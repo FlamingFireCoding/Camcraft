@@ -114,7 +114,11 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
             // named and flown at the plunge feed - never a straight-down
             // feed at the cutting feed.
             let zf = if a.ramp_to_depth { (p.top_z + a.plunge_height).min(prev_z) } else { from };
-            let angle = crate::links::DEFAULT_RAMP_ANGLE;
+            let angle = if !s.first && p.links.transition == Some(Entry3D::Ramp) {
+                level_angle(p.links.ramp_angle)
+            } else {
+                crate::links::DEFAULT_RAMP_ANGLE
+            };
             if !chord_clears(center, leg, e2) {
                 return sub(b, "the ramp's chord is blocked");
             }
@@ -201,6 +205,12 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
             sub(b, why)
         }
     }
+}
+
+/// The level ramp's angle (degrees): the links' own where it is a real
+/// descent angle, else the default (a file that never set it).
+fn level_angle(deg: f64) -> f64 {
+    if deg.is_finite() && deg > 0.0 && deg < 90.0 { deg } else { crate::links::DEFAULT_RAMP_ANGLE }
 }
 
 /// Does the chord `st -> e` drop `dz` no steeper than `deg` degrees? A

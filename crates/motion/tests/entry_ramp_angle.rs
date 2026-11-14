@@ -38,6 +38,10 @@ fn links(entry_angle: f64) -> Links {
 }
 
 fn contour_path(entry_angle: f64, climb: bool) -> Toolpath {
+    contour_with_links(links(entry_angle), climb)
+}
+
+fn contour_with_links(links: Links, climb: bool) -> Toolpath {
     contour(
         &region(),
         &ContourParams {
@@ -60,7 +64,7 @@ fn contour_path(entry_angle: f64, climb: bool) -> Toolpath {
             entry: Entry3D::Ramp,
             helix_radius: 1.0,
             blend_turns: false,
-            links: links(entry_angle),
+            links,
         },
     )
     .expect("a legal inside contour")
@@ -217,36 +221,40 @@ fn explicit_entry_angle_remains_independent_of_steep_link_angle() {
 
 #[test]
 fn explicit_ramp_transition_keeps_its_own_link_angle() {
-    let t = circular_with_links(
-        Links {
+    for climb in [true, false] {
+        let links = Links {
             transition: Some(Entry3D::Ramp),
             ..links(0.0)
-        },
-        true,
-    );
-    let mut steep_transition = false;
-    let mut gentle_entry = false;
-    for m in &t.moves {
-        let dz = m.from.z - m.to.z;
-        let len = xy_len(m);
-        if m.kind == MoveKind::Rapid || dz <= 1e-9 || len <= 1e-9 {
-            continue;
-        }
-        let angle = (dz / len).atan().to_degrees();
-        if m.from.z > 0.0 {
-            assert!(angle <= 3.0 + 1e-4, "entry steepened to {angle}");
-            gentle_entry = true;
-        } else {
+        };
+        for t in [
+            circular_with_links(links, climb),
+            contour_with_links(links, climb),
+        ] {
+            let mut steep_transition = false;
+            let mut gentle_entry = false;
+            for m in &t.moves {
+                let dz = m.from.z - m.to.z;
+                let len = xy_len(m);
+                if m.kind == MoveKind::Rapid || dz <= 1e-9 || len <= 1e-9 {
+                    continue;
+                }
+                let angle = (dz / len).atan().to_degrees();
+                if m.from.z > 0.0 {
+                    assert!(angle <= 3.0 + 1e-4, "entry steepened to {angle}");
+                    gentle_entry = true;
+                } else {
+                    assert!(
+                        angle <= 45.0 + 1e-4,
+                        "transition exceeded its angle: {angle}"
+                    );
+                    steep_transition |= angle > 3.0 + 1e-4;
+                }
+            }
+            assert!(gentle_entry, "the first entry ramps at its default");
             assert!(
-                angle <= 45.0 + 1e-4,
-                "transition exceeded its angle: {angle}"
+                steep_transition,
+                "later transitions still use the 45 degree link setting"
             );
-            steep_transition |= angle > 3.0 + 1e-4;
         }
     }
-    assert!(gentle_entry, "the first entry ramps at its default");
-    assert!(
-        steep_transition,
-        "later transitions still use the 45 degree link setting"
-    );
 }
