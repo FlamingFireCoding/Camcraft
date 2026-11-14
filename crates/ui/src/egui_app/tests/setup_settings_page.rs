@@ -141,9 +141,9 @@ fn the_setup_page_is_laid_out_in_groups_like_the_wcs_page() {
     plane_method(&mut h, "Points", "Manual");
     assert_group(&h, GROUPS[2], GROUPS[3], &["Plane orientation", ALIGN, TURN, ABOUT, RELATIVE]);
     plane_method(&mut h, "Manual", "Axes");
-    assert_group(&h, GROUPS[3], GROUPS[4], &[FEATURES, "Pick for WCS", OFFSET]);
-    // The page's old reading order holds: "Set WCS from features" above the G54-G59 picker.
-    assert!(top(&h, FEATURES) < top(&h, OFFSET), "features row before the work offset picker");
+    assert_group(&h, GROUPS[3], GROUPS[4], &[FEATURES, "Pick for WCS"]);
+    // #1648: the work offset picker lives on the WCS page, not here.
+    gone(&h, OFFSET);
     assert_between(&h, GROUPS[4], foot(&h), &["Delete Setup2", "Open Setup2 fixtures"]);
     // Stock follows its source: a fresh setup's own stock entity, stated at the foot.
     assert!(foot(&h) > top(&h, "Open Setup2 fixtures"), "the readout is under the groups");

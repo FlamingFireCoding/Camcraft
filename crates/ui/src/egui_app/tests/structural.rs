@@ -335,10 +335,10 @@ fn setup_page_alignment_rows_structure() {
     assert!(pane.contains_rect(corner), "the box point combo lies inside the pane: {corner:?}");
     assert!(h.state().state.points_pick.is_none(), "nothing is armed by drawing the page");
     assert!(h.state().state.cylinder_pick.is_none() && h.state().state.origin_pick.is_none(), "no #771 draft is armed by drawing the page");
-    // #931: the work-offset combo reads the setup's post's name for the
-    // offset, worded "Work offset n (NAME)" - never a bare G-word.
+    // #1648: the work-offset combo moved to the WCS page (one_wcs.rs pins
+    // it, worded "Work offset n (NAME)", #931); the Setup page has none.
     let wcs = |v: &str| h.query_all_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some(v)).count();
-    assert_eq!(wcs("Work offset 1 (G54)"), 1, "the Settings page's work-offset combo");
+    assert_eq!(wcs("Work offset 1 (G54)"), 0, "the Settings page has no work-offset combo (#1648)");
     assert_eq!(wcs("G54"), 0, "no bare word in the combo");
 }
 
