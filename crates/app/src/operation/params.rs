@@ -427,6 +427,7 @@ impl OpParams {
                 steep_stepover,
                 pencil_reference,
                 fill_openings,
+                gap_link,
             } => {
                 // v16: the pattern chooses a different kinematic (and
                 // the raster fields only answer to Parallel), so they
@@ -503,6 +504,17 @@ impl OpParams {
                 if let Some(s) = fill_openings {
                     h.write_u8(0x4C);
                     w(h, *s);
+                }
+                // The gap link authors the chain between runs. Only
+                // a non-Jump choice digests (one tag byte plus the
+                // variant), so every op that hops as before keeps
+                // the stamp it had.
+                if *gap_link != crate::finishing3d::GapLink::Jump {
+                    h.write_u8(0x4D);
+                    h.write_u8(match *gap_link {
+                        crate::finishing3d::GapLink::Straight => 2,
+                        crate::finishing3d::GapLink::Jump => 1,
+                    });
                 }
             }
             // The deburr ride digests the one authored number, the

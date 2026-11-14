@@ -1108,6 +1108,9 @@ fn seed_finish3d(c: &Carried) -> OpParams {
         // The model is the finished surface until a machinist asks
         // for the land (#1196).
         fill_openings: None,
+        // Fresh finishes hop to clearance like every older file;
+        // straight links are the machinist's opt-in (the linking menu).
+        gap_link: crate::finishing3d::GapLink::Jump,
     }
 }
 

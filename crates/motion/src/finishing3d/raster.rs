@@ -139,6 +139,17 @@ pub(super) fn raster_pass_spaced(
     let mut runs: Vec<Vec<(Point2, f64)>> = Vec::new();
     for (_, mut pieces, back) in lines {
         if back {
+            // The line runs back WHOLE: the pieces too. Reversing
+            // only each piece's points made the chain run one piece
+            // backwards and then hop back across the whole field to
+            // the next piece's far end - every break a backwards
+            // long traverse instead of a crossing of the gap. Under
+            // the plain jump that mis-pairing hid inside a high
+            // rapid; a gap link authors the same line at the cut,
+            // where it shows. Pieces in order and points in order
+            // is what makes the serpentine cross each gap once,
+            // between the facing edges.
+            pieces.reverse();
             for pc in pieces.iter_mut() {
                 pc.reverse();
             }
