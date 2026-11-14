@@ -87,6 +87,7 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     }
     if state.tool_body_ui.lathe.is_some() {
         super::tool_body_lathe_page::section(ui, state, u);
+        super::tool_body_assembly_page::section(ui, state);
         return;
     }
     let old_axis = state.tool_body_ui.axis;
@@ -139,6 +140,7 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
     if ui.button("Apply body").on_hover_text("attach the body with this placement (one undo step)").clicked() {
         state.queue_apply_tool_body();
     }
+    super::tool_body_assembly_page::section(ui, state);
 }
 
 fn axis_combo(ui: &mut Ui, axis: &mut [f64; 3]) {
