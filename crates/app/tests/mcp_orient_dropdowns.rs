@@ -344,3 +344,35 @@ fn place_setup_origin_moves_named_setup_keeps_rotation_and_undoes() {
         false
     );
 }
+
+#[test]
+fn named_setup_vertex_origin_uses_its_pose_when_inactive() {
+    let mut c = Client::new("named-vertex-origin");
+    c.import("part", cylinder(20.0, 10.0, 48));
+    c.import("block", cube(Point3::new(30.0, 40.0, 50.0), Point3::new(40.0, 50.0, 60.0)));
+    c.ok("add_setup", json!({}));
+    let features = c.ok("list_features", json!({"model": "part"}));
+    let wall = features["patches"].as_array().expect("patches").iter()
+        .max_by_key(|p| p["faces"].as_array().map_or(0, Vec::len)).expect("wall");
+    let vertices = c.ok("list_features", json!({"model": "block"}));
+    let vertex = vertices["vertices"].as_array().expect("vertices").iter()
+        .find(|v| v["at"] == json!([30.0, 50.0, 50.0])).expect("cube corner");
+    let args = json!({"setup": "Setup1", "source": "vertex",
+        "pick": {"model": "block", "id": vertex["id"]}});
+    c.ok("align_part_cylinder", json!({"pick": {"model": "part", "id": wall["id"]}, "target": "x"}));
+    c.ok("add_setup", json!({}));
+    let before = c.ok("get_job", json!({}));
+    let inactive = c.ok("place_setup_origin", args.clone());
+    let after = c.ok("get_job", json!({}));
+    assert_eq!(after["active_setup"], "Setup2");
+    assert_eq!(after["setups"][1], before["setups"][1], "Setup2 is untouched");
+    assert_eq!(after["setups"][0]["wcs"]["origin"], inactive["origin"]);
+    c.ok("undo", json!({}));
+    assert_eq!(c.ok("get_job", json!({}))["setups"][0]["wcs"], before["setups"][0]["wcs"]);
+    c.ok("activate_setup", json!({"name": "Setup1"}));
+    let active = c.ok("place_setup_origin", args);
+    assert_eq!(inactive, active, "the named setup's pose must not depend on the active setup");
+    for (got, expected) in inactive["origin"].as_array().expect("origin").iter().zip([35.0, 35.0, 60.0]) {
+        assert!((got.as_f64().expect("coordinate") - expected).abs() < 1e-8, "origin: {inactive}");
+    }
+}

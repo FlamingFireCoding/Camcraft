@@ -22,3 +22,10 @@ the existing alignment module remains below 400 lines.
 **Cost to change later:** A different public argument shape requires
 updating the MCP schemas, handlers, headless tests and skill rows together.
 The shared commands and saved project format do not need to change.
+
+**Review fix - named vertex origin:** Resolve the vertex through the
+requested setup's pose in the shared origin command. Keep the existing
+active-view vertex reader for viewport callers. Switching the active
+setup temporarily was rejected because reading a named setup must not
+change session state. The MCP pin compares active and inactive requests,
+checks the known aligned coordinate, and checks undo and Setup2 isolation.
