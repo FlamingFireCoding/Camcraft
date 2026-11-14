@@ -1,5 +1,5 @@
 //! Provenance: our own headless MCP fixtures over the setup orientation commands (#1586).
-//! Gate map: covers app::mcp::align_tools, app::commands::set_wcs.
+//! Gate map: covers app::mcp::align_tools, app::commands::set_wcs, app::pick::cylinder.
 
 use camcraft_app::geometry::{Mesh, Point3, cube, cylinder};
 use camcraft_app::mcp::Server;
@@ -200,6 +200,48 @@ fn align_part_cylinder_lands_undoes_and_refuses_by_name() {
         json!({"pick": pick, "flip": "bad"}),
         "flip",
     );
+}
+
+#[test]
+fn consecutive_cylinder_alignments_land_the_original_axis() {
+    let mut c = Client::new("consecutive-cylinder");
+    c.import("part", cylinder(20.0, 10.0, 48));
+    c.ok("add_setup", json!({}));
+    let features = c.ok("list_features", json!({"model": "part"}));
+    let wall = features["patches"]
+        .as_array()
+        .expect("patches")
+        .iter()
+        .max_by_key(|p| p["faces"].as_array().map_or(0, Vec::len))
+        .expect("wall");
+    let pick = json!({"model": "part", "id": wall["id"]});
+    let first = c.ok(
+        "align_part_cylinder",
+        json!({"pick": pick, "target": "x", "angle_deg": 21.0}),
+    );
+    let first_setup = c.saved_setup("Setup1");
+    let axis = rotated(&first["alignment"]["rotation"], [0.0, 0.0, 1.0]);
+    assert!(
+        axis[0].abs() > 1.0 - 1e-8 && axis[1].abs() < 1e-8 && axis[2].abs() < 1e-8,
+        "first alignment's original cylinder axis: {axis:?}"
+    );
+    let second = c.ok(
+        "align_part_cylinder",
+        json!({"pick": pick, "target": "y", "angle_deg": 33.0, "flip": true}),
+    );
+    // Read the actual stored pose, independently of the backend's landing proof.
+    let second_setup = c.saved_setup("Setup1");
+    assert_ne!(second_setup, first_setup);
+    assert_eq!(second["alignment"]["rotation"], second_setup["part_alignment"]["rotation"]);
+    let axis = rotated(&second_setup["part_alignment"]["rotation"], [0.0, 0.0, 1.0]);
+    assert!(
+        axis[0].abs() < 1e-8 && axis[1].abs() > 1.0 - 1e-8 && axis[2].abs() < 1e-8,
+        "second alignment's original cylinder axis: {axis:?}"
+    );
+    c.ok("undo", json!({}));
+    assert_eq!(c.saved_setup("Setup1"), first_setup);
+    c.ok("redo", json!({}));
+    assert_eq!(c.saved_setup("Setup1"), second_setup);
 }
 
 #[test]
