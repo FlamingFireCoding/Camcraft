@@ -1787,6 +1787,11 @@ pub struct State {
     /// highlight (#1507) reads last frame's answer - a one-frame lag, with a
     /// repaint requested whenever the two differ. Ephemeral, never a command.
     pub geo_hover_drawn: Option<GeoSel>,
+    /// The Geometry-tab rows marked this frame because the viewport pointer
+    /// is over their picked face, chain or vertex (#1519, the reverse of
+    /// `geo_hover`). Cleared at the frame edge, set by the page as it draws
+    /// each row. Ephemeral view state, never a command.
+    pub geo_row_marked: Vec<GeoSel>,
     /// Which named section of the operation page is open (the M1.4 tab
     /// bar, restored after M9.1 B's stack on user feedback). An index into
     /// `egui_app::op_tabs::SECTIONS`. Ephemeral pane state like the drafts
@@ -1992,6 +1997,7 @@ impl State {
             incoming_view: Default::default(),
             geo_hover: None,
             geo_hover_drawn: None,
+            geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
             hidden_stocks: Vec::new(),

@@ -96,6 +96,7 @@ pub(crate) fn shell_layout(
     // imgui App::draw law); the viewport's update_hover and the property-page
     // chip hovers then own it until the pointer moves on.
     state.geo_hover_drawn = state.geo_hover.take();
+    state.geo_row_marked.clear();
     panes::shortcuts(ui, state);
     // #1450: a model file dropped on the window goes through Model's import.
     super::file_drop::take_drop(ui, state);
