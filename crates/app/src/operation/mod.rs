@@ -146,6 +146,7 @@ mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;
 mod boundary_turn;
+mod boundary_chains;
 mod contour_open;
 mod finish_clip;
 mod finish_entry;

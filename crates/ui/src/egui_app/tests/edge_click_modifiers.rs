@@ -169,3 +169,43 @@ fn hovering_a_selection_rows_remove_button_highlights_that_pick() {
     assert_eq!(h.state().state.geo_hover, None, "the highlight goes when the pointer leaves");
     assert_eq!(h.state().state.history.is_dirty(), history, "hover is not a command");
 }
+
+/// The open boundary's picks in the page draft.
+fn open_picks(st: &crate::state::State) -> Vec<GeoSel> {
+    st.op_ui.area.open.as_ref().map(|o| o.picks.clone()).unwrap_or_default()
+}
+
+/// #1727: with the toolbar in Faces mode, an armed boundary row still takes
+/// the edge under the cursor (it took faces only, so no edge could bound
+/// the cut), and Ctrl adds a second, separate edge. Apply commits the two
+/// edges as one undoable edit; undo takes them back out. The click goes
+/// through the viewport's own feature-click route (`feature_click::click`)
+/// at the pixel over each edge, between frames, as the shell calls it.
+#[test]
+fn an_armed_boundary_row_takes_edges_in_faces_mode() {
+    let (h, name) = harness_for(Some(OpType::Face));
+    let (near, far) = (side(h.state(), 0), side(h.state(), 3));
+    let mut sh = h.into_state();
+    let st = &mut sh.state;
+    st.geo_pick = GeoPick::Face;
+    st.boundary_pick = Some(crate::state::BoundaryPick::Open);
+    let ctrl = crate::interact::Mods { command: true, ..Default::default() };
+    crate::feature_click::click(st, [near.x, near.y], crate::interact::Mods::default());
+    let one = open_picks(st);
+    assert_eq!(one.len(), 1, "a click takes one pick: {one:?} / {}", st.status);
+    assert!(matches!(one[0].feature, operation::FeatureSel::Chain(_)), "the pick is an edge, not the face: {one:?}");
+    crate::feature_click::click(st, [far.x, far.y], ctrl);
+    let two = open_picks(st);
+    assert_eq!(two.len(), 2, "Ctrl adds the far edge: {two:?} / {}", st.status);
+    assert!(two.iter().all(|g| matches!(g.feature, operation::FeatureSel::Chain(_))), "both picks are edges: {two:?}");
+    assert!(st.status.contains("2 open chains"), "the entry reads as two chains: {}", st.status);
+    st.apply_operation_params(&name);
+    st.drain_actions();
+    let stored = |st: &crate::state::State| {
+        model::find_by_name(&st.world, &name).and_then(|e| model::operation_of(&st.world, &e)).and_then(|o| o.area.open).map(|o| o.picks)
+    };
+    assert_eq!(stored(st), Some(two), "Apply commits the two edges: {}", st.status);
+    st.pending.push_back(CommandKind::Undo);
+    st.drain_actions();
+    assert_eq!(stored(st), None, "undo takes the boundary back out");
+}
