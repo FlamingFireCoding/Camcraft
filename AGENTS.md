@@ -770,9 +770,10 @@ gate <tier>`, from the workspace's `xtask/` crate. `scripts/gate.ps1`
    touched crates (`cargo xtask gate quick [--base main]`); debug; no heavy
    lanes.
 2. **batch** (main session, before committing a batch, target ≤ 20 min):
-   every debug suite except those tagged slow, the ui suites from
-   `crates/ui`, clippy (`cargo xtask gate batch`). No release-mode heavy
-   lanes.
+   every debug suite except those tagged slow (the `camcraft-kernel`
+   suites included since #1702, so the post-merge gate finds a kernel
+   failure before a cut), the ui suites from `crates/ui`, clippy
+   (`cargo xtask gate batch`). No release-mode heavy lanes.
 3. **release** (only at a cut): everything - all debug suites, the
    `--ignored` heavy lanes in release (`cargo xtask gate release`). Since
    #1413 it runs on the self-hosted Linux cut runner through `cut.yml`
@@ -781,6 +782,11 @@ gate <tier>`, from the workspace's `xtask/` crate. `scripts/gate.ps1`
 
 Any tier takes `--dry-run` to print its plan without running it; logs go
 to `gate-logs/<tier>-<timestamp>/`.
+Any tier but `test` takes `--only <step>` (repeatable; a step name or its
+first word, for example `kernel`, `clippy`, `ui`) to run only the named
+steps, and `--failed gate-logs/<run>` to run only the steps that failed in
+that earlier run (#1702). A fix for one red step then costs that step, not
+a full run. `--dry-run` shows the selected steps.
 
 **Shared compile cache (optional, #900).** Every worktree has its own
 `target/`, so a fresh one recompiles every third-party crate. With
