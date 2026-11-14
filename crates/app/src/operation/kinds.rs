@@ -899,6 +899,8 @@ fn seed_slot(c: &Carried) -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: c.tilt,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
