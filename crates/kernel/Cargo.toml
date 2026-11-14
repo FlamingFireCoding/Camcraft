@@ -46,4 +46,8 @@ camcraft-kernel = { path = ".", features = ["truck"] }
 # pins). Dev-only on purpose: the library gains no truck-stepio.
 truck-stepio = { workspace = true }
 truck-meshalgo = { workspace = true }
+# The bench's face meter (#1697, tests/step_util/truck_guard.rs) builds a
+# CompressedShell of metered faces; truck-stepio does not re-export the type.
+# Already in the workspace (crates/app), at the same pin.
+truck-topology = { workspace = true }
 ruststep = { workspace = true }
