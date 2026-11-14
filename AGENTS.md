@@ -775,7 +775,12 @@ gate <tier>`, from the workspace's `xtask/` crate. `scripts/gate.ps1`
    failure before a cut), the ui suites from `crates/ui`, clippy
    (`cargo xtask gate batch`). No release-mode heavy lanes.
 3. **release** (only at a cut): everything - all debug suites, the
-   `--ignored` heavy lanes in release (`cargo xtask gate release`). Since
+   `--ignored` heavy lanes in release (`cargo xtask gate release`). The heavy
+   lanes of motion and app are one release build (`--no-run`), then one step
+   for each test target that can hold an ignored test: `<crate> heavy: lib`,
+   `bins`, `doc` and `<crate> heavy: <binary>` (#1714). One red binary is one
+   red step, its note names the failed tests and any test libtest reports as
+   running over 60 s, and `--only "app heavy: <binary>"` re-runs it alone. Since
    #1413 it runs on the self-hosted Linux cut runner through `cut.yml`
    (`cargo xtask gate release --no-snapshots`); the pixel-snapshot lanes
    stay a local step at the cut ("A cut goes PR review", step 2).
