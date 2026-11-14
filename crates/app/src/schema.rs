@@ -102,6 +102,17 @@ pub struct StepBudget {
     pub facets: u64,
 }
 
+/// The hole of a model imported from a STEP closed shell that meshes open
+/// (#1610), said in words: the model rides fidelity unknown
+/// (`ReducedFidelity` at `model_fidelity::UNKNOWN_MM`) and every refusal
+/// of it names this hole. Read only beside that sentinel. Written by the
+/// import, update and delete commands and the project loader, through
+/// `mesh_open::set`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct MeshOpen {
+    pub hole: String,
+}
+
 /// Selection marker (tag). Only `SelectEntity` writes it (AGENTS.md: changes
 /// go through commands); the tree and viewport read it to highlight.
 #[derive(Component, Debug)]
@@ -692,6 +703,7 @@ pub fn register_schema(world: &World) {
     world.component::<GeoSig>();
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
+    world.component::<MeshOpen>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();

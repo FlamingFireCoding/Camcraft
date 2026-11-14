@@ -116,7 +116,7 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
             });
             // #864: only a model imported coarser than promised says so.
             if let Some(chord) = crate::model_fidelity::chord_of(w, e) {
-                m["reduced_fidelity"] = crate::model_fidelity::facts(w, chord);
+                m["reduced_fidelity"] = crate::mesh_open::facts(w, e, chord);
             }
             // #1054: and one imported under a non-default STEP facet budget.
             if let Some(b) = crate::model_fidelity::budget_of(w, e) {
