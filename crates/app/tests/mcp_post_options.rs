@@ -222,3 +222,28 @@ fn post_options_refuses_bad_inputs_and_no_ops_by_name() {
             .contains("together")
     );
 }
+
+#[test]
+fn post_options_refuses_enum_types_without_applying_valid_fields() {
+    let mut c = Client::new();
+    c.ok("add_setup", json!({ "name": "Setup1" }));
+    c.ok("set_post_options", json!({ "setup": "Setup1", "per_op": true }));
+    let document = c.ok("get_post_options", json!({}));
+    let setup = c.ok("get_post_options", json!({ "setup": "Setup1" }));
+
+    for field in ["threading", "end_units", "between_setups"] {
+        for invalid in [Value::Null, json!(true), json!(42), json!([]), json!({})] {
+            for target in [None, Some("Setup1")] {
+                let mut args = json!({ "skip_stops": true });
+                args[field] = invalid.clone();
+                if let Some(name) = target {
+                    args["setup"] = json!(name);
+                }
+                let error = c.refused("set_post_options", args.clone());
+                assert!(error.contains(field), "{args}: {error}");
+                assert_eq!(c.ok("get_post_options", json!({})), document, "{args}");
+                assert_eq!(c.ok("get_post_options", json!({ "setup": "Setup1" })), setup, "{args}");
+            }
+        }
+    }
+}
