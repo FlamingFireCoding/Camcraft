@@ -859,7 +859,11 @@ GitHub-hosted runner. What the machine needs:
   changes a file under `.github/workflows/` - such a file could name
   `self-hosted`.
 
-**The post-merge gate** (#1451) shares this runner: `post-merge.yml` runs
+**The post-merge gate** (#1451) has a runner of its own (maintainer,
+2026-11-15: "tag 2 out of 3 action runners as camcraft-pr-test and one of em
+run the post-merge gate"): its jobs target the runner label
+`camcraft-post-merge` (the Linux runner `uma`), which does not carry
+`camcraft-pr-test`, so a PR test never waits behind a gate. `post-merge.yml` runs
 `cargo xtask gate batch` on every push to `main` (and `workflow_dispatch`,
 input `ref`), never on a PR trigger. It yields to the cut - it skips itself
 (green, with a notice) while a `cut.yml` run is queued or running or an
@@ -886,7 +890,7 @@ other PRs build locally) when a runner is online and no cut is using it; a "read
 is never sent. With no runner, or a run that is cancelled, times out or
 never starts, the review builds locally or says "not built" - never "pass".
 The job targets the runner label `camcraft-pr-test` and runs on any self-hosted
-runner carrying it, Linux (`uma`) or macOS (`m3`); on macOS the UI suites open
+runner carrying it, Linux (`len`) or macOS (`m3`); on macOS the UI suites open
 real windows, so that runner needs a logged-in session, and per-OS pinned
 readings run that OS's arm. Each runs under its own OS
 user, HOME, cargo home and sccache dir, never shared with the cut/release
