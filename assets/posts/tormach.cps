@@ -35,6 +35,7 @@ var sRpm = 0;              // spindle/T order follows the stream: PARAMs,
 var spindleWait = false;   // TOOL, SECTION - the preamble writes them
 var toolWait = false;      // when the first motion needs them legal
 var tNo = 0;
+var loadedTool = null;     // #1626: only the tool this program emitted M6 for is known
 var inCycle = false;       // a cycle group is open; its chain is suppressed
 var cycleSig = "";         // g|Z|R|Q of the open group (modal X Y holes)
 var cycX = 0, cycY = 0, cycR = 0; // the open group's hole XY and R plane (world, #994)
@@ -435,9 +436,14 @@ function startPreamble() {
   planeG = 17;              // the preamble states the plane
   if (toolWait) {
     toolNote();
-    retract();
-    xyUnknown = true;        // G30 (or the changer) may have moved X and Y
-    block(["T" + ni(tNo), "M6"]);
+    // The initial spindle tool is unknown. Only a repeated tool that this
+    // program already loaded can skip the trip to G30 and the tool change.
+    if (loadedTool !== tNo) {
+      retract();
+      block(["T" + ni(tNo), "M6"]);
+      loadedTool = tNo;
+    }
+    xyUnknown = true;        // restate clearance after G43/lift, even without a change
     block(["G43", "H" + ni(tNo)]);
     // #1596: Z straight up again (G53, so the G43 just applied does not
     // shift it) before the section's first X/Y or A move. The G30 above
