@@ -26,7 +26,7 @@ Released 2026-11-14.
 A minor release headlined by **a Z clearance law for the posts**, **wire and
 sinker EDM in the UI**, **stricter gouge judgement of 2D operations against the
 parts in the stock**, **a hardened STEP importer**, and **a browser build that
-opens, saves and posts**. 119 pull requests merged since 0.19.0. Two fixes came in during the cut: #1692 (issue 1691) and #1698 (issue 1697, the STEP bench meters truck's faces).
+opens, saves and posts**. 120 pull requests merged since 0.19.0. Three fixes came in during the cut: #1692 (issue 1691), #1698 (issue 1697, the STEP bench meters truck's faces) and #1712 (issue 1706, test only: the heavy test of `shared_face_bodies` asked for a 3D Pocket that the product correctly refuses; the test now pins the refusal and generates the 3D Finish).
 
 ## Highlights
 ### Posts and G-code
@@ -144,7 +144,7 @@ went from 62 to 65:
   Technical English. A fork pulls the process files and reads AGENTS.md again.
 
 ## Known issues
-- None at the start of the cut.
+- No P1 or P2 issue was open at the start of the cut, and none was filed after it.
 - No installer is built on the cut machine; the zip is the release, and the
   published artifact is built by the release workflow from the tag.
 
