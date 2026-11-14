@@ -581,7 +581,9 @@ function g76Wanted() { return typeof postOptions !== "undefined" && postOptions.
 // exactly the grid numbers chosen here, never three roundings that
 // disagree. The root is rounded OUTWARD (never deeper than the
 // record's minor diameter - a deeper root is a gouge of the thread
-// form); J, the first depth, is rounded shallower.
+// form); J, the first depth, is rounded shallower - unless the
+// shallower J would make the control cut one pass more than the record
+// lays (#1619, below).
 function gridStep() { return inch ? 0.0001 : 0.001; }
 function gridOf(mm) { return len(mm) / gridStep(); }               // mm -> grid steps (real)
 function gridWord(n) { return trim0(Number(n * gridStep()).toFixed(inch ? 4 : 3)); }
@@ -631,12 +633,28 @@ function g76Grid(p, r0) {
   var x = Math.round(gridOf(2 * r0));
   var peak = Math.round(gridOf(p.MajorDiameter));
   var root = Math.ceil(gridOf(p.MinorDiameter) - 1e-6);   // outward: never deeper than the minor
-  var j = Math.floor(gridOf(2 * p.FirstDepth) + 1e-6);     // shallower: never a heavier first cut
+  var jRec = gridOf(2 * p.FirstDepth);                     // the record's first depth, real
   var k = peak - root;
   if (!(x - peak >= 1)) return { why: "the drive line is not clear of the crest at the control's resolution" };
   if (!(k >= 1)) return { why: "the thread depth is below the control's resolution" };
+  // #1619: R1 (LinuxCNC: "R1.0 selects constant depth") cuts J, 2J, ...
+  // and clamps the last pass at K, so the control cuts ceil(K/J)
+  // passes. The record lays ceil(height / first depth) equal rungs
+  // (g76Why holds the equal ladder); J must make the control's count
+  // that same number: (n-1)J < K <= nJ. J is the grid's shallower
+  // rounding when that keeps the count; when it would add a pass, the
+  // one grid step up - never a full step heavier than the record's
+  // first depth. Anything else is refused by name.
+  var n = Math.max(1, Math.ceil(p.ThreadHeight / p.FirstDepth - 1e-9));
+  var lo = Math.ceil(k / n);                                // nJ >= K
+  var hi = n > 1 ? Math.floor((k - 1) / (n - 1)) : k;       // (n-1)J < K
+  var j = Math.min(Math.floor(jRec + 1e-6), hi);            // shallower: the record's first cut or less
+  if (j < lo) j = lo;                                       // shallower adds a pass: one step up
   if (!(j >= 1)) return { why: "the first-pass depth is below the control's resolution" };
-  return { x: x, i: peak - x, j: Math.min(j, k), k: k };
+  if (!(j <= hi && j - jRec < 1 - 1e-6)) {
+    return { why: "no first depth J on the control's grid makes R1's equal ladder cut the record's " + n + " passes (K " + gridWord(k) + ")" };
+  }
+  return { x: x, i: peak - x, j: j, k: k };
 }
 
 // A THREAD record: with G76 chosen, a rapid to the drive line at the
