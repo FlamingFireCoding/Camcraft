@@ -284,6 +284,7 @@ impl OpParams {
                 entry,
                 helix_radius,
                 optimal_load,
+                method,
                 tilt,
             } => {
                 w(h, *stepover);
@@ -306,6 +307,11 @@ impl OpParams {
                 // M11.4 C: the kind now runs the HSM plan, not rings -
                 // a generation word so every pre-C op goes Stale once.
                 h.write_u8(0xA4);
+                // #1509: written only off the default, so every Spiral
+                // op keeps the digest it had before the choice existed.
+                if *method == crate::machining2d::AdaptiveMethod::Trochoidal {
+                    h.write_u8(0xA5);
+                }
             }
             OpParams::Offset2D {
                 links: _,
@@ -1065,14 +1071,8 @@ impl OpParams {
                 // through here or through the source arm.
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped)); // changes what the
-                    // bore door says, so it belongs in the digest (M8.3):
-                    // a re-detect that folds a step marks the op Stale.
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
                 // The radial list digests too (M5.2 F2): same law -
                 // detection output or a typed edit is params data, and
@@ -1080,15 +1080,7 @@ impl OpParams {
                 // the op Stale rather than re-detect silently.
                 h.write_u32(cross.len() as u32);
                 for c in cross {
-                    for p in [c.origin, c.dir] {
-                        w(h, p.x);
-                        w(h, p.y);
-                        w(h, p.z);
-                    }
-                    for v in [c.radius, c.entry_d, c.floor_d] {
-                        w(h, v);
-                    }
-                    h.write_u8(u8::from(c.through));
+                    super::hole_digest::cross(h, c);
                 }
             }
             // The facing ladder (M5.2 stage A, tag 18): three heights,
@@ -1412,12 +1404,8 @@ impl OpParams {
                 h.write_u8(u8::from(*climb));
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped));
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
             }
             // The probe (#108): every number moves the touches or the
@@ -1642,12 +1630,8 @@ impl OpParams {
                 });
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped));
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
             }
         }
@@ -1704,6 +1688,10 @@ impl OpParams {
                 if a.arc_xy {
                     h.write_u8(0xC4);
                 }
+                // #1449: pre-drilled entry - a byte only when on.
+                if a.predrilled {
+                    h.write_u8(0xC7);
+                }
                 // M13.11: control compensation moves what the post
                 // writes - a byte only when on, so every earlier
                 // approach keeps its digest.
@@ -1718,6 +1706,12 @@ impl OpParams {
                 // #1448: the user's start point - bytes only when set.
                 if let Some(q) = a.start_point {
                     h.write_u8(0xC7);
+                    w(h, q.x);
+                    w(h, q.y);
+                }
+                // #1473: the exit point - bytes only when set.
+                if let Some(q) = a.exit_point {
+                    h.write_u8(0xC8);
                     w(h, q.x);
                     w(h, q.y);
                 }

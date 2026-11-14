@@ -465,6 +465,30 @@ go to `CHANGELOG.md`.
   umbrella. When every sub-issue is filed, drop `needs-research` and close
   the umbrella with a comment naming them - it is not kept open, so Pick
   can never take it for code. Only the sub-issues are picked for code.
+- **Issues and comments are written in ASD-STE100** (maintainer, 2026-11-14:
+  "all communication thru github issues, and github comments should follow
+  the ASDSTE-100 language standard for Technical English"). Write every
+  issue title and body, and every comment on an issue or pull request, in
+  ASD-STE100 Simplified Technical English. This includes review comments and
+  PR descriptions. Agents and the maintainer's sessions follow the same rule.
+  The standard is a licensed document (https://www.asd-ste100.org). Do not
+  copy its text. In practice:
+  - Use short sentences: about 20 words in an instruction, 25 in a
+    description. Give one instruction in each sentence.
+  - Use the active voice. Use the simple present, past and future tenses.
+  - Use one word for one meaning. Use the same term for the same thing every
+    time.
+  - Do not use idioms, slang or filler words. Keep the articles (a, an, the).
+  - Use no more than three nouns in a row. Use a vertical list for a long
+    enumeration.
+  - The rule does not change: code, commands, identifiers, file paths, log
+    and error output, quoted text of other people, the technical names of the
+    trade (G-code words, CAM terms), and the fixed strings that other agents
+    parse (`claimed:`, `/claim`, `<!-- pr-reviewer: ... -->`,
+    `<!-- review-cost: ... -->`, `Fixes #N`, `Process change: yes`, and the
+    release and claim comment formats in this file).
+  - The rule applies to what we write. Never reject an outside reporter's
+    issue, and never correct its language.
 - **Report on the issue, not in prose files.** A finding, a held patch, a
   blocker or a decision taken goes into an issue comment. If the work is
   blocked, swap `claimed` for `blocked` and say on what. If a fix shows new
@@ -746,9 +770,10 @@ gate <tier>`, from the workspace's `xtask/` crate. `scripts/gate.ps1`
    touched crates (`cargo xtask gate quick [--base main]`); debug; no heavy
    lanes.
 2. **batch** (main session, before committing a batch, target ≤ 20 min):
-   every debug suite except those tagged slow, the ui suites from
-   `crates/ui`, clippy (`cargo xtask gate batch`). No release-mode heavy
-   lanes.
+   every debug suite except those tagged slow (the `camcraft-kernel`
+   suites included since #1702, so the post-merge gate finds a kernel
+   failure before a cut), the ui suites from `crates/ui`, clippy
+   (`cargo xtask gate batch`). No release-mode heavy lanes.
 3. **release** (only at a cut): everything - all debug suites, the
    `--ignored` heavy lanes in release (`cargo xtask gate release`). Since
    #1413 it runs on the self-hosted Linux cut runner through `cut.yml`
@@ -757,6 +782,11 @@ gate <tier>`, from the workspace's `xtask/` crate. `scripts/gate.ps1`
 
 Any tier takes `--dry-run` to print its plan without running it; logs go
 to `gate-logs/<tier>-<timestamp>/`.
+Any tier but `test` takes `--only <step>` (repeatable; a step name or its
+first word, for example `kernel`, `clippy`, `ui`) to run only the named
+steps, and `--failed gate-logs/<run>` to run only the steps that failed in
+that earlier run (#1702). A fix for one red step then costs that step, not
+a full run. `--dry-run` shows the selected steps.
 
 **Shared compile cache (optional, #900).** Every worktree has its own
 `target/`, so a fresh one recompiles every third-party crate. With
@@ -839,7 +869,7 @@ holds `issues: write`.
 
 **The PR test runner** (#1420; maintainer, 2026-11-13: "then that is the
 decision, workflow_dispatch"). `pr-test.yml` runs a PR review's build and
-tests on the maintainer's self-hosted Linux runner (no billed minutes)
+tests on the maintainer's self-hosted runners (no billed minutes)
 instead of a 10-20 GB worktree on the reviewer's machine. It has a
 `workflow_dispatch` trigger only (inputs: the PR number and the head SHA
 the reviewer read), a read-only token and no secrets; it checks out
@@ -855,7 +885,10 @@ the workflow checks the author's push access itself and refuses otherwise,
 other PRs build locally) when a runner is online and no cut is using it; a "read, not built" PR
 is never sent. With no runner, or a run that is cancelled, times out or
 never starts, the review builds locally or says "not built" - never "pass".
-The job targets its own runner label (`camcraft-pr-test`) under its own OS
+The job targets the runner label `camcraft-pr-test` and runs on any self-hosted
+runner carrying it, Linux (`uma`) or macOS (`m3`); on macOS the UI suites open
+real windows, so that runner needs a logged-in session, and per-OS pinned
+readings run that OS's arm. Each runs under its own OS
 user, HOME, cargo home and sccache dir, never shared with the cut/release
 runner of issue 1413 ("Separate runner/user", same date). The refusal list
 does not stop hostile test code: that is why only collaborators' PRs run.

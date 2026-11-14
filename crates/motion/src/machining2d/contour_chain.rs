@@ -14,7 +14,7 @@ use crate::geometry::Point3;
 use crate::links::Link;
 use crate::plunge_law;
 
-use super::arcs::{fit_arcs, lead_in, lead_out, push_segs, walk_tangent};
+use super::arcs::{fit_arcs_sided, lead_in, lead_out, push_segs, walk_tangent};
 use super::contour::{ContourParams, air_side};
 use super::face::GenError;
 
@@ -52,6 +52,14 @@ pub fn contour_along_chain(
             q.x, q.y
         )));
     }
+    if let Some(q) = p.links.approach.exit_point {
+        // #1473: likewise an open run leaves at its other end.
+        return Err(GenError::Invalid(format!(
+            "exit point ({:.3}, {:.3}): an open chain leaves at its end - a picked exit is \
+             taken only on closed contours yet; clear the exit point",
+            q.x, q.y
+        )));
+    }
     let poly: Vec<Point2> = if p.climb {
         pts.to_vec()
     } else {
@@ -60,7 +68,7 @@ pub fn contour_along_chain(
         v
     };
     let zs = p.levels()?;
-    let walk = fit_arcs(&poly, p.tolerance);
+    let walk = fit_arcs_sided(&poly, p.tolerance, Some(p.climb));
     let t0 = walk_tangent(&walk, &poly, true);
     let (entry, lead) = lead_in(poly[0], t0, air_side(t0, p.climb), p.lead);
     let n = poly.len();

@@ -112,6 +112,7 @@ fn punch(machine: &str, mesh: Mesh, pick: bool, four_axis: Option<WireFourAxis>)
         burnout: None,
         clearance: camcraft_app::operation::DEFAULT_CLEARANCE,
         four_axis,
+        skims: Vec::new(),
     };
     let c = CreateOperation::new(&world, "Punch1", "", src, OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);

@@ -17,6 +17,8 @@ setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
 coolantModes = true; // reads PARAM Coolant (#112/#150): the engine refuses non-Flood ops for a post without it
 afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a stop or home ask for a post without it
+workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
+workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets not verified here (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 millSpindleReverse = true; // reads PARAM MillSpindle (#988, #1411): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
 
@@ -25,6 +27,7 @@ millSpindleReverse = true; // reads PARAM MillSpindle (#988, #1411): M4 for a le
 
 // ---------------------------------------------------------------- state
 var wcsWord = "G54";       // from the WorkOffset PARAM
+var wcsIndex = 1;          // the offset number wcsWord writes (#931)
 var sRpm = 0;              // S.. M3 waits for the section: the stream
 var spindleWait = false;   // order is PARAMs, TOOL, SECTION
 var spinRev = false;       // PARAM MillSpindle reverse (#988): this section's spindle runs M4
@@ -331,8 +334,21 @@ function compRefuse(what) {
   }
 }
 
+// #931: PARAM WorkOffset arrives as the 1-based offset number (the engine
+// refuses one above workOffsetMax by setup name); the word is ours to write.
+function workOffsetName(n) {  // offset n -> this control's word; "" when it has none
+  return n >= 1 && n <= 6 && n === Math.floor(n) ? "G" + (53 + n) : "";
+}
+function offsetWord(value) {
+  var n = Number(value), w = workOffsetName(n);
+  if (!w) { msg("work offset " + value + " - this post expresses work offsets 1-" + workOffsetMax + " only"); return wcsWord; }
+  wcsIndex = n;
+  return w;
+}
+
 function onParameter(name, value) {
   if (name === "RetractPlane") hopZ = has(value) ? Number(value) : null;  // #1028
+  if (name === "ClearancePlane") clearZ = has(value) ? Number(value) : null;  // #1633
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
   if (name === "SmoothingMode") { smoothMode = String(value || ""); return; }
   commentParam(name, value);
@@ -340,7 +356,7 @@ function onParameter(name, value) {
   if (name === "MillSpindle") { spinRev = String(value || "") === "reverse"; return; }
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
-  if (name === "WorkOffset" && value) wcsWord = String(value);
+  if (name === "WorkOffset" && value) wcsWord = offsetWord(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
@@ -395,6 +411,7 @@ function startPreamble() {
     toolNote();
     block(["T" + ni(tNo), "M6"]);
     block(["G43", "H" + ni(tNo)]);
+    xyUnknown = true;          // #1633: the first traverse states its height again
     toolWait = false;
   }
   if (spindleWait && sRpm > 0) {   // a touch probe (#173) states no spindle
@@ -454,7 +471,7 @@ function endPreamble() {
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
-function onSectionEnd() { endPreamble(); hopZ = null; }  // #1028: the next section states its own hop
+function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions
 // While a canned-cycle group is open its expanded hole chain is the
@@ -493,16 +510,65 @@ function probeSeat() {
   block(["G80"]);
   inCycle = false;
 }
+// ------------------------------------------------- the first traverse
+// #1633 (#1616's second half; the #1614 hazard): X and Y are unknown at
+// the program's start and after every tool change, and so is the height
+// the change left the tip at - a long tool on a high work offset can
+// stand below the part top there, and a first move written as one
+// combined rapid (`G00 X20 Y10 Z-3`) is a straight line from that point,
+// across the part. So the first X/Y traverse is made at a STATED
+// height: a Z-only rapid to the section's clearance - its
+// ClearancePlane, else its RetractPlane, never below the move's own Z -
+// then X/Y alone at it, then the move as the stream states it. A setup
+// that cannot reach that height is stopped by the control's Z limit
+// instead of rapiding through the part. A stream that states neither
+// plane has no verified height to traverse at: refused by name.
+// This dialect refuses tilted records (tiltOk), so the rapids are always
+// in the frame of the section's upright words.
+var clearZ = null;            // #1633: the section's ClearancePlane, null when unstated
+var xyUnknown = true;         // #1633: at the program's start and after each tool change
+var traverseRefused = false;  // #1633: once per program
+function traverseZ(z) {
+  var c = has(clearZ) ? clearZ : (has(hopZ) ? hopZ : null);
+  if (c === null) return null;
+  return has(z) ? Math.max(c, Number(z)) : c;
+}
+// (x, y, z): a rapid's target (a cycle's hole at its R plane), which the
+// record itself then goes to; or, with `descend`, where the stream says a
+// feed, an arc or a probing move starts - rapided down to when it lies
+// below the clearance, so the move runs only the stretch planned.
+// False when refused: the caller then writes nothing for its move - nor
+// for any later one while X/Y stay unknown (the rest of the section) -
+// so no combined X/Y/Z rapid from an unknown height reaches the text.
+function xyFirst(x, y, z, descend) {
+  if (!xyUnknown || !has(x) || !has(y)) return true;
+  var tz = traverseZ(z);
+  if (tz === null) {
+    if (!traverseRefused) {
+      traverseRefused = true;
+      msg(coolantWho() + "first X/Y traverse with no clearance height stated (no ClearancePlane or RetractPlane) - the post will not rapid X/Y at an unknown height");
+    }
+    return false;
+  }
+  block(["G00", wo("Z", tz, orgZ)]);
+  // A rapid already at the clearance is the traverse itself.
+  if (descend || !has(z) || Math.abs(Number(z) - tz) > 1e-9) block(["G00", wo("X", x, orgX), wo("Y", y, orgY)]);
+  if (descend && has(z) && Number(z) < tz - 1e-9) block(["G00", wo("Z", z, orgZ)]);
+  xyUnknown = false;
+  return true;
+}
 function onRapid() {
   startPreamble();
   compRefuse("a rapid");
   if (!tiltOk(properties) || chainRapid()) return;
+  if (!xyFirst(properties.X, properties.Y, properties.Z, false)) return;  // #1633: refused - the move is not written
   block(["G00"].concat(xyz(properties)));
 }
 function onLinear() {
   startPreamble();
   if (!tiltOk(properties) || chainCut()) return;
   if (spindleStopped("feed move G01")) return;
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   // The pending comp word rides this straight block (#39).
   var cg = compG, cd = compD;
   compG = ""; compD = "";
@@ -515,6 +581,7 @@ function onCircular() {
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G02" : "G03"))) return;
   var p = properties;
   if (compPlaneRefuse(planeOf(p))) return;
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   block([
     planeWord(planeOf(p)),
     p.CircularDirection === "CW" ? "G02" : "G03",
@@ -597,6 +664,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
   if (inCycle && sig === cycleSig) {
@@ -654,6 +722,7 @@ function onProbeMove() {
   startPreamble();
   probeSeat();               // #1028
   compRefuse("a probing move");
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   var p = properties;
   block(["G31", wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), fw(p.Feed)]);
   var ai = travelAxis(p);
@@ -685,6 +754,7 @@ function onProbeGuard() {
   startPreamble();
   probeSeat();               // #1028
   compRefuse("a protected probe move");
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   var p = properties;
   block(["G31", wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), fw(p.Feed)]);
   var to = [p.X, p.Y, p.Z], from = [p.StartX, p.StartY, p.StartZ], org = [orgX, orgY, orgZ];
@@ -692,10 +762,6 @@ function onProbeGuard() {
     if (has(from[ai]) && Math.abs(to[ai] - from[ai]) < 1e-6) continue;  // an axis that holds still
     alarmUnless("ABS[" + minusU("#" + (5061 + ai), to[ai] - org[ai]) + "]LE" + eps(), 3, "PROBE HIT ON POSITIONING");
   }
-}
-function slotOf(word) {  // "G55" -> 1
-  var n = Number(String(word).replace(/[^0-9]/g, "")) - 54;
-  return n >= 0 && n <= 5 ? n : 0;
 }
 function onProbeResult() {
   var p = properties;
@@ -716,7 +782,7 @@ function onProbeResult() {
     alarmUnless("ABS[#" + (dev + i) + "]LE" + fu(p.Tolerance), 1, "PROBE " + a.Axis + " OUT OF TOLERANCE");
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
-    var act = 5221 + 20 * slotOf(wcsWord);
+    var act = 5221 + 20 * (wcsIndex - 1);
     var words = ["G10", "L2", "P" + (Number(p.SetWorkOffset) + 1)];
     for (var j = 0; j < axes.length; j++) {
       var aj = axisIx(axes[j].Axis);

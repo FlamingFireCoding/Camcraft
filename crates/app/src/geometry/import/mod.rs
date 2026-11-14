@@ -5,13 +5,28 @@
 //! `metadata` before the facet buffer exists; OBJ and STEP stay buffered,
 //! their parsers wanting the whole text in hand.
 
+mod mesh_outward;
 pub mod obj;
 pub mod step;
 pub mod step_budget;
 pub mod step_csys;
+mod step_closed;
+mod step_facets;
+mod step_continuity;
 mod step_diag;
+mod step_division;
+mod step_edge3d;
+mod step_outward;
+mod step_guard;
+mod step_nearest;
+mod step_pole;
 pub mod step_depth;
 mod step_refine;
+mod step_orient;
+mod step_seams;
+mod step_stretch;
+#[cfg(test)]
+mod step_thread_fixture;
 mod step_units;
 pub mod stl;
 
@@ -49,6 +64,8 @@ pub enum ImportError {
     Step(String),
     #[error("imported mesh contains non-finite coordinates")]
     NonFinite,
+    #[error("mesh may have nested or overlapping shells; inward winding may describe a cavity, so automatic orientation is ambiguous; re-export as separate non-overlapping solids")]
+    AmbiguousShells,
     #[error("unsupported file type: {0}")]
     Unsupported(String),
 }
@@ -82,6 +99,11 @@ pub struct Graded {
     /// the promise, and for STL and OBJ - those files ARE the mesh, with
     /// no surface behind them to measure against.
     pub coarse_mm: Option<f64>,
+    /// What the importer changed on the way, one line each (#1573 review:
+    /// a STEP face flipped to agree with its neighbours, by name; #1617: a
+    /// closed solid wound inward turned outward). Empty when it
+    /// changed nothing.
+    pub notes: Vec<String>,
 }
 
 /// [`load_model`], with the fidelity the import achieved.
@@ -98,7 +120,9 @@ pub fn load_model_graded_within(path: &Path, budget: usize) -> Result<Graded, Im
         return Err(ImportError::TooLarge);
     }
     if format == Format::Stl {
-        return Ok(Graded { mesh: gate(stl::parse_file(path)?)?, coarse_mm: None });
+        let mut mesh = gate(stl::parse_file(path)?)?;
+        let notes = mesh_outward::turn_outward(&mut mesh)?.into_iter().collect();
+        return Ok(Graded { mesh, coarse_mm: None, notes });
     }
     let data = std::fs::read(path)?;
     parse_model_graded_within(&data, format, budget)
@@ -109,16 +133,27 @@ pub fn parse_model_graded(data: &[u8], format: Format) -> Result<Graded, ImportE
     parse_model_graded_within(data, format, MAX_FACETS)
 }
 
-fn parse_model_graded_within(data: &[u8], format: Format, budget: usize) -> Result<Graded, ImportError> {
-    let (mesh, coarse_mm) = match format {
-        Format::Stl => (stl::parse(data)?, None),
-        Format::Obj => (obj::parse(data)?, None),
+/// [`parse_model_graded`] with a STEP model tessellated inside `budget`
+/// facets - the bytes twin of [`load_model_graded_within`] (#31).
+pub fn parse_model_graded_within(data: &[u8], format: Format, budget: usize) -> Result<Graded, ImportError> {
+    let (mesh, coarse_mm, notes) = match format {
+        Format::Stl | Format::Obj => {
+            let mut mesh = gate(match format {
+                Format::Stl => stl::parse(data)?,
+                _ => obj::parse(data)?,
+            })?;
+            let notes = mesh_outward::turn_outward(&mut mesh)?.into_iter().collect();
+            (mesh, None, notes)
+        }
         Format::Step => {
-            let (mesh, chord) = step::parse_with_chord_budget(data, budget)?;
-            (mesh, step::coarse(chord))
+            let (mut mesh, chord, mut notes) = step::parse_noted(data, budget)?;
+            // #1617: a closed solid the file winds inward is turned
+            // outward, and the import says so.
+            notes.extend(step_outward::turn_outward(&mut mesh));
+            (mesh, step::coarse(chord), notes)
         }
     };
-    Ok(Graded { mesh: gate(mesh)?, coarse_mm })
+    Ok(Graded { mesh: gate(mesh)?, coarse_mm, notes })
 }
 
 /// Belt-and-gate: each importer checks finiteness at the parse site, and
