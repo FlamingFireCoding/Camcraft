@@ -283,6 +283,8 @@ mod wcs_page_tests;
 #[cfg(test)]
 mod wcs_circle_tests;
 #[cfg(test)]
+mod wcs_flip_tests;
+#[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]
 mod setup_relative_tests;

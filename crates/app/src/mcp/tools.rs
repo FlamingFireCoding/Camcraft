@@ -65,6 +65,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::wcs_circle::TOOLS)
         .chain(super::coolant_tools::TOOLS)
         .chain(super::wcs_tools::TOOLS)
+        .chain(super::wcs_flip_tools::TOOLS)
         .chain(super::model_tools::TOOLS)
         .chain(super::vise_tools::TOOLS)
         .chain(super::accessory_tools::TOOLS)

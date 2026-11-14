@@ -513,6 +513,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // mesh the file holds no fidelity record for is marked unknown.
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
+        // v61 -> v62 (#1720): a WCS may record flipped axes; absent is
+        // no flip.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -739,6 +741,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
             }
             EntityKind::Wcs => {
                 entity.entity_view(world).add(Wcs);
+                // #1720: absent is no flip (every pre-v62 file).
+                if let Some(f) = dto.flip {
+                    crate::setup_wcs_flip::set(world, &entity, [f.x, f.y, f.z]);
+                }
             }
             EntityKind::Entry => super::program_entry_dto::apply(world, &entity, dto.entry)?,
             EntityKind::Tool => {

@@ -780,6 +780,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     problems.extend(suppressed::suppressed_problems(world));
     // The rotated-offset clause (#315): the post carries translation only.
     problems.extend(wcs_rotation::rotated_wcs_problems(world));
+    // #1720: nor a flipped axis - refused by name until it is carried.
+    problems.extend(crate::setup_wcs_flip::post_problems(world));
     // The offset-range clause (#931): each setup's offset index against
     // its own post's maximum - never posted at offset 1.
     problems.extend(crate::setup_offsets::range_problems(world));

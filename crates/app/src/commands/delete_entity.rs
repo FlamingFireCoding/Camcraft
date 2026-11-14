@@ -24,6 +24,8 @@ pub struct DeleteEntity {
     /// kind of named entity undoable with its kind intact.
     stock: Option<StockShape>,
     wcs: bool,
+    /// #1720: a deleted WCS's flipped axes come back with its undo.
+    wcs_flip: [bool; 3],
     tool: Option<Tool>,
     /// #221: a deleted tool's number, restored with it on undo.
     tool_number: Option<u32>,
@@ -68,6 +70,7 @@ impl DeleteEntity {
             facet_budget: crate::model_fidelity::budget_of(world, &entity),
             stock: model::stock_def_of(world, &entity),
             wcs: model::is_wcs(world, &entity),
+            wcs_flip: crate::setup_wcs_flip::of_entity(world, &entity),
             tool: model::tool_of(world, &entity),
             tool_number: model::tool_number_of(world, &entity),
             tool_body: crate::tool_body::body_of(world, &entity),
@@ -112,6 +115,7 @@ impl Command for DeleteEntity {
         }
         if self.wcs {
             entity.entity_view(world).add(Wcs);
+            crate::setup_wcs_flip::set(world, &entity, self.wcs_flip);
         }
         if let Some(tool) = &self.tool {
             entity

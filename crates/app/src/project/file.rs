@@ -94,7 +94,11 @@ use super::*;
 /// v60 file posted - so a v60 file steps up unchanged. An old reader
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
-pub const PROJECT_VERSION: u32 = 61;
+/// v62 (#1720): a WCS row may record flipped axes (`flip`). Absent is
+/// no flip - what every v61 file posted - so a v61 file steps up
+/// unchanged. An old reader must refuse a v62 file rather than drop the
+/// flip and post the setup in the unflipped frame.
+pub const PROJECT_VERSION: u32 = 62;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
