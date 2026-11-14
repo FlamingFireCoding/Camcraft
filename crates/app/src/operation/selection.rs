@@ -276,6 +276,8 @@ pub(super) fn selection_geometry_in(
             if stitched_rings == 1 { "" } else { "s" },
         ));
     }
+    // #1735: two open edges of a pocket-family pick are a band's walls.
+    let band = open_band::of_selection(world, setup, items, params, frame, &stitched, &mut loops, notes.as_deref_mut())?;
     for (gi, g) in items.iter().enumerate() {
         let Some(entity) = model::find_by_name(world, &g.entity) else {
             return Err(GenError::Invalid(format!(
@@ -356,10 +358,10 @@ pub(super) fn selection_geometry_in(
                         continue;
                     }
                     if pocket {
-                        return Err(GenError::Invalid(format!(
-                            "{label} is an open run - a {} cannot end mid-edge; select a closed chain - Ctrl+click the remaining edges, or Shift+click to take the whole loop",
-                            params.kind().info().label
-                        )));
+                        if band {
+                            continue;
+                        }
+                        return Err(open_band::mid_edge(&label, params));
                     }
                     if contour {
                         // The run's consumer: a centerline pass along

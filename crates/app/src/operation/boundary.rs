@@ -89,6 +89,9 @@ pub struct AreaCtx {
     pub(super) islands: bool,
     pub(super) extra: Vec<(BoundaryMode, Region)>,
     pub(super) open: Option<(OpenGeom, ChainSide)>,
+    /// #1735: the open-edge band of the selection, grown by the
+    /// extension along its walls (`open_band`); the area never leaves it.
+    pub(super) lane: Option<Region>,
     /// #740: the document's display unit, so the area law's refusals (on
     /// worker threads, world-free) spell their depths through this lens.
     pub(super) unit: crate::units::Unit,
@@ -263,6 +266,9 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
     }
     if let Some(f) = &far_side {
         area = check(area.difference(f)?, "open boundary")?;
+    }
+    if let Some(l) = &ctx.lane {
+        area = check(area.intersect(l)?, "open-edge band")?;
     }
     // 4. Includes, then the part's own material back out.
     for (mode, b) in &ctx.extra {
