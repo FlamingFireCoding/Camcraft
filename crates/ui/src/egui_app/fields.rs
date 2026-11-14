@@ -22,7 +22,10 @@ pub(super) use crate::state::State;
 
 pub(super) use super::heights_page::{HEIGHT_SRC_ID, LEVELS, corner_note, height_editor, retract_hop, retract_note};
 pub(super) use super::kind_editors::*;
-pub(super) use super::layout::{CTRL_W, auto_opt, auto_value, check_row, consequence, group, hint, prop_row};
+pub(super) use super::layout::{
+    CTRL_W, auto_opt, auto_value, button, check_row, consequence, group, hint, list_row, prop_row,
+    radio_pair, small_button,
+};
 pub(super) use super::lead_page;
 pub(super) use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_HEIGHTS, SEC_LEADS, SEC_MACHINE, SEC_PASSES};
 pub(super) use super::params_page::Cx;
@@ -152,6 +155,19 @@ pub(crate) fn named(r: egui::Response, name: &str) -> egui::Response {
 pub(crate) fn num_plain_by(ui: &mut Ui, v: &mut f64, label: egui::Id) {
     let h = ui.spacing().interact_size.y;
     ui.add_sized([CTRL_W, h], DragValue::new(v).speed(0.1)).labelled_by(label);
+}
+
+/// Bounded integer count inside a `prop_row`, named by that row's
+/// label (#1119, #1122).
+pub(crate) fn int_range_row<N: egui::emath::Numeric>(
+    ui: &mut Ui,
+    v: &mut N,
+    range: std::ops::RangeInclusive<N>,
+) {
+    let r = ui.add(DragValue::new(v).range(range));
+    if let Some(l) = super::layout::row_label_id(ui) {
+        r.labelled_by(l);
+    }
 }
 
 /// A lens-free number with its unit as the suffix ("°", "s", "%").
