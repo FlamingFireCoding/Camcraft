@@ -651,6 +651,13 @@ fn viewport_panel(
                 egui::Stroke::new(m.width, super::colorvision::ink(m.rgb)),
             );
         }
+        // #1732: a Slot's hand-typed A and B, following the page draft.
+        for m in crate::slot_manual_viz::slot_marks(state, aspect) {
+            ui.painter().line_segment(
+                [to_px(m.a), to_px(m.b)],
+                egui::Stroke::new(m.width, super::colorvision::ink(m.rgb)),
+            );
+        }
         // The tool marker, last of the scene-space furniture but under the
         // chrome: a white ring at the tool point with three stubs along the
         // axes it actually moves on, projected through the same camera math
