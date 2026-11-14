@@ -26,7 +26,7 @@ Released 2026-11-14.
 A minor release headlined by **a Z clearance law for the posts**, **wire and
 sinker EDM in the UI**, **stricter gouge judgement of 2D operations against the
 parts in the stock**, **a hardened STEP importer**, and **a browser build that
-opens, saves and posts**. 118 pull requests merged since 0.19.0.
+opens, saves and posts**. 119 pull requests merged since 0.19.0. Two fixes came in during the cut: #1692 (issue 1691) and #1698 (issue 1697, the STEP bench meters truck's faces).
 
 ## Highlights
 ### Posts and G-code
