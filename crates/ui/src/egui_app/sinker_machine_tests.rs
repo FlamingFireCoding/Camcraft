@@ -211,3 +211,27 @@ fn the_burn_page_reads_the_conditions_gap_and_undersize() {
     assert!(h.query_all_by_label_contains("0.050 mm").count() >= 1, "the stated gap reads");
     assert!(h.query_all_by_label("not stated").count() >= 1, "the unstated undersize says so");
 }
+
+/// #1119: every input in the Sinker EDM machine editor carries an accessible name.
+#[test]
+fn the_sinker_machine_editor_names_every_input() {
+    let mut state = State::new();
+    let mut m = sinker();
+    if let Some(edm) = m.edm.as_mut() {
+        edm.max_orbit_radius.get_or_insert(1.0);
+        edm.pickup.get_or_insert_with(|| "ER-32".to_owned());
+        if let Some(c) = edm.conditions.first_mut() {
+            c.gap.get_or_insert(0.01);
+            c.undersize.get_or_insert(0.1);
+        }
+    }
+    state.pending.push_back(CommandKind::EditMachineApply { path: "synth.mch".into(), machine: Box::new(m) });
+    state.drain_actions();
+    state.pending.push_back(CommandKind::EditMachineDialog);
+    state.drain_actions();
+    let mut h = window(state);
+    h.run();
+    let (bad, seen) = super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 10, "only {seen} inputs found in sinker machine editor");
+    assert!(bad.is_empty(), "unnamed inputs in sinker machine editor: {bad:?}");
+}

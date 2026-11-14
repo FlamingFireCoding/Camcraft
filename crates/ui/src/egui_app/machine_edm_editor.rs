@@ -24,7 +24,7 @@ use camcraft_app::machine::{
 };
 use camcraft_app::units::Unit;
 
-use super::pages;
+use super::{fields, pages};
 
 /// Draw the section for a sinker machine; any other kind shows nothing.
 /// The draft's `edm` is only written when an edit changed it, so merely
@@ -56,14 +56,14 @@ const GAP_SEED_MM: f64 = 0.01;
 /// What ticking a condition's undersize seeds, mm (within (0, 1] mm).
 const UNDERSIZE_SEED_MM: f64 = 0.1;
 
-fn stated_num(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl FnOnce(&mut Ui, &mut f64)) {
+fn stated_num(ui: &mut Ui, u: Unit, label: &str, v: &mut Option<f64>, seed: f64) {
     ui.horizontal(|ui| {
         let mut on = v.is_some();
         if ui.checkbox(&mut on, label).changed() {
             *v = on.then_some(seed);
         }
         match v {
-            Some(x) => show(ui, x),
+            Some(x) => fields::num_named(ui, u, x, &format!("{label} value")),
             None => {
                 ui.label("not stated");
             }
@@ -73,7 +73,7 @@ fn stated_num(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: im
 
 fn keys(ui: &mut Ui, u: Unit, e: &mut Edm) {
     pages::field(ui, "Sinker keys");
-    stated_num(ui, "Max orbit radius", &mut e.max_orbit_radius, 1.0, |ui, v| pages::num(ui, u, v));
+    stated_num(ui, u, "Max orbit radius", &mut e.max_orbit_radius, 1.0);
     ui.horizontal(|ui| {
         let mut on = e.pickup.is_some();
         if ui.checkbox(&mut on, "Electrode pickup").changed() {
@@ -98,11 +98,12 @@ fn orbits(ui: &mut Ui, e: &mut Edm) {
         ui.horizontal(|ui| {
             let mut k = ORBIT_KINDS.iter().position(|w| *w == o.kind).unwrap_or(0);
             let shown = ORBIT_KINDS.get(k).copied().unwrap_or("circular");
-            ComboBox::from_id_salt(("edm-orbit-kind", i)).selected_text(shown).width(90.0).show_ui(ui, |ui| {
+            let cb = ComboBox::from_id_salt(("edm-orbit-kind", i)).selected_text(shown).width(90.0).show_ui(ui, |ui| {
                 for (j, w) in ORBIT_KINDS.iter().enumerate() {
                     ui.selectable_value(&mut k, j, *w);
                 }
             });
+            fields::named(cb.response, &format!("Orbit {} kind", i + 1));
             o.kind = ORBIT_KINDS.get(k).copied().unwrap_or("circular").to_owned();
             let l = ui.label(format!("Orbit {} word", i + 1));
             ui.add(TextEdit::singleline(&mut o.word).desired_width(80.0).hint_text("control word")).labelled_by(l.id);
@@ -134,17 +135,18 @@ fn conditions(ui: &mut Ui, u: Unit, e: &mut Edm) {
             ui.add(TextEdit::singleline(&mut c.name).desired_width(90.0)).labelled_by(l.id);
             // Seeds the condition law accepts (#560: a gap > 0, an
             // undersize in (0, 1] mm); the user types the manual's.
-            stated_num(ui, &format!("Condition {n} gap"), &mut c.gap, GAP_SEED_MM, |ui, v| pages::num(ui, u, v));
+            stated_num(ui, u, &format!("Condition {n} gap"), &mut c.gap, GAP_SEED_MM);
             let us = format!("Condition {n} undersize");
-            stated_num(ui, &us, &mut c.undersize, UNDERSIZE_SEED_MM, |ui, v| pages::num(ui, u, v));
+            stated_num(ui, u, &us, &mut c.undersize, UNDERSIZE_SEED_MM);
             let mut r = CONDITION_ROLES.iter().position(|w| *w == c.role).map_or(0, |p| p + 1);
             let shown = if r == 0 { "role not stated" } else { CONDITION_ROLES[r - 1] };
-            ComboBox::from_id_salt(("edm-cond-role", i)).selected_text(shown).width(110.0).show_ui(ui, |ui| {
+            let cb = ComboBox::from_id_salt(("edm-cond-role", i)).selected_text(shown).width(110.0).show_ui(ui, |ui| {
                 ui.selectable_value(&mut r, 0, "role not stated");
                 for (j, w) in CONDITION_ROLES.iter().enumerate() {
                     ui.selectable_value(&mut r, j + 1, *w);
                 }
             });
+            fields::named(cb.response, &format!("Condition {n} role"));
             c.role = if r == 0 { String::new() } else { CONDITION_ROLES[r - 1].to_owned() };
             if ui.button(format!("Remove condition {n}")).clicked() {
                 remove = Some(i);
