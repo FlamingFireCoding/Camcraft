@@ -36,6 +36,7 @@ var tNo = 0;
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
+var setupNext = "";        // #1647: the next setup, only for this section
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
@@ -299,6 +300,7 @@ function onParameter(name, value) {
   if (name === "OperationName") coolantOp = String(value || "");
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
+  if (name === "SetupChange") { setupNext = clean(value); return; }
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
   if (name === "WorkOffset" && value) wcsWord = workOffsetName(Number(value));
   else if (name === "OriginX" && has(value)) orgX = Number(value);
@@ -407,8 +409,15 @@ function startPreamble() {
 // unset), and homing itself (G28.2) is not a program's business.
 function afterOp() {
   var ask = afterAsk;
+  var next = setupNext;
   afterAsk = "";
+  setupNext = "";
   if (!ask) return;
+  if (next && (ask === "optional-stop" || ask === "stop")) {
+    // #1647: lift Z before inviting the operator to re-clamp the part.
+    retract();
+    note("SETUP CHANGE - NEXT: " + next);
+  }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }
   if (ask === "home") {
