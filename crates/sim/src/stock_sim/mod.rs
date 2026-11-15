@@ -73,6 +73,8 @@ mod dexel_arc;
 // #541: the sinker electrode's box atom.
 mod dexel_box;
 mod dexel_bull;
+// #1152: the sinker body electrode's outline atom.
+mod dexel_outline;
 mod deviate;
 mod edge_break;
 // #1595: the mark an Engrave or Trace declared.
@@ -129,6 +131,7 @@ pub use cut::{auto_cell, first_posed, simulate, SimOp, POSED_REFUSAL};
 pub use deviate::{color_classes, deviate, Deviation, DEV_TOL, ProgramSim, SimSurface};
 pub use dexel::{reach, Dexel};
 pub use dexel_box::{simulate_box, BOX_ARC_REFUSAL};
+pub use dexel_outline::{simulate_outline, OUTLINE_ARC_REFUSAL};
 pub use edge_break::credit_breaks;
 pub use mark::{credit_marks, Mark};
 // The floor a mark must leave on the part's underside (#1595).
