@@ -26,7 +26,7 @@ holes with a note (a choice the user made would do nothing).
 **The dialog group is not in this PR.** "Done means" names the file, the
 undo, MCP, the refusals and the goldens, not the page; the page needs
 before/after screenshots and the UI gate. The page keeps the group as it
-is (the field rides the page's Apply unchanged). Follow-up issue filed.
+is (the field rides the page's Apply unchanged). Follow-up: #1815.
 
 **The stock-simulation reading, as measured** (`rest_pocket.rs`,
 `read_against_the_simulated_roughing_pass`): after the 12 mm roughing
@@ -37,7 +37,7 @@ corner's rest material at the rim); every ring cuts its corner, but the
 inner leg of each ring crosses cleared floor (measured 6.7 of 14.8 to
 15.3 mm per ring). The plain pocket's first level at the top of the part
 runs over no stock, as it always has. Entry from cleared space is #1490's;
-the inner legs are a follow-up issue. Both are feeds, so they cost time,
+the inner legs are #1816. Both are feeds, so they cost time,
 not safety.
 
 **No new dependency between crates.**
