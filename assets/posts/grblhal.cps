@@ -38,7 +38,7 @@ var retractSet = false;    // G98 written once per program
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
-var setupNext = "";        // #1647: the next setup, only for this section
+var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
@@ -381,12 +381,12 @@ function afterOp() {
   var ask = afterAsk;
   var next = setupNext;
   afterAsk = "";
-  setupNext = "";
+  setupNext = null;
   if (!ask) return;
-  if (next && (ask === "optional-stop" || ask === "stop")) {
+  if (next !== null && (ask === "optional-stop" || ask === "stop")) {
     // #1647: lift Z before inviting the operator to re-clamp the part.
     retract();
-    note("SETUP CHANGE - NEXT: " + next);
+    note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
   }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }

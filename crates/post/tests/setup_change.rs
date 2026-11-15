@@ -70,13 +70,13 @@ fn has_block(nc: &str, expected: &[&str]) -> bool {
     })
 }
 
-fn pin(stem: &str) {
-    for (after, stop) in [(AfterOperation::ProgramStop, "M0"), (AfterOperation::OptionalStop, "M1")] {
-        let r = records(after, Some("Flip (B);*"));
+fn pin(stem: &str, name: &str, displayed: &str, stops: &[(AfterOperation, &str)]) {
+    for &(after, stop) in stops {
+        let r = records(after, Some(name));
         let out = post(stem, &machine(), &r);
         assert!(out.warnings.is_empty(), "{stem}: {:?}", out.warnings);
         let first = gap(&out.program, "Cut2");
-        let note = first.find("SETUP CHANGE - NEXT: Flip B").unwrap_or_else(|| panic!("{stem}: missing next setup:\n{first}"));
+        let note = first.find(&format!("SETUP CHANGE - NEXT: {displayed}")).unwrap_or_else(|| panic!("{stem}: missing next setup:\n{first}"));
         let stop_at = first.lines().position(|l| words(l).contains(&stop)).expect("requested stop");
         let note_at = first[..note].lines().count() - 1;
         assert!(note_at < stop_at, "{stem}: comment precedes stop:\n{first}");
@@ -113,7 +113,13 @@ fn pin(stem: &str) {
 }
 
 macro_rules! pin_post {
-    ($name:ident, $stem:literal) => { #[test] fn $name() { pin($stem); } };
+    ($name:ident, $stem:literal) => {
+        #[test] fn $name() {
+            pin($stem, "Flip (B);*", "Flip B", &[
+                (AfterOperation::ProgramStop, "M0"), (AfterOperation::OptionalStop, "M1"),
+            ]);
+        }
+    };
 }
 pin_post!(haas_setup_change_retracts_and_names_next, "haas");
 pin_post!(mazak_setup_change_retracts_and_names_next, "mazak");
@@ -122,6 +128,26 @@ pin_post!(sinumerik_setup_change_retracts_and_names_next, "sinumerik");
 pin_post!(heidenhain_setup_change_retracts_and_names_next, "heidenhain");
 pin_post!(grblhal_setup_change_retracts_and_names_next, "grblhal");
 pin_post!(tinyg_setup_change_retracts_and_names_next, "tinyg");
+
+// A permitted name can disappear entirely in comment cleaning. Each stop mode
+// has its own pin so both bypasses are visible when the handler is regressed.
+macro_rules! pin_empty_setup_name {
+    ($program:ident, $optional:ident, $stem:literal) => {
+        #[test] fn $program() {
+            pin($stem, "()", "UNNAMED SETUP", &[(AfterOperation::ProgramStop, "M0")]);
+        }
+        #[test] fn $optional() {
+            pin($stem, "()", "UNNAMED SETUP", &[(AfterOperation::OptionalStop, "M1")]);
+        }
+    };
+}
+pin_empty_setup_name!(haas_empty_setup_name_m0, haas_empty_setup_name_m1, "haas");
+pin_empty_setup_name!(mazak_empty_setup_name_m0, mazak_empty_setup_name_m1, "mazak");
+pin_empty_setup_name!(doosan_empty_setup_name_m0, doosan_empty_setup_name_m1, "doosan-dnm");
+pin_empty_setup_name!(sinumerik_empty_setup_name_m0, sinumerik_empty_setup_name_m1, "sinumerik");
+pin_empty_setup_name!(heidenhain_empty_setup_name_m0, heidenhain_empty_setup_name_m1, "heidenhain");
+pin_empty_setup_name!(grblhal_empty_setup_name_m0, grblhal_empty_setup_name_m1, "grblhal");
+pin_empty_setup_name!(tinyg_empty_setup_name_m0, tinyg_empty_setup_name_m1, "tinyg");
 
 #[test]
 fn ordinary_stops_do_not_add_setup_change_motion() {

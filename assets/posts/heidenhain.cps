@@ -43,7 +43,7 @@ var coolant = "";
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
 var setupStockTop = null; // #1647: the current sections stated stock top
-var setupNext = "";        // #1647: the next setup, only for this section
+var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;
 var smoothTol = 0;          // #616: the section's PARAM Smoothing, mm (0: none asked)
@@ -387,11 +387,11 @@ function afterOp() {
   var ask = afterAsk;
   var next = setupNext;
   afterAsk = "";
-  setupNext = "";
+  setupNext = null;
   var top = setupStockTop;
   setupStockTop = null;
   if (!ask) return;
-  if (next && (ask === "optional-stop" || ask === "stop")) {
+  if (next !== null && (ask === "optional-stop" || ask === "stop")) {
     // #1647: lift Z before inviting the operator to re-clamp the part.
     // No trusted machine datum: stay in the verified work clearance.
     if (!has(clearZ) || !has(top) || !(clearZ > top)) {
@@ -400,7 +400,7 @@ function afterOp() {
     }
     var setupZ = has(properties.Z) ? Math.max(clearZ, Number(properties.Z)) : clearZ;
     motion("G00", [wo("Z", setupZ, orgZ)]);
-    note("SETUP CHANGE - NEXT: " + next);
+    note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
   }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }

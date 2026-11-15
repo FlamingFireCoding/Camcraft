@@ -6,6 +6,15 @@ existing comment cleaner, and retract before naming that setup and writing
 its M0 or M1. The setup marker resets with the after-operation request.
 An ordinary operation stop keeps its existing output.
 
+**Review fix:** The seven posts use `null` for an absent setup marker,
+separate from its cleaned display text. A valid name such as `()` cleans
+to an empty string; that still triggers the dialect's retract and displays
+`UNNAMED SETUP` before M0 or M1. The marker still resets after the section.
+Refusing these names was considered and dropped because a valid setup can
+retain its safe retract and operator stop with replacement display text.
+Changing that replacement later requires updating the posts and their
+empty-name pins, without changing their retract policies.
+
 **Why:** The app already sends the marker beside `AfterOperation` at a setup
 boundary. Reading that marker in each dialect extends the existing Fanuc
 and Tormach behavior without changing the stream or the app's stop policy.
