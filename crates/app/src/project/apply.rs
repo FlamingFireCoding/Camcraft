@@ -720,6 +720,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // a parametric block is meshed here, never coarse.
                 if matches!(shape, StockShape::FromModel { .. }) {
                     crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
+                    // #1700: and its source's hole; validate_kind refused
+                    // a hole without the mark.
+                    crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
                 }
                 entity.entity_view(world).set(StockDef {
                     shape: shape.clone(),

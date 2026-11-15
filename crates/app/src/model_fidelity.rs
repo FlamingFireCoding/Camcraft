@@ -145,27 +145,34 @@ pub fn set_budget(world: &World, entity: &Entity, budget: Option<u64>) {
 /// The reduced-fidelity model behind the entity `name`: itself (a model,
 /// or a stock copy carrying its source's flag, #1056), or - for a stock
 /// copy from a file that predates that - the model it copies.
-fn coarse_source(world: &World, name: &str) -> Option<(String, f64)> {
+fn coarse_source(world: &World, name: &str) -> Option<Coarse> {
     let entity = model::find_by_name(world, name)?;
     let copied = match model::stock_def_of(world, &entity) {
         Some(StockShape::FromModel { source }) => Some(source),
         _ => None,
     };
     // A refusal names the model the facets came from, also once it is
-    // gone: that is what a person re-imports.
+    // gone: that is what a person re-imports. The hole is read off the
+    // entity that carries the sentinel (#1700): a copy's own, so it
+    // outlives the source too.
     if let Some(c) = chord_of(world, &entity) {
-        return Some((copied.unwrap_or_else(|| name.to_string()), c));
+        let hole = crate::mesh_open::hole_of(world, &entity);
+        return Some((copied.unwrap_or_else(|| name.to_string()), c, hole));
     }
     let source = copied?;
     let src = model::find_by_name(world, &source)?;
-    chord_of(world, &src).map(|c| (source, c))
+    chord_of(world, &src).map(|c| (source, c, crate::mesh_open::hole_of(world, &src)))
 }
+
+/// The model a mesh's facets came from, its chord, and its hole when it
+/// was imported incomplete (#1610).
+type Coarse = (String, f64, Option<String>);
 
 /// The chord error a stock copied from `source` lands with (#1056): the
 /// source's own, or what a stock it is itself copied from carries.
 #[must_use]
 pub fn chord_behind(world: &World, source: &str) -> Option<f64> {
-    coarse_source(world, source).map(|(_, c)| c)
+    coarse_source(world, source).map(|(_, c, _)| c)
 }
 
 /// The loader's last pass (#1056): a `FromModel` stock from a file that
@@ -189,7 +196,7 @@ pub fn adopt_copies(world: &World) {
 /// mm: its chord error less the cap, 0 at full fidelity.
 #[must_use]
 pub fn excess_of(world: &World, name: &str) -> f64 {
-    coarse_source(world, name).map_or(0.0, |(_, c)| excess(c))
+    coarse_source(world, name).map_or(0.0, |(_, c, _)| excess(c))
 }
 
 /// Whether the excess of `setup`'s stock is known (#1091 reviews): a box
@@ -284,7 +291,7 @@ fn within(world: &World, chord_mm: f64) -> String {
 /// selection) and the setup's stock - the collision laws read clearance
 /// against it (#904; `operation::material::judged_material` is the same
 /// pair at generation).
-fn op_coarse(world: &World, op: &Operation) -> Option<(String, f64)> {
+fn op_coarse(world: &World, op: &Operation) -> Option<Coarse> {
     let mut names = vec![crate::setup::stock_entity_name(world, op.setup.as_deref())];
     match &op.src {
         SrcRef::Stock => {}
@@ -301,9 +308,9 @@ fn op_coarse(world: &World, op: &Operation) -> Option<(String, f64)> {
 /// `None` when it can (full fidelity, or tightened verdicts).
 #[must_use]
 pub fn op_problem(world: &World, name: &str, op: &Operation) -> Option<String> {
-    let (model, chord) = op_coarse(world, op)?;
+    let (model, chord, hole) = op_coarse(world, op)?;
     if is_unknown(chord) {
-        return Some(format!("{name}: model '{model}' was {}", crate::mesh_open::unknown_note(world, &model)));
+        return Some(format!("{name}: model '{model}' was {}", crate::mesh_open::note_for(hole.as_deref())));
     }
     let said = format!("surfaces are approximated to within {}", within(world, chord));
     if !fidelity_law::excess_aware(&op.params) {

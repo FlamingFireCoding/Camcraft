@@ -57,6 +57,8 @@ pub struct UpdateModel {
     /// The derived stock's own flag as it stood (#1056): the copy carries
     /// the fidelity of the facets it holds, traded with them both ways.
     prev_stock_coarse_mm: Option<f64>,
+    /// ... and its hole (#1700), traded with the flag.
+    prev_stock_hole: Option<String>,
     /// The fidelity of the new mesh and of the one it replaces (#864): the
     /// flag describes the facets, so it is traded with them, both ways.
     coarse_mm: Option<f64>,
@@ -104,6 +106,7 @@ impl UpdateModel {
         let copies = stock_copies(world, name);
         let prev_stock = copies.first().and_then(|s| model::facets_of(world, s));
         let prev_stock_coarse_mm = copies.first().and_then(|s| crate::model_fidelity::chord_of(world, s));
+        let prev_stock_hole = copies.first().and_then(|s| crate::mesh_open::hole_of(world, s));
         Ok(UpdateModel {
             name: name.to_string(),
             mesh,
@@ -111,6 +114,7 @@ impl UpdateModel {
             prev_rev: model::rev_of(world, &entity),
             prev_stock,
             prev_stock_coarse_mm,
+            prev_stock_hole,
             coarse_mm: None,
             prev_coarse_mm: crate::model_fidelity::chord_of(world, &entity),
             hole: None,
@@ -202,6 +206,7 @@ impl Command for UpdateModel {
             for stock in stock_copies(world, &self.name) {
                 model::set_facets(world, &stock, self.mesh.facets.clone());
                 crate::model_fidelity::set(world, &stock, self.coarse_mm);
+                crate::mesh_open::set(world, &stock, self.hole.as_deref());
             }
         }
         if let Some(p) = &self.plate {
@@ -236,6 +241,7 @@ impl Command for UpdateModel {
             for stock in stock_copies(world, &self.name) {
                 model::set_facets(world, &stock, tris.clone());
                 crate::model_fidelity::set(world, &stock, self.prev_stock_coarse_mm);
+                crate::mesh_open::set(world, &stock, self.prev_stock_hole.as_deref());
             }
         }
         self.marks.write(world, false);
