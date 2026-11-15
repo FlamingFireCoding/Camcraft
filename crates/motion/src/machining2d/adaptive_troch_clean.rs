@@ -59,7 +59,8 @@ pub(super) fn plan_cleanup(
     // 0.18*r peel steps with 0.20*r 90-deg rounding hold <= 90 deg even into tight neck corners.
     let step = load_step(d, optimal_load).min(0.18 * r);
     // A custom contact-angle limit must also bound the cleanup front.
-    let engagement_step = r * (1.0 - t.max_engagement.to_radians().cos());
+    let angle_scale = if t.max_engagement < 90.0 { 1.0 - t.max_engagement.to_radians().cos() } else { 1.0 };
+    let engagement_step = 0.18 * r * angle_scale;
     let step = step.min(engagement_step);
     let mut chains = Vec::new();
 
