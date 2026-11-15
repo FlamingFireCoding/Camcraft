@@ -1578,6 +1578,12 @@ pub struct State {
     /// #157: the Debug info window is open. View state - never a
     /// command, never saved.
     pub debug_info_open: bool,
+    /// #1696: the Report an issue window is open. View state - never a
+    /// command, never saved.
+    pub report_open: bool,
+    /// #1696: the title typed into the Report window, kept between visits
+    /// so a mis-click does not lose it. View state, never saved.
+    pub report_title: String,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
     /// set once by the windowed shell; `None` headless.
     pub gpu_line: Option<String>,
@@ -1972,6 +1978,8 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            report_open: false,
+            report_title: String::new(),
             gpu_line: None,
             spindle_as_vc: false,
             tool_import_mode: camcraft_app::commands::ImportMode::default(),

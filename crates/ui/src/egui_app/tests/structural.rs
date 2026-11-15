@@ -127,6 +127,9 @@ fn assert_shell_skeleton(h: &Harness<'static, ShellUi>) {
     let s = at(&texts, &status);
     assert!(s.y > p.y && s.y > 600.0, "the status line sits on the bottom strip");
     assert!(h.get_by_label("Debug info").rect().min.y > 600.0, "Debug info is on the status strip");
+    // #1696: the Report door stands beside it. The window it opens stays
+    // closed by the next pin (no floating window open by default).
+    assert!(h.get_by_label("Report an issue").rect().min.y > 600.0, "the Report door is on the status strip");
     // Every floating surface is closed by default.
     let titled: Vec<_> = h
         .query_all_by_role(egui::accesskit::Role::Window)
