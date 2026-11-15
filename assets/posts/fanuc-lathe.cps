@@ -126,10 +126,11 @@ explainBlockMax = 80;
 //    start point. So d is the finishing pass's own depth (never 0 on a
 //    laid ladder, or the control would cut the root once more than was
 //    verified), and a record the cycle cannot state - alternating
-//    flank infeed, a one-pass thread - is refused by name. The control
-//    reads the ROUNDED words, so d is derived from their own ladder
-//    (g76Allowance): the allowance that makes the rounded Q, Q, P cut
-//    the record's rough pass count, nearest the record's allowance
+//    flank infeed, a one-pass thread, every roughing depth cut twice
+//    (issue #418: the cycle cuts each depth once) - is refused by name.
+//    The control reads the ROUNDED words, so d is derived from their own
+//    ladder (g76Allowance): the allowance that makes the rounded Q, Q, P
+//    cut the record's rough pass count, nearest the record's allowance
 //    (inch: R0.0158 where 0.4 mm reads 0.0157 - with Q157 P472, R0.0157
 //    would add a 0.0001 in pass). More than one least increment from
 //    the record's allowance is refused by name.
@@ -826,6 +827,7 @@ function g76Why(p, r0, r1) {
   if (!(p.Lead > 0)) return "no lead";
   if (!(p.ThreadHeight > 0)) return "no thread height";
   if (p.Alternating === true) return "alternating flank infeed is not a G76 cycle (the cycle infeeds along one flank only) - choose G32 passes, or radial or flank infeed";
+  if (p.RepeatEachDepth === true) return "repeat each roughing depth is not a G76 cycle (the cycle cuts each depth once) - choose G32 passes, or turn the repeat off";
   if (has(p.FinishAllowance) && p.FinishAllowance >= p.ThreadHeight - EPS) {
     return "a one-pass thread is not a G76 cycle (the cycle always roughs before its finishing pass) - choose G32 passes, or a first-pass depth under the thread height";
   }
