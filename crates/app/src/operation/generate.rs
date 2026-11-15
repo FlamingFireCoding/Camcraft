@@ -1711,17 +1711,22 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             climb,
             entry,
             helix_radius,
+            extend_start,
+            extend_end,
             ..
         } => {
             // #1504: picks bound the room the slot may cut in - a slot
             // too wide, too long or placed past them is refused by name,
-            // never cut across the wall.
+            // never cut across the wall. The room judges the AUTHORED
+            // slot: an end extension (#1731) runs past the picks by the
+            // user's choice, and the gouge laws judge where it goes.
             if let Some(room) = slot_bound.take() {
                 room?.judge(*a, *b, *width)?;
             }
+            let (ea, eb) = machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
             let path = machining2d::slot(
-                *a,
-                *b,
+                ea,
+                eb,
                 &SlotParams {
                     links: lk,
                     tool_diameter: d,
@@ -2079,7 +2084,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     } else {
                         super::cross_spindle::Solids { source: &keep_parts, stock: Some(&material.facets), kept: &keep_parts, neighbours: &[] }
                     };
-                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit)?
+                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?
                 }
             } else {
                 // M13.5 A: on a plain lathe the Drill kind is the
