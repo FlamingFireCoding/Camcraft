@@ -71,3 +71,7 @@ blockquote { margin: 1em 0; padding: 8px 16px; border-left: 4px solid var(--acce
 .search-results a small { display: block; color: var(--muted); font-size: 0.85rem; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-results .search-empty { padding: 6px 8px; color: var(--muted); font-size: 0.9rem; }
 @media (max-width: 600px) { .search { flex-basis: 100%; max-width: none; margin: 0; } }
+.guide-content img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
+.guide-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; }
+.guide-pair p { margin: 0; }
+.guide-pair em { display: block; font-size: 0.88rem; color: var(--muted); margin-top: 4px; }

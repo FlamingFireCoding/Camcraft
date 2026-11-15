@@ -36,6 +36,8 @@ and **Open to stock** closes the moving jaw against the stock. MCP:
 clamp or a soft jaw, each generated from a few dimensions you can edit
 later. MCP: `add_accessory`, `set_accessory`.
 
+![Built-in six inch vise holding stock on parallels with face and contour toolpaths clearing the jaws](../../../images/guide/workholding-vise-toolpath.png)
+
 ## Fixture plates and mod vises
 
 **Add fixture plate…** adds a grid (tooling) plate: size, hole pitch, first

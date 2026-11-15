@@ -67,6 +67,8 @@ How an index posts depends on the post:
 - Tool shank and holder against the part and fixtures along tilted moves.
 - The index swing: see [Checks](@/guide/multi-axis/checks.md).
 
+![CamCraft indexed three plus two facing operation tilted over a rectangular workpiece with fixed B angle](../../../images/guide/op-indexed-3plus2.png)
+
 ## Recipe: a three-sided block, 3+1
 
 On a machine with an A table (for example the Tormach microARC 4 file).

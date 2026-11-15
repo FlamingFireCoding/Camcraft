@@ -159,6 +159,8 @@ walls; doubly-curved ground is 5-Axis Parallel work.
 | Passes | Tolerance | 0.05 |
 | Feeds | Feed / Plunge feed / Climb milling | 1200 / 300 / on |
 
+![CamCraft continuous five-axis swarf passes walking along the ruled flank of a cylindrical blade](../../../images/guide/op-multiaxis-swarf.png)
+
 **Common refusals:** "swarf found no ruling to follow - this surface
 curves about the same in every direction; doubly-curved ground is 5-Axis
 Parallel or Scallop work"; "this model's ruling runs along Z (vertical
