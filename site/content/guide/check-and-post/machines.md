@@ -20,7 +20,7 @@ messages below.
 | Lathe | Turning, plus the axial Drill | Fanuc Lathe, Tormach PathPilot Lathe | Turning center 2-axis, Tormach 8L, 15L, 15LX |
 | Mill-turn | milling and turning | every post except plasma | Multitasking 5-axis |
 | Plasma | Plasma Profile only | Tormach PathPilot Plasma | Tormach 1300PL |
-| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21); Sinker EDM (ISO) | supply a machine file with the required EDM data |
+| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21); Sinker EDM (ISO) | Sodick ALC400G (complete its EDM data); supply a sinker machine file |
 
 The picker lists posts for the setup's machine kind. A loaded post also
 refuses by name any operation or move that it cannot express.
@@ -78,7 +78,10 @@ ordinary milling operations and the setup's fixtures, not by the machine.
 The library also supplies **Sienci AltMill 2x4**, **4x4** and **4x8**
 machines, paired with the **grblHAL** post. **grblHAL 3-axis** and
 **TinyG 3-axis** are generic controller examples. Check their travel,
-spindle and retract settings against your actual machine before use.
+spindle and retract settings against your actual machine before use. For a
+complete sheet-goods walkthrough on the Sienci AltMill 4x4 (plus shop-router
+notes for RichAuto DSP A11), see
+[Your first router part](@/guide/getting-started/first-router-part.md).
 
 ## Lathe
 
@@ -141,6 +144,15 @@ tapping` and `a plasma table cuts flat sheet in X and Y - it states no
 rotary axis`.
 
 ## Wire and sinker EDM
+
+The library includes **Sodick ALC400G** (`sodick-alc400g.mch`): X/Y
+travel is 400/300 mm and U/V travel is 150/150 mm, centred on zero in
+the file. Its stated taper maximum is 25 degrees at 130 mm work height.
+The file supplies no conditions, wire diameter, guide heights, automatic
+threading or EDM codes. Add those from your actual machine and control
+documentation before use. The taper figure alone does not enable taper:
+the missing guide planes cause a nonzero taper edit to be refused.
+The ALC400G control has not been confirmed to match the Mark 21 post.
 
 Wire Contour runs on a machine file that declares `wire_edm`. The
 **Generic ISO Wire EDM** post takes its EDM words from the file's

@@ -457,7 +457,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         // to the floor of the wall it trims - the part
                         // read as the union of its touching bodies
                         // (M13.11) when the picks span several models.
-                        machining2d::contour_on_bodies(&region, &m_gen.facets, &m_gen.bodies, &cp)?
+                        // #1927: a picked ring that meets its wall at no
+                        // level - the side stands in the part - is refused.
+                        machining2d::contour_on_picked(&region, &m_gen.facets, &m_gen.bodies, &cp)?
                     } else {
                         machining2d::contour(&region, &cp)?
                     };
