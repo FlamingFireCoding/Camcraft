@@ -190,7 +190,7 @@ fn curved_center(world: &World, g: &GeoSel) -> Result<[f64; 3], String> {
 }
 
 /// A picked vertex's world position (#771: the setup's origin point).
-pub(crate) fn vertex(world: &World, g: &GeoSel) -> Result<[f64; 3], String> {
+pub fn vertex(world: &World, g: &GeoSel) -> Result<[f64; 3], String> {
     vertex_with_pose(world, g, crate::setup_align::view_pose)
 }
 
