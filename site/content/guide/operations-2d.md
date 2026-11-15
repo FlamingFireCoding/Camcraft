@@ -34,7 +34,11 @@ can hold separate chains that keep the area between them. Crossing,
 touching or ambiguous chains are refused; Contour still rides one open
 boundary chain. Include and Exclude boundaries must remain closed.
 
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
+
 ## Face
+
+![Top view of parallel facing passes across the stock top.](/operation-paths.svg#Face)
 
 **For:** skimming the top of the stock flat, usually the first operation.
 Choose it over a pocket when the area to clear is the whole stock top, not
@@ -55,6 +59,8 @@ bound it to a smaller area.
 first cut level".
 
 ## 2D Contour
+
+![Top view of one offset profile followed around a wall.](/operation-paths.svg#Contour)
 
 **For:** one wall, inside or outside, followed at a set of levels: profiles,
 bosses and bores. Choose it over a pocket when only the wall needs cutting.
@@ -90,6 +96,8 @@ narrower than the tool's ... diameter"; "a Contour's open boundary must be
 an open chain".
 
 ## 2D Pocket
+
+![Top view of passes clearing the inside of a pocket.](/operation-paths.svg#Pocket)
 
 **For:** clearing the inside of a closed area down to a floor, with islands
 left standing. **Detect pockets / slots** on the Model page finds pockets
@@ -129,6 +137,8 @@ already supply the arc motion.
 
 ## 2D Adaptive
 
+![Top view of looping pocket passes with small radial engagement.](/operation-paths.svg#Adaptive2D)
+
 **For:** roughing a pocket with a constant side load on the tool, so it can
 run deeper and faster than a fixed stepover allows. Choose it over Pocket
 for hard materials or deep roughing; it is Pocket's machinery with the
@@ -147,6 +157,8 @@ spacing set by the load.
 
 ## 2D Offset
 
+![Top view of concentric offset passes inside a pocket.](/operation-paths.svg#Offset2D)
+
 **For:** roughing a pocket in concentric rings from the boundary inward at a
 fixed stepover. Choose it over Adaptive when an even offset pattern is
 wanted rather than a constant load.
@@ -155,6 +167,8 @@ wanted rather than a constant load.
 0, Entry Helix radius 1. **Common refusals:** as Pocket.
 
 ## Slot
+
+![Top view of straight passes between the slot endpoints.](/operation-paths.svg#Slot)
 
 **For:** a straight slot of a given width between two points. The slot is
 typed in or seeded from suitable picked slot geometry;
@@ -178,6 +192,8 @@ Extensions still pass through the part checks. An extension into kept
 material blocks posting.
 
 ## Trochoidal slot
+
+![Top view of overlapping loops progressing along a slot.](/operation-paths.svg#TrochoidalSlot)
 
 **For:** a slot wider than the tool, cleared with small looping passes that
 keep the tool's engagement low. Choose it over Slot in hard material or
@@ -204,6 +220,8 @@ use the Retract return to hop higher".
 
 ## Trace
 
+![Top view of a centreline path following a picked chain.](/operation-paths.svg#Trace)
+
 **For:** running the tool's centre exactly along picked edges at a depth:
 grooves, scribed lines, cutting along a chain. No tool offset is applied,
 so any mill or a taper tool may be used.
@@ -214,6 +232,8 @@ region" when nothing usable is picked.
 
 ## Engrave
 
+![Top view of an engraving path following the marking centreline.](/operation-paths.svg#Engrave)
+
 **For:** the same centreline ride as Trace, named for engraving text and
 markings with a V-bit. Choose Engrave when the job is marking, Trace when
 it is a functional groove; the path is the same.
@@ -221,6 +241,8 @@ it is a functional groove; the path is the same.
 **Picks and settings:** as Trace.
 
 ## 2D Chamfer
+
+![Section view of the chamfer tool cone lying along the chamfer face.](/operation-paths.svg#Chamfer2D)
 
 **For:** breaking a top edge with a chamfer mill in one pass: the tool's
 cone lies on the chamfer face. Choose it over Deburr for a chamfer of a
@@ -246,6 +268,8 @@ this face stands at".
 
 ## Circular
 
+![Top view of concentric passes clearing a circular pocket.](/operation-paths.svg#Circular)
+
 **For:** a round pocket of a given centre and radius, cut in rings, with a
 flat floor or a domed one (**Vault - dome floor**). Choose it over Pocket
 when the circle is a dimension, not a model face.
@@ -263,6 +287,8 @@ when the circle is a dimension, not a model face.
 within the cutter radius - the last ring could leave an uncut core".
 
 ## Thread
+
+![View of the helical tool travel around an internal thread.](/operation-paths.svg#Thread)
 
 **For:** milling an internal thread with a helical thread mill. Choose it
 over a tap cycle for large threads, hard materials, or a machine without a
@@ -282,6 +308,8 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 0 and the ... mm thread depth this pitch stands at".
 
 ## Drill
+
+![Side view of an axial drilling stroke and retract.](/operation-paths.svg#Drill)
 
 **For:** drilling, spot drilling, tapping and cycle boring with canned
 cycles. **Detect holes** fills the hole list from the model; a new Drill
@@ -308,6 +336,8 @@ mouth, short of the ... mm asked - ... match the depth and size to the
 model"; "tap leaves no thread core".
 
 ## Bore
+
+![View of circular interpolation inside a hole.](/operation-paths.svg#Bore)
 
 **For:** finishing a hole with an end mill smaller than the hole, which
 circles the hole wall by interpolation. Choose it over a Drill boring cycle

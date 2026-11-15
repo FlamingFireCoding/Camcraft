@@ -19,6 +19,8 @@ stepdown 5, stepover 3 and tolerance 0.05. A retyped operation keeps the
 numbers it already had; a retype from an indexed (3+2) operation drops
 its tilt.
 
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
+
 ## What every multi-axis kind shares
 
 **The tool.** Every kind cuts with a ball-nose. A wrong tool is refused
@@ -65,6 +67,8 @@ cannot, so post multi-axis work with a machine that states its rotaries.
 
 ## 5-Axis Contour
 
+![View of waterline passes with a leaning tool axis.](/operation-paths.svg#Contour5D)
+
 **For:** finishing steep walls with waterline rings, with the tool leaning
 off the wall. Choose it over 3D Finish's waterline when the holder or
 shank would rub a deep wall at a vertical pose.
@@ -81,6 +85,8 @@ shank would rub a deep wall at a vertical pose.
 | Feeds | Feed / Plunge feed / Climb milling | 1200 / 300 / on |
 
 ## 5-Axis Parallel
+
+![View of parallel surface passes with a leaning tool axis.](/operation-paths.svg#Parallel5D)
 
 **For:** raster finishing of open, shallow-to-moderate ground with a
 leaning tool. Choose it over 3D Finish's parallel when a lead angle keeps
@@ -101,6 +107,8 @@ terrain's cosine.
 
 ## 5-Axis Flow
 
+![View of curved surface passes following the surface direction.](/operation-paths.svg#Flow5D)
+
 **For:** the 5-Axis Parallel's lines, but following the surface's own
 least-curving direction instead of a straight raster. Choose it on
 blended, sweeping ground where straight lines cross the flow; flat ground
@@ -108,6 +116,8 @@ is cut in straight passes. The settings and defaults are 5-Axis
 Parallel's; the direction is read from the model, not set.
 
 ## Multi-Axis Contour
+
+![View of a leaning tool following a picked spatial chain.](/operation-paths.svg#MultiAxisContour)
 
 **For:** riding the ball along picked model edges wherever they stand,
 with a leaning tool: a chamfer or trace along a 3D edge. Choose it over
@@ -131,6 +141,8 @@ a ..."; "picked chain ... stands at z ..., outside the window [..., ...]
 model to ride".
 
 ## Swarf
+
+![View of passes along a ruled flank with a leaning tool.](/operation-paths.svg#Swarf)
 
 **For:** finishing ruled flanks (surfaces straight in one direction, such
 as a drafted wall) with passes along the ruling. Choose it on ruled
@@ -157,6 +169,8 @@ refine it or finish with 5-Axis Parallel".
 
 ## Advanced Swarf
 
+![View of successive coarse and fine passes along a ruled flank.](/operation-paths.svg#AdvancedSwarf)
+
 **For:** Swarf run coarse to fine. Each rough pass relaxes the tolerance
 fourfold and doubles the spacing; the last pass cuts to the stated
 tolerance. Choose it over Swarf when one pass would take too much at
@@ -166,6 +180,8 @@ Settings as Swarf, plus **Pass count** on the Passes tab: 2 on a new
 operation, 1 to 4 (the panel clamps it). Refusals as Swarf.
 
 ## Rotary Contour
+
+![View of ring passes around the fitted rotation axis.](/operation-paths.svg#RotaryContour)
 
 **For:** finishing a turned workpiece in rings around its axis, the tool
 posed off the radial. The axis is fitted to the model, not set. Choose it
@@ -189,6 +205,8 @@ along it: Rotary Parallel".
 
 ## Rotary Parallel
 
+![View of passes along a bar at successive rotary positions.](/operation-paths.svg#RotaryParallel)
+
 **For:** finishing a turned bar with passes along its fitted axis, spaced
 around the turn. Choose it for a bar lying on the table.
 
@@ -202,6 +220,8 @@ standing bar are its rings: Rotary Contour"; "Rotary Parallel reads its
 work's ... mm radius - raise it".
 
 ## Rotary Offset
+
+![View of roughing passes wrapping around a turned workpiece.](/operation-paths.svg#RotaryOffset)
 
 **For:** roughing a turned bar by wrapping: each level peels a radial
 infeed off the skin, the passes spaced around the bar. Choose it to rough
@@ -225,6 +245,8 @@ wrap's seam ..."; "the wrapped work has no radial extent to rough"; "the
 height window leaves no station of the work to rough".
 
 ## Multi-Axis Rough
+
+![View of roughing levels with tool axes that lean near walls.](/operation-paths.svg#MultiAxisRough)
 
 **For:** the 3D Pocket's level-by-level roughing, move for move, with the
 spindle posed where a wall or corner needs it and vertical where a floor

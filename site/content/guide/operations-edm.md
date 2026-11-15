@@ -4,16 +4,11 @@ description = "The Wire Contour, Sinker Burn and Sinker Side Burn operations: th
 weight = 5
 +++
 
-This page is the reference for the EDM kinds of the
-[operations](@/guide/operations.md) ribbon: **Wire Contour**, the one kind
-in the **Wire EDM** group, and **Sinker Burn** and **Sinker Side Burn**
-(captioned **Side Burn**), the two kinds in the **Sinker EDM** group. For
-the tabs themselves and what a click picks, see that page; for what a
-refusal means in general, see [Reading a refusal](@/guide/refusals.md).
+This page is the reference for the EDM kinds of the [operations](@/guide/operations.md) ribbon: **Wire Contour**, the one kind in the **Wire EDM** group, and **Sinker Burn** and **Sinker Side Burn** (captioned **Side Burn**), the two kinds in the **Sinker EDM** group. For the tabs themselves and what a click picks, see that page; for what a refusal means in general, see [Reading a refusal](@/guide/refusals.md).
 
-Lengths are in mm (inches in an inch document); feeds are in mm/min.
-The wire kinds come first; the sinker kinds follow from
-[Sinker EDM](#sinker-edm).
+Lengths are in mm (inches in an inch document); feeds are in mm/min. The wire kinds come first; the sinker kinds follow from [Sinker EDM](#sinker-edm).
+
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
 ## Wire EDM: the machine, the wire and the post
 
@@ -48,6 +43,8 @@ kerf, profile, threading point, release plan and stated machine limits.
 Simulate does not remove stock for wire work: the wire checks judge it.
 
 ## Wire Contour
+
+![Top view of wire travel from a start hole around a die profile.](/operation-paths.svg#WireContour)
 
 **For:** cutting one profile through the workpiece with a vertical or tapered
 wire. A **die** keeps the opening (the wire runs inside the profile and
@@ -238,6 +235,8 @@ atom) judges the burn".
 
 ## Sinker Burn
 
+![Side view of an electrode plunging into a cavity and retracting.](/operation-paths.svg#SinkerBurn)
+
 **For:** burning a cavity the shape of the electrode's face, straight
 down Z. The electrode rapids to the approach plane above the burn point,
 feeds down to the burn depth (its tip a spark gap above the burn floor),
@@ -300,6 +299,8 @@ remaining electrode length. Compensation still obeys the floor and
 electrode-length checks.
 
 ## Sinker Side Burn
+
+![Side view of an electrode plunging, moving toward one wall and returning.](/operation-paths.svg#SinkerSideBurn)
 
 **For:** moving one wall of a burned cavity outward by a small amount,
 after the plunge. The electrode plunges as a Sinker Burn does, then feeds
