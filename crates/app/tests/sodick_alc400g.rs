@@ -132,11 +132,12 @@ fn a_punch_posts_through_the_sodick_post_on_it() {
 }
 
 /// Refs #1800: the file states a taper limit (`edm.max_taper_deg`) but no
-/// guide heights and no wire plane. A tapered cut generates, then the post
-/// refuses it by name (guide heights first; the wire plane next, #1800).
-/// This pins the first refusal as it is.
+/// guide heights. A tapered cut generates, then the post refuses it by name
+/// (`wire_edm.rs`: no guide heights, no taper limit, or a lean over the
+/// limit). The Sodick post also writes a vertical 2-axis cut only (#1800).
+/// This pins the guide-height refusal as it is.
 #[test]
-fn a_tapered_punch_is_refused_at_post_until_guide_heights_and_a_wire_plane_exist() {
+fn a_tapered_punch_is_refused_at_post_while_the_file_states_no_guide_heights() {
     let mut raw: serde_json::Value = serde_json::from_str(text()).expect("json");
     raw["edm"]["conditions"] = serde_json::json!([
         { "id": "C110", "name": "test row", "gap": 0.04, "wire_diameter": 0.25, "role": "rough", "notes": "TEST ONLY - not a Sodick figure" }
@@ -146,6 +147,6 @@ fn a_tapered_punch_is_refused_at_post_until_guide_heights_and_a_wire_plane_exist
     let out = std::env::temp_dir().join(format!("camcraft-alc400g-taper-{}.nc", std::process::id()));
     let posted = posting::post_script(&world, &out, cps);
     let _ = std::fs::remove_file(&out);
-    let err = format!("{:?}", posted.err().expect("a taper cannot post on this file"));
+    let err = format!("{:?}", posted.expect_err("a taper cannot post on this file"));
     assert!(err.contains("states no edm.lower_guide_z and edm.upper_guide_z"), "{err}");
 }
