@@ -22,11 +22,11 @@
 //!   then calls the very function it called before #326, so an untouched
 //!   setup is byte-identical (paths, stamps, posts and saved files).
 //! - **Refuse what is not verified.** Generation in an aligned setup is
-//!   wired for the 2D milling kinds (`Face`, `Contour`, `Pocket`,
-//!   `Adaptive2D`) over a whole model, the stock, or picked features;
-//!   every other kind, area controls, a tilt and a non-mill machine are
-//!   refused by name ([`generation_problem`]) - never cut in the
-//!   unaligned frame.
+//!   wired for `Face`, `Contour`, `Pocket`, `Adaptive2D`, `Pocket3D`
+//!   and `Finish3D` over a whole model, the stock, or picked features.
+//!   The 3D kinds also resolve area controls in the setup frame.
+//!   Other kinds, 2D area controls, a tilt and a non-mill machine are
+//!   refused by name ([`generation_problem`]).
 
 use flecs_ecs::core::EntityViewGet; // try_get is not re-exported in prelude (0.2.2)
 use flecs_ecs::prelude::{Entity, World};
@@ -366,6 +366,7 @@ fn verified_kind(params: &crate::operation::OpParams) -> bool {
     matches!(
         params,
         OpParams::Face { .. } | OpParams::Pocket { .. } | OpParams::Contour { .. } | OpParams::Adaptive2D { .. }
+            | OpParams::Pocket3D { .. } | OpParams::Finish3D { .. }
     )
 }
 
@@ -386,15 +387,17 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
     }
     if !verified_kind(&op.params) {
         return Some(format!(
-            "{head} - {} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket and \
-             2D Adaptive are); set the setup's part alignment back to As modelled, or machine it in another setup",
+            "{head} - {} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket, \
+             2D Adaptive, 3D Pocket and 3D Finish are); set the setup's part alignment back to As modelled, or machine it in another setup",
             op.params.kind().info().label
         ));
     }
     if op.params.tilt().is_some() {
         return Some(format!("{head} - a tilted plane is not supported yet in an aligned setup"));
     }
-    if !op.area.is_default() {
+    // #1743: 3D boundaries read the same aligned facets and picks as generation.
+    let area_verified = matches!(op.params, crate::operation::OpParams::Pocket3D { .. } | crate::operation::OpParams::Finish3D { .. });
+    if !op.area.is_default() && !area_verified {
         return Some(format!("{head} - area controls are not supported yet in an aligned setup"));
     }
     None
