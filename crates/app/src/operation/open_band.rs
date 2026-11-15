@@ -371,7 +371,7 @@ pub(super) fn lane(world: &World, op: &Operation) -> Result<Option<Region>, GenE
         return Ok(None);
     }
     let setup = op.setup.as_deref();
-    let (_, stitched) = stitch_open_runs(world, items, None)?;
+    let (_, stitched) = stitch_open_runs(world, setup, items, None)?;
     let Some(w) = walls(world, setup, items, &op.params, None, &stitched)? else {
         return Ok(None);
     };
