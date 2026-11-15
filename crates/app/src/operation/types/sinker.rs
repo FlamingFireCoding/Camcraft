@@ -150,14 +150,6 @@ impl SinkerBurnOp {
 
 pub use crate::sinker_side::{SideBurn as SinkerSide, SideDirection as SinkerSideDirection};
 
-/// A Side Burn stating a wear rate, refused by name (#546 meets #545:
-/// the side move is not wear-compensated yet).
-pub const SIDE_WEAR_REFUSAL: &str =
-    "electrode wear compensation is not supported on a Sinker Side Burn yet - clear the wear rate";
-/// A Side Burn stating a layer step (#546's layering), refused by name.
-pub const SIDE_LAYER_REFUSAL: &str =
-    "burning in layers is not supported on a Sinker Side Burn yet - clear the layer step";
-
 /// The Sinker Side Burn's parameters (#545): its own burn (approach,
 /// heights, datum, depth, point, feed and its OWN condition - no
 /// orbit), the axis direction it moves along, the lateral amount it
@@ -182,9 +174,10 @@ impl SinkerSideBurnOp {
         SinkerSide { direction: self.direction, amount: self.amount, undersize: self.undersize }
     }
 
-    /// The structural refusal by name (no world): an orbit, a wear rate
-    /// or layer step (#546 - not supported on a side burn yet), an
-    /// amount or undersize out of range, an amount past the undersize.
+    /// The structural refusal by name (no world): an orbit, a measured
+    /// wear or layer step that is not sound (#546's refusals; a sound one
+    /// compensates the plunge, #1340), an amount or undersize out of
+    /// range, an amount past the undersize.
     /// `None` when sound.
     #[must_use]
     pub fn refusal(&self) -> Option<String> {
@@ -197,11 +190,10 @@ impl SinkerSideBurnOp {
                     .into(),
             );
         }
-        if self.burn.wear_lost.is_some() || self.burn.wear_over.is_some() {
-            return Some(SIDE_WEAR_REFUSAL.into());
-        }
-        if self.burn.layer.is_some() {
-            return Some(SIDE_LAYER_REFUSAL.into());
+        // #1340: a measured wear and a layer step compensate the plunge;
+        // only a half-stated or nonsense one is refused, by name.
+        if let Some(why) = self.burn.compensation_refusal() {
+            return Some(why);
         }
         crate::sinker_side::side_refusal(&self.side())
     }
