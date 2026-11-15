@@ -62,10 +62,10 @@
     pass at the programmed Z. If the end is fixed, early passes run up
     to k·tan(θ) further (or shorter) at the runout, shallower than the
     root. That is not a gouge of the thread form.
-  - Micron rounding: words are whole microns (R at 0.001 mm). With
-    authored numbers off the micron lattice, the control's ladder can
-    differ by under 1 µm. In an edge case where k - d rounds above the
-    last roughing depth, it could add one sub-micron pass.
+  - Micron rounding: words are whole least increments (0.001 mm,
+    0.0001 in). The extra-pass edge case is closed by the rounded-ladder
+    R below; single rungs of a long sqrt ladder can still differ from the
+    laid ones by a few increments, with the same pass count.
 
   None of these moves the finished form, so none blocks the merge. They
   cannot be checked in the PathPilot Hub simulation: its lathe is
@@ -126,3 +126,36 @@
   default `J0.0314 K0.0944` gives ceil(K/J) = 4 passes for a 3-pass
   record); left out of this PR because its goldens must stay
   byte-identical to the Hub-run files, and filed on its own.
+- **Takeover check of the R word** (owner account, 2026-11-15, on the
+  maintainer's order to clear the stack). Main's inch work (#902/#977)
+  pinned the inch golden at `R0`. That pin is replaced, not kept, on
+  evidence:
+  - The published Fanuc 0i-TD operator manual and Fanuc-compatible
+    lathe programming references define the first-block `R(d)` of the
+    two-block G76 as the finishing allowance: a radius length in the
+    program unit, written with a decimal point. The second-block
+    `P(k)`, `Q(dd)` and the first-block `Q(dmin)` are in least
+    increments with no decimal point (0.0001 in for IS-B under G20).
+    The post's header already states this unit law.
+  - The value comes from the record's `finish_allowance` (the laid
+    finishing pass, a user parameter through the infeed plan), never
+    from a constant. In inch it is the record's allowance in 0.0001 in,
+    moved by at most one increment so the rounded words cut the
+    verified pass count (0.4 mm = 0.015748 in posts `R0.0158`, not
+    `R0.0157`: the control cuts 0.0157 / 0.0314 / 0.0472). More than
+    one increment is refused by name.
+  - Dialects checked: only `fanuc-lathe.cps` writes a two-block G76 R.
+    `tormach-lathe.cps` writes LinuxCNC's one-block G76 with no finish
+    word (its R is the degression, `R1`), and only takes a record whose
+    finish step is its ladder's own. `tormach-plasma.cps` writes no
+    canned cycle. No other post writes G76.
+  - Chosen: keep `R0.0158` and its pins. Dropped: main's `R0` (one
+    unverified root pass) and the plain conversion `R0.0157` (one
+    unverified 0.0001 in pass).
+- **A project cached before this PR posts `R0`** (M3's non-blocking
+  question). The stale stamp hashes inputs only, so such an op reads
+  Fresh. Its cached record has `finish_allowance` 0, and the new post
+  writes `R0` for it: the same output as main before this PR, not a
+  new wrong word. Chosen: accept, and say so in the PR body. Dropped:
+  a generator version in the stamp (a project-wide change to every
+  cached op, outside this PR). Cost to change later: a stamp field.
