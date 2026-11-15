@@ -122,10 +122,8 @@ impl SinkerBurnOp {
 
     /// The rough / finish pass's structural refusal by name (#543, no
     /// world), so it answers at command creation, not first at generate:
-    /// the finished cavity's X and Y must both be stated (> 0), and the
-    /// pass burns without an orbit - the undersize law sizes the burn as
-    /// electrode plus two spark gaps and does not yet count an orbit's
-    /// radius, which would widen it past that (#1355). `None` for a single burn
+    /// the finished cavity's X and Y must both be stated (> 0).
+    /// The undersize law counts any orbit at generation (#1355). `None` for a single burn
     /// or a sound pass.
     #[must_use]
     pub fn pass_refusal(&self) -> Option<String> {
@@ -137,11 +135,6 @@ impl SinkerBurnOp {
         if !stated(self.cavity_x) || !stated(self.cavity_y) {
             return Some(format!(
                 "a sinker {pass} is judged against the finished cavity - state its X and Y size (both above 0)"
-            ));
-        }
-        if self.orbit.is_some() {
-            return Some(format!(
-                "a sinker {pass} burns without an orbit: the undersize law does not count an orbit's radius yet (#1355) - burn the {pass} as a plunge"
             ));
         }
         None

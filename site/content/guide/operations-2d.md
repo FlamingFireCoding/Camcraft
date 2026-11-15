@@ -26,6 +26,14 @@ name ("'<tool>' is a <kind>; a <operation> operation cuts with a ..."),
 and a document with no suitable tool is told to add one to the tool
 library.
 
+Use Ctrl+click to build a feature selection from multiple edges. CamCraft
+accepts the first edge even when that edge alone cannot define a region;
+**Generate** checks the completed selection. An armed Boundary row accepts
+faces and edges regardless of the toolbar's pick mode. Its open boundary
+can hold separate chains that keep the area between them. Crossing,
+touching or ambiguous chains are refused; Contour still rides one open
+boundary chain. Include and Exclude boundaries must remain closed.
+
 ## Face
 
 **For:** skimming the top of the stock flat, usually the first operation.
@@ -65,6 +73,17 @@ added as an open boundary.
 | Lead in / Lead out | Tab count / width / height | 0 / 5 / 1 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
+An open run picked on a part cuts on its air side, offset by the tool
+radius plus stock to leave. **Side** applies only to closed rings.
+CamCraft refuses an open run whose air side changes or whose offset cuts
+the kept part. A run with no part material beside it keeps a centreline
+ride and the path notes say so.
+
+An inside **Ramp** entry descends along the lead and ring at the entry
+angle. An unset entry angle means 3 degrees, independently of the link
+angle. If there is too little room for that ramp, the path reports its
+substitution and uses the plunge feed. Read the generated entry notes.
+
 **Common refusals:** "the bore is narrower than the tool - switch Side to
 Outside or pick a smaller tool"; "cannot cut the gap at (x, y): it is
 narrower than the tool's ... diameter"; "a Contour's open boundary must be
@@ -91,6 +110,22 @@ for an include or exclude boundary.
 **Common refusals:** "pocket is narrower than the tool"; "stepover leaves
 bands the tool cannot reach"; a pick that "projects to a line from above
 and bounds no area".
+
+Pocket, 2D Adaptive and 2D Offset can also use two open part edges as the
+walls of a band. The stock outline closes its ends. Both walls must be
+level at the same height and run alongside one another without crossing.
+**Extend past** extends the band's open ends along the walls, without
+widening it. With zero extension, the tool centre stops a radius inside
+the stock edge; an extension of at least one radius clears that edge.
+Mixed open and closed picks, ambiguous bands and tool containment On or
+Outside are refused.
+
+**Arc turns at corners and links** rounds pocket-family corners.
+Its optional **Arc radius** defaults to the tool radius when unstated.
+A stated radius must be at least 0.01 mm and no larger than the tool
+radius. The path notes report corner material left by the rounding.
+Adaptive's Trochoidal method refuses this option because its loops
+already supply the arc motion.
 
 ## 2D Adaptive
 
@@ -122,19 +157,25 @@ wanted rather than a constant load.
 ## Slot
 
 **For:** a straight slot of a given width between two points. The slot is
-typed in, not picked; **Detect pockets / slots** can create one along a
-recognised slot's centreline.
+typed in or seeded from suitable picked slot geometry;
+**Detect pockets / slots** can create one along a recognised slot's centreline.
 
 | Tab | Setting | Default |
 |---|---|---|
 | Geometry | A X, A Y / B X, B Y | (-20, 0) / (20, 0) |
 | Geometry | Slot width | 4 |
+| Geometry | Extend past A / Extend past B | 0 / 0 |
 | Passes | Stepover / Stock to leave | 3 / 0 |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
 **Common refusals:** "slot is narrower than the tool"; "slot width must be
 positive".
+
+**Extend past A** and **Extend past B** run the pass beyond each end,
+along the slot's length. Values must be finite and non-negative.
+Extensions still pass through the part checks. An extension into kept
+material blocks posting.
 
 ## Trochoidal slot
 
@@ -256,6 +297,12 @@ starts empty and refuses to generate until it has holes.
 
 Tools: drill, tap or boring bar.
 
+A cross drill can use a reduced-fidelity model when its mesh error leaves
+a positive verification tolerance. CamCraft increases the required
+stand-off, entry, reach and holder clearance to account for that error.
+It also tightens the part and radial rapid checks. If the error uses the
+full tolerance, import the model again at a higher step budget.
+
 **Common refusals:** "no holes to drill"; "the tip meets steel ... past the
 mouth, short of the ... mm asked - ... match the depth and size to the
 model"; "tap leaves no thread core".
@@ -277,3 +324,9 @@ when there is no boring bar of the right size.
 
 **Common refusals:** "boring needs at least one hole"; "clearance plane
 below a hole entry".
+
+A Bore **Ramp** entry zig-zags along the first radial sweep. An unset
+entry angle means 3 degrees. A separate link angle does not steepen it.
+If the sweep is too short, the path states that it substitutes a plunge
+at the plunge feed; the return descent to a ring is also named in the
+entry notes.

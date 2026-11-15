@@ -158,7 +158,7 @@ fn box_anchor(ui: &mut Ui, state: &mut State) {
     });
     ui.checkbox(&mut state.wcs_ui.pick_anchor, "Pick markers in viewport");
     if state.wcs_ui.pick_anchor {
-        ui.label("Click a yellow marker in the viewport to set the origin.");
+        ui.label("Click a yellow marker, a corner or a circle centre of the part in the viewport to set the origin.");
     }
     compass(ui, state);
 }

@@ -9,6 +9,7 @@ use winit::window::{Icon, WindowAttributes};
 const PNG_128: &[u8] = include_bytes!("../../../../assets/logo/icons/camcraft-128.png");
 
 /// The 256 px render, for the Windows taskbar button (`ICON_BIG`, 256 px is winit's ceiling).
+#[cfg(windows)]
 const PNG_256: &[u8] = include_bytes!("../../../../assets/logo/icons/camcraft-256.png");
 
 /// The 128 px icon's pixels as RGBA8 with its width and height, or why it does not decode.
@@ -37,6 +38,7 @@ pub fn window_icon() -> Option<Icon> {
 }
 
 /// The 256 px taskbar icon; `None` (and a log line) when it cannot be made.
+#[cfg(windows)]
 pub fn taskbar_icon() -> Option<Icon> {
     let made = decode_png(PNG_256).and_then(|(rgba, w, h)| Icon::from_rgba(rgba, w, h).map_err(|e| format!("logotype icon: {e}")));
     match made {
@@ -69,6 +71,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(windows)]
     #[test]
     fn the_taskbar_icon_decodes_at_256_and_both_icons_reach_the_window_attributes() -> Result<(), String> {
         let (rgba, w, h) = super::decode_png(super::PNG_256)?;
