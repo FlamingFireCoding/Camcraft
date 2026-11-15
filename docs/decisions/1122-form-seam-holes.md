@@ -26,8 +26,10 @@
   weakening unrelated existing guards; dropping those guards or adding arbitrary
   slack was considered and rejected.
 - **Chosen:** Retain `docs/reviews/1724/` as review evidence, matching existing
-  repository evidence in `docs/reviews/1756/`, `docs/review/1765/` and
-  `docs/pr-1711/`. The PR description already embeds all six images. Removing
+  review evidence from [PR #1756](https://github.com/NeoTech/Camcraft/pull/1756),
+  [PR #1765](https://github.com/NeoTech/Camcraft/pull/1765) and
+  [PR #1711](https://github.com/NeoTech/Camcraft/pull/1711).
+  The PR description already embeds all six images. Removing
   these files would discard their capture provenance and link-validation script.
 
 ### PR #1724 latest review: scope the guard to migrated pages
