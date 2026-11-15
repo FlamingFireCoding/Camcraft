@@ -3,9 +3,9 @@
 //! offer for it, and a punch posted through that post on this machine.
 //! Provenance: our own tests over our own machine file; the figures are
 //! Sodick's published ALC series specifications (X/Y/Z 400 x 300 x 250 mm,
-//! U/V 150 x 150 mm, taper +-25 deg at 130 mm: sodick.eu/products/wire-edm,
-//! sodick.co.th/EN/EDW.php, ALC series brochure); see
-//! docs/decisions/1501-sodick-alc400g.md.
+//! U/V 150 x 150 mm, taper +-25 deg at 130 mm: sodick.co.th/EN/EDW.php for
+//! the taper; the sodick.eu page and the ALC series brochure for the travels);
+//! see docs/decisions/1501-sodick-alc400g.md.
 //! Gate map (#1501): covers app::posting (MACHINES, WIRE_POSTS,
 //! post_script), app::machine (parse_mch, library), sodick-wire.cps.
 
@@ -77,7 +77,7 @@ fn slug() -> Mesh {
 
 /// The world with `machine_text` mounted and a punch contour under
 /// `condition`; the op's creation error as text when the machine refuses it.
-fn punch_world(machine_text: &str, condition: &str) -> Result<flecs_ecs::prelude::World, String> {
+fn punch_world(machine_text: &str, condition: &str, taper_deg: f64) -> Result<flecs_ecs::prelude::World, String> {
     let world = new_world();
     let mut h = History::default();
     let m = parse_mch(machine_text).expect("parses");
@@ -91,7 +91,7 @@ fn punch_world(machine_text: &str, condition: &str) -> Result<flecs_ecs::prelude
         start: Some([-30.0, 0.0]),
         tabs: None,
         capture: true,
-        taper_deg: 0.0,
+        taper_deg,
         four_axis: None,
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
@@ -107,7 +107,7 @@ fn punch_world(machine_text: &str, condition: &str) -> Result<flecs_ecs::prelude
 /// none and the app refuses a wire cut by name until the user adds theirs.
 #[test]
 fn the_shipped_file_refuses_a_cut_until_the_user_states_a_condition() {
-    let e = punch_world(text(), "C110").expect_err("no condition is stated");
+    let e = punch_world(text(), "C110", 0.0).expect_err("no condition is stated");
     assert!(e.contains("states no EDM condition") && e.contains("edm.conditions"), "{e}");
 }
 
@@ -119,7 +119,7 @@ fn a_punch_posts_through_the_sodick_post_on_it() {
     raw["edm"]["conditions"] = serde_json::json!([
         { "id": "C110", "name": "test row", "gap": 0.04, "wire_diameter": 0.25, "role": "rough", "notes": "TEST ONLY - not a Sodick figure" }
     ]);
-    let world = punch_world(&raw.to_string(), "C110").expect("the user's condition lets the punch generate");
+    let world = punch_world(&raw.to_string(), "C110", 0.0).expect("the user's condition lets the punch generate");
     let cps = BUILTINS.iter().find(|(n, _)| *n == SODICK).map(|(_, s)| *s).expect("registered");
     let out = std::env::temp_dir().join(format!("camcraft-alc400g-{}.nc", std::process::id()));
     let posted = posting::post_script(&world, &out, cps);
@@ -129,4 +129,23 @@ fn a_punch_posts_through_the_sodick_post_on_it() {
     assert!(has("G21") && has("C110") && has("M02"), "{text}");
     // No AWT is stated for this model, so no thread / cut words are written.
     assert!(!has("T91") && !has("T90"), "{text}");
+}
+
+/// Refs #1800: the file states a taper limit (`edm.max_taper_deg`) but no
+/// guide heights and no wire plane. A tapered cut generates, then the post
+/// refuses it by name (guide heights first; the wire plane next, #1800).
+/// This pins the first refusal as it is.
+#[test]
+fn a_tapered_punch_is_refused_at_post_until_guide_heights_and_a_wire_plane_exist() {
+    let mut raw: serde_json::Value = serde_json::from_str(text()).expect("json");
+    raw["edm"]["conditions"] = serde_json::json!([
+        { "id": "C110", "name": "test row", "gap": 0.04, "wire_diameter": 0.25, "role": "rough", "notes": "TEST ONLY - not a Sodick figure" }
+    ]);
+    let world = punch_world(&raw.to_string(), "C110", 5.0).expect("5 deg is inside the 25 deg limit");
+    let cps = BUILTINS.iter().find(|(n, _)| *n == SODICK).map(|(_, s)| *s).expect("registered");
+    let out = std::env::temp_dir().join(format!("camcraft-alc400g-taper-{}.nc", std::process::id()));
+    let posted = posting::post_script(&world, &out, cps);
+    let _ = std::fs::remove_file(&out);
+    let err = format!("{:?}", posted.err().expect("a taper cannot post on this file"));
+    assert!(err.contains("states no edm.lower_guide_z and edm.upper_guide_z"), "{err}");
 }

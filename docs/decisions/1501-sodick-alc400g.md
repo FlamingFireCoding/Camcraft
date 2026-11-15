@@ -5,8 +5,8 @@
 `posting::MACHINES`. Pinned by `crates/app/tests/sodick_alc400g.rs`.
 
 **Sources (public, Sodick's own pages; read 2026-11-15).**
-- https://sodick.eu/products/wire-edm : ALC400G family, X/Y/Z 400 x 300 x 250 mm, U/V 150 x 150 mm, taper +-25 deg at 130 mm.
-- https://www.sodick.co.th/EN/EDW.php : same X 400, Y 300, Z 250, taper +-25 deg at 130 mm, U x V 150 x 150 mm.
+- https://sodick.eu/products/wire-edm : ALC400G iG+E, X/Y/Z 400 x 300 x 250 mm, U/V 150 x 150. This page states no taper for the ALC400G.
+- https://www.sodick.co.th/EN/EDW.php : taper angle +-25 deg at work height 130 mm for the ALC400G (the +-30 deg on that page is ALC800GH and ALN800GH, not this model); X 400, Y 300, Z 250, taper +-25 deg at 130 mm, U x V 150 x 150 mm.
 - Sodick ALC series brochure (text copy at https://www.scribd.com/document/479890863/Sodick-ALC-series-wire-cut-EDM-machines): ALC400G X 400, Y 300, Z 250, U x V 150 x 150 mm, taper +-25 deg at 130 mm.
 
 **Stated in the file.** X 400 mm, Y 300 mm, U 150 mm, V 150 mm of travel;
@@ -40,3 +40,11 @@ says "not verified on a control" in every program.
 - Guessing guide heights or AWT from the model class: the issue forbids it.
 
 **Cost to change.** Edit the `.mch` and the pinned figures in the test.
+
+**Limit (rework of review of PR 1793; Refs #1800).** The taper figure is
+data only. The file states no guide heights, so a tapered cut is refused at post.
+If a user adds them, the post refuses it too ("states no wire
+plane"), for every wire machine file. Pinned by
+`a_tapered_punch_is_refused_at_post_until_guide_heights_and_a_wire_plane_exist`. The
+schema and post are not changed here; #1800 tracks them. A review asked for 30
+deg; Sodick's page lists 30 only for other models, so 25 stays.
