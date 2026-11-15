@@ -71,6 +71,7 @@ pub(super) fn ladder(
     start: Point3,
     shell: bool,
     seam: Option<&hsm::Seam>,
+    stock: Option<&Region>,
 ) -> Result<Toolpath, GenError> {
     let r = p.tool_diameter * 0.5;
     let hop_z = p.retract_z.unwrap_or(p.clearance_z).min(p.clearance_z);
@@ -140,7 +141,7 @@ pub(super) fn ladder(
         // The level's plan: the strategy's tiling, or the HSM plan
         // (M11.4, `hsm`) - whose entry bore the level's params carry.
         // #871: a part-way refusal hands back the levels so far.
-        let lp = hsm::plan_level(&mut b, &center, p, z, hop_z, rest.is_some(), shell, seam)
+        let lp = hsm::plan_level(&mut b, &center, p, z, hop_z, rest.is_some(), shell, seam, stock)
             .map_err(|e| e.with_ghost_moves(b.moves()))?;
         let passes = &lp.passes;
         let level_p = lp.params(p);

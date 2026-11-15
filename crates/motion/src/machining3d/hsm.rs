@@ -112,7 +112,8 @@ impl LevelPlan {
 /// planner's notes on the builder.
 // One slot per law the level threads (the ladder's own shape): the
 // builder, the area, the params, the plane, the hop, the rest and shell
-// flags, and the wrap's seam (issue #9).
+// flags, the wrap's seam (issue #9) and the stock outline of an
+// open-side level (issue #1950: its ring is cut from the air).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_level(
     b: &mut PathBuilder,
@@ -123,6 +124,7 @@ pub(super) fn plan_level(
     rest: bool,
     shell: bool,
     seam: Option<&Seam>,
+    stock: Option<&Region>,
 ) -> Result<LevelPlan, GenError> {
     let step = p.tiling_step();
     if p.strategy != PocketStrategy::Adaptive {
@@ -169,7 +171,7 @@ pub(super) fn plan_level(
     // On the wrap a hard planner refusal (no room for an entry, ...)
     // costs the level, not the op: rings cut it, said by name - the
     // planar ladder keeps the refusal it always had.
-    let (passes, notes, s, room, joins) = match (adaptive_passes(center, &pp, &what, false), seam) {
+    let (passes, notes, s, room, joins) = match (adaptive_passes(center, &pp, &what, false, if seam.is_some() { None } else { stock }), seam) {
         (Ok(planned), _) => planned,
         (Err(e), Some(_)) => return rings_named(b, center, p, &format!("adaptive: the HSM planner refused ({e})"), &what),
         (Err(e), None) => return Err(e),

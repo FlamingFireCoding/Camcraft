@@ -263,7 +263,7 @@ pub(super) fn pocket_over(
     // The HSM plan may choose where its entry stands (`pocket_hsm`).
     let (passes, strategy, room, joins) = match strategy {
         PocketStrategy::Adaptive => {
-            let (passes, notes, s, room, joins) = adaptive_passes(center, p, "this pocket", true)?;
+            let (passes, notes, s, room, joins) = adaptive_passes(center, p, "this pocket", true, None)?;
             notes.into_iter().for_each(|n| b.note(n));
             (passes, s, room, joins)
         }

@@ -1,10 +1,8 @@
-//! Held probe for issue #1950 (not a pin): the user's D plate
-//! (`Milling-test.step`: disc R30 cut flat at y 19.719, bore R12.5) in a
-//! 70 x 70 stock, one level, its center area built as the 3-D ladder
-//! builds it (`open_sides` with the stock outline, less the part, eroded
-//! by r). Prints what the HSM plan does with each piece and with the
-//! whole level. Run: `cargo test --release -p camcraft-motion --lib
-//! probe_ring -- --ignored --nocapture`. Ours.
+//! Pins of issue #1950 on the user's D plate (`Milling-test.step`: disc
+//! R30 cut flat at y 19.719, bore R12.5) in a 70 x 70 stock, one level,
+//! its center area built as the 3-D ladder builds it (`open_sides` with
+//! the Adaptive stock band, less the part, eroded by r): the stock ring
+//! reaches `hsm_passes` with the stock and is planned from the air. Ours.
 
 use super::*;
 use crate::entry::Entry3D;
@@ -57,13 +55,16 @@ fn region(pts: Vec<Point2>) -> Region {
     r
 }
 
+fn stock() -> Region {
+    let s = 35.0;
+    region(vec![Point2::new(-s, -s), Point2::new(s, -s), Point2::new(s, s), Point2::new(-s, s)])
+}
+
 /// The level's center area as the 3-D ladder builds it.
 fn level_center() -> Region {
     let r = 5.0;
-    let s = 35.0;
-    let stock = region(vec![Point2::new(-s, -s), Point2::new(s, -s), Point2::new(s, s), Point2::new(-s, s)]);
     let d = part_d();
-    let Ok(foot) = crate::machining3d::open_sides(&d, r, &Region::empty(), Some(&stock)) else { panic!("foot") };
+    let Ok(foot) = crate::machining3d::open_sides(&d, r, &Region::empty(), Some(&stock()), crate::machining3d::stock_band(r, true)) else { panic!("foot") };
     let bore = region(circle(12.5, 2000));
     let Ok(mat) = d.difference(&bore) else { panic!("mat") };
     let Ok(target) = foot.difference(&mat) else { panic!("target") };
@@ -71,27 +72,57 @@ fn level_center() -> Region {
     c
 }
 
+/// Round B: the whole level goes through `hsm_passes` with the stock;
+/// the ring is planned from the air (no growth-spiral budget refusal),
+/// within the rest law and the move budget.
 #[test]
-#[ignore = "probe for issue #1950: prints readings, asserts nothing (~30 s release)"]
-fn probe_ring() {
-    let ring = level_center();
-    for l in ring.loops() {
-        let (lo, hi) = l.points().iter().fold((Point2::new(1e9, 1e9), Point2::new(-1e9, -1e9)), |(a, b), q| (Point2::new(a.x.min(q.x), a.y.min(q.y)), Point2::new(b.x.max(q.x), b.y.max(q.y))));
-        eprintln!("center loop: {} pts, area {:.1}, box ({:.2},{:.2})-({:.2},{:.2})", l.points().len(), l.area(), lo.x, lo.y, hi.x, hi.y);
-    }
-    if let Ok(comps) = components(&ring) {
-        for (i, c) in comps.iter().enumerate() {
-            let t = std::time::Instant::now();
-            let Ok((ps, _, rest, _, _, tr, why)) = hsm_passes(c, &params()) else { panic!("piece") };
-            eprintln!("piece {i} area {:.0}: {:.1} s, pts {}, rest {rest:.3}, {tr:?}, refused {why:?}", c.area(), t.elapsed().as_secs_f64(), ps.iter().map(|p| p.len()).sum::<usize>());
-        }
-    }
-    let t0 = std::time::Instant::now();
-    let Ok(h) = hsm_passes(&ring, &params()) else { panic!("plan") };
-    let (passes, notes, rest, _, _, travel, refused) = h;
-    let pts: usize = passes.iter().map(|p| p.len()).sum();
-    eprintln!("level: {:.1} s, passes {} pts {pts}, rest {rest:.3}, travel {travel:?}, refused {refused:?}", t0.elapsed().as_secs_f64(), passes.len());
-    for n in notes {
-        eprintln!("  note {n}");
-    }
+fn the_stock_ring_level_reaches_the_air_planner_with_the_stock() {
+    let t = std::time::Instant::now();
+    let Ok((passes, notes, rest, _, _, travel, refused)) = hsm_passes(&level_center(), &params(), Some(&stock())) else { panic!("plan") };
+    eprintln!("level: {:.1} s, passes {}, rest {rest:.4}, {travel:?}, refused {refused:?}", t.elapsed().as_secs_f64(), passes.len());
+    assert!(refused.is_none(), "{refused:?}");
+    assert!(notes.iter().any(|n| n.contains("cut from the air")), "{notes:?}");
+    assert!(rest <= HSM_REST_MAX, "rest {rest:.4}");
+    assert!(travel.moves < MOVE_BUDGET, "moves {}", travel.moves);
+}
+
+/// Without the stock the level is planned as before (the growth spiral).
+#[test]
+fn no_stock_keeps_the_growth_spiral() {
+    let Ok(comps) = components(&level_center()) else { panic!("comps") };
+    let Some(bore) = comps.iter().find(|c| c.area() < 1000.0) else { panic!("bore") };
+    let Ok((_, notes, ..)) = hsm_passes(bore, &params(), None) else { panic!("plan") };
+    assert!(!notes.iter().any(|n| n.contains("cut from the air")), "{notes:?}");
+}
+
+/// The Prime Directive on the air plan: a plan whose worst reading is
+/// over the bound is refused by name, never posted. The bound is made
+/// tight (a negative margin) so the D plate's ring is over it.
+#[test]
+fn an_air_plan_over_the_load_bound_is_refused_by_name() {
+    let Ok(comps) = components(&level_center()) else { panic!("comps") };
+    let Some(ring) = comps.iter().find(|c| c.area() > 1000.0) else { panic!("ring") };
+    let r = 5.0;
+    let Ok(reach) = ring.offset(r) else { panic!("reach") };
+    let at = Point2::new(0.0, 0.0);
+    let tight = AdaptiveSpec { r, load: DEFAULT_OPTIMAL_LOAD, tol: -0.3, climb: true, seed: at, start: at, bore: 0.0, helix_r: 0.0, smooth: 0.5 * r };
+    let Ok(Some(Err(why))) = air_plan(&reach, ring, &tight, Some(&stock())) else { panic!("an overloaded air plan must be refused") };
+    assert!(why.contains("over the") && why.contains("optimal load"), "{why}");
+    let ok = AdaptiveSpec { tol: PLAN_TOL, ..tight };
+    let Ok(Some(Ok((pl, _)))) = air_plan(&reach, ring, &ok, Some(&stock())) else { panic!("the plan within the bound is kept") };
+    assert!(!pl.passes.is_empty());
+}
+
+/// The load reading of round B: the air plan's slack to the bound.
+#[test]
+#[ignore = "reading for issue #1950: prints the slack to the load bound (~10 s debug)"]
+fn probe_air_slack() {
+    let Ok(comps) = components(&level_center()) else { panic!("comps") };
+    let Some(ring) = comps.iter().find(|c| c.area() > 1000.0) else { panic!("ring") };
+    let Ok(reach) = ring.offset(5.0) else { panic!("reach") };
+    let Ok(mat) = reach.intersect(&stock()) else { panic!("mat") };
+    let at = Point2::new(0.0, 0.0);
+    let s = AdaptiveSpec { r: 5.0, load: DEFAULT_OPTIMAL_LOAD, tol: PLAN_TOL, climb: true, seed: at, start: at, bore: 0.0, helix_r: 0.0, smooth: 2.5 };
+    let Ok(Some(p)) = super::super::adaptive::plan_from_air(&mat, &stock(), ring, &s) else { panic!("air") };
+    eprintln!("worst {:.6} at {:?}, ends {:.6}, slack {:.9} deg, over {:?}, hops {}", p.worst.0, p.worst.1, p.ends.0, p.slack_deg, p.over, p.plan.travel.hops);
 }

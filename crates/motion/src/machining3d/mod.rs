@@ -114,11 +114,11 @@ mod tests;
 
 pub use entry::{
     pocket3d, pocket3d_air_split, pocket3d_offset, pocket3d_offset_prev, pocket3d_offset_with_rest,
-    pocket3d_offset_with_rest_prev, pocket3d_prev, pocket3d_with_rest,
+    pocket3d_offset_with_rest_prev, pocket3d_open_prev, pocket3d_prev, pocket3d_with_rest,
     pocket3d_with_rest_prev,
 };
 pub use feed::{engagement_on, optimize_feed, FFO_FLOOR};
-pub use open_side::{open_sides, OPEN_SLACK};
+pub use open_side::{open_sides, stock_band, ADAPTIVE_BAND_PER_R, OPEN_SLACK};
 pub use hsm::{NARROW_HELIX, REST_RINGS, SHELL_RINGS};
 pub use params::{engagement_step, Entry3D, Pocket3DParams};
 pub use rest::material_above;

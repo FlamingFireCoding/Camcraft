@@ -43,7 +43,10 @@ pub(super) fn open_footprint(
     } else {
         slice::project(neighbours, FOOTPRINT_SAMPLES).map_err(from_slice)?
     };
-    machining3d::open_sides(&region, r, &keep_out, stock)
+    // Issue #1950 round B: every arm keeps the band it had; the Adaptive
+    // arm takes `stock_band(r, true)` when it is wired to
+    // `pocket3d_open_prev`.
+    machining3d::open_sides(&region, r, &keep_out, stock, machining3d::stock_band(r, false))
 }
 
 #[cfg(test)]

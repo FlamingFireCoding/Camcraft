@@ -58,6 +58,13 @@ pub(crate) struct AirPlan {
     pub ends: (f64, Point2),
     /// Fronts cut as closed spiral loops, and fronts cut as open runs.
     pub fronts: (usize, usize),
+    /// The bound less the worst reading (degrees of rim; >= 0 within it).
+    pub slack_deg: f64,
+    /// Why the plan is over the load bound (`None`: within it). The law
+    /// of `lift::keeps`: readings are whole rim samples, so the compare
+    /// is in degrees with `1e-9` float slack - a reading equal to the
+    /// bound passes, one sample over is refused.
+    pub over: Option<String>,
 }
 
 /// Plan the material `mat` (already clipped to `stock`) from the air
@@ -177,17 +184,23 @@ pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &A
     (plan.passes, plan.joins) = (passes, joins);
     let (wl, el) = (load_at_rim(worst.0, d, rim), load_at_rim(ends.0, d, rim));
     plan.notes.push(format!("adaptive: stock ring cut from the air in {closed} spiral and {open} open fronts"));
-    if wl > s.load * (1.0 + s.tol.max(0.0)) {
-        plan.notes.push(format!(
-            "adaptive: worst planned load {:.1}% of D at ({:.2}, {:.2}) exceeds the {:.1}% optimal load by {:.0}%",
-            wl * 100.0,
-            worst.1.x,
-            worst.1.y,
+    // The run-start plunge readings are kept in `ends` only: the bound
+    // holds for the higher of the two.
+    let top = if ends.0 > worst.0 { ends } else { worst };
+    let mut over = None;
+    if top.0 > bound + 1e-9 {
+        let tl = load_at_rim(top.0, d, rim);
+        over = Some(format!(
+            "would cut {:.1}% of D at ({:.2}, {:.2}), over the {:.1}% optimal load by {:.0}%",
+            tl * 100.0,
+            top.1.x,
+            top.1.y,
             s.load * 100.0,
-            (wl / s.load - 1.0) * 100.0
+            (tl / s.load - 1.0) * 100.0
         ));
     }
-    Ok(Some(AirPlan { plan, worst: (wl, worst.1), ends: (el, ends.1), fronts: (closed, open) }))
+    let slack_deg = bound - top.0;
+    Ok(Some(AirPlan { plan, worst: (wl, worst.1), ends: (el, ends.1), fronts: (closed, open), slack_deg, over }))
 }
 
 fn note(worst: &mut (f64, Point2), w: (f64, Point2)) {
