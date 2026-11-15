@@ -110,9 +110,11 @@ More: [Setups](@/guide/set-up/setups.md).
 
 ## Cut a sheet part
 
-On a router: use **Contour** (Milling 2D) around the part; its **Lead in /
-Lead out** tab has **Tab count**, **Tab width** and **Tab height** to leave
-the part held.
+On a router: follow the full walkthrough in
+[Your first router part](@/guide/getting-started/first-router-part.md)
+(Sienci AltMill 4x4, grblHAL, corner `G54`, `Drill`, `2D Pocket`, and `2D Contour`
+with holding tabs — **Tab count**, **Tab width** and **Tab height** under **Lead
+in / Lead out** — plus RichAuto DSP A11 shop-router notes).
 
 On a plasma table: click the machine button and pick **Plasma cutting**,
 add a **Plasma Profile**, and set **Compensation** and **Direction** on its

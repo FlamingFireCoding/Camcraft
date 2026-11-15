@@ -306,7 +306,13 @@ pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
         String::new()
     };
     if exists {
-        if ui.button("Apply").clicked() {
+        let recipe_refusal = (state.tool_ui.tool_kind() == tools::ToolKind::Waterjet)
+            .then(|| state.tool_ui.to_tool().torch_refusal())
+            .flatten();
+        if ui.add_enabled(recipe_refusal.is_none(), egui::Button::new("Apply"))
+            .on_disabled_hover_text(recipe_refusal.as_deref().unwrap_or_default())
+            .clicked()
+        {
             // #93 slice 3: a landed drawn cutter rides the edit.
             let apply = state.apply_tool_numbers(&name_now);
             state.pending.push_back(apply);
