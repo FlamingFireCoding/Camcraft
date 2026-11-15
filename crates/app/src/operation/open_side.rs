@@ -50,6 +50,57 @@ pub(super) fn open_footprint(
     machining3d::open_sides(&region, r, &keep_out, stock, machining3d::stock_band(r, air))
 }
 
+/// Issue #1950: the Adaptive air band (the footprint outside the stock
+/// outline, up to `stock_band(r, true)` past it) is cut, so steel that
+/// stands in it is struck. The generator does not route round it: a
+/// fixture box that meets the band in XY and stands above the op's
+/// bottom refuses the op by name, before the post. The machine table is
+/// not judged here (it stands under the whole stock; the post gate's
+/// fixture law judges it on every move). The post gate stays the second
+/// line for steel moved after generation.
+pub(super) fn air_band_refusal(
+    footprint: &Region,
+    stock: &Region,
+    fixtures: &[(&str, &crate::fixture::FixtureBox)],
+    bottom_z: f64,
+) -> Result<(), GenError> {
+    if fixtures.is_empty() {
+        return Ok(());
+    }
+    let band = footprint.difference(stock)?;
+    if band.is_empty() {
+        return Ok(());
+    }
+    for (name, b) in fixtures {
+        if *name == crate::fixture::MACHINE_TABLE || b.min.z.max(b.max.z) <= bottom_z {
+            continue;
+        }
+        let t = AIR_BAND_TOL;
+        let (x0, x1) = (b.min.x.min(b.max.x) - t, b.max.x.max(b.min.x) + t);
+        let (y0, y1) = (b.min.y.min(b.max.y) - t, b.max.y.max(b.min.y) + t);
+        if ![x0, x1, y0, y1].iter().all(|v| v.is_finite()) {
+            return Err(GenError::Invalid(format!("the fixture '{name}' has a box that cannot be read, so the Adaptive air band cannot be judged against it")));
+        }
+        let rect = Region::new(vec![Loop::new(vec![
+            Point2::new(x0, y0),
+            Point2::new(x1, y0),
+            Point2::new(x1, y1),
+            Point2::new(x0, y1),
+        ])?])?;
+        if !band.intersect(&rect)?.is_empty() {
+            return Err(GenError::Invalid(format!("{AIR_BAND_FIXTURE} '{name}' - move the fixture out of that band, or select the Offset rings strategy")));
+        }
+    }
+    Ok(())
+}
+
+/// The named refusal of [`air_band_refusal`].
+pub const AIR_BAND_FIXTURE: &str = "the Adaptive strategy cuts the stock ring from the air up to 2 tool radii past the stock side, and that band meets the fixture";
+
+/// The XY growth of a fixture box for [`air_band_refusal`] (mm): steel
+/// contact is contact.
+const AIR_BAND_TOL: f64 = 0.01;
+
 #[cfg(test)]
 mod law {
     use super::*;

@@ -171,6 +171,9 @@ pub(super) fn ladder(
             first_pass,
             prev_z,
             prev_cut: prev_state.as_ref().map(|(q, _)| *q),
+            // #1950: a tool that is not centre-cutting keeps its own
+            // entry law (the plunge law cannot read the air as air).
+            air: lp.air_entry && p.links.approach.center_cutting,
         };
         let mut lvl = LevelCtx {
             cen: &center,
@@ -310,6 +313,7 @@ pub(super) fn ladder(
                         first_pass: pass,
                         prev_z: prev_state.as_ref().map_or(hz, |(q, _)| *q),
                         prev_cut: prev_state.as_ref().map(|(q, _)| *q),
+                        air: false,
                     };
                     let (tip, top) = (lvl.tip(next_entry, 0.0), descent::mat_top(&lvl, &again));
                     if !p.links.approach.center_cutting && plunge_law::into_solid(&b, next_entry, tip, top, r) {

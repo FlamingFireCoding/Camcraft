@@ -746,6 +746,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
             };
+            // #1950: steel in the air band refuses the op by name.
+            if let Some(st) = air_stock {
+                let named: Vec<_> = fixture_names.iter().map(String::as_str).zip(fixtures.iter()).collect();
+                super::open_side::air_band_refusal(&region, st, &named, pp.bottom_z)?;
+            }
             // Re-machining (M3.1 D): what the program ahead of this
             // pocket left standing bounds the coarse run, so it cuts
             // the shelves its predecessors already cleared only if the

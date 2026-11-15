@@ -38,6 +38,9 @@ pub(super) struct Ask<'a> {
     pub prev_z: f64,
     /// The previous cut level's plane, `None` before any cut.
     pub prev_cut: Option<f64>,
+    /// Issue #1950: `entry` is proved in the air outside the stock - a
+    /// plain plunge there, for every arm (it bores into nothing).
+    pub air: bool,
 }
 
 /// The plane a descent starts from (M11.3): on the first level the top
@@ -234,7 +237,7 @@ fn plunge_at(lvl: &LevelCtx, a: &Ask) -> Option<Point2> {
 /// Where the descent `a` begins in XY with the tool standing over `leg`.
 pub(super) fn start(lvl: &LevelCtx, a: &Ask, leg: Point2) -> Point2 {
     let sub = || plunge_at(lvl, a).unwrap_or(a.entry);
-    if a.rest {
+    if a.rest || a.air {
         return a.entry;
     }
     let cc = lvl.p.links.approach.center_cutting;
@@ -323,8 +326,9 @@ pub(super) fn descend(b: &mut PathBuilder, lvl: &LevelCtx, a: &Ask) -> Option<Po
     let (entry, z) = (a.entry, lvl.z);
     let at = b.at();
     let leg = Point2::new(at.x, at.y);
-    if a.rest {
-        // The rest ladder's entry: it starts inside planes the coarse
+    if a.rest || a.air {
+        // The rest ladder's entry (and #1950's air entry, its tool disc
+        // clear of the stock): it starts inside planes the coarse
         // run already swept, so it rides the vertical dive at the wall
         // entry the nesting law specced.
         traverse(b, lvl, entry);

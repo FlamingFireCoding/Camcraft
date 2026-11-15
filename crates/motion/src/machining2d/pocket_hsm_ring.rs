@@ -89,6 +89,17 @@ fn the_stock_ring_level_reaches_the_air_planner_with_the_stock() {
     assert!(travel.hops <= HOP_BUDGET, "hops {} over {HOP_BUDGET}", travel.hops);
 }
 
+/// Round D: through `adaptive_passes` (the door the 3-D ladder opens) the
+/// stock ring level keeps the Adaptive plan, with no planning budget note
+/// and no fallback to the Offset rings.
+#[test]
+fn the_stock_ring_level_plans_adaptive_with_no_budget_note() {
+    let Ok((passes, notes, s, _, _)) = adaptive_passes(&level_center(), &params(), "the level at Z 10.000", false, Some(&stock())) else { panic!("plan") };
+    assert_eq!(s, PocketStrategy::Adaptive, "{notes:?}");
+    assert!(!passes.is_empty());
+    assert!(!notes.iter().any(|n| n.contains("budget") || n.contains("Offset rings")), "{notes:?}");
+}
+
 /// Without the stock the level is planned as before (the growth spiral).
 #[test]
 fn no_stock_keeps_the_growth_spiral() {

@@ -308,6 +308,18 @@ fn air_plan(reach: &Region, comp: &Region, spec: &AdaptiveSpec, stock: Option<&R
     }))
 }
 
+/// Issue #1950: the gap (mm) between the stock and the tool's disc at an
+/// air entry - the plunge touches no stock.
+pub(crate) const AIR_ENTRY_GAP: f64 = 0.005;
+
+/// Issue #1950: is the tool's disc of radius `r` about `e` fully in the
+/// air outside `stock` (the stock outline, a prism in Z), with
+/// [`AIR_ENTRY_GAP`] to spare? A plunge there from the clearance plane
+/// meets no stock at any height. `false` for a non-finite point.
+pub(crate) fn in_air(stock: &Region, e: Point2, r: f64) -> bool {
+    e.x.is_finite() && e.y.is_finite() && !stock.is_empty() && !stock.contains(e) && boundary_dist(stock, e) >= r + AIR_ENTRY_GAP
+}
+
 #[cfg(test)]
 #[path = "pocket_hsm_ring.rs"]
 mod ring_tests;
