@@ -43,6 +43,7 @@ fn params() -> TrochoidParams {
         return_feed: 3000.0,
         plunge_feed: 300.0,
         climb: true,
+        material_top: None,
     }
 }
 

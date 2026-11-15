@@ -8,7 +8,7 @@
 //! 2026-11-15); the depth-of-cut ladder is general machining knowledge.
 //!
 //! Gate map: covers camcraft_motion::machining2d (levels / cut_levels,
-//! pocket, adaptive_troch, contour, slots, bore, circular, face) and
+//! pocket, adaptive_troch, contour, slots, trochoid_slot, bore, circular, face) and
 //! camcraft_motion::machining3d (entry, ladder).
 
 use camcraft_motion::cl::{MoveKind, Toolpath};
@@ -20,6 +20,7 @@ use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
 use camcraft_motion::machining2d::{
     adaptive_trochoidal, bore, circular, contour, cut_levels, cut_levels_under, face, pocket, slot, trace, BoreHole, BoreParams,
     CircularParams, ContourParams, FaceParams, Lead, PocketParams, PocketStrategy, Side, SlotParams, TraceParams,
+    trochoidal_slot, TrochoidParams, TrochoidReturn, DEFAULT_MICROLIFT,
 };
 use camcraft_motion::machining3d::{pocket3d, Pocket3DParams};
 
@@ -180,6 +181,7 @@ fn a_slot_and_a_trace_whose_stepdown_spans_the_depth_cut_one_level() {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
+        material_top: None,
     };
     one_level("trace", &trace(&square(0.0, 0.0, 30.0), &tp).expect("trace"));
 }
@@ -319,4 +321,64 @@ fn stock_over_top_z_keeps_the_level_at_top_z() {
     for (t, b, st) in [(20.0, 0.0, 5.0), (13.0, 0.0, 50.0), (20.0, 2.0, 4.6)] {
         assert_eq!(cut_levels_under(t, None, b, st).expect("law"), cut_levels(t, b, st).expect("law"));
     }
+}
+
+/// #2004 round 5: a trace (and the engrave twin, which calls it) reads the
+/// stock top. Stock over Top Z keeps the level at Top Z, so the first bite
+/// is at most one stepdown under the material top; without it Top Z is the
+/// material top and no air level is cut.
+#[test]
+fn a_trace_under_stock_over_top_z_keeps_the_level_at_top_z() {
+    let tp = TraceParams {
+        clearance_z: 20.0,
+        retract_z: None,
+        top_z: 10.0,
+        bottom_z: BOTTOM,
+        stepdown: 5.0,
+        feed: 500.0,
+        plunge_feed: 100.0,
+        climb: true,
+        material_top: Some(13.0),
+    };
+    let reg = square(0.0, 0.0, 30.0);
+    assert_eq!(cut_planes(&trace(&reg, &tp).expect("trace")), vec![10.0, 5.0, 0.0], "stock over Top Z");
+    let flush = TraceParams { material_top: Some(10.0), ..tp };
+    assert_eq!(cut_planes(&trace(&reg, &flush).expect("trace")), vec![5.0, 0.0], "stock at Top Z");
+    let none = TraceParams { material_top: None, ..tp };
+    assert_eq!(cut_planes(&trace(&reg, &none).expect("trace")), vec![5.0, 0.0], "no stock stated");
+}
+
+/// #2004 round 5: the trochoidal slot reads the stock top the same way.
+/// Its microlift returns ride 0.3 mm over each level, so the test reads
+/// the levels on the grid of the stepdown only.
+#[test]
+fn a_trochoidal_slot_under_stock_over_top_z_keeps_the_level_at_top_z() {
+    let tp = TrochoidParams {
+        tool_diameter: 10.0,
+        width: 16.0,
+        loop_width: None,
+        step: 1.0,
+        max_engagement: 90.0,
+        ret: TrochoidReturn::Microlift { height: DEFAULT_MICROLIFT },
+        smoothing: 1.0,
+        stock_to_leave: 0.0,
+        clearance_z: 10.0,
+        retract_z: Some(2.0),
+        top_z: 0.0,
+        bottom_z: -6.0,
+        stepdown: 3.0,
+        feed: 1200.0,
+        return_feed: 3000.0,
+        plunge_feed: 300.0,
+        climb: true,
+        material_top: Some(3.0),
+    };
+    let chain = [Point2::new(0.0, 0.0), Point2::new(40.0, 0.0)];
+    let levels = |p: &TrochoidParams| -> Vec<f64> {
+        let t = trochoidal_slot(&chain, p).unwrap_or_else(|e| panic!("trochoidal slot: {e}"));
+        cut_planes(&t).into_iter().filter(|z| (z / 3.0 - (z / 3.0).round()).abs() < 1e-6).collect()
+    };
+    assert_eq!(levels(&tp), vec![0.0, -3.0, -6.0], "stock over Top Z");
+    assert_eq!(levels(&TrochoidParams { material_top: Some(0.0), ..tp }), vec![-3.0, -6.0], "stock at Top Z");
+    assert_eq!(levels(&TrochoidParams { material_top: None, ..tp }), vec![-3.0, -6.0], "no stock stated");
 }

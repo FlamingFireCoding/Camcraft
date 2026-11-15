@@ -1635,6 +1635,7 @@ fn tp() -> TraceParams {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
+        material_top: None,
     }
 }
 

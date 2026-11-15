@@ -1770,6 +1770,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 hl.retract,
                 req_z(hl.top, "Top of Part Z")?,
                 req_z(hl.bottom, "Bottom of Part Z")?,
+                lk.approach.material_top,
             )?;
             let region = region_for_job(
                     &mut picked_region,
@@ -1814,6 +1815,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
+                    material_top: lk.approach.material_top,
                 },
             )?;
             (region, path)
@@ -1851,6 +1853,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
+                    material_top: lk.approach.material_top,
                 },
             )?;
             (region, path)

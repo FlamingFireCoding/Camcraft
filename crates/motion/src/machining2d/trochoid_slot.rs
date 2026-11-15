@@ -26,7 +26,7 @@ use crate::geometry::Point3;
 use crate::quality::{QualitySpec, measure, stock_for};
 
 use super::face::GenError;
-use super::levels::cut_levels;
+use super::levels::cut_levels_under;
 use super::trochoid_air::lifted_cut;
 use super::trochoid_bore::{bore, start as bore_start};
 use super::trochoid_loops::{Chain, El, Layout, MAX_LOOPS, contained, layout, layout_closed};
@@ -84,6 +84,10 @@ pub struct TrochoidParams {
     pub return_feed: f64,
     pub plunge_feed: f64,
     pub climb: bool,
+    /// The stock top in this frame (#2004): stock over Top Z keeps a
+    /// level at Top Z, so no first bite is deeper than one stepdown.
+    /// `None` reads Top Z as the material top.
+    pub material_top: Option<f64>,
 }
 
 impl TrochoidParams {
@@ -316,7 +320,7 @@ pub(super) fn plan_lane_layout(chain: &[Point2], p: &TrochoidParams, open: bool,
 /// The kept plan over every level, said in the notes and held to the
 /// verifier's crossing law.
 fn finish(lay: &Layout, p: &TrochoidParams, step: f64, deg: f64, b: f64, room: f64, open: bool) -> Result<TrochoidPlan, GenError> {
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.material_top, p.bottom_z, p.stepdown)?;
     let entry = bore_start(lay, p, open);
     let hop = p.retract_z.unwrap_or(p.clearance_z);
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
