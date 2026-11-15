@@ -14,7 +14,7 @@ use camcraft_app::operation::{self, OpParams};
 use crate::egui_app::ground_ink::{Overlay, overlay};
 use crate::egui_app::op_tabs::SEC_GEO;
 use crate::interact::project_uv;
-use crate::state::State;
+use crate::state::{State, UiTarget};
 
 /// What a mark says, for the tests and the draw order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,7 +42,13 @@ pub struct SlotMark {
 /// shown, finite coordinates, a resolvable top Z.
 #[must_use]
 pub fn draft_points(state: &State) -> Option<([f64; 3], [f64; 3])> {
-    if state.op_ui.name.is_empty() || !state.op_ui.geo.is_empty() || state.op_tab != SEC_GEO {
+    if !state.panels_open.properties
+        || !state.properties_shown
+        || state.pane_target() != UiTarget::Operation(state.op_ui.name.clone())
+        || state.op_ui.name.is_empty()
+        || !state.op_ui.geo.is_empty()
+        || state.op_tab != SEC_GEO
+    {
         return None;
     }
     let OpParams::Slot { a, b, top_z, .. } = &state.op_ui.params else {

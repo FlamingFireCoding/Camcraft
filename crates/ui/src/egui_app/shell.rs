@@ -129,7 +129,8 @@ pub(crate) fn shell_layout(
     // AFTER it. A pick left armed at a frame's end therefore had its rows
     // on screen that frame, and the next frame's click sees the result:
     // no frame where a hidden draft takes a click.
-    if !layout::is_shown(dock, &Tab::Properties) {
+    state.properties_shown = layout::is_shown(dock, &Tab::Properties);
+    if !state.properties_shown {
         crate::axis_pick::disarm_all(state);
         // #673: the locate draft's form is on that pane too - dropped
         // here, before the dock routes a viewport release to it.
