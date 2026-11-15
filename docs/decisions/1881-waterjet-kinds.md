@@ -54,3 +54,10 @@
   because it would discard useful work without changing the design. The
   allowed-kind message assertion is updated with the intentionally extended
   vocabulary. Process files and NC/CL goldens remain outside this change.
+
+- **Disable waterjet Apply until the recipe is valid.** The latest PR review
+  requested structural coverage of invalid and valid Apply states. The
+  editor uses the existing named recipe refusal as its disabled tooltip;
+  the undoable command still validates the tool when Apply runs. Keeping
+  Apply clickable and reporting an error afterwards was dropped because it
+  does not expose the requested invalid state before the command is sent.
