@@ -76,7 +76,7 @@ use super::theme::Tokens;
 pub(crate) use super::fields::{combo, field, num, num_feed, num_plain};
 
 /// Tool kind labels, same order as `ToolKind` (mirrors the tool page).
-const TOOL_KINDS: [&str; 16] = [
+const TOOL_KINDS: [&str; 17] = [
     "End mill",
     "Ball nose",
     "Bull nose",
@@ -96,6 +96,7 @@ const TOOL_KINDS: [&str; 16] = [
     // #894: rows of teeth at one pitch / one row over a pitch range.
     "Thread mill",
     "Single-form thread mill",
+    "Waterjet nozzle",
 ];
 
 /// The note gray the model page's notes use ([0.62,0.66,0.72]).
@@ -716,14 +717,14 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                         // The torch (#670): no spindle, no corner - a
                         // kerf. Leaving it, a spinning kind needs an rpm.
                         // The sinker electrode (#541) turns none either.
-                        if matches!(state.tool_ui.tool_kind(), tools::ToolKind::Torch | tools::ToolKind::Electrode) {
+                        if matches!(state.tool_ui.tool_kind(), tools::ToolKind::Torch | tools::ToolKind::Waterjet | tools::ToolKind::Electrode) {
                             state.tool_ui.rpm = 0.0;
                             state.tool_ui.corner_r = 0.0;
-                        } else if (before == 12 || before == 13) && (state.tool_ui.rpm.is_nan() || state.tool_ui.rpm <= 0.0) {
+                        } else if matches!(before, 12 | 13 | 16) && (state.tool_ui.rpm.is_nan() || state.tool_ui.rpm <= 0.0) {
                             state.tool_ui.rpm = 10000.0;
                         }
                     }
-                    let torch = state.tool_ui.tool_kind() == tools::ToolKind::Torch;
+                    let torch = matches!(state.tool_ui.tool_kind(), tools::ToolKind::Torch | tools::ToolKind::Waterjet);
                     let electrode = state.tool_ui.tool_kind() == tools::ToolKind::Electrode;
                     if electrode {
                         // #541: the burning face's two sides.
@@ -737,7 +738,7 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                         // #670): every offset reads radius = kerf / 2.
                         field(ui, "Kerf width");
                         num(ui, u, &mut state.tool_ui.diameter);
-                        ui.label("the cut's width - about 1.5x the nozzle orifice; confirm it with a test cut");
+                        ui.label("the cut's width; confirm it with a test cut");
                     } else {
                         field(ui, "Diameter");
                         num(ui, u, &mut state.tool_ui.diameter);
@@ -754,6 +755,13 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                     if state.tool_ui.kind == 4 {
                         field(ui, "Thread pitch");
                         num(ui, u, &mut state.tool_ui.pitch);
+                        let mut left = state.tool_ui.thread_hand == camcraft_app::tools::ThreadHand::Left;
+                        super::fields::check_row(ui, "Left-hand tap (posting unavailable)", &mut left);
+                        state.tool_ui.thread_hand = if left {
+                            camcraft_app::tools::ThreadHand::Left
+                        } else {
+                            camcraft_app::tools::ThreadHand::Right
+                        };
                         ui.label("distance advanced per turn - M6 is 1.0, M8 is 1.25");
                     }
                     if state.tool_ui.kind == 6 {
@@ -807,7 +815,7 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                         ui.label("half the diameter - a ball nose's whole tip is its ball");
                     } else if !matches!(
                         state.tool_ui.tool_kind(),
-                        tools::ToolKind::Tap | tools::ToolKind::Torch | tools::ToolKind::Electrode | tools::ToolKind::ThreadMill | tools::ToolKind::ThreadMillSingle
+                        tools::ToolKind::Tap | tools::ToolKind::Torch | tools::ToolKind::Waterjet | tools::ToolKind::Electrode | tools::ToolKind::ThreadMill | tools::ToolKind::ThreadMillSingle
                     ) {
                         field(ui, "Corner radius");
                         num(ui, u, &mut state.tool_ui.corner_r);
@@ -865,7 +873,13 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                 String::new()
             };
             if exists {
-                if ui.button("Apply").clicked() {
+                let recipe_refusal = (state.tool_ui.tool_kind() == tools::ToolKind::Waterjet)
+                    .then(|| state.tool_ui.to_tool().torch_refusal())
+                    .flatten();
+                if ui.add_enabled(recipe_refusal.is_none(), egui::Button::new("Apply"))
+                    .on_disabled_hover_text(recipe_refusal.as_deref().unwrap_or_default())
+                    .clicked()
+                {
                     // #93 slice 3: a landed drawn cutter rides the edit.
                     let apply = state.apply_tool_numbers(&name_now);
                     state.pending.push_back(apply);
@@ -920,7 +934,12 @@ fn draw_tool_preview(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64,
     let rect = resp.rect;
     let axis_x = rect.center().x;
     painter.rect_filled(rect, 4.0, Color32::from_rgb(24, 26, 31));
-    let outline = t.profile();
+    // A body replaces the parameter holder, as in the collision band stack.
+    let outline = if body.is_some() {
+        tools::Tool { holder_len: 0.0, ..t.clone() }.profile()
+    } else {
+        t.profile()
+    };
     // #371: a body's bands (above, len, r) widen the frame to hold them.
     let bands = body.unwrap_or_default();
     let r_max = outline.iter().map(|q| q.1).chain(bands.iter().map(|b| b.2)).fold(0.0f64, f64::max);
@@ -982,8 +1001,7 @@ fn draw_tool_preview(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64,
             Stroke::NONE,
         ));
     }
-    // #371: the modelled body's revolved envelope, translucent amber over
-    // the cylinders it replaces in the judging laws.
+    // #371: the modelled body's revolved envelope replaces the holder.
     for &(above, len, r) in bands {
         if !(above.is_finite() && len.is_finite() && r.is_finite()) || len <= 0.0 || r <= 0.0 {
             continue;
@@ -1191,6 +1209,10 @@ fn tool_import_mode_combo(ui: &mut egui::Ui, mode: &mut camcraft_app::commands::
 }
 
 #[cfg(test)]
+#[path = "tap_hand_tests.rs"]
+mod tap_hand_tests;
+
+#[cfg(test)]
 mod turn_tests {
     //! The page tests that stayed with pages.rs; the WCS turn tests moved
     //! with `turn_wcs` to `wcs_page_tests` (#739).
@@ -1231,3 +1253,7 @@ mod turn_tests {
         assert!(state.pending.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "tests/tool_preview.rs"]
+mod tool_preview_tests;

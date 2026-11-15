@@ -78,7 +78,7 @@ mod spindle_row;
 mod approach_page;
 mod lead_page;
 mod start_exit_rows;
-mod op_tabs;
+pub(crate) mod op_tabs;
 mod painted;
 mod tree_badges;
 mod tree_glyphs;
@@ -255,6 +255,8 @@ mod thread_hand_tests;
 mod thread_mill_page_tests;
 #[cfg(test)]
 mod slot_pick_page_tests;
+#[cfg(test)]
+mod slot_manual_tests;
 #[cfg(test)]
 mod after_op_tests;
 #[cfg(test)]

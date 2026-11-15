@@ -454,7 +454,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         // to the floor of the wall it trims - the part
                         // read as the union of its touching bodies
                         // (M13.11) when the picks span several models.
-                        machining2d::contour_on_bodies(&region, &m_gen.facets, &m_gen.bodies, &cp)?
+                        // #1927: a picked ring that meets its wall at no
+                        // level - the side stands in the part - is refused.
+                        machining2d::contour_on_picked(&region, &m_gen.facets, &m_gen.bodies, &cp)?
                     } else {
                         machining2d::contour(&region, &cp)?
                     };
@@ -465,17 +467,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     }
                     // #1777: a run on a part is cut on its air side, read
                     // from the part's sections; Side applies to rings only.
-                    let section_at = |z: f64| match super::material::section(&m_gen.facets, z) {
+                    let cut = |f: &[Triangle], z: f64| match super::material::section(f, z) {
                         Ok(r) => Ok(Some(r)),
                         Err(GenError::Empty(_)) => Ok(None),
                         Err(e) => Err(e),
                     };
+                    let section_at = |z: f64| cut(&m_gen.facets, z);
+                    // #1928: a run on the stock stands one radius off its
+                    // line on the side Side names (a picked selection has
+                    // no tilt frame: world facets are the job's frame).
+                    let stock_at = |z: f64| stock_facets.as_deref().map_or(Ok(None), |f| cut(f, z));
+                    let part_at = |z: f64| if keep_parts.is_empty() { Ok(None) } else { cut(&keep_parts, z) };
                     for run in &runs {
                         // #1015: a run refused shows the rings and runs before it.
                         let next = if part_solid {
                             machining2d::contour_open_run(run, &cp, &section_at)
                         } else {
-                            machining2d::contour_along_chain(run, &cp)
+                            machining2d::contour_open_run_sided(run, &cp, *side, &stock_at, &part_at)
                         }
                         .map_err(|e| e.after_moves(&path.moves))?;
                         let said = next.notes.clone();
