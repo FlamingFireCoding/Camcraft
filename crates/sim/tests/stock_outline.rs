@@ -233,7 +233,7 @@ fn garbage_outlines_and_moves_refuse_or_burn_and_never_raise_a_column() {
         state ^= state << 17;
         state
     };
-    let mut num = |r: u64| match r % 11 {
+    let num = |r: u64| match r % 11 {
         0 => f64::NAN,
         1 => f64::INFINITY,
         2 => -1e300,
