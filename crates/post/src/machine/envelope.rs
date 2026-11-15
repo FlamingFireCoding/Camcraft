@@ -91,6 +91,18 @@ mod tests {
     }
 
     #[test]
+    fn an_inverted_axis_with_two_nonzero_ends_flips_both_bounds() {
+        // X travel -100..200 about origin 10: sign -1 gives 10+100 .. 10-200.
+        let mut m = mill();
+        m.axes[0].direction = AxisDirection::Inverted;
+        let Ok(EnvelopeShape::Box { min, max }) = envelope(&m, [10.0, 20.0, 5.0]) else { panic!("box") };
+        assert_eq!((min[0], max[0]), (-190.0, 110.0));
+        // The other axes keep their upright bounds.
+        assert_eq!((min[1], max[1]), (-30.0, 70.0));
+        assert_eq!((min[2], max[2]), (-25.0, 5.0));
+    }
+
+    #[test]
     fn a_missing_travel_names_the_axis() {
         let mut m = mill();
         m.axes[1].travel = None;

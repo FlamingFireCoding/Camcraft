@@ -600,6 +600,10 @@ fn viewport_panel(
         for (a, b) in crate::vertex_pick::picked_point_marks(state, aspect) {
             ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(2.0, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
         }
+        // #1171: the wire sync pairs' rulings, violet like the other pick marks.
+        for (a, b) in crate::wire_sync_pick::segments(state, aspect) {
+            ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(1.5, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
+        }
         // #1505/#1507: selected picks and the viewport hover
         // as thick, haloed strokes over the model.
         crate::pick_ink::paint(ui.painter(), state, aspect, to_px, rgb8);

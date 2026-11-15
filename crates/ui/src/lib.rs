@@ -53,6 +53,7 @@ pub mod axis_pick;
 pub mod cylinder_pick;
 pub mod origin_pick;
 pub mod points_pick;
+pub mod wire_sync_pick;
 pub mod wcs_pick;
 pub mod shortcut_keys;
 pub mod state;

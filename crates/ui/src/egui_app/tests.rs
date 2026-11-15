@@ -132,6 +132,8 @@ mod pick_through;
 mod setup_picks_disarm;
 // #555: real clicks pick the three points of the plane.
 mod points_vertex_pick;
+// #1171: real clicks state a wire sync pair.
+mod wire_sync_viewport;
 mod one_wcs;
 // #343: the per-setup browser tree.
 mod setup_tree;
