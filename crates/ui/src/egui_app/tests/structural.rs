@@ -310,7 +310,11 @@ fn setup_page_alignment_rows_structure() {
     // (#326/#606) are not drawn while Axes is selected.
     assert!(h.query_by_label_contains("Lay on a plane - pick a face").is_none(), "the face row waits behind the dropdown");
     assert!(h.query_by_label_contains("Lay on a plane - pick three points").is_none(), "the points row waits behind the dropdown");
-    assert!(h.query_by_label_contains("Turn").is_none(), "the manual picker waits behind the dropdown");
+    assert!(
+        h.query_all_by_label_contains("Turn")
+            .all(|n| n.accesskit_node().role() == egui::accesskit::Role::Tab),
+        "the manual picker waits behind the dropdown"
+    );
     // The origin side shows the model box reading: the box point combo
     // and Place origin, with the box readout beside it.
     assert!(point_combo.max.y < h.get_by_label("Place origin").rect().min.y, "the origin controls expand under the dropdown");
