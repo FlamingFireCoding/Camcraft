@@ -50,8 +50,7 @@ engine refuses a higher offset by setup name; without the flag the
 script receives the word `G54`..`G59` for offsets 1-6 and the engine
 refuses any offset above 6. A flagged script also defines
 `workOffsetName(n)`, its control's name for offset n (display only).
-Every shipped post sets it except grblhal.cps and tinyg.cps, which
-still take the word (offsets 1-6 only; follow-up issue); an extended word (`G59.1`, `G505`...) is
+Every shipped post sets it. An extended word (`G59.1`, `G505`...) is
 written only where the control's public manual is cited (tormach.cps
 and tormach-lathe.cps: the LinuxCNC G-code reference's G59.1-G59.3);
 `threadHands = true` (#629) says the script
@@ -158,6 +157,15 @@ write (the gate), so the released program never carries one.
   everything the first raw motion line needs (`startPreamble`
   pattern), and serve legacy streams that carry no `SECTION` by
   firing it from the first motion too.
+- **The first traverse states its height (#1614).** After a tool
+  change (or a G30, or at the program's start) the top of Z travel
+  is not proof of clearance: a long tool on a high work offset can
+  stand below the part there. `tormach.cps` writes `G0 Z<ClearancePlane>`
+  (else the RetractPlane) before the first X/Y move, so a setup that
+  cannot clear is stopped by the control's Z limit instead of rapiding
+  through the part; a stream stating neither plane is refused by name,
+  and the refused move (with every later one while X/Y stay unknown) is
+  not written.
 - **A cycle states its feed; a cut needs a turning spindle (#1357).**
   A canned cycle whose `FeedRate` is missing or not positive is a
   `message()` refusal by name ("canned cycle G73 has no feed rate"),

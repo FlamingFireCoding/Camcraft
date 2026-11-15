@@ -549,6 +549,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
             Some("mm") => crate::schema::EndUnits::Millimeters,
             Some(other) => return Err(corrupt(format!("unknown end units {other:?}"))),
         },
+        // #1532: an absent key is the default pause between setups.
+        between_setups: match file.post_options.as_ref().and_then(|o| o.between_setups.as_deref()) {
+            None => crate::schema::BetweenSetups::default(),
+            Some(w) => crate::schema::BetweenSetups::from_word(w)
+                .ok_or_else(|| corrupt(format!("unknown between-setups choice {w:?}")))?,
+        },
     };
     // The program identity (#258): checked by `SetProgramInfo`'s rules,
     // so a hand-edited value they refuse is a corrupt file, refused
@@ -684,6 +690,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // #864: the flag lands with the facets it describes; an
                 // absent key, or a value that is no coarse chord, is none.
                 crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
+                // #1610: validate_kind refused a hole without the mark.
+                crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
             }

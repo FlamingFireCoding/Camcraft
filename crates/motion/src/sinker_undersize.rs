@@ -11,17 +11,17 @@
 //! are our own design (#290 D1-D10). No vendor material.
 //!
 //! The law, per axis, for an electrode `e` wide burning a cavity `c`
-//! wide under a condition of undersize `u` and spark gap `g`:
+//! wide under a condition of undersize `u`, spark gap `g` and XY orbit radius `r`:
 //! - the electrode is the one the condition calls for: `e = c - 2u`;
-//! - it burns `e + 2g`, which never exceeds `c` (more would burn past
+//! - it burns `e + 2(g + r)`, which never exceeds `c` (more would burn past
 //!   the finished wall: a gouge);
 //! - a finish burns exactly `c` - less leaves the finished cavity
 //!   under size, refused by name;
-//! - the electrode stands `u` inside the finished surface on every
-//!   side, its face included: the tip stops `u` above the finished
-//!   floor, so a rough leaves `u - g` on the floor as on the walls.
+//! - the orbit moves only in XY: the tip stops `u - r` above the finished
+//!   floor, so a rough leaves `u - r - g` on the floor as on the walls.
 
 use crate::machining2d::GenError;
+use crate::sinker_orbit::{Orbit, OrbitKind};
 
 /// Which pass of a cavity a burn is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -65,11 +65,13 @@ pub struct Undersize {
     pub gap: f64,
     /// The condition's electrode undersize per side.
     pub undersize: f64,
+    /// The lateral sweep; absent for a straight plunge.
+    pub orbit: Option<Orbit>,
 }
 
 /// Judge one undersized burn, by name: the cavity it burns against the
 /// finished size, and the electrode against its condition. On success,
-/// the stand-off the tip keeps above the finished floor (the undersize).
+/// the stand-off above the finished floor (undersize minus XY orbit radius).
 /// A `Single` pass is not judged here and stands one gap off.
 ///
 /// # Errors
@@ -81,6 +83,10 @@ pub fn judge(u: &Undersize, condition: &str) -> Result<f64, GenError> {
         return Ok(u.gap);
     }
     let pass = u.pass.label();
+    if let Some(o) = &u.orbit {
+        o.check()?;
+    }
+    let radius = u.orbit.map_or(0.0, |o| o.radius);
     let nums = [u.cavity.0, u.cavity.1, u.electrode.0, u.electrode.1, u.gap, u.undersize];
     if !nums.iter().all(|v| v.is_finite()) {
         return Err(GenError::Invalid(format!("sinker {pass}: a size, gap or undersize is not a finite number")));
@@ -97,17 +103,17 @@ pub fn judge(u: &Undersize, condition: &str) -> Result<f64, GenError> {
         )));
     }
     for (axis, c, e) in [("X", u.cavity.0, u.electrode.0), ("Y", u.cavity.1, u.electrode.1)] {
-        let burned = e + 2.0 * u.gap;
+        let burned = e + 2.0 * (u.gap + radius);
         if burned > c + SIZE_SLACK {
             return Err(GenError::Invalid(format!(
-                "sinker {pass}: the electrode's {e:.3} in {axis} plus 2 x the {:.3} spark gap of condition {condition:?} burns {burned:.3}, wider than the {c:.3} cavity - the wall would be burned {:.3} past size per side",
+                "sinker {pass}: the electrode's {e:.3} in {axis} plus 2 x (spark gap {:.3} of condition {condition:?} + orbit radius {radius:.3}) burns {burned:.3}, wider than the {c:.3} cavity - the wall would be burned {:.3} past size per side",
                 u.gap,
                 (burned - c) * 0.5
             )));
         }
         if u.pass == SinkerPass::Finish && burned < c - SIZE_SLACK {
             return Err(GenError::Invalid(format!(
-                "sinker finish leaves the cavity under size: the electrode's {e:.3} in {axis} plus 2 x the {:.3} spark gap of condition {condition:?} burns {burned:.3}, short of the {c:.3} cavity by {:.3} per side",
+                "sinker finish leaves the cavity under size: the electrode's {e:.3} in {axis} plus 2 x (spark gap {:.3} of condition {condition:?} + orbit radius {radius:.3}) burns {burned:.3}, short of the {c:.3} cavity by {:.3} per side",
                 u.gap,
                 (c - burned) * 0.5
             )));
@@ -120,7 +126,16 @@ pub fn judge(u: &Undersize, condition: &str) -> Result<f64, GenError> {
             )));
         }
     }
-    Ok(u.undersize)
+    // Circular and planetary paths reach all four axes. A vector pattern
+    // does so only in multiples of four; radius alone cannot certify its finish.
+    if u.pass == SinkerPass::Finish
+        && u.orbit.is_some_and(|o| o.kind == OrbitKind::Vector && !o.vectors.is_multiple_of(4))
+    {
+        return Err(GenError::Invalid(
+            "sinker finish: the vector orbit leaves the cavity under size on a wall - use a multiple of four directions to reach all four walls".into(),
+        ));
+    }
+    Ok(u.undersize - radius)
 }
 
 /// The order law between a rough and the finish after it: the finish
@@ -138,7 +153,7 @@ mod tests {
     use super::*;
 
     fn pair(pass: SinkerPass, e: f64, gap: f64, undersize: f64) -> Undersize {
-        Undersize { pass, cavity: (20.0, 12.0), electrode: (e, e - 8.0), gap, undersize }
+        Undersize { pass, cavity: (20.0, 12.0), electrode: (e, e - 8.0), gap, undersize, orbit: None }
     }
 
     #[test]
@@ -160,5 +175,33 @@ mod tests {
         let none = Undersize { cavity: (0.0, 12.0), ..pair(SinkerPass::Rough, 19.4, 0.1, 0.3) };
         assert!(judge(&none, "R").is_err());
         assert!(inverted(0.3, 0.3) && inverted(0.4, 0.3) && !inverted(0.02, 0.3));
+    }
+
+    #[test]
+    fn sinker_undersize_counts_orbit_width_and_keeps_the_floor() {
+        let orbit = |radius| Some(Orbit { kind: OrbitKind::Circular, radius, vectors: 4, turns: 1 });
+        let rough = Undersize { orbit: orbit(0.05), ..pair(SinkerPass::Rough, 19.4, 0.1, 0.3) };
+        assert!((judge(&rough, "R").expect("rough") - 0.25).abs() < 1e-9);
+        let finish = Undersize { orbit: orbit(0.03), ..pair(SinkerPass::Finish, 19.9, 0.02, 0.05) };
+        assert!((judge(&finish, "F").expect("finish") - 0.02).abs() < 1e-9);
+        let overburn = Undersize { orbit: orbit(0.21), ..rough };
+        let err = judge(&overburn, "R").expect_err("orbit overburn").to_string();
+        assert!(err.contains("orbit") && err.contains("past size"), "{err}");
+    }
+
+    #[test]
+    fn sinker_undersize_checks_orbit_before_judging_it() {
+        let circle = Orbit { kind: OrbitKind::Circular, radius: 0.05, vectors: 4, turns: 1 };
+        for orbit in [
+            Orbit { radius: f64::NAN, ..circle },
+            Orbit { radius: f64::INFINITY, ..circle },
+            Orbit { radius: -0.1, ..circle },
+            Orbit { kind: OrbitKind::Vector, vectors: 0, ..circle },
+            Orbit { kind: OrbitKind::Planetary, turns: 99, ..circle },
+        ] {
+            let rough = Undersize { orbit: Some(orbit), ..pair(SinkerPass::Rough, 19.4, 0.1, 0.3) };
+            let err = judge(&rough, "R").expect_err("bad orbit").to_string();
+            assert!(err.contains("orbit"), "{err}");
+        }
     }
 }
