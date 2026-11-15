@@ -228,7 +228,7 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
                     (l, rt, Some(d), None)
                 }
                 OpenGeom::Chains(cs) => {
-                    let (between, beyond, t) = super::boundary_chains::sides_of_chains(cs, &reach, &base)?;
+                    let (between, beyond, t) = super::boundary_chains::sides_of_chains(cs, &reach, &base).map_err(super::boundary_chain_error)?;
                     (between, beyond, None, Some(t))
                 }
                 OpenGeom::Ring(ring) => (reach.intersect(ring)?, reach.difference(ring)?, None, None),

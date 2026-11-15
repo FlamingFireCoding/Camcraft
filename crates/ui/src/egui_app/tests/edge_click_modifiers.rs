@@ -183,12 +183,18 @@ fn open_picks(st: &crate::state::State) -> Vec<GeoSel> {
 /// at the pixel over each edge, between frames, as the shell calls it.
 #[test]
 fn an_armed_boundary_row_takes_edges_in_faces_mode() {
-    let (h, name) = harness_for(Some(OpType::Face));
+    let (mut h, name) = harness_for(Some(OpType::Face));
+    h.set_size(egui::vec2(1440.0, 1100.0));
+    h.run_steps(2);
+    let boundary = h.get_by_label("Boundary").rect();
+    click(&mut h, egui::pos2(boundary.left() - 10.0, boundary.center().y), Modifiers::NONE);
+    h.run_steps(2);
     let (near, far) = (side(h.state(), 0), side(h.state(), 3));
-    let mut sh = h.into_state();
-    let st = &mut sh.state;
+    let st = &mut h.state_mut().state;
     st.geo_pick = GeoPick::Face;
     st.boundary_pick = Some(crate::state::BoundaryPick::Open);
+    h.run_steps(2);
+    let st = &mut h.state_mut().state;
     let ctrl = crate::interact::Mods { command: true, ..Default::default() };
     crate::feature_click::click(st, [near.x, near.y], crate::interact::Mods::default());
     let one = open_picks(st);
@@ -199,6 +205,12 @@ fn an_armed_boundary_row_takes_edges_in_faces_mode() {
     assert_eq!(two.len(), 2, "Ctrl adds the far edge: {two:?} / {}", st.status);
     assert!(two.iter().all(|g| matches!(g.feature, operation::FeatureSel::Chain(_))), "both picks are edges: {two:?}");
     assert!(st.status.contains("2 open chains"), "the entry reads as two chains: {}", st.status);
+    h.run_steps(2);
+    let texts = super::structural::painted(&h);
+    assert!(texts.iter().any(|(s, _)| s == "2 edges, 2 open chains"), "the Boundary row renders the two-chain entry: {texts:?}");
+    assert_eq!(h.state().state.geo_pick, GeoPick::Face, "boundary picking keeps Faces mode");
+    capture_boundary_review(&mut h, "after");
+    let st = &mut h.state_mut().state;
     st.apply_operation_params(&name);
     st.drain_actions();
     let stored = |st: &crate::state::State| {
@@ -208,4 +220,12 @@ fn an_armed_boundary_row_takes_edges_in_faces_mode() {
     st.pending.push_back(CommandKind::Undo);
     st.drain_actions();
     assert_eq!(stored(st), None, "undo takes the boundary back out");
+}
+
+/// Opt-in PR evidence from the actual shell, never a pixel golden update.
+fn capture_boundary_review(h: &mut Harness<'static, ShellUi>, step: &str) {
+    if let Some(dir) = std::env::var_os("BOUNDARY_REVIEW_IMAGES") {
+        std::fs::create_dir_all(&dir).expect("review image directory");
+        h.render().expect("render shell").save(std::path::Path::new(&dir).join(format!("{step}.png"))).expect("save review evidence");
+    }
 }

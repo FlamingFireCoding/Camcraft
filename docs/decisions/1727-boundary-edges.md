@@ -36,5 +36,23 @@ kernel.
   overlay draws one open chain; the page lists the entry as
   "2 edges, 2 open chains". Left for a follow-up if wanted.
 
-**Cost to change later.** Small: the law is `operation::boundary_chains`
+**Cost to change later.** Small: the law is `camcraft_geometry::boundary_chains`
 and one arm in `boundary::resolve`; nothing new is saved.
+
+## PR #1756 review follow-up
+
+**Chosen.** Keep chain grouping, distance checks and region splitting in
+`camcraft-geometry`, with geometry unit tests beside them. The app passes
+regions and point chains through that interface and maps domain errors into
+its operation errors. World lookup and undoable commands stay in app.
+
+**Why.** These calculations have no ECS or project dependency. Keeping the
+new algorithms in app was considered and dropped because it violates the
+existing domain ownership rule.
+
+**Evidence choice.** Capture the actual egui shell used by the structural
+pin for the Boundary row in Faces mode, including its two-chain entry.
+Review images live under `docs/reviews/1756`, outside release snapshot
+goldens. A painted-text assertion pins the entry without a pixel comparison;
+hand-drawn mockups and updating release snapshot PNGs were dropped because
+they would not show the reviewed behavior or fit the PR snapshot rule.

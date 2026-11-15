@@ -103,7 +103,7 @@ pub(super) fn picks_geom(
                 return chains.pop().map(OpenGeom::Chain).ok_or_else(|| GenError::Empty("no open chain".into()));
             }
             match touching_refusal(&chains) {
-                Some(e) => Err(e),
+                Some(e) => Err(super::boundary_chain_error(e)),
                 None => Ok(OpenGeom::Chains(chains)),
             }
         }
