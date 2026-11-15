@@ -1761,6 +1761,9 @@ pub struct State {
     /// The Setups page's three-points draft (#555); `Some` routes Vertex
     /// picks into it (and refuses faces and edges by name).
     pub points_pick: Option<crate::points_pick::PointsPick>,
+    /// The Wire Contour page's sync-point pick (#1171); armed, Vertex
+    /// picks state the draft's sync pairs.
+    pub wire_sync: crate::wire_sync_pick::WireSync,
     /// The Setups page's cylinder-angle draft (#771); while it is
     /// collecting, Face picks land in it ahead of everything else.
     pub cylinder_pick: Option<crate::cylinder_pick::CylinderPick>,
@@ -1996,6 +1999,7 @@ impl State {
             locate_form_drawn: false,
             axis_pick: None,
             points_pick: None,
+            wire_sync: crate::wire_sync_pick::WireSync::default(),
             cylinder_pick: None,
             origin_pick: None,
             axis_rows_shown: false,
