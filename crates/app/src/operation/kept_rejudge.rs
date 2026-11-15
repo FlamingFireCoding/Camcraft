@@ -141,7 +141,7 @@ fn cross_problem(path: &Toolpath, facets: &[crate::geometry::Triangle], job: &su
     let crate::operation::OpParams::Drill { cross, .. } = &job.params else {
         return None;
     };
-    super::cross_part::part_clear(path, facets, &job.tool, cutter, cross).err().map(|e| e.to_string())
+    super::cross_part::part_clear(path, facets, &job.tool, cutter, cross, job.material.excess).err().map(|e| e.to_string())
 }
 
 /// A part-source cross drill's chain against one of the setup's other
@@ -154,7 +154,7 @@ fn neighbour_cross_problem(path: &Toolpath, facets: &[crate::geometry::Triangle]
     if !job.part_solid || cross.is_empty() {
         return None;
     }
-    super::cross_part::neighbours_clear(path, facets, &job.tool, cutter, cross).err().map(|e| e.to_string())
+    super::cross_part::neighbours_clear(path, facets, &job.tool, cutter, cross, job.material.excess).err().map(|e| e.to_string())
 }
 
 /// Whether a Thread's holes stand in round walls, read as generation read

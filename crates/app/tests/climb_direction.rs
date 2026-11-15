@@ -128,7 +128,10 @@ fn pocket(strategy: PocketStrategy, climb: bool) -> OpParams {
         strategy,
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
-        optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
+        // Issue #1716: 40% of D keeps the Adaptive plan fast in debug.
+        // The cut direction and the analytic-solid check do not read the
+        // ring step; only the Adaptive strategy reads the load.
+        optimal_load: 0.4,
         blend_turns: false,
         tilt: None,
     }

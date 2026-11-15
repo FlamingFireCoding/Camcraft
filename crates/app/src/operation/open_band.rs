@@ -80,7 +80,7 @@ fn walls(
     if !band_kind(params) || frame.is_some() {
         return Ok(None);
     }
-    let runs: Vec<Run> = gather_runs(world, items, None).into_iter().filter(|r| !run_used(r, stitched)).collect();
+    let runs: Vec<Run> = gather_runs(world, setup, items, None).into_iter().filter(|r| !run_used(r, stitched)).collect();
     if runs.len() < 2 {
         return Ok(None);
     }

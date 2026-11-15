@@ -347,6 +347,13 @@ pub enum OpParams {
         links: Links,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// How far the pass runs past `a`, back along `b -> a`, mm
+        /// (#1731). Zero is the authored end. The extended pass answers
+        /// to the same gouge laws as the rest of the slot: an extension
+        /// into a part the job keeps is a blocking Gouge.
+        extend_start: f64,
+        /// How far the pass runs past `b`, on along `a -> b`, mm (#1731).
+        extend_end: f64,
     },
     /// Trochoidal slotting (#220): the channel of `width` along `a -> b`
     /// cleared by trochoid loops whose engagement the planner measures

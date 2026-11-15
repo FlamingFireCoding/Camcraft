@@ -7,7 +7,8 @@
 //!
 //! Gate map: covers app::operation::material (from_slice), app::mcp's
 //! generate / verify, through camcraft_geometry::geometry::slice's union
-//! fallback and camcraft_motion::machining3d::rest.
+//! fallback and camcraft_motion::machining3d (including the pocket ladder
+//! and camcraft_motion::machining3d::rest).
 //!
 //! Provenance: the issue's own MCP reproduction; hand-built boxes for the
 //! refusal (a closed shell welded to another along one vertical edge).
@@ -165,16 +166,16 @@ fn the_sample_as_imported_still_generates_the_3d_finish() {
 /// (`operation::material_source`, `Pocket3D`), and the cutter centre must
 /// stay a radius inside it. The sample as imported casts a strip only
 /// 6.53 mm wide (Y -4.94 .. 1.59), so with the part's section taken out
-/// no 6 mm end mill fits at any level. The refusal is correct and named;
-/// the job never cut here (the test that asked for it, added by #1407,
-/// failed from its first commit).
+/// no 6 mm end mill fits at any level. #1709 names the tool clearance
+/// needed, rather than saying the model fills the pocket. This pins the
+/// refusal through the imported STEP sample and the generate command.
 #[test]
 fn the_sample_as_imported_refuses_the_3d_pocket_by_name() {
     let mut c = sample_job(false);
     let (err, result) = c.call("generate", json!({ "name": "R1" }));
     let text = result.to_string();
     assert!(err, "no area for the tool must refuse: {text}");
-    assert!(text.contains("nothing to cut: the model fills the pocket at every level"), "{text}");
+    assert!(text.contains("nothing to cut: the open area is too narrow for the 6 mm tool and 0 mm stock to leave at every level"), "{text}");
 }
 
 /// Two blocks welded along one vertical edge, written as one ASCII STL:
