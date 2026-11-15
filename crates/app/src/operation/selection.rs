@@ -227,6 +227,7 @@ pub(super) fn selection_geometry_in(
     // of `region_for` and the verification project, so preview and path
     // agree) and the stock around it (what a run runs out to, where
     // stock exists).
+    let opframe = OpFrame::new(setup.map(str::to_owned), None);
     let mut material_sil = None;
     let mut envelope = None;
     let mut chain_only = false;
@@ -243,7 +244,7 @@ pub(super) fn selection_geometry_in(
             let sil = silhouette(&material.facets);
             let stock_name = crate::setup::stock_entity_name(world, setup);
             envelope = model::find_by_name(world, &stock_name)
-                .and_then(|e| model::world_facets(world, &e))
+                .and_then(|e| opframe.furniture_facets(world, &e))
                 .and_then(|f| slice::project(&f, FOOTPRINT_SAMPLES).ok())
                 .filter(|r| !r.is_empty())
                 .or_else(|| sil.clone());
@@ -257,7 +258,7 @@ pub(super) fn selection_geometry_in(
     // Per entity first, then across entities (M13.11); the cross walk's
     // refusals - a three-way junction, runs on different planes - are
     // the Prime Directive's kind and come back by name.
-    let (rings, stitched) = stitch_open_runs(world, items, frame)?;
+    let (rings, stitched) = stitch_open_runs(world, setup, items, frame)?;
     let mut stitched_runs = 0usize;
     let mut stitched_rings = 0usize;
     for (label, pts, runs) in rings {
@@ -289,7 +290,7 @@ pub(super) fn selection_geometry_in(
                 g.entity
             )));
         };
-        let loc = model::transform_of(world, &entity).unwrap_or_default();
+        let loc = opframe.pose_in_setup(world, &entity).unwrap_or_default();
         let label = format!("{} of '{}'", g.feature, g.entity);
         match g.feature {
             FeatureSel::Vertex(_) => {

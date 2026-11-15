@@ -14,7 +14,8 @@ pub fn stitched_rings(world: &World, items: &[GeoSel]) -> Vec<Option<usize>> {
     // A walk that refuses (a cross-entity fork or plane mismatch,
     // M13.11) owns no ring: every chip reads "stitched nothing", and
     // the refusal itself is the account's to quote.
-    let Ok((_, consumed)) = stitch_open_runs(world, items, None) else {
+    let setup = crate::setup::active(world);
+    let Ok((_, consumed)) = stitch_open_runs(world, setup.as_deref(), items, None) else {
         return vec![None; items.len()];
     };
     let mut out: Vec<Option<usize>> = vec![None; items.len()];
