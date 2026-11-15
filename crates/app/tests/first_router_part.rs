@@ -208,6 +208,11 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
 #[test]
 fn first_router_part_project_loads_verifies_and_posts_to_grblhal() {
     let demo_path = repo("examples/first-router-part.camproj");
+    if std::env::var_os("WRITE_GOLDEN").is_some() {
+        // The demo is the command build below, saved (#1917's decision):
+        // a generator change regenerates it, as for every golden.
+        project::save(&build_demo_world(), &demo_path).expect("write the demo project");
+    }
     assert!(demo_path.exists(), "expected committed router demo project at {}", demo_path.display());
 
     let world = new_world();

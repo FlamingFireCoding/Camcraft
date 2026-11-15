@@ -90,6 +90,58 @@
    types - the two generators read no other link, and a `Links` field
    promises controls that they do not have.
 
+10. Round 7, the red quick gate on `185a69f1e`. Each failure, by class:
+    (a) the expectation names only the lost air level at Top Z, so the
+    expectation changes and every other assert stays; (b) a real
+    regression, fixed in the code.
+    - (b) `blind_floor::random_stepdowns_and_floors_never_cut_below_a_floor`
+      case 4 (floor 16.108 over the first level): the contour depth
+      ladder (`contour_depth::ladder`) searched a ring's floor only under
+      a level that the ring walked. The old ladder always walked Top Z
+      first (in air), so a blind hole shallower than one stepdown got its
+      floor; now its first level failed and the ring cut nothing. Fix:
+      when the first level fails and the ring is clear above Top Z, the
+      floor search runs up to Top Z. New pin:
+      `a_blind_hole_shallower_than_one_stepdown_is_cut_at_its_floor`.
+      This corrects item 4c for contour rings: a ring with a floor between
+      Top Z and the first level is cut at that floor, not refused.
+    - (b) `area_open::a_containment_that_puts_the_tool_in_the_part_is_refused_by_name`
+      and, in `contour_outside_hole`,
+      `outside_on_a_picked_hole_wall_is_refused_by_name_at_every_depth`
+      and `inside_on_a_picked_block_top_is_refused_by_name`: with no air
+      level, a wrong-side picked ring walks no level, so the generic
+      "every contour ring cuts into the part at its first level" refusal
+      came first and hid the #1927 named refusal. Fix: `picked_law` runs
+      before the empty-ladder check (`contour.rs`). The named text, the
+      side advice and "part top Z 10.000" are unchanged, and the four
+      depth cases (full, patch, selection heights, top over the part)
+      still refuse.
+    - (a) `blind_floor::a_blind_hole_ring_ends_at_its_floor_and_the_outer_wall_goes_to_the_bottom`,
+      `a_through_hole_ring_keeps_every_level`: the stock top is Top Z 20,
+      so the level at 20 goes. The floor, the skip notes and the deepest
+      move asserts are unchanged.
+    - (a) `contour_outside_hole::inside_and_auto_on_the_hole_wall_cut_every_level_clean`,
+      `outside_on_an_outer_wall_and_on_a_boss_stays_legal`: the part top
+      is Top Z 10 (no stock), so the level at 10 goes.
+    - (a) `drill_prior::a_stock_facing_allowance_is_faced_and_the_drill_after_it_stands`:
+      the fifth pass had its nose tip at the stock end Z 22 (item 5). The
+      four passes remove the full 2 mm: the test now also asserts the last
+      pass at the finished end, the first bite one stepdown, and each bite
+      at most one stepdown.
+    - (a) `post_engine::every_golden_is_a_legal_post_input`,
+      `slot_fullwidth_centerline.cl` with 9 records: the golden still
+      feeds the full row at Z -3 and Z -6 (bottom -6). Only the record
+      floor of 10 failed. That golden's floor is 8, and the test now
+      asserts its two full-depth rows.
+    - (a) `explain_tormach::tormach_explains_every_conformance_golden_without_changing_the_program`:
+      the `explain_*.nc` goldens were not written again in round 6. Each
+      one loses the same lines as its plain twin (188 lines in all).
+    - (a) `first_router_part::first_router_part_project_loads_verifies_and_posts_to_grblhal`:
+      `examples/first-router-part.camproj` holds cached toolpaths of the
+      old ladder. It is now written from the test's command build under
+      `WRITE_GOLDEN=1` (as #1917's decision says). The diff removes 37
+      moves and changes the stamp; the verification gate stays silent.
+
 **Why:** a level at the material top removes nothing and doubles the cycle
 time of a one-level cut (the maintainer's report on v0.21.0). The fix at the
 shared law reaches each caller at once.

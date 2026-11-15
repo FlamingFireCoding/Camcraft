@@ -170,8 +170,14 @@ fn contour_impl(region: &Region, p: &ContourParams, part: Option<PartRef<'_>>) -
     // a flat region; against a part, each ring down to its own floor.
     let lad = match part {
         None => Ladder::uniform(&flat, loops.len()),
-        Some((f, bodies, _)) => ladder(&plan, f, bodies, &flat, r, p.stock_to_leave, &mut lead_notes),
+        Some((f, bodies, _)) => ladder(&plan, f, bodies, &flat, p.top_z, r, p.stock_to_leave, &mut lead_notes),
     };
+    // A picked ring on the wrong side is refused by its own name first
+    // (#1927), also when it was the only ring (#2004: with no air level
+    // at Top Z, such a ring walks no level at all).
+    if let Some((f, _, true)) = part {
+        picked_law(&plan, f, &flat, &lad, d, p.side)?;
+    }
     if lad.zs.is_empty() {
         // Every ring stands in the part at its first level: nothing is
         // legal to cut, and an empty path would read as a clean one.
@@ -180,9 +186,6 @@ fn contour_impl(region: &Region, p: &ContourParams, part: Option<PartRef<'_>>) -
              without a gouge ({})",
             lead_notes.join("; ")
         )));
-    }
-    if let Some((f, _, true)) = part {
-        picked_law(&plan, f, &flat, &lad, d, p.side)?;
     }
     let lad = &lad;
 

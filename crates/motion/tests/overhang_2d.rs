@@ -236,9 +236,6 @@ fn a_ring_under_an_overhang_stops_above_it() {
     assert_eq!(depth_verify(&t, &region, &f, 20.0, 0.0), Vec::new(), "{notes}");
 }
 
-/// The contour's refusal when no ring has a legal level (#2004).
-const REFUSAL: &str = "every contour ring cuts into the part at its first level";
-
 #[test]
 fn random_ladders_never_walk_a_ring_into_hanging_or_floor_solid() {
     let mut s: u64 = 0x0_5ad0_ba5e;
@@ -246,7 +243,7 @@ fn random_ladders_never_walk_a_ring_into_hanging_or_floor_solid() {
         s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         (s >> 11) as f64 / (1u64 << 53) as f64
     };
-    let (mut runs, mut refused) = (0, 0);
+    let mut runs = 0;
     for case in 0..24 {
         let stepdown = 0.8 + 6.0 * next();
         let leave = if case % 3 == 0 { 0.3 } else { 0.0 };
@@ -256,43 +253,24 @@ fn random_ladders_never_walk_a_ring_into_hanging_or_floor_solid() {
         let f = post_and_slab(z0);
         let region = slice::slice(&f, 20.0 - 1e-3).expect("top section");
         let bottom = -3.0 * next();
-        // #2004: the first level is one stepdown under Top Z 20. When it
-        // stands under the slab top over the post's ring (the tool reaches
-        // x = 5 + 2R + leave), the ring has no legal level: the old ladder
-        // walked it only at the air plane Top Z. Then the contour refuses
-        // by name - and only then.
-        let no_level = 20.0 - stepdown < u(5.0 + 2.0 * R + leave, z0) + T + leave + TOL;
-        match contour_on_part(&region, &f, &params(20.0, bottom, stepdown, leave)) {
-            Ok(t) => {
-                if let Some((i, q)) = first_hit(&t, |q| hits_post_or_slab(q, z0, TOL)) {
-                    panic!("{tag} slab {z0:.4}: move {i} enters solid at {q:?} ({:?})", t.moves[i]);
-                }
-                assert_eq!(depth_verify(&t, &region, &f, 20.0, leave), Vec::new(), "{tag} slab {z0:.4}: {:?}", t.notes);
-            }
-            Err(e) if no_level && e.to_string().contains(REFUSAL) => refused += 1,
-            Err(e) => panic!("{tag} slab {z0:.4}: {e}"),
+        let t = contour_on_part(&region, &f, &params(20.0, bottom, stepdown, leave))
+            .unwrap_or_else(|e| panic!("{tag} slab {z0:.4}: {e}"));
+        if let Some((i, q)) = first_hit(&t, |q| hits_post_or_slab(q, z0, TOL)) {
+            panic!("{tag} slab {z0:.4}: move {i} enters solid at {q:?} ({:?})", t.moves[i]);
         }
+        assert_eq!(depth_verify(&t, &region, &f, 20.0, leave), Vec::new(), "{tag} slab {z0:.4}: {:?}", t.notes);
         // The blind block, Bottom anywhere down to under its underside.
         let d = 1.0 + 12.0 * next();
         let f = block(d);
         let region = slice::slice(&f, -1e-3).expect("top section");
         let bottom = -d - (ZB.abs() + 4.0 - d) * next();
-        // #2004: the same law in the hole - a first level under the hole
-        // floor plus the leave leaves the hole's ring no legal level.
-        let no_level = -stepdown < -d + leave - 1e-9;
-        match contour_on_part(&region, &f, &params(0.0, bottom, stepdown, leave)) {
-            Ok(t) => {
-                if let Some((i, q)) = first_hit(&t, |q| hits_block(q, d, TOL)) {
-                    panic!("{tag} hole {d:.4} bottom {bottom:.4}: move {i} enters solid at {q:?} ({:?})", t.moves[i]);
-                }
-                assert_eq!(depth_verify(&t, &region, &f, 0.0, leave), Vec::new(), "{tag} hole {d:.4}: {:?}", t.notes);
-            }
-            Err(e) if no_level && e.to_string().contains(REFUSAL) => refused += 1,
-            Err(e) => panic!("{tag} hole {d:.4}: {e}"),
+        let t = contour_on_part(&region, &f, &params(0.0, bottom, stepdown, leave))
+            .unwrap_or_else(|e| panic!("{tag} hole {d:.4}: {e}"));
+        if let Some((i, q)) = first_hit(&t, |q| hits_block(q, d, TOL)) {
+            panic!("{tag} hole {d:.4} bottom {bottom:.4}: move {i} enters solid at {q:?} ({:?})", t.moves[i]);
         }
+        assert_eq!(depth_verify(&t, &region, &f, 0.0, leave), Vec::new(), "{tag} hole {d:.4}: {:?}", t.notes);
         runs += 2;
     }
     assert_eq!(runs, 48);
-    // The refusal is the rare case: most cases cut, and are judged above.
-    assert!(refused <= 8, "{refused} of 48 refused");
 }
