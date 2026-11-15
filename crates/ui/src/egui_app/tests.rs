@@ -148,6 +148,7 @@ mod setup_eye;
 mod program_entry;
 // #371: the tool editor's Body section.
 mod tool_body;
+mod tool_body_assembly;
 mod tool_body_lathe;
 // #93: the tool editor's spun-profile (Profile) section.
 mod tool_profile;
