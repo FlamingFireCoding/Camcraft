@@ -29,7 +29,7 @@ use camcraft_app::world::new_world;
 use camcraft_app::{model, posting, project, recognize};
 use common::{gen_to_cltext, write_golden};
 use flecs_ecs::prelude::World;
-use pocket_support::{block_with_pocket, rounded_rect, write_stl};
+use pocket_support::{block_with_pocket, height_field, rounded_rect, write_stl};
 use serde_json::{json, Value};
 
 const TOOL: &str = "EM-0600-4FL";
@@ -41,6 +41,7 @@ fn part(a: f64, b: f64) -> camcraft_app::geometry::Mesh {
 
 fn adaptive(method: AdaptiveMethod) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: Links::PLANAR,
         stepover: 1.0,
         stock_to_leave: 0.0,
@@ -60,19 +61,48 @@ fn adaptive(method: AdaptiveMethod) -> OpParams {
     }
 }
 
-/// The part, a stock box round it, the 6 mm end mill and "A1" on the
-/// pocket's floor face.
-fn job(a: f64, b: f64, method: AdaptiveMethod) -> (World, History) {
+fn job_mesh(mesh: camcraft_app::geometry::Mesh, dx: f64, dy: f64, method: AdaptiveMethod) -> (World, History) {
     let world = new_world();
     let mut h = History::default();
-    h.execute(&world, ImportModel::from_mesh("part", part(a, b)));
-    h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 50.0, dz: 20.0 }, Default::default()).expect("stock"));
+    h.execute(&world, ImportModel::from_mesh("part", mesh));
+    h.execute(&world, SetStock::new(&world, StockShape::Box { dx, dy, dz: 20.0 }, Default::default()).expect("stock"));
     let t = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, t).expect("tool"));
     let p = recognize::pockets_of(&world, "part").expect("recognised").into_iter().next().expect("the pocket");
     let src = SrcRef::Selection(vec![GeoSel { entity: "part".into(), feature: FeatureSel::Face(p.floor) }]);
     h.execute(&world, CreateOperation::new(&world, "A1", TOOL, src, adaptive(method)).expect("create"));
     (world, h)
+}
+
+/// The part, a stock box round it, the 6 mm end mill and "A1" on the
+/// pocket's floor face.
+fn job(a: f64, b: f64, method: AdaptiveMethod) -> (World, History) {
+    job_mesh(part(a, b), 70.0, 50.0, method)
+}
+
+fn check_troch_job(mesh: camcraft_app::geometry::Mesh, dx: f64, dy: f64, golden: &str) {
+    let (world, mut h) = job_mesh(mesh, dx, dy, AdaptiveMethod::Trochoidal);
+    h.execute(&world, GenerateOperation::new(&world, "A1").expect("generates"));
+    let e = model::find_by_name(&world, "A1").expect("op");
+    let c = model::toolpath_of(&world, &e).expect("cached path");
+    let min_z = c
+        .path
+        .moves
+        .iter()
+        .filter(|m| m.kind != MoveKind::Rapid)
+        .flat_map(|m| [m.from.z, m.to.z])
+        .fold(f64::INFINITY, f64::min);
+    assert!(min_z >= 17.0 - 1e-6, "never under pocket floor: z={min_z:.4}");
+    assert!(c.path.has_arcs(), "the loops post as arcs");
+    assert!(c.path.notes.iter().any(|n| n.contains("2D Adaptive (Trochoidal)") && n.contains("engagement")), "{:?}", c.path.notes);
+    let bad: Vec<_> = c.warnings.iter().filter(|w| w.blocks_post()).collect();
+    assert!(bad.is_empty(), "{bad:?}");
+    let rep = posting::verification_report(&world);
+    assert!(rep.problems.is_empty(), "{:?}", rep.problems);
+    let out = std::env::temp_dir().join(format!("camcraft-1587-{golden}-{}.nc", std::process::id()));
+    posting::post_setup(&world, &out).expect("the trochoidal 2D Adaptive posts");
+    let _ = std::fs::remove_file(&out);
+    write_golden(golden, &gen_to_cltext(&c.path));
 }
 
 fn method_of(world: &World) -> AdaptiveMethod {
@@ -122,6 +152,32 @@ fn the_trochoidal_method_stays_in_the_picked_face_posts_clean_and_matches_its_go
     assert_ne!(stamp(AdaptiveMethod::Spiral), stamp(AdaptiveMethod::Trochoidal), "the method moves the stamp");
     h.execute(&world, EditOperationParams::new(&world, "A1", adaptive(AdaptiveMethod::Spiral)).expect("edit"));
     assert_eq!(operation::status_of(&world, &e), OpStatus::Stale, "a method change makes the cached path stale");
+}
+
+#[test]
+fn wide_rectangular_pocket_posts_clean_and_matches_golden() {
+    let mesh = block_with_pocket(40.0, 30.0, &rounded_rect(30.0, 20.0, 0.0, 1), 17.0, 20.0);
+    check_troch_job(mesh, 90.0, 70.0, "adaptive2d_trochoidal_wide.cl");
+}
+
+#[test]
+fn l_shaped_pocket_posts_clean_and_matches_golden() {
+    let mesh = height_field(
+        &[-40.0, -30.0, 0.0, 30.0, 40.0],
+        &[-40.0, -30.0, 0.0, 30.0, 40.0],
+        |i, j| if (1..=2).contains(&i) && (1..=2).contains(&j) && !(i == 2 && j == 2) { 17.0 } else { 20.0 },
+    );
+    check_troch_job(mesh, 90.0, 90.0, "adaptive2d_trochoidal_l_shape.cl");
+}
+
+#[test]
+fn pocket_with_island_posts_clean_and_matches_golden() {
+    let mesh = height_field(
+        &[-40.0, -33.0, -6.0, 6.0, 33.0, 40.0],
+        &[-30.0, -23.0, -6.0, 6.0, 23.0, 30.0],
+        |i, j| if (1..=3).contains(&i) && (1..=3).contains(&j) && !(i == 2 && j == 2) { 17.0 } else { 20.0 },
+    );
+    check_troch_job(mesh, 90.0, 70.0, "adaptive2d_trochoidal_island.cl");
 }
 
 #[test]

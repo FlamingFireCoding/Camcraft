@@ -262,3 +262,22 @@ pub(super) fn kept_parts_named(
         .filter_map(|(name, e)| crate::setup_align::facets_in(world, &e, setup).map(|f| (name, f)))
         .collect()
 }
+
+/// #1637: a stock-source 2D Chamfer whose solid-law check hits a part
+/// breaks an edge belonging to the part rather than stock-only material.
+/// Rewrite `Warning::Gouge` into `Warning::StockChamferGouge` so every
+/// channel names the cause and the part-source workaround.
+pub(super) fn note_stock_chamfer_gouges(
+    params: &OpParams,
+    part_solid: bool,
+    warns: &mut [crate::verify::Warning],
+) {
+    if part_solid || !matches!(params, OpParams::Chamfer2D { .. }) {
+        return;
+    }
+    for w in warns {
+        if let crate::verify::Warning::Gouge { at } = *w {
+            *w = crate::verify::Warning::StockChamferGouge { at };
+        }
+    }
+}

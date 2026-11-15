@@ -53,13 +53,16 @@ on the [Keyboard and mouse](@/guide/keyboard-and-mouse.md) page.
 1. **Import a model.** Click **Model** and pick an STL, OBJ or STEP file. If
    an imported mesh has holes, the model's page has **Repair mesh**, which
    welds vertices and fills holes and reports what it changed.
+   Closed STL and OBJ shells with inward winding are turned outward on
+   import, so their solid checks use the outside of the part.
 2. **Set the stock.** Click **Stock**. The stock is a box, a cylinder, or a
    copy of a model.
 3. **Place the work offset.** Click **Origin** to set the work coordinate
    system (WCS) the program is written in.
 4. **Add a tool.** Click **Tools**, then **New tool…**. Fill in the
-   cutter's type and size. Tool libraries can be exported and imported as
-   `.camtools` files.
+   cutter's type and size, then choose **Add tool**. See
+   [Tools and tool libraries](@/guide/tools.md) for holders, tool numbers,
+   and import and export of `.camtools` libraries.
 5. **Add an operation.** Pick one from an operation group, for example
    **Face** under Milling 2D. Its page opens with tabs: Geometry, Heights,
    Passes, Lead in / Lead out, Feeds (and Machine for a few kinds). A kind

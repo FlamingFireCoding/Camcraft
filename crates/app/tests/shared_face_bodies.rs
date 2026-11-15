@@ -7,7 +7,8 @@
 //!
 //! Gate map: covers app::operation::material (from_slice), app::mcp's
 //! generate / verify, through camcraft_geometry::geometry::slice's union
-//! fallback and camcraft_motion::machining3d::rest.
+//! fallback and camcraft_motion::machining3d (including the pocket ladder
+//! and camcraft_motion::machining3d::rest).
 //!
 //! Provenance: the issue's own MCP reproduction; hand-built boxes for the
 //! refusal (a closed shell welded to another along one vertical edge).
