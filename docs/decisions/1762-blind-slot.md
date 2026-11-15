@@ -26,3 +26,19 @@ existing helper provides the required construction.
 **Cost to change later:** Extend the supported-shape checks and add tests
 for each accepted shape and each ambiguous case. The plane split and the
 safety checks can stay in place.
+
+### Review correction: geometry ownership
+
+**Decided:** Move the blind-slot calculation and its five unit tests to
+`camcraft-geometry`, in `boundary_chains::open_slot`. Keep the conversion
+from geometry errors to application errors in `app`.
+
+**Why:** The calculation uses only points, regions, and numeric values.
+The geometry crate owns those values. Its guard tests can run without
+building the application.
+
+**Considered and dropped:** Keeping the calculation in `app` would retain
+code in a crate that does not own its domain. The review requires the move.
+
+**Cost to change later:** Callers use the geometry API. Changes to the
+application error type affect only the conversion in `app`.
