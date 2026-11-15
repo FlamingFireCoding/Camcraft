@@ -15,13 +15,37 @@
    A refusal of the law (stepdown not positive, too many levels, NaN)
    gives the one bottom plane there, as before; the generator refuses by
    name later.
-3. Top Z below the stock top (material above Top Z): the meaning is
-   unchanged. Material above Top Z is outside the operation, as it was
-   before. The first level now cuts `stock top - Top Z + stepdown`; before
-   it cut `stock top - Top Z` at Top Z itself. Neither ladder kept each
-   level under one stepdown in that case. No new refusal is added here:
-   the 2D generators do not read the stock, and the stock simulation and
-   the verify still judge the posted program.
+3. Top Z below the stock top (material above Top Z): OPEN, a real
+   defect of this change (round 2 finding). The first level now cuts
+   `stock top - Top Z + stepdown`; before it cut `stock top - Top Z` at
+   Top Z itself. When that gap is less than one stepdown, the old ladder
+   kept each bite at or under one stepdown and the new one does not. The
+   default Top Z of the depth kinds is the model top
+   (`operation/kinds.rs`), so stock above the model gives this case
+   unless an earlier operation faced it. The motion generators know only
+   `top_z`; the app knows the stock top (`generate.rs`, `stock_top_z`).
+   The fix that this PR owes: the app hands the ladder the material top,
+   and the ladder keeps the level at Top Z when material stands above
+   it (the old ladder, byte for byte, in that case). The verify does not
+   judge a bite deeper than the stepdown, so no gate catches it.
+4b. Vault: a plane at Top Z is dropped. The rim ring's floor is the bowl
+   at the radius, which is Top Z, so the rim ring cut air at Top Z under
+   the old and the round-1 ladder; the first inner ring opened at that
+   same plane. A ring with no plane under Top Z is not walked.
+4c. A ring, a hole or an overhang whose only legal level was Top Z
+   (a stepdown past the hole floor or past the slab top) is now refused
+   by name ("nothing to machine"). Before, the operation posted one air
+   pass at Top Z there. A level at a flat floor between ladder levels is
+   a separate enhancement.
+4d. Bore contour, helix transition (`one_descent`,
+   `the_bore_contour_descends_into_each_level_once`, case "bore lead none
+   Ramp helix transition"): OPEN, not judged. Verify reports
+   `RapidInStock` at the rapid from clearance down to the floor of the
+   level before (`descent_from`, non-first branch gives `prev_z`). Under
+   the old ladder the first such rapid went to the stock top, which
+   verify accepts. The dive point may stand in stock that the ring before
+   did not sweep. Verify is not loosened; a reader must decide if the
+   rapid target is a real defect.
 4. Circular, vault mode: the rim ring starts one stepdown under Top Z.
    An inner ring keeps the floor of the ring before it as its first level
    (`levels_from` in `circular.rs`). That plane is not a repeat: the
