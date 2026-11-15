@@ -72,6 +72,7 @@ fn refusals() -> Vec<GenError> {
             }
             for strategy in [PocketStrategy::Zigzag, PocketStrategy::Waterline] {
                 let p = PocketParams {
+                    blend_radius: None,
                     tool_diameter: 6.0,
                     stepover: 2.5,
                     stock_to_leave: 0.0,
@@ -147,6 +148,7 @@ fn bore_over(holes: Vec<camcraft_motion::machining2d::BoreHole>) -> Result<Toolp
     camcraft_motion::machining2d::bore(&camcraft_motion::machining2d::BoreParams {
         holes,
         tool_diameter: 6.0,
+        corner_radius: 0.0,
         stock_to_leave: 0.0,
         stepdown: 0.01,
         through_allowance: 0.5,

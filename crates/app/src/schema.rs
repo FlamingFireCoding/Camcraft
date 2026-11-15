@@ -102,6 +102,17 @@ pub struct StepBudget {
     pub facets: u64,
 }
 
+/// The hole of a model imported from a STEP closed shell that meshes open
+/// (#1610), said in words: the model rides fidelity unknown
+/// (`ReducedFidelity` at `model_fidelity::UNKNOWN_MM`) and every refusal
+/// of it names this hole. Read only beside that sentinel. Written by the
+/// import, update and delete commands and the project loader, through
+/// `mesh_open::set`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct MeshOpen {
+    pub hole: String,
+}
+
 /// Selection marker (tag). Only `SelectEntity` writes it (AGENTS.md: changes
 /// go through commands); the tree and viewport read it to highlight.
 #[derive(Component, Debug)]
@@ -202,6 +213,10 @@ pub struct ToolBody {
     /// (`HolderProfile::floored`, in `tool_body::judged`). `false` for
     /// every body the user lands, and for every older file's.
     pub machine_default: bool,
+    /// #361 / #1040: individual modular pieces (head, adapter, clamping
+    /// unit) with their tool-frame facets and coordinate systems. For
+    /// single-body imports holds piece 0; empty only for drawn spun profiles.
+    pub pieces: Vec<crate::tool_body_assembly::BodyPiece>,
 }
 
 /// #93 slice 2: a milling tool's own drawn cutter, neck and shank
@@ -238,10 +253,11 @@ impl ToolBody {
 /// (it sits at the origin). `datum_from` records the setup whose stock
 /// and WCS a new setup was cloned from - provenance for the sheet, inert
 /// for every stamp (the clones themselves carry the data).
-/// `work_offset` is only the setup's post LABEL (#196, #342), an index
-/// into [`WCS_SLOTS`]: the `G54`..`G59` word the post writes for this
-/// setup's WCS. It selects no stored origin - changing it moves nothing.
-/// `None` - the default - writes `G54` ([`crate::setup::wcs_slot`]).
+/// `work_offset` is only the setup's post LABEL (#196, #342, #931): the
+/// 0-based pick of the work offset the post writes for this setup's WCS
+/// (offset `pick + 1`; the setup's post names it and bounds it). It
+/// selects no stored origin - changing it moves nothing. `None` - the
+/// default - is offset 1 ([`crate::setup::wcs_slot`]).
 /// Written only by `SetSetupWorkOffset` and the loader's migrations.
 /// `part_alignment` (#326) is how the PART sits in this setup: the rigid
 /// transform from the document frame into the setup frame (which face
@@ -494,6 +510,69 @@ pub struct PostOptions {
     pub smoothing: bool,
     /// The length unit the control is left in after the program (#596).
     pub end_units: EndUnits,
+    /// Explain G-code (#1386): off (the default) posts no explanations;
+    /// on, a post that declares `explains` appends a short comment to
+    /// each block saying what its words do, and one that does not is
+    /// refused by name.
+    pub explain: bool,
+    /// What the post does where the program moves from one setup to the
+    /// next (#1532): pause for the operator (the default), an optional
+    /// stop, run straight on, or write one file per setup.
+    pub between_setups: BetweenSetups,
+}
+
+/// The between-setups choice of [`PostOptions`] (#1532). A setup is a
+/// new clamping (the part flipped, re-clamped, moved to another vise),
+/// so a program that runs from one setup's last cut into the next
+/// setup's first with no pause cuts a part nobody has re-clamped. The
+/// default therefore pauses; running straight on is the user's explicit
+/// choice (several vises on one table, each its own work offset).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BetweenSetups {
+    /// A program stop (M0) after each setup's last operation, with a
+    /// comment naming the next setup.
+    #[default]
+    Pause,
+    /// An optional stop (M1) there instead.
+    OptionalStop,
+    /// No stop: the program runs on into the next setup (the behaviour
+    /// of every post before #1532).
+    Continue,
+    /// One file per setup, each a whole program of its own.
+    FilePerSetup,
+}
+
+impl BetweenSetups {
+    /// Every choice, in the order the post page lists them.
+    pub const ALL: [BetweenSetups; 4] = [Self::Pause, Self::OptionalStop, Self::Continue, Self::FilePerSetup];
+
+    /// The project file's and MCP's word.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Pause => "pause",
+            Self::OptionalStop => "optional-stop",
+            Self::Continue => "continue",
+            Self::FilePerSetup => "file-per-setup",
+        }
+    }
+
+    /// The choice a word names; `None` for a word that names none.
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|b| b.word() == word)
+    }
+
+    /// The post page's words.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pause => "Pause (M0)",
+            Self::OptionalStop => "Optional stop (M1)",
+            Self::Continue => "Run straight on",
+            Self::FilePerSetup => "One file per setup",
+        }
+    }
 }
 
 /// The end-units choice of [`PostOptions`] (#596). LinuxCNC's M2 / M30
@@ -512,6 +591,21 @@ pub enum EndUnits {
     Inch,
     /// End in millimetres: an inch program writes G21 before M30.
     Millimeters,
+}
+
+/// The document's program identity (#258), a flecs singleton beside
+/// `PostOptions`: the program number a numbering dialect writes as its
+/// O-word and the program comment (the program's name on a control
+/// that addresses programs by name). Moved only by `SetProgramInfo`
+/// (undoable, validated at creation) or a document load. `None` is "not
+/// stated": every post then writes exactly what it wrote before #258
+/// (O0001 and the machine's name), so the default changes no program.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProgramInfo {
+    /// The program number, 1..=9999 when stated.
+    pub number: Option<u32>,
+    /// The program comment / name, non-empty when stated.
+    pub comment: Option<String>,
 }
 
 /// The thread-output choice of [`PostOptions`].
@@ -600,7 +694,7 @@ pub struct RibbonPins(pub Vec<usize>);
 /// tree, undo, and save all reach stock through this.
 pub const STOCK_NAME: &str = "Stock";
 
-pub use crate::operation::types::WCS_SLOTS;
+pub(crate) use crate::operation::types::LEGACY_WCS_NAMES;
 
 /// Registers every schema component with a fresh world. Called by
 /// `world::new_world()` so every binary (and every test) gets identical
@@ -613,6 +707,7 @@ pub fn register_schema(world: &World) {
     world.component::<GeoSig>();
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
+    world.component::<MeshOpen>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();
@@ -631,6 +726,7 @@ pub fn register_schema(world: &World) {
     world.component::<PostOptions>();
     world.component::<ThemeRef>();
     world.component::<PostOptions>();
+    world.component::<ProgramInfo>();
     world.component::<ColorVision>();
     world.component::<WorkMaterialDef>();
     world.component::<RibbonPins>();

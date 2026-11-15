@@ -28,7 +28,11 @@ A wrong tool is refused by name ("'<tool>' is a <kind>; a <operation>
 operation cuts with a ..."), and a document with no suitable tool is told
 to add one to the tool library.
 
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
+
 ## 3D Pocket
+
+![View of roughing passes at successive levels around a 3D model.](../../operation-paths.svg#Pocket3D)
 
 **For:** roughing a 3D part level by level, from Top Z down to Bottom Z.
 At each level the tool clears around the material that stands above it,
@@ -68,7 +72,14 @@ machined this area"; "helix radius must be positive and at most the tool
 radius"; "optimal load must be in (0, 50] % of the tool diameter";
 "retract plane sits inside the material".
 
+When space remains but the cutter cannot fit, the refusal names the tool
+diameter and stock to leave. Use a smaller tool or reduce the allowance
+only if the job permits it. This differs from a model that fills every
+level, where there is no target to clear.
+
 ## 3D Finish
+
+![View of parallel finishing passes following a curved surface.](../../operation-paths.svg#Finish3D)
 
 **For:** finishing 3D surfaces with a ball-nose, to a stated tolerance.
 One kind carries every finishing pattern; choose the pattern by the
@@ -132,6 +143,8 @@ inside the programmed depths"; "pencil reference diameter ... does not
 exceed the op's ball".
 
 ## Deburr
+
+![View of a toolpath following exposed edges of a 3D model.](../../operation-paths.svg#Deburr)
 
 **For:** breaking every exposed edge of the model with a chamfer mill:
 an open model's rim, or a convex crease where two faces meet. The cone

@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 const STREAM: &str = "PARAM ClearancePlane 15\nPARAM StockZTop 0\nPARAM SpindleSpeed 8000\nTOOL 3 EM6\nSECTION\nRapid X 0 Y 0 Z 5000\nFeed X 10000 Y 0 Z -1000 F 500000\nENDSECTION\n\
-                      PARAM SpindleSpeed 6000\nTOOL 4 DRILL5\nSECTION\nCYCLE DRILL X 20000 Y 5000 Z -3000 R 2000 P 1500 F 100000\nENDSECTION\n";
+                      PARAM ClearancePlane 15\nPARAM SpindleSpeed 6000\nTOOL 4 DRILL5\nSECTION\nCYCLE DRILL X 20000 Y 5000 Z -3000 R 2000 P 1500 F 100000\nENDSECTION\n";
 
 fn read(rel: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../").join(rel);
@@ -44,6 +44,14 @@ fn generic() -> Value {
 
 fn post(m: &Value, stream: &str) -> String {
     let out = engine::run(&cps(), m, stream).unwrap_or_else(|e| panic!("posts: {e}"));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    out.program
+}
+
+/// #902: the program's unit is the document's (`postOptions.Units`),
+/// never the machine file's.
+fn post_with(m: &Value, stream: &str, options: &Value) -> String {
+    let out = engine::run_with(&cps(), m, stream, options).unwrap_or_else(|e| panic!("posts: {e}"));
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     out.program
 }
@@ -80,11 +88,14 @@ fn each_tool_change_lifts_z_then_stands_alone() {
         let at = lines.iter().position(|l| *l == call).unwrap_or_else(|| panic!("no {call:?}\n{nc}"));
         assert_eq!(lines[at - 1], "G0 Z15", "Z goes up first, in the work offset\n{nc}");
     }
-    assert_eq!(nc.matches("G0 Z15\n").count(), 3, "two changes and the end\n{nc}");
+    // #1616: two changes and the end, plus each section's stated first
+    // traverse height.
+    assert_eq!(nc.matches("G0 Z15\n").count(), 5, "two changes, two traverses and the end\n{nc}");
     assert!(!nc.contains("G53"), "no machine-coordinate move without homing\n{nc}");
-    // X Y move first after a change, at the safe height; Z comes down after.
+    // X Y move first after a change, at the stated clearance; Z comes down after.
     let t4 = lines.iter().position(|l| *l == "T4 M6").expect("T4");
-    assert!(lines[t4 + 1..].contains(&"G0 X20 Y5"), "{nc}");
+    let xy = t4 + lines[t4..].iter().position(|l| *l == "G0 X20 Y5").unwrap_or_else(|| panic!("{nc}"));
+    assert_eq!(lines[xy - 1], "G0 Z15", "the clearance stated before the traverse\n{nc}");
 }
 
 #[test]
@@ -144,10 +155,12 @@ fn an_unknown_or_buried_lift_height_is_refused_by_name() {
     assert_eq!(w.iter().filter(|w| w.contains("Z lift") || w.contains("stock top")).count(), 1, "once: {w:?}");
 }
 #[test]
-fn an_inch_machine_posts_g20_and_inches() {
-    let mut m = generic();
-    m["units"] = json!("inch");
-    let nc = post(&m, STREAM);
+fn an_inch_document_posts_g20_and_inches() {
+    let nc = post_with(&generic(), STREAM, &json!({"Units": "inch"}));
     assert!(nc.lines().nth(1).is_some_and(|l| l.starts_with("G20 ")), "{nc}");
     assert!(nc.contains("G1 X0.3937 Y0 Z-0.0394 F19.69"), "{nc}");
+    // An inch machine file alone no longer makes an inch program.
+    let mut m = generic();
+    m["units"] = json!("inch");
+    assert_eq!(post(&m, STREAM), post(&generic(), STREAM), "the machine file's unit decides nothing");
 }

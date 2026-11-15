@@ -74,10 +74,7 @@ pub fn collect(world: &World) -> ProjectFile {
                         stock: d.stock.clone(),
                         wcs: WcsDto::One(d.wcs.clone()),
                         datum_from: d.datum_from.clone(),
-                        work_offset: d
-                            .work_offset
-                            .and_then(|i| crate::schema::WCS_SLOTS.get(i))
-                            .map(|w| (*w).to_string()),
+                        work_offset: d.work_offset.map(crate::project::work_offset_text),
                         part_alignment: d.part_alignment.as_ref().map(AlignmentDto::from_location),
                         machine: d.machine.as_ref().map(SetupMachineDto::from_def),
                         post: d.post.as_ref().map(SetupPostDto::from_ref),
@@ -173,6 +170,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     .filter(|c| !crate::model_fidelity::is_unknown(*c)),
                 fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
                     .is_some_and(crate::model_fidelity::is_unknown),
+                mesh_open: crate::mesh_open::hole_of(world, &entity),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
                 kind,
                 raw_stock_only: mark.is_some(),
@@ -214,7 +212,8 @@ pub fn collect(world: &World) -> ProjectFile {
         post_options: {
             let o = crate::setup_post_options::document(world);
             (o.threading != crate::schema::ThreadingOutput::default()
-                || o.end_units != crate::schema::EndUnits::default())
+                || o.end_units != crate::schema::EndUnits::default()
+                || o.between_setups != crate::schema::BetweenSetups::default())
             .then(|| PostOptionsDto {
                 threading: match o.threading {
                     crate::schema::ThreadingOutput::G32Passes => None,
@@ -226,6 +225,9 @@ pub fn collect(world: &World) -> ProjectFile {
                     crate::schema::EndUnits::Inch => Some("inch".into()),
                     crate::schema::EndUnits::Millimeters => Some("mm".into()),
                 },
+                // #1532: the default pause writes no key.
+                between_setups: (o.between_setups != crate::schema::BetweenSetups::default())
+                    .then(|| o.between_setups.word().to_owned()),
             })
         },
         post: match crate::posting::document_post_of(world) {
@@ -243,23 +245,36 @@ pub fn collect(world: &World) -> ProjectFile {
         skip_stops: crate::setup_post_options::document(world).skip_stops,
         // One combined program writes no key (#111).
         per_op_files: crate::setup_post_options::document(world).per_op,
+        // Nothing stated writes no key (#258).
+        program: {
+            let p = crate::posting::program_info(world);
+            (p != crate::schema::ProgramInfo::default())
+                .then_some(ProgramDto { number: p.number, comment: p.comment })
+        },
         // Off writes no key (#616).
         smoothing: crate::setup_post_options::document(world).smoothing,
+        // Off writes no key (#1386).
+        explain: crate::setup_post_options::document(world).explain,
         entities,
     }
 }
 
-pub fn save(world: &World, path: &Path) -> Result<(), ProjectError> {
-    let file = collect(world);
-    let text = serde_json::to_string_pretty(&file).map_err(|e| {
-        tracing::warn!(file = %crate::logging::file_name(path), "project not saved: {e}");
+/// The project file's text, exactly what [`save`] writes (#1431): the
+/// browser build hands it to a download instead of a path.
+pub fn save_text(world: &World) -> Result<String, ProjectError> {
+    serde_json::to_string_pretty(&collect(world)).map_err(|e| {
+        tracing::warn!("project not saved: {e}");
         corrupt(e.to_string())
-    })?;
+    })
+}
+
+pub fn save(world: &World, path: &Path) -> Result<(), ProjectError> {
+    let text = save_text(world)?;
     if let Err(e) = std::fs::write(path, &text) {
         tracing::warn!(file = %crate::logging::file_name(path), "project not saved: {e}");
         return Err(e.into());
     }
-    tracing::info!(file = %crate::logging::file_name(path), bytes = text.len(), entities = file.entities.len(), "project saved");
+    tracing::info!(file = %crate::logging::file_name(path), bytes = text.len(), "project saved");
     Ok(())
 }
 

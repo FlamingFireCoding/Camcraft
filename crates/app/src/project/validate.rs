@@ -33,6 +33,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             return Err(corrupt(format!("'{}' records a chord error and an unknown fidelity at once", dto.name)));
         }
     }
+    // #1610: a hole is said of a model of unknown fidelity only.
+    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && matches!(kind, EntityKind::Model)) {
+        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
+    }
     match kind {
         EntityKind::Entry => {}
         EntityKind::Model => {
@@ -103,9 +107,9 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             // names it `<setup>/WCS`, older setups kept their slot's
             // name (`G54`, `<setup>/G55`). The word it posts is the
             // setup's label, never this name.
-            let name_ok = WCS_SLOTS.contains(&dto.name.as_str())
+            let name_ok = LEGACY_WCS_NAMES.contains(&dto.name.as_str())
                 || dto.name.rsplit_once('/').is_some_and(|(_, last)| {
-                    WCS_SLOTS.contains(&last) || last == crate::setup::WCS_SUFFIX
+                    LEGACY_WCS_NAMES.contains(&last) || last == crate::setup::WCS_SUFFIX
                 });
             if !name_ok {
                 return Err(corrupt(format!(
@@ -317,7 +321,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
 /// Tool arm's reserved-name test: a tool wearing a furniture name would
 /// poison the by-name lookups in `setup::stock_entity` and friends.
 pub(super) fn is_furniture_name(name: &str) -> bool {
-    name == STOCK_NAME || WCS_SLOTS.contains(&name) || crate::setup::is_furniture_shape(name)
+    name == STOCK_NAME || LEGACY_WCS_NAMES.contains(&name) || crate::setup::is_furniture_shape(name)
 }
 
 /// Moves and cycles, for the cache's structural checks (the warnings ride

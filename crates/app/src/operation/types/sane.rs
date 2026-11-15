@@ -5,7 +5,41 @@ use crate::machining2d::PocketStrategy;
 use crate::operation::types::params::OpParams;
 use crate::operation::types::sel::lead_sane;
 
+/// The refusal of pre-drilled entry on a kind that does not read it (#1449).
+pub const PREDRILLED_POCKET_ONLY: &str =
+    "pre-drilled entry is read by the 2D Pocket only so far - turn it off for this operation kind";
+
+/// The refusal of a corner-arc radius no control can cut (#1733); the
+/// bound by the tool radius is the generator's (it owns the tool).
+pub const ARC_RADIUS_DOOR: &str = "corner arc radius must be a number of at least 0.01 mm";
+
+/// The refusal of arc turns under 2D Adaptive's Trochoidal method (#1733):
+/// its loops are arcs already, and the option is never silently dropped.
+pub const ARC_TURNS_TROCHOIDAL: &str =
+    "arc turns at corners are not available with the Trochoidal method - turn the option off or use Spiral";
+
 impl OpParams {
+    /// The corner-arc option's door (#1733), for the kinds that carry it.
+    fn arc_turn_refusal(&self) -> Option<&'static str> {
+        let (on, radius, trochoidal) = match self {
+            OpParams::Pocket { blend_turns, blend_radius, .. }
+            | OpParams::Offset2D { blend_turns, blend_radius, .. } => (*blend_turns, *blend_radius, false),
+            OpParams::Adaptive2D { blend_turns, blend_radius, method, .. } => {
+                (*blend_turns, *blend_radius, *method == crate::machining2d::AdaptiveMethod::Trochoidal)
+            }
+            _ => return None,
+        };
+        if radius.is_some_and(|r| !(r.is_finite() && r >= crate::machining2d::MIN_BLEND_RADIUS)) {
+            return Some(ARC_RADIUS_DOOR);
+        }
+        (on && trochoidal).then_some(ARC_TURNS_TROCHOIDAL)
+    }
+
+    /// Pre-drilled entry asked on a kind other than the 2-D Pocket.
+    fn predrilled_elsewhere(&self) -> bool {
+        !matches!(self, OpParams::Pocket { .. }) && self.links().is_some_and(|l| l.approach.predrilled)
+    }
+
     /// The by-name refusal behind a failed [`Self::is_sane`], where a
     /// kind can say it (#546: the sinker burn's wear rate and layer
     /// step; the side burn's structural refusal, which names a wear rate
@@ -13,6 +47,30 @@ impl OpParams {
     /// commands' generic "not usable".
     #[must_use]
     pub fn named_refusal(&self) -> Option<String> {
+        if self.predrilled_elsewhere() {
+            return Some(PREDRILLED_POCKET_ONLY.into());
+        }
+        if let Some(why) = self.arc_turn_refusal() {
+            return Some(why.into());
+        }
+        // #1448: only the untilted 2D contour takes a picked start so far;
+        // every other kind refuses it here rather than ignore it.
+        // #1473: the exit point likewise.
+        for (what, set) in [
+            ("start", self.links().is_some_and(|l| l.approach.start_point.is_some())),
+            ("exit", self.links().is_some_and(|l| l.approach.exit_point.is_some())),
+        ] {
+            if !set {
+                continue;
+            }
+            match self {
+                OpParams::Contour { tilt: None, .. } => {}
+                OpParams::Contour { .. } => {
+                    return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
+                }
+                _ => return Some(format!("a {what} point is taken only by the 2D contour so far - clear it on this operation")),
+            }
+        }
         match self {
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
@@ -44,6 +102,11 @@ impl OpParams {
         // every ladder kind at once: the ramp angle where it is read, a
         // pitch and a stay-down limit that are zero or positive.
         let links_ok = self.links().is_none_or(|l| l.validate().is_ok());
+        // #1449: pre-drilled entry is read by the 2-D Pocket only - set
+        // on another kind it would be a silently dropped choice.
+        let links_ok = links_ok && !self.predrilled_elsewhere();
+        // #1733: the corner-arc radius and the method that refuses it.
+        let links_ok = links_ok && self.arc_turn_refusal().is_none();
         tilt_ok
             && links_ok
             && match self {
@@ -699,6 +762,8 @@ impl OpParams {
                 stepover,
                 feed,
                 plunge_feed,
+                extend_start,
+                extend_end,
                 ..
             } => {
                 a.x.is_finite()
@@ -715,6 +780,8 @@ impl OpParams {
                     && pos(*stepover)
                     && pos(*feed)
                     && pos(*plunge_feed)
+                    && nneg(*extend_start)
+                    && nneg(*extend_end)
             }
             OpParams::TrochoidalSlot {
                 a,
@@ -1135,6 +1202,7 @@ impl OpParams {
                 plunge_feed,
                 holes,
                 pitch,
+                passes,
                 ..
             } => {
                 clearance_z.is_sane()
@@ -1142,6 +1210,9 @@ impl OpParams {
                     && top_z.is_sane()
                     && bottom_z.is_none_or(|b| b.is_sane())
                     && pitch.is_none_or(pos)
+                    // #988: signs are judged by name at the door.
+                    && passes.finish.is_finite()
+                    && passes.allowance.is_finite()
                     && pos(*infeed)
                     && pos(*feed)
                     && pos(*plunge_feed)

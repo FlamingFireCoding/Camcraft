@@ -37,7 +37,9 @@ pub(super) fn roughing2d_pane(
     entry: &mut camcraft_app::machining3d::Entry3D,
     helix_radius: &mut f64,
     optimal_load: Option<&mut f64>,
+    method: Option<&mut camcraft_app::machining2d::AdaptiveMethod>,
     links: &mut camcraft_app::links::Links,
+    arc: (&mut bool, &mut Option<f64>),
     tilt: &mut Option<Tilt>,
 ) {
     if tab == SEC_HEIGHTS {
@@ -51,8 +53,22 @@ pub(super) fn roughing2d_pane(
         });
     }
     if tab == SEC_PASSES {
-        prop_row(ui, "Stepover", |ui| num(ui, u, stepover));
+        // #1509: how 2D Adaptive clears its region - the choice the
+        // Adaptive operations own (maintainer, 2026-11-13).
+        let trochoidal = method.as_deref() == Some(&camcraft_app::machining2d::AdaptiveMethod::Trochoidal);
+        if let Some(m) = method {
+            adaptive_method_row(ui, m);
+        }
+        // #1512: the adaptive twin steps by its optimal load and never
+        // reads the stepover, so only the offset twin shows the field.
+        if optimal_load.is_none() {
+            prop_row(ui, "Stepover", |ui| num(ui, u, stepover));
+        }
         prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
+        arc_turn_rows(ui, u, "Arc turns at corners", arc.0, arc.1);
+        if trochoidal && *arc.0 {
+            consequence(ui, "arc turns are not available with the Trochoidal method: the operation is refused");
+        }
         match optimal_load {
             Some(m) => super::load_field::optimal_load_field(ui, m),
             None => {
@@ -68,6 +84,54 @@ pub(super) fn roughing2d_pane(
         prop_row(ui, "Plunge feed", |ui| num_feed(ui, u, plunge_feed));
         check_row(ui, "Climb milling", climb);
     }
+}
+
+/// The corner-arc option and its radius (#1733): the switch, then -
+/// while it is on - the radius, `Tool radius` (the `None` every earlier
+/// file holds) or a set value the generator bounds by the tool radius.
+pub(super) fn arc_turn_rows(ui: &mut Ui, u: Unit, label: &str, on: &mut bool, radius: &mut Option<f64>) {
+    check_row(ui, label, on);
+    if !*on {
+        return;
+    }
+    let mut auto = radius.is_none();
+    check_row(ui, "Arc radius = tool radius", &mut auto);
+    match (auto, radius.as_mut()) {
+        (true, _) => *radius = None,
+        (false, Some(r)) => prop_row(ui, "Arc radius", |ui| num(ui, u, r)),
+        // Leaving Auto seeds a small radius; the generator refuses one
+        // past the tool radius by name.
+        (false, None) => *radius = Some(ARC_RADIUS_SEED),
+    }
+}
+
+/// The radius `arc_turn_rows` seeds when the user leaves `Tool radius`,
+/// mm: small enough for the common end mills.
+const ARC_RADIUS_SEED: f64 = 0.5;
+
+/// The names of 2D Adaptive's Method combo, in the combo's order
+/// (`AdaptiveMethod::ALL`).
+pub(crate) fn adaptive_method_names() -> Vec<&'static str> {
+    camcraft_app::machining2d::AdaptiveMethod::ALL.iter().map(|m| m.label()).collect()
+}
+
+/// What the two methods do: the Method row's hover text.
+const METHOD_HINT: &str = "Spiral: a spiral out of the entry bore, then passes that hold the optimal load. Trochoidal: loops along the region's medial line, kept inside the region; the optimal load is the most the loops advance a turn";
+
+/// 2D Adaptive's Method row (#1509): Spiral (the path it always cut)
+/// or Trochoidal; what each does is the row's hover text.
+fn adaptive_method_row(ui: &mut Ui, method: &mut camcraft_app::machining2d::AdaptiveMethod) {
+    use camcraft_app::machining2d::AdaptiveMethod;
+    let names = adaptive_method_names();
+    let before = AdaptiveMethod::ALL.iter().position(|m| m == method).unwrap_or(0);
+    let mut idx = before;
+    prop_row(ui, "Method", |ui| combo(ui, "a_method", &mut idx, &names));
+    if idx != before
+        && let Some(m) = AdaptiveMethod::ALL.get(idx)
+    {
+        *method = *m;
+    }
+    hint(ui, METHOD_HINT);
 }
 
 /// The axis trio both 5-axis kinds carry (M5.1 stage C). The law lives

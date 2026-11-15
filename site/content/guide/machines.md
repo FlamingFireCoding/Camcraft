@@ -19,12 +19,10 @@ messages below.
 | Lathe | Turning, plus the axial Drill | Fanuc Lathe, Tormach PathPilot Lathe | Turning center 2-axis, Tormach 8L, 15L, 15LX |
 | Mill-turn | milling and turning | every post except plasma | Multitasking 5-axis |
 | Plasma | Plasma Profile only | Tormach PathPilot Plasma | Tormach 1300PL |
-| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | none yet | none yet |
+| Wire / sinker EDM | Wire Contour (wire EDM); Sinker Burn, Side Burn (sinker EDM) | Generic ISO Wire EDM, Sodick Wire EDM (Mark 21); Sinker EDM (ISO) | supply a machine file with the required EDM data |
 
-The rules are `Family::admits` in `crates/app/src/operation/kinds.rs` and
-`post_serves` in `crates/app/src/posting.rs`. A picker lists posts by this
-table, but picking another post is not blocked there: a post refuses by
-name what it cannot express.
+The picker lists posts for the setup's machine kind. A loaded post also
+refuses by name any operation or move that it cannot express.
 
 ## Mill
 
@@ -45,8 +43,21 @@ rotary letters and angles.
 
 Posts: Fanuc (the default), Haas, Siemens 840D, Heidenhain, Mazak,
 Tormach PathPilot, Doosan DNM and Makera Carvera. Machine files:
-`3axis-vmc`, `vmc`, `tilthead`, `doosan-dnm`, the Carvera pair and the
-Tormach mills.
+`3axis-vmc`, `vmc`, `tilthead`, the Carvera pair and the Tormach mills.
+**Doosan DNM 5700** is the 3-axis machine; **Doosan DNM 5700 + rotary
+table** is the separate rotary configuration. Pick the one that matches
+your installed hardware.
+
+The Machine page has a **Library** picker and **Load other**, **Edit** and
+**Clear** actions. The overview shows the file's stated limits. A blank
+means **not stated**. The editor names invalid inputs and blocks saving
+until all refusals are fixed.
+
+In the browser's View controls, select **Show work envelope** to draw the
+active setup's machine travel as an outline. Mount a machine first. The
+outline uses its stated travel and the work origin. Missing travel data
+produces a reason instead of a guessed volume. This is a display aid;
+posting still checks the path against the machine limits.
 
 Common refusals: `a <kind> operation cannot run on its setup's milling
 machine` (a turning or plasma operation on a mill), `move <i> tilts the
@@ -62,6 +73,11 @@ travel, spindle range and tool table are whatever its file states. The
 Tormach 24R and xsTECH files in `assets/machines/` are mills in this sense.
 Sheet-goods practice (spoilboard, tabs, hold-down) is handled by the
 ordinary milling operations and the setup's fixtures, not by the machine.
+
+The library also supplies **Sienci AltMill 2x4**, **4x4** and **4x8**
+machines, paired with the **grblHAL** post. **grblHAL 3-axis** and
+**TinyG 3-axis** are generic controller examples. Check their travel,
+spindle and retract settings against your actual machine before use.
 
 ## Lathe
 
@@ -125,16 +141,22 @@ rotary axis`.
 
 ## Wire and sinker EDM
 
-The kinds exist (`wire_edm`, `sinker_edm`), and the Wire Contour operation
-(`OpType::WireContour`) is admitted on a wire EDM machine. What does not ship
-yet is an EDM post or an EDM machine file: no post serves an EDM kind, so
-nothing can be posted for one. Status: Wire Contour can be created and
-generated on a machine file you write that declares `wire_edm`; posting it
-stops with `a Wire Contour operation posts through a wire EDM post, which
-is not built yet - nothing is posted`. The sinker EDM kind admits Sinker
-Burn and Sinker Side Burn on a machine file you write that declares
-`sinker_edm`; posting them stops with `no post for a sinker EDM machine
-yet (#542)`.
+Wire Contour runs on a machine file that declares `wire_edm`. The
+**Generic ISO Wire EDM** post takes its EDM words from the file's
+`edm.codes`. A user `.cps` file can also declare `wireEdm` in its manifest.
+The **Sodick Wire EDM (Mark 21)** post writes 2-axis contours. It refuses
+taper and 4-axis cuts. Its output has not been verified on a Sodick control.
+
+For an angle-word taper, the machine must state `edm.taper_angle`,
+including its side rule and mitre or cone corner rule. The generic wire
+post writes that stated angle word. Verification uses the same corner
+rule. Do not substitute another control's codes or corner rule.
+
+The sinker EDM kind admits Sinker Burn and Sinker Side Burn on a machine
+file that declares `sinker_edm`. **Sinker EDM (ISO)** takes every EDM code
+from the file's `edm.codes`. The Machine window's sinker condition table
+lets you edit each condition's wear rate and notes. Use measured data for
+your electrode and work material.
 The operations, their settings and their refusals are in
 [Wire and sinker EDM](@/guide/operations-edm.md).
 

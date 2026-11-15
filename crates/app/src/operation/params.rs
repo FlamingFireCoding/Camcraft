@@ -208,6 +208,7 @@ impl OpParams {
                 // The level links ride the shared tail below (M11.2).
             }
             OpParams::Pocket {
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -263,6 +264,12 @@ impl OpParams {
                 // M11.1 C: written only when ON, as for Face/Contour.
                 if *blend_turns {
                     h.write_u8(0xB1);
+                    // #1733: a set radius only, so every earlier
+                    // blended pocket keeps its digest.
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
                 }
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
@@ -270,6 +277,8 @@ impl OpParams {
             // pins which ladder runs, and a field that cannot move
             // has nothing to say about staleness.
             OpParams::Adaptive2D {
+                blend_turns,
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -284,6 +293,7 @@ impl OpParams {
                 entry,
                 helix_radius,
                 optimal_load,
+                method,
                 tilt,
             } => {
                 w(h, *stepover);
@@ -306,8 +316,25 @@ impl OpParams {
                 // M11.4 C: the kind now runs the HSM plan, not rings -
                 // a generation word so every pre-C op goes Stale once.
                 h.write_u8(0xA4);
+                // #1509: written only off the default, so every Spiral
+                // op keeps the digest it had before the choice existed.
+                if *method == crate::machining2d::AdaptiveMethod::Trochoidal {
+                    h.write_u8(0xA5);
+                }
+                // #1733: written only when ON, as for the pocket.
+                if *blend_turns {
+                    h.write_u8(0xB1);
+                    // #1733: a set radius only, so every earlier
+                    // blended pocket keeps its digest.
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
+                }
             }
             OpParams::Offset2D {
+                blend_turns,
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -340,6 +367,14 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
+                // #1733: written only when ON, as for the pocket.
+                if *blend_turns {
+                    h.write_u8(0xB1);
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
+                }
             }
             OpParams::Pocket3D {
                 links: _,
@@ -843,6 +878,8 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => {
                 wp2(h, *a);
                 wp2(h, *b);
@@ -868,6 +905,12 @@ impl OpParams {
                     Entry3D::Arc => 3,
                 });
                 wt(h, *tilt);
+                // #1731: appended only when set, so a slot with no
+                // extension keeps its hash and stays Fresh.
+                if *extend_start != 0.0 || *extend_end != 0.0 {
+                    w(h, *extend_start);
+                    w(h, *extend_end);
+                }
             }
             OpParams::TrochoidalSlot {
                 a,
@@ -1057,6 +1100,7 @@ impl OpParams {
                     CycleChoice::FloatingTap => 7,
                     CycleChoice::Bore => 5,
                     CycleChoice::BackBore => 6,
+                    CycleChoice::Ream => 8,
                 });
                 // The hole list is params data, so it digests: recognition
                 // output, a typed edit, or a moved model (whose re-
@@ -1064,14 +1108,8 @@ impl OpParams {
                 // through here or through the source arm.
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped)); // changes what the
-                    // bore door says, so it belongs in the digest (M8.3):
-                    // a re-detect that folds a step marks the op Stale.
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
                 // The radial list digests too (M5.2 F2): same law -
                 // detection output or a typed edit is params data, and
@@ -1079,15 +1117,7 @@ impl OpParams {
                 // the op Stale rather than re-detect silently.
                 h.write_u32(cross.len() as u32);
                 for c in cross {
-                    for p in [c.origin, c.dir] {
-                        w(h, p.x);
-                        w(h, p.y);
-                        w(h, p.z);
-                    }
-                    for v in [c.radius, c.entry_d, c.floor_d] {
-                        w(h, v);
-                    }
-                    h.write_u8(u8::from(c.through));
+                    super::hole_digest::cross(h, c);
                 }
             }
             // The facing ladder (M5.2 stage A, tag 18): three heights,
@@ -1424,12 +1454,8 @@ impl OpParams {
                 h.write_u8(u8::from(*climb));
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped));
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
             }
             // The probe (#108): every number moves the touches or the
@@ -1472,7 +1498,28 @@ impl OpParams {
                 wh(h, p.bottom_z);
                 h.write(p.condition.as_bytes());
                 h.write_u8(0xff);
-                h.write_u8(u8::from(p.side == super::WireSide::Punch));
+                // #1370: the side as its own discriminant - die and punch
+                // keep the bytes they always wrote (0 / 1), so no closed
+                // cut's stamp moves; an open run's left / right (#1109)
+                // and its run-out clearance, read only by an open run,
+                // stand apart.
+                match p.side {
+                    super::WireSide::Die => h.write_u8(0),
+                    super::WireSide::Punch => h.write_u8(1),
+                    super::WireSide::Left => {
+                        h.write_u8(2);
+                        w(h, p.clearance);
+                    }
+                    super::WireSide::Right => {
+                        h.write_u8(3);
+                        w(h, p.clearance);
+                    }
+                }
+                // #540: written only when set, so no contour's stamp moves.
+                if let Some(c) = p.burnout {
+                    h.write(b"burnout");
+                    w(h, c);
+                }
                 match p.start {
                     Some([x, y]) => {
                         h.write_u8(1);
@@ -1480,6 +1527,31 @@ impl OpParams {
                         w(h, y);
                     }
                     None => h.write_u8(0),
+                }
+                // #539: the tabs, only when stated, so no stamp of an
+                // untabbed cut moves. `capture` shapes no move and is
+                // read live at the post.
+                if let Some(t) = &p.tabs {
+                    h.write(b"tabs");
+                    h.write_u32(t.count.unwrap_or(u32::MAX));
+                    w(h, t.width.unwrap_or(f64::NAN));
+                    h.write_usize(t.at.len());
+                    for [x, y] in &t.at {
+                        w(h, *x);
+                        w(h, *y);
+                    }
+                    h.write(t.cutoff_condition.as_bytes());
+                    h.write_u8(0xff);
+                }
+                // #536: only a stated taper is digested, so every
+                // vertical cut's stamp stays what it was.
+                if p.taper_deg != 0.0 {
+                    h.write(b"taper");
+                    w(h, p.taper_deg);
+                }
+                // #537: likewise only a stated 4-axis cut.
+                if let Some(f) = &p.four_axis {
+                    super::wire_ruled::digest(f, h);
                 }
             }
             // The sinker burn (#541): every stored number, the datum
@@ -1499,6 +1571,18 @@ impl OpParams {
                 }
                 h.write(p.condition.as_bytes());
                 h.write_u8(0xff);
+                // #543: the pass and the finished cavity it is judged
+                // against - a byte and the sizes only for a rough or
+                // finish, so a single burn's digest never moves.
+                if p.pass != super::SinkerPass::Single {
+                    h.write_u8(match p.pass {
+                        super::SinkerPass::Single => 0,
+                        super::SinkerPass::Rough => 1,
+                        super::SinkerPass::Finish => 2,
+                    });
+                    w(h, p.cavity_x);
+                    w(h, p.cavity_y);
+                }
                 // #544: the orbit - bytes only when one is stated, so a
                 // plain plunge's digest does not move.
                 if let Some(o) = &p.orbit {
@@ -1555,7 +1639,29 @@ impl OpParams {
                 holes,
                 pitch,
                 hand,
+                external,
+                passes,
             } => {
+                // #985: an external thread is a different ride on the
+                // same list. Written only when set, so every internal
+                // thread keeps the digest it was cached under.
+                if *external {
+                    h.write_u8(0xE7);
+                }
+                // #988: the pass control, written only when it differs
+                // from the #894 ride, so no older thread goes Stale.
+                if *passes != crate::machining2d::ThreadPasses::default() {
+                    h.write_u8(0xE8);
+                    h.write_u8(match passes.schedule {
+                        crate::machining2d::PassSchedule::Equal => 0,
+                        crate::machining2d::PassSchedule::ConstantArea => 1,
+                    });
+                    w(h, passes.finish);
+                    h.write_u32(passes.spring);
+                    w(h, passes.allowance);
+                    h.write_u8(u8::from(passes.spindle_reverse));
+                    h.write_u8(u8::from(passes.cutter_left));
+                }
                 wh(h, *clearance_z);
                 wh(h, *top_z);
                 wh_opt(h, *bottom_z);
@@ -1574,12 +1680,8 @@ impl OpParams {
                 });
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped));
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
             }
         }
@@ -1636,6 +1738,10 @@ impl OpParams {
                 if a.arc_xy {
                     h.write_u8(0xC4);
                 }
+                // #1449: pre-drilled entry - a byte only when on.
+                if a.predrilled {
+                    h.write_u8(0xC7);
+                }
                 // M13.11: control compensation moves what the post
                 // writes - a byte only when on, so every earlier
                 // approach keeps its digest.
@@ -1646,6 +1752,18 @@ impl OpParams {
                 // G41/G42 - its own byte, again only when on.
                 if a.compensation == crate::links::Compensation::Wear {
                     h.write_u8(0xC6);
+                }
+                // #1448: the user's start point - bytes only when set.
+                if let Some(q) = a.start_point {
+                    h.write_u8(0xC7);
+                    w(h, q.x);
+                    w(h, q.y);
+                }
+                // #1473: the exit point - bytes only when set.
+                if let Some(q) = a.exit_point {
+                    h.write_u8(0xC8);
+                    w(h, q.x);
+                    w(h, q.y);
                 }
                 match a.lead_out {
                     None => h.write_u8(0xFF),

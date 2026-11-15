@@ -15,17 +15,20 @@
 //! the user's own by the dialect its manifest declares (the
 //! `capabilities` mask, [`crate::post::dialect::work_voice`]): a lathe
 //! takes only a script that declares turning, a mill or a plasma table
-//! refuses one that declares turning, and no user script serves an EDM
-//! (only the registry's wire posts serve a wire EDM, #533; no sinker
-//! dialect ships, #542). A refusal names the setup, its operations,
-//! the post and the machine's kind - nothing is posted.
+//! refuses one that declares turning, and no undeclared user script
+//! serves an EDM (the registry's wire posts serve a wire EDM, #533, and
+//! its sinker posts a sinker EDM, #542 - each the only door for its
+//! kind since the "no post yet" refusal retired). A refusal names the
+//! setup, its operations, the post and the machine's kind - nothing is
+//! posted.
 //!
 //! A user's script states the kinds it serves in its manifest
 //! (`serves = ["plasma"];`, #1266): it then posts to exactly those
 //! kinds. One that states none is accepted only where its dialect
 //! proves it (turning serves a lathe and a mill-turn, a non-turning
-//! one a mill and a mill-turn); a plasma table and an EDM are refused
-//! for it, and the refusal says to declare `serves`.
+//! one a mill and a mill-turn). A script declaring `wireEdm = true`
+//! serves only a wire EDM (#1335). Other undeclared scripts are refused
+//! on a plasma table or EDM, with a request to declare `serves`.
 //!
 //! And per section (maintainer, 2026-11-12, on a mill-turn): a section
 //! that turns the work - a turning op or an on-centre drill, as
@@ -53,6 +56,9 @@ fn serves(cps: &str, kind: Kind) -> Result<bool, String> {
     }
     if let Some(kinds) = declared_serves(cps).map_err(|e| format!("post engine: {e}"))? {
         return Ok(kinds.contains(&kind));
+    }
+    if crate::post::js::Script::load(cps).map_err(|e| format!("post engine: {e}"))?.voices_wire_edm() {
+        return Ok(kind == Kind::WireEdm);
     }
     let turning = work_voice(cps).map_err(|e| format!("post engine: {e}"))? == WorkVoice::WorkSpindle;
     Ok(match kind {
@@ -131,3 +137,7 @@ pub(super) fn refusal(
         }
     )))
 }
+
+#[cfg(test)]
+#[path = "posting_serves/tests.rs"]
+mod tests;

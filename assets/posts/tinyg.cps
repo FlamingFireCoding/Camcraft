@@ -10,7 +10,7 @@
 // script text and no other CAM's output used; original work. Structure
 // follows our own grblhal.cps (the other grbl-family dialect); the
 // goldens lock this file's decisions.
-description = "Synthetos TinyG (3-axis mill, G20/G21 from the machine, XY G2/G3 in half turns, other-plane arcs as chords, G4 dwell; drilling as plain moves - no canned cycles, no G41/G42, no G84, no probing macros; tools T1-T31, M0 after every tool change)";
+description = "Synthetos TinyG (3-axis mill, G20/G21 from the document, XY G2/G3 in half turns, other-plane arcs as chords, G4 dwell; drilling as plain moves - no canned cycles, no G41/G42, no G84, no probing macros; tools T1-T31, M0 after every tool change)";
 vendor = "Camcraft";
 legal = "Original clean-room work; public documentation only";
 certificationLevel = 1;
@@ -18,8 +18,11 @@ minimumRevision = 1;
 extension = "gcode";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+workOffsetIndex = true; // reads the 1-based WorkOffset number (#1385)
+workOffsetMax = 6;      // G54..G59, per the public control documentation cited above
 coolantModes = true; // reads PARAM Coolant (#112/#150)
 afterModes = true;   // reads PARAM AfterOperation (#110)
+programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -36,7 +39,7 @@ var afterAsk = "";         // the section's PARAM AfterOperation (#110), none wh
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
-var inch = false;          // the machine is programmed in inches (onOpen)
+var inch = false;          // the document's unit is inch (onOpen, #902: postOptions.Units)
 var smoothTol = 0;         // #616: the section's PARAM Smoothing, mm (0: none asked)
 var smoothNamed = false;   // the not-written note, once per program
 
@@ -45,7 +48,7 @@ var smoothNamed = false;   // the not-written note, once per program
 // in either unit: TinyG checks that an arc's start and end sit at the
 // same radius from the I J K centre, and a tenth of a micron keeps a
 // rounded centre inside that check where three decimals would not
-// always. An inch machine gets every length and feed divided by 25.4.
+// always. An inch document gets every length and feed divided by 25.4.
 // Angles and rpm never scale.
 function has(v) { return v !== null && v !== undefined && isFinite(v); }
 function trim(s) {
@@ -53,7 +56,7 @@ function trim(s) {
   return s === "-0" ? "0" : s;
 }
 function len(v) { return inch ? v / 25.4 : v; }
-function fu(v) {  // a length, in the machine's unit
+function fu(v) {  // a length, in the document's unit
   if (!has(v)) return "0";
   return trim(Number(len(v)).toFixed(4));
 }
@@ -92,6 +95,29 @@ function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, o
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("(" + s + ")");
+}
+
+// #1359 (from #1357): a cut needs a turning spindle. spindleOn is true
+// from the preamble's spindle start (S.. M3) to the next M5 (every
+// section end, and a touch probe's stop). A touch probe's section feeds
+// its stylus with the spindle stopped on purpose: a section is a
+// probe's only when it states 0 rpm (#574) AND its tool is a touch
+// probe (PARAM ToolKind) - a cutter whose speed reads 0 is a stopped
+// spindle, not a probe. A feed, arc or cycle with the spindle stopped
+// anywhere else is refused by name and not posted: a stream that states
+// no spindle speed would otherwise drag a stopped cutter through the
+// part. Once per program.
+var spindleOn = false;
+var probeSection = false;
+var kindProbe = false;    // this section's PARAM ToolKind names a touch probe
+var spindleRefused = false;
+function spindleStopped(what) {  // true: refused, nothing is posted
+  if (spindleOn || probeSection) return false;
+  if (!spindleRefused) {
+    spindleRefused = true;
+    msg(what + " with the spindle stopped - no spindle start (S.. M3) precedes it; state the operation's spindle speed");
+  }
+  return true;
 }
 var tapRefused = false;   // the tapping refusal, once per program
 var tiltRefused = false;  // one named refusal per program, not per line
@@ -178,7 +204,7 @@ function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
   else if (name === "OperationKind") opKind = clean(value).toUpperCase();
-  else if (name === "ToolKind") toolKind = clean(value).toUpperCase();
+  else if (name === "ToolKind") { toolKind = clean(value).toUpperCase(); kindProbe = toolKind === "TOUCH PROBE"; }
   else if (name === "ToolDiameter" && has(value)) toolDia = Number(value);
   else if (name === "ToolCornerRadius" && has(value)) toolCr = Number(value);
 }
@@ -213,7 +239,7 @@ function toolNote() {  // just before the tool change it describes
 // a G49 here would throw a measured length away, and the post knows no
 // length to restate. No G40 either: TinyG accepts it only to ignore it.
 function onOpen() {
-  inch = typeof machine !== "undefined" && machine.units === "inch";
+  inch = typeof postOptions !== "undefined" && postOptions && postOptions.Units === "inch"; // #902: the document's unit, never the machine file's
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
   note(clean(nm) || "CAMCRAFT");
   block([inch ? "G20" : "G21", "G17", "G90", "G91.1", "G94", "G64"]);
@@ -265,17 +291,21 @@ function onRadiusCompensation() {
   msg("control cutter compensation (G41/G42) is not supported by TinyG - choose In computer");
 }
 
+// #1385: the engine validates the offset index before this script receives it.
+function workOffsetName(n) { return "G" + (53 + n); }
+
 function onParameter(name, value) {
   commentParam(name, value);
   if (name === "OperationName") coolantOp = String(value || "");
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
-  if (name === "WorkOffset" && value) wcsWord = String(value);
+  if (name === "WorkOffset" && value) wcsWord = workOffsetName(Number(value));
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
-  else if (name === "ClearancePlane") seeZ(value);
+  else if (name === "ClearancePlane") { seeZ(value); clearZ = has(value) ? Number(value) : null; }  // #1616
+  else if (name === "RetractPlane") hopZ = has(value) ? Number(value) : null;  // #1616
   else if (name === "StockZTop" && has(value)) stockTop = Number(value);
 }
 
@@ -358,8 +388,10 @@ function startPreamble() {
   }
   // A touch probe states 0 rpm: no spindle start and no cutting fluid.
   var touchProbe = spindleWait && !(sRpm > 0);
+  probeSection = touchProbe && kindProbe;
   if (spindleWait && sRpm > 0) {
     block(["S" + ni(sRpm), "M3"]);
+    spindleOn = true;
     spindleDwell();
   }
   spindleWait = false;
@@ -394,31 +426,72 @@ function endPreamble() {
   coolant = "";
   coolantAsk = "flood";      // the next section states its own ask
   block(["M5"]);
+  spindleOn = false;
+  probeSection = false;
+  kindProbe = false;         // the next section states its own tool kind
   smoothOff();
   afterOp();
 }
 
 function onSection() { startPreamble(); }
-function onSectionEnd() { endPreamble(); }
+function onSectionEnd() { endPreamble(); clearZ = null; hopZ = null; }  // #1616: the next section states its own planes
 
 // ------------------------------------------------------------- motions
 // X and Y are unknown at the program's start and after every tool change
 // (the operator may jog the spindle anywhere at the M0): the first move
-// from there is preceded by a G0 to its X Y alone, at the current -
-// safe, Z-up - height, and only then does Z come down. A rapid positions
-// at its target; a feed or arc at the point the stream says it starts
-// from (the target when the stream names none).
+// from there is preceded by a Z-only G0 to the section's stated
+// clearance (#1616, below), then a G0 to its X Y alone at that height,
+// and only then does Z come down. A rapid positions at its target; a
+// feed or arc at the point the stream says it starts from (the target
+// when the stream names none).
 var xyUnknown = true;
-function xyFirst(x, y) {
-  if (!xyUnknown || !has(x) || !has(y)) return;
+// #1616 (the #1614 hazard): the height that traverse is made at is
+// STATED, never assumed. The lift before the change is the machine's
+// safe retract or the work-offset clearance, but the operator may jog
+// Z at the M0, and a long tool on a high work offset can stand below
+// the part top even at the top of travel: a bare X Y rapid there may
+// cross the part. So the first traverse is preceded by a Z-only rapid
+// to the section's clearance - its ClearancePlane, else its
+// RetractPlane, never below the move's own Z. A setup that cannot reach
+// it is stopped by the control's Z limit instead of rapiding through
+// the part. A stream that states neither plane has no verified height
+// to traverse at: refused by name.
+var clearZ = null;            // #1616: the section's ClearancePlane, null when unstated
+var hopZ = null;              // #1616: the section's RetractPlane, null when unstated
+var traverseRefused = false;  // #1616: once per program
+var traversedAt = null;       // #1616: the Z the last first-traverse was made at
+function traverseZ(z) {
+  var c = has(clearZ) ? clearZ : (has(hopZ) ? hopZ : null);
+  if (c === null) return null;
+  return has(z) ? Math.max(c, Number(z)) : c;
+}
+// #1682: false when refused - the caller then writes nothing for its
+// move, nor for any later one while X/Y stay unknown (the rest of the
+// section), so no combined X/Y/Z move from an unknown height reaches the
+// text (the Tormach and Fanuc-family posts' rule, #1614 / #1633).
+function xyFirst(x, y, z) {
+  if (!xyUnknown || !has(x) || !has(y)) return true;
+  traversedAt = null;
+  var tz = traverseZ(z);
+  if (tz === null) {
+    if (!traverseRefused) {
+      traverseRefused = true;
+      msg(coolantWho() + "first X/Y traverse with no clearance height stated (no ClearancePlane or RetractPlane) - the post will not rapid X/Y at an unknown height");
+    }
+    return false;
+  }
+  block(["G0", wo("Z", tz, orgZ)]);
+  traversedAt = tz;
   block(["G0", wo("X", x, orgX), wo("Y", y, orgY)]);
   xyUnknown = false;
+  return true;
 }
 // A feed or arc as the first move after a tool change starts, in the
 // stream, from the generator's own start point (its clearance height).
-// The tool stands at the lift height, so feeding from there would crawl
-// the whole way down: once X Y are positioned, a rapid takes Z down to
-// that start height and the feed runs only the stretch it planned.
+// The tool stands at the traverse's clearance, so feeding from there
+// would crawl the whole way down: once X Y are positioned, a rapid takes
+// Z down to that start height (unless the traverse is already there) and
+// the feed runs only the stretch it planned.
 function startXY(p) {
   if (!xyUnknown) return true;
   if (!has(p.StartX) || !has(p.StartY) || !has(p.StartZ)) {
@@ -429,10 +502,13 @@ function startXY(p) {
     msg("the first cutting move must start above the stock after the tool change; provide a safe rapid approach");
     return false;
   }
-  xyFirst(p.StartX, p.StartY);
+  if (!xyFirst(p.StartX, p.StartY, p.StartZ)) return false;  // #1616: refused above, no traverse made
   // Horizontal and rising cuts also start at their stated Z, never at
   // the retract height. The first cutting start must be a safe approach.
-  block(["G0", wo("Z", p.StartZ, orgZ)]);
+  // #1616: not when the stated traverse height already is it.
+  if (!(has(traversedAt) && Math.abs(traversedAt - p.StartZ) < 1e-9)) {
+    block(["G0", wo("Z", p.StartZ, orgZ)]);
+  }
   return true;
 }
 
@@ -440,13 +516,14 @@ function onRapid() {
   startPreamble();
   seeZ(properties.Z);
   if (!tiltOk(properties)) return;
-  xyFirst(properties.X, properties.Y);
+  if (!xyFirst(properties.X, properties.Y, properties.Z)) return;  // #1682: refused - the move is not written
   block(["G0"].concat(xyz(properties)));
 }
 function onLinear() {
   startPreamble();
   seeZ(properties.Z); seeZ(properties.StartZ);
   if (!tiltOk(properties)) return;
+  if (spindleStopped("feed move G1")) return;
   if (!startXY(properties)) return;
   block(["G1"].concat(xyz(properties), [fw(properties.FeedRate)]));
   dwellAtBottom(properties.Z);
@@ -458,6 +535,7 @@ function onLinear() {
 function onCircular() {
   startPreamble();
   if (!tiltOk(properties)) return;
+  if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;
   var p = properties, c = p.IJKIncrement || {};
   var from = [p.StartX, p.StartY, p.StartZ], to = [p.X, p.Y, p.Z];
   var axes = p.CircularPlane === "XZ" ? [2, 0, 1] :

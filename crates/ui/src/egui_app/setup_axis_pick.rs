@@ -44,7 +44,7 @@ pub(super) fn rows(ui: &mut Ui, state: &mut State, setup: &str) {
         if d.applied && e.to_string().contains("already holds") {
             "applied - tick Flip +Y / Flip +X and Apply again to align the part the other way".to_owned()
         } else {
-            e.to_string()
+            crate::pick_words::plain(&e.to_string())
         }
     });
     ui.horizontal(|ui| {
@@ -62,7 +62,8 @@ pub(super) fn rows(ui: &mut Ui, state: &mut State, setup: &str) {
     ui.horizontal(|ui| {
         ui.label("     ");
         let tip = match &check {
-            Ok(()) => "Align the part so the picks run along their axes (+Z by the right-hand rule).".to_owned(),
+            Ok(()) => "Align the part from where it sits now so the picks run along their axes (+Z by the right-hand rule; one undo step)."
+                .to_owned(),
             Err(why) => why.clone(),
         };
         if ui
@@ -128,8 +129,7 @@ fn axis_row(ui: &mut Ui, state: &mut State, setup: &str, axis: InPlaneAxis) {
             AxisBy::Points => "points",
         };
         let text = if armed { format!("Stop picking {name}") } else { format!("Pick {name} {what}") };
-        if ui
-            .selectable_label(armed, text)
+        if super::pick_button::pick_button(ui, armed, text)
             .on_hover_text(format!("Click {} in the viewport; it runs along {name}.", by.noun()))
             .clicked()
         {

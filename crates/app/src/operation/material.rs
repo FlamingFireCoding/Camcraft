@@ -144,6 +144,14 @@ pub fn holes_of(
     Ok(crate::drilling::recognize(&m.facets))
 }
 
+/// The boss list of one source (#985): the same world-transformed
+/// facets, read for upright convex cylinders - what an external Thread
+/// operation mills its thread on.
+pub fn bosses_of(world: &World, setup: Option<&str>, src: &SrcRef) -> Result<Vec<crate::drilling::Hole>, GenError> {
+    let m = material_of(world, setup, src)?;
+    Ok(crate::drilling::recognize_bosses(&m.facets))
+}
+
 /// The radial hole list of one source, for Detect holes on a document
 /// that holds a turret (M5.2 F2): the same world-transformed facets,
 /// read a second way - closed cylindrical walls whose AXIS runs at
@@ -165,15 +173,25 @@ pub fn cross_holes_of(
 /// of the mesh's sides). `name` only words the refusals. The caller
 /// commits the result as one undoable `EditOperationParams`, so the
 /// app's Detect holes button and the MCP `detect_holes` tool store the
-/// same list.
+/// same list. A Bore op keeps only the holes its tool's one ring clears
+/// (#1556); each one left out is named in [`DetectedHoles::skipped`].
 pub fn detect_holes(
     world: &World,
     name: &str,
     params: &OpParams,
     setup: Option<&str>,
     src: &SrcRef,
-) -> Result<OpParams, String> {
+) -> Result<DetectedHoles, String> {
     let mut params = params.clone();
+    // #985: an external Thread operation lists bosses, read the same way.
+    if let OpParams::Thread { external: true, holes, .. } = &mut params {
+        let found = bosses_of(world, setup, src).map_err(|e| e.to_string())?;
+        if found.is_empty() {
+            return Err("no upright round bosses found in the source model - an external thread is milled on one".to_string());
+        }
+        *holes = found;
+        return Ok(DetectedHoles { params, skipped: Vec::new() });
+    }
     let is_drill = matches!(params, OpParams::Drill { .. });
     let holes: &mut Vec<_> = match &mut params {
         OpParams::Drill { holes, .. } | OpParams::Bore { holes, .. } | OpParams::Thread { holes, .. } => holes,
@@ -194,10 +212,13 @@ pub fn detect_holes(
         });
     }
     *holes = axial;
+    // #1556: a Bore op's ride is one ring; a hole wider than that ring
+    // clears would leave a core - left out here, named, never stored.
+    let skipped = super::bore_reach::skip_unborable(world, name, &mut params)?;
     if let OpParams::Drill { cross, .. } = &mut params {
         *cross = radial;
     }
-    Ok(params)
+    Ok(DetectedHoles { params, skipped })
 }
 
 /// A named entity's facets in its setup's frame (#326: a part of an
@@ -233,6 +254,8 @@ pub(super) fn usable(facets: Vec<Triangle>, top: f64, label: &str) -> Result<Mat
 pub(super) fn from_slice(e: SliceError) -> GenError {
     match e {
         SliceError::Geo(g) => GenError::Geo(g),
+        // #1407: a model fault, named as one - never "machining parameters".
+        e @ (SliceError::Open { .. } | SliceError::NonManifold { .. }) => GenError::Model(e.to_string()),
         other => GenError::Invalid(other.to_string()),
     }
 }

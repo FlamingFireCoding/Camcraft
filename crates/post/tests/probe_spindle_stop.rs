@@ -1,7 +1,7 @@
 //! #574: a touch probe section states its spindle stopped. After the
 //! probe's tool change and length offset, and before its first move,
-//! every built-in mill post writes its dialect's spindle-stop word (M5;
-//! MOTOFF on Mazak) - so a control whose tool change leaves the spindle
+//! every built-in mill post writes its dialect's spindle-stop word (M5 -
+//! Mazak too since #1411) - so a control whose tool change leaves the spindle
 //! turning (a manual change, a same-tool continuation) still brings the
 //! probe to the part stopped. A cutting section posts no such word in
 //! its preamble.
@@ -26,7 +26,7 @@ const MILL_POSTS: &[(&str, &str)] = &[
     ("tormach", "M5"),
     ("sinumerik", "M5"),
     ("heidenhain", "M5"),
-    ("mazak", "MOTOFF"),
+    ("mazak", "M5"),
     // #1035: added after #574, and missed it.
     ("doosan-dnm", "M5"),
 ];
@@ -51,6 +51,9 @@ fn post(stem: &str, rpm: f64) -> String {
         op_name: "Probe1",
         tool_number: 99,
         tool_name: "PROBE-4",
+        // A touch probe states its kind (posting.rs does): Tormach exempts
+        // a 0-rpm section from the spindle refusal only for a probe (#1357).
+        tool_kind: if rpm > 0.0 { "" } else { "touch probe" },
         tool_diameter: 4.0,
         rpm,
         clearance_z: 50.0,
@@ -85,14 +88,16 @@ fn is_motion(ws: &[String]) -> bool {
 }
 
 /// (index of the last tool-change / length-offset block, index of the
-/// first motion block after it) in the program's lines.
+/// first motion block after it) in the program's lines. A `G53` block is
+/// a straight-up retract in machine coordinates (Tormach's lift after the
+/// tool change, #1596), not the section's first move.
 fn preamble_span(stem: &str, lines: &[Vec<String>]) -> (usize, usize) {
     let anchor = lines
         .iter()
         .rposition(|ws| ws.iter().any(|w| w == "T99" || w == "G43" || w == "H99" || w == "D99"))
         .unwrap_or_else(|| panic!("{stem}: no tool change / length offset block"));
     let first = (anchor + 1..lines.len())
-        .find(|&i| is_motion(&lines[i]))
+        .find(|&i| is_motion(&lines[i]) && !lines[i].iter().any(|w| w == "G53"))
         .unwrap_or_else(|| panic!("{stem}: no motion after the tool change"));
     (anchor, first)
 }
@@ -108,7 +113,7 @@ fn a_probe_section_stops_its_spindle_after_the_tool_change_on_every_mill_post() 
         // Nothing starts the spindle again after the stop.
         if let Some(at) = at {
             let restart = (at + 1..first)
-                .any(|i| lines[i].iter().any(|w| matches!(w.as_str(), "M3" | "M03" | "MOTON")));
+                .any(|i| lines[i].iter().any(|w| matches!(w.as_str(), "M3" | "M03")));
             assert!(!restart, "{stem}: the spindle restarts after {stop}:\n{out}");
         }
     }

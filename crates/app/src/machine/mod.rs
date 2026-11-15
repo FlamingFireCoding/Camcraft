@@ -61,7 +61,7 @@ pub mod library;
 // it shares with the cutting check.
 mod judge;
 mod plasma;
-mod wire_edm;
+pub mod wire_edm;
 use judge::{c_letter_problem, move_extremes, pose_problems, say, slowest_axis, tap_gate};
 mod sheet;
 pub mod validate;
@@ -72,6 +72,9 @@ pub mod order;
 pub mod store;
 // #647: a lathe's slides judged on the posted meridian radius.
 mod lathe_stroke;
+// #1567: the envelope the viewport draws.
+mod work_envelope;
+pub use work_envelope::work_envelope;
 
 use flecs_ecs::prelude::World;
 

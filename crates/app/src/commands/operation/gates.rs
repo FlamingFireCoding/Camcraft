@@ -97,7 +97,18 @@ pub(super) fn tool_door(world: &World, params: &OpParams, tool: &str) -> Result<
 /// in the generator.
 pub(super) fn wire_gate(world: &World, setup: Option<&str>, params: &OpParams) -> Result<(), CommandError> {
     match params {
-        OpParams::WireContour(w) => operation::wire_op::condition_of(world, setup, w).map(|_| ()).map_err(CommandError::Invalid),
+        OpParams::WireContour(w) => {
+            if let Some(why) = operation::wire_op::tabs_taper_refusal(w) {
+                return Err(CommandError::Invalid(why));
+            }
+            operation::wire_op::condition_of(world, setup, w).map_err(CommandError::Invalid)?;
+            // #1800: a taper the mounted machine cannot post is refused
+            // here, by the machine check's own words, not first at the post.
+            if let Some(m) = crate::machine::of_setup(world, setup).1 {
+                crate::machine::wire_edm::taper_door(&m, w.taper_deg).map_err(CommandError::Invalid)?;
+            }
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
@@ -187,6 +198,13 @@ pub(super) fn family_gate(world: &World, context: Option<&str>, params: &OpParam
 /// condition its allowance, refused by name before the op exists
 /// (`sinker_side_op::creation_refusal`). Every other kind passes.
 pub(super) fn sinker_gate(world: &World, context: Option<&str>, params: &OpParams) -> Result<(), CommandError> {
+    // #543: a rough or finish names what it lacks before `is_sane`'s
+    // generic refusal would.
+    if let OpParams::SinkerBurn(p) = params
+        && let Some(why) = p.pass_refusal()
+    {
+        return Err(CommandError::Invalid(why));
+    }
     match operation::sinker_side_op::creation_refusal(world, context, params) {
         Some(msg) => Err(CommandError::Invalid(msg)),
         None => Ok(()),

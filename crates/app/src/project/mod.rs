@@ -1,4 +1,4 @@
-//! Project save/load: `.camproj`, JSON, version 59 (see `PROJECT_VERSION`).
+//! Project save/load: `.camproj`, JSON, version 61 (see `PROJECT_VERSION`).
 //!
 //! Serialization goes through plain DTO structs (deliberately not flecs
 //! reflection): the file format is our public persistence contract and must
@@ -98,7 +98,7 @@ use crate::model;
 use crate::operation::{FeatureSel, GenStamp, GeoSel, OpParams, SrcRef};
 use crate::schema::{
     FixtureDef, Location, Operation, OperationMeta, STOCK_NAME, SetupDef, StockDef, ToolDef,
-    Toolpath as ToolpathCache, WCS_SLOTS, Wcs,
+    Toolpath as ToolpathCache, LEGACY_WCS_NAMES, Wcs,
 };
 use crate::stock::{self, StockShape};
 use crate::tools::{Tool, ToolKind};
@@ -123,7 +123,7 @@ pub use break_dto::EdgeBreakDto;
 // #416: the threading infeed plan's file mirror.
 mod thread_infeed_dto;
 pub use thread_infeed_dto::{DepthScheduleDto, InfeedMethodDto, ThreadInfeedDto};
-pub use thread_dto::{ThreadCycleDto, ThreadHandDto};
+pub use thread_dto::{PassScheduleDto, ThreadCycleDto, ThreadHandDto, ThreadPassesDto};
 mod touch_dto;
 pub use touch_dto::ProbeTouchDto;
 mod params_impl;
@@ -157,11 +157,15 @@ mod fidelity_migrate;
 use apply::*;
 // #813: the load note for a machine embedded before #804.
 mod swing_note;
+// #902: the v59 -> v60 rung - the document's unit is the program's.
+mod units_migrate;
 mod validate;
 use validate::*;
 mod wcs_migrate;
 // #342: the v53 -> v54 one-WCS-per-setup rung.
 mod wcs_one;
+mod wcs_pick;
+pub(crate) use wcs_pick::{work_offset_pick, work_offset_text};
 // #343: a setup's own machine and post (v55).
 mod mount_dto;
 pub use mount_dto::{SetupMachineDto, SetupPostDto};

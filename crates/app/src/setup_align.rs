@@ -22,10 +22,11 @@
 //!   then calls the very function it called before #326, so an untouched
 //!   setup is byte-identical (paths, stamps, posts and saved files).
 //! - **Refuse what is not verified.** Generation in an aligned setup is
-//!   wired for the 2D milling kinds over a whole model or the stock;
-//!   every other kind, a pick, area controls, a tilt and a non-mill
-//!   machine are refused by name ([`generation_problem`]) - never cut in
-//!   the unaligned frame.
+//!   wired for the 2D milling kinds (`Face`, `Contour`, `Pocket`,
+//!   `Adaptive2D`) over a whole model, the stock, or picked features;
+//!   every other kind, area controls, a tilt and a non-mill machine are
+//!   refused by name ([`generation_problem`]) - never cut in the
+//!   unaligned frame.
 
 use flecs_ecs::core::EntityViewGet; // try_get is not re-exported in prelude (0.2.2)
 use flecs_ecs::prelude::{Entity, World};
@@ -153,8 +154,22 @@ pub fn solid_aabb_in(world: &World, declared: Option<&str>) -> Option<Aabb> {
     if alignment(world, declared).is_none() {
         return model::solid_world_aabb(world);
     }
+    models_aabb_in(world, declared, |_| true)
+}
+
+/// The PARTS' bounds in a setup's frame - every model but the fixtures
+/// (vises, accessories, plates, tagged meshes) of any setup: what the
+/// Top/Bottom of Model heights stand for (#1529). Fixtures are judged
+/// by the collision laws, never measured as the part.
+#[must_use]
+pub fn part_aabb_in(world: &World, declared: Option<&str>) -> Option<Aabb> {
+    models_aabb_in(world, declared, |e| !model::is_fixture(world, e))
+}
+
+fn models_aabb_in(world: &World, declared: Option<&str>, keep: impl Fn(&Entity) -> bool) -> Option<Aabb> {
     let tris: Vec<Triangle> = model::model_entities(world)
         .into_iter()
+        .filter(|(_, e)| keep(e))
         .filter_map(|(_, e)| facets_in(world, &e, declared))
         .flatten()
         .collect();
@@ -361,7 +376,6 @@ fn verified_kind(params: &crate::operation::OpParams) -> bool {
 /// in the unaligned frame.
 #[must_use]
 pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Option<String> {
-    use crate::operation::SrcRef;
     let setup = crate::setup::effective(world, op.setup.as_deref())?;
     stored(world, &setup)?;
     let head = format!("setup '{setup}' holds the part turned (part alignment)");
@@ -379,9 +393,6 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
     }
     if op.params.tilt().is_some() {
         return Some(format!("{head} - a tilted plane is not supported yet in an aligned setup"));
-    }
-    if matches!(op.src, SrcRef::Selection(_)) {
-        return Some(format!("{head} - picked faces and edges are not supported yet in an aligned setup; pick a whole model or the stock"));
     }
     if !op.area.is_default() {
         return Some(format!("{head} - area controls are not supported yet in an aligned setup"));

@@ -27,6 +27,10 @@ pub mod drilling;
 pub mod entry;
 pub mod entry_arc;
 pub mod links;
+// #1558: a zig-zag ramp flown as the ring's own helical arcs.
+pub mod ring_zig;
+#[cfg(test)]
+mod ring_zig_tests;
 pub mod load;
 pub mod finishing3d;
 pub mod machining2d;
@@ -37,6 +41,15 @@ pub mod wire_edm;
 pub mod probing;
 // #541: sinker EDM burn to depth.
 pub mod sinker;
+// #543: sinker rough and finish with undersize.
+pub mod sinker_undersize;
+// #547: a cavity read from picked faces, and the electrode it calls for.
+pub mod sinker_cavity;
+pub mod sinker_electrode;
+#[cfg(test)]
+mod sinker_electrode_tests;
+#[cfg(test)]
+mod sinker_electrode_fuzz;
 // #546: sinker electrode wear compensation in Z.
 pub mod sinker_wear;
 // #544: sinker EDM orbit patterns as explicit moves.

@@ -747,6 +747,7 @@ fn seed_contour(c: &Carried) -> OpParams {
 
 fn seed_pocket(c: &Carried) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -780,6 +781,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 /// (optimal_load) stays visible.
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -794,6 +796,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         entry: Entry3D::Helix, // M11.3: new pocket-family ops helix in (ramp, then plunge, stand in)
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
+        method: crate::machining2d::AdaptiveMethod::Spiral,
         tilt: c.tilt,
     }
 }
@@ -803,6 +806,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 /// the pane must not show.
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -898,6 +902,8 @@ fn seed_slot(c: &Carried) -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: c.tilt,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
@@ -1003,6 +1009,10 @@ fn seed_thread_mill(c: &Carried) -> OpParams {
         holes: Vec::new(),
         pitch: None,
         hand: crate::cl::ThreadHand::Right,
+        // #985: holes until the author says bosses.
+        external: false,
+        // #988: the #894 ride - equal passes, M3, right-hand-cut mill.
+        passes: crate::machining2d::ThreadPasses::default(),
     }
 }
 
@@ -1224,9 +1234,17 @@ fn seed_facing(c: &Carried) -> OpParams {
     OpParams::Facing {
         tolerance: 0.05,
         clearance_z: c.clearance,
-        top_z: c.top,
-        bottom_z: c.bottom,
-        // The one number NOT folded: an infeed is bounded by twice
+        // #1409: the heights are NOT folded either. Face has no floor,
+        // so the fold hands every seed the mill's Bottom of Model
+        // (#214) - and for a Facing that "bottom" is the finished
+        // facing plane: the ladder would climb from the part's floor
+        // and cut the whole part away. A facing removes the allowance
+        // the stock holds above the part, so it runs from the stock's
+        // top down to the part's top; a part already at length has
+        // nothing between the two, and the generator says so.
+        top_z: Height::of(HeightReference::TopOfStock, 0.0),
+        bottom_z: Height::of(HeightReference::TopOfModel, 0.0),
+        // The other number NOT folded: an infeed is bounded by twice
         // the nose's reach (the kernel's law), and the mill default
         // the fold carries would refuse against the house insert's
         // 0.8 mm nose the moment a user created the op. 0.5 is the

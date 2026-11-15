@@ -108,6 +108,10 @@ $ echo $?
 
 (`cam.log` prints each argument on its own line.) `importTools` takes the
 mode `"add"`, `"update"` or `"replace"`.
+Read [Tools and tool libraries](@/guide/tools.md) before replacing a
+library. That page explains the supported formats, tool numbers and
+import refusals. Export a copy before a replacement when you need to
+keep the current library.
 
 Generate and post a project (`scratch/job.js`):
 

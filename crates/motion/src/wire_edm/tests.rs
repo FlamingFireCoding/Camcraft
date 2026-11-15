@@ -23,6 +23,7 @@ fn params(side: WireSide, start: Option<(f64, f64)>) -> WireParams {
         side,
         start: start.map(|(x, y)| Point2::new(x, y)),
         plane_z: -12.0,
+        tabs: None,
         stock: None,
         clearance: 1.0,
     }
@@ -232,4 +233,104 @@ fn the_moves_ride_one_plane_with_no_pose_from_and_to_the_start_hole() {
     let area: f64 = (0..n).map(|i| pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y).sum::<f64>() * 0.5;
     assert!(area > 0.0, "counter-clockwise");
     assert!(path.notes.iter().any(|n| n.contains("threaded at X3.000 Y-1.000") && n.contains("lead-in of 8.835 mm")), "{:?}", path.notes);
+}
+
+fn pass(id: &str, gap: f64, reverse: bool) -> WirePass {
+    WirePass { condition: id.into(), wire_diameter: WIRE, gap, reverse }
+}
+
+/// #538: no skims is the single pass exactly; each skim walks its own
+/// offset from the threading point and back, a reversed one clockwise.
+#[test]
+fn skims_cut_their_own_offsets_and_none_is_the_single_pass() {
+    let sq = [rect(-20.0, -10.0, 20.0, 10.0)];
+    let p = params(WireSide::Punch, Some((-30.0, 0.0)));
+    let one = wire_contour(&sq, &[], &p).unwrap();
+    assert_eq!(wire_passes(&sq, &[], &p, &[]).unwrap(), one);
+    let three = wire_passes(&sq, &[], &p, &[pass("S21", 0.02, false), pass("S31", 0.01, true)]).unwrap();
+    let start = Point3::new(-30.0, 0.0, -12.0);
+    let returns: Vec<usize> = three.moves.iter().enumerate().filter(|(_, m)| m.to == start).map(|(i, _)| i).collect();
+    assert_eq!(returns.len(), 3, "one return to the threading point per pass");
+    for (i, k) in [K, 0.145, 0.135].iter().enumerate() {
+        let lead = if i == 0 { &three.moves[0] } else { &three.moves[returns[i - 1] + 1] };
+        assert!((lead.to.x - (-20.0 - k)).abs() < 1e-6 && lead.to.y.abs() < 1e-6, "pass {i}: {:?}", lead.to);
+    }
+    // The reversed pass goes up the left side first.
+    assert!(three.moves[returns[1] + 2].to.y > 0.0);
+    assert!(three.moves[returns[0] + 2].to.y < 0.0);
+    assert!(three.notes.iter().any(|n| n.contains("skim 2 - condition S31") && n.contains("reversed")), "{:?}", three.notes);
+}
+
+/// #538: each pass law refuses by name.
+#[test]
+fn skim_laws_refuse_by_name() {
+    let p = params(WireSide::Die, Some((0.0, 0.0)));
+    let err = |s: &[WirePass]| check_passes(&p, s).unwrap_err().to_string();
+    assert!(err(&[pass(" ", 0.02, false)]).contains("skim 1 names no EDM condition"));
+    assert!(err(&[pass("S1", 0.01, false), pass("S2", 0.02, false)]).contains("cut past the finished profile"));
+    assert!(err(&[pass("S1", 0.05, false)]).contains("rough pass (C110) stands 0.1650 mm"));
+    let thin = WirePass { wire_diameter: 0.2, ..pass("W", 0.02, false) };
+    assert!(err(&[thin]).contains("one threading cuts every pass with one wire"));
+    assert!(err(&[pass("S", f64::NAN, false)]).contains("spark gap"));
+    assert!(check_passes(&p, &[pass("S1", 0.02, false), pass("S2", 0.02, true)]).is_ok(), "equal offsets are allowed");
+    // An open run (#1109) is cut once: skims are refused at the door.
+    let open = params(WireSide::Left, None);
+    let e = check_passes(&open, &[pass("S1", 0.02, false)]).unwrap_err().to_string();
+    assert!(e.contains("an open run is cut once"), "{e}");
+    assert!(check_passes(&open, &[]).is_ok(), "an open run alone is not refused here");
+    // Tabs (#539) are cut on the rough pass alone: skims beside them are
+    // refused by name.
+    let tabs = TabParams { count: Some(1), width: Some(1.0), at: Vec::new(), cutoff: None };
+    let tabbed = WireParams { tabs: Some(tabs), ..params(WireSide::Die, Some((0.0, 0.0))) };
+    let e = check_passes(&tabbed, &[pass("S1", 0.02, false)]).unwrap_err().to_string();
+    assert!(e.contains("skims are cut on an untabbed profile only"), "{e}");
+}
+
+/// #536: a zero taper is the vertical cut itself; a constant taper
+/// leans every side by exactly its angle, stands the wire upright at
+/// the start hole, and refuses an angle past the machine's maximum and
+/// a side the lean folds over - each by name.
+#[test]
+fn a_taper_leans_every_side_by_its_angle_and_zero_is_the_vertical_cut() {
+    let loops = [rect(-20.0, -10.0, 20.0, 10.0)];
+    let p = params(WireSide::Punch, Some((-30.0, 0.0)));
+    let t = |a: f64, max: Option<f64>| WireTaper { angle_deg: a, top_z: 0.0, max_deg: max, machine: "M".into(), corner: WireCorner::Mitre };
+    let flat = wire_contour(&loops, &[], &p).unwrap();
+    assert_eq!(wire_contour_tapered(&loops, &[], &p, &t(0.0, None)).unwrap().moves, flat.moves);
+    let path = wire_contour_tapered(&loops, &[], &p, &t(3.0, Some(15.0))).unwrap();
+    let lean = |a: [f64; 3]| a[0].hypot(a[1]).atan2(a[2]).to_degrees();
+    // The lead-in's end: the middle of the left side, leaning 3 degrees
+    // outward (-X) going down - its pose points +X toward the upper guide.
+    let first = path.moves[0].axis.unwrap();
+    assert!((lean(first) - 3.0).abs() < 1e-9 && first[0] > 0.0 && first[1].abs() < 1e-12, "{first:?}");
+    let h = 12.0 * 3.0_f64.to_radians().tan();
+    assert!((path.moves[0].to.x - (-20.0 - K / 3.0_f64.to_radians().cos() - h)).abs() < 1e-6, "{:?}", path.moves[0].to);
+    assert!(path.moves.iter().all(|m| m.to.z == -12.0 && m.feed.is_none()));
+    assert_eq!(path.moves.last().unwrap().axis, Some([0.0, 0.0, 1.0]), "upright at the start hole");
+    let err = wire_contour_tapered(&loops, &[], &p, &t(30.0, Some(15.0))).unwrap_err().to_string();
+    assert!(err.contains("30.000 degree taper") && err.contains("at most 15.000"), "{err}");
+    let err = wire_contour_tapered(&loops, &[], &p, &t(3.0, None)).unwrap_err().to_string();
+    assert!(err.contains("states no edm.max_taper_deg"), "{err}");
+    // A 1 mm punch narrowed 20 degrees downward over 12 mm closes on itself.
+    let small = [rect(-0.5, -0.5, 0.5, 0.5)];
+    let pin = params(WireSide::Punch, Some((-5.0, 0.0)));
+    let err = wire_contour_tapered(&small, &[], &pin, &t(-20.0, Some(30.0))).unwrap_err().to_string();
+    assert!(err.contains("folds the side"), "{err}");
+}
+
+/// #1164: the cone corner rule holds the lean at the angle through
+/// each corner (the lower end on an arc about the top corner), and a
+/// lead-in that meets a corner under it is refused by name.
+#[test]
+fn the_cone_rule_holds_the_lean_and_refuses_a_lead_into_a_corner() {
+    let loops = [rect(-20.0, -10.0, 20.0, 10.0)];
+    let t = WireTaper { angle_deg: 3.0, top_z: 0.0, max_deg: Some(15.0), machine: "M".into(), corner: WireCorner::Cone };
+    let path = wire_contour_tapered(&loops, &[], &params(WireSide::Punch, Some((-30.0, 0.0))), &t).unwrap();
+    let lean = |a: [f64; 3]| a[0].hypot(a[1]).atan2(a[2]).to_degrees();
+    let (_, cut) = path.moves.split_last().unwrap();
+    assert!(cut.iter().all(|m| (lean(m.axis.unwrap()) - 3.0).abs() < 1e-9));
+    // Four quarter turns of 45 two-degree steps, plus the sides and leads.
+    assert_eq!(path.moves.len(), 4 * 45 + 7);
+    let err = wire_contour_tapered(&loops, &[], &params(WireSide::Punch, Some((-30.0, -20.0))), &t).unwrap_err().to_string();
+    assert!(err.contains("lead-in meets the corner") && err.contains("cone corner rule"), "{err}");
 }

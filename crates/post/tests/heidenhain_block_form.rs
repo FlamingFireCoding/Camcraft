@@ -21,6 +21,12 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
+// #1359: the legacy goldens as the programs a real operation streams
+// (tool change, spindle speed) - a cut with the spindle stopped is refused.
+#[path = "../../app/tests/common/legacy_program.rs"]
+#[allow(dead_code)]
+mod legacy_program;
+
 fn run(stream: &str) -> engine::PostOutput {
     let mch: serde_json::Value =
         serde_json::from_str(&read("assets/machines/3axis-vmc.mch")).expect("machine json");
@@ -106,7 +112,7 @@ fn check_form(nc: &str, what: &str) -> Vec<String> {
 #[test]
 fn heidenhain_posts_the_manuals_numbered_signed_block_form() {
     for g in GOLDENS {
-        let out = run(&read(&format!("crates/app/tests/golden/{g}.cl")));
+        let out = run(&legacy_program::as_program(g, &read(&format!("crates/app/tests/golden/{g}.cl"))));
         assert!(out.warnings.is_empty(), "{g}: {:?}", out.warnings);
         check_form(&out.program, g);
     }
@@ -138,6 +144,7 @@ fn drilling(dwell_reaches_bottom: bool) -> String {
     let drill_bottom = if dwell_reaches_bottom { -6.0 } else { -5.0 };
     cnc::serialize(&[
         R::Param { name: "SpindleSpeed".into(), value: json!(3000) },
+        R::Param { name: "ClearancePlane".into(), value: json!(10.0) }, // #1633, as `post::dump` states it
         R::Tool { number: 4, name: "6MM DRILL".into() },
         R::Section { begin: true },
         mv(MoveKind::Rapid, 10.0, 10.0, 10.0, None),
@@ -161,6 +168,7 @@ fn native_cycles() -> String {
     let mut rs = vec![
         R::Param { name: "WorkOffset".into(), value: json!("G55") },
         R::Param { name: "SpindleSpeed".into(), value: json!(3000) },
+        R::Param { name: "ClearancePlane".into(), value: json!(10.0) }, // #1633, as `post::dump` states it
         R::Tool { number: 4, name: "TAP-M4".into() },
         R::Section { begin: true },
     ];
@@ -254,6 +262,7 @@ fn heidenhain_keeps_the_legacy_no_spindle_tap_refusal_and_maps_presets() {
     let section = |offset: Option<&str>| {
         let mut rs = Vec::new();
         if let Some(word) = offset { rs.push(R::Param { name: "WorkOffset".into(), value: json!(word) }); }
+        rs.push(R::Param { name: "ClearancePlane".into(), value: json!(5.0) }); // #1633
         rs.extend([R::Section { begin: true }, mv(MoveKind::Rapid, 0.0, 0.0, 5.0, None), R::Section { begin: false }]);
         cnc::serialize(&rs)
     };

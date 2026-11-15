@@ -55,6 +55,22 @@ pub fn current_stamp(
             Ok(g) => w(&mut h, g),
             Err(e) => h.write(e.as_bytes()),
         }
+        // #543: a rough or finish reads its condition's undersize, and a
+        // finish the rough it follows - a re-stated undersize, or a
+        // rough added, removed or re-sized, is a different judgement.
+        if let Some(read) = super::sinker_pass::read_pass(world, op_name, setup, p) {
+            h.write(b"sinker-pass");
+            match read {
+                Ok(r) => {
+                    w(&mut h, r.undersize);
+                    if let Some((name, u)) = r.rough {
+                        h.write(name.as_bytes());
+                        w(&mut h, u);
+                    }
+                }
+                Err(e) => h.write(e.as_bytes()),
+            }
+        }
         // #546: and the condition's stated wear rate - a re-stated rate
         // is a different (compensated) burn. Nothing when unstated.
         if let Some(r) = super::sinker_wear_op::condition_wear(world, setup, p) {
@@ -156,7 +172,7 @@ pub fn current_stamp(
                 let entity = model::find_by_name(world, &g.entity)?;
                 if !digested.contains(&g.entity.as_str()) {
                     digested.push(g.entity.as_str());
-                    let loc = model::transform_of(world, &entity).unwrap_or_default();
+                    let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
                     for v in [
                         loc.pos.x,
                         loc.pos.y,

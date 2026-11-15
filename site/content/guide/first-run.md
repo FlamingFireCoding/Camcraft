@@ -10,9 +10,14 @@ When this site's release has a browser version,
 [CamCraft in the browser](@/app.md) opens it with nothing to install (it
 needs a browser with WebGL2: a current Chrome, Firefox, Edge or Safari), so
 you can look around the window described below; if it does not, that page
-says so, and the front page says which it is. The browser version cannot
-open or save files yet and simulation playback does not work in it, so for a
-real first toolpath, install a [desktop build](@/guide/install.md).
+says so, and the front page says which it is. The browser version opens a
+model or a project with the browser's file picker. Save and Save As download
+the project. Post downloads the program when Output is set to one combined
+program; one file for each operation is refused. Its other file commands
+(recent files, machine, post, theme, fixture and tool library files, and the
+setup sheet, tool list and stock exports) are greyed, or refused with the
+reason on the status line. For real work, install a
+[desktop build](@/guide/install.md).
 
 ## The window
 
@@ -53,13 +58,16 @@ on the [Keyboard and mouse](@/guide/keyboard-and-mouse.md) page.
 1. **Import a model.** Click **Model** and pick an STL, OBJ or STEP file. If
    an imported mesh has holes, the model's page has **Repair mesh**, which
    welds vertices and fills holes and reports what it changed.
+   Closed STL and OBJ shells with inward winding are turned outward on
+   import, so their solid checks use the outside of the part.
 2. **Set the stock.** Click **Stock**. The stock is a box, a cylinder, or a
    copy of a model.
 3. **Place the work offset.** Click **Origin** to set the work coordinate
    system (WCS) the program is written in.
 4. **Add a tool.** Click **Tools**, then **New tool…**. Fill in the
-   cutter's type and size. Tool libraries can be exported and imported as
-   `.camtools` files.
+   cutter's type and size, then choose **Add tool**. See
+   [Tools and tool libraries](@/guide/tools.md) for holders, tool numbers,
+   and import and export of `.camtools` libraries.
 5. **Add an operation.** Pick one from an operation group, for example
    **Face** under Milling 2D. Its page opens with tabs: Geometry, Heights,
    Passes, Lead in / Lead out, Feeds (and Machine for a few kinds). A kind
