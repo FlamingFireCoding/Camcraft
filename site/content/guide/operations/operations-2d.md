@@ -81,10 +81,14 @@ added as an open boundary.
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
 An open run picked on a part cuts on its air side, offset by the tool
-radius plus stock to leave. **Side** applies only to closed rings.
+radius plus stock to leave. For a run picked on the stock instead,
+**Side** chooses the offset: Inside goes toward the stock and Outside
+goes away from it. Auto goes away from the part; it needs a part whose
+side is clear at every level. An ambiguous side is refused. Inspect the
+generated path before posting.
 CamCraft refuses an open run whose air side changes or whose offset cuts
-the kept part. A run with no part material beside it keeps a centreline
-ride and the path notes say so.
+the kept part. A part-source run with no part material beside it keeps a
+centreline ride and the path notes say so.
 
 An inside **Ramp** entry descends along the lead and ring at the entry
 angle. An unset entry angle means 3 degrees, independently of the link
@@ -129,6 +133,11 @@ the stock edge; an extension of at least one radius clears that edge.
 Mixed open and closed picks, ambiguous bands and tool containment On or
 Outside are refused.
 
+A U-shaped blind slot can use its floor face or all three rim edges.
+The two side walls and closed end define the slot; the stock outline
+closes its open mouth. **Extend past** opens that mouth beyond the stock
+edge. A missing wall, unequal wall heights or an ambiguous mouth is refused.
+
 **Arc turns at corners and links** rounds pocket-family corners.
 Its optional **Arc radius** defaults to the tool radius when unstated.
 A stated radius must be at least 0.01 mm and no larger than the tool
@@ -153,6 +162,24 @@ spacing set by the load.
 | Passes | Stock to leave | 0 |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Helix, radius 1 |
+
+**Method** chooses Spiral or Trochoidal. Trochoidal follows the pocket's
+medial lanes, including parallel branches around islands, then cleans up
+corners. With **Method = Trochoidal**, these additional controls appear:
+
+| Tab | Setting | Default |
+|---|---|---|
+| Passes | Max engagement | 90 degrees; the forward step tightens to hold this limit |
+| Passes | Loop width | All the room; optionally limit the band swept by loop centres |
+| Passes | Return | Auto: a 0.3 mm microlift if clearance permits, otherwise Retract |
+| Passes | Microlift height | 0.3 mm when Microlift is selected |
+| Feeds | Return feed | Cutting feed; optionally state another feed |
+
+Max engagement must be above 0 and at most 180 degrees. A stated loop
+width must be positive; the available channel limits its actual width.
+A microlift above clearance is refused.
+Choose Retract when the return must rise higher. These controls do not
+apply to Spiral.
 
 **Common refusals:** as Pocket.
 
@@ -340,9 +367,10 @@ model"; "tap leaves no thread core".
 
 ![View of circular interpolation inside a hole.](../../../operation-paths.svg#Bore)
 
-**For:** finishing a hole with an end mill smaller than the hole, which
-circles the hole wall by interpolation. Choose it over a Drill boring cycle
-when there is no boring bar of the right size.
+**For:** clearing and finishing a hole with an end mill smaller than the
+hole. Wide holes use concentric rings at each level; radial sweeps open
+each ring band and the last ring finishes the wall. Choose it over a
+Drill boring cycle when there is no boring bar of the right size.
 
 **Picks:** holes, found with **Detect holes**.
 
@@ -355,6 +383,11 @@ when there is no boring bar of the right size.
 
 **Common refusals:** "boring needs at least one hole"; "clearance plane
 below a hole entry".
+
+For a blind hole, the ring spacing uses the cutter's reach at the floor,
+so a bull-nose does not leave an interior floor ridge. Small holes keep a
+single ring when its floor bands meet. A plan needing more than 4,096
+rings is refused before generation; review the hole and tool sizes.
 
 A Bore **Ramp** entry zig-zags along the first radial sweep. An unset
 entry angle means 3 degrees. A separate link angle does not steepen it.

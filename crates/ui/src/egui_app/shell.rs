@@ -130,7 +130,8 @@ pub(crate) fn shell_layout(
     // AFTER it. A pick left armed at a frame's end therefore had its rows
     // on screen that frame, and the next frame's click sees the result:
     // no frame where a hidden draft takes a click.
-    if !layout::is_shown(dock, &Tab::Properties) {
+    state.properties_shown = layout::is_shown(dock, &Tab::Properties);
+    if !state.properties_shown {
         crate::axis_pick::disarm_all(state);
         // #673: the locate draft's form is on that pane too - dropped
         // here, before the dock routes a viewport release to it.
@@ -653,6 +654,13 @@ fn viewport_panel(
                     egui::pos2(rx0 + m.a[0] * rw, ry0 + m.a[1] * rh),
                     egui::pos2(rx0 + m.b[0] * rw, ry0 + m.b[1] * rh),
                 ],
+                egui::Stroke::new(m.width, super::colorvision::ink(m.rgb)),
+            );
+        }
+        // #1732: a Slot's hand-typed A and B, following the page draft.
+        for m in crate::slot_manual_viz::slot_marks(state, aspect) {
+            ui.painter().line_segment(
+                [to_px(m.a), to_px(m.b)],
                 egui::Stroke::new(m.width, super::colorvision::ink(m.rgb)),
             );
         }

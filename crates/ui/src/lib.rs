@@ -26,6 +26,7 @@ pub mod boundary_draft;
 pub mod box_pick;
 pub mod browser_files;
 pub mod boundary_viz;
+pub mod slot_manual_viz;
 pub mod plate_viz;
 pub mod boundary_summary;
 pub mod edge_pick;
