@@ -472,3 +472,19 @@ fn custom_return_feed_is_emitted_by_production_parallel_lanes_and_cleanup() {
     assert!(path.moves.iter().any(|m| m.feed == Some(p.feed)));
     assert!(confined(&path, &region.offset(-0.5 * p.tool_diameter).unwrap()).unwrap().is_none());
 }
+
+#[test]
+fn cleanup_front_respects_custom_engagement_limit() {
+    let center = rect(-3.0, -3.0, 3.0, 3.0);
+    let cleared = rect(-5.0, -5.0, 5.0, 5.0);
+    let reach = rect(-6.0, -6.0, 6.0, 6.0);
+    let used = rect(-1.98, -1.98, 1.98, 1.98);
+    let t = AdaptiveTrochParams { max_engagement: 10.0, ..AdaptiveTrochParams::default() };
+    let (chains, _) = super::super::adaptive_troch_clean::plan_cleanup(&center, &reach, &used, &cleared, D, 0.1, true, &t)
+        .expect("cleanup with a custom engagement limit");
+    assert!(!chains.is_empty(), "exercise a real cleanup peel");
+    let first_extent = chains[0].pts.iter().map(|q| q.x.abs().max(q.y.abs())).fold(0.0, f64::max);
+    let angle_step = 0.5 * D * (1.0 - t.max_engagement.to_radians().cos());
+    assert!(first_extent > 1.98, "cleanup advances into stock");
+    assert!(first_extent <= 1.98 + angle_step + 2e-3, "custom angle cleanup advanced too far: {first_extent}");
+}
