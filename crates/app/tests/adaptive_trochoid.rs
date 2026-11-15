@@ -347,3 +347,34 @@ fn trochoidal_doors_refuse_out_of_range_and_over_clearance_values_by_name() {
     let err = EditOperationParams::new(&world, "A1", tall).map(|_| ()).expect_err("tall microlift").to_string();
     assert!(err.contains("microlift") && err.contains("clearance plane") && err.contains("10.000"), "{err}");
 }
+
+#[test]
+fn merged_arc_and_trochoidal_parameters_round_trip_and_keep_the_arc_refusal() {
+    let (world, _h) = job(17.0, 8.0, AdaptiveMethod::Trochoidal);
+    let e = model::find_by_name(&world, "A1").expect("op");
+    let mut op = model::operation_of(&world, &e).expect("operation");
+    if let OpParams::Adaptive2D { blend_turns, blend_radius, troch, .. } = &mut op.params {
+        *blend_turns = true;
+        *blend_radius = Some(0.75);
+        troch.max_engagement = 65.0;
+        troch.ret = Some(camcraft_app::machining2d::TrochoidReturn::Microlift { height: 0.4 });
+        troch.return_feed = Some(1500.0);
+        troch.loop_width = Some(3.5);
+    }
+    let saved = project::params_to_json(&op.params);
+    let fields = &saved["adaptive2_d"];
+    assert_eq!(fields["blend_turns"], json!(true));
+    assert_eq!(fields["blend_radius"], json!(0.75));
+    assert_eq!(fields["max_engagement"], json!(65.0));
+    assert_eq!(fields["return"], json!("microlift"));
+    assert_eq!(fields["lift"], json!(0.4));
+    assert_eq!(fields["return_feed"], json!(1500.0));
+    assert_eq!(fields["loop_width"], json!(3.5));
+    assert_eq!(project::params_from_json(&saved).expect("both parameter sets read back"), op.params);
+    let err = EditOperationParams::new(&world, "A1", op.params.clone()).map(|_| ()).expect_err("edit refuses arc turns").to_string();
+    assert!(err.contains("arc turns") && err.contains("Trochoidal"), "{err}");
+    // Bypass command validation: the generation arm must independently
+    // refuse main's unsupported option rather than silently dropping it.
+    let err = operation::generate(&world, &op, "A1").map(|_| ()).expect_err("generation refuses arc turns").to_string();
+    assert!(err.contains("arc turns") && err.contains("Trochoidal"), "{err}");
+}

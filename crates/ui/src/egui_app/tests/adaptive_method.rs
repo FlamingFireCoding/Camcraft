@@ -88,6 +88,14 @@ fn trochoidal_method_shows_its_passes_and_feeds_fields_and_spiral_and_offset_hid
     harness.run();
     assert_eq!(harness.query_all_by_label("Microlift height").count(), 1, "Microlift shows Microlift height");
 
+    for ret in [Some(camcraft_app::machining2d::TrochoidReturn::Retract), None] {
+        if let OpParams::Adaptive2D { troch, .. } = &mut harness.state_mut().state.op_ui.params {
+            troch.ret = ret;
+        }
+        harness.run();
+        assert_eq!(harness.query_all_by_label("Microlift height").count(), 0, "only explicit Microlift shows its height");
+    }
+
     let mut off = passes_of(OpType::Offset2D);
     for label in ["Max engagement", "Loop width", "Return"] {
         assert_eq!(off.query_all_by_label(label).count(), 0, "Offset2D hides {label}");

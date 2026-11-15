@@ -17,3 +17,7 @@
 
 **Cost to change later.**
 - Low: `AdaptiveTrochParams` is self-contained and only read under `AdaptiveMethod::Trochoidal`; `ParamsDto::Adaptive2D` fields are additive with serde defaults.
+
+**PR #1782 review remediation.**
+- Merged upstream main and retained both the trochoidal parameter set and the corner-arc parameter set, including main's refusal of arc turns with the Trochoidal method. Dropping either parameter set or bypassing that refusal was rejected because saved projects and generation must keep both laws.
+- Captured the actual egui shell for Passes and Feeds with Trochoidal selected. Kept review pictures under `docs/pr-1782/`, outside the release-only pixel goldens. The before pane uses the original PR parent's rendering body; the after pane uses the merged shipping body. A temporary signature adapter lets the original rendering body read the current grouped method field without changing its widgets.
