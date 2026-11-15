@@ -148,6 +148,7 @@ mod setup_eye;
 mod program_entry;
 // #371: the tool editor's Body section.
 mod tool_body;
+mod tool_body_assembly;
 mod tool_body_lathe;
 // #93: the tool editor's spun-profile (Profile) section.
 mod tool_profile;
@@ -174,6 +175,8 @@ mod fixture_rows;
 mod fixtures_page;
 // #864: a reduced-fidelity model says so on its page.
 mod model_fidelity;
+// #1610 review: incomplete model advice and import status are visible.
+mod model_incomplete;
 // #1054: the STEP facet budget on the model page.
 mod step_budget;
 // #1573 review: what a STEP import changed is said on the status line.
@@ -2840,7 +2843,7 @@ fn tips_match_the_imgui_table() {
         (Cmd::Tools, "Tool library"),
         (
             Cmd::Machine,
-            "Switch the workspace: Milling, Turning, Mill-turning or Plasma cutting (mounts the kind's built-in machine, undoable)",
+            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting or Wire EDM (mounts the kind's built-in machine, undoable)",
         ),
         (Cmd::Undo, undo.as_str()),
         (Cmd::Redo, redo.as_str()),
@@ -5309,4 +5312,5 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
     );
 }
 
+mod review_1710_evidence;
 

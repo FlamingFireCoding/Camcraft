@@ -24,6 +24,14 @@ workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (
 workOffsetMax = 9;      // LinuxCNC G-code reference: G54-G59.3 select coordinate systems 1-9 (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 afterModes = true; // #1532: reads PARAM AfterOperation (stop / optional stop) and PARAM SetupChange; a trip home is refused by name
+explains = "paren"; // #1387: LinuxCNC parenthesized comments; shared helper keeps them inert
+// Original wording; inherited mill meanings cite RS-274 / LinuxCNC in explain.rs.
+explainWords = {
+  "G38.2": "PROBE TOWARD CONTACT", // LinuxCNC G-code reference, G38.2-G38.5: probing toward contact
+  "G59.1": "WORK OFFSET 7", // LinuxCNC G-code reference, G54-G59.3: coordinate system 7
+  "G59.2": "WORK OFFSET 8", // LinuxCNC G-code reference, G54-G59.3: coordinate system 8
+  "G59.3": "WORK OFFSET 9"  // LinuxCNC G-code reference, G54-G59.3: coordinate system 9
+};
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -78,7 +86,10 @@ function block(words) {  // join the non-empty words onto one line
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var c = explain(a);
+    writeln(a.join(" ") + (c ? " " + c : ""));
+  }
 }
 function xyz(p) {
   if (indexed()) {  // #785: the whole tip, turned into the indexed frame

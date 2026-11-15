@@ -90,6 +90,9 @@ pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, 
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};
+#[path = "state_tool_body_assembly.rs"]
+mod tool_body_assembly_ui;
+pub use tool_body_assembly_ui::AssemblyUi;
 #[path = "state_tool_profile.rs"]
 mod tool_profile_ui;
 #[path = "state_tool_cutter.rs"]
@@ -291,6 +294,19 @@ pub enum CommandKind {
     SetLatheToolBody {
         name: String,
         body: LatheBodyDraft,
+    },
+    /// #361 / #1040: attach a modular piece onto a tool's landed body
+    /// as one `SetToolBody::attach_piece`.
+    AttachToolBodyPiece {
+        name: String,
+        path: PathBuf,
+        place: camcraft_app::tool_body_assembly::PiecePlace,
+    },
+    /// #361 / #1040: remove a piece from a multi-piece tool body
+    /// assembly as one `SetToolBody::remove_piece`.
+    RemoveToolBodyPiece {
+        name: String,
+        index: usize,
     },
     /// #93: set a milling tool's drawn spun holder (`Some` points) or
     /// return it to its parametric cylinder (`None`) - the tool editor's
@@ -3178,6 +3194,12 @@ impl State {
             }
             CommandKind::SetToolBody { name, body } => self.run_set_tool_body(&name, body),
             CommandKind::SetLatheToolBody { name, body } => self.run_set_lathe_tool_body(&name, body),
+            CommandKind::AttachToolBodyPiece { name, path, place } => {
+                self.run_attach_tool_body_piece(&name, &path, place)
+            }
+            CommandKind::RemoveToolBodyPiece { name, index } => {
+                self.run_remove_tool_body_piece(&name, index)
+            }
             CommandKind::SetToolProfile { name, points } => self.run_set_tool_profile(&name, points),
             CommandKind::SetToolCutter { name, points } => self.run_set_tool_cutter(&name, points),
             CommandKind::ReshapeTool { name, tool, points } => self.run_reshape_tool(&name, tool, points),
@@ -3974,8 +3996,8 @@ impl State {
                     return;
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
-                    let (coarse, budget) = (command.coarse_mm, command.facet_budget);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_budget(budget)) {
+                    let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
@@ -3994,10 +4016,10 @@ impl State {
                 }
                 // #864: an import kept coarser than promised is said, not
                 // only logged.
-                if let Some(chord) = model::find_by_name(&self.world, &name)
-                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e))
+                if let Some((e, chord)) = model::find_by_name(&self.world, &name)
+                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e).map(|c| (e, c)))
                 {
-                    let said = camcraft_app::model_fidelity::summary(&self.world, chord);
+                    let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
                 }
             }

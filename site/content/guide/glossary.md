@@ -37,11 +37,11 @@ is. See [Reading a refusal](@/guide/refusals.md#common-post-refusals).
 **Holder.** The tool holder that clamps the cutter. A holder profile is
 drawn in the tool editor or taken from the holder library, and a holder
 that hits the part is flagged as a warning on the operation. The guide has
-no page on holders yet; the tool step of [First run](@/guide/first-run.md#a-first-toolpath) is the nearest.
+details in [Tools and tool libraries](@/guide/tools.md#holders-and-profiles).
 
 **Holder body.** The holder's body, the section above its nose that the
 tool editor's Body tab draws. It is checked against the part like the rest
-of the holder. See [First run](@/guide/first-run.md#a-first-toolpath).
+of the holder. See [Tools and tool libraries](@/guide/tools.md#imported-and-modular-tool-bodies).
 
 **Live tooling.** A driven tool in a lathe or mill-turn turret. When a path
 states spindle C angles it is live-tool work: the S word drives the live
@@ -103,7 +103,7 @@ the Passes tab. Auto applies the scallop law where the kind offers it. See
 [Operations](@/guide/operations.md#the-settings-tabs).
 
 **Stick-out.** The length from the tool tip to the holder's nose face: the
-flute plus the shank, shown on the tool's holder profile. See [First run](@/guide/first-run.md#a-first-toolpath).
+flute plus the shank, shown on the tool's holder profile. See [Tools and tool libraries](@/guide/tools.md#holders-and-profiles).
 
 **Stock.** The raw block the part is cut from: a box, a cylinder or a copy
 of a model, set with **Stock** on the Setup group. Verify and simulation cut
