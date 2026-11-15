@@ -190,6 +190,7 @@ fn build(world: &World, op: &Operation, tool_r: f64, material: &Material, part_s
         islands,
         extra,
         open,
+        lane: if frame.is_none() { super::open_band::lane(world, op)? } else { None },
         unit: crate::units::of(world),
     })
 }

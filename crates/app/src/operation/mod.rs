@@ -138,6 +138,7 @@ mod stitch;
 use stitch::*;
 mod stitch_cross;
 use stitch_cross::*;
+mod open_band;
 mod run_out;
 use run_out::*;
 mod area;

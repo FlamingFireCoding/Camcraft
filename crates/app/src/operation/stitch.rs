@@ -61,7 +61,7 @@ pub(super) type Rings = Vec<(String, Vec<Point2>, usize)>;
 type Stitched = (Rings, HashMap<usize, usize>);
 
 /// Every distinct picked open run, in the walk's frame.
-fn gather_runs(
+pub(super) fn gather_runs(
     world: &World,
     setup: Option<&str>,
     items: &[GeoSel],
