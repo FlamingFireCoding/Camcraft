@@ -246,7 +246,7 @@ fn read_against_the_simulated_roughing_pass() {
             let at = Point2::new(m.to.x, m.to.y);
             let axis = now.top_over(at).unwrap_or(f64::NAN);
             let rim = top_under(&now, at, 2.0);
-            if !(axis <= m.to.z + 0.01) || rim > m.from.z.min(TOP) + 0.01 {
+            if axis.is_nan() || axis > m.to.z + 0.01 || rim > m.from.z.min(TOP) + 0.01 {
                 plunges_in.push((k, axis, rim, m.to.z));
             }
         } else if below_top(m) && flat {
