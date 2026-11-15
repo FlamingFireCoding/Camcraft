@@ -114,6 +114,18 @@ const ROWS: &[Row] = &[
         mesh: "watertight, within tolerance",
     },
     Row {
+        file: "modular_clamp_unit.step",
+        mm_per_unit: 1.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    Row {
+        file: "modular_lathe_head.step",
+        mm_per_unit: 1.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    Row {
         file: "sample_ap214.step",
         mm_per_unit: 1000.0,
         import: "agree",
@@ -417,6 +429,8 @@ per_file! {
     step_empty_list => "empty_list.step",
     step_fillet_corner => "fillet_corner.step",
     step_lathe_holder_offset => "lathe_holder_offset.step",
+    step_modular_clamp_unit => "modular_clamp_unit.step",
+    step_modular_lathe_head => "modular_lathe_head.step",
     step_sample_ap214 => "sample_ap214.step",
     step_tool_csys_box_iso13399 => "tool_csys_box_iso13399.step",
     step_tool_csys_degenerate => "tool_csys_degenerate.step",
