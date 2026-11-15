@@ -34,6 +34,7 @@ pub(crate) mod gpu_select;
 // glyph tint are the consumers (ratio, on-fill, the follow law, the gate).
 pub mod contrast;
 mod boundary;
+mod pick_button;
 mod gcode_highlight;
 mod gcode_view;
 mod debug_info;
