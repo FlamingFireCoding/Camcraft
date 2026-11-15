@@ -36,6 +36,15 @@ segment copies its layer name.
 Bound the complete support circle of each arc against `geo2d::COORD_LIMIT`.
 Refuse a bulge whose sweep cannot be represented safely.
 
+For review #1937, evaluate both endpoints from the emitted arc's center,
+radius, start angle and sweep. Require each endpoint error to be at most
+`1e-10` times the source chord length. Otherwise return the entity-named error
+`bulge arc cannot preserve source endpoints`. This relative bound does not
+depend on unresolved drawing units. It also prevents a large support circle
+from hiding endpoint error. Refuse such arcs instead of replacing them with
+lines or adding stored endpoints to the public `Primitive` type. Relaxing
+this bound later needs endpoint tests across scales and both arc directions.
+
 **Why.** The reader must preserve geometry or return a named error.
 Explicit units prevent a silent scale change. Exact arcs retain the source
 curve for later machining work. Borrowed records and count limits bound

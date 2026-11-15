@@ -245,7 +245,7 @@ fn dxf_circle_and_wrapping_arc_stay_exact() {
 
 #[test]
 fn dxf_bulge_sign_and_major_arcs_keep_the_exact_sweep() {
-    for bulge in [1.0f64, -1.0, 2.0, -2.0, 0.25] {
+    for bulge in [1.0f64, -1.0, 2.0, -2.0, 0.25, 1e-4, -1e-4] {
         let entity = format!("0\nLWPOLYLINE\n90\n2\n10\n0\n20\n0\n42\n{bulge}\n10\n2\n20\n0\n");
         let doc = parse(drawing("", "", &entity).as_bytes()).unwrap();
         assert_eq!(doc.primitives.len(), 1);
@@ -267,6 +267,40 @@ fn dxf_bulge_sign_and_major_arcs_keep_the_exact_sweep() {
         near(center.x + radius * (start_angle + sweep_angle).cos(), 2.0);
         near(center.y + radius * (start_angle + sweep_angle).sin(), 0.0);
     }
+}
+
+#[test]
+fn dxf_bulge_arcs_that_lose_source_endpoints_are_refused() {
+    // The smaller bulge collapses both endpoints. The larger one keeps them
+    // distinct but displaces them from the source vertices in both directions.
+    let mut accepted = Vec::new();
+    for bulge in ["1e-17", "-1e-17", "1e-12", "-1e-12"] {
+        for (kind, entity) in [
+            (
+                "LWPOLYLINE",
+                format!("0\nLWPOLYLINE\n90\n2\n10\n0\n20\n0\n42\n{bulge}\n10\n0.00001\n20\n0\n"),
+            ),
+            (
+                "POLYLINE",
+                format!(
+                    "0\nPOLYLINE\n0\nVERTEX\n10\n0\n20\n0\n42\n{bulge}\n0\nVERTEX\n10\n0.00001\n20\n0\n0\nSEQEND\n"
+                ),
+            ),
+        ] {
+            match parse(drawing("", "", &entity).as_bytes()) {
+                Err(error) => {
+                    let error = error.to_string();
+                    assert!(error.contains(kind), "{kind}, bulge {bulge}: {error}");
+                    assert!(error.contains("endpoint"), "{kind}, bulge {bulge}: {error}");
+                }
+                Ok(_) => accepted.push(format!("{kind}, bulge {bulge}")),
+            }
+        }
+    }
+    assert!(
+        accepted.is_empty(),
+        "arcs lost source endpoints: {accepted:?}"
+    );
 }
 
 #[test]

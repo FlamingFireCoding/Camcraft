@@ -128,10 +128,22 @@ pub(super) fn segment(
     if sweep_angle == 0.0 || sweep_angle.abs() >= TAU {
         return Err(error(kind, "bulge sweep cannot be represented safely"));
     }
+    let start_angle = (start.y - center.y).atan2(start.x - center.x);
+    // Drawing units are unresolved. Bound endpoint loss relative to the source
+    // chord, not the potentially enormous support circle or an absolute unit.
+    let endpoint_tolerance = chord * 1e-10;
+    for (source, angle) in [(start, start_angle), (end, start_angle + sweep_angle)] {
+        let x = center.x + radius * angle.cos();
+        let y = center.y + radius * angle.sin();
+        let endpoint_error = (x - source.x).hypot(y - source.y);
+        if !endpoint_error.is_finite() || endpoint_error > endpoint_tolerance {
+            return Err(error(kind, "bulge arc cannot preserve source endpoints"));
+        }
+    }
     Ok(Primitive::Arc {
         center,
         radius,
-        start_angle: (start.y - center.y).atan2(start.x - center.x),
+        start_angle,
         sweep_angle,
     })
 }
