@@ -747,6 +747,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // themselves at every plane, so there is nothing here for a
             // picked loop to add - and nothing to erode by hand either:
             // one erosion per level, from that level's target.
+            let source_built = picked_region.is_none();
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -755,6 +756,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #1749: the silhouette's outside is air, so on a whole model
+            // the centre rides up to the silhouette edge - an open-sided
+            // notch is cleared past its open edge, never left as a ridge
+            // a radius wide. The setup's other parts stay out of reach.
+            // A picked or controlled region is the user's boundary and
+            // stays as given; a tilted plane keeps the old reading.
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -1514,6 +1522,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.kind
                 )));
             }
+            // #1749: the same footprint as the 3D Pocket - one ladder.
+            let source_built = picked_region.is_none();
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -1522,6 +1532,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
