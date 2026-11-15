@@ -35,6 +35,18 @@
   refuse, because the G32 / G76 choice is a document post option, not
   an op parameter. The refusal therefore happens where that choice is
   known, the same way alternating infeed is refused.
+- **The Tormach PathPilot lathe G76 refuses it too (takeover,
+  2026-11-15).** Main's #612 added `tormach-lathe.cps` with a one-block
+  LinuxCNC G76 after this PR was written. Its `g76Why` did not read
+  `RepeatEachDepth`, so a repeat plan with G76 chosen posted a cycle
+  that cuts each depth once: not the passes that were verified.
+  - Chosen: refuse by name ("repeat each roughing depth - LinuxCNC's
+    G76 cuts each depth once"), the same rule as Fanuc and as
+    alternating infeed. Pinned by a new case in
+    `lathe_post_tormach_thread::a_g76_record_the_cycle_cannot_state_exactly_is_refused_by_name`.
+  - Dropped: post the G76 and ignore the repeat. The program then
+    differs from the verified passes (#417's law), so it is not an
+    option. G33 passes still post the repeat.
 - **Defaults are byte-identical.** With the default off:
   - the kernel lays the same passes;
   - the stamp writes no extra byte (one byte, `0xD5`, only when the

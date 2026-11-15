@@ -230,11 +230,13 @@ fn a_g76_record_the_cycle_cannot_state_exactly_is_refused_by_name() {
     let records = posting::stream_records(&world).expect("generated");
     let bare: Vec<cnc::Record> = records.iter().filter(|r| !matches!(r, cnc::Record::Thread(_))).cloned().collect();
     type Bend = fn(&mut cnc_thread::ThreadRec);
-    let cases: [(&str, Vec<cnc::Record>); 8] = [
+    let cases: [(&str, Vec<cnc::Record>); 9] = [
         ("no thread cycle record", bare),
         // #417: R1's ladder infeeds along one line; its finishing pass
         // is the ladder's own last step, never a stated allowance.
         ("alternating flank infeed", with_rec(&records, (|t| t.alternating = true) as Bend)),
+        // #418: the cycle cuts each depth once, never the repeat.
+        ("repeat each roughing depth", with_rec(&records, (|t| t.repeat_each_depth = true) as Bend)),
         ("infeed angle", with_rec(&records, (|t| t.infeed_angle = 29.5) as Bend)),
         ("finish allowance", with_rec(&records, (|t| t.finish_allowance = 0.05) as Bend)),
         ("pull-out", with_rec(&records, (|t| t.pull_out = 1.0) as Bend)),

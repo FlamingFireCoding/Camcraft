@@ -100,7 +100,8 @@ explainTool = "station-offset";
 //    rungs (LinuxCNC: "R1.0 selects constant depth"), Q0 for its radial
 //    infeed, H its spring passes; a finishing step only when it is the
 //    equal ladder's own last one (G76 has no word for any other, #417),
-//    no alternating flanks, no pull-out (no E/L taper), an external thread cut from
+//    no alternating flanks, no repeat of each roughing depth (#418),
+//    no pull-out (no E/L taper), an external thread cut from
 //    the +X side. I J K are diameters on the control's resolution
 //    grid, rounded so the last pass never goes deeper than the
 //    record's minor diameter. Anything else is refused by name, never
@@ -745,6 +746,9 @@ function g76Why(p, r0, r1) {
   }
   if (Math.abs(p.InfeedAngle) > 1e-6) return "infeed angle " + p.InfeedAngle + " - a compound infeed (Q) is not posted on this control yet (radial only, Q0)";
   if (p.Alternating === true) return "alternating flank infeed - LinuxCNC's G76 infeeds along one line (Q) only";
+  // #418: the record's passes cut every roughing depth twice; the
+  // cycle cuts each depth once, so it would not run the verified passes.
+  if (p.RepeatEachDepth === true) return "repeat each roughing depth - LinuxCNC's G76 cuts each depth once; choose G33 passes, or turn the repeat off";
   // The record's finishing pass cuts FinishAllowance below the last
   // roughing pass (#417). R1's equal ladder (J, 2J, ... clamped at K)
   // has no word for that step: its finishing pass takes the ladder's
