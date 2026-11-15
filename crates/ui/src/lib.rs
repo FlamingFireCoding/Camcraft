@@ -17,6 +17,10 @@
 #[macro_use]
 pub mod diag;
 
+pub mod cli_options;
+#[cfg(test)]
+mod cli_options_tests;
+
 pub mod actions;
 pub mod align_pick_viz;
 pub(crate) mod machine_modes;
@@ -103,6 +107,23 @@ mod axis_note_tests;
 /// at M-g and there is nothing left to select.
 /// Provenance: our own shell, specced from public CAM workflow conventions.
 pub fn run(args: &[String]) -> i32 {
+    // #2082: help, version and unknown options are settled before any
+    // window, GPU device or server is made.
+    match cli_options::parse(args) {
+        Ok(cli_options::Parsed::Help) => {
+            diag::info(&cli_options::help_text());
+            return 0;
+        }
+        Ok(cli_options::Parsed::Version) => {
+            diag::info(&cli_options::version_text());
+            return 0;
+        }
+        Ok(cli_options::Parsed::Run) => {}
+        Err(err) => {
+            diag_warn!("{err}");
+            return 2;
+        }
+    }
     let mut it = args.iter();
     while let Some(a) = it.next() {
         if a == "--ui" {
