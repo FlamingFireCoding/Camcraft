@@ -55,7 +55,32 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State) {
     }
     ui.separator();
     ui.heading("Catalog");
-    for (cname, ct) in tools::catalog() {
+    let catalog = tools::catalog();
+    egui::ComboBox::from_id_salt("catalog_tool_type")
+        .selected_text(state.tool_catalog_kind.map(kind_name).unwrap_or("All types"))
+        .show_ui(ui, |ui| {
+            ui.selectable_value(&mut state.tool_catalog_kind, None, "All types");
+            let mut kinds = Vec::new();
+            for (_, tool) in &catalog {
+                if !kinds.contains(&tool.kind) {
+                    kinds.push(tool.kind);
+                    ui.selectable_value(&mut state.tool_catalog_kind, Some(tool.kind), kind_name(tool.kind));
+                }
+            }
+        }).response.labelled_by(ui.label("Tool type").id);
+    let name_label = ui.label("Name filter");
+    ui.add(egui::TextEdit::singleline(&mut state.tool_catalog_name)
+        .desired_width(ui.available_width()))
+        .labelled_by(name_label.id);
+    let name_filter = state.tool_catalog_name.to_lowercase();
+    let mut matches = 0;
+    for (cname, ct) in catalog {
+        if state.tool_catalog_kind.is_some_and(|kind| ct.kind != kind)
+            || !cname.to_lowercase().contains(&name_filter)
+        {
+            continue;
+        }
+        matches += 1;
         let taken = model::find_by_name(&state.world, cname).is_some();
         let clicked = ui
             .horizontal(|ui| {
@@ -80,6 +105,9 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State) {
                 tool: ct,
             });
         }
+    }
+    if matches == 0 {
+        ui.label("No tools match the filters.");
     }
 
     });

@@ -116,6 +116,7 @@ mod work_envelope;
 mod camera_target;
 mod structural;
 mod waterjet_recipe;
+mod catalog_filters;
 mod cycle_combo;
 mod radial_step_field;
 // #1509: 2D Adaptive's Method choice on the Passes tab.

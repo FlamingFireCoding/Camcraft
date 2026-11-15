@@ -60,3 +60,23 @@
   this issue changes navigation and ownership rather than a release
   baseline. Reversing the split later would require moving the routing
   and these structural assertions; it needs no project-file migration.
+
+- **Keep catalog filters in temporary UI state.** `Option<ToolKind>` selects
+  one of the kinds present in the catalog; `None` selects All types. A
+  `String` holds the name filter. A row must match both the selected kind
+  and the lowercase name substring. An empty result shows a short message.
+  This meets the requested catalog search without changing the project or
+  command history. Persisted filters and undoable filter commands were
+  dropped because these controls only change which catalog rows are shown.
+  Listing only catalog kinds avoids choices with no catalog entries.
+  Changing the filter rules later needs UI and structural-test changes,
+  but no project migration.
+
+- **Preserve main's waterjet Apply refusal in the shared form.** The merge
+  moves the `torch_refusal()` check into `tool_settings::contents`, where
+  it disables Apply for an invalid waterjet recipe in both Properties and
+  the editor window. Main's check and the form extraction are compatible.
+  Taking either side alone was dropped because it would lose the refusal
+  or the shared settings surface. The Add tool path stays unchanged.
+  A later form split must retain this check on both Apply paths and update
+  the structural tests that pin the refusal.
