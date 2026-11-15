@@ -115,6 +115,7 @@ mod work_envelope;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+mod waterjet_recipe;
 mod cycle_combo;
 mod radial_step_field;
 // #1509: 2D Adaptive's Method choice on the Passes tab.

@@ -1140,6 +1140,7 @@ impl ToolUi {
                 ToolKind::Electrode => 13,
                 ToolKind::ThreadMill => 14,
                 ToolKind::ThreadMillSingle => 15,
+                ToolKind::Waterjet => 16,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1191,6 +1192,7 @@ impl ToolUi {
             13 => ToolKind::Electrode,
             14 => ToolKind::ThreadMill,
             15 => ToolKind::ThreadMillSingle,
+            16 => ToolKind::Waterjet,
             _ => ToolKind::EndMill,
         }
     }

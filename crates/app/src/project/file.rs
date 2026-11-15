@@ -482,6 +482,7 @@ pub enum ToolKindDto {
     /// The plasma torch (#670): additive in the same way - no older
     /// file names it.
     Torch,
+    Waterjet,
     /// The sinker electrode (#541): additive in the same way.
     Electrode,
     /// The thread mills (#894): additive words - no older file names
@@ -508,6 +509,7 @@ impl ToolDto {
                 ToolKind::Taper => ToolKindDto::Taper,
                 ToolKind::Probe => ToolKindDto::Probe,
                 ToolKind::Torch => ToolKindDto::Torch,
+                ToolKind::Waterjet => ToolKindDto::Waterjet,
                 ToolKind::Electrode => ToolKindDto::Electrode,
                 ToolKind::ThreadMill => ToolKindDto::ThreadMill,
                 ToolKind::ThreadMillSingle => ToolKindDto::ThreadMillSingle,
@@ -564,6 +566,7 @@ impl ToolDto {
                 ToolKindDto::Taper => ToolKind::Taper,
                 ToolKindDto::Probe => ToolKind::Probe,
                 ToolKindDto::Torch => ToolKind::Torch,
+                ToolKindDto::Waterjet => ToolKind::Waterjet,
                 ToolKindDto::Electrode => ToolKind::Electrode,
                 ToolKindDto::ThreadMill => ToolKind::ThreadMill,
                 ToolKindDto::ThreadMillSingle => ToolKind::ThreadMillSingle,

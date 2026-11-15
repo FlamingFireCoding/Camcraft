@@ -76,7 +76,7 @@ use super::theme::Tokens;
 pub(crate) use super::fields::{combo, field, num, num_feed, num_plain};
 
 /// Tool kind labels, same order as `ToolKind` (mirrors the tool page).
-const TOOL_KINDS: [&str; 16] = [
+const TOOL_KINDS: [&str; 17] = [
     "End mill",
     "Ball nose",
     "Bull nose",
@@ -96,6 +96,7 @@ const TOOL_KINDS: [&str; 16] = [
     // #894: rows of teeth at one pitch / one row over a pitch range.
     "Thread mill",
     "Single-form thread mill",
+    "Waterjet nozzle",
 ];
 
 /// The note gray the model page's notes use ([0.62,0.66,0.72]).
@@ -716,14 +717,14 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                         // The torch (#670): no spindle, no corner - a
                         // kerf. Leaving it, a spinning kind needs an rpm.
                         // The sinker electrode (#541) turns none either.
-                        if matches!(state.tool_ui.tool_kind(), tools::ToolKind::Torch | tools::ToolKind::Electrode) {
+                        if matches!(state.tool_ui.tool_kind(), tools::ToolKind::Torch | tools::ToolKind::Waterjet | tools::ToolKind::Electrode) {
                             state.tool_ui.rpm = 0.0;
                             state.tool_ui.corner_r = 0.0;
-                        } else if (before == 12 || before == 13) && (state.tool_ui.rpm.is_nan() || state.tool_ui.rpm <= 0.0) {
+                        } else if matches!(before, 12 | 13 | 16) && (state.tool_ui.rpm.is_nan() || state.tool_ui.rpm <= 0.0) {
                             state.tool_ui.rpm = 10000.0;
                         }
                     }
-                    let torch = state.tool_ui.tool_kind() == tools::ToolKind::Torch;
+                    let torch = matches!(state.tool_ui.tool_kind(), tools::ToolKind::Torch | tools::ToolKind::Waterjet);
                     let electrode = state.tool_ui.tool_kind() == tools::ToolKind::Electrode;
                     if electrode {
                         // #541: the burning face's two sides.
@@ -737,7 +738,7 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                         // #670): every offset reads radius = kerf / 2.
                         field(ui, "Kerf width");
                         num(ui, u, &mut state.tool_ui.diameter);
-                        ui.label("the cut's width - about 1.5x the nozzle orifice; confirm it with a test cut");
+                        ui.label("the cut's width; confirm it with a test cut");
                     } else {
                         field(ui, "Diameter");
                         num(ui, u, &mut state.tool_ui.diameter);
@@ -807,7 +808,7 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                         ui.label("half the diameter - a ball nose's whole tip is its ball");
                     } else if !matches!(
                         state.tool_ui.tool_kind(),
-                        tools::ToolKind::Tap | tools::ToolKind::Torch | tools::ToolKind::Electrode | tools::ToolKind::ThreadMill | tools::ToolKind::ThreadMillSingle
+                        tools::ToolKind::Tap | tools::ToolKind::Torch | tools::ToolKind::Waterjet | tools::ToolKind::Electrode | tools::ToolKind::ThreadMill | tools::ToolKind::ThreadMillSingle
                     ) {
                         field(ui, "Corner radius");
                         num(ui, u, &mut state.tool_ui.corner_r);
@@ -865,7 +866,13 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                 String::new()
             };
             if exists {
-                if ui.button("Apply").clicked() {
+                let recipe_refusal = (state.tool_ui.tool_kind() == tools::ToolKind::Waterjet)
+                    .then(|| state.tool_ui.to_tool().torch_refusal())
+                    .flatten();
+                if ui.add_enabled(recipe_refusal.is_none(), egui::Button::new("Apply"))
+                    .on_disabled_hover_text(recipe_refusal.as_deref().unwrap_or_default())
+                    .clicked()
+                {
                     // #93 slice 3: a landed drawn cutter rides the edit.
                     let apply = state.apply_tool_numbers(&name_now);
                     state.pending.push_back(apply);
