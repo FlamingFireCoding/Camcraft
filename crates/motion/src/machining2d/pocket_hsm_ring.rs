@@ -84,6 +84,9 @@ fn the_stock_ring_level_reaches_the_air_planner_with_the_stock() {
     assert!(notes.iter().any(|n| n.contains("cut from the air")), "{notes:?}");
     assert!(rest <= HSM_REST_MAX, "rest {rest:.4}");
     assert!(travel.moves < MOVE_BUDGET, "moves {}", travel.moves);
+    // Round C: the passes are joined by microlift returns, so the level
+    // keeps the Adaptive plan (not the Offset rings by the hop budget).
+    assert!(travel.hops <= HOP_BUDGET, "hops {} over {HOP_BUDGET}", travel.hops);
 }
 
 /// Without the stock the level is planned as before (the growth spiral).

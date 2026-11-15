@@ -178,7 +178,12 @@ pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &A
             }
         }
     }
-    let joins = vec![None; passes.len()];
+    // Each pass reached by the microlift return law, else a hop.
+    // A pass whose lead grazes starts on it: the walk in order is read
+    // again and kept in the worst reading.
+    let joined = super::air_links::air_joins(&ras0, &passes, center, (r, rim, read.2, bite));
+    note(&mut worst, joined.worst);
+    let (passes, joins) = (joined.passes, joined.joins);
     let mut plan = AdaptivePlan { rest: ras.standing() as f64 * ras.h * ras.h, ..AdaptivePlan::default() };
     plan.travel = lift::travel(&ras0, &passes, &joins, (r, rim, read.2, bite));
     (plan.passes, plan.joins) = (passes, joins);

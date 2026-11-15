@@ -38,6 +38,7 @@
 //! too much is left). Every loop is capped; the plan cannot hang.
 
 // Issue #1950: the stock ring cut from the air.
+mod air_links;
 mod air_rings;
 mod budget;
 mod conform;
