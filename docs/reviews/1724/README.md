@@ -28,7 +28,9 @@ PNG files. Pass a saved PR body as an argument to check that it also embeds
 all six images. This pins the review's missing-evidence finding; it does
 not assert pixel equality.
 
-The repository keeps this review evidence, following the existing checked-in
-evidence in `docs/reviews/1756/`, `docs/review/1765/` and `docs/pr-1711/`.
+The repository keeps this review evidence, following the earlier evidence from
+[PR #1756](https://github.com/NeoTech/Camcraft/pull/1756),
+[PR #1765](https://github.com/NeoTech/Camcraft/pull/1765) and
+[PR #1711](https://github.com/NeoTech/Camcraft/pull/1711).
 The six images remain embedded in the PR description; this directory preserves
 their capture provenance and the image-link check alongside them.

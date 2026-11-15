@@ -293,6 +293,22 @@ fn a_helix_entry_posts_continuous_helical_arcs() {
     assert!(helical >= helix.len(), "{helical} helical words for {} helix moves", helix.len());
 }
 
+/// XY distance from `q` to the triangle's projection (0 inside it).
+fn to_tri(q: Point3, t: [Point3; 3]) -> f64 {
+    let seg = |a: Point3, b: Point3| {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let l2 = dx * dx + dy * dy;
+        let s = if l2 > 0.0 { (((q.x - a.x) * dx + (q.y - a.y) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+        (a.x + s * dx - q.x).hypot(a.y + s * dy - q.y)
+    };
+    let side = |a: Point3, b: Point3| (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x);
+    let (s0, s1, s2) = (side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0]));
+    if (s0 >= 0.0 && s1 >= 0.0 && s2 >= 0.0) || (s0 <= 0.0 && s1 <= 0.0 && s2 <= 0.0) {
+        return 0.0;
+    }
+    seg(t[0], t[1]).min(seg(t[1], t[2])).min(seg(t[2], t[0]))
+}
+
 /// Found while building M11.2 (pre-existing, not a links defect): the
 /// 3-D ladder run to the STOCK bottom on this part found a sliver level
 /// at Z -7 under the part's underside (Z -5) - the plane sections no
@@ -308,13 +324,24 @@ fn never_under_the_bore_floor(entry: Entry3D) {
     if let OpParams::Pocket3D { bottom_z, .. } = &mut op {
         *bottom_z = Height::of(HeightReference::BottomOfStock, 0.0);
     }
-    let (_w, _h, t, warns) = user_job(op);
+    let (w, _h, t, warns) = user_job(op);
     assert!(!t.moves.is_empty(), "{entry:?}: the bore is still cut");
     let in_bore = |p: &Point3| p.x.hypot(p.y) < 12.5;
     let under = t.moves.iter().find(|m| [m.from, m.to].iter().any(|q| in_bore(q) && q.z < -1e-6));
     assert!(under.is_none(), "{entry:?}: a move under the bore floor: {under:?}");
-    let low = t.moves.iter().map(|m| m.to.z.min(m.from.z)).fold(f64::INFINITY, f64::min);
-    assert!(low >= -1e-6, "{entry:?}: the part shadows everything below Z 0, got {low}");
+    // #1774: the stock AROUND the part is cleared down to the stock's
+    // bottom (the 2D pocket's #12 reading); under the part's own
+    // shadow nothing goes below Z 0 - every lower move keeps its
+    // tool disc off the part's projected facets.
+    let part = model::find_by_name(&w, "Milling-test").and_then(|e| model::world_facets(&w, &e)).expect("part facets");
+    let low = t
+        .moves
+        .iter()
+        .flat_map(|m| [m.from, m.to])
+        .filter(|q| q.z < -1e-6)
+        .map(|q| part.iter().map(|f| to_tri(q, [f.a, f.b, f.c])).fold(f64::INFINITY, f64::min))
+        .fold(f64::INFINITY, f64::min);
+    assert!(low >= 5.0 - 0.02, "{entry:?}: a move below Z 0 is {low} from the part's footprint");
     assert!(warns.is_empty(), "{entry:?}: {warns:?} / {:?}", t.notes);
 }
 

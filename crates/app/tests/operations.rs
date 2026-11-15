@@ -6354,13 +6354,18 @@ fn multiaxis_rough_pocket_twin() -> OpParams {
 /// first (or read Stale against its sibling's path). This law is about
 /// the stock, not a sequence: each kind must see the whole stock.
 fn ladder_job(tag: &str, stamped: bool) -> (World, History, camcraft_app::cl::Toolpath) {
+    ladder_job_on(tag, stamped, 40.0)
+}
+
+/// [`ladder_job`] on a square stock `side` mm across (#1774).
+fn ladder_job_on(tag: &str, stamped: bool, side: f64) -> (World, History, camcraft_app::cl::Toolpath) {
     let world = new_world();
     let mut history = History::default();
     let cmd = SetStock::new(
         &world,
         StockShape::Box {
-            dx: 40.0,
-            dy: 40.0,
+            dx: side,
+            dy: side,
             dz: 20.0,
         },
         Location {
@@ -6396,6 +6401,22 @@ fn ladder_job(tag: &str, stamped: bool) -> (World, History, camcraft_app::cl::To
     );
     let path = cache(&world, tag).expect("cached ladder").path;
     (world, history, path)
+}
+
+/// #1774: a stock reaching 15 mm past the slab is cleared by both kinds
+/// out to its outline - Multi-Axis Rough reads the 3D Pocket's footprint,
+/// so the far stock grows both ladders alike.
+#[test]
+fn multiaxis_rough_clears_the_far_stock_the_pocket_clears() {
+    let (_pw, _ph, near) = ladder_job_on("P3N", false, 40.0);
+    let (_fw, _fh, plain) = ladder_job_on("P3F", false, 70.0);
+    let (_rw, _rh, rough) = ladder_job_on("MARF", true, 70.0);
+    assert!(plain.moves.len() > near.moves.len(), "the far stock adds cuts: {} vs {}", plain.moves.len(), near.moves.len());
+    assert_eq!(plain.moves.len(), rough.moves.len(), "one ladder, two readings, on the far stock too");
+    let reach = |t: &camcraft_app::cl::Toolpath| {
+        t.moves.iter().filter(|m| m.kind == MoveKind::Feed).map(|m| m.to.x.abs().max(m.to.y.abs())).fold(0.0, f64::max)
+    };
+    assert!(reach(&rough) > 31.0, "Multi-Axis Rough reaches the far stock: {}", reach(&rough));
 }
 
 #[test]
