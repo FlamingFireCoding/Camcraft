@@ -150,6 +150,12 @@ write (the gate), so the released program never carries one.
   power-on height) reads an unstated `safe_retract` as "not homed" and
   lifts in the work offset to the section's `ClearancePlane` instead,
   refused by name when that height is unknown or not above `StockZTop`.
+- **A length word carries its decimal point (#1836).** A Fanuc-family
+  control with parameter 3401#0 DPI=0 reads a word with no point in least
+  increments (`Z14` is 0.014 mm). The Fanuc, Fanuc Lathe, Haas, Mazak and
+  Doosan posts write every length, angle, lead and feed-per-rev word with
+  its point (`Z14.`); only the words the control documents as "no decimal
+  point" (lathe G76 P Q, G83 Q) stay in whole least increments.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a

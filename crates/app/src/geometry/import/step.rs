@@ -295,6 +295,15 @@ fn shell_facets(
                 .collect();
             polys
         }));
+        if let Some(i) = cshell.edges.iter().position(|e| e.curve.meter.refused()) {
+            return Err(PassError::Unconverged {
+                continuous: false,
+                refusal: ImportError::Step(format!(
+                    "edge {} of {} in shell #{shell_id} could not be tessellated: its curve subdivision did not converge within {cap} evaluations (a discontinuous or degenerate curve) - re-export the model, or import an STL",
+                    i + 1, cshell.edges.len()
+                )),
+            });
+        }
         if let Some(trip) = guarded.tripped() {
             // A face that may jump is refused even when a coarser pass
             // met: it converges at any tolerance wider than its gap, and

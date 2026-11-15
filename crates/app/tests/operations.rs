@@ -6639,6 +6639,7 @@ fn stub_tool() -> Tool {
         pitch_min: 0.0,
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }

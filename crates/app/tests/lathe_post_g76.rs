@@ -189,8 +189,8 @@ fn a_g76_thread_posts_to_the_lathe_golden() {
     // the three passes verified. R0 had it rough to 1.2 and cut the
     // root once more.
     assert!(text.contains("M03\n") && !text.contains("M04"), "{text}");
-    assert!(text.contains("G00 X12.1 Z14\nG76 P010000 Q400 R0.4\n"), "{text}");
-    assert!(text.contains("G76 X9.6 Z8 P1200 Q400 F2\n"), "{text}");
+    assert!(text.contains("G00 X12.1 Z14.\nG76 P010000 Q400 R0.4\n"), "{text}");
+    assert!(text.contains("G76 X9.6 Z8. P1200 Q400 F2.\n"), "{text}");
     assert_eq!(text.matches("G76").count(), 2, "one two-block cycle: {text}");
     assert!(!text.contains("G32"), "the passes are the control's now: {text}");
     // The in-app post (gate and all) follows the document's option.
@@ -348,7 +348,7 @@ fn a_right_hand_thread_posts_toward_the_chuck_under_m03() {
     }
     let (g76, refused) = post(&world, &records, g76());
     assert!(refused.is_empty(), "{refused:?}");
-    assert!(g76.contains("M03") && g76.contains("G00 X12.1 Z14\n") && g76.contains("G76 X9.6 Z8 "), "{g76}");
+    assert!(g76.contains("M03") && g76.contains("G00 X12.1 Z14.\n") && g76.contains("G76 X9.6 Z8. "), "{g76}");
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn a_left_hand_thread_posts_toward_the_chuck_under_m04() {
     assert!(zs.chunks(6).all(|p| p.windows(2).all(|w| w[1] < w[0])), "toward the chuck: {zs:?}");
     let (g76, refused) = post(&world, &records, g76());
     assert!(refused.is_empty(), "{refused:?}");
-    assert!(g76.contains("M04") && g76.contains("G76 X9.6 Z8 "), "{g76}");
+    assert!(g76.contains("M04") && g76.contains("G76 X9.6 Z8. "), "{g76}");
     // The gated in-app post agrees.
     let path = std::env::temp_dir().join(format!("camcraft-lh-{}.nc", std::process::id()));
     let _ = std::fs::remove_file(&path);

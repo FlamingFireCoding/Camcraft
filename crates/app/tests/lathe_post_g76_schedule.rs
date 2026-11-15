@@ -240,7 +240,7 @@ fn a_constant_area_flank_g76_states_its_verified_passes() {
     let (text, refused) = post(&world);
     assert!(refused.is_empty(), "{refused:?}");
     assert!(text.contains("G76 P020055 Q100 R0.05\n"), "{text}");
-    assert!(text.contains(" P1200 Q400 F2\n"), "{text}");
+    assert!(text.contains(" P1200 Q400 F2.\n"), "{text}");
     same_ladder(&world, &text);
     common::write_golden("nc/fanuc-lathe/thread_g76_area.nc", &text);
 }

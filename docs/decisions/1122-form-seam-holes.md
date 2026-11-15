@@ -25,12 +25,14 @@
   and all other family caps. This fixes the reported merge failure without
   weakening unrelated existing guards; dropping those guards or adding arbitrary
   slack was considered and rejected.
-- **Chosen:** Retain `docs/reviews/1724/` as review evidence, matching existing
+- **Chosen then:** Retain the review evidence for
+  [PR #1724](https://github.com/NeoTech/Camcraft/pull/1724), matching existing
   review evidence from [PR #1756](https://github.com/NeoTech/Camcraft/pull/1756),
   [PR #1765](https://github.com/NeoTech/Camcraft/pull/1765) and
   [PR #1711](https://github.com/NeoTech/Camcraft/pull/1711).
-  The PR description already embeds all six images. Removing
-  these files would discard their capture provenance and link-validation script.
+  The PR description already embedded all six images. The decision kept
+  their capture provenance and link-validation script beside them.
+  Issue #1845 supersedes this choice. Git history preserves that evidence.
 
 ### PR #1724 latest review: scope the guard to migrated pages
 

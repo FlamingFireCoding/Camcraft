@@ -155,48 +155,18 @@ fn the_sample_as_imported_still_sections_on_the_plain_read() {
 /// the pocket clears the stock along the strip's sides - never a cut
 /// into the part (no gouge).
 ///
-/// It does NOT post with the job's tool: EM-0600-4FL has 15 mm of flute
-/// and an 8 mm shank, and the part stands 118 mm tall. The ladder keeps
-/// only the flute radius off the material above, so beside every wall
-/// taller than the flutes the shank and holder touch the part. Verify
-/// names each such move (`shank_hit`, and `rapid_in_stock` on the lifts
-/// out of those cuts) and holds the post by R1: visible, never silent.
-/// The same R1 path with flutes that reach the whole depth verifies
-/// clean, so the hits come from the tool's reach, not from the #1749
-/// footprint. The ladder's shank blindness is owed in #1844.
+/// #1844: the short tool is refused by name before the ladder runs.
+/// A reaching tool still generates and verifies clean beside the silhouette.
 #[test]
 fn the_sample_as_imported_roughs_the_3d_pocket_beside_its_silhouette() {
     let mut c = sample_job(false);
-    // S1 never generated would skip the program gate (#1840): judge R1 alone.
     c.ok("delete_operation", json!({ "name": "S1" }));
-    let generated = c.ok("generate", json!({ "name": "R1" }));
-    let st = statuses(&generated);
-    assert_eq!(st.len(), 1, "{generated}");
-    for (name, status, row) in st {
-        assert_eq!(status, "ok", "{name}: {row}");
-    }
-    let v = c.ok("verify", json!({}));
-    assert!(v["gate"].get("skipped").is_none(), "the gate must run: {v}");
-    assert_eq!(v["gate"]["ok"], json!(true), "{v}");
-    assert!(gate_problems(&v).iter().all(|p| !p.starts_with("gouge")), "no gouge: {v}");
-    let findings: Vec<Value> = v["findings"].as_array().cloned().unwrap_or_default();
-    let count = |k: &str| findings.iter().filter(|f| f["kind"] == json!(k)).count();
-    assert!(count("shank_hit") > 0 && count("rapid_in_stock") > 0, "the short tool's reach is named: {v}");
-    for f in &findings {
-        let kind = f["kind"].as_str().unwrap_or_default();
-        assert!(kind == "shank_hit" || kind == "rapid_in_stock", "only the reach findings: {f}");
-        assert_eq!(f["op"], json!("R1"), "{f}");
-        assert_eq!(f["blocks_post"], json!(true), "{f}");
-        if kind == "shank_hit" {
-            let msg = f["message"].as_str().unwrap_or_default();
-            assert!(msg.contains("collides with the part"), "{f}");
-        }
-    }
-    assert_eq!(v["ok"], json!(false), "the post is held: {v}");
-    assert_eq!(v["held_by"], json!(["R1"]), "{v}");
+    let (_, generated) = c.call("generate", json!({ "name": "R1" }));
+    let text = generated.to_string();
+    assert!(!text.contains("\"status\":\"ok\""), "the short tool must refuse at generation: {text}");
+    assert!(text.contains("3D Pocket") && text.contains("shank") && text.contains("Bottom"), "name the reach and remedy: {text}");
 
-    // The same path with flutes past the part's height and no wider
-    // shank: nothing stands beside the steel, so verify is clean.
+    // Longer flutes remove the obstruction without weakening verify.
     c.ok("edit_tool", json!({ "name": "EM-0600-4FL", "patch": { "flute_len": 125.0, "shank_d": 6.0 } }));
     let generated = c.ok("generate", json!({ "name": "R1" }));
     assert!(statuses(&generated).iter().all(|(_, s, _)| s == "ok"), "{generated}");

@@ -70,6 +70,7 @@ var hopZ = null;           // #1028: the section's RetractPlane (its hop), null 
 var coolant = "";          // the M-code this program started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
+var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var homedAt = -1;          // linesWritten() just after a trip home (#504): onClose skips its own home when nothing followed
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
@@ -107,15 +108,22 @@ function trimNum(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) {  // a length: mm at three decimals, or inch at four
+// #1836: a length or angle word always carries its decimal point (`Z14.`,
+// never `Z14`). Fanuc parameter 3401 bit 0 (DPI, Series 0i parameter
+// manual) decides how the control reads a word with no point: DPI=0 reads
+// it in least increments (Z14 is 0.014 mm under IS-B), DPI=1 in mm or
+// inch. With the point, both settings read the same value.
+function pt(s) { return s.indexOf(".") >= 0 ? s : s + "."; }
+function fn(v) {  // a length as text (comments): mm at three decimals, or inch at four
   if (!has(v)) return "0";
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
-function fa(v) {  // an angle (degrees) at three decimals - no unit to convert
-  return has(v) ? trimNum(Number(v).toFixed(3)) : "0";
+function fu(v) { return pt(fn(v)); }  // a length word, with its point
+function fa(v) {  // an angle (degrees) at three decimals, with its point
+  return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0");
 }
 function minusU(expr, v) {
-  var s = fu(v);
+  var s = fn(v);  // macro-B text: a constant is not scaled by DPI (#1836)
   if (s === "0") return expr;
   return s.charAt(0) === "-" ? expr + "+" + s.substring(1) : expr + "-" + s;
 }
@@ -545,8 +553,8 @@ function opNotes() {
 function toolNote() {
   var desc = [];
   if (toolKind) desc.push(toolKind);
-  if (toolDia > 0) desc.push("D" + fu(toolDia));
-  if (toolCr > 0) desc.push("R" + fu(toolCr));
+  if (toolDia > 0) desc.push("D" + fn(toolDia));
+  if (toolCr > 0) desc.push("R" + fn(toolCr));
   note(joinDash(["T" + pad2(tNo) + (toolName ? " " + toolName : ""), desc.join(" ")]));
   toolKind = ""; toolCr = 0;
 }
@@ -599,6 +607,7 @@ function onParameter(name, value) {
   if (name === "OperationName") coolantOp = String(value || "");
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
+  if (name === "SetupChange") { setupNext = clean(value); return; }
   if (name === "WorkOffset" && value) wcsWord = offsetWord(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
@@ -676,8 +685,17 @@ function startPreamble() {
 
 function afterOp() {
   var ask = afterAsk;
+  var next = setupNext;
   afterAsk = "";
+  setupNext = null;
   if (!ask) return;
+  if (next !== null && (ask === "optional-stop" || ask === "stop")) {
+    // #1647: lift Z before inviting the operator to re-clamp the part.
+    if (tcpmOn) { block(["G49"]); tcpmOn = false; }
+    block(["G91", "G28", "Z0"]);
+    block(["G90"]);
+    note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
+  }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }
   if (ask === "home") {
@@ -1103,7 +1121,7 @@ function onProbeResult() {
     for (var k = 0; k < a.Measures.length; k++) sum.push("#" + (probeBase + 3 * a.Measures[k] + ai));
     var mean = a.Measures.length > 1 ? "[[" + sum.join("+") + "]/" + a.Measures.length + "]" : sum[0];
     block(["#" + (dev + i) + "=" + minusU(mean, a.Expected - org[ai])]);
-    block(["IF[ABS[#" + (dev + i) + "]GT" + fu(p.Tolerance) + "]THEN#3000=1(PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
+    block(["IF[ABS[#" + (dev + i) + "]GT" + fn(p.Tolerance) + "]THEN#3000=1(PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
     var act = 5221 + 20 * (wcsIndex - 1);

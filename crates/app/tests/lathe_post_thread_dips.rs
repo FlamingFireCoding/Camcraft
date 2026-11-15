@@ -210,7 +210,7 @@ fn the_posted_chain_keeps_the_plain_threads_z_words_and_lead() {
     for ((_, za, fa), (_, zb, fb)) in plain.iter().zip(&dipped) {
         assert_eq!(za, zb, "a dip moved a Z word: the helix phase");
         assert_eq!(fa, fb, "a dip changed the lead");
-        assert_eq!(fb, "2", "every G32 states the 2.0 lead as F");
+        assert_eq!(fb, "2.", "every G32 states the 2.0 lead as F, with its decimal point (#1836)");
     }
     assert!(plain.iter().all(|(x, _, _)| !x), "the plain thread's G32s carry no X");
 }
