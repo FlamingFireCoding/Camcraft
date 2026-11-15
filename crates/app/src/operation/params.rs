@@ -878,6 +878,8 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => {
                 wp2(h, *a);
                 wp2(h, *b);
@@ -903,6 +905,12 @@ impl OpParams {
                     Entry3D::Arc => 3,
                 });
                 wt(h, *tilt);
+                // #1731: appended only when set, so a slot with no
+                // extension keeps its hash and stays Fresh.
+                if *extend_start != 0.0 || *extend_end != 0.0 {
+                    w(h, *extend_start);
+                    w(h, *extend_end);
+                }
             }
             OpParams::TrochoidalSlot {
                 a,

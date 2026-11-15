@@ -1067,6 +1067,8 @@ impl ParamsDto {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => ParamsDto::Slot {
                 links: links_to_dto(links, &p.default_links()),
                 a: [a.x, a.y],
@@ -1090,6 +1092,8 @@ impl ParamsDto {
                 },
                 helix_radius: *helix_radius,
                 tilt: (*tilt).map(Into::into),
+                extend_start: *extend_start,
+                extend_end: *extend_end,
             },
             OpParams::Trace {
                 clearance_z,
@@ -2258,6 +2262,8 @@ impl ParamsDto {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => OpParams::Slot {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 a: Point2::new(a[0], a[1]),
@@ -2281,6 +2287,8 @@ impl ParamsDto {
                 },
                 helix_radius: *helix_radius,
                 tilt: (*tilt).map(Into::into),
+                extend_start: *extend_start,
+                extend_end: *extend_end,
             },
             ParamsDto::Trace {
                 clearance_z,

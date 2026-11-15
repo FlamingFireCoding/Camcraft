@@ -356,6 +356,13 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #1731: how far the pass runs past `a` / past `b`, mm. Absent
+        /// (and not written) when zero, so earlier files and saves stay
+        /// byte-identical.
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        extend_start: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        extend_end: f64,
     },
     Trace {
         clearance_z: HeightDto,
@@ -1195,6 +1202,12 @@ fn default_helix_radius() -> f64 {
 /// `false` is absent from the file, so legacy saves stay byte-identical.
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// Serde's skip test for an additive length that is zero by default
+/// (#1731 slot end extensions): a zero is absent from the file.
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
 }
 
 /// The facing hole law (M13.11): `lift` is the default and absent from

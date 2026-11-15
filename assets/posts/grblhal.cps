@@ -431,8 +431,12 @@ function traverseZ(z) {
   if (c === null) return null;
   return has(z) ? Math.max(c, Number(z)) : c;
 }
+// #1682: false when refused - the caller then writes nothing for its
+// move, nor for any later one while X/Y stay unknown (the rest of the
+// section), so no combined X/Y/Z move from an unknown height reaches the
+// text (the Tormach and Fanuc-family posts' rule, #1614 / #1633).
 function xyFirst(x, y, z) {
-  if (!xyUnknown || !has(x) || !has(y)) return;
+  if (!xyUnknown || !has(x) || !has(y)) return true;
   traversedAt = null;
   var tz = traverseZ(z);
   if (tz === null) {
@@ -440,12 +444,13 @@ function xyFirst(x, y, z) {
       traverseRefused = true;
       msg(coolantWho() + "first X/Y traverse with no clearance height stated (no ClearancePlane or RetractPlane) - the post will not rapid X/Y at an unknown height");
     }
-    return;
+    return false;
   }
   block(["G0", wo("Z", tz, orgZ)]);
   traversedAt = tz;
   block(["G0", wo("X", x, orgX), wo("Y", y, orgY)]);
   xyUnknown = false;
+  return true;
 }
 // A feed or arc as the first move after a tool change starts, in the
 // stream, from the generator's own start point (its clearance height).
@@ -453,15 +458,16 @@ function xyFirst(x, y, z) {
 // would crawl the whole way down: once X Y are positioned, a rapid takes
 // Z down to that start height (unless the traverse is already there) and
 // the feed runs only the stretch it planned.
-function startXY(p) {
-  if (!xyUnknown) return;
-  if (has(p.StartX) && has(p.StartY)) xyFirst(p.StartX, p.StartY, p.StartZ);
-  else xyFirst(p.X, p.Y, p.Z);
+function startXY(p) {  // false: refused (#1682), the caller writes nothing
+  if (!xyUnknown) return true;
+  var ok = (has(p.StartX) && has(p.StartY)) ? xyFirst(p.StartX, p.StartY, p.StartZ) : xyFirst(p.X, p.Y, p.Z);
+  if (!ok) return false;
   // #1616: not when the stated traverse height already is it.
   if (!xyUnknown && has(p.StartZ) && has(p.Z) && p.StartZ > p.Z &&
       !(has(traversedAt) && Math.abs(traversedAt - p.StartZ) < 1e-9)) {
     block(["G0", wo("Z", p.StartZ, orgZ)]);
   }
+  return true;
 }
 
 // While a canned-cycle group is open its expanded hole chain is the
@@ -470,7 +476,7 @@ function onRapid() {
   startPreamble();
   seeZ(properties.Z);
   if (!tiltOk(properties) || inCycle) return;
-  xyFirst(properties.X, properties.Y, properties.Z);
+  if (!xyFirst(properties.X, properties.Y, properties.Z)) return;  // #1682: refused - the move is not written
   block(["G0"].concat(xyz(properties)));
 }
 function onLinear() {
@@ -478,7 +484,7 @@ function onLinear() {
   seeZ(properties.Z); seeZ(properties.StartZ);
   if (!tiltOk(properties) || inCycle) return;
   if (spindleStopped("feed move G1")) return;
-  startXY(properties);
+  if (!startXY(properties)) return;  // #1682: refused - the move is not written
   block(["G1"].concat(xyz(properties), [fw(properties.FeedRate)]));
 }
 function onCircular() {
@@ -487,7 +493,7 @@ function onCircular() {
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;
   var p = properties;
   seeZ(p.Z); seeZ(p.StartZ);
-  startXY(p);
+  if (!startXY(p)) return;  // #1682: refused - the move is not written
   block([
     planeWord(planeOf(p)),
     p.CircularDirection === "CW" ? "G2" : "G3",
@@ -538,7 +544,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
-  xyFirst(p.X, p.Y);         // a cycle as the first move: its first hole
+  if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1682: refused - not written)
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
