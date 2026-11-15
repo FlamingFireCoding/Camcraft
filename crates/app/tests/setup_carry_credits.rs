@@ -163,3 +163,52 @@ fn a_mark_from_another_setup_cannot_credit_a_real_gouge() {
     assert!(dev.gouge_cells > 0, "Setup1's mark forgave a gouge in Setup2");
     assert!((dev.max_gouge - 0.3).abs() < 1e-6, "the uncredited cut: {}", dev.max_gouge);
 }
+
+#[test]
+fn retained_top_credit_preserves_the_underside_gouge() {
+    // The two cuts share columns: a real 0.2 mm underside gouge and a
+    // deeper, declared 0.3 mm top mark. Crediting the top must leave the
+    // underside's own depth and location, not erase the combined cell.
+    let world = new_world();
+    let mut h = History::default();
+    h.execute(&world, ImportModel::from_mesh("part", cube(Point3::new(-30.0, -30.0, 0.0), Point3::new(30.0, 30.0, 16.0))));
+    h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 60.0, dy: 60.0, dz: 16.0 }, Default::default()).expect("stock"));
+    let tool = catalog().into_iter().find(|(n, _)| *n == MILL).expect("catalog tool").1;
+    h.execute(&world, AddTool::new(&world, MILL, tool).expect("tool"));
+    h.execute(&world, CreateSetup::new(&world, None, None).expect("Setup1"));
+    h.execute(&world, AlignPartToSetup::preset(&world, "Setup1", AlignPreset::FlipX).expect("underside"));
+    add_op(&world, &mut h, "Face1", MILL, face(16.0));
+    h.execute(&world, CreateSetup::new(&world, None, Some("Setup1")).expect("Setup2"));
+    h.execute(&world, AlignPartToSetup::preset(&world, "Setup2", AlignPreset::AsModelled).expect("top side"));
+    add_op(&world, &mut h, "Trace2", MILL, params(OpType::Trace));
+
+    let trace = model::find_by_name(&world, "Trace2").expect("trace");
+    let mut cached = model::toolpath_of(&world, &trace).expect("trace path");
+    for m in &mut cached.path.moves {
+        m.from.z += 0.1;
+        m.to.z += 0.1;
+    }
+    let first = model::find_by_name(&world, "Face1").expect("first face");
+    first.entity_view(&world).set(schema::Toolpath::new(cached.path, cached.warnings));
+    h.execute(&world, GenerateOperation::new(&world, "Trace2").expect("regenerate after changed incoming stock"));
+
+    // Read only the incoming body, before the top cut: this supplies the
+    // underside count and location independently of retained credits.
+    let incoming = camcraft_app::stock_sim::incoming_body(&world, "Setup2").expect("incoming damaged body");
+    let underside = incoming.deviate(&parts_facets_in(&world, Some("Setup2")), camcraft_app::stock_sim::DEV_TOL).expect("underside verdict");
+    assert!(underside.gouge_cells > 0);
+    assert!((underside.max_gouge - 0.2).abs() < 1e-6);
+    let at = underside.max_gouge_at.expect("underside location");
+    assert!((at.z - 0.2).abs() < 1e-6, "underside in Setup2's frame: {at:?}");
+
+    h.execute(&world, CreateSetup::new(&world, None, Some("Setup2")).expect("Setup3"));
+    h.execute(&world, AlignPartToSetup::preset(&world, "Setup3", AlignPreset::FlipX).expect("turn"));
+    h.execute(&world, SetSetupStockSource::new(&world, "Setup3", StockSource::Own).expect("new block"));
+    add_op(&world, &mut h, "Face3", MILL, face(16.0));
+    let dev = simulate_document(&world).expect("retained two-face verdict").dev;
+    assert!((dev.max_gouge - 0.2).abs() < 1e-6, "lost the underside depth: {}", dev.max_gouge);
+    assert_eq!(dev.max_gouge_at, underside.max_gouge_at, "keep the underside location in Setup2's frame");
+    assert_eq!(dev.gouge_cells, underside.gouge_cells, "count only the real underside damage");
+    assert!((dev.gouge_volume - underside.gouge_volume).abs() < 1e-6);
+    assert!(!dev.is_clean(), "retained underside damage cannot be clean");
+}

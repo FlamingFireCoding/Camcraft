@@ -319,12 +319,12 @@ fn judge(
     let facets = crate::setup_align::parts_facets_in(world, frame.as_deref());
     // #864: the same tightened tolerance the final verdict is read at.
     let tol = crate::model_fidelity::program_tol(world)?;
-    let (mut dev, display) = held.verdict_snapshot(&facets, tol)?;
     let breaks = super::program_breaks(world, cut, true, frame);
-    super::credit_breaks(&mut dev, &display, &facets, &breaks);
     let marks = super::marks::program_marks(world, cut, true, frame);
-    super::credit_marks(&mut dev, &display, &facets, &marks);
-    Ok(dev)
+    held.verdict_snapshot(&facets, tol, |dev, tops| {
+        super::credit_breaks(dev, tops, &facets, &breaks);
+        super::credit_marks(dev, tops, &facets, &marks);
+    })
 }
 
 /// The stock setup `setup` starts from when the program reaches it: the

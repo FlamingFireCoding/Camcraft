@@ -225,20 +225,25 @@ impl Held {
         }
     }
 
-    /// Read a verdict and its credit lattice while retaining the stock for
-    /// the next setup. Read a field body once; do not copy its field layers.
-    pub(crate) fn verdict_snapshot(&self, facets: &[Triangle], tol: f64) -> Result<(Deviation, Dexel), String> {
+    /// Credit the top before combining it with the underside, while retaining
+    /// the stock for the next setup. Read a field body once, without copying it.
+    pub(crate) fn verdict_snapshot(
+        &self,
+        facets: &[Triangle],
+        tol: f64,
+        credit: impl FnOnce(&mut Deviation, &Dexel),
+    ) -> Result<Deviation, String> {
         let body = match self {
             Held::Plain(Stock::Column(d)) => {
-                let dev = crate::stock_sim::deviate(d, facets, tol).map_err(|e| e.to_string())?;
-                return Ok((dev, d.clone()));
+                let mut dev = crate::stock_sim::deviate(d, facets, tol).map_err(|e| e.to_string())?;
+                credit(&mut dev, d);
+                return Ok(dev);
             }
             Held::Plain(Stock::Field(_)) => return Err(PLAIN_FIELD_REFUSAL.into()),
             Held::Carried(CarriedStock::Column(b)) => std::borrow::Cow::Borrowed(b),
             Held::Carried(CarriedStock::Field(f)) => std::borrow::Cow::Owned(f.body()?),
         };
-        let dev = body.deviate(facets, tol).map_err(|e| e.to_string())?;
-        Ok((dev, body.display()))
+        body.deviate_with_top_credit(facets, tol, credit).map_err(|e| e.to_string())
     }
 
     /// The verdict and the tops the viewer draws (a carried body's

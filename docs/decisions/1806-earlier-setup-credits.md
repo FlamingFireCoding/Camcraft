@@ -10,10 +10,13 @@ could not correct that earlier verdict. Reusing the existing laws preserves
 their width, depth, target-part and remaining-floor limits. A deeper cut
 continues to count at its excess below the declared finish surface.
 
-Read the verdict with its matching display lattice while retaining the stock
+Read the top verdict with its matching lattice while retaining the stock
 for the next setup. Borrow a carried column body and read a field body once.
-Keep the body's existing floor verdict; do not replace it with a top-only
-judgment. The existing credit walk only credits a column's top verdict.
+Apply credits to the top before combining it with the body's untouched
+floor verdict. The combined per-cell value stores only the worse face, so
+crediting it afterwards can erase a shallower real underside gouge beneath
+a deeper valid top mark. Keep both faces' counts, depth and location through
+the merge; do not replace the body's verdict with a top-only judgment.
 
 Stack on PR #1804 because it introduces the side-on retained-verdict path.
 PR #1811 also edits `walk`, in the electrode-dispatch block, and edits other
@@ -23,7 +26,10 @@ methods of `Held`. Preserve both changes when the later branch refreshes.
 Applying every setup's declarations could excuse a different block's cut.
 Copying the whole held field just to get a lattice would copy unnecessary
 field layers. Duplicating the credit laws would give the final and retained
-verdicts separate definitions of the same intended cut.
+verdicts separate definitions of the same intended cut. Restoring underside
+depth after crediting the combined verdict would require recovering face
+information already lost by the merge; crediting first keeps that information
+at its existing source.
 
 Transforming an earlier setup's credits into the final silhouette is outside
 this change. A full-perimeter chamfer visible from the new tool axis can
