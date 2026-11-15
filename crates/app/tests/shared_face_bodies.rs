@@ -4,6 +4,8 @@
 //! the stock sim and verify find no gouge. Genuine non-manifold input is
 //! still refused, now named as a model fault, not "invalid machining
 //! parameters". The model as imported (axis horizontal) is untouched.
+//! Its 3D Finish, in level bands, is in `shared_face_bodies_finish.rs`
+//! (#1715).
 //!
 //! Gate map: covers app::operation::material (from_slice), app::mcp's
 //! generate / verify, through camcraft_geometry::geometry::slice's union
@@ -142,24 +144,6 @@ fn the_sample_as_imported_still_sections_on_the_plain_read() {
         let r = camcraft_app::geometry::slice::slice(&m.facets, z);
         assert!(r.is_ok(), "z = {z}: {r:?}");
     }
-}
-
-/// The as-imported job end to end: 118 mm of Z in debug is far past the
-/// default suite's budget, so it rides the heavy lane. #1706: only the
-/// 3D Finish can run here - the 3D Pocket has nothing it may cut (next
-/// test), so this test generates S1 alone and verifies it.
-#[test]
-#[ignore = "heavy lane (#1407): 3D Finish over the as-imported sample's 118 mm Z span, ~15+ min debug - run at the cut with -- --ignored"]
-fn the_sample_as_imported_still_generates_the_3d_finish() {
-    let mut c = sample_job(false);
-    let generated = c.ok("generate", json!({ "name": "S1" }));
-    let st = statuses(&generated);
-    assert_eq!(st.len(), 1, "{generated}");
-    for (name, status, row) in st {
-        assert_eq!(status, "ok", "{name}: {row}");
-    }
-    let v = c.ok("verify", json!({}));
-    assert!(gate_problems(&v).iter().all(|p| !p.starts_with("gouge")), "{v}");
 }
 
 /// #1706, read again by #1749: a 3D Pocket's machine area is the
