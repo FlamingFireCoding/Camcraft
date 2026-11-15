@@ -70,6 +70,18 @@
    refused.
 7. The last step keeps the remainder (`[15, 10, 5, 2]` for bottom 2).
    Equal steps are a separate choice, filed as a follow-up issue.
+8. Rotary wrap rough, a station window that holds only air under the
+   wrap top (round 4): the refusal "nothing to cut" is correct. With no
+   stock, the wrap top is the skin maximum (rho 2.5 on the test bar). In
+   the windows v 0..8 (foot, rho 2.0) and v 19..28 (cone top and barrel)
+   the old ladder `[2.5, 1.5, 0.5]` had open area only at 2.5, where the
+   tip stands on the stock skin. That program cut only air. The test now
+   pins both windows as refusals by name, and asserts the station law on
+   windows with material (v 0..12 and v 10..28). Dropped: to keep an air
+   level so that the window does not refuse - it posts a program that
+   removes nothing. Not changed: the ladder does not reach the material
+   between rho 2.0 and 2.5 on the foot (levels 1.5 and 0.5 are in the
+   model). That was so before this change too.
 
 **Why:** a level at the material top removes nothing and doubles the cycle
 time of a one-level cut (the maintainer's report on v0.21.0). The fix at the

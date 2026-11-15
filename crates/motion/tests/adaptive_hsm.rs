@@ -329,8 +329,9 @@ fn judge(name: &str, reg: &Region, (cell, tol): (f64, f64), print: bool) -> Vec<
         }
         return bad;
     }
-    if new.descents != 2 {
-        bad.push(format!("{name}: {} descents into stock for 2 levels", new.descents));
+    // #2004: one level (Z -5); the old air level at Top Z 0 is gone.
+    if new.descents != 1 {
+        bad.push(format!("{name}: {} descents into stock for 1 level", new.descents));
     }
     if new.slot_len > 0.0 {
         bad.push(format!("{name}: {:.1} mm of slotting", new.slot_len));
