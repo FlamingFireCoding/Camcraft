@@ -280,6 +280,7 @@ fn wide_rectangular_pocket_is_cleared_by_parallel_lanes() {
 }
 
 #[test]
+#[ignore = "heavy lane: release engagement and rest-area measurement"]
 fn l_shaped_pocket_is_cleared_under_engagement_limit() {
     let p = PocketParams { tool_diameter: 10.0, bottom_z: -3.0, ..params() };
     let Ok(l) = Region::new(vec![poly(&[(0.0, 0.0), (60.0, 0.0), (60.0, 30.0), (30.0, 30.0), (30.0, 60.0), (0.0, 60.0)])]) else {
