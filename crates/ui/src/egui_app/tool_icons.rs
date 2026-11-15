@@ -56,7 +56,12 @@ pub(crate) fn glyph(ui: &mut Ui, icon: Icon) {
     let Some(set) = IconSet::from_ctx(ui.ctx()) else { return };
     if let Some(tex) = set.texture(icon) {
         let ink = ui.visuals().text_color();
-        ui.add(Image::new(tex).fit_to_exact_size(Vec2::splat(16.0)).tint(ink));
+        ui.add(
+            Image::new(tex)
+                .fit_to_exact_size(Vec2::splat(16.0))
+                .tint(ink)
+                .alt_text(tex.name()),
+        );
     }
 }
 

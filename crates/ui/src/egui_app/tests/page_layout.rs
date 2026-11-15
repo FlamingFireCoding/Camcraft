@@ -234,3 +234,82 @@ fn layout_window_debug_info() {
     let copy = win.get_by_label("Copy").rect();
     assert!(wr.contains_rect(copy), "Debug info window: Copy {copy:?} leaves the window {wr:?}");
 }
+
+/// The Setup fixtures page with one selected model: its Mark button sits
+/// below the add buttons, shares their left edge and matches their width.
+#[test]
+fn layout_page_setup_fixtures_mark() {
+    let _g = snapshot_guard();
+    let mut h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Fixtures));
+    {
+        let st = &mut h.state_mut().state;
+        st.pending.push_back(CommandKind::Select(Some("Block".into())));
+        st.drain_actions();
+    }
+    h.run_steps(2);
+    let mark = h.get_by_label("Mark Block as fixture").rect();
+    let plate = h.get_by_label("Add fixture plate…").rect();
+    let import = h.get_by_label("Import fixture…").rect();
+    assert!(mark.top() > plate.bottom(), "Mark under the adds: {mark:?} vs {plate:?}");
+    assert_eq!(mark.left(), import.left(), "Mark starts at the left edge: {mark:?} vs {import:?}");
+    assert!((mark.width() - import.width()).abs() < 3.0, "Mark is as wide as the adds: {mark:?} vs {import:?}");
+}
+
+/// The G-code viewer window: inside the screen, a line wider than the
+/// viewer stays on one row at the listing's left edge, and toggling trace
+/// keeps the window the same size.
+#[test]
+fn layout_window_gcode_wrap_and_trace() {
+    let _g = snapshot_guard();
+    let lines = [
+        "%",
+        "G00 G90 G54 X12.5 Y-40. S8000 M3",
+        "M30",
+        "(A COMMENT FAR WIDER THAN THE VIEWER WINDOW - TOOL 1 IS A 6 MM FLAT END MILL, 3 FLUTES, 20 MM FLUTE LENGTH, 50 MM STICKOUT)",
+        "%",
+    ];
+    let mut h = shell_harness();
+    h.state_mut().state.post_view = Some(PostView {
+        path: std::path::PathBuf::from("p.nc"),
+        program: lines.join("\n"),
+        line_pos: vec![None; lines.len()],
+        open: true,
+        line: 0,
+        blocks: Vec::new(),
+        trace: false,
+        not_judged: None,
+    });
+    h.run();
+    let screen = h.ctx.content_rect();
+    let gcode_rect = |h: &H| {
+        h.ctx
+            .memory(|m| m.area_rect(egui::Id::new("gcode-viewer")))
+            .expect("G-code window: not open")
+    };
+    let before = gcode_rect(&h);
+    assert!(screen.contains_rect(before), "G-code window: {before:?} leaves the screen {screen:?}");
+    let wide = h.get_by_label(lines[3]).rect();
+    let short = h.get_by_label(lines[2]).rect();
+    assert!(
+        (wide.height() - short.height()).abs() < 0.5,
+        "G-code window: wide line {wide:?} wrapped vs {short:?}"
+    );
+    assert!(
+        (wide.left() - short.left()).abs() < 0.5,
+        "G-code window: wide line {wide:?} left differs from {short:?}"
+    );
+    h.get_by_label("trace").click();
+    h.run_steps(5);
+    let after = gcode_rect(&h);
+    assert!(
+        (after.width() - before.width()).abs() < 1.0 && (after.height() - before.height()).abs() < 1.0,
+        "G-code window went {before:?} -> {after:?} when trace was ticked"
+    );
+    h.get_by_label("trace").click();
+    h.run_steps(5);
+    let back = gcode_rect(&h);
+    assert!(
+        (back.width() - before.width()).abs() < 1.0 && (back.height() - before.height()).abs() < 1.0,
+        "G-code window went {before:?} -> {back:?} when trace was cleared"
+    );
+}
