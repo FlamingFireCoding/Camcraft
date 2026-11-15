@@ -54,24 +54,50 @@
   the posted `G00 X Z` start is `c_first - k·tan(θ)`, so the control's
   pass n (at `start + depth_n·tan(a/2)`) lands where the kernel laid it,
   and the finishing pass lands on the lattice.
-- **Not verifiable from the sources read, flagged for Hub / machine:**
-  - The sign of the per-pass Z shift. We follow LinuxCNC's "positive
-    angle, leading edge cuts more heavily": deeper passes move in the
-    direction of travel.
-  - Whether the control also shifts each pass's END Z, or ends every
-    pass at the programmed Z. If the end is fixed, early passes run up
-    to k·tan(θ) further (or shorter) at the runout, shallower than the
-    root. That is not a gouge of the thread form.
-  - Micron rounding: words are whole least increments (0.001 mm,
-    0.0001 in). The extra-pass edge case is closed by the rounded-ladder
-    R below; single rungs of a long sqrt ladder can still differ from the
-    laid ones by a few increments, with the same pass count.
+- **Not verifiable from the sources read; open for a Fanuc control run**
+  (corrected after the full review of head be4546ca, 2026-11-15; an
+  earlier text of this entry called items 1 and 2 harmless, which the
+  sources do not show). In the list, k is the thread height and a the
+  tool angle of the first block (twice the flank angle).
+  1. **Z-shift sign, and which pass sits at the programmed Z.** We follow
+     LinuxCNC's "positive angle, leading edge cuts more heavily": deeper
+     passes move in the direction of travel, and the post sets the start
+     Z to `c_first - k·tan(a/2)` so that pass n starts at
+     `start + depth_n·tan(a/2)`. If the control shifts the other way, or
+     if its finishing pass sits at the programmed start Z (the reading of
+     some Fanuc figures), the whole thread moves axially by
+     `k·tan(a/2)` to `2k·tan(a/2)` (0.6 to 1.25 mm for the
+     `thread_g76_area.nc` golden on a 2 mm lead). That is a cut in the
+     wrong place, not a profile detail.
+  2. **End-Z shift.** If the control also shifts the end of each pass by
+     `depth·tan(a/2)`, the root pass ends `k·tan(a/2)` past the
+     programmed end Z. Where the thread ends at a shoulder, that can cut
+     into the shoulder. If the end is fixed, early passes end up to
+     `k·tan(a/2)` off at the runout, shallower than the root.
+  3. **Minimum-depth clamp reading.** We read Q(dmin) as a per-pass
+     minimum against the previous clamped depth (see above). A different
+     reading changes the pass count or the per-pass depth only, never the
+     root. It can give fewer, deeper passes than verified (the tool load
+     is not judged). Equal-depth ladders (the default) are not affected.
+  4. **Rounding.** Words are whole least increments (0.001 mm,
+     0.0001 in). The pass count is fixed by construction (the
+     rounded-ladder R below, refused beyond one increment). Single rungs
+     of a long sqrt ladder can still differ from the laid ones by a few
+     increments. That is not a gouge.
 
-  None of these moves the finished form, so none blocks the merge. They
-  cannot be checked in the PathPilot Hub simulation: its lathe is
-  LinuxCNC's one-block `G76 P.. J.. K..`, not Fanuc's two-block G76.
-  They stay open for a run on a Fanuc lathe control (or its vendor's
-  simulator), recorded here and in the PR's "Not exercised".
+  Items 1 and 2 affect flank threads only (a ≠ 0). The default radial
+  thread (a = 0, the posted default) has no Z shift, so a wrong reading
+  of items 1 and 2 does not change it. Main already carries the risk of
+  items 1 and 2 for flank threads (#416 posts the angle and the start);
+  this PR does not add it. Items 1 and 2 stay unproven until a run on a
+  Fanuc lathe control (or its vendor's simulator). The PathPilot Hub
+  simulation cannot check them: its lathe is LinuxCNC's one-block
+  `G76 P.. J.. K..`, not Fanuc's two-block G76. Items 3 and 4 need the
+  same run for proof, but a wrong reading of them does not move the cut.
+  The follow-up issue for the Fanuc run is named in the PR body.
+  At the boundary, the chosen R puts the last rough depth exactly on a
+  rung (in mm too). A control that tests "reached" in a different way
+  could repeat that rung: at most one pass at a depth already verified.
 - **Record plumbing:** `ThreadCycle.alternating` and `ThreadRec.alternating`.
   The stream line writes `ALT 1` only when set (absent reads 0), so
   every earlier stream keeps its bytes. The post property is
