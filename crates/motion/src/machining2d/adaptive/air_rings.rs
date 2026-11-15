@@ -1,0 +1,370 @@
+//! Issue #1950: the stock ring of an open-side level cut from the air
+//! side inward - contour-parallel fronts of the stock outline (Held 1991,
+//! "On the Computational Geometry of Pocket Machining", LNCS 500), one
+//! load width apart, joined as one inward spiral while a front is a
+//! closed loop (Held & Spielberger 2009, CAD 41(7)), each cut read on the
+//! in-process stock before it is kept (Stori & Wright 2000, J. Manuf.
+//! Systems 19(3)). First principles and that literature; no vendor
+//! material or output consulted.
+
+use crate::geo2d::{Point2, Region};
+use crate::load::{deg_at_rim, load_at_rim};
+
+use super::front::{dist, len};
+use super::raster::Raster;
+use super::{AdaptivePlan, AdaptiveSpec, GRID_PER_D, lift};
+use crate::machining2d::GenError;
+
+/// The entry plunge stands this far outside the disc that touches the
+/// stock (mm): the first plunge is fully in air.
+const AIR_GAP: f64 = 0.005;
+
+/// Fronts are capped (the Prime Directive's "never hang").
+const MAX_FRONTS: usize = 2000;
+
+/// The lead-in keeps this far under the bound (degrees): the rim's
+/// sampling step.
+const LEAD_MARGIN_DEG: f64 = 1.0;
+
+/// The lead-in starts at most this many load widths off its front ...
+const LEAD_START_W: usize = 4;
+
+/// ... reaches it within this many tool radii ...
+const LEAD_PER_R: f64 = 12.0;
+
+/// ... and tries this many gaps a step.
+const LEAD_TRIES: usize = 16;
+
+/// The lead-out leaves the front over this many load widths.
+const LEAD_OUT_PER_W: f64 = 3.0;
+
+/// Wall laps held off the centre outline before the lap on it ...
+const WALL_LAPS: usize = 2;
+
+/// ... each this share of a load width further off.
+const WALL_LAP_SHARE: f64 = 0.9;
+
+/// A run end is read over this many tool radii of its length.
+const END_PER_R: f64 = 2.0;
+
+/// The air-side plan and its readings.
+#[derive(Clone, Debug)]
+pub(crate) struct AirPlan {
+    pub plan: AdaptivePlan,
+    /// Worst planned load (ae/D) over the whole plan, and where.
+    pub worst: (f64, Point2),
+    /// Worst planned load within `END_PER_R` radii of a run start or end
+    /// where a front breaks into runs at the part wall, and where.
+    pub ends: (f64, Point2),
+    /// Fronts cut as closed spiral loops, and fronts cut as open runs.
+    pub fronts: (usize, usize),
+}
+
+/// Plan the material `mat` (already clipped to `stock`) from the air
+/// outside `stock`, the tool centre kept in `center`. `None`: the piece
+/// has no air side, or its first front is not one closed loop in
+/// `center` (the caller keeps the growth spiral).
+pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &AdaptiveSpec) -> Result<Option<AirPlan>, GenError> {
+    if !(s.r > 0.0 && s.load > 0.0 && s.load < 1.0 && s.tol > -0.5) {
+        return Err(GenError::Invalid("air-side plan needs positive radius and load".into()));
+    }
+    let r = s.r;
+    if mat.is_empty() || center.difference(stock)?.area() <= r * r * 1e-3 {
+        return Ok(None);
+    }
+    let (d, w, seg) = (2.0 * r, 2.0 * r * s.load, r / 8.0);
+    let mut ras = Raster::from_region(mat, d / GRID_PER_D, 3.0 * r)?;
+    ras.open_air(&stock.offset(4.0 * r)?.difference(stock)?);
+    let ras0 = ras.clone();
+    let rim = crate::quality::rim_for(d, ras.h);
+    let read = (r, rim, r / 10.0);
+    let bite = deg_at_rim(super::BITE_LOAD, d, rim);
+    let mut passes: Vec<Vec<Point2>> = Vec::new();
+    let mut worst = (0.0f64, s.start);
+    let mut ends = (0.0f64, s.start);
+    let mut spiral: Vec<Point2> = Vec::new();
+    let (mut closed, mut open) = (0usize, 0usize);
+    let mut last_closed: Option<Vec<Point2>> = None;
+    let bound = deg_at_rim(s.load * (1.0 + s.tol.max(0.0)), d, rim);
+    for k in 1..=MAX_FRONTS {
+        let front = stock.offset(r - k as f64 * w)?;
+        if front.is_empty() {
+            break;
+        }
+        let mut runs = Vec::new();
+        let mut whole = true;
+        for l in front.loops() {
+            let ring = climb_ring(l.points(), seg, s.climb);
+            let inside: Vec<bool> = ring.iter().map(|&p| center.contains(p)).collect();
+            whole &= inside.iter().all(|&b| b);
+            runs.extend(split_runs(&ring, &inside));
+        }
+        if whole && open == 0 && front.loops().len() == 1 {
+            // One closed loop: ramp onto it from the last front (the
+            // first from the air), one continuous inward spiral.
+            let ring = climb_ring(front.loops()[0].points(), seg, s.climb);
+            let from = spiral.last().copied().unwrap_or(ring[0]);
+            let ramp = ramp_onto(&ring, from, if k == 1 { w + AIR_GAP } else { w }, s.climb);
+            if k == 1 && !(center.contains(ramp[0]) && ras.disc_clear(ramp[0], r)) {
+                return Ok(None);
+            }
+            spiral.extend(ramp);
+            last_closed = Some(ring);
+            closed += 1;
+            continue;
+        }
+        if k == 1 {
+            return Ok(None);
+        }
+        if let Some(ring) = last_closed.take() {
+            // The ramp left a wedge at its start: one closing lap.
+            let at = nearest(&ring, spiral.last().copied().unwrap_or(ring[0]));
+            spiral.extend(ring[at..].iter().chain(&ring[1..=at]).copied());
+            let wk = ras.walk(&spiral, read.0, read.1, read.2);
+            note(&mut worst, wk);
+            passes.push(std::mem::take(&mut spiral));
+        }
+        for run in runs {
+            if run.len() < 2 {
+                continue;
+            }
+            // Lead in from the cleared side (the last front's level) on
+            // the steepest slope the load allows, lead out away from it.
+            let pass = leads(&ras, &run, w, center, s.climb, (r, rim, bound));
+            // Where the run starts the tool stands in the stock it
+            // plunges into: read as the straight wall of that depth.
+            if pass.len() < 2 {
+                continue;
+            }
+            let sunk = plunge_depth(&ras, pass[0], r);
+            if sunk > 0.0 {
+                note(&mut ends, (deg_at_rim(sunk / d, d, rim), pass[0]));
+            }
+            walk_ends(&mut ras, &pass, read, END_PER_R * r, (&mut worst, &mut ends));
+            passes.push(pass);
+            open += 1;
+        }
+    }
+    if !spiral.is_empty() {
+        let wk = ras.walk(&spiral, read.0, read.1, read.2);
+        note(&mut worst, wk);
+        passes.push(spiral);
+    }
+    if closed == 0 {
+        return Ok(None);
+    }
+    // The wall laps: the centre outline where the disc still bites (the
+    // cusps the fronts leave where they meet the part wall), first held
+    // off it by whole load widths, outermost first, then on it.
+    for j in (0..=WALL_LAPS).rev() {
+        let lap = if j == 0 { center.clone() } else { center.offset(-(j as f64) * WALL_LAP_SHARE * w)? };
+        for l in lap.loops() {
+            // A centre loop has the part on its right: climb as it is.
+            let ring = climb_ring(l.points(), seg, !s.climb);
+            let bites: Vec<bool> = ring.iter().map(|&p| !ras.disc_clear(p, r)).collect();
+            for run in split_runs(&ring, &grow_marks(&bites)) {
+                if run.len() >= 2 {
+                    let mut wall_ends = (0.0, s.start);
+                    walk_ends(&mut ras, &run, read, END_PER_R * r, (&mut worst, &mut wall_ends));
+                    passes.push(run);
+                }
+            }
+        }
+    }
+    let joins = vec![None; passes.len()];
+    let mut plan = AdaptivePlan { rest: ras.standing() as f64 * ras.h * ras.h, ..AdaptivePlan::default() };
+    plan.travel = lift::travel(&ras0, &passes, &joins, (r, rim, read.2, bite));
+    (plan.passes, plan.joins) = (passes, joins);
+    let (wl, el) = (load_at_rim(worst.0, d, rim), load_at_rim(ends.0, d, rim));
+    plan.notes.push(format!("adaptive: stock ring cut from the air in {closed} spiral and {open} open fronts"));
+    if wl > s.load * (1.0 + s.tol.max(0.0)) {
+        plan.notes.push(format!(
+            "adaptive: worst planned load {:.1}% of D at ({:.2}, {:.2}) exceeds the {:.1}% optimal load by {:.0}%",
+            wl * 100.0,
+            worst.1.x,
+            worst.1.y,
+            s.load * 100.0,
+            (wl / s.load - 1.0) * 100.0
+        ));
+    }
+    Ok(Some(AirPlan { plan, worst: (wl, worst.1), ends: (el, ends.1), fronts: (closed, open) }))
+}
+
+fn note(worst: &mut (f64, Point2), w: (f64, Point2)) {
+    if w.0 > worst.0 {
+        *worst = w;
+    }
+}
+
+/// Walk `pass` on the stock, its first and last `span` mm read apart as
+/// the run ends.
+fn walk_ends(ras: &mut Raster, pass: &[Point2], read: (f64, f64, f64), span: f64, (worst, ends): (&mut (f64, Point2), &mut (f64, Point2))) {
+    let total = len(pass);
+    let (mut acc, mut cut) = (0.0, vec![0usize]);
+    for i in 1..pass.len() {
+        acc += dist(pass[i - 1], pass[i]);
+        if (cut.len() == 1 && acc >= span.min(0.5 * total)) || (cut.len() == 2 && acc >= total - span.min(0.5 * total)) {
+            cut.push(i);
+        }
+    }
+    cut.push(pass.len() - 1);
+    for (j, win) in cut.windows(2).enumerate() {
+        let Some(part) = pass.get(win[0]..=win[1]) else { continue };
+        let wk = ras.walk(part, read.0, read.1, read.2);
+        note(worst, wk);
+        if j == 0 || j + 2 == cut.len() {
+            note(ends, wk);
+        }
+    }
+}
+
+/// The loop as a closed climb walk (material on the right: a region's
+/// loops reversed), at most `seg` apart, its first point repeated.
+fn climb_ring(pts: &[Point2], seg: f64, climb: bool) -> Vec<Point2> {
+    let mut v: Vec<Point2> = pts.to_vec();
+    if climb {
+        v.reverse();
+    }
+    super::front::densify(&v, seg, true)
+}
+
+/// The unit normal toward the cleared side (left of a climb walk, right
+/// of a conventional one) at point `i`.
+fn normal(pts: &[Point2], i: usize, climb: bool) -> Point2 {
+    let a = pts[i.saturating_sub(1)];
+    let b = pts[(i + 1).min(pts.len() - 1)];
+    let (tx, ty) = (b.x - a.x, b.y - a.y);
+    let l = tx.hypot(ty).max(1e-12);
+    if climb { Point2::new(-ty / l, tx / l) } else { Point2::new(ty / l, -tx / l) }
+}
+
+fn nearest(ring: &[Point2], p: Point2) -> usize {
+    let n = ring.len().saturating_sub(1).max(1);
+    (0..n).min_by(|&i, &j| dist(ring[i], p).total_cmp(&dist(ring[j], p))).unwrap_or(0)
+}
+
+/// One revolution of `ring` from the point nearest `from`, each point
+/// held off toward the cleared side by `gap` at the start, falling to 0
+/// at the end (the step between revolutions spread over the whole one).
+fn ramp_onto(ring: &[Point2], from: Point2, gap: f64, climb: bool) -> Vec<Point2> {
+    let at = nearest(ring, from);
+    let walk: Vec<Point2> = ring[at..].iter().chain(&ring[1..=at]).copied().collect();
+    let total = len(&walk).max(1e-12);
+    let mut acc = 0.0;
+    let mut out = Vec::with_capacity(walk.len());
+    for i in 0..walk.len() {
+        if i > 0 {
+            acc += dist(walk[i - 1], walk[i]);
+        }
+        let n = normal(&walk, i, climb);
+        let g = gap * (1.0 - acc / total);
+        out.push(Point2::new(walk[i].x + n.x * g, walk[i].y + n.y * g));
+    }
+    out
+}
+
+/// How deep the disc at `p` stands in the stock (mm, to a fiftieth of
+/// the radius): `r` less the widest clear disc there.
+fn plunge_depth(ras: &Raster, p: Point2, r: f64) -> f64 {
+    (0..=50).map(|k| r * (1.0 - k as f64 / 50.0)).find(|&rho| ras.disc_clear(p, rho)).map_or(r, |rho| r - rho)
+}
+
+/// `run` with its lead-in and a lead-out of `LEAD_OUT_PER_W` widths,
+/// each point held off toward the cleared side by a gap that stays in
+/// `center`. The lead-in starts where the disc stands clear (at most
+/// `LEAD_START_W` widths off), and each step drops the gap as far as the
+/// contact angle read on the stock allows (`bound`, degrees): an oblique
+/// entry reads its slope on top of the wall it meets (the engagement arc
+/// of peripheral milling, first principles; measured, not assumed).
+fn leads(ras: &Raster, run: &[Point2], w: f64, center: &Region, climb: bool, (r, rim, bound): (f64, f64, f64)) -> Vec<Point2> {
+    let off = |i: usize, g: f64| {
+        let n = normal(run, i, climb);
+        let q = Point2::new(run[i].x + n.x * g, run[i].y + n.y * g);
+        (g > 0.0 && center.contains(q)).then_some(q)
+    };
+    let mut g = w;
+    for k in 2..=(2 * LEAD_START_W) {
+        if off(0, g).is_some_and(|q| ras.disc_clear(q, r)) {
+            break;
+        }
+        g = 0.5 * k as f64 * w;
+    }
+    let mut stock = ras.clone();
+    let mut pass = vec![off(0, g).unwrap_or(run[0])];
+    stock.cut(pass[0], pass[0], r);
+    let mut i = 1;
+    while i < run.len() && g > 0.0 && len(&run[..=i]) < LEAD_PER_R * r {
+        let prev = pass[pass.len() - 1];
+        let ds = dist(run[i - 1], run[i]);
+        // The lowest gap whose step reads within the bound (else the
+        // least read), from a little up to steeply down.
+        let mut best: Option<(f64, f64, Point2)> = None;
+        for j in 0..=LEAD_TRIES {
+            let gj = (g + ds * (0.2 - 1.0 * j as f64 / LEAD_TRIES as f64)).max(0.0);
+            let q = if gj > 0.0 { off(i, gj) } else { Some(run[i]) };
+            let Some(q) = q else { continue };
+            let deg = stock.peek(&[prev, q], rim, 0.1 * r);
+            let fits = deg <= bound - LEAD_MARGIN_DEG;
+            if best.is_none_or(|(bd, bg, _)| (fits && (gj < bg || bd > bound - LEAD_MARGIN_DEG)) || (!fits && bd > bound - LEAD_MARGIN_DEG && deg < bd)) {
+                best = Some((deg, gj, q));
+            }
+        }
+        let Some((bd, gj, q)) = best else { break };
+        if bd > bound - LEAD_MARGIN_DEG {
+            // No gap holds the load here (a short run into the wall):
+            // the run ends, its rest is the wall laps'.
+            return pass;
+        }
+        stock.cut(prev, q, r);
+        (g, i) = (gj, i + 1);
+        pass.push(q);
+    }
+    let total = len(run);
+    let out_len = LEAD_OUT_PER_W * w;
+    let mut acc = len(&run[..i.min(run.len())]);
+    for j in i..run.len() {
+        if j > i {
+            acc += dist(run[j - 1], run[j]);
+        }
+        let rest = total - acc;
+        let gj = if rest < out_len { w * (1.0 - rest / out_len) } else { 0.0 };
+        pass.push(off(j, gj).unwrap_or(run[j]));
+    }
+    pass
+}
+
+/// Each marked sample with its two neighbours marked too (a bite run
+/// starts and ends one sample in air).
+fn grow_marks(m: &[bool]) -> Vec<bool> {
+    let n = m.len();
+    (0..n).map(|i| m[i] || (i > 0 && m[i - 1]) || (i + 1 < n && m[i + 1])).collect()
+}
+
+/// The runs of a closed walk (first point repeated) where `inside` holds.
+fn split_runs(ring: &[Point2], inside: &[bool]) -> Vec<Vec<Point2>> {
+    let n = ring.len().saturating_sub(1);
+    if n == 0 {
+        return Vec::new();
+    }
+    let Some(out0) = (0..n).find(|&i| !inside[i]) else {
+        return vec![ring.to_vec()];
+    };
+    let mut runs = Vec::new();
+    let mut cur: Vec<Point2> = Vec::new();
+    for k in 1..=n {
+        let i = (out0 + k) % n;
+        if inside[i] {
+            cur.push(ring[i]);
+        } else if !cur.is_empty() {
+            runs.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        runs.push(cur);
+    }
+    runs
+}
+
+#[cfg(test)]
+#[path = "air_rings_tests.rs"]
+mod tests;

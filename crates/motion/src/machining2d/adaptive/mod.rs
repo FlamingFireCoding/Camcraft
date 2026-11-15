@@ -37,6 +37,9 @@
 //! refused and left (and `pocket_hsm` falls back to Offset rings when
 //! too much is left). Every loop is capped; the plan cannot hang.
 
+// Issue #1950: the stock ring cut from the air (wired in round B).
+#[cfg_attr(not(test), allow(dead_code))]
+mod air_rings;
 mod budget;
 mod conform;
 mod core;
