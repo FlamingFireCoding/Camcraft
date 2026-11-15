@@ -704,6 +704,7 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
     // (the setup's own offset before the world axes) - the arrow is the
     // program frame and is never flipped.
     let mut notes = crate::axis_note::triad_notes(state);
+    let shown = crate::view_frame::axes_shown(state);
     for gizmo in gizmos(state) {
         let base = Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]);
         // #727: the gizmo's own name, at its origin - whose zero this is,
@@ -725,6 +726,9 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
             out.push(([uv[0], uv[1] + NAME_DROP_UV], c, gizmo.name.clone()));
         }
         for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            if !shown[axis] {
+                continue; // #2019: no Y letter on a lathe without a Y axis
+            }
             let p = transform_point(
                 Point3::new(
                     dir[0] * len * 1.08,
@@ -758,13 +762,17 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
 pub(crate) fn gizmo_segments(state: &State, aspect: f64) -> Vec<([f32; 2], [f32; 2], [f32; 3])> {
     let len = gizmo_len(state);
     let mvp = state.cam.mvp(aspect);
+    let shown = crate::view_frame::axes_shown(state);
     let mut out = Vec::new();
     for gizmo in gizmos(state) {
         let base = Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]);
         let Some(o) = project_uv(&mvp, gizmo.pos) else {
             continue;
         };
-        for (rgb, dir) in &axes() {
+        for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            if !shown[axis] {
+                continue;
+            }
             let p = transform_point(Point3::new(dir[0] * len, dir[1] * len, dir[2] * len), base, gizmo.rot);
             let Some(tip) = project_uv(&mvp, [p.x, p.y, p.z]) else {
                 continue;
@@ -904,9 +912,13 @@ pub(crate) fn is_axis_label(text: &str) -> bool {
 pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
     let len = gizmo_len(state);
     let mut out: Vec<[f32; 6]> = Vec::new();
+    let shown = crate::view_frame::axes_shown(state);
     for gizmo in gizmos(state) {
         let (px, py, pz) = (ftoz(gizmo.pos[0]), ftoz(gizmo.pos[1]), ftoz(gizmo.pos[2]));
-        for (rgb, dir) in &axes() {
+        for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            if !shown[axis] {
+                continue;
+            }
             let p = transform_point(
                 Point3::new(dir[0] * len, dir[1] * len, dir[2] * len),
                 Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]),
