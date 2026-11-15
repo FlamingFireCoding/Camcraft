@@ -151,7 +151,8 @@ fn try_single_fast_path(
             }
             let b_used = t.loop_width.map_or(b, |w| 0.5 * w);
             let swept = Region::sweep(std::slice::from_ref(&chain), r + b_used)?;
-            if rest_share(reach, &swept) > REST_MAX {
+            // An explicit narrow band deliberately leaves stock for cleanup.
+            if t.loop_width.is_none() && rest_share(reach, &swept) > REST_MAX {
                 return Ok(false);
             }
             let tp = trochoid_params(b, p, t);
