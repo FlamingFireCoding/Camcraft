@@ -1836,6 +1836,8 @@ pub struct State {
     /// [`OpUi`]: the drafts rebuild on every sync, and a tab reset on
     /// Apply or on reselecting the same op would read as a bug.
     pub op_tab: usize,
+    /// Whether Properties is the visible dock tab this frame.
+    pub properties_shown: bool,
     pub tool_ui: ToolUi,
     /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
     /// that tool, `Some("")` the blank creation form. Ephemeral window
@@ -2035,6 +2037,7 @@ impl State {
             incoming_view: Default::default(),
             geo_hover: None,
             geo_hover_drawn: None,
+            properties_shown: true,
             geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
