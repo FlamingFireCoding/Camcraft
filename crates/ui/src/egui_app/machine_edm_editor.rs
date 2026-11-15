@@ -60,13 +60,22 @@ const UNDERSIZE_SEED_MM: f64 = 0.1;
 const WEAR_SEED: f64 = 0.1;
 
 fn stated_num(ui: &mut Ui, u: Unit, label: &str, v: &mut Option<f64>, seed: f64) {
+    stated_with(ui, label, v, seed, |ui, x, name| fields::num_named(ui, u, x, name));
+}
+
+/// A stated number with no unit (a ratio): the same tick-in row.
+fn stated_plain(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64) {
+    stated_with(ui, label, v, seed, |ui, x, name| fields::num_plain_named(ui, x, name));
+}
+
+fn stated_with(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl FnOnce(&mut Ui, &mut f64, &str)) {
     ui.horizontal(|ui| {
         let mut on = v.is_some();
         if ui.checkbox(&mut on, label).changed() {
             *v = on.then_some(seed);
         }
         match v {
-            Some(x) => fields::num_named(ui, u, x, &format!("{label} value")),
+            Some(x) => show(ui, x, &format!("{label} value")),
             None => {
                 ui.label("not stated");
             }
@@ -161,7 +170,7 @@ fn conditions(ui: &mut Ui, u: Unit, e: &mut Edm) {
             ui.add_space(24.0);
             // The axial wear rate (#1381): a ratio, so no unit lens. A value
             // outside [0, 1) is named below and refused at Apply.
-            stated_num(ui, &format!("Condition {n} wear rate"), &mut c.wear, WEAR_SEED, pages::num_plain);
+            stated_plain(ui, &format!("Condition {n} wear rate"), &mut c.wear, WEAR_SEED);
             let l = ui.label(format!("Condition {n} notes"));
             ui.add(TextEdit::singleline(&mut c.notes).desired_width(120.0).hint_text("free text")).labelled_by(l.id);
         });
