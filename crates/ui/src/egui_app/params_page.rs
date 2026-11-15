@@ -31,6 +31,8 @@ pub(super) struct Cx<'a> {
     /// #1504: the Slot's room read off its picks (`Some(Ok)` when the
     /// slot fits it), or the refusal; `None` while the typed slot rules.
     pub slot_fit: &'a Option<Result<String, String>>,
+    /// #1815: diameter of the currently selected tool for seeding rest params.
+    pub tool_diameter: Option<f64>,
 }
 
 pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
@@ -189,6 +191,10 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     } else {
         None
     };
+    let tool_diameter = model::find_by_name(&state.world, &state.op_ui.tool)
+        .as_ref()
+        .and_then(|t| model::tool_of(&state.world, t))
+        .map(|t| t.diameter);
     let mut cx = Cx {
         u,
         tab,
@@ -202,6 +208,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         sync_toggle: false,
         circle_fit: &circle_fit,
         slot_fit: &slot_fit,
+        tool_diameter,
     };
     let world = &state.world;
     let params = &mut state.op_ui.params;

@@ -238,9 +238,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             helix_radius,
             optimal_load,
             blend_turns, blend_radius,
-            // #1489: the rest group is set through MCP and the project
-            // file for now; its page group is a follow-up.
-            rest: _,
+            rest,
             tilt,
         } => {
             if tab == SEC_LEADS {
@@ -310,6 +308,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if let Some(note) = &auto_note {
                     consequence(ui, note);
                 }
+                super::rest_pocket_page::rest_group(ui, u, cx.tool_diameter, *strategy, &links.approach, rest);
             }
             if tab == SEC_FEEDS {
                 prop_row(ui, "Feed", |ui| num_feed(ui, u, feed));

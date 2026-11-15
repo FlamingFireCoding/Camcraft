@@ -157,6 +157,8 @@ mod trochoid_page;
 mod kind_editors;
 mod mill2d_more_page;
 mod mill2d_page;
+// #1815: 2D Pocket's "Rest machining" group on the Passes tab.
+mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
 mod op_page;
@@ -313,6 +315,8 @@ mod gate_route_tests;
 mod sinker_pass_tests;
 #[cfg(test)]
 mod sinker_machine_tests;
+#[cfg(test)]
+mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, fallback adapter, View3D
