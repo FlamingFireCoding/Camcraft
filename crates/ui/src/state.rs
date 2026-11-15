@@ -3996,8 +3996,8 @@ impl State {
                     return;
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
-                    let (coarse, budget) = (command.coarse_mm, command.facet_budget);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_budget(budget)) {
+                    let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
@@ -4016,10 +4016,10 @@ impl State {
                 }
                 // #864: an import kept coarser than promised is said, not
                 // only logged.
-                if let Some(chord) = model::find_by_name(&self.world, &name)
-                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e))
+                if let Some((e, chord)) = model::find_by_name(&self.world, &name)
+                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e).map(|c| (e, c)))
                 {
-                    let said = camcraft_app::model_fidelity::summary(&self.world, chord);
+                    let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
                 }
             }
