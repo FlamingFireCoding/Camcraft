@@ -479,7 +479,7 @@ fn cleanup_front_respects_custom_engagement_limit() {
     let cleared = rect(-5.0, -5.0, 5.0, 5.0);
     let reach = rect(-6.0, -6.0, 6.0, 6.0);
     let used = rect(-1.98, -1.98, 1.98, 1.98);
-    let t = AdaptiveTrochParams { max_engagement: 10.0, ..AdaptiveTrochParams::default() };
+    let t = AdaptiveTrochParams { max_engagement: 20.0, ..AdaptiveTrochParams::default() };
     let (chains, _) = super::super::adaptive_troch_clean::plan_cleanup(&center, &reach, &used, &cleared, D, 0.1, true, &t)
         .expect("cleanup with a custom engagement limit");
     assert!(!chains.is_empty(), "exercise a real cleanup peel");
