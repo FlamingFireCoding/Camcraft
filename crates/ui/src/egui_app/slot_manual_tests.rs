@@ -65,6 +65,60 @@ fn the_marks_follow_a_draft_edit_before_it_is_committed() {
     );
 }
 
+fn assert_tilted_draft_marks(origin: [f64; 3], expected: ([f64; 3], [f64; 3])) {
+    let mut state = opened();
+    if let OpParams::Slot { tilt, b, .. } = &mut state.op_ui.params {
+        *tilt = Some(camcraft_app::operation::Tilt {
+            a_deg: 90.0,
+            b_deg: 0.0,
+            origin,
+        });
+        b.y = 6.0;
+    }
+    let actual = draft_points(&state).expect("the tilted draft resolves");
+    for (actual, expected) in [(actual.0, expected.0), (actual.1, expected.1)] {
+        for axis in 0..3 {
+            assert!(
+                (actual[axis] - expected[axis]).abs() < 1e-9,
+                "{actual:?} != {expected:?}"
+            );
+        }
+    }
+    let line = slot_marks(&state, 1.5)
+        .into_iter()
+        .find(|m| m.kind == SlotMarkKind::Line)
+        .expect("the tilted draft has a projected A-B line");
+    let mvp = state.cam.mvp(1.5);
+    assert_eq!(
+        line.a,
+        crate::interact::project_uv(&mvp, expected.0).expect("A projects")
+    );
+    assert_eq!(
+        line.b,
+        crate::interact::project_uv(&mvp, expected.1).expect("B projects")
+    );
+    let committed = model::find_by_name(&state.world, "Op")
+        .and_then(|e| model::operation_of(&state.world, &e))
+        .expect("the committed operation");
+    assert!(
+        committed.params.tilt().is_none(),
+        "the tilt is still an unapplied draft"
+    );
+}
+
+#[test]
+fn tilted_draft_marks_use_the_cutting_plane() {
+    // At A=90, local X stays X, local Y becomes world Z, and Top Z=10
+    // becomes world Y=-10. These values are independent of Tilt::frame.
+    assert_tilted_draft_marks([0.0; 3], ([-20.0, -10.0, 0.0], [20.0, -10.0, 6.0]));
+}
+
+#[test]
+fn tilted_draft_marks_shift_resolved_height_before_the_world_transform() {
+    // The fixed Top Z=10 shifts to local Z=5, then rotates and translates.
+    assert_tilted_draft_marks([3.0, 4.0, 5.0], ([-17.0, -1.0, 5.0], [23.0, -1.0, 11.0]));
+}
+
 #[test]
 fn no_marks_with_a_selection_or_off_the_geometry_tab() {
     let mut state = opened();

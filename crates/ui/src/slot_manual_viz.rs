@@ -51,7 +51,7 @@ pub fn draft_points(state: &State) -> Option<([f64; 3], [f64; 3])> {
     {
         return None;
     }
-    let OpParams::Slot { a, b, top_z, .. } = &state.op_ui.params else {
+    let OpParams::Slot { a, b, top_z, tilt, .. } = &state.op_ui.params else {
         return None;
     };
     if ![a.x, a.y, b.x, b.y].iter().all(|v| v.is_finite()) {
@@ -60,7 +60,18 @@ pub fn draft_points(state: &State) -> Option<([f64; 3], [f64; 3])> {
     let op = camcraft_app::model::find_by_name(&state.world, &state.op_ui.name)
         .and_then(|e| camcraft_app::model::operation_of(&state.world, &e))?;
     let z = operation::resolve_height(&state.world, op.setup.as_deref(), Some(&op.src), *top_z)?;
-    Some(([a.x, a.y, z], [b.x, b.y, z]))
+    let frame = match tilt {
+        Some(tilt) => Some(tilt.frame()?),
+        None => None,
+    };
+    // Match generation: typed X/Y are in the cutting plane, and resolved
+    // heights shift by origin Z before the frame maps them to world space.
+    let world = |p: &camcraft_app::geo2d::Point2| {
+        let p = camcraft_app::geometry::Point3::new(p.x, p.y, z - frame.map_or(0.0, |f| f.origin.z));
+        let p = frame.map_or(p, |f| f.to_world(p));
+        [p.x, p.y, p.z]
+    };
+    Some((world(a), world(b)))
 }
 
 /// Every mark this frame (empty when [`draft_points`] is None).
