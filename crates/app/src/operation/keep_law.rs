@@ -219,8 +219,14 @@ fn kept_models(
             Vec::new()
         }
         // #1641: a cross drill carries its radial part law
-        // (`cross_part`) though its `DepthLaw` reads `None`.
-        _ if super::generate::depth_law_of(params, src, true) == super::generate::DepthLaw::None && !is_cross_drill(params) => {
+        // (`cross_part`) though its `DepthLaw` reads `None`. #1749: so
+        // does a 3D Pocket (and its stamped twin), whose cutter now passes its model's
+        // silhouette edge - its footprint keeps out of these parts, and
+        // the solid law below holds them as the second net.
+        _ if super::generate::depth_law_of(params, src, true) == super::generate::DepthLaw::None
+            && !is_cross_drill(params)
+            && !matches!(params, OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. }) =>
+        {
             return Vec::new()
         }
         SrcRef::Stock => return Vec::new(),

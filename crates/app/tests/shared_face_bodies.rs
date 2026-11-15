@@ -161,20 +161,23 @@ fn the_sample_as_imported_still_generates_the_3d_finish() {
     assert!(gate_problems(&v).iter().all(|p| !p.starts_with("gouge")), "{v}");
 }
 
-/// #1706: a 3D Pocket's machine area is the model's own XY silhouette
-/// (`operation::material_source`, `Pocket3D`), and the cutter centre must
-/// stay a radius inside it. The sample as imported casts a strip only
-/// 6.53 mm wide (Y -4.94 .. 1.59), so with the part's section taken out
-/// no 6 mm end mill fits at any level. The refusal is correct and named;
-/// the job never cut here (the test that asked for it, added by #1407,
-/// failed from its first commit).
+/// #1706, read again by #1749: a 3D Pocket's machine area is the
+/// model's own XY silhouette (`operation::material_source`, `Pocket3D`).
+/// The sample as imported casts a strip only 6.53 mm wide (Y -4.94 ..
+/// 1.59), so with the centre kept a radius inside it no 6 mm end mill
+/// fit at any level and the op refused. Since #1749 the centre rides the
+/// silhouette edge (the outside of a silhouette is air at every Z), so
+/// the pocket clears the stock along the strip's sides and verifies
+/// clean - never a cut into the part.
 #[test]
-fn the_sample_as_imported_refuses_the_3d_pocket_by_name() {
+fn the_sample_as_imported_roughs_the_3d_pocket_beside_its_silhouette() {
     let mut c = sample_job(false);
-    let (err, result) = c.call("generate", json!({ "name": "R1" }));
-    let text = result.to_string();
-    assert!(err, "no area for the tool must refuse: {text}");
-    assert!(text.contains("nothing to cut: the model fills the pocket at every level"), "{text}");
+    let generated = c.ok("generate", json!({ "name": "R1" }));
+    let st = statuses(&generated);
+    assert_eq!(st.len(), 1, "{generated}");
+    for (name, status, row) in st {
+        assert_eq!(status, "ok", "{name}: {row}");
+    }
 }
 
 /// Two blocks welded along one vertical edge, written as one ASCII STL:
