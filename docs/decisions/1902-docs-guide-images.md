@@ -16,3 +16,20 @@
   - Storing synthetic SVG mockups for UI views instead of rendered screenshots: misses actual panel/viewport behavior and drifts silently when widgets change.
 
 - **Cost to change later:** Low — the manifest (`MANIFEST` and `DEMO_PROJECTS` in `xtask/src/docs_images.rs`) and scene camera/parameter recipes (`crates/ui/src/egui_app/tests/guide_images.rs`) are declarative tables that can be re-rendered anytime with `cargo xtask docs-images`.
+
+
+### PR #2078 review correction: identify unsafe multi-axis examples
+
+- **What was decided:** Keep the existing Indexed Face1 and Swarf1 images as
+  explicitly unsafe examples. Add adjacent warning counts, explanations and
+  required setup corrections, and identify the unsafe state in their alt text.
+- **Why:** The review permits an explained unsafe example. The images show the
+  actual demo warning state, so the guide must not present them as verified
+  machining recipes. Require regeneration and verification after corrections;
+  a stock simulation result of "not judged" cannot establish safety.
+- **Considered and dropped:** Changing demo geometry or toolpath settings to
+  make these images normal examples would require proving a different demo
+  safe and replacing images. The narrow review fix instead documents the
+  existing unsafe state without changing geometry, safety checks or images.
+- **Cost to change later:** Low. Replace the examples and their notes together
+  only after regenerated operations have been independently verified.

@@ -5,6 +5,8 @@ clean-room PNG header and HTML inspection using Python stdlib only.
 """
 
 from html.parser import HTMLParser
+from collections import Counter
+import json
 from pathlib import Path
 import os
 import re
@@ -64,6 +66,36 @@ class GuideImgParser(HTMLParser):
 
 
 class GuideImagesTest(unittest.TestCase):
+    def test_unsafe_multiaxis_images_explain_cached_warnings_and_corrections(self) -> None:
+        """Unsafe demo paths must carry a warning beside their screenshot (#2078)."""
+        project = json.loads((EXAMPLES_DIR / "guide-multiaxis.camproj").read_text())
+        operations = {entity["name"]: entity["operation"] for entity in project["entities"]
+                      if "operation" in entity}
+        cases = [
+            ("multi-axis/indexed.md", "op-indexed-3plus2.png", "Indexed Face1",
+             {"gouge": 30}, ("tilted plane", "cut depth")),
+            ("multi-axis/operations-multiaxis.md", "op-multiaxis-swarf.png", "Swarf1",
+             {"shank_hit": 897, "rapid_in_stock": 9, "sweep_hit": 2},
+             ("tool", "clearance", "retract")),
+        ]
+        for page, image, name, expected, corrections in cases:
+            with self.subTest(operation=name):
+                text = (GUIDE / page).read_text()
+                match = next(match for match in IMAGE_RE.finditer(text) if match[3] == image)
+                self.assertIn("unsafe", match[1].lower(), "Alt text must identify the unsafe path")
+                # Only the text immediately beside this image counts, not a distant disclaimer.
+                note = text[match.end():].split("\n##", 1)[0].split("**Common refusals:**", 1)[0]
+                note = " ".join(note.lower().split())
+                for phrase in ("unsafe example", name.lower(), "do not post or machine",
+                               "regenerate", "verify", *corrections):
+                    self.assertIn(phrase, note, f"{page}: missing safety explanation: {phrase}")
+                warnings = Counter(key for warning in operations[name]["cache"]["warnings"]
+                                   for key in warning)
+                self.assertEqual(warnings, expected, "Revisit the adjacent warning explanation when the demo changes")
+                for kind, count in warnings.items():
+                    self.assertIn(f"{count} {kind.replace('_', '-')}", note,
+                                  f"{page}: explain every cached warning beside the image")
+
     def test_committed_demo_projects_exist(self) -> None:
         missing = [name for name in REQUIRED_DEMOS if not (EXAMPLES_DIR / name).is_file()]
         self.assertEqual(missing, [], f"Missing committed demo project(s): {missing}")
