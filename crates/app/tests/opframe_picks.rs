@@ -183,6 +183,7 @@ fn adaptive_params(top: Height, bottom: Height, stepdown: f64) -> OpParams {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method: AdaptiveMethod::Spiral,
+        troch: Default::default(),
     }
 }
 

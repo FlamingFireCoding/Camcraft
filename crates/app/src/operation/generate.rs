@@ -633,6 +633,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             method,
+            troch,
             blend_turns,
             blend_radius,
             ..
@@ -665,7 +666,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
             };
-            // #1509: the method picks the planner; both cut the same
+            // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let path = match method {
                 machining2d::AdaptiveMethod::Spiral => machining2d::pocket(&region, &pp)?,
@@ -676,7 +677,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         "arc turns at corners are not available with the Trochoidal method".into(),
                     ));
                 }
-                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal(&region, &pp)?,
+                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal_with(&region, &pp, troch)?,
             };
             (region, path)
         }

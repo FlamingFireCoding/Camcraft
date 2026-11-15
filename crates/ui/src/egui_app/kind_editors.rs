@@ -37,7 +37,7 @@ pub(super) fn roughing2d_pane(
     entry: &mut camcraft_app::machining3d::Entry3D,
     helix_radius: &mut f64,
     optimal_load: Option<&mut f64>,
-    method: Option<&mut camcraft_app::machining2d::AdaptiveMethod>,
+    mut troch: Option<(&mut camcraft_app::machining2d::AdaptiveMethod, &mut camcraft_app::machining2d::AdaptiveTrochParams)>,
     links: &mut camcraft_app::links::Links,
     arc: (&mut bool, &mut Option<f64>),
     tilt: &mut Option<Tilt>,
@@ -55,8 +55,8 @@ pub(super) fn roughing2d_pane(
     if tab == SEC_PASSES {
         // #1509: how 2D Adaptive clears its region - the choice the
         // Adaptive operations own (maintainer, 2026-11-13).
-        let trochoidal = method.as_deref() == Some(&camcraft_app::machining2d::AdaptiveMethod::Trochoidal);
-        if let Some(m) = method {
+        let trochoidal = troch.as_ref().is_some_and(|(m, _)| **m == camcraft_app::machining2d::AdaptiveMethod::Trochoidal);
+        if let Some((m, _)) = &mut troch {
             adaptive_method_row(ui, m);
         }
         // #1512: the adaptive twin steps by its optimal load and never
@@ -75,14 +75,52 @@ pub(super) fn roughing2d_pane(
                 hint(ui, "concentric rings from the boundary inward, one stepover apart");
             }
         }
-    }
-    if tab == SEC_LEADS {
+        if let Some((m, t)) = troch
+            && *m == camcraft_app::machining2d::AdaptiveMethod::Trochoidal
+        {
+            adaptive_troch_passes(ui, u, t);
+        }
+    } else if tab == SEC_LEADS {
         lead_page::leads_tab(ui, u, tag, Some((entry, helix_radius)), links);
-    }
-    if tab == SEC_FEEDS {
+    } else if tab == SEC_FEEDS {
         prop_row(ui, "Feed", |ui| num_feed(ui, u, feed));
+        if let Some((m, t)) = troch
+            && *m == camcraft_app::machining2d::AdaptiveMethod::Trochoidal
+        {
+            auto_opt(ui, "Return feed", "Cutting feed", &mut t.return_feed, "the cutting feed", *feed, |ui, v| {
+                num_feed(ui, u, v)
+            });
+        }
         prop_row(ui, "Plunge feed", |ui| num_feed(ui, u, plunge_feed));
         check_row(ui, "Climb milling", climb);
+    }
+}
+
+/// 2D Adaptive's trochoidal-only Passes fields (#1588): hidden under Spiral.
+fn adaptive_troch_passes(ui: &mut Ui, u: Unit, t: &mut camcraft_app::machining2d::AdaptiveTrochParams) {
+    use camcraft_app::machining2d::{DEFAULT_MICROLIFT, TrochoidReturn};
+    prop_row(ui, "Max engagement", |ui| num_unit(ui, &mut t.max_engagement, "deg"));
+    hint(ui, "most cutter contact allowed on a loop; the forward step tightens to hold it");
+    auto_opt(ui, "Loop width", "All the room", &mut t.loop_width, "medial room", 2.0, |ui, v| num(ui, u, v));
+    hint(ui, "band the loop centres sweep along the medial line");
+    let before = match t.ret {
+        None => 0,
+        Some(TrochoidReturn::Microlift { .. }) => 1,
+        Some(TrochoidReturn::Retract) => 2,
+    };
+    let mut idx = before;
+    prop_row(ui, "Return", |ui| combo(ui, "a_troch_return", &mut idx, &["Auto", "Microlift", "Retract"]));
+    if idx != before {
+        t.ret = match idx {
+            1 => Some(TrochoidReturn::Microlift { height: DEFAULT_MICROLIFT }),
+            2 => Some(TrochoidReturn::Retract),
+            _ => None,
+        };
+    }
+    match &mut t.ret {
+        None => hint(ui, "0.3 mm microlift when clearance is at least 0.3 mm above top, else retract"),
+        Some(TrochoidReturn::Microlift { height }) => prop_row(ui, "Microlift height", |ui| num(ui, u, height)),
+        Some(TrochoidReturn::Retract) => hint(ui, "rapid up to the retract plane between loops"),
     }
 }
 
