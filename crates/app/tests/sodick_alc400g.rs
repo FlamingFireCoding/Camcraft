@@ -132,21 +132,35 @@ fn a_punch_posts_through_the_sodick_post_on_it() {
 }
 
 /// Refs #1800: the file states a taper limit (`edm.max_taper_deg`) but no
-/// guide heights. A tapered cut generates, then the post refuses it by name
-/// (`wire_edm.rs`: no guide heights, no taper limit, or a lean over the
-/// limit). The Sodick post also writes a vertical 2-axis cut only (#1800).
-/// This pins the guide-height refusal as it is.
+/// guide heights. Since #1818 the command door (`wire_edm::taper_door`)
+/// refuses a tapered cut by name; the post keeps its own refusal as
+/// defence in depth (`wire_edm.rs`: no guide heights, no taper limit, or a
+/// lean over the limit). The Sodick post also writes a vertical 2-axis cut
+/// only (#1800). This pins the two guide-height refusals (#1856).
 #[test]
 fn a_tapered_punch_is_refused_at_post_while_the_file_states_no_guide_heights() {
+    const NO_GUIDES: &str = "states no edm.lower_guide_z and edm.upper_guide_z";
     let mut raw: serde_json::Value = serde_json::from_str(text()).expect("json");
     raw["edm"]["conditions"] = serde_json::json!([
         { "id": "C110", "name": "test row", "gap": 0.04, "wire_diameter": 0.25, "role": "rough", "notes": "TEST ONLY - not a Sodick figure" }
     ]);
-    let world = punch_world(&raw.to_string(), "C110", 5.0).expect("5 deg is inside the 25 deg limit");
+    let shipped = raw.to_string();
+    // The door: 5 deg is inside the 25 deg limit, but no guide heights are stated.
+    let e = punch_world(&shipped, "C110", 5.0).expect_err("the door refuses a taper on this file");
+    assert!(e.contains(NO_GUIDES) && e.contains("set the taper to 0"), "{e}");
+    // The post: the op is made where guide heights are stated (TEST ONLY
+    // figures), then the shipped file is mounted. The post must refuse.
+    let mut guided = raw.clone();
+    guided["edm"]["lower_guide_z"] = serde_json::json!(-5.0);
+    guided["edm"]["upper_guide_z"] = serde_json::json!(25.0);
+    let world = punch_world(&guided.to_string(), "C110", 5.0).expect("stated guide heights admit the taper");
+    let mut h = History::default();
+    let m = parse_mch(&shipped).expect("parses");
+    h.execute(&world, LoadMachine::new(&world, "alc400g.mch".into(), Some(m)).expect("remount"));
     let cps = BUILTINS.iter().find(|(n, _)| *n == SODICK).map(|(_, s)| *s).expect("registered");
     let out = std::env::temp_dir().join(format!("camcraft-alc400g-taper-{}.nc", std::process::id()));
     let posted = posting::post_script(&world, &out, cps);
     let _ = std::fs::remove_file(&out);
     let err = format!("{:?}", posted.expect_err("a taper cannot post on this file"));
-    assert!(err.contains("states no edm.lower_guide_z and edm.upper_guide_z"), "{err}");
+    assert!(err.contains(NO_GUIDES), "{err}");
 }
