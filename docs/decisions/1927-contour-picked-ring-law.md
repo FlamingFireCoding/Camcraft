@@ -5,10 +5,13 @@ part solid) goes through the new `machining2d::contour_on_picked`. After
 the per-ring depth ladder, `contour_depth::picked_law` refuses the
 operation by name when a picked ring walks no level under the part top
 near it, while the operation's own levels go under that top. The
-message names the ring's position, the part top and the fix:
-"Outside of this ring is inside the part - it rings a hole; use Inside
-or Auto" (and the mirror text for Inside on a ring that bounds
-material). The whole-model source (`SrcRef::Entity` / stock) keeps
+message names the ring's position, the part top and the fix: "the
+cutter Outside this ring stands in the part material - if the ring
+bounds a hole, set Side to Inside; else check the tool containment"
+(and the mirror text for Inside). The side the law reads is the
+resolved one (the app turns Auto into Inside or Outside first), and a
+tool containment moves the ring too, so the text names both causes and
+never says "use Auto". The whole-model source (`SrcRef::Entity` / stock) keeps
 `contour_on_bodies` and is not changed.
 
 **Why.** The depth ladder judges each level against the part material
@@ -43,8 +46,15 @@ unrelated body in a multi-body pick.
 **Cost to change later.** Low. The law is one function in
 `contour_depth.rs` and one call in `contour_impl`. `contour.rs` was
 already over the 400-line law before this PR (446 lines); this PR adds
-15 lines (the entry point and the call). A split of `contour_impl` is owed separately.
+about 20 lines (the entry point, the call and a type alias). A split of
+`contour_impl` is owed separately.
 
-When Side is Auto and Auto's fill verdict resolves to the wrong side,
-the same refusal fires with the resolved side's text ("use Inside or
-Auto"). That case was not seen on any fixture.
+**Seen during the gate.** Two tests pinned the silent top-plane pass:
+- `area_open`: Side Auto on the rim of a BLIND bore resolves to Outside
+  (the bore floor fills the XY silhouette that Auto's fill ratio
+  reads), and a forced Containment Outside puts the ring 10 mm into the
+  wall. Both walked only the mouth, in air, with 0 warnings. Both are
+  now refused by name; Inside is the clean control. The Auto verdict
+  itself is wrong for blind bores: filed as #1933 (P3), not fixed here.
+- `tilt`: the flat control used Inside on a block's top face, the
+  mirror case. It now uses Outside, the legal side for that ring.
