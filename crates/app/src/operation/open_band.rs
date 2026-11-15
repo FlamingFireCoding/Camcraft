@@ -37,6 +37,9 @@ const LEVEL_TOL: f64 = 1e-3;
 /// Area, mm², under which a band is nothing.
 const AREA_MIN: f64 = 1e-4;
 
+/// The two walls of a band, each a run of points in world XY.
+type Walls = (Vec<Point2>, Vec<Point2>);
+
 fn refuse(msg: String) -> GenError {
     GenError::Invalid(msg)
 }
@@ -73,7 +76,7 @@ fn walls(
     params: &OpParams,
     frame: Option<&crate::cl::TiltedFrame>,
     stitched: &HashMap<usize, usize>,
-) -> Result<Option<(Vec<Point2>, Vec<Point2>)>, GenError> {
+) -> Result<Option<Walls>, GenError> {
     if !band_kind(params) || frame.is_some() {
         return Ok(None);
     }
@@ -101,7 +104,7 @@ fn walls(
     for r in &runs {
         let lo = r.zs.iter().copied().fold(f64::INFINITY, f64::min);
         let hi = r.zs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        if !(hi - lo <= LEVEL_TOL) {
+        if !(hi - lo).is_finite() || hi - lo > LEVEL_TOL {
             return Err(refuse(format!(
                 "a picked open edge of '{}' is not level (it runs from Z {} to Z {}) - an open-edge band needs two level edges at one height",
                 r.entity,
@@ -185,7 +188,7 @@ fn chord(p: &[Point2]) -> Result<(Point2, (f64, f64), f64), GenError> {
     };
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let len = dx.hypot(dy);
-    if !(len > 1e-6) {
+    if len.is_nan() || len <= 1e-6 {
         return Err(refuse(
             "a picked open edge ends where it starts - it gives the band no direction; pick a straighter edge".into(),
         ));
@@ -254,7 +257,7 @@ pub(super) fn band(a: &[Point2], b: &[Point2], stock: &Region, extend: f64) -> R
     let (ca, cb) = (chord(a)?, chord(b)?);
     let (cross, dot) = (ca.1.0 * cb.1.1 - ca.1.1 * cb.1.0, ca.1.0 * cb.1.0 + ca.1.1 * cb.1.1);
     let angle = cross.abs().atan2(dot.abs()).to_degrees();
-    if !(angle <= FACING_MAX_DEG) {
+    if angle.is_nan() || angle > FACING_MAX_DEG {
         return Err(refuse(format!(
             "the two picked open edges do not face each other (they stand at {angle:.0} degrees to each other; the limit is {FACING_MAX_DEG:.0}) - pick two opposite edges"
         )));
@@ -324,7 +327,7 @@ pub(super) fn band(a: &[Point2], b: &[Point2], stock: &Region, extend: f64) -> R
     Ok(band)
 }
 
-fn band_of(world: &World, setup: Option<&str>, w: &(Vec<Point2>, Vec<Point2>), extend: f64) -> Result<Region, GenError> {
+fn band_of(world: &World, setup: Option<&str>, w: &Walls, extend: f64) -> Result<Region, GenError> {
     let Some(stock) = stock_outline(world, setup) else {
         return Err(refuse(
             "two open edges are closed by the stock outline, and this setup has no stock - set up stock, or close the pick into a chain".into(),
