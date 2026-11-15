@@ -2079,7 +2079,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     } else {
                         super::cross_spindle::Solids { source: &keep_parts, stock: Some(&material.facets), kept: &keep_parts, neighbours: &[] }
                     };
-                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit)?
+                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?
                 }
             } else {
                 // M13.5 A: on a plain lathe the Drill kind is the
