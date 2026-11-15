@@ -33,7 +33,28 @@
    and stays the second line, for steel moved after generation. So the air
    entry plunge in the band is clear of the tagged fixtures: a fixture in
    the band refuses the op before any move is posted.
-5. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
+5. **No pass crosses an earlier one (round E).** The round D reading through
+   `adaptive_passes` was a self-crossing at (-8.12, -35.61). Cause, measured
+   by the crossing pairs before and after the joins: the bare passes had 40
+   crossing pairs, and the joins added none. The pairs were the spiral and
+   the first open runs (a lead-in starts one load width back, on the last
+   front's path, and steps past it), each open run and the run of the next
+   front, and open runs and the wall laps (a run that meets the part wall
+   cuts across the laps). Fix: `adaptive::air_uncross`. Each new pass drops
+   the chords that cross a kept pass, by the plan's own law
+   (`guard::crosses`), and goes on as a new piece. Each piece is read on the
+   stock as before, so the rest and the load readings stay true. A late join
+   (`LinkLaw::late`) that grows a pass by its grazing lead is kept only when
+   the grown pass crosses no other pass. If not, the next law runs, or the
+   retract hop. The crossing check, the load check and the budgets are not
+   changed.
+6. **Round E reading: over the hop budget.** Through `adaptive_passes`, the
+   D plate level now has no crossing, but it has 23 retract hops (budget 8).
+   So the level still goes to the Offset rings, by name. 22 of the 23 hops
+   are late joins that were refused because their lead crosses an earlier
+   pass. The round C reading of 3 hops (and the round D reading of 8) came
+   from joins whose leads crossed. The budget was not raised.
+7. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
    shares the open-side footprint, but its levels were not read with the
    air planner.
 
@@ -52,6 +73,13 @@ Generation now says why and what to do, before the post gate has to.
 - A helix bore in the air: no material to bore, so a plunge is enough.
 - Air entry for a tool that is not centre-cutting: needs the plunge law to
   read the stock outline. Left for later.
+- Round E: a looser crossing test, or a higher hop budget. Both dropped by
+  the brief: the crossing law is the verifier's law (a), and the budget
+  says when the plan is slower than the rings it replaces.
+- Round E: capping the lead-in gap under one load width, so a lead stays
+  between its run and the last front. Not tried in this round. It is the
+  first item for round F, with a join law for the open runs that does not
+  run back across the last front.
 
 **Open point for the maintainer: the load margin.** The worst load of the D
 plate air plan is 0.153760 of D at (29.77, 22.31). That is at the bound,

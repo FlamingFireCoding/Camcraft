@@ -14,6 +14,7 @@ use super::front::{densify, dist};
 use super::lift_link::{LinkLaw, RAMP_RUN, Return, legs};
 use super::lift_split::Piece;
 use super::lift_swept::Swept;
+use super::air_uncross::Kept;
 use super::raster::Raster;
 
 /// A synthetic lead runs back from a pass start this many ramp runs.
@@ -42,6 +43,12 @@ pub(super) fn air_joins(ras0: &Raster, passes: &[Vec<Point2>], center: &Region, 
     let mut joins = Vec::with_capacity(passes.len());
     let mut out = Vec::with_capacity(passes.len());
     let mut worst = (0.0f64, Point2::new(0.0, 0.0));
+    // The passes as they stand: a pass grown by its grazing lead is kept
+    // only where the lead crosses no other pass (the crossing law).
+    let mut kept = Kept::default();
+    for (k, pass) in passes.iter().enumerate() {
+        kept.add_as(pass, k);
+    }
     for (k, pass) in passes.iter().enumerate() {
         let mut piece = Piece { pts: pass.clone(), lead: lead_of(pass, center), tail: Vec::new(), fine: None };
         let from = k.checked_sub(1).and_then(|j| passes.get(j)).and_then(|p| p.last()).copied();
@@ -51,7 +58,7 @@ pub(super) fn air_joins(ras0: &Raster, passes: &[Vec<Point2>], center: &Region, 
                 // Else the lead re-read on the stock as it stands: where
                 // its end grazes, the graze joins the pass (walked and
                 // read below like any cut) and the return lands on air.
-                law.find(a, &[], &piece, None).or_else(|| law.high(&piece)).or_else(|| law.late(a, &[], &mut piece)).map(|ret| (legs(a, &ret), ret))
+                law.find(a, &[], &piece, None).or_else(|| law.high(&piece)).or_else(|| grown(&law, a, &mut piece, &mut kept, k)).map(|ret| (legs(a, &ret), ret))
             }
             _ => None,
         };
@@ -67,6 +74,20 @@ pub(super) fn air_joins(ras0: &Raster, passes: &[Vec<Point2>], center: &Region, 
         out.push(piece.pts);
     }
     Joined { passes: out, joins, worst }
+}
+
+/// The late join (`LinkLaw::late`) of pass `k`, on a copy of `piece`:
+/// kept, and the piece grown by its lead, only where the grown pass
+/// crosses no other pass; else `None` (the ladder's retract hop).
+fn grown(law: &LinkLaw, a: Point2, piece: &mut Piece, kept: &mut Kept, k: usize) -> Option<Return> {
+    let mut trial = piece.clone();
+    let ret = law.late(a, &[], &mut trial)?;
+    if kept.crosses_but(&trial.pts, k) {
+        return None;
+    }
+    kept.add_as(&trial.pts, k);
+    *piece = trial;
+    Some(ret)
 }
 
 /// The straight run back from `pass`'s start against its first chord,

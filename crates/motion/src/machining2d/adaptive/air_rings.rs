@@ -92,6 +92,9 @@ pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &A
     let mut spiral: Vec<Point2> = Vec::new();
     let (mut closed, mut open) = (0usize, 0usize);
     let mut last_closed: Option<Vec<Point2>> = None;
+    // No pass crosses an earlier one (the plan's crossing law): each is
+    // cut past its crossing chords before it is read (`air_uncross`).
+    let mut kept = super::air_uncross::Kept::default();
     let bound = deg_at_rim(s.load * (1.0 + s.tol.max(0.0)), d, rim);
     for k in 1..=MAX_FRONTS {
         let front = stock.offset(r - k as f64 * w)?;
@@ -127,9 +130,11 @@ pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &A
             // The ramp left a wedge at its start: one closing lap.
             let at = nearest(&ring, spiral.last().copied().unwrap_or(ring[0]));
             spiral.extend(ring[at..].iter().chain(&ring[1..=at]).copied());
-            let wk = ras.walk(&spiral, read.0, read.1, read.2);
-            note(&mut worst, wk);
-            passes.push(std::mem::take(&mut spiral));
+            for piece in kept.split(&std::mem::take(&mut spiral)) {
+                note(&mut worst, ras.walk(&piece, read.0, read.1, read.2));
+                kept.add(&piece);
+                passes.push(piece);
+            }
         }
         for run in runs {
             if run.len() < 2 {
@@ -138,24 +143,25 @@ pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &A
             // Lead in from the cleared side (the last front's level) on
             // the steepest slope the load allows, lead out away from it.
             let pass = leads(&ras, &run, w, center, s.climb, (r, rim, bound));
-            // Where the run starts the tool stands in the stock it
-            // plunges into: read as the straight wall of that depth.
-            if pass.len() < 2 {
-                continue;
+            let pieces = kept.split(&pass);
+            open += usize::from(!pieces.is_empty());
+            for pass in pieces {
+                // Where a piece starts the tool stands in the stock it
+                // plunges into: read as the straight wall of that depth.
+                let sunk = plunge_depth(&ras, pass[0], r);
+                if sunk > 0.0 {
+                    note(&mut ends, (deg_at_rim(sunk / d, d, rim), pass[0]));
+                }
+                walk_ends(&mut ras, &pass, read, END_PER_R * r, (&mut worst, &mut ends));
+                kept.add(&pass);
+                passes.push(pass);
             }
-            let sunk = plunge_depth(&ras, pass[0], r);
-            if sunk > 0.0 {
-                note(&mut ends, (deg_at_rim(sunk / d, d, rim), pass[0]));
-            }
-            walk_ends(&mut ras, &pass, read, END_PER_R * r, (&mut worst, &mut ends));
-            passes.push(pass);
-            open += 1;
         }
     }
-    if !spiral.is_empty() {
-        let wk = ras.walk(&spiral, read.0, read.1, read.2);
-        note(&mut worst, wk);
-        passes.push(spiral);
+    for piece in kept.split(&spiral) {
+        note(&mut worst, ras.walk(&piece, read.0, read.1, read.2));
+        kept.add(&piece);
+        passes.push(piece);
     }
     if closed == 0 {
         return Ok(None);
@@ -169,10 +175,11 @@ pub(crate) fn plan_from_air(mat: &Region, stock: &Region, center: &Region, s: &A
             // A centre loop has the part on its right: climb as it is.
             let ring = climb_ring(l.points(), seg, !s.climb);
             let bites: Vec<bool> = ring.iter().map(|&p| !ras.disc_clear(p, r)).collect();
-            for run in split_runs(&ring, &grow_marks(&bites)) {
-                if run.len() >= 2 {
+            for whole in split_runs(&ring, &grow_marks(&bites)) {
+                for run in kept.split(&whole) {
                     let mut wall_ends = (0.0, s.start);
                     walk_ends(&mut ras, &run, read, END_PER_R * r, (&mut worst, &mut wall_ends));
+                    kept.add(&run);
                     passes.push(run);
                 }
             }
