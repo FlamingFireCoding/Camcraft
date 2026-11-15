@@ -1,0 +1,9 @@
+## #1965 - Pure-Rust AC table-table kinematics in `camcraft_post::kinematics`
+
+**Chosen:** Placed the shared 5-axis XYZAC trunnion forward/inverse solver in `crates/post/src/kinematics/` under a standalone public module (`camcraft_post::kinematics`), parameterized by explicit rotary vectors, offsets, sign convention, travel bounds, pole tolerance, and joint weights.
+
+**Why:** Keeping the solver inside `camcraft-post` lets both machine verification (#1969) and JavaScript post hooks (#1966/#1968) compute identical coordinates without reading `.mch` schema extensions (#1962) or mutating existing machine parsing modules with open PRs. Closed-form Rodrigues projection solves arbitrary unit rotary axes, handles `A = 0` poles by holding modal `C` while letting weighted step minimization cross zero smoothly, enforces continuous `C` travel inside sections while re-wrapping at `SafeRetract`, and checks quarter-point forward kinematics to subdivide rotary arcs accurately (including C re-indexing when asymmetric `A` limits block negative tilt).
+
+**Dropped:** Hardcoding orthogonal `X`/`Z` Euler `atan2`/`acos` formulas would break machines with aligned offsets or non-orthogonal rotary vectors; extending `.mch` structs or JS post bindings in the same PR would collide with #1962, #1966, #1968, and open PRs in `crates/post/src/machine/mod.rs` and `crates/post/src/post/mod.rs`. Silently re-wrapping `C` mid-cut when travel limits expire was rejected in favor of named refusals so multi-turn continuous cuts never crash through fixtures without a safe retract.
+
+**Cost to change later:** Self-contained behind `AcTrunnionConfig`, `AcSolver`, and `solve_path`/`solve_toolpath`; wiring it into `.mch` loading (#1962), post hooks (#1968), and machine checking (#1969) adds adapters only and requires zero changes to the math core.
