@@ -3,10 +3,11 @@
 //! and verifies with no gouge. The one whole-span test took about 28 min
 //! in release, so the span is cut into `BANDS` level bands: each test
 //! generates S1 over one band (top and bottom heights from the model) and
-//! verifies it. The bands tile the model's whole Z span, so together they
-//! run every level the whole-span program ran, and libtest runs them in
-//! parallel. Sibling of `shared_face_bodies.rs` (its other tests stay
-//! there).
+//! verifies it. The bands tile the model's whole Z span, and libtest runs
+//! them in parallel. Each band's level ladder starts at its own top, so
+//! levels can shift by less than one stepdown at a band boundary compared
+//! with the whole-span program. Links between bands are not generated or
+//! verified. Sibling of `shared_face_bodies.rs` (its other tests stay there).
 //!
 //! Gate map: covers app::operation::material (from_slice), app::mcp's
 //! generate / verify, through camcraft_geometry::geometry::slice's union
