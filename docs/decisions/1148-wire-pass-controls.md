@@ -25,3 +25,10 @@ of the existing draft and Apply workflow.
 **Cost to change later.** Control arrangement or editing behaviour can
 change in the wire page's UI helpers. The stored parameter shape, command
 door and generator need no migration for such a change.
+
+**Review evidence (#1765).** Capture the actual egui operation page before
+and after the change with the same populated wire draft. Store these review
+images outside release snapshot goldens and link them from the PR body at
+the pushed commit. This gives the reviewer stable visual evidence without
+refreshing release snapshots or adding production behavior. A small PNG and
+Markdown-reference pin detects missing, corrupt, or duplicated evidence.
