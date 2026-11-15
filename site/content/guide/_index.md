@@ -17,6 +17,9 @@ rigidity, chips, finish, proving out and posts.
 For task recipes (facing, two-setup squaring, pockets, holes, lathe,
 re-posting) see [Common workflows](@/guide/workflows.md).
 
+[Tools and tool libraries](@/guide/tools.md) covers tool creation, holders,
+modular bodies, controller numbers, and library import and export.
+
 The [glossary](@/guide/glossary.md) defines the terms CamCraft uses, such as
 setup, work offset, stale, gouge and refusal, and links each to its page.
 
