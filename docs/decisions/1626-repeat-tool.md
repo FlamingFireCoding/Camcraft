@@ -29,3 +29,14 @@ source of trusted spindle state and tests for the initial tool change.
 Changing compensation or clearance behavior would need separate safety
 evidence and pinning tests. The current policy needs only one remembered
 tool number per posted program.
+
+**Review decision (PR #1741):** An emitted M0 or M1 makes the loaded tool
+unknown, including a setup-change stop or a probe-result check. The next
+section emits its tool change even when its tool number is unchanged.
+An operator may remove or exchange the tool during a stop; the post cannot
+trust the earlier M6 after control returns. Optional stops use the same
+conservative rule because the post cannot know whether the control will
+honor M1. Continuing to skip M6 after a stop was rejected because it could
+apply G43 to an empty spindle. Changing this later would require trusted
+controller spindle state. The `tormach_stop_tool` pins cover program stops,
+optional stops, setup changes and probe checks.

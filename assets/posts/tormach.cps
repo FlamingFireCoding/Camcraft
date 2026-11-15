@@ -512,6 +512,8 @@ function afterOp() {
     block(["(MSG, SETUP CHANGE - NEXT: " + next + ")"]);
   }
   block([ask === "stop" ? "M0" : "M1"]);
+  // The operator may remove the tool at either stop, even an optional one.
+  loadedTool = null;
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
@@ -1038,6 +1040,7 @@ function onProbeResult() {
   } else {
     block(["(MSG, CHECK PROBE RESULT #" + dev + "..)"]);
     block(["M0"]);
+    loadedTool = null;       // a probe check gives the operator access to the tool
   }
 }
 
