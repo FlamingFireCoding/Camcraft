@@ -107,7 +107,7 @@ pub use bore::{bore, BoreHole, BoreParams};
 pub use bore_core::{bore_core_gap, bore_floor_reach, bore_leaves_core, cutting_radius_at, max_bore_diameter};
 pub use chamfer::{chamfer, ChamferParams};
 pub use circular::{circular, CircularParams};
-pub use contour::{contour, contour_on_bodies, contour_on_part, ContourParams, Lead, Side};
+pub use contour::{contour, contour_on_bodies, contour_on_part, contour_on_picked, ContourParams, Lead, Side};
 pub use contour_chain::contour_along_chain;
 pub use contour_run_side::{contour_open_run, SectionAt};
 pub use contour_link::DEFAULT_LEVEL_RAMP_ANGLE;

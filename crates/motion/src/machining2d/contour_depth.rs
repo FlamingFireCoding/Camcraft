@@ -265,3 +265,63 @@ pub(super) fn ladder(
     all.dedup_by(|a, b| a.to_bits() == b.to_bits());
     Ladder { zs: all, per_ring }
 }
+
+/// The highest part vertex near `ring`: the facets whose XY box comes
+/// within `reach` of the ring's XY box. `None` = no part stands near it.
+fn local_top(ring: &[Point2], facets: &[Triangle], reach: f64) -> Option<f64> {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for p in ring {
+        (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
+    }
+    let (x0, y0, x1, y1) = (x0 - reach, y0 - reach, x1 + reach, y1 + reach);
+    facets
+        .iter()
+        .filter(|t| {
+            let xs = [t.a.x, t.b.x, t.c.x];
+            let ys = [t.a.y, t.b.y, t.c.y];
+            let lo = |v: [f64; 3]| v.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = |v: [f64; 3]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            lo(xs) <= x1 && hi(xs) >= x0 && lo(ys) <= y1 && hi(ys) >= y0
+        })
+        .flat_map(|t| [t.a.z, t.b.z, t.c.z])
+        .filter(|z| z.is_finite())
+        .reduce(f64::max)
+}
+
+/// #1927, the picked-ring law: a ring the user PICKED must trim its wall
+/// at one level at least. The ladder above stops a ring where it stands
+/// in the part, but a level at or above the part's top is legal for any
+/// ring - nothing stands there - so a ring on the wrong side of its wall
+/// (Outside of a hole, Inside of a boss) kept only the top plane and cut
+/// air with no word. When the flat ladder asks for a level under the
+/// part's top near the ring and the ring walks none, the side the user
+/// chose lies in the part at every level: refused by name. A whole-model
+/// section never calls this - its rings come from the part itself.
+pub(super) fn picked_law(
+    rings: &[Vec<Point2>],
+    facets: &[Triangle],
+    zs: &[f64],
+    lad: &Ladder,
+    reach: f64,
+    side: super::contour_params::Side,
+) -> Result<(), super::face::GenError> {
+    use super::contour_params::Side;
+    for (li, ring) in rings.iter().enumerate() {
+        let Some(top) = local_top(ring, facets, reach) else { continue };
+        let asks_below = zs.iter().any(|&z| z < top - SAME_LEVEL);
+        let trims = lad.ring(li).iter().any(|&z| z < top - SAME_LEVEL);
+        if !asks_below || trims {
+            continue;
+        }
+        let at = ring.first().copied().unwrap_or(Point2::new(0.0, 0.0));
+        let what = match side {
+            Side::Inside => "Inside of this ring is inside the part - it rings material, not a hole; use Outside or Auto",
+            _ => "Outside of this ring is inside the part - it rings a hole; use Inside or Auto",
+        };
+        return Err(super::face::GenError::Invalid(format!(
+            "the picked ring at ({:.3}, {:.3}) meets its wall at no level below the part top Z {top:.3}: {what}",
+            at.x, at.y
+        )));
+    }
+    Ok(())
+}
