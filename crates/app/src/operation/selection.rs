@@ -512,10 +512,11 @@ pub(super) fn selection_geometry_in(
     }
     if contour && contour_side != Side::Auto && loops.is_empty() && !chains.is_empty() {
         // An explicit Side on a pure open-run selection changes nothing -
-        // the cutter rides the run's own points - so say that plainly
-        // instead of letting the combo imply an effect.
+        // the cutter stays on the run's air side, read from the part
+        // (#1777) - so say that plainly instead of letting the combo
+        // imply an effect.
         if let Some(n) = &mut notes {
-            n.push("Side does not apply to open runs - the cutter rides the run's line".into());
+            n.push("Side does not apply to open runs - the tool stays on the run's air side, read from the part".into());
         }
     }
     Ok((loops, chains, contour_inside))

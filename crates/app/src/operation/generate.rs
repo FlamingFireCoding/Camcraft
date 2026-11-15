@@ -513,10 +513,28 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                             "{comp_name} compensation does not ride open runs - pick closed rings, or choose In computer"
                         )));
                     }
+                    // #1777: a run on a part is cut on its air side, read
+                    // from the part's sections; Side applies to rings only.
+                    let section_at = |z: f64| match super::material::section(&m_gen.facets, z) {
+                        Ok(r) => Ok(Some(r)),
+                        Err(GenError::Empty(_)) => Ok(None),
+                        Err(e) => Err(e),
+                    };
                     for run in &runs {
                         // #1015: a run refused shows the rings and runs before it.
-                        let next = machining2d::contour_along_chain(run, &cp).map_err(|e| e.after_moves(&path.moves))?;
+                        let next = if part_solid {
+                            machining2d::contour_open_run(run, &cp, &section_at)
+                        } else {
+                            machining2d::contour_along_chain(run, &cp)
+                        }
+                        .map_err(|e| e.after_moves(&path.moves))?;
+                        let said = next.notes.clone();
                         path = stitch(path, next);
+                        for n in said {
+                            if !path.notes.contains(&n) {
+                                path.notes.push(n);
+                            }
+                        }
                     }
                     (region, path)
                 }
