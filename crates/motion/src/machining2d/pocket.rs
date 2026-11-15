@@ -10,7 +10,7 @@ use crate::geometry::Point3;
 use crate::links::Links;
 
 use super::face::{GenError, band};
-use super::levels::{Cert, Motion, cut_levels, run_level_walks};
+use super::levels::{Cert, Motion, run_level_walks};
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::arc_cross::post_crossing_free;
 use super::arc_proof::{ProofTally, fit_proved};
@@ -274,7 +274,7 @@ pub(super) fn pocket_over(
     let passes = if p.links.approach.arc_xy && room.is_none() { super::descent_xy::reseat_first(passes) } else { passes };
     // #1449: a proved hole re-seats the plan on itself (not the HSM plan's own bore).
     let passes = super::predrilled::reseat(passes, holes, center, p.links.approach.predrilled && room.is_none());
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.material_top, p.bottom_z, p.stepdown)?;
     // Waterline rings circle around material, so they get the arc fitter
     // (rings straight enough to be lines stay exactly that); zigzag rows
     // are straight by construction and keep the plain walk.

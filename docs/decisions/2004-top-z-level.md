@@ -15,19 +15,24 @@
    A refusal of the law (stepdown not positive, too many levels, NaN)
    gives the one bottom plane there, as before; the generator refuses by
    name later.
-3. Top Z below the stock top (material above Top Z): OPEN, a real
-   defect of this change (round 2 finding). The first level now cuts
-   `stock top - Top Z + stepdown`; before it cut `stock top - Top Z` at
-   Top Z itself. When that gap is less than one stepdown, the old ladder
-   kept each bite at or under one stepdown and the new one does not. The
-   default Top Z of the depth kinds is the model top
-   (`operation/kinds.rs`), so stock above the model gives this case
-   unless an earlier operation faced it. The motion generators know only
-   `top_z`; the app knows the stock top (`generate.rs`, `stock_top_z`).
-   The fix that this PR owes: the app hands the ladder the material top,
-   and the ladder keeps the level at Top Z when material stands above
-   it (the old ladder, byte for byte, in that case). The verify does not
-   judge a bite deeper than the stepdown, so no gate catches it.
+3. Top Z below the stock top (material above Top Z, round 2 finding):
+   fixed in round 3. `Approach` gets the runtime field `material_top:
+   Option<f64>` (default `None`, never in the project file). The app
+   lays the setup's stock top over it at generation (`generate.rs`,
+   `stock_top_z`, in the generator's frame), and the region planes read
+   the same top (`area.rs`, `material_top`). The law
+   `cut_levels_under(top, material_top, bottom, step)` keeps the level at
+   Top Z when the material top stands over Top Z: that is the old ladder,
+   byte for byte, so each bite stays at or under one stepdown. `None`
+   or a material top at Top Z gives the new ladder. The stock top is the
+   raw setup stock: an earlier facing operation is not read, so that
+   case keeps the old (one air level) answer. That errs to the safe side.
+   Callers with no `links` (face, vault, trace, trochoidal slot) keep
+   `cut_levels`: face and vault have their own law (items 4, 4b), and
+   the trace and trochoidal slot are on the remaining list.
+   Dropped: a new field on each params struct (about 350 literals); an
+   app shift of Top Z by one stepdown (float noise, and the plunge
+   starts higher); a thread-local.
 4b. Vault: a plane at Top Z is dropped. The rim ring's floor is the bowl
    at the radius, which is Top Z, so the rim ring cut air at Top Z under
    the old and the round-1 ladder; the first inner ring opened at that
@@ -37,15 +42,18 @@
    by name ("nothing to machine"). Before, the operation posted one air
    pass at Top Z there. A level at a flat floor between ladder levels is
    a separate enhancement.
-4d. Bore contour, helix transition (`one_descent`,
-   `the_bore_contour_descends_into_each_level_once`, case "bore lead none
-   Ramp helix transition"): OPEN, not judged. Verify reports
-   `RapidInStock` at the rapid from clearance down to the floor of the
-   level before (`descent_from`, non-first branch gives `prev_z`). Under
-   the old ladder the first such rapid went to the stock top, which
-   verify accepts. The dive point may stand in stock that the ring before
-   did not sweep. Verify is not loosened; a reader must decide if the
-   rapid target is a real defect.
+4d. Bore contour, helix transition (`one_descent`, case "bore lead none
+   Ramp helix transition"): a real rapid into stock, fixed in round 3.
+   Hole radius 10, tool diameter 6, top 0, stepdown 2, levels [-2, -4,
+   -6]. The ring at -2 sweeps only the band r 4..10; the core r < 4 stays
+   at Z 0. The level transition rapided to Z -2 at r 6.55, and its disc
+   (r 3.55..9.55) stood 0.45 mm into the uncut core over Z -2..0. The
+   old ladder started the first transition at Top Z, so it opened the
+   column from the top. Now a transition whose column no earlier descent
+   opened (`BoreStep::opened`, `Step::opened`) starts at the top of the
+   cut plus the plunge height (Z 2), and later transitions reuse the
+   opened column at the plane above. Verify is not loosened. Edge not
+   exercised: a helix that changes its radius between levels.
 4. Circular, vault mode: the rim ring starts one stepdown under Top Z.
    An inner ring keeps the floor of the ring before it as its first level
    (`levels_from` in `circular.rs`). That plane is not a repeat: the

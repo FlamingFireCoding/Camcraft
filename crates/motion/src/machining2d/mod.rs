@@ -120,7 +120,7 @@ pub use ghost::Ghost;
 pub use face_entry::{air_lead, AIR_MARGIN};
 pub use fillet::{fillet_corners, Legal};
 pub use fillet_tally::{corner_arc_radius, fillet_floor, FilletTally};
-pub use levels::cut_levels;
+pub use levels::{cut_levels, cut_levels_under};
 pub use pocket::{pocket, pocket_entered, PocketParams, PocketStrategy};
 pub use predrilled::PreHole;
 pub use rest2d::{rest_plan, rest_pocket, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};

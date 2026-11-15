@@ -71,7 +71,8 @@ pub(super) fn pocket_ladder(
     else {
         return Ok(None);
     };
-    Ok(Some((material.facets, ladder_planes(t, b, stepdown))))
+    let mt = material_top(world, setup, material.top, 0.0);
+    Ok(Some((material.facets, ladder_planes(t, mt, b, stepdown))))
 }
 
 /// Below this (mm^2) the part material inside the enclosed area is
@@ -170,16 +171,17 @@ pub(super) fn whole_model_pocket(
     }
     let t = resolve_height(world, setup, Some(src), top)?;
     let b = resolve_height(world, setup, Some(src), bottom)?;
-    let part = match material_of(world, setup, src) {
-        Ok(m) => m.facets,
+    let (part, part_top) = match material_of(world, setup, src) {
+        Ok(m) => (m.facets, m.top),
         Err(e) => return Some(Err(e)),
     };
     let oz = frame.map_or(0.0, |f| f.origin.z);
+    let mt = material_top(world, setup, part_top, oz);
     let (part, stock) = match frame {
         Some(f) => (f.local_facets(&part), f.local_facets(&stock)),
         None => (part, stock),
     };
-    Some(around_part(&part, &stock, &ladder_planes(t - oz, b - oz, stepdown), crate::units::of(world)))
+    Some(around_part(&part, &stock, &ladder_planes(t - oz, mt, b - oz, stepdown), crate::units::of(world)))
 }
 
 /// The pocket family on the STOCK as its source (#1554): the stock is the
@@ -230,7 +232,8 @@ pub(super) fn stock_pocket(
             units::len(z, unit, 3)
         )
     };
-    let planes = ladder_planes(t - oz, b - oz, stepdown);
+    let mt = material_top(world, setup, f64::NEG_INFINITY, oz);
+    let planes = ladder_planes(t - oz, mt, b - oz, stepdown);
     let enclosed = match slice::project(&stock, FOOTPRINT_SAMPLES).map_err(from_slice) {
         Ok(r) if !r.is_empty() => r,
         Ok(_) => return None,
@@ -289,8 +292,17 @@ const SHADOW_AREA_MIN: f64 = 1e-6;
 /// the material top and never a plane). Degenerate spans and steps
 /// collapse to the one bottom plane; the generator refuses them by name
 /// later.
-pub(super) fn ladder_planes(top: f64, bottom: f64, stepdown: f64) -> Vec<f64> {
-    crate::machining2d::cut_levels(top, bottom, stepdown).unwrap_or_else(|_| vec![bottom])
+pub(super) fn ladder_planes(top: f64, material_top: Option<f64>, bottom: f64, stepdown: f64) -> Vec<f64> {
+    crate::machining2d::cut_levels_under(top, material_top, bottom, stepdown).unwrap_or_else(|_| vec![bottom])
+}
+
+/// The material top in a frame `oz` up (#2004): the generator's own
+/// reading (`generate.rs`, `stock_top_z`) - the part top or the setup's
+/// stock top, the higher - so the region planes are the generator's levels.
+fn material_top(world: &World, setup: Option<&str>, part_top: f64, oz: f64) -> Option<f64> {
+    let stock = model::stock_world_aabb_for(world, setup).map_or(f64::NEG_INFINITY, |b| b.max.z);
+    let top = part_top.max(stock);
+    top.is_finite().then_some(top - oz)
 }
 
 #[cfg(test)]
@@ -354,7 +366,7 @@ mod law {
             Point2::new(-10.0, 10.0),
         ])
         .expect("ring");
-        let planes = ladder_planes(20.0, 0.0, 4.6);
+        let planes = ladder_planes(20.0, None, 0.0, 4.6);
         assert!(planes.iter().all(|&z| !(17.0..19.0).contains(&z)), "{planes:?}");
         let r = pocket_region_on_part(vec![ring.clone()], &part, &planes, Unit::Millimeters).expect("region");
         assert!(!r.contains(Point2::new(8.0, 0.0)), "under the lip is part material");
@@ -369,16 +381,19 @@ mod law {
     #[test]
     fn ladder_planes_match_the_level_law_and_never_hang() {
         // #2004: Top Z is the material top - never a plane of its own.
-        assert_eq!(ladder_planes(20.0, 0.0, 5.0), vec![15.0, 10.0, 5.0, 0.0]);
-        assert_eq!(ladder_planes(20.0, 2.0, 5.0), vec![15.0, 10.0, 5.0, 2.0]);
-        assert_eq!(ladder_planes(13.0, 0.0, 50.0), vec![0.0]);
+        assert_eq!(ladder_planes(20.0, None, 0.0, 5.0), vec![15.0, 10.0, 5.0, 0.0]);
+        assert_eq!(ladder_planes(20.0, None, 2.0, 5.0), vec![15.0, 10.0, 5.0, 2.0]);
+        assert_eq!(ladder_planes(13.0, None, 0.0, 50.0), vec![0.0]);
         for (t, b, s) in [(20.0, 0.0, 5.0), (20.0, 2.0, 5.0), (13.0, 0.0, 50.0), (20.0, 0.0, 4.6), (1.0, 1.0, 5.0)] {
             let law = crate::machining2d::cut_levels(t, b, s).expect("walkable");
-            assert_eq!(ladder_planes(t, b, s), law, "one law: {t} {b} {s}");
+            assert_eq!(ladder_planes(t, None, b, s), law, "one law: {t} {b} {s}");
         }
-        assert_eq!(ladder_planes(1.0, 1.0, 5.0), vec![1.0]);
-        assert_eq!(ladder_planes(10.0, 0.0, 0.0), vec![0.0]);
-        assert_eq!(ladder_planes(f64::NAN, 0.0, 1.0), vec![0.0]);
-        assert!(ladder_planes(1e9, 0.0, 1e-9).len() <= 100_001);
+        assert_eq!(ladder_planes(1.0, None, 1.0, 5.0), vec![1.0]);
+        assert_eq!(ladder_planes(10.0, None, 0.0, 0.0), vec![0.0]);
+        assert_eq!(ladder_planes(f64::NAN, None, 0.0, 1.0), vec![0.0]);
+        assert!(ladder_planes(1e9, None, 0.0, 1e-9).len() <= 100_001);
+        // Stock over Top Z keeps the level at Top Z (the old ladder).
+        assert_eq!(ladder_planes(10.0, Some(13.0), 0.0, 5.0), vec![10.0, 5.0, 0.0]);
+        assert_eq!(ladder_planes(10.0, Some(10.0), 0.0, 5.0), vec![5.0, 0.0]);
     }
 }

@@ -283,7 +283,7 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
                 levels_from(prev, floor, p.stepdown)
             }
         } else {
-            cut_levels(p.top_z, p.bottom_z, p.stepdown)
+            super::levels::cut_levels_under(p.top_z, p.links.approach.material_top, p.bottom_z, p.stepdown)
         }
         // #871: a part-way refusal hands back the rings cut so far.
         .map_err(|e| e.with_ghost_moves(b.moves()))?;

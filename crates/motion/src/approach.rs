@@ -113,6 +113,11 @@ pub struct Approach {
     /// traverse plane, as every pre-M11.3 path did; the default is
     /// [`DEFAULT_PLUNGE_HEIGHT`].
     pub plunge_height: f64,
+    /// The top of the material over the cut, when the application knows
+    /// it (#2004, the setup's stock top): above Top Z, the level law keeps
+    /// a level at Top Z (`machining2d::cut_levels_under`). `None` - the
+    /// default - reads Top Z as the material top.
+    pub material_top: Option<f64>,
     // --- D: feeds and engagement at entry ---
     /// Feed of ramp, helix and arc descents (mm/min); `0` is the cutting
     /// feed.
@@ -213,6 +218,7 @@ impl Approach {
         arc_xy: false,
         predrilled: false,
         plunge_height: DEFAULT_PLUNGE_HEIGHT,
+        material_top: None,
         ramp_feed: 0.0,
         plunge_feed: 0.0,
         lead_feed_pct: 100.0,

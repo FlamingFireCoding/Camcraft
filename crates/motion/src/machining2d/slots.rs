@@ -157,7 +157,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         pass.push(e);
     }
 
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.material_top, p.bottom_z, p.stepdown)?;
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     let mut motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed);
     // `Plunge` passes no center and the ladder dives at the pass start

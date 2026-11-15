@@ -253,6 +253,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // M11.3: the tool says whether an entry may plunge into solid - laid
     // over the generation's copy only, never stored in the op.
     lk.approach.center_cutting = tool.center_cutting;
+    // #2004: the material top in the generator's frame - where stock stands
+    // over Top Z the level law keeps a level at Top Z (the old ladder).
+    lk.approach.material_top = stock_top_z.is_finite().then_some(stock_top_z - oz);
     // The bar the turning kinds approach from (#130), read once.
     let (turn_stock, turn_note) = super::turning_stock::read(&params, &material.facets, stock_facets.as_deref());
     // #894 x #1205: the thread's walls read round (set in its arm).

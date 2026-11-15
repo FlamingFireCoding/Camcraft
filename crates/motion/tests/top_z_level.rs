@@ -18,7 +18,7 @@ use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::Links;
 use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
 use camcraft_motion::machining2d::{
-    adaptive_trochoidal, bore, circular, contour, cut_levels, face, pocket, slot, trace, BoreHole, BoreParams,
+    adaptive_trochoidal, bore, circular, contour, cut_levels, cut_levels_under, face, pocket, slot, trace, BoreHole, BoreParams,
     CircularParams, ContourParams, FaceParams, Lead, PocketParams, PocketStrategy, Side, SlotParams, TraceParams,
 };
 use camcraft_motion::machining3d::{pocket3d, Pocket3DParams};
@@ -306,4 +306,17 @@ fn a_3d_pocket_whose_stepdown_spans_the_depth_cuts_one_level() {
     };
     let t = pocket3d(&plate(), &square(0.0, 0.0, 40.0), &p).expect("3D pocket");
     one_level("3D pocket", &t);
+}
+
+#[test]
+fn stock_over_top_z_keeps_the_level_at_top_z() {
+    // #2004 round 3: material above Top Z - the first bite stays one
+    // stepdown, so the level at Top Z stays (the old ladder, same floats).
+    assert_eq!(cut_levels_under(10.0, Some(13.0), 0.0, 5.0).expect("law"), vec![10.0, 5.0, 0.0]);
+    // Material at or under Top Z: no air level.
+    assert_eq!(cut_levels_under(10.0, Some(10.0), 0.0, 5.0).expect("law"), vec![5.0, 0.0]);
+    assert_eq!(cut_levels_under(13.0, Some(12.0), 0.0, 5.0).expect("law"), vec![8.0, 3.0, 0.0]);
+    for (t, b, st) in [(20.0, 0.0, 5.0), (13.0, 0.0, 50.0), (20.0, 2.0, 4.6)] {
+        assert_eq!(cut_levels_under(t, None, b, st).expect("law"), cut_levels(t, b, st).expect("law"));
+    }
 }
