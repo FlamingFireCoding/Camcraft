@@ -761,8 +761,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // notch is cleared past its open edge, never left as a ridge
             // a radius wide. The setup's other parts stay out of reach.
             // A picked or controlled region is the user's boundary and
-            // stays as given; a tilted plane keeps the old reading.
-            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, d * 0.5)?;
+            // stays as given. #1774: the footprint reaches out to the
+            // stock's outline, so stock far past the silhouette is
+            // cleared too (the 2D pocket's #12 reading); a tilted
+            // plane refuses by name (no 3D Pocket carries one today).
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -1532,7 +1535,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, d * 0.5)?;
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,

@@ -16,6 +16,12 @@
 //! material stands flush with the silhouette the grown band is narrower
 //! than the erosion and cuts nothing. Other parts beside the model are
 //! taken out of the band, and the erosion keeps a full radius off them.
+//!
+//! #1774: where the stock reaches past the silhouette by more than that
+//! band, the band grows from the stock's outline too - the 2D pocket's
+//! reading since #12: a whole model clears the stock around it out to
+//! the stock's edge, never a ring of the stock left standing past the
+//! band while the op reads ok.
 
 use crate::geo2d::Region;
 use crate::machining2d::GenError;
@@ -28,14 +34,20 @@ use crate::machining2d::GenError;
 pub const OPEN_SLACK: f64 = 0.01;
 
 /// The footprint of a whole-model 3D pocket whose centre may ride the
-/// silhouette: `silhouette` united with its offset by `r - OPEN_SLACK`
-/// less `keep_out` (the setup's other parts' silhouettes). A radius too
-/// small for the slack leaves the silhouette as it is.
-pub fn open_sides(silhouette: &Region, r: f64, keep_out: &Region) -> Result<Region, GenError> {
+/// silhouette: `silhouette` united with the offset by `r - OPEN_SLACK`
+/// of the silhouette and of `stock` (the setup's stock outline, #1774;
+/// `None` with no stock set up), less `keep_out` (the setup's other
+/// parts' silhouettes). A radius too small for the slack leaves the
+/// silhouette as it is.
+pub fn open_sides(silhouette: &Region, r: f64, keep_out: &Region, stock: Option<&Region>) -> Result<Region, GenError> {
     let grow = r - OPEN_SLACK;
     if !grow.is_finite() || grow <= 0.0 || silhouette.is_empty() {
         return Ok(silhouette.clone());
     }
-    let band = silhouette.offset(grow)?.difference(keep_out)?;
+    let reach = match stock {
+        Some(s) if !s.is_empty() => silhouette.union(s)?,
+        _ => silhouette.clone(),
+    };
+    let band = reach.offset(grow)?.difference(keep_out)?;
     Ok(silhouette.union(&band)?)
 }
