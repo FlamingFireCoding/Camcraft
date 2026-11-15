@@ -204,7 +204,8 @@ fn face_square_40x40_blended_matches_golden() {
 
 #[test]
 fn face_square_40x40_stepped_matches_golden() {
-    // The same square staged from 2.0 down to -2.0 in 1.5 steps: the row
+    // The same square staged from 2.0 down to -2.0 in 1.5 steps (#2004:
+    // the first level is one step under Top Z): the row
     // band is identical at every level, and each level change lifts to
     // clearance and re-enters above the first row's start.
     let p = FaceParams { holes: Default::default(),
@@ -222,8 +223,8 @@ fn face_square_40x40_stepped_matches_golden() {
     let t = face(&rect(0.0, 0.0, 40.0, 40.0), &p).unwrap();
     assert_eq!(
         t.moves.iter().filter(|m| m.kind == MoveKind::Plunge).count(),
-        4,
-        "levels 2.0, 0.5, -1.0, -2.0"
+        3,
+        "levels 0.5, -1.0, -2.0 (#2004: no level at Top Z 2.0)"
     );
     write_golden("face_square_40x40_stepped.cl", &gen_to_cltext(&t));
 }

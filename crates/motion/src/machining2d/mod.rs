@@ -36,6 +36,7 @@ mod thread_passes;
 mod thread_ride;
 mod trochoid_air;
 mod trochoid_bore;
+mod trochoid_level;
 mod trochoid_loops;
 mod trochoid_slot;
 mod contour;
