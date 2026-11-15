@@ -15,7 +15,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## Probe
 
-![View of a probe approaching a surface, measuring and backing off.](/operation-paths.svg#Probe)
+![View of a probe approaching a surface, measuring and backing off.](../../operation-paths.svg#Probe)
 
 **For:** measuring the part on the machine with a spindle touch probe and
 either setting a work offset from what it finds or checking the part

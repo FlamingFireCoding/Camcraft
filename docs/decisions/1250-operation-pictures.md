@@ -23,3 +23,9 @@ keep the diagrams together and let the coverage test check every kind.
 text when the operation changes. If the operation enum gains a kind, add
 its reference section, picture view and coverage mapping. Replacing the
 schematics with generated previews can keep the same section locations.
+
+**Review correction:** Use `../../operation-paths.svg#<kind>` in each
+reference page. The relative URL keeps the configured site prefix when
+the site is deployed under `/Camcraft/`. A generated HTML test checks all
+44 image URLs against a base URL with that prefix. Root-relative URLs
+were dropped because they request the asset outside the deployed site.

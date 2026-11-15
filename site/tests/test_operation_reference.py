@@ -3,8 +3,13 @@
 Provenance: CamCraft's own OpType and guide sections; no vendor material.
 """
 
+from html.parser import HTMLParser
 from pathlib import Path
+import os
 import re
+import subprocess
+import tempfile
+from urllib.parse import urljoin
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -59,11 +64,41 @@ class OperationReferencePictures(unittest.TestCase):
                 with self.subTest(kind=kind):
                     self.assertIn(heading, contents, f"Missing section in {page}")
                     image = re.search(
-                        rf"!\[([^\]]+)\]\(/operation-paths\.svg#{kind}\)",
+                        rf"!\[([^\]]+)\]\(\.\./\.\./operation-paths\.svg#{kind}\)",
                         contents[heading],
                     )
                     self.assertIsNotNone(image, f"{heading} needs its toolpath picture")
                     self.assertGreater(len(image.group(1).split()), 4, "Describe the pictured path")
+
+    def test_generated_picture_urls_preserve_site_prefix(self):
+        class Pictures(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.sources = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "img":
+                    source = dict(attrs).get("src", "")
+                    if "operation-paths.svg" in source:
+                        self.sources.append(source)
+
+        base_url = "https://example.test/Camcraft"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "public"
+            subprocess.run(
+                [os.environ.get("ZOLA", "zola"), "build", "--base-url", base_url, "--output-dir", str(output)],
+                cwd=SITE, check=True, capture_output=True, text=True,
+            )
+            self.assertTrue((output / "operation-paths.svg").is_file())
+            for family, sections in FAMILIES.items():
+                with self.subTest(family=family):
+                    relative_page = f"guide/operations-{family}/"
+                    parser = Pictures()
+                    parser.feed((output / relative_page / "index.html").read_text())
+                    resolved = [urljoin(f"{base_url}/{relative_page}", src)
+                                for src in parser.sources]
+                    expected = [f"{base_url}/operation-paths.svg#{kind}" for kind in sections]
+                    self.assertCountEqual(resolved, expected)
 
     def test_picture_views_are_valid_and_described(self):
         path = SITE / "static/operation-paths.svg"
