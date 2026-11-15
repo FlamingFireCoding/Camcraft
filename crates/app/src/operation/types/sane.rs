@@ -732,6 +732,8 @@ impl OpParams {
                 stepover,
                 feed,
                 plunge_feed,
+                extend_start,
+                extend_end,
                 ..
             } => {
                 a.x.is_finite()
@@ -748,6 +750,8 @@ impl OpParams {
                     && pos(*stepover)
                     && pos(*feed)
                     && pos(*plunge_feed)
+                    && nneg(*extend_start)
+                    && nneg(*extend_end)
             }
             OpParams::TrochoidalSlot {
                 a,
