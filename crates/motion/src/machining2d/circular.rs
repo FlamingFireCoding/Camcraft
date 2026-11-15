@@ -287,6 +287,15 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
         }
         // #871: a part-way refusal hands back the rings cut so far.
         .map_err(|e| e.with_ghost_moves(b.moves()))?;
+        // #2004: a vault plane at Top Z cuts air - the rim ring's floor
+        // (the bowl meets the top at the radius) and an inner ring's
+        // opening plane under a rim that cut nothing. A ring with no
+        // plane under Top Z is not walked.
+        let zs = if p.vault { under_top(zs, p.top_z) } else { zs };
+        if zs.is_empty() {
+            k += 1;
+            continue;
+        }
         run_level_walks(&mut b, &pass, &zs, &motion, Some(&runs), cert.as_ref(), cert.as_ref());
         k += 1;
     }
@@ -316,6 +325,13 @@ fn levels_from(top: f64, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenErro
     Ok(std::iter::once(top).chain(below).collect())
 }
 
+/// The vault planes strictly under Top Z (a plane at Top Z removes
+/// nothing, #2004); `1e-9` of the span absorbs the bowl's float noise.
+fn under_top(zs: Vec<f64>, top: f64) -> Vec<f64> {
+    let tol = 1e-9 * top.abs().max(1.0);
+    zs.into_iter().filter(|&z| z < top - tol).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,6 +346,10 @@ mod tests {
         assert_eq!(levels_from(2.0, 2.0, 5.0).ok(), Some(vec![2.0]));
         assert!(levels_from(8.0, 0.0, 0.0).is_err());
         assert_eq!(cut_levels(8.0, 0.0, 5.0).ok(), Some(vec![3.0, 0.0]));
+        // The rim ring's floor at Top Z and an opening plane at Top Z go.
+        assert_eq!(under_top(vec![13.0], 13.0), Vec::<f64>::new());
+        assert_eq!(under_top(vec![13.0, 8.32], 13.0), vec![8.32]);
+        assert_eq!(under_top(vec![8.0, 3.0], 13.0), vec![8.0, 3.0]);
     }
 
     /// #1558: the polygon's chord count comes from the tolerance, not a

@@ -105,13 +105,21 @@ fn a_pocket_whose_stepdown_spans_the_depth_cuts_one_level() {
         one_level(&format!("2D pocket {s:?}"), &t);
     }
     let t = adaptive_trochoidal(&reg, &pp(PocketStrategy::Adaptive)).expect("trochoidal");
-    one_level("2D Adaptive (Trochoidal)", &t);
+    // The trochoidal returns between loops ride the Auto microlift, 0.3 mm
+    // over the level (a feed that keeps its Z, but no cut): one cut level.
+    assert_eq!(cut_planes(&t), vec![BOTTOM + 0.3, BOTTOM], "2D Adaptive (Trochoidal): one level at Bottom Z, none at Top Z");
 }
 
 #[test]
 fn a_pocket_of_four_steps_cuts_the_four_planes_under_top_z() {
     let reg = square(0.0, 0.0, 40.0);
-    let p = PocketParams { top_z: 20.0, stepdown: 5.0, ..pp(PocketStrategy::OffsetRings) };
+    let p = PocketParams {
+        top_z: 20.0,
+        stepdown: 5.0,
+        clearance_z: 30.0,
+        retract_z: Some(25.0),
+        ..pp(PocketStrategy::OffsetRings)
+    };
     let t = pocket(&reg, &p).expect("pocket");
     assert_eq!(cut_planes(&t), vec![15.0, 10.0, 5.0, 0.0]);
 }
@@ -233,8 +241,12 @@ fn a_vault_cuts_no_ring_at_top_z_but_keeps_each_inner_ring_opening_plane() {
     // Rings at rho 7, 5, 3, 1; each ring's floor is the bowl at rho + r,
     // and each inner ring opens at the floor of the ring before it.
     let bowl = |rho: f64| BOTTOM + (TOP - BOTTOM) * (rho / 10.0f64).min(1.0).powi(2);
+    // The rim ring (rho 7) has its floor at Top Z, so it cuts nothing and
+    // is not walked; rho 5 opens under it at Top Z, which is not a level.
     for rho in [5.0, 3.0, 1.0] {
-        for z in [bowl(rho + 3.0), bowl(rho + 2.0 + 3.0)] {
+        let opening = bowl(rho + 2.0 + 3.0);
+        let want = if opening < TOP - 1e-6 { vec![bowl(rho + 3.0), opening] } else { vec![bowl(rho + 3.0)] };
+        for z in want {
             assert!(planes.iter().any(|&q| (q - z).abs() < 1e-3), "rho {rho}: plane {z} missing in {planes:?}");
         }
     }
