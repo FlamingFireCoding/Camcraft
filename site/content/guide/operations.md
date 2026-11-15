@@ -61,6 +61,11 @@ common refusals, in [Turning operations](@/guide/operations-turning.md).
 
 ## What a click picks
 
+**Pick** buttons use a faint selection tint when idle. An armed button
+uses the full selection colour and an outline. This marks the active pick
+target. Hover a selected face, edge or corner in the viewport to highlight
+its row on the Geometry tab.
+
 Every page that takes a pick from the viewport (operation geometry,
 boundaries, setup alignment, fixture mates, the work origin) follows the
 same rule:

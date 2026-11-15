@@ -68,6 +68,11 @@ machined this area"; "helix radius must be positive and at most the tool
 radius"; "optimal load must be in (0, 50] % of the tool diameter";
 "retract plane sits inside the material".
 
+When space remains but the cutter cannot fit, the refusal names the tool
+diameter and stock to leave. Use a smaller tool or reduce the allowance
+only if the job permits it. This differs from a model that fills every
+level, where there is no target to clear.
+
 ## 3D Finish
 
 **For:** finishing 3D surfaces with a ball-nose, to a stated tolerance.

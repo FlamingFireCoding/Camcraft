@@ -66,17 +66,49 @@ time. The current, authoritative tool list is whatever the client's
 | Area | Tools |
 |---|---|
 | Document and history | `open_project`, `save_project`, `get_job`, `undo`, `redo` |
-| Models | `import_model`, `move_model`, `repair_model`, `set_part_axes`, `lay_part_on_points` |
-| Setups and work offsets | `add_setup`, `activate_setup`, `set_wcs`, `set_work_offset`, `load_machine`, `set_workholding_max_rpm`, `set_stock`, `set_raw_stock_only` |
+| Models | `import_model`, `move_model`, `repair_model`, `set_part_axes`, `lay_part_on_points`, `lay_part_on_face`, `align_part_cylinder` |
+| Setups and work offsets | `add_setup`, `activate_setup`, `set_wcs`, `set_wcs_from_features`, `set_wcs_circle_centre`, `place_setup_origin`, `set_work_offset`, `load_machine`, `set_workholding_max_rpm`, `set_stock`, `fit_stock`, `set_raw_stock_only` |
 | Fixtures and workholding | `add_fixture`, `remove_fixture`, `move_fixture`, `locate_part`, `get_fixture_findings`, `add_builtin_vise`, `set_vise`, `add_mod_vise_pair`, `set_mod_jaw`, `refit_mod_vise`, `add_accessory`, `set_accessory`, `add_fixture_plate`, `set_fixture_plate`, `place_on_plate`, `detect_plate_grid`, `get_plate_grid` |
 | Tools and holders | `list_tool_catalog`, `add_tool`, `set_tool`, `import_tool_library`, `export_tool_library`, `list_holder_library`, `set_tool_holder`, `get_tool_cutter_profile`, `set_tool_cutter_profile`, `set_tool_cutter_params` |
+| Tool bodies and numbers | `set_tool_number`, `get_tool_body`, `set_tool_body`, `set_lathe_tool_body`, `attach_tool_body_piece`, `remove_tool_body_piece`, `set_lathe_insert_zone`, `clear_tool_body` |
 | Operations | `list_operation_types`, `add_operation`, `edit_operation`, `delete_operation`, `rename_operation`, `reorder_operation` |
 | Picking geometry | `list_features`, `get_operation_geometry`, `set_operation_geometry`, `set_operation_area`, `detect_holes`, `detect_pockets` |
-| Generate, verify, post | `generate`, `verify`, `render_stock`, `post` |
+| Generate, verify, post | `generate`, `verify`, `render_stock`, `get_post_options`, `set_post_options`, `post` |
 
 `list_operation_types` returns each operation kind's parameters, their
 types and defaults; `list_tool_catalog` and `list_holder_library` return the
 built-in tools and holders an agent can add.
+
+### Alignment and origins
+
+`align_part_cylinder` takes a cylinder-wall `pick` from `list_features`.
+Choose `target: "x"`, `"y"` or `"z"` (default Z). Optional `flip` reverses
+the axis; `angle_deg` turns the aligned part about it. This changes the
+part alignment, not the WCS.
+
+`place_setup_origin` keeps the WCS rotation. Set `source` to `model_box`
+or `stock_box`, with `point: "corner"` or `"centre"`. Use `source: "vertex"`
+with a vertex `pick` to place it on a feature. Both tools accept a named
+`setup`; omission uses the active setup. Each change is one undo step.
+
+### Post options
+
+`get_post_options {}` reads the document options. Give `setup` to read a
+named setup's resolved options and `follows_document` state.
+`set_post_options` uses the same explicit target: no `setup` changes the
+document, even when another setup is active. Omitted fields keep their
+current values.
+
+For example, `set_post_options {"setup":"Finish","per_op":true}` gives
+Finish its own options. `set_post_options {"setup":"Finish","follow":true}`
+returns it to following the document. Do not combine `follow: true` with
+option fields. The options include `skip_stops`, `per_op`, `threading`
+(`g32` or `g76`), `end_units` (`leave`, `inch`, `mm`), `smoothing`,
+`between_setups` and `explain`. Read `tools/list` for the accepted values.
+
+`detect_holes` reports holes it does not create in its `skipped` field.
+Read that field before assuming that every detected hole became an
+operation. A refused Bore is not silently replaced by Drill.
 
 ## Example session
 
