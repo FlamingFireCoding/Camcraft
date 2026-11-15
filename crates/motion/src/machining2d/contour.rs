@@ -351,7 +351,10 @@ fn contour_impl(
                 // The level's first engagement: a crossing, or the path's
                 // first entry (prev_z falls back to clearance there).
                 let prev_z = if rzi == 0 { p.clearance_z } else { rz[rzi - 1] };
-                let step = Step { arm, e2, z, prev_z, first: first_entry, inside, tabbed, lead_top };
+                // #2004: the column of this descent is open down to prev_z
+                // when the descent one level up was the same arm.
+                let opened = rzi >= 2 || (rzi == 1 && arm == p.entry);
+                let step = Step { arm, e2, z, prev_z, first: first_entry, opened, inside, tabbed, lead_top };
                 if let Some(d) = engage_level(&mut b, &eng, &step, &lead, &walk, &mut said) {
                     if dives.0.to_bits() != z.to_bits() {
                         dives = (z, Vec::new());
