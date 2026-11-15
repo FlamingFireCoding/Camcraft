@@ -38,12 +38,39 @@ project with the project's name and the `.nc` extension.
   move is not written, including through the standalone post tool.
 - **Wire EDM:** a user post must declare `wireEdm` to serve wire work.
   The generic post uses the machine's EDM code templates. The Sodick
-  post supports 2-axis work only and refuses taper and 4-axis work.
+  post supports 2-axis work only and refuses taper, 4-axis work and
+  control-side G41/G42 H offsets. Set tank and flushing functions at the
+  control; this post does not program them.
+- **Fanuc-family numbers:** Fanuc, Haas, Mazak, Doosan DNM and Fanuc
+  Lathe write a decimal point on whole-number lengths, angles and
+  feed-per-revolution words, for example `Z14.`. This prevents a control
+  with DPI=0 from reading that number as least increments.
+- **Indexed work offsets:** grblHAL and TinyG accept G54 through G59
+  for indexed work. An offset beyond that range is refused.
 
 Post options can belong to the document or to one setup. A setup can
 follow the document or keep its own options. Agents can inspect and edit
 these choices with `get_post_options` and `set_post_options`; see
 [AI agents (MCP)](@/guide/automate/mcp.md).
+
+### Explain G-code
+
+Turn on **Explain G-code** in the post options to append plain-English
+comments to supported blocks. Tormach PathPilot milling, Fanuc, Haas,
+Mazak, Doosan DNM and Fanuc Lathe support this option. The comments do
+not change executable words or motion. Fanuc-family posts omit an
+explanation when it would exceed the block length budget. Explain is off
+by default; a post without explanation support refuses the option.
+
+### Stops between setups
+
+For a setup-change stop, Haas, Mazak, Doosan DNM, Sinumerik, Heidenhain,
+grblHAL and TinyG lift Z and name the next setup before the M0 or M1.
+Ordinary operation stops keep their existing behavior. Heidenhain uses
+the section's work clearance and refuses missing or unsafe clearance;
+it preserves a tip already above that height. Sinumerik refuses a missing
+machine retract. This does not establish a safe home position for every
+machine: inspect the retract and the setup before running it.
 
 ## What is checked before anything is written
 

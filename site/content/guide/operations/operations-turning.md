@@ -236,6 +236,21 @@ The V's angle comes from the tool (its form angle), not the operation.
 Right hand posts under M03; left hand under M04, with the insert mounted
 for reverse rotation. Threading posts a constant rpm (G97).
 
+**Repeat each depth**, off by default on Passes, repeats each roughing
+pass at the same depth, flank and helix phase. It does not repeat the
+finishing or root spring passes. G32/G33 output carries those repeated
+passes; Fanuc and Tormach PathPilot G76 cycles refuse the option because
+their cycles cut each roughing depth once.
+
+With the Fanuc **G76** post option, the finish allowance and spring count
+describe the verified passes. The default metric thread now writes
+`R0.4`, rather than `R0`, to avoid an extra full-depth pass. G32 remains
+the default output. G76 refuses alternating infeed, a one-pass thread,
+or a doubled flank angle outside 0, 29, 30, 55, 60 or 80 degrees. It also
+refuses a rounded-word schedule that cannot match the verified pass count.
+These are software checks; Fanuc flank G76 behavior still needs a control
+run. Read the program and confirm the control's cycle before machining.
+
 **Common refusals:** "nothing to thread - no valley ... down from the
 bar's surface stands in the window: threading cuts a MODELED thread ...";
 "a ... wide insert does not fit a ... pitch - the V is wider than the

@@ -50,8 +50,7 @@ fn catalog_gate(name: &str, tool: &mut Tool) -> Result<(), CommandError> {
 /// (non-finite or non-positive rpm / feed, a material twice) by the
 /// tool's name, before anything enters the history.
 fn cutting_gate(name: &str, tool: &Tool) -> Result<(), CommandError> {
-    let torch = tool.kind == crate::tools::ToolKind::Torch;
-    match camcraft_tools::cutting_rows::refusal(&tool.cutting, torch) {
+    match camcraft_tools::cutting_rows::refusal_for_kind(&tool.cutting, tool.kind) {
         Some(why) => Err(CommandError::Invalid(format!("tool '{name}': {why}"))),
         None => Ok(()),
     }

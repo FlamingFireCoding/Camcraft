@@ -47,10 +47,12 @@ or picked vertex while retaining the WCS rotation. These changes are
 undoable. MCP exposes the same cylinder and origin commands.
 
 Face, Contour, Pocket and 2D Adaptive can generate picked features in an
-aligned milling setup. Extra area controls, tilt combined with picks and
-unverified operation kinds still receive named refusals. Keep each pick
-with its intended setup; changing the alignment makes affected paths
-stale.
+aligned milling setup. **3D Pocket**, **3D Adaptive** and **3D Finish**
+also work there, including area controls and picked boundaries in the
+setup frame. Extra area controls on the 2D kinds, tilt combined with
+picks and unverified operation kinds still receive named refusals. Keep
+each pick with its intended setup; changing the alignment makes affected
+paths stale.
 
 ## Carrying stock to the next setup
 
@@ -64,6 +66,19 @@ machining and the fixture checks of that setup then see the material the
 earlier setup left, not the raw stock. CamCraft refuses that choice by
 name when it cannot verify the carry, for example between setups on
 different machines.
+
+A side-on setup can carry the earlier stock through a quarter turn
+(90 degrees about X or Y). Turns must be quarter turns about X, Y or Z;
+a skew turn is refused with both setup names. For a side-on carry the
+column simulation keeps a conservative hull: it can retain extra material,
+but never removes material merely because the setup turned. Read the
+carry note in the verification report.
+
+The verdict retains a gouge cut before the turn, even if that hull hides
+it in the new view. It credits the departing setup's declared chamfers,
+deburrs and marks before retaining gouges, including when the next setup
+starts from a new block. A cut deeper than the declared finish remains
+a gouge; a later setup cannot erase it.
 
 ## Machines
 
