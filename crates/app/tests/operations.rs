@@ -108,6 +108,8 @@ fn slot_params() -> OpParams {
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
@@ -1980,6 +1982,7 @@ fn pocket_refuses_an_open_run() {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
         params: OpParams::Pocket {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,
             stepover: 3.0,
@@ -2170,7 +2173,7 @@ fn open_run_of(world: &World, name: &str) -> u64 {
 }
 
 #[test]
-fn an_open_run_contours_on_its_centerline() {
+fn an_open_run_contours_on_its_air_side() {
     let (world, mut history) = box_part_world();
     let run = open_run_of(&world, "part");
     history.execute(
@@ -2189,8 +2192,8 @@ fn an_open_run_contours_on_its_centerline() {
         GenerateOperation::new(&world, "Edge1").expect("generate"),
     );
 
-    // Preview: the run bounds no area, so no region outline - the
-    // centerline stands in for it, and it is exactly what the path rides.
+    // Preview: the run bounds no area, so no region outline - the picked
+    // run stands in for it; the path rides beside it (#1777).
     let op = model::operation_of(&world, &model::find_by_name(&world, "Edge1").expect("op"))
         .expect("op");
     assert!(
@@ -2213,8 +2216,21 @@ fn an_open_run_contours_on_its_centerline() {
         .find(|c| c.id == run)
         .expect("chain");
     let pts = feature::chain_points(&f, &c);
+    assert_eq!(pts.len(), 2, "a box rim edge is one straight segment");
+    // #1777: the tool stands one radius (3 mm) off the edge on its air
+    // side - outside the 10 x 10 box - never on the edge itself.
+    let (a, b) = (pts[0], pts[1]);
+    let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let n = (-(b[1] - a[1]) / l, (b[0] - a[0]) / l);
+    let outside = |x: f64, y: f64| !(-1e-9..=10.0 + 1e-9).contains(&x) || !(-1e-9..=10.0 + 1e-9).contains(&y);
+    let off = |e: [f64; 3]| {
+        let (p, q) = ((e[0] + 3.0 * n.0, e[1] + 3.0 * n.1), (e[0] - 3.0 * n.0, e[1] - 3.0 * n.1));
+        if outside(p.0, p.1) { p } else { q }
+    };
+    let ends = [off(a), off(b)];
+    let near = |x: f64, y: f64, e: (f64, f64)| (x - e.0).hypot(y - e.1) < 1e-6;
     // contour_params: 5.0 -> 0.0 at 2.5 - three levels, one plunge each,
-    // Lead::None so the plunge lands exactly on the stored start vertex.
+    // Lead::None so the plunge lands exactly on the offset start.
     let levels = [5.0, 2.5, 0.0];
     let plunges: Vec<_> = path
         .moves
@@ -2222,12 +2238,10 @@ fn an_open_run_contours_on_its_centerline() {
         .filter(|m| m.kind == MoveKind::Plunge)
         .collect();
     assert_eq!(plunges.len(), levels.len());
+    let start = plunges[0].to;
+    let first = ends.iter().position(|e| near(start.x, start.y, *e)).expect("the plunge enters at an offset end of the run");
     for (lvl, m) in plunges.iter().enumerate() {
-        assert_eq!(
-            (m.to.x, m.to.y),
-            (pts[0][0], pts[0][1]),
-            "plunge {lvl} enters at the run start, not short of it"
-        );
+        assert!(near(m.to.x, m.to.y, ends[first]), "plunge {lvl} enters at the same offset end: {:?}", m.to);
         assert_eq!(m.to.z, levels[lvl]);
     }
     for (lvl, &z) in levels.iter().enumerate() {
@@ -2236,18 +2250,20 @@ fn an_open_run_contours_on_its_centerline() {
             .iter()
             .filter(|m| m.kind == MoveKind::Feed && m.to.z == z)
             .collect();
-        assert_eq!(
-            feeds.len(),
-            pts.len() - 1,
-            "one feed per segment, level {lvl}"
+        assert_eq!(feeds.len(), 1, "one feed along the straight offset, level {lvl}");
+        let last = feeds[0];
+        assert!(
+            near(last.to.x, last.to.y, ends[1 - first]),
+            "the ride stops at the run's other offset end, never beyond: {:?}",
+            last.to
         );
-        let last = feeds.last().expect("a level feeds somewhere");
-        assert_eq!(
-            (last.to.x, last.to.y),
-            (pts[pts.len() - 1][0], pts[pts.len() - 1][1]),
-            "the run stops at its end, never beyond"
-        );
+        assert!(outside(last.to.x, last.to.y), "the tool centre stays off the part");
     }
+    assert!(
+        path.notes.iter().any(|s| s.contains("air side")),
+        "the path says how it read the run: {:?}",
+        path.notes
+    );
 }
 
 // ============ M1.5.1 step 4: picked runs stitch into rings ============
@@ -2633,17 +2649,21 @@ fn a_mixed_pick_list_cuts_boundary_then_run_and_says_what_overlap_means() {
         6,
         "three levels of boundary, three of run"
     );
-    // The run's edge lies on the face's own wall, so a full-width cutter
-    // centered there half-cuts air and half-cuts the finished boundary -
-    // the verifier sees exactly that and says so, instead of pretending
-    // the pick list was coherent. (Pick the run WITHOUT the face, or use
-    // a chamfer tool, for a clean edge-of-part pass.)
+    // The run's edge lies on the face's own wall. Before #1777 the cutter
+    // rode the edge on its centre and half-cut the finished boundary; now
+    // it stands one radius off the edge on its air side, so the run
+    // repeats the wall's pass and cuts nothing it must keep.
     assert!(
-        out.warnings
+        !out.warnings
             .iter()
             .any(|w| matches!(w, Warning::Gouge { .. })),
-        "a centerline inside a picked wall is flagged, never silent: {:?}",
+        "a run on a picked wall rides beside the wall, never into it: {:?}",
         out.warnings
+    );
+    assert!(
+        out.path.notes.iter().any(|s| s.contains("air side")),
+        "the run says how it was cut: {:?}",
+        out.path.notes
     );
 }
 

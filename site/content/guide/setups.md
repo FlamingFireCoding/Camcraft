@@ -33,6 +33,24 @@ Each setup owns one work coordinate system. G54 to G59 is only the label
 the post writes for it. Heights that are measured from the work offset read
 the setup's offset.
 
+On the WCS page, **Pick markers in viewport** accepts the box markers,
+part corners and round-edge centres. A box marker takes priority when
+points overlap. A click on a part corner places the origin there; a round
+edge supplies its centre.
+
+The setup's alignment controls can align a part from faces, axes, three
+points or a cylinder wall. For a cylinder, choose **Pick wall**, select
+its curved wall, choose the target axis and optional angle or flip, then
+choose **Apply cylinder**. **Place origin** can use a stock box, model box
+or picked vertex while retaining the WCS rotation. These changes are
+undoable. MCP exposes the same cylinder and origin commands.
+
+Face, Contour, Pocket and 2D Adaptive can generate picked features in an
+aligned milling setup. Extra area controls, tilt combined with picks and
+unverified operation kinds still receive named refusals. Keep each pick
+with its intended setup; changing the alignment makes affected paths
+stale.
+
 ## Carrying stock to the next setup
 
 **New setup** with **Carry stock and WCS over** ticked starts the new
