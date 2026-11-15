@@ -168,3 +168,20 @@ fn wire_unknown_condition_ids_stay_visible_and_unchanged() {
     assert_eq!(draft(&h).skims[0].condition, "missing skim");
     assert_eq!(draft(&h).tabs.as_ref().expect("tabs").cutoff_condition, "missing cutoff");
 }
+
+#[test]
+fn wire_sync_pick_button_arms_and_says_the_next_click() {
+    let mut h = wire_page();
+    h.state_mut().op_tab = super::super::op_tabs::SEC_GEO;
+    h.run_steps(3);
+    press(&mut h, "4-axis (upper and lower profiles)");
+    press(&mut h, "Pairing");
+    choose(&mut h, "Pairing", "By sync points");
+    assert!(h.query_by_label("Pick sync points in the viewport").is_some(), "the pick button shows");
+    press(&mut h, "Pick sync points in the viewport");
+    assert!(h.state().wire_sync.armed, "the button arms the pick");
+    assert!(h.query_by_label("Stop picking sync points").is_some());
+    assert!(h.query_by_label("Next: click the upper point of pair 1 (a vertex of the upper profile)").is_some());
+    press(&mut h, "Stop picking sync points");
+    assert!(!h.state().wire_sync.armed);
+}

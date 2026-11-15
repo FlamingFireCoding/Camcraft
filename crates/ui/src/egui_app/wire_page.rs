@@ -127,7 +127,7 @@ fn tab_fields(ui: &mut Ui, u: Unit, tabs: &mut Option<WireTabs>, ids: &[String])
 }
 
 /// The 4-axis block (#537): the rule, the tolerance and the sync pairs.
-fn four_axis_fields(ui: &mut Ui, u: Unit, f: &mut WireFourAxis) {
+fn four_axis_fields(ui: &mut Ui, u: Unit, f: &mut WireFourAxis, cx: &mut Cx<'_>) {
     let mut pi = usize::from(f.pairing == WirePairingRule::SyncPoints);
     prop_row(ui, "Pairing", |ui| combo(ui, "wire.pairing", &mut pi, &PAIRINGS));
     f.pairing = if pi == 1 { WirePairingRule::SyncPoints } else { WirePairingRule::ArcLength };
@@ -161,6 +161,17 @@ fn four_axis_fields(ui: &mut Ui, u: Unit, f: &mut WireFourAxis) {
     if ui.button("Add sync pair").clicked() {
         f.sync.push(WireSyncPair { upper: Some([0.0, 0.0]), lower: Some([0.0, 0.0]) });
     }
+    // #1171: state the pairs by two vertex clicks in the viewport.
+    let label = if cx.sync_armed { "Stop picking sync points" } else { "Pick sync points in the viewport" };
+    prop_row(ui, "Sync pick", |ui| {
+        if ui.button(label).clicked() {
+            cx.sync_toggle = true;
+        }
+    });
+    if cx.sync_armed {
+        ui.label(format!("Next: {}", crate::wire_sync_pick::next_click(&f.sync)));
+    }
+    hint(ui, "the first click of a pair is a vertex of the upper profile (the higher one), the second a vertex of the lower profile; Apply stores the pairs");
     hint(ui, "each sync pair is one point of the upper profile and the point of the lower profile the wire passes through with it; between pairs the profiles are walked at the same share of their length");
 }
 
@@ -197,7 +208,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         let mut on = four_axis.is_some();
         check_row(ui, "4-axis (upper and lower profiles)", &mut on);
         match (on, four_axis.as_mut()) {
-            (true, Some(f)) => four_axis_fields(ui, u, f),
+            (true, Some(f)) => four_axis_fields(ui, u, f, cx),
             (true, None) => *four_axis = Some(WireFourAxis::default()),
             (false, _) => *four_axis = None,
         }
