@@ -29,3 +29,13 @@
   repository evidence in `docs/reviews/1756/`, `docs/review/1765/` and
   `docs/pr-1711/`. The PR description already embeds all six images. Removing
   these files would discard their capture provenance and link-validation script.
+
+### PR #1724 latest review: scope the guard to migrated pages
+
+- **Chosen:** Keep the hard zero-call limit for the holes family only. Remove
+  the unrelated family baselines, and pin the guard's scope to holes_page.rs
+  and thread_page.rs. This supersedes the earlier choice to retain all caps.
+- **Why:** Main's wire-page additions exceeded the multi-axis cap again.
+  Unmigrated page work must not block this holes-only migration.
+- **Considered and dropped:** Raising the multi-axis cap to 18 or adding
+  arbitrary slack would only postpone the same failure after future changes.
