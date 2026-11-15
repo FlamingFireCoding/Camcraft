@@ -112,6 +112,7 @@ mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+mod lathe_view;
 mod structural;
 mod cycle_combo;
 mod radial_step_field;

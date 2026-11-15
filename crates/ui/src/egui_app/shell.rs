@@ -281,6 +281,9 @@ fn viewport_panel(
     viewport_points: &mut [f32; 2],
     left_press: &mut Option<[f32; 2]>,
 ) {
+    // The camera orbits in the mounted machine's frame (#1993): a lathe
+    // shows its spindle axis across the screen.
+    crate::view_frame::sync(state);
     // M1.7c move simulation: the timeline is rebuilt from the world on
     // every document change (`cached_script` below, keyed on
     // `doc_version`), which is why a document switch needs no reset -
