@@ -795,13 +795,13 @@ const GRID_MAJOR: [f32; 3] = [0.23, 0.25, 0.29];
 /// beyond what the default framing shows, so no hard edge is ever on
 /// screen; the outermost rings fade into the ground (issue: an empty
 /// viewport read as a void).
-const GRID_HALF_STEPS: i64 = 24;
+pub(crate) const GRID_HALF_STEPS: i64 = 24;
 /// Beyond this (mm) the grid is not drawn: far past any machine table, and
 /// where `step * GRID_HALF_STEPS` can overflow to infinity and stretch the
 /// line-index range to the whole of i64.
 const GRID_MAX_COORD: f64 = 1.0e9;
 /// Every fifth line is a major one (0.5, 1, 5, 10, 50 ... on a 1-2-5 step).
-const GRID_MAJOR_EVERY: i64 = 5;
+pub(crate) const GRID_MAJOR_EVERY: i64 = 5;
 
 /// The Z=0 ground grid: the machine table plane under the part, one line
 /// per 1-2-5 step of `dist / 10`, centred on the camera target and snapped
@@ -875,8 +875,10 @@ fn grid_ink(k: i64, centre: i64) -> [f32; 3] {
 }
 
 /// The next 1-2-5 decade at or above `v` (0.1, 0.2, 0.5, 1, 2, 5, 10 ...),
-/// so grid spacing is a round machine number at every zoom.
-fn nice_step(v: f64) -> f64 {
+/// so grid spacing is a round machine number at every zoom. One law for
+/// every grid: the viewport floor and the report picture (#1696) both
+/// take their step here.
+pub(crate) fn nice_step(v: f64) -> f64 {
     if !v.is_finite() || v <= 0.0 {
         return 1.0;
     }

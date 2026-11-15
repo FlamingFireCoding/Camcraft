@@ -42,3 +42,27 @@ are three constants in `report.rs`; a fork pointing at its own repo
 changes one constant. If GitHub later lets a URL prefill an issue form,
 the blank template can go and `template=` changes - no Rust change
 beyond that constant.
+
+## #1696 follow-up - the screenshot's ground grid (GUI test finding)
+
+**What was decided.** The maintainer's GUI test found the screenshot's
+background grid wrong: dark scratch lines over the part. The shot now
+builds its own floor for the shot's fitted camera: the viewport's grid
+law (`interact::nice_step` spacing, `GRID_MAJOR_EVERY` heavy lines, the
+cubed rim fade) at a 40 px wanted spacing, with light inks on a light
+ground, drawn through a new depth-tested `Canvas::ground_line` before
+the parts so the part occludes the floor. The live camera's overlay grid
+copy is dropped from the shot.
+
+**Why.** `world::collect`'s overlay grid is spaced and centred for the
+live camera; through the shot's fitted camera it landed at the wrong
+scale and position, and `raster()` drew every overlay line with no
+depth test, so it painted over the part. Pinning test:
+`raster::tests::ground_lines_take_the_viewports_floor_law`, plus the
+grid-ink assertions in `report_tests::the_screenshot_paints_the_document`.
+
+**Considered and dropped.**
+- Fading or deleting the grid: the floor helps the reader place the
+  part; the viewport shows one, so the shot should show its own.
+- Reusing the overlay lines with a depth test only: the spacing bug
+  stayed - the lines were still the live camera's.

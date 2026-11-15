@@ -131,4 +131,14 @@ fn the_screenshot_paints_the_document() {
         img.pixels.iter().any(|p| *p != bg),
         "the cube paints over the background"
     );
+    // The maintainer's GUI finding: the floor must read like the
+    // viewport's, not like dark scratch lines over the part. A cube at
+    // 0..10 frames at ~50 px per mm, so the 1-2-5 law gives a 1 mm step
+    // and the cube centre (5, 5) lands on a major line at full ink;
+    // that line crosses the cube's centre and keeps its exact ink
+    // (fade 1.0) where the part does not cover it.
+    let major = egui::Color32::from_rgb(198, 198, 204);
+    let minor = egui::Color32::from_rgb(218, 218, 222);
+    assert!(img.pixels.iter().any(|p| *p == major), "the floor paints a major grid line");
+    assert!(img.pixels.iter().any(|p| *p == minor), "the floor paints a minor grid line");
 }
