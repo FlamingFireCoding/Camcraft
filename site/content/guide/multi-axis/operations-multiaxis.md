@@ -254,7 +254,11 @@ spindle posed where a wall or corner needs it and vertical where a floor
 does not ask. Choose it over 3D Pocket when the shank or holder would
 reach a deep wall at a vertical pose.
 
-**Picks:** none; it roughs around the whole model.
+**Picks:** none; it roughs around the whole model. Like a whole-model
+[3D Pocket](@/guide/operations/operations-3d.md#3d-pocket), it clears
+out to the stock outline, including stock far from the silhouette, and
+extends across open notch mouths without leaving a tool-radius ridge.
+Other parts remain protected by the same checks.
 
 | Tab | Setting | Default |
 |---|---|---|
