@@ -1980,6 +1980,7 @@ fn pocket_refuses_an_open_run() {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
         params: OpParams::Pocket {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,
             stepover: 3.0,

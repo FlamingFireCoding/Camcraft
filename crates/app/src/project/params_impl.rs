@@ -112,6 +112,7 @@ impl ParamsDto {
                 helix_radius,
                 optimal_load,
                 blend_turns,
+                blend_radius,
                 tilt,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
@@ -144,6 +145,7 @@ impl ParamsDto {
                 max_engagement: None,
                 optimal_load: Some(*optimal_load),
                 blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             // The twins drop the strategy tag - the variant itself
@@ -164,6 +166,8 @@ impl ParamsDto {
                 helix_radius,
                 optimal_load,
                 method,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => ParamsDto::Adaptive2D {
                 links: links_to_dto(links, &p.default_links()),
@@ -190,6 +194,8 @@ impl ParamsDto {
                     crate::machining2d::AdaptiveMethod::Spiral => AdaptiveMethodDto::Spiral,
                     crate::machining2d::AdaptiveMethod::Trochoidal => AdaptiveMethodDto::Trochoidal,
                 },
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             OpParams::Offset2D {
@@ -206,6 +212,8 @@ impl ParamsDto {
                 climb,
                 entry,
                 helix_radius,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
@@ -226,6 +234,8 @@ impl ParamsDto {
                     Entry3D::Arc => EntryDto::Arc,
                 },
                 helix_radius: *helix_radius,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
@@ -1318,6 +1328,7 @@ impl ParamsDto {
                 max_engagement,
                 optimal_load,
                 blend_turns,
+                blend_radius,
                 tilt,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1349,6 +1360,7 @@ impl ParamsDto {
                 helix_radius: *helix_radius,
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Adaptive2D {
@@ -1368,6 +1380,8 @@ impl ParamsDto {
                 max_engagement,
                 optimal_load,
                 method,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1393,6 +1407,8 @@ impl ParamsDto {
                     AdaptiveMethodDto::Spiral => crate::machining2d::AdaptiveMethod::Spiral,
                     AdaptiveMethodDto::Trochoidal => crate::machining2d::AdaptiveMethod::Trochoidal,
                 },
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Offset2D {
@@ -1409,6 +1425,8 @@ impl ParamsDto {
                 retract_z,
                 entry,
                 helix_radius,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1429,6 +1447,8 @@ impl ParamsDto {
                     EntryDto::Arc => Entry3D::Arc,
                 },
                 helix_radius: *helix_radius,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             // The M2.4 B trio back out of the wire, same shapes.

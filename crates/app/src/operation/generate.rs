@@ -555,6 +555,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -591,6 +592,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     helix_radius: *helix_radius,
                     optimal_load: *optimal_load,
                     blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
                 },
                 &holes,
             )?;
@@ -613,6 +615,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             method,
+            blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -640,12 +644,20 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
-                blend_turns: false,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
             };
             // #1509: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let path = match method {
                 machining2d::AdaptiveMethod::Spiral => machining2d::pocket(&region, &pp)?,
+                // #1733: the loops are arcs already; the option is
+                // refused by name, never ignored (`sane` says it first).
+                machining2d::AdaptiveMethod::Trochoidal if *blend_turns => {
+                    return Err(GenError::Invalid(
+                        "arc turns at corners are not available with the Trochoidal method".into(),
+                    ));
+                }
                 machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal(&region, &pp)?,
             };
             (region, path)
@@ -659,6 +671,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             climb,
             entry,
             helix_radius,
+            blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -688,7 +702,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     entry: *entry,
                     helix_radius: *helix_radius,
                     optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
-                    blend_turns: false,
+                    blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
                 },
             )?;
             (region, path)
