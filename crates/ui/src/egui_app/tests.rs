@@ -112,6 +112,8 @@ mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+// #1997: the orbit pivot ignores the work envelope; open frames the part.
+mod camera_target;
 mod structural;
 mod cycle_combo;
 mod radial_step_field;

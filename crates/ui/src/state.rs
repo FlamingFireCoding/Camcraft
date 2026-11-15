@@ -4243,6 +4243,9 @@ impl State {
         self.rename_draft = None;
         self.dragging_op = None;
         self.world = loaded;
+        // #1997: the orbit pivot is the new document's part and stock, never
+        // the old document's target (the envelope is not in the bounds).
+        self.frame_all();
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
