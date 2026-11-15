@@ -258,6 +258,18 @@ fn assert_window_layout(h: &H, title: &str, anchors: &[&str]) {
     assert_stack_in(h, wr, title, anchors);
 }
 
+/// Modal area: its full frame stays on screen, including every anchor and the dismiss button.
+fn assert_modal_layout(h: &H, id: &str, who: &str, anchors: &[&str], dismiss: &str) {
+    let screen = h.ctx.content_rect();
+    let modal = h.ctx.memory(|m| m.area_rect(egui::Id::new(id)));
+    let Some(modal) = modal else { panic!("{who}: modal area is not laid out") };
+    assert!(screen.contains_rect(modal), "{who}: {modal:?} leaves the screen {screen:?}");
+    assert_stack_in(h, modal, who, anchors);
+    let body = h.get_by_label(anchors[0]).parent().unwrap_or_else(|| panic!("{who}: missing modal body"));
+    let button = body.get_by_role_and_label(egui::accesskit::Role::Button, dismiss).rect();
+    assert!(modal.expand(1.0).contains_rect(button), "{who}: {dismiss} {button:?} leaves {modal:?}");
+}
+
 #[test]
 fn layout_window_post_refusal() {
     let _g = snapshot_guard();
@@ -285,24 +297,23 @@ fn layout_window_unsaved_prompt() {
     let mut h = shell_harness();
     h.state_mut().state.pending.push_back(CommandKind::Quit);
     h.run_steps(3);
-    let screen = h.ctx.content_rect();
-    assert_stack_in(
+    assert_modal_layout(
         &h,
-        screen,
+        "unsaved-prompt",
         "Unsaved changes modal",
         &["Unsaved changes", "Save the changes to Untitled before closing?", "Don't Save"],
+        "Cancel",
     );
-    let r = h.get_by_label("Cancel").rect();
-    assert!(screen.expand(1.0).contains_rect(r), "Unsaved changes modal: Cancel {r:?} leaves {screen:?}");
 }
 
 fn assert_fixture_modal(cmd: CommandKind, who: &str, anchors: &[&str]) {
+    let dismiss = if matches!(cmd, CommandKind::FixtureLibraryInsertDialog(_)) { "Close" } else { "Cancel" };
     let mut h = shell_harness();
     let dir = std::env::temp_dir().join(format!("camcraft-layout-fixlib-{}", std::process::id()));
     h.state_mut().state.fixture_lib_dir = Some(dir.clone());
     h.state_mut().state.pending.push_back(cmd);
     h.run_steps(3);
-    assert_stack_in(&h, h.ctx.content_rect(), who, anchors);
+    assert_modal_layout(&h, "fixture-library", who, anchors, dismiss);
     let _ = std::fs::remove_dir_all(dir);
 }
 
