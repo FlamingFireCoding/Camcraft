@@ -1,7 +1,8 @@
 +++
 title = "Troubleshooting"
 description = "Find the message you see, learn what it means and how to fix it."
-weight = 7
+weight = 4
+aliases = ["guide/troubleshooting/"]
 +++
 
 <!-- Maintainers: every `### ` heading holds the message(s) as backticked
@@ -13,7 +14,7 @@ one. Never write a message here that was not copied from the code. -->
 This page is organised by what you see. Find the message (or its start; the
 parts in angle brackets are filled in with your operation, tool or numbers),
 read what it means, then follow the fix. For the rules behind the
-refusals, see [Reading a refusal](@/guide/refusals.md).
+refusals, see [Reading a refusal](@/guide/reference/refusals.md).
 
 ## The app will not open a window
 
@@ -204,7 +205,7 @@ machine file's number is wrong.
 none.
 
 **Fix.** Go to Setup > Stock and define the stock (see
-[Setups](@/guide/setups.md)), then generate again. The vise dialog says
+[Setups](@/guide/set-up/setups.md)), then generate again. The vise dialog says
 the same in other words: a vise grips the stock, not the imported model.
 
 ### `the stock reaches <n> mm into the fixed jaw - place the vise against the stock first`

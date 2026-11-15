@@ -1,11 +1,12 @@
 +++
 title = "Command line"
 description = "Run CamCraft without the window: process a project, run a script, and read the exit codes."
-weight = 7
+weight = 1
+aliases = ["guide/cli/"]
 +++
 
 `camcraft-cli` is the headless lane: the same commands and the same post
-gate as the window, with no UI. Build it as shown in [Install](@/guide/install.md)
+gate as the window, with no UI. Build it as shown in [Install](@/guide/getting-started/install.md)
 (a debug build is `target/debug/camcraft-cli`; a release build is
 `target/release/camcraft-cli`). Every example below was run against the
 0.18.0 build from this repository, from the repository root, and the output
@@ -108,7 +109,7 @@ $ echo $?
 
 (`cam.log` prints each argument on its own line.) `importTools` takes the
 mode `"add"`, `"update"` or `"replace"`.
-Read [Tools and tool libraries](@/guide/tools.md) before replacing a
+Read [Tools and tool libraries](@/guide/set-up/tools.md) before replacing a
 library. That page explains the supported formats, tool numbers and
 import refusals. Export a copy before a replacement when you need to
 keep the current library.

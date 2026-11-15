@@ -1,7 +1,8 @@
 +++
 title = "Coming from another CAM system"
 description = "What you can bring into CamCraft from your current CAM system, how to bring it, and what you redo."
-weight = 7
+weight = 5
+aliases = ["guide/migrating/"]
 +++
 
 CamCraft reads its own formats and neutral ones. It does not read the tool
@@ -210,7 +211,7 @@ model page before importing, or pass it from a script,
 ## Machines and posts
 
 Pick the built-in machine and post closest to your machine in **Setup**; see
-[Setups](@/guide/setups.md) and [Posting](@/guide/posting.md). CamCraft ships
+[Setups](@/guide/set-up/setups.md) and [Posting](@/guide/check-and-post/posting.md). CamCraft ships
 machine files (`.mch`) for generic mills, a lathe and a mill-turn, and for
 several Tormach and other machines, and posts (`.cps` scripts) for Fanuc, Haas,
 Siemens 840D, Heidenhain, Mazak, Tormach PathPilot, Makera Carvera and Fanuc
@@ -243,7 +244,7 @@ Your current system has its own names for these; CamCraft's are:
 
 CamCraft refuses to post when it cannot show a program is safe against the
 model, stock, fixtures and machine facts it knows. That can feel stricter than
-you are used to; see [When CamCraft refuses](@/guide/refusals.md).
+you are used to; see [When CamCraft refuses](@/guide/reference/refusals.md).
 
 ## What does not migrate
 
@@ -255,13 +256,13 @@ re-created as described above.
 
 ## A first-job checklist
 
-1. Install and check the app ([Install](@/guide/install.md),
-   [First run](@/guide/first-run.md)).
+1. Install and check the app ([Install](@/guide/getting-started/install.md),
+   [First run](@/guide/getting-started/first-run.md)).
 2. Import your tool list and compare it with your tool sheet.
 3. Import the part and check one dimension, including its unit.
-4. Set the machine, post, stock and work offset ([Setups](@/guide/setups.md)).
+4. Set the machine, post, stock and work offset ([Setups](@/guide/set-up/setups.md)).
 5. Add operations and generate them; read the diagnostics.
-6. Post ([Posting](@/guide/posting.md)). A refusal is a result, not a fault:
-   read it ([Refusals](@/guide/refusals.md)).
+6. Post ([Posting](@/guide/check-and-post/posting.md)). A refusal is a result, not a fault:
+   read it ([Refusals](@/guide/reference/refusals.md)).
 7. Read the G-code. Dry-run with the spindle off and Z raised, then run
    single-block on the control before cutting material.

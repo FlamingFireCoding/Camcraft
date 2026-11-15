@@ -2,12 +2,13 @@
 title = "Plasma cutting"
 description = "The Plasma Profile operation: kerf, cut direction, leads, small holes, the plasma table and post it needs, and the refusals you are most likely to meet."
 weight = 5
+aliases = ["guide/operations-plasma/"]
 +++
 
 This page is the reference for **Plasma Profile**, the one kind in the
-**Plasma** group of the [operations](@/guide/operations.md) ribbon. For
+**Plasma** group of the [operations](@/guide/operations/_index.md) ribbon. For
 the tabs themselves and what a click picks, see that page; for what a
-refusal means in general, see [Reading a refusal](@/guide/refusals.md).
+refusal means in general, see [Reading a refusal](@/guide/reference/refusals.md).
 
 Lengths are in mm (inches in an inch document), feeds in mm/min (in/min).
 
@@ -37,7 +38,7 @@ judged instead by the plasma laws at the post gate (below).
 
 ## Plasma Profile
 
-![Top view of torch travel from a pierce point along the lead and outer plate profile.](../../operation-paths.svg#PlasmaProfile)
+![Top view of torch travel from a pierce point along the lead and outer plate profile.](../../../operation-paths.svg#PlasmaProfile)
 
 **For:** cutting parts out of flat plate: one through-cut per contour,
 with the kerf offset to the waste side, arc leads, holes before the

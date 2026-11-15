@@ -1,15 +1,16 @@
 +++
 title = "Multi-axis operations"
 description = "One section per multi-axis kind: what it is for, its key settings and defaults, what it picks, the reach and collision checks, and the refusals you are most likely to meet."
-weight = 5
+weight = 6
+aliases = ["guide/operations-multiaxis/"]
 +++
 
 This page is the reference for the kinds in the **Multi-axis** group of
-the [operations](@/guide/operations.md) ribbon: 5-Axis Contour, 5-Axis
+the [operations](@/guide/operations/_index.md) ribbon: 5-Axis Contour, 5-Axis
 Parallel, 5-Axis Flow, Multi-Axis Contour, Swarf, Advanced Swarf, Rotary
 Contour, Rotary Parallel, Rotary Offset and Multi-Axis Rough. For the
 tabs themselves and what a click picks, see that page; for what a refusal
-means in general, see [Reading a refusal](@/guide/refusals.md).
+means in general, see [Reading a refusal](@/guide/reference/refusals.md).
 
 Lengths are in mm (inches in an inch document), feeds in mm/min (in/min),
 angles in degrees. The defaults below are what a freshly created operation
@@ -67,7 +68,7 @@ cannot, so post multi-axis work with a machine that states its rotaries.
 
 ## 5-Axis Contour
 
-![View of waterline passes with a leaning tool axis.](../../operation-paths.svg#Contour5D)
+![View of waterline passes with a leaning tool axis.](../../../operation-paths.svg#Contour5D)
 
 **For:** finishing steep walls with waterline rings, with the tool leaning
 off the wall. Choose it over 3D Finish's waterline when the holder or
@@ -86,7 +87,7 @@ shank would rub a deep wall at a vertical pose.
 
 ## 5-Axis Parallel
 
-![View of parallel surface passes with a leaning tool axis.](../../operation-paths.svg#Parallel5D)
+![View of parallel surface passes with a leaning tool axis.](../../../operation-paths.svg#Parallel5D)
 
 **For:** raster finishing of open, shallow-to-moderate ground with a
 leaning tool. Choose it over 3D Finish's parallel when a lead angle keeps
@@ -107,7 +108,7 @@ terrain's cosine.
 
 ## 5-Axis Flow
 
-![View of curved surface passes following the surface direction.](../../operation-paths.svg#Flow5D)
+![View of curved surface passes following the surface direction.](../../../operation-paths.svg#Flow5D)
 
 **For:** the 5-Axis Parallel's lines, but following the surface's own
 least-curving direction instead of a straight raster. Choose it on
@@ -117,7 +118,7 @@ Parallel's; the direction is read from the model, not set.
 
 ## Multi-Axis Contour
 
-![View of a leaning tool following a picked spatial chain.](../../operation-paths.svg#MultiAxisContour)
+![View of a leaning tool following a picked spatial chain.](../../../operation-paths.svg#MultiAxisContour)
 
 **For:** riding the ball along picked model edges wherever they stand,
 with a leaning tool: a chamfer or trace along a 3D edge. Choose it over
@@ -142,7 +143,7 @@ model to ride".
 
 ## Swarf
 
-![View of passes along a ruled flank with a leaning tool.](../../operation-paths.svg#Swarf)
+![View of passes along a ruled flank with a leaning tool.](../../../operation-paths.svg#Swarf)
 
 **For:** finishing ruled flanks (surfaces straight in one direction, such
 as a drafted wall) with passes along the ruling. Choose it on ruled
@@ -169,7 +170,7 @@ refine it or finish with 5-Axis Parallel".
 
 ## Advanced Swarf
 
-![View of successive coarse and fine passes along a ruled flank.](../../operation-paths.svg#AdvancedSwarf)
+![View of successive coarse and fine passes along a ruled flank.](../../../operation-paths.svg#AdvancedSwarf)
 
 **For:** Swarf run coarse to fine. Each rough pass relaxes the tolerance
 fourfold and doubles the spacing; the last pass cuts to the stated
@@ -181,7 +182,7 @@ operation, 1 to 4 (the panel clamps it). Refusals as Swarf.
 
 ## Rotary Contour
 
-![View of ring passes around the fitted rotation axis.](../../operation-paths.svg#RotaryContour)
+![View of ring passes around the fitted rotation axis.](../../../operation-paths.svg#RotaryContour)
 
 **For:** finishing a turned workpiece in rings around its axis, the tool
 posed off the radial. The axis is fitted to the model, not set. Choose it
@@ -205,7 +206,7 @@ along it: Rotary Parallel".
 
 ## Rotary Parallel
 
-![View of passes along a bar at successive rotary positions.](../../operation-paths.svg#RotaryParallel)
+![View of passes along a bar at successive rotary positions.](../../../operation-paths.svg#RotaryParallel)
 
 **For:** finishing a turned bar with passes along its fitted axis, spaced
 around the turn. Choose it for a bar lying on the table.
@@ -221,7 +222,7 @@ work's ... mm radius - raise it".
 
 ## Rotary Offset
 
-![View of roughing passes wrapping around a turned workpiece.](../../operation-paths.svg#RotaryOffset)
+![View of roughing passes wrapping around a turned workpiece.](../../../operation-paths.svg#RotaryOffset)
 
 **For:** roughing a turned bar by wrapping: each level peels a radial
 infeed off the skin, the passes spaced around the bar. Choose it to rough
@@ -246,7 +247,7 @@ height window leaves no station of the work to rough".
 
 ## Multi-Axis Rough
 
-![View of roughing levels with tool axes that lean near walls.](../../operation-paths.svg#MultiAxisRough)
+![View of roughing levels with tool axes that lean near walls.](../../../operation-paths.svg#MultiAxisRough)
 
 **For:** the 3D Pocket's level-by-level roughing, move for move, with the
 spindle posed where a wall or corner needs it and vertical where a floor

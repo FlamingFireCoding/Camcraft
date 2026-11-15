@@ -1,15 +1,16 @@
 +++
 title = "Common workflows"
 description = "Task recipes from facing a block to re-posting for another machine."
-weight = 7
+weight = 4
+aliases = ["guide/workflows/"]
 +++
 
 Short how-to recipes, one per task. They are not a reference: each links
 the page that explains the screen in depth. Every recipe ends the same way:
 **Simulate**, **Deviate**, then **Post**, which refuses by name if
-something is unsafe (see [Reading a refusal](@/guide/refusals.md)). A
+something is unsafe (see [Reading a refusal](@/guide/reference/refusals.md)). A
 passing post is not a guarantee; read the program and dry-run it
-([Posting](@/guide/posting.md)).
+([Posting](@/guide/check-and-post/posting.md)).
 
 The recipes use one sample part: `testdata/models/Milling-test.step` in the
 repository, a small STEP model. Any STEP part of your own works the same.
@@ -17,7 +18,7 @@ repository, a small STEP model. Any STEP part of your own works the same.
 All recipes start the same way: **Model** to import the part, **Stock** to
 describe the block, **Origin** to place the work offset, **Tools** >
 **New tool…** to make the cutters
-([First run](@/guide/first-run.md)).
+([First run](@/guide/getting-started/first-run.md)).
 
 ## Face the stock top
 
@@ -32,7 +33,7 @@ describe the block, **Origin** to place the work offset, **Tools** >
 4. Click **Generate**, then **Simulate**: the tool must clear the whole top
    of the stock. **Deviate** shows any material left.
 
-More: [Operations](@/guide/operations.md).
+More: [Operations](@/guide/operations/_index.md).
 
 ## Square up a block in two setups
 
@@ -50,7 +51,7 @@ More: [Operations](@/guide/operations.md).
 6. **Post** writes the program for each setup. CamCraft refuses a carried
    stock it cannot verify, such as between setups on different machines.
 
-More: [Setups](@/guide/setups.md).
+More: [Setups](@/guide/set-up/setups.md).
 
 ## Pocket and contour a 2D part
 

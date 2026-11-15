@@ -1,7 +1,8 @@
 +++
 title = "Posting"
 description = "Writing the NC program, and what is checked first."
-weight = 6
+weight = 2
+aliases = ["guide/posting/"]
 +++
 
 Posting turns the document's operations into an NC program for one
@@ -42,7 +43,7 @@ project with the project's name and the `.nc` extension.
 Post options can belong to the document or to one setup. A setup can
 follow the document or keep its own options. Agents can inspect and edit
 these choices with `get_post_options` and `set_post_options`; see
-[AI agents (MCP)](@/guide/mcp.md).
+[AI agents (MCP)](@/guide/automate/mcp.md).
 
 ## What is checked before anything is written
 
@@ -62,7 +63,7 @@ only on the selected part or parts. Neighbouring parts remain subject to
 the gouge check. Selecting one part does not permit a mark on another.
 
 If any check fails, **nothing is written**; a program already at that path
-is left unchanged. See [Reading a refusal](@/guide/refusals.md).
+is left unchanged. See [Reading a refusal](@/guide/reference/refusals.md).
 
 ## More than one machine
 
@@ -80,9 +81,9 @@ spindle off and Z raised before cutting material.
 ## Headless posting
 
 The command-line tool `camcraft-cli` can drive CamCraft without the window,
-including as an MCP server for AI agents (see [AI agents (MCP)](@/guide/mcp.md)). The standalone `post` tool runs a
+including as an MCP server for AI agents (see [AI agents (MCP)](@/guide/automate/mcp.md)). The standalone `post` tool runs a
 `.cps` script over a cutter-location file; it does not run the document
 checks above, so its output is not verified.
 
 Which unit the program is written in, and where its coordinates are
-measured from, is on [Units and coordinates](@/guide/units-and-coordinates.md).
+measured from, is on [Units and coordinates](@/guide/reference/units-and-coordinates.md).

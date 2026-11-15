@@ -1,7 +1,8 @@
 +++
 title = "AI agents (MCP)"
 description = "Let an AI agent drive CamCraft: setup, run modes, tools, undo and safety."
-weight = 7
+weight = 2
+aliases = ["guide/mcp/"]
 +++
 
 CamCraft includes a [Model Context Protocol](https://modelcontextprotocol.io)
@@ -144,7 +145,7 @@ A tool that cannot do what it was asked answers with an error naming the
 tool and the reason, for example `edit_operation: ...`, and the document is
 unchanged. An argument the tool does not know is refused rather than
 ignored, so a typo never reads as "done". The same reasons the window gives
-apply: see [Reading a refusal](@/guide/refusals.md). An unexpected internal
+apply: see [Reading a refusal](@/guide/reference/refusals.md). An unexpected internal
 fault is caught and reported as a refusal; it does not end the session.
 
 ## Safety
@@ -156,4 +157,4 @@ finds a gouge, or a machine limit is exceeded. There is no way for an agent
 to skip these checks. A posted program is still proved the usual way: look
 it over in the G-code viewer, and prove it on the machine (air cut, single
 block, feed override down) before cutting material. See
-[Posting](@/guide/posting.md).
+[Posting](@/guide/check-and-post/posting.md).

@@ -1,7 +1,8 @@
 +++
 title = "Machine types"
 description = "Mill, router, lathe, mill-turn, plasma and EDM: what each allows and how it changes setups and posting."
-weight = 7
+weight = 3
+aliases = ["guide/machines/"]
 +++
 
 A machine file (`.mch`) declares a **kind**: `mill`, `lathe`, `mill-turn`,
@@ -9,8 +10,8 @@ A machine file (`.mch`) declares a **kind**: `mill`, `lathe`, `mill-turn`,
 from its axes (a mill unless it has a lathe's X/Z pair or a turning
 rotary); plasma and EDM are never guessed, only declared. The kind decides
 which operations the document accepts, which posts the picker lists and
-which limits the program is checked against. See [Setups](@/guide/setups.md)
-for mounting a machine and [Reading a refusal](@/guide/refusals.md) for the
+which limits the program is checked against. See [Setups](@/guide/set-up/setups.md)
+for mounting a machine and [Reading a refusal](@/guide/reference/refusals.md) for the
 messages below.
 
 | Kind | Operation families allowed | Posts that serve it | Shipped machine files |
@@ -158,7 +159,7 @@ from the file's `edm.codes`. The Machine window's sinker condition table
 lets you edit each condition's wear rate and notes. Use measured data for
 your electrode and work material.
 The operations, their settings and their refusals are in
-[Wire and sinker EDM](@/guide/operations-edm.md).
+[Wire and sinker EDM](@/guide/operations/operations-edm.md).
 
 ## Changing a setup's machine
 

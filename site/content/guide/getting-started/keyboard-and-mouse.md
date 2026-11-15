@@ -1,7 +1,8 @@
 +++
 title = "Keyboard and mouse"
 description = "Every keyboard shortcut and mouse action, for Windows, Linux and macOS."
-weight = 7
+weight = 3
+aliases = ["guide/keyboard-and-mouse/"]
 +++
 
 This page lists the keys and mouse gestures CamCraft binds today. Each row
