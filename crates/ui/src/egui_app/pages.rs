@@ -603,6 +603,10 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
 }
 
 #[cfg(test)]
+#[path = "tap_hand_tests.rs"]
+mod tap_hand_tests;
+
+#[cfg(test)]
 mod turn_tests {
     //! The page tests that stayed with pages.rs; the WCS turn tests moved
     //! with `turn_wcs` to `wcs_page_tests` (#739).

@@ -1063,6 +1063,8 @@ pub struct ToolUi {
     pub pitch: f64,
     /// A single-form thread mill's finest pitch (#894); inert elsewhere.
     pub pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    pub thread_hand: camcraft_app::tools::ThreadHand,
     /// Insert nose radius; the turning kind's cutting ball, inert on
     /// the mills (the app's `Tool` field's law, mirrored).
     pub nose_radius: f64,
@@ -1147,6 +1149,7 @@ impl ToolUi {
             tip_angle: t.tip_angle,
             pitch: t.pitch,
             pitch_min: t.pitch_min,
+            thread_hand: t.thread_hand,
             nose_radius: t.nose_radius,
             width: t.width,
             flute_len: t.flute_len,
@@ -1227,6 +1230,7 @@ impl ToolUi {
             tip_angle: self.tip_angle,
             pitch: self.pitch,
             pitch_min: self.pitch_min,
+            thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,
@@ -1843,6 +1847,8 @@ pub struct State {
     /// [`OpUi`]: the drafts rebuild on every sync, and a tab reset on
     /// Apply or on reselecting the same op would read as a bug.
     pub op_tab: usize,
+    /// Whether Properties is the visible dock tab this frame.
+    pub properties_shown: bool,
     pub tool_ui: ToolUi,
     /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
     /// that tool, `Some("")` the blank creation form. Ephemeral window
@@ -2044,6 +2050,7 @@ impl State {
             incoming_view: Default::default(),
             geo_hover: None,
             geo_hover_drawn: None,
+            properties_shown: true,
             geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),

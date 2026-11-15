@@ -190,6 +190,13 @@ pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
             if state.tool_ui.kind == 4 {
                 field(ui, "Thread pitch");
                 num(ui, u, &mut state.tool_ui.pitch);
+                let mut left = state.tool_ui.thread_hand == camcraft_app::tools::ThreadHand::Left;
+                super::fields::check_row(ui, "Left-hand tap (posting unavailable)", &mut left);
+                state.tool_ui.thread_hand = if left {
+                    camcraft_app::tools::ThreadHand::Left
+                } else {
+                    camcraft_app::tools::ThreadHand::Right
+                };
                 ui.label("distance advanced per turn - M6 is 1.0, M8 is 1.25");
             }
             if state.tool_ui.kind == 6 {

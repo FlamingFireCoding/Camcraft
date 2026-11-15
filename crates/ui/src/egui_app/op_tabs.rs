@@ -31,7 +31,7 @@ use super::theme::Tokens;
 /// `pages::params_fields` are these same numbers - one placement law,
 /// table and guards read each other.
 pub(crate) const SECTIONS: [&str; 6] = ["Geometry", "Heights", "Passes", "Lead in / Lead out", "Feeds", "Machine"];
-pub(super) const SEC_GEO: usize = 0;
+pub(crate) const SEC_GEO: usize = 0;
 pub(super) const SEC_HEIGHTS: usize = 1;
 pub(super) const SEC_PASSES: usize = 2;
 pub(super) const SEC_LEADS: usize = 3;
