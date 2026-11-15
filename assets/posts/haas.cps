@@ -698,6 +698,8 @@ function onCycle() {
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #1820: Haas G83 keeps P modal; a changed dwell must reopen the cycle.
+  if (g === "G83") sig += "|" + ms;
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -708,7 +710,9 @@ function onCycle() {
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
       words.push(w("Q", p.Q));
     }
-    if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
+    // Haas G83/G04 documentation: integer P is milliseconds. P0 clears
+    // a previous dwell; omitting P would reuse it even after a new G83.
+    if (g === "G83" || (ms > 0 && g !== "G73" && g !== "G84")) words.push("P" + ms);
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;
