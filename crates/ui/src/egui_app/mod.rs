@@ -99,6 +99,9 @@ mod thread_page;
 mod tool_thread_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
+mod tool_settings;
+mod tool_library;
+mod tool_preview;
 // #890: the tool editor's per-material cutting data.
 mod tool_cutting_rows;
 mod tool_turning_row;
