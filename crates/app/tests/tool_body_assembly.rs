@@ -295,3 +295,58 @@ fn mcp_attach_and_remove_tool_body_piece_roundtrips_and_undoes() {
     let e = c.refused("remove_tool_body_piece", json!({ "tool": INSERT, "index": 9 }));
     assert!(e.contains("out of range"), "{e}");
 }
+
+
+#[test]
+fn inconsistent_saved_piece_coordinates_are_refused_in_camproj_and_camtools() {
+    let world = camcraft_app::world::new_world();
+    let mut history = History::default();
+    add_tool(&world, &mut history, MILL);
+    history.execute(
+        &world,
+        SetToolBody::from_step_auto(&world, MILL, &testdata("tool_csys_box_iso13399.step")).expect("head"),
+    );
+    history.execute(
+        &world,
+        SetToolBody::attach_piece(
+            &world, MILL, &testdata("modular_clamp_unit.step"), PiecePlace::csys(Some(0), "MCS", "CSW"),
+        ).expect("adapter"),
+    );
+
+    // Keep facet counts unchanged while shrinking the retained head. Previously
+    // loading passed, but removing the adapter rebuilt an unsafe smaller body.
+    fn shrink_piece(value: &mut Value) -> bool {
+        match value {
+            Value::Object(object) => {
+                if let Some(pieces) = object.get_mut("pieces").and_then(Value::as_array_mut) {
+                    let facets = pieces[0]["facets"].as_array_mut().expect("piece facets");
+                    for facet in facets {
+                        for vertex in facet.as_array_mut().expect("vertices") {
+                            for coordinate in vertex.as_array_mut().expect("coordinates").iter_mut().take(2) {
+                                *coordinate = json!(coordinate.as_f64().expect("coordinate") * 0.1);
+                            }
+                        }
+                    }
+                    return true;
+                }
+                object.values_mut().any(shrink_piece)
+            }
+            Value::Array(values) => values.iter_mut().any(shrink_piece),
+            _ => false,
+        }
+    }
+
+    let mut saved = serde_json::to_value(project::collect(&world)).expect("save project");
+    assert!(shrink_piece(&mut saved), "project contains modular pieces");
+    let reopened = camcraft_app::world::new_world();
+    let err = project::open(&reopened, &saved.to_string()).expect_err("inconsistent project refused");
+    assert!(err.to_string().contains(MILL), "{err}");
+    assert!(err.to_string().contains("modular piece coordinates"), "{err}");
+
+    let exported = tool_library::export_tool_library(&world).expect("export tools");
+    let mut library: Value = serde_json::from_str(&exported).expect("library JSON");
+    assert!(shrink_piece(&mut library), "library contains modular pieces");
+    let err = tool_library::parse_tool_library(&library.to_string()).expect_err("inconsistent library refused");
+    assert!(err.to_string().contains(MILL), "{err}");
+    assert!(err.to_string().contains("modular piece coordinates"), "{err}");
+}

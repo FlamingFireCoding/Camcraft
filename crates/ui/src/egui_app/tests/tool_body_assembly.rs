@@ -114,3 +114,56 @@ fn editor_mates_spindle_pieces_with_explicit_csys_and_refuses_bad_names() {
     assert_eq!(pieces_len(st, MILL), 2);
     assert!(st.status.contains("piece not attached") && st.status.contains("NO_SUCH"), "{}", st.status);
 }
+
+#[test]
+fn editor_selects_target_piece_when_three_pieces_repeat_csys_names() {
+    let mut harness = editor_on(MILL);
+    harness
+        .state_mut()
+        .state
+        .import_tool_body_from(&fixture("tool_csys_box_iso13399.step"));
+    harness.run();
+    harness.get_by_label("Apply body").click();
+    harness.run();
+    harness.run();
+    let unit = fixture("modular_clamp_unit.step");
+    {
+        let st = &mut harness.state_mut().state;
+        st.tool_body_ui.assembly.target_csys = "MCS".into();
+        st.tool_body_ui.assembly.piece_csys = "CSW".into();
+        st.attach_tool_body_piece_from(&unit);
+    }
+    harness.run();
+    harness.run();
+    assert_eq!(pieces_len(&harness.state().state, MILL), 2);
+    // Both existing pieces have MCS. Searching the whole assembly must refuse.
+    {
+        let st = &mut harness.state_mut().state;
+        st.tool_body_ui.assembly.target_csys = "MCS".into();
+        st.tool_body_ui.assembly.piece_csys = "CSW".into();
+        st.attach_tool_body_piece_from(&unit);
+    }
+    harness.run();
+    harness.run();
+    assert_eq!(pieces_len(&harness.state().state, MILL), 2);
+    assert!(harness.state().state.status.contains("ambiguous"));
+    // Select adapter 1 through the editor control, then attach the third piece.
+    harness.get_by_label("Target piece").click();
+    harness.run();
+    harness.get_by_label("1: modular_clamp_unit.step").click();
+    harness.run();
+    assert_eq!(
+        harness.state().state.tool_body_ui.assembly.target_piece,
+        Some(1)
+    );
+    harness.state_mut().state.attach_tool_body_piece_from(&unit);
+    harness.run();
+    harness.run();
+    assert_eq!(
+        pieces_len(&harness.state().state, MILL),
+        3,
+        "{}",
+        harness.state().state.status
+    );
+    assert!(harness.query_by_label("Assembly (3 piece(s))").is_some());
+}

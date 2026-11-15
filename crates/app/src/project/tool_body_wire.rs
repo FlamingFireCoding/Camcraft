@@ -184,6 +184,14 @@ impl ToolBodyDto {
                     body.facets.len()
                 ));
             }
+            // Pieces rebuild the judged body after attachment/removal. Require
+            // the same ordered geometry that was validated above, not merely
+            // the same number of facets, so a saved piece cannot shrink it.
+            if !pieces.iter().flat_map(|p| p.facets.iter()).eq(body.facets.iter()) {
+                return Err(format!(
+                    "tool '{tool}': modular piece coordinates do not match combined body facets"
+                ));
+            }
             body.pieces = pieces;
         }
         Ok(body)

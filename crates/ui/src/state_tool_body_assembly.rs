@@ -14,6 +14,8 @@ use super::{CommandKind, ErrorScope, State};
 /// Ephemeral UI fields for attaching the next modular piece.
 #[derive(Clone, Debug, Default)]
 pub struct AssemblyUi {
+    /// Existing piece to mate against (None = search the whole assembly).
+    pub target_piece: Option<usize>,
     /// Optional target CSYS name (blank = auto-mate).
     pub target_csys: String,
     /// Optional incoming piece CSYS name (blank = auto-mate).
@@ -30,7 +32,7 @@ impl State {
     #[must_use]
     pub(crate) fn editor_piece_place(&self) -> PiecePlace {
         PiecePlace::Csys {
-            target_piece: None,
+            target_piece: self.tool_body_ui.assembly.target_piece,
             target_csys: non_empty(&self.tool_body_ui.assembly.target_csys),
             piece_csys: non_empty(&self.tool_body_ui.assembly.piece_csys),
         }

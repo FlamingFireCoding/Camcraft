@@ -32,6 +32,24 @@ pub(super) fn section(ui: &mut Ui, state: &mut State) {
             state.attach_tool_body_piece_dialog();
         }
     });
+    super::layout::prop_row(ui, "Target piece", |ui| {
+        let selected = &mut state.tool_body_ui.assembly.target_piece;
+        let label = selected
+            .and_then(|i| pieces.get(i).map(|p| format!("{i}: {}", p.source)))
+            .unwrap_or_else(|| "Auto (all pieces)".into());
+        let response = egui::ComboBox::from_id_salt("assembly_target_piece")
+            .selected_text(label)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(selected, None, "Auto (all pieces)");
+                for (i, piece) in pieces.iter().enumerate() {
+                    ui.selectable_value(selected, Some(i), format!("{i}: {}", piece.source));
+                }
+            })
+            .response;
+        if let Some(label_id) = super::layout::row_label_id(ui) {
+            response.labelled_by(label_id);
+        }
+    });
     ui.horizontal(|ui| {
         ui.label("Target CSYS").on_hover_text("blank = auto-mate MCS <-> CSW");
         ui.add(
