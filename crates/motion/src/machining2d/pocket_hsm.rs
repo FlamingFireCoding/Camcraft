@@ -271,6 +271,10 @@ fn hsm_passes(center: &Region, p: &PocketParams) -> Result<HsmPlanned, GenError>
 }
 
 #[cfg(test)]
+#[path = "pocket_hsm_ring.rs"]
+mod ring_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
