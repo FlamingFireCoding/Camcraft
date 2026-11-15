@@ -209,7 +209,6 @@ fn an_armed_boundary_row_takes_edges_in_faces_mode() {
     let texts = super::structural::painted(&h);
     assert!(texts.iter().any(|(s, _)| s == "2 edges, 2 open chains"), "the Boundary row renders the two-chain entry: {texts:?}");
     assert_eq!(h.state().state.geo_pick, GeoPick::Face, "boundary picking keeps Faces mode");
-    capture_boundary_review(&mut h, "after");
     let st = &mut h.state_mut().state;
     st.apply_operation_params(&name);
     st.drain_actions();
@@ -220,12 +219,4 @@ fn an_armed_boundary_row_takes_edges_in_faces_mode() {
     st.pending.push_back(CommandKind::Undo);
     st.drain_actions();
     assert_eq!(stored(st), None, "undo takes the boundary back out");
-}
-
-/// Opt-in PR evidence from the actual shell, never a pixel golden update.
-fn capture_boundary_review(h: &mut Harness<'static, ShellUi>, step: &str) {
-    if let Some(dir) = std::env::var_os("BOUNDARY_REVIEW_IMAGES") {
-        std::fs::create_dir_all(&dir).expect("review image directory");
-        h.render().expect("render shell").save(std::path::Path::new(&dir).join(format!("{step}.png"))).expect("save review evidence");
-    }
 }

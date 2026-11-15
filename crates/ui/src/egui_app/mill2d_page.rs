@@ -332,7 +332,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             climb,
             entry,
             helix_radius,
-            optimal_load, method, blend_turns, blend_radius,
+            optimal_load, method, troch, blend_turns, blend_radius,
             tilt,
         } => roughing2d_pane(
             ui,
@@ -353,7 +353,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             climb,
             entry,
             helix_radius,
-            Some(optimal_load), Some(method),
+            Some(optimal_load), Some((method, troch)),
             links, (blend_turns, blend_radius),
             tilt,
         ),

@@ -20,58 +20,8 @@ pub fn generate(
     run_job(job)
 }
 
-/// Run a fully-collected job: every world read happened in
-/// [`collect_job`], on the caller's thread, and nothing here names a
-/// `World`. Split from [`generate`] at the seam M5.3 B needed - a
-/// batch's jobs run on worker threads, where a `&World` cannot exist -
-/// and it is exactly the old body below the old head, so a solo
-/// generation is byte-identical to the file's whole history of them.
-pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
-    // The spindle law's set-aside note (issue #71 review) rides the
-    // path whichever arm cut it: a note, never a warning - the post
-    // is not held for features the op honestly leaves standing.
-    let note = job.spindle_note.take();
-    let carried = job.carried_overhang.take();
-    let tool_r = job.tool.diameter * 0.5;
-    let kind = job.params.kind();
-    // #261 part 2: a refusal's spot is in the frame the generators ran
-    // in (a 3+2 tilt's local one); the UI draws in world, so it is
-    // carried out through the same frame the path would have been.
-    let frame = job.frame;
-    // #835: a refusal naming the holder of a tool with a body says it
-    // judged the cylinder enclosing that body - #842: only where it did,
-    // a body whose band stack does not fit the record.
-    let judged_tool = job.tool.clone();
-    let body = job.body.clone().filter(|p| super::body_judged::falls_back(&judged_tool, p));
-    let _span = tracing::info_span!("generate", op = %job.op_name).entered();
-    let started = crate::clock::Instant::now();
-    tracing::debug!(kind = %kind, "generation started");
-    let (mut path, warns) = run_job_arms(job)
-        .map_err(|e| super::body_judged::name_enclosure(e, &judged_tool, body.as_ref()))
-        .map_err(|e| e.map_location(|p| frame.map_or(p, |f| f.to_world(p))))
-        // #261 part 3: a refusal's ghost rides the same frame map as a path.
-        .map_err(|e| match &frame {
-            Some(f) => e.map_ghost(|t| f.world_path(t, machining2d::ARC_FIT_TOL)),
-            None => e,
-        })
-        .inspect_err(|e| {
-            tracing::warn!(kind = %kind, ms = crate::logging::elapsed_ms(started), "generation refused: {e}");
-        })?;
-    tracing::info!(
-        kind = %kind,
-        moves = path.moves.len(),
-        warnings = warns.len(),
-        ms = crate::logging::elapsed_ms(started),
-        "generated"
-    );
-    let carried = carried.map(|o| o.note(&path, tool_r));
-    for n in note.into_iter().chain(carried) {
-        if !path.notes.contains(&n) {
-            path.notes.push(n);
-        }
-    }
-    Ok((path, warns))
-}
+mod run_job;
+pub use run_job::run_job;
 
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
@@ -504,7 +454,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         // to the floor of the wall it trims - the part
                         // read as the union of its touching bodies
                         // (M13.11) when the picks span several models.
-                        machining2d::contour_on_bodies(&region, &m_gen.facets, &m_gen.bodies, &cp)?
+                        // #1927: a picked ring that meets its wall at no
+                        // level - the side stands in the part - is refused.
+                        machining2d::contour_on_picked(&region, &m_gen.facets, &m_gen.bodies, &cp)?
                     } else {
                         machining2d::contour(&region, &cp)?
                     };
@@ -515,17 +467,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     }
                     // #1777: a run on a part is cut on its air side, read
                     // from the part's sections; Side applies to rings only.
-                    let section_at = |z: f64| match super::material::section(&m_gen.facets, z) {
+                    let cut = |f: &[Triangle], z: f64| match super::material::section(f, z) {
                         Ok(r) => Ok(Some(r)),
                         Err(GenError::Empty(_)) => Ok(None),
                         Err(e) => Err(e),
                     };
+                    let section_at = |z: f64| cut(&m_gen.facets, z);
+                    // #1928: a run on the stock stands one radius off its
+                    // line on the side Side names (a picked selection has
+                    // no tilt frame: world facets are the job's frame).
+                    let stock_at = |z: f64| stock_facets.as_deref().map_or(Ok(None), |f| cut(f, z));
+                    let part_at = |z: f64| if keep_parts.is_empty() { Ok(None) } else { cut(&keep_parts, z) };
                     for run in &runs {
                         // #1015: a run refused shows the rings and runs before it.
                         let next = if part_solid {
                             machining2d::contour_open_run(run, &cp, &section_at)
                         } else {
-                            machining2d::contour_along_chain(run, &cp)
+                            machining2d::contour_open_run_sided(run, &cp, *side, &stock_at, &part_at)
                         }
                         .map_err(|e| e.after_moves(&path.moves))?;
                         let said = next.notes.clone();
@@ -633,6 +591,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             method,
+            troch,
             blend_turns,
             blend_radius,
             ..
@@ -665,7 +624,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
             };
-            // #1509: the method picks the planner; both cut the same
+            // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let path = match method {
                 machining2d::AdaptiveMethod::Spiral => machining2d::pocket(&region, &pp)?,
@@ -676,7 +635,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         "arc turns at corners are not available with the Trochoidal method".into(),
                     ));
                 }
-                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal(&region, &pp)?,
+                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal_with(&region, &pp, troch)?,
             };
             (region, path)
         }
@@ -747,6 +706,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // themselves at every plane, so there is nothing here for a
             // picked loop to add - and nothing to erode by hand either:
             // one erosion per level, from that level's target.
+            let source_built = picked_region.is_none();
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -755,6 +715,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #1749: the silhouette's outside is air, so on a whole model
+            // the centre rides up to the silhouette edge - an open-sided
+            // notch is cleared past its open edge, never left as a ridge
+            // a radius wide. The setup's other parts stay out of reach.
+            // A picked or controlled region is the user's boundary and
+            // stays as given. #1774: the footprint reaches out to the
+            // stock's outline, so stock far past the silhouette is
+            // cleared too (the 2D pocket's #12 reading); a tilted
+            // plane refuses by name (no 3D Pocket carries one today).
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -1514,6 +1484,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.kind
                 )));
             }
+            // #1749: the same footprint as the 3D Pocket - one ladder.
+            let source_built = picked_region.is_none();
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -1522,6 +1494,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,

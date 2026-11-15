@@ -480,6 +480,7 @@ fn cycle_tool(kind: ToolKind, diameter: f64, tip_angle: f64, pitch: f64) -> Tool
         pitch_min: 0.0,
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }

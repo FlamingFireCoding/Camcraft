@@ -266,7 +266,7 @@ fn fanuc_lathe_seats_an_off_seat_face_cycle_by_the_hop_law() {
     assert_eq!(holes, 1, "{}", out.program);
     assert!(faults.is_empty(), "{faults:#?}\n{}", out.program);
     assert!(
-        out.program.contains("G00 X30 Z18\nG00 Z22\nG00 X0\nG83 Z10 F0.1\nG80\nG00 X0 Z40\n"),
+        out.program.contains("G00 X30. Z18.\nG00 Z22.\nG00 X0.\nG83 Z10. F0.1\nG80\nG00 X0. Z40.\n"),
         "Z out to R, X onto the centre, the cycle: {}",
         out.program
     );
@@ -274,7 +274,7 @@ fn fanuc_lathe_seats_an_off_seat_face_cycle_by_the_hop_law() {
     let stream = cnc::serialize(&off_seat_stream(Some((15.0, 30.0)), 22.0));
     let out = engine::run(FANUC_CPS, &lathe_mch(), &stream).expect("the lathe script runs");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.contains("G00 X30 Z30\nG00 X0\nG00 Z22\nG83 Z10"), "{}", out.program);
+    assert!(out.program.contains("G00 X30. Z30.\nG00 X0.\nG00 Z22.\nG83 Z10."), "{}", out.program);
     assert_eq!(check(&out.program, 10.0, 22.0, 40.0), (vec![], 1), "{}", out.program);
 }
 

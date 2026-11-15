@@ -210,6 +210,10 @@ pub enum OpParams {
         /// trochoidal loops along the region's medial line
         /// (`machining2d::adaptive_trochoidal`).
         method: crate::machining2d::AdaptiveMethod,
+        /// Trochoidal controls (#1588): read only when `method` is
+        /// `Trochoidal` (engagement limit, return mode, return feed,
+        /// loop width).
+        troch: crate::machining2d::AdaptiveTrochParams,
         /// Arc turns at the spiral's corners (#1733), see
         /// [`OpParams::Pocket`]; `false` is every earlier file. The
         /// Trochoidal method's loops are arcs already: it refuses the

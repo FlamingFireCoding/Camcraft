@@ -294,6 +294,7 @@ impl OpParams {
                 helix_radius,
                 optimal_load,
                 method,
+                troch,
                 tilt,
             } => {
                 w(h, *stepover);
@@ -320,6 +321,20 @@ impl OpParams {
                 // op keeps the digest it had before the choice existed.
                 if *method == crate::machining2d::AdaptiveMethod::Trochoidal {
                     h.write_u8(0xA5);
+                    if *troch != crate::machining2d::AdaptiveTrochParams::default() {
+                        h.write_u8(0xA6);
+                        w(h, troch.max_engagement);
+                        match troch.ret {
+                            None => h.write_u8(0),
+                            Some(crate::machining2d::TrochoidReturn::Microlift { height }) => {
+                                h.write_u8(1);
+                                w(h, height);
+                            }
+                            Some(crate::machining2d::TrochoidReturn::Retract) => h.write_u8(2),
+                        }
+                        w(h, troch.return_feed.unwrap_or(-1.0));
+                        w(h, troch.loop_width.unwrap_or(-1.0));
+                    }
                 }
                 // #1733: written only when ON, as for the pocket.
                 if *blend_turns {
@@ -1291,6 +1306,11 @@ impl OpParams {
                     h.write_u8(infeed_plan.method as u8);
                     h.write_u8(infeed_plan.schedule as u8);
                     h.write_u32(infeed_plan.spring_passes);
+                    // #418: a byte only when set, so a #416 plan's
+                    // digest is unchanged.
+                    if infeed_plan.repeat_each_depth {
+                        h.write_u8(0xD5);
+                    }
                     for v in [infeed_plan.flank_angle, infeed_plan.min_depth, infeed_plan.finish_allowance] {
                         w(h, v);
                     }

@@ -1102,6 +1102,9 @@ pub struct ToolUi {
     /// #891: the turning cutting data (Vc, f/rev, max rpm), None = not
     /// stated - carried so an Apply never drops it.
     pub turning: Option<camcraft_app::tools::TurningData>,
+    /// #1152: a sinker body electrode's section - carried so an Apply
+    /// never turns the body into the rectangle of its two sizes.
+    pub outline: Vec<[f64; 2]>,
 }
 
 impl Default for ToolUi {
@@ -1164,6 +1167,7 @@ impl ToolUi {
             notes: t.catalog.notes.clone().unwrap_or_default(),
             cutting: t.cutting.clone(),
             turning: t.turning,
+            outline: t.outline.clone(),
         }
     }
 
@@ -1238,6 +1242,7 @@ impl ToolUi {
             catalog: self.catalog(),
             cutting: self.cutting.clone(),
             turning: self.turning,
+            outline: self.outline.clone(),
         };
         tool.corner_r = tool.tip_corner_r();
         tool
