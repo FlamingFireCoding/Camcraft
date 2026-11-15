@@ -39,3 +39,19 @@ to the pre-v59 words (still refused). The real fix for the meshes stays
 
 **Cost to change later.** Small: `mesh_open` is one module, one component
 and one optional file key.
+
+### PR #1699 review follow-up
+
+**Decided.** Pin the incomplete-model page and painted import status with
+structural UI assertions. Capture the same missing-wall STEP fixture in
+the real headless shell for review, with its placeholder viewport disclosed.
+The before image temporarily restores the previous graded-loader entry
+point and shows the actual import refusal; the after image shows the
+current incomplete model page and status. Restore the loader after capture.
+
+**Why.** This checks the displayed behavior and supplies reproducible visual
+evidence without changing the release-only pixel goldens.
+
+**Considered and dropped.** Updating pixel goldens would violate the UI test
+policy. Reconstructing the previous page around an incomplete model would
+misrepresent the prior loader, which refused this input entirely.

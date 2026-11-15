@@ -157,6 +157,8 @@ mod fixture_rows;
 mod fixtures_page;
 // #864: a reduced-fidelity model says so on its page.
 mod model_fidelity;
+// #1610 review: incomplete model advice and import status are visible.
+mod model_incomplete;
 // #1054: the STEP facet budget on the model page.
 mod step_budget;
 // #1573 review: what a STEP import changed is said on the status line.
