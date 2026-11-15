@@ -64,6 +64,8 @@ mod backend_edit;
 mod carried;
 mod carried_read;
 mod carry;
+// #874: the side-on quarter turns.
+mod carry_side;
 mod columns;
 mod cut;
 mod dexel;
@@ -120,6 +122,7 @@ pub use backend::{Backend, Stock, FIELD_BAND, FIELD_VERDICT_EPS, LATHE_COLUMN_RE
 pub use backend_edit::SET_TOPS_FIELD_REFUSAL;
 pub use carried::{clip_columns_under, lattice_of_grid, CarriedStock, FieldBody};
 pub use carry::{Body, LatticeTurn, CARRY_TURN_REFUSAL};
+pub use carry_side::{CarryTurn, SideTurn, FIELD_SIDE_CARRY_REFUSAL};
 pub use columns::Columns;
 pub use partial::{clamp_frac, partial_move, PartialCut};
 pub use cut::{auto_cell, first_posed, simulate, SimOp, POSED_REFUSAL};
