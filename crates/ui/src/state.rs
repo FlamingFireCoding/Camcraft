@@ -1140,6 +1140,7 @@ impl ToolUi {
                 ToolKind::Electrode => 13,
                 ToolKind::ThreadMill => 14,
                 ToolKind::ThreadMillSingle => 15,
+                ToolKind::Waterjet => 16,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1191,6 +1192,7 @@ impl ToolUi {
             13 => ToolKind::Electrode,
             14 => ToolKind::ThreadMill,
             15 => ToolKind::ThreadMillSingle,
+            16 => ToolKind::Waterjet,
             _ => ToolKind::EndMill,
         }
     }
@@ -4243,6 +4245,9 @@ impl State {
         self.rename_draft = None;
         self.dragging_op = None;
         self.world = loaded;
+        // #1997: the orbit pivot is the new document's part and stock, never
+        // the old document's target (the envelope is not in the bounds).
+        self.frame_all();
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
