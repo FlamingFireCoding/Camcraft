@@ -147,6 +147,15 @@ mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;
 mod boundary_turn;
+use camcraft_geometry::boundary_chains;
+
+fn boundary_chain_error(error: boundary_chains::BoundaryError) -> GenError {
+    match error {
+        boundary_chains::BoundaryError::Invalid(s) => GenError::Invalid(s),
+        boundary_chains::BoundaryError::Empty(s) => GenError::Empty(s),
+        boundary_chains::BoundaryError::Geometry(e) => e.into(),
+    }
+}
 mod contour_open;
 mod finish_clip;
 mod finish_entry;
