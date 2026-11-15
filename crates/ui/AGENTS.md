@@ -50,6 +50,15 @@ and the root file differ, the root file wins.
   tier's snapshot lane. A PR never changes a snapshot PNG, not to refresh a
   conflict and not to accept a new render; they are regenerated once at a
   minor or major cut. (Root `AGENTS.md`, "Testing".)
+- A refit PR (new look, chrome or layout) changes one page or component and
+  its tests. Behaviour tests assert labels, roles, enabled state and
+  commands, never a position, size or colour; each page's coarse layout is
+  its named `layout_page_<page>` / `layout_window_<window>` test in
+  `src/egui_app/tests/page_layout.rs`, which the page's refit PR updates. The
+  PR is not ready while a UI test it touches is red, ignored or deleted, and
+  the crate's `#[test]` count does not go down. Pointer targets in behaviour
+  tests come from the live layout (`tests/anchors.rs`), not fixed screen
+  numbers. (Root `AGENTS.md`, "A UI refit PR keeps its tests"; #1953.)
 
 ## Icons and assets
 

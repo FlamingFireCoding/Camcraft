@@ -46,7 +46,7 @@ fn row(rows: &[(ViewRow, egui::Rect)], want: ViewRow) -> egui::Pos2 {
 }
 
 /// The laid-out rect of the leaf holding `tab` (None when closed).
-fn leaf_rect(dock: &DockState<Tab>, tab: &Tab) -> Option<egui::Rect> {
+pub(super) fn leaf_rect(dock: &DockState<Tab>, tab: &Tab) -> Option<egui::Rect> {
     let path = dock.find_tab(tab)?;
     dock[path.node_path()].rect()
 }
@@ -146,7 +146,9 @@ fn the_viewport_row_is_inert_and_the_door_dismisses_outside() {
     assert!(layout::is_open(&h.state().dock, &Tab::Viewport));
     // A press on the status strip, away from the door, dismisses it
     // (the viewport would pick, and a pick is a command).
-    click(&mut h, egui::pos2(640.0, 712.0));
+    let away: Vec<egui::Rect> = std::iter::once(button).chain(rows.iter().map(|(_, r)| *r)).collect();
+    let outside = super::anchors::chrome_point(&h, &away);
+    click(&mut h, outside);
     assert!(!h.state().state.ribbon_view_open, "an outside press closes the list");
     assert_no_commands(&h);
 }

@@ -113,6 +113,8 @@ mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
 mod structural;
+mod page_layout;
+mod anchors;
 mod cycle_combo;
 mod radial_step_field;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
@@ -1543,7 +1545,8 @@ fn click_outside_the_viewport_is_not_a_pick() {
     let mut harness = shell_harness();
     harness.run();
     let status0 = harness.state().state.status.clone();
-    click_viewport(&mut harness, egui::pos2(4.0, 4.0));
+    let outside = anchors::chrome_point(&harness, &[]);
+    click_viewport(&mut harness, outside);
     let st = &harness.state().state;
     assert_eq!(st.status, status0, "a stray click ran a pick");
     assert!(
@@ -1865,7 +1868,8 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
     // Scroll the properties pane so the anchor grid (bottom of the page)
     // is in view.
     for _ in 0..4 {
-        wheel(&mut harness, egui::pos2(1100.0, 500.0), -220.0);
+        let pane = anchors::pane_center(&harness, &Tab::Properties);
+        wheel(&mut harness, pane, -220.0);
     }
     harness.get_by_label("SE").click_accesskit();
     harness.run_steps(2);

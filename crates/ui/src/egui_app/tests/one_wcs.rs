@@ -89,7 +89,8 @@ fn the_wcs_page_shows_the_work_offset_dropdown_and_no_setups_page_pointer() {
         {
             break;
         }
-        wheel(&mut h, egui::pos2(1100.0, 500.0), -220.0);
+        let pane = super::anchors::pane_center(&h, &Tab::Properties);
+        wheel(&mut h, pane, -220.0);
     }
     let texts = super::structural::painted(&h);
     assert!(
