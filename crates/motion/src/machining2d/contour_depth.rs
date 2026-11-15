@@ -316,7 +316,10 @@ pub(super) fn picked_law(
         let at = ring.first().copied().unwrap_or(Point2::new(0.0, 0.0));
         let what = match side {
             Side::Inside => "Inside of this ring is inside the part - it rings material, not a hole; use Outside or Auto",
-            _ => "Outside of this ring is inside the part - it rings a hole; use Inside or Auto",
+            Side::Outside => "Outside of this ring is inside the part - it rings a hole; use Inside or Auto",
+            // Auto picks the open side itself; what moved the ring into
+            // the part is the region (a containment or offset of it).
+            _ => "the ring stands in the part material - check the tool containment and the offsets of the picked boundary",
         };
         return Err(super::face::GenError::Invalid(format!(
             "the picked ring at ({:.3}, {:.3}) meets its wall at no level below the part top Z {top:.3}: {what}",
