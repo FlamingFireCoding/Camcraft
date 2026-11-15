@@ -203,3 +203,33 @@ The following capabilities exist in the GUI or app command layer but do not yet 
 
 Per `AGENTS.md` ("Everything Is a Command"):
 > A PR that adds a user-facing command also adds its MCP tool (and script verb where it fits) in `crates/app/src/mcp/`, or files a `source:agent` follow-up issue `MCP: <command>` (labels `P5`, `area:mcp`) and names it in the PR body.
+
+## Plasma Profile workflow (#1871)
+
+The built-in `Tormach 1300PL` uses a `Torch` tool and the `Tormach PathPilot Plasma` post. The catalog tool `PT-KERF-150` has a 1.5 mm kerf and zero rpm. For a plate model spanning Z = 0 to 5 mm, call these MCP tools in order (arguments shown below):
+
+```text
+load_machine { "builtin": "Tormach 1300PL" }
+add_tool { "catalog": "PT-KERF-150" }
+import_model { "path": "plate.stl", "name": "plate" }
+add_operation { "kind": "Plasma Profile", "name": "Plasma1", "tool": "PT-KERF-150", "source": "plate", "params": { "clearance_z": 25, "top_z": 5, "bottom_z": 0, "lead_in": 4, "lead_out": 3, "overburn": 1 } }
+edit_operation { "name": "Plasma1", "params": { "pierce_delay": 0.5 } }
+undo {}
+redo {}
+generate { "name": "Plasma1" }
+verify {}
+```
+
+The edit, undo and redo above set, remove and restore the pierce delay. Adapt the heights and leads to the actual plate. Use `list_operation_types` for the complete parameter fields and defaults. `kerf: null` uses the torch's diameter; `comp` is `"computer"` (default) or `"control"`. Optional `feed` (mm/min), `pierce_height` and `cut_height` (mm above the plate), and `pierce_delay` (seconds) leave the controller's AutoFS in charge when unset; an `edit_operation` patch with `null` clears one.
+
+Inspect `verify`'s `ok`, `gate.problems`, and `gate.not_judged`. The latter says that the 3D stock simulation does not run for plasma and reports the 2D plasma laws instead: cut order, cut crossing, kerf crossing and tip-up. Cut-order and cut-crossing failures block posting; kerf-crossing and tip-up warnings remain visible in that line. A clean report does not mean that a 3D stock simulation ran.
+
+After verification, post with the explicit plasma post:
+
+```text
+post { "output": "plate.nc", "post": "Tormach PathPilot Plasma" }
+```
+
+This `post` argument applies to this call; it does not change the stored post selection. For a declared setup, `set_setup_post` can store the plasma post for later calls that omit `post`.
+
+Refusals return `isError: true` with a named reason. Assigning an end mill with `set_tool` is refused because Plasma Profile requires a plasma torch. `edit_tool { "name": "PT-KERF-150", "patch": { "rpm": 3000 } }` is refused because a torch turns no spindle. A milling post such as `Fanuc` refuses the plasma machine. A cached path that cuts an outline before its hole produces a `plasma cut order` problem in `verify` and blocks `post`; a refused post writes no NC file. These cases are pinned by `crates/app/tests/mcp_plasma.rs`. The tests run headlessly, not on a physical plasma table.
