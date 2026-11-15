@@ -322,6 +322,22 @@ fn the_stamp_tells_the_choices_apart() {
 /// (`machining3d::material_above`): under the closed floor no level
 /// exists, so no move of any entry arm goes below the bore floor inside
 /// the bore - nor anywhere under the part - and the path verifies clean.
+/// XY distance from `q` to the triangle's projection (0 inside it).
+fn to_tri(q: Point3, t: [Point3; 3]) -> f64 {
+    let seg = |a: Point3, b: Point3| {
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let l2 = dx * dx + dy * dy;
+        let s = if l2 > 0.0 { (((q.x - a.x) * dx + (q.y - a.y) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+        (a.x + s * dx - q.x).hypot(a.y + s * dy - q.y)
+    };
+    let side = |a: Point3, b: Point3| (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x);
+    let (s0, s1, s2) = (side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0]));
+    if (s0 >= 0.0 && s1 >= 0.0 && s2 >= 0.0) || (s0 <= 0.0 && s1 <= 0.0 && s2 <= 0.0) {
+        return 0.0;
+    }
+    seg(t[0], t[1]).min(seg(t[1], t[2])).min(seg(t[2], t[0]))
+}
+
 #[test]
 fn a_helix_under_the_bore_floor_is_never_silent() {
     for entry in [Entry3D::Helix, Entry3D::Plunge, Entry3D::Ramp, Entry3D::Arc] {
@@ -329,13 +345,24 @@ fn a_helix_under_the_bore_floor_is_never_silent() {
         if let OpParams::Pocket3D { bottom_z, .. } = &mut op {
             *bottom_z = Height::of(HeightReference::BottomOfStock, 0.0);
         }
-        let (_w, _h, t, warns) = user_job(op);
+        let (w, _h, t, warns) = user_job(op);
         assert!(!t.moves.is_empty(), "{entry:?}: the bore is still cut");
         let in_bore = |p: &Point3| p.x.hypot(p.y) < 12.5;
         let under = t.moves.iter().find(|m| [m.from, m.to].iter().any(|q| in_bore(q) && q.z < -1e-6));
         assert!(under.is_none(), "{entry:?}: a move under the bore floor: {under:?}");
-        let low = t.moves.iter().map(|m| m.to.z.min(m.from.z)).fold(f64::INFINITY, f64::min);
-        assert!(low >= -1e-6, "{entry:?}: the part shadows everything below Z 0, got {low}");
+        // #1774: the stock AROUND the part is cleared down to the stock's
+        // bottom (the 2D pocket's #12 reading); under the part's own
+        // shadow nothing goes below Z 0 - every lower move keeps its
+        // tool disc off the part's projected facets.
+        let part = model::find_by_name(&w, "Milling-test").and_then(|e| model::world_facets(&w, &e)).expect("part facets");
+        let low = t
+            .moves
+            .iter()
+            .flat_map(|m| [m.from, m.to])
+            .filter(|q| q.z < -1e-6)
+            .map(|q| part.iter().map(|f| to_tri(q, [f.a, f.b, f.c])).fold(f64::INFINITY, f64::min))
+            .fold(f64::INFINITY, f64::min);
+        assert!(low >= 5.0 - 0.02, "{entry:?}: a move below Z 0 is {low} from the part's footprint");
         assert!(warns.is_empty(), "{entry:?}: {warns:?} / {:?}", t.notes);
     }
 }

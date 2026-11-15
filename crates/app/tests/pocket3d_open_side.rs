@@ -6,8 +6,11 @@
 //! the op said ok. The setup's other parts stay out of the cutter's
 //! reach.
 //!
-//! Gate map (#1749): covers app::operation (generate's Pocket3D arm),
-//! motion::machining3d (open_side).
+//! #1774: stock reaching far past the silhouette is cleared out to the
+//! stock's outline, and the open-side law's tilted branch is pinned.
+//!
+//! Gate map (#1749, #1774): covers app::operation (generate's Pocket3D
+//! arm, open_side), motion::machining3d (open_side).
 
 mod area_support;
 
@@ -82,6 +85,11 @@ fn notched_block() -> Mesh {
 }
 
 fn world(neighbour: Option<Mesh>) -> World {
+    world_on(neighbour, 30.0)
+}
+
+/// The part on a square stock `side` mm across, centred on the part.
+fn world_on(neighbour: Option<Mesh>, side: f64) -> World {
     let world = new_world();
     let mut h = History::default();
     h.execute(&world, ImportModel::from_mesh("part", notched_block()));
@@ -90,7 +98,7 @@ fn world(neighbour: Option<Mesh>) -> World {
     }
     // The stock fits the part in XY (the user's case): only the notch
     // and the 2 mm above the top are to cut.
-    let stock = StockShape::Box { dx: 30.0, dy: 30.0, dz: STOCK_TOP };
+    let stock = StockShape::Box { dx: side, dy: side, dz: STOCK_TOP };
     h.execute(&world, SetStock::new(&world, stock, Location::default()).expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
@@ -242,4 +250,49 @@ fn a_part_standing_in_the_notch_is_named_by_the_solid_law() {
     let o = op(SrcRef::Entity("part".into()), pocket3d(), AreaControls::default());
     let (_, warns) = run(&world, &o).unwrap_or_else(|e| panic!("the notch generates: {e}"));
     assert!(warns > 0, "the cut through the second part is warned, never ok");
+}
+
+/// #1774: a stock reaching 20 mm past the part on every side, four tool
+/// radii - far past the #1749 band, which stopped about two radii out.
+/// The whole-model pocket clears it out to the stock's outline, to the
+/// floor, without a cutter position inside the part. Before the fix the
+/// columns past the silhouette by more than two radii kept the stock's
+/// full height, and the op read ok.
+#[test]
+fn stock_far_past_the_silhouette_is_cleared_to_the_stock_outline() {
+    let world = world_on(None, 70.0);
+    let (lo, hi) = stock_box(&world);
+    assert!((lo.x + 35.0).abs() < 1e-6 && (hi.y - 35.0).abs() < 1e-6, "stock {lo:?} {hi:?}");
+    let o = op(SrcRef::Entity("part".into()), pocket3d(), AreaControls::default());
+    let (path, warns) = run(&world, &o).unwrap_or_else(|e| panic!("the far stock generates: {e}"));
+    assert_eq!(warns, 0, "verify stays clean");
+    let s = feed_samples(&path);
+    assert_no_gouge(&s);
+    let mut worst = (f64::NEG_INFINITY, 0.0, 0.0);
+    for k in 0..=70 {
+        let a = -34.9 + 69.8 * k as f64 / 70.0;
+        // The stock's edge, and a ring between it and the #1749 band.
+        for (x, y) in [(34.9, a), (-34.9, a), (a, 34.9), (a, -34.9), (28.0, a.clamp(-28.0, 28.0)), (-28.0, a.clamp(-28.0, 28.0))] {
+            let z = carried(&s, x, y);
+            if z > worst.0 {
+                worst = (z, x, y);
+            }
+        }
+    }
+    assert!(
+        worst.0 <= FLOOR + 1e-3,
+        "the stock past the silhouette keeps Z {:.3} at ({:.2}, {:.2}); the floor is Z {FLOOR}",
+        worst.0,
+        worst.1,
+        worst.2
+    );
+}
+
+/// #1774: the 3D Pocket (like its stamped twin, `OpParams::tilt`'s
+/// exhaustive match) carries no 3+2 index, so the open-side law is never read in a tilted frame; the
+/// law's tilted branch refuses by name (`open_side`'s unit test). Should
+/// either kind gain a tilt, this premise fails first.
+#[test]
+fn no_3d_pocket_kind_carries_a_tilt() {
+    assert!(pocket3d().tilt().is_none(), "a 3D Pocket carries no 3+2 index");
 }
