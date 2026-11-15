@@ -82,6 +82,13 @@
    removes nothing. Not changed: the ladder does not reach the material
    between rho 2.0 and 2.5 on the foot (levels 1.5 and 0.5 are in the
    model). That was so before this change too.
+9. Trace, engrave and trochoidal slot (round 5): `TraceParams` and
+   `TrochoidParams` get their own field `material_top: Option<f64>`. The
+   app fills it from the same `lk.approach.material_top` as the other
+   operations. The trochoid lanes of 2D Adaptive (Trochoidal) copy it from
+   their pocket's links. Dropped: a full `Links` field on the two param
+   types - the two generators read no other link, and a `Links` field
+   promises controls that they do not have.
 
 **Why:** a level at the material top removes nothing and doubles the cycle
 time of a one-level cut (the maintainer's report on v0.21.0). The fix at the
