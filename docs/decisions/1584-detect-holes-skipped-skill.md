@@ -1,0 +1,9 @@
+## #1584 - Document detect_holes skipped field and Bore refusal in camcraft-mcp skill
+
+**Decided:** Update the `detect_holes` row in `.claude/skills/camcraft-mcp/SKILL.md` to document the `{ operation, holes, radial_holes, skipped, status }` reply shape, the Bore-operation hole filter (`d + 4 * reach + 2 * stock_to_leave`, `3d + 2 * stock_to_leave` for a square end mill or blind hole, less for a bull-nose or ball cutter on a through hole) that omits wider holes and names each sentence in `skipped`, the all-too-wide Bore-operation refusal (`no hole this Bore op can make: ...`) that stores nothing, the external-Thread boss mode, the lathe/mill-turn radial cross-hole detection for Drill, and the single undo step. Keep the PR docs-only without editing `.claude/PROCESS_VERSION` (adding `Process change: yes` to the PR body for the merging session).
+
+**Why:** Matches `crates/app/src/mcp/tools.rs`, `crates/app/src/mcp/edit.rs`, `crates/app/src/operation/material.rs`, and `crates/app/src/operation/bore_reach.rs` so headless MCP agents know why a Bore operation drops wide holes into `skipped` or refuses detection without modifying the operation.
+
+**Considered and dropped:** Adding an `xtask` or `crates/app` Rust test reading `SKILL.md` was dropped to keep this documentation fix docs-only (`Pr::docs()` eligible for read-only review and `pr-test.yml` without adding build scope; runtime behavior is already pinned by `crates/app/tests/bore_core.rs` and `crates/app/tests/mcp.rs`). Editing `.claude/PROCESS_VERSION` on the branch was dropped per current `PROCESS_VERSION >= 63` rules so the merging session sets the next sequential number and announces on `#681`.
+
+**Cost to change later:** Editing the single `detect_holes` row in `.claude/skills/camcraft-mcp/SKILL.md` when the MCP tool's reply or refusal contract changes.
