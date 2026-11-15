@@ -52,7 +52,7 @@ existing domain ownership rule.
 
 **Evidence choice.** Capture the actual egui shell used by the structural
 pin for the Boundary row in Faces mode, including its two-chain entry.
-Review images live under `docs/reviews/1756`, outside release snapshot
-goldens. A painted-text assertion pins the entry without a pixel comparison;
+Review images accompany [PR #1756](https://github.com/NeoTech/Camcraft/pull/1756).
+A painted-text assertion pins the entry without a pixel comparison;
 hand-drawn mockups and updating release snapshot PNGs were dropped because
 they would not show the reviewed behavior or fit the PR snapshot rule.
