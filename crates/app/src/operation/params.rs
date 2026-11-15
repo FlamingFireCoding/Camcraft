@@ -208,6 +208,7 @@ impl OpParams {
                 // The level links ride the shared tail below (M11.2).
             }
             OpParams::Pocket {
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -263,6 +264,12 @@ impl OpParams {
                 // M11.1 C: written only when ON, as for Face/Contour.
                 if *blend_turns {
                     h.write_u8(0xB1);
+                    // #1733: a set radius only, so every earlier
+                    // blended pocket keeps its digest.
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
                 }
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
@@ -270,6 +277,8 @@ impl OpParams {
             // pins which ladder runs, and a field that cannot move
             // has nothing to say about staleness.
             OpParams::Adaptive2D {
+                blend_turns,
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -327,8 +336,20 @@ impl OpParams {
                         w(h, troch.loop_width.unwrap_or(-1.0));
                     }
                 }
+                // #1733: written only when ON, as for the pocket.
+                if *blend_turns {
+                    h.write_u8(0xB1);
+                    // #1733: a set radius only, so every earlier
+                    // blended pocket keeps its digest.
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
+                }
             }
             OpParams::Offset2D {
+                blend_turns,
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -361,6 +382,14 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
+                // #1733: written only when ON, as for the pocket.
+                if *blend_turns {
+                    h.write_u8(0xB1);
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
+                }
             }
             OpParams::Pocket3D {
                 links: _,
@@ -864,6 +893,8 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => {
                 wp2(h, *a);
                 wp2(h, *b);
@@ -889,6 +920,12 @@ impl OpParams {
                     Entry3D::Arc => 3,
                 });
                 wt(h, *tilt);
+                // #1731: appended only when set, so a slot with no
+                // extension keeps its hash and stays Fresh.
+                if *extend_start != 0.0 || *extend_end != 0.0 {
+                    w(h, *extend_start);
+                    w(h, *extend_end);
+                }
             }
             OpParams::TrochoidalSlot {
                 a,

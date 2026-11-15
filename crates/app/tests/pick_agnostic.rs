@@ -36,6 +36,7 @@ use flecs_ecs::prelude::World;
 
 fn pocket(strategy: PocketStrategy, top: f64, bottom: f64) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
         stock_to_leave: 0.0,
@@ -58,6 +59,7 @@ fn pocket(strategy: PocketStrategy, top: f64, bottom: f64) -> OpParams {
 
 fn adaptive2d(top: f64, bottom: f64) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
         stock_to_leave: 0.0,

@@ -31,6 +31,7 @@ fn face() -> Region {
 
 fn params() -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: D,
         stepover: 1.0,
         stock_to_leave: 0.0,

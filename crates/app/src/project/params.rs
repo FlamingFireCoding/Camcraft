@@ -164,6 +164,10 @@ pub enum ParamsDto {
         /// is the sharp walk every earlier file held - no version step.
         #[serde(default, skip_serializing_if = "is_false")]
         blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
@@ -218,6 +222,14 @@ pub enum ParamsDto {
         /// #1588: loop width (mm); absent uses all medial room.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         loop_width: Option<f64>,
+        /// #1733 arc turns: absent (written only when ON) is the sharp
+        /// walk every earlier file held - no version step.
+        #[serde(default, skip_serializing_if = "is_false")]
+        blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -242,6 +254,14 @@ pub enum ParamsDto {
         entry: EntryDto,
         #[serde(default = "default_helix_radius")]
         helix_radius: f64,
+        /// #1733 arc turns: absent (written only when ON) is the sharp
+        /// walk every earlier file held - no version step.
+        #[serde(default, skip_serializing_if = "is_false")]
+        blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -348,6 +368,13 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #1731: how far the pass runs past `a` / past `b`, mm. Absent
+        /// (and not written) when zero, so earlier files and saves stay
+        /// byte-identical.
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        extend_start: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        extend_end: f64,
     },
     Trace {
         clearance_z: HeightDto,
@@ -1187,6 +1214,12 @@ fn default_helix_radius() -> f64 {
 /// `false` is absent from the file, so legacy saves stay byte-identical.
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// Serde's skip test for an additive length that is zero by default
+/// (#1731 slot end extensions): a zero is absent from the file.
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
 }
 
 /// The facing hole law (M13.11): `lift` is the default and absent from
