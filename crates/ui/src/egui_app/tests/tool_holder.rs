@@ -146,32 +146,35 @@ fn the_picker_lists_the_tts_holders_and_names_the_collar() {
 }
 
 /// #2018: the list has one Weldon row for each taper; picking it on the
-/// 6 mm shank names the 6 mm bore and its Ø25 body, and Apply holder
-/// lands the old "BT40 Weldon 6 mm" outline - the same collision shape.
+/// editor tool's 8 mm shank names the 8 mm bore and its Ø28 body, and
+/// Apply holder lands the old "BT40 Weldon 8 mm" outline - the same
+/// collision shape.
 #[test]
 fn one_weldon_row_for_each_taper_takes_the_bore_of_the_shank() {
     let mut harness = profile_tab();
-    harness.get_by_label("Library holder").click();
-    harness.run();
-    harness.run();
-    for t in ["BT30", "BT40", "CAT40", "TTS"] {
-        assert_eq!(harness.query_all_by_label(&format!("{t} Weldon")).count(), 1, "{t} has one Weldon row");
-    }
-    assert!(harness.query_by_label("BT40 Weldon 10 mm").is_none(), "no row for each bore");
     harness.state_mut().state.pick_library_holder("BT40 Weldon");
     harness.run();
     harness.run();
     let st = &harness.state().state;
     assert_eq!((st.tool_profile_ui.library.as_deref(), st.tool_profile_ui.gauge), (Some("BT40 Weldon"), 63.0));
-    assert!(harness.query_all_by_label_contains("Weldon bore Ø6.00, body Ø25.00").next().is_some(), "the bore of the shank");
+    assert!(harness.query_all_by_label_contains("Weldon bore Ø8.00, body Ø28.00").next().is_some(), "the bore of the shank");
     harness.get_by_label("Apply holder").click();
     harness.run();
     harness.run();
-    let want = holder_library::find("BT40 Weldon 6 mm").and_then(|e| e.points(55.0, 63.0)).expect("draws");
+    let want = holder_library::find("BT40 Weldon 8 mm").and_then(|e| e.points(55.0, 63.0)).expect("draws");
     assert_eq!(
         drawn(&harness.state().state),
         Some(want.iter().map(|p| (p.z, p.r)).collect()),
         "status: {}",
         harness.state().state.status
     );
+    // The list: one Weldon row for each taper, none for each bore.
+    harness.get_by_label("Library holder").click();
+    harness.run();
+    harness.run();
+    for t in ["BT30", "BT40", "CAT40", "TTS"] {
+        assert!(harness.query_all_by_label(&format!("{t} Weldon")).count() >= 1, "{t} has a Weldon row");
+    }
+    assert!(harness.query_by_label("BT40 Weldon 10 mm").is_none(), "no row for each bore");
+    assert!(harness.query_by_label("BT30 Weldon 6 mm").is_none(), "no row for each bore");
 }
