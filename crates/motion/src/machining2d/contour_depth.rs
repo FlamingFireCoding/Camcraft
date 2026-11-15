@@ -48,12 +48,18 @@ const MAX_FLANK_PROBES: usize = 256;
 pub(super) struct Ladder {
     pub zs: Vec<f64>,
     pub per_ring: Vec<Vec<f64>>,
+    /// Per ring: why it stopped when the part could not be SECTIONED at
+    /// the plane that failed (a slice error - fail closed), `None` when it
+    /// stopped on material or never stopped. #1927's law reads it, so a
+    /// ring on its legal side over an unreadable mesh is not blamed on
+    /// its side.
+    pub unread: Vec<Option<String>>,
 }
 
 impl Ladder {
     /// Every ring at every level - the flat-region law, byte for byte.
     pub(super) fn uniform(zs: &[f64], rings: usize) -> Self {
-        Ladder { zs: zs.to_vec(), per_ring: vec![zs.to_vec(); rings] }
+        Ladder { zs: zs.to_vec(), per_ring: vec![zs.to_vec(); rings], unread: vec![None; rings] }
     }
 
     /// Whether ring `li` is cut at level `z`.
@@ -101,13 +107,14 @@ struct Above {
     shadow: Region,
 }
 
-/// Material above each plane, cached by plane; `None` = a slice failed,
-/// which every reader treats as "not legal" (fail closed). `bodies`
-/// are the per-solid ranges of `facets` (fewer than two: one body).
+/// Material above each plane, cached by plane; `Err` = a slice failed
+/// (its reason kept), which every reader treats as "not legal" (fail
+/// closed). `bodies` are the per-solid ranges of `facets` (fewer than
+/// two: one body).
 struct Sections<'a> {
     facets: &'a [Triangle],
     bodies: &'a [Range<usize>],
-    cache: HashMap<u64, Option<Above>>,
+    cache: HashMap<u64, Result<Above, String>>,
 }
 
 /// Every sample keeps `need2` (squared) off the region and out of it.
@@ -125,16 +132,17 @@ fn clear_of(s: &Region, pts: &[Point2], need2: f64) -> bool {
 }
 
 impl Sections<'_> {
-    fn at(&mut self, z: f64) -> Option<&Above> {
+    fn at(&mut self, z: f64) -> Result<&Above, &str> {
         let (f, bodies) = (self.facets, self.bodies);
         self.cache
             .entry(z.to_bits())
             .or_insert_with(|| {
-                let section = material_above_of(f, bodies, z).ok()?;
-                let shadow = shadow_above(f, z).ok()?;
-                Some(Above { section, shadow })
+                let section = material_above_of(f, bodies, z).map_err(|e| e.to_string())?;
+                let shadow = shadow_above(f, z).map_err(|e| e.to_string())?;
+                Ok(Above { section, shadow })
             })
             .as_ref()
+            .map_err(String::as_str)
     }
 
     /// The ring keeps `need` off the part's material strictly above `z`:
@@ -142,7 +150,7 @@ impl Sections<'_> {
     /// (Clear of both halves is clear of their union: outside each, the
     /// union's boundary distance is the nearer of the two.)
     fn clear(&mut self, pts: &[Point2], z: f64, need: f64) -> bool {
-        let Some(a) = self.at(z) else { return false };
+        let Ok(a) = self.at(z) else { return false };
         let need2 = need.max(0.0) * need.max(0.0);
         clear_of(&a.section, pts, need2) && clear_of(&a.shadow, pts, need2)
     }
@@ -183,6 +191,30 @@ fn legal_at(
     flank.into_iter().all(|v| sec.clear(pts, v, need))
 }
 
+/// Why [`legal_at`] failed, when it failed on a plane the part could not
+/// be sectioned at: the planes in `legal_at`'s own order, the first one
+/// that is unreadable or not clear decides. `None` = material (or legal).
+fn unread_at(
+    sec: &mut Sections,
+    pts: &[Point2],
+    heights: &[f64],
+    z: f64,
+    above: f64,
+    leave: f64,
+    need: f64,
+) -> Option<String> {
+    let flank = heights.iter().copied().filter(|&v| v > z - leave && v < above).take(MAX_FLANK_PROBES);
+    for v in std::iter::once(z - leave).chain(flank) {
+        if let Err(why) = sec.at(v) {
+            return Some(why.to_string());
+        }
+        if !sec.clear(pts, v, need) {
+            return None;
+        }
+    }
+    None
+}
+
 /// Build the ladder for `rings` (closed center polylines, contour order)
 /// over the flat ladder `zs` against the part `facets`. A ring stops at
 /// the first level it is not legal at; the deepest legal vertex plane
@@ -203,6 +235,7 @@ pub(super) fn ladder(
     let heights = vertex_heights(facets);
     let mut sec = Sections { facets, bodies, cache: HashMap::new() };
     let mut per_ring: Vec<Vec<f64>> = Vec::with_capacity(rings.len());
+    let mut unread: Vec<Option<String>> = Vec::with_capacity(rings.len());
     for ring in rings {
         let pts = samples(ring);
         let mut mine: Vec<f64> = Vec::new();
@@ -217,8 +250,10 @@ pub(super) fn ladder(
                 break;
             }
         }
+        let mut why: Option<String> = None;
         if let Some(k) = stop {
             let z_bad = zs[k];
+            why = unread_at(&mut sec, &pts, &heights, z_bad, above, leave, need);
             // The floor: the deepest legal vertex plane + leave strictly
             // between the failed level and the last walked one.
             let top = if mine.is_empty() { f64::NEG_INFINITY } else { above };
@@ -259,11 +294,12 @@ pub(super) fn ladder(
             });
         }
         per_ring.push(mine);
+        unread.push(why);
     }
     let mut all: Vec<f64> = per_ring.iter().flatten().copied().collect();
     all.sort_by(|a, b| b.total_cmp(a));
     all.dedup_by(|a, b| a.to_bits() == b.to_bits());
-    Ladder { zs: all, per_ring }
+    Ladder { zs: all, per_ring, unread }
 }
 
 /// The highest part vertex near `ring`: the facets whose XY box comes
@@ -295,7 +331,10 @@ fn local_top(ring: &[Point2], facets: &[Triangle], reach: f64) -> Option<f64> {
 /// (Outside of a hole, Inside of a boss) kept only the top plane and cut
 /// air with no word. When the flat ladder asks for a level under the
 /// part's top near the ring and the ring walks none, the side the user
-/// chose lies in the part at every level: refused by name. A whole-model
+/// chose lies in the part at every level: refused by name. When the ring
+/// stopped because the part could not be SECTIONED there (the ladder's
+/// fail-closed slice error), the refusal names that error and the skipped
+/// levels instead - the side is not at fault. A whole-model
 /// section never calls this - its rings come from the part itself.
 pub(super) fn picked_law(
     rings: &[Vec<Point2>],
@@ -314,6 +353,21 @@ pub(super) fn picked_law(
             continue;
         }
         let at = ring.first().copied().unwrap_or(Point2::new(0.0, 0.0));
+        if let Some(Some(why)) = lad.unread.get(li) {
+            // The part could not be sectioned under the ring (a self-
+            // touching or broken mesh): no level is proven clear, and the
+            // side may well be right - name the mesh, not the side.
+            let skipped: Vec<String> =
+                zs.iter().filter(|&&z| z < top - SAME_LEVEL).map(|z| format!("{z:.3}")).collect();
+            return Err(super::face::GenError::Invalid(format!(
+                "the picked ring at ({:.3}, {:.3}) meets its wall at no level below the part top Z {top:.3}: \
+                 the part cannot be sectioned under it, so no deeper level is proven clear - levels below \
+                 skipped ({}): {why}",
+                at.x,
+                at.y,
+                skipped.join(", ")
+            )));
+        }
         let what = match side {
             // The side here is the RESOLVED one (the app turns Auto into
             // Inside or Outside first), and a tool containment moves the
