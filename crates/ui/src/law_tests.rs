@@ -681,6 +681,8 @@ mod path_tests {
                     stepdown: 2.0,
                     feed: 800.0,
                     plunge_feed: 200.0,
+                    // #1579: the coarse (0.1) fit keeps the wall's air
+                    // side on the climb walk too, so the default holds.
                     climb: true,
                     side: camcraft_app::machining2d::Side::Auto,
                     lead: camcraft_app::machining2d::Lead::None,
@@ -1442,7 +1444,7 @@ mod height_plane_tests {
     }
 
     fn pocket() -> OpParams {
-        OpParams::Pocket { tilt: None,
+        OpParams::Pocket { tilt: None, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             stepover: 3.0,
             stock_to_leave: 0.0,
