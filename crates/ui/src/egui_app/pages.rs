@@ -266,6 +266,7 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     if pick != per_op {
         state.pending.push_back(CommandKind::SetPerOpOutput(pick));
     }
+    super::post_options::explain_switch(ui, state);
     // #258: the program's number and comment, each one undoable command.
     super::program_info::program_rows(ui, state);
     super::post_options::threading_picker(ui, state);
