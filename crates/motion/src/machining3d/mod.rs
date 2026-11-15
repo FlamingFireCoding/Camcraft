@@ -96,6 +96,7 @@
 
 
 mod descent;
+mod descent_place;
 mod entry;
 mod feed;
 mod hsm;
