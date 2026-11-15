@@ -242,6 +242,12 @@ pub struct SolvedMove {
 /// Refusals returned when trunnion geometry, tool orientation, or travel limits fail validation.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum KinematicsError {
+    /// CL arcs cannot be represented by the linear path adapter without losing geometry.
+    #[error("unsupported arc at move {source_index}: linearize within tolerance before AC solving")]
+    UnsupportedArc {
+        /// Index of the input move carrying arc geometry.
+        source_index: usize,
+    },
     /// Adjacent moves do not share a part pose; no implicit transition is safe.
     #[error("discontinuous path at move {source_index}: an explicit pose transition is required")]
     DiscontinuousPath {

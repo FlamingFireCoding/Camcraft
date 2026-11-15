@@ -109,6 +109,7 @@ pub fn solve_path(
 }
 
 /// Adapts a CL [`Toolpath`] into [`PathMove`] entries and solves it for an AC trunnion machine.
+/// Returns [`KinematicsError::UnsupportedArc`] for arcs; callers must linearize them within tolerance.
 pub fn solve_toolpath(
     cfg: &AcTrunnionConfig,
     toolpath: &Toolpath,
@@ -117,7 +118,11 @@ pub fn solve_toolpath(
     let mut path_moves = Vec::with_capacity(toolpath.moves.len());
     let mut prev_axis = [0.0, 0.0, 1.0];
 
-    for mv in &toolpath.moves {
+    for (source_index, mv) in toolpath.moves.iter().enumerate() {
+        // PathMove represents straight segments only. Never discard CL arc geometry.
+        if mv.arc.is_some() {
+            return Err(KinematicsError::UnsupportedArc { source_index });
+        }
         let axis = mv.axis.unwrap_or([0.0, 0.0, 1.0]);
         let from_tip = [mv.from.x, mv.from.y, mv.from.z];
         let to_tip = [mv.to.x, mv.to.y, mv.to.z];

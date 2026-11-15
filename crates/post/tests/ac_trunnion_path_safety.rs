@@ -1,7 +1,8 @@
 // Provenance: clean-room regression tests for AC trunnion joint interpolation and fail-closed path limits.
 //! Gate map: covers camcraft_post::kinematics.
 
-use camcraft_post::cl::{Move, MoveKind, Toolpath};
+use camcraft_post::cl::{ArcPlane, Move, MoveKind, Toolpath};
+use camcraft_post::geo2d::Point2;
 use camcraft_post::geometry::Point3;
 use camcraft_post::kinematics::{
     AcTrunnionConfig, KinematicsError, MachinePose, PathMove, PathOptions, forward_part,
@@ -200,4 +201,83 @@ fn continuous_subdivision_depth_cap_refuses_unmet_chord_tolerance() {
         err.contains("SubdivisionLimitExceeded") && err.contains("continuous segment"),
         "{err}"
     );
+}
+
+fn quarter_circle(plane: ArcPlane) -> Move {
+    let (from, to, ccw) = match plane {
+        ArcPlane::Xy => (
+            Point3::new(100.0, 0.0, 0.0),
+            Point3::new(0.0, 100.0, 0.0),
+            true,
+        ),
+        ArcPlane::Xz => (
+            Point3::new(100.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 100.0),
+            false,
+        ),
+        ArcPlane::Yz => (
+            Point3::new(0.0, 100.0, 0.0),
+            Point3::new(0.0, 0.0, 100.0),
+            true,
+        ),
+    };
+    Move::new(MoveKind::Feed, from, to, Some(400.0)).with_arc_in(Point2::new(0.0, 0.0), ccw, plane)
+}
+
+fn assert_arc_refused(plane: ArcPlane) {
+    let arc = quarter_circle(plane);
+    for source_index in [0, 1] {
+        let mut toolpath = Toolpath::default();
+        if source_index == 1 {
+            let from = Point3::new(arc.from.x, arc.from.y, arc.from.z + 10.0);
+            toolpath
+                .moves
+                .push(Move::new(MoveKind::Feed, from, arc.from, Some(400.0)));
+        }
+        toolpath.moves.push(arc);
+        assert_eq!(
+            solve_toolpath(
+                &AcTrunnionConfig::default(),
+                &toolpath,
+                &PathOptions::default()
+            ),
+            Err(KinematicsError::UnsupportedArc { source_index }),
+            "{plane:?} quarter-circle must not become a straight cut"
+        );
+    }
+}
+
+#[test]
+fn cl_xy_quarter_circle_is_refused_instead_of_cutting_across_part() {
+    assert_arc_refused(ArcPlane::Xy);
+}
+
+#[test]
+fn cl_xz_quarter_circle_is_refused_instead_of_cutting_across_part() {
+    assert_arc_refused(ArcPlane::Xz);
+}
+
+#[test]
+fn cl_yz_quarter_circle_is_refused_instead_of_cutting_across_part() {
+    assert_arc_refused(ArcPlane::Yz);
+}
+
+#[test]
+fn cl_straight_feed_remains_supported() {
+    let mut straight = quarter_circle(ArcPlane::Xy);
+    straight.arc = None;
+    let mut toolpath = Toolpath::default();
+    toolpath.moves.push(straight);
+    let solved = solve_toolpath(
+        &AcTrunnionConfig::default(),
+        &toolpath,
+        &PathOptions::default(),
+    )
+    .expect("straight feed remains supported");
+    assert_eq!(solved.len(), 1);
+    assert_eq!(solved[0].source_index, 0);
+    assert_eq!(solved[0].tip_from, [100.0, 0.0, 0.0]);
+    assert_eq!(solved[0].tip_to, [0.0, 100.0, 0.0]);
+    assert_eq!(solved[0].kind, MoveKind::Feed);
+    assert_eq!(solved[0].feed, Some(400.0));
 }
