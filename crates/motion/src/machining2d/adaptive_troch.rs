@@ -67,6 +67,11 @@ const REST_NOTE: f64 = 0.005;
 pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath, GenError> {
     let p = &PocketParams { strategy: PocketStrategy::Adaptive, ..*p };
     p.validate()?;
+    if p.optimal_load < 0.04 {
+        return Err(GenError::Invalid(format!(
+            "{WHO}: optimal load below 4% of tool diameter is unsupported by cleanup - increase optimal load to at least 4%"
+        )));
+    }
     if region.is_empty() {
         return Err(GenError::Empty("empty pocket region".into()));
     }

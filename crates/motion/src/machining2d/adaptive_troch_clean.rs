@@ -56,7 +56,7 @@ pub(super) fn plan_cleanup(
         .intersect(&raw_center)?;
     let mut prev_safe = air0.clone();
     // 0.18*r peel steps with 0.20*r 90-deg rounding hold <= 90 deg even into tight neck corners.
-    let step = load_step(d, optimal_load).min(0.18 * r).max(0.08 * r);
+    let step = load_step(d, optimal_load).min(0.18 * r);
     let mut chains = Vec::new();
 
     for k in 1..=MAX_PEEL_STEPS {

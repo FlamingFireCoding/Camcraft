@@ -341,3 +341,30 @@ fn corner_cleanup_reduces_34x16_rest_to_at_most_hsm_rest() {
     let p = PocketParams { bottom_z: -3.0, ..params() };
     check_cleared("face 34x16 D6", &face(), &p);
 }
+
+
+/// PR #1788: valid loads below 4% must not be raised to a 4% cleanup step.
+#[test]
+fn low_load_bounds_cleanup_spacing_and_complete_path() {
+    let center = rect(-3.0, -3.0, 3.0, 3.0);
+    let cleared = rect(-5.0, -5.0, 5.0, 5.0);
+    let reach = rect(-6.0, -6.0, 6.0, 6.0);
+    let used = rect(-1.98, -1.98, 1.98, 1.98);
+    let Ok((chains, _)) = super::super::adaptive_troch_clean::plan_cleanup(
+        &center, &reach, &used, &cleared, D, 0.01, true,
+    ) else { panic!("cleanup") };
+    assert!(!chains.is_empty(), "the spacing check must exercise cleanup");
+    // The initial safe-air front is at 5 - (3 + 0.02) = 1.98 mm.
+    // Its first peel must advance by at most the requested 0.06 mm.
+    let first_extent = chains[0].pts.iter().map(|q| q.x.abs().max(q.y.abs())).fold(0.0, f64::max);
+    assert!(first_extent > 1.98, "cleanup advances into stock");
+    assert!(first_extent <= 2.04 + 2e-3, "1% cleanup front advanced too far: {first_extent}");
+
+    // The complete generator refuses unsupported low loads by parameter name
+    // before planning any lane or emitting cleanup at an enlarged spacing.
+    for load in [0.01, 0.03, 0.039999] {
+        let p = PocketParams { optimal_load: load, bottom_z: -1.0, stepdown: 1.0, ..params() };
+        let why = refusal(&face(), &p);
+        assert!(why.contains("optimal load below 4%") && why.contains("unsupported by cleanup"), "{why}");
+    }
+}
