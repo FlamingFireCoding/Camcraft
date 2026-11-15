@@ -113,6 +113,7 @@ mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
 mod structural;
+mod waterjet_recipe;
 mod cycle_combo;
 mod radial_step_field;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
