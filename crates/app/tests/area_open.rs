@@ -89,9 +89,9 @@ fn a_containment_that_puts_the_tool_in_the_part_is_refused_by_name() {
         })
         .map(|c| FeatureSel::Chain(c.id))
         .expect("the bore rim");
-    let p = contour(20.0, 10.0, Side::Auto);
+    let p = contour(20.0, 10.0, Side::Inside);
     let (_, clean) = run(&world, &op(sel(&name, rim), p.clone(), AreaControls::default())).expect("default");
-    assert_eq!(clean, 0, "the bore wall contour is clean by default");
+    assert_eq!(clean, 0, "the bore wall contour is clean from inside");
     let out = AreaControls { containment: Some(Containment::Outside), ..Default::default() };
     // The ring 10 mm into the wall: the part-aware walk keeps only the
     // mouth, where it cuts air. Before #1927 that top-plane pass posted
@@ -100,6 +100,12 @@ fn a_containment_that_puts_the_tool_in_the_part_is_refused_by_name() {
     let err = run(&world, &op(sel(&name, rim), p, out)).expect_err("refused");
     assert!(err.contains("meets its wall at no level below the part top Z 20.000"), "{err}");
     assert!(err.contains("tool containment"), "{err}");
+    // Auto reads this blind bore's rim as material (its floor fills the
+    // XY silhouette) and resolves to Outside: the same mouth-only pass,
+    // refused by name with the side to set.
+    let err = run(&world, &op(sel(&name, rim), contour(20.0, 10.0, Side::Auto), AreaControls::default()))
+        .expect_err("Auto resolves Outside here");
+    assert!(err.contains("set Side to Inside"), "{err}");
 }
 
 /// A 40 x 40 x 5 plate with a 10 x 10 boss standing to Z 10, in a

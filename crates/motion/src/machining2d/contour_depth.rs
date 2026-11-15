@@ -315,11 +315,16 @@ pub(super) fn picked_law(
         }
         let at = ring.first().copied().unwrap_or(Point2::new(0.0, 0.0));
         let what = match side {
-            Side::Inside => "Inside of this ring is inside the part - it rings material, not a hole; use Outside or Auto",
-            Side::Outside => "Outside of this ring is inside the part - it rings a hole; use Inside or Auto",
-            // Auto picks the open side itself; what moved the ring into
-            // the part is the region (a containment or offset of it).
-            _ => "the ring stands in the part material - check the tool containment and the offsets of the picked boundary",
+            // The side here is the RESOLVED one (the app turns Auto into
+            // Inside or Outside first), and a tool containment moves the
+            // ring too - so the advice names both, never "use Auto".
+            Side::Inside => {
+                "the cutter Inside this ring stands in the part material - if the ring bounds material, set Side to Outside; else check the tool containment"
+            }
+            Side::Outside => {
+                "the cutter Outside this ring stands in the part material - if the ring bounds a hole, set Side to Inside; else check the tool containment"
+            }
+            _ => "the cutter stands in the part material - check Side and the tool containment",
         };
         return Err(super::face::GenError::Invalid(format!(
             "the picked ring at ({:.3}, {:.3}) meets its wall at no level below the part top Z {top:.3}: {what}",

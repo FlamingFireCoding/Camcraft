@@ -73,6 +73,9 @@ fn world_with(facets: Vec<Triangle>) -> (World, History) {
     (world, h)
 }
 
+/// A pick builder: the fixture world in, the selection out.
+type Picker = fn(&World) -> Vec<GeoSel>;
+
 fn pick(feature: FeatureSel) -> Vec<GeoSel> {
     vec![GeoSel { entity: "part".into(), feature }]
 }
@@ -170,7 +173,7 @@ fn gouges(w: &[Warning]) -> usize {
 #[test]
 fn outside_on_a_picked_hole_wall_is_refused_by_name_at_every_depth() {
     let sel = (Height::of(HeightReference::TopOfSelection, 0.0), Height::of(HeightReference::BottomOfSelection, 0.0));
-    let cases: [(&str, fn(&World) -> Vec<GeoSel>, OpParams); 4] = [
+    let cases: [(&str, Picker, OpParams); 4] = [
         ("chain, full depth", hole_chain, full(Side::Outside)),
         ("patch, full depth", hole_patch, full(Side::Outside)),
         ("patch, selection heights", hole_patch, params(Side::Outside, sel.0, sel.1)),
@@ -181,8 +184,8 @@ fn outside_on_a_picked_hole_wall_is_refused_by_name_at_every_depth() {
         let (world, mut h) = world_with(holed_plate());
         let items = items(&world);
         let err = generate(&world, &mut h, items, p).err().unwrap_or_else(|| panic!("{tag}: Outside of a hole must be refused"));
-        assert!(err.contains("Outside of this ring is inside the part"), "{tag}: {err}");
-        assert!(err.contains("use Inside or Auto"), "{tag}: {err}");
+        assert!(err.contains("the cutter Outside this ring stands in the part material"), "{tag}: {err}");
+        assert!(err.contains("set Side to Inside"), "{tag}: {err}");
         assert!(err.contains("part top Z 10.000"), "{tag}: {err}");
         let e = model::find_by_name(&world, "C").expect("op");
         assert!(model::toolpath_of(&world, &e).is_none(), "{tag}: nothing cached, nothing to post");
@@ -192,7 +195,7 @@ fn outside_on_a_picked_hole_wall_is_refused_by_name_at_every_depth() {
 #[test]
 fn inside_and_auto_on_the_hole_wall_cut_every_level_clean() {
     for side in [Side::Inside, Side::Auto] {
-        for items in [hole_chain as fn(&World) -> Vec<GeoSel>, hole_patch] {
+        for items in [hole_chain as Picker, hole_patch] {
             let (world, mut h) = world_with(holed_plate());
             let items = items(&world);
             let (t, w) = generate(&world, &mut h, items, full(side)).expect("a hole cut from inside is legal");
@@ -228,9 +231,9 @@ fn inside_on_a_picked_block_top_is_refused_by_name() {
     // stands in the block at every level below its top.
     let (world, mut h) = world_with(block());
     let items = top_face(&world, 10.0);
-    let err = generate(&world, &mut h, items, full(Side::Inside)).err().expect("Inside of a block is refused");
-    assert!(err.contains("Inside of this ring is inside the part"), "{err}");
-    assert!(err.contains("use Outside or Auto"), "{err}");
+    let err = generate(&world, &mut h, items, full(Side::Inside)).expect_err("Inside of a block is refused");
+    assert!(err.contains("the cutter Inside this ring stands in the part material"), "{err}");
+    assert!(err.contains("set Side to Outside"), "{err}");
 }
 
 #[test]
