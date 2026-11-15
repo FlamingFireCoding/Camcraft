@@ -84,6 +84,7 @@ pub struct LatheBodyDraft {
     pub place: LathePlacement,
     pub zone: Option<InsertZone>,
     pub csys: Vec<camcraft_app::tool_body_assembly::BodyCsys>,
+    pub pieces: Vec<camcraft_app::tool_body_assembly::BodyPiece>,
 }
 
 impl std::fmt::Debug for LatheBodyDraft {
@@ -146,6 +147,7 @@ impl State {
     /// the spindle is).
     pub(crate) fn import_lathe_body(&mut self, loaded: LoadedBody) {
         let d = &mut self.tool_body_ui;
+        d.pieces.clear();
         d.source = loaded.source;
         d.facets = Arc::from(loaded.facets);
         d.lathe = Some(LatheDraft::default());
@@ -210,7 +212,7 @@ impl State {
         if d.facets.is_empty() {
             return;
         }
-        let body = LatheBodyDraft { source: d.source.clone(), facets: Arc::clone(&d.facets), place: l.place, zone: l.zone(), csys: d.csys.clone() };
+        let body = LatheBodyDraft { source: d.source.clone(), facets: Arc::clone(&d.facets), place: l.place, zone: l.zone(), csys: d.csys.clone(), pieces: d.pieces.clone() };
         self.pending.push_back(CommandKind::SetLatheToolBody { name: self.tool_ui.name.clone(), body });
     }
 
@@ -218,7 +220,9 @@ impl State {
     /// the Tool pane by name and the draft stays for correction.
     pub(crate) fn run_set_lathe_tool_body(&mut self, name: &str, body: LatheBodyDraft) {
         let spec = LatheBodySpec { source: body.source, facets: body.facets.to_vec(), place: body.place, zone: body.zone };
-        let res = if body.csys.is_empty() {
+        let res = if !body.pieces.is_empty() {
+            SetToolBody::lathe_with_pieces(&self.world, name, spec, body.pieces)
+        } else if body.csys.is_empty() {
             SetToolBody::lathe(&self.world, name, Some(spec))
         } else {
             SetToolBody::lathe_with_csys(&self.world, name, spec, body.csys)

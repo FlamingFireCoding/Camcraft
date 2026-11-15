@@ -76,6 +76,8 @@ pub struct ToolBodyUi {
     /// #361 / #1040: named CSYS carried by the imported piece 0 (model frame
     /// until Apply body, tool frame after mirroring).
     pub csys: Vec<BodyCsys>,
+    /// Mirrored pieces in the same frame as `facets`; empty for a new import.
+    pub pieces: Vec<camcraft_app::tool_body_assembly::BodyPiece>,
     /// Modular assembly attachment fields.
     pub assembly: super::tool_body_assembly_ui::AssemblyUi,
 }
@@ -105,6 +107,7 @@ pub struct BodyDraft {
     pub axis: [f64; 3],
     pub offset: f64,
     pub csys: Vec<BodyCsys>,
+    pub pieces: Vec<camcraft_app::tool_body_assembly::BodyPiece>,
 }
 
 impl std::fmt::Debug for BodyDraft {
@@ -149,6 +152,7 @@ impl State {
         let lathe = self.lathe_draft_for(world.as_ref());
         let mut d = ToolBodyUi { tool: self.tool_ui.name.clone(), axis: [0.0, 0.0, 1.0], lathe, ..ToolBodyUi::default() };
         if let Some(b) = world {
+            d.pieces = camcraft_app::tool_body_assembly::pieces_of(&b);
             d.source = b.source;
             d.facets = b.facets;
             d.csys = b.pieces.first().map(|p| p.csys.clone()).unwrap_or_default();
@@ -179,6 +183,7 @@ impl State {
             }
             Ok(loaded) => {
                 let d = &mut self.tool_body_ui;
+                d.pieces.clear();
                 d.source = loaded.source;
                 d.facets = Arc::from(loaded.facets);
                 d.csys = loaded.csys;
@@ -292,7 +297,7 @@ impl State {
         if d.lathe.is_some() {
             return self.queue_apply_lathe_tool_body();
         }
-        let body = BodyDraft { source: d.source.clone(), facets: Arc::clone(&d.facets), axis: d.axis, offset: d.offset, csys: d.csys.clone() };
+        let body = BodyDraft { source: d.source.clone(), facets: Arc::clone(&d.facets), axis: d.axis, offset: d.offset, csys: d.csys.clone(), pieces: d.pieces.clone() };
         self.pending.push_back(CommandKind::SetToolBody { name: self.tool_ui.name.clone(), body: Some(body) });
     }
 
@@ -313,6 +318,10 @@ impl State {
         let clearing = body.is_none();
         let res = match body {
             None => SetToolBody::new(&self.world, name, None),
+            Some(b) if !b.pieces.is_empty() => {
+                let spec = ToolBodySpec { source: b.source, facets: b.facets.to_vec(), axis: b.axis, offset: b.offset };
+                SetToolBody::with_pieces(&self.world, name, spec, b.pieces)
+            }
             Some(b) if b.csys.is_empty() => {
                 let spec = ToolBodySpec { source: b.source, facets: b.facets.to_vec(), axis: b.axis, offset: b.offset };
                 SetToolBody::new(&self.world, name, Some(spec))

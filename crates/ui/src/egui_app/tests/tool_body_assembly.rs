@@ -167,3 +167,158 @@ fn editor_selects_target_piece_when_three_pieces_repeat_csys_names() {
     );
     assert!(harness.query_by_label("Assembly (3 piece(s))").is_some());
 }
+
+fn body(state: &State, tool: &str) -> camcraft_app::schema::ToolBody {
+    let entity = model::find_by_name(&state.world, tool).expect("tool");
+    tool_body::body_of(&state.world, &entity).expect("body")
+}
+
+fn assembly_editor(tool: &str) -> Harness<'static, ShellUi> {
+    let mut harness = editor_on(tool);
+    let head = if tool == MILL {
+        "tool_csys_box_iso13399.step"
+    } else {
+        "modular_lathe_head.step"
+    };
+    harness
+        .state_mut()
+        .state
+        .import_tool_body_from(&fixture(head));
+    if tool == INSERT {
+        harness
+            .state_mut()
+            .state
+            .tool_body_ui
+            .lathe
+            .as_mut()
+            .expect("lathe")
+            .place = LathePlacement {
+            radial: [1.0, 0.0, 0.0],
+            along: [0.0, 0.0, 1.0],
+            tip: [0.0; 3],
+        };
+    }
+    harness.run();
+    apply_body(&mut harness);
+    {
+        let st = &mut harness.state_mut().state;
+        st.tool_body_ui.assembly.target_csys = "MCS".into();
+        st.tool_body_ui.assembly.piece_csys = "CSW".into();
+        st.attach_tool_body_piece_from(&fixture("modular_clamp_unit.step"));
+    }
+    harness.run();
+    harness.run();
+    assert_eq!(pieces_len(&harness.state().state, tool), 2);
+    harness
+}
+
+fn apply_body(harness: &mut Harness<'static, ShellUi>) {
+    harness.get_by_label("Apply body").click();
+    harness.run();
+    harness.run();
+}
+
+#[test]
+fn editor_unchanged_apply_retains_modular_pieces_and_csys() {
+    for tool in [MILL, INSERT] {
+        let mut harness = assembly_editor(tool);
+        let original = body(&harness.state().state, tool);
+        assert!(original.pieces.iter().all(|p| !p.csys.is_empty()));
+        apply_body(&mut harness);
+        let applied = body(&harness.state().state, tool);
+        assert_eq!(
+            applied.pieces, original.pieces,
+            "Apply body must retain modular pieces: {tool}"
+        );
+        assert_eq!(applied.facets, original.facets);
+        // Separate pieces still support removal, and undo restores their records.
+        let mut buttons: Vec<_> = harness.get_all_by_label("Remove").collect();
+        buttons.swap_remove(1).click();
+        harness.run();
+        harness.run();
+        assert_eq!(pieces_len(&harness.state().state, tool), 1);
+        harness
+            .state_mut()
+            .state
+            .pending
+            .push_back(CommandKind::Undo);
+        harness.run();
+        harness.run();
+        assert_eq!(body(&harness.state().state, tool).pieces, original.pieces);
+        // A new import deliberately replaces, rather than reusing, the assembly.
+        let replacement = if tool == MILL { "tool_csys_box_iso13399.step" } else { "modular_lathe_head.step" };
+        harness.state_mut().state.import_tool_body_from(&fixture(replacement));
+        harness.run();
+        apply_body(&mut harness);
+        assert_eq!(pieces_len(&harness.state().state, tool), 1);
+    }
+}
+
+#[test]
+fn editor_placement_apply_transforms_all_modular_pieces_and_csys() {
+    use camcraft_app::tool_body_assembly::{transform_csys_lathe, transform_csys_spindle};
+    for tool in [MILL, INSERT] {
+        let mut harness = assembly_editor(tool);
+        let original = body(&harness.state().state, tool);
+        let mut expected = original.pieces.clone();
+        if tool == MILL {
+            let axis = [0.01, 0.0, 1.0];
+            let offset = 5.0;
+            harness.state_mut().state.tool_body_ui.axis = axis;
+            harness.state_mut().state.tool_body_ui.offset = offset;
+            for p in &mut expected {
+                p.facets = tool_body::place(&p.facets, axis, offset)
+                    .expect("placed piece")
+                    .into();
+                p.csys = transform_csys_spindle(&p.csys, axis, offset).expect("placed CSYS");
+            }
+        } else {
+            let place = LathePlacement {
+                radial: [0.0, 1.0, 0.0],
+                along: [0.0, 0.0, 1.0],
+                tip: [-3.0, 2.0, -5.0],
+            };
+            harness
+                .state_mut()
+                .state
+                .tool_body_ui
+                .lathe
+                .as_mut()
+                .expect("lathe")
+                .place = place;
+            for p in &mut expected {
+                p.facets = camcraft_app::tool_body_lathe::place(&p.facets, &place)
+                    .expect("placed piece")
+                    .into();
+                p.csys = transform_csys_lathe(&p.csys, &place).expect("placed CSYS");
+            }
+        }
+        harness.run();
+        apply_body(&mut harness);
+        let applied = body(&harness.state().state, tool);
+        assert_ne!(
+            applied.facets,
+            original.facets,
+            "placement must be applied: {}",
+            harness.state().state.status
+        );
+        assert_eq!(
+            applied.pieces, expected,
+            "all piece meshes and CSYS must move together: {tool}"
+        );
+        let combined: Vec<_> = applied
+            .pieces
+            .iter()
+            .flat_map(|p| p.facets.iter().copied())
+            .collect();
+        assert_eq!(applied.facets.as_ref(), combined);
+        harness
+            .state_mut()
+            .state
+            .pending
+            .push_back(CommandKind::Undo);
+        harness.run();
+        harness.run();
+        assert_eq!(body(&harness.state().state, tool).pieces, original.pieces);
+    }
+}
