@@ -11,11 +11,12 @@ When this site's release has a browser version,
 needs a browser with WebGL2: a current Chrome, Firefox, Edge or Safari), so
 you can look around the window described below; if it does not, that page
 says so, and the front page says which it is. The browser version opens a
-model or a project with the browser's file picker, and Save, Save As and Post
-download the project and the program. Its other file commands (recent files,
-machine, post, theme, fixture and tool library files, and the setup sheet,
-tool list and stock exports) are greyed and say why, and simulation playback
-does not work in it, so for real work, install a
+model or a project with the browser's file picker. Save and Save As download
+the project. Post downloads the program when Output is set to one combined
+program; one file for each operation is refused. Its other file commands
+(recent files, machine, post, theme, fixture and tool library files, and the
+setup sheet, tool list and stock exports) are greyed, or refused with the
+reason on the status line. For real work, install a
 [desktop build](@/guide/install.md).
 
 ## The window
