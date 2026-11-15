@@ -112,6 +112,11 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
         // #701: the role draft takes faces, edges, corners and walls alike -
         // the toolbar's pick mode stays the user's own.
         PickKinds { faces: true, edges: true, points: true, centres: false }
+    } else if state.boundary_pick.is_some() {
+        // #1727: an armed boundary row takes faces AND edges whatever the
+        // toolbar's pick mode - in Faces mode it took faces only, so no
+        // edge could ever bound the cut.
+        PickKinds { faces: true, edges: true, points: false, centres: false }
     } else {
         mode
     };

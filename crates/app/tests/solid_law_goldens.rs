@@ -182,6 +182,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         ("pocket_waterline_plate_with_island.cl", PocketStrategy::Waterline, false),
     ] {
         let p = PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 3.0,

@@ -121,10 +121,30 @@ pub(crate) fn num_feed(ui: &mut Ui, u: Unit, v: &mut f64) {
     num_prec(ui, u, v, 2, u.feed_suffix());
 }
 
+fn plain_drag(ui: &mut Ui, v: &mut f64) -> egui::Response {
+    let h = ui.spacing().interact_size.y;
+    ui.add_sized([CTRL_W, h], DragValue::new(v).speed(0.1))
+}
+
 /// Rpm, counts, ratios: no lens - these were never millimeters.
 pub(crate) fn num_plain(ui: &mut Ui, v: &mut f64) {
-    let h = ui.spacing().interact_size.y;
-    ui.add_sized([CTRL_W, h], DragValue::new(v).speed(0.1));
+    plain_drag(ui, v);
+}
+
+/// [`num`] with an accessible name (#1119), for inline fields without a
+/// dedicated row label.
+pub(crate) fn num_named(ui: &mut Ui, u: Unit, v: &mut f64, name: &str) {
+    named(num_sized(ui, u, v, 4, &format!(" {}", u.suffix()), CTRL_W), name);
+}
+
+/// [`num_feed`] with an accessible name (#1119).
+pub(crate) fn num_feed_named(ui: &mut Ui, u: Unit, v: &mut f64, name: &str) {
+    named(num_sized(ui, u, v, 2, &format!(" {}", u.feed_suffix()), CTRL_W), name);
+}
+
+/// [`num_plain`] with an accessible name (#1119).
+pub(crate) fn num_plain_named(ui: &mut Ui, v: &mut f64, name: &str) {
+    named(plain_drag(ui, v), name);
 }
 
 /// [`num`] inside a `prop_row`, named by that row's label (#1119).
@@ -137,8 +157,7 @@ pub(crate) fn num_row(ui: &mut Ui, u: Unit, v: &mut f64) {
 
 /// [`num_plain`] inside a `prop_row`, named by that row's label (#1119).
 pub(crate) fn num_plain_row(ui: &mut Ui, v: &mut f64) {
-    let h = ui.spacing().interact_size.y;
-    let r = ui.add_sized([CTRL_W, h], DragValue::new(v).speed(0.1));
+    let r = plain_drag(ui, v);
     if let Some(l) = super::layout::row_label_id(ui) {
         r.labelled_by(l);
     }
@@ -153,8 +172,7 @@ pub(crate) fn named(r: egui::Response, name: &str) -> egui::Response {
 
 /// [`num_plain`] named by the label beside it (#1119).
 pub(crate) fn num_plain_by(ui: &mut Ui, v: &mut f64, label: egui::Id) {
-    let h = ui.spacing().interact_size.y;
-    ui.add_sized([CTRL_W, h], DragValue::new(v).speed(0.1)).labelled_by(label);
+    plain_drag(ui, v).labelled_by(label);
 }
 
 /// Bounded integer count inside a `prop_row`, named by that row's

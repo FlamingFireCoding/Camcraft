@@ -252,9 +252,9 @@ pub(crate) struct Planned {
     /// The edge breaks the op was asked to cut (#303); empty for every
     /// kind but the chamfer and the deburr.
     pub breaks: Vec<crate::cl::EdgeBreak>,
-    /// The mark budget the op declares (#1595, `operation::mark_law`):
-    /// `Some` only for an Engrave or Trace on the finished part.
-    pub mark: Option<f64>,
+    /// The mark budget and target part(s) the op declares (#1595, #1627,
+    /// `operation::mark_law`): `Some` only for an Engrave or Trace.
+    pub mark: Option<crate::operation::mark_law::SimMark>,
     /// A sinker electrode's box atom (#541): `[hx, hy, gap]` - the face's
     /// half sizes and the condition's spark gap. The column verdict cuts
     /// it (`simulate_box`); the field eye has no box atom and refuses the
@@ -394,7 +394,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
             moves,
             // #529: only what the op itself declared, never wider.
             breaks: breaks::bounded(name, &op.params, cache.path.breaks),
-            mark: crate::operation::mark_law::budget_of(world, &op, tool.diameter * 0.5),
+            mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,
             cone,
