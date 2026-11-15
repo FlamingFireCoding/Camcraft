@@ -312,7 +312,23 @@ impl Body {
     /// # Errors
     /// A non-finite tolerance.
     pub fn deviate(&self, facets: &[Triangle], tol: f64) -> Result<Deviation, StockError> {
-        let top = deviate(&self.dex, facets, tol)?;
+        self.deviate_with_top_credit(facets, tol, |_, _| {})
+    }
+
+    /// Credit declared top cuts before combining the two face verdicts.
+    /// The underside keeps its own depths, locations and counts even when
+    /// a deeper top cut in the same column receives credit.
+    ///
+    /// # Errors
+    /// A non-finite tolerance.
+    pub fn deviate_with_top_credit(
+        &self,
+        facets: &[Triangle],
+        tol: f64,
+        credit: impl FnOnce(&mut Deviation, &Dexel),
+    ) -> Result<Deviation, StockError> {
+        let mut top = deviate(&self.dex, facets, tol)?;
+        credit(&mut top, &self.dex);
         if !self.floor_judged {
             return Ok(top);
         }
