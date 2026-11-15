@@ -161,7 +161,7 @@ pub(super) fn stitch_open_runs(
             continue;
         };
         let pts = compose_ring(&runs, &seq, rings.len(), &mut consumed);
-        rings.push((format!("the stitched rim of '{}'", runs[s].entity), pts, seq.len()));
+        rings.push((format!("{STITCHED_RIM} '{}'", runs[s].entity), pts, seq.len()));
     }
     stitch_across(&runs, &mut rings, &mut consumed)?;
     Ok((rings, consumed))
