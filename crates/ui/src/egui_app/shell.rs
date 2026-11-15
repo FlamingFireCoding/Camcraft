@@ -35,11 +35,9 @@ use super::theme;
 use super::viewcube;
 
 pub(crate) const VIEW3D_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-/// Ribbon strip height: the cell box plus the caption row and the pad
-/// (`theme::ribbon_h` = `cell_h + 26`), imgui's `height()` formula restated
-/// as one derivation off the token - 61 at the dark defaults. The panel
-/// sizes it live from `theme::current()`; this const is the test fixture's
-/// number (a theme that grows the cells grows the ribbon with it).
+/// Ribbon strip height: the rows and gaps of the theme plus its cell box
+/// (`theme::ribbon_h`) - 88 at the dark defaults. The panel sizes it live
+/// from `theme::current()`; this const is the test fixture's number.
 #[cfg(test)]
 pub(crate) const RIBBON_H: f32 = theme::ribbon_h(&theme::Tokens::DARK);
 /// Status strip height (imgui's single-line bottom bar).

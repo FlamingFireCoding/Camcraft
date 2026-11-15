@@ -80,6 +80,12 @@ mod names {
     pub const FONT_CAPTION: &str = "font_caption";
     pub const FONT_ROW: &str = "font_row";
     pub const FONT_ROW_SUFFIX: &str = "font_row_suffix";
+    pub const RIBBON_INK: &str = "ribbon_ink";
+    pub const RIBBON_TAB_H: &str = "ribbon_tab_h";
+    pub const RIBBON_CELL_TOP_GAP: &str = "ribbon_cell_top_gap";
+    pub const RIBBON_CAPTION_GAP: &str = "ribbon_caption_gap";
+    pub const RIBBON_CAPTION_ROW_H: &str = "ribbon_caption_row_h";
+    pub const RIBBON_BOTTOM_GAP: &str = "ribbon_bottom_gap";
 }
 
 /// The colour vocabulary, in table order (refusals quote it).
@@ -88,6 +94,7 @@ pub const COLOR_NAMES: &[&str] = &[
     names::TEXT_FAINT, names::BORDER, names::ACCENT, names::ACCENT_HOVER,
     names::FIELD_BG, names::FIELD_HOVER, names::FIELD_ACTIVE,
     names::SELECTION_BG, names::SELECTION_STROKE, names::VIEWPORT,
+    names::RIBBON_INK,
 ];
 /// The geometry vocabulary (every override is clamped through the
 /// same windows the built-in const guard checks).
@@ -97,6 +104,8 @@ pub const GEOM_NAMES: &[&str] = &[
     names::BUTTON_PADDING_Y, names::CONTROL_HEIGHT, names::ROW_HEIGHT,
     names::CELL_H, names::CELL_W, names::GLYPH_PX, names::FONT_LABEL,
     names::FONT_CAPTION, names::FONT_ROW, names::FONT_ROW_SUFFIX,
+    names::RIBBON_TAB_H, names::RIBBON_CELL_TOP_GAP, names::RIBBON_CAPTION_GAP,
+    names::RIBBON_CAPTION_ROW_H, names::RIBBON_BOTTOM_GAP,
 ];
 
 /// One theme, read and applied: what it is called, the token table it
@@ -363,7 +372,9 @@ fn apply_overlay(
         selection_stroke, viewport, radius_widget, radius_window, radius_menu,
         item_spacing_x, item_spacing_y, button_padding_x, button_padding_y,
         control_height, row_height, cell_h, cell_w, glyph_px, font_label,
-        font_caption, font_row, font_row_suffix,
+        font_caption, font_row, font_row_suffix, ribbon_ink, ribbon_tab_h,
+        ribbon_cell_top_gap, ribbon_caption_gap, ribbon_caption_row_h,
+        ribbon_bottom_gap,
     } = base;
     let c = |name: &str, keep: Color32| colors.get(name).copied().unwrap_or(keep);
     let f = |name: &str, keep: f32, win: (f32, f32)| {
@@ -390,6 +401,7 @@ fn apply_overlay(
         selection_bg: c(names::SELECTION_BG, selection_bg),
         selection_stroke: c(names::SELECTION_STROKE, selection_stroke),
         viewport: c(names::VIEWPORT, viewport),
+        ribbon_ink: c(names::RIBBON_INK, ribbon_ink),
         radius_widget: rad(names::RADIUS_WIDGET, radius_widget, clamp::RADIUS as f32),
         radius_window: rad(names::RADIUS_WINDOW, radius_window, 24.0),
         radius_menu: rad(names::RADIUS_MENU, radius_menu, 24.0),
@@ -406,6 +418,11 @@ fn apply_overlay(
         font_caption: f(names::FONT_CAPTION, font_caption, clamp::FONT),
         font_row: f(names::FONT_ROW, font_row, clamp::FONT),
         font_row_suffix: f(names::FONT_ROW_SUFFIX, font_row_suffix, clamp::FONT),
+        ribbon_tab_h: f(names::RIBBON_TAB_H, ribbon_tab_h, clamp::RIBBON_ROW),
+        ribbon_cell_top_gap: f(names::RIBBON_CELL_TOP_GAP, ribbon_cell_top_gap, clamp::RIBBON_GAP),
+        ribbon_caption_gap: f(names::RIBBON_CAPTION_GAP, ribbon_caption_gap, clamp::RIBBON_GAP),
+        ribbon_caption_row_h: f(names::RIBBON_CAPTION_ROW_H, ribbon_caption_row_h, clamp::RIBBON_ROW),
+        ribbon_bottom_gap: f(names::RIBBON_BOTTOM_GAP, ribbon_bottom_gap, clamp::RIBBON_GAP),
     }
 }
 
