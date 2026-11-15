@@ -4,16 +4,11 @@ description = "The Wire Contour, Sinker Burn and Sinker Side Burn operations: th
 weight = 5
 +++
 
-This page is the reference for the EDM kinds of the
-[operations](@/guide/operations.md) ribbon: **Wire Contour**, the one kind
-in the **Wire EDM** group, and **Sinker Burn** and **Sinker Side Burn**
-(captioned **Side Burn**), the two kinds in the **Sinker EDM** group. For
-the tabs themselves and what a click picks, see that page; for what a
-refusal means in general, see [Reading a refusal](@/guide/refusals.md).
+This page is the reference for the EDM kinds of the [operations](@/guide/operations.md) ribbon: **Wire Contour**, the one kind in the **Wire EDM** group, and **Sinker Burn** and **Sinker Side Burn** (captioned **Side Burn**), the two kinds in the **Sinker EDM** group. For the tabs themselves and what a click picks, see that page; for what a refusal means in general, see [Reading a refusal](@/guide/refusals.md).
 
-Lengths are in mm (inches in an inch document); feeds are in mm/min.
-The wire kinds come first; the sinker kinds follow from
-[Sinker EDM](#sinker-edm).
+Lengths are in mm (inches in an inch document); feeds are in mm/min. The wire kinds come first; the sinker kinds follow from [Sinker EDM](#sinker-edm).
+
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
 ## Wire EDM: the machine, the wire and the post
 
@@ -39,18 +34,19 @@ side) and a `wire_diameter`, taken from your machine's manual. None ship.
 CamCraft reads only those two numbers; power and flushing stay with the
 control, which picks them by the condition's id.
 
-**No post yet.** No post serves a wire EDM, so a Wire Contour can be
-created and generated but not posted. Posting stops with "a Wire Contour
-operation posts through a wire EDM post, which is not built yet - nothing
-is posted". The machine check judges only X/Y travel against the strokes
-the file states; it does not judge the wire against the part, the slug or
-the start hole, nor rpm, feed or tool numbers (a wire EDM has no spindle
-or tool changer). Simulate does not cut the stock for a wire cut ("a wire
-cut is verified by the wire laws, not the stock sim").
+**Posting and checks.** The built-in **Generic ISO Wire EDM** and **Sodick
+Wire EDM (Mark 21)** posts serve wire machines. A user `.cps` post can declare
+`wireEdm = true`; its manifest and machine support are checked before
+posting. See [Posting](@/guide/posting.md). Machine EDM codes and conditions
+must come from the real control's manual. The program checks the wire's
+kerf, profile, threading point, release plan and stated machine limits.
+Simulate does not remove stock for wire work: the wire checks judge it.
 
 ## Wire Contour
 
-**For:** cutting one closed profile through the workpiece with a vertical
+![Top view of wire travel from a start hole around a die profile.](../../operation-paths.svg#WireContour)
+
+**For:** cutting one profile through the workpiece with a vertical or tapered
 wire. A **die** keeps the opening (the wire runs inside the profile and
 the slug falls out); a **punch** keeps the part (the wire runs outside
 it). The cut starts at a start hole, leads straight to the path, goes once
@@ -58,13 +54,17 @@ round the profile counter-clockwise and leads back out the way it came.
 
 **Picks:** the one closed profile to cut, on the Geometry tab. Without a
 pick it cuts the model's through-silhouette, which must then be a single
-outline. Open runs are not cut.
+outline. An open cut-off uses one open run that reaches the stock edge at
+both ends and **Left** or **Right** side. **Run-out clearance** states
+how far the threading point and run-out stand beyond the stock.
 
 | Tab | Setting | Default |
 |---|---|---|
 | Geometry | Side | Die - the wire runs inside the profile; or Punch - the wire runs outside the profile |
 | Geometry | Start hole stated | off |
 | Geometry | Start hole X / Start hole Y | 0 / 0 when first ticked |
+| Geometry | Taper angle | 0 degrees (vertical) |
+| Geometry | 4-axis (upper and lower profiles) | off |
 | Heights | Top of workpiece | model top |
 | Heights | Bottom of workpiece | model bottom |
 | Passes | Condition | (none chosen) |
@@ -91,6 +91,34 @@ stand below the top.
 machine states. A condition the machine no longer states stays shown as
 "... (not stated by the machine)" until you pick another.
 
+**Passes and release.** **Add skim** adds a pass after the rough cut.
+Choose each skim's condition, reverse flag and list order. Use the move
+and remove buttons to change that order. Skims cannot be combined with
+taper, 4-axis, tabs or burnout. **Freed piece captured** states that a
+catcher, magnet or machine retention catches the freed piece. Alternatively,
+**Hold with tabs** needs an explicit count, width, profile positions and
+**Tab cut-off condition**. **Burn out the pocket (no core)** removes the
+interior with offset rings; **Wall clearance** must be at least the kerf
+offset. An incomplete release plan is refused.
+
+**Taper.** Positive **Taper angle** widens the profile downward from the
+top plane; negative narrows it. The machine must state a maximum taper.
+U/V machines use their guide geometry. Angle-word controls instead need
+an explicit positive-angle direction and corner rule in `edm.taper_angle`,
+plus the taper codes. CamCraft models `mitre` and `cone` corner rules.
+A cone lead-in that meets a corner is refused; move the start hole.
+An angle-word control cannot cut different upper and lower profiles.
+
+**4-axis profiles.** Pick one upper profile on the top plane and one lower
+profile on the bottom plane. Choose pairing by arc length or **By sync
+points**, and set **Twist tolerance**. Sync pairs can be typed or collected
+with **Pick sync points in the viewport**: click an upper-profile vertex,
+then a lower-profile vertex. **Apply** saves the pairs. A fan can hold one
+endpoint still while the other walks a span. Crossed pair order, identical
+rulings and an ambiguous whole turn at one endpoint are refused. Separate
+open runs are not stitched into a profile; select a face or one closed
+edge chain.
+
 **Inside corners.** No inside corner can be cut tighter than the kerf
 offset. A corner, slot or neck the wire cannot reach is refused by name,
 never rounded for you; round it in the model or cut with a thinner wire
@@ -115,36 +143,17 @@ At **Generate**, about the geometry and the start hole (each begins "wire
 contour:"):
 
 - "no profile to cut";
-- "the profile is open (... open run(s) picked) - this operation cuts one
-  CLOSED profile; an open profile has no punch or die side";
-- "... closed profiles are given - one operation cuts one profile from
-  its own start hole; pick one, and give each profile its own operation";
+- An open profile with Die or Punch side: use Left or Right for a supported
+  open cut. Multiple closed profiles need separate operations and starts.
 - "the profile crosses itself - a wire path cannot cross its own kerf";
-- "the profile has no area (a zero-length or collinear ring) - there is
-  nothing to cut around";
-- "the profile is too small for the wire - no point inside it stands the
-  kerf offset (... mm) from its edge";
-- "the profile narrows to a neck under the kerf width (... mm) - the wire
-  cannot pass it without burning the die";
-- "the profile has a slot or notch narrower than the kerf width (... mm)
-  - the wire cannot enter it; widen it or use a thinner wire";
-- "an inside corner or slot of the profile near X... Y... is tighter than
-  the wire can cut on the ... side - the minimum inside radius is ... mm
-  (wire radius ... + spark gap ...), and the kerf would leave ... mm
-  standing there; round it to at least that radius, or cut with a thinner
-  wire";
+- A profile with no area, or a neck, slot or inside corner tighter than
+  the kerf allows: correct the profile or use a thinner wire condition.
 - "no start hole is stated - a closed profile is cut from a threading
   point (...); the wire cannot be threaded through solid material" - tick
   **Start hole stated** and give X and Y;
-- "the start hole at X... Y... stands on the wire path itself - move it
-  off the profile by more than the kerf offset (... mm)";
-- "the start hole at X... Y... stands closer to the profile than the kerf
-  offset (... mm) - the wire would burn the ... there; move it away from
-  the profile";
-- "the start hole at X... Y... lies outside the profile - a die is cut
-  from a start hole inside it, in the slug";
-- "the start hole at X... Y... lies inside the profile - a punch is cut
-  from outside it; the wire would burn through the punch";
+- A start hole on the path or within its kerf offset: move the hole
+  farther from the profile. A die threads inside the slug; a punch threads
+  outside the kept part.
 - "the workpiece's bottom (...) does not stand below its top (...)".
 
 A message that names a place can be clicked to frame it. For other
@@ -226,6 +235,8 @@ atom) judges the burn".
 
 ## Sinker Burn
 
+![Side view of an electrode plunging into a cavity and retracting.](../../operation-paths.svg#SinkerBurn)
+
 **For:** burning a cavity the shape of the electrode's face, straight
 down Z. The electrode rapids to the approach plane above the burn point,
 feeds down to the burn depth (its tip a spark gap above the burn floor),
@@ -270,7 +281,26 @@ The generated path's notes give the depth and datum, the burn floor and
 tip Z, the spark gap and the cavity floor datum, and the orbit's pattern,
 radius and move count.
 
+**Rough and finish sizing.** **Electrode pass** selects Single electrode,
+Rough (undersized) or Finish (to size). Rough and Finish also state
+**Finished cavity X/Y**. The condition's undersize sizes the electrode.
+The size check includes twice the sum of spark gap and XY orbit radius.
+A rough must stay inside the finished cavity; a finish must reach its
+size. The tip's floor stand is undersize minus orbit radius. A finish
+vector orbit needs a direction count divisible by four to reach all four
+walls. An orbit that overburns or leaves a finish short is refused.
+
+**Layers and wear.** **Layer step** can divide the plunge into layers.
+**Measured wear** and **Measured over** state length lost over burned
+depth. Both values are required together. Measured wear takes priority
+over the condition's rate; with neither, the burn is uncompensated.
+The path notes state the rate, layer step, deepest commanded tip and
+remaining electrode length. Compensation still obeys the floor and
+electrode-length checks.
+
 ## Sinker Side Burn
+
+![Side view of an electrode plunging, moving toward one wall and returning.](../../operation-paths.svg#SinkerSideBurn)
 
 **For:** moving one wall of a burned cavity outward by a small amount,
 after the plunge. The electrode plunges as a Sinker Burn does, then feeds
@@ -278,8 +308,6 @@ sideways along one axis by the amount you state, comes back to the
 centre, and rapids up. Choose it to finish or size one side of a cavity
 with an electrode made undersize; for an even enlargement on every side,
 orbit a Sinker Burn instead.
-
-**Picks:** none, as for the Sinker Burn.
 
 The Geometry, Heights and Feeds tabs, and **Depth from** and **Depth**
 on Passes, are the Sinker Burn's, with the same defaults. In place of the
@@ -299,6 +327,11 @@ you. The seed numbers are a draft to edit, not values for your machine.
 
 The generated path's notes give the move and its wall, the burn Z and
 tip Z, the undersize, the spark gap and the allowance left.
+
+Side Burn also offers **Layer step**, **Measured wear** and **Measured
+over**. Only measured axial wear applies; the condition's wear rate alone
+does not compensate a side burn. The lateral move and return run at the
+last compensated tip. Side wear does not lengthen the lateral move.
 
 ## Sinker refusals
 
@@ -352,22 +385,16 @@ About the depth and the electrode (each begins "sinker burn:"):
 - "the burn floor Z ... does not enter the work (its top is Z ...)";
 - "the approach plane Z ... must stand above the work top Z ..." - raise
   the approach plane on the Heights tab;
-- "the spark gap ... is not smaller than the burn's ... below the work
-  top - the electrode would never enter the work" - burn deeper, or pick
-  a condition with a smaller gap;
-- "the burn reaches ... below the work top, but the electrode is only ...
-  long - its holder would enter the work" - use a longer electrode (its
-  Flute length), or burn less deep.
+- A spark gap as large as the burn depth: burn deeper or select a smaller
+  gap so the electrode enters the work.
+- A burn deeper than the electrode length: use a longer electrode or
+  burn less deeply so the holder stays above the work.
 
 About the side burn's allowance (each begins "sinker side burn:"):
 
-- "the condition's spark gap ... exceeds the electrode undersize ... per
-  side - the plunge alone would burn past the finished wall; pick a
-  condition whose gap the undersize can honour";
-- "a lateral move of ... toward ... burns into the part - the side's
-  allowance is ... (undersize ... less spark gap ...)" - move the wall
-  less, or use a more undersized electrode;
+- A gap larger than the electrode undersize: choose a condition whose
+  gap fits the undersize.
+- A move larger than undersize minus gap: move the wall less or use a
+  more undersized electrode.
 - "a Sinker Side Burn moves along one axis - it takes no orbit (orbit
   with a Sinker Burn)".
-
-For other messages, see [Troubleshooting](@/guide/troubleshooting.md).

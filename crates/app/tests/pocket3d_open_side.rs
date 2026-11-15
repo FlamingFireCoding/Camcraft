@@ -296,3 +296,128 @@ fn stock_far_past_the_silhouette_is_cleared_to_the_stock_outline() {
 fn no_3d_pocket_kind_carries_a_tilt() {
     assert!(pocket3d().tilt().is_none(), "a 3D Pocket carries no 3+2 index");
 }
+
+/// A cached 3D cut must be checked against parts added after generation,
+/// even when the rotated stock prevents the program simulation from running.
+fn added_part_blocks_live_post(world: World, params: OpParams, tool_name: &str, tag: &str, inner: impl FnOnce(&Toolpath) -> Mesh) {
+    use camcraft_app::commands::GenerateOperation;
+    use camcraft_app::operation::OpStatus;
+    use camcraft_app::posting;
+
+    let mut h = History::default();
+    if tool_name != TOOL {
+        let tool = catalog().into_iter().find(|(n, _)| *n == tool_name).map(|(_, t)| t).expect("catalog tool");
+        h.execute(&world, AddTool::new(&world, tool_name, tool).expect("tool"));
+    }
+    h.execute(
+        &world,
+        CreateOperation::new(&world, tag, tool_name, SrcRef::Entity("part".into()), params).expect("create"),
+    );
+    h.execute(&world, GenerateOperation::new(&world, tag).expect("generate"));
+    let e = model::find_by_name(&world, tag).expect("operation");
+    let cached = model::toolpath_of(&world, &e).expect("cached path");
+    assert!(!cached.path.moves.is_empty(), "the clean cut exists");
+    assert!(!cached.warnings.iter().any(|w| w.blocks_post()), "clean generation: {:?}", cached.warnings);
+    assert_eq!(operation::status_of(&world, &e), OpStatus::Ok);
+
+    let out = std::env::temp_dir().join(format!("camcraft-live-3d-{tag}-{}.nc", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    posting::post_setup(&world, &out).unwrap_or_else(|err| panic!("the clean path posts: {err}"));
+    assert!(out.exists(), "the clean post writes an NC file");
+    std::fs::remove_file(&out).expect("remove clean output");
+
+    let inner = inner(&cached.path);
+    h.execute(&world, ImportModel::from_mesh("inner", inner));
+    assert_eq!(
+        operation::status_of(&world, &e),
+        OpStatus::Ok,
+        "adding a neighbour leaves the cached path fresh"
+    );
+    let result = posting::post_setup(&world, &out);
+    let wrote = out.exists();
+    let _ = std::fs::remove_file(&out);
+    let err = result.expect_err("a cached cut through an added part must never post");
+    assert!(
+        err.contains(&format!("{tag} now cuts part 'inner'")),
+        "refuse by operation and part name: {err}"
+    );
+    assert!(err.contains("regenerate"), "{err}");
+    assert!(!wrote, "the refused post writes no NC file");
+}
+
+#[test]
+fn pocket3d_post_refuses_a_part_added_after_clean_generation_on_rotated_stock() {
+    let world = world(None);
+    let mut h = History::default();
+    let at = Location {
+        rot: camcraft_app::geometry::quat_from_yaw(std::f64::consts::FRAC_PI_2),
+        ..Location::default()
+    };
+    h.execute(
+        &world,
+        SetStock::new(
+            &world,
+            StockShape::Box {
+                dx: 30.0,
+                dy: 30.0,
+                dz: STOCK_TOP,
+            },
+            at,
+        )
+        .expect("turned stock"),
+    );
+    added_part_blocks_live_post(world, pocket3d(), TOOL, "pocket-live", |_| {
+        voxel_mesh(&[5.0, 10.0], &[5.0, 10.0], &[FLOOR, TOP], |_, _, _| true)
+    });
+}
+
+#[test]
+fn multiaxis_rough_post_refuses_a_part_added_after_clean_generation_on_rotated_stock() {
+    let world = new_world();
+    let mut h = History::default();
+    let facets = cube(Point3::new(-20.0, -20.0, -20.0), Point3::new(20.0, 20.0, -10.0)).facets.to_vec();
+    h.execute(&world, ImportModel::from_mesh("part", Mesh::from_facets(facets)));
+    let at = Location {
+        pos: Point3::new(0.0, 0.0, -20.0),
+        rot: camcraft_app::geometry::quat_from_yaw(std::f64::consts::FRAC_PI_2),
+    };
+    h.execute(
+        &world,
+        SetStock::new(&world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 20.0 }, at).expect("turned stock"),
+    );
+    let params = OpParams::MultiAxisRough {
+        links: Links::ROUGH3D,
+        tolerance: 0.1,
+        stepover: 3.0,
+        stock_to_leave: 0.0,
+        clearance_z: Height::fixed(5.0),
+        retract_z: None,
+        top_z: Height::fixed(0.0),
+        bottom_z: Height::fixed(-5.0),
+        stepdown: 5.0,
+        feed: 1200.0,
+        plunge_feed: 300.0,
+        climb: true,
+        strategy: PocketStrategy::Zigzag,
+        entry: Entry3D::Plunge,
+        helix_radius: 1.0,
+        optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
+        lead_deg: 0.0,
+        lag_deg: 0.0,
+        max_tilt_deg: 1.0,
+        shank_avoid: false,
+    };
+    added_part_blocks_live_post(world, params, "BN-0600", "multi-live", |path| {
+        let p = path
+            .moves
+            .iter()
+            .find(|m| m.kind == MoveKind::Feed && m.to.z < 0.0)
+            .expect("a feed below the stock top")
+            .to;
+        Mesh::from_facets(
+            cube(Point3::new(p.x - 1.0, p.y - 1.0, p.z - 1.0), Point3::new(p.x + 1.0, p.y + 1.0, p.z + 1.0))
+                .facets
+                .to_vec(),
+        )
+    });
+}

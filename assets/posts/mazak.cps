@@ -22,6 +22,11 @@ workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets not verified here 
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 millSpindleReverse = true; // reads PARAM MillSpindle (#988, #1411): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
 
+// #1388: optional explanations; conservative house budgets, not control maxima.
+explains = "paren";
+commentMax = 60;
+explainBlockMax = 80;
+
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
 
@@ -82,7 +87,12 @@ function block(words) {  // join the non-empty words onto one line
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    // Omit an explanation that does not fit; never cut executable words.
+    if (c && line.length + 1 + c.length <= explainBlockMax) line += " " + c;
+    writeln(line);
+  }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative

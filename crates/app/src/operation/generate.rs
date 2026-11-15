@@ -513,10 +513,28 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                             "{comp_name} compensation does not ride open runs - pick closed rings, or choose In computer"
                         )));
                     }
+                    // #1777: a run on a part is cut on its air side, read
+                    // from the part's sections; Side applies to rings only.
+                    let section_at = |z: f64| match super::material::section(&m_gen.facets, z) {
+                        Ok(r) => Ok(Some(r)),
+                        Err(GenError::Empty(_)) => Ok(None),
+                        Err(e) => Err(e),
+                    };
                     for run in &runs {
                         // #1015: a run refused shows the rings and runs before it.
-                        let next = machining2d::contour_along_chain(run, &cp).map_err(|e| e.after_moves(&path.moves))?;
+                        let next = if part_solid {
+                            machining2d::contour_open_run(run, &cp, &section_at)
+                        } else {
+                            machining2d::contour_along_chain(run, &cp)
+                        }
+                        .map_err(|e| e.after_moves(&path.moves))?;
+                        let said = next.notes.clone();
                         path = stitch(path, next);
+                        for n in said {
+                            if !path.notes.contains(&n) {
+                                path.notes.push(n);
+                            }
+                        }
                     }
                     (region, path)
                 }
@@ -555,6 +573,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -591,6 +610,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     helix_radius: *helix_radius,
                     optimal_load: *optimal_load,
                     blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
                 },
                 &holes,
             )?;
@@ -613,6 +633,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             method,
+            blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -640,12 +662,20 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry: *entry,
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
-                blend_turns: false,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
             };
             // #1509: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let path = match method {
                 machining2d::AdaptiveMethod::Spiral => machining2d::pocket(&region, &pp)?,
+                // #1733: the loops are arcs already; the option is
+                // refused by name, never ignored (`sane` says it first).
+                machining2d::AdaptiveMethod::Trochoidal if *blend_turns => {
+                    return Err(GenError::Invalid(
+                        "arc turns at corners are not available with the Trochoidal method".into(),
+                    ));
+                }
                 machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal(&region, &pp)?,
             };
             (region, path)
@@ -659,6 +689,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             climb,
             entry,
             helix_radius,
+            blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -688,7 +720,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     entry: *entry,
                     helix_radius: *helix_radius,
                     optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
-                    blend_turns: false,
+                    blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
                 },
             )?;
             (region, path)
@@ -1725,17 +1758,22 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             climb,
             entry,
             helix_radius,
+            extend_start,
+            extend_end,
             ..
         } => {
             // #1504: picks bound the room the slot may cut in - a slot
             // too wide, too long or placed past them is refused by name,
-            // never cut across the wall.
+            // never cut across the wall. The room judges the AUTHORED
+            // slot: an end extension (#1731) runs past the picks by the
+            // user's choice, and the gouge laws judge where it goes.
             if let Some(room) = slot_bound.take() {
                 room?.judge(*a, *b, *width)?;
             }
+            let (ea, eb) = machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
             let path = machining2d::slot(
-                *a,
-                *b,
+                ea,
+                eb,
                 &SlotParams {
                     links: lk,
                     tool_diameter: d,
@@ -2093,7 +2131,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     } else {
                         super::cross_spindle::Solids { source: &keep_parts, stock: Some(&material.facets), kept: &keep_parts, neighbours: &[] }
                     };
-                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit)?
+                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?
                 }
             } else {
                 // M13.5 A: on a plain lathe the Drill kind is the
@@ -3093,7 +3131,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // for a whole-model source, the setup's parts for a stock one
             // (#1607: every stock-kept kind but the marks and the holes).
             if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&material.facets).or((!keep_parts.is_empty() && !parts_marked && !parts_holed && !parts_crossed).then_some(&keep_parts)) {
+                let start = warns.len();
                 contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
             }
             // #1631: a hole kind off the stock - the setup's parts by the
             // containment law, its declared holes' modelled walls excused.
@@ -3262,7 +3302,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1603: the keep law in the plane's frame.
             let keep_local = (!keep_parts.is_empty()).then(|| f.local_facets(&keep_parts));
             if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| !parts_marked && !parts_holed && !parts_crossed)) {
+                let start = warns.len();
                 contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
             }
             // #1631: a hole kind off the stock, in the plane's frame.
             if let Some(kept) = keep_local.as_ref().filter(|_| parts_holed) {
