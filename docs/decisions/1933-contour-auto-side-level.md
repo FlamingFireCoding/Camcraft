@@ -14,9 +14,14 @@ full XY silhouette. The law is `machining2d::auto_side`
   material" at a fill of 0.5 or more (the threshold of the old fill law).
 - Material inside only: Outside. Material outside only: Inside. The first
   probe that decides wins.
-- The probes disagree, or neither decides (material on both sides, or on
-  neither): the generate is refused by name, "Side Auto cannot tell ... -
+- The probes disagree, or they see material on both sides and no probe
+  decides: the generate is refused by name, "Side Auto cannot tell ... -
   set Side to Inside or Outside". Auto never guesses.
+- Neither probe sees material on either side (a sheet part with no
+  volume, a ring that floats over the part): the old law decides, from
+  the part's XY outline. A ring that bounds outline material is cut
+  Outside, a ring that bounds air Inside. The outline is computed only
+  in this case, because it costs a full projection.
 - No readable part (a sketch, no facets) or no pick height: Outside, the
   side that Auto always took for an outline.
 
@@ -35,6 +40,10 @@ rim (both sides are metal under a floor).
   steps and pockets in a pocket.
 - A wider band or a probe deeper under the rim. Dropped: a deeper probe
   can pass the floor of a shallow counterbore and read the wrong wall.
+
+- Refuse also when no probe sees material. Dropped: the existing sheet
+  fixtures (a flat disc, a bored flat plate in `operations.rs`) have no
+  section at any level, and the outline law gives them the right side.
 
 **Known limit.** Picks at several levels share one verdict, read over
 their combined span. If the probes disagree, the op is refused by name.

@@ -55,6 +55,8 @@ fn pick_span(
 
 /// Side Auto for the rings `loops` that the picks `items` spell. No
 /// readable material, or no pick height, keeps the old answer: Outside.
+/// The part's XY outline rides along for rings with no material at
+/// their level (a sheet part): there the outline decides, as before.
 pub(super) fn auto_side_of_picks(
     world: &World,
     setup: Option<&str>,
@@ -74,5 +76,5 @@ pub(super) fn auto_side_of_picks(
         None => m.facets,
     };
     let rings = Region::new(loops.to_vec())?;
-    machining2d::auto_side(&rings, &facets, &m.bodies, lo, hi)
+    machining2d::auto_side(&rings, &facets, &m.bodies, || silhouette(&facets), lo, hi)
 }

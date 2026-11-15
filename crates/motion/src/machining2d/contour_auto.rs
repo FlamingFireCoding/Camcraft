@@ -36,21 +36,34 @@ pub enum AutoSide {
     Undecided(String),
 }
 
-/// One probe's verdict: `Some(true)` = Inside, `Some(false)` = Outside.
-fn probe(rings: &Region, band: &Region, facets: &[Triangle], bodies: &[Range<usize>], z: f64) -> Result<Option<bool>, GenError> {
+/// What one probe section reads on the two sides of the rings.
+#[derive(Clone, Copy, PartialEq)]
+enum Read {
+    /// Material inside only: the cutter goes outside.
+    Outside,
+    /// Material outside only: the cutter goes inside.
+    Inside,
+    /// Material on both sides.
+    Both,
+    /// No material on either side, or no section to read.
+    Neither,
+}
+
+fn probe(rings: &Region, band: &Region, facets: &[Triangle], bodies: &[Range<usize>], z: f64) -> Result<Read, GenError> {
     let Ok(sec) = material_above_of(facets, bodies, z) else {
-        return Ok(None);
+        return Ok(Read::Neither);
     };
     let (whole, ring_band) = (rings.area().abs(), band.area().abs());
-    if whole <= 0.0 || ring_band <= 0.0 {
-        return Ok(None);
+    if whole <= 0.0 || ring_band <= 0.0 || sec.is_empty() {
+        return Ok(Read::Neither);
     }
     let inside = rings.intersect(&sec)?.area().abs() / whole >= HOLDS;
     let outside = band.intersect(&sec)?.area().abs() / ring_band >= HOLDS;
     Ok(match (inside, outside) {
-        (true, false) => Some(false),
-        (false, true) => Some(true),
-        _ => None,
+        (true, false) => Read::Outside,
+        (false, true) => Read::Inside,
+        (true, true) => Read::Both,
+        (false, false) => Read::Neither,
     })
 }
 
@@ -61,13 +74,19 @@ fn probe(rings: &Region, band: &Region, facets: &[Triangle], bodies: &[Range<usi
 /// decides. A blind bore rim reads air inside and metal outside at its
 /// mouth (Inside), as a through hole does; a boss or an outer wall reads
 /// metal inside and air outside (Outside). A floor rim reads metal on
-/// both sides below it and decides from above. When no probe decides, or
-/// the two probes disagree, the answer is [`AutoSide::Undecided`] with
-/// the sentence to show - never a guess.
+/// both sides below it and decides from above. When no probe sees any
+/// material near the rings (a sheet part with no volume, a ring that
+/// floats over the part), the part's XY outline (`plan`, read only
+/// then: it costs a full projection) decides as it
+/// always did: rings that bound material are cut Outside, rings that
+/// bound air Inside. When the probes see material but cannot decide, or
+/// the two disagree, the answer is [`AutoSide::Undecided`] with the
+/// sentence to show - never a guess.
 pub fn auto_side(
     rings: &Region,
     facets: &[Triangle],
     bodies: &[Range<usize>],
+    plan: impl FnOnce() -> Option<Region>,
     z_lo: f64,
     z_hi: f64,
 ) -> Result<AutoSide, GenError> {
@@ -77,18 +96,32 @@ pub fn auto_side(
         return Ok(AutoSide::Outside);
     }
     let band = rings.offset(AUTO_BAND)?.difference(rings)?;
-    let (below, above) = (z_hi - AUTO_PROBE_DZ, z_lo + AUTO_PROBE_DZ);
-    let first = probe(rings, &band, facets, bodies, below)?;
-    let second = probe(rings, &band, facets, bodies, above)?;
+    let first = probe(rings, &band, facets, bodies, z_hi - AUTO_PROBE_DZ)?;
+    let second = probe(rings, &band, facets, bodies, z_lo + AUTO_PROBE_DZ)?;
     let undecided = |why: &str| {
         AutoSide::Undecided(format!(
             "Side Auto cannot tell which side of the picked ring holds the material at Z {z_hi:.3}: {why} - set Side to Inside or Outside"
         ))
     };
+    let decisive = |r: Read| matches!(r, Read::Inside | Read::Outside);
     Ok(match (first, second) {
-        (Some(a), Some(b)) if a != b => undecided("the part stands inside the ring on one side of that level and outside it on the other"),
-        (Some(true), _) | (None, Some(true)) => AutoSide::Inside,
-        (Some(false), _) | (None, Some(false)) => AutoSide::Outside,
-        (None, None) => undecided("the part stands on both sides of the ring there, or on neither"),
+        (a, b) if decisive(a) && decisive(b) && a != b => {
+            undecided("the part stands inside the ring on one side of that level and outside it on the other")
+        }
+        (Read::Inside, _) | (_, Read::Inside) => AutoSide::Inside,
+        (Read::Outside, _) | (_, Read::Outside) => AutoSide::Outside,
+        (Read::Neither, Read::Neither) => from_plan(rings, plan().as_ref())?,
+        _ => undecided("the part stands on both sides of the ring there"),
     })
+}
+
+/// The outline law for rings with no material at their level: the share
+/// of the rings' area that the part's XY outline covers.
+fn from_plan(rings: &Region, plan: Option<&Region>) -> Result<AutoSide, GenError> {
+    let whole = rings.area().abs();
+    let Some(plan) = plan.filter(|_| whole > 0.0) else {
+        return Ok(AutoSide::Outside);
+    };
+    let fill = rings.intersect(plan)?.area().abs() / whole;
+    Ok(if fill < HOLDS { AutoSide::Inside } else { AutoSide::Outside })
 }

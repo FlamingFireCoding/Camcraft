@@ -45,11 +45,11 @@ fn frame(z0: f64, z1: f64) -> Vec<([f64; 3], [f64; 3])> {
 #[test]
 fn the_rim_of_a_block_reads_outside_and_a_frame_opening_reads_inside() {
     let (f, b) = boxes(&[([-10.0, -10.0, 0.0], [10.0, 10.0, 10.0])]);
-    assert_eq!(auto_side(&square(10.0), &f, &b, 10.0, 10.0).expect("law"), AutoSide::Outside);
+    assert_eq!(auto_side(&square(10.0), &f, &b, || None, 10.0, 10.0).expect("law"), AutoSide::Outside);
     let (f, b) = boxes(&frame(0.0, 10.0));
-    assert_eq!(auto_side(&square(10.0), &f, &b, 10.0, 10.0).expect("law"), AutoSide::Inside);
+    assert_eq!(auto_side(&square(10.0), &f, &b, || None, 10.0, 10.0).expect("law"), AutoSide::Inside);
     // A wall patch spans the full height: the probe under its top decides.
-    assert_eq!(auto_side(&square(10.0), &f, &b, 0.0, 10.0).expect("law"), AutoSide::Inside);
+    assert_eq!(auto_side(&square(10.0), &f, &b, || None, 0.0, 10.0).expect("law"), AutoSide::Inside);
 }
 
 #[test]
@@ -59,20 +59,31 @@ fn a_floor_rim_decides_from_above() {
     let mut parts = frame(4.0, 10.0);
     parts.push(([-15.0, -15.0, 0.0], [15.0, 15.0, 4.0]));
     let (f, b) = boxes(&parts);
-    assert_eq!(auto_side(&square(10.0), &f, &b, 4.0, 4.0).expect("law"), AutoSide::Inside);
+    assert_eq!(auto_side(&square(10.0), &f, &b, || None, 4.0, 4.0).expect("law"), AutoSide::Inside);
 }
 
 #[test]
-fn a_ring_mid_solid_or_in_open_air_is_undecided_by_name() {
+fn a_ring_mid_solid_is_undecided_by_name() {
     let (f, b) = boxes(&[([-20.0, -20.0, 0.0], [20.0, 20.0, 10.0])]);
-    let AutoSide::Undecided(why) = auto_side(&square(10.0), &f, &b, 5.0, 5.0).expect("law") else {
+    let AutoSide::Undecided(why) = auto_side(&square(10.0), &f, &b, || None, 5.0, 5.0).expect("law") else {
         panic!("metal on both sides must not decide");
     };
     assert!(why.contains("set Side to Inside or Outside") && why.contains("Z 5.000"), "{why}");
-    let AutoSide::Undecided(why) = auto_side(&square(10.0), &f, &b, 15.0, 15.0).expect("law") else {
-        panic!("air on both sides must not decide");
-    };
-    assert!(why.contains("on both sides of the ring there, or on neither"), "{why}");
+    assert!(why.contains("on both sides of the ring there"), "{why}");
+}
+
+#[test]
+fn a_ring_with_no_material_at_its_level_reads_the_part_outline() {
+    // A ring over a block, in open air: the XY outline decides, as the
+    // old law did (a sheet part has no section at any level).
+    let (f, b) = boxes(&[([-20.0, -20.0, 0.0], [20.0, 20.0, 10.0])]);
+    let plan = square(20.0);
+    assert_eq!(auto_side(&square(10.0), &f, &b, || Some(plan.clone()), 15.0, 15.0).expect("law"), AutoSide::Outside);
+    let ring = Region::new(vec![Loop::new(vec![
+        Point2::new(30.0, 30.0), Point2::new(40.0, 30.0), Point2::new(40.0, 40.0), Point2::new(30.0, 40.0),
+    ]).expect("loop")]).expect("region");
+    assert_eq!(auto_side(&ring, &f, &b, || Some(plan.clone()), 15.0, 15.0).expect("law"), AutoSide::Inside);
+    assert_eq!(auto_side(&ring, &f, &b, || None, 15.0, 15.0).expect("law"), AutoSide::Outside);
 }
 
 #[test]
@@ -82,7 +93,7 @@ fn probes_that_disagree_are_undecided_by_name() {
     let mut parts = frame(5.0, 10.0);
     parts.push(([-10.0, -10.0, 0.0], [10.0, 10.0, 5.0]));
     let (f, b) = boxes(&parts);
-    let AutoSide::Undecided(why) = auto_side(&square(10.0), &f, &b, 0.0, 10.0).expect("law") else {
+    let AutoSide::Undecided(why) = auto_side(&square(10.0), &f, &b, || None, 0.0, 10.0).expect("law") else {
         panic!("disagreeing probes must not decide");
     };
     assert!(why.contains("inside the ring on one side of that level and outside it on the other"), "{why}");
@@ -90,5 +101,5 @@ fn probes_that_disagree_are_undecided_by_name() {
 
 #[test]
 fn no_part_to_read_keeps_outside() {
-    assert_eq!(auto_side(&square(10.0), &[], &[], 0.0, 10.0).expect("law"), AutoSide::Outside);
+    assert_eq!(auto_side(&square(10.0), &[], &[], || None, 0.0, 10.0).expect("law"), AutoSide::Outside);
 }

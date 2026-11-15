@@ -86,7 +86,7 @@ fn a_containment_that_puts_the_tool_in_the_part_is_refused_by_name() {
         .find_map(|c| {
             let p = feature::chain_points(&f, &c);
             (c.closed && p.iter().all(|q| (q[2] - 20.0).abs() < 1e-6 && (q[0].hypot(q[1]) - 12.5).abs() < 0.01))
-                .then(|| (FeatureSel::Chain(c.id), p))
+                .then_some((FeatureSel::Chain(c.id), p))
         })
         .expect("the bore rim");
     let p = contour(20.0, 10.0, Side::Inside);
