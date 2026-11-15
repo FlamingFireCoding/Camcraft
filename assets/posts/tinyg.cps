@@ -18,6 +18,8 @@ minimumRevision = 1;
 extension = "gcode";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+workOffsetIndex = true; // reads the 1-based WorkOffset number (#1385)
+workOffsetMax = 6;      // G54..G59, per the public control documentation cited above
 coolantModes = true; // reads PARAM Coolant (#112/#150)
 afterModes = true;   // reads PARAM AfterOperation (#110)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
@@ -289,13 +291,16 @@ function onRadiusCompensation() {
   msg("control cutter compensation (G41/G42) is not supported by TinyG - choose In computer");
 }
 
+// #1385: the engine validates the offset index before this script receives it.
+function workOffsetName(n) { return "G" + (53 + n); }
+
 function onParameter(name, value) {
   commentParam(name, value);
   if (name === "OperationName") coolantOp = String(value || "");
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
-  if (name === "WorkOffset" && value) wcsWord = String(value);
+  if (name === "WorkOffset" && value) wcsWord = workOffsetName(Number(value));
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
