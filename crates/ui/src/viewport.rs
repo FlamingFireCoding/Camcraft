@@ -1395,14 +1395,24 @@ impl Camera {
         // the eye): a fixed 0.1 clipped against any part smaller than
         // half a millimetre near the camera, so zooming magnified cut
         // the near faces away at the surface.
-        let near = (self.dist * 0.001).clamp(1e-5, 0.1);
-        let far = (self.dist * 40.0).max(1000.0);
         let aspect = if aspect.is_finite() && aspect > 1e-6 {
             aspect
         } else {
             1.0
         };
+        // Perspective clips 0.1 mm in front of the eye - enough to kill
+        // the near-plane tunnel problem without a visible crop at sane
+        // distances. `dist` clamps to 0.5 mm, so the 0.1 mm plane still
+        // sits inside the clip volume at every zoom.
+        let near = (self.dist * 0.001).clamp(1e-5, 0.1);
+        let far = (self.dist * 40.0).max(1000.0);
         let proj = if self.projection == ProjectionMode::Orthographic {
+            // The eye stays a fixed nominal distance behind the target,
+            // so a near plane in front of it would sit 99.9 mm ahead of
+            // the target plane and any nearer geometry would vanish.
+            // The near plane reaches far behind the eye plane so nothing
+            // inside the visible box clips away.
+            let near = -((self.dist * 20.0).max(1000.0) - ORTHO_EYE_DIST);
             // Parallel box (#434): half-height is what perspective sees at
             // the target plane, so `dist` keeps spelling zoom and the
             // mode switch never jumps the framing. Depth is linear and
