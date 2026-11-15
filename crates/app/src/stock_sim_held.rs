@@ -182,6 +182,25 @@ pub(crate) fn first_carried(world: &World, setup: Option<&str>, min_r: f64) -> R
     first_held(world, setup, min_r)?.into_carried(world, setup)
 }
 
+/// What a sinker electrode sweeps: its face's half sizes (the box atom,
+/// #541) or, when the tool states one, its outline about the burn point
+/// (the outline atom, #1152), and the condition's spark gap.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ElectrodeAtom {
+    pub half: [f64; 2],
+    pub gap: f64,
+    /// Empty for a rectangular face.
+    pub outline: Vec<[f64; 2]>,
+}
+
+impl ElectrodeAtom {
+    pub(crate) fn of(tool: &crate::tools::Tool, gap: f64) -> Self {
+        let (hx, hy) = camcraft_tools::electrode::half_sizes(tool);
+        let outline = camcraft_tools::electrode::outline(tool).map(<[_]>::to_vec).unwrap_or_default();
+        Self { half: [hx, hy], gap, outline }
+    }
+}
+
 impl Held {
     /// Cut `ops` (current frame) into the stock.
     pub(crate) fn simulate(&mut self, ops: &[SimOp]) -> Result<(), String> {
@@ -203,6 +222,19 @@ impl Held {
             }
         };
         crate::stock_sim::simulate_box(dex, moves, hx, hy, gap).map_err(|e| e.to_string())
+    }
+
+    /// Burn a sinker body electrode's outline atom (#1152) into the
+    /// column grid; the field engine has none and refuses by name.
+    pub(crate) fn simulate_outline(&mut self, moves: &[crate::cl::Move], outline: &[[f64; 2]], gap: f64) -> Result<(), String> {
+        let dex = match self {
+            Held::Plain(Stock::Column(d)) => d,
+            Held::Carried(CarriedStock::Column(b)) => &mut b.dex,
+            Held::Plain(Stock::Field(_)) | Held::Carried(CarriedStock::Field(_)) => {
+                return Err(crate::stock_sim::ELECTRODE_FIELD_REFUSAL.into());
+            }
+        };
+        crate::stock_sim::simulate_outline(dex, moves, outline, gap).map_err(|e| e.to_string())
     }
 
     /// Clip under the entered setup's own stock `grid` (the M3.2 A clip).

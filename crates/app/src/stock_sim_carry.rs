@@ -254,9 +254,15 @@ pub(crate) fn walk(
         if until.is_some() && frame.as_deref() == until {
             return Ok(Walked { held, frame, spanned, origin, left });
         }
-        // #541: a sinker electrode burns its box atom.
-        if let Some([hx, hy, gap]) = p.electrode {
-            held.simulate_box(&p.moves, hx, hy, gap).map_err(|e| format!("{}: {e}", p.name))?;
+        // #541: a sinker electrode burns its box atom; #1152: a body
+        // electrode its outline atom.
+        if let Some(e) = &p.electrode {
+            let burned = if e.outline.is_empty() {
+                held.simulate_box(&p.moves, e.half[0], e.half[1], e.gap)
+            } else {
+                held.simulate_outline(&p.moves, &e.outline, e.gap)
+            };
+            burned.map_err(|why| format!("{}: {why}", p.name))?;
             continue;
         }
         let sim_ops = [SimOp { moves: &p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner }];

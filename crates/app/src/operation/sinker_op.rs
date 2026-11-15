@@ -258,6 +258,8 @@ pub(super) fn generate_sinker(
             gap,
             undersize: r.undersize,
             orbit: op.orbit,
+            // #1152: a body electrode is judged on its outline's extents.
+            outline: camcraft_tools::electrode::outline(tool).is_some(),
         };
         p.stand = Some(judge(&u, op.condition.trim())?);
     }
