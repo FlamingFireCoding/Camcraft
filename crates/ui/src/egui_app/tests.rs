@@ -132,6 +132,8 @@ mod setup_picks_disarm;
 // #555: real clicks pick the three points of the plane.
 mod points_vertex_pick;
 mod one_wcs;
+// #1926: the feature picks that set the WCS are on the WCS page.
+mod wcs_page_picks;
 // #343: the per-setup browser tree.
 mod setup_tree;
 mod mcp_live;
