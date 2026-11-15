@@ -38,7 +38,7 @@ use egui::{
 };
 
 use super::icons::{Icon, IconSet};
-use super::theme::Tokens;
+use super::theme::{Tokens, clamp};
 
 /// The full-texel uv of an uploaded image.
 const UV_FULL: Rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0));
@@ -164,7 +164,7 @@ pub fn caption(
     job.append(
         &title.to_uppercase(),
         0.0,
-        TextFormat::simple(FontId::proportional(MIN_LABEL_PX), ink),
+        TextFormat::simple(FontId::proportional(clamp::range(pal.font_caption, clamp::FONT)), ink),
     );
     let galley = ui.painter().layout_job(job);
     if galley.size().x > width {
