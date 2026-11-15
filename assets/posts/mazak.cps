@@ -17,14 +17,22 @@ setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
 coolantModes = true; // reads PARAM Coolant (#112/#150): the engine refuses non-Flood ops for a post without it
 afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a stop or home ask for a post without it
+workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
+workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets not verified here (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 millSpindleReverse = true; // reads PARAM MillSpindle (#988, #1411): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
+
+// #1388: optional explanations; conservative house budgets, not control maxima.
+explains = "paren";
+commentMax = 60;
+explainBlockMax = 80;
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
 
 // ---------------------------------------------------------------- state
 var wcsWord = "G54";       // from the WorkOffset PARAM
+var wcsIndex = 1;          // the offset number wcsWord writes (#931)
 var sRpm = 0;              // S.. M3 waits for the section: the stream
 var spindleWait = false;   // order is PARAMs, TOOL, SECTION
 var spinRev = false;       // PARAM MillSpindle reverse (#988): this section's spindle runs M4
@@ -38,6 +46,7 @@ var hopZ = null;           // #1028: the section's RetractPlane (its hop), null 
 var coolant = "";          // the M-code this program started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
+var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var homedAt = -1;          // linesWritten() just after a trip home (#504): onClose skips its own home when nothing followed
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
@@ -62,10 +71,17 @@ function trimNum(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) {  // a length: mm at three decimals, or inch at four
+// #1836: a length word always carries its decimal point (`Z14.`, never
+// `Z14`). An EIA/ISO control of the Fanuc family can read a word with no
+// point in its least increment (Fanuc parameter 3401#0 DPI=0: Z14 is
+// 0.014 mm). With the point, the control reads the same value whatever
+// that setting is.
+function pt(s) { return s.indexOf(".") >= 0 ? s : s + "."; }
+function fn(v) {  // a length as text (comments): mm at three decimals, or inch at four
   if (!has(v)) return "0";
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
+function fu(v) { return pt(fn(v)); }  // a length word, with its point
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
   return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
@@ -79,7 +95,12 @@ function block(words) {  // join the non-empty words onto one line
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    // Omit an explanation that does not fit; never cut executable words.
+    if (c && line.length + 1 + c.length <= explainBlockMax) line += " " + c;
+    writeln(line);
+  }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
@@ -269,8 +290,8 @@ function opNotes() {  // at the section's preamble: the setup once, the op each 
 function toolNote() {  // just before the tool change it describes
   var desc = [];
   if (toolKind) desc.push(toolKind);
-  if (toolDia > 0) desc.push("D" + fu(toolDia));
-  if (toolCr > 0) desc.push("R" + fu(toolCr));
+  if (toolDia > 0) desc.push("D" + fn(toolDia));
+  if (toolCr > 0) desc.push("R" + fn(toolCr));
   note(joinDash(["T" + ni(tNo) + (toolName ? " " + toolName : ""), desc.join(" ")]));
   toolKind = ""; toolCr = 0;
 }
@@ -331,8 +352,21 @@ function compRefuse(what) {
   }
 }
 
+// #931: PARAM WorkOffset arrives as the 1-based offset number (the engine
+// refuses one above workOffsetMax by setup name); the word is ours to write.
+function workOffsetName(n) {  // offset n -> this control's word; "" when it has none
+  return n >= 1 && n <= 6 && n === Math.floor(n) ? "G" + (53 + n) : "";
+}
+function offsetWord(value) {
+  var n = Number(value), w = workOffsetName(n);
+  if (!w) { msg("work offset " + value + " - this post expresses work offsets 1-" + workOffsetMax + " only"); return wcsWord; }
+  wcsIndex = n;
+  return w;
+}
+
 function onParameter(name, value) {
   if (name === "RetractPlane") hopZ = has(value) ? Number(value) : null;  // #1028
+  if (name === "ClearancePlane") clearZ = has(value) ? Number(value) : null;  // #1633
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
   if (name === "SmoothingMode") { smoothMode = String(value || ""); return; }
   commentParam(name, value);
@@ -340,7 +374,8 @@ function onParameter(name, value) {
   if (name === "MillSpindle") { spinRev = String(value || "") === "reverse"; return; }
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
-  if (name === "WorkOffset" && value) wcsWord = String(value);
+  if (name === "SetupChange") { setupNext = clean(value); return; }
+  if (name === "WorkOffset" && value) wcsWord = offsetWord(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
@@ -395,6 +430,7 @@ function startPreamble() {
     toolNote();
     block(["T" + ni(tNo), "M6"]);
     block(["G43", "H" + ni(tNo)]);
+    xyUnknown = true;          // #1633: the first traverse states its height again
     toolWait = false;
   }
   if (spindleWait && sRpm > 0) {   // a touch probe (#173) states no spindle
@@ -417,8 +453,16 @@ function startPreamble() {
 // section states its own.
 function afterOp() {
   var ask = afterAsk;
+  var next = setupNext;
   afterAsk = "";
+  setupNext = null;
   if (!ask) return;
+  if (next !== null && (ask === "optional-stop" || ask === "stop")) {
+    // #1647: lift Z before inviting the operator to re-clamp the part.
+    block(["G91", "G28", "Z0"]);
+    block(["G90"]);
+    note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
+  }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }
   if (ask === "home") {
@@ -454,7 +498,7 @@ function endPreamble() {
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
-function onSectionEnd() { endPreamble(); hopZ = null; }  // #1028: the next section states its own hop
+function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions
 // While a canned-cycle group is open its expanded hole chain is the
@@ -493,16 +537,65 @@ function probeSeat() {
   block(["G80"]);
   inCycle = false;
 }
+// ------------------------------------------------- the first traverse
+// #1633 (#1616's second half; the #1614 hazard): X and Y are unknown at
+// the program's start and after every tool change, and so is the height
+// the change left the tip at - a long tool on a high work offset can
+// stand below the part top there, and a first move written as one
+// combined rapid (`G00 X20 Y10 Z-3`) is a straight line from that point,
+// across the part. So the first X/Y traverse is made at a STATED
+// height: a Z-only rapid to the section's clearance - its
+// ClearancePlane, else its RetractPlane, never below the move's own Z -
+// then X/Y alone at it, then the move as the stream states it. A setup
+// that cannot reach that height is stopped by the control's Z limit
+// instead of rapiding through the part. A stream that states neither
+// plane has no verified height to traverse at: refused by name.
+// This dialect refuses tilted records (tiltOk), so the rapids are always
+// in the frame of the section's upright words.
+var clearZ = null;            // #1633: the section's ClearancePlane, null when unstated
+var xyUnknown = true;         // #1633: at the program's start and after each tool change
+var traverseRefused = false;  // #1633: once per program
+function traverseZ(z) {
+  var c = has(clearZ) ? clearZ : (has(hopZ) ? hopZ : null);
+  if (c === null) return null;
+  return has(z) ? Math.max(c, Number(z)) : c;
+}
+// (x, y, z): a rapid's target (a cycle's hole at its R plane), which the
+// record itself then goes to; or, with `descend`, where the stream says a
+// feed, an arc or a probing move starts - rapided down to when it lies
+// below the clearance, so the move runs only the stretch planned.
+// False when refused: the caller then writes nothing for its move - nor
+// for any later one while X/Y stay unknown (the rest of the section) -
+// so no combined X/Y/Z rapid from an unknown height reaches the text.
+function xyFirst(x, y, z, descend) {
+  if (!xyUnknown || !has(x) || !has(y)) return true;
+  var tz = traverseZ(z);
+  if (tz === null) {
+    if (!traverseRefused) {
+      traverseRefused = true;
+      msg(coolantWho() + "first X/Y traverse with no clearance height stated (no ClearancePlane or RetractPlane) - the post will not rapid X/Y at an unknown height");
+    }
+    return false;
+  }
+  block(["G00", wo("Z", tz, orgZ)]);
+  // A rapid already at the clearance is the traverse itself.
+  if (descend || !has(z) || Math.abs(Number(z) - tz) > 1e-9) block(["G00", wo("X", x, orgX), wo("Y", y, orgY)]);
+  if (descend && has(z) && Number(z) < tz - 1e-9) block(["G00", wo("Z", z, orgZ)]);
+  xyUnknown = false;
+  return true;
+}
 function onRapid() {
   startPreamble();
   compRefuse("a rapid");
   if (!tiltOk(properties) || chainRapid()) return;
+  if (!xyFirst(properties.X, properties.Y, properties.Z, false)) return;  // #1633: refused - the move is not written
   block(["G00"].concat(xyz(properties)));
 }
 function onLinear() {
   startPreamble();
   if (!tiltOk(properties) || chainCut()) return;
   if (spindleStopped("feed move G01")) return;
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   // The pending comp word rides this straight block (#39).
   var cg = compG, cd = compD;
   compG = ""; compD = "";
@@ -515,6 +608,7 @@ function onCircular() {
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G02" : "G03"))) return;
   var p = properties;
   if (compPlaneRefuse(planeOf(p))) return;
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   block([
     planeWord(planeOf(p)),
     p.CircularDirection === "CW" ? "G02" : "G03",
@@ -597,6 +691,7 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
   if (inCycle && sig === cycleSig) {
@@ -646,7 +741,7 @@ function alarmUnless(cond, n, text) {  // alarm #3000=n unless cond holds
   block(["N" + probeLabel]);
 }
 function minusU(expr, v) {  // expr - v, the sign folded into the operator
-  var s = fu(v);
+  var s = fn(v);  // macro-B text: a constant is not scaled by DPI (#1836)
   if (s === "0") return expr;
   return s.charAt(0) === "-" ? expr + "+" + s.substring(1) : expr + "-" + s;
 }
@@ -654,6 +749,7 @@ function onProbeMove() {
   startPreamble();
   probeSeat();               // #1028
   compRefuse("a probing move");
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   var p = properties;
   block(["G31", wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), fw(p.Feed)]);
   var ai = travelAxis(p);
@@ -685,6 +781,7 @@ function onProbeGuard() {
   startPreamble();
   probeSeat();               // #1028
   compRefuse("a protected probe move");
+  if (!xyFirst(properties.StartX, properties.StartY, properties.StartZ, true)) return;  // #1633: refused - the move is not written
   var p = properties;
   block(["G31", wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), fw(p.Feed)]);
   var to = [p.X, p.Y, p.Z], from = [p.StartX, p.StartY, p.StartZ], org = [orgX, orgY, orgZ];
@@ -692,10 +789,6 @@ function onProbeGuard() {
     if (has(from[ai]) && Math.abs(to[ai] - from[ai]) < 1e-6) continue;  // an axis that holds still
     alarmUnless("ABS[" + minusU("#" + (5061 + ai), to[ai] - org[ai]) + "]LE" + eps(), 3, "PROBE HIT ON POSITIONING");
   }
-}
-function slotOf(word) {  // "G55" -> 1
-  var n = Number(String(word).replace(/[^0-9]/g, "")) - 54;
-  return n >= 0 && n <= 5 ? n : 0;
 }
 function onProbeResult() {
   var p = properties;
@@ -712,11 +805,11 @@ function onProbeResult() {
     // (edge, outside corner) never writes a doubled sign like `--`.
     var ex = a.Expected - org[ai];
     var op = ex < 0 ? "+" : "-";
-    block(["#" + (dev + i) + "=" + mean + op + fu(Math.abs(ex))]);
+    block(["#" + (dev + i) + "=" + mean + op + fn(Math.abs(ex))]);
     alarmUnless("ABS[#" + (dev + i) + "]LE" + fu(p.Tolerance), 1, "PROBE " + a.Axis + " OUT OF TOLERANCE");
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
-    var act = 5221 + 20 * slotOf(wcsWord);
+    var act = 5221 + 20 * (wcsIndex - 1);
     var words = ["G10", "L2", "P" + (Number(p.SetWorkOffset) + 1)];
     for (var j = 0; j < axes.length; j++) {
       var aj = axisIx(axes[j].Axis);

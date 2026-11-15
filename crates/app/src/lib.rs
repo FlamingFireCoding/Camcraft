@@ -46,6 +46,7 @@ pub mod mcp;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
+pub mod mesh_open;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;
@@ -87,6 +88,7 @@ pub mod rotary_stack;
 pub mod schema;
 pub mod script;
 pub mod setup;
+pub mod setup_offsets;
 // #326: the part's alignment per setup.
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
@@ -155,6 +157,8 @@ pub use camcraft_tools::{lathe_holder, lathe_insert_zone};
 // #361: the one door a body file is read through; the lathe placement reads.
 pub mod tool_body_file;
 pub mod tool_body_lathe_view;
+// #361 / #1040: modular multi-piece tool bodies assembled by ISO 13399 CSYS.
+pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.

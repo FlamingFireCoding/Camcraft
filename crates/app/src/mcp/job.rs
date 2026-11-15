@@ -9,7 +9,6 @@ use crate::geometry::Aabb;
 use crate::model;
 use crate::operation::{self, KindInfo, SrcRef};
 use crate::project;
-use crate::schema::WCS_SLOTS;
 use crate::script::{api, fnum, inventory, Env};
 use crate::setup;
 use crate::verify::Warning;
@@ -49,7 +48,10 @@ fn setups_view(env: &Env) -> Vec<Value> {
             let wcs = setup::wcs_entity(w, d).and_then(|e| model::transform_of(w, &e).map(|loc| (e, loc)));
             let wcs = json!({
                 "label": setup::wcs_label(w, d),
-                "word": WCS_SLOTS.get(setup::wcs_slot(w, d)).copied().unwrap_or("G54"),
+                "index": crate::setup_offsets::index(w, d),
+                "name": setup::wcs_name(w, d),
+                // #931: kept as an alias of `name` for older callers.
+                "word": setup::wcs_name(w, d),
                 "placed": wcs.is_some(),
                 "entity": setup::wcs_entity_name(w, d),
                 "origin": wcs.as_ref().map(|(_, loc)| vec![fnum(loc.pos.x), fnum(loc.pos.y), fnum(loc.pos.z)]),
@@ -114,7 +116,7 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
             });
             // #864: only a model imported coarser than promised says so.
             if let Some(chord) = crate::model_fidelity::chord_of(w, e) {
-                m["reduced_fidelity"] = crate::model_fidelity::facts(w, chord);
+                m["reduced_fidelity"] = crate::mesh_open::facts(w, e, chord);
             }
             // #1054: and one imported under a non-default STEP facet budget.
             if let Some(b) = crate::model_fidelity::budget_of(w, e) {
@@ -217,7 +219,7 @@ pub(super) fn list_tool_catalog(_env: &mut Env, _a: &Map<String, Value>) -> Resu
 pub(super) fn finding(op: &str, w: &Warning) -> Value {
     let (kind, at) = match w {
         Warning::Crossing { moves } => ("crossing", moves[0]),
-        Warning::Gouge { at } => ("gouge", *at),
+        Warning::Gouge { at } | Warning::StockChamferGouge { at } => ("gouge", *at),
         Warning::ShankHit { at, .. } => ("shank_hit", *at),
         Warning::HolderHit { at, .. } => ("holder_hit", *at),
         Warning::SweepHit { at, .. } => ("sweep_hit", *at),

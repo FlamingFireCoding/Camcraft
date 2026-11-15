@@ -127,7 +127,7 @@ fn a_dumped_lean_posts_the_same_program_as_a_tilted_stream() {
         clearance_z: 12.0,
         retract_z: 10.0,
         top_z: 0.0,
-        wcs: "G54",
+        wcs: 1,
         origin: [0.0; 3],
         stock: [-20.0, 20.0, -20.0, 20.0],
         stock_top_z: 0.0,
@@ -190,6 +190,7 @@ fn rtcp_output_arms_once_and_walks_the_angles() {
               "travel": [-120.0, 120.0] } ] } }
     });
     let stream = "\
+PARAM ClearancePlane 5
 TOOL 1 10MM BALL
 PARAM SpindleSpeed 6000
 SECTION
@@ -211,15 +212,18 @@ ENDSECTION
     assert_eq!(lines.iter().filter(|l| l.contains("G43.4")).count(), 1, "armed once");
     // #997: the arm names every rotary the machine states - here only A;
     // the stream's B0 and C0 are letters of rotaries it has none of.
-    assert_eq!(lines[arm + 1], "G00 X10 Y0 Z5 A40", "the stated rotaries on the arm");
+    // #1633: the first traverse's stated height, under the arm (the work
+    // frame), then the record with the stated rotaries.
+    assert_eq!(lines[arm + 1], "G00 Z5.", "the clearance stated under G43.4");
+    assert_eq!(lines[arm + 2], "G00 X10. Y0. Z5. A40.", "the stated rotaries on the arm");
     // The cut continues: only A changed since the last block.
-    assert_eq!(lines[at("A45")], "G01 X20 Y0 Z0 A45 F150", "modal words: unchanged angles rest");
+    assert_eq!(lines[at("A45.")], "G01 X20. Y0. Z0. A45. F150", "modal words: unchanged angles rest");
     // (#997: with A the only stated rotary, the arm and the modal block
     // carry the same one angle word - the exact lines above pin both.)
     // The home return: only A had left zero, so only A comes back -
     // the modal law runs in both directions. TCPM stays armed (the
     // next G49 would be a new preamble's; this program ends first).
-    assert_eq!(lines[at("X30")], "G01 X30 Y0 Z0 A0 F150");
+    assert_eq!(lines[at("X30.")], "G01 X30. Y0. Z0. A0. F150");
 }
 
 /// #997: on the A+B tilthead (no C) the arm writes A and B, never a C
@@ -231,12 +235,12 @@ fn an_absent_rotary_takes_no_angle_word() {
     let text = read("assets/machines/tilthead.mch");
     let mch = post::machine::mirror(&camcraft_post::machine::parse_mch(&text).expect("tilthead parses"));
     let stream = |c: &str| {
-        format!("TOOL 1 T1\nPARAM SpindleSpeed 6000\nSECTION\nRapid X 0 Y 0 Z 20000 A 30000 B 0 C {c}\nFeed X 20000 Y 0 Z 0 F 300000 A 0 B 30000 C {c}\nENDSECTION\n")
+        format!("PARAM ClearancePlane 20\nTOOL 1 T1\nPARAM SpindleSpeed 6000\nSECTION\nRapid X 0 Y 0 Z 20000 A 30000 B 0 C {c}\nFeed X 20000 Y 0 Z 0 F 300000 A 0 B 30000 C {c}\nENDSECTION\n")
     };
     let out = engine::run(&cps, &mch, &stream("0")).expect("post");
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    assert!(out.program.lines().any(|l| l == "G00 X0 Y0 Z20 A30 B0"), "{}", out.program);
-    assert!(out.program.lines().any(|l| l == "G01 X20 Y0 Z0 A0 B30 F300"), "{}", out.program);
+    assert!(out.program.lines().any(|l| l == "G00 X0. Y0. Z20. A30. B0."), "{}", out.program);
+    assert!(out.program.lines().any(|l| l == "G01 X20. Y0. Z0. A0. B30. F300"), "{}", out.program);
     let c_word = |l: &str| l.split(' ').any(|w| w.len() > 1 && w.starts_with('C') && w[1..].parse::<f64>().is_ok());
     assert!(!out.program.lines().any(c_word), "no C word on a machine with no C: {}", out.program);
     let out = engine::run(&cps, &mch, &stream("10000")).expect("post");
@@ -253,10 +257,12 @@ fn tool_change_rearms_tcpm() {
             { "letter": "B", "type": "rotary", "direction": [0.0, 1.0, 0.0] } ] } }
     });
     let stream = "\
+PARAM ClearancePlane 5
 TOOL 1 T1
 SECTION
 Rapid X 0 Y 0 Z 5 B 30000
 ENDSECTION
+PARAM ClearancePlane 5
 TOOL 2 T2
 SECTION
 Rapid X 0 Y 0 Z 5 B 30000

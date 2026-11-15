@@ -47,6 +47,7 @@ var compOff = false;       // the section's first cut has been written
 var cutZ = null;           // the section's one programmed plane (2-axis)
 var awt = false;
 var taper = 0;             // the section's stated taper, degrees (0: vertical)
+var angleWord = false;    // WireAngle is unsupported, including a stated zero
 var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile)
 var leaning = false;       // the next move states an upper guide offset
 var machineGood = false;
@@ -127,12 +128,31 @@ function onParameter(name, value) {
   else if (name === "OperationName") opName = clean(value);
   else if (name === "OperationKind") opKind = clean(value);
   else if (name === "SetupName") setupName = clean(value);
-  else if (name === "EdmCondition") condition = String(value === null || value === undefined ? "" : value);
+  else if (name === "EdmCondition") {
+    // #538: the C word is written once, when the wire is threaded
+    // (startCut). A condition stated after the section's first cut is a
+    // skim pass's; this post has no public source for how the control
+    // takes a condition change mid-program (#617), so it is refused by
+    // name - never cut on the rough pass's C word.
+    if (inSection && (threaded || compOff)) {
+      refuse("skims" + opName, who() + "Sodick: a condition change between passes (skims) is not supported by this post - post the skims through wire-iso or as separate operations");
+      sectionOk = false;
+      return;
+    }
+    condition = String(value === null || value === undefined ? "" : value);
+  }
   else if (name === "WireSide") side = clean(value);
   else if (name === "AfterOperation") afterOp = String(value);
   else if (name === "WireTaper" && has(value)) taper = Number(value);
   else if (name === "WireFourAxis") fourAxis = clean(value);
   else if (name === "WireU" || name === "WireV") leaning = true;
+  else if (name === "WireAngle") {
+    angleWord = true;
+    // #1496: guard the move itself even when the section omits WireTaper.
+    // The angle stream's plane/corner mapping is not confirmed for Mark 21.
+    refuse("angle" + opName, who() + "an angle-word move - the Sodick wire post writes a vertical 2-axis cut only; programmed-plane and corner mapping for G51 / G52 A is not confirmed");
+    sectionOk = false;
+  }
   else if (name === "SpindleSpeed" && has(value) && Number(value) > 0) {
     refuse("rpm" + opName, who() + "states " + Math.round(Number(value)) + " rpm - a wire EDM turns no spindle");
   }
@@ -165,6 +185,10 @@ function onSection() {
     ok = false;
   } else if (taper !== 0) {
     refuse("taper" + opName, who() + "is tapered - the Sodick wire post writes a vertical 2-axis cut only (no G51 / G52 or A words)");
+    ok = false;
+  }
+  if (angleWord) {
+    refuse("angle" + opName, who() + "an angle-word move - the Sodick wire post writes a vertical 2-axis cut only; programmed-plane and corner mapping for G51 / G52 A is not confirmed");
     ok = false;
   }
   if (!/^G5[4-9]$/.test(wcsWord)) {
@@ -308,6 +332,7 @@ function onSectionEnd() {
   side = "";
   afterOp = "";
   taper = 0;
+  angleWord = false;
   fourAxis = "";
   leaning = false;
 }

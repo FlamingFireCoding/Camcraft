@@ -47,6 +47,7 @@ fn plain_fourth(rate: f64) -> Value {
 /// Short tip moves with large turns, a turn with the tip still, a long
 /// move with a small turn, and a tilted arc that turns A.
 const STREAM: &str = "\
+PARAM ClearancePlane 5
 TOOL 1 10MM BALL
 PARAM SpindleSpeed 6000
 SECTION
@@ -147,11 +148,11 @@ fn fanuc_tcp_feed_holds_the_stated_a_rate() {
     assert!(out.program.contains("G43.4"), "{}", out.program);
     assert_eq!(assert_within(&out.program, Reading::Path, A_RATE), 5, "{}", out.program);
     // 0.1 mm of tip for 30 degrees: 1000 * 0.1 / 30 = 3.33 -> F3.3, floored.
-    assert!(out.program.contains("G01 X10.1 Y0 Z0 A30 F3.3"), "{}", out.program);
+    assert!(out.program.contains("G01 X10.1 Y0. Z0. A30. F3.3"), "{}", out.program);
     // The tip still while A turns: F is the A rate itself.
-    assert!(out.program.contains("G01 X10.1 Y0 Z0 A60 F1000"), "{}", out.program);
+    assert!(out.program.contains("G01 X10.1 Y0. Z0. A60. F1000"), "{}", out.program);
     // A long move with a small turn is under the rate: the op's F stands.
-    assert!(out.program.contains("G01 X40 Y0 Z0 A61 F2000"), "{}", out.program);
+    assert!(out.program.contains("G01 X40. Y0. Z0. A61. F2000"), "{}", out.program);
 }
 
 #[test]
@@ -160,7 +161,7 @@ fn doosan_tcp_feed_holds_the_stated_a_rate() {
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     assert!(out.program.contains("G43.4"), "{}", out.program);
     assert_eq!(assert_within(&out.program, Reading::Path, A_RATE), 5, "{}", out.program);
-    assert!(out.program.contains("A30 F3.3"), "{}", out.program);
+    assert!(out.program.contains("A30. F3.3"), "{}", out.program);
 }
 
 #[test]
@@ -171,7 +172,7 @@ fn doosan_fourth_axis_composite_feed_holds_the_stated_a_rate() {
     // after it is held at the stated rate.
     let placed = post("assets/posts/doosan-dnm.cps", &plain_fourth(rate), STREAM);
     assert!(placed.warnings.is_empty(), "{:?}", placed.warnings);
-    assert!(placed.program.contains("G00 X10 Y0 Z5 A0"), "{}", placed.program);
+    assert!(placed.program.contains("G00 X10. Y0. Z5. A0."), "{}", placed.program);
     assert_eq!(assert_within(&placed.program, Reading::Composite, rate), 5, "{}", placed.program);
     // A program whose rapid writes an A word places the table first.
     let stream = STREAM.replace("Rapid X 10000 Y 0 Z 5000 A 0 ", "Rapid X 10000 Y 0 Z 5000 A 1000 ");
@@ -183,7 +184,7 @@ fn doosan_fourth_axis_composite_feed_holds_the_stated_a_rate() {
     // Composite: lcmd = sqrt(0.1^2 + 30^2); A runs at F * 30 / lcmd <= 600.
     let lcmd = (0.1_f64 * 0.1 + 900.0).sqrt();
     let want = (rate * lcmd / 30.0 * 10.0).floor() / 10.0;
-    assert!(out.program.contains(&format!("A30 F{want}")), "want F{want}: {}", out.program);
+    assert!(out.program.contains(&format!("A30. F{want}")), "want F{want}: {}", out.program);
 }
 
 #[test]
@@ -200,6 +201,7 @@ fn a_feed_turning_from_an_unknown_angle_is_refused_by_name() {
     // The first tilted record is a feed: the post never placed A, so the
     // turn it commands - and its rate - is unknown.
     let stream = "\
+PARAM ClearancePlane 5
 TOOL 1 T1
 PARAM SpindleSpeed 6000
 SECTION
@@ -223,8 +225,8 @@ ENDSECTION
 #[test]
 fn an_inch_program_posts_the_capped_feed_in_inch() {
     for (cps, want) in [
-        ("assets/posts/fanuc.cps", ["A30 F0.13", "A60 F39.37", "A70 F4.377"]),
-        ("assets/posts/doosan-dnm.cps", ["A30 F0.13", "A60 F39.37", "A70 F4.377"]),
+        ("assets/posts/fanuc.cps", ["A30. F0.13", "A60. F39.37", "A70. F4.377"]),
+        ("assets/posts/doosan-dnm.cps", ["A30. F0.13", "A60. F39.37", "A70. F4.377"]),
     ] {
         let mch = trunnion(Some(A_RATE));
         let mm = post_units(cps, &mch, STREAM, "mm");
@@ -254,6 +256,7 @@ fn a_feed_turning_c_alone_holds_the_stated_c_rate() {
         { "letter": "A", "type": "rotary", "direction": [1.0, 0.0, 0.0], "travel": [-120.0, 120.0], "speeds": { "normal": A_RATE } },
         { "letter": "C", "type": "rotary", "direction": [0.0, 0.0, 1.0], "speeds": { "normal": c_rate } } ] } } });
     let stream = "\
+PARAM ClearancePlane 5
 TOOL 1 10MM BALL
 PARAM SpindleSpeed 6000
 SECTION
@@ -266,7 +269,7 @@ ENDSECTION
         let out = post(cps, &mch, stream);
         assert!(out.warnings.is_empty(), "{cps}: {:?}", out.warnings);
         // 0.1 mm of tip for 40 degrees of C: 500 * 0.1 / 40 = 1.25 -> F1.2.
-        assert!(out.program.contains("C40 F1.2"), "{cps}: {}", out.program);
+        assert!(out.program.contains("C40. F1.2"), "{cps}: {}", out.program);
     }
 }
 
@@ -282,9 +285,9 @@ fn the_slow_feed_refusal_is_judged_in_mm_in_both_units() {
         let mm = post_units(cps, &mch, STREAM, "mm");
         let inch = post_units(cps, &mch, STREAM, "inch");
         assert!(mm.warnings.is_empty() && inch.warnings.is_empty(), "{cps}: {:?} {:?}", mm.warnings, inch.warnings);
-        assert!(mm.program.contains("A30 F1\n") || mm.program.contains("A30 F1\r"), "{cps}: {}", mm.program);
+        assert!(mm.program.contains("A30. F1\n") || mm.program.contains("A30. F1\r"), "{cps}: {}", mm.program);
         // The inch move posts 0.0039 in (0.09906 mm): 0.9906 mm/min.
-        assert!(inch.program.contains("A30 F0.039"), "{cps}: {}", inch.program);
+        assert!(inch.program.contains("A30. F0.039"), "{cps}: {}", inch.program);
         // 10 deg/min: 0.033 mm/min, refused by name in both units.
         let slow = trunnion(Some(10.0));
         for u in ["mm", "inch"] {
@@ -334,8 +337,8 @@ fn a_capped_rotary_feed_is_posted_in_the_programs_unit() {
             assert!(back <= (fm + 0.1) * 1.001 + 1e-6 && back >= fm * 0.99 - 0.26, "{cps}: mm F{fm} posted as inch F{fi}: {}", inch.program);
         }
         assert!(capped >= 3, "{cps}: {}", inch.program);
-        assert!(inch.program.contains("A30 F0.13"), "{cps}: {}", inch.program);
-        assert!(inch.program.contains("A60 F39.37"), "{cps}: {}", inch.program);
+        assert!(inch.program.contains("A30. F0.13"), "{cps}: {}", inch.program);
+        assert!(inch.program.contains("A60. F39.37"), "{cps}: {}", inch.program);
     }
 }
 
@@ -348,6 +351,7 @@ fn a_capped_rotary_feed_is_posted_in_the_programs_unit() {
 #[test]
 fn a_work_offset_off_the_output_grid_does_not_hide_a_short_move_from_the_cap() {
     let stream = "\
+PARAM ClearancePlane 5
 TOOL 1 10MM BALL
 PARAM SpindleSpeed 6000
 PARAM OriginX 1
@@ -377,6 +381,7 @@ ENDSECTION
 #[test]
 fn a_rounded_uncapped_feed_never_posts_above_the_cap() {
     let stream = "\
+PARAM ClearancePlane 5
 TOOL 1 10MM BALL
 PARAM SpindleSpeed 6000
 SECTION

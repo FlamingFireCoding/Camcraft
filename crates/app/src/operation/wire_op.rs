@@ -16,7 +16,9 @@ use crate::geo2d::{Loop, Point2, Region};
 use crate::machine::{ConditionField, Kind};
 use crate::machining2d::GenError;
 use crate::verify::Warning;
-use crate::wire_edm::{clearance_door, wire_burnout, wire_contour_tapered, TabParams, WireParams, WireTaper};
+use crate::wire_edm::{
+    check_passes, clearance_door, wire_burnout, wire_contour_tapered, wire_passes, TabParams, WireCorner, WireParams, WirePass, WireTaper,
+};
 
 use super::kinds::Carried;
 use super::types::{OpParams, WireContourOp, WireSide};
@@ -38,6 +40,7 @@ pub(super) fn seed_wire_contour(c: &Carried) -> OpParams {
         four_axis: None,
         burnout: None,
         clearance: super::types::DEFAULT_CLEARANCE,
+        skims: Vec::new(),
     })
 }
 
@@ -49,10 +52,16 @@ pub struct WireCondition {
     pub wire_diameter: f64,
     /// The spark gap per side, mm.
     pub gap: f64,
+    /// The skim passes after this (the rough) pass, each resolved from
+    /// its own condition (#538); empty is the rough pass alone.
+    pub skims: Vec<WirePass>,
     /// The machine's name and its stated maximum taper (#536), for the
     /// taper's door.
     pub machine: String,
     pub max_taper_deg: Option<f64>,
+    /// The machine's angle-word taper dialect (#1164), as stated;
+    /// `None` = it tapers by U/V moves.
+    pub taper_angle: Option<crate::machine::TaperAngle>,
 }
 
 /// The condition door (#531, #532): the op's condition on the machine
@@ -71,35 +80,71 @@ pub fn condition_of(world: &World, setup: Option<&str>, op: &WireContourOp) -> R
             "a Wire Contour needs a wire EDM machine mounted on its setup - the machine's EDM conditions state the wire diameter and the spark gap".into(),
         );
     };
+    let (id, wire_diameter, gap) = one_condition(&machine, &op.condition, "a Wire Contour")?;
+    let mut skims = Vec::with_capacity(op.skims.len());
+    for (i, s) in op.skims.iter().enumerate() {
+        let who = format!("skim {} of the Wire Contour", i + 1);
+        let (condition, wire_diameter, gap) =
+            one_condition(&machine, &s.condition, &who).map_err(|e| if e.starts_with(&who) { e } else { format!("{who}: {e}") })?;
+        skims.push(WirePass { condition, wire_diameter, gap, reverse: s.reverse });
+    }
+    let max_taper_deg = machine.edm.as_ref().and_then(|e| e.max_taper_deg);
+    let taper_angle = machine.edm.as_ref().and_then(|e| e.taper_angle);
+    let c = WireCondition { id, wire_diameter, gap, skims, machine: machine.model.clone(), max_taper_deg, taper_angle };
+    // The burnout's clearance against the condition's kerf (#540).
+    if let Some(clear) = op.burnout {
+        clearance_door(clear, c.wire_diameter * 0.5 + c.gap)?;
+    }
+    // Skims with a taper, a burnout, tabs or a 4-axis cut (#538 x #536,
+    // #540, #539, #537): refused by name at the door, never cut as
+    // something else.
+    if let Some(why) = skims_refusal(op) {
+        return Err(why);
+    }
+    // The passes' offset laws (#538) are the machine's numbers alone,
+    // so they stand at the door too, not first in the generator.
+    let rough = WireParams {
+        wire_diameter: c.wire_diameter,
+        gap: c.gap,
+        condition: c.id.clone(),
+        side: op.side,
+        start: None,
+        plane_z: 0.0,
+        tabs: None,
+        stock: None,
+        clearance: op.clearance,
+    };
+    check_passes(&rough, &c.skims).map_err(|e| match e {
+        GenError::Invalid(why) => why,
+        e => e.to_string(),
+    })?;
+    Ok(c)
+}
+
+/// One condition `id` on `machine`, with its gap and wire diameter
+/// both stated - or the refusal naming what is missing; `who` is the
+/// pass that names it.
+fn one_condition(machine: &crate::machine::Machine, id: &str, who: &str) -> Result<(String, f64, f64), String> {
     let stated = || match machine.edm.as_ref().map(|e| e.conditions.as_slice()) {
         None | Some([]) => "it states none - add edm.conditions to the machine file".to_owned(),
         Some(cs) => format!("it states {}", cs.iter().map(|c| c.id.as_str()).collect::<Vec<_>>().join(", ")),
     };
-    if op.condition.trim().is_empty() {
-        return Err(format!(
-            "a Wire Contour names no EDM condition - choose one of machine {}'s conditions ({})",
-            machine.model,
-            stated()
-        ));
+    if id.trim().is_empty() {
+        return Err(format!("{who} names no EDM condition - choose one of machine {}'s conditions ({})", machine.model, stated()));
     }
     let Some(edm) = machine.edm.as_ref() else {
-        return Err(format!("machine {} states no EDM condition {:?} ({})", machine.model, op.condition, stated()));
+        return Err(format!("machine {} states no EDM condition {id:?} ({})", machine.model, stated()));
     };
-    let known = edm.conditions.iter().any(|c| c.id == op.condition);
+    let known = edm.conditions.iter().any(|c| c.id == id);
     let c = edm
-        .condition(&machine.model, &op.condition, &[ConditionField::Gap, ConditionField::WireDiameter])
+        .condition(&machine.model, id, &[ConditionField::Gap, ConditionField::WireDiameter])
         .map_err(|e| if known { e } else { format!("{e} ({})", stated()) })?;
     // The door above promised both; a `None` here is its law broken,
     // named rather than read as zero.
     let (Some(gap), Some(wire_diameter)) = (c.gap, c.wire_diameter) else {
         return Err(format!("machine {}: EDM condition {:?} states no gap or no wire diameter", machine.model, c.id));
     };
-    let cond = WireCondition { id: c.id.clone(), wire_diameter, gap, machine: machine.model.clone(), max_taper_deg: edm.max_taper_deg };
-    // The burnout's clearance against the condition's kerf (#540).
-    if let Some(clear) = op.burnout {
-        clearance_door(clear, cond.wire_diameter * 0.5 + cond.gap)?;
-    }
-    Ok(cond)
+    Ok((c.id.clone(), wire_diameter, gap))
 }
 
 /// The condition a wire EDM kind's generation cuts with, read where
@@ -130,7 +175,9 @@ pub fn cutoff_of(world: &World, setup: Option<&str>, op: &WireContourOp) -> Resu
     let Some(t) = op.tabs.as_ref().filter(|t| !t.cutoff_condition.trim().is_empty()) else {
         return Ok(None);
     };
-    let probe = WireContourOp { condition: t.cutoff_condition.clone(), ..op.clone() };
+    // The probe is the cut-off's condition alone: the skims' laws read
+    // the rough pass, not the cut-off.
+    let probe = WireContourOp { condition: t.cutoff_condition.clone(), skims: Vec::new(), ..op.clone() };
     condition_of(world, setup, &probe).map(Some).map_err(|e| format!("the tab cut-off's condition: {e}"))
 }
 
@@ -156,10 +203,27 @@ pub(super) fn stamp_condition(world: &World, setup: Option<&str>, op: &WireConto
             h.write_u8(0xff);
             h.write(&c.wire_diameter.to_bits().to_le_bytes());
             h.write(&c.gap.to_bits().to_le_bytes());
+            // #538: each skim's condition as the machine states it now.
+            // Nothing is written for no skims, so a rough-only cut's
+            // stamp is the one it always was.
+            for s in &c.skims {
+                h.write(b"skim");
+                h.write(s.condition.as_bytes());
+                h.write_u8(0xff);
+                h.write(&s.wire_diameter.to_bits().to_le_bytes());
+                h.write(&s.gap.to_bits().to_le_bytes());
+                h.write_u8(u8::from(s.reverse));
+            }
             // #536: a taper also reads the machine's maximum; a vertical
             // cut's stamp stays what it was.
             if op.taper_deg != 0.0 || op.four_axis.is_some() {
                 h.write(&c.max_taper_deg.map_or(u64::MAX, f64::to_bits).to_le_bytes());
+                // #1164: an angle-word machine's rules shape the path;
+                // a U/V machine's stamp stays what it was.
+                if let Some(a) = c.taper_angle {
+                    h.write(b"taper-angle");
+                    h.write(format!("{:?}{:?}", a.positive, a.corner).as_bytes());
+                }
             }
         }
         Err(_) => h.write_u8(0),
@@ -246,6 +310,33 @@ pub fn tabs_taper_refusal(op: &WireContourOp) -> Option<String> {
     })
 }
 
+/// Skims with what they are not cut with yet (#538): the skims walk
+/// the vertical, untabbed contour of one profile, so a taper (#536), a
+/// no-core burnout (#540), tabs (#539) or a 4-axis cut (#537) beside
+/// them is refused by name, at the command door and at generation.
+/// `None` when the op states no skims or none of those.
+#[must_use]
+pub fn skims_refusal(op: &WireContourOp) -> Option<String> {
+    if op.skims.is_empty() {
+        return None;
+    }
+    let with = if op.four_axis.is_some() {
+        "a 4-axis cut".to_owned()
+    } else if op.burnout.is_some() {
+        "a no-core burnout".to_owned()
+    } else if op.tabs.is_some() {
+        "tabs".to_owned()
+    } else if op.taper_deg != 0.0 {
+        format!("a {:.3} degree taper", op.taper_deg)
+    } else {
+        return None;
+    };
+    Some(format!(
+        "wire contour: {} skim pass(es) are stated with {with} - skims are cut on a vertical, untabbed one-profile contour only; remove the skims or that setting",
+        op.skims.len()
+    ))
+}
+
 /// Generate: `picks` is the picked profile (closed rings, open runs)
 /// when the source is a selection; otherwise `base` - the model's
 /// through-silhouette - is the profile. `stock` is read only for an
@@ -261,10 +352,15 @@ pub(super) fn generate_wire(
     stock: impl FnOnce() -> Option<Region>,
 ) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let (cond, cutoff) = cond?;
+    if let Some(why) = skims_refusal(op) {
+        return Err(GenError::Invalid(why));
+    }
+    let corner = corner_rule(op, &cond)?;
     // #537: two profiles paired into rulings - its own generator, read
     // from its own picks. A burnout (#540), tabs (#539) and an open run
     // (#1109) are not cut along rulings: each refused by name, never
-    // cut as something else.
+    // cut as something else; on an angle-word machine `corner_rule`
+    // has refused it already (#1164).
     if let Some(four) = &op.four_axis {
         if op.burnout.is_some() {
             return Err(GenError::Invalid(
@@ -287,11 +383,18 @@ pub(super) fn generate_wire(
     };
     let stock = if chains.is_empty() { None } else { stock() };
     let p = wire_params(op, &cond, cutoff.as_ref(), hs, stock)?;
+    // #538: skims walk the vertical, untabbed, one-profile contour
+    // (`wire_passes`); every other cut is main's path exactly.
+    if !cond.skims.is_empty() {
+        let path = wire_passes(&loops, &chains, &p, &cond.skims)?;
+        return Ok((path, Vec::new()));
+    }
     let taper = WireTaper {
         angle_deg: op.taper_deg,
         top_z: hs.top.unwrap_or(p.plane_z),
         max_deg: cond.max_taper_deg,
         machine: cond.machine.clone(),
+        corner,
     };
     let path = match op.burnout {
         // #536 x #540: the burnout's rings are cut vertical; a taper
@@ -313,4 +416,28 @@ pub(super) fn generate_wire(
         }
     };
     Ok((path, Vec::new()))
+}
+
+/// The corner rule a leaning cut is generated under (#1164): on a U/V
+/// machine CamCraft's own mitre (#536); on an angle-word machine the
+/// control's stated rule - unstated is refused by name, and so is a
+/// 4-axis cut, which one angle cannot state.
+///
+/// # Errors
+/// A 4-axis cut on an angle-word machine, or its rules incomplete.
+pub(super) fn corner_rule(op: &WireContourOp, cond: &WireCondition) -> Result<WireCorner, GenError> {
+    let Some(angle) = cond.taper_angle.filter(|_| op.taper_deg != 0.0 || op.four_axis.is_some()) else {
+        return Ok(WireCorner::Mitre);
+    };
+    if op.four_axis.is_some() {
+        return Err(GenError::Invalid(format!(
+            "wire contour: a 4-axis cut, and machine {} tapers by angle word (edm.taper_angle) - one angle cannot state different upper and lower profiles; a 4-axis cut needs a U/V machine",
+            cond.machine
+        )));
+    }
+    let (_, corner) = angle.complete(&cond.machine).map_err(|e| GenError::Invalid(format!("wire contour: {e}")))?;
+    Ok(match corner {
+        crate::machine::TaperCorner::Mitre => WireCorner::Mitre,
+        crate::machine::TaperCorner::Cone => WireCorner::Cone,
+    })
 }

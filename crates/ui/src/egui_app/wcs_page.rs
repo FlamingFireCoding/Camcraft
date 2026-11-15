@@ -158,7 +158,7 @@ fn box_anchor(ui: &mut Ui, state: &mut State) {
     });
     ui.checkbox(&mut state.wcs_ui.pick_anchor, "Pick markers in viewport");
     if state.wcs_ui.pick_anchor {
-        ui.label("Click a yellow marker in the viewport to set the origin.");
+        ui.label("Click a yellow marker, a corner or a circle centre of the part in the viewport to set the origin.");
     }
     compass(ui, state);
 }
@@ -219,7 +219,7 @@ pub(super) fn circle_line(state: &State) -> String {
 fn circle_anchor(ui: &mut Ui, state: &mut State) {
     let avail = ui.available_width();
     let armed = state.wcs_ui.pick_circle;
-    if ui.add_sized(Vec2::new(avail, BUTTON_H), Button::selectable(armed, "Pick a circular edge")).clicked() {
+    if ui.add_sized(Vec2::new(avail, BUTTON_H), super::pick_button::pick_widget(ui, armed, "Pick a circular edge")).clicked() {
         state.wcs_ui.pick_circle = !armed;
     }
     if state.wcs_ui.pick_circle {
@@ -248,7 +248,7 @@ fn readout(ui: &mut Ui, state: &mut State, u: Unit) {
         None => format!("{label}: not placed (at the origin)"),
     };
     ui.label(line);
-    ui.label("Work offset: the G54-G59 slot this setup posts. It does not move the origin.");
+    ui.label("Work offset: the offset this setup posts, as its post names it. It does not move the origin.");
 }
 
 pub(super) fn apply_wcs_drafts(state: &mut State) {

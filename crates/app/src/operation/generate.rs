@@ -20,58 +20,8 @@ pub fn generate(
     run_job(job)
 }
 
-/// Run a fully-collected job: every world read happened in
-/// [`collect_job`], on the caller's thread, and nothing here names a
-/// `World`. Split from [`generate`] at the seam M5.3 B needed - a
-/// batch's jobs run on worker threads, where a `&World` cannot exist -
-/// and it is exactly the old body below the old head, so a solo
-/// generation is byte-identical to the file's whole history of them.
-pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
-    // The spindle law's set-aside note (issue #71 review) rides the
-    // path whichever arm cut it: a note, never a warning - the post
-    // is not held for features the op honestly leaves standing.
-    let note = job.spindle_note.take();
-    let carried = job.carried_overhang.take();
-    let tool_r = job.tool.diameter * 0.5;
-    let kind = job.params.kind();
-    // #261 part 2: a refusal's spot is in the frame the generators ran
-    // in (a 3+2 tilt's local one); the UI draws in world, so it is
-    // carried out through the same frame the path would have been.
-    let frame = job.frame;
-    // #835: a refusal naming the holder of a tool with a body says it
-    // judged the cylinder enclosing that body - #842: only where it did,
-    // a body whose band stack does not fit the record.
-    let judged_tool = job.tool.clone();
-    let body = job.body.clone().filter(|p| super::body_judged::falls_back(&judged_tool, p));
-    let _span = tracing::info_span!("generate", op = %job.op_name).entered();
-    let started = crate::clock::Instant::now();
-    tracing::debug!(kind = %kind, "generation started");
-    let (mut path, warns) = run_job_arms(job)
-        .map_err(|e| super::body_judged::name_enclosure(e, &judged_tool, body.as_ref()))
-        .map_err(|e| e.map_location(|p| frame.map_or(p, |f| f.to_world(p))))
-        // #261 part 3: a refusal's ghost rides the same frame map as a path.
-        .map_err(|e| match &frame {
-            Some(f) => e.map_ghost(|t| f.world_path(t, machining2d::ARC_FIT_TOL)),
-            None => e,
-        })
-        .inspect_err(|e| {
-            tracing::warn!(kind = %kind, ms = crate::logging::elapsed_ms(started), "generation refused: {e}");
-        })?;
-    tracing::info!(
-        kind = %kind,
-        moves = path.moves.len(),
-        warnings = warns.len(),
-        ms = crate::logging::elapsed_ms(started),
-        "generated"
-    );
-    let carried = carried.map(|o| o.note(&path, tool_r));
-    for n in note.into_iter().chain(carried) {
-        if !path.notes.contains(&n) {
-            path.notes.push(n);
-        }
-    }
-    Ok((path, warns))
-}
+mod run_job;
+pub use run_job::run_job;
 
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
@@ -111,6 +61,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         fixture_meshes,
         rotary_axis,
         part_solid,
+        around_part,
+        keep_parts,
+        neighbour_parts,
         area,
         wcs_origin,
         unit,
@@ -510,10 +463,28 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                             "{comp_name} compensation does not ride open runs - pick closed rings, or choose In computer"
                         )));
                     }
+                    // #1777: a run on a part is cut on its air side, read
+                    // from the part's sections; Side applies to rings only.
+                    let section_at = |z: f64| match super::material::section(&m_gen.facets, z) {
+                        Ok(r) => Ok(Some(r)),
+                        Err(GenError::Empty(_)) => Ok(None),
+                        Err(e) => Err(e),
+                    };
                     for run in &runs {
                         // #1015: a run refused shows the rings and runs before it.
-                        let next = machining2d::contour_along_chain(run, &cp).map_err(|e| e.after_moves(&path.moves))?;
+                        let next = if part_solid {
+                            machining2d::contour_open_run(run, &cp, &section_at)
+                        } else {
+                            machining2d::contour_along_chain(run, &cp)
+                        }
+                        .map_err(|e| e.after_moves(&path.moves))?;
+                        let said = next.notes.clone();
                         path = stitch(path, next);
+                        for n in said {
+                            if !path.notes.contains(&n) {
+                                path.notes.push(n);
+                            }
+                        }
                     }
                     (region, path)
                 }
@@ -552,6 +523,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -588,6 +560,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     helix_radius: *helix_radius,
                     optimal_load: *optimal_load,
                     blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
                 },
                 &holes,
             )?;
@@ -609,6 +582,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             entry,
             helix_radius,
             optimal_load,
+            method,
+            troch,
+            blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -619,28 +596,39 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let path = machining2d::pocket(
-                &region,
-                &PocketParams {
-                    links: lk,
-                    tool_diameter: d,
-                    stepover: *stepover,
-                    stock_to_leave: *stock_to_leave,
-                    clearance_z: hl.clearance,
-                    retract_z: hl.retract,
-                    top_z: req_z(hl.top, "Top of Part Z")?,
-                    bottom_z: req_z(hl.bottom, "Bottom of Part Z")?,
-                    stepdown: *stepdown,
-                    feed: *feed,
-                    plunge_feed: *plunge_feed,
-                    climb: *climb,
-                    strategy: PocketStrategy::Adaptive,
-                    entry: *entry,
-                    helix_radius: *helix_radius,
-                    optimal_load: *optimal_load,
-                    blend_turns: false,
-                },
-            )?;
+            let pp = PocketParams {
+                links: lk,
+                tool_diameter: d,
+                stepover: *stepover,
+                stock_to_leave: *stock_to_leave,
+                clearance_z: hl.clearance,
+                retract_z: hl.retract,
+                top_z: req_z(hl.top, "Top of Part Z")?,
+                bottom_z: req_z(hl.bottom, "Bottom of Part Z")?,
+                stepdown: *stepdown,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                climb: *climb,
+                strategy: PocketStrategy::Adaptive,
+                entry: *entry,
+                helix_radius: *helix_radius,
+                optimal_load: *optimal_load,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
+            };
+            // #1509 / #1588: the method picks the planner; both cut the same
+            // region, the one the op's source and boundary settings give.
+            let path = match method {
+                machining2d::AdaptiveMethod::Spiral => machining2d::pocket(&region, &pp)?,
+                // #1733: the loops are arcs already; the option is
+                // refused by name, never ignored (`sane` says it first).
+                machining2d::AdaptiveMethod::Trochoidal if *blend_turns => {
+                    return Err(GenError::Invalid(
+                        "arc turns at corners are not available with the Trochoidal method".into(),
+                    ));
+                }
+                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal_with(&region, &pp, troch)?,
+            };
             (region, path)
         }
         OpParams::Offset2D {
@@ -652,6 +640,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             climb,
             entry,
             helix_radius,
+            blend_turns,
+            blend_radius,
             ..
         } => {
             let region = region_for_job(
@@ -681,7 +671,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     entry: *entry,
                     helix_radius: *helix_radius,
                     optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
-                    blend_turns: false,
+                    blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
                 },
             )?;
             (region, path)
@@ -707,6 +698,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // themselves at every plane, so there is nothing here for a
             // picked loop to add - and nothing to erode by hand either:
             // one erosion per level, from that level's target.
+            let source_built = picked_region.is_none();
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -715,6 +707,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #1749: the silhouette's outside is air, so on a whole model
+            // the centre rides up to the silhouette edge - an open-sided
+            // notch is cleared past its open edge, never left as a ridge
+            // a radius wide. The setup's other parts stay out of reach.
+            // A picked or controlled region is the user's boundary and
+            // stays as given. #1774: the footprint reaches out to the
+            // stock's outline, so stock far past the silhouette is
+            // cleared too (the 2D pocket's #12 reading); a tilted
+            // plane refuses by name (no 3D Pocket carries one today).
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -1474,6 +1476,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.kind
                 )));
             }
+            // #1749: the same footprint as the 3D Pocket - one ladder.
+            let source_built = picked_region.is_none();
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -1482,6 +1486,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -1704,17 +1709,22 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             climb,
             entry,
             helix_radius,
+            extend_start,
+            extend_end,
             ..
         } => {
             // #1504: picks bound the room the slot may cut in - a slot
             // too wide, too long or placed past them is refused by name,
-            // never cut across the wall.
+            // never cut across the wall. The room judges the AUTHORED
+            // slot: an end extension (#1731) runs past the picks by the
+            // user's choice, and the gouge laws judge where it goes.
             if let Some(room) = slot_bound.take() {
                 room?.judge(*a, *b, *width)?;
             }
+            let (ea, eb) = machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
             let path = machining2d::slot(
-                *a,
-                *b,
+                ea,
+                eb,
                 &SlotParams {
                     links: lk,
                     tool_diameter: d,
@@ -1844,16 +1854,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // 90-degree tool), and its diameter must reach the face's
         // full width - `width / tan(alpha)` of cone height is exactly
         // the corner depth, so the reach door is the whole flute law
-        // for a well-made cone. `side` cannot change the ride - the
-        // cone meets its wall the same circle whether the material
+        // for a well-made cone. `side` cannot change the ride's circle -
+        // the cone meets its wall the same circle whether the material
         // stands inside it (bore) or outside (boss) - it says which
-        // wall the region picks, and the sim judges.
+        // wall the region picks (the sim judges), and so which way
+        // climb travels it (#1555: material right of travel under M3).
         OpParams::Chamfer2D {
             width,
             angle_deg,
             feed,
             plunge_feed,
             climb,
+            side,
             ..
         } => {
             if tool.kind != crate::tools::ToolKind::Taper {
@@ -1907,6 +1919,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
+                    // #1555: which side of the picked loops the material
+                    // stands on - the travel climb needs follows from it.
+                    inside: *side == Side::Inside,
                 },
             )?;
             (region, path)
@@ -2024,8 +2039,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // refuses it by name, and every standoff is measured
                 // about the spindle the post programs - world Z
                 // through the work offset - not the world origin.
+                // #1635: off the stock, the parts it holds are the
+                // turned work (the raw stock may be a box).
                 if machine_kind == crate::machine::Kind::Lathe {
-                    super::cross_spindle::lathe_reads(&material.facets, wcs_origin)?;
+                    let turned = if part_solid || keep_parts.is_empty() { &material.facets } else { &keep_parts };
+                    super::cross_spindle::lathe_reads(turned, wcs_origin)?;
                 }
                 let radial = drilling::CrossParams {
                     // The clearance/retract planes projected onto the
@@ -2048,7 +2066,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool: &tool,
                     holes: cross,
                 };
-                super::cross_spindle::cross_drill(radial, &material.facets, stock_facets.as_deref(), wcs_origin, &cutter, &tool_name, unit)?
+                {
+                    // #1635: off the stock, the chain is the one a part
+                    // source drills in that stock - the setup's parts are
+                    // the solid it measures and keeps, the source stock
+                    // the raw material its mouths stand off. #1641: on a
+                    // part source the setup's other parts are kept too.
+                    let solids = if part_solid {
+                        super::cross_spindle::Solids {
+                            source: &material.facets,
+                            stock: stock_facets.as_deref(),
+                            kept: &material.facets,
+                            neighbours: &neighbour_parts,
+                        }
+                    } else {
+                        super::cross_spindle::Solids { source: &keep_parts, stock: Some(&material.facets), kept: &keep_parts, neighbours: &[] }
+                    };
+                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?
+                }
             } else {
                 // M13.5 A: on a plain lathe the Drill kind is the
                 // turret's axial hole - the doors refuse by name a
@@ -2136,6 +2171,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     })
                     .collect(),
                 tool_diameter: d,
+                // #1556: the corner sets the reach at a through floor.
+                corner_radius: tool.corner_r,
                 stock_to_leave: *stock_to_leave,
                 stepdown: *stepdown,
                 // The cycles' exit gift, the drilling crate's own
@@ -2711,6 +2748,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let path = super::turning_holder::noted(path, &params, &tool, lathe_body.is_some());
     // #1037: ...and a bodied one names the fixtures its law cannot read.
     let path = super::turning_holder_steel::noted(path, &params, lathe_body.is_some(), &unread_steel);
+    // #1655: a band of the stock around the part that is narrower than
+    // the tool gets no pass - the op names it.
+    let cleared_around = around_part || (matches!(src, SrcRef::Stock) && !keep_parts.is_empty());
+    let path = super::keep_law::narrow_noted(path, &params, &region, d, cleared_around, unit);
 
     // M3.2 stage B: what the program clamps to. The op's setup context
     // decides - user fixtures bound to it (tagged models, implicit-
@@ -2745,116 +2786,32 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     } else {
         path
     };
-    let stl = match &params {
-        OpParams::Face { .. }
-        | OpParams::Probe { .. }
-        | OpParams::PlasmaProfile(_)
-        | OpParams::WireContour(_)
-        | OpParams::SinkerBurn(_)
-        | OpParams::SinkerSideBurn(_)
-        | OpParams::Trace { .. }
-        // The engrave twin leaves no kerf shelf (M2.4 B), and the
-        // chamfer cone owns its face outright - the ride IS the
-        // finished surface, a leave number could only move the rest
-        // verdict (the contour-rides' answer, spoken on a mill).
-        | OpParams::Engrave { .. }
-        | OpParams::Chamfer2D { .. }
-        // The deburr cone owns its break outright, same grammar as
-        // its 2D twin one row up: the ride IS the finished edge, and
-        // a leave number could only move the rest verdict (M2.5 E B).
-        | OpParams::Deburr { .. }
-        | OpParams::Drill { .. }
-        | OpParams::Finish3D { .. }
-        // The 5-axis kinds leave no stock - the ball path is the
-        // finish's path, and the pose adds no material law. The swarf
-        // family included: lying WITH the flank changes what the
-        // shank sees, not what the ball removes.
-        | OpParams::Contour5D { .. }
-        | OpParams::Parallel5D { .. }
-        | OpParams::Swarf { .. }
-        | OpParams::AdvancedSwarf { .. }
-        // Rotary leaves no stock either: the posed path is the
-        // finish's path, the axis fit adds no material law.
-        | OpParams::RotaryContour { .. }
-        | OpParams::RotaryParallel { .. }
-        // Flow bends the lines, not the material law. The drive-curve
-        // contour removes what the chain says, nothing more - the
-        // ball's envelope at the curve's stations is the whole law.
-        | OpParams::Flow5D { .. }
-        | OpParams::MultiAxisContour { .. }
-        // Facing leaves no shelf: the ladder steps to the facing
-        // plane and stops - the tolerance measures the finish, a
-        // stock-to-leave number would only move the verdict (M5.2 A).
-        // The finish ride is that answer on the skin: the tolerance
-        // IS its chord budget, and a leave would only move the
-        // verdict (M5.2 B).
-        | OpParams::Facing { .. }
-        // The finish plunge is the floor itself - the leave would
-        // only move the rest verdict, and the verdict already reads
-        // it (M5.2 C). Parting leaves nothing: the bar that stands
-        // past the kerf is the scrap, and it goes.
-        | OpParams::ProfileFinish { .. }
-        | OpParams::GrooveFinish { .. }
-        | OpParams::Part { .. }
-        // Threading leaves no shelf either: the full-form pass owns
-        // the whole wave, and the shallower rungs before it only
-        // widen it - what stands is what the wave scan measures,
-        // with nothing added to the floor (M5.2 D). The contour
-        // rides own their skin outright: a chamfer and a taper are
-        // finished by definition, and a multi-pass program ends ON
-        // the profile - its leave is spent inside the ladder, not
-        // standing outside the verdict (M5.2 E).
-        | OpParams::Threading { .. }
-        | OpParams::Chamfering { .. }
-        | OpParams::TaperTurning { .. }
-        | OpParams::MultiPassTurning { .. }
-        // A crown plunge leaves no shelf either: the valley IS the
-        // promise, and the deepest legal sink stands in it exactly -
-        // a leave number could only move the rest verdict (M5.2 E2).
-        // The bore ride owns its wall outright: the nose stands ON
-        // the skin it offsets, and a leave would only move the
-        // envelope's pass band (M5.2 F).
-        | OpParams::FormTurning { .. }
-        | OpParams::BoringTurning { .. }
-        // The thread mill owns the wave outright: the helix ends ON
-        // the major circle, and the infeed rungs before it only
-        // widen it (M2.4 C) - the threading answer on a mill.
-        | OpParams::Thread { .. } => 0.0,
-        OpParams::Contour { stock_to_leave, .. }
-        | OpParams::Pocket { stock_to_leave, .. }
-        // The twins leave the pocket's shelf, same law (M2.4 A).
-        | OpParams::Adaptive2D { stock_to_leave, .. }
-        | OpParams::Offset2D { stock_to_leave, .. }
-        | OpParams::Slot { stock_to_leave, .. }
-        | OpParams::TrochoidalSlot { stock_to_leave, .. }
-        // The circular ladder leaves the pocket's shelf, ring 0 eroded
-        // off the wall by it (M2.4 B).
-        | OpParams::Circular { stock_to_leave, .. }
-        // The boring ride leaves the wall's own shelf: the rim
-        // stands this far short of the model's circle (M2.4 C).
-        | OpParams::Bore { stock_to_leave, .. }
-        | OpParams::Pocket3D { stock_to_leave, .. }
-        // The ladder is the one rotary that LEAVES a shelf on purpose:
-        // the finishing kinds own the ledge under a column's last cut,
-        // so the wrap reads this number as a radial wall (E2).
-        | OpParams::RotaryOffset { stock_to_leave, .. }
-        // The stamped ladder leaves the pocket's shelf, same law.
-        | OpParams::MultiAxisRough { stock_to_leave, .. }
-        // The rung ladder leaves a radial wall read as a distance to
-        // the part - which is exactly what the scan measures
-        // (M5.2 B): every feed point must stand nose+leave off.
-        // The blade ladder leaves the same skin on the groove floor,
-        // and the meridian verdict gates REST by exactly tol+leave
-        // (M5.2 C).
-        | OpParams::ProfileRough { stock_to_leave, .. }
-        | OpParams::GrooveRough { stock_to_leave, .. } => *stock_to_leave,
-    };
+    let stl = stock_to_leave_of(&params);
     // The 2D kinds' depth-aware verify (the silent-gouge fix): a flat
     // region says where the walls stand at ONE plane, and a path walked
     // at every level of the ladder must also answer to the part solid
     // at each level it cuts - a blind bore's ring below its floor is in
     // steel the flat region never shows.
-    let depth_law = depth_law_of(&params, &src, part_solid);
+    let depth_law = match depth_law_of(&params, &src, part_solid) {
+        // #1603: with no stock set up a whole-model pocket source is the
+        // volume to remove (#12's reading does not apply): nothing to keep.
+        DepthLaw::Keep if !around_part => DepthLaw::None,
+        law => law,
+    };
+    // #1607: an Engrave or Trace off the stock marks the setup's parts.
+    let parts_marked = super::mark_law::is_mark_kind(&params) && !keep_parts.is_empty();
+    // #1631: a Drill, Bore or Thread off the stock enters the setup's
+    // parts only through the holes they model (the containment law).
+    let parts_holed = super::keep_law::is_hole_kind(&params) && !keep_parts.is_empty();
+    // #1635: a cross drill off the stock answered for the setup's parts
+    // in its own radial law (`cross_part`, above); the vertical solid
+    // law below would convict the declared cross hole's own wall.
+    // #1641: on a part source its radial law also refuses a chain into
+    // the setup's other parts; the neighbour law below (no wall excused)
+    // stays on it as a second net.
+    let parts_crossed = super::keep_law::is_cross_drill(&params);
+    // #1595: what a mark may take off the part's surface under the cutter.
+    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| super::mark_law::budget(t, b, tool.diameter * 0.5));
     // #1057: the containment kinds' declared rims, read untightened.
     let rims = if depth_law == DepthLaw::Contain { super::material_source::rims_of(&params) } else { Vec::new() };
     match &frame {
@@ -3121,6 +3078,31 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             if depth_law == DepthLaw::Contain {
                 contain_into(&mut warns, &path, &material.facets, &cutter, depth_law, stl, material.excess, &params, &thread_bores);
             }
+            // #1603: the pocket family keeps the part - its own mesh
+            // for a whole-model source, the setup's parts for a stock one
+            // (#1607: every stock-kept kind but the marks and the holes).
+            if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&material.facets).or((!keep_parts.is_empty() && !parts_marked && !parts_holed && !parts_crossed).then_some(&keep_parts)) {
+                let start = warns.len();
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
+            }
+            // #1631: a hole kind off the stock - the setup's parts by the
+            // containment law, its declared holes' modelled walls excused.
+            if parts_holed {
+                contain_into(&mut warns, &path, &keep_parts, &cutter, DepthLaw::Contain, stl, material.excess, &params, &thread_bores);
+            }
+            // #1595: an Engrave or Trace on the part may lower its
+            // surface by the mark budget and no more (`mark_law`);
+            // #1607: on a stock source, the setup's parts the same way.
+            let marked = match (depth_law == DepthLaw::Mark).then_some(&material.facets).or(parts_marked.then_some(&keep_parts)) {
+                Some(part) => super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess),
+                None => super::mark_law::Marked::default(),
+            };
+            // #1621: the setup's other parts, beside a part source - the
+            // plain solid law, no budget (a mark is on its own part).
+            if !neighbour_parts.is_empty() {
+                contain_into(&mut warns, &path, &neighbour_parts, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+            }
             // #985: an external thread's crest ring against every wall
             // that is not the boss it threads, with no thread allowance.
             for w in super::thread_boss::neighbours(&params, &path, &material.facets, &tool) {
@@ -3135,6 +3117,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 let mut w = verify::verify_bodies(&path, &VerifyContext { tool: &g, cutter: Some(c), ..ctx.clone() }, &material.bodies);
                 if depth_law == DepthLaw::Contain {
                     contain_into(&mut w, &path, &material.facets, &c, depth_law, stl, material.excess, &params, &[]);
+                }
+                // #1631: the core re-reads every part law the full tap
+                // answered to - the parts off the stock, and #1621's
+                // neighbours - or their gouges would be acquitted unread.
+                if parts_holed {
+                    contain_into(&mut w, &path, &keep_parts, &c, DepthLaw::Contain, stl, material.excess, &params, &[]);
+                }
+                if !neighbour_parts.is_empty() {
+                    contain_into(&mut w, &path, &neighbour_parts, &c, DepthLaw::Keep, stl, material.excess, &params, &[]);
                 }
                 w
             });
@@ -3154,6 +3145,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // The all-air verdict (M13.8): a finish that provably cuts
             // nothing says so by name instead of passing silent.
             let mut path = super::air_law::air_noted(path, mode, &material.facets, stock_top_z, &geom);
+            path.notes.extend(super::mark_law::notes(params.kind().info().label, marked, mark_budget, unit));
             // #104: explain the height mismatch, without replacing any move-level
             // verdict. Tilted, rotary and turning heights are not world-Z tops.
             if stock_aabb.is_some()
@@ -3258,6 +3250,30 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             if depth_law == DepthLaw::Contain {
                 contain_into(&mut warns, &path, &m_gen.facets, &cutter, depth_law, stl, material.excess, &params, &thread_bores);
             }
+            // #1603: the keep law in the plane's frame.
+            let keep_local = (!keep_parts.is_empty()).then(|| f.local_facets(&keep_parts));
+            if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| !parts_marked && !parts_holed && !parts_crossed)) {
+                let start = warns.len();
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
+            }
+            // #1631: a hole kind off the stock, in the plane's frame.
+            if let Some(kept) = keep_local.as_ref().filter(|_| parts_holed) {
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Contain, stl, material.excess, &params, &thread_bores);
+            }
+            // #1595: the mark law in the plane's frame - local path,
+            // local part, the budget measured along the tool (#1607:
+            // the setup's parts on a stock source).
+            let mut path_world = path_world;
+            let mark_part = (depth_law == DepthLaw::Mark).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| parts_marked));
+            if let Some(part) = mark_part {
+                let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess);
+                path_world.notes.extend(super::mark_law::notes(params.kind().info().label, marked, mark_budget, unit));
+            }
+            // #1621: the setup's other parts, in the plane's frame.
+            if !neighbour_parts.is_empty() {
+                contain_into(&mut warns, &path, &f.local_facets(&neighbour_parts), &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+            }
             warns.extend(workholding_warnings(
                 &path_world,
                 (&geom, &holder),
@@ -3327,8 +3343,23 @@ fn workholding_warnings(
 pub(super) enum DepthLaw {
     /// Nothing beyond the kind's own laws: the 3D kinds (they pass the
     /// model already), stock sources, and the kinds whose source IS the
-    /// material they remove or whose cut enters the part by design.
+    /// material they remove or whose cut enters the part by design
+    /// with a depth that is derived, not typed (2D Chamfer).
     None,
+    /// The keep law (#1603, `keep_law`): the pocket family on a whole
+    /// model. The part's sections are islands the rings stand outside
+    /// of, so tangency to them is the promise and the section laws
+    /// have nothing to add - but an area offset or extension can move
+    /// the boundary into the part. The solid law alone, nothing
+    /// excused: a stack entering the part anywhere is a gouge.
+    Keep,
+    /// The mark law (Engrave, Trace; #1595, `mark_law`): the cut enters
+    /// the part by design, so tangency and the sections stand down -
+    /// but only as a mark. The solid law runs against the part lowered
+    /// by the mark budget (the lesser of Top - Bottom and the cutter
+    /// radius): a cutter standing deeper than that under the part's
+    /// surface, or in a wall beside the line, is a gouge.
+    Mark,
     /// The full model law: the gouge tangency and containment checked
     /// against the part's section at every move's deepest plane, and
     /// the reach laws reading those sections as islands - plus the
@@ -3347,55 +3378,79 @@ pub(super) enum DepthLaw {
 /// The depth law per kind and source. Only a finished-part source (see
 /// `GenJob::part_solid`) can be gouged:
 /// - Contour and Face trim/skim the part itself: `Section`.
-/// - The pocket family cuts picked part features (`Section`); a whole-
-///   model source there is the volume to REMOVE (the region is the
-///   material, its interior is cut by contract), so no part law applies.
-/// - Circular cuts authored geometry into its source. A Stock source is
-///   the material to remove; a finished-part source (a whole model) is
-///   a part to keep - [`authored_law`] (#1543).
-/// - Slot: `Section` whenever its source is the finished part - picked
-///   (#1504, the part's own feature) or the whole model (#1537: a slot
-///   typed through the part's wall gouges what the job keeps). A Stock
-///   source is not part-solid, so the typed slot cuts it unjudged.
-/// - Trace, Engrave and 2D Chamfer enter the part by design (the
-///   engraving, the broken edge); their own modes stand the gouge law
-///   down for exactly that reason.
-/// - Drill (Z holes), Bore, Thread: `Contain`.
+/// - The pocket family cuts picked part features (`Section`). A whole-
+///   model source there is cleared AROUND (#12: the part's sections are
+///   islands), and the part itself is kept: `Keep` (#1603), the solid
+///   law alone - an area offset or extension that carries the boundary
+///   into the part gouges it. With no stock set up the model stays the
+///   volume to remove, and `run_job` stands the law down (`around_part`).
+///   (On a stock source the same law reads the
+///   setup's parts, `keep_law::parts_in_stock`; that is not a
+///   `part_solid` job and does not come through here. #1607: every kind
+///   below that carries a part law takes it there too - the solid law,
+///   or the mark law for Engrave and Trace.)
+/// - Circular, Slot and Trochoidal slot cut geometry typed by hand into
+///   their source: [`authored_law`]. `Section` whenever the source is
+///   the finished part - picked (Slot #1504, Circular #1550, Trochoidal
+///   slot #1593: a ring or channel typed below the picked floor gouges
+///   it) or the whole model (Slot #1537, Circular #1543, Trochoidal slot
+///   #1593: a circle or slot typed through the part's wall gouges what
+///   the job keeps). A Stock source is not part-solid: its typed
+///   geometry answers to the setup's parts instead (#1607,
+///   `keep_law::parts_in_stock`).
+/// - Trace and Engrave enter the part by design, as a mark: `Mark`
+///   (#1595), whole model or pick - the part's surface under the
+///   cutter may give way by the mark budget and no more, so the verdict
+///   is the operation's own wherever the program sim cannot judge.
+/// - 2D Chamfer enters the part by design (the broken edge) with a
+///   depth derived from its width and angle; its mode stands the gouge
+///   law down for exactly that reason. Off the stock it breaks the
+///   stock's edge, not the part's: the setup's parts take the solid
+///   law there (#1631, `keep_law::parts_in_stock`).
+/// - Drill (Z holes), Bore, Thread: `Contain` - and off the stock the
+///   same law against the setup's parts (#1631).
 pub(super) fn depth_law_of(params: &OpParams, src: &SrcRef, part_solid: bool) -> DepthLaw {
     if !part_solid {
         return DepthLaw::None;
     }
     match params {
         OpParams::Contour { .. } | OpParams::Face { .. } => DepthLaw::Section,
-        // #1504 / #1537: a Slot on the finished part (picked or whole
-        // model) keeps the part around it; only Stock is cut unjudged.
-        OpParams::Slot { .. } => DepthLaw::Section,
+        // #1504 / #1537 / #1543 / #1550 / #1593: a Slot, Trochoidal
+        // slot or Circular on the finished part (picked or whole model)
+        // keeps the part around it; only Stock is cut unjudged.
+        OpParams::Slot { .. } | OpParams::TrochoidalSlot { .. } | OpParams::Circular { .. } => authored_law(src),
         OpParams::Pocket { .. } | OpParams::Adaptive2D { .. } | OpParams::Offset2D { .. }
             if matches!(src, SrcRef::Selection(_)) =>
         {
             DepthLaw::Section
         }
+        // #1603: a whole model is kept, whatever the area controls say.
+        OpParams::Pocket { .. } | OpParams::Adaptive2D { .. } | OpParams::Offset2D { .. } => DepthLaw::Keep,
         OpParams::Drill { cross, .. } if cross.is_empty() => DepthLaw::Contain,
         OpParams::Bore { .. } | OpParams::Thread { .. } => DepthLaw::Contain,
-        OpParams::Circular { .. } => authored_law(src),
+        // #1595: a centreline cut on the finished part is a mark.
+        OpParams::Engrave { .. } | OpParams::Trace { .. } => DepthLaw::Mark,
         _ => DepthLaw::None,
     }
 }
 
-/// The law of a kind that cuts geometry typed by hand (Circular's centre
-/// and radius; the Slot's endpoints and width, #1537) into a finished-
-/// part source (#1543, Prime Directive). A whole-model source names the
-/// part to keep, not a volume to remove: nothing about the typed circle
-/// says it stays inside the part's own hole, so the path answers to the
-/// part's sections and solid (`Section`) - a circle typed through a wall
-/// is a blocking Gouge, a circle inside the modeled hole stays clean.
-/// A picked source keeps its own kind's arm (a picked Circular's circle
-/// IS the picked rim's); a Stock source never reaches here
-/// (`part_solid` is false), so it still cuts unjudged.
+/// The one law of the kinds that cut geometry typed by hand - Circular's
+/// centre and radius, the Slot's and the Trochoidal slot's endpoints and
+/// width - into a finished-part source (#1504, #1537, #1543, #1550,
+/// #1593; Prime Directive). Nothing
+/// about typed geometry says it stays inside the part's own hole or
+/// above its own floor, so the path answers to the part's sections and
+/// solid (`Section`) whether the source is the whole model or a pick:
+/// a circle typed through a wall, or a ring typed below the picked
+/// floor, is a blocking Gouge; a circle inside the modeled hole stays
+/// clean. A Stock source is the material to remove and never reaches
+/// here (`part_solid` is false, `depth_law_of`'s early return); its arm
+/// reads `None` - the parts standing in that stock are kept by
+/// `keep_law::parts_in_stock` instead (#1607).
 pub(super) fn authored_law(src: &SrcRef) -> DepthLaw {
     match src {
-        SrcRef::Entity(_) => DepthLaw::Section,
-        SrcRef::Stock | SrcRef::Selection(_) => DepthLaw::None,
+        SrcRef::Entity(_) | SrcRef::Selection(_) => DepthLaw::Section,
+        SrcRef::Stock => DepthLaw::None,
     }
 }
 
@@ -3412,7 +3467,7 @@ const CONTAIN_STEP: f64 = 0.25;
 /// own axis (#1205), never a flat - and a thread mill's `bores` their
 /// threads (#1071).
 #[allow(clippy::too_many_arguments)] // the path, the part, the cutter and the law's inputs
-fn contain_into(
+pub(super) fn contain_into(
     warns: &mut Vec<Warning>,
     path: &Toolpath,
     facets: &[Triangle],
@@ -3438,6 +3493,116 @@ fn contain_into(
         if !warns.contains(&w) {
             warns.push(w);
         }
+    }
+}
+
+/// The stock to leave every solid law reads for `params` (#1628: one
+/// table, so the post's live re-judge of the kept parts reads the very
+/// number generation did).
+pub(super) fn stock_to_leave_of(params: &OpParams) -> f64 {
+    match params {
+        OpParams::Face { .. }
+        | OpParams::Probe { .. }
+        | OpParams::PlasmaProfile(_)
+        | OpParams::WireContour(_)
+        | OpParams::SinkerBurn(_)
+        | OpParams::SinkerSideBurn(_)
+        | OpParams::Trace { .. }
+        // The engrave twin leaves no kerf shelf (M2.4 B), and the
+        // chamfer cone owns its face outright - the ride IS the
+        // finished surface, a leave number could only move the rest
+        // verdict (the contour-rides' answer, spoken on a mill).
+        | OpParams::Engrave { .. }
+        | OpParams::Chamfer2D { .. }
+        // The deburr cone owns its break outright, same grammar as
+        // its 2D twin one row up: the ride IS the finished edge, and
+        // a leave number could only move the rest verdict (M2.5 E B).
+        | OpParams::Deburr { .. }
+        | OpParams::Drill { .. }
+        | OpParams::Finish3D { .. }
+        // The 5-axis kinds leave no stock - the ball path is the
+        // finish's path, and the pose adds no material law. The swarf
+        // family included: lying WITH the flank changes what the
+        // shank sees, not what the ball removes.
+        | OpParams::Contour5D { .. }
+        | OpParams::Parallel5D { .. }
+        | OpParams::Swarf { .. }
+        | OpParams::AdvancedSwarf { .. }
+        // Rotary leaves no stock either: the posed path is the
+        // finish's path, the axis fit adds no material law.
+        | OpParams::RotaryContour { .. }
+        | OpParams::RotaryParallel { .. }
+        // Flow bends the lines, not the material law. The drive-curve
+        // contour removes what the chain says, nothing more - the
+        // ball's envelope at the curve's stations is the whole law.
+        | OpParams::Flow5D { .. }
+        | OpParams::MultiAxisContour { .. }
+        // Facing leaves no shelf: the ladder steps to the facing
+        // plane and stops - the tolerance measures the finish, a
+        // stock-to-leave number would only move the verdict (M5.2 A).
+        // The finish ride is that answer on the skin: the tolerance
+        // IS its chord budget, and a leave would only move the
+        // verdict (M5.2 B).
+        | OpParams::Facing { .. }
+        // The finish plunge is the floor itself - the leave would
+        // only move the rest verdict, and the verdict already reads
+        // it (M5.2 C). Parting leaves nothing: the bar that stands
+        // past the kerf is the scrap, and it goes.
+        | OpParams::ProfileFinish { .. }
+        | OpParams::GrooveFinish { .. }
+        | OpParams::Part { .. }
+        // Threading leaves no shelf either: the full-form pass owns
+        // the whole wave, and the shallower rungs before it only
+        // widen it - what stands is what the wave scan measures,
+        // with nothing added to the floor (M5.2 D). The contour
+        // rides own their skin outright: a chamfer and a taper are
+        // finished by definition, and a multi-pass program ends ON
+        // the profile - its leave is spent inside the ladder, not
+        // standing outside the verdict (M5.2 E).
+        | OpParams::Threading { .. }
+        | OpParams::Chamfering { .. }
+        | OpParams::TaperTurning { .. }
+        | OpParams::MultiPassTurning { .. }
+        // A crown plunge leaves no shelf either: the valley IS the
+        // promise, and the deepest legal sink stands in it exactly -
+        // a leave number could only move the rest verdict (M5.2 E2).
+        // The bore ride owns its wall outright: the nose stands ON
+        // the skin it offsets, and a leave would only move the
+        // envelope's pass band (M5.2 F).
+        | OpParams::FormTurning { .. }
+        | OpParams::BoringTurning { .. }
+        // The thread mill owns the wave outright: the helix ends ON
+        // the major circle, and the infeed rungs before it only
+        // widen it (M2.4 C) - the threading answer on a mill.
+        | OpParams::Thread { .. } => 0.0,
+        OpParams::Contour { stock_to_leave, .. }
+        | OpParams::Pocket { stock_to_leave, .. }
+        // The twins leave the pocket's shelf, same law (M2.4 A).
+        | OpParams::Adaptive2D { stock_to_leave, .. }
+        | OpParams::Offset2D { stock_to_leave, .. }
+        | OpParams::Slot { stock_to_leave, .. }
+        | OpParams::TrochoidalSlot { stock_to_leave, .. }
+        // The circular ladder leaves the pocket's shelf, ring 0 eroded
+        // off the wall by it (M2.4 B).
+        | OpParams::Circular { stock_to_leave, .. }
+        // The boring ride leaves the wall's own shelf: the rim
+        // stands this far short of the model's circle (M2.4 C).
+        | OpParams::Bore { stock_to_leave, .. }
+        | OpParams::Pocket3D { stock_to_leave, .. }
+        // The ladder is the one rotary that LEAVES a shelf on purpose:
+        // the finishing kinds own the ledge under a column's last cut,
+        // so the wrap reads this number as a radial wall (E2).
+        | OpParams::RotaryOffset { stock_to_leave, .. }
+        // The stamped ladder leaves the pocket's shelf, same law.
+        | OpParams::MultiAxisRough { stock_to_leave, .. }
+        // The rung ladder leaves a radial wall read as a distance to
+        // the part - which is exactly what the scan measures
+        // (M5.2 B): every feed point must stand nose+leave off.
+        // The blade ladder leaves the same skin on the groove floor,
+        // and the meridian verdict gates REST by exactly tol+leave
+        // (M5.2 C).
+        | OpParams::ProfileRough { stock_to_leave, .. }
+        | OpParams::GrooveRough { stock_to_leave, .. } => *stock_to_leave,
     }
 }
 

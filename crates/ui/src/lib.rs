@@ -24,6 +24,7 @@ mod axis_note;
 mod build_info;
 pub mod boundary_draft;
 pub mod box_pick;
+pub mod browser_files;
 pub mod boundary_viz;
 pub mod plate_viz;
 pub mod boundary_summary;
@@ -33,6 +34,7 @@ pub mod feature_click;
 pub mod egui_app;
 pub mod feedback;
 pub mod file_dialog;
+pub mod file_pick;
 pub mod incoming_view;
 pub mod headless_gpu;
 pub mod interact;
@@ -40,6 +42,7 @@ pub mod locate_pick;
 pub mod move_drag;
 pub mod machined;
 mod setup_display;
+mod work_envelope;
 pub mod mcp_host;
 pub mod operations;
 pub mod path_lines;
@@ -48,7 +51,10 @@ pub mod post_file;
 pub mod plane_pick;
 pub mod pick_words;
 pub mod axis_pick;
+pub mod cylinder_pick;
+pub mod origin_pick;
 pub mod points_pick;
+pub mod wire_sync_pick;
 pub mod wcs_pick;
 pub mod shortcut_keys;
 pub mod state;
@@ -60,9 +66,13 @@ pub mod viewport;
 pub mod wcs_circle_pick;
 
 #[cfg(test)]
+mod file_pick_tests;
+#[cfg(test)]
 mod law_tests;
 #[cfg(test)]
 mod refusal_focus_tests;
+#[cfg(test)]
+mod detect_holes_note_tests;
 #[cfg(test)]
 mod refusal_ghost_tests;
 #[cfg(test)]

@@ -34,6 +34,7 @@ pub(crate) mod gpu_select;
 // glyph tint are the consumers (ratio, on-fill, the follow law, the gate).
 pub mod contrast;
 mod boundary;
+mod pick_button;
 mod gcode_highlight;
 mod gcode_view;
 mod debug_info;
@@ -87,6 +88,7 @@ mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
 // #371: the tool editor's Body section and its picking preview.
+mod tool_body_assembly_page;
 mod tool_body_lathe_page;
 mod tool_body_page;
 // #630: the tool editor's lathe orientation row.
@@ -123,6 +125,7 @@ pub(crate) use setup_align_pick::align_text;
 // #330: the Setups page's lay-on-a-plane row.
 mod setup_plane_pick;
 mod setup_axis_pick;
+mod setup_orient_pick;
 // #555: the Setups page's lay-on-three-points row.
 mod setup_points_pick;
 // #701: the Setups page's set-WCS-from-features role row.
@@ -171,6 +174,7 @@ mod panes;
 // #441: the ribbon's Theme door and its dropdown.
 mod theme_drop;
 mod recent_drop;
+mod file_drop;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
 // #155: Pause / Home entry rows and their menu.
@@ -281,6 +285,8 @@ mod setup_wcs_tests;
 mod wcs_page_tests;
 #[cfg(test)]
 mod wcs_circle_tests;
+#[cfg(test)]
+mod wcs_part_point_tests;
 #[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]

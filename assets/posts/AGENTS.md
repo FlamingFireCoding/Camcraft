@@ -19,7 +19,7 @@ the property table there is the vocabulary, this file is the grammar.
 
 Manifest: top-level assignments only — `description`, `vendor`, `legal`,
 `certificationLevel`, `minimumRevision`, `extension`, `setCodePage`,
-`capabilities`, `serves`, `coolantModes`, `programUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`. All but `serves` and the last six are
+`capabilities`, `serves`, `coolantModes`, `programUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`. All but `serves` and the last eight are
 text the engine reads none of; `serves = ["plasma"];` (#1266; one word or a list of kind words: mill, lathe, mill-turn, plasma, wire_edm, sinker_edm) names the machine kinds a script of the user's own posts to - the app refuses it by name on any other kind, and a script that states none is accepted only on a mill (non-turning dialect), a lathe (turning) or a mill-turn, never on a plasma table or an EDM; shipped posts are judged by registry name and need no `serves`; `programUnits = "mm inch"` (#902) says
 the script writes the program in the document's unit -
 `postOptions.Units`, `"mm"` or `"inch"`, absent = mm: the dialect's
@@ -43,7 +43,17 @@ in) and `explainTool = "station-offset"` (a lathe T0101 is tool 1,
 offset 1) - a malformed table is refused by name when Explain is on;
 never read
 `machine.units` for the program's unit, it is only the unit the
-machine file was written in; `threadHands = true` (#629) says the script
+machine file was written in; `workOffsetIndex = true` (#931) says the
+script reads `PARAM WorkOffset` as the 1-based offset number and writes
+its own word for it, up to `workOffsetMax` (6 when unstated) - the
+engine refuses a higher offset by setup name; without the flag the
+script receives the word `G54`..`G59` for offsets 1-6 and the engine
+refuses any offset above 6. A flagged script also defines
+`workOffsetName(n)`, its control's name for offset n (display only).
+Every shipped post sets it. An extended word (`G59.1`, `G505`...) is
+written only where the control's public manual is cited (tormach.cps
+and tormach-lathe.cps: the LinuxCNC G-code reference's G59.1-G59.3);
+`threadHands = true` (#629) says the script
 reads `PARAM SpindleDirection` and states a thread's hand (M04 when the
 helix needs the spindle reversed) - without it the engine refuses a
 reverse-spindle thread section by name (fanuc-lathe.cps and tormach-lathe.cps set it); `liveTooling = true` (issue #33) says the
@@ -133,6 +143,12 @@ write (the gate), so the released program never carries one.
   power-on height) reads an unstated `safe_retract` as "not homed" and
   lifts in the work offset to the section's `ClearancePlane` instead,
   refused by name when that height is unknown or not above `StockZTop`.
+- **A length word carries its decimal point (#1836).** A Fanuc-family
+  control with parameter 3401#0 DPI=0 reads a word with no point in least
+  increments (`Z14` is 0.014 mm). The Fanuc, Fanuc Lathe, Haas, Mazak and
+  Doosan posts write every length, angle, lead and feed-per-rev word with
+  its point (`Z14.`); only the words the control documents as "no decimal
+  point" (lathe G76 P Q, G83 Q) stay in whole least increments.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a
@@ -147,6 +163,15 @@ write (the gate), so the released program never carries one.
   everything the first raw motion line needs (`startPreamble`
   pattern), and serve legacy streams that carry no `SECTION` by
   firing it from the first motion too.
+- **The first traverse states its height (#1614).** After a tool
+  change (or a G30, or at the program's start) the top of Z travel
+  is not proof of clearance: a long tool on a high work offset can
+  stand below the part there. `tormach.cps` writes `G0 Z<ClearancePlane>`
+  (else the RetractPlane) before the first X/Y move, so a setup that
+  cannot clear is stopped by the control's Z limit instead of rapiding
+  through the part; a stream stating neither plane is refused by name,
+  and the refused move (with every later one while X/Y stay unknown) is
+  not written.
 - **A cycle states its feed; a cut needs a turning spindle (#1357).**
   A canned cycle whose `FeedRate` is missing or not positive is a
   `message()` refusal by name ("canned cycle G73 has no feed rate"),

@@ -32,6 +32,9 @@ pub mod carry;
 pub mod held;
 #[path = "stock_sim_breaks.rs"]
 pub mod breaks;
+// #1595: the marks an Engrave or Trace on the part declares.
+#[path = "stock_sim_marks.rs"]
+mod marks;
 // The wire clause (#1110): a wire cut stays out of the plan, by name.
 #[path = "stock_sim_wire.rs"]
 pub mod wire;
@@ -166,6 +169,9 @@ pub fn simulate_document(
     // #303: the op owns its break - a chamfer's or deburr's declared
     // bevel is part of the finished part, judged by its own depth.
     credit_breaks(&mut dev, &display, &model_facets, &program_breaks(world, &planned, walked.spanned, &walked.frame));
+    // #1595: and its mark - an Engrave's or Trace's own sweep, within
+    // the budget the operation's own law holds it to.
+    credit_marks(&mut dev, &display, &model_facets, &marks::program_marks(world, &planned, walked.spanned, &walked.frame));
     // #320: a gouge on a block a later setup set aside for a new one.
     if let Some(left) = &walked.left {
         carry::fold_left(&mut dev, left);
@@ -246,11 +252,13 @@ pub(crate) struct Planned {
     /// The edge breaks the op was asked to cut (#303); empty for every
     /// kind but the chamfer and the deburr.
     pub breaks: Vec<crate::cl::EdgeBreak>,
-    /// A sinker electrode's box atom (#541): `[hx, hy, gap]` - the face's
-    /// half sizes and the condition's spark gap. The column verdict cuts
-    /// it (`simulate_box`); the field eye has no box atom and refuses the
-    /// program by name. `None` for every other tool.
-    pub electrode: Option<[f64; 3]>,
+    /// The mark budget and target part(s) the op declares (#1595, #1627,
+    /// `operation::mark_law`): `Some` only for an Engrave or Trace.
+    pub mark: Option<crate::operation::mark_law::SimMark>,
+    /// A sinker electrode's atom (#541, #1152). The column verdict cuts
+    /// it; the field eye has no electrode atom and refuses the program
+    /// by name. `None` for every other tool.
+    pub electrode: Option<held::ElectrodeAtom>,
 }
 
 /// The field eye's refusal of a sinker electrode (#541), said once.
@@ -352,39 +360,38 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         // half its band - `LathePlan::feature`): the display cell law
         // (`auto_cell`) reads it, not the IC. Every other tool sweeps
         // its cutting radius - a tap its thread's core (#266, #985).
-        // A sinker electrode (#541) sweeps its rectangular face grown by
-        // the condition's spark gap - the box atom; its radius is the
-        // inscribed half size, which only the cell law reads.
+        // A sinker electrode (#541) sweeps its rectangular face - or its
+        // outline (#1152) - grown by the condition's spark gap; its
+        // radius is the least half extent, which only the cell law reads.
         let electrode = match &op.params {
             crate::operation::OpParams::SinkerBurn(sb) if tool.kind == crate::tools::ToolKind::Electrode => {
-                let (hx, hy) = camcraft_tools::electrode::half_sizes(&tool);
                 let gap = crate::operation::sinker_op::condition_gap(world, op.setup.as_deref(), sb)
                     .map_err(|e| format!("{name}: {e}"))?;
-                Some([hx, hy, gap])
+                Some(held::ElectrodeAtom::of(&tool, gap))
             }
             // #545: the side burn sweeps the same box atom along its
             // lateral move.
             crate::operation::OpParams::SinkerSideBurn(sb) if tool.kind == crate::tools::ToolKind::Electrode => {
-                let (hx, hy) = camcraft_tools::electrode::half_sizes(&tool);
                 let gap = crate::operation::sinker_side_op::side_gap(world, op.setup.as_deref(), sb)
                     .map_err(|e| format!("{name}: {e}"))?;
-                Some([hx, hy, gap])
+                Some(held::ElectrodeAtom::of(&tool, gap))
             }
             _ => None,
         };
-        let radius = match (lathe, electrode) {
+        let radius = match (lathe, &electrode) {
             (Some(plan), _) => plan.feature(),
-            (None, Some([hx, hy, _])) => hx.min(hy),
+            (None, Some(e)) => e.half[0].min(e.half[1]),
             (None, None) => crate::operation::thread_op::sim_radius(&tool, &op.params).map_err(|e| format!("{name}: {e}"))?,
         };
         // #546: a wear-compensated burn is judged as the worn electrode burns it.
-        let moves = crate::operation::sinker_wear_op::judged(world, &op, electrode.map(|e| e[2]), cache.path.moves)
+        let moves = crate::operation::sinker_wear_op::judged(world, &op, electrode.as_ref().map(|e| e.gap), cache.path.moves)
             .map_err(|e| format!("{name}: {e}"))?;
         planned.push(Planned {
             name: name.clone(),
             moves,
             // #529: only what the op itself declared, never wider.
             breaks: breaks::bounded(name, &op.params, cache.path.breaks),
+            mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,
             cone,

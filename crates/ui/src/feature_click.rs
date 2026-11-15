@@ -92,14 +92,20 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
             GeoPick::Vertex => PickKinds::POINTS,
             _ => PickKinds { points: true, ..mode },
         }
+    } else if state.wire_sync.armed {
+        // #1171: wire sync points are vertices.
+        PickKinds::POINTS
     } else if state.points_pick.is_some() {
         // #555: three points (it arms Vertex mode). A face or an edge
         // picked in another mode still reaches `points_pick::take`,
         // which refuses it by name. #692: a point taker opts in to
         // round-edge centres.
         PickKinds { centres: mode.points, ..mode }
-    } else if crate::plane_pick::collecting(state) {
+    } else if crate::plane_pick::collecting(state) || crate::cylinder_pick::collecting(state) {
         PickKinds::FACES
+    } else if crate::origin_pick::collecting(state) {
+        // #771: the origin point is a vertex.
+        PickKinds::POINTS
     } else if let Some(by) = state.axis_pick.as_ref().and_then(|d| d.picking.map(|a| d.by(a))) {
         match by {
             AxisBy::Edge => PickKinds::EDGES,
@@ -109,6 +115,11 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
         // #701: the role draft takes faces, edges, corners and walls alike -
         // the toolbar's pick mode stays the user's own.
         PickKinds { faces: true, edges: true, points: true, centres: false }
+    } else if state.boundary_pick.is_some() {
+        // #1727: an armed boundary row takes faces AND edges whatever the
+        // toolbar's pick mode - in Faces mode it took faces only, so no
+        // edge could ever bound the cut.
+        PickKinds { faces: true, edges: true, points: false, centres: false }
     } else {
         mode
     };
@@ -180,6 +191,10 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
         crate::locate_pick::take(state, pick); // #561: the locate mates; refuses an edge by name
         return;
     }
+    if state.wire_sync.armed {
+        crate::wire_sync_pick::take(state, pick); // #1171: refuses a face or an edge by name
+        return;
+    }
     if state.points_pick.is_some() {
         crate::points_pick::take(state, pick); // #555: refuses a face or an edge by name
         return;
@@ -194,6 +209,14 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     }
     if crate::plane_pick::collecting(state) {
         crate::plane_pick::take(state, pick); // #330 / #554
+        return;
+    }
+    if crate::cylinder_pick::collecting(state) {
+        crate::cylinder_pick::take(state, pick); // #771
+        return;
+    }
+    if crate::origin_pick::collecting(state) {
+        crate::origin_pick::take(state, pick); // #771
         return;
     }
     if crate::axis_pick::hint_stray(state) {

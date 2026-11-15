@@ -208,6 +208,7 @@ impl OpParams {
                 // The level links ride the shared tail below (M11.2).
             }
             OpParams::Pocket {
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -263,6 +264,12 @@ impl OpParams {
                 // M11.1 C: written only when ON, as for Face/Contour.
                 if *blend_turns {
                     h.write_u8(0xB1);
+                    // #1733: a set radius only, so every earlier
+                    // blended pocket keeps its digest.
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
                 }
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
@@ -270,6 +277,8 @@ impl OpParams {
             // pins which ladder runs, and a field that cannot move
             // has nothing to say about staleness.
             OpParams::Adaptive2D {
+                blend_turns,
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -284,6 +293,8 @@ impl OpParams {
                 entry,
                 helix_radius,
                 optimal_load,
+                method,
+                troch,
                 tilt,
             } => {
                 w(h, *stepover);
@@ -306,8 +317,39 @@ impl OpParams {
                 // M11.4 C: the kind now runs the HSM plan, not rings -
                 // a generation word so every pre-C op goes Stale once.
                 h.write_u8(0xA4);
+                // #1509: written only off the default, so every Spiral
+                // op keeps the digest it had before the choice existed.
+                if *method == crate::machining2d::AdaptiveMethod::Trochoidal {
+                    h.write_u8(0xA5);
+                    if *troch != crate::machining2d::AdaptiveTrochParams::default() {
+                        h.write_u8(0xA6);
+                        w(h, troch.max_engagement);
+                        match troch.ret {
+                            None => h.write_u8(0),
+                            Some(crate::machining2d::TrochoidReturn::Microlift { height }) => {
+                                h.write_u8(1);
+                                w(h, height);
+                            }
+                            Some(crate::machining2d::TrochoidReturn::Retract) => h.write_u8(2),
+                        }
+                        w(h, troch.return_feed.unwrap_or(-1.0));
+                        w(h, troch.loop_width.unwrap_or(-1.0));
+                    }
+                }
+                // #1733: written only when ON, as for the pocket.
+                if *blend_turns {
+                    h.write_u8(0xB1);
+                    // #1733: a set radius only, so every earlier
+                    // blended pocket keeps its digest.
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
+                }
             }
             OpParams::Offset2D {
+                blend_turns,
+                blend_radius,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -340,6 +382,14 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
+                // #1733: written only when ON, as for the pocket.
+                if *blend_turns {
+                    h.write_u8(0xB1);
+                    if let Some(r) = blend_radius {
+                        h.write_u8(0xB2);
+                        w(h, *r);
+                    }
+                }
             }
             OpParams::Pocket3D {
                 links: _,
@@ -843,6 +893,8 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => {
                 wp2(h, *a);
                 wp2(h, *b);
@@ -868,6 +920,12 @@ impl OpParams {
                     Entry3D::Arc => 3,
                 });
                 wt(h, *tilt);
+                // #1731: appended only when set, so a slot with no
+                // extension keeps its hash and stays Fresh.
+                if *extend_start != 0.0 || *extend_end != 0.0 {
+                    w(h, *extend_start);
+                    w(h, *extend_end);
+                }
             }
             OpParams::TrochoidalSlot {
                 a,
@@ -1065,14 +1123,8 @@ impl OpParams {
                 // through here or through the source arm.
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped)); // changes what the
-                    // bore door says, so it belongs in the digest (M8.3):
-                    // a re-detect that folds a step marks the op Stale.
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
                 // The radial list digests too (M5.2 F2): same law -
                 // detection output or a typed edit is params data, and
@@ -1080,15 +1132,7 @@ impl OpParams {
                 // the op Stale rather than re-detect silently.
                 h.write_u32(cross.len() as u32);
                 for c in cross {
-                    for p in [c.origin, c.dir] {
-                        w(h, p.x);
-                        w(h, p.y);
-                        w(h, p.z);
-                    }
-                    for v in [c.radius, c.entry_d, c.floor_d] {
-                        w(h, v);
-                    }
-                    h.write_u8(u8::from(c.through));
+                    super::hole_digest::cross(h, c);
                 }
             }
             // The facing ladder (M5.2 stage A, tag 18): three heights,
@@ -1262,6 +1306,11 @@ impl OpParams {
                     h.write_u8(infeed_plan.method as u8);
                     h.write_u8(infeed_plan.schedule as u8);
                     h.write_u32(infeed_plan.spring_passes);
+                    // #418: a byte only when set, so a #416 plan's
+                    // digest is unchanged.
+                    if infeed_plan.repeat_each_depth {
+                        h.write_u8(0xD5);
+                    }
                     for v in [infeed_plan.flank_angle, infeed_plan.min_depth, infeed_plan.finish_allowance] {
                         w(h, v);
                     }
@@ -1412,12 +1461,8 @@ impl OpParams {
                 h.write_u8(u8::from(*climb));
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped));
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
             }
             // The probe (#108): every number moves the touches or the
@@ -1642,12 +1687,8 @@ impl OpParams {
                 });
                 h.write_u32(holes.len() as u32);
                 for hole in holes {
-                    wp2(h, hole.xy);
-                    w(h, hole.radius);
-                    w(h, hole.entry_z);
-                    w(h, hole.floor_z);
-                    h.write_u8(u8::from(hole.through));
-                    h.write_u8(u8::from(hole.stepped));
+                    // #1560: in the form the file stores (lattice).
+                    super::hole_digest::hole(h, hole);
                 }
             }
         }

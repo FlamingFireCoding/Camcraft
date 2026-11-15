@@ -74,7 +74,7 @@ fn probe() -> String {
         rpm: 0.0,
         clearance_z: 50.0,
         retract_z: 50.0,
-        wcs: "G54",
+        wcs: 1,
         probe_result: Some(post::probe_rec::ProbeResult { set_wcs: Some(1), tol_mm: 0.5 }),
         ..Dump::default()
     };
@@ -109,6 +109,7 @@ fn drill_retract() -> String {
         orientation: None,
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
         pitch_min: 0.0,
     };
@@ -145,7 +146,7 @@ fn drill_retract() -> String {
         clearance_z: 10.0,
         retract_z: 3.0,
         top_z: 0.0,
-        wcs: "G54",
+        wcs: 1,
         ..Dump::default()
     };
     cnc::serialize(&post::dump(&t, &d))
@@ -305,7 +306,7 @@ fn probe_stream(p: &Probe) -> String {
         rpm: 0.0,
         clearance_z: 50.0,
         retract_z: 50.0,
-        wcs: "G54",
+        wcs: 1,
         origin: p.origin,
         probe_result: Some(post::probe_rec::ProbeResult { set_wcs: p.set_wcs, tol_mm: 0.5 }),
         ..Dump::default()

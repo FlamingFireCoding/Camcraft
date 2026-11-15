@@ -1,9 +1,10 @@
 //! #1543: a Circular whose source is the finished part (a whole model,
 //! `SrcRef::Entity`) is judged against that part. A circle typed through
 //! the hole's wall is a blocking `Warning::Gouge` and the post is held;
-//! a circle inside the modeled hole stays clean; a Stock source still
-//! cuts the typed circle unjudged; a picked Circular keeps its law. The
-//! same job driven over MCP is judged the same.
+//! a circle inside the modeled hole stays clean; a Stock source answers
+//! for the part standing in it the same way (#1607) (a picked Circular is judged too:
+//! `circular_pick_law.rs`, #1550). The same job driven over MCP is
+//! judged the same.
 //!
 //! Provenance: our own tests over the depth-aware verify (the section
 //! and solid laws); no vendor material consulted.
@@ -66,8 +67,19 @@ fn job() -> (World, History) {
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("tool");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
     h.execute(&world, ImportModel::from_mesh("part", holed_block()));
-    let at = Location { pos: Point3::new(-20.0, -20.0, 0.0), ..Location::default() };
+    // A box stock stands centred on its place: pos at the origin puts
+    // [-20, 20]^2 over the part.
+    let at = Location::default();
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 8.0 }, at).expect("stock"));
+    let b = model::stock_world_aabb_for(&world, None).expect("stock box");
+    let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
+    assert!(
+        on(b.min.x, -20.0) && on(b.min.y, -20.0) && on(b.min.z, 0.0)
+            && on(b.max.x, 20.0) && on(b.max.y, 20.0) && on(b.max.z, 8.0),
+        "stock at {:?}..{:?}",
+        b.min,
+        b.max
+    );
     (world, h)
 }
 
@@ -141,12 +153,15 @@ fn a_whole_model_circle_inside_the_modeled_hole_stays_clean() {
 }
 
 #[test]
-fn a_stock_source_still_cuts_the_typed_circle_unjudged() {
-    // The stock IS the material to remove: no part law, as before.
+fn a_stock_source_circle_through_the_hole_wall_answers_for_the_part() {
+    // The stock IS the material to remove, but the part standing in it
+    // is kept (#1607, `keep_law::parts_in_stock`): the same circle
+    // through the hole's wall is convicted off a Stock source too.
     let (world, mut h) = job();
     let (path, warns) = run(&world, &mut h, "C3", SrcRef::Stock, circular(12.0));
     assert!(!path.moves.is_empty(), "the rings were generated");
-    assert_eq!(gouges(&warns), 0, "{warns:?}");
+    assert!(gouges(&warns) > 0, "the wall is convicted: {warns:?}");
+    assert_blocked(&world, "stock-wall");
 }
 
 // ---- MCP parity -----------------------------------------------------
@@ -201,4 +216,22 @@ fn over_mcp_the_whole_model_circle_is_judged_the_same() {
     assert_eq!(reply["generated"][0]["status"], json!("ok"), "{reply}");
     assert_eq!(op_gouges(&good), 0, "{good}");
     assert_eq!(good["ok"], json!(true), "a legal circle verifies ok: {good}");
+}
+
+#[test]
+fn fixture_stock_covers_the_part() {
+    let (world, _) = job();
+    let b = model::stock_world_aabb_for(&world, None).expect("stock box");
+    let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
+    assert!(
+        on(b.min.x, -20.0)
+            && on(b.min.y, -20.0)
+            && on(b.min.z, 0.0)
+            && on(b.max.x, 20.0)
+            && on(b.max.y, 20.0)
+            && on(b.max.z, 8.0),
+        "stock at {:?}..{:?}",
+        b.min,
+        b.max
+    );
 }

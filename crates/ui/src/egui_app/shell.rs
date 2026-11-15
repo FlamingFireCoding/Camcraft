@@ -96,7 +96,10 @@ pub(crate) fn shell_layout(
     // imgui App::draw law); the viewport's update_hover and the property-page
     // chip hovers then own it until the pointer moves on.
     state.geo_hover_drawn = state.geo_hover.take();
+    state.geo_row_marked.clear();
     panes::shortcuts(ui, state);
+    // #1450: a model file dropped on the window goes through Model's import.
+    super::file_drop::take_drop(ui, state);
     // The live theme, read once per pass: the strips and every pane below
     // share one token table, so the widget path and the painted ink cannot
     // disagree on a retheme (M6.1 A). `ribbon_h` tracks the cell box.
@@ -378,11 +381,12 @@ fn viewport_panel(
                 fly = Some([q.x, q.y, q.z]);
             }
             // M7.2 D: what the program leaves, out as a mesh.
-            if ui
-                .button("Export STL")
-                .on_hover_text("Write the machined stock as an STL mesh (extracted from the traced field)")
-                .clicked()
-            {
+            if crate::browser_files::button(
+                ui,
+                state.browser_refusal_of(&crate::state::CommandKind::ExportStockDialog),
+                "Export STL",
+                "Write the machined stock as an STL mesh (extracted from the traced field)",
+            ) {
                 export = true;
             }
         });
@@ -410,6 +414,7 @@ fn viewport_panel(
     // global pointer coords imgui's viewport_rect fed the raw-event path.
     let ([rx0, ry0], [rx1, ry1]) = (parr(resp.rect.min), parr(resp.rect.max));
     state.viewport_rect = ([rx0, ry0], [rx1, ry1]);
+    super::file_drop::paint_hint(ui, resp.rect);
     let hot = resp.hovered();
     state.viewport_hot = hot;
     let (rw, rh) = (rx1 - rx0, ry1 - ry0);
@@ -463,16 +468,25 @@ fn viewport_panel(
             viewcube::click(state, h, p);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if mid_press {
-                state.drag = Some(DragMode::Orbit);
-            }
-            if right_press {
-                state.drag = Some(DragMode::Pan);
-            }
-            // #1198 b: a press on a move ball starts the body drag and is
-            // never remembered as a pick/orbit press - the ball wins.
-            if left_pressed && !crate::move_drag::press(state, parr(p)) {
-                *left_press = Some(parr(p));
+            if let Some(tool) = state.nav_tool {
+                // A nav tool owns the drag whatever the button is;
+                // a press remembers nothing, so the release's pick
+                // law sees no press to resolve.
+                if left_pressed || mid_press || right_press {
+                    state.drag = Some(tool);
+                }
+            } else {
+                if mid_press {
+                    state.drag = Some(DragMode::Orbit);
+                }
+                if right_press {
+                    state.drag = Some(DragMode::Pan);
+                }
+                // #1198 b: a press on a move ball starts the body drag and is
+                // never remembered as a pick/orbit press - the ball wins.
+                if left_pressed && !crate::move_drag::press(state, parr(p)) {
+                    *left_press = Some(parr(p));
+                }
             }
         }
         if let (Some(steps), Some(p)) = (wheel, pos)
@@ -497,7 +511,7 @@ fn viewport_panel(
         crate::move_drag::release(state);
     } else if left_released {
         let press = left_press.take();
-        if state.drag == Some(DragMode::Orbit) {
+        if state.drag.is_some() {
             state.drag = None;
         }
         // #979: a pick box's release adds what it holds, as one command.
@@ -530,6 +544,7 @@ fn viewport_panel(
         match state.drag {
             Some(DragMode::Orbit) => state.cam.orbit(motion.x, motion.y),
             Some(DragMode::Pan) => state.cam.pan(motion.x, motion.y),
+            Some(DragMode::Zoom) => state.cam.zoom(-motion.y * 0.05),
             None => {
                 if let Some(b) = state.pick_box.as_mut()
                     && let Some(p) = pos
@@ -599,6 +614,10 @@ fn viewport_panel(
         // #709: picked points, violet and never occluded; the hover over them.
         for (a, b) in crate::vertex_pick::picked_point_marks(state, aspect) {
             ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(2.0, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
+        }
+        // #1171: the wire sync pairs' rulings, violet like the other pick marks.
+        for (a, b) in crate::wire_sync_pick::segments(state, aspect) {
+            ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(1.5, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
         }
         // #1505/#1507: selected picks and the viewport hover
         // as thick, haloed strokes over the model.
@@ -791,6 +810,7 @@ fn viewport_panel(
         let hint = match state.drag {
             Some(DragMode::Orbit) => "orbit",
             Some(DragMode::Pan) => "pan",
+            Some(DragMode::Zoom) => "zoom",
             None => super::viewport_layout::LEGEND,
         };
         if (hot || state.drag.is_some())

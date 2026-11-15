@@ -71,13 +71,20 @@ pub(super) fn open_band(
 /// The tool-centre run of the open pass and its offset from the chain:
 /// the chain run on past both ends by the Boundary extension, offset to
 /// the chosen side by the containment's placement, the Boundary offset
-/// and the stock to leave. Every refusal of the pass is named here.
+/// and the stock to leave, ordered with the material on its right (the
+/// climb order, #1555). Every refusal of the pass is named here.
 pub(super) fn open_run(base: &Region, ctx: &AreaCtx, stock_to_leave: f64) -> Result<(Vec<Point2>, f64), GenError> {
     let Some((geom, side)) = &ctx.open else {
         return Err(unreached("contour open boundary"));
     };
     if ctx.family != Family::Contour {
         return Err(unreached("contour open boundary family"));
+    }
+    if let OpenGeom::Chains(cs) = geom {
+        return Err(GenError::Invalid(format!(
+            "a Contour rides one open chain - its open boundary spells {} separate chains; pick the edges between them or use a clearing kind to cut between them",
+            cs.len()
+        )));
     }
     let OpenGeom::Chain(raw) = geom else {
         return Err(GenError::Invalid(
@@ -126,7 +133,15 @@ pub(super) fn open_run(base: &Region, ctx: &AreaCtx, stock_to_leave: f64) -> Res
         d = -d;
     }
     let ext = extended(&chain, c.extension);
-    let run = if d < TOL { ext } else { offset_run(&ext, d, tool_left, ctx.unit)? };
+    // #1555: the run is handed on with the material on its RIGHT, the
+    // order climb travels it under M3 (conventional reverses it). The
+    // offset comes back along the CCW tube, the chain - the material's
+    // side - on its left, so it turns round; a run on the chain itself
+    // keeps the chain's order when the tool stands left of it.
+    let mut run = if d < TOL { ext } else { offset_run(&ext, d, tool_left, ctx.unit)? };
+    if d >= TOL || !tool_left {
+        run.reverse();
+    }
     Ok((run, d))
 }
 
@@ -168,7 +183,7 @@ fn cross(o: Point2, a: Point2, b: Point2) -> f64 {
 }
 
 /// Closest distance between segments ab and cd (zero when they cross).
-fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
+pub(super) fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
     let (d1, d2) = (cross(a, b, c), cross(a, b, d));
     let (d3, d4) = (cross(c, d, a), cross(c, d, b));
     if d1 * d2 < 0.0 && d3 * d4 < 0.0 {

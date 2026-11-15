@@ -230,7 +230,7 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
         if let Some(name) = pick {
             state.pending.push_back(CommandKind::SelectPostNamed(name));
         }
-        if ui.button("Load post (.cps)").clicked() {
+        if crate::browser_files::button(ui, state.browser_refusal_of(&CommandKind::SelectPostDialog), "Load post (.cps)", "") {
             state.pending.push_back(CommandKind::SelectPostDialog);
         }
         if matches!(current, PostRef::File(_)) && ui.button("Built-in").clicked() {
@@ -270,6 +270,7 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     super::post_options::threading_picker(ui, state);
     super::post_options::smoothing_switch(ui, state);
     super::post_options::end_units_picker(ui, state);
+    super::post_options::between_setups_picker(ui, state);
 }
 
 /// The post offer (M13.5 B): when the mounted machine's kind is not
@@ -439,7 +440,7 @@ fn setups_page(ui: &mut Ui, state: &mut State) {
 /// button queues the dialog arm and nothing touches the history.
 pub(super) fn sheet_footer(ui: &mut Ui, state: &mut State) {
     ui.horizontal(|ui| {
-        if ui.button("Export setup sheets…").clicked() {
+        if crate::browser_files::button(ui, state.browser_refusal_of(&CommandKind::SetupSheetDialog), "Export setup sheets…", "") {
             state.pending.push_back(CommandKind::SetupSheetDialog);
         }
         ui.label("(one page per setup, text)");
@@ -512,14 +513,18 @@ fn tool_page(ui: &mut Ui, state: &mut State, name: &str) {
     let (new, export, import) = ui
         .horizontal_wrapped(|ui| {
             let new = ui.button("New tool…").clicked();
-            let export = ui
-                .button("Export library…")
-                .on_hover_text("write the document's tools to a CamCraft tool library file")
-                .clicked();
-            let import = ui
-                .button("Import library…")
-                .on_hover_text("import the tools of a CamCraft tool library file (one undo step; the mode beside it says what happens to a name the document has)")
-                .clicked();
+            let export = crate::browser_files::button(
+                ui,
+                state.in_browser(crate::browser_files::NO_EXPORT),
+                "Export library…",
+                "write the document's tools to a CamCraft tool library file",
+            );
+            let import = crate::browser_files::button(
+                ui,
+                state.in_browser(crate::browser_files::NEEDS_PICKER),
+                "Import library…",
+                "import the tools of a CamCraft tool library file (one undo step; the mode beside it says what happens to a name the document has)",
+            );
             tool_import_mode_combo(ui, &mut state.tool_import_mode);
             (new, export, import)
         })
@@ -1036,14 +1041,17 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
     // #864: a model imported coarser than the importer promises says so,
     // with the error it carries and what that does to the checks.
     if let Some(chord) = camcraft_app::model_fidelity::chord_of(&state.world, &entity) {
-        ui.label(camcraft_app::model_fidelity::summary(&state.world, chord));
-        hint(
+        ui.label(camcraft_app::mesh_open::summary(&state.world, &entity, chord));
+        // #1610: an incomplete model's line already says what to do.
+        if camcraft_app::mesh_open::hole_of(&state.world, &entity).is_none() {
+            hint(
             ui,
             "This model was too large to import at full detail. Gouge checks against it are \
              stricter to make up for that; when it is too coarse to check at all, its operations \
              are refused at the post. Raise the STEP facet budget below and import the file \
              again to clear this.",
-        );
+            );
+        }
     }
     super::step_budget_row::row(ui, state, &entity);
     if let Some(a) = model::entity_world_aabb(&state.world, &entity) {
