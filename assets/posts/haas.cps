@@ -68,10 +68,16 @@ function trimNum(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) {  // a length: mm at three decimals, or inch at four
+// #1836: a length word always carries its decimal point (`Z14.`, never
+// `Z14`). A Fanuc-family control can read a word with no point in its
+// least increment (Fanuc parameter 3401#0 DPI=0: Z14 is 0.014 mm). With
+// the point, the control reads the same value whatever that setting is.
+function pt(s) { return s.indexOf(".") >= 0 ? s : s + "."; }
+function fn(v) {  // a length as text (comments): mm at three decimals, or inch at four
   if (!has(v)) return "0";
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
+function fu(v) { return pt(fn(v)); }  // a length word, with its point
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
   return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
@@ -283,8 +289,8 @@ function opNotes() {  // at the section's preamble: the setup once, the op each 
 function toolNote() {  // just before the tool change it describes
   var desc = [];
   if (toolKind) desc.push(toolKind);
-  if (toolDia > 0) desc.push("D" + fu(toolDia));
-  if (toolCr > 0) desc.push("R" + fu(toolCr));
+  if (toolDia > 0) desc.push("D" + fn(toolDia));
+  if (toolCr > 0) desc.push("R" + fn(toolCr));
   note(joinDash(["T" + ni(tNo) + (toolName ? " " + toolName : ""), desc.join(" ")]));
   toolKind = ""; toolCr = 0;
 }
@@ -734,7 +740,7 @@ function travelAxis(p) {  // where the target and the nominal trip differ most
   return d[0] >= d[1] && d[0] >= d[2] ? 0 : (d[1] >= d[2] ? 1 : 2);
 }
 function minusU(expr, v) {  // expr - v, the sign folded into the operator
-  var s = fu(v);
+  var s = fn(v);  // macro-B text: a constant is not scaled by DPI (#1836)
   if (s === "0") return expr;
   return s.charAt(0) === "-" ? expr + "+" + s.substring(1) : expr + "-" + s;
 }
@@ -797,8 +803,8 @@ function onProbeResult() {
     // (edge, outside corner) never writes a doubled sign like `--`.
     var ex = a.Expected - org[ai];
     var op = ex < 0 ? "+" : "-";
-    block(["#" + (dev + i) + "=" + mean + op + fu(Math.abs(ex))]);
-    block(["IF[ABS[#" + (dev + i) + "]GT" + fu(p.Tolerance) + "]THEN#3000=1(PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
+    block(["#" + (dev + i) + "=" + mean + op + fn(Math.abs(ex))]);
+    block(["IF[ABS[#" + (dev + i) + "]GT" + fn(p.Tolerance) + "]THEN#3000=1(PROBE " + a.Axis + " OUT OF TOLERANCE)"]);
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
     var act = 5221 + 20 * (wcsIndex - 1);
