@@ -95,7 +95,10 @@ pub fn moved_part_problem(world: &World, name: &str, op: &Operation, path: &Tool
                             mark_law::mark_into(&mut w, judged, &facets, c, budget, excess);
                         }
                         Law::Hole => contain_into(&mut w, judged, &facets, c, DepthLaw::Contain, stl, excess, &job.params, bores),
-                        _ => contain_into(&mut w, judged, &facets, c, DepthLaw::Keep, stl, excess, &job.params, &[]),
+                        _ => {
+                            contain_into(&mut w, judged, &facets, c, DepthLaw::Keep, stl, excess, &job.params, &[]);
+                            super::keep_law::note_stock_chamfer_gouges(&job.params, job.part_solid, &mut w);
+                        }
                     }
                     w
                 };

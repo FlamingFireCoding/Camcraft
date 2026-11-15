@@ -186,3 +186,62 @@ fn a_part_added_under_a_stock_source_drill_is_judged_at_the_post_by_the_hole_law
         }
     }
 }
+
+#[test]
+fn stock_source_chamfer_refusal_names_cause_and_part_as_source_workaround() {
+    // #1637: a stock-source 2D Chamfer flush with the part breaks into
+    // the part; its refusal on generate, post, and MCP verify must name
+    // the cause and tell the user to chamfer with the part as source.
+    for rotated in [false, true] {
+        let (world, mut h) = job(Model::hole(3.0, 8.0), 15.0, rotated);
+        let warns = generated(&world, &mut h, CHAMFER, chamfer(1.0));
+        let hints: Vec<String> = warns.iter().filter(|w| w.blocks_post()).map(ToString::to_string).collect();
+        assert!(
+            hints.iter().any(|m| m.contains("stock-source chamfer breaks into a part") && m.contains("chamfer with the part as source")),
+            "generate rotated {rotated}: expected cause + workaround in warnings: {hints:?}"
+        );
+        if rotated {
+            assert_not_posted(&world, "chamfer-hint-rotated", "chamfer with the part as source");
+        }
+
+        // A part added under a previously clear rotated-stock chamfer is
+        // also caught at the post by the same hint.
+        if rotated {
+            let (re_world, mut rh) = job(Model::hole(3.0, 8.0), HALF, true);
+            let clear_warns = generated(&re_world, &mut rh, CHAMFER, chamfer(1.0));
+            assert!(clear_warns.iter().all(|w| !w.blocks_post()), "{clear_warns:?}");
+            let mut f = Vec::new();
+            common::solid_part::plate(&common::solid_part::rect(30.0, -5.0, 35.0, 5.0), None, 0.0, TOP, &mut f);
+            rh.execute(&re_world, ImportModel::from_mesh("other", Mesh::from_facets(f)));
+            assert_not_posted(&re_world, "chamfer-rejudge-hint", "chamfer with the part as source");
+        }
+
+        // Choosing the part as source produces a clean path that posts.
+        let (part_world, mut ph) = job(Model::hole(3.0, 8.0), 15.0, rotated);
+        ph.execute(
+            &part_world,
+            CreateOperation::new(&part_world, "S1", CHAMFER, SrcRef::Entity("part".into()), chamfer(1.0)).expect("create part-source chamfer"),
+        );
+        ph.execute(&part_world, GenerateOperation::new(&part_world, "S1").expect("generate part-source chamfer"));
+        let e = model::find_by_name(&part_world, "S1").expect("op");
+        let tp = model::toolpath_of(&part_world, &e).expect("cached path");
+        assert!(tp.warnings.iter().all(|w| !w.blocks_post()), "part-source rotated {rotated}: {:?}", tp.warnings);
+        assert_posts(&part_world, &format!("chamfer-part-source-{rotated}"));
+    }
+
+    let chamfer_json = json!({ "width": 1.0, "angle_deg": 45.0, "top_z": 20.0 });
+    let flush = mcp_verify("chamfer-hint-mcp", 15.0, "2D Chamfer", CHAMFER, chamfer_json);
+    assert_eq!(flush["ok"], json!(false), "{flush}");
+    let findings = flush["findings"].as_array().expect("findings array");
+    assert!(
+        findings.iter().any(|f| {
+            f["op"] == json!("S1")
+                && f["kind"] == json!("gouge")
+                && f["blocks_post"] == json!(true)
+                && f["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("stock-source chamfer breaks into a part") && m.contains("chamfer with the part as source"))
+        }),
+        "MCP verify findings missing cause + workaround: {flush}"
+    );
+}
