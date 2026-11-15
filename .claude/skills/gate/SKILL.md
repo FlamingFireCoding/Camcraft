@@ -36,6 +36,19 @@ Flags:
 
 A fix for one red step then costs one step, not a full run.
 
+## What quick selects
+
+Quick prints its selection before it runs:
+
+- The changed `#[test]` functions of a changed suite (`--exact`).
+- The gate-mapped suites of a changed source module. The header of each
+  suite has the map: `Gate map (M4.4): covers app::x, app::y...`.
+- A change to shared test code (`tests/common`, goldens, snapshots) runs the
+  suites of that crate.
+- A change in geometry, cl or a `Cargo.toml` falls back to batch.
+- A change in `xtask/` runs the unit tests of xtask.
+- `camcraft-kernel` runs in quick only when kernel is touched.
+
 ## Job budget (#2057)
 
 - One budget sets the jobs of the whole gate: 6 by default.
@@ -53,19 +66,6 @@ A fix for one red step then costs one step, not a full run.
   calls. When other builds run, lower the budget of each one (for example
   two gates at `CAMCRAFT_GATE_JOBS=3` on 6 cores). A plain `cargo` call
   takes its own `-j`.
-
-## What quick selects
-
-Quick prints its selection before it runs:
-
-- The changed `#[test]` functions of a changed suite (`--exact`).
-- The gate-mapped suites of a changed source module. The header of each
-  suite has the map: `Gate map (M4.4): covers app::x, app::y...`.
-- A change to shared test code (`tests/common`, goldens, snapshots) runs the
-  suites of that crate.
-- A change in geometry, cl or a `Cargo.toml` falls back to batch.
-- A change in `xtask/` runs the unit tests of xtask.
-- `camcraft-kernel` runs in quick only when kernel is touched.
 
 ## Slow binaries and heavy lanes
 
