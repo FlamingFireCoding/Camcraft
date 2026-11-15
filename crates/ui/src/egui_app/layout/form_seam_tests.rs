@@ -76,7 +76,7 @@ const FAMILIES: &[Family<'_>] = &[
     },
     Family {
         name: "multi-axis",
-        max_raw: 9,
+        max_raw: 16,
         sources: &[
             ("multiaxis_page.rs", include_str!("../multiaxis_page.rs")),
             ("rotary_page.rs", include_str!("../rotary_page.rs")),
@@ -120,7 +120,7 @@ const FAMILIES: &[Family<'_>] = &[
     },
     Family {
         name: "tools and machine",
-        max_raw: 202,
+        max_raw: 204,
         sources: &[
             ("tool_list_page.rs", include_str!("../tool_list_page.rs")),
             ("tool_cutter_page.rs", include_str!("../tool_cutter_page.rs")),

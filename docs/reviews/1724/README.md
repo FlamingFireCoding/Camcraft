@@ -27,3 +27,8 @@ Run `python3 docs/reviews/1724/check_screenshots.py` to check the six linked
 PNG files. Pass a saved PR body as an argument to check that it also embeds
 all six images. This pins the review's missing-evidence finding; it does
 not assert pixel equality.
+
+The repository keeps this review evidence, following the existing checked-in
+evidence in `docs/reviews/1756/`, `docs/review/1765/` and `docs/pr-1711/`.
+The six images remain embedded in the PR description; this directory preserves
+their capture provenance and the image-link check alongside them.

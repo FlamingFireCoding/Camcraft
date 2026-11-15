@@ -16,3 +16,16 @@
 
 - **What it would cost to change later:**
   - Trivial: `layout/controls.rs` functions are thin `pub` wrappers under `layout/` and can be backed by any kit widget (or merged/split) without touching page callers.
+
+### PR #1724 review fixes
+
+- **Chosen:** Merge current main and update the tools-and-machine raw-call cap
+  from 202 to its merged baseline of 204, and the multi-axis cap from 9 to
+  its merged baseline of 16. Keep the holes-family zero-call guard
+  and all other family caps. This fixes the reported merge failure without
+  weakening unrelated existing guards; dropping those guards or adding arbitrary
+  slack was considered and rejected.
+- **Chosen:** Retain `docs/reviews/1724/` as review evidence, matching existing
+  repository evidence in `docs/reviews/1756/`, `docs/review/1765/` and
+  `docs/pr-1711/`. The PR description already embeds all six images. Removing
+  these files would discard their capture provenance and link-validation script.
