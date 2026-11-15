@@ -129,6 +129,10 @@ fn pin(name: &str) {
     }
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/golden/explain/{name}.nc"));
+    if std::env::var_os("WRITE_GOLDEN").is_some() {
+        // The review of a regenerated golden is its git diff.
+        std::fs::write(&path, &on.program).expect("write the Explain golden");
+    }
     assert_eq!(
         on.program,
         std::fs::read_to_string(path).expect("Explain golden"),

@@ -201,7 +201,7 @@ fn surface_speed_is_feet_per_minute_and_rpm_never_scales() {
     assert!(inch.program.contains("G96 S656 M03\n"), "200 m/min is 656 ft/min: {}", inch.program);
     assert!(inch.program.contains("G50 S12000\n"), "{}", inch.program);
     // 100 mm/min at 1000 rpm: 0.1 mm/rev = 0.0039 in/rev; X12 -> X0.4724.
-    assert!(inch.program.contains("G01 X0.4724 Z0 F0.0039\n"), "{}", inch.program);
+    assert!(inch.program.contains("G01 X0.4724 Z0. F0.0039\n"), "{}", inch.program);
     let s = section(vec![], vec![mv(MoveKind::Feed, 0.0, 6.0, 0.0, Some(100.0))]);
     assert!(run(&s, "inch").program.contains("G97 S1000 M03\n"));
 }
@@ -216,7 +216,7 @@ fn a_peck_counts_the_inch_increment() {
     // cannot be seated (#1026) and is refused.
     let s = section(vec![], vec![mv(MoveKind::Rapid, 0.0, 0.0, 22.0, None), peck, mv(MoveKind::Rapid, 0.0, 0.0, 22.0, None)]);
     let (mm, inch) = (run(&s, "mm"), run(&s, "inch"));
-    assert!(mm.program.contains("G83 Z10 Q1000 P500 F0.1\n"), "{}", mm.program);
+    assert!(mm.program.contains("G83 Z10. Q1000 P500 F0.1\n"), "{}", mm.program);
     // 1 mm = 394 ten-thousandths; the 500 ms dwell is unchanged.
     assert!(inch.program.contains("G83 Z0.3937 Q394 P500 F0.0039\n"), "{}", inch.program);
 }
