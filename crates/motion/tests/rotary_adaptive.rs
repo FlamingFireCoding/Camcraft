@@ -55,10 +55,10 @@ fn adaptive_plans_the_developed_levels_under_the_load_and_kink_laws() {
     };
     assert!(dev.is_chained() && dev.all_finite());
     // The measuring stock is the clamped bar itself, developed: its top
-    // the r7 skin. The ladder's first level stands ON that skin (zero
-    // depth); the levels below it cut real stock, each read from the
-    // skin above it - round 1's r6.2 stock left only the skin level to
-    // the planner and its 0% reading proved nothing.
+    // the r7 skin. The ladder takes no level on that skin (#2004); each
+    // level cuts real stock, read from the skin above it - round 1's
+    // r6.2 stock left only the skin level to the planner and its 0%
+    // reading proved nothing.
     let reads = read_levels(&dev, 7.0, 0.0, p.stepdown);
     for r in &reads {
         println!(

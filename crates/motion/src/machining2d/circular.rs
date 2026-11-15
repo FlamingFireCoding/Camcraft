@@ -270,12 +270,18 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
             // The ladder starts where the previous ring settled (the
             // rim's first cut opens at the top plane itself).
             let floor = p.bowl_z((rho + r).min(p.radius));
-            let prev = if k == 0 {
-                p.top_z
+            if k == 0 {
+                // The rim ring: Top Z is the material top, never a
+                // level of its own (#2004).
+                cut_levels(p.top_z, floor, p.stepdown)
             } else {
-                p.bowl_z((rho + p.stepover + r).min(p.radius))
-            };
-            cut_levels(prev, floor, p.stepdown)
+                // An inner ring: the previous ring's floor is a real
+                // cut for this one - the strip inside the previous
+                // ring's band still stands at the stock top, and it
+                // opens at that plane. Keep it as the first level.
+                let prev = p.bowl_z((rho + p.stepover + r).min(p.radius));
+                levels_from(prev, floor, p.stepdown)
+            }
         } else {
             cut_levels(p.top_z, p.bottom_z, p.stepdown)
         }
@@ -298,9 +304,33 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
     Ok(path)
 }
 
+/// An inner vault ring's ladder: the plane `top` (the previous ring's
+/// floor, where this ring's new strip opens) and then the shared
+/// [`cut_levels`] below it - the ladder this ring has always cut. A span
+/// of zero or less is the one plane at `bottom`, as `cut_levels` says.
+fn levels_from(top: f64, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenError> {
+    let below = cut_levels(top, bottom, stepdown)?;
+    if top - bottom <= 0.0 {
+        return Ok(below);
+    }
+    Ok(std::iter::once(top).chain(below).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #2004: the rim ring and a flat disk start a stepdown under Top Z;
+    /// an inner vault ring keeps the previous ring's floor as its first
+    /// level (its new strip opens there), the same ladder as before.
+    #[test]
+    fn an_inner_vault_ring_keeps_its_opening_plane() {
+        assert_eq!(levels_from(8.0, 0.0, 5.0).ok(), Some(vec![8.0, 3.0, 0.0]));
+        assert_eq!(levels_from(8.0, 0.0, 50.0).ok(), Some(vec![8.0, 0.0]));
+        assert_eq!(levels_from(2.0, 2.0, 5.0).ok(), Some(vec![2.0]));
+        assert!(levels_from(8.0, 0.0, 0.0).is_err());
+        assert_eq!(cut_levels(8.0, 0.0, 5.0).ok(), Some(vec![3.0, 0.0]));
+    }
 
     /// #1558: the polygon's chord count comes from the tolerance, not a
     /// fixed 512 - its sagitta stays within it, and it is the fewest

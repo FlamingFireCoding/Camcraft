@@ -68,9 +68,19 @@ fn dist_to_seg(p: Point2, a: Point2, b: Point2) -> f64 {
     let t = (((p.x - a.x) * d.x + (p.y - a.y) * d.y) / dd).clamp(0.0, 1.0);
     (p.x - a.x - t * d.x).hypot(p.y - a.y - t * d.y)
 }
-/// Cut levels from `top` down to `bottom`, snapped so the last level is
+/// Cut levels below `top` down to `bottom`, snapped so the last level is
 /// `bottom` exactly. Shared by depth-stepping operations.
-pub(crate) fn cut_levels(top: f64, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenError> {
+///
+/// `top` is the top of the material the ladder cuts (the operation's
+/// Top Z), so it is never a level itself: a plane there removes nothing
+/// (#2004). The first level is `top - stepdown`; a stepdown that spans
+/// the whole depth is the one level at `bottom`. `top 20, bottom 0,
+/// step 5` gives `[15, 10, 5, 0]`; `top 13, bottom 0, step 50` gives
+/// `[0]`. The last step keeps the remainder (`top 20, bottom 2, step 5`
+/// gives `[15, 10, 5, 2]`). A span of zero or less is the one plane at
+/// `bottom`; a stepdown that is not positive, or that needs more than
+/// [`super::MAX_PASSES`] levels, is refused.
+pub fn cut_levels(top: f64, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenError> {
     let span = top - bottom;
     if span <= 0.0 {
         return Ok(vec![bottom]);
@@ -78,7 +88,9 @@ pub(crate) fn cut_levels(top: f64, bottom: f64, stepdown: f64) -> Result<Vec<f64
     super::face::pass_budget("stepdown", span, stepdown)?;
     let tol = span * 1e-9;
     let mut zs = Vec::new();
-    let mut z = top;
+    // The same subtraction chain as before #2004, one step on: every
+    // level below the first is the same float it always was.
+    let mut z = top - stepdown;
     while z > bottom + tol {
         zs.push(z);
         z -= stepdown;

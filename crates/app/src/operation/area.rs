@@ -284,25 +284,13 @@ fn standing_inside(enclosed: &Region, part: &[Triangle], z: f64) -> Result<Regio
 const SHADOW_AREA_MIN: f64 = 1e-6;
 
 /// The planes a pocket ladder cuts at, top down, the last one `bottom`
-/// exactly - the `machining2d` level law, restated here because the
-/// region is built before the generator runs (and the motion crate keeps
-/// its helper private). Degenerate spans and steps collapse to the one
-/// bottom plane; the generator refuses them by name later.
+/// exactly: the `machining2d` level law itself (`cut_levels`, #2004 - one
+/// law, so the region is built at the planes the generator cuts; Top Z is
+/// the material top and never a plane). Degenerate spans and steps
+/// collapse to the one bottom plane; the generator refuses them by name
+/// later.
 pub(super) fn ladder_planes(top: f64, bottom: f64, stepdown: f64) -> Vec<f64> {
-    let span = top - bottom;
-    let walkable = span.is_finite() && span > 0.0 && stepdown > 0.0;
-    if !walkable {
-        return vec![bottom];
-    }
-    let tol = span * 1e-9;
-    let mut zs = Vec::new();
-    let mut z = top;
-    while z > bottom + tol && zs.len() < 100_000 {
-        zs.push(z);
-        z -= stepdown;
-    }
-    zs.push(bottom);
-    zs
+    crate::machining2d::cut_levels(top, bottom, stepdown).unwrap_or_else(|_| vec![bottom])
 }
 
 #[cfg(test)]
@@ -380,8 +368,14 @@ mod law {
 
     #[test]
     fn ladder_planes_match_the_level_law_and_never_hang() {
-        assert_eq!(ladder_planes(20.0, 0.0, 5.0), vec![20.0, 15.0, 10.0, 5.0, 0.0]);
-        assert_eq!(ladder_planes(20.0, 2.0, 5.0), vec![20.0, 15.0, 10.0, 5.0, 2.0]);
+        // #2004: Top Z is the material top - never a plane of its own.
+        assert_eq!(ladder_planes(20.0, 0.0, 5.0), vec![15.0, 10.0, 5.0, 0.0]);
+        assert_eq!(ladder_planes(20.0, 2.0, 5.0), vec![15.0, 10.0, 5.0, 2.0]);
+        assert_eq!(ladder_planes(13.0, 0.0, 50.0), vec![0.0]);
+        for (t, b, s) in [(20.0, 0.0, 5.0), (20.0, 2.0, 5.0), (13.0, 0.0, 50.0), (20.0, 0.0, 4.6), (1.0, 1.0, 5.0)] {
+            let law = crate::machining2d::cut_levels(t, b, s).expect("walkable");
+            assert_eq!(ladder_planes(t, b, s), law, "one law: {t} {b} {s}");
+        }
         assert_eq!(ladder_planes(1.0, 1.0, 5.0), vec![1.0]);
         assert_eq!(ladder_planes(10.0, 0.0, 0.0), vec![0.0]);
         assert_eq!(ladder_planes(f64::NAN, 0.0, 1.0), vec![0.0]);
