@@ -106,6 +106,29 @@ fn the_air_entry_disc_is_clear_of_the_stock() {
     assert!(!s.contains(q) && boundary_dist(&s, q) >= R, "entry {q:?} is {:.4} from the stock", boundary_dist(&s, q));
 }
 
+/// The hop reading of round F: each pass, where it starts and ends, and
+/// how it is reached (a retract hop, or a return low or over the retract
+/// plane). Each open run of a front reads as a hop: its start stands
+/// beside the last front, where the rim (`r + 1.5` cells) reads its wall.
+#[test]
+#[ignore = "reading for issue #1950: prints how each air ring pass is reached (~6 s debug)"]
+fn probe_air_hops() {
+    let (_, _, p) = ring_plan();
+    eprintln!("hops {} fronts {:?}", p.plan.travel.hops, p.fronts);
+    for (k, (pass, j)) in p.plan.passes.iter().zip(&p.plan.joins).enumerate() {
+        let (Some(&a), Some(&b)) = (pass.first(), pass.last()) else { continue };
+        let prev = k.checked_sub(1).and_then(|i| p.plan.passes.get(i)).and_then(|q| q.last().copied());
+        eprintln!(
+            "{k:3} n {:4} len {:7.2} start ({:7.2},{:7.2}) end ({:7.2},{:7.2}) gap {:6.2} join {}",
+            pass.len(),
+            super::super::front::len(pass),
+            a.x, a.y, b.x, b.y,
+            prev.map_or(0.0, |q| super::super::front::dist(q, a)),
+            match j { None => "HOP".to_string(), Some(r) => format!("{} lift {:.2} down {}", if r.high { "high" } else { "low" }, r.lift, r.down.len()) }
+        );
+    }
+}
+
 #[test]
 fn a_piece_with_no_air_side_keeps_the_growth_spiral() {
     let (_, bore) = level();

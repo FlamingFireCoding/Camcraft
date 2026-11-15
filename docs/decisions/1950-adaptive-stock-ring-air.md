@@ -54,7 +54,25 @@
    are late joins that were refused because their lead crosses an earlier
    pass. The round C reading of 3 hops (and the round D reading of 8) came
    from joins whose leads crossed. The budget was not raised.
-7. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
+7. **Round F reading: each open run needs its hop.** A reading probe
+   (`air_rings::tests::probe_air_hops`) lists how each pass is reached.
+   All 21 open runs of the D plate are reached by a retract hop. Cause: an
+   open run starts at the part wall, beside the last front. The descent of
+   a return must read no more than the bite (15.0 deg of rim). The rim is
+   `r + 1.5` cells (`quality::rim_for`), so a disc that rides on a cut path
+   reads its wall at about 25 deg. A landing that reads air must stand past
+   the last front's path, and then the lead-in onto the run crosses that
+   path. The last front's run ends at the centre boundary, so the lead-in
+   cannot go round its end. Two changes were tried and reverted:
+   - The lead-in gap capped at one load width less 0.02 mm. The runs are
+     no longer split, but each start reads 25 deg of rim: 31 hops (was 23).
+   - A lead square to the first chord on the cleared side (`find`, else
+     `high`). It reads 25 to 84 deg on the descent and is refused.
+   So with fronts cut as open runs, the hop count is at least the number of
+   open runs. The budget of 8 needs a different cut of the open fronts (round
+   G). The crossing law, the load law, the bite and the budget were not
+   changed.
+8. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
    shares the open-side footprint, but its levels were not read with the
    air planner.
 
@@ -80,6 +98,9 @@ Generation now says why and what to do, before the post gate has to.
   between its run and the last front. Not tried in this round. It is the
   first item for round F, with a join law for the open runs that does not
   run back across the last front.
+- Round F: a higher bite for the descent, a smaller rim for the landing, or a
+  higher hop budget. All dropped: each loosens a check. The two tried
+  changes of item 7 are dropped because they do not lower the hops.
 
 **Open point for the maintainer: the load margin.** The worst load of the D
 plate air plan is 0.153760 of D at (29.77, 22.31). That is at the bound,
