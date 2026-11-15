@@ -43,6 +43,43 @@ manual).
 For a message that is not in this table, look it up by what you see on the
 [Troubleshooting](@/guide/troubleshooting.md) page.
 
+## Geometry and generation
+
+The table quotes the identifying part of each message. The full message
+also gives the operation, dimensions or picked geometry.
+
+| The message says | What it means | What to do |
+|---|---|---|
+| `the open area is too narrow for the ... tool and ... stock to leave at every level` | 3D Pocket has no cutter-centre space after tool clearance and allowance. | Use a smaller tool, review the allowance, or pick a larger machinable area. |
+| A stock band is narrower than the tool | A stock-source Pocket, Adaptive or Offset cannot enter that strip between the part and stock edge. | Use a smaller tool or change the stock or operation source. Inspect each named band. |
+| `stock-source chamfer breaks into a part; chamfer with the part as source` | The chamfer cut on stock crosses the kept part. | Set the part as the chamfer source and generate again. |
+| `the entry ramp angle must be 0 (one chord) or between 0 and 90 degrees` | The entry angle is outside its allowed range. | Use a finite entry angle below 90 degrees. Zero requests one chord. |
+| `the ramp angle must be between 0 and 90 degrees` | A link ramp needs a positive angle strictly below 90 degrees. | Correct the link angle. The entry and link settings are separate. |
+| Boundary chains touch or cross | The selected edges do not define an unambiguous area between them. | Select two separate boundaries that do not touch or cross. |
+| An open Contour has no clear air side | The part does not establish which side of the open run is outside material. | Correct the picked edge or source. Do not assume that reversing the run makes it safe. |
+| `mesh may have nested or overlapping shells` | An inward mesh shell can describe a cavity, so automatic orientation is ambiguous. | Re-export separate non-overlapping solids. Isolated closed inward STL and OBJ solids are corrected at import, with a note. |
+
+For a reduced-fidelity model, Cross Drill checks include the model's
+excess in entry, reach, holder and part clearances. A refusal means those
+checks cannot establish clearance with that uncertainty. Use a more
+accurate model or change the setup; do not reduce the safety clearance to
+hide the finding.
+
+## EDM and controller data
+
+| The message says | What it means | What to do |
+|---|---|---|
+| `a profile stitched from ... open runs ... is not supported` | A 4-axis wire profile has unsupported stitched geometry. | Pick one face or closed edge chain on each plane. Use explicit sync pairs for supported fan spans. |
+| A 4-axis wire cut asks for tabs or no-core burnout | Those features are supported on one-profile cuts only. | Remove them or use a one-profile contour. |
+| A taper machine does not state its angle or corner rule | The control's lean cannot be determined safely. | Complete the machine's `edm.taper_angle` data from its control documentation. |
+| Sodick refuses taper or 4-axis work | The shipped Sodick post supports 2-axis contours only. | Use a supported vertical contour or a post verified for your control and cut type. |
+| Sinker overburn or an incomplete orbit vector | Gap and orbit radius cannot produce the requested size, or the machine lacks the needed orbit data. | Review the electrode size, condition, orbit and machine data. See [Wire and sinker EDM](@/guide/operations-edm.md). |
+| `first X/Y traverse with no clearance height stated` | grblHAL, Carvera or TinyG cannot position safely without a clearance or retract plane. | Set the operation heights and generate again. For a standalone CL stream, supply the plane. |
+| Tormach lathe has no stock or clearance plane | The post cannot establish the safe one-axis approach to or departure from G30. | Supply the stock and required heights. Check the stored G30 position at the control. |
+
+Tool import, numbering and body placement refusals are explained in
+[Tools and tool libraries](@/guide/tools.md).
+
 ## When you think a refusal is wrong
 
 Report it on the

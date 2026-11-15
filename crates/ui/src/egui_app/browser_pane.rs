@@ -130,6 +130,18 @@ fn view_menu(ui: &mut Ui, state: &mut State) {
             state.hide_all_toolpaths();
         }
     }
+    // #1567: the machine's work envelope. Enabled only with a machine
+    // mounted; the tooltip says why nothing is drawn when its travel
+    // figures are missing. View state, never a command.
+    let mounted = crate::work_envelope::machine_mounted(state);
+    let tip = if mounted {
+        crate::work_envelope::tooltip(state)
+    } else {
+        "Mount a machine on the active setup to show its work envelope.".to_owned()
+    };
+    ui.add_enabled(mounted, egui::Checkbox::new(&mut state.show_work_envelope, "Show work envelope"))
+        .on_hover_text(tip)
+        .on_disabled_hover_text("Mount a machine on the active setup to show its work envelope.");
     // The display mode is view state (a direct field flip, never a command).
     ui.horizontal(|ui| {
         ui.label("Solids");

@@ -116,6 +116,7 @@ fn drill(tip: f64, radius: f64) -> OpParams {
 
 fn pocket(predrilled: bool) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         stepover: 1.6,
         stock_to_leave: 0.0,
         clearance_z: Height::fixed(TOP + 15.0),

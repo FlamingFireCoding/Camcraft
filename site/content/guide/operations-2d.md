@@ -26,7 +26,19 @@ name ("'<tool>' is a <kind>; a <operation> operation cuts with a ..."),
 and a document with no suitable tool is told to add one to the tool
 library.
 
+Use Ctrl+click to build a feature selection from multiple edges. CamCraft
+accepts the first edge even when that edge alone cannot define a region;
+**Generate** checks the completed selection. An armed Boundary row accepts
+faces and edges regardless of the toolbar's pick mode. Its open boundary
+can hold separate chains that keep the area between them. Crossing,
+touching or ambiguous chains are refused; Contour still rides one open
+boundary chain. Include and Exclude boundaries must remain closed.
+
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
+
 ## Face
+
+![Top view of parallel facing passes across the stock top.](../../operation-paths.svg#Face)
 
 **For:** skimming the top of the stock flat, usually the first operation.
 Choose it over a pocket when the area to clear is the whole stock top, not
@@ -48,6 +60,8 @@ first cut level".
 
 ## 2D Contour
 
+![Top view of one offset profile followed around a wall.](../../operation-paths.svg#Contour)
+
 **For:** one wall, inside or outside, followed at a set of levels: profiles,
 bosses and bores. Choose it over a pocket when only the wall needs cutting.
 
@@ -65,12 +79,25 @@ added as an open boundary.
 | Lead in / Lead out | Tab count / width / height | 0 / 5 / 1 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
+An open run picked on a part cuts on its air side, offset by the tool
+radius plus stock to leave. **Side** applies only to closed rings.
+CamCraft refuses an open run whose air side changes or whose offset cuts
+the kept part. A run with no part material beside it keeps a centreline
+ride and the path notes say so.
+
+An inside **Ramp** entry descends along the lead and ring at the entry
+angle. An unset entry angle means 3 degrees, independently of the link
+angle. If there is too little room for that ramp, the path reports its
+substitution and uses the plunge feed. Read the generated entry notes.
+
 **Common refusals:** "the bore is narrower than the tool - switch Side to
 Outside or pick a smaller tool"; "cannot cut the gap at (x, y): it is
 narrower than the tool's ... diameter"; "a Contour's open boundary must be
 an open chain".
 
 ## 2D Pocket
+
+![Top view of passes clearing the inside of a pocket.](../../operation-paths.svg#Pocket)
 
 **For:** clearing the inside of a closed area down to a floor, with islands
 left standing. **Detect pockets / slots** on the Model page finds pockets
@@ -92,7 +119,25 @@ for an include or exclude boundary.
 bands the tool cannot reach"; a pick that "projects to a line from above
 and bounds no area".
 
+Pocket, 2D Adaptive and 2D Offset can also use two open part edges as the
+walls of a band. The stock outline closes its ends. Both walls must be
+level at the same height and run alongside one another without crossing.
+**Extend past** extends the band's open ends along the walls, without
+widening it. With zero extension, the tool centre stops a radius inside
+the stock edge; an extension of at least one radius clears that edge.
+Mixed open and closed picks, ambiguous bands and tool containment On or
+Outside are refused.
+
+**Arc turns at corners and links** rounds pocket-family corners.
+Its optional **Arc radius** defaults to the tool radius when unstated.
+A stated radius must be at least 0.01 mm and no larger than the tool
+radius. The path notes report corner material left by the rounding.
+Adaptive's Trochoidal method refuses this option because its loops
+already supply the arc motion.
+
 ## 2D Adaptive
+
+![Top view of looping pocket passes with small radial engagement.](../../operation-paths.svg#Adaptive2D)
 
 **For:** roughing a pocket with a constant side load on the tool, so it can
 run deeper and faster than a fixed stepover allows. Choose it over Pocket
@@ -112,6 +157,8 @@ spacing set by the load.
 
 ## 2D Offset
 
+![Top view of concentric offset passes inside a pocket.](../../operation-paths.svg#Offset2D)
+
 **For:** roughing a pocket in concentric rings from the boundary inward at a
 fixed stepover. Choose it over Adaptive when an even offset pattern is
 wanted rather than a constant load.
@@ -121,14 +168,17 @@ wanted rather than a constant load.
 
 ## Slot
 
+![Top view of straight passes between the slot endpoints.](../../operation-paths.svg#Slot)
+
 **For:** a straight slot of a given width between two points. The slot is
-typed in, not picked; **Detect pockets / slots** can create one along a
-recognised slot's centreline.
+typed in or seeded from suitable picked slot geometry;
+**Detect pockets / slots** can create one along a recognised slot's centreline.
 
 | Tab | Setting | Default |
 |---|---|---|
 | Geometry | A X, A Y / B X, B Y | (-20, 0) / (20, 0) |
 | Geometry | Slot width | 4 |
+| Geometry | Extend past A / Extend past B | 0 / 0 |
 | Passes | Stepover / Stock to leave | 3 / 0 |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
@@ -136,7 +186,14 @@ recognised slot's centreline.
 **Common refusals:** "slot is narrower than the tool"; "slot width must be
 positive".
 
+**Extend past A** and **Extend past B** run the pass beyond each end,
+along the slot's length. Values must be finite and non-negative.
+Extensions still pass through the part checks. An extension into kept
+material blocks posting.
+
 ## Trochoidal slot
+
+![Top view of overlapping loops progressing along a slot.](../../operation-paths.svg#TrochoidalSlot)
 
 **For:** a slot wider than the tool, cleared with small looping passes that
 keep the tool's engagement low. Choose it over Slot in hard material or
@@ -163,6 +220,8 @@ use the Retract return to hop higher".
 
 ## Trace
 
+![Top view of a centreline path following a picked chain.](../../operation-paths.svg#Trace)
+
 **For:** running the tool's centre exactly along picked edges at a depth:
 grooves, scribed lines, cutting along a chain. No tool offset is applied,
 so any mill or a taper tool may be used.
@@ -173,6 +232,8 @@ region" when nothing usable is picked.
 
 ## Engrave
 
+![Top view of an engraving path following the marking centreline.](../../operation-paths.svg#Engrave)
+
 **For:** the same centreline ride as Trace, named for engraving text and
 markings with a V-bit. Choose Engrave when the job is marking, Trace when
 it is a functional groove; the path is the same.
@@ -180,6 +241,8 @@ it is a functional groove; the path is the same.
 **Picks and settings:** as Trace.
 
 ## 2D Chamfer
+
+![Section view of the chamfer tool cone lying along the chamfer face.](../../operation-paths.svg#Chamfer2D)
 
 **For:** breaking a top edge with a chamfer mill in one pass: the tool's
 cone lies on the chamfer face. Choose it over Deburr for a chamfer of a
@@ -205,6 +268,8 @@ this face stands at".
 
 ## Circular
 
+![Top view of concentric passes clearing a circular pocket.](../../operation-paths.svg#Circular)
+
 **For:** a round pocket of a given centre and radius, cut in rings, with a
 flat floor or a domed one (**Vault - dome floor**). Choose it over Pocket
 when the circle is a dimension, not a model face.
@@ -222,6 +287,8 @@ when the circle is a dimension, not a model face.
 within the cutter radius - the last ring could leave an uncut core".
 
 ## Thread
+
+![View of the helical tool travel around an internal thread.](../../operation-paths.svg#Thread)
 
 **For:** milling an internal thread with a helical thread mill. Choose it
 over a tap cycle for large threads, hard materials, or a machine without a
@@ -242,6 +309,8 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 
 ## Drill
 
+![Side view of an axial drilling stroke and retract.](../../operation-paths.svg#Drill)
+
 **For:** drilling, spot drilling, tapping and cycle boring with canned
 cycles. **Detect holes** fills the hole list from the model; a new Drill
 starts empty and refuses to generate until it has holes.
@@ -256,11 +325,19 @@ starts empty and refuses to generate until it has holes.
 
 Tools: drill, tap or boring bar.
 
+A cross drill can use a reduced-fidelity model when its mesh error leaves
+a positive verification tolerance. CamCraft increases the required
+stand-off, entry, reach and holder clearance to account for that error.
+It also tightens the part and radial rapid checks. If the error uses the
+full tolerance, import the model again at a higher step budget.
+
 **Common refusals:** "no holes to drill"; "the tip meets steel ... past the
 mouth, short of the ... mm asked - ... match the depth and size to the
 model"; "tap leaves no thread core".
 
 ## Bore
+
+![View of circular interpolation inside a hole.](../../operation-paths.svg#Bore)
 
 **For:** finishing a hole with an end mill smaller than the hole, which
 circles the hole wall by interpolation. Choose it over a Drill boring cycle
@@ -277,3 +354,9 @@ when there is no boring bar of the right size.
 
 **Common refusals:** "boring needs at least one hole"; "clearance plane
 below a hole entry".
+
+A Bore **Ramp** entry zig-zags along the first radial sweep. An unset
+entry angle means 3 degrees. A separate link angle does not steepen it.
+If the sweep is too short, the path states that it substitutes a plunge
+at the plunge feed; the return descent to a ring is also named in the
+entry notes.

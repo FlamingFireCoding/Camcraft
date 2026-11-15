@@ -96,6 +96,7 @@ pub(crate) fn shell_layout(
     // imgui App::draw law); the viewport's update_hover and the property-page
     // chip hovers then own it until the pointer moves on.
     state.geo_hover_drawn = state.geo_hover.take();
+    state.geo_row_marked.clear();
     panes::shortcuts(ui, state);
     // #1450: a model file dropped on the window goes through Model's import.
     super::file_drop::take_drop(ui, state);
@@ -598,6 +599,10 @@ fn viewport_panel(
         // #709: picked points, violet and never occluded; the hover over them.
         for (a, b) in crate::vertex_pick::picked_point_marks(state, aspect) {
             ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(2.0, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
+        }
+        // #1171: the wire sync pairs' rulings, violet like the other pick marks.
+        for (a, b) in crate::wire_sync_pick::segments(state, aspect) {
+            ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(1.5, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
         }
         // #1505/#1507: selected picks and the viewport hover
         // as thick, haloed strokes over the model.

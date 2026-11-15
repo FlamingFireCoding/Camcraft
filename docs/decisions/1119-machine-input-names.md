@@ -1,0 +1,8 @@
+## #1119 - Accessible names for Machine editor, pane, and page inputs (slice 2)
+
+- **What was decided:** Added `fields::num_named`, `fields::num_feed_named`, and `fields::num_plain_named` (sharing `fields::plain_drag` and `fields::num_sized`) and named every `ComboBox`, `TextEdit`, and `DragValue` across `machine_editor.rs`, `machine_edm.rs`, `machine_edm_editor.rs`, `machine_page.rs`, and `machines_pane.rs` via `fields::named` / `fields::num*_named`, using distinct descriptive names rather than reusing existing visible label IDs where a checkbox or `get_by_label` structural test already owns the label.
+- **Why:** Inline machine editor fields sit beside shared row punctuation (`..`, `mm`, `min`, `max`), checkboxes whose AccessKit labels must stay unique for `kittest::get_by_label` (`"Max orbit radius"`, `"Condition 1 gap"`), or `prop_grid` labels asserted unique by existing layout tests (`"Library"`). Setting distinct descriptive AccessKit labels gives screen readers unambiguous context without duplicating visible labels or disturbing layout/test queries.
+- **Considered and dropped:**
+  - Linking controls to existing labels with `.labelled_by(...)` on `"Library"`, `"Kind"`, or checkbox text: would make `query_by_label` / `query_all_by_label` return two AccessKit nodes and break existing layout and Sinker EDM tests.
+  - Modifying global `pages::num` / `pages::prop_row` / `pages::combo`: would sweep unrelated op-page families where open PRs overlap (`#518`, `#1711`, `#1639`); kept to Slice 2 (the Machine UI family) as specified in `#1119`.
+- **Cost to change later:** Low and mechanical — each site is a one-line `fields::named` / `fields::num*_named` call that can be swapped to `num_by` if a future layout gives each field its own label.

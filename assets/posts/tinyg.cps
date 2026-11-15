@@ -18,6 +18,8 @@ minimumRevision = 1;
 extension = "gcode";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+workOffsetIndex = true; // reads the 1-based WorkOffset number (#1385)
+workOffsetMax = 6;      // G54..G59, per the public control documentation cited above
 coolantModes = true; // reads PARAM Coolant (#112/#150)
 afterModes = true;   // reads PARAM AfterOperation (#110)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
@@ -289,13 +291,16 @@ function onRadiusCompensation() {
   msg("control cutter compensation (G41/G42) is not supported by TinyG - choose In computer");
 }
 
+// #1385: the engine validates the offset index before this script receives it.
+function workOffsetName(n) { return "G" + (53 + n); }
+
 function onParameter(name, value) {
   commentParam(name, value);
   if (name === "OperationName") coolantOp = String(value || "");
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
-  if (name === "WorkOffset" && value) wcsWord = String(value);
+  if (name === "WorkOffset" && value) wcsWord = workOffsetName(Number(value));
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
@@ -460,8 +465,12 @@ function traverseZ(z) {
   if (c === null) return null;
   return has(z) ? Math.max(c, Number(z)) : c;
 }
+// #1682: false when refused - the caller then writes nothing for its
+// move, nor for any later one while X/Y stay unknown (the rest of the
+// section), so no combined X/Y/Z move from an unknown height reaches the
+// text (the Tormach and Fanuc-family posts' rule, #1614 / #1633).
 function xyFirst(x, y, z) {
-  if (!xyUnknown || !has(x) || !has(y)) return;
+  if (!xyUnknown || !has(x) || !has(y)) return true;
   traversedAt = null;
   var tz = traverseZ(z);
   if (tz === null) {
@@ -469,12 +478,13 @@ function xyFirst(x, y, z) {
       traverseRefused = true;
       msg(coolantWho() + "first X/Y traverse with no clearance height stated (no ClearancePlane or RetractPlane) - the post will not rapid X/Y at an unknown height");
     }
-    return;
+    return false;
   }
   block(["G0", wo("Z", tz, orgZ)]);
   traversedAt = tz;
   block(["G0", wo("X", x, orgX), wo("Y", y, orgY)]);
   xyUnknown = false;
+  return true;
 }
 // A feed or arc as the first move after a tool change starts, in the
 // stream, from the generator's own start point (its clearance height).
@@ -492,8 +502,7 @@ function startXY(p) {
     msg("the first cutting move must start above the stock after the tool change; provide a safe rapid approach");
     return false;
   }
-  xyFirst(p.StartX, p.StartY, p.StartZ);
-  if (xyUnknown) return false;  // #1616: refused above, no traverse made
+  if (!xyFirst(p.StartX, p.StartY, p.StartZ)) return false;  // #1616: refused above, no traverse made
   // Horizontal and rising cuts also start at their stated Z, never at
   // the retract height. The first cutting start must be a safe approach.
   // #1616: not when the stated traverse height already is it.
@@ -507,7 +516,7 @@ function onRapid() {
   startPreamble();
   seeZ(properties.Z);
   if (!tiltOk(properties)) return;
-  xyFirst(properties.X, properties.Y, properties.Z);
+  if (!xyFirst(properties.X, properties.Y, properties.Z)) return;  // #1682: refused - the move is not written
   block(["G0"].concat(xyz(properties)));
 }
 function onLinear() {

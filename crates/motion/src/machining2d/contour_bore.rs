@@ -107,14 +107,18 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
             // superset law at its simplest - a planar contour's single
             // center); the leg limit takes the chord's last stretch.
             // #1664: the chord stands only where it is no steeper than the
-            // ramp angle (the transition's, 3 deg by default). On a closed
+            // entry ramp angle (3 deg by default). On a closed
             // ring the leg IS the ring's start, so the chord has no run:
             // the ramp zig-zags along the lead-in and the ring at the
             // angle instead, and where they are too short the dive is
             // named and flown at the plunge feed - never a straight-down
             // feed at the cutting feed.
             let zf = if a.ramp_to_depth { (p.top_z + a.plunge_height).min(prev_z) } else { from };
-            let angle = level_angle(p.links.ramp_angle);
+            let angle = if !s.first && p.links.transition == Some(Entry3D::Ramp) {
+                level_angle(p.links.ramp_angle)
+            } else {
+                crate::links::DEFAULT_RAMP_ANGLE
+            };
             if !chord_clears(center, leg, e2) {
                 return sub(b, "the ramp's chord is blocked");
             }

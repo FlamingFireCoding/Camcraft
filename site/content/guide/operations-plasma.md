@@ -11,6 +11,8 @@ refusal means in general, see [Reading a refusal](@/guide/refusals.md).
 
 Lengths are in mm (inches in an inch document), feeds in mm/min (in/min).
 
+Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
+
 ## The machine, the tool and the post
 
 **A plasma table.** Plasma Profile needs a setup whose machine is a
@@ -34,6 +36,8 @@ the 3D stock simulation does not run for a torch. The through-cut is
 judged instead by the plasma laws at the post gate (below).
 
 ## Plasma Profile
+
+![Top view of torch travel from a pierce point along the lead and outer plate profile.](../../operation-paths.svg#PlasmaProfile)
 
 **For:** cutting parts out of flat plate: one through-cut per contour,
 with the kerf offset to the waste side, arc leads, holes before the

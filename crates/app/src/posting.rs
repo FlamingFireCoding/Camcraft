@@ -249,6 +249,9 @@ pub const MACHINES: &[(&str, &str)] = &[
     // #1135: the empty sinker template (no `edm.codes`); pairs with the
     // "Sinker EDM (ISO)" post, which refuses by name until the user fills the codes.
     ("Sinker EDM 3-axis (template)", include_str!("../../../assets/machines/sinker-edm.mch")),
+    // #1501: a Sodick wire EDM, X Y U V travels and taper from Sodick's published
+    // ALC series specifications (docs/decisions/1501-sodick-alc400g.md).
+    ("Sodick ALC400G", include_str!("../../../assets/machines/sodick-alc400g.mch")),
 ];
 
 /// The mount path a built-in library entry records (stage C): the
