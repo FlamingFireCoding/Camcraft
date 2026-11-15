@@ -65,7 +65,7 @@ fn stated_num(ui: &mut Ui, u: Unit, label: &str, v: &mut Option<f64>, seed: f64)
 
 /// A stated number with no unit (a ratio): the same tick-in row.
 fn stated_plain(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64) {
-    stated_with(ui, label, v, seed, |ui, x, name| fields::num_plain_named(ui, x, name));
+    stated_with(ui, label, v, seed, fields::num_plain_named);
 }
 
 fn stated_with(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl FnOnce(&mut Ui, &mut f64, &str)) {
