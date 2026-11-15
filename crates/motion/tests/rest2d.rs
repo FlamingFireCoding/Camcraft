@@ -268,8 +268,8 @@ fn bad_rest_parameters_are_refused_by_name() {
     }
     let adaptive = invalid(rest_pocket(&region, &pp(PocketStrategy::Adaptive), &prev()));
     assert!(adaptive.contains("not available with the Adaptive strategy yet"), "{adaptive}");
-    let zigzag = invalid(rest_pocket(&region, &pp(PocketStrategy::Zigzag), &prev()));
-    assert!(zigzag.contains("not available with the Zigzag strategy"), "{zigzag}");
+    let zigzag = rest_pocket(&region, &pp(PocketStrategy::Zigzag), &prev());
+    assert!(zigzag.is_ok(), "Zigzag rest machining is supported: {zigzag:?}");
     assert!(rest_plan(&region, 0.0, 0.0, &prev()).is_err());
     assert!(rest_plan(&region, f64::NAN, 0.0, &prev()).is_err());
     assert!(rest_plan(&region, TOOL_D, -1.0, &prev()).is_err());

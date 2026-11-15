@@ -9,16 +9,16 @@ use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use crate::links::Links;
 
-use super::face::{GenError, band};
+use super::face::GenError;
 use super::levels::{Cert, Motion, cut_levels, run_level_walks};
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::arc_cross::post_crossing_free;
 use super::arc_proof::{ProofTally, fit_proved};
 use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
-use super::waterscan::{scan_row, waterline_passes};
-use super::slots::chord_clears;
+use super::waterscan::waterline_passes;
 use super::pocket_hsm::adaptive_passes;
+use super::pocket_zigzag::{rest_passes, zigzag_passes};
 use super::predrilled::PreHole;
 pub use super::pocket_strategy::PocketStrategy;
 
@@ -201,7 +201,7 @@ impl PocketParams {
 /// family - the dive it always posted, or the ramp diagonal / helical
 /// bore the 3-D ladder proves and `run_levels` now shares (M5.1 H);
 /// within a level a straight connection between two cut segments is
-/// kept as a Feed exactly when [`chord_clears`] proves it never leaves
+/// kept as a Feed exactly when [`super::slots::chord_clears`] proves it never leaves
 /// the cutter-center area (boundary grazing counts as staying in - it
 /// is the tangency wall passes are built on), and otherwise it becomes
 /// lift-rapid-plunge. Rapids inside the footprint below the safe plane
@@ -261,7 +261,7 @@ pub(super) fn pocket_over(
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     notes.into_iter().for_each(|n| b.note(n));
     // The HSM plan may choose where its entry stands (`pocket_hsm`).
-    let (passes, strategy, room, joins) = match strategy {
+    let (mut passes, strategy, room, joins) = match strategy {
         PocketStrategy::Adaptive => {
             let (passes, notes, s, room, joins) = adaptive_passes(center, p, "this pocket", true)?;
             notes.into_iter().for_each(|n| b.note(n));
@@ -269,6 +269,9 @@ pub(super) fn pocket_over(
         }
         s => (plan_passes(center, p.tiling_step(), p.climb, s)?, s, None, Vec::new()),
     };
+    if hold_crossings && strategy == PocketStrategy::Zigzag {
+        passes = rest_passes(center, p.tiling_step(), p.climb)?;
+    }
     // The horizontal arc entry (M11.3) lands on the first pass: a closed
     // first ring starts mid its longest edge, where an arc has room.
     let passes = if p.links.approach.arc_xy && room.is_none() { super::descent_xy::reseat_first(passes) } else { passes };
@@ -366,55 +369,6 @@ pub(super) fn pocket_over(
         return Err(GenError::Invalid("path left the finite horizon".into()));
     }
     Ok(path)
-}
-
-/// Serpentine rows across the cutter-center area, each scanline split
-/// where the even-odd parity says material stands (islands fall out of
-/// the interval walk for free). Rows band [lo.y, hi.y] at `stepover` with
-/// the extremes kept: a row on the area's own boundary is the pass whose
-/// edge grazes the wall, and dropping it would leave the wall's last band
-/// standing.
-pub(super) fn zigzag_passes(center: &Region, stepover: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
-    let (lo, hi) = match center.bounds() {
-        Some(b) => b,
-        None => return Err(GenError::Empty("empty pocket region".into())),
-    };
-    let ys = band(lo.y, hi.y, 0.0, stepover)?;
-    let mut passes: Vec<Vec<Point2>> = Vec::new();
-    let mut cur: Vec<Point2> = Vec::new();
-    for (i, &y) in ys.iter().enumerate() {
-        let segs = scan_row(center, y, y == hi.y);
-        let left_to_right = climb == (i % 2 == 0);
-        for k in 0..segs.len() {
-            let (x0, x1) = segs[if left_to_right { k } else { segs.len() - 1 - k }];
-            let (s, e) = if left_to_right {
-                (Point2::new(x0, y), Point2::new(x1, y))
-            } else {
-                (Point2::new(x1, y), Point2::new(x0, y))
-            };
-            let join = match cur.last() {
-                Some(&prev) => chord_clears(center, prev, s),
-                None => false,
-            };
-            if join {
-                // The corner matters: the connection feeds prev -> s (the
-                // tested chord) and only then along the row to e. Pushing
-                // only e would cut prev -> e, a diagonal the join test
-                // never proved.
-                cur.push(s);
-                cur.push(e);
-            } else {
-                if cur.len() >= 2 {
-                    passes.push(std::mem::take(&mut cur));
-                }
-                cur = vec![s, e];
-            }
-        }
-    }
-    if cur.len() >= 2 {
-        passes.push(cur);
-    }
-    Ok(passes)
 }
 
 /// Concentric rings marching inward: ring k is the cutter-center area

@@ -344,8 +344,7 @@ fn values_and_strategies_the_rest_pass_cannot_run_are_refused_by_name() {
     }
     assert!(rest_op(Some(prev())).is_sane() && rest_op(Some(prev())).named_refusal().is_none());
     let with = |strategy: PocketStrategy| pocket(1.5, Entry3D::Plunge, strategy, Some(prev()));
-    let msg = refusal(EditOperationParams::new(&world, "P2", with(PocketStrategy::Zigzag)));
-    assert!(msg.contains("not available with the Zigzag strategy"), "{msg}");
+    assert!(EditOperationParams::new(&world, "P2", with(PocketStrategy::Zigzag)).is_ok(), "Zigzag rest machining is supported");
     let msg = refusal(EditOperationParams::new(&world, "P2", with(PocketStrategy::Adaptive)));
     assert!(msg.contains("not available with the Adaptive strategy"), "{msg}");
     // Pre-drilled entry beside it: one of the two is turned off.
