@@ -182,9 +182,9 @@ impl State {
     /// length starts at the entry's own and (#792) the projection at
     /// the stored tool's stickout (flute plus shank length), the
     /// command's own default. An unknown name clears the pick. #2018: a
-    /// taper's Weldon row ("BT40 Weldon") stays the pick as it is named
-    /// - its bore is the one for the tool's shank, resolved on Apply -
-    /// and takes the taper's Weldon gauge length.
+    /// taper's Weldon row ("BT40 Weldon") stays the pick as it is named,
+    /// its bore the one for the tool's shank (resolved on Apply), and
+    /// takes the taper's Weldon gauge length.
     pub(crate) fn pick_library_holder(&mut self, entry: &str) {
         let stickout = self.editor_stored_tool().map(|t| t.flute_len + t.shank_len);
         let key = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase();
