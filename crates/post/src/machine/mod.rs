@@ -10,6 +10,7 @@ pub mod edm_codes;
 mod edm_conditions;
 mod edm_named;
 pub mod edm_taper;
+pub mod envelope;
 mod kind;
 mod no_spindle;
 mod parse;

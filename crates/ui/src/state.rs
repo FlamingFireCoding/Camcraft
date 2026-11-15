@@ -1529,6 +1529,9 @@ pub struct State {
     /// Setups other than the active one whose eye is on (#1494); the active
     /// setup is always drawn. View state, never saved: display only.
     pub shown_setups: Vec<String>,
+    /// The Browser's "Show work envelope" box (#1567): view state, never
+    /// saved, never a command; display only.
+    pub show_work_envelope: bool,
     pub operation_clipboard: Option<OperationClipboard>,
     /// Expanded state of Setup, Models, Tools, and Operations in the browser.
     pub browser_expanded: [bool; 3],
@@ -2016,6 +2019,7 @@ impl State {
             hidden_offsets: Vec::new(),
             hidden_paths: Vec::new(),
             shown_setups: Vec::new(),
+            show_work_envelope: false,
             operation_clipboard: None,
             browser_expanded: [true; 3],
             cam: Camera::default(),

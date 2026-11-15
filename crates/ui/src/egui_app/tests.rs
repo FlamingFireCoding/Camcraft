@@ -111,6 +111,7 @@ mod post_refusal;
 mod program_units;
 mod gcode_viewer;
 mod first_setup;
+mod work_envelope;
 mod structural;
 mod cycle_combo;
 mod radial_step_field;
