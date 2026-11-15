@@ -114,7 +114,7 @@ pub use face_holes::FaceHoles;
 pub use ghost::Ghost;
 pub use face_entry::{air_lead, AIR_MARGIN};
 pub use fillet::{fillet_corners, Legal};
-pub use fillet_tally::{fillet_floor, FilletTally};
+pub use fillet_tally::{corner_arc_radius, fillet_floor, FilletTally};
 pub(crate) use levels::cut_levels;
 pub use pocket::{pocket, pocket_entered, PocketParams, PocketStrategy};
 pub use predrilled::PreHole;

@@ -747,6 +747,7 @@ fn seed_contour(c: &Carried) -> OpParams {
 
 fn seed_pocket(c: &Carried) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -780,6 +781,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 /// (optimal_load) stays visible.
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -804,6 +806,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 /// the pane must not show.
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,

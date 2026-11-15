@@ -39,6 +39,7 @@ pub(super) fn roughing2d_pane(
     optimal_load: Option<&mut f64>,
     method: Option<&mut camcraft_app::machining2d::AdaptiveMethod>,
     links: &mut camcraft_app::links::Links,
+    arc: (&mut bool, &mut Option<f64>),
     tilt: &mut Option<Tilt>,
 ) {
     if tab == SEC_HEIGHTS {
@@ -54,6 +55,7 @@ pub(super) fn roughing2d_pane(
     if tab == SEC_PASSES {
         // #1509: how 2D Adaptive clears its region - the choice the
         // Adaptive operations own (maintainer, 2026-11-13).
+        let trochoidal = method.as_deref() == Some(&camcraft_app::machining2d::AdaptiveMethod::Trochoidal);
         if let Some(m) = method {
             adaptive_method_row(ui, m);
         }
@@ -63,6 +65,10 @@ pub(super) fn roughing2d_pane(
             prop_row(ui, "Stepover", |ui| num(ui, u, stepover));
         }
         prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
+        arc_turn_rows(ui, u, "Arc turns at corners", arc.0, arc.1);
+        if trochoidal && *arc.0 {
+            consequence(ui, "arc turns are not available with the Trochoidal method: the operation is refused");
+        }
         match optimal_load {
             Some(m) => super::load_field::optimal_load_field(ui, m),
             None => {
@@ -79,6 +85,29 @@ pub(super) fn roughing2d_pane(
         check_row(ui, "Climb milling", climb);
     }
 }
+
+/// The corner-arc option and its radius (#1733): the switch, then -
+/// while it is on - the radius, `Tool radius` (the `None` every earlier
+/// file holds) or a set value the generator bounds by the tool radius.
+pub(super) fn arc_turn_rows(ui: &mut Ui, u: Unit, label: &str, on: &mut bool, radius: &mut Option<f64>) {
+    check_row(ui, label, on);
+    if !*on {
+        return;
+    }
+    let mut auto = radius.is_none();
+    check_row(ui, "Arc radius = tool radius", &mut auto);
+    match (auto, radius.as_mut()) {
+        (true, _) => *radius = None,
+        (false, Some(r)) => prop_row(ui, "Arc radius", |ui| num(ui, u, r)),
+        // Leaving Auto seeds a small radius; the generator refuses one
+        // past the tool radius by name.
+        (false, None) => *radius = Some(ARC_RADIUS_SEED),
+    }
+}
+
+/// The radius `arc_turn_rows` seeds when the user leaves `Tool radius`,
+/// mm: small enough for the common end mills.
+const ARC_RADIUS_SEED: f64 = 0.5;
 
 /// The names of 2D Adaptive's Method combo, in the combo's order
 /// (`AdaptiveMethod::ALL`).
