@@ -755,6 +755,13 @@ pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
                     if state.tool_ui.kind == 4 {
                         field(ui, "Thread pitch");
                         num(ui, u, &mut state.tool_ui.pitch);
+                        let mut left = state.tool_ui.thread_hand == camcraft_app::tools::ThreadHand::Left;
+                        super::fields::check_row(ui, "Left-hand tap (posting unavailable)", &mut left);
+                        state.tool_ui.thread_hand = if left {
+                            camcraft_app::tools::ThreadHand::Left
+                        } else {
+                            camcraft_app::tools::ThreadHand::Right
+                        };
                         ui.label("distance advanced per turn - M6 is 1.0, M8 is 1.25");
                     }
                     if state.tool_ui.kind == 6 {
@@ -1190,6 +1197,10 @@ fn tool_import_mode_combo(ui: &mut egui::Ui, mode: &mut camcraft_app::commands::
                 .on_hover_text("update, and tools the file lacks are removed - refused if an operation uses one");
         });
 }
+
+#[cfg(test)]
+#[path = "tap_hand_tests.rs"]
+mod tap_hand_tests;
 
 #[cfg(test)]
 mod turn_tests {
