@@ -1,15 +1,16 @@
 +++
 title = "Turning operations"
 description = "One section per turning kind: what it is for, its key settings and defaults, the tool it takes, and the refusals you are most likely to meet."
-weight = 5
+weight = 4
+aliases = ["guide/operations-turning/"]
 +++
 
 This page is the reference for the kinds in the **Turning** group of the
-[operations](@/guide/operations.md) ribbon: Facing, Profile Rough,
+[operations](@/guide/operations/_index.md) ribbon: Facing, Profile Rough,
 Profile Finish, Groove Rough, Groove Finish, Part, Threading, Chamfer,
 Taper, Multi-Pass, Form and Bore. The ribbon shows them on a lathe or
 mill-turn document. For the tabs themselves, see that page; for what a
-refusal means in general, see [Reading a refusal](@/guide/refusals.md).
+refusal means in general, see [Reading a refusal](@/guide/reference/refusals.md).
 
 Lengths are in mm (inches in an inch document), feeds in mm/min (in/min).
 The defaults below are what a freshly created operation starts with:
@@ -73,7 +74,7 @@ the tool turning and the work held on C.
 
 ## Facing
 
-![Side view of radial passes facing the end of a rotating bar.](../../operation-paths.svg#Facing)
+![Side view of radial passes facing the end of a rotating bar.](../../../operation-paths.svg#Facing)
 
 **For:** facing the end of the bar square to the axis, stepping in from
 the part top to the facing plane. Choose it to clean the end before
@@ -98,7 +99,7 @@ too fine ...".
 
 ## Profile Rough
 
-![Side view of successive roughing passes outside a turned profile.](../../operation-paths.svg#ProfileRough)
+![Side view of successive roughing passes outside a turned profile.](../../../operation-paths.svg#ProfileRough)
 
 **For:** roughing the outside profile down a ladder of radial rungs,
 leaving a skin for a finish pass. Choose it before Profile Finish; choose
@@ -124,7 +125,7 @@ ladder would run ... radial rungs - the stepdown is far too ...".
 
 ## Profile Finish
 
-![Side view of one finishing pass along a turned profile.](../../operation-paths.svg#ProfileFinish)
+![Side view of one finishing pass along a turned profile.](../../../operation-paths.svg#ProfileFinish)
 
 **For:** one ride of the insert's nose along the finished profile.
 Choose it after Profile Rough (or after a stock that is already close).
@@ -144,7 +145,7 @@ profile has nothing to ride".
 
 ## Groove Rough
 
-![Side view of successive blade plunges across a groove.](../../operation-paths.svg#GrooveRough)
+![Side view of successive blade plunges across a groove.](../../../operation-paths.svg#GrooveRough)
 
 **For:** sinking a groove with a grooving blade, plunge by plunge, with a
 skin left on the walls and floor. Choose it over Profile Rough where the
@@ -171,7 +172,7 @@ than ... passes - the blade is far too narrow for the window ...".
 
 ## Groove Finish
 
-![Side view of blade plunges to the finished groove floor.](../../operation-paths.svg#GrooveFinish)
+![Side view of blade plunges to the finished groove floor.](../../../operation-paths.svg#GrooveFinish)
 
 **For:** one plunge per centre to the groove's floor, with no leave.
 Choose it after Groove Rough.
@@ -187,7 +188,7 @@ Choose it after Groove Rough.
 
 ## Part
 
-![Side view of one radial parting path toward the spindle axis.](../../operation-paths.svg#Part)
+![Side view of one radial parting path toward the spindle axis.](../../../operation-paths.svg#Part)
 
 **For:** cutting the finished part off the bar with a grooving blade, at
 the parting plane. The ladder runs down through the bar's full height and
@@ -215,7 +216,7 @@ past the bar's top"; "parting needs a positive stepdown".
 
 ## Threading
 
-![View of synchronized helical threading passes on a rotating bar.](../../operation-paths.svg#Threading)
+![View of synchronized helical threading passes on a rotating bar.](../../../operation-paths.svg#Threading)
 
 **For:** single-point threading of a modeled thread (a revolved V
 section) with a threading insert, in passes of rising depth. Every pass
@@ -247,7 +248,7 @@ the spindle ..."; "the thread would run more than ... turns ...";
 
 ## Chamfer
 
-![Side view of a turning pass across a modeled chamfer.](../../operation-paths.svg#Chamfering)
+![Side view of a turning pass across a modeled chamfer.](../../../operation-paths.svg#Chamfering)
 
 **For:** riding a chamfer the model already has, at a stated angle, with
 a turning insert. Choose it over Profile Finish to cut one modeled cone
@@ -268,7 +269,7 @@ cylinder - the kind only speaks a cone ...".
 
 ## Taper
 
-![Side view of a turning pass along a modeled taper.](../../operation-paths.svg#TaperTurning)
+![Side view of a turning pass along a modeled taper.](../../../operation-paths.svg#TaperTurning)
 
 **For:** riding a modeled taper between two stated diameters with a
 turning insert.
@@ -290,7 +291,7 @@ at both ends is a line, not a part ...".
 
 ## Multi-Pass
 
-![Side view of roughing and finishing passes along a turned profile.](../../operation-paths.svg#MultiPassTurning)
+![Side view of roughing and finishing passes along a turned profile.](../../../operation-paths.svg#MultiPassTurning)
 
 **For:** roughing and finishing the outside profile in one operation: the
 Profile Rough ladder, then finishing rides that share out the leave.
@@ -314,7 +315,7 @@ Rough.
 
 ## Form
 
-![Side view of a form tool plunging into a curved groove.](../../operation-paths.svg#FormTurning)
+![Side view of a form tool plunging into a curved groove.](../../../operation-paths.svg#FormTurning)
 
 **For:** sinking a modeled form (a revolved groove with a curved floor)
 with a form gauge whose ground crown matches it. Choose it over Groove
@@ -340,7 +341,7 @@ are boring work".
 
 ## Bore
 
-![Side view of a boring bar following an existing hole wall.](../../operation-paths.svg#BoringTurning)
+![Side view of a boring bar following an existing hole wall.](../../../operation-paths.svg#BoringTurning)
 
 **For:** turning the inside wall of a hole the part already has, with a
 boring bar riding the wall on its nose. Choose it for an inside diameter

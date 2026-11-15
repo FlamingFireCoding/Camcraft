@@ -1,10 +1,11 @@
 +++
 title = "Wire and sinker EDM"
 description = "The Wire Contour, Sinker Burn and Sinker Side Burn operations: the EDM machine and conditions they need, their settings and defaults, and the refusals you are most likely to meet."
-weight = 5
+weight = 6
+aliases = ["guide/operations-edm/"]
 +++
 
-This page is the reference for the EDM kinds of the [operations](@/guide/operations.md) ribbon: **Wire Contour**, the one kind in the **Wire EDM** group, and **Sinker Burn** and **Sinker Side Burn** (captioned **Side Burn**), the two kinds in the **Sinker EDM** group. For the tabs themselves and what a click picks, see that page; for what a refusal means in general, see [Reading a refusal](@/guide/refusals.md).
+This page is the reference for the EDM kinds of the [operations](@/guide/operations/_index.md) ribbon: **Wire Contour**, the one kind in the **Wire EDM** group, and **Sinker Burn** and **Sinker Side Burn** (captioned **Side Burn**), the two kinds in the **Sinker EDM** group. For the tabs themselves and what a click picks, see that page; for what a refusal means in general, see [Reading a refusal](@/guide/reference/refusals.md).
 
 Lengths are in mm (inches in an inch document); feeds are in mm/min. The wire kinds come first; the sinker kinds follow from [Sinker EDM](#sinker-edm).
 
@@ -15,7 +16,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 **A wire EDM machine.** Wire Contour needs a setup whose machine file
 declares the kind `wire_edm`. No wire EDM machine file ships, so you
 write one for your machine (the keys are in
-[Machine types](@/guide/machines.md)). The **Wire EDM** ribbon group
+[Machine types](@/guide/check-and-post/machines.md)). The **Wire EDM** ribbon group
 shows only when such a machine is mounted. On any other machine the
 operation is refused ("a Wire Contour operation is wire EDM work; the
 setup's machine is a ... - mount a wire EDM first"), and a wire EDM in
@@ -37,14 +38,14 @@ control, which picks them by the condition's id.
 **Posting and checks.** The built-in **Generic ISO Wire EDM** and **Sodick
 Wire EDM (Mark 21)** posts serve wire machines. A user `.cps` post can declare
 `wireEdm = true`; its manifest and machine support are checked before
-posting. See [Posting](@/guide/posting.md). Machine EDM codes and conditions
+posting. See [Posting](@/guide/check-and-post/posting.md). Machine EDM codes and conditions
 must come from the real control's manual. The program checks the wire's
 kerf, profile, threading point, release plan and stated machine limits.
 Simulate does not remove stock for wire work: the wire checks judge it.
 
 ## Wire Contour
 
-![Top view of wire travel from a start hole around a die profile.](../../operation-paths.svg#WireContour)
+![Top view of wire travel from a start hole around a die profile.](../../../operation-paths.svg#WireContour)
 
 **For:** cutting one profile through the workpiece with a vertical or tapered
 wire. A **die** keeps the opening (the wire runs inside the profile and
@@ -157,7 +158,7 @@ contour:"):
 - "the workpiece's bottom (...) does not stand below its top (...)".
 
 A message that names a place can be clicked to frame it. For other
-messages, see [Troubleshooting](@/guide/troubleshooting.md).
+messages, see [Troubleshooting](@/guide/reference/troubleshooting.md).
 
 ## Sinker EDM
 
@@ -235,7 +236,7 @@ atom) judges the burn".
 
 ## Sinker Burn
 
-![Side view of an electrode plunging into a cavity and retracting.](../../operation-paths.svg#SinkerBurn)
+![Side view of an electrode plunging into a cavity and retracting.](../../../operation-paths.svg#SinkerBurn)
 
 **For:** burning a cavity the shape of the electrode's face, straight
 down Z. The electrode rapids to the approach plane above the burn point,
@@ -300,7 +301,7 @@ electrode-length checks.
 
 ## Sinker Side Burn
 
-![Side view of an electrode plunging, moving toward one wall and returning.](../../operation-paths.svg#SinkerSideBurn)
+![Side view of an electrode plunging, moving toward one wall and returning.](../../../operation-paths.svg#SinkerSideBurn)
 
 **For:** moving one wall of a burned cavity outward by a small amount,
 after the plunge. The electrode plunges as a Sinker Burn does, then feeds

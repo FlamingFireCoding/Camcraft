@@ -1,7 +1,8 @@
 +++
 title = "Order of operations"
 description = "How to sequence a job's operations, and how CamCraft helps you check the order."
-weight = 7
+weight = 1
+aliases = ["guide/order-of-operations/"]
 +++
 
 The order of a program is a machining decision, and it is one of the main
@@ -37,7 +38,7 @@ machine runs.
   or cools between the passes that must match.
 - **Group by setup.** Do in the first setup whatever the second one needs in
   order to hold and locate the part: a clean datum face, a squared edge, a
-  locating bore. See [Setups](@/guide/setups.md).
+  locating bore. See [Setups](@/guide/set-up/setups.md).
 - **Turning.** Face the end, rough the outside, finish the outside, groove,
   thread, then part off. Do inside work (drilling and boring) before the part
   is weakened by deep grooves or a long overhang.
@@ -60,11 +61,11 @@ setup, so create it there instead.
 
 The order is saved with the project and is the single program order. Posting
 reads it, and so do simulation and rest material, so what you see in the
-browser is what is posted and simulated. See [Posting](@/guide/posting.md).
+browser is what is posted and simulated. See [Posting](@/guide/check-and-post/posting.md).
 
 ### Later operations see earlier ones
 
-For the operation kinds themselves, see [Operations](@/guide/operations.md).
+For the operation kinds themselves, see [Operations](@/guide/operations/_index.md).
 
 CamCraft cuts the stock forward in program order, so an operation sees the
 material the earlier ones left:
@@ -77,7 +78,7 @@ material the earlier ones left:
 - A new setup can take its stock from what the setup before it leaves behind,
   so verification, rest machining and the fixture checks of that setup see
   the machined part. See
-  [Carrying stock to the next setup](@/guide/setups.md#carrying-stock-to-the-next-setup).
+  [Carrying stock to the next setup](@/guide/set-up/setups.md#carrying-stock-to-the-next-setup).
 
 Because of this, moving an operation can change what another one does. After
 a reorder, regenerate the operations after it and check the result.
@@ -85,7 +86,7 @@ a reorder, regenerate the operations after it and check the result.
 ### Refusals that depend on order
 
 CamCraft refuses rather than cut a bad program (see
-[Reading a refusal](@/guide/refusals.md)). Some refusals follow from the
+[Reading a refusal](@/guide/reference/refusals.md)). Some refusals follow from the
 order, because they judge the tool against the material that stands at that
 point:
 

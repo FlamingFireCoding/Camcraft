@@ -1,13 +1,14 @@
 +++
 title = "3D milling operations"
 description = "One section per 3D milling kind: what it is for, its key settings and defaults, what it picks, and the refusals you are most likely to meet."
-weight = 5
+weight = 2
+aliases = ["guide/operations-3d/"]
 +++
 
 This page is the reference for the kinds in the **Milling 3D** group of
-the [operations](@/guide/operations.md) ribbon: 3D Pocket, 3D Finish and
+the [operations](@/guide/operations/_index.md) ribbon: 3D Pocket, 3D Finish and
 Deburr. For the tabs themselves and what a click picks, see that page; for
-what a refusal means in general, see [Reading a refusal](@/guide/refusals.md).
+what a refusal means in general, see [Reading a refusal](@/guide/reference/refusals.md).
 
 Lengths are in mm (inches in an inch document), feeds in mm/min (in/min).
 The defaults below are what a freshly created operation starts with: feed
@@ -32,7 +33,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## 3D Pocket
 
-![View of roughing passes at successive levels around a 3D model.](../../operation-paths.svg#Pocket3D)
+![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
 
 **For:** roughing a 3D part level by level, from Top Z down to Bottom Z.
 At each level the tool clears around the material that stands above it,
@@ -79,7 +80,7 @@ level, where there is no target to clear.
 
 ## 3D Finish
 
-![View of parallel finishing passes following a curved surface.](../../operation-paths.svg#Finish3D)
+![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
 
 **For:** finishing 3D surfaces with a ball-nose, to a stated tolerance.
 One kind carries every finishing pattern; choose the pattern by the
@@ -144,7 +145,7 @@ exceed the op's ball".
 
 ## Deburr
 
-![View of a toolpath following exposed edges of a 3D model.](../../operation-paths.svg#Deburr)
+![View of a toolpath following exposed edges of a 3D model.](../../../operation-paths.svg#Deburr)
 
 **For:** breaking every exposed edge of the model with a chamfer mill:
 an open model's rim, or a convex crease where two faces meet. The cone

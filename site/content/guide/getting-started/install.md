@@ -2,6 +2,7 @@
 title = "Install"
 description = "Download a release for your system, or build from source."
 weight = 1
+aliases = ["guide/install/"]
 +++
 
 Releases are published on the
@@ -63,4 +64,4 @@ cargo build --release -p camcraft-post --bin post          # standalone post pro
 ```
 
 The command line is described, with runnable examples, in
-[Command line](@/guide/cli.md).
+[Command line](@/guide/automate/cli.md).

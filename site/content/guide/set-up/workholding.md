@@ -1,7 +1,8 @@
 +++
 title = "Workholding and fixtures"
 description = "Vises, plates, accessories, chucks and imported fixtures, and what the checks do with them."
-weight = 7
+weight = 2
+aliases = ["guide/workholding/"]
 +++
 
 A fixture is steel the machine must not hit. CamCraft keeps it in the
@@ -100,7 +101,7 @@ carried body. A vise jaw or clamp sitting inside material the earlier setup
 left standing is refused: the setup's fixture "stands inside the stock
 carried from" the earlier setup, so move the fixture or re-check the hold.
 Soft jaws for op 2 are an accessory in the second setup. See
-[Setups](@/guide/setups.md).
+[Setups](@/guide/set-up/setups.md).
 
 ## Common refusals
 

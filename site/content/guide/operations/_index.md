@@ -1,7 +1,8 @@
 +++
 title = "Operations"
 description = "The operation kinds, their settings tabs, and generating toolpaths."
-weight = 4
+sort_by = "weight"
+weight = 3
 +++
 
 An operation is one machining step: a tool, an area to cut, and how to cut
@@ -23,7 +24,7 @@ milling. A mill-turn shows both.
 | Sinker EDM | Sinker Burn, Side Burn |
 
 Each 3D milling kind has its own section, with its settings, defaults
-and common refusals, in [3D milling operations](@/guide/operations-3d.md).
+and common refusals, in [3D milling operations](@/guide/operations/operations-3d.md).
 
 Some kinds carry several strategies. The 3D kinds cover adaptive roughing
 per level, waterline, parallel, scallop, radial, spiral, morph, flow,
@@ -33,7 +34,7 @@ you. Milling operations can also be indexed (3+2) to a tilted plane on a
 machine that can tilt.
 
 Each 2D milling and hole kind has its own section, with its settings,
-defaults and common refusals, in [2D milling operations](@/guide/operations-2d.md).
+defaults and common refusals, in [2D milling operations](@/guide/operations/operations-2d.md).
 
 ## The settings tabs
 
@@ -57,7 +58,7 @@ Edits on a page are pending until you click **Apply** or **Generate**.
 Both are undoable with Ctrl+Z (Cmd+Z on macOS).
 
 Each turning kind has its own section, with its settings, defaults and
-common refusals, in [Turning operations](@/guide/operations-turning.md).
+common refusals, in [Turning operations](@/guide/operations/operations-turning.md).
 
 ## What a click picks
 
@@ -93,7 +94,7 @@ id a click could not have picked is refused by name.
 ## Order
 
 Operations post in the order the browser lists them. Which order to choose,
-and why, is covered in [Order of operations](@/guide/order-of-operations.md).
+and why, is covered in [Order of operations](@/guide/check-and-post/order-of-operations.md).
 
 ## Generating
 
@@ -123,7 +124,7 @@ can be clicked to frame it.
 
 The multi-axis kinds, Probe, Plasma Profile and the EDM kinds (Wire
 Contour, Sinker Burn, Sinker Side Burn) each have their own reference, with settings, defaults and common refusals:
-[Multi-axis operations](@/guide/operations-multiaxis.md),
-[Probing](@/guide/operations-probing.md),
-[Plasma cutting](@/guide/operations-plasma.md) and
-[Wire and sinker EDM](@/guide/operations-edm.md).
+[Multi-axis operations](@/guide/multi-axis/operations-multiaxis.md),
+[Probing](@/guide/operations/operations-probing.md),
+[Plasma cutting](@/guide/operations/operations-plasma.md) and
+[Wire and sinker EDM](@/guide/operations/operations-edm.md).

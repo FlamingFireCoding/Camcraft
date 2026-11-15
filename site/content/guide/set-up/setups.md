@@ -1,7 +1,8 @@
 +++
 title = "Setups"
 description = "Stock, work offsets, machines, posts and fixtures, per setup."
-weight = 3
+weight = 1
+aliases = ["guide/setups/"]
 +++
 
 A setup is one way the part is held on one machine: its stock, its work
@@ -22,7 +23,7 @@ Each setup appears in the browser with its own pages:
 - **Post:** the post processor the setup writes with: a built-in post, or
   **Load post (.cps)** for a script of your own.
 - **Fixtures:** vises, clamps and other workholding, imported or placed
-  from the fixture library. See [Workholding and fixtures](@/guide/workholding.md).
+  from the fixture library. See [Workholding and fixtures](@/guide/set-up/workholding.md).
 - **Tools:** the tools this setup's operations use, in change order.
 
 Below the pages, **Operations** lists the setup's operations.
@@ -70,7 +71,7 @@ The workspace button on the Setup group mounts a built-in machine for
 Milling, Turning or Mill-turning, and the ribbon shows only the operations
 that machine can run. CamCraft also ships machine files for several
 Tormach mills, and **View > Panels > Machines** browses, validates and
-edits `.mch` machine files. See [Machine types](@/guide/machines.md) for what each kind allows.
+edits `.mch` machine files. See [Machine types](@/guide/check-and-post/machines.md) for what each kind allows.
 
 A machine file states facts such as axis travel, spindle speed range and
 rigid-tapping support. CamCraft checks a program against the facts the
@@ -91,4 +92,4 @@ rapid lengths and the estimated time. **Export setup sheets…** writes one
 text page per setup. Posting does not write them.
 
 For which unit and zero every number uses, see
-[Units and coordinates](@/guide/units-and-coordinates.md).
+[Units and coordinates](@/guide/reference/units-and-coordinates.md).

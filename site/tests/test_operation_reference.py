@@ -57,14 +57,15 @@ class OperationReferencePictures(unittest.TestCase):
         documented = {kind for family in FAMILIES.values() for kind in family}
         self.assertEqual(kinds, documented, "Update the reference when OpType changes")
         for family, sections in FAMILIES.items():
-            page = SITE / "content/guide" / f"operations-{family}.md"
+            group = "multi-axis" if family == "multiaxis" else "operations"
+            page = SITE / "content/guide" / group / f"operations-{family}.md"
             parts = re.split(r"^## (.+)$", page.read_text(), flags=re.M)
             contents = dict(zip(parts[1::2], parts[2::2]))
             for kind, heading in sections.items():
                 with self.subTest(kind=kind):
                     self.assertIn(heading, contents, f"Missing section in {page}")
                     image = re.search(
-                        rf"!\[([^\]]+)\]\(\.\./\.\./operation-paths\.svg#{kind}\)",
+                        rf"!\[([^\]]+)\]\(\.\./\.\./\.\./operation-paths\.svg#{kind}\)",
                         contents[heading],
                     )
                     self.assertIsNotNone(image, f"{heading} needs its toolpath picture")
@@ -92,7 +93,8 @@ class OperationReferencePictures(unittest.TestCase):
             self.assertTrue((output / "operation-paths.svg").is_file())
             for family, sections in FAMILIES.items():
                 with self.subTest(family=family):
-                    relative_page = f"guide/operations-{family}/"
+                    group = "multi-axis" if family == "multiaxis" else "operations"
+                    relative_page = f"guide/{group}/operations-{family}/"
                     parser = Pictures()
                     parser.feed((output / relative_page / "index.html").read_text())
                     resolved = [urljoin(f"{base_url}/{relative_page}", src)

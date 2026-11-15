@@ -1,7 +1,8 @@
 +++
 title = "Units and coordinates"
 description = "Which unit each number is in, and which frame each coordinate is measured from."
-weight = 7
+weight = 1
+aliases = ["guide/units-and-coordinates/"]
 +++
 
 Most unit and coordinate mistakes come from assuming that two numbers share
@@ -148,4 +149,4 @@ A second setup can instead take the material the previous setup leaves.
 - Reading generator refusals in millimetres in an inch document: some
   refusal messages still print millimetres (tracked as issue #740).
 
-See also [Setups](@/guide/setups.md) and [Posting](@/guide/posting.md).
+See also [Setups](@/guide/set-up/setups.md) and [Posting](@/guide/check-and-post/posting.md).

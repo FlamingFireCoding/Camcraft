@@ -1,7 +1,8 @@
 +++
 title = "Reading a refusal"
 description = "Why CamCraft refused, and how to fix it."
-weight = 7
+weight = 3
+aliases = ["guide/refusals/"]
 +++
 
 CamCraft refuses rather than guess. A refusal is not a crash: the document
@@ -41,7 +42,7 @@ the machine file's number is wrong (check it against the machine's
 manual).
 
 For a message that is not in this table, look it up by what you see on the
-[Troubleshooting](@/guide/troubleshooting.md) page.
+[Troubleshooting](@/guide/reference/troubleshooting.md) page.
 
 ## Geometry and generation
 
@@ -73,12 +74,12 @@ hide the finding.
 | A 4-axis wire cut asks for tabs or no-core burnout | Those features are supported on one-profile cuts only. | Remove them or use a one-profile contour. |
 | A taper machine does not state its angle or corner rule | The control's lean cannot be determined safely. | Complete the machine's `edm.taper_angle` data from its control documentation. |
 | Sodick refuses taper or 4-axis work | The shipped Sodick post supports 2-axis contours only. | Use a supported vertical contour or a post verified for your control and cut type. |
-| Sinker overburn or an incomplete orbit vector | Gap and orbit radius cannot produce the requested size, or the machine lacks the needed orbit data. | Review the electrode size, condition, orbit and machine data. See [Wire and sinker EDM](@/guide/operations-edm.md). |
+| Sinker overburn or an incomplete orbit vector | Gap and orbit radius cannot produce the requested size, or the machine lacks the needed orbit data. | Review the electrode size, condition, orbit and machine data. See [Wire and sinker EDM](@/guide/operations/operations-edm.md). |
 | `first X/Y traverse with no clearance height stated` | grblHAL, Carvera or TinyG cannot position safely without a clearance or retract plane. | Set the operation heights and generate again. For a standalone CL stream, supply the plane. |
 | Tormach lathe has no stock or clearance plane | The post cannot establish the safe one-axis approach to or departure from G30. | Supply the stock and required heights. Check the stored G30 position at the control. |
 
 Tool import, numbering and body placement refusals are explained in
-[Tools and tool libraries](@/guide/tools.md).
+[Tools and tool libraries](@/guide/set-up/tools.md).
 
 ## When you think a refusal is wrong
 

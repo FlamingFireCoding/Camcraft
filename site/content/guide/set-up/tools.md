@@ -1,7 +1,8 @@
 +++
 title = "Tools and tool libraries"
 description = "Create tools, set holders and tool numbers, and exchange CamCraft tool libraries."
-weight = 8
+weight = 3
+aliases = ["guide/tools/"]
 +++
 
 ## Create and edit a tool
@@ -26,7 +27,7 @@ by part number.
 **Centre cutting (may plunge into solid)** states whether the cutter can
 plunge into material. Set it from the real tool's specification. Turning
 tools also have orientation or touched-off corner settings. These describe
-the point touched off on the machine; see [Turning](@/guide/operations-turning.md).
+the point touched off on the machine; see [Turning](@/guide/operations/operations-turning.md).
 
 ## Holders and profiles
 
@@ -72,13 +73,13 @@ as an undoable change; it cannot remove the last piece.
 
 STL and OBJ do not carry named STEP coordinate systems. If automatic
 assembly has no suitable frames, use suitable named STEP models or the
-explicit placement options exposed through [MCP](@/guide/mcp.md).
+explicit placement options exposed through [MCP](@/guide/automate/mcp.md).
 CamCraft refuses missing or ambiguous mates instead of guessing.
 The combined body is saved with the project and tool library.
 
 **Clear body** removes an applied body. A milling tool then returns to its
 holder cylinder. A turning tool without a body does not have a judged
-holder. Read the operation's warnings and [refusals](@/guide/refusals.md).
+holder. Read the operation's warnings and [refusals](@/guide/reference/refusals.md).
 
 ## Import and export
 
@@ -114,7 +115,7 @@ An imported body change can make operations stale.
 The whole file and the planned import are checked before any change.
 An import is one undo step. The result states which tools were added,
 renamed, skipped, updated, replaced or removed, and which holders arrived.
-See [CLI](@/guide/cli.md) and [MCP](@/guide/mcp.md) for headless exchange.
+See [CLI](@/guide/automate/cli.md) and [MCP](@/guide/automate/mcp.md) for headless exchange.
 
 ## Tool numbering
 

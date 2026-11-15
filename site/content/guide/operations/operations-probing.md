@@ -1,13 +1,14 @@
 +++
 title = "Probing"
 description = "The Probe operation: what it finds, its settings and defaults, what it writes into the program, and the guards around the stylus."
-weight = 5
+weight = 3
+aliases = ["guide/operations-probing/"]
 +++
 
 This page is the reference for **Probe**, in the **Drilling** group of
-the [operations](@/guide/operations.md) ribbon. For the tabs themselves
+the [operations](@/guide/operations/_index.md) ribbon. For the tabs themselves
 and what a click picks, see that page; for what a refusal means in
-general, see [Reading a refusal](@/guide/refusals.md).
+general, see [Reading a refusal](@/guide/reference/refusals.md).
 
 Lengths are in mm (inches in an inch document), feeds in mm/min (in/min).
 
@@ -15,7 +16,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## Probe
 
-![View of a probe approaching a surface, measuring and backing off.](../../operation-paths.svg#Probe)
+![View of a probe approaching a surface, measuring and backing off.](../../../operation-paths.svg#Probe)
 
 **For:** measuring the part on the machine with a spindle touch probe and
 either setting a work offset from what it finds or checking the part

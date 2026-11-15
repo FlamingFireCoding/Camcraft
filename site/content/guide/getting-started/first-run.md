@@ -2,6 +2,7 @@
 title = "First run"
 description = "The window, the ribbon, and a first toolpath."
 weight = 2
+aliases = ["guide/first-run/"]
 +++
 
 ## Trying it in the browser first
@@ -17,7 +18,7 @@ program; one file for each operation is refused. Its other file commands
 (recent files, machine, post, theme, fixture and tool library files, and the
 setup sheet, tool list and stock exports) are greyed, or refused with the
 reason on the status line. For real work, install a
-[desktop build](@/guide/install.md).
+[desktop build](@/guide/getting-started/install.md).
 
 ## The window
 
@@ -51,7 +52,7 @@ why in its tooltip, for example "No tool yet - add one (Setup > Tools)" or
 "No stock yet - set up stock first (Setup > Stock)".
 
 Every keyboard shortcut and mouse gesture, for Windows, Linux and macOS, is
-on the [Keyboard and mouse](@/guide/keyboard-and-mouse.md) page.
+on the [Keyboard and mouse](@/guide/getting-started/keyboard-and-mouse.md) page.
 
 ## A first toolpath
 
@@ -66,7 +67,7 @@ on the [Keyboard and mouse](@/guide/keyboard-and-mouse.md) page.
    system (WCS) the program is written in.
 4. **Add a tool.** Click **Tools**, then **New tool…**. Fill in the
    cutter's type and size, then choose **Add tool**. See
-   [Tools and tool libraries](@/guide/tools.md) for holders, tool numbers,
+   [Tools and tool libraries](@/guide/set-up/tools.md) for holders, tool numbers,
    and import and export of `.camtools` libraries.
 5. **Add an operation.** Pick one from an operation group, for example
    **Face** under Milling 2D. Its page opens with tabs: Geometry, Heights,
@@ -77,9 +78,9 @@ on the [Keyboard and mouse](@/guide/keyboard-and-mouse.md) page.
    the path but keeps the operation.
 7. **Check it.** Use **Simulate** to play the program against the stock,
    and **Deviate** to compare the machined stock with the model.
-8. **Save** the project (`.camproj`) and [post](@/guide/posting.md) it.
+8. **Save** the project (`.camproj`) and [post](@/guide/check-and-post/posting.md) it.
 
-More tasks: [Common workflows](@/guide/workflows.md).
+More tasks: [Common workflows](@/guide/getting-started/workflows.md).
 
 ## Undo
 
@@ -88,5 +89,5 @@ macOS) step through all of it: imports, stock, tools, operation settings, setups
 theme changes. Moving the view, hovering and the simulation's playback
 position are not part of the history.
 
-Before you import a model, read [Units and coordinates](@/guide/units-and-coordinates.md): an
+Before you import a model, read [Units and coordinates](@/guide/reference/units-and-coordinates.md): an
 STL or OBJ file has no unit, and a 25.4 times error is easy to miss.
