@@ -77,7 +77,7 @@ mod tol_tests;
 use crate::cl::Toolpath;
 use crate::geo2d::{Point2, Region};
 
-pub use finding::{WireFinding, WireUnder};
+pub use finding::{slugs_said, WireFinding, WireUnder};
 pub use slug::Slug;
 
 use kerf::{gouge_at, polyline, Wire};
@@ -271,7 +271,8 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
     // The die's reading of the model (module head), decided once for
     // the whole height: the start hole stands in the model at some plane.
     let opening = job.side == CutSide::Die && job.sections.iter().any(|s| s.part.contains(start));
-    // The threading point's worst plane, and the first plane that gouges.
+    // The threading point's worst plane, and the first plane that gouges
+    // (with the deepest reading of any plane, #1170).
     let mut worst: Option<(f64, f64)> = None;
     let mut gouge: Option<WireFinding> = None;
     for s in &job.sections {
@@ -280,11 +281,9 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
         if worst.is_none_or(|(c, _)| clear < c) {
             worst = Some((clear, s.z));
         }
-        if gouge.is_none() {
-            let under;
-            (gouge, under) = passes::gouge_at(&p, &wire, &passes, s.z, tol);
-            v.under = WireUnder::deeper(v.under, under);
-        }
+        let (found, under) = passes::gouge_at(&p, &wire, &passes, s.z, tol);
+        gouge = WireFinding::first_gouge(gouge, found);
+        v.under = WireUnder::deeper(v.under, under);
     }
     if let Some((clear, z)) = worst.filter(|(c, _)| *c < k - KERF_TOL) {
         v.findings.push(WireFinding::Threading { z, at: start, clear, need: k });
@@ -301,11 +300,9 @@ fn open(job: &WireJob<'_>, wire: &Wire, k: f64, v: &mut WireVerdict) {
     let mut worst: Option<(f64, f64, Point2)> = None;
     let mut gouge: Option<WireFinding> = None;
     for s in &job.sections {
-        if gouge.is_none() {
-            let under;
-            (gouge, under) = gouge_at(&Product::Part(&s.part), wire, k, s.z, job.verify_tol);
-            v.under = WireUnder::deeper(v.under, under);
-        }
+        let (found, under) = gouge_at(&Product::Part(&s.part), wire, k, s.z, job.verify_tol);
+        gouge = WireFinding::first_gouge(gouge, found);
+        v.under = WireUnder::deeper(v.under, under);
         let Some(stock) = s.stock.as_ref() else { continue };
         // The ends where the wire stands at this height (a leaning
         // wire's ends move with the plane).

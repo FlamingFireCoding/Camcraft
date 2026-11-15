@@ -43,11 +43,12 @@ pub(super) struct Reading {
     first: Option<(usize, Point2, f64)>,
     moves: usize,
     under: Option<(f64, Point2)>,
+    deepest: f64,
 }
 
 impl Reading {
     pub(super) fn new(tol: f64) -> Self {
-        Reading { tol, first: None, moves: 0, under: None }
+        Reading { tol, first: None, moves: 0, under: None, deepest: 0.0 }
     }
 
     /// Move `move_no` (1-based): its kerf needs `need` and the product
@@ -55,6 +56,7 @@ impl Reading {
     pub(super) fn take(&mut self, move_no: usize, d: f64, need: f64, at: Point2) {
         if d < need - KERF_TOL - self.tol {
             self.moves += 1;
+            self.deepest = self.deepest.max(need - d);
             self.first.get_or_insert((move_no, at, need - d));
         } else if d < need - KERF_TOL && self.under.is_none_or(|(deep, _)| need - d > deep) {
             self.under = Some((need - d, at));
@@ -64,9 +66,9 @@ impl Reading {
     /// The first gouge at height `z` with the count of moves that
     /// gouge, and the deepest reading passed under the tolerance.
     pub(super) fn close(self, z: f64) -> (Option<WireFinding>, Option<WireUnder>) {
-        let (moves, tol) = (self.moves, self.tol);
+        let (moves, tol, deepest) = (self.moves, self.tol, self.deepest);
         (
-            self.first.map(|(move_no, at, depth)| WireFinding::Gouge { move_no, z, at, depth, moves, tol }),
+            self.first.map(|(move_no, at, depth)| WireFinding::Gouge { move_no, z, at, depth, moves, tol, deepest }),
             self.under.map(|(depth, at)| WireUnder { depth, z, at }),
         )
     }
