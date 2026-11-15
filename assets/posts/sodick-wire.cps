@@ -48,6 +48,7 @@ var cutZ = null;           // the section's one programmed plane (2-axis)
 var awt = false;
 var taper = 0;             // the section's stated taper, degrees (0: vertical)
 var angleWord = false;    // WireAngle is unsupported, including a stated zero
+var controlOffset = false; // a COMP record refuses this section, even before SECTION
 var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile)
 var leaning = false;       // the next move states an upper guide offset
 var machineGood = false;
@@ -162,6 +163,16 @@ function onToolChange(number, name) {
   refuse("tool" + opName, who() + "changes to tool " + number + " - a wire EDM mounts no tool (the wire is the condition's)");
 }
 
+// #1498: the wire laws judge the generated wire-centre path. No stored
+// H-register value ties a control-offset path to that judged geometry.
+// Refuse every COMP record (including wear and OFF); OFF cannot make a
+// refused section safe again. Section end resets the refusal.
+function onRadiusCompensation() {
+  controlOffset = true;
+  sectionOk = false;
+  refuse("offset" + opName, who() + "Sodick: control-side wire offset (G41/G42 H) is not supported - no verified H-register value is stored; post a generated wire-centre path without control or wear compensation");
+}
+
 // ------------------------------------------------------------- section
 function onSection() {
   inSection = true;
@@ -173,7 +184,7 @@ function onSection() {
     refuse("op" + opName, who() + "is not wire EDM work (no EDM condition) - the Sodick wire post posts Wire Contour operations only");
     return;
   }
-  var ok = machineGood;
+  var ok = machineGood && !controlOffset;
   // The manual's condition word: C and three digits (C000 to C999). The
   // operation's condition id is that word; anything else is refused.
   if (!/^C[0-9]{3}$/.test(condition)) {
@@ -333,6 +344,7 @@ function onSectionEnd() {
   afterOp = "";
   taper = 0;
   angleWord = false;
+  controlOffset = false;
   fourAxis = "";
   leaning = false;
 }
