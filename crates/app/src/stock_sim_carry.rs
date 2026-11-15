@@ -260,7 +260,7 @@ pub(crate) fn walk(
     let mut origin = first_eff;
     let mut left: Option<Deviation> = None;
     let mut spanned = false;
-    for p in planned {
+    for (index, p) in planned.iter().enumerate() {
         let eff = crate::setup::effective(world, p.setup.as_deref());
         if eff != frame {
             spanned = true;
@@ -279,12 +279,12 @@ pub(crate) fn walk(
                 Entry::Carry(turn) => {
                     // #874: the side-on read can hide a gouge cut so far.
                     if turn.side_on() {
-                        keep_gouges(&mut left, judge(world, &held, frame.as_deref())?);
+                        keep_gouges(&mut left, judge(world, &held, &frame, &planned[..index])?);
                     }
                     held = Held::Carried(held.into_carried(world, origin.as_deref())?.carry_through(&turn)?);
                 }
                 Entry::NewBlock => {
-                    keep_gouges(&mut left, judge(world, &held, frame.as_deref())?);
+                    keep_gouges(&mut left, judge(world, &held, &frame, &planned[..index])?);
                     held = first_held(world, eff.as_deref(), min_r)?;
                     origin = eff.clone();
                 }
@@ -314,12 +314,23 @@ pub(crate) fn walk(
     Ok(Walked { held, frame, spanned, origin, left })
 }
 
-/// The verdict of the stock as held, against the parts in `frame`.
-pub(crate) fn judge(world: &flecs_ecs::prelude::World, held: &Held, frame: Option<&str>) -> Result<Deviation, String> {
-    let facets = crate::setup_align::parts_facets_in(world, frame);
+/// The verdict before leaving `frame`, credited only by operations already
+/// cut in that setup. A later setup's declarations cannot excuse this cut.
+fn judge(
+    world: &flecs_ecs::prelude::World,
+    held: &Held,
+    frame: &Option<String>,
+    cut: &[Planned],
+) -> Result<Deviation, String> {
+    let facets = crate::setup_align::parts_facets_in(world, frame.as_deref());
     // #864: the same tightened tolerance the final verdict is read at.
     let tol = crate::model_fidelity::program_tol(world)?;
-    held.deviate(&facets, tol)
+    let breaks = super::program_breaks(world, cut, true, frame);
+    let marks = super::marks::program_marks(world, cut, true, frame);
+    held.verdict_snapshot(&facets, tol, |dev, tops| {
+        super::credit_breaks(dev, tops, &facets, &breaks);
+        super::credit_marks(dev, tops, &facets, &marks);
+    })
 }
 
 /// The stock setup `setup` starts from when the program reaches it: the
