@@ -65,13 +65,86 @@ pub const REST_MAX: f64 = 0.25;
 const REST_NOTE: f64 = 0.005;
 
 /// Clear `region` with trochoidal loops (see the module law). `p` is the
-/// 2D Adaptive's own parameter set: the optimal load is the most the
-/// loops may advance a turn, the stepover and the entry are not read
-/// (the lane bores its own helix at its start).
+/// Trochoidal parameters exposed under 2D Adaptive when `Method = Trochoidal`
+/// (#1588): engagement limit, return mode between loops, return feed, and
+/// loop width.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AdaptiveTrochParams {
+    /// Engagement limit (degrees of the cutter periphery in contact).
+    pub max_engagement: f64,
+    /// Return between loops: `None` is Auto (0.3 mm microlift when clearance
+    /// exceeds top by at least 0.3 mm, else retract).
+    pub ret: Option<TrochoidReturn>,
+    /// Return feed (mm/min); `None` uses the cutting `feed`.
+    pub return_feed: Option<f64>,
+    /// Loop band width (mm); `None` uses all the room along the medial line.
+    pub loop_width: Option<f64>,
+}
+
+impl Default for AdaptiveTrochParams {
+    fn default() -> Self {
+        Self {
+            max_engagement: DEFAULT_MAX_ENGAGEMENT,
+            ret: None,
+            return_feed: None,
+            loop_width: None,
+        }
+    }
+}
+
+impl AdaptiveTrochParams {
+    /// Named refusal if any trochoidal control is non-finite or out of range.
+    #[must_use]
+    pub fn refusal(&self) -> Option<String> {
+        let pos = |v: f64| v.is_finite() && v > 0.0;
+        if !pos(self.max_engagement) || self.max_engagement > 180.0 {
+            return Some("max engagement must be finite and in (0, 180] degrees".into());
+        }
+        if let Some(TrochoidReturn::Microlift { height }) = self.ret
+            && !pos(height)
+        {
+            return Some("microlift height must be finite and positive".into());
+        }
+        if self.return_feed.is_some_and(|f| !pos(f)) {
+            return Some("return feed must be finite and positive".into());
+        }
+        if self.loop_width.is_some_and(|w| !pos(w)) {
+            return Some("loop width must be finite and positive".into());
+        }
+        None
+    }
+
+    #[must_use]
+    pub fn is_sane(&self) -> bool {
+        self.refusal().is_none()
+    }
+
+    fn validate(&self) -> Result<(), GenError> {
+        if let Some(msg) = self.refusal() {
+            return Err(GenError::Invalid(format!("{WHO}: {msg}")));
+        }
+        Ok(())
+    }
+}
+
+/// 2D Adaptive's own parameter set with default trochoidal controls: the
+/// optimal load is the most the loops may advance a turn, the stepover
+/// and the entry are not read (the lane bores its own helix at its start).
 pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath, GenError> {
+    adaptive_trochoidal_with(region, p, &AdaptiveTrochParams::default())
+}
+
+/// 2D Adaptive's trochoidal planner with explicit engagement, return,
+/// return-feed, and loop-width controls (#1588).
+pub fn adaptive_trochoidal_with(
+    region: &Region,
+    p: &PocketParams,
+    t: &AdaptiveTrochParams,
+) -> Result<Toolpath, GenError> {
     // The Adaptive doors (finite numbers, the load in (0, 50] % of D).
     let p = &PocketParams { strategy: PocketStrategy::Adaptive, ..*p };
     p.validate()?;
+    t.validate()?;
     if region.is_empty() {
         return Err(GenError::Empty("empty pocket region".into()));
     }
@@ -84,7 +157,7 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
         )));
     }
     let (chain, b) = lane(region, &center, p)?;
-    cut_lane(&center, &chain, b, p)
+    cut_lane(&center, &chain, b, p, t)
 }
 
 /// The lane of `center`: its straightened medial line and the loop
@@ -189,21 +262,27 @@ fn straightened(pts: &[Point2], tol: f64) -> Vec<Point2> {
 
 /// The lane cut: loops of band half-width `b` along `chain`, planned by
 /// the measured-engagement ladder, then held to `center` move by move.
-pub(super) fn cut_lane(center: &Region, chain: &[Point2], b: f64, p: &PocketParams) -> Result<Toolpath, GenError> {
+pub(super) fn cut_lane(
+    center: &Region,
+    chain: &[Point2],
+    b: f64,
+    p: &PocketParams,
+    t: &AdaptiveTrochParams,
+) -> Result<Toolpath, GenError> {
     let r = 0.5 * p.tool_diameter;
-    // A lifted return is a feed: it needs the room under the clearance
-    // plane, else the returns hop by the retract plane.
-    let ret = if p.clearance_z - p.top_z >= DEFAULT_MICROLIFT {
+    // A lifted return is a feed: in Auto mode it lifts by 0.3 mm when the
+    // clearance plane leaves room, else hops by the retract plane.
+    let ret = t.ret.unwrap_or(if p.clearance_z - p.top_z >= DEFAULT_MICROLIFT {
         TrochoidReturn::Microlift { height: DEFAULT_MICROLIFT }
     } else {
         TrochoidReturn::Retract
-    };
+    });
     let tp = TrochoidParams {
         tool_diameter: p.tool_diameter,
         width: 2.0 * (b + r + p.stock_to_leave),
-        loop_width: None,
+        loop_width: t.loop_width,
         step: load_step(p.tool_diameter, p.optimal_load),
-        max_engagement: DEFAULT_MAX_ENGAGEMENT,
+        max_engagement: t.max_engagement,
         ret,
         smoothing: r * SMOOTH_PER_R,
         stock_to_leave: p.stock_to_leave,
@@ -213,7 +292,7 @@ pub(super) fn cut_lane(center: &Region, chain: &[Point2], b: f64, p: &PocketPara
         bottom_z: p.bottom_z,
         stepdown: p.stepdown,
         feed: p.feed,
-        return_feed: p.feed,
+        return_feed: t.return_feed.unwrap_or(p.feed),
         plunge_feed: p.plunge_feed,
         climb: p.climb,
     };
@@ -229,7 +308,8 @@ pub(super) fn cut_lane(center: &Region, chain: &[Point2], b: f64, p: &PocketPara
         *n = rename(n);
     }
     let reach = center.offset(r)?;
-    let rest = rest_share(&reach, &Region::sweep(&[chain.to_vec()], r + b)?);
+    let b_used = t.loop_width.map_or(b, |w| (0.5 * w).min(b));
+    let rest = rest_share(&reach, &Region::sweep(&[chain.to_vec()], r + b_used)?);
     if rest > REST_NOTE {
         path.notes.push(format!(
             "{WHO}: about {:.1} mm2 ({:.0} %) of the region is outside the loops' reach (its corners and wider parts) - a following operation must clear it",

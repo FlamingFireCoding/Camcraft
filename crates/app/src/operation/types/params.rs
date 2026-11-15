@@ -206,6 +206,10 @@ pub enum OpParams {
         /// trochoidal loops along the region's medial line
         /// (`machining2d::adaptive_trochoidal`).
         method: crate::machining2d::AdaptiveMethod,
+        /// Trochoidal controls (#1588): read only when `method` is
+        /// `Trochoidal` (engagement limit, return mode, return feed,
+        /// loop width).
+        troch: crate::machining2d::AdaptiveTrochParams,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },

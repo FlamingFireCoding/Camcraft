@@ -285,6 +285,7 @@ impl OpParams {
                 helix_radius,
                 optimal_load,
                 method,
+                troch,
                 tilt,
             } => {
                 w(h, *stepover);
@@ -311,6 +312,20 @@ impl OpParams {
                 // op keeps the digest it had before the choice existed.
                 if *method == crate::machining2d::AdaptiveMethod::Trochoidal {
                     h.write_u8(0xA5);
+                    if *troch != crate::machining2d::AdaptiveTrochParams::default() {
+                        h.write_u8(0xA6);
+                        w(h, troch.max_engagement);
+                        match troch.ret {
+                            None => h.write_u8(0),
+                            Some(crate::machining2d::TrochoidReturn::Microlift { height }) => {
+                                h.write_u8(1);
+                                w(h, height);
+                            }
+                            Some(crate::machining2d::TrochoidReturn::Retract) => h.write_u8(2),
+                        }
+                        w(h, troch.return_feed.unwrap_or(-1.0));
+                        w(h, troch.loop_width.unwrap_or(-1.0));
+                    }
                 }
             }
             OpParams::Offset2D {

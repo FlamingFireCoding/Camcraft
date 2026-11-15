@@ -613,6 +613,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             helix_radius,
             optimal_load,
             method,
+            troch,
             ..
         } => {
             let region = region_for_job(
@@ -642,11 +643,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 optimal_load: *optimal_load,
                 blend_turns: false,
             };
-            // #1509: the method picks the planner; both cut the same
+            // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let path = match method {
                 machining2d::AdaptiveMethod::Spiral => machining2d::pocket(&region, &pp)?,
-                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal(&region, &pp)?,
+                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal_with(&region, &pp, troch)?,
             };
             (region, path)
         }

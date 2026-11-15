@@ -56,6 +56,7 @@ fn adaptive(method: AdaptiveMethod) -> OpParams {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method,
+        troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
     }
 }
@@ -206,4 +207,142 @@ fn mcp_sets_the_method_generates_inside_the_face_and_refuses_an_unknown_word() {
     let ops = call(&mut s, 13, "get_job", json!({})).to_string();
     assert!(ops.contains("trochoidal"), "undo restores the method: {ops}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_edits_trochoidal_parameters_generates_refuses_limits_and_round_trips() {
+    let dir = std::env::temp_dir().join(format!("camcraft-1588-mcp-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let stl = dir.join("part.stl");
+    write_stl(&part(17.0, 8.0), &stl);
+    let mut s = Server::new();
+    let ok = |r: &Value| r["isError"] != json!(true);
+    assert!(ok(&call(&mut s, 1, "import_model", json!({ "path": stl.display().to_string() }))));
+    assert!(ok(&call(&mut s, 2, "set_stock", json!({ "box": { "dx": 70.0, "dy": 50.0, "dz": 20.0 } }))));
+    assert!(ok(&call(&mut s, 3, "add_tool", json!({ "catalog": TOOL }))));
+    let floor = call(&mut s, 4, "detect_pockets", json!({ "model": "part" }))["structuredContent"]["features"][0]["floor"].clone();
+    assert!(ok(&call(
+        &mut s,
+        5,
+        "add_operation",
+        json!({
+            "kind": "2D Adaptive",
+            "tool": TOOL,
+            "name": "A1",
+            "source": "part",
+            "params": {
+                "top_z": { "reference": "fixed", "offset": 20.0 },
+                "bottom_z": { "reference": "fixed", "offset": 17.0 },
+                "stepdown": 3.0
+            }
+        })
+    )));
+    assert!(ok(&call(&mut s, 6, "set_operation_geometry", json!({ "operation": "A1", "picks": [{ "model": "part", "id": floor }] }))));
+
+    let edit = call(
+        &mut s,
+        7,
+        "edit_operation",
+        json!({
+            "name": "A1",
+            "params": {
+                "method": "trochoidal",
+                "max_engagement": 60.0,
+                "return": "retract",
+                "return_feed": 1800.0,
+                "loop_width": 4.0
+            }
+        }),
+    );
+    assert!(ok(&edit), "edit_operation should accept the trochoidal parameters: {edit}");
+    let p = &edit["structuredContent"]["params"]["adaptive2_d"];
+    assert_eq!(p["max_engagement"], json!(60.0), "{p}");
+    assert_eq!(p["return"], json!("retract"), "{p}");
+    assert_eq!(p["return_feed"], json!(1800.0), "{p}");
+    assert_eq!(p["loop_width"], json!(4.0), "{p}");
+
+    let generated = call(&mut s, 8, "generate", json!({ "name": "A1" }));
+    assert!(ok(&generated), "{generated}");
+    let verify = call(&mut s, 9, "verify", json!({}));
+    assert_eq!(verify["structuredContent"]["ok"], json!(true), "{verify}");
+
+    let tall_lift = call(
+        &mut s,
+        10,
+        "edit_operation",
+        json!({ "name": "A1", "params": { "return": "microlift", "lift": 50.0 } }),
+    );
+    assert_eq!(tall_lift["isError"], json!(true), "tall microlift must be refused: {tall_lift}");
+    assert!(tall_lift.to_string().contains("microlift"), "{tall_lift}");
+
+    let good_lift = call(
+        &mut s,
+        11,
+        "edit_operation",
+        json!({
+            "name": "A1",
+            "params": { "max_engagement": 90.0, "return": "microlift", "lift": 0.4, "return_feed": null, "loop_width": null }
+        }),
+    );
+    assert!(ok(&good_lift), "{good_lift}");
+    let good_lift_gen = call(&mut s, 12, "generate", json!({ "name": "A1" }));
+    assert!(ok(&good_lift_gen), "{good_lift_gen}");
+
+    let tight = call(&mut s, 13, "edit_operation", json!({ "name": "A1", "params": { "max_engagement": 10.0 } }));
+    assert!(ok(&tight), "{tight}");
+    let refused = call(&mut s, 14, "generate", json!({ "name": "A1" }));
+    assert_eq!(refused["isError"], json!(true), "unachievable engagement limit must be refused: {refused}");
+    let err_text = refused.to_string();
+    assert!(err_text.contains("2D Adaptive (Trochoidal)") && err_text.contains("engagement limit"), "{err_text}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn trochoidal_parameters_undo_redo_and_round_trip_with_older_files_defaulting() {
+    let (world, mut h) = job(17.0, 8.0, AdaptiveMethod::Trochoidal);
+    let base = adaptive(AdaptiveMethod::Trochoidal);
+    let mut edited = base.clone();
+    if let OpParams::Adaptive2D { troch, .. } = &mut edited {
+        troch.max_engagement = 65.0;
+        troch.ret = Some(camcraft_app::machining2d::TrochoidReturn::Microlift { height: 0.5 });
+        troch.return_feed = Some(1500.0);
+        troch.loop_width = Some(3.5);
+    }
+    h.execute(&world, EditOperationParams::new(&world, "A1", edited.clone()).expect("edit"));
+    let e = model::find_by_name(&world, "A1").expect("op");
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, edited);
+    assert!(h.undo(&world));
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, base, "undo restores defaults");
+    assert!(h.redo(&world));
+    assert_eq!(model::operation_of(&world, &e).expect("op").params, edited, "redo applies trochoidal params");
+
+    let saved = project::params_to_json(&edited);
+    assert_eq!(project::params_from_json(&saved).expect("roundtrip"), edited);
+
+    let mut legacy = project::params_to_json(&base);
+    let obj = legacy.get_mut("adaptive2_d").and_then(Value::as_object_mut).expect("obj");
+    for k in ["max_engagement", "return", "lift", "return_feed", "loop_width"] {
+        obj.remove(k);
+    }
+    assert_eq!(project::params_from_json(&legacy).expect("older file"), base);
+}
+
+#[test]
+fn trochoidal_doors_refuse_out_of_range_and_over_clearance_values_by_name() {
+    let (world, _h) = job(17.0, 8.0, AdaptiveMethod::Trochoidal);
+    let mut bad_eng = adaptive(AdaptiveMethod::Trochoidal);
+    if let OpParams::Adaptive2D { troch, .. } = &mut bad_eng {
+        troch.max_engagement = 181.0;
+    }
+    let err = EditOperationParams::new(&world, "A1", bad_eng).map(|_| ()).expect_err("bad max_engagement").to_string();
+    assert!(err.contains("max engagement"), "{err}");
+
+    let mut tall = adaptive(AdaptiveMethod::Trochoidal);
+    if let OpParams::Adaptive2D { troch, .. } = &mut tall {
+        // clearance is 30, top is 20 -> 10 mm room.
+        troch.ret = Some(camcraft_app::machining2d::TrochoidReturn::Microlift { height: 10.5 });
+    }
+    let err = EditOperationParams::new(&world, "A1", tall).map(|_| ()).expect_err("tall microlift").to_string();
+    assert!(err.contains("microlift") && err.contains("clearance plane") && err.contains("10.000"), "{err}");
 }

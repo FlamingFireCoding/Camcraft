@@ -73,6 +73,7 @@ fn adaptive2d(top: f64, bottom: f64) -> OpParams {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
+        troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         tilt: None,
     }
 }

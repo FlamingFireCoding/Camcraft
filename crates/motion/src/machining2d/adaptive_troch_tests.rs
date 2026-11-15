@@ -109,7 +109,7 @@ fn the_opened_bore_leaves_no_post_at_the_lane_start() {
         let Ok(a) = rest_area(&dex, &core, -3.0) else { panic!("rest") };
         a
     };
-    let t = match cut_lane(&center, &chain, b, &p) {
+    let t = match cut_lane(&center, &chain, b, &p, &AdaptiveTrochParams::default()) {
         Ok(t) => t,
         Err(e) => panic!("cut: {e}"),
     };
@@ -237,7 +237,7 @@ fn a_zero_or_oversized_load_is_refused_by_name_never_looped_forever() {
 fn a_loop_outside_the_region_is_refused_by_the_check_on_the_path() {
     let Ok(center) = face().offset(-0.5 * D) else { panic!("center") };
     let chain = [Point2::new(-9.0, 0.0), Point2::new(9.0, 0.0)];
-    let err = match cut_lane(&center, &chain, 6.5, &PocketParams { bottom_z: -3.0, ..params() }) {
+    let err = match cut_lane(&center, &chain, 6.5, &PocketParams { bottom_z: -3.0, ..params() }, &AdaptiveTrochParams::default()) {
         Err(e) => e,
         Ok(_) => panic!("a band 1.5 mm past the walls must not pass"),
     };
@@ -261,4 +261,62 @@ fn without_lift_room_the_returns_retract_and_a_plunge_entry_is_said_unread() {
     assert!(t.notes.iter().any(|n| n.contains("the Entry setting is not read")), "{:?}", t.notes);
     let helix = cut(&face(), &PocketParams { bottom_z: -3.0, ..params() });
     assert!(!helix.notes.iter().any(|n| n.contains("Entry setting")), "{:?}", helix.notes);
+}
+
+#[test]
+fn explicit_trochoidal_parameters_control_engagement_return_feed_and_loop_width() {
+    let p = PocketParams { bottom_z: -3.0, ..params() };
+
+    let impossible = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams { max_engagement: 10.0, ..AdaptiveTrochParams::default() },
+    )
+    .expect_err("10 deg engagement must be refused")
+    .to_string();
+    assert!(
+        impossible.contains(WHO) && impossible.contains("10.0 deg engagement limit") && impossible.contains("the least"),
+        "{impossible}"
+    );
+
+    let retracted = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams { ret: Some(TrochoidReturn::Retract), ..AdaptiveTrochParams::default() },
+    )
+    .expect("retract generates");
+    let rapids = retracted.moves.iter().filter(|m| m.kind == MoveKind::Rapid).count();
+    assert!(rapids > 40, "explicit Retract forces rapid hops even with room: {rapids}");
+
+    let fast_lift = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams {
+            ret: Some(TrochoidReturn::Microlift { height: 0.4 }),
+            return_feed: Some(1800.0),
+            loop_width: Some(4.0),
+            ..AdaptiveTrochParams::default()
+        },
+    )
+    .expect("custom lift, return_feed and narrower loop_width");
+    assert!(fast_lift.moves.iter().any(|m| m.feed == Some(1800.0)), "return feed is emitted");
+    assert!(fast_lift.moves.iter().any(|m| m.feed == Some(p.feed)), "cutting feed stays p.feed");
+
+    let wide = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams { loop_width: Some(50.0), ..AdaptiveTrochParams::default() },
+    )
+    .expect_err("loop width wider than the room is refused")
+    .to_string();
+    assert!(wide.contains(WHO) && wide.contains("loop"), "{wide}");
+
+    let bad_eng = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams { max_engagement: 200.0, ..AdaptiveTrochParams::default() },
+    )
+    .expect_err("max_engagement > 180 is refused")
+    .to_string();
+    assert!(bad_eng.contains(WHO) && bad_eng.contains("max engagement"), "{bad_eng}");
 }

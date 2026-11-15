@@ -121,7 +121,7 @@ pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use unreached::{unreached_note, unreached_pieces};
 pub use adaptive_method::AdaptiveMethod;
-pub use adaptive_troch::adaptive_trochoidal;
+pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
 pub use trochoid_air::lifted_cut;
 pub use trochoid_slot::{
     plan_trochoidal_slot, trochoidal_slot, TrochoidParams, TrochoidPlan, TrochoidReturn, DEFAULT_MAX_ENGAGEMENT,
