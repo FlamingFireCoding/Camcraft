@@ -23,6 +23,9 @@ pub(super) const TILTED_OPEN_SIDE: &str = "a whole-model 3D Pocket on a tilted (
 /// otherwise the picked or controlled boundary, exactly as given.
 /// `neighbours` are the setup's other parts (`keep_law::neighbour_parts`):
 /// the growth never reaches into them. A tilted whole model refuses.
+/// Issue #1950: `air` (the Adaptive plain ladder) reaches `stock_band(r,
+/// true)` past the stock, so the stock ring is entered from the air.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn open_footprint(
     region: Region,
     source_built: bool,
@@ -31,6 +34,7 @@ pub(super) fn open_footprint(
     neighbours: &[Triangle],
     stock: Option<&Region>,
     r: f64,
+    air: bool,
 ) -> Result<Region, GenError> {
     if !source_built || !matches!(src, SrcRef::Entity(_)) {
         return Ok(region);
@@ -43,10 +47,7 @@ pub(super) fn open_footprint(
     } else {
         slice::project(neighbours, FOOTPRINT_SAMPLES).map_err(from_slice)?
     };
-    // Issue #1950 round B: every arm keeps the band it had; the Adaptive
-    // arm takes `stock_band(r, true)` when it is wired to
-    // `pocket3d_open_prev`.
-    machining3d::open_sides(&region, r, &keep_out, stock, machining3d::stock_band(r, false))
+    machining3d::open_sides(&region, r, &keep_out, stock, machining3d::stock_band(r, air))
 }
 
 #[cfg(test)]
@@ -61,9 +62,9 @@ mod law {
     #[test]
     fn a_tilted_whole_model_refuses_by_name() {
         let src = SrcRef::Entity("part".into());
-        let err = open_footprint(square(10.0), true, true, &src, &[], None, 3.0).expect_err("a tilted whole model refuses");
+        let err = open_footprint(square(10.0), true, true, &src, &[], None, 3.0, false).expect_err("a tilted whole model refuses");
         assert!(err.to_string().contains("tilted (3+2) plane"), "{err}");
-        let picked = open_footprint(square(10.0), false, true, &src, &[], None, 3.0).expect("a picked region stays as given");
+        let picked = open_footprint(square(10.0), false, true, &src, &[], None, 3.0, false).expect("a picked region stays as given");
         assert!((picked.area().abs() - 400.0).abs() < 1e-6);
     }
 }
