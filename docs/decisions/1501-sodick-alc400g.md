@@ -43,8 +43,11 @@ says "not verified on a control" in every program.
 
 **Limit (rework of review of PR 1793; Refs #1800).** The taper figure is
 data only. The file states no guide heights, so a tapered cut is refused at post.
-If a user adds them, the post refuses it too ("states no wire
-plane"), for every wire machine file. Pinned by
-`a_tapered_punch_is_refused_at_post_until_guide_heights_and_a_wire_plane_exist`. The
+`crates/app/src/machine/wire_edm.rs` refuses it by name: "states no
+edm.lower_guide_z and edm.upper_guide_z". If a user adds the guide heights, it
+still refuses a lean past `edm.max_taper_deg`, and an upper guide offset outside
+the U/V stroke. The Sodick post (`assets/posts/sodick-wire.cps`) also writes a
+vertical 2-axis cut only, and refuses any taper. Pinned by
+`a_tapered_punch_is_refused_at_post_while_the_file_states_no_guide_heights`. The
 schema and post are not changed here; #1800 tracks them. A review asked for 30
 deg; Sodick's page lists 30 only for other models, so 25 stays.
