@@ -259,13 +259,15 @@ fn the_rapids_stand_clear_of_the_whirl() {
 #[test]
 fn the_seam_closes_into_a_full_ring() {
     let got = rotary_offset(&lathe_bar(16), &params(28.0, 0.0), &control(0.0, 0.0, None)).unwrap();
-    // The skim runs at the wrap top: its positions must cover every
+    // #2004: the wrap top (rho 2.5) is the material top and takes no
+    // level now; the first ring is one stepdown under it (rho 1.5), round
+    // the barrel. Its positions must cover every
     // azimuth. An open seam would leave a rest ridge there and show
     // as an angular gap far wider than the 16-turn chord step.
     let mut ths: Vec<f64> = got
         .moves
         .iter()
-        .filter(|m| m.kind != MoveKind::Rapid && (tangent(m.to) - 2.5).abs() < 1e-6)
+        .filter(|m| m.kind != MoveKind::Rapid && (tangent(m.to) - 1.5).abs() < 1e-6)
         .map(|m| m.to.y.atan2(m.to.x))
         .collect();
     ths.sort_by(|a, b| a.partial_cmp(b).unwrap());
