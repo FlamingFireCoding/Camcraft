@@ -201,6 +201,15 @@ pub(super) fn neighbour_parts(
         .collect()
 }
 
+/// Whether a part-source operation keeps neighbouring parts. Generation
+/// and the live posting check share this rule, including kinds whose
+/// own source is judged outside `depth_law_of`.
+pub(super) fn is_part_kept_kind(params: &OpParams, src: &SrcRef) -> bool {
+    super::generate::depth_law_of(params, src, true) != super::generate::DepthLaw::None
+        || is_cross_drill(params)
+        || matches!(params, OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. })
+}
+
 /// The models whose meshes an operation's part laws read beyond its own
 /// source: on a part source ([`neighbour_parts`]) the setup's other
 /// parts, on a stock source ([`parts_in_stock`]) every part. Empty for a
@@ -223,12 +232,7 @@ fn kept_models(
         // does a 3D Pocket (and its stamped twin), whose cutter now passes its model's
         // silhouette edge - its footprint keeps out of these parts, and
         // the solid law below holds them as the second net.
-        _ if super::generate::depth_law_of(params, src, true) == super::generate::DepthLaw::None
-            && !is_cross_drill(params)
-            && !matches!(params, OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. }) =>
-        {
-            return Vec::new()
-        }
+        _ if !is_part_kept_kind(params, src) => return Vec::new(),
         SrcRef::Stock => return Vec::new(),
         SrcRef::Entity(n) => vec![n.as_str()],
         SrcRef::Selection(items) => items.iter().map(|g| g.entity.as_str()).collect(),
