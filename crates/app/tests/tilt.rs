@@ -100,6 +100,7 @@ fn rotated_by_90(m: Mesh) -> Mesh {
 /// test that generates a warning per level tests nothing.
 fn pocket(tilt: Option<Tilt>, top_z: f64) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt,
         stepover: 3.0,
@@ -130,6 +131,7 @@ fn pocket(tilt: Option<Tilt>, top_z: f64) -> OpParams {
 /// must therefore choose heights by the door, not by hand.
 fn pocket_parked() -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: Some(tilt90_parked()),
         stepover: 3.0,
@@ -373,7 +375,9 @@ fn tilt_on_a_picked_selection_refuses_by_name() {
         feed: 800.0,
         plunge_feed: 200.0,
         climb: true,
-        side: Side::Inside,
+        // Outside: the top face's ring bounds material (#1927 refuses
+        // Inside there - it stood in the part below Z 5).
+        side: Side::Outside,
         lead: Lead::None,
         tolerance: 0.01,
         tab_count: 0,

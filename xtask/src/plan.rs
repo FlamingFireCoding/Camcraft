@@ -161,6 +161,63 @@ pub fn batch(root: &Path) -> Plan {
     plan
 }
 
+/// Crate dirs whose `#[ignore]`d tests run in release (the heavy lanes).
+pub const HEAVY_CRATES: &[&str] = &["kernel", "motion", "app"];
+
+/// True when the integration binary `b` can hold an `#[ignore]`d test: its source text names `ignore`, or it
+/// pulls in other files (`mod x;`, `include!`, `#[path]`) the entry file does not show. A binary with no
+/// ignored test has nothing for a heavy step to run, so it gets none (526 steps otherwise, one cargo
+/// start each); the test `heavy_steps_skip_only_binaries_without_ignored_tests` pins that no binary is
+/// skipped by mistake. Unreadable source counts as heavy: the gate never drops a binary by accident.
+fn may_run_ignored(root: &Path, d: &str, b: &str) -> bool {
+    let entry = crate::suites::entry(root, d, b);
+    let Ok(text) = std::fs::read_to_string(&entry) else { return true };
+    if text.contains("ignore") || text.contains("include!") || text.contains("#[path") {
+        return true;
+    }
+    text.lines().any(|l| {
+        let t = l.trim_start();
+        let t = t.strip_prefix("pub ").unwrap_or(t);
+        t.starts_with("mod ") && t.trim_end().ends_with(';')
+    })
+}
+
+/// The heavy lanes as one step for each test target (#1714): one release build of the heavy crates
+/// (`--no-run`), then for each crate its `--lib`, `--bins`, every integration binary by name and its
+/// `--doc` tests, each running only its `--ignored` tests. Together the targets are exactly what
+/// `cargo test --release -p <crate> -- --ignored` runs. Kernel joins the heavy coverage in #1783;
+/// a red step names one binary, and `--only "app heavy: <binary>"` re-runs it alone.
+pub fn heavy_steps(root: &Path) -> Vec<Step> {
+    let mut out = Vec::new();
+    let mut build: Vec<String> = vec!["test".into(), "--release".into(), "-j".into(), J.into()];
+    for d in HEAVY_CRATES {
+        build.push("-p".into());
+        build.push(pkg(d));
+    }
+    build.push("--no-run".into());
+    out.push(Step::new("heavy build (release --no-run)", &[], "").with(&build));
+    for &d in HEAVY_CRATES {
+        let p = pkg(d);
+        let mut targets: Vec<(String, Vec<String>)> = vec![
+            ("lib".into(), vec!["--lib".into()]),
+            ("bins".into(), vec!["--bins".into()]),
+        ];
+        for b in scan::binaries(root, d) {
+            if may_run_ignored(root, d, &b) {
+                targets.push((b.clone(), vec!["--test".into(), b]));
+            }
+        }
+        targets.push(("doc".into(), vec!["--doc".into()]));
+        for (label, sel) in targets {
+            let mut args = vec!["test", "--release", "-j", J, "-p", &p, "--no-fail-fast"];
+            args.extend(strs(&sel));
+            args.extend(["--", T, "--ignored"]);
+            out.push(Step::new(format!("{d} heavy: {label}"), &args, ""));
+        }
+    }
+    out
+}
+
 pub fn release(root: &Path) -> Plan {
     release_with(root, true)
 }
@@ -171,7 +228,7 @@ pub fn release(root: &Path) -> Plan {
 pub fn release_with(root: &Path, snapshots: bool) -> Plan {
     let mut plan = Plan::default();
     plan.notes.push(
-        "release: every debug suite, ui, clippy, then the --ignored heavy lanes in release and the ui snapshot lane"
+        "release: prebuild both profiles, then up to four debug/release lanes; app, kernel, ui and clippy run alone"
             .into(),
     );
     if !snapshots {
@@ -180,17 +237,21 @@ pub fn release_with(root: &Path, snapshots: bool) -> Plan {
         );
     }
     let non_ui: Vec<&str> = ALL_CRATES.iter().copied().filter(|d| *d != "ui").collect();
+    let mut build = vec!["test", "-j", J];
+    let packages: Vec<String> = ALL_CRATES.iter().map(|d| pkg(d)).collect();
+    for p in &packages {
+        build.extend(["-p", p]);
+    }
+    build.push("--no-run");
+    plan.steps.push(Step::new("debug build (--no-run)", &build, ""));
+    let mut heavy = heavy_steps(root).into_iter();
+    if let Some(build) = heavy.next() {
+        plan.steps.push(build);
+    }
     plan.steps.extend(run_suites(root, &non_ui, false));
     plan.steps.extend(run_suites(root, &["ui"], false));
     plan.steps.push(clippy());
-    for d in ["motion", "app"] {
-        let p = pkg(d);
-        plan.steps.push(Step::new(
-            format!("{d} heavy lane (release --ignored)"),
-            &["test", "--release", "-j", J, "-p", &p, "--no-fail-fast", "--", T, "--ignored"],
-            "",
-        ));
-    }
+    plan.steps.extend(heavy);
     if !snapshots {
         return plan;
     }

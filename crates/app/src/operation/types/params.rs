@@ -170,6 +170,10 @@ pub enum OpParams {
         /// inside the cutter-center area where the law proves it;
         /// `false` is the sharp walk every pre-M11.1 file holds.
         blend_turns: bool,
+        /// The corner arc's radius, mm (#1733), read only with
+        /// `blend_turns`; `None` is the tool radius every earlier file
+        /// blends at.
+        blend_radius: Option<f64>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -206,6 +210,17 @@ pub enum OpParams {
         /// trochoidal loops along the region's medial line
         /// (`machining2d::adaptive_trochoidal`).
         method: crate::machining2d::AdaptiveMethod,
+        /// Trochoidal controls (#1588): read only when `method` is
+        /// `Trochoidal` (engagement limit, return mode, return feed,
+        /// loop width).
+        troch: crate::machining2d::AdaptiveTrochParams,
+        /// Arc turns at the spiral's corners (#1733), see
+        /// [`OpParams::Pocket`]; `false` is every earlier file. The
+        /// Trochoidal method's loops are arcs already: it refuses the
+        /// option by name rather than ignore it.
+        blend_turns: bool,
+        /// The corner arc's radius, mm; `None` is the tool radius.
+        blend_radius: Option<f64>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -232,6 +247,11 @@ pub enum OpParams {
         /// Helix centerline radius, mm; read only when `entry` is Helix.
         helix_radius: f64,
         links: Links,
+        /// Arc turns at the rings' corners (#1733), see
+        /// [`OpParams::Pocket`]; `false` is every earlier file.
+        blend_turns: bool,
+        /// The corner arc's radius, mm; `None` is the tool radius.
+        blend_radius: Option<f64>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
