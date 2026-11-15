@@ -20,58 +20,8 @@ pub fn generate(
     run_job(job)
 }
 
-/// Run a fully-collected job: every world read happened in
-/// [`collect_job`], on the caller's thread, and nothing here names a
-/// `World`. Split from [`generate`] at the seam M5.3 B needed - a
-/// batch's jobs run on worker threads, where a `&World` cannot exist -
-/// and it is exactly the old body below the old head, so a solo
-/// generation is byte-identical to the file's whole history of them.
-pub fn run_job(mut job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
-    // The spindle law's set-aside note (issue #71 review) rides the
-    // path whichever arm cut it: a note, never a warning - the post
-    // is not held for features the op honestly leaves standing.
-    let note = job.spindle_note.take();
-    let carried = job.carried_overhang.take();
-    let tool_r = job.tool.diameter * 0.5;
-    let kind = job.params.kind();
-    // #261 part 2: a refusal's spot is in the frame the generators ran
-    // in (a 3+2 tilt's local one); the UI draws in world, so it is
-    // carried out through the same frame the path would have been.
-    let frame = job.frame;
-    // #835: a refusal naming the holder of a tool with a body says it
-    // judged the cylinder enclosing that body - #842: only where it did,
-    // a body whose band stack does not fit the record.
-    let judged_tool = job.tool.clone();
-    let body = job.body.clone().filter(|p| super::body_judged::falls_back(&judged_tool, p));
-    let _span = tracing::info_span!("generate", op = %job.op_name).entered();
-    let started = crate::clock::Instant::now();
-    tracing::debug!(kind = %kind, "generation started");
-    let (mut path, warns) = run_job_arms(job)
-        .map_err(|e| super::body_judged::name_enclosure(e, &judged_tool, body.as_ref()))
-        .map_err(|e| e.map_location(|p| frame.map_or(p, |f| f.to_world(p))))
-        // #261 part 3: a refusal's ghost rides the same frame map as a path.
-        .map_err(|e| match &frame {
-            Some(f) => e.map_ghost(|t| f.world_path(t, machining2d::ARC_FIT_TOL)),
-            None => e,
-        })
-        .inspect_err(|e| {
-            tracing::warn!(kind = %kind, ms = crate::logging::elapsed_ms(started), "generation refused: {e}");
-        })?;
-    tracing::info!(
-        kind = %kind,
-        moves = path.moves.len(),
-        warnings = warns.len(),
-        ms = crate::logging::elapsed_ms(started),
-        "generated"
-    );
-    let carried = carried.map(|o| o.note(&path, tool_r));
-    for n in note.into_iter().chain(carried) {
-        if !path.notes.contains(&n) {
-            path.notes.push(n);
-        }
-    }
-    Ok((path, warns))
-}
+mod run_job;
+pub use run_job::run_job;
 
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
