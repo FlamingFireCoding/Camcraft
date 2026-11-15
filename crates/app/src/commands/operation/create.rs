@@ -94,6 +94,10 @@ impl CreateOperation {
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
         }
+        // #1445: a dwell that is not a time from 0 to the bound, by name.
+        if let Some(why) = params.dwell_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
         sinker_gate(world, setup.as_deref(), &params)?;
         if !params.is_sane() {
             return Err(CommandError::Invalid(format!(
