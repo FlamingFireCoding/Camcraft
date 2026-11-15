@@ -1,6 +1,13 @@
 //! #1917: "Your first router part" guide page, Sienci AltMill 4x4 + grblHAL
 //! demo project (`examples/first-router-part.camproj`), RichAuto DSP A11
 //! shop-router notes, and Getting started navigation links.
+//!
+//! Gate map: covers app::commands, app::project, app::posting, app::machine,
+//! app::model, app::operation, app::pick, app::recognize, app::schema,
+//! app::setup, app::world, app::geometry, geometry::geometry::stock,
+//! motion::drilling, motion::machining2d, motion::machining3d, motion::links,
+//! motion::load, tools::tools, post::post, sim::verify, assets/posts/grblhal.cps.
+//!
 //! Provenance: clean-room test suite over public CamCraft commands, shipped
 //! Sienci AltMill 4x4 / grblHAL assets, and Zola guide sources.
 
@@ -253,6 +260,10 @@ fn first_router_part_project_loads_verifies_and_posts_to_grblhal() {
     for forbidden in ["G43", "G49", "G41", "G42", "G84", "%"] {
         assert!(!posted.program.contains(forbidden), "forbidden grblHAL word {forbidden} in:\n{}", posted.program);
     }
+    assert!(
+        posted.program.lines().any(|line| line.starts_with("G73 ") && line.split_whitespace().any(|word| word == "Z-13")),
+        "demo drill breaks through the 12 mm stock by 1 mm at G54 Z-13"
+    );
 
     let rebuilt = build_demo_world();
     let out2 = std::env::temp_dir().join(format!("camcraft_first_router_rebuilt_{}.nc", std::process::id()));
@@ -320,4 +331,44 @@ fn first_router_part_guide_and_navigation_links_exist_and_resolve() {
 
     let nav_test = std::fs::read_to_string(repo("site/tests/test_guide_navigation.py")).expect("test_guide_navigation.py");
     assert!(nav_test.contains("first-router-part"), "test_guide_navigation.py must cover guide/getting-started/first-router-part");
+}
+
+#[test]
+fn first_router_part_richauto_zeroing_uses_xy0_with_oem_source() {
+    let guide = std::fs::read_to_string(repo("site/content/guide/getting-started/first-router-part.md")).expect("router guide");
+    let richauto = guide.split("## Shop routers with RichAuto DSP A11").nth(1).expect("RichAuto section");
+    let calibration = richauto.split("- **Calibrate your Z touch-off puck").nth(1).expect("calibration instructions")
+        .split("- **Use a single-tool").next().expect("calibration bullet");
+    assert!(calibration.contains("**`XY→0`**"), "set X/Y zero with XY→0");
+    assert!(!calibration.contains("press **`ORIGIN`**"), "ORIGIN returns to the existing origin; it does not set X/Y zero");
+    for required in [
+        "https://www.richautocontroller.com/wp-content/uploads/2023/08/DSP-A11-Manual.pdf",
+        "2.3",
+        "5.4.1",
+    ] {
+        assert!(richauto.contains(required), "cite OEM A11 manual sections 2.3 and 5.4.1: missing {required}");
+    }
+}
+
+#[test]
+fn first_router_part_guide_states_drill_breakthrough_and_clearance() {
+    let guide = std::fs::read_to_string(repo("site/content/guide/getting-started/first-router-part.md")).expect("router guide");
+    let origin = guide.split("4. **Set a corner work offset").nth(1).expect("G54 setup instructions")
+        .split("## Tool selection").next().expect("setup step");
+    for required in ["-12 mm", "-13 mm", "1 mm", "12 mm"] {
+        assert!(origin.contains(required), "G54 depth summary must include drill breakthrough: missing {required}");
+    }
+    let drill = guide.split("1. **`Drill1`").nth(1).expect("drilling instructions")
+        .split("2. **`2D Pocket1`").next().expect("drilling step");
+    for required in ["-13 mm", "1 mm", "12 mm"] {
+        assert!(drill.contains(required), "drilling instructions must state breakthrough depth: missing {required}");
+    }
+    let checks = guide.split("## Simulate, check clearances and post to `.nc`").nth(1).expect("clearance checklist")
+        .split("Click **Post**").next().expect("clearance instructions");
+    let clearance = checks.split("\n\n").flat_map(|paragraph| paragraph.split("\n- "))
+        .find(|bullet| bullet.contains("spoilboard")).expect("spoilboard clearance check");
+    for required in ["drill", "-13 mm", "-12 mm", "1 mm"] {
+        assert!(clearance.contains(required), "spoilboard clearance must include drill breakthrough and contour depth: missing {required}");
+    }
+    assert!(clearance.contains("fastener") || clearance.contains("screw"), "check fastener clearance to the drill breakthrough depth");
 }

@@ -18,3 +18,5 @@
   - **Running `zola` and `python3` in CI here:** `zola` is not installed on PATH in this environment and `python3` is blocked by sandbox policy, so Zola link and sidebar checks are additionally pinned by `crates/app/tests/first_router_part.rs` until CI runs `test_guide_navigation.py` with Zola.
 
 - **Cost to change later:** Low. All documentation is additive markdown under `site/content/guide/`, and `examples/first-router-part.camproj` can be regenerated directly from the command sequence in `crates/app/tests/first_router_part.rs` once `#1902` captures UI screenshots or `#1914`/`#1915`/`#1916` ship RichAuto/router profiles.
+
+- **PR #1920 review corrections:** Use `XY→0` to set the A11 X/Y work origin, with the OEM manual sections 2.3 and 5.4.1 as the source. Dropped the `ORIGIN` instruction because `ORIGIN/OK` returns to the existing origin. State the demo's `G54 Z = -13 mm` drill breakthrough in the setup, drilling and clearance instructions. A contour-only `-12 mm` clearance check omits the drill's `1 mm` penetration below the stock.

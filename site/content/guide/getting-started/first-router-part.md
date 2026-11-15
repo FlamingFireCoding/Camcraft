@@ -36,9 +36,10 @@ camcraft-cli process examples/first-router-part.camproj -o first-router-part.nc
 4. **Set a corner work offset (`G54`).** In **Setup > Origin**, put `G54` at
    the **front-left top corner** of the sheet stock (`X = -100`, `Y = -80`,
    `Z = 12` in document coordinates). In posted G-code (`G54`), every X/Y
-   coordinate stays positive inside `0..200 mm × 0..160 mm` and all cutting
-   depths plunge negative (`0` down to `-12 mm`), matching a corner Z touch
-   plate or zero puck resting on top of the sheet. See
+   coordinate stays positive inside `0..200 mm × 0..160 mm`. Cutting depths
+   are negative relative to the sheet top: the contour reaches `-12 mm`, and
+   the drill reaches `-13 mm` for breakthrough, `1 mm` below the `12 mm` stock.
+   This matches a corner Z touch plate or zero puck resting on the sheet. See
    [Units and coordinates](@/guide/reference/units-and-coordinates.md) for
    more on WCS orientation.
 
@@ -70,7 +71,10 @@ part rigid until the very last cut (see
    populate the four through-holes while the sheet is completely intact. Leave
    **Cycle** on `Auto` (`grblhal.cps` posts `G73` chip-break peck when a `4 mm`
    peck is set), **Clearance** at `Top of stock + 15 mm`, **Retract** at
-   `Top of stock + 5 mm`, and **Coolant = Off**.
+   `Top of stock + 5 mm`, and **Coolant = Off**. The detected through-holes
+   include `1 mm` breakthrough below the `12 mm` stock: the posted drill
+   bottom is `-13 mm` in `G54` (`G73 X53 Y50 Z-13 R0 Q4 F150` for the
+   first hole). Check this depth before running the drill.
 2. **`2D Pocket1` (Milling 2D > 2D Pocket).** Pick the floor face of the
    `50 × 30 × 4 mm` central recess using `EM-0600-4FL`. Use `Waterline`
    strategy, **Entry = Helix** (`1.2 mm` helix radius), `3 mm` stepover,
@@ -96,8 +100,10 @@ and check **Deviate**:
   the outer sheet waste.
 - Small `3 mm` inside corner fillets stay uncut inside sharp `90°` pocket
   corners (excess material left by a `6 mm` round end mill, not a gouge).
-- Check the clearance between the contour cut (`-12 mm` Z in `G54`) and your
-  spoilboard / screw locations before cutting real stock.
+- Check clearance for both the contour (`-12 mm` Z in `G54`) and the drill
+  breakthrough (`-13 mm` Z), `1 mm` below the `12 mm` stock. Confirm the
+  spoilboard permits this penetration and all screws and other fasteners stay
+  clear of the drill and contour paths through their full cutting depths.
 
 Click **Post** (with **grblHAL** selected) to write `first-router-part.nc`. A
 valid program starts with `grblhal.cps`'s metric header, lifts via `G53 G0 Z0`
@@ -162,10 +168,13 @@ equipped with a RichAuto A11 handheld pendant:
 - **Calibrate your Z touch-off puck (`C.A.D Thickness`):** Measure the aluminum
   or brass touch-off puck height in millimeters with calipers and save that
   exact figure in **`MENU -> Machine Setup -> C.A.D Thickness`**. Jog X and Y
-  to the front-left corner of your sheet (`G54` `(0, 0)`) and press **`ORIGIN`**
-  to zero X/Y, place the puck flat on the sheet surface under the bit (attach
-  the ground clip if required), and press **`ON/OFF + MENU`** to auto-zero Z
-  (or use a paper feeler touch-off and zero Z manually).
+  to the front-left corner of your sheet (`G54` `(0, 0)`) and press **`XY→0`**
+  to set the X/Y work origin. **`ORIGIN/OK`** returns to the existing work
+  origin; it does not set the origin. See the [RichAuto A11 OEM manual,
+  sections 2.3 and 5.4.1](https://www.richautocontroller.com/wp-content/uploads/2023/08/DSP-A11-Manual.pdf).
+  Place the puck flat on the sheet surface under the bit (attach the ground
+  clip if required), and press **`ON/OFF + MENU`** to auto-zero Z (or use a
+  paper feeler touch-off and zero Z manually).
 - **Use a single-tool `.nc` file per bit:** Manual-collet DSP routers without an
   ATC often pause unexpectedly or alarm on `T<n> M6` when `Read T` is active.
   Suppress the other tool's operations in CamCraft and post one **single-tool**
