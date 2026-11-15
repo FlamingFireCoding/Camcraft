@@ -58,3 +58,26 @@ about 20 lines (the entry point, the call and a type alias). A split of
   itself is wrong for blind bores: filed as #1933 (P3), not fixed here.
 - `tilt`: the flat control used Inside on a block's top face, the
   mirror case. It now uses Outside, the legal side for that ring.
+
+**Review fix (two camcraft-app tests red on the PR head).**
+- `stitch_cross::a_self_touching_single_body_still_stops_at_its_top_level`:
+  the ring is Outside of a 40 x 40 outline, so its side is right and
+  Outside is air. The ladder stopped it at the top plane because the one
+  self-touching shell cannot be sectioned below it (a non-manifold slice
+  error, fail closed). The law blamed the side ("set Side to Inside"),
+  which is wrong advice. Decided: the ladder now records, per ring, the
+  slice error that stopped it (`Ladder::unread`). The law still refuses
+  (a top-plane-only pass does not machine the pick), but it names the
+  unreadable mesh and the skipped levels, never the side. Dropped: let
+  the slice-error case through as the old top-only pass with a note -
+  that is the same silent, empty program that #1927 refuses.
+- `setup_align::unverified_kinds_are_refused_while_verified_picks_generate_aligned`:
+  the refusal is correct, and it reads the setup frame. The first
+  horizontal face was the modelled top annulus. Flipped over Y it lies at
+  the setup's Z 0, the blind hole opens down (Z 0..10), and Z 10..20 is
+  solid. Outside of the hole ring the cutter centre ran at +-8 mm, inside
+  that solid at Z 16 and Z 12; the old path kept only a top-plane pass in
+  air. Decided: the test picks the modelled bottom face (the setup's top,
+  Outside is air) with Side Outside, asserts a cut below the top, and
+  keeps the annulus as a control: it generates as modelled and is refused
+  by name once flipped.

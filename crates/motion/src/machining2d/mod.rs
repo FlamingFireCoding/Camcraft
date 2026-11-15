@@ -49,6 +49,7 @@ mod contour_entry;
 mod contour_link;
 mod contour_params;
 mod contour_run_side;
+mod contour_run_stock;
 mod contour_start;
 mod contour_step;
 mod descent;
@@ -112,6 +113,7 @@ pub use contour::{contour, contour_on_bodies, contour_on_part, contour_on_picked
 pub use contour_auto::{auto_side, AutoSide, AUTO_BAND, AUTO_PROBE_DZ};
 pub use contour_chain::contour_along_chain;
 pub use contour_run_side::{contour_open_run, SectionAt};
+pub use contour_run_stock::contour_open_run_sided;
 pub use contour_link::DEFAULT_LEVEL_RAMP_ANGLE;
 pub use crate::links::{Link, Links};
 pub use face::{face, face_led, face_over, FaceParams, GenError, MAX_PASSES};

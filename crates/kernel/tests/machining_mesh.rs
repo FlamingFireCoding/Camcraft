@@ -24,6 +24,62 @@ use solidcore_tess::{
 /// The app's chord cap (#689), mm.
 const TOL: f64 = 0.005;
 
+#[test]
+fn solidcraft_sample_meshes_within_the_app_chord() {
+    let bytes = include_bytes!("../../../testdata/models/solidcraft_for_beginners.sc");
+    let imported = camcraft_kernel::solidcraft::import_solidcraft(
+        &mut SolidcoreKernel::default(),
+        bytes,
+        &CancelToken::new(),
+    )
+    .expect("the Solidcraft sample must import as a checked solid");
+    let mesh = machining_mesh(&imported.solid, TOL, &CancelToken::new())
+        .expect("the Solidcraft sample must mesh at the app chord");
+    println!("Solidcraft sample: {:?}", mesh.report);
+    assert_eq!(mesh.report.tolerance_mm, TOL);
+    assert_eq!(mesh.report.open_sides, 0);
+    assert!(mesh.report.deviation.largest() <= TOL);
+    assert!(mesh.report.deviation.samples > 0);
+    assert!(mesh.report.volume > 0.0);
+    assert_eq!(mesh.report.faces, imported.solid.record.faces.len());
+    assert!(
+        mesh.report
+            .notes
+            .iter()
+            .any(|note| note.contains("replanned"))
+    );
+    for face in 0..imported.solid.record.faces.len() {
+        assert!(
+            mesh.tri_face.contains(&(face as u32)),
+            "missing face {face}"
+        );
+    }
+}
+
+#[test]
+fn solidcraft_sample_still_refuses_an_out_of_tolerance_mesh() {
+    let bytes = include_bytes!("../../../testdata/models/solidcraft_for_beginners.sc");
+    let imported = camcraft_kernel::solidcraft::import_solidcraft(
+        &mut SolidcoreKernel::default(),
+        bytes,
+        &CancelToken::new(),
+    )
+    .expect("the Solidcraft sample must import as a checked solid");
+    match machining_mesh(&imported.solid, 0.1, &CancelToken::new()) {
+        Err(MeshRefusal::Deviation {
+            measured,
+            tol,
+            face,
+        }) => {
+            println!("coarse sample: face {face:?}, measured {measured}, tolerance {tol}");
+            assert!(measured > tol);
+            assert_eq!(tol, 0.1);
+            assert!(face.is_some());
+        }
+        other => panic!("the coarse sample must remain refused: {other:?}"),
+    }
+}
+
 fn solid(file: &str) -> StepSolid {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata/models")
