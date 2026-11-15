@@ -1,6 +1,6 @@
 //! #1965: pure-Rust AC table-table forward/inverse kinematics, pole
 //! holding, weighted branch continuity across A = 0, continuous C
-//! unwrapping with safe-retract re-wrapping, and rotary chord
+//! unwrapping through clearance retracts, and rotary chord
 //! subdivision in `camcraft-post`.
 //!
 //! Gate map (#1965): covers camcraft_post::kinematics.
@@ -196,7 +196,7 @@ fn smooth_crossing_of_a_zero_without_180_deg_c_flip() {
 }
 
 #[test]
-fn continuous_c_unwrapping_and_safe_retract_rewrapping() {
+fn continuous_c_unwrapping_and_safe_retract_travel_refusal() {
     let mut cfg = standard_ac_trunnion();
     cfg.c.travel = Some((-450.0, 450.0));
 
@@ -248,7 +248,7 @@ fn continuous_c_unwrapping_and_safe_retract_rewrapping() {
         "refusal should name C and travel: {err}"
     );
 
-    // Adding a safe-retract boundary before the last move lets C re-wrap and succeed.
+    // A retract does not authorize an unchecked unwind; exhausted travel still refuses.
     let mut with_retract = moves[..11].to_vec();
     with_retract.push(PathMove {
         kind: MoveKind::Rapid,
@@ -268,11 +268,11 @@ fn continuous_c_unwrapping_and_safe_retract_rewrapping() {
         feed: Some(500.0),
         safe_retract: false,
     });
-    let rewrapped = solve_path(&cfg, &with_retract, &opts).expect("safe retract re-wraps C");
+    let err = solve_path(&cfg, &with_retract, &opts)
+        .expect_err("unchecked clearance unwind must not be synthesized");
     assert!(
-        rewrapped.last().expect("nonempty").to.c_deg.abs() <= 180.0 + 1e-6,
-        "after retract, C should re-wrap into primary turn, got {}",
-        rewrapped.last().expect("nonempty").to.c_deg
+        err.to_string().contains("C") && err.to_string().contains("450"),
+        "refusal should name C and travel: {err}"
     );
 }
 

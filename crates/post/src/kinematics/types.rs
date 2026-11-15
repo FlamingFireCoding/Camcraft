@@ -190,7 +190,8 @@ pub struct PathMove {
     pub to_axis: [f64; 3],
     /// Optional feed rate (mm/min) preserved on subdivided output segments.
     pub feed: Option<f64>,
-    /// Marks a clearance retract move where `C` may re-wrap within its travel window.
+    /// Marks a clearance lift, checked with continuous C winding.
+    /// Does not authorize an unwind; exhausted rotary travel is refused.
     pub safe_retract: bool,
 }
 
@@ -241,6 +242,20 @@ pub struct SolvedMove {
 /// Refusals returned when trunnion geometry, tool orientation, or travel limits fail validation.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum KinematicsError {
+    /// Adjacent moves do not share a part pose; no implicit transition is safe.
+    #[error("discontinuous path at move {source_index}: an explicit pose transition is required")]
+    DiscontinuousPath {
+        /// Index of the move whose start differs from the preceding end.
+        source_index: usize,
+    },
+    /// The bounded subdivision budget cannot satisfy the requested path tolerances.
+    #[error("subdivision limit exceeded at move {source_index} during {stage}; tolerance unmet")]
+    SubdivisionLimitExceeded {
+        /// Index of the input move that cannot be discretized within tolerance.
+        source_index: usize,
+        /// Subdivision procedure that exhausted its budget.
+        stage: &'static str,
+    },
     /// Machine configuration is malformed (zero vectors, parallel axes, inverted bounds, bad weights).
     #[error("{message}")]
     InvalidConfig {

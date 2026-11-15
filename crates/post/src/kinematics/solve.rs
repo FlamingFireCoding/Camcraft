@@ -171,7 +171,7 @@ impl AcSolver {
                             None => Err(travel_err_c(
                                 &self.v.c,
                                 unwrapped,
-                                "insert a safe retract boundary to re-wrap C",
+                                "C requires a checked unwind at clearance; no continuous C turn fits travel",
                             )),
                         }
                     }

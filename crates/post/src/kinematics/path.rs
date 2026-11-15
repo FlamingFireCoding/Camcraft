@@ -61,23 +61,20 @@ pub fn solve_path(
             axis: to_axis,
         };
 
-        let boundary = if mv.safe_retract {
-            SectionBoundary::SafeRetract
-        } else {
-            SectionBoundary::Continuous
-        };
-
         let m_from = match prev_end {
             Some((prev_part, prev_mach)) if same_part_pose(prev_part, p_from) => prev_mach,
-            _ => solver.solve_pose(p_from, boundary)?,
+            Some(_) => return Err(KinematicsError::DiscontinuousPath { source_index }),
+            None => solver.solve_pose(p_from, SectionBoundary::Continuous)?,
         };
 
-        // Safe-retract moves unwrap/rewrap in clearance space and must not bisect tip chords across 360-deg unwinds.
-        let allow_subdivide = !mv.safe_retract
-            && (mv.kind != MoveKind::Rapid || opts.subdivide_rapids);
+        // A clearance marker does not establish clearance before the lift finishes.
+        // Keep the winding through the lift; refuse exhausted travel instead of
+        // synthesizing an unchecked unwind, even after reaching clearance.
+        let allow_subdivide =
+            mv.safe_retract || mv.kind != MoveKind::Rapid || opts.subdivide_rapids;
 
         if !allow_subdivide {
-            let m_to = solver.solve_pose(p_to, boundary)?;
+            let m_to = solver.solve_pose(p_to, SectionBoundary::Continuous)?;
             out.push(SolvedMove {
                 source_index,
                 kind: mv.kind,
@@ -192,9 +189,14 @@ fn emit_continuous_segment(
         return Ok(cur_m);
     }
 
-    let needs_split = depth < MAX_SUBDIV_DEPTH
-        && (exceeds_angular_step(m0, m1, opts.max_angular_step_deg)
-            || exceeds_chord_tol(solver, p0, m0, p1, m1, opts.chord_tol_mm)?);
+    let needs_split = exceeds_angular_step(m0, m1, opts.max_angular_step_deg)
+        || exceeds_chord_tol(solver, p0, m0, p1, m1, opts.chord_tol_mm)?;
+    if needs_split && depth >= MAX_SUBDIV_DEPTH {
+        return Err(KinematicsError::SubdivisionLimitExceeded {
+            source_index,
+            stage: "continuous segment",
+        });
+    }
 
     if !needs_split {
         let committed = solver.solve_pose(p1, SectionBoundary::Continuous)?;
@@ -266,10 +268,16 @@ fn emit_pole_c_reorient(
         let mid_c1 = m0.c_deg + dc;
         let (seg0, _) = forward_machine_validated(solver.trunnion(), p_pole, m0.a_deg, mid_c0)?;
         let (seg1, _) = forward_machine_validated(solver.trunnion(), p_pole, m0.a_deg, mid_c1)?;
-        if !exceeds_chord_tol(solver, p_pole, seg0, p_pole, seg1, opts.chord_tol_mm)?
-            || steps >= 4096
-        {
+        let needs_split = exceeds_angular_step(seg0, seg1, opts.max_angular_step_deg)
+            || exceeds_chord_tol(solver, p_pole, seg0, p_pole, seg1, opts.chord_tol_mm)?;
+        if !needs_split {
             break;
+        }
+        if steps >= 4096 {
+            return Err(KinematicsError::SubdivisionLimitExceeded {
+                source_index,
+                stage: "pole C reorientation",
+            });
         }
         steps = (steps * 2).min(4096);
     }
