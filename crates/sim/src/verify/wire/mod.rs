@@ -43,6 +43,15 @@
 //! the wire's lean per unit height. Poses are read only from a cut that
 //! states a taper; any other posed move stays unreadable.
 //!
+//! A stated verify tolerance (#1170): the sections are the model's
+//! facets, and a tessellated loft bulges past its true ruled surface by
+//! up to the chord tolerance it was tessellated at. A cut that states
+//! that tolerance has the kerf law pass a reading that enters the
+//! facets by no more than it; the verdict says the deepest such
+//! reading, and a deeper one is a gouge that names the tolerance. The
+//! threading and slug laws never use it. Zero - the default - judges
+//! the facets as they stand.
+//!
 //! Provenance: plain 2D distance and region geometry (point-segment
 //! distance, polygon booleans and the disc sweep of `geo2d`, clipper2)
 //! over the public wire EDM practice the umbrella #290 cites: the kerf
@@ -52,6 +61,7 @@
 //! manual or CAM product behaviour was consulted.
 
 mod dist;
+mod finding;
 mod kerf;
 mod passes;
 mod slug;
@@ -61,10 +71,13 @@ mod hold_tests;
 mod taper_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tol_tests;
 
 use crate::cl::Toolpath;
 use crate::geo2d::{Point2, Region};
 
+pub use finding::{WireFinding, WireUnder};
 pub use slug::Slug;
 
 use kerf::{gouge_at, polyline, Wire};
@@ -144,102 +157,10 @@ pub struct WireJob<'a> {
     /// A no-core burnout (#540): the cut must free nothing - any piece
     /// it frees is a core that drops, refused.
     pub burnout: bool,
-}
-
-/// Every finding refuses: the wire laws have no warning tier.
-#[derive(Clone, Debug, PartialEq)]
-pub enum WireFinding {
-    /// The path cannot be read by these laws (an arc, a posed or
-    /// non-planar move, no moves, a bad offset).
-    Unreadable(String),
-    NoStart,
-    /// The path does not start at the stated start hole.
-    StartMoved { stated: Point2, path: Point2 },
-    /// The product stands nearer the threading point than the kerf.
-    Threading { z: f64, at: Point2, clear: f64, need: f64 },
-    /// An open run's end (where the wire is threaded or cut) stands in
-    /// the stock or nearer it than the kerf.
-    OpenEndInStock { z: f64, at: Point2, clear: f64, need: f64 },
-    /// The kerf of move `move_no` (1-based) enters the product.
-    Gouge { move_no: usize, z: f64, at: Point2, depth: f64, moves: usize },
-    /// The closed cut frees no material.
-    NothingFreed { z: f64 },
-    /// The piece freed is not the one the stated side drops.
-    WrongSlug { z: f64, side: CutSide, at: Point2, product_area: f64 },
-    /// The cut frees a piece and nothing holds it: no tabs, no capture
-    /// stated (#290 D6, #539).
-    Unsupported { z: f64, side: CutSide, at: Point2 },
-    /// The main cut of a tabbed path already frees a piece: the tabs do
-    /// not hold it (#539).
-    TabsDoNotHold { z: f64, at: Point2 },
-    /// A burnout (#540) frees a piece: a core is left to drop.
-    Core { z: f64, at: Point2, area: f64 },
-}
-
-impl WireFinding {
-    /// The finding in words, mm.
-    #[must_use]
-    pub fn describe(&self) -> String {
-        match self {
-            WireFinding::Unreadable(why) => format!("the wire laws cannot read the path - {why}"),
-            WireFinding::NoStart => {
-                "no start hole is stated - the wire cannot be threaded, nothing is judged clear".into()
-            }
-            WireFinding::StartMoved { stated, path } => format!(
-                "the path starts at X{:.3} Y{:.3}, not at the stated start hole X{:.3} Y{:.3} - regenerate it",
-                path.x, path.y, stated.x, stated.y
-            ),
-            WireFinding::Threading { z, at, clear, need } => format!(
-                "the start hole at X{:.3} Y{:.3} is not clear for threading at Z{z:.3}: the part stands {} - the wire and its gap need {need:.4} mm all round",
-                at.x,
-                at.y,
-                if *clear <= 0.0 { "at the threading point itself".to_owned() } else { format!("{clear:.4} mm from it") }
-            ),
-            WireFinding::OpenEndInStock { z, at, clear, need } => format!(
-                "the open run's end at X{:.3} Y{:.3} is not clear of the stock at Z{z:.3}: the stock stands {} - the wire is threaded and cut in the air, {need:.4} mm clear all round (regenerate the run against the stock as it stands)",
-                at.x,
-                at.y,
-                if *clear <= 0.0 { "at the point itself".to_owned() } else { format!("{clear:.4} mm from it") }
-            ),
-            WireFinding::Gouge { move_no, z, at, depth, moves } => format!(
-                "gouge: the kerf of move {move_no} enters the part by {depth:.4} mm near X{:.3} Y{:.3} at Z{z:.3} ({moves} move(s) gouge)",
-                at.x, at.y
-            ),
-            WireFinding::NothingFreed { z } => format!(
-                "the cut frees no material at Z{z:.3} - nothing drops when it closes (no closed cut, or no stock around the opening to judge the slug)"
-            ),
-            WireFinding::WrongSlug { z, side: CutSide::Die, at, product_area } => format!(
-                "slug: the piece freed near X{:.3} Y{:.3} at Z{z:.3} holds {product_area:.3} mm² of the part - a die keeps the material outside the cut, but here the part drops",
-                at.x, at.y
-            ),
-            WireFinding::Core { z, at, area } => format!(
-                "core: the burnout frees a piece of {area:.3} mm² near X{:.3} Y{:.3} at Z{z:.3} - a burnout must leave no core to drop",
-                at.x, at.y
-            ),
-            WireFinding::WrongSlug { z, side: CutSide::Punch, at, .. } => format!(
-                "slug: the piece freed near X{:.3} Y{:.3} at Z{z:.3} holds none of the part - a punch's cut frees the punch, but here only waste drops and the part stays in the skeleton",
-                at.x, at.y
-            ),
-            WireFinding::Unsupported { z, side, at } => format!(
-                "slug: the {} freed near X{:.3} Y{:.3} at Z{z:.3} drops unsupported when the cut closes - state tabs to hold it until a tab cut-off, or state that the slug is captured",
-                match side {
-                    CutSide::Die => "slug",
-                    CutSide::Punch => "punch",
-                    CutSide::Open => "piece",
-                },
-                at.x,
-                at.y
-            ),
-            WireFinding::TabsDoNotHold { z, at } => format!(
-                "slug: the main cut already frees the piece near X{:.3} Y{:.3} at Z{z:.3} - the tabs do not hold it; place them on the cut that encloses it",
-                at.x, at.y
-            ),
-            WireFinding::WrongSlug { z, side: CutSide::Open, at, .. } => format!(
-                "slug: an open run frees a piece near X{:.3} Y{:.3} at Z{z:.3} - an open run closes no slug",
-                at.x, at.y
-            ),
-        }
-    }
+    /// The stated verify tolerance (#1170, mm; module head): how far the
+    /// kerf may enter the model's facets and still pass the kerf law.
+    /// 0 judges the facets as they stand.
+    pub verify_tol: f64,
 }
 
 /// The verdict: every refusal, and the pieces the cut frees at the
@@ -256,6 +177,11 @@ pub struct WireVerdict {
     /// The laws not applied to this cut and why ([`OPEN_SKIP`] for an
     /// open run); `None` when every law ran.
     pub skipped: Option<&'static str>,
+    /// The verify tolerance the kerf law judged under (#1170, mm).
+    pub verify_tol: f64,
+    /// The deepest kerf reading that tolerance let pass; `None` when no
+    /// reading needed it.
+    pub under: Option<WireUnder>,
 }
 
 /// The product's section at one height (module head): the model, or
@@ -291,6 +217,14 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
         v.findings.push(WireFinding::Unreadable(format!("the kerf offset {k} is not a positive number")));
         return v;
     }
+    let tol = job.verify_tol;
+    if !(tol.is_finite() && tol >= 0.0 && tol < k) {
+        v.findings.push(WireFinding::Unreadable(format!(
+            "the verify tolerance {tol} mm is not zero or a positive number below the kerf offset {k:.4} mm"
+        )));
+        return v;
+    }
+    v.verify_tol = tol;
     let wire = match polyline(job.path, job.taper) {
         Ok(p) => p,
         Err(why) => {
@@ -347,7 +281,9 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
             worst = Some((clear, s.z));
         }
         if gouge.is_none() {
-            gouge = passes::gouge_at(&p, &wire, &passes, s.z);
+            let under;
+            (gouge, under) = passes::gouge_at(&p, &wire, &passes, s.z, tol);
+            v.under = WireUnder::deeper(v.under, under);
         }
     }
     if let Some((clear, z)) = worst.filter(|(c, _)| *c < k - KERF_TOL) {
@@ -366,7 +302,9 @@ fn open(job: &WireJob<'_>, wire: &Wire, k: f64, v: &mut WireVerdict) {
     let mut gouge: Option<WireFinding> = None;
     for s in &job.sections {
         if gouge.is_none() {
-            gouge = gouge_at(&Product::Part(&s.part), wire, k, s.z);
+            let under;
+            (gouge, under) = gouge_at(&Product::Part(&s.part), wire, k, s.z, job.verify_tol);
+            v.under = WireUnder::deeper(v.under, under);
         }
         let Some(stock) = s.stock.as_ref() else { continue };
         // The ends where the wire stands at this height (a leaning
