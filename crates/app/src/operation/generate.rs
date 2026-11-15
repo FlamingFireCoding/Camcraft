@@ -417,7 +417,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     // together they machine the whole pick list. The
                     // walk resolved them on the caller's thread (M5.3 B);
                     // this arm only takes the answer.
-                    let (loops, runs, auto_inside) = contour_sel
+                    let (loops, runs, auto) = contour_sel
                         .take()
                         .ok_or_else(|| unreached("contour selection geometry"))??;
                     if loops.is_empty() && runs.is_empty() {
@@ -426,10 +426,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         ));
                     }
                     let mut cp = cp;
-                    cp.side = match side {
-                        Side::Auto if auto_inside => Side::Inside,
-                        Side::Auto => Side::Outside,
-                        s => *s,
+                    cp.side = match (side, auto) {
+                        (Side::Auto, machining2d::AutoSide::Inside) => Side::Inside,
+                        (Side::Auto, machining2d::AutoSide::Outside) => Side::Outside,
+                        // #1933: the level reading could not tell - named, never guessed.
+                        (Side::Auto, machining2d::AutoSide::Undecided(why)) if !loops.is_empty() => {
+                            return Err(GenError::Invalid(why));
+                        }
+                        (Side::Auto, _) => Side::Outside,
+                        (s, _) => *s,
                     };
                     if loops.is_empty() && area.is_some() {
                         return Err(GenError::Invalid(
