@@ -377,9 +377,9 @@ fn tilt_times_picks_and_unverified_and_area_stay_refused_in_phase_two() {
     let err = generate(&world, &op_of(&world, "TiltedPick"), "TiltedPick").expect_err("aligned tilt x picks refuses");
     assert!(err.to_string().contains("tilted plane is not supported yet in an aligned setup"), "{err}");
 
-    let p3d = (KindInfo::ALL[OpType::Pocket3D.ordinal()].seed)(&Carried::of(&face_params(Height::fixed(9.0), 25.0)));
-    h.execute(&world, CreateOperation::new(&world, "P3DPick", TOOL, sel, p3d).expect("create p3d"));
-    let err = generate(&world, &op_of(&world, "P3DPick"), "P3DPick").expect_err("unverified kind refuses");
+    let offset = (KindInfo::ALL[OpType::Offset2D.ordinal()].seed)(&Carried::of(&face_params(Height::fixed(9.0), 25.0)));
+    h.execute(&world, CreateOperation::new(&world, "OffsetPick", TOOL, sel, offset).expect("create offset pocket"));
+    let err = generate(&world, &op_of(&world, "OffsetPick"), "OffsetPick").expect_err("unverified kind refuses");
     assert!(err.to_string().contains("not supported yet in an aligned setup"), "{err}");
 
     let mut area_op = op_of(&world, "TiltedPick");
