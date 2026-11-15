@@ -5,6 +5,7 @@
 //! `metadata` before the facet buffer exists; OBJ and STEP stay buffered,
 //! their parsers wanting the whole text in hand.
 
+mod mesh_outward;
 pub mod obj;
 pub mod step;
 pub mod step_budget;
@@ -63,6 +64,8 @@ pub enum ImportError {
     Step(String),
     #[error("imported mesh contains non-finite coordinates")]
     NonFinite,
+    #[error("mesh may have nested or overlapping shells; inward winding may describe a cavity, so automatic orientation is ambiguous; re-export as separate non-overlapping solids")]
+    AmbiguousShells,
     #[error("unsupported file type: {0}")]
     Unsupported(String),
 }
@@ -98,8 +101,8 @@ pub struct Graded {
     pub coarse_mm: Option<f64>,
     /// What the importer changed on the way, one line each (#1573 review:
     /// a STEP face flipped to agree with its neighbours, by name; #1617: a
-    /// closed STEP solid wound inward turned outward). Empty when it
-    /// changed nothing, and for STL and OBJ.
+    /// closed solid wound inward turned outward). Empty when it
+    /// changed nothing.
     pub notes: Vec<String>,
     /// A STEP closed shell that meshes open, its hole named (#1610): the
     /// mesh has walls missing there. Only the `*_open` loaders return one;
@@ -140,7 +143,9 @@ pub fn load_model_open_within(path: &Path, budget: usize) -> Result<Graded, Impo
         return Err(ImportError::TooLarge);
     }
     if format == Format::Stl {
-        return Ok(Graded { mesh: gate(stl::parse_file(path)?)?, coarse_mm: None, notes: Vec::new(), open: None });
+        let mut mesh = gate(stl::parse_file(path)?)?;
+        let notes = mesh_outward::turn_outward(&mut mesh)?.into_iter().collect();
+        return Ok(Graded { mesh, coarse_mm: None, notes, open: None });
     }
     let data = std::fs::read(path)?;
     parse_model_open_within(&data, format, budget)
@@ -161,8 +166,14 @@ pub fn parse_model_graded_within(data: &[u8], format: Format, budget: usize) -> 
 /// the bytes twin of [`load_model_open_within`] (#1610).
 pub fn parse_model_open_within(data: &[u8], format: Format, budget: usize) -> Result<Graded, ImportError> {
     let (mesh, coarse_mm, notes, open) = match format {
-        Format::Stl => (stl::parse(data)?, None, Vec::new(), None),
-        Format::Obj => (obj::parse(data)?, None, Vec::new(), None),
+        Format::Stl | Format::Obj => {
+            let mut mesh = gate(match format {
+                Format::Stl => stl::parse(data)?,
+                _ => obj::parse(data)?,
+            })?;
+            let notes = mesh_outward::turn_outward(&mut mesh)?.into_iter().collect();
+            (mesh, None, notes, None)
+        }
         Format::Step => {
             let (mut mesh, chord, mut notes, open) = step::parse_open(data, budget)?;
             // #1617: a closed solid the file winds inward is turned

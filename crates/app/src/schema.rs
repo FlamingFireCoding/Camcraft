@@ -213,6 +213,10 @@ pub struct ToolBody {
     /// (`HolderProfile::floored`, in `tool_body::judged`). `false` for
     /// every body the user lands, and for every older file's.
     pub machine_default: bool,
+    /// #361 / #1040: individual modular pieces (head, adapter, clamping
+    /// unit) with their tool-frame facets and coordinate systems. For
+    /// single-body imports holds piece 0; empty only for drawn spun profiles.
+    pub pieces: Vec<crate::tool_body_assembly::BodyPiece>,
 }
 
 /// #93 slice 2: a milling tool's own drawn cutter, neck and shank

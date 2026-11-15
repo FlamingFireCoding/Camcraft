@@ -157,6 +157,8 @@ pub use camcraft_tools::{lathe_holder, lathe_insert_zone};
 // #361: the one door a body file is read through; the lathe placement reads.
 pub mod tool_body_file;
 pub mod tool_body_lathe_view;
+// #361 / #1040: modular multi-piece tool bodies assembled by ISO 13399 CSYS.
+pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.

@@ -86,7 +86,7 @@ pub fn moved_part_problem(world: &World, name: &str, op: &Operation, path: &Tool
     for (part, facets) in parts {
         let facets = job.frame.as_ref().map_or(facets.clone(), |f| f.local_facets(&facets));
         let found = match law {
-            Law::Cross => cross_problem(judged, &facets, &job, &cutter),
+            Law::Cross => cross_problem(judged, &facets, &job, &cutter).map(|w| if local.is_none() { w } else { String::new() }),
             _ => {
                 let judge = |c: &verify::Cutter, bores: &[verify::ThreadBore]| {
                     let mut w = Vec::new();
@@ -95,7 +95,10 @@ pub fn moved_part_problem(world: &World, name: &str, op: &Operation, path: &Tool
                             mark_law::mark_into(&mut w, judged, &facets, c, budget, excess);
                         }
                         Law::Hole => contain_into(&mut w, judged, &facets, c, DepthLaw::Contain, stl, excess, &job.params, bores),
-                        _ => contain_into(&mut w, judged, &facets, c, DepthLaw::Keep, stl, excess, &job.params, &[]),
+                        _ => {
+                            contain_into(&mut w, judged, &facets, c, DepthLaw::Keep, stl, excess, &job.params, &[]);
+                            super::keep_law::note_stock_chamfer_gouges(&job.params, job.part_solid, &mut w);
+                        }
                     }
                     w
                 };
@@ -106,12 +109,20 @@ pub fn moved_part_problem(world: &World, name: &str, op: &Operation, path: &Tool
                     let g = core.geom();
                     judge(&verify::Cutter::of(core).with_body(&g, &crate::tool_body::stack(&g, job.body.as_ref()).with_neck(holder.neck.clone())), &[])
                 });
-                warns.iter().find(|w| w.blocks_post()).map(ToString::to_string).or_else(|| neighbour_cross_problem(judged, &facets, &job, &cutter))
+                warns.iter().find(|w| w.blocks_post()).map(|w| {
+                    if local.is_none() {
+                        w.to_string()
+                    } else if matches!(w, verify::Warning::StockChamferGouge { .. }) {
+                        "stock-source chamfer breaks into a part; chamfer with the part as source".to_owned()
+                    } else {
+                        String::new()
+                    }
+                }).or_else(|| neighbour_cross_problem(judged, &facets, &job, &cutter).map(|w| if local.is_none() { w } else { String::new() }))
             }
         };
         if let Some(w) = found {
             // A local path's move numbers are not the posted path's: said only upright.
-            let what = if local.is_none() { format!(" ({w})") } else { String::new() };
+            let what = if w.is_empty() { String::new() } else { format!(" ({w})") };
             return Some(format!(
                 "{name} now cuts part '{part}'{what} - a part moved, added or no longer workholding since it was generated; regenerate it"
             ));
@@ -141,7 +152,7 @@ fn cross_problem(path: &Toolpath, facets: &[crate::geometry::Triangle], job: &su
     let crate::operation::OpParams::Drill { cross, .. } = &job.params else {
         return None;
     };
-    super::cross_part::part_clear(path, facets, &job.tool, cutter, cross).err().map(|e| e.to_string())
+    super::cross_part::part_clear(path, facets, &job.tool, cutter, cross, job.material.excess).err().map(|e| e.to_string())
 }
 
 /// A part-source cross drill's chain against one of the setup's other
@@ -154,7 +165,7 @@ fn neighbour_cross_problem(path: &Toolpath, facets: &[crate::geometry::Triangle]
     if !job.part_solid || cross.is_empty() {
         return None;
     }
-    super::cross_part::neighbours_clear(path, facets, &job.tool, cutter, cross).err().map(|e| e.to_string())
+    super::cross_part::neighbours_clear(path, facets, &job.tool, cutter, cross, job.material.excess).err().map(|e| e.to_string())
 }
 
 /// Whether a Thread's holes stand in round walls, read as generation read
