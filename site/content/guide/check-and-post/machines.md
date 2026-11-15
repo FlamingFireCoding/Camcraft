@@ -78,7 +78,10 @@ ordinary milling operations and the setup's fixtures, not by the machine.
 The library also supplies **Sienci AltMill 2x4**, **4x4** and **4x8**
 machines, paired with the **grblHAL** post. **grblHAL 3-axis** and
 **TinyG 3-axis** are generic controller examples. Check their travel,
-spindle and retract settings against your actual machine before use.
+spindle and retract settings against your actual machine before use. For a
+complete sheet-goods walkthrough on the Sienci AltMill 4x4 (plus shop-router
+notes for RichAuto DSP A11), see
+[Your first router part](@/guide/getting-started/first-router-part.md).
 
 ## Lathe
 
