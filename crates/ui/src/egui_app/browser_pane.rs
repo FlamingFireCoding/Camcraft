@@ -113,6 +113,11 @@ pub(super) fn focus(state: &mut State, name: &str) {
 /// The View door's contents: the same switches the inline block used to
 /// show, now one click behind the header.
 fn view_menu(ui: &mut Ui, state: &mut State) {
+    if ui.button("Tool library…").clicked() {
+        actions::target(state, UiTarget::Tool(String::new()));
+        ui.close();
+    }
+    ui.separator();
     ui.checkbox(&mut state.show_world_axes, "Show world origin axes");
     // #645: the #727 gizmo names get the switch the review asked for.
     // Same local-copy law as "Show all toolpaths": the flip goes

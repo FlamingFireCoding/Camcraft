@@ -51,6 +51,7 @@ pub(crate) enum Tab {
     Browser,
     Properties,
     Machines,
+    Tools,
 }
 
 impl Tab {
@@ -60,6 +61,7 @@ impl Tab {
             Tab::Browser => "Browser",
             Tab::Properties => "Properties",
             Tab::Machines => "Machines",
+            Tab::Tools => "Tool library",
         }
     }
 }
@@ -256,6 +258,7 @@ impl TabViewer for ShellTabs<'_> {
                 let pal = theme::current();
                 pages::properties(ui, self.state, &pal);
             }
+            Tab::Tools => super::tool_library::draw(ui, self.state),
             Tab::Machines => {
                 let pal = theme::current();
                 machines_pane::draw(ui, self.state, &pal);

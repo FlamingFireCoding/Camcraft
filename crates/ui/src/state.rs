@@ -1438,6 +1438,10 @@ pub enum Panel {
 pub enum LayoutRequest {
     /// Close the panel if open, reopen it at its default side if not.
     Toggle(Panel),
+    /// Open and focus a panel without toggling it closed.
+    Show(Panel),
+    /// Open and focus the independent tool library.
+    ToolLibrary,
     /// Rebuild the default three-pane dock.
     Reset,
 }
