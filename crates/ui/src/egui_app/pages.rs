@@ -927,7 +927,12 @@ fn draw_tool_preview(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64,
     let rect = resp.rect;
     let axis_x = rect.center().x;
     painter.rect_filled(rect, 4.0, Color32::from_rgb(24, 26, 31));
-    let outline = t.profile();
+    // A body replaces the parameter holder, as in the collision band stack.
+    let outline = if body.is_some() {
+        tools::Tool { holder_len: 0.0, ..t.clone() }.profile()
+    } else {
+        t.profile()
+    };
     // #371: a body's bands (above, len, r) widen the frame to hold them.
     let bands = body.unwrap_or_default();
     let r_max = outline.iter().map(|q| q.1).chain(bands.iter().map(|b| b.2)).fold(0.0f64, f64::max);
@@ -989,8 +994,7 @@ fn draw_tool_preview(ui: &mut Ui, t: &tools::Tool, u: Unit, body: Option<&[(f64,
             Stroke::NONE,
         ));
     }
-    // #371: the modelled body's revolved envelope, translucent amber over
-    // the cylinders it replaces in the judging laws.
+    // #371: the modelled body's revolved envelope replaces the holder.
     for &(above, len, r) in bands {
         if !(above.is_finite() && len.is_finite() && r.is_finite()) || len <= 0.0 || r <= 0.0 {
             continue;
@@ -1238,3 +1242,7 @@ mod turn_tests {
         assert!(state.pending.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "tests/tool_preview.rs"]
+mod tool_preview_tests;
