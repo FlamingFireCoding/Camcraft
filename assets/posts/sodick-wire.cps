@@ -145,6 +145,12 @@ function onParameter(name, value) {
   else if (name === "WireTaper" && has(value)) taper = Number(value);
   else if (name === "WireFourAxis") fourAxis = clean(value);
   else if (name === "WireU" || name === "WireV") leaning = true;
+  else if (name === "WireAngle") {
+    // #1496: guard the move itself even when the section omits WireTaper.
+    // The angle stream's plane/corner mapping is not confirmed for Mark 21.
+    refuse("angle" + opName, who() + "an angle-word move - the Sodick wire post writes a vertical 2-axis cut only; programmed-plane and corner mapping for G51 / G52 A is not confirmed");
+    sectionOk = false;
+  }
   else if (name === "SpindleSpeed" && has(value) && Number(value) > 0) {
     refuse("rpm" + opName, who() + "states " + Math.round(Number(value)) + " rpm - a wire EDM turns no spindle");
   }
