@@ -285,7 +285,7 @@ of spending unbounded time subdividing it.
 **Fix.** Repair or re-export the source geometry. A joined B-spline knot
 can be valid; an actual jump cannot be made safe by a coarse tolerance.
 
-### `model '<model>' was imported incomplete - closed shell ... meshes open: ...`
+### model '<model>' was `imported incomplete - <hole> - so it has walls missing and no gouge check against it can be trusted; ...`
 
 **Means.** The model loaded for inspection, but a closed STEP shell has
 missing walls after meshing. The model page and import status name the
