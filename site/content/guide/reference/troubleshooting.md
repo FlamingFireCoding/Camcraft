@@ -275,6 +275,27 @@ to another extension; an export that wrote something other than a model.
 
 **Fix.** Re-export from the CAD program, and check the file opens there.
 
+### STEP curve subdivision refused
+
+**Means.** An edge or swept curve is discontinuous, produces non-finite
+points, or exceeds the bounded evaluation budget. The message names the
+edge and shell, or the swept face. CamCraft stops that import instead
+of spending unbounded time subdividing it.
+
+**Fix.** Repair or re-export the source geometry. A joined B-spline knot
+can be valid; an actual jump cannot be made safe by a coarse tolerance.
+
+### `model '<model>' was imported incomplete - closed shell ... meshes open: ...`
+
+**Means.** The model loaded for inspection, but a closed STEP shell has
+missing walls after meshing. The model page and import status name the
+hole. Every operation on the model is refused at the post because no
+gouge check against it can be trusted.
+
+**Fix.** Re-export the model or import a sound STL. A higher facet budget
+addresses coarse surfaces, not these missing walls. Tool-body and fixture
+imports still refuse such shells instead of loading them incomplete.
+
 ### `unsupported file type: <ext>`
 
 **Means.** CamCraft reads STEP, STL and OBJ files; this extension is none

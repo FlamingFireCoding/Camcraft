@@ -61,6 +61,10 @@ on the [Keyboard and mouse](@/guide/getting-started/keyboard-and-mouse.md) page.
    welds vertices and fills holes and reports what it changed.
    Closed STL and OBJ shells with inward winding are turned outward on
    import, so their solid checks use the outside of the part.
+   A STEP closed shell that meshes with missing walls can load as
+   **Incomplete** for viewing and setup. Its page names the hole; every
+   operation on it is refused at the post. Re-export a sound model or
+   import an STL; raising the facet budget does not repair missing walls.
 2. **Set the stock.** Click **Stock**. The stock is a box, a cylinder, or a
    copy of a model.
 3. **Place the work offset.** Click **Origin** to set the work coordinate
