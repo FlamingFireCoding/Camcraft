@@ -351,7 +351,7 @@ fn s_post() -> Value {
     obj(
         json!({
             "output": { "type": "string", "description": "The .nc file to write." },
-            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak) or a .cps path." },
+            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak, Tormach PathPilot Plasma) or a .cps path." },
             "between_setups": {
                 "type": "string",
                 "enum": ["pause", "optional-stop", "continue", "file-per-setup"],
