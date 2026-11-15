@@ -245,3 +245,33 @@ fn stock_source_chamfer_refusal_names_cause_and_part_as_source_workaround() {
         "MCP verify findings missing cause + workaround: {flush}"
     );
 }
+
+#[test]
+fn framed_stock_chamfer_live_refusal_keeps_hint_without_local_move_number() {
+    use camcraft_app::operation::Tilt;
+    let (world, mut h) = job_without_part(HALF);
+    let mut params = chamfer(1.0);
+    if let OpParams::Chamfer2D { tilt, .. } = &mut params {
+        *tilt = Some(Tilt { a_deg: 0.0, b_deg: 10.0, origin: [0.0; 3] });
+    }
+    let warns = generated(&world, &mut h, CHAMFER, params);
+    assert!(warns.iter().all(|w| !w.blocks_post()), "previously clear chamfer: {warns:?}");
+    let e = model::find_by_name(&world, "S1").expect("op");
+    let op = model::operation_of(&world, &e).expect("operation");
+    let path = model::toolpath_of(&world, &e).expect("cached path").path;
+    assert!(op.params.tilt().is_some(), "exercise the operation frame");
+    assert!(camcraft_app::operation::kept_rejudge::moved_part_problem(&world, "S1", &op, &path).is_none());
+    let mut f = Vec::new();
+    // Model the added part in the cutting plane: its top meets the
+    // chamfer, while its body stays below the cutter's shank.
+    common::solid_part::plate(&common::solid_part::rect(-50.0, -50.0, 50.0, 50.0), None, 0.0, TOP, &mut f);
+    let frame = op.params.tilt().expect("tilt").frame().expect("frame");
+    let f = f.iter().map(|t| camcraft_app::geometry::Triangle::new(frame.to_world(t.a), frame.to_world(t.b), frame.to_world(t.c))).collect();
+    h.execute(&world, ImportModel::from_mesh("other", Mesh::from_facets(f)));
+    let refusal = camcraft_app::operation::kept_rejudge::moved_part_problem(&world, "S1", &op, &path).expect("live refusal");
+    assert!(refusal.contains("S1 now cuts part 'other'"), "{refusal}");
+    assert!(refusal.contains("stock-source chamfer breaks into a part"), "{refusal}");
+    assert!(refusal.contains("chamfer with the part as source"), "{refusal}");
+    assert!(!refusal.contains("move "), "local move numbers are not posted move numbers: {refusal}");
+    assert_not_posted(&world, "framed-chamfer-live", "stock-source chamfer breaks into a part");
+}

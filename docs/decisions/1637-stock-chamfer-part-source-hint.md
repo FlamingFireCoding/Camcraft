@@ -32,3 +32,10 @@ finish surface"` assertions while surfacing both the cause and the exact
 **Cost to change later.** Remove `Warning::StockChamferGouge` and
 `note_stock_chamfer_gouges` if another warning representation carries
 per-law hints.
+
+**Review follow-up (#1771).** For live post refusals on operations with an
+operation frame, retain the stock-chamfer cause and part-source workaround,
+but omit the local move number. The rejudge path's local move indices do
+not identify moves in the posted path. Keep the existing suppression of
+other local warning text. Keeping the full warning `Display` was rejected
+because it would present a misleading posted move number.
