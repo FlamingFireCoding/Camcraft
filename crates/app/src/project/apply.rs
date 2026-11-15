@@ -514,6 +514,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
+        // v62 -> v63 (#2015): each tool's own rpm / feed is its Unknown
+        // cutting row (derived where the tool is read); absent stock
+        // material states none.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -725,6 +728,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 entity.entity_view(world).set(StockDef {
                     shape: shape.clone(),
                 });
+                // #2015: the word was judged at parse (StockMaterialWord).
+                crate::stock_material::land_entity(world, &entity, dto.stock_material.map(|w| w.0));
                 // #1094: the mark lands only on a from-model stock, naming
                 // its source; anywhere else it means nothing and is dropped.
                 // The print is the mark's check (third review): no print,

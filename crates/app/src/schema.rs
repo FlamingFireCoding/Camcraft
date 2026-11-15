@@ -142,6 +142,14 @@ pub struct StockSourceOnly {
     pub print: GeomPrint,
 }
 
+/// #2015: the workpiece material a setup's stock states. Rides the stock
+/// entity; absent (every older file) states none, and the document's
+/// material speaks for the setup. It picks the tool cutting-data row the
+/// setup's operations are seeded from. Only `SetStockMaterial`, the
+/// project loader and the stock's delete/undo write it.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StockMaterial(pub crate::tools::WorkMaterial);
+
 /// A model's geometry as the program verdict reads it (#1094,
 /// `stock_print`): its facet count and two independent 64-bit hashes over
 /// every vertex coordinate's bits (local frame) and its placement's bits.
@@ -711,6 +719,7 @@ pub fn register_schema(world: &World) {
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();
+    world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
     world.component::<ToolDef>();

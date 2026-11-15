@@ -175,6 +175,10 @@ pub fn collect(world: &World) -> ProjectFile {
                 kind,
                 raw_stock_only: mark.is_some(),
                 raw_stock_print: mark.as_ref().map(crate::stock_print::to_text),
+                stock_material: model::is_stock(world, &entity)
+                    .then(|| crate::stock_material::of_entity(world, &entity))
+                    .flatten()
+                    .map(super::StockMaterialWord),
                 stock,
                 tool,
                 operation,

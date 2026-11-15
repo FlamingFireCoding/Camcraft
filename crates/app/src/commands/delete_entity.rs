@@ -25,6 +25,8 @@ pub struct DeleteEntity {
     /// `Wcs` tag. Together with the CAM components below they keep every
     /// kind of named entity undoable with its kind intact.
     stock: Option<StockShape>,
+    /// #2015: a stock's workpiece material, restored with it.
+    stock_material: Option<crate::tools::WorkMaterial>,
     wcs: bool,
     tool: Option<Tool>,
     /// #221: a deleted tool's number, restored with it on undo.
@@ -70,6 +72,7 @@ impl DeleteEntity {
             facet_budget: crate::model_fidelity::budget_of(world, &entity),
             hole: crate::mesh_open::hole_of(world, &entity),
             stock: model::stock_def_of(world, &entity),
+            stock_material: crate::stock_material::of_entity(world, &entity),
             wcs: model::is_wcs(world, &entity),
             tool: model::tool_of(world, &entity),
             tool_number: model::tool_number_of(world, &entity),
@@ -113,6 +116,7 @@ impl Command for DeleteEntity {
             entity
                 .entity_view(world)
                 .set(StockDef { shape: shape.clone() });
+            crate::stock_material::land_entity(world, &entity, self.stock_material);
         }
         if self.wcs {
             entity.entity_view(world).add(Wcs);

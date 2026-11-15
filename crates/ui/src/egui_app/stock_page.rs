@@ -4,7 +4,8 @@
 //! label-left rows in one grid column, and the three actions as equal
 //! buttons under a divider. The per-side margins are shown only when
 //! "Per side" is ticked, and the source rows only for stock from a model.
-//! Every change is a command: `SetStock` (Apply), `StockFit` /
+//! #2015: a Material group states the stock's workpiece material.
+//! Every change is a command: `SetStock` (Apply), `SetStockMaterial`, `StockFit` /
 //! `StockFitSides` (Fit to Models) and `DeleteByName` - the page only
 //! drafts and queues.
 //!
@@ -27,6 +28,7 @@ const BUTTON_H: f32 = 24.0;
 pub(super) fn stock_page(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     group(ui, "Shape", None, |ui| shape_section(ui, state));
+    group(ui, "Material", None, |ui| super::stock_material_row::stock_material_row(ui, state));
     group(ui, "Size", None, |ui| size_fields(ui, state, u));
     group(ui, "Position and rotation", None, |ui| position_fields(ui, state, u));
     group(ui, "Fit to models", None, |ui| fit_fields(ui, state, u));

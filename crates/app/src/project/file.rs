@@ -95,7 +95,13 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
-pub const PROJECT_VERSION: u32 = 62;
+/// v63 (#2015): a tool's cutting data holds an `unknown` row and rows
+/// may state a stepdown and a stepover; a setup's stock may state its
+/// workpiece material. An old reader must refuse the file rather than
+/// drop the rows or the stock material the feeds were picked by. A v62
+/// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
+/// row (derived at read).
+pub const PROJECT_VERSION: u32 = 63;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -549,13 +555,22 @@ impl ToolDto {
             coating: t.catalog.coating.clone(),
             helix_deg: t.catalog.helix_deg,
             notes: t.catalog.notes.clone(),
-            cutting_data: t.cutting.iter().map(super::CuttingRowDto::from_row).collect(),
+            cutting_data: super::cutting_rows_dto::rows_to_write(&t.cutting, t.rpm, t.feed),
             turning: t.turning,
             outline: t.outline.clone(),
         }
     }
 
+    /// #2015: read in the canonical form - a tool's own rpm / feed are
+    /// its `Unknown` row (every older file, and every row the writer left
+    /// out as derived). The running numbers are read as written.
     pub(super) fn to_tool(&self) -> Tool {
+        let mut tool = self.tool_as_written();
+        camcraft_tools::cutting_rows::canonical(&mut tool);
+        tool
+    }
+
+    fn tool_as_written(&self) -> Tool {
         Tool {
             kind: match self.kind {
                 ToolKindDto::EndMill => ToolKind::EndMill,

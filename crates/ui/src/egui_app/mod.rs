@@ -87,6 +87,7 @@ mod wcs_page;
 mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
+mod stock_material_row;
 // #371: the tool editor's Body section and its picking preview.
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;

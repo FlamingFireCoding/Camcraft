@@ -36,6 +36,7 @@ pub mod ribbon_pins;
 pub mod select_entity;
 pub mod set_stock;
 pub mod stock_source_only;
+pub mod stock_material;
 pub mod setup;
 pub mod setup_delete;
 // #196: a setup's picked program offset.
@@ -106,6 +107,7 @@ pub use ribbon_pins::SetRibbonPins;
 pub use select_entity::SelectEntity;
 pub use set_stock::SetStock;
 pub use stock_source_only::SetStockSourceOnly;
+pub use stock_material::SetStockMaterial;
 pub use setup::{ActivateSetup, CreateSetup, DeleteSetup, SetOperationSetup};
 pub use setup_align::AlignPartToSetup;
 pub use setup_wcs::SetSetupWorkOffset;
