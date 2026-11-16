@@ -35,7 +35,7 @@ pub(super) fn explain_switch(ui: &mut Ui, state: &mut State) {
 /// The pass word a lathe post writes when it does not write the cycle:
 /// G32 (Fanuc) or G33 (LinuxCNC / PathPilot); `None` for a post with no
 /// threading option.
-fn pass_word(post: &PostRef) -> Option<&'static str> {
+pub(super) fn pass_word(post: &PostRef) -> Option<&'static str> {
     match post {
         PostRef::Named(n) if n == "Fanuc Lathe" => Some("G32"),
         PostRef::Named(n) if n == "Tormach PathPilot Lathe" => Some("G33"),

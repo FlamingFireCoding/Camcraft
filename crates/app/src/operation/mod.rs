@@ -184,13 +184,19 @@ mod cross_spindle;
 mod cross_stock;
 mod drill_reach;
 mod bore_reach;
+use camcraft_motion::break_through;
 pub use bore_reach::DetectedHoles;
+pub use break_through::BELOW_STOCK_NOTE;
 mod drill_prior;
 mod carried_stock;
 pub use carried_stock::{CARRIED_OUTSIDE_DECLARED, CARRIED_OUTSIDE_NOTED, carried_problems};
 pub(crate) use drill_prior::reads_prior;
 mod plunge_solid;
 mod predrilled_entry;
+pub mod rest_op;
+pub use rest_op::REST_PREDRILLED;
+#[cfg(test)]
+mod rest_op_tests;
 #[cfg(test)]
 mod predrilled_entry_tests;
 #[cfg(test)]

@@ -119,7 +119,7 @@ fn floor_pick(world: &World) -> SrcRef {
 }
 
 fn pocket() -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 3.0,
@@ -145,6 +145,7 @@ fn pocket() -> OpParams {
 /// ladder's top is the hole's `entry_z`, not the op's top height.
 fn bore() -> OpParams {
     OpParams::Bore {
+        break_through: None,
         links: camcraft_app::links::Links::PLANAR,
         clearance_z: Height::fixed(40.0),
         retract_z: None,
