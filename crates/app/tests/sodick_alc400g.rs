@@ -82,6 +82,11 @@ fn punch_world(machine_text: &str, condition: &str, taper_deg: f64) -> Result<fl
     let mut h = History::default();
     let m = parse_mch(machine_text).expect("parses");
     h.execute(&world, LoadMachine::new(&world, "alc400g.mch".into(), Some(m)).expect("mount"));
+    h.execute(
+        &world,
+        camcraft_app::commands::AddTool::new(&world, "EDM-W025", camcraft_app::wire_tools::wire_tool(0.25))
+            .expect("wire"),
+    );
     h.execute(&world, ImportModel::from_mesh("slug", slug()));
     let op = WireContourOp {
         top_z: Height::fixed(12.0),
@@ -97,7 +102,7 @@ fn punch_world(machine_text: &str, condition: &str, taper_deg: f64) -> Result<fl
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
     };
-    let c = CreateOperation::new(&world, "Punch1", "", SrcRef::Entity("slug".into()), OpParams::WireContour(op)).map_err(|e| format!("{e:?}"))?;
+    let c = CreateOperation::new(&world, "Punch1", "EDM-W025", SrcRef::Entity("slug".into()), OpParams::WireContour(op)).map_err(|e| format!("{e:?}"))?;
     h.execute(&world, c);
     h.execute(&world, GenerateOperation::new(&world, "Punch1").expect("generates"));
     Ok(world)

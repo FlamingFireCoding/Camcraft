@@ -34,7 +34,7 @@ const IN: f64 = 25.4;
 const R: f64 = 0.375 * IN;
 const STICK: f64 = 1.5 * IN;
 const ARC4: &str = "Tormach 770MX + microARC 4";
-const UNDER: Tilt = Tilt { a_deg: 0.0, b_deg: 180.0, origin: [0.0; 3] };
+const UNDER: Tilt = Tilt { basis_version: 1, a_deg: 0.0, b_deg: 180.0, origin: [0.0; 3] };
 
 fn ok<T, E: std::fmt::Debug>(r: Result<T, E>, what: &str) -> T {
     r.unwrap_or_else(|e| panic!("{what}: {e:?}"))
