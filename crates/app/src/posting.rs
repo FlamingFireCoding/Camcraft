@@ -852,21 +852,22 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     gated_ops(world, false).map(|(ops, _)| ops)
 }
 
+/// Operations by name, in program order.
+pub(crate) type OpList = Vec<(String, Entity)>;
+
 /// [`program_ops`] for the stock playback only (#2280): the same order
 /// and the same gates, but the walk ends before the first operation
 /// with no toolpath, which comes back with every op from it on. The
 /// playback shows the program up to there; it never skips that op and
 /// cuts the next ones on a stock the skipped op did not cut. The post
 /// and the Deviate verdict keep [`program_ops`]: it refuses.
-pub(crate) fn program_ops_until_ungenerated(
-    world: &World,
-) -> Result<(Vec<(String, Entity)>, Vec<(String, Entity)>), String> {
+pub(crate) fn program_ops_until_ungenerated(world: &World) -> Result<(OpList, OpList), String> {
     gated_ops(world, true)
 }
 
 /// The walk under [`program_ops`]; `stop_at_ungenerated` turns the
 /// "no toolpath yet" refusal into the end of the list.
-fn gated_ops(world: &World, stop_at_ungenerated: bool) -> Result<(Vec<(String, Entity)>, Vec<(String, Entity)>), String> {
+fn gated_ops(world: &World, stop_at_ungenerated: bool) -> Result<(OpList, OpList), String> {
     // THE order law by call (M3.2 A): setup rank, then operation position - the same
     // walk re-machining, the sim and the machine-limit check make.
     // A suppressed op (#110) is not in the program: skipped before the

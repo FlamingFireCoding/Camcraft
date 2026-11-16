@@ -65,7 +65,7 @@ impl PlayIndex {
     pub fn position_at(&self, p: &Progress, frac: f64) -> Option<(usize, f64)> {
         // #2280: an op at or past the stop is not in the plan; the
         // picture holds the stock as the plan left it.
-        if self.rest.iter().any(|n| *n == p.op) {
+        if self.rest.contains(&p.op) {
             return Some((self.total, 0.0));
         }
         let k = self.index_at(p)?;

@@ -292,7 +292,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
 /// post never read this: they keep `plan_program`, which refuses.
 pub(crate) fn plan_program_until_ungenerated(
     world: &flecs_ecs::prelude::World,
-) -> Result<(Vec<Planned>, Vec<(String, flecs_ecs::prelude::Entity)>), String> {
+) -> Result<(Vec<Planned>, crate::posting::OpList), String> {
     let (ops, rest) = crate::posting::program_ops_until_ungenerated(world)?;
     Ok((plan_ops(world, &ops)?, rest))
 }

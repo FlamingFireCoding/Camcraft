@@ -74,7 +74,7 @@ fn same(a: &Preview, b: &Preview) -> bool {
 fn playback_plays_the_ops_before_the_first_one_without_a_toolpath() {
     let world = doc(&[("Face1", 18.0, true), ("Face2", 17.0, false)]);
     // Safety: the verdict and the post still refuse the document by name.
-    let err = simulate_document(&world).err().expect("the verdict refuses");
+    let Err(err) = simulate_document(&world) else { panic!("the verdict refuses") };
     assert!(err.contains("Face2: no toolpath yet"), "{err}");
     assert!(camcraft_app::posting::program_ops(&world).is_err(), "the post refuses as before");
 
