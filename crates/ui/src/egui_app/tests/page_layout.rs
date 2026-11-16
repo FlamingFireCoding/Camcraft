@@ -158,7 +158,13 @@ fn layout_page_tool_library() {
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    assert_page_layout(&h, "Tool", &["Edit", "New tool…", "Import library…", "Import tool holders"]);
+    // The selected tool edits its fields directly in Properties; catalog
+    // actions belong to the separate Tool library tab.
+    assert_page_layout(
+        &h,
+        "Tool",
+        &["Tool: EM-0600-4FL", "Delete", "Type", "Diameter", "Corner radius", "Flute length"],
+    );
 }
 
 #[test]
