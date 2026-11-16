@@ -25,3 +25,19 @@ fn boundary_chains_are_a_geometry_crate_interface() {
     assert!(!between.contains(p(0.0, 20.0)));
     assert!(beyond.contains(p(0.0, 20.0)));
 }
+
+#[test]
+fn blind_slot_is_a_geometry_crate_interface() {
+    let stock = Region::new(vec![
+        Loop::new(vec![p(-35.0, -35.0), p(35.0, -35.0), p(35.0, 35.0), p(-35.0, 35.0)])
+            .expect("stock loop"),
+    ])
+    .expect("stock region");
+    let wall = [p(-8.0, -20.0), p(-8.0, 8.0), p(8.0, 8.0), p(8.0, -20.0)];
+    let slot = camcraft_geometry::boundary_chains::open_slot::region(&wall, &stock, 0.0)
+        .expect("blind slot");
+    assert!(slot.contains(p(0.0, 0.0)));
+    assert!(slot.contains(p(0.0, -30.0)));
+    assert!(!slot.contains(p(0.0, 20.0)));
+    assert!(!slot.contains(p(20.0, 0.0)));
+}

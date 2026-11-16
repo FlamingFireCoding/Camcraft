@@ -798,6 +798,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         method: crate::machining2d::AdaptiveMethod::Spiral,
+        troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
     }
 }
@@ -1749,6 +1750,8 @@ pub enum Family {
     /// The sinker EDM's electrode work (#541): admitted on a sinker
     /// EDM only.
     Sinker,
+    /// Abrasive waterjet work; operations are added by the following slice.
+    Waterjet,
 }
 
 impl Family {
@@ -1767,6 +1770,7 @@ impl Family {
                 | (Family::Plasma, Kind::Plasma)
                 | (Family::WireEdm, Kind::WireEdm)
                 | (Family::Sinker, Kind::SinkerEdm)
+                | (Family::Waterjet, Kind::Waterjet)
         )
     }
 
@@ -1779,6 +1783,7 @@ impl Family {
             Family::Plasma => "plasma cutting",
             Family::WireEdm => "wire EDM",
             Family::Sinker => "sinker EDM",
+            Family::Waterjet => "waterjet",
         }
     }
 
@@ -1791,6 +1796,7 @@ impl Family {
             Family::Plasma => "plasma table",
             Family::WireEdm => "wire EDM",
             Family::Sinker => "sinker EDM",
+            Family::Waterjet => "waterjet",
         }
     }
 }

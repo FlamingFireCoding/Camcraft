@@ -517,7 +517,13 @@ pub(super) fn selection_geometry_in(
         // the cutter stays on the run's air side, read from the part
         // (#1777) - so say that plainly instead of letting the combo
         // imply an effect.
-        if let Some(n) = &mut notes {
+        // #1928: a run off the stock (any pick on the stock entity) obeys
+        // Side instead, so the note does not claim the part rule there.
+        let stock_name = crate::setup::stock_entity_name(world, setup);
+        let on_stock = items.iter().any(|g| g.entity == stock_name);
+        if let Some(n) = &mut notes
+            && !on_stock
+        {
             n.push("Side does not apply to open runs - the tool stays on the run's air side, read from the part".into());
         }
     }

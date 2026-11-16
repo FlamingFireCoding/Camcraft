@@ -9,6 +9,7 @@ use crate::geometry::Point3;
 use crate::load::load_step;
 
 use super::adaptive::corner_radius;
+use super::adaptive_troch::AdaptiveTrochParams;
 use super::face::GenError;
 use super::pocket::PocketParams;
 
@@ -23,6 +24,7 @@ pub(super) struct CleanChain {
 
 /// Peel outward from `cleared.offset(-(r + 0.02))` inside `center` up to `step <= 0.6*r`
 /// per ring, keeping only chains that remove real uncut stock inside `reach`.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn plan_cleanup(
     center: &Region,
     reach: &Region,
@@ -31,6 +33,7 @@ pub(super) fn plan_cleanup(
     d: f64,
     optimal_load: f64,
     climb: bool,
+    t: &AdaptiveTrochParams,
 ) -> Result<(Vec<CleanChain>, Region), GenError> {
     let r = 0.5 * d;
     let raw_center = center.offset(-0.5e-3)?;
@@ -51,12 +54,14 @@ pub(super) fn plan_cleanup(
     // Round acute (< ~81 deg) convex corners by corner_radius and 90-deg corners lightly (0.15*r)
     // so sharp corner cusps stay under 90 deg while narrow bridges stay open and rest matches HSM.
     let rho_acute = corner_radius(center, r);
-    let safe_center = round_acute_corners(&raw_center, rho_acute, 0.20 * r)?
-        .union(&air0)?
-        .intersect(&raw_center)?;
+    let safe_center = round_acute_corners(&raw_center, rho_acute, 0.20 * r)?.union(&air0)?.intersect(&raw_center)?;
     let mut prev_safe = air0.clone();
     // 0.18*r peel steps with 0.20*r 90-deg rounding hold <= 90 deg even into tight neck corners.
     let step = load_step(d, optimal_load).min(0.18 * r);
+    // A custom contact-angle limit must also bound the cleanup front.
+    let angle_scale = if t.max_engagement < 90.0 { 1.0 - t.max_engagement.to_radians().cos() } else { 1.0 };
+    let engagement_step = 0.18 * r * angle_scale;
+    let step = step.min(engagement_step);
     let mut chains = Vec::new();
 
     for k in 1..=MAX_PEEL_STEPS {

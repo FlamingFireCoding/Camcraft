@@ -226,8 +226,10 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         center_cutting: true,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     };
     let hole = |x: f64, y: f64, r: f64, floor: f64, through: bool| Hole { xy: Point2::new(x, y), radius: r, entry_z: 0.0, floor_z: floor, through, stepped: false };
