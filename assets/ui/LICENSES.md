@@ -127,14 +127,16 @@ Copyright (c) 2019 Tokio Contributors
 
 ## AI provider transport (crates/app/src/ai/http.rs, keychain.rs - #1945; native builds only)
 
-`ureq` (HTTP client) with `rustls`, `rustls-webpki`, `rustls-pki-types`,
+`reqwest` (HTTP client), `tokio` (request runtime), `hyper`, `hyper-util`
+and `http-body-util` (HTTP), with `rustls`, `rustls-webpki`, `rustls-pki-types`,
 `ring` and `untrusted` (TLS), `webpki-roots` (the Mozilla CA roots), and
 `keyring` with `keyring-core` and its per-OS stores
 (`apple-native-keyring-store` and `security-framework`,
 `windows-native-keyring-store`, `zbus-secret-service-keyring-store` and
 `secret-service` with the RustCrypto `aes`, `cbc`, `hkdf`, `hmac`, `sha2`,
 `subtle` and `zeroize` crates) are crates.io dependencies. Licences, as each
-crate declares them: MIT OR Apache-2.0 (ureq, keyring, keyring-core and its
+crate declares them: MIT (tokio, hyper, hyper-util, http-body-util);
+MIT OR Apache-2.0 (reqwest, keyring, keyring-core and its
 stores, rustls-pki-types, security-framework, secret-service, the RustCrypto
 crates except subtle, zeroize); Apache-2.0 OR ISC OR MIT (rustls); ISC
 (rustls-webpki, untrusted); Apache-2.0 AND ISC (ring); BSD-3-Clause

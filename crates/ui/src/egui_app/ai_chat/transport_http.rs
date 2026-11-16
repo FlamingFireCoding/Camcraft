@@ -9,12 +9,15 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use camcraft_app::ai::http::{Client, probe_ollama, send_chat};
+use camcraft_app::ai::http::{Client, probe_ollama_cancellable, send_chat};
 use camcraft_app::ai::wire::{ChatMessage, ChatRequest, DEFAULT_MAX_TOKENS, Image, split_payload};
 use camcraft_app::ai::{Endpoint, ProviderEndpoint, by_id, keychain, secret};
 use camcraft_app::mcp::provider::FallbackMode;
 
-use super::transport::{ChatTransport, TransportOutput, TransportRequest, TurnMessage, check_offline_policy};
+use super::transport::{
+    ChatTransport, TransportOutput, TransportRequest, TurnMessage, check_offline_policy,
+    extract_assistant_text,
+};
 
 /// Sends each step over HTTP(S); holds no state between steps.
 pub(crate) struct HttpTransport;
@@ -22,7 +25,12 @@ pub(crate) struct HttpTransport;
 /// The app endpoint behind a panel preset: the cloud ids match, every
 /// local preset is an Ollama model (the panel's local runtime today).
 fn endpoint_for(preset_id: &str) -> Option<&'static ProviderEndpoint> {
-    by_id(preset_id).or_else(|| preset_id.starts_with("local-").then(|| by_id("ollama")).flatten())
+    by_id(preset_id).or_else(|| {
+        preset_id
+            .starts_with("local-")
+            .then(|| by_id("ollama"))
+            .flatten()
+    })
 }
 
 /// The panel's message, with an opted-in selection folded into the text.
@@ -34,23 +42,35 @@ fn to_wire(m: &TurnMessage) -> ChatMessage {
             sel.selected_entities, sel.active_setup, sel.selected_operation
         ));
     }
-    let image = m
-        .screenshot
-        .as_ref()
-        .map(|s| Image { mime_type: s.mime_type.clone(), data_base64: s.data_base64.clone() });
-    ChatMessage { role: m.role.clone(), text, image, raw: m.raw.clone() }
+    let image = m.screenshot.as_ref().map(|s| Image {
+        mime_type: s.mime_type.clone(),
+        data_base64: s.data_base64.clone(),
+    });
+    ChatMessage {
+        role: m.role.clone(),
+        text,
+        image,
+        raw: m.raw.clone(),
+    }
 }
 
 impl ChatTransport for HttpTransport {
-    fn complete(&self, req: &TransportRequest, cancel: &AtomicBool) -> Result<TransportOutput, String> {
+    fn complete(
+        &self,
+        req: &TransportRequest,
+        cancel: &AtomicBool,
+    ) -> Result<TransportOutput, String> {
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".to_owned());
         }
-        check_offline_policy(req.offline_only, req.preset.endpoint_kind, &req.preset.label)?;
+        check_offline_policy(
+            req.offline_only,
+            req.preset.endpoint_kind,
+            &req.preset.label,
+        )?;
         let def = endpoint_for(&req.preset.id)
             .ok_or_else(|| format!("no endpoint is known for '{}'", req.preset.label))?;
         let ep = Endpoint::parse(def.base_url)?;
-        let client = Client::new(req.offline_only);
         let key = match def.key {
             None => None,
             Some(name) => {
@@ -65,8 +85,23 @@ impl ChatTransport for HttpTransport {
                 Some(key)
             }
         };
-        if def.ollama_probe && req.fallback_mode == FallbackMode::Native {
-            let caps = probe_ollama(&client, &ep, &req.model)?;
+        self.complete_at(req, cancel, &ep, key.as_ref())
+    }
+}
+
+impl HttpTransport {
+    pub(super) fn complete_at(
+        &self,
+        req: &TransportRequest,
+        cancel: &AtomicBool,
+        ep: &Endpoint,
+        key: Option<&camcraft_app::ai::ApiKey>,
+    ) -> Result<TransportOutput, String> {
+        let client = Client::new(req.offline_only);
+        if endpoint_for(&req.preset.id).is_some_and(|def| def.ollama_probe)
+            && req.fallback_mode == FallbackMode::Native
+        {
+            let caps = probe_ollama_cancellable(&client, ep, &req.model, cancel)?;
             if !caps.tools {
                 return Err(format!(
                     "model '{}' cannot call tools (Ollama lists no 'tools' capability) - \
@@ -85,8 +120,13 @@ impl ChatTransport for HttpTransport {
             tools: &tools,
             max_tokens: DEFAULT_MAX_TOKENS,
         };
-        let envelope = send_chat(&client, &ep, &chat, key.as_ref(), cancel)?;
-        Ok(TransportOutput::AssistantResponse { text: String::new(), envelope, fallback_override: None })
+        let envelope = send_chat(&client, ep, &chat, key, cancel)?;
+        let text = extract_assistant_text(req.preset.provider, &envelope, "");
+        Ok(TransportOutput::AssistantResponse {
+            text,
+            envelope,
+            fallback_override: None,
+        })
     }
 }
 

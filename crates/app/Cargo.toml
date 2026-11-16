@@ -37,7 +37,8 @@ url = { workspace = true }
 # #1945: the AI provider HTTP client and the OS keychain - native only,
 # so the browser build (crates/ui shell_web) never links sockets.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-ureq = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
 keyring = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

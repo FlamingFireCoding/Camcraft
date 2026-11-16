@@ -13,26 +13,35 @@ the offline-only default transport and links no socket or keychain code.
 `prefs.json` gains `aiOfflineOnly` (written only when on), and the dock's
 "Offline only" switch is saved there.
 
-**New third-party crates (need the maintainer's decision).** `ureq 2.12`
-(default features off, `tls`: rustls + ring + webpki-roots) for HTTP(S), and
-`keyring 4.2` (macOS Keychain, Windows Credential Manager, Secret Service
-over the zbus 5 already in the lock) for the keys. `url 2.5` was already in
-the lock and is now a direct dependency. Nothing in the workspace spoke TLS
-or reached an OS credential store, so neither could be done with existing
-crates; hand-writing TLS is not an option.
+**New third-party crates (need the maintainer's decision).** `reqwest 0.12`
+(default features off, `rustls-tls-webpki-roots`) provides HTTP(S).
+`tokio 1` uses `rt`, `time`, `net` and `macros` for a current-thread runtime
+per request. `keyring 4.2` provides macOS Keychain, Windows Credential
+Manager and Secret Service over zbus. `url 2.5` was already in the lock and
+is now a direct dependency. These dependencies still need the maintainer's
+decision. This change adds no dependency between CamCraft crates.
 
-**Why these.** ureq is blocking (the chat worker is a plain thread; no async
-runtime enters the tree) and its 2.x line reads no proxy from the
-environment by default, so a loopback call cannot be routed off the machine
-by an `HTTP_PROXY`. rustls with ring avoids OpenSSL on Linux and the
-aws-lc-rs CMake build. keyring 4's Linux store is pure Rust over zbus, so no
-`libdbus` build package is needed on the release runners.
+**Why these.** The first version used blocking `ureq 2.12`. Review #2122
+found that its active request could not be cancelled. A silent server could
+therefore block chat shutdown for the full request timeout. The client now
+selects between the async request and a cancellation check every 20 ms.
+Cancellation drops the request and its runtime, which closes the active
+connection. The Ollama capability probe uses the same cancellation path.
+A detached blocking request was rejected because it would remain active
+after cancellation. rustls avoids system TLS dependencies. keyring 4's
+Linux store uses Rust over zbus, so the release runners need no `libdbus`
+build package.
+
+**Provider errors remove secrets.** JSON and plain-text provider errors
+remove the supplied API key before the message is truncated. This also
+removes a key that crosses the text limit.
 
 **Offline-only is enforced in the client, twice.** `endpoint::admit` refuses
-a non-loopback host before anything resolves; the agent's resolver then
+a non-loopback host before anything resolves; the client's resolver then
 refuses any resolved address that is not loopback (a hosts-file `localhost`
 pointing elsewhere). No redirect is followed: a local server could otherwise
-bounce a call to a remote host. Plain `http://` off the machine is refused
+bounce a call to a remote host. `no_proxy` disables environment proxies,
+so a loopback request cannot use a remote proxy. Plain `http://` off the machine is refused
 whether or not a key is sent - cloud providers are https only.
 
 **Unsloth Studio and llama-server bases.** The issue names
@@ -47,7 +56,8 @@ step is refused by name, pointing at the Prompt-JSON and Q&A presets. Falling
 back inside the transport would send a request without the prompt-JSON
 context (the transport has no project snapshot) and the reply would not parse.
 
-**Considered and dropped.** `reqwest` (pulls tokio and hyper); `native-tls`
+**Considered and dropped.** Blocking `ureq` (no active request cancellation);
+`native-tls`
 (OpenSSL headers on Linux); keyring's `dbus-secret-service` store (vendored
 libdbus C build); storing keys in `prefs.json` encrypted (the issue forbids
 any key there); an MCP tool to set a key (an agent should never handle a

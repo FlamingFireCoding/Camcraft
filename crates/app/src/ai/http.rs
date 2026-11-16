@@ -5,7 +5,7 @@
 //! server could otherwise bounce a call off the machine), no proxy is
 //! read from the environment, and no error message carries the key.
 //!
-//! Provenance: our own policy over the `ureq` crate's public API; the
+//! Provenance: our own policy over the `reqwest` crate's public API; the
 //! auth headers are each provider's documented ones (`x-api-key`,
 //! `Authorization: Bearer`, `x-goog-api-key`).
 
@@ -30,11 +30,14 @@ pub struct Timeouts {
 
 impl Default for Timeouts {
     fn default() -> Self {
-        Self { connect: Duration::from_secs(10), total: Duration::from_secs(300) }
+        Self {
+            connect: Duration::from_secs(10),
+            total: Duration::from_secs(300),
+        }
     }
 }
 
-/// The client: the offline switch and the timeouts. An agent is built
+/// The client: the offline switch and the timeouts. A connection is built
 /// per request, so each carries its own loopback rule.
 #[derive(Clone, Copy, Debug)]
 pub struct Client {
@@ -48,22 +51,10 @@ const ERROR_TEXT: usize = 400;
 impl Client {
     #[must_use]
     pub fn new(offline_only: bool) -> Self {
-        Self { offline_only, timeouts: Timeouts::default() }
-    }
-
-    fn agent(&self, loopback_only: bool) -> ureq::Agent {
-        ureq::AgentBuilder::new()
-            .redirects(0)
-            .try_proxy_from_env(false)
-            .timeout_connect(self.timeouts.connect)
-            .timeout(self.timeouts.total)
-            .user_agent(concat!("camcraft/", env!("CARGO_PKG_VERSION")))
-            .resolver(move |netloc: &str| -> std::io::Result<Vec<std::net::SocketAddr>> {
-                let addrs = std::net::ToSocketAddrs::to_socket_addrs(netloc)?.collect();
-                endpoint::admit_addrs(addrs, loopback_only)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))
-            })
-            .build()
+        Self {
+            offline_only,
+            timeouts: Timeouts::default(),
+        }
     }
 
     /// POST `body` as JSON to `path` under `ep`, with `auth` as the auth
@@ -77,52 +68,132 @@ impl Client {
         auth: Option<(&'static str, String)>,
         body: &Value,
     ) -> Result<Value, String> {
+        self.post_json_cancellable(ep, path, headers, auth, body, &AtomicBool::new(false))
+    }
+
+    /// As `post_json`, but drops the active connection when cancelled.
+    pub fn post_json_cancellable(
+        &self,
+        ep: &Endpoint,
+        path: &str,
+        headers: &[(String, String)],
+        auth: Option<(&'static str, String)>,
+        body: &Value,
+        cancel: &AtomicBool,
+    ) -> Result<Value, String> {
         endpoint::admit(ep, self.offline_only)?;
-        let loopback_only = self.offline_only || ep.scheme == Scheme::Http;
-        let url = ep.url(path);
-        let mut req = self.agent(loopback_only).post(&url).set("content-type", "application/json");
-        for (k, v) in headers {
-            req = req.set(k, v);
+        if cancel.load(Ordering::Relaxed) {
+            return Err("cancelled".into());
         }
-        if let Some((name, value)) = &auth {
-            req = req.set(name, value);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("HTTP runtime unavailable: {e}"))?;
+        runtime.block_on(async {
+            let request = self.post_async(ep, path, headers, auth.as_ref(), body);
+            tokio::select! {
+                result = request => result,
+                () = async {
+                    while !cancel.load(Ordering::Relaxed) {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                } => Err("cancelled".into()),
+            }
+        })
+    }
+
+    async fn post_async(
+        &self,
+        ep: &Endpoint,
+        path: &str,
+        headers: &[(String, String)],
+        auth: Option<&(&'static str, String)>,
+        body: &Value,
+    ) -> Result<Value, String> {
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .connect_timeout(self.timeouts.connect)
+            .timeout(self.timeouts.total)
+            .dns_resolver(std::sync::Arc::new(CheckedResolver {
+                loopback_only: self.offline_only || ep.scheme == Scheme::Http,
+            }))
+            .user_agent(concat!("camcraft/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .map_err(|_| "HTTP client unavailable".to_owned())?;
+        let mut req = client
+            .post(ep.url(path))
+            .header("content-type", "application/json");
+        for (name, value) in headers {
+            req = req.header(name, value);
         }
-        let resp = match req.send_string(&body.to_string()) {
-            Ok(r) => r,
-            Err(ureq::Error::Status(code, r)) => {
-                let text = r.into_string().unwrap_or_default();
-                return Err(format!("{} answered HTTP {code}: {}", ep.host, provider_message(&text)));
-            }
-            Err(ureq::Error::Transport(t)) => {
-                return Err(with_detail(format!("{} could not be reached: {}", ep.host, t.kind()), &t));
-            }
-        };
+        if let Some((name, value)) = auth {
+            req = req.header(*name, value);
+        }
+        // Do not expose transport diagnostics: they can include header values.
+        let resp = req
+            .body(body.to_string())
+            .send()
+            .await
+            .map_err(|_| format!("{} could not be reached", ep.host))?;
         let status = resp.status();
-        if !(200..300).contains(&status) {
-            return Err(format!("{} answered HTTP {status} (redirects are not followed)", ep.host));
+        let text = resp
+            .text()
+            .await
+            .map_err(|_| format!("{} answer not read", ep.host))?;
+        if !status.is_success() {
+            let secret = auth.map(|(name, value)| {
+                if name.eq_ignore_ascii_case("authorization") {
+                    value.strip_prefix("Bearer ").unwrap_or(value.as_str())
+                } else {
+                    value.as_str()
+                }
+            });
+            return Err(format!(
+                "{} answered HTTP {}: {}",
+                ep.host,
+                status.as_u16(),
+                provider_message(&text, secret)
+            ));
         }
-        let text = resp.into_string().map_err(|e| format!("{} answer not read: {e}", ep.host))?;
         serde_json::from_str(&text).map_err(|e| format!("{} answer is not JSON ({e})", ep.host))
     }
 }
 
-/// A transport error's own message, minus anything after the URL (ureq
-/// prints the request URL, which never holds a key: keys ride headers).
-fn with_detail(base: String, t: &ureq::Transport) -> String {
-    match t.message() {
-        Some(m) => format!("{base} ({m})"),
-        None => base,
+/// Resolve inside the cancellable future and enforce the address policy before connecting.
+struct CheckedResolver {
+    loopback_only: bool,
+}
+
+impl reqwest::dns::Resolve for CheckedResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let loopback_only = self.loopback_only;
+        Box::pin(async move {
+            let addrs = tokio::net::lookup_host((name.as_str(), 0)).await?.collect();
+            let checked =
+                endpoint::admit_addrs(addrs, loopback_only).map_err(std::io::Error::other)?;
+            Ok(Box::new(checked.into_iter()) as reqwest::dns::Addrs)
+        })
     }
 }
 
-/// The provider's error message if it sent one, else the start of the body.
-fn provider_message(text: &str) -> String {
+/// Redact before truncating, including keys that cross the text limit.
+fn provider_message(text: &str, secret: Option<&str>) -> String {
     let parsed: Option<Value> = serde_json::from_str(text).ok();
     let msg = parsed
         .as_ref()
-        .and_then(|v| v["error"]["message"].as_str().or_else(|| v["error"].as_str()).map(str::to_owned))
+        .and_then(|v| {
+            v["error"]["message"]
+                .as_str()
+                .or_else(|| v["error"].as_str())
+                .map(str::to_owned)
+        })
         .unwrap_or_else(|| text.to_owned());
-    msg.chars().take(ERROR_TEXT).collect()
+    let redacted = match secret.filter(|key| !key.is_empty()) {
+        Some(key) => msg.replace(key, "[redacted]"),
+        None => msg,
+    };
+    redacted.chars().take(ERROR_TEXT).collect()
 }
 
 /// The auth header for `provider`, per its documentation.
@@ -130,7 +201,9 @@ fn provider_message(text: &str) -> String {
 pub fn auth_header(provider: Provider, key: &ApiKey) -> (&'static str, String) {
     match provider {
         Provider::Anthropic => ("x-api-key", key.expose().to_owned()),
-        Provider::OpenAiChat | Provider::OpenAiResponses => ("authorization", format!("Bearer {}", key.expose())),
+        Provider::OpenAiChat | Provider::OpenAiResponses => {
+            ("authorization", format!("Bearer {}", key.expose()))
+        }
         Provider::Gemini => ("x-goog-api-key", key.expose().to_owned()),
     }
 }
@@ -148,7 +221,7 @@ pub fn send_chat(
     }
     let w = wire::build(req)?;
     let auth = key.map(|k| auth_header(req.provider, k));
-    let out = client.post_json(ep, &w.path, &w.headers, auth, &w.body)?;
+    let out = client.post_json_cancellable(ep, &w.path, &w.headers, auth, &w.body, cancel)?;
     if cancel.load(Ordering::Relaxed) {
         return Err("cancelled".into());
     }
@@ -158,8 +231,25 @@ pub fn send_chat(
 /// Ask an Ollama server what `model` can do. `ep` is the chat base
 /// (`.../v1`); the probe goes to `/api/show` on the same host and port.
 pub fn probe_ollama(client: &Client, ep: &Endpoint, model: &str) -> Result<Capabilities, String> {
+    probe_ollama_cancellable(client, ep, model, &AtomicBool::new(false))
+}
+
+/// Probe with the same cancellation policy as chat requests.
+pub fn probe_ollama_cancellable(
+    client: &Client,
+    ep: &Endpoint,
+    model: &str,
+    cancel: &AtomicBool,
+) -> Result<Capabilities, String> {
     wire::check_model(model)?;
     let root = ep.with_base_path("");
-    let answer = client.post_json(&root, "/api/show", &[], None, &probe::show_request(model))?;
+    let answer = client.post_json_cancellable(
+        &root,
+        "/api/show",
+        &[],
+        None,
+        &probe::show_request(model),
+        cancel,
+    )?;
     probe::parse_show(&answer)
 }
