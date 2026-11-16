@@ -129,7 +129,10 @@ fn the_viewport_row_is_inert_and_the_door_dismisses_outside() {
     assert!(layout::is_open(&h.state().dock, &Tab::Viewport));
     // A press on the status strip, away from the door, dismisses it
     // (the viewport would pick, and a pick is a command).
-    let away: Vec<egui::Rect> = std::iter::once(button).chain(rows.iter().map(|(_, r)| *r)).collect();
+    let button = h.get_by_role_and_label(egui::accesskit::Role::Button, "Panels").rect();
+    let away: Vec<egui::Rect> = std::iter::once(button)
+        .chain(h.get_all_by_role(egui::accesskit::Role::MenuItem).map(|node| node.rect()))
+        .collect();
     let outside = super::anchors::chrome_point(&h, &away);
     click(&mut h, outside);
     assert!(!h.state().state.ribbon_view_open, "an outside press closes the list");
