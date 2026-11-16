@@ -4,21 +4,29 @@
 The part is a clean-room CamCraft fixture: the 1.5 in of a 3/4 in round bar
 that sticks out of a 4th-axis chuck. The bar axis is the X axis, the free
 end is at X0, and the axis passes through Y0 Z0 (the A centreline).
-The finished part has:
+The model is the bar as the example program cuts it:
 
-- four flats, 0.015 in deep, from X-0.875 to X-0.125, one on each of the
-  +Z, -Y, -Z and +Y sides (0.720 in across each pair);
+- four flats, 0.015 in deep (0.720 in across each pair), one on each of
+  the +Z, -Y, -Z and +Y sides. A 1/4 in flat end mill cuts each one in a
+  pass with its centre from X-0.75 to X-0.25. Thus each flat has round
+  ends of the tool's radius: it reaches X-0.875 and X-0.125 on its centre
+  line only.
 - one cross slot on the +Z flat, 0.125 in wide about X-0.5, with its
-  floor 0.030 in below the bar's skin (Z0.345).
+  floor 0.030 in below the bar's skin (Z0.345). The 1/8 in tool runs out
+  of the two sides of the bar, so the slot has straight walls.
 
 An OBJ file has no unit and CamCraft reads its numbers as millimetres, so
 the script writes millimetres.
 
-Method: each length of the bar is a prism of one cross-section, and each
-cross-section is a radius function r(angle) sampled at the same angles.
-The sections therefore share their vertices at each station, the walls
-between two sections are plain rings, and the mesh is watertight. The
-script checks that before it writes the file.
+Method: the skin is a set of lines along X ("longitudes"), one for each
+sampled angle about the axis. Each longitude has the same ten points: the
+two bar ends, and for its face the two ends of the flat (on the skin and
+on the floor) and the two walls of the slot (top and floor). A point that
+a longitude does not need lies on its neighbour point. The strips between
+adjacent longitudes then close the surface with no gap, and the script
+checks that before it writes the file. The round end of a flat is a wall
+of flat strips between the samples: the samples are 1 degree apart on the
+flats, so each strip is less than 0.0002 in from the true arc.
 
 Usage: python3 gen_first_4axis_part_obj.py [output.obj]
 """
@@ -27,83 +35,88 @@ import math
 import sys
 
 IN = 25.4
-R = 0.375           # bar radius, in
-FLAT = 0.360        # centreline to each flat, in
-GROOVE = 0.345      # centreline to the cross-slot floor, in
-STATIONS = [-1.5, -0.875, -0.5625, -0.4375, -0.125, 0.0]
-ZONES = ["round", "flats", "groove", "flats", "round"]
+R = 0.375            # bar radius, in
+FLAT = 0.360         # centreline to each flat, in
+GROOVE = 0.345       # centreline to the cross-slot floor, in
+LENGTH = 1.5         # the bar out of the chuck, in
+FLAT_X = (-0.75, -0.25)        # the 1/4 in tool's centre along each flat
+FLAT_TOOL_R = 0.125
+SLOT_X = (-0.5625, -0.4375)    # the walls of the cross slot
+FACES = [math.pi / 2, math.pi, 3 * math.pi / 2, 0.0]   # the normals: +Z, -Y, -Z, +Y
+SLOT_FACE = 0                  # the cross slot is on the +Z face
 UNIFORM = 96
-
-
-def radius(zone, t):
-    """The section's radius at angle t (y = r cos t, z = r sin t)."""
-    r = R
-    if zone in ("flats", "groove"):
-        c, s = abs(math.cos(t)), abs(math.sin(t))
-        if c > 1e-12:
-            r = min(r, FLAT / c)
-        if s > 1e-12:
-            r = min(r, FLAT / s)
-    if zone == "groove" and math.sin(t) > 1e-12:
-        r = min(r, GROOVE / math.sin(t))
-    return r
+FINE_DEG = 1.0
 
 
 def angles():
-    """Uniform samples plus the exact corners of the flats and the slot."""
-    out = {round(math.tau * k / UNIFORM, 12) for k in range(UNIFORM)}
-    corner = math.acos(FLAT / R)
-    for quarter in range(4):
-        base = quarter * math.pi / 2
-        for t in (base - corner, base + corner):
-            out.add(round(t % math.tau, 12))
-    g = math.asin(GROOVE / R)
-    out.update({round(g, 12), round(math.pi - g, 12)})
-    return sorted(out)
+    """Uniform samples, 1 degree samples on the flats, and the exact edges."""
+    out = {math.tau * k / UNIFORM for k in range(UNIFORM)}
+    half = math.acos(FLAT / R)
+    steps = int(math.degrees(half) / FINE_DEG)
+    for face in FACES:
+        out.update({face - half, face + half})
+        for k in range(-steps, steps + 1):
+            out.add(face + math.radians(k * FINE_DEG))
+    slot = math.acos(GROOVE / R)
+    out.update({FACES[SLOT_FACE] - slot, FACES[SLOT_FACE] + slot})
+    unique = []
+    for t in sorted(a % math.tau for a in out):
+        if not unique or t - unique[-1] > 1e-9:
+            unique.append(t)
+    if unique[-1] - unique[0] > math.tau - 1e-9:
+        unique.pop()
+    return unique
+
+
+def longitude(t):
+    """The ten points of the skin line at angle t, as (x, height, side, face)."""
+    face, side, height = None, 0.0, R
+    for k, normal in enumerate(FACES):
+        d = (t - normal + math.pi) % math.tau - math.pi
+        if abs(d) < math.pi / 4 + 1e-12:
+            face, side, height = k, R * math.sin(d), R * math.cos(d)
+            break
+    floor = min(height, FLAT)
+    if height > FLAT + 1e-12:
+        reach = math.sqrt(max(FLAT_TOOL_R ** 2 - side ** 2, 0.0))
+        x_in, x_out = FLAT_X[0] - reach, FLAT_X[1] + reach
+    else:
+        x_in, x_out = FLAT_X[0] - FLAT_TOOL_R, FLAT_X[1] + FLAT_TOOL_R
+    slot = min(floor, GROOVE) if face == SLOT_FACE else floor
+    rows = [(-LENGTH, height), (x_in, height), (x_in, floor), (SLOT_X[0], floor), (SLOT_X[0], slot),
+            (SLOT_X[1], slot), (SLOT_X[1], floor), (x_out, floor), (x_out, height), (0.0, height)]
+    normal = FACES[face]
+    out = []
+    for x, h in rows:
+        y = h * math.cos(normal) - side * math.sin(normal)
+        z = h * math.sin(normal) + side * math.cos(normal)
+        out.append((x, y, z))
+    return out
 
 
 def build():
-    ts = angles()
-    n = len(ts)
     verts, index, tris = [], {}, []
 
-    def vid(x, r, t):
-        p = (round(x * IN, 6), round(r * math.cos(t) * IN, 6), round(r * math.sin(t) * IN, 6))
-        if p not in index:
-            index[p] = len(verts)
-            verts.append(p)
-        return index[p]
+    def vid(p):
+        key = (round(p[0] * IN, 6) + 0.0, round(p[1] * IN, 6) + 0.0, round(p[2] * IN, 6) + 0.0)
+        if key not in index:
+            index[key] = len(verts)
+            verts.append(key)
+        return index[key]
 
     def tri(a, b, c):
         if a != b and b != c and a != c:
             tris.append((a, b, c))
 
-    for k, zone in enumerate(ZONES):
-        x0, x1 = STATIONS[k], STATIONS[k + 1]
-        for j in range(n):
-            t0, t1 = ts[j], ts[(j + 1) % n]
-            a0, a1 = vid(x0, radius(zone, t0), t0), vid(x0, radius(zone, t1), t1)
-            b0, b1 = vid(x1, radius(zone, t0), t0), vid(x1, radius(zone, t1), t1)
-            tri(a0, b1, b0)
-            tri(a0, a1, b1)
-    # The step between two sections at a station: a ring in the plane of X.
-    for k in range(1, len(ZONES)):
-        x, left, right = STATIONS[k], ZONES[k - 1], ZONES[k]
-        for j in range(n):
-            t0, t1 = ts[j], ts[(j + 1) % n]
-            l0, l1 = vid(x, radius(left, t0), t0), vid(x, radius(left, t1), t1)
-            r0, r1 = vid(x, radius(right, t0), t0), vid(x, radius(right, t1), t1)
-            if radius(left, t0) + radius(left, t1) >= radius(right, t0) + radius(right, t1):
-                tri(r0, l0, l1)   # the left section is larger: the ring faces +X
-                tri(r0, l1, r1)
-            else:
-                tri(l0, r1, r0)   # the right section is larger: the ring faces -X
-                tri(l0, l1, r1)
-    back, front = vid(STATIONS[0], 0.0, 0.0), vid(STATIONS[-1], 0.0, 0.0)
-    for j in range(n):
-        t0, t1 = ts[j], ts[(j + 1) % n]
-        tri(back, vid(STATIONS[0], R, t1), vid(STATIONS[0], R, t0))
-        tri(front, vid(STATIONS[-1], R, t0), vid(STATIONS[-1], R, t1))
+    lines = [[vid(p) for p in longitude(t)] for t in angles()]
+    back, front = vid((-LENGTH, 0.0, 0.0)), vid((0.0, 0.0, 0.0))
+    for j, a in enumerate(lines):
+        b = lines[(j + 1) % len(lines)]
+        for i in range(len(a) - 1):
+            tri(a[i], b[i + 1], a[i + 1])
+            tri(a[i], b[i], b[i + 1])
+        tri(back, b[0], a[0])
+        tri(front, a[-1], b[-1])
     return verts, tris
 
 
@@ -115,7 +128,7 @@ def check(verts, tris):
             seen[e] = seen.get(e, 0) + 1
     for (a, b), count in seen.items():
         if count != 1 or seen.get((b, a), 0) != 1:
-            raise SystemExit(f"open or doubled edge {a}-{b}")
+            raise SystemExit(f"open or doubled edge {verts[a]}-{verts[b]}")
     volume = 0.0
     for a, b, c in tris:
         (ax, ay, az), (bx, by, bz), (cx, cy, cz) = verts[a], verts[b], verts[c]
