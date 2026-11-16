@@ -263,8 +263,12 @@ the header and each section tell the operator it must exist in the
 control's condition table), `G40` rides the `G00` to the threading point, a coordinate always carries its decimal point,
 `M02` ends. It reads no `edm.codes`. It writes a vertical 2-axis cut
 only: taper, 4-axis, a missing G54-G59 and an arc as the first cut are
-refused by name; G92, the tank and flushing T codes and G41 / G42 are
-never written. It was not run on a control; what is unconfirmed is in
+refused by name; G92 and G41 / G42 are never written. The machine's
+`edm.flushing` / `edm.tank` (#1499), when stated, post T84 / T85 and
+T94 / T89 after each threading, before the C word (the manual's Program
+Example 1 order); unstated, nothing is written and the header says so.
+The tank fill / drain, flushing pump and wire-drive T codes are never
+written. It was not run on a control; what is unconfirmed is in
 `docs/decisions/617-sodick-wire-post.md`. Its golden rides under
 `nc/sodick-wire/` (`sodick_wire_post.rs`).
 
