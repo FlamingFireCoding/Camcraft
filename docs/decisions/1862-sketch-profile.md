@@ -112,11 +112,12 @@ The operation has no toolpath, and the post gate refuses it.
 - Each profile is read and chained before any world write. A profile off its
   face, with an unknown unit code or with primitives that do not chain refuses
   the file by name.
-- **`PROJECT_VERSION` 62 -> 63.** A v62 file has no profile row and steps up
-  unchanged. An old reader refuses a v63 file. (A v62 reader also refuses the
-  kind word `sketch`; the version gives the clear message.) PR #2077 and PR
-  #2126 also take v63 at this time. The PR that merges second takes the next
-  number when it merges main.
+- **`PROJECT_VERSION` 63 -> 64.** Main uses v63 for the through-hole
+  `break_through` field from #1557. Profiles use the next version, v64.
+  A v63 file keeps its breakthrough values and steps up unchanged. A v62
+  file still loads through the earlier migration. An older reader refuses
+  a v64 file before it can discard a profile. Dropped: sharing v63 with
+  main, which lets a reader discard a field that controls tool travel.
 
 ### What it costs to change later
 
@@ -154,8 +155,17 @@ The operation has no toolpath, and the post gate refuses it.
 - Keep both `rest_dto` and `sketch_dto` in the project module. They store
   separate data. Dropped: taking either module list alone, which loses the
   other feature's file types.
-- Keep project version 63. Main still writes version 62 after #1817. Its
-  rest parameters are additive optional keys. The new profile row still
-  needs version 63 to make an older reader refuse the file. Dropped: an
-  extra version step without a competing version change. The combined
-  round-trip pin keeps both payloads in one version 63 project.
+- The first refresh kept project version 63 because main still wrote
+  version 62 after #1817. Its rest parameters were additive optional keys.
+  That decision is superseded by the next refresh below.
+
+### PR #2134 breakthrough format refresh
+
+- Merge main's v63 breakthrough format and give profiles v64. Keep both
+  project modules and all breakthrough fields. The v63-to-v64 migration
+  preserves the document data. The v62 migration remains in the chain.
+  Dropped: retaining version 63 for profiles, because two formats with one
+  version let an older reader remove a stated breakthrough on save.
+- Pin a v63 breakthrough file through load, save as v64, and load again.
+  Pin the profile and rest payloads in the v64 round trip. These checks
+  protect the stored travel limit and the profile data together.

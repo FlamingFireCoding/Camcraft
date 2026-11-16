@@ -95,11 +95,17 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
-/// v63 (#1862): a DXF profile is an entity row of kind `sketch`, placed
-/// on the stock of a setup. A v62 file has none and steps up unchanged.
-/// An old reader must refuse a v63 file rather than open a setup without
+/// v63 (#1557): a Drill, Bore or Thread may state its through-hole
+/// break-through (`break_through`). Absent is the kind's default - what
+/// every v62 file posted - so a v62 file steps up unchanged. An old
+/// reader must refuse a v63 file rather than drop a stated break-through
+/// and run the tip its default 1.0 mm past the floor, into what the
+/// user kept it out of.
+/// v64 (#1862): a DXF profile is an entity row of kind `sketch`, placed
+/// on the stock of a setup. A v63 file has none and steps up unchanged.
+/// An old reader must refuse a v64 file rather than open a setup without
 /// the profiles its operations cut.
-pub const PROJECT_VERSION: u32 = 63;
+pub const PROJECT_VERSION: u32 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

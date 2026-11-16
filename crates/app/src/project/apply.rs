@@ -514,8 +514,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
-        // v62 -> v63 (#1862): a DXF profile row arrives; a v62 file has
-        // none, so it steps up unchanged.
+        // v62 -> v63 (#1557): absent break-through keeps the kind's default.
+        // v63 -> v64 (#1862): a DXF profile row arrives; a v63 file has
+        // none, so it steps up unchanged. Stated break-through values
+        // remain unchanged in their parameter DTOs.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
