@@ -484,7 +484,7 @@ pub use program::{
 pub(crate) use program::normalised as normalised_program_info;
 #[path = "posting_units.rs"]
 mod program_unit;
-pub use program_unit::{program_options, unit_word};
+pub use program_unit::{end_units_words, program_options, unit_word};
 
 /// Declared per-post options read from a [`PostRef`]'s `.cps` source (#258).
 pub fn declared_options_for_post(post: &PostRef) -> Result<Vec<DeclaredOption>, String> {

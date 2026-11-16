@@ -100,6 +100,8 @@ mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+// #2172: the bodies stand on the floor of the work envelope.
+mod floor;
 mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;

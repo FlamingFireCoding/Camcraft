@@ -155,7 +155,7 @@ fn pocket_adaptive_is_refused_at_every_door() {
 
     // Direct generator call must also refuse rather than cut Pocket + Adaptive.
     let gen_err = operation::generate(&world, &raw_operation(bad), "")
-        .err().expect("operation::generate must refuse Pocket + Adaptive");
+        .expect_err("operation::generate must refuse Pocket + Adaptive");
     assert!(gen_err.to_string().contains("2D Adaptive"), "generate: {gen_err}");
 
     // MCP add_operation and edit_operation both refuse Pocket + Adaptive.
