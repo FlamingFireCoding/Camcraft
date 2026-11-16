@@ -22,6 +22,24 @@ round a turned part with the allowance of each setup side; when that
 re-fit would leave the stock faces off the mates, the locate is refused
 ("would not land on the mates") instead of posting a stock off its seat.
 
+**The mate check judges each picked face, not the box (review of
+c492f7006).** Equal boxes do not prove a seat: a D20 x H20 cylinder whose
+cap is mated to a vertical stop re-fits upright, and its cap stays
+perpendicular to the stop with the same box. Now, after the box check,
+each picked stock face is placed where the mates put it. The followed
+stock must hold facets that face the same way (unit normals agree within
+`NORMAL_TOL` = 1e-4, about 0.8 degree) and lie on that plane (within
+`LEN_TOL_MM` = 1e-4 mm). These facets must cover the face's area (less at
+most `FACE_AREA_REL_TOL` = 0.1 %) and each centre of its facets. A picked
+stock vertex must be a corner of the followed stock within `LEN_TOL_MM`.
+A rigid carry (identical facets) passes by construction. A failure is
+refused in the command with the stock face, the fixture face and a hint.
+- Dropped: re-fit the stock in the turned frame so that the cap lands.
+  It changes the stock-follow law for every turned part, which is a larger
+  change than this issue.
+- Dropped: compare the outward normal of the face with the same face id
+  on the re-fitted stock. A re-fit can renumber its faces.
+
 **Considered and dropped.**
 - Move the stock alone: it detaches the part from its blank, and every
   stock-relative height and the rest-material model would then be wrong.

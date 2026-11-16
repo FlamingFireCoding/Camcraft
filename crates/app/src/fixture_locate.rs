@@ -30,6 +30,11 @@ mod solve_impl;
 
 pub use solve_impl::{LEN_TOL_MM, LocateOffset, MAX_MATES, NORMAL_TOL, solve};
 
+#[path = "fixture_locate_land.rs"]
+mod land_impl;
+
+pub use land_impl::{FACE_AREA_REL_TOL, stock_lands};
+
 use flecs_ecs::prelude::{Entity, World};
 
 pub use crate::fixture_clash::PENETRATION_MM;
@@ -246,44 +251,6 @@ pub fn stock_carried(world: &World, plan: &Plan) -> Vec<(String, Vec<Triangle>)>
         .and_then(|e| model::world_facets(world, &e))
         .map(|t| vec![(name, t.into_iter().map(|t| fixture_clash::place(t, plan.delta)).collect())])
         .unwrap_or_default()
-}
-
-/// A stock locate moves the part and lets its stock follow (#2173). The
-/// follow must carry the stock exactly where the mates put it: a square
-/// stock that re-fits round a turned part keeps its allowance on each
-/// setup side, and its faces then miss the mates. That is refused by
-/// name, never posted as a stock off its mates. `stocks` are the moved
-/// stock bodies (setup frame) of the part write.
-pub fn stock_lands(world: &World, plan: &Plan, stocks: &[(String, Vec<Triangle>)]) -> Result<(), String> {
-    let name = crate::setup::stock_entity_name(world, plan.setup.as_deref());
-    let want = stock_carried(world, plan);
-    let want = want.iter().find(|(n, _)| *n == name).and_then(|(_, t)| box_of(t));
-    let got = stocks.iter().find(|(n, _)| *n == name).and_then(|(_, t)| box_of(t));
-    let (Some(want), Some(got)) = (want, got) else {
-        return Err(format!("the stock '{name}' does not follow the part - set the stock round the part, or locate the part"));
-    };
-    let off = (0..3).any(|k| (want.0[k] - got.0[k]).abs() > LEN_TOL_MM || (want.1[k] - got.1[k]).abs() > LEN_TOL_MM);
-    if off {
-        return Err(format!(
-            "the stock '{name}' stays square round the part and would not land on the mates - locate it without a turn, or locate the part"
-        ));
-    }
-    Ok(())
-}
-
-/// The (min, max) box of a body; `None` when empty or not finite.
-fn box_of(tris: &[Triangle]) -> Option<([f64; 3], [f64; 3])> {
-    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for p in tris.iter().flat_map(|t| [t.a, t.b, t.c]) {
-        for (k, v) in [p.x, p.y, p.z].into_iter().enumerate() {
-            if !v.is_finite() {
-                return None;
-            }
-            lo[k] = lo[k].min(v);
-            hi[k] = hi[k].max(v);
-        }
-    }
-    (lo[0] <= hi[0]).then_some((lo, hi))
 }
 
 /// Both warnings, joined.

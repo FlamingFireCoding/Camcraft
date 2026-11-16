@@ -36,8 +36,9 @@
 //!   collision check re-judges at the new placement.
 //! - **The stock can be the held body (#2173).** Its faces mate the
 //!   fixture; the part moves and the stock follows it, so the part keeps
-//!   its place in the blank. A follow that leaves the stock off its mates
-//!   is refused by name.
+//!   its place in the blank. A follow that leaves a picked stock face off
+//!   its mate plane (a cylinder re-fitted upright round a turned part) or
+//!   a picked stock corner off its mate is refused by name.
 
 use flecs_ecs::prelude::World;
 
@@ -91,7 +92,7 @@ impl LocatePart {
         };
         // #2173: a stock locate lands only where its stock meets the mates.
         if spec.body == fixture_locate::LocateBody::Stock {
-            fixture_locate::stock_lands(world, &plan, &stocks).map_err(invalid)?;
+            fixture_locate::stock_lands(world, spec, &plan, &stocks).map_err(invalid)?;
         }
         let warning = fixture_locate::join_warnings(
             fixture_locate::interpenetration(world, spec, &plan),
