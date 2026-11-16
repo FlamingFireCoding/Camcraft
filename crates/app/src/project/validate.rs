@@ -201,8 +201,9 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             let Some(op) = &dto.operation else {
                 return Err(corrupt("operation entity without a definition"));
             };
-            // Every operation kind names its library tool.
-            if op.tool.is_empty() {
+            // Legacy Wire Contours stored no tool. Keep that recoverable state;
+            // generation and posting still require an explicit wire tool.
+            if op.tool.is_empty() && !matches!(op.params.to_params(), OpParams::WireContour(_)) {
                 return Err(corrupt(format!("'{}' names no tool", dto.name)));
             }
             if op.label.as_deref().is_some_and(|s| s.trim().is_empty() || s.len() > 120 || s.chars().any(char::is_control)) {

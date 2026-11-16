@@ -220,3 +220,47 @@ fn wire_tool_refuses_machine_wire_list_condition_and_spark_gap_mismatches() {
     h.execute(&world, CreateOperation::new(&world, "Good", "W25", SrcRef::Entity("slug".into()), OpParams::WireContour(wire_op("C25"))).expect("good"));
     assert!(EditOperationLinks::new(&world, "Good", Some("W16"), None).is_err());
 }
+
+#[test]
+fn legacy_wire_project_opens_without_a_tool_and_requires_recovery_before_posting() {
+    use camcraft_app::project;
+
+    let (world, mut h) = doc_with_machine(FIXTURE);
+    h.execute(&world, AddTool::new(&world, "W25", wire_tool(0.25)).expect("wire"));
+    h.execute(&world, CreateOperation::new(&world, "Legacy", "W25", SrcRef::Entity("slug".into()), OpParams::WireContour(wire_op("C110"))).expect("op"));
+    h.execute(&world, GenerateOperation::new(&world, "Legacy").expect("generate"));
+    // Reconstruct the pre-#2011 on-disk layout: same schema version,
+    // condition-owned diameter, an empty tool reference and no tool entity.
+    let mut old: serde_json::Value = serde_json::from_str(&project::save_text(&world).expect("save")).expect("json");
+    let entities = old["entities"].as_array_mut().expect("entities");
+    entities.retain(|e| e["name"] != "W25");
+    let op = entities.iter_mut().find(|e| e["name"] == "Legacy").expect("legacy");
+    op["operation"]["tool"] = serde_json::json!("");
+    assert!(op["operation"]["cache"].is_object(), "fixture includes a cached path");
+    let saved_machine = old["machine"].clone();
+    assert!(saved_machine.is_object(), "fixture retains the machine condition table");
+
+    let loaded = new_world();
+    let notes = project::open_noted(&loaded, &old.to_string()).expect("previously saved wire project opens");
+    assert!(notes.iter().any(|n| n.contains("Legacy") && n.contains("assign a wire tool")), "{notes:?}");
+    let e = model::find_by_name(&loaded, "Legacy").expect("op retained");
+    assert!(model::toolpath_of(&loaded, &e).is_none(), "legacy cache cannot authorize posting");
+    let saved: serde_json::Value = serde_json::from_str(&project::save_text(&loaded).expect("save recovered")).expect("json");
+    assert_eq!(saved["machine"], saved_machine, "condition-owned wire diameter is preserved exactly");
+    let saved_op = saved["entities"].as_array().expect("entities").iter().find(|e| e["name"] == "Legacy").expect("op");
+    assert!(saved_op["operation"]["stamp"].is_null(), "legacy generation stamp is discarded");
+    assert!(GenerateOperation::new(&loaded, "Legacy").is_err(), "no implicit wire tool");
+    let cps = BUILTINS.iter().find(|(n, _)| *n == CPS_ISO).expect("post").1;
+    let out = std::env::temp_dir().join(format!("camcraft-2140-legacy-{}.nc", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    assert!(posting::post_script(&loaded, &out, cps).is_err(), "legacy operation must not post");
+    assert!(!out.exists(), "no NC file before recovery");
+
+    let mut h = History::default();
+    h.execute(&loaded, AddTool::new(&loaded, "Recovered", wire_tool(0.25)).expect("wire"));
+    h.execute(&loaded, EditOperationLinks::new(&loaded, "Legacy", Some("Recovered"), None).expect("assign wire"));
+    h.execute(&loaded, GenerateOperation::new(&loaded, "Legacy").expect("regenerate after recovery"));
+    assert!(posting::post_script(&loaded, &out, cps).is_ok(), "explicit recovery posts");
+    let _ = std::fs::remove_file(&out);
+    project::open(&new_world(), &project::save_text(&loaded).expect("save")).expect("recovered project reopens");
+}
