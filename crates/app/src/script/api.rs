@@ -307,6 +307,15 @@ pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
         None | Some(Value::Null) => None,
         Some(v) => Some(posting::json_map_to_overrides(v)?),
     };
+    if posting::post_options(&env.world).per_op {
+        let (dir, program) = super::report::per_op_target(&to)?;
+        let files = match &cps {
+            None => posting::post_per_op_with_script_options(&env.world, dir, program, extra.as_ref()),
+            Some(text) => posting::post_per_op_script_with_options(&env.world, dir, program, text, extra.as_ref()),
+        }
+        .map_err(|e| e.to_string())?;
+        return Ok(super::report::posted_per_op_view(env, files, with_program));
+    }
     let files = match &cps {
         None => posting::post_mounts_with_script_options(&env.world, &to, extra.as_ref()),
         Some(text) => posting::post_mounts_script_with_options(&env.world, &to, text, extra.as_ref()),

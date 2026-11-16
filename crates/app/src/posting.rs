@@ -253,6 +253,12 @@ pub const MACHINES: &[(&str, &str)] = &[
     // published nose_to_axis, so that one refuses until a setup states it).
     ("Doosan DNM 5700", include_str!("../../../assets/machines/doosan-dnm-3axis.mch")),
     ("Doosan DNM 5700 + rotary table", include_str!("../../../assets/machines/doosan-dnm.mch")),
+    // #1976: public Haas specifications; configurations and sources in docs/decisions/1976-haas-machines.md.
+    ("Haas VF-2", include_str!("../../../assets/machines/haas-vf2.mch")),
+    ("Haas VF-2SS", include_str!("../../../assets/machines/haas-vf2ss.mch")),
+    ("Haas Mini Mill", include_str!("../../../assets/machines/haas-mini-mill.mch")),
+    ("Haas DT-1", include_str!("../../../assets/machines/haas-dt1.mch")),
+    ("Haas DM-1", include_str!("../../../assets/machines/haas-dm1.mch")),
     // #1135: the empty sinker template (no `edm.codes`); pairs with the
     // "Sinker EDM (ISO)" post, which refuses by name until the user fills the codes.
     ("Sinker EDM 3-axis (template)", include_str!("../../../assets/machines/sinker-edm.mch")),
@@ -1108,6 +1114,7 @@ pub fn fixture_findings(world: &World) -> Result<FixtureFindings, String> {
 /// through one script without the verification gate, which the
 /// posting suites lock separately - the golden locks the translation.
 pub fn stream_records(world: &World) -> Result<Vec<cnc::Record>, String> {
+    mounts::refuse_per_op(world, "one combined stream")?;
     Ok(join_streams(op_streams(world)?))
 }
 
