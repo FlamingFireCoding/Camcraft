@@ -51,6 +51,7 @@ pub(crate) enum Tab {
     Browser,
     Properties,
     Machines,
+    AiChat,
     Tools,
 }
 
@@ -61,6 +62,7 @@ impl Tab {
             Tab::Browser => "Browser",
             Tab::Properties => "Properties",
             Tab::Machines => "Machines",
+            Tab::AiChat => "AI Chat",
             Tab::Tools => "Tool library",
         }
     }
@@ -264,6 +266,7 @@ impl TabViewer for ShellTabs<'_> {
                 let pal = theme::current();
                 machines_pane::draw(ui, self.state, &pal);
             }
+            Tab::AiChat => super::ai_chat::draw(ui, self.state),
         }
     }
 }

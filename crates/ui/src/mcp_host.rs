@@ -9,25 +9,41 @@ use crate::state::State;
 /// Answer every waiting request. Safe to call every frame; never blocks
 /// (each agent waits for its answer, so there is rarely more than one).
 pub fn pump(state: &mut State) {
-    let Some(inbox) = state.mcp.as_ref() else {
-        return;
-    };
-    let waiting: Vec<_> = std::iter::from_fn(|| inbox.next()).collect();
+    let waiting: Vec<_> = state
+        .mcp
+        .as_ref()
+        .map_or_else(Vec::new, |inbox| std::iter::from_fn(|| inbox.next()).collect());
     for request in waiting {
-        let answer = camcraft_app::mcp::answer_live(
-            &state.world,
-            &mut state.history,
-            state.project_path.as_deref(),
-            request.line(),
-        );
-        if let Some(tool) = &answer.tool {
-            // A tool may have changed the document: every view keyed on
-            // the document version refetches, the same as after an undo.
-            state.doc_version += 1;
-            state.status = format!("agent: {tool}");
-        }
-        request.answer(answer.reply);
+        answer_request(state, request, false);
     }
+    let ai_waiting: Vec<_> = state
+        .ai_mcp_inbox
+        .as_ref()
+        .map_or_else(Vec::new, |inbox| std::iter::from_fn(|| inbox.next()).collect());
+    for request in ai_waiting {
+        answer_request(state, request, true);
+    }
+}
+
+fn answer_request(state: &mut State, request: camcraft_app::mcp::Request, track_ai_turn: bool) {
+    let before_done = state.history.done_len();
+    let answer = camcraft_app::mcp::answer_live(
+        &state.world,
+        &mut state.history,
+        state.project_path.as_deref(),
+        request.line(),
+    );
+    if track_ai_turn {
+        let delta = state.history.done_len().saturating_sub(before_done);
+        state.ai_chat.note_mcp_execution(delta);
+    }
+    if let Some(tool) = &answer.tool {
+        // A tool may have changed the document: every view keyed on
+        // the document version refetches, the same as after an undo.
+        state.doc_version += 1;
+        state.status = format!("agent: {tool}");
+    }
+    request.answer(answer.reply);
 }
 
 /// The status strip's note while the server listens, so the user can

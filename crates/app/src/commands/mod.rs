@@ -277,6 +277,12 @@ impl History {
         !self.redo.is_empty()
     }
 
+    /// Number of committed commands currently on the undo stack.
+    #[must_use]
+    pub fn done_len(&self) -> usize {
+        self.done.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.done.is_empty() && self.redo.is_empty()
     }
