@@ -93,7 +93,27 @@
    bridge crosses the run end), and a closed lap started beside the last
    pass (its join still reads over the bite). The crossing law, the load
    law, the bite, the rim and the budget were not changed.
-9. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
+9. **Round H: the trim at the outermost wall lap is dropped.** The open
+   runs were cut where they leave `center.offset(-2 * 0.9 * w)`, and the
+   wall laps took the rest. Then no lap meets a run end and each lap is one
+   whole piece per region (7 lap pieces, no split). But the first lap
+   then reads 0.2437 of D at (-32.69, 18.66) and its two mirror points,
+   over the bound 0.1538. There the first open front runs almost parallel
+   to the part wall: the trim drops a long stretch of that front, and the
+   lap then meets that stretch ahead of the disc, near a slot. The run
+   ends read 0.1740. Without the lead-out the run ends read 0.2209 and the
+   lap is unchanged. The level would fall back by name, so the trim is
+   not kept. A closed last lap started next to the end of the pass before
+   it (gap 1.32 mm, not 7.59 mm) is still a hop: the join enters the
+   0.9 w of stock that the lap takes. Reading after round H: 10 hops
+   (budget 8), worst load 0.1538, rest 0.0000, unchanged from round G.
+   The two D plate pins stay ignored. The maintainer's limit of two more
+   rounds (G and H) is used; the next step is his decision. Open options:
+   a lap that is held off the wall by the distance of the nearest cut
+   front (not a fixed share of w), or a join law that may cross a run end
+   on the cleared floor. Each one is new design work. No check, bound or
+   budget was changed.
+10. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
    shares the open-side footprint, but its levels were not read with the
    air planner.
 
