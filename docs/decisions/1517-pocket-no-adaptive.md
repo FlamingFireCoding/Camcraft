@@ -1,0 +1,16 @@
+## #1517 - Adaptive clearing lives in the Adaptive operations only (retire Adaptive from 2D Pocket)
+
+### What was decided
+- **2D Pocket UI & parameter doors**: Removed `"Adaptive"` from 2D Pocket's `strategy_names()` combo list (`crates/ui/src/operations.rs`) and `mill2d_page.rs` (`strategy3d_names()` keeps `"Adaptive"` for 3D Pocket / Multi-axis Rough / Rotary Offset until `#1591`). Refused `OpParams::Pocket { strategy: PocketStrategy::Adaptive, .. }` by name (`POCKET_ADAPTIVE_RETIRED`, pointing to `2D Adaptive`) in `OpParams::named_refusal`, `OpParams::is_sane`, `CreateOperation`, `EditOperationParams`, `PasteOperation`, `ChangeOperationKind`, MCP (`add_operation` / `edit_operation`), script, and `operation::generate`.
+- **Pre-v65 migration (`PROJECT_VERSION` 64 -> 65)**: Added `pocket_adaptive_migrate::settle` on load for `< 65` files (`ParamsDto::Pocket { strategy: StrategyDto::Adaptive, .. }` -> `ParamsDto::Adaptive2D { method: Spiral, .. }`), preserving geometry, heights, feeds, entry, `helix_radius`, `optimal_load` (including legacy `max_engagement`), `blend_turns`, `blend_radius`, `tilt`, and `links` while clearing the old Pocket stamp digest. Version 65+ files carrying `Pocket` with `strategy: "adaptive"` are refused as corrupt.
+- **Un-carriable fields & `"needs review"` gate**: Dropped `rest` and `links.approach.predrilled` when migrating `Pocket + Adaptive` to `Adaptive2D` (dropping any old cache), emitted load notes (`open_noted`, surfaced in GUI status & `open_project` / `cam.load` JSON), stored dropped parameter descriptions in persisted `OperationMeta::needs_review` (`OperationDto::needs_review`), blocked `posting::program_ops`, `verification_report_by`, and MCP `verify`/`post` until cleared, surfaced `"needs review"` + `BadgeWarning` on the browser row (`browser_tree.rs`) and `"Mark reviewed"` banner on the operation page (`op_page.rs`), and added undoable `MarkOperationReviewed` + MCP `mark_operation_reviewed` (`SKILL.md` updated).
+
+### Why
+- Maintaining two entry points for 2D HSM clearing (`2D Pocket + Adaptive` vs `2D Adaptive`) confused users after `#1509` added `Method` (`Spiral | Trochoidal`) exclusively on `2D Adaptive`.
+- Bumping `PROJECT_VERSION` to 65 prevents older builds from opening migrated files without honoring the persisted `needs_review` posting block.
+- Storing `needs_review` in `OperationMeta` keeps it preserved across rename, reorder, setup moves, delete/undo, and project save/load, and gives users an explicit undoable sign-off before posting rather than silently altering toolpaths.
+
+### Considered and dropped
+- **Keeping `Pocket + Adaptive` silently as an alias on file load without changing the operation kind**: dropped because saved documents would keep opening as `2D Pocket` with no strategy option in the UI and no `Method` choice.
+- **Silently dropping `rest` or `predrilled` on load without blocking posting**: dropped because a migrated operation would otherwise post a full-pocket path or plunge into un-drilled stock without warning the machinist.
+- **Removing `PocketStrategy::Adaptive` from the Rust enum**: dropped because `Pocket3D`, `MultiAxisRough`, `RotaryOffset`, and `Adaptive2D`'s internal `machining2d::pocket` path still share `PocketStrategy::Adaptive` (3D Adaptive `Method` is tracked separately under `#1591`).
