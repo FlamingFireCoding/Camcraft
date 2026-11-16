@@ -132,4 +132,7 @@ fn the_work_offset_control_is_on_the_wcs_page_and_not_the_setup_page() {
     crate::actions::target(&mut h.state_mut().state, UiTarget::Wcs);
     h.run_steps(3);
     assert_eq!(combos(&h), 1, "the WCS page has the work offset combo");
+    // The row label carries no Setup-page indent inside its own group.
+    assert_eq!(h.query_all_by_label("Work offset").count(), 1, "one plain row label");
+    assert!(h.query_all_by_label("    Work offset").next().is_none(), "no indented row label");
 }
