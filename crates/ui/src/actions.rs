@@ -154,7 +154,7 @@ pub(crate) fn ensure_field_view(state: &mut State) {
         return;
     }
     if let Err(err) = follow_playhead(state, judged) {
-        state.status += &format!(" | traced playback refused: {err} - the sheet stands");
+        state.status += &format!(" | stock simulation refused: {err} - the stock shows uncut");
         state.field_play = None;
         state.field_view = Some(Err(err));
     }

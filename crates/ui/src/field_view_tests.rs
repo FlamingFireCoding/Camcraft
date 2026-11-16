@@ -22,7 +22,7 @@ fn a_refused_playback_is_said_once_and_retired_with_the_transport() {
     state.sim = Some(Sim::new()); // an empty document: no stock to cut
     ensure_field_view(&mut state);
     assert!(matches!(state.field_view, Some(Err(_))), "no stock is a named refusal");
-    assert!(state.status.contains("traced playback refused"), "{}", state.status);
+    assert!(state.status.contains("stock simulation refused"), "{}", state.status);
     let said = state.status.clone();
     ensure_field_view(&mut state);
     assert_eq!(state.status, said, "the same state is not re-walked or re-said");

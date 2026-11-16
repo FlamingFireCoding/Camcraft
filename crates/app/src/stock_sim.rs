@@ -283,9 +283,22 @@ pub(crate) fn bull_corner(tool: &crate::tools::Tool) -> Result<Option<f64>, Stri
 /// The program in posting order, each op resolved to its tool's atom
 /// - the one plan both the column verdict and the field eye walk.
 pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Planned>, String> {
-    use crate::{model, posting};
+    plan_ops(world, &crate::posting::program_ops(world)?)
+}
 
-    let ops = posting::program_ops(world)?;
+/// The playback's plan (#2280): [`plan_program`] up to the first op
+/// with no toolpath, and that op and every op after it, in program
+/// order (empty when every op has a toolpath). The verdict and the
+/// post never read this: they keep `plan_program`, which refuses.
+pub(crate) fn plan_program_until_ungenerated(
+    world: &flecs_ecs::prelude::World,
+) -> Result<(Vec<Planned>, Vec<(String, flecs_ecs::prelude::Entity)>), String> {
+    let (ops, rest) = crate::posting::program_ops_until_ungenerated(world)?;
+    Ok((plan_ops(world, &ops)?, rest))
+}
+
+fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelude::Entity)]) -> Result<Vec<Planned>, String> {
+    use crate::model;
 
     // Tools and cached paths, resolved once, in program order. The
     // atom follows the tool kind (stage A's law): a ball nose sweeps
@@ -298,7 +311,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
     // and a tap sweeps the disc of its thread's core (#266,
     // `tool_law::cutting_radius`).
     let mut planned: Vec<Planned> = Vec::with_capacity(ops.len());
-    for (name, e) in &ops {
+    for (name, e) in ops {
         let op = model::operation_of(world, e)
             .ok_or_else(|| format!("{name}: lost its operation"))?;
         if wire::skips(&op) {
