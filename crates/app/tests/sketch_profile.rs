@@ -372,3 +372,28 @@ fn deleting_the_entity_frees_its_drawing() {
     model::remove(&world, &entity);
     assert!(drawing.upgrade().is_none(), "deleting the entity frees the drawing");
 }
+
+#[test]
+fn stock_source_word_is_reserved_for_explicit_profile_names_and_file_stems() {
+    for spelling in ["stock", "STOCK", "sToCk"] {
+        let (world, mut history) = sheet_world();
+        let drawing = dxf_text(Some(4));
+        let before = camcraft_app::project::save_text(&world).expect("save before refusal");
+        let options = DxfOptions { name: Some(spelling.into()), ..Default::default() };
+        let why = refusal(ImportDxf::from_bytes(&world, None, "plate.dxf", drawing.as_bytes(), &options), "reserved name");
+        assert!(why.contains(spelling) && why.contains("not a usable name for a DXF profile"), "{why}");
+        assert_eq!(camcraft_app::project::save_text(&world).expect("save after refusal"), before);
+
+        // A reserved file stem uses a safe fallback, with the profile still addressable.
+        let cmd = ImportDxf::from_bytes(&world, None, &format!("{spelling}.dxf"), drawing.as_bytes(), &DxfOptions::default())
+            .expect("a reserved stem gets a safe name");
+        let name = cmd.name().to_owned();
+        assert_eq!(name, "profile");
+        history.execute(&world, cmd);
+        assert!(sketch::find(&world, &name).is_some());
+        let contour = operation::seed_params(OpType::Contour.ordinal());
+        run(&world, &mut history, CreateOperation::new(&world, "Cut", TOOL, SrcRef::Entity(name), contour), "profile operation");
+        let why = refusal(GenerateOperation::new(&world, "Cut"), "profile generation");
+        assert!(why.contains("DXF profile 'profile'") && why.contains("is not generated yet"), "{why}");
+    }
+}

@@ -188,3 +188,44 @@ fn a_corrupt_profile_row_refuses_the_file_by_name() {
     // The untouched file still opens.
     reopened(&file.to_string());
 }
+
+fn assert_overflowing_profile_summary_refused(empty: bool) {
+    let text = saved(&sheet_job());
+    let (mut corrupt, row) = file_and_row(&text);
+    corrupt["entities"][row]["sketch"]["skipped"] = json!({ "TEXT": usize::MAX, "DIMENSION": 1 });
+    if empty {
+        corrupt["entities"][row]["sketch"]["primitives"] = json!([]);
+    }
+    let why = refused(&corrupt);
+    assert!(why.contains("DXF profile 'plate'") && why.contains("invalid DXF import summary"), "{why}");
+
+    // A failed open must also leave an existing document intact.
+    let existing = sheet_job();
+    let before = saved(&existing);
+    let why = project::open(&existing, &corrupt.to_string()).expect_err("invalid summary must refuse").to_string();
+    assert!(why.contains("invalid DXF import summary"), "{why}");
+    assert_eq!(saved(&existing), before, "a refusal made no world writes");
+}
+
+#[test]
+fn overflowing_profile_summary_refuses_before_world_writes() {
+    assert_overflowing_profile_summary_refused(false);
+}
+
+#[test]
+fn overflowing_empty_profile_summary_refuses_before_world_writes() {
+    assert_overflowing_profile_summary_refused(true);
+}
+
+#[test]
+fn valid_stored_profile_summary_loads_and_get_job_reports_its_total() {
+    let (mut file, row) = file_and_row(&saved(&sheet_job()));
+    file["entities"][row]["sketch"]["skipped"] = json!({ "TEXT": 2, "DIMENSION": 1 });
+    let world = reopened(&file.to_string());
+    let request = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "get_job", "arguments": {} } });
+    let answer = camcraft_app::mcp::answer_live(&world, &mut History::default(), None, &request.to_string());
+    let reply: Value = serde_json::from_str(&answer.reply.expect("get_job responds")).expect("JSON reply");
+    assert_ne!(reply["result"]["isError"], json!(true), "{reply}");
+    assert_eq!(reply["result"]["structuredContent"]["profiles"][0]["skipped_total"], json!(3));
+    assert_eq!(reply["result"]["structuredContent"]["profiles"][0]["skipped"], json!({ "TEXT": 2, "DIMENSION": 1 }));
+}

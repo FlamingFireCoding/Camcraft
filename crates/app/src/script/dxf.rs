@@ -31,7 +31,7 @@ pub(crate) fn profile_view(world: &World, name: &str) -> Option<Value> {
     let data = &profile.data;
     let units = data.units();
     let chains = data.chains();
-    let skipped: usize = data.summary().skipped.values().sum();
+    let skipped = data.skipped_total();
     let (x, y, angle) = crate::model::transform_of(world, &entity).and_then(sketch::face_placement).unwrap_or_default();
     let pose = sketch::world_pose(world, &entity);
     let stated = match units.stated {

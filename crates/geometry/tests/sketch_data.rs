@@ -129,3 +129,37 @@ fn arc_bounds_count_the_axis_extremes_the_sweep_passes() {
     common::near(hi2.y, hi.y);
     assert!(bounds(&[]).is_none());
 }
+
+#[test]
+fn invalid_summary_counts_are_refused_by_both_sketch_constructors() {
+    use camcraft_geometry::dxf::{ImportSummary, Limits};
+    use std::collections::BTreeMap;
+
+    let limits = Limits::default();
+    let summaries = [
+        ImportSummary { entities: limits.max_entities + 1, ..Default::default() },
+        ImportSummary { vertices: limits.max_vertices + 1, ..Default::default() },
+        ImportSummary { skipped: BTreeMap::from([("TEXT".into(), limits.max_entities + 1)]), ..Default::default() },
+        ImportSummary { skipped: BTreeMap::from([("TEXT".into(), limits.max_entities), ("DIMENSION".into(), 1)]), ..Default::default() },
+        ImportSummary { skipped: BTreeMap::from([("TEXT".into(), usize::MAX), ("DIMENSION".into(), 1)]), ..Default::default() },
+    ];
+    for summary in summaries {
+        for empty in [false, true] {
+            let mut doc = parse(&drawing(Some(4))).expect("drawing parses");
+            doc.summary = summary.clone();
+            if empty {
+                doc.primitives.clear();
+            }
+            let why = SketchData::from_parts(
+                doc.primitives.clone(),
+                doc.layers.iter().map(|l| l.name.clone()).collect(),
+                SourceUnits { stated: doc.units, applied: Unit::Millimeters },
+                None,
+                doc.summary.clone(),
+            ).expect_err("stored summary counts must be checked");
+            assert!(why.to_string().contains("invalid DXF import summary"), "{why}");
+            let why = SketchData::from_dxf(doc, None, None).expect_err("parsed summary counts must be checked");
+            assert!(why.to_string().contains("invalid DXF import summary"), "{why}");
+        }
+    }
+}

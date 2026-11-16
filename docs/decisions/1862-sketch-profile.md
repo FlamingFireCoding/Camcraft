@@ -127,3 +127,24 @@ The operation has no toolpath, and the post gate refuses it.
   gets one arm; operations saved before that keep the refusal until then.
 - A profile on a different stock face (a side, the bottom) needs a face
   choice on `Sketch` and in the file.
+
+### PR #2134 review fixes
+
+- **Reserve the stock source word without regard to letter case.** Explicit
+  profile names such as `stock` and `STOCK` are refused. The same file stems
+  use the existing `profile` fallback and unique-name handling. The MCP
+  source reader treats these words as stock, so accepting them as profile
+  names could silently select different geometry. Dropped: accepting
+  ambiguous aliases or changing the source-reference format for this fix.
+  An unambiguous source-reference format later needs coordinated changes to
+  the source reader and its callers.
+- **Validate summary counts in both `SketchData` constructors.** Entity and
+  vertex counts must fit the default DXF import limits. The skipped counts
+  are added with checked arithmetic, and their total must fit the entity
+  limit. This check runs before the empty-drawing refusal. The validated
+  total is retained for `profile_view`, so it never adds untrusted counts.
+  Invalid stored summaries become the existing project error naming the
+  profile before any world write. Dropped: unchecked addition, a panic, or
+  saturating addition that hides invalid saved data. Changing these limits
+  later requires changing the constructor validation and its pins; no new
+  project field or version is needed for the derived total.

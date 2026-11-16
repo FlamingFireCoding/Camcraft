@@ -11,7 +11,7 @@
 //! so a `SketchData` cannot carry chains that its primitives do not give. This module has no
 //! file I/O and no application state.
 
-use crate::dxf::{Document, ImportSummary, LayeredPrimitive, Primitive, Unit, Units};
+use crate::dxf::{Document, ImportSummary, LayeredPrimitive, Limits, Primitive, Unit, Units};
 use crate::geo2d::Point2;
 use crate::sketch_chains::{ChainError, ChainOptions, DEFAULT_JOIN_TOLERANCE, SketchChains, chain};
 use std::collections::BTreeSet;
@@ -34,6 +34,8 @@ pub enum SketchError {
         "the DXF file has no line, arc or circle to place ({skipped} other entities were skipped)"
     )]
     Empty { skipped: usize },
+    #[error("invalid DXF import summary: counts or skipped total exceed the import limits")]
+    InvalidSummary,
     #[error(transparent)]
     Chain(#[from] ChainError),
 }
@@ -72,6 +74,7 @@ pub struct SketchData {
     join_tolerance: f64,
     chains: SketchChains,
     summary: ImportSummary,
+    skipped_total: usize,
 }
 
 impl SketchData {
@@ -83,10 +86,9 @@ impl SketchData {
         unit_override: Option<Unit>,
         join_tolerance: Option<f64>,
     ) -> Result<SketchData, SketchError> {
+        let skipped = checked_summary(&doc.summary)?;
         if doc.primitives.is_empty() {
-            return Err(SketchError::Empty {
-                skipped: doc.summary.skipped.values().sum(),
-            });
+            return Err(SketchError::Empty { skipped });
         }
         let applied = match (unit_override, doc.units) {
             (Some(unit), _) | (None, Units::Known(unit)) => unit,
@@ -118,9 +120,10 @@ impl SketchData {
         join_tolerance: Option<f64>,
         summary: ImportSummary,
     ) -> Result<SketchData, SketchError> {
+        let skipped_total = checked_summary(&summary)?;
         if primitives.is_empty() {
             return Err(SketchError::Empty {
-                skipped: summary.skipped.values().sum(),
+                skipped: skipped_total,
             });
         }
         let join_tolerance = join_tolerance.unwrap_or(DEFAULT_JOIN_TOLERANCE);
@@ -136,6 +139,7 @@ impl SketchData {
             join_tolerance,
             chains,
             summary,
+            skipped_total,
         })
     }
 
@@ -166,9 +170,34 @@ impl SketchData {
         &self.summary
     }
 
+    /// The skipped count, checked before this sketch was constructed.
+    pub fn skipped_total(&self) -> usize {
+        self.skipped_total
+    }
+
     /// The extents of the primitives in millimetres, arcs included exactly.
     pub fn bounds(&self) -> Option<(Point2, Point2)> {
         bounds(&self.primitives)
+    }
+}
+
+/// Stored summaries are untrusted, just like the source DXF counts. Validate before
+/// even the empty-drawing refusal adds counts, and keep readers free of unchecked sums.
+fn checked_summary(summary: &ImportSummary) -> Result<usize, SketchError> {
+    let limits = Limits::default();
+    let skipped = summary
+        .skipped
+        .values()
+        .try_fold(0_usize, |total, &count| total.checked_add(count));
+    match skipped {
+        Some(total)
+            if summary.entities <= limits.max_entities
+                && summary.vertices <= limits.max_vertices
+                && total <= limits.max_entities =>
+        {
+            Ok(total)
+        }
+        _ => Err(SketchError::InvalidSummary),
     }
 }
 

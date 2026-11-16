@@ -136,7 +136,7 @@ fn check_extension(path: &Path) -> Result<(), CommandError> {
 /// name taken from the file's stem is made unique (`part`, `part (2)`),
 /// so one drawing can be placed more than once.
 fn profile_name(world: &World, path: &Path, stated: Option<&str>) -> Result<String, CommandError> {
-    let reserved = |n: &str| n == STOCK_NAME || LEGACY_WCS_NAMES.contains(&n) || crate::setup::is_furniture_shape(n);
+    let reserved = |n: &str| n.eq_ignore_ascii_case(STOCK_NAME) || LEGACY_WCS_NAMES.contains(&n) || crate::setup::is_furniture_shape(n);
     if let Some(name) = stated {
         if name.trim().is_empty() || reserved(name) {
             return Err(CommandError::Invalid(format!("'{name}' is not a usable name for a DXF profile")));
