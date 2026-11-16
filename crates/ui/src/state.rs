@@ -373,7 +373,7 @@ pub enum CommandKind {
         src: SrcRef,
         params: OpParams,
     },
-    PasteOperation { name: String, operation: OperationDef },
+    PasteOperation { name: String, operation: OperationDef, needs_review: Vec<String> },
     /// The properties page's parameter draft.
     EditOperationParams {
         name: String,
@@ -1525,6 +1525,7 @@ impl PanelsOpen {
 /// toolpaths are intentionally absent: Paste creates a fresh operation.
 #[derive(Clone)]
 pub struct OperationClipboard {
+    pub needs_review: Vec<String>,
     pub label: String,
     pub operation: OperationDef,
 }
@@ -2866,7 +2867,10 @@ impl State {
             return;
         };
         let label = model::operation_label(&self.world, name, &entity);
-        self.operation_clipboard = Some(OperationClipboard { label: label.clone(), operation });
+        self.operation_clipboard = Some(OperationClipboard {
+            label: label.clone(), operation,
+            needs_review: model::operation_meta_of(&self.world, &entity).needs_review,
+        });
         self.status = format!("copied operation {label}");
     }
 
@@ -2892,7 +2896,7 @@ impl State {
             };
             suffix = next;
         };
-        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation });
+        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation, needs_review: clip.needs_review });
     }
 
     /// Names of the tool entities, in document order.
@@ -3454,8 +3458,8 @@ impl State {
                     );
                 }
             },
-            CommandKind::PasteOperation { name, operation } => {
-                match PasteOperation::new(&self.world, &name, operation) {
+            CommandKind::PasteOperation { name, operation, needs_review } => {
+                match PasteOperation::new(&self.world, &name, operation, needs_review) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         History::execute_ephemeral(&self.world, SelectEntity::new(&self.world, Some(name.as_str())));

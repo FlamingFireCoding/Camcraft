@@ -140,7 +140,7 @@ fn pocket_adaptive_is_refused_at_every_door() {
         .err().expect("CreateOperation must refuse Pocket + Adaptive");
     assert!(err.to_string().contains("2D Adaptive"), "CreateOperation: {err}");
 
-    let err = PasteOperation::new(&world, "P_copy", raw_operation(bad.clone()))
+    let err = PasteOperation::new(&world, "P_copy", raw_operation(bad.clone()), Vec::new())
         .err().expect("PasteOperation must refuse Pocket + Adaptive");
     assert!(err.to_string().contains("2D Adaptive"), "PasteOperation: {err}");
 
@@ -229,18 +229,13 @@ fn v63_pocket_adaptive_opens_as_adaptive2d_with_identical_toolpath() {
     history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate migrated"));
     let migrated_cl = gen_to_cltext(&model::toolpath_of(&world, &e).expect("path").path);
 
-    let (w2, mut h2) = setup_world();
-    h2.execute(
-        &w2,
-        CreateOperation::new(&w2, "A1", "EM-0400-2FL", SrcRef::Stock, op.params.clone())
-            .expect("create Adaptive2D"),
-    );
-    h2.execute(&w2, GenerateOperation::new(&w2, "A1").expect("generate fresh"));
-    let e2 = model::find_by_name(&w2, "A1").expect("fresh op");
-    let fresh_cl = gen_to_cltext(&model::toolpath_of(&w2, &e2).expect("path").path);
+    // Recorded by opening this unchanged v63 fixture with the old Pocket+Adaptive
+    // generator at a529c455352d8c2d228e3dd83d0e5d42a91ea9b0 (the parent of
+    // #1517's retirement commit). This expectation never reads migrated params.
     assert_eq!(
-        migrated_cl, fresh_cl,
-        "migrated v63 Pocket+Adaptive must generate byte-identical CL to 2D Adaptive (Spiral)"
+        migrated_cl,
+        include_str!("golden/pocket_adaptive_v63.cl"),
+        "migration must preserve the independent legacy Pocket+Adaptive CL record"
     );
 
     let path: PathBuf =

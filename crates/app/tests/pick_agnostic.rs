@@ -329,11 +329,11 @@ fn block_with_boss() -> Mesh {
     Mesh::from_facets(f)
 }
 
-/// The island law (M11.4 A) under each of `strategies`: the floor face,
+/// The island law (M11.4 A) under each of `plans`: the floor face,
 /// the rim runs at the mouth and at the floor, and face + rim cut the
 /// same bytes, and no feed below the boss top enters its tool-grown
 /// footprint.
-fn island_law(strategies: &[PocketStrategy]) {
+fn island_law(plans: &[OpParams]) {
     let (world, name) = world_with(ImportModel::from_mesh("part", block_with_boss()), 0.0, 20.0);
     // The pocket's floor face (half-width 18: circumradius 25.46) - its
     // loops carry the boss as a hole.
@@ -370,19 +370,18 @@ fn island_law(strategies: &[PocketStrategy]) {
         ("floor rim runs".to_owned(), floor),
         ("face + mouth rim".to_owned(), with_face),
     ];
-    for &strategy in strategies {
-        let params = pocket(strategy, 20.0, 5.0);
-        identical_spellings(&world, &name, &spelled, &params);
+    for params in plans {
+        identical_spellings(&world, &name, &spelled, params);
         // No feed with its center over the boss's tool-grown footprint
         // below the boss top (r = 5 tool around a 3 mm half-width boss).
-        let (t, _) = generate(&world, &name, &[face], &params).expect("generates");
+        let (t, _) = generate(&world, &name, &[face], params).expect("generates");
         // Distance from a center to the boss square; the tool edge must
         // stand off it by the radius (the arc fitter's 0.01 band aside).
         let off = |x: f64, y: f64| (x.abs() - 3.0).max(0.0).hypot((y.abs() - 3.0).max(0.0));
         for m in t.moves.iter().filter(|m| m.kind == MoveKind::Feed && m.to.z < 12.0) {
             assert!(
                 off(m.to.x, m.to.y) >= 5.0 - 0.011,
-                "{strategy:?}: feed into the boss at {:?}",
+                "{params:?}: feed into the boss at {:?}",
                 m.to
             );
         }
@@ -393,7 +392,7 @@ fn island_law(strategies: &[PocketStrategy]) {
 /// the boss standoff, in seconds.
 #[test]
 fn a_face_with_an_island_and_its_rim_loop_cut_the_same_bytes_around_the_boss() {
-    island_law(&[PocketStrategy::Zigzag]);
+    island_law(&[pocket(PocketStrategy::Zigzag, 20.0, 5.0)]);
 }
 
 /// Heavy lane: the island law under the HSM Adaptive plan too (five plans
@@ -402,7 +401,9 @@ fn a_face_with_an_island_and_its_rim_loop_cut_the_same_bytes_around_the_boss() {
 #[test]
 #[ignore = "heavy lane: HSM adaptive around the boss island, five plans, ~12 min debug"]
 fn a_face_with_an_island_and_its_rim_loop_cut_the_same_bytes_around_the_boss_full() {
-    island_law(&[PocketStrategy::OffsetRings, PocketStrategy::Zigzag]);
+    let plans = [adaptive2d(20.0, 5.0), pocket(PocketStrategy::Zigzag, 20.0, 5.0)];
+    assert!(matches!(plans[0], OpParams::Adaptive2D { .. }), "the heavy island law must exercise Adaptive2D");
+    island_law(&plans);
 }
 
 #[test]

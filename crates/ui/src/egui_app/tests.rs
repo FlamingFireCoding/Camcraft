@@ -5134,3 +5134,19 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
 
 mod review_1710_evidence;
 
+
+#[test]
+fn clipboard_keeps_review_notes_after_source_is_deleted() {
+    let mut shell = ShellUi::seeded();
+    let source = model::find_by_name(&shell.state.world, "Contour1").expect("source");
+    let mut meta = model::operation_meta_of(&shell.state.world, &source);
+    meta.needs_review = vec!["Legacy rest settings were dropped".into()];
+    source.entity_view(&shell.state.world).set(meta.clone());
+    shell.state.copy_operation("Contour1");
+    shell.state.history.execute(&shell.state.world,
+        camcraft_app::commands::DeleteOperation::new(&shell.state.world, "Contour1").expect("delete source"));
+    shell.state.paste_operation();
+    shell.state.drain_actions();
+    let copy = model::find_by_name(&shell.state.world, "Contour1 Copy").expect("copy");
+    assert_eq!(model::operation_meta_of(&shell.state.world, &copy).needs_review, meta.needs_review);
+}

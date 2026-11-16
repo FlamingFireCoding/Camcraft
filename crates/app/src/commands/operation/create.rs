@@ -169,7 +169,12 @@ pub struct PasteOperation {
 }
 
 impl PasteOperation {
-    pub fn new(world: &World, name: &str, mut operation: Operation) -> Result<Self, CommandError> {
+    pub fn new(
+        world: &World,
+        name: &str,
+        mut operation: Operation,
+        needs_review: Vec<String>,
+    ) -> Result<Self, CommandError> {
         if name.trim().is_empty() || model::find_by_name(world, name).is_some() {
             return Err(CommandError::NameConflict(name.to_owned()));
         }
@@ -203,7 +208,7 @@ impl PasteOperation {
         Ok(Self {
             name: name.to_owned(),
             operation,
-            meta: OperationMeta { label: None, order: Some(order), needs_review: Vec::new() },
+            meta: OperationMeta { label: None, order: Some(order), needs_review },
             reordered,
         })
     }
