@@ -2,7 +2,8 @@
 //! in `camcraft_geometry`.
 //!
 //! Gate map (M4.4): covers camcraft_geometry::dxf (writer + annotations),
-//! camcraft_geometry::dxf_profile, camcraft_geometry::profile_mesh.
+//! camcraft_geometry::dxf_profile, camcraft_geometry::profile_mesh,
+//! camcraft_geometry::sketch_chains.
 //! Provenance: hand-built ASCII DXF fixtures and closed-solid invariants.
 
 use std::collections::HashMap;
@@ -149,6 +150,17 @@ fn extruded_fixture_reads_closed_profile_and_depth_from_annotation_or_arg() {
     let (prof2, depth2) = extruded_from_dxf(written.as_bytes(), None).expect("re-read exported DXF");
     assert!((depth2 - depth).abs() < 1e-6);
     assert_eq!(prof2.points.len(), prof.points.len());
+
+    // The exported fixture outline also remains usable by the sketch-chain API.
+    let doc = parse(written.as_bytes()).expect("parse exported fixture outline");
+    let chains = camcraft_geometry::sketch_chains::chain(
+        &doc.primitives,
+        camcraft_geometry::sketch_chains::ChainOptions::default(),
+    )
+    .expect("chain exported fixture outline");
+    assert!(chains.open.is_empty() && chains.rejected.is_empty());
+    assert_eq!(chains.closed.len(), 1);
+    assert!((chains.closed[0].area - vol / depth).abs() < 1e-6);
 }
 
 #[test]

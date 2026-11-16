@@ -246,6 +246,19 @@ pub enum CommandKind {
     /// The post's user options (issue #34): the undoable
     /// `SetPostOptions` with the picked value.
     SetPostOptions(camcraft_app::schema::PostOptions),
+    /// Per-post declared script option overrides (#258), routed by setup target.
+    SetPostScriptOptions {
+        setup: Option<String>,
+        post: camcraft_app::schema::PostRef,
+        overrides: std::collections::BTreeMap<String, camcraft_app::post::options::OptionValue>,
+    },
+    /// Commit settings staged in the desktop Post dialog as one undo unit, optionally posting afterwards (#258).
+    ApplyPostDialog {
+        edit: camcraft_app::commands::PostSettingsEdit,
+        post_path: Option<PathBuf>,
+        per_op_dir: Option<PathBuf>,
+        program_prefix: Option<String>,
+    },
     /// The user's theme (M6.1 C; a preference since #877, never on the
     /// history): the two built-ins and a discovered file arrive as a
     /// reference (what the headless tests queue too), and the dialog arm
@@ -1913,6 +1926,12 @@ pub struct State {
     /// edit are a copy of the machine until Apply pushes `LoadMachine`,
     /// which is the command, which is the undo.
     pub machine_editor: Option<crate::egui_app::machine_editor::MachineEditor>,
+    /// Floating desktop Post dialog draft state (#258): `None` when closed.
+    pub post_dialog: Option<crate::egui_app::post_dialog::PostDialogState>,
+    /// Remembered desktop Post dialog output folder for this document (#258).
+    pub post_last_dir: Option<PathBuf>,
+    /// Remembered desktop Post dialog output file name for this document (#258).
+    pub post_last_name: Option<String>,
     /// The Machines pane's view state (#287): the cached catalogue and
     /// the selected row. Ephemeral like the dock itself - browsing a
     /// machine is not a command; assigning one will be.
@@ -2189,6 +2208,9 @@ impl State {
             tool_profile_ui: ToolProfileUi::default(),
             tool_cutter_ui: ToolCutterUi::default(),
             machine_editor: None,
+            post_dialog: None,
+            post_last_dir: None,
+            post_last_name: None,
             machines_pane: Default::default(),
             theme_cache: theme_files::Cache::new(),
             // One walk per window, at construction: the switcher's file
@@ -3090,6 +3112,9 @@ impl State {
                 self.field_play = None;
                 self.stock_mesh.clear();
                 self.machine_editor = None;
+                self.post_dialog = None;
+                self.post_last_dir = None;
+                self.post_last_name = None;
                 self.rename_draft = None;
                 self.dragging_op = None;
                 self.doc_version += 1;
@@ -3274,6 +3299,12 @@ impl State {
             // #389: routed to the active setup's own options when it has them.
             CommandKind::SetPostOptions(next) => {
                 self.route_post_options(next, "post options set", "post options not set", ErrorScope::Setup);
+            }
+            CommandKind::SetPostScriptOptions { setup, post, overrides } => {
+                self.route_post_script_options(setup.as_deref(), &post, overrides);
+            }
+            CommandKind::ApplyPostDialog { edit, post_path, per_op_dir, program_prefix } => {
+                self.apply_post_dialog(edit, post_path, per_op_dir, program_prefix);
             }
             CommandKind::SelectTheme(next) => self.select_theme(next),
             CommandKind::SelectColorVision(next) => self.select_color_vision(next),
@@ -4392,6 +4423,9 @@ impl State {
         self.field_play = None; // nor its playback
         self.stock_mesh.clear(); // nor the mesh extracted from it
         self.machine_editor = None; // nor a draft over its machine's numbers
+        self.post_dialog = None;
+        self.post_last_dir = None;
+        self.post_last_name = None;
         self.rename_draft = None;
         self.dragging_op = None;
         self.world = loaded;
@@ -4435,12 +4469,28 @@ impl State {
             Ok(files) if files.len() > 1 => {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
+                self.post_last_dir = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(PathBuf::from);
+                self.post_last_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_owned);
                 self.post_refusal = None;
                 self.show_posted_mounts(files);
             }
             Ok(files) => {
                 let Some(first) = files.into_iter().next() else { return };
                 let (path, posted) = (first.path, first.posted);
+                self.post_last_dir = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(PathBuf::from);
+                self.post_last_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_owned);
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
@@ -4634,12 +4684,9 @@ pub(crate) fn save_project_dialog(current: Option<&Path>) -> Option<PathBuf> {
     dialog.set_file_name(filename).save_file()
 }
 
-/// The Post dialog, opened where `crate::post_file::post_target` says
-/// (#258: the last post's folder and name, else the project's).
-fn post_program_dialog(target: &crate::post_file::PostTarget) -> Option<PathBuf> {
-    // The extension law lives with the script (fanuc.cps's `extension`
-    // is "nc"); the dialog just offers it.
-    let mut dialog = crate::file_dialog::FileDialog::new().add_filter("NC Program", &["nc"]);
+/// Open the save-file picker for a single-program NC export with dialect extension (#258).
+pub(crate) fn save_program_dialog(target: &crate::post_file::PostTarget, ext: &str) -> Option<PathBuf> {
+    let mut dialog = crate::file_dialog::FileDialog::new().add_filter("NC Program", &[ext]);
     if let Some(dir) = &target.dir {
         dialog = dialog.set_directory(dir);
     }

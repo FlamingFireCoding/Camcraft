@@ -191,6 +191,10 @@ pub use carried_stock::{CARRIED_OUTSIDE_DECLARED, CARRIED_OUTSIDE_NOTED, carried
 pub(crate) use drill_prior::reads_prior;
 mod plunge_solid;
 mod predrilled_entry;
+pub mod rest_op;
+pub use rest_op::REST_PREDRILLED;
+#[cfg(test)]
+mod rest_op_tests;
 #[cfg(test)]
 mod predrilled_entry_tests;
 #[cfg(test)]
@@ -210,10 +214,12 @@ mod open_side;
 pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
 pub(crate) mod fidelity_law;
+mod clearance_stock;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
+pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
 pub use top_stock::TOP_STOCK_WARNING;
 mod turning_credit;
 mod turning_axis;

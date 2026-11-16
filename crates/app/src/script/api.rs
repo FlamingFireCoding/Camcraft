@@ -5,7 +5,7 @@
 //! do its whole job returns `Err(reason)`; the dispatcher records it,
 //! and the script sees a catchable `Error` whose text is the reason.
 
-use super::{arg_opt, arg_str, builtin_cps, inventory, only_keys, Env};
+use super::{arg_opt, arg_str, inventory, only_keys, Env};
 
 use crate::commands::{GenerateOperation, History, ImportMode, ImportModel, ImportTools, UpdateModel};
 use crate::model;
@@ -283,7 +283,10 @@ pub(crate) fn v_check(env: &mut Env, args: Vec<Value>) -> Result<Value, String> 
 /// `.cps` by path; omitted means the document's own post.
 /// `program: true` also hands the text back to the script.
 pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
-    let opts = only_keys(args.first().unwrap_or(&Value::Null), &["to", "cps", "program"])?;
+    let opts = only_keys(
+        args.first().unwrap_or(&Value::Null),
+        &["to", "cps", "program", "options"],
+    )?;
     let to = match opts.get("to") {
         Some(Value::String(s)) => PathBuf::from(s),
         Some(_) => return Err("\"to\" must be a path string".into()),
@@ -292,16 +295,7 @@ pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     // Omitted: each mount's own post (#388); named: that script for all.
     let cps = match opts.get("cps") {
         None | Some(Value::Null) => None,
-        Some(Value::String(s)) => {
-            if let Some(text) = builtin_cps(s) {
-                Some(text.to_owned())
-            } else if Path::new(s).extension().is_some_and(|e| e.eq_ignore_ascii_case("cps")) {
-                Some(std::fs::read_to_string(s).map_err(|e| format!("cannot read post script {s}: {e}"))?)
-            } else {
-                let names: Vec<&str> = crate::posting::BUILTINS.iter().map(|(n, _)| *n).collect();
-                return Err(format!("unknown built-in post '{s}' - names: {}; or give a .cps file path", names.join(", ")));
-            }
-        }
+        Some(Value::String(s)) => Some(posting::resolve_cps_text(s)?),
         Some(_) => return Err("\"cps\" must be a built-in name or a .cps path".into()),
     };
     let with_program = match opts.get("program") {
@@ -309,9 +303,13 @@ pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
         Some(Value::Bool(b)) => *b,
         Some(_) => return Err("\"program\" must be true or false".into()),
     };
+    let extra = match opts.get("options") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(posting::json_map_to_overrides(v)?),
+    };
     let files = match &cps {
-        None => posting::post_mounts(&env.world, &to),
-        Some(text) => posting::post_mounts_script(&env.world, &to, text),
+        None => posting::post_mounts_with_script_options(&env.world, &to, extra.as_ref()),
+        Some(text) => posting::post_mounts_script_with_options(&env.world, &to, text, extra.as_ref()),
     }
     .map_err(|e| e.to_string())?;
     Ok(super::report::posted_view(env, files, with_program))

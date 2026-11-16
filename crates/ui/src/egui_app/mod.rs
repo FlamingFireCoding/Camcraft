@@ -49,7 +49,10 @@ mod stock_page;
 pub mod colorvision;
 pub mod ground_ink;
 pub mod window_chrome;
+pub(crate) mod post_dialog;
+mod post_dialog_tabs;
 mod post_options;
+mod post_script_options;
 mod program_info;
 pub mod cvd;
 mod app_icon;
@@ -271,6 +274,8 @@ mod slot_manual_tests;
 mod after_op_tests;
 #[cfg(test)]
 mod program_info_tests;
+#[cfg(test)]
+mod post_dialog_tests;
 #[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]
