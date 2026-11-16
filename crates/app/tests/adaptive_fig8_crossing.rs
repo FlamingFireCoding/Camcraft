@@ -109,6 +109,7 @@ fn assert_clean_post(world: &World, h: &mut History, op_name: &str, crossed_befo
 }
 
 #[test]
+#[ignore = "release heavy lane: fig8 generation and verification exceed 60 seconds in debug; run with --release -- --ignored"]
 fn adaptive2d_on_fig8_model_in_tight_stock_has_no_crossings_and_posts() {
     let (world, mut h, part_name) = setup_fig8(90.0, 200.0);
     let params = fig8_params();
@@ -119,6 +120,7 @@ fn adaptive2d_on_fig8_model_in_tight_stock_has_no_crossings_and_posts() {
 }
 
 #[test]
+#[ignore = "release heavy lane: fig8 generation and verification exceed 60 seconds in debug; run with --release -- --ignored"]
 fn adaptive2d_on_fig8_stock_excluding_top_face_has_no_crossings_and_posts() {
     let (world, mut h, part_name) = setup_fig8(100.0, 220.0);
     let part = model::find_by_name(&world, &part_name).expect("part");
