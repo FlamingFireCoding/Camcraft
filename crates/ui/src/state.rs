@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, GenerateOperation, History, ImportModel,
-    MoveFixture, MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -63,6 +63,9 @@ mod setup_workholding;
 mod fixture_view;
 #[path = "state_locate.rs"]
 mod locate_ui;
+#[path = "state_fixture_turn.rs"]
+mod fixture_turn_ui;
+pub(crate) use fixture_turn_ui::euler_deg;
 #[path = "state_align.rs"]
 mod align_ui;
 use locate_ui::with_warning;
@@ -569,10 +572,21 @@ pub enum CommandKind {
         name: String,
         fixed: bool,
     },
+    /// The place draft's Apply: position plus the Model page's three
+    /// angles (#2174 added roll and pitch to the yaw).
     MoveFixture {
         name: String,
         pos: [f64; 3],
+        roll_deg: f64,
+        pitch_deg: f64,
         yaw_deg: f64,
+    },
+    /// A quarter-turn button (#2174): one `TurnFixture` about world X, Y
+    /// or Z (`axis` 0, 1, 2) through the fixture's origin.
+    TurnFixture {
+        name: String,
+        axis: usize,
+        degrees: f64,
     },
     DeleteFixture(String),
     ImportFixtureDialog,
@@ -816,6 +830,9 @@ pub struct FixtureUi {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    /// #2174: the Model page's tilt angles, beside the yaw.
+    pub roll_deg: f64,
+    pub pitch_deg: f64,
     pub yaw_deg: f64,
 }
 
@@ -3815,23 +3832,10 @@ impl State {
                     }
                 }
             }
-            CommandKind::MoveFixture { name, pos, yaw_deg } => {
-                let location = Location {
-                    pos: Point3::new(pos[0], pos[1], pos[2]),
-                    rot: quat_from_yaw(yaw_deg.to_radians()),
-                };
-                match MoveFixture::new(&self.world, &name, location) {
-                    Ok(command) => {
-                        let warning = command.warning().map(str::to_owned);
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        self.status = with_warning(format!("moved fixture {name}"), warning);
-                    }
-                    Err(err) => {
-                        self.refuse(ErrorScope::Setup, format!("fixture not moved: {err}"));
-                    }
-                }
+            CommandKind::MoveFixture { name, pos, roll_deg, pitch_deg, yaw_deg } => {
+                self.dispatch_move_fixture(&name, pos, [roll_deg, pitch_deg, yaw_deg]);
             }
+            CommandKind::TurnFixture { name, axis, degrees } => self.dispatch_turn_fixture(&name, axis, degrees),
             CommandKind::Locate { spec, mover } => self.dispatch_locate(&spec, mover),
             CommandKind::DeleteFixture(name) => match DeleteFixture::new(&self.world, &name) {
                 Ok(command) => {
