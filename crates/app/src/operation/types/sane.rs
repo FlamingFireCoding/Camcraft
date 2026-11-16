@@ -47,11 +47,18 @@ impl OpParams {
     /// commands' generic "not usable".
     #[must_use]
     pub fn named_refusal(&self) -> Option<String> {
+        if let Some(why) = self.tilt().and_then(|t| t.refusal()) {
+            return Some(why);
+        }
         if self.predrilled_elsewhere() {
             return Some(PREDRILLED_POCKET_ONLY.into());
         }
         if let Some(why) = self.arc_turn_refusal() {
             return Some(why.into());
+        }
+        // #1489: the rest group, in the rest generator's own words.
+        if let Some(why) = crate::operation::rest_op::rest_refusal(self) {
+            return Some(why);
         }
         // #1448: only the untilted 2D contour takes a picked start so far;
         // every other kind refuses it here rather than ignore it.
@@ -108,6 +115,8 @@ impl OpParams {
         let links_ok = links_ok && !self.predrilled_elsewhere();
         // #1733: the corner-arc radius and the method that refuses it.
         let links_ok = links_ok && self.arc_turn_refusal().is_none();
+        // #1489: a rest group the generator would refuse.
+        let links_ok = links_ok && crate::operation::rest_op::rest_refusal(self).is_none();
         tilt_ok
             && links_ok
             && match self {

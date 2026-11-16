@@ -146,6 +146,22 @@ fn a_stated_break_through_moves_the_deepest_feed() {
 }
 
 #[test]
+fn a_spot_dimple_does_not_claim_to_break_through_the_stock() {
+    let (world, mut h) = world();
+    let mut p = drill(Some(0.3));
+    if let OpParams::Drill { cycle, .. } = &mut p {
+        *cycle = CycleChoice::Spot;
+    }
+    let (t, _) = run(&world, &mut h, "Spot", "DR-0600", p);
+    assert!((deepest(&t) - 8.0).abs() < 1e-6, "the dimple stops two millimetres below entry Z10: {}", deepest(&t));
+    assert!(
+        t.notes.iter().all(|n| !n.contains("through holes run") && !n.starts_with(BELOW_STOCK_NOTE)),
+        "a spot never reaches the through floor: {:?}",
+        t.notes
+    );
+}
+
+#[test]
 fn a_negative_break_through_is_refused_at_creation() {
     let (world, _) = world();
     assert!(CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(-1.0))).is_err());
@@ -193,5 +209,50 @@ fn the_parameter_round_trips_the_file_and_the_mcp_params() {
         let v = project::params_to_json(&p);
         assert!(body(&v).get("break_through").is_none(), "{v}");
         assert_eq!(project::params_from_json(&v).expect("back"), p);
+    }
+}
+
+
+#[test]
+fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
+    use camcraft_app::commands::ChangeTool;
+    use camcraft_app::tool_cutting_rows::CuttingRow;
+    use serde_json::json;
+
+    let (world, mut history) = world();
+    let entity = model::find_by_name(&world, "DR-0600").unwrap();
+    let mut tool = model::tool_of(&world, &entity).unwrap();
+    tool.cutting = vec![CuttingRow {
+        stepdown: Some(0.5), ..CuttingRow::plain(None, tool.rpm, tool.feed)
+    }];
+    history.execute(&world, ChangeTool::new(&world, "DR-0600", tool.clone()).unwrap());
+    history.execute(&world, CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(0.4))).unwrap());
+    let saved = project::save_text(&world).unwrap();
+    let current: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert_eq!(current["version"], json!(project::PROJECT_VERSION), "the trunnion-schema format follows main's v65 tilt-basis format");
+    for version in [62, 63, 64, 65] {
+        let mut file = current.clone();
+        file["version"] = json!(version);
+        for row in file["entities"].as_array_mut().unwrap() {
+            if version < 64 && let Some(tool) = row.get_mut("tool").and_then(serde_json::Value::as_object_mut) {
+                tool.remove("cutting_data");
+            }
+            if version < 63 && let Some(params) = row.get_mut("operation").and_then(|op| op.get_mut("params")).and_then(serde_json::Value::as_object_mut) {
+                for body in params.values_mut() {
+                    if let Some(body) = body.as_object_mut() { body.remove("break_through"); }
+                }
+            }
+        }
+        let loaded = camcraft_app::world::new_world();
+        project::open(&loaded, &file.to_string()).unwrap();
+        let op = model::find_by_name(&loaded, "D").and_then(|e| model::operation_of(&loaded, &e)).unwrap();
+        let expected = if version >= 63 { Some(0.4) } else { None };
+        assert!(matches!(op.params, OpParams::Drill { break_through, .. } if break_through == expected), "v{version}: {:?}", op.params);
+        let actual = model::find_by_name(&loaded, "DR-0600").and_then(|e| model::tool_of(&loaded, &e)).unwrap();
+        assert_eq!((actual.rpm, actual.feed), (tool.rpm, tool.feed));
+        if version >= 64 { assert_eq!(actual.cutting, tool.cutting); }
+        else { assert!(actual.cutting.is_empty(), "older tools keep their derived Unknown row"); }
+        let rewritten: serde_json::Value = serde_json::from_str(&project::save_text(&loaded).unwrap()).unwrap();
+        assert_eq!(rewritten["version"], json!(project::PROJECT_VERSION), "old documents migrate forward");
     }
 }

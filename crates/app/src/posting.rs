@@ -17,10 +17,15 @@
 
 use crate::model;
 use crate::operation::{self, Height, OpStatus, OpParams};
-use crate::post::{self, cnc, engine, Dump};
+use crate::post::{
+    self, cnc, engine,
+    options::{self, DeclaredOption, OptionValue},
+    Dump,
+};
 use crate::schema::{EndUnits, PostOptions, PostRef, ThreadingOutput};
 use flecs_ecs::prelude::*;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// The post scripts that ship with the app (name, text), embedded so
@@ -249,6 +254,15 @@ pub const MACHINES: &[(&str, &str)] = &[
     // published nose_to_axis, so that one refuses until a setup states it).
     ("Doosan DNM 5700", include_str!("../../../assets/machines/doosan-dnm-3axis.mch")),
     ("Doosan DNM 5700 + rotary table", include_str!("../../../assets/machines/doosan-dnm.mch")),
+    // #1976: public Haas specifications; configurations and sources in docs/decisions/1976-haas-machines.md.
+    ("Haas VF-2", include_str!("../../../assets/machines/haas-vf2.mch")),
+    ("Haas VF-2SS", include_str!("../../../assets/machines/haas-vf2ss.mch")),
+    ("Haas Mini Mill", include_str!("../../../assets/machines/haas-mini-mill.mch")),
+    ("Haas DT-1", include_str!("../../../assets/machines/haas-dt1.mch")),
+    ("Haas DM-1", include_str!("../../../assets/machines/haas-dm1.mch")),
+    // #1135: the empty sinker template (no `edm.codes`); pairs with the
+    // "Sinker EDM (ISO)" post, which refuses by name until the user fills the codes.
+    ("Sinker EDM 3-axis (template)", include_str!("../../../assets/machines/sinker-edm.mch")),
     // #1501: a Sodick wire EDM, X Y U V travels and taper from Sodick's published
     // ALC series specifications (docs/decisions/1501-sodick-alc400g.md).
     ("Sodick ALC400G", include_str!("../../../assets/machines/sodick-alc400g.mch")),
@@ -300,8 +314,8 @@ pub fn document_post_of(world: &World) -> PostRef {
 /// one answer the post and the machine's spindle-range check both read.
 #[must_use]
 pub fn posted_rpm(tool: &crate::tools::Tool) -> f64 {
-    // A torch states rpm 0 by law (#670): no spindle word, like a probe.
-    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) { 0.0 } else { tool.rpm }
+    // A torch or wire states rpm 0 by law (#670, #2011): no spindle word, like a probe.
+    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) { 0.0 } else { tool.rpm }
 }
 
 /// Write the singleton. For the `SelectPost` command and the project
@@ -465,13 +479,152 @@ mod setup_change;
 #[path = "posting_program.rs"]
 mod program;
 pub use program::{
-    document_program_id, parse_number as parse_program_number, program_id, program_info, program_info_set,
-    PROGRAM_COMMENT_MAX, PROGRAM_NUMBER_MAX,
+    check as check_program_info, document_program_id, parse_number as parse_program_number,
+    program_id, program_info, program_info_set, PROGRAM_COMMENT_MAX, PROGRAM_NUMBER_MAX,
 };
-pub(crate) use program::{check as check_program_info, normalised as normalised_program_info};
+pub(crate) use program::normalised as normalised_program_info;
 #[path = "posting_units.rs"]
 mod program_unit;
-pub use program_unit::{program_options, unit_word};
+pub use program_unit::{end_units_words, program_options, unit_word};
+
+/// Declared per-post options read from a [`PostRef`]'s `.cps` source (#258).
+pub fn declared_options_for_post(post: &PostRef) -> Result<Vec<DeclaredOption>, String> {
+    let (_, cps) = script_of(post)?;
+    options::declared_options(&cps).map_err(|e| e.to_string())
+}
+
+/// Host [`program_options`] layered with a script's `declaredOptions` defaults,
+/// stored overrides for `(setup, post)`, and optional per-run `extra` overrides (#258).
+pub fn program_options_for_script(
+    world: &World,
+    cps: &str,
+    post: Option<&PostRef>,
+    setup: Option<&str>,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Value, String> {
+    let host = match setup {
+        Some(s) => {
+            let mut v = options_value(crate::setup_post_options::of(world, Some(s)));
+            if let Some(map) = v.as_object_mut() {
+                map.insert(
+                    "Units".to_owned(),
+                    Value::from(unit_word(crate::units::of(world))),
+                );
+            }
+            v
+        }
+        None => program_options(world),
+    };
+    let schema = options::declared_options(cps).map_err(|e| e.to_string())?;
+    let mut overrides = post
+        .map(|p| crate::setup_post_options::script_for_post(world, setup, p))
+        .unwrap_or_default();
+    if let Some(extra) = extra {
+        for (k, v) in extra {
+            overrides.insert(k.clone(), v.clone());
+        }
+    }
+    options::merge_post_options(&schema, &host, &overrides)
+}
+
+/// Convert a JSON `{ key: scalar }` map into post script overrides (#258).
+pub(crate) fn json_map_to_overrides(val: &Value) -> Result<BTreeMap<String, OptionValue>, String> {
+    let map = val
+        .as_object()
+        .ok_or_else(|| "\"options\" must be an object".to_owned())?;
+    let mut out = BTreeMap::new();
+    for (k, v) in map {
+        if options::RESERVED_KEYS.contains(&k.as_str()) {
+            return Err(format!("post option '{k}' is reserved by host settings"));
+        }
+        let ov: OptionValue = serde_json::from_value(v.clone())
+            .map_err(|_| format!("post option '{k}' must be a bool, number, or string"))?;
+        if !ov.is_finite() {
+            return Err(format!("post option '{k}' must be finite"));
+        }
+        out.insert(k.clone(), ov);
+    }
+    Ok(out)
+}
+
+/// Resolve a built-in post name or `.cps` file path to its [`PostRef`] and script text (#258, #2190).
+pub fn resolve_cps(cps: &str) -> Result<(PostRef, String), String> {
+    if let Some((name, text)) = BUILTINS.iter().find(|(n, _)| *n == cps) {
+        return Ok((PostRef::Named((*name).to_owned()), (*text).to_owned()));
+    }
+    if Path::new(cps)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("cps"))
+    {
+        let text = std::fs::read_to_string(cps)
+            .map_err(|e| format!("cannot read post script {cps}: {e}"))?;
+        return Ok((PostRef::File(cps.to_owned()), text));
+    }
+    let names: Vec<&str> = BUILTINS.iter().map(|(n, _)| *n).collect();
+    Err(format!(
+        "unknown built-in post '{cps}' - names: {}; or give a .cps file path",
+        names.join(", ")
+    ))
+}
+
+/// Resolve a built-in post name or `.cps` file path to its script text (#258).
+pub fn resolve_cps_text(cps: &str) -> Result<String, String> {
+    resolve_cps(cps).map(|(_, text)| text)
+}
+
+fn scalar_from_cli(raw: &str) -> Value {
+    match raw {
+        "true" => Value::Bool(true),
+        "false" => Value::Bool(false),
+        _ => {
+            if let Ok(i) = raw.parse::<i64>() {
+                Value::Number(i.into())
+            } else if let Ok(f) = raw.parse::<f64>()
+                && f.is_finite()
+                && let Some(n) = serde_json::Number::from_f64(f)
+            {
+                Value::Number(n)
+            } else {
+                Value::String(raw.to_owned())
+            }
+        }
+    }
+}
+
+/// Parse repeatable CLI `key=value` post option specs, validating early against `cps` when known (#258).
+pub fn parse_cli_post_options(
+    specs: &[String],
+    cps: Option<&str>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    if specs.is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    if let Some(cps_spec) = cps {
+        let src = resolve_cps_text(cps_spec)?;
+        let schema = options::declared_options(&src).map_err(|e| e.to_string())?;
+        let mut parsed = BTreeMap::new();
+        for spec in specs {
+            let (k, v) = options::parse_cli_override(&schema, spec)?;
+            parsed.insert(k, v);
+        }
+        return Ok(parsed.into_iter().map(|(k, v)| (k, v.to_json())).collect());
+    }
+    let mut out = serde_json::Map::new();
+    for spec in specs {
+        let (key, raw) = spec
+            .split_once('=')
+            .ok_or_else(|| format!("--post-option expects key=value, got '{spec}'"))?;
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(format!("--post-option key must not be empty in '{spec}'"));
+        }
+        if options::RESERVED_KEYS.contains(&key) {
+            return Err(format!("post option '{key}' is reserved by host settings"));
+        }
+        out.insert(key.to_owned(), scalar_from_cli(raw));
+    }
+    Ok(out)
+}
 #[path = "posting_serves.rs"]
 mod serves;
 #[path = "posting_edm.rs"]
@@ -482,11 +635,18 @@ pub mod nose;
 pub mod index_swing;
 #[path = "posting_swing_standing.rs"]
 pub mod swing_standing;
+#[path = "posting_section_mode.rs"]
+mod section_mode;
 pub(crate) use wcs_rotation::{offset_frame, OffsetFrame};
 pub use mounts::{
-    machine_checks, machine_value_for, machine_value_of, post_mounts, post_mounts_script, post_of_setup, PostedMount,
+    machine_checks, machine_value_for, machine_value_of, post_mounts,
+    post_mounts_for_post_with_options, post_mounts_script, post_mounts_script_with_options,
+    post_mounts_with_script_options, post_of_setup, PostedMount,
 };
-pub use per_op::{file_stem, post_per_op, post_per_op_script, PostedFile};
+pub use per_op::{
+    file_stem, post_per_op, post_per_op_for_post_with_options, post_per_op_script, post_per_op_script_with_options,
+    post_per_op_with_script_options, PostedFile,
+};
 pub use sim_clause_impl::{sim_clause, SimClause, NOT_JUDGED};
 
 /// The verification gate's whole answer: the blocking problems, and
@@ -507,8 +667,18 @@ pub struct GateReport {
 /// mounts is refused here by name; [`post_mounts`] writes it as one
 /// file per mount.
 pub fn post_setup(world: &World, out_path: &Path) -> Result<Posted, String> {
-    let (label, cps) = script_of(&mounts::single(world, true)?.post)?;
-    post_script_as(world, out_path, &cps, Some(&label))
+    post_setup_with_script_options(world, out_path, None)
+}
+
+/// [`post_setup`] with temporary per-run script option overrides (#258).
+pub fn post_setup_with_script_options(
+    world: &World,
+    out_path: &Path,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
+    let post = mounts::single(world, true)?.post;
+    let (label, cps) = script_of(&post)?;
+    post_script_as(world, out_path, &cps, Some(&label), Some(&post), extra)
 }
 
 /// The gate's post at a given script (M3.3 A): the stream and the
@@ -516,14 +686,44 @@ pub fn post_setup(world: &World, out_path: &Path) -> Result<Posted, String> {
 /// parameterized - what a caller holding a script text runs, and
 /// what the tests use to exercise the script seam directly.
 pub fn post_script(world: &World, out_path: &Path, cps: &str) -> Result<Posted, String> {
-    post_script_as(world, out_path, cps, None)
+    post_script_with_script_options(world, out_path, cps, None)
+}
+
+/// [`post_script`] with temporary per-run script option overrides (#258).
+pub fn post_script_with_script_options(
+    world: &World,
+    out_path: &Path,
+    cps: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
+    post_script_as(world, out_path, cps, None, None, extra)
+}
+
+/// [`post_script`] for a resolved [`PostRef`] with temporary per-run script option overrides (#258, #2190).
+pub fn post_script_for_post_with_options(
+    world: &World,
+    out_path: &Path,
+    post: &PostRef,
+    cps: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
+    let label = post_ref_label(post);
+    post_script_as(world, out_path, cps, Some(&label), Some(post), extra)
 }
 
 /// [`post_script`] with the script's label (a post file's path), for
 /// the refusal that names a post not serving the machine (#1232).
-fn post_script_as(world: &World, out_path: &Path, cps: &str, label: Option<&str>) -> Result<Posted, String> {
+fn post_script_as(
+    world: &World,
+    out_path: &Path,
+    cps: &str,
+    label: Option<&str>,
+    post: Option<&PostRef>,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
     let started = crate::clock::Instant::now();
-    let posted = post_script_body(world, cps, label).and_then(|p| write_program(out_path, p));
+    let posted = post_script_body_with(world, cps, label, post, extra)
+        .and_then(|p| write_program(out_path, p));
     match &posted {
         Ok(p) => tracing::info!(
             file = %crate::logging::file_name(out_path),
@@ -544,8 +744,9 @@ fn post_script_as(world: &World, out_path: &Path, cps: &str, label: Option<&str>
 /// to write to; a program over several mounts is refused by name, as the
 /// one-file post refuses it.
 pub fn post_setup_unwritten(world: &World) -> Result<Posted, String> {
-    let (label, cps) = script_of(&mounts::single(world, true)?.post)?;
-    let posted = post_script_body(world, &cps, Some(&label));
+    let post = mounts::single(world, true)?.post;
+    let (label, cps) = script_of(&post)?;
+    let posted = post_script_body_with(world, &cps, Some(&label), Some(&post), None);
     match &posted {
         Ok(p) => tracing::info!(bytes = p.program.len(), ops = p.ops, lines = p.lines, "NC program posted, not written"),
         Err(why) => tracing::warn!("NC program not posted: {why}"),
@@ -563,7 +764,13 @@ fn write_program(out_path: &Path, posted: Posted) -> Result<Posted, String> {
     Ok(posted)
 }
 
-fn post_script_body(world: &World, cps: &str, label: Option<&str>) -> Result<Posted, String> {
+fn post_script_body_with(
+    world: &World,
+    cps: &str,
+    label: Option<&str>,
+    post: Option<&PostRef>,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
     // #388: the program's one machine (a program over several refuses).
     let mount = mounts::single(world, false)?;
     let streams = op_streams_by(world, false)?;
@@ -591,7 +798,13 @@ fn post_script_body(world: &World, cps: &str, label: Option<&str>) -> Result<Pos
     }
     let stream = cnc::serialize(&records);
     let id = document_program_id(world, 1)?;
-    let out = engine::run_program_with(cps, &machine_value_for(&machine), &stream, &program_options(world), &id)
+    let mount_setup = mount
+        .setups
+        .first()
+        .cloned()
+        .or_else(|| crate::setup::active(world));
+    let opts = program_options_for_script(world, cps, post, mount_setup.as_deref(), extra)?;
+    let out = engine::run_program_with(cps, &machine_value_for(&machine), &stream, &opts, &id)
         .map_err(|e| format!("post engine: {e}"))?;
     if !out.warnings.is_empty() {
         return Err(format!(
@@ -923,6 +1136,7 @@ pub fn fixture_findings(world: &World) -> Result<FixtureFindings, String> {
 /// through one script without the verification gate, which the
 /// posting suites lock separately - the golden locks the translation.
 pub fn stream_records(world: &World) -> Result<Vec<cnc::Record>, String> {
+    mounts::refuse_per_op(world, "one combined stream")?;
     Ok(join_streams(op_streams(world)?))
 }
 
@@ -1018,6 +1232,15 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             Some(a) => ([a.min.x, a.max.x, a.min.y, a.max.y], a.max.z),
             None => ([0.0; 4], 0.0),
         };
+        // #1666: a turning machine's stream states the radius the stock
+        // sweeps about the spindle axis, so a square bar's corners are
+        // known to the post; a mill's stream stays as it was.
+        let stock_turn_radius = matches!(
+            crate::machine::kind_of_setup(world, setup),
+            crate::machine::Kind::Lathe | crate::machine::Kind::MillTurn
+        )
+        .then(|| crate::stock_turn::turn_radius_for(world, setup, [origin[0], origin[1]]))
+        .flatten();
         // The feeder signals ride the section (M5.2 G.2): only a
         // Part operation can carry them, and a load with an advance
         // of 0 is still a load - the ACT, not the number. The
@@ -1106,6 +1329,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             origin,
             stock,
             stock_top_z,
+            stock_turn_radius,
             // The scallop reading (M13.9) is a quality note: shown on
             // the op, never a WARN record - a WARN record holds the
             // post, and a scallop is neither a gouge nor a collision.
@@ -1126,6 +1350,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             post::ask_reverse_spindle(&mut records);
         }
         setup_change::ask(&changes, name, &mut records);
+        section_mode::insert(&op.params, &posted, &mut records);
         streams.push((name.clone(), records));
     }
     Ok(streams)
