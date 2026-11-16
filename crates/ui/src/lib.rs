@@ -38,6 +38,7 @@ pub mod pick_ink;
 pub mod feature_click;
 pub mod egui_app;
 pub mod feedback;
+pub mod gen_worker;
 pub mod file_dialog;
 pub mod file_pick;
 pub mod frame_memo;
