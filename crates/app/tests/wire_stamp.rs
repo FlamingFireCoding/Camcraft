@@ -246,7 +246,8 @@ fn four(pairing: WirePairingRule, sync: &[(Pt, Pt)], tolerance: f64) -> WireCont
 /// is written only when the block is stated, so this value does not
 /// move; if a toolchain changes `DefaultHasher`, re-pin it only after
 /// checking the arm still writes nothing for `four_axis: None`.
-const ONE_PROFILE_STAMP: u64 = 16_116_910_563_891_173_640;
+/// (#2152: re-pinned for the stamp salt v3; the salt is the only change.)
+const ONE_PROFILE_STAMP: u64 = 8_981_019_231_957_264_890;
 
 /// Done means (M3, PR #1181 item 2): the pairing rule, each sync point
 /// on each side of each pair, and the tolerance each move the stamp, so
