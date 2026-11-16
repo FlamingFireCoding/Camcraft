@@ -580,7 +580,7 @@ pub(crate) fn feature_segments(
             }
         }
         FeatureSel::Chain(cid) => {
-            let Some(chain) = feature::resolve_chain(&features, cid) else {
+            let Some(chain) = camcraft_app::model::resolve_chain(&features, cid) else {
                 return;
             };
             let pts = feature::chain_points(&features, &chain);
@@ -1143,7 +1143,7 @@ pub(crate) fn region_lines(state: &State) -> Vec<[f32; 6]> {
             continue; // the region plane's source is gone - draw nothing
                       // rather than an outline at a guessed level
         };
-        if let Some(region) = operation::region_of(&state.world, &op) {
+        if let Some(region) = crate::frame_memo::region_of(&state.world, &name, &op) {
             for l in region.loops() {
                 let pts = l.points();
                 if pts.len() < 3 {
@@ -1194,7 +1194,7 @@ pub(crate) fn shown_regions(state: &State) -> Vec<(f64, Option<Region>)> {
         let Some(op) = model::operation_of(&state.world, &entity) else {
             continue;
         };
-        let region = operation::region_of(&state.world, &op);
+        let region = crate::frame_memo::region_of(&state.world, &name, &op);
         if let Some(z) = operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params)
             && (region.is_some() || !operation::chains_of(&state.world, &op).is_empty())
         {
@@ -1763,7 +1763,7 @@ fn feature_lines(state: &State, items: &[GeoSel]) -> Vec<[f32; 6]> {
                 }
             }
             FeatureSel::Chain(cid) => {
-                let Some(chain) = feature::resolve_chain(&features, cid) else {
+                let Some(chain) = camcraft_app::model::resolve_chain(&features, cid) else {
                     continue;
                 };
                 let pts = feature::chain_points(&features, &chain);
