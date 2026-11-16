@@ -71,7 +71,7 @@ pub(super) fn section(ui: &mut Ui, state: &mut State, u: Unit) {
             }
         }
     });
-    super::tool_body_page::preview_3d(ui, state);
+    super::tool_body_page::placement_view(ui, state);
     zone_rows(ui, state, u);
     let note = match state.lathe_body_preview() {
         Some(Ok(b)) => tool_body_lathe_view::extent(b).map_or_else(String::new, |(lo, hi)| {

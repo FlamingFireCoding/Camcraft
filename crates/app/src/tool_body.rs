@@ -178,13 +178,31 @@ pub fn judged(world: &World, entity: &Entity, tool: Tool) -> Result<(Tool, Optio
     match body.frame {
         BodyFrame::Lathe { .. } => Ok((tool, None)),
         BodyFrame::Spindle { profile, .. } => {
-            // #828: an assumed (machine-default) holder never judges
-            // looser than the stand-in cylinder the bare tool gets.
-            let profile = if body.machine_default { profile.floored(&tool.geom()) } else { profile };
+            let profile = checked_profile(&tool, profile, body.machine_default);
             let enclosed = profile.enclose(&tool).ok_or("the tool body reaches into the flutes")?;
             Ok((enclosed, Some(profile)))
         }
     }
+}
+
+/// The body profile as the judging laws read it (#828): an assumed
+/// (machine-default) holder never judges looser than the stand-in cylinder
+/// the bare tool gets, so it is floored at the tool's holder cylinder; an
+/// explicit one is read as drawn. `judged` and the tool page's preview
+/// (#2017) both call this: one source for the shape.
+#[must_use]
+pub fn checked_profile(tool: &Tool, profile: HolderProfile, machine_default: bool) -> HolderProfile {
+    if machine_default { profile.floored(&tool.geom()) } else { profile }
+}
+
+/// The bands `(above, len, r)` the collision check sweeps above the
+/// shank of `tool` for `body`: the checked profile through [`stack`], the
+/// shank carried up to the foot included. The tool page's side preview
+/// (#2017) draws exactly these. `None` for a lathe body.
+#[must_use]
+pub fn checked_bands(tool: &Tool, body: &ToolBody) -> Option<Vec<(f64, f64, f64)>> {
+    let profile = checked_profile(tool, body.profile()?.clone(), body.machine_default);
+    Some(stack(&tool.geom(), Some(&profile)).bands.iter().map(|q| (q.above, q.len, q.r)).collect())
 }
 
 /// What the fixture laws sweep above the shank of `geom`: the body's
