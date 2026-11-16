@@ -126,9 +126,15 @@ pub fn run(args: &[String]) -> i32 {
     }
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        if a == "--ui" {
-            match it.next().map(String::as_str) {
-                None => {
+        // Both `--ui value` and `--ui=value` give the same result.
+        let value = if a == "--ui" {
+            Some(it.next().map(String::as_str))
+        } else {
+            a.strip_prefix("--ui=").map(Some)
+        };
+        if let Some(value) = value {
+            match value {
+                None | Some("") => {
                     diag_warn!("--ui needs a value: egui is the only shell (imgui retired at M1.4.2 M-g)");
                     return 2;
                 }

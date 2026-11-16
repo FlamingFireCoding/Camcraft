@@ -62,7 +62,7 @@ pub const OPTIONS: &[Opt] = &[
         value: Some("<dx12|metal|vulkan|gl>"),
         env: Some("CAMCRAFT_GPU_BACKEND"),
         default: "automatic",
-        help: "Try this graphics system first. The other systems stay as a fallback.",
+        help: "Try this graphics system first. The other systems stay as a fallback. Also accepted: d3d12 (dx12), gles and opengl (gl).",
     },
     Opt {
         flag: "--gpu",
