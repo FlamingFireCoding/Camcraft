@@ -90,3 +90,17 @@ only on STEP fixtures, so no GUI workflow is lost.
 profile. It keeps derivation open for every fixture, but it changes the
 project and library formats and every reader of `FixtureDef::profile`. That
 is more surface than the review finding needs.
+
+### Fixture profile domain ownership (PR #2101 review)
+
+**Chosen:** Move the pure `FixtureProfile` module intact into `camcraft-sim`.
+This crate already owns fixture collision data and depends on geometry, tools,
+and serialization. App re-exports the module for document and command callers.
+The public API and stored formats stay the same. No dependency is added.
+
+**Why:** Profile meshing, chord bounds, DXF interchange, and tool conversion
+operate on domain values. They do not access the document or ECS world.
+
+**Dropped:** Placing the complete module in geometry. Its tool-profile
+conversion would add a dependency from geometry to tools. The existing sim
+dependencies support the complete module without that new dependency.

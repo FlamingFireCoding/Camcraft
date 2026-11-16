@@ -17,7 +17,9 @@ use camcraft_app::commands::{
 };
 use camcraft_app::fixture;
 use camcraft_app::fixture_library::{self, DatumChoice, entry_from_model};
-use camcraft_app::fixture_profile::{ExtrudeAxis, FixtureProfile, ProfilePoint};
+use camcraft_app::fixture_profile::{ExtrudeAxis, ProfilePoint};
+// Exercise the domain API directly while app commands accept the re-exported type.
+use camcraft_sim::fixture_profile::FixtureProfile;
 use camcraft_app::fixture_struck;
 use camcraft_app::fixture_view::{self, BoxReason, MeshState};
 use camcraft_app::geometry::{IDENTITY_Q, Point3};
