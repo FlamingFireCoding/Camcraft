@@ -4,9 +4,10 @@
 //!
 //! Provenance: our own per-frame scene cache; no external code or vendor material.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use camcraft_app::geo2d::Region;
+use camcraft_app::geometry::Triangle;
 use camcraft_app::model;
 use camcraft_app::operation::{AreaControls, GeoSel, OpParams};
 use flecs_ecs::prelude::Entity;
@@ -203,7 +204,7 @@ pub(crate) struct SceneCacheKey {
 }
 
 struct WorldVertsEntry {
-    facets_ptr: usize,
+    facets: Weak<[Triangle]>,
     facets_len: usize,
     pose: [u64; 7],
     verts: Arc<Vec<[f32; 3]>>,
@@ -248,16 +249,20 @@ fn lock_inner(cache: &FrameCache) -> std::sync::MutexGuard<'_, FrameCacheInner> 
 impl FrameCache {
     pub(crate) fn world_verts_cached(
         &self,
-        facets_ptr: usize,
-        facets_len: usize,
+        facets: &Arc<[Triangle]>,
         pose: [u64; 7],
         build: impl FnOnce() -> Vec<[f32; 3]>,
     ) -> Arc<Vec<[f32; 3]>> {
+        let matches = |e: &WorldVertsEntry| {
+            e.facets.strong_count() > 0
+                && std::ptr::eq(e.facets.as_ptr(), Arc::as_ptr(facets))
+                && e.facets_len == facets.len()
+                && e.pose == pose
+        };
         {
             let mut inner = lock_inner(self);
-            if let Some(i) = inner.world_verts.iter().position(|e| {
-                e.facets_ptr == facets_ptr && e.facets_len == facets_len && e.pose == pose
-            }) {
+            inner.world_verts.retain(|e| e.facets.strong_count() > 0);
+            if let Some(i) = inner.world_verts.iter().position(matches) {
                 inner.world_verts[i..].rotate_left(1);
                 if let Some(entry) = inner.world_verts.last() {
                     return Arc::clone(&entry.verts);
@@ -266,17 +271,16 @@ impl FrameCache {
         }
         let verts = Arc::new(build());
         let mut inner = lock_inner(self);
-        if let Some(i) = inner.world_verts.iter().position(|e| {
-            e.facets_ptr == facets_ptr && e.facets_len == facets_len && e.pose == pose
-        }) {
+        inner.world_verts.retain(|e| e.facets.strong_count() > 0);
+        if let Some(i) = inner.world_verts.iter().position(matches) {
             return Arc::clone(&inner.world_verts[i].verts);
         }
         if inner.world_verts.len() >= WORLD_VERTS_CAP {
             inner.world_verts.remove(0);
         }
         inner.world_verts.push(WorldVertsEntry {
-            facets_ptr,
-            facets_len,
+            facets: Arc::downgrade(facets),
+            facets_len: facets.len(),
             pose,
             verts: Arc::clone(&verts),
         });
@@ -371,3 +375,7 @@ impl FrameCache {
         (scene, digest)
     }
 }
+
+#[cfg(test)]
+#[path = "frame_cache_tests.rs"]
+mod tests;

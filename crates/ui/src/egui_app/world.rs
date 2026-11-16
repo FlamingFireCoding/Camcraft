@@ -252,10 +252,11 @@ fn scene_cache_key(state: &State) -> crate::frame_cache::SceneCacheKey {
 // ---------------------------------------------------------------- parts
 
 fn world_verts(state: &State, entity: &flecs_ecs::prelude::Entity) -> Vec<[f32; 3]> {
-    let tris = model::facets_of(&state.world, entity).unwrap_or_default();
-    let ptr = std::sync::Arc::as_ptr(&tris).cast::<()>() as usize;
+    let Some(tris) = model::facets_of(&state.world, entity) else {
+        return Vec::new();
+    };
     let pose = crate::frame_cache::pose_bits(state, entity);
-    let cached = state.frame_cache.world_verts_cached(ptr, tris.len(), pose, || {
+    let cached = state.frame_cache.world_verts_cached(&tris, pose, || {
         // #326: the part where the active setup holds it.
         let loc = camcraft_app::setup_align::view_pose(&state.world, entity).unwrap_or_default();
         let mut verts = Vec::with_capacity(tris.len() * 3);
