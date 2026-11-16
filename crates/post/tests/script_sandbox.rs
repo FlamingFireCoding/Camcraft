@@ -86,3 +86,30 @@ fn direct_output_buffer_writes_are_refused_before_drain() {
     let error = script.drain().unwrap_err().to_string();
     assert!(error.contains("output") && error.contains("limit"), "{error}");
 }
+
+#[test]
+fn caught_output_limit_error_is_still_refused() {
+    let cps = "function onOpen() {\n  try {\n    for (var i = 0; i < 100001; i++) writeBlock('G01 X1');\n  } catch (e) {}\n}\n";
+    let error = camcraft_post::post::post(cps, &serde_json::json!({}), "")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("output") && error.contains("limit"), "{error}");
+
+    let mut script = Script::load(cps).unwrap();
+    let call_err = script.call("onOpen", "").unwrap_err().to_string();
+    assert!(call_err.contains("output") && call_err.contains("limit"), "{call_err}");
+    let drain_err = script.drain().unwrap_err().to_string();
+    assert!(drain_err.contains("output") && drain_err.contains("limit"), "{drain_err}");
+
+    let top_level = "try { for (var i = 0; i < 100001; i++) writeBlock('G01 X1'); } catch (e) {}";
+    let top_err = camcraft_post::post::post(top_level, &serde_json::json!({}), "")
+        .unwrap_err()
+        .to_string();
+    assert!(top_err.contains("output") && top_err.contains("limit"), "{top_err}");
+
+    let cleared = "function onOpen() {\n  try {\n    for (var i = 0; i < 100001; i++) writeBlock('G01 X1');\n  } catch (e) { _outputLimitExceeded = false; _outputLines = 0; OUT.length = 0; }\n}\n";
+    let cleared_err = camcraft_post::post::post(cleared, &serde_json::json!({}), "")
+        .unwrap_err()
+        .to_string();
+    assert!(cleared_err.contains("output") && cleared_err.contains("limit"), "{cleared_err}");
+}

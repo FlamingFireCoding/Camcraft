@@ -70,6 +70,8 @@ pub struct Script {
     /// section is refused by name - a cutting post would write a wire
     /// path with no condition, threading or wire words.
     wire_edm: bool,
+    /// Latches once any output-limit check trips so caught exceptions cannot pass truncated output.
+    output_limit_exceeded: bool,
 }
 
 impl Script {
@@ -105,6 +107,7 @@ impl Script {
             continuous_threading: false,
             mill_spindle_reverse: false,
             wire_edm: false,
+            output_limit_exceeded: false,
         };
         let mut present = Vec::new();
         for h in HOOKS {
@@ -155,6 +158,7 @@ impl Script {
             .eval("typeof wireEdm !== \"undefined\" && wireEdm === true")
             .map(|v| is_true(&v))
             .unwrap_or(false);
+        super::js_host::check_output_limit(&mut s.ctx, &mut s.output_limit_exceeded)?;
         Ok(s)
     }
 
@@ -266,10 +270,13 @@ impl Script {
     /// missing-hook case is a no-op returning undefined. A JS throw is
     /// a `Script` error - the Prime Directive's refusal shape.
     pub fn call(&mut self, name: &str, args: &str) -> Result<JsValue, PostError> {
+        super::js_host::check_output_limit(&mut self.ctx, &mut self.output_limit_exceeded)?;
         if !self.has(name) {
             return Ok(JsValue::undefined());
         }
-        self.eval(&format!("{name}({args})"))
+        let res = self.eval(&format!("{name}({args})"));
+        super::js_host::check_output_limit(&mut self.ctx, &mut self.output_limit_exceeded)?;
+        res
     }
 
     /// True when `name` exists (used for the onPlunge preference).
@@ -338,10 +345,12 @@ impl Script {
     /// Open partial lines count as flushed: a hook that ends a record
     /// mid-line still wrote a line of the program.
     pub fn out_len(&mut self) -> Result<usize, PostError> {
+        super::js_host::check_output_limit(&mut self.ctx, &mut self.output_limit_exceeded)?;
         let v = self.eval("(_flushLine(), OUT.length)")?;
         let len = v.as_number().map(|n| n.max(0.0) as usize).unwrap_or(0);
         if len > MAX_OUTPUT_LINES {
-            return Err(PostError::Script("post output line limit exceeded".into()));
+            self.output_limit_exceeded = true;
+            return Err(PostError::Script(super::js_host::OUTPUT_LIMIT_ERROR.into()));
         }
         Ok(len)
     }

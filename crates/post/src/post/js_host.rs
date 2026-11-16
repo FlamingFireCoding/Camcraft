@@ -7,11 +7,22 @@ use boa_engine::JsValue;
 pub const PRELUDE: &str = r#"
 var OUT = [];
 var _outputLines = 0;
-function _emitLine(s) {
-  if (_outputLines >= _maxOutputLines) throw new Error("post output line limit exceeded");
-  _outputLines++;
-  OUT.push(s);
-}
+var _emitLine = (function (global, maxLines) {
+  var exceeded = false;
+  Object.defineProperty(global, "_outputLimitExceeded", {
+    get: function () { return exceeded; },
+    enumerable: false,
+    configurable: false
+  });
+  return function (s) {
+    if (exceeded || _outputLines >= maxLines) {
+      exceeded = true;
+      throw new Error("post output line limit exceeded");
+    }
+    _outputLines++;
+    OUT.push(s);
+  };
+})(this, _maxOutputLines);
 var MESSAGES = [];
 var LINE = "";
 var properties = {};
@@ -168,3 +179,21 @@ impl Default for ProgramId {
     }
 }
 
+/// Canonical refusal message when a post exceeds `MAX_OUTPUT_LINES`.
+pub const OUTPUT_LIMIT_ERROR: &str = "post output line limit exceeded";
+
+/// Check and latch the JS output-limit flag so a caught exception cannot hide an exceeded limit.
+pub fn check_output_limit(ctx: &mut boa_engine::Context, latched: &mut bool) -> Result<(), super::PostError> {
+    if !*latched {
+        *latched = ctx
+            .eval(boa_engine::Source::from_bytes(
+                b"typeof _outputLimitExceeded !== \"undefined\" && _outputLimitExceeded === true",
+            ))
+            .map(|v| is_true(&v))
+            .unwrap_or(false);
+    }
+    if *latched {
+        return Err(super::PostError::Script(OUTPUT_LIMIT_ERROR.into()));
+    }
+    Ok(())
+}
