@@ -305,6 +305,15 @@ pub struct SetupDto {
     /// Absent follows the document's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_options: Option<SetupPostOptionsDto>,
+    /// #258: the setup's own per-post script option overrides; absent
+    /// follows the document's (`post_options.script`), additive (no version step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_properties: Option<
+        std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+        >,
+    >,
     /// #821: the setup's stated nose-to-rotary-centerline figure, mm,
     /// additive (no version step). Absent states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]

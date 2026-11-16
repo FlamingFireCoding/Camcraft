@@ -557,6 +557,15 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 .ok_or_else(|| corrupt(format!("unknown between-setups choice {w:?}")))?,
         },
     };
+    let mut doc_script = crate::schema::PostScriptOptions {
+        by_post: file
+            .post_options
+            .as_ref()
+            .map(|o| o.script.clone())
+            .unwrap_or_default(),
+    };
+    doc_script.normalize();
+    crate::commands::post_script_options::validate_post_map(&doc_script).map_err(corrupt)?;
     // The program identity (#258): checked by `SetProgramInfo`'s rules,
     // so a hand-edited value they refuse is a corrupt file, refused
     // before any world write; absent is nothing stated.
@@ -639,6 +648,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
     // refusal is the net (`script_source` reads both, and both refuse
     // by name when gone).
     crate::posting::post_options_set(world, post_options);
+    crate::setup_post_options::script_document_set(world, doc_script);
     crate::posting::program_info_set(world, program);
     crate::posting::post_set(
         world,
@@ -848,6 +858,16 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     None => None,
                     Some(o) => Some(o.to_options(&dto.name).map_err(corrupt)?),
                 };
+                let post_properties = match sdto.post_properties {
+                    None => None,
+                    Some(by_post) => {
+                        let mut s = crate::schema::PostScriptOptions { by_post };
+                        s.normalize();
+                        crate::commands::post_script_options::validate_post_map(&s)
+                            .map_err(|e| corrupt(format!("setup '{}': {e}", dto.name)))?;
+                        Some(s)
+                    }
+                };
                 // #1031: a limit no command would accept is a corrupt file,
                 // never a guessed one.
                 if let Some(why) = sdto.workholding_max_rpm.and_then(crate::setup_workholding::invalid) {
@@ -870,6 +890,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     relative_to: sdto.relative_to.clone(),
                     stock_source,
                     post_options,
+                    post_properties,
                     // #821: absent in every earlier file - states none.
                     nose_to_axis: sdto.nose_to_axis,
                     workholding_max_rpm: sdto.workholding_max_rpm,
