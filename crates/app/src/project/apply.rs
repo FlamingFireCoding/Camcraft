@@ -518,9 +518,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v63 -> v64 (#2015): each tool's own rpm / feed is its Unknown
         // cutting row (derived where the tool is read); absent stock
         // material states none.
-        // v64 -> v65 (#1862): a DXF profile row arrives; a v64 file has
-        // none, so it steps up unchanged. Stated break-through values
-        // remain unchanged in their parameter DTOs.
+        // v64 -> v65 (#2133): absent tilt basis preserves the legacy frame.
+        // Saving writes v65 so old readers cannot drop an explicit basis.
+        // v65 -> v66 (#1862): a DXF profile row arrives; a v65 file has
+        // none, so it steps up unchanged. Stated tilt bases and
+        // break-through values remain unchanged in their parameter DTOs.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;

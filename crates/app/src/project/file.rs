@@ -107,11 +107,13 @@ use super::*;
 /// drop the rows or the stock material the feeds were picked by. A v63
 /// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
 /// row (derived at read).
-/// v65 (#1862): a DXF profile is an entity row of kind `sketch`, placed
-/// on the stock of a setup. A v64 file has none and steps up unchanged.
-/// An old reader must refuse a v65 file rather than open a setup without
+/// v65 (#2133): old readers must not discard the tilted frame basis version.
+/// Version 64 and older tilts retain basis 0; new tilts state basis 1.
+/// v66 (#1862): a DXF profile is an entity row of kind `sketch`, placed
+/// on the stock of a setup. A v65 file has none and steps up unchanged.
+/// An old reader must refuse a v66 file rather than open a setup without
 /// the profiles its operations cut.
-pub const PROJECT_VERSION: u32 = 65;
+pub const PROJECT_VERSION: u32 = 66;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

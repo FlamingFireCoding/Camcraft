@@ -35,6 +35,7 @@ pub mod dialect;
 pub mod end_units;
 pub mod engine;
 pub mod explain;
+pub mod g93;
 pub mod invert;
 pub mod js;
 pub mod machine;
@@ -44,6 +45,7 @@ mod options_parse;
 pub mod probe_rec;
 mod program;
 pub mod rotary_cap;
+pub mod section_mode;
 pub mod work_offset;
 pub mod units;
 
@@ -51,6 +53,7 @@ pub use after_op::AfterOperation;
 pub use coolant::CoolantMode;
 pub use engine::{LineInfo, PostOutput, TraceBlock};
 pub use js::ProgramId;
+pub use section_mode::{read_section_mode, set_section_mode, SectionMode, SectionModeError};
 
 use crate::cl::{MoveKind, Toolpath};
 use cnc::{CycleRec, MoveRec, Record};

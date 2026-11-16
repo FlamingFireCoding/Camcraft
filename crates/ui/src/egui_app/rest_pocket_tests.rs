@@ -277,9 +277,15 @@ fn rest_group_warns_and_refuses_incompatible_strategy_and_predrilled_on_apply() 
     on_row(&h, "Rest machining", Role::CheckBox).click();
     h.run();
 
+    let zigzag_refusal = h.state().op_ui.params.named_refusal().expect("Zigzag draft refusal");
+    assert!(zigzag_refusal.contains("Zigzag"), "{zigzag_refusal}");
     assert!(
-        h.query_by_label_contains("Zigzag").is_some(),
+        h.query_by_label(&zigzag_refusal).is_some(),
         "consequence warns when Zigzag is active with rest machining"
+    );
+    assert!(
+        h.query_by_label(&format!("Apply will be refused: {zigzag_refusal}.")).is_some(),
+        "Apply hint also names the Zigzag refusal"
     );
     click_apply(&mut h);
     assert_eq!(live_rest(h.state()), None, "Zigzag + rest refuses on Apply");
@@ -292,8 +298,12 @@ fn rest_group_warns_and_refuses_incompatible_strategy_and_predrilled_on_apply() 
     }
     h.run();
     assert!(
-        h.query_by_label_contains("pre-drilled").is_some(),
+        h.query_by_label(REST_PREDRILLED).is_some(),
         "consequence warns when pre-drilled entry is on with rest machining"
+    );
+    assert!(
+        h.query_by_label(&format!("Apply will be refused: {REST_PREDRILLED}.")).is_some(),
+        "Apply hint also names the pre-drilled refusal"
     );
     click_apply(&mut h);
     assert_eq!(live_rest(h.state()), None, "predrilled + rest refuses on Apply");

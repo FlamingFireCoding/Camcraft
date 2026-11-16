@@ -112,10 +112,10 @@ The operation has no toolpath, and the post gate refuses it.
 - Each profile is read and chained before any world write. A profile off its
   face, with an unknown unit code or with primitives that do not chain refuses
   the file by name.
-- **`PROJECT_VERSION` 64 -> 65.** Main uses v64 for the cutting-data
-  rows and stock material from #2015. Profiles use the next version, v65.
-  A v64 file steps up unchanged; the earlier v63 breakthrough values and
-  v62 migration remain intact. An older reader refuses a v65 file before
+- **`PROJECT_VERSION` 65 -> 66.** Main uses v65 for the tilted-frame
+  basis from #2133. Profiles use the next version, v66. A v65 file steps
+  up unchanged; the tilt basis, earlier cutting-data rows and breakthrough
+  values remain intact. An older reader refuses a v66 file before
   it can discard a profile. Dropped: sharing a version with main, which
   lets an older reader discard data it cannot represent.
 
@@ -161,7 +161,8 @@ The operation has no toolpath, and the post gate refuses it.
 
 ### PR #2134 breakthrough format refresh
 
-- Merge main's v63 breakthrough format and give profiles v64. Keep both
+- This choice is superseded by the cutting-data and tilt-basis refreshes
+  below. Merge main's v63 breakthrough format and give profiles v64. Keep both
   project modules and all breakthrough fields. The v63-to-v64 migration
   preserves the document data. The v62 migration remains in the chain.
   Dropped: retaining version 63 for profiles, because two formats with one
@@ -173,7 +174,8 @@ The operation has no toolpath, and the post gate refuses it.
 
 ### PR #2134 cutting-data format refresh
 
-- The breakthrough refresh's choice of v64 for profiles is superseded:
+- This choice is superseded by the tilt-basis refresh below.
+  The breakthrough refresh's choice of v64 for profiles is superseded:
   main now uses v64 for #2015's cutting-data rows and stock material.
   Merge that format intact and give the profile row v65. Keep main's
   v63-to-v64 migration and add the v64-to-v65 step; neither needs a data
@@ -190,3 +192,16 @@ The operation has no toolpath, and the post gate refuses it.
   `delete_undo_keeps_both_stock_material_and_profile_drawing`, and
   `all_drawing_units_keep_both_persistence_code_apis`. They cover the v64
   cutting data, both undo payloads, and the two unit-code APIs.
+
+### PR #2134 tilt-basis format refresh
+
+- Merge main's v65 tilted-frame basis format and give profiles v66. Keep
+  main's basis fields, format history and earlier migration steps; add the
+  v65-to-v66 profile step without rewriting document data. Dropped: sharing
+  v65, which lets an older reader discard the stated basis and change the
+  frame used for tool motion. The earlier v65 profile choice is superseded.
+- Pin a v65 tilt with legacy basis 0 and with basis 1 through load, save as
+  v66, and reload. Preserve the stated basis and angles in both cases. Keep
+  the v63 breakthrough and v64 cutting-data pins, and update the profile
+  persistence assertions to v66. These checks protect the earlier motion
+  and cutting limits while the profile format advances.
