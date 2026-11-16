@@ -67,6 +67,11 @@ copy kept the old numbers.
 (Apply profile, MCP `points`) keeps the reference. One edited point
 makes it a custom drawn profile, in one undo step.
 
+**Tool library import.** The import's "same tool" test still compares
+the shape (the body as a save wrote it before). A drawn copy and a
+reference with the same outline are therefore the same tool and are
+skipped, not added a second time as "Name (2)".
+
 **The holder fields.** With a referenced holder the tool settings show
 the holder diameter and length the laws read (the cylinder that
 encloses the entry) as text, not as two fields. The tool record's own

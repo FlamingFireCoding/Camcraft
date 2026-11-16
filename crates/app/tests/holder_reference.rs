@@ -300,6 +300,9 @@ fn an_older_tool_library_loads_as_custom_holders_and_a_new_one_round_trips_the_r
     assert!(export_tool_library(&bare).expect("export").contains("\"version\": 1"));
 }
 
+/// One corruption of the tool's record.
+type Edit<'a> = &'a dyn Fn(&mut Value);
+
 fn with_tool(text: &str, f: impl Fn(&mut Value)) -> String {
     let mut v: Value = serde_json::from_str(text).expect("json");
     let list = if v.get("entities").is_some() { "entities" } else { "tools" };
@@ -314,7 +317,7 @@ fn an_unknown_entry_refuses_the_file_by_name_and_never_lands_another_holder() {
     let (world, _history) = walled_world();
     let project_text = project::save_text(&world).expect("save");
     let library_text = export_tool_library(&world).expect("export");
-    let cases: [(&dyn Fn(&mut Value), &str); 6] = [
+    let cases: [(Edit, &str); 6] = [
         (&|t| t["holder"]["entry"] = json!("BT35 ER20"), "there is no holder 'BT35 ER20' in the holder library"),
         // A grouped pick is no entry: the file names one bore.
         (&|t| t["holder"]["entry"] = json!("BT30 Weldon"), "there is no holder 'BT30 Weldon' in the holder library"),
