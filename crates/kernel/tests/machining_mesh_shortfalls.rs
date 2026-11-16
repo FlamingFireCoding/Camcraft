@@ -204,6 +204,7 @@ fn provoke_face_capped_refusal() {
 }
 
 #[test]
+#[ignore = "release heavy lane: capped-note spline fixture exceeds 60 seconds in debug"]
 fn provoke_face_capped_note() {
     // 4b. FaceCapped (within == true): localized cross-band spline hits GridThinned, Refine brings sag <= tol -> note.
     let mut s = solid("box.step");
