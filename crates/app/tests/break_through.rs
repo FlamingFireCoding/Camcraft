@@ -146,6 +146,22 @@ fn a_stated_break_through_moves_the_deepest_feed() {
 }
 
 #[test]
+fn a_spot_dimple_does_not_claim_to_break_through_the_stock() {
+    let (world, mut h) = world();
+    let mut p = drill(Some(0.3));
+    if let OpParams::Drill { cycle, .. } = &mut p {
+        *cycle = CycleChoice::Spot;
+    }
+    let (t, _) = run(&world, &mut h, "Spot", "DR-0600", p);
+    assert!((deepest(&t) - 8.0).abs() < 1e-6, "the dimple stops two millimetres below entry Z10: {}", deepest(&t));
+    assert!(
+        t.notes.iter().all(|n| !n.contains("through holes run") && !n.starts_with(BELOW_STOCK_NOTE)),
+        "a spot never reaches the through floor: {:?}",
+        t.notes
+    );
+}
+
+#[test]
 fn a_negative_break_through_is_refused_at_creation() {
     let (world, _) = world();
     assert!(CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(-1.0))).is_err());

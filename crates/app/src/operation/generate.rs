@@ -2117,7 +2117,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     drilling::axial_doors(&material.facets, holes, d, hl.bottom)?;
                 }
                 let run = break_through.unwrap_or(drilling::THROUGH_CLEAR);
-                if hl.bottom.is_none() && !lathe_axial {
+                // Spot stops at the entry dimple, regardless of a through floor.
+                if hl.bottom.is_none() && !lathe_axial && *cycle != drilling::CycleChoice::Spot {
                     broke = super::break_through::deepest(holes.iter().filter(|h| h.through).map(|h| (h.xy, h.floor_z - run)), run);
                 }
                 drilling::drill(&drilling::CycleParams {

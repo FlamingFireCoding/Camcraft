@@ -9,11 +9,12 @@ use crate::geo2d::Point2;
 use crate::geometry::Point3;
 use crate::units::{self, Unit};
 
-use super::Z_TOL;
+// Match the document generation tolerance at the stock boundary.
+const Z_TOL: f64 = 1e-6;
 
 /// The through holes' run and the deepest tip it takes them to.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Broke {
+pub struct Broke {
     /// How far past each through floor the tip runs, mm.
     pub run: f64,
     /// The deepest tip of any through hole: its centre and Z.
@@ -23,7 +24,7 @@ pub(super) struct Broke {
 /// The deepest through tip of `tips` (each through hole's centre and the
 /// Z its tip reaches), run `run` past its floor; `None` when no hole runs
 /// through (a blind list, or a Bottom stated by hand).
-pub(super) fn deepest(tips: impl IntoIterator<Item = (Point2, f64)>, run: f64) -> Option<Broke> {
+pub fn deepest(tips: impl IntoIterator<Item = (Point2, f64)>, run: f64) -> Option<Broke> {
     tips.into_iter()
         .filter(|(_, z)| z.is_finite())
         .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -43,7 +44,7 @@ pub const BELOW_STOCK_NOTE: &str = "Break-through below stock:";
 /// modelled, what the stock sits on is unknown (a table, a spoil board,
 /// parallels): the program posts as it always has, and the note says the
 /// tip leaves the stock and by how much.
-pub(super) fn judge(mut path: Toolpath, broke: Option<Broke>, stock_bottom: Option<f64>, steel: bool, unit: Unit) -> Toolpath {
+pub fn judge(mut path: Toolpath, broke: Option<Broke>, stock_bottom: Option<f64>, steel: bool, unit: Unit) -> Toolpath {
     let Some(b) = broke else {
         return path;
     };

@@ -184,7 +184,7 @@ mod cross_spindle;
 mod cross_stock;
 mod drill_reach;
 mod bore_reach;
-mod break_through;
+use camcraft_motion::break_through;
 pub use bore_reach::DetectedHoles;
 pub use break_through::BELOW_STOCK_NOTE;
 mod drill_prior;

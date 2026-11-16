@@ -110,6 +110,7 @@ mod theme_tree_hits;
 mod waterjet_recipe;
 mod catalog_filters;
 mod cycle_combo;
+mod holes_break_through;
 mod radial_step_field;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
