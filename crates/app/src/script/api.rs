@@ -310,11 +310,42 @@ pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     if posting::post_options(&env.world).per_op {
         let (dir, program) = super::report::per_op_target(&to)?;
         let files = match &cps {
-            None => posting::post_per_op_with_script_options(&env.world, dir, program, extra.as_ref()),
-            Some((_, text)) => posting::post_per_op_script_with_options(&env.world, dir, program, text, extra.as_ref()),
+            None => {
+                posting::post_per_op_with_script_options(&env.world, dir, program, extra.as_ref())
+            }
+            Some((post_ref, text)) => posting::post_per_op_for_post_with_options(
+                &env.world,
+                dir,
+                program,
+                post_ref,
+                text,
+                extra.as_ref(),
+            ),
         }
         .map_err(|e| e.to_string())?;
-        return Ok(super::report::posted_per_op_view(env, files, with_program));
+        let warning = cps.as_ref().and_then(|(post_ref, _)| {
+            let mut setups = Vec::new();
+            for file in &files {
+                let setup = model::find_by_name(&env.world, &file.op)
+                    .and_then(|e| model::operation_of(&env.world, &e))
+                    .and_then(|op| op.setup);
+                let effective =
+                    crate::setup::effective(&env.world, setup.as_deref()).unwrap_or_default();
+                let group = vec![effective];
+                if !setups.contains(&group) {
+                    setups.push(group);
+                }
+            }
+            crate::setup_post_options::unapplied_script_warning(&env.world, &setups, post_ref)
+        });
+        if let Some(w) = &warning {
+            env.logs.push(w.clone());
+        }
+        let mut out = super::report::posted_per_op_view(env, files, with_program);
+        if let Some(w) = warning {
+            out["warning"] = json!(w);
+        }
+        return Ok(out);
     }
     let files = match &cps {
         None => posting::post_mounts_with_script_options(&env.world, &to, extra.as_ref()),

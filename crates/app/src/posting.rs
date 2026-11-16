@@ -641,7 +641,7 @@ pub use mounts::{
     post_mounts_with_script_options, post_of_setup, PostedMount,
 };
 pub use per_op::{
-    file_stem, post_per_op, post_per_op_script, post_per_op_script_with_options,
+    file_stem, post_per_op, post_per_op_for_post_with_options, post_per_op_script, post_per_op_script_with_options,
     post_per_op_with_script_options, PostedFile,
 };
 pub use sim_clause_impl::{sim_clause, SimClause, NOT_JUDGED};
