@@ -591,11 +591,18 @@ fn cam_post_and_cli_and_multi_setup_handle_named_post_script_options() {
     assert!(script_text.contains("G53 G00 Z0.") && script_text.contains("N10 "), "{script_text}");
 
     let out_mismatch = script::run(&format!(
-        "cam.load({}); cam.post({{ to: {}, cps: \"Haas\" }})",
+        "cam.load({}); const posted = cam.post({{ to: {}, cps: \"Haas\", program: true }}); ({{ ...posted, report: cam.report() }})",
         json!(proj.display().to_string()),
         json!(haas_nc.display().to_string()),
     ));
     assert!(out_mismatch.ok, "{:?}", out_mismatch.errors);
+    // Conflict resolution must retain the shared header and first-file bookkeeping alongside the warning.
+    let haas_text = std::fs::read_to_string(&haas_nc).expect("script Haas nc");
+    assert_eq!(out_mismatch.result["path"], json!(haas_nc.display().to_string()));
+    assert_eq!(out_mismatch.result["ops"], json!(1));
+    assert_eq!(out_mismatch.result["lines"], json!(haas_text.lines().count()));
+    assert_eq!(out_mismatch.result["program"], json!(haas_text));
+    assert_eq!(out_mismatch.result["report"]["posted"], out_mismatch.result["path"]);
     assert!(
         out_mismatch.result["warning"].as_str().is_some_and(|w| w.contains("Fanuc") && w.contains("safeRetract")),
         "{:?}",

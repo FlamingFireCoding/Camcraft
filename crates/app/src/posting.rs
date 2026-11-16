@@ -1133,6 +1133,7 @@ pub fn fixture_findings(world: &World) -> Result<FixtureFindings, String> {
 /// through one script without the verification gate, which the
 /// posting suites lock separately - the golden locks the translation.
 pub fn stream_records(world: &World) -> Result<Vec<cnc::Record>, String> {
+    mounts::refuse_per_op(world, "one combined stream")?;
     Ok(join_streams(op_streams(world)?))
 }
 

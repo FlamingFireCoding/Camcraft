@@ -79,10 +79,24 @@ fn active(world: &World) -> Mount {
     }
 }
 
+/// Refuse combined-program posting when Output is "One file per operation" (#2188):
+/// setup-change stops are suppressed for per-op files, so a combined program
+/// would cross setup boundaries without a stop.
+pub(super) fn refuse_per_op(world: &World, surface: &str) -> Result<(), String> {
+    if crate::setup_post_options::in_force(world).per_op {
+        return Err(format!(
+            "Output is set to One file per operation - {surface} cannot hold per-operation programs; \
+             post one file per operation, or switch Output to One program"
+        ));
+    }
+    Ok(())
+}
+
 /// The program's one mount, or a refusal naming every mount it spans:
 /// one file holds one post for one machine. `by_post` false groups by
 /// machine alone (a caller handing its own script).
 pub(super) fn single(world: &World, by_post: bool) -> Result<Mount, String> {
+    refuse_per_op(world, "one combined file")?;
     let mounts = program_mounts(world, by_post);
     // #1532: "One file per setup" asks a file per setup - one file
     // cannot hold two, so the single-file post refuses and says how.
@@ -216,6 +230,7 @@ fn post_mounts_with(
     explicit: Option<(Option<&PostRef>, &str)>,
     extra: Option<&BTreeMap<String, OptionValue>>,
 ) -> Result<Vec<PostedMount>, String> {
+    refuse_per_op(world, "one file per mount")?;
     // #1532: "One file per setup" writes each setup as its own mount's file.
     let mounts = super::setup_change::split(world, program_mounts(world, explicit.is_none()));
     if mounts.len() <= 1 {
