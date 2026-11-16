@@ -18,7 +18,7 @@ use crate::frame_cost::{self, Cost};
 
 /// Still frames measured per state, after the warm-up frames.
 const N: u32 = 6;
-const CONTOUR: &str = "Probe contour";
+pub(super) const CONTOUR: &str = "Probe contour";
 pub(super) const ADAPTIVE: &str = "Probe adaptive";
 const FACE: &str = "Probe face";
 
@@ -33,6 +33,7 @@ struct Counts {
     digests: u64,
     slices: u64,
     patches: u64,
+    selections: u64,
 }
 
 fn counts() -> Counts {
@@ -42,6 +43,7 @@ fn counts() -> Counts {
         digests: model::feature_digests(),
         slices: operation::pocket_slices(),
         patches: model::patch_builds(),
+        selections: operation::selection_walks(),
     }
 }
 
@@ -100,7 +102,7 @@ fn biggest_patch(st: &State) -> GeoSel {
     GeoSel { entity: "fig8".into(), feature: FeatureSel::Patch(p.id) }
 }
 
-fn create(h: &mut Harness<'static, ShellUi>, name: &str, kind: OpType, items: Vec<GeoSel>) {
+pub(super) fn create(h: &mut Harness<'static, ShellUi>, name: &str, kind: OpType, items: Vec<GeoSel>) {
     run(h, |st| {
         let seed = model::find_by_name(&st.world, "Contour1").and_then(|e| model::operation_of(&st.world, &e)).expect("seed op");
         st.pending.push_back(CommandKind::CreateOperation {
@@ -146,6 +148,7 @@ fn still(h: &mut Harness<'static, ShellUi>) -> Probe {
         digests: after.digests - before.digests,
         slices: after.slices - before.slices,
         patches: after.patches - before.patches,
+        selections: after.selections - before.selections,
     };
     let egui_delay =
         h.output().viewport_output.get(&egui::ViewportId::ROOT).map_or(Duration::MAX, |v| v.repaint_delay);
@@ -223,6 +226,7 @@ fn still_frames_on_fig8_name_their_costs() {
     for (name, p) in [("a", &a), ("b", &b), ("c", &c), ("d", &d), ("e", &e)] {
         assert_eq!((p.delta.walks, p.delta.digests), (0, 0), "{name}: no chain walk, no digest on a still frame");
         assert_eq!(p.delta.patches, 0, "{name}: no patch grouping on a still frame (#2247)");
+        assert_eq!(p.delta.selections, 0, "{name}: no selection walk for the page on a still frame (#2248, #2249)");
         // Each piece of the scene is collected once per scene.
         assert_eq!(calls(p, "scene/collect"), N, "{name}");
         assert_eq!(calls(p, "scene/parts.models"), N, "{name}");

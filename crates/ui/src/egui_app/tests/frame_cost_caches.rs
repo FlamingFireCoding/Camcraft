@@ -7,9 +7,9 @@
 //! material consulted.
 
 use camcraft_app::geometry::feature;
-use camcraft_app::operation::GeoSel;
+use camcraft_app::operation::{self, GeoSel, OpType};
 
-use super::frame_cost_probe::{ADAPTIVE, adaptive_preview, fig8, run, top_chains};
+use super::frame_cost_probe::{ADAPTIVE, CONTOUR, adaptive_preview, create, fig8, run, top_chains};
 use super::*;
 
 fn chips(h: &Harness<'static, ShellUi>) -> Vec<(String, bool)> {
@@ -61,4 +61,104 @@ fn pick_chips_group_the_welded_faces_once_and_follow_the_picks() {
     run(&mut h, |st| st.pending.push_back(CommandKind::Undo));
     assert_eq!(chips(&h), chips0, "after the undo the chips are the first ones");
     assert_eq!(align(&h), align0, "after the undo the 3-2-1 answer is the first one");
+}
+
+/// What the page shows for the open contour, through the memo, and what
+/// one fresh walk answers for the same document.
+#[derive(Debug, PartialEq)]
+struct Shown {
+    side: Option<bool>,
+    account: (Vec<String>, Option<String>),
+}
+
+fn contour_op(h: &Harness<'static, ShellUi>) -> camcraft_app::schema::Operation {
+    let st = &h.state().state;
+    model::find_by_name(&st.world, CONTOUR).and_then(|e| model::operation_of(&st.world, &e)).expect("the contour")
+}
+
+/// The memo's answer, asserted equal to a fresh walk's.
+fn shown(h: &Harness<'static, ShellUi>, why: &str) -> Shown {
+    let (st, op) = (&h.state().state, contour_op(h));
+    let SrcRef::Selection(items) = &op.src else { panic!("{why}: the contour has picks") };
+    let setup = op.setup.as_deref();
+    let memo = Shown {
+        side: operation::contour_auto_side(&st.world, setup, &op.src, &op.params),
+        account: operation::selection_account(&st.world, setup, items, &op.params),
+    };
+    let fresh = Shown {
+        side: operation::contour_auto_side_fresh(&st.world, setup, &op.src, &op.params),
+        account: operation::selection_account_fresh(&st.world, setup, items, &op.params),
+    };
+    assert_eq!(memo, fresh, "{why}: the cached side and account are the fresh walk's");
+    memo
+}
+
+/// Run `change`, then assert the page walked again and shows the fresh
+/// answer.
+fn changed(h: &mut Harness<'static, ShellUi>, why: &str, change: impl FnOnce(&mut State)) -> Shown {
+    let before = operation::selection_walks();
+    run(h, change);
+    assert!(operation::selection_walks() > before, "{why}: a changed input walks again");
+    shown(h, why)
+}
+
+fn set_contour(h: &mut Harness<'static, ShellUi>, why: &str, items: Vec<GeoSel>) -> Shown {
+    changed(h, why, |st| st.pending.push_back(CommandKind::SetOperationGeometry { name: CONTOUR.into(), items }))
+}
+
+/// An undo may land on an input the memo still holds: then it is a hit,
+/// and the hit must still be the fresh walk's answer.
+fn undo(h: &mut Harness<'static, ShellUi>, why: &str) -> Shown {
+    run(h, |st| st.pending.push_back(CommandKind::Undo));
+    shown(h, why)
+}
+
+/// #2248, #2249: the open contour's selection account and Auto side are
+/// one walk per input. A still frame walks nothing; each input change -
+/// the picks, the side, the part's pose - and each undo gives the answer
+/// a fresh walk gives, so the side the page names is the side the walk
+/// that generation runs would take.
+#[test]
+fn contour_side_and_account_walk_once_per_input() {
+    let mut h = fig8();
+    let chains = top_chains(&h.state().state);
+    assert!(chains.len() > 1, "fig8 has several top chains: {chains:?}");
+    create(&mut h, CONTOUR, OpType::Contour, chains.clone());
+    run(&mut h, |st| crate::actions::target(st, UiTarget::Operation(CONTOUR.into())));
+    let all = shown(&h, "all top chains");
+
+    // Still frames walk nothing, and the page shows the same answer.
+    h.run_steps(2);
+    let before = operation::selection_walks();
+    h.run_steps(3);
+    assert_eq!(operation::selection_walks() - before, 0, "a still frame walks no selection");
+    assert_eq!(shown(&h, "still"), all);
+
+    // Each top chain alone: a new pick is a new key.
+    let mut sides = Vec::new();
+    for (i, c) in chains.iter().enumerate() {
+        sides.push(set_contour(&mut h, &format!("top chain {i} alone"), vec![c.clone()]).side);
+    }
+    println!("auto side per top chain: {sides:?}; all chains: {:?}", all.side);
+    let back = undo(&mut h, "undo the last pick");
+    assert_eq!(back.side, sides[sides.len() - 2], "the undo shows the earlier pick's side");
+    // Back to the first picks: a hit or a walk, the answer is the first.
+    run(&mut h, |st| st.pending.push_back(CommandKind::SetOperationGeometry { name: CONTOUR.into(), items: chains.clone() }));
+    assert_eq!(shown(&h, "all chains again"), all);
+
+    // The side parameter: a named side is no Auto verdict.
+    let op = contour_op(&h);
+    let OpParams::Contour { .. } = &op.params else { panic!("a contour") };
+    let mut inside = op.params.clone();
+    if let OpParams::Contour { side, .. } = &mut inside {
+        *side = camcraft_app::machining2d::Side::Inside;
+    }
+    changed(&mut h, "side Inside", |st| st.pending.push_back(CommandKind::EditOperationParams { name: CONTOUR.into(), params: inside }));
+    assert_eq!(undo(&mut h, "undo side Inside"), all);
+
+    // The part's pose: a move reads new world points.
+    changed(&mut h, "fig8 moved", |st| {
+        st.pending.push_back(CommandKind::MoveModel { name: "fig8".into(), pos: [7.0, -3.0, 2.0], roll_deg: 0.0, pitch_deg: 0.0, yaw_deg: 30.0 });
+    });
+    assert_eq!(undo(&mut h, "undo the move"), all);
 }
