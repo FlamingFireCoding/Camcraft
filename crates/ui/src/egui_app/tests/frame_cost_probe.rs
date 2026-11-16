@@ -34,6 +34,7 @@ struct Counts {
     slices: u64,
     patches: u64,
     selections: u64,
+    pick_lines: u64,
 }
 
 fn counts() -> Counts {
@@ -44,6 +45,7 @@ fn counts() -> Counts {
         slices: operation::pocket_slices(),
         patches: model::patch_builds(),
         selections: operation::selection_walks(),
+        pick_lines: crate::pick_line_memo::pick_line_builds(),
     }
 }
 
@@ -122,6 +124,10 @@ fn open(h: &mut Harness<'static, ShellUi>, t: UiTarget) {
 /// Warm up, then measure N frames where nothing changes.
 fn still(h: &mut Harness<'static, ShellUi>) -> Probe {
     h.run_steps(3);
+    // The shell collects the scene on each frame; the harness does not.
+    // One collect here is the first frame of the new input, so the window
+    // measures still frames only.
+    std::hint::black_box(world::collect(&h.state().state));
     let before = counts();
     let mut phases = [Duration::ZERO; 3];
     let ((), costs) = frame_cost::record(|| {
@@ -149,6 +155,7 @@ fn still(h: &mut Harness<'static, ShellUi>) -> Probe {
         slices: after.slices - before.slices,
         patches: after.patches - before.patches,
         selections: after.selections - before.selections,
+        pick_lines: after.pick_lines - before.pick_lines,
     };
     let egui_delay =
         h.output().viewport_output.get(&egui::ViewportId::ROOT).map_or(Duration::MAX, |v| v.repaint_delay);
@@ -227,6 +234,7 @@ fn still_frames_on_fig8_name_their_costs() {
         assert_eq!((p.delta.walks, p.delta.digests), (0, 0), "{name}: no chain walk, no digest on a still frame");
         assert_eq!(p.delta.patches, 0, "{name}: no patch grouping on a still frame (#2247)");
         assert_eq!(p.delta.selections, 0, "{name}: no selection walk for the page on a still frame (#2248, #2249)");
+        assert_eq!(p.delta.pick_lines, 0, "{name}: no pick line build on a still frame (#2250)");
         // Each piece of the scene is collected once per scene.
         assert_eq!(calls(p, "scene/collect"), N, "{name}");
         assert_eq!(calls(p, "scene/parts.models"), N, "{name}");
