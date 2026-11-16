@@ -20,18 +20,18 @@
 //! Provenance: our own code (the M1.4 tab bar, restored from our git
 //! history); no HSMWorks material involved.
 
-use egui::{Button, CornerRadius, RichText, Stroke, Ui, Vec2};
+use egui::{CornerRadius, Stroke, Ui, Vec2};
 
 use camcraft_app::operation::OpType;
 
 use super::contrast;
-use super::theme::Tokens;
+use super::theme::{Tokens, clamp};
 
 /// The section names in tab-bar order. The guard indices in
 /// `pages::params_fields` are these same numbers - one placement law,
 /// table and guards read each other.
 pub(crate) const SECTIONS: [&str; 6] = ["Geometry", "Heights", "Passes", "Lead in / Lead out", "Feeds", "Machine"];
-pub(super) const SEC_GEO: usize = 0;
+pub(crate) const SEC_GEO: usize = 0;
 pub(super) const SEC_HEIGHTS: usize = 1;
 pub(super) const SEC_PASSES: usize = 2;
 pub(super) const SEC_LEADS: usize = 3;
@@ -50,7 +50,10 @@ pub(super) const SEC_MACHINE: usize = 5;
 /// exactly these: no dead tabs.
 pub(crate) fn has_section(kind: OpType, s: usize) -> bool {
     match s {
-        SEC_GEO | SEC_HEIGHTS | SEC_FEEDS => true,
+        SEC_GEO | SEC_HEIGHTS => true,
+        // A wire cut states no feed (#532): the control's generator
+        // sets the rate, so the kind has no Feeds tab.
+        SEC_FEEDS => kind != OpType::WireContour,
         SEC_PASSES => {
             !matches!(
                 kind,
@@ -101,35 +104,87 @@ pub(crate) fn resolve_tab(kind: OpType, want: usize) -> usize {
 /// viewport, M1.4's pane-width law). The open tab wears the accent fill
 /// with its on-fill text and sits on an accent rule; the rest are the
 /// theme's plain buttons, hover included.
+/// The glyph of one section tab, in `SECTIONS` index order. Exhaustive
+/// on purpose: every index the tab bar can show names its own `sec-*`
+/// master (the `op_icon_table` law, applied to the tab bar).
+pub(super) fn sec_icon(i: usize) -> crate::egui_app::icons::Icon {
+    use crate::egui_app::icons::Icon;
+    match i {
+        0 => Icon::SecGeometry,
+        1 => Icon::SecHeights,
+        2 => Icon::SecPasses,
+        3 => Icon::SecLeads,
+        4 => Icon::SecFeeds,
+        _ => Icon::SecMachine,
+    }
+}
+
 pub(super) fn tab_bar(ui: &mut Ui, kind: OpType, open: &mut usize, pal: &Tokens) -> usize {
+    let icon_px = clamp::range(pal.op_tab_icon_px, clamp::GLYPH);
+    let pad_x = clamp::range(pal.op_tab_pad_x, clamp::SPACING);
+    let icon_gap = clamp::range(pal.op_tab_icon_gap, clamp::SPACING);
+    let tab_h = clamp::range(pal.op_tab_h, clamp::CONTROL_H);
+    let tab_gap = clamp::range(pal.op_tab_gap, clamp::SPACING);
+    let bottom_gap = clamp::range(pal.op_tab_bottom_gap, clamp::RIBBON_GAP);
+    let font_px = clamp::range(pal.font_op_tab, clamp::FONT);
+    let stroke_w = clamp::range(pal.highlight_stroke_px, clamp::STROKE);
+    let r = pal.op_tab_radius.min(clamp::RADIUS);
+    let radius = CornerRadius { nw: r, ne: r, sw: 0, se: 0 };
     let mut tab = resolve_tab(kind, *open);
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().item_spacing.x = tab_gap;
         for (i, name) in SECTIONS.iter().enumerate() {
             if !has_section(kind, i) {
                 continue;
             }
             let sel = tab == i;
-            let btn = if sel {
-                Button::new(RichText::new(*name).strong().color(contrast::on_fill(pal.accent)))
-                    .fill(pal.accent)
-                    .stroke(Stroke::new(1.0, pal.accent_hover))
-            } else {
-                Button::new(*name)
-            };
-            let btn = btn
-                .selected(sel)
-                .corner_radius(CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 })
-                .min_size(Vec2::new(0.0, 22.0));
-            if ui.add(btn).clicked() {
+            let ink = if sel { contrast::on_fill(pal.accent) } else { ui.visuals().text_color() };
+            let font = egui::FontId::proportional(font_px);
+            let galley = ui.ctx().fonts_mut(|f| f.layout_no_wrap((*name).to_owned(), font.clone(), ink));
+            let w = pad_x + icon_px + icon_gap + galley.size().x + pad_x;
+            let size = Vec2::new(w, tab_h);
+            let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+            let painter = ui.painter();
+            if sel {
+                painter.rect_filled(rect, radius, pal.accent);
+                painter.rect_stroke(
+                    rect,
+                    radius,
+                    egui::Stroke::new((stroke_w * 0.5).max(0.5), pal.accent_hover),
+                    egui::StrokeKind::Outside,
+                );
+            } else if resp.hovered() {
+                painter.rect_filled(rect, radius, pal.field_hover);
+            }
+            if let Some(set) = crate::egui_app::icons::IconSet::from_ctx(ui.ctx())
+                && let Some(tex) = set.texture(sec_icon(i))
+            {
+                let icon_rect = egui::Rect::from_center_size(
+                    egui::Pos2::new(rect.left() + pad_x + icon_px * 0.5, rect.center().y),
+                    Vec2::splat(icon_px),
+                );
+                painter.image(
+                    tex.id(),
+                    icon_rect,
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                    ink,
+                );
+            }
+            painter.galley(
+                egui::Pos2::new(rect.left() + pad_x + icon_px + icon_gap, rect.center().y - galley.size().y * 0.5),
+                galley,
+                ink,
+            );
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, *name));
+            if resp.clicked() {
                 tab = i;
             }
         }
     });
     let rule = ui.available_rect_before_wrap();
     let y = rule.top();
-    ui.painter().hline(rule.x_range(), y, Stroke::new(2.0, pal.accent));
-    ui.add_space(4.0);
+    ui.painter().hline(rule.x_range(), y, Stroke::new(stroke_w, pal.accent));
+    ui.add_space(bottom_gap);
     *open = tab;
     tab
 }

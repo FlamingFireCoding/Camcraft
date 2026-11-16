@@ -25,6 +25,9 @@ pub mod move_model;
 pub mod operation;
 pub mod post;
 pub mod post_options;
+pub mod post_script_options;
+// #258: the document's program number and comment.
+pub mod program_info;
 // #155: Pause / Home entries of the operation list.
 pub mod program_entry;
 // M13.11: mesh repair (weld + fill holes) as one undo unit over UpdateModel.
@@ -38,10 +41,13 @@ pub mod setup;
 pub mod setup_delete;
 // #196: a setup's picked program offset.
 pub mod setup_align;
+mod align_stock;
 pub mod setup_wcs;
 // #343: a setup's own machine and post.
 pub mod setup_mount;
 pub mod setup_post_options;
+// #821: a setup's stated nose-to-rotary figure (a raised rotary).
+pub mod setup_nose;
 pub mod setup_workholding;
 // #316: a setup placed relative to another (flip / turn presets).
 pub mod setup_relative;
@@ -54,6 +60,8 @@ pub mod theme;
 // M13.4 / #877: the viewer's colour-vision remap, the theme's twin.
 pub mod color_vision;
 pub mod set_wcs;
+// #739: the WCS origin on a picked circle's centre.
+pub mod wcs_circle;
 pub mod tool;
 // #368: a tool's modelled body.
 pub mod tool_body;
@@ -64,6 +72,8 @@ pub mod tool_import;
 // #221: a tool's controller number.
 pub mod tool_number;
 pub mod update_model;
+// #547: a sinker electrode generated from a cavity's picked faces.
+pub mod electrode;
 
 use flecs_ecs::prelude::World;
 
@@ -90,6 +100,10 @@ pub use operation::{
 };
 pub use post::SelectPost;
 pub use post_options::SetPostOptions;
+pub use post_script_options::{
+    PostSettingsEdit, SetPostScriptOptions, SetPostSettings, SetSetupPostScriptOptions,
+};
+pub use program_info::SetProgramInfo;
 pub use program_entry::{AddProgramEntry, EditProgramEntry};
 pub use repair_model::RepairModel;
 pub use ribbon_pins::SetRibbonPins;
@@ -101,17 +115,20 @@ pub use setup_align::AlignPartToSetup;
 pub use setup_wcs::SetSetupWorkOffset;
 pub use setup_mount::{SetSetupMachine, SetSetupPost};
 pub use setup_post_options::SetSetupPostOptions;
+pub use setup_nose::SetSetupNoseToAxis;
 pub use setup_workholding::SetSetupWorkholdingRpm;
 pub use setup_relative::SetSetupRelative;
 pub use setup_stock::SetSetupStockSource;
 pub use set_units::SetUnits;
 pub use theme::{check_theme, theme_of, theme_set};
 pub use color_vision::{color_vision_of, color_vision_set};
-pub use set_wcs::SetWcsOrigin;
+pub use set_wcs::{BoxPoint, OriginAt, SetWcsOrigin, place_setup_origin};
+pub use wcs_circle::SetWcsAtCircleCentre;
 pub use tool::{AddTool, ChangeTool, DeleteTool, HolderPick};
 pub use tool_body::{LatheBodySpec, SetToolBody, ToolBodySpec};
 pub use tool_cutter::{ReshapeTool, SetToolCutter};
 pub use tool_import::{ImportMode, ImportReport, ImportTools};
+pub use electrode::ElectrodeFromFaces;
 pub use tool_number::SetToolNumber;
 pub use update_model::UpdateModel;
 
@@ -175,6 +192,17 @@ pub trait Command {
     fn invert(&self, world: &World);
 }
 
+// Globally unique identities survive Undo/Redo but never a replacement edit or document.
+fn next_history_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+struct HistoryEntry {
+    id: u64,
+    command: Box<dyn Command>,
+}
+
 /// Linear undo/redo over executed commands. Executing a fresh command clears
 /// the redo stack (standard history semantics).
 ///
@@ -185,14 +213,20 @@ pub trait Command {
 /// command executed while the saved point sits on the redo stack discards
 /// that state for good, so the saved point becomes unreachable (`None`).
 pub struct History {
-    done: Vec<Box<dyn Command>>,
-    redo: Vec<Box<dyn Command>>,
+    done: Vec<HistoryEntry>,
+    redo: Vec<HistoryEntry>,
+    identity: u64,
     saved: Option<usize>,
 }
 
 impl Default for History {
     fn default() -> Self {
-        Self { done: Vec::new(), redo: Vec::new(), saved: Some(0) }
+        Self {
+            done: Vec::new(),
+            redo: Vec::new(),
+            saved: Some(0),
+            identity: next_history_id(),
+        }
     }
 }
 
@@ -203,7 +237,10 @@ impl History {
             self.saved = None;
         }
         command.apply(world);
-        self.done.push(Box::new(command));
+        self.done.push(HistoryEntry {
+            id: next_history_id(),
+            command: Box::new(command),
+        });
         self.redo.clear();
     }
 
@@ -211,7 +248,7 @@ impl History {
         match self.done.pop() {
             Some(command) => {
                 tracing::debug!("undo");
-                command.invert(world);
+                command.command.invert(world);
                 self.redo.push(command);
                 true
             }
@@ -222,7 +259,7 @@ impl History {
     pub fn redo(&mut self, world: &World) -> bool {
         match self.redo.pop() {
             Some(command) => {
-                command.apply(world);
+                command.command.apply(world);
                 self.done.push(command);
                 true
             }
@@ -239,6 +276,7 @@ impl History {
     /// Drop all history; used when a document replaces the current one.
     /// The replacing document (blank or loaded) starts clean.
     pub fn clear(&mut self) {
+        self.identity = next_history_id();
         self.done.clear();
         self.redo.clear();
         self.saved = Some(0);
@@ -262,6 +300,24 @@ impl History {
 
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
+    }
+
+    /// Number of committed commands currently on the undo stack.
+    #[must_use]
+    pub fn done_len(&self) -> usize {
+        self.done.len()
+    }
+
+    /// Identity of the document timeline; clearing history starts a new timeline.
+    #[must_use]
+    pub fn identity(&self) -> u64 {
+        self.identity
+    }
+
+    /// Exact committed entries, preserved by Undo/Redo and unique across replacement edits.
+    #[must_use]
+    pub fn done_entry_ids(&self) -> Vec<u64> {
+        self.done.iter().map(|entry| entry.id).collect()
     }
 
     pub fn is_empty(&self) -> bool {

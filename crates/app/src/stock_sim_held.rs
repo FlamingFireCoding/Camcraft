@@ -27,6 +27,12 @@
 //!   `CAMCRAFT_CARRY_ENGINE=field` sets the process default for running
 //!   the carried suites whole on the field arm. A job thread never reads
 //!   the switch: a plan carries the stock it was built with.
+//! - **A shipped build ignores the switch (#1168).** The variable is
+//!   honoured only where [`CARRY_ENGINE_SWITCH_HONOURED`] holds - builds
+//!   with debug assertions (the dev and test profiles); a release build
+//!   always carries on the column engine, so two machines judge one file
+//!   alike. Wherever the field engine does judge, the verdict says so
+//!   ([`engine_note`]), never silently.
 
 use std::cell::Cell;
 use std::sync::OnceLock;
@@ -54,12 +60,44 @@ thread_local! {
     static ENGINE: Cell<Option<Backend>> = const { Cell::new(None) };
 }
 
+/// Whether this build honours [`CARRY_ENGINE_ENV`] (#1168): only builds
+/// with debug assertions (dev and test profiles). A release build - what
+/// ships - never reads it.
+pub const CARRY_ENGINE_SWITCH_HONOURED: bool = cfg!(debug_assertions);
+
+/// The default engine a [`CARRY_ENGINE_ENV`] value selects: the field
+/// engine for `field` when the switch is `honoured`; the column engine
+/// otherwise - always in a build that does not honour it.
+#[must_use]
+pub fn engine_from_switch(value: Option<&str>, honoured: bool) -> Backend {
+    match value {
+        Some(v) if honoured && v.trim().eq_ignore_ascii_case("field") => Backend::Field { band: FIELD_BAND },
+        _ => Backend::Column,
+    }
+}
+
 fn default_engine() -> Backend {
     static DEFAULT: OnceLock<Backend> = OnceLock::new();
-    *DEFAULT.get_or_init(|| match std::env::var(CARRY_ENGINE_ENV) {
-        Ok(v) if v.trim().eq_ignore_ascii_case("field") => Backend::Field { band: FIELD_BAND },
-        _ => Backend::Column,
+    *DEFAULT.get_or_init(|| {
+        if !CARRY_ENGINE_SWITCH_HONOURED {
+            return Backend::Column; // a shipped build never reads the variable
+        }
+        engine_from_switch(std::env::var(CARRY_ENGINE_ENV).ok().as_deref(), true)
     })
+}
+
+/// The line a verdict carries when this thread's carried stock is NOT on
+/// the shipped column engine (#1168): which engine judged, so a verdict
+/// that differs from another machine's says why. `None` on the column
+/// engine (every shipped verdict: nothing extra to say).
+#[must_use]
+pub fn engine_note() -> Option<String> {
+    match engine() {
+        Backend::Column => None,
+        Backend::Field { band } => Some(format!(
+            "carried stock judged by the field engine (band {band}, development switch {CARRY_ENGINE_ENV}), not the shipped column engine"
+        )),
+    }
 }
 
 /// The engine this thread's carried stock is built on.
@@ -144,6 +182,25 @@ pub(crate) fn first_carried(world: &World, setup: Option<&str>, min_r: f64) -> R
     first_held(world, setup, min_r)?.into_carried(world, setup)
 }
 
+/// What a sinker electrode sweeps: its face's half sizes (the box atom,
+/// #541) or, when the tool states one, its outline about the burn point
+/// (the outline atom, #1152), and the condition's spark gap.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ElectrodeAtom {
+    pub half: [f64; 2],
+    pub gap: f64,
+    /// Empty for a rectangular face.
+    pub outline: Vec<[f64; 2]>,
+}
+
+impl ElectrodeAtom {
+    pub(crate) fn of(tool: &crate::tools::Tool, gap: f64) -> Self {
+        let (hx, hy) = camcraft_tools::electrode::half_sizes(tool);
+        let outline = camcraft_tools::electrode::outline(tool).map(<[_]>::to_vec).unwrap_or_default();
+        Self { half: [hx, hy], gap, outline }
+    }
+}
+
 impl Held {
     /// Cut `ops` (current frame) into the stock.
     pub(crate) fn simulate(&mut self, ops: &[SimOp]) -> Result<(), String> {
@@ -152,6 +209,32 @@ impl Held {
             Held::Carried(c) => c.simulate(ops),
         }
         .map_err(|e| e.to_string())
+    }
+
+    /// Burn a sinker electrode's box atom (#541) into the column grid;
+    /// the field engine has no box atom and refuses by name.
+    pub(crate) fn simulate_box(&mut self, moves: &[crate::cl::Move], hx: f64, hy: f64, gap: f64) -> Result<(), String> {
+        let dex = match self {
+            Held::Plain(Stock::Column(d)) => d,
+            Held::Carried(CarriedStock::Column(b)) => &mut b.dex,
+            Held::Plain(Stock::Field(_)) | Held::Carried(CarriedStock::Field(_)) => {
+                return Err(crate::stock_sim::ELECTRODE_FIELD_REFUSAL.into());
+            }
+        };
+        crate::stock_sim::simulate_box(dex, moves, hx, hy, gap).map_err(|e| e.to_string())
+    }
+
+    /// Burn a sinker body electrode's outline atom (#1152) into the
+    /// column grid; the field engine has none and refuses by name.
+    pub(crate) fn simulate_outline(&mut self, moves: &[crate::cl::Move], outline: &[[f64; 2]], gap: f64) -> Result<(), String> {
+        let dex = match self {
+            Held::Plain(Stock::Column(d)) => d,
+            Held::Carried(CarriedStock::Column(b)) => &mut b.dex,
+            Held::Plain(Stock::Field(_)) | Held::Carried(CarriedStock::Field(_)) => {
+                return Err(crate::stock_sim::ELECTRODE_FIELD_REFUSAL.into());
+            }
+        };
+        crate::stock_sim::simulate_outline(dex, moves, outline, gap).map_err(|e| e.to_string())
     }
 
     /// Clip under the entered setup's own stock `grid` (the M3.2 A clip).
@@ -174,12 +257,25 @@ impl Held {
         }
     }
 
-    /// The verdict of the stock as held, against `facets`.
-    pub(crate) fn deviate(&self, facets: &[Triangle], tol: f64) -> Result<Deviation, String> {
-        match self {
-            Held::Plain(s) => s.deviate(facets, tol).map_err(|e| e.to_string()),
-            Held::Carried(c) => c.deviate(facets, tol),
-        }
+    /// Credit the top before combining it with the underside, while retaining
+    /// the stock for the next setup. Read a field body once, without copying it.
+    pub(crate) fn verdict_snapshot(
+        &self,
+        facets: &[Triangle],
+        tol: f64,
+        credit: impl FnOnce(&mut Deviation, &Dexel),
+    ) -> Result<Deviation, String> {
+        let body = match self {
+            Held::Plain(Stock::Column(d)) => {
+                let mut dev = crate::stock_sim::deviate(d, facets, tol).map_err(|e| e.to_string())?;
+                credit(&mut dev, d);
+                return Ok(dev);
+            }
+            Held::Plain(Stock::Field(_)) => return Err(PLAIN_FIELD_REFUSAL.into()),
+            Held::Carried(CarriedStock::Column(b)) => std::borrow::Cow::Borrowed(b),
+            Held::Carried(CarriedStock::Field(f)) => std::borrow::Cow::Owned(f.body()?),
+        };
+        body.deviate_with_top_credit(facets, tol, credit).map_err(|e| e.to_string())
     }
 
     /// The verdict and the tops the viewer draws (a carried body's
@@ -208,3 +304,8 @@ impl Held {
         }
     }
 }
+
+// #541 review: `simulate_box` on every arm (split out by the 400-line law).
+#[cfg(test)]
+#[path = "stock_sim_held_tests.rs"]
+mod tests;

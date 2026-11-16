@@ -743,6 +743,8 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Tormach PCNC 1100 (Series 3)", Kind::Mill),
         ("Tormach 770M+", Kind::Mill),
         ("Tormach 1100M+", Kind::Mill),
+        ("grblHAL 3-axis", Kind::Mill),
+        ("TinyG 3-axis", Kind::Mill),
         ("Tormach 24R", Kind::Mill),
         ("Tormach xsTECH Pro", Kind::Mill),
         ("Tormach xsTECH", Kind::Mill),
@@ -752,7 +754,19 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Tormach 15LX Slant-PRO", Kind::Lathe),
         ("Makera Carvera", Kind::Mill),
         ("Makera Carvera Air", Kind::Mill),
+        ("Makera Z1", Kind::Mill),
+        ("Sienci AltMill 2x4", Kind::Mill),
+        ("Sienci AltMill 4x4", Kind::Mill),
+        ("Sienci AltMill 4x8", Kind::Mill),
         ("Doosan DNM 5700", Kind::Mill),
+        ("Doosan DNM 5700 + rotary table", Kind::Mill),
+        ("Haas VF-2", Kind::Mill),
+        ("Haas VF-2SS", Kind::Mill),
+        ("Haas Mini Mill", Kind::Mill),
+        ("Haas DT-1", Kind::Mill),
+        ("Haas DM-1", Kind::Mill),
+        ("Sinker EDM 3-axis (template)", Kind::SinkerEdm),
+        ("Sodick ALC400G", Kind::WireEdm),
     ];
     assert_eq!(MACHINES.len(), expectations.len(), "the pane offers what the tests pin");
     for ((name, text), (want_name, want_kind)) in MACHINES.iter().zip(expectations) {
@@ -763,7 +777,9 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         let mut inferred = m.clone();
         inferred.kind = None;
         // #669: plasma is declared, never inferred - its X/Y/Z reads mill.
-        let axes_say = if want_kind == Kind::Plasma { Kind::Mill } else { want_kind };
+        // #1135: so is a sinker EDM (#530: no axis inventory infers an EDM); #1501: so is a wire EDM.
+        let axes_say =
+            if matches!(want_kind, Kind::Plasma | Kind::SinkerEdm | Kind::WireEdm) { Kind::Mill } else { want_kind };
         assert_eq!(kind(Some(&inferred)), axes_say, "{name}'s axes agree with its word");
     }
 }

@@ -53,6 +53,10 @@ enum KindWord {
     Taper,
     Probe,
     Torch,
+    Waterjet,
+    Electrode,
+    ThreadMill,
+    ThreadMillSingle,
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -73,6 +77,12 @@ struct Def {
     tip_angle: f64,
     #[serde(default)]
     pitch: f64,
+    /// A single-form thread mill's finest pitch (#894).
+    #[serde(default)]
+    pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    #[serde(default)]
+    thread_hand: crate::thread_hand::ThreadHand,
     #[serde(default)]
     nose_radius: f64,
     #[serde(default)]
@@ -97,6 +107,9 @@ struct Def {
     /// Turning cutting data (#891); the starter catalog states none.
     #[serde(default)]
     turning: Option<crate::turning_data::TurningData>,
+    /// A sinker electrode's section (#1152); the starter catalog states none.
+    #[serde(default)]
+    outline: Vec<[f64; 2]>,
 }
 
 fn yes() -> bool {
@@ -120,11 +133,17 @@ impl Def {
                 KindWord::Taper => ToolKind::Taper,
                 KindWord::Probe => ToolKind::Probe,
                 KindWord::Torch => ToolKind::Torch,
+                KindWord::Waterjet => ToolKind::Waterjet,
+                KindWord::Electrode => ToolKind::Electrode,
+                KindWord::ThreadMill => ToolKind::ThreadMill,
+                KindWord::ThreadMillSingle => ToolKind::ThreadMillSingle,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,
             tip_angle: self.tip_angle,
             pitch: self.pitch,
+            pitch_min: self.pitch_min,
+            thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,
@@ -142,6 +161,9 @@ impl Def {
             flutes: self.flutes,
             center_cutting: self.center_cutting,
             orientation: self.orientation,
+            catalog: crate::catalog_fields::ToolCatalog::default(),
+            cutting: Vec::new(),
+            outline: self.outline,
             turning: self.turning,
         }
     }

@@ -50,12 +50,24 @@ pub struct Edm {
     /// vertical (0 < angle < 90).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_taper_deg: Option<f64>,
+    /// Wire: the angle-word taper dialect (#1164); `None` = the machine
+    /// tapers by U/V moves (#536).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub taper_angle: Option<super::edm_taper::TaperAngle>,
     /// Wire: the wire diameters the machine takes, mm.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub wire_diameters: Vec<f64>,
     /// Wire: automatic wire threading. Unstated = not claimed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub awt: Option<bool>,
+    /// Wire: the work cut submerged or not (#1499). Unstated = set at
+    /// the control, nothing posted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tank: Option<super::edm_dielectric::Tank>,
+    /// Wire: high or low pressure flushing (#1499). Unstated = set at
+    /// the control, nothing posted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flushing: Option<super::edm_dielectric::Flushing>,
     /// Sinker: the orbit patterns the control offers.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub orbits: Vec<OrbitWord>,
@@ -74,11 +86,21 @@ pub struct Edm {
 }
 
 /// The keys only a wire machine states.
-pub const WIRE_KEYS: [&str; 5] = ["lower_guide_z", "upper_guide_z", "max_taper_deg", "wire_diameters", "awt"];
+pub const WIRE_KEYS: [&str; 8] = [
+    "lower_guide_z",
+    "upper_guide_z",
+    "max_taper_deg",
+    "wire_diameters",
+    "awt",
+    "taper_angle",
+    "tank",
+    "flushing",
+];
 /// The keys only a sinker machine states.
 pub const SINKER_KEYS: [&str; 3] = ["orbits", "max_orbit_radius", "pickup"];
-/// The keys either EDM kind states.
-pub const COMMON_KEYS: [&str; 1] = ["conditions"];
+/// The keys either EDM kind states (`codes`: the control's own words,
+/// #533, read by `edm_codes::parse_codes`).
+pub const COMMON_KEYS: [&str; 2] = ["conditions", "codes"];
 /// The keys of one orbit entry.
 const ORBIT_KEYS: [&str; 2] = ["kind", "word"];
 
@@ -114,6 +136,7 @@ impl Edm {
             && self.max_taper_deg.is_none_or(|a| a.is_finite() && a > 0.0 && a < 90.0)
             && self.wire_diameters.iter().all(|d| d.is_finite() && *d > 0.0)
             && pos(self.max_orbit_radius)
+            && self.pickup.as_ref().is_none_or(|p| !p.trim().is_empty())
             && self.orbits.iter().all(|o| ORBIT_KINDS.contains(&o.kind.as_str()) && !o.word.trim().is_empty())
             && self.conditions_sane()
     }
@@ -128,15 +151,17 @@ impl Edm {
             || self.max_taper_deg.is_some()
             || !self.wire_diameters.is_empty()
             || self.awt.is_some()
+            || self.tank.is_some()
+            || self.flushing.is_some()
             || self.conditions.iter().any(|c| c.wire_diameter.is_some());
         let sinker = !self.orbits.is_empty()
             || self.max_orbit_radius.is_some()
             || self.pickup.is_some()
-            || self.conditions.iter().any(|c| c.undersize.is_some());
+            || self.conditions.iter().any(|c| c.undersize.is_some() || c.wear.is_some());
         match k {
             Kind::WireEdm => !sinker,
             Kind::SinkerEdm => !wire,
-            Kind::Mill | Kind::Lathe | Kind::MillTurn | Kind::Plasma => false,
+            Kind::Mill | Kind::Lathe | Kind::MillTurn | Kind::Plasma | Kind::Waterjet => false,
         }
     }
 }
@@ -278,6 +303,8 @@ pub(super) fn parse_edm(v: Option<&Value>, f: f64, k: Option<Kind>) -> Result<Op
         }
         Some(x) => return Err(format!("machine file: edm.orbits must be a list, not {x}")),
     }
+    e.taper_angle = super::edm_taper::parse_taper_angle(v.get("taper_angle"))?;
+    (e.tank, e.flushing) = super::edm_dielectric::parse_dielectric(v)?;
     Ok(Some(e))
 }
 

@@ -14,6 +14,10 @@ pub mod catalog_asset;
 #[cfg(test)]
 mod catalog_asset_tests;
 pub mod cutting;
+// #541: the sinker EDM electrode as a tool record.
+pub mod electrode;
+// #1152: the body electrode's outline law.
+pub mod electrode_outline;
 // #368: a modelled tool body as the stack laws read it.
 pub mod holder_profile;
 // #793: the built-in BT/CAT taper holder library, drawn as spun profiles.
@@ -32,6 +36,13 @@ pub mod lathe_holder;
 pub mod lathe_insert_zone;
 // #630: the lathe tool orientation code and its control point.
 pub mod orientation;
+// #894: the thread mills - form constants, sanity and the pitch door.
+pub mod thread_mill;
+pub mod thread_hand;
+pub mod catalog_fields;
+// #890: a tool's cutting data per workpiece material.
+pub mod cutting_rows;
+pub mod waterjet;
 pub mod tools;
 // #1186: the tool sanity law, said by name.
 pub mod tool_sanity;

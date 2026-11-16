@@ -14,7 +14,7 @@ use crate::geometry::Point3;
 use crate::links::Link;
 use crate::plunge_law;
 
-use super::arcs::{fit_arcs, lead_in, lead_out, push_segs, walk_tangent};
+use super::arcs::{fit_arcs_sided, lead_in, lead_out, push_segs, walk_tangent};
 use super::contour::{ContourParams, air_side};
 use super::face::GenError;
 
@@ -43,6 +43,23 @@ pub fn contour_along_chain(
             "a centerline run needs at least two points".into(),
         ));
     }
+    if let Some(q) = p.links.approach.start_point {
+        // #1448: an open run starts at one of its ends; a picked start
+        // there is a later slice - refused by name, never ignored.
+        return Err(GenError::Invalid(format!(
+            "start point ({:.3}, {:.3}): an open chain starts at its end - a picked start is \
+             taken only on closed contours yet; clear the start point",
+            q.x, q.y
+        )));
+    }
+    if let Some(q) = p.links.approach.exit_point {
+        // #1473: likewise an open run leaves at its other end.
+        return Err(GenError::Invalid(format!(
+            "exit point ({:.3}, {:.3}): an open chain leaves at its end - a picked exit is \
+             taken only on closed contours yet; clear the exit point",
+            q.x, q.y
+        )));
+    }
     let poly: Vec<Point2> = if p.climb {
         pts.to_vec()
     } else {
@@ -51,7 +68,7 @@ pub fn contour_along_chain(
         v
     };
     let zs = p.levels()?;
-    let walk = fit_arcs(&poly, p.tolerance);
+    let walk = fit_arcs_sided(&poly, p.tolerance, Some(p.climb));
     let t0 = walk_tangent(&walk, &poly, true);
     let (entry, lead) = lead_in(poly[0], t0, air_side(t0, p.climb), p.lead);
     let n = poly.len();
@@ -110,7 +127,7 @@ pub fn contour_along_chain(
         // The stock beside the run is not proved cleared: the one plunge
         // law refuses a tool that is not centre-cutting by name.
         let cc = p.links.approach.center_cutting;
-        plunge_law::guard(&mut b, cc, p.tool_diameter * 0.5, entry, z, p.top_z, "the dive at the lead-in");
+        plunge_law::guard(&mut b, cc, p.tool_diameter * 0.5, entry, z, p.entry_top(), "the dive at the lead-in");
         b.push(MoveKind::Plunge, Point3::new(entry.x, entry.y, z), Some(p.plunge_feed));
         push_segs(&mut b, &lead, z, p.feed);
         push_segs(&mut b, &walk, z, p.feed);

@@ -38,14 +38,17 @@
 //! too much is left). Every loop is capped; the plan cannot hang.
 
 mod budget;
+mod conform;
 mod core;
 mod front;
 mod grow;
 mod guard;
 mod kernel;
 mod lift;
+mod lift_coarse;
 mod lift_link;
 mod lift_split;
+mod lift_swept;
 mod link;
 mod loops;
 // Issue #5: the trochoidal fallback (`pocket_hsm`: spiral -> trochoid ->
@@ -54,6 +57,8 @@ mod medial;
 mod morph;
 mod near;
 mod raster;
+// Issue 2031: rest machining over proved remaining stock.
+mod rest;
 mod rings;
 mod rounds;
 mod route;
@@ -77,12 +82,14 @@ pub(crate) use troch_plan::{plan as plan_trochoid, seed as trochoid_seed};
 pub(crate) use lift::Travel;
 pub(crate) use lift_link::Return;
 pub(crate) use loops::boundary_dist;
+pub(crate) use medial::{Spine, spine as medial_spine};
 /// The plan's chord sagitta (`morph`): the finest tessellation the
 /// pocket family posts, which `quality` walks arcs at.
 pub(crate) use morph::SAG as PLAN_SAG;
 
 use super::GenError;
 use raster::Raster;
+pub use rest::{REST_STOCK_FILM, RestStock, StockFloor, rest_adaptive};
 
 /// The worst contact angle a trial walk read, and where.
 type Worst = (f64, Point2);

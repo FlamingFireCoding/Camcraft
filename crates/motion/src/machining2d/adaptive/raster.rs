@@ -7,6 +7,7 @@
 use crate::geo2d::{Point2, Region};
 
 use crate::machining2d::GenError;
+mod conservative;
 
 /// Front-half rim samples (over 180 degrees): the measuring stock's
 /// own count, so a reading here is a reading there.
@@ -194,6 +195,11 @@ impl Raster {
     /// The center of cell `i`.
     pub(super) fn center(&self, i: usize) -> Point2 {
         Point2::new(self.x0 + ((i % self.nx) as f64 + 0.5) * self.h, self.y0 + ((i / self.nx) as f64 + 0.5) * self.h)
+    }
+
+    /// Does a cell stand here that `other` has cleared (two cuts compared)?
+    pub(super) fn stands_over(&self, other: &Raster) -> bool {
+        self.cells.len() != other.cells.len() || self.cells.iter().zip(&other.cells).any(|(&a, &b)| a && !b)
     }
 
     /// Material cells standing (the progress yardstick of a round).

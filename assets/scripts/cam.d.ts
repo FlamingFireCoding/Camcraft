@@ -43,11 +43,14 @@ interface PostOptions {
   /** The .nc (or .cnc) file to write. Required. */
   to: string;
   /** A built-in post name - "Fanuc", "Haas", "Siemens 840D",
-   *  "Heidenhain", "Mazak", "Tormach PathPilot" - or the path of a .cps file.
+   *  "Heidenhain", "Mazak", "Tormach PathPilot", "grblHAL", "TinyG" - or the
+   *  path of a .cps file.
    *  Omitted means the document's own post. */
   cps?: string;
   /** Also return the program text in the result. */
   program?: boolean;
+  /** Per-post declared option overrides for this run. */
+  options?: Record<string, boolean | number | string>;
 }
 
 interface PostResult {
@@ -55,9 +58,11 @@ interface PostResult {
   ops: number;
   lines: number;
   program?: string;
-  /** Setups on different machines or posts: every file written, one per mount. */
+  /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];
   mounts?: PostedMountInfo[];
+  /** One file per operation (`per_op` enabled): per-operation summaries when multiple files are written. */
+  operations?: PostedOpInfo[];
 }
 
 interface PostedMountInfo {
@@ -66,6 +71,13 @@ interface PostedMountInfo {
   machine: string;
   post: string;
   ops: number;
+  lines: number;
+  program?: string;
+}
+
+interface PostedOpInfo {
+  path: string;
+  operation: string;
   lines: number;
   program?: string;
 }
@@ -92,7 +104,7 @@ interface JobReport {
 interface CamApi {
   load(path: string): DocumentInfo;  // arity 1
   save(path?: string): { path: string };  // variadic
-  import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number };  // variadic
+  import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] };  // variadic
   exportTools(path: string): { path: string; tools: number };  // arity 1
   importTools(path: string, mode?: "add" | "update" | "replace", holders?: boolean): { path: string; mode: string; added: string[]; renamed: { from: string; to: string }[]; skipped: string[]; updated: string[]; replaced: string[]; removed: string[]; holders: number; holders_left_out: number; summary: string };  // variadic
   operations(): OperationInfo[];  // arity 0

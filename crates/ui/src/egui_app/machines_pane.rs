@@ -34,6 +34,7 @@ use super::colorvision::text_inks;
 use super::layout::{group_open, prop_grid};
 use super::theme::Tokens;
 use crate::state::{CommandKind, State};
+use crate::shortcut_keys::chord;
 
 /// The pane's view state.
 #[derive(Default)]
@@ -58,7 +59,10 @@ pub struct MachinesPane {
 }
 
 /// The kinds New blank offers, in the combo's order.
-const KINDS: [Kind; 4] = [Kind::Mill, Kind::Lathe, Kind::MillTurn, Kind::Plasma];
+const KINDS: [Kind; 7] = [
+    Kind::Mill, Kind::Lathe, Kind::MillTurn, Kind::Plasma,
+    Kind::Waterjet, Kind::WireEdm, Kind::SinkerEdm,
+];
 
 /// The dropdown's first entry: no filter, New blank shut.
 pub(crate) const ALL_KINDS: &str = "All";
@@ -145,7 +149,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State, pal: &Tokens) {
     let mut open: Option<Result<MachineDraft, String>> = None;
     if p.editor.is_none() {
         ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_id_salt("machines-new-kind")
+            let cb = egui::ComboBox::from_id_salt("machines-new-kind")
                 .selected_text(want.map_or(ALL_KINDS, |k| k.word()))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut p.kind_filter, None, ALL_KINDS);
@@ -153,6 +157,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State, pal: &Tokens) {
                         ui.selectable_value(&mut p.kind_filter, Some(i), k.word());
                     }
                 });
+            super::fields::named(cb.response, "Filter machines by kind");
             // A blank file needs a kind: shut under "All", accent-filled
             // once a kind is picked.
             let mut blank = egui::Button::new("New blank");
@@ -271,7 +276,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State, pal: &Tokens) {
         let r = ui.add_enabled(why.is_none(), egui::Button::new(USE_FOR_SETUP));
         match &why {
             None => {
-                if r.on_hover_text("Make this the setup's machine (Ctrl+Z undoes it)").clicked() {
+                if r.on_hover_text(format!("Make this the setup's machine ({} undoes it)", chord("Z"))).clicked() {
                     assign = Some(e.source.clone());
                 }
             }

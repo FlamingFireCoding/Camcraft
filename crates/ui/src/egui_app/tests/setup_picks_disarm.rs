@@ -85,6 +85,18 @@ fn show_setup_page(harness: &mut Harness<'static, ShellUi>) {
     assert!(harness.state().state.axis_rows_shown, "the setup page draws the pick rows");
 }
 
+/// #771: the plane row and the points row live behind the orientation
+/// dropdown's entries - switch the plane method before clicking their
+/// buttons. `method` is the entry's label ("Face", "Points", ...).
+fn switch_plane_method(harness: &mut Harness<'static, ShellUi>, method: &str) {
+    harness
+        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Axes"))
+        .click();
+    harness.run();
+    harness.get_by_label(method).click();
+    harness.run();
+}
+
 /// Leave for Contour1's page, click `p` there: the operation's geometry
 /// takes the pick. Returns the operation's picks.
 fn click_on_operation_page(harness: &mut Harness<'static, ShellUi>, p: egui::Pos2) -> Vec<camcraft_app::operation::GeoSel> {
@@ -154,6 +166,7 @@ fn an_axis_two_points_pick_disarms_when_its_page_is_left() {
 #[test]
 fn a_plane_face_pick_disarms_when_its_page_is_left() {
     let mut harness = on_setup_page();
+    switch_plane_method(&mut harness, "Face");
     harness.get_by_label("Pick a face").click();
     harness.run();
     assert!(crate::plane_pick::collecting(&harness.state().state), "the plane row arms");
@@ -194,18 +207,16 @@ fn a_plane_face_pick_disarms_when_its_page_is_left() {
 /// Press the ribbon's View door, then its `panel` row - the user's way
 /// to close or reopen a pane.
 fn view_door_toggle(harness: &mut Harness<'static, ShellUi>, panel: crate::state::Panel) {
-    let strip = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::super::shell::RIBBON_H));
-    let (cells, _) = mill_plan_at(1280.0);
-    let button = cells.iter().find(|c| c.cmd == Cmd::View).expect("the View door stands on the bar").rect;
-    let rows = panes::view_rows_of(button, strip, &theme::current());
-    let at = rows
-        .iter()
-        .find(|(r, _)| *r == super::super::layout::ViewRow::Panel(panel))
-        .expect("the View door lists the panel")
-        .1
-        .center();
-    super::machines_pane::click(harness, button.center());
-    super::machines_pane::click(harness, at);
+    let label = match panel {
+        crate::state::Panel::Browser => "Browser",
+        crate::state::Panel::Properties => "Properties",
+        crate::state::Panel::Machines => "Machines",
+        crate::state::Panel::AiChat => "AI Chat",
+    };
+    harness.get_by_role_and_label(egui::accesskit::Role::Button, "Panels").click();
+    harness.run_steps(2);
+    harness.get_by_role_and_label(egui::accesskit::Role::MenuItem, label).click();
+    harness.run_steps(2);
 }
 
 fn properties_shown(harness: &Harness<'static, ShellUi>) -> bool {
@@ -244,6 +255,7 @@ fn a_plane_pick_disarms_when_another_tab_hides_the_properties_pane() {
     let mut harness = on_setup_page();
     // The Machines pane lists no user folder - never the tester's own.
     harness.state_mut().state.machines_pane.user_dir = Some(None);
+    switch_plane_method(&mut harness, "Face");
     harness.get_by_label("Pick a face").click();
     harness.run();
     let p = beside_an_edge(harness.state());
@@ -382,6 +394,7 @@ fn a_click_in_the_frame_the_pane_hides_misses_the_hidden_locate_draft() {
 #[test]
 fn a_three_points_pick_disarms_when_its_page_is_left() {
     let mut harness = on_setup_page();
+    switch_plane_method(&mut harness, "Points");
     harness.get_by_label("Pick three points").click();
     harness.run();
     assert!(harness.state().state.points_pick.is_some(), "the points row arms");

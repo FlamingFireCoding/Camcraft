@@ -71,6 +71,7 @@ fn od_world(bar: bool) -> (World, History) {
         history.execute(&world, SetStock::new(&world, shape, at).expect("bar stock"));
     }
     history.execute(&world, LoadMachine::new(&world, "lathe.mch".into(), Some(machine("lathe"))).expect("lathe"));
+    history.execute(&world, camcraft_app::commands::SelectPost::new(&world, camcraft_app::schema::PostRef::Named("Fanuc Lathe".into())).expect("lathe post"));
     add_tool(&world, &mut history, INSERT);
     history.execute(&world, ImportModel::from_mesh("step", stepped()));
     (world, history)
@@ -243,6 +244,7 @@ fn a_grooving_blade_holder_is_judged_by_its_band_and_a_fat_one_rubs_the_groove_w
     let shape = camcraft_app::stock::StockShape::Cylinder { diameter: 20.0, height: 44.0 };
     history.execute(&world, SetStock::new(&world, shape, at).expect("bar stock"));
     history.execute(&world, LoadMachine::new(&world, "lathe.mch".into(), Some(machine("lathe"))).expect("lathe"));
+    history.execute(&world, camcraft_app::commands::SelectPost::new(&world, camcraft_app::schema::PostRef::Named("Fanuc Lathe".into())).expect("lathe post"));
     add_tool(&world, &mut history, "GT-0200");
     let grooved = revolve(&[(0.0, -16.0), (6.0, -16.0), (6.0, -6.8), (4.0, -6.8), (4.0, -3.6), (6.0, -3.6), (6.0, 28.0), (0.0, 28.0)]);
     history.execute(&world, ImportModel::from_mesh("bar", grooved));
@@ -324,6 +326,7 @@ fn a_lathe_body_on_a_bar_refuses_a_milling_op_by_name() {
     history.execute(&world, SetToolBody::lathe(&world, "BR-1000", Some(body("bar.stp", cuboid([-4.0, -1.5, 1.0], [-0.5, 1.5, 80.0])))).expect("a sane bar"));
     let hole = camcraft_app::drilling::Hole { xy: camcraft_app::geo2d::Point2::new(0.0, 0.0), radius: 5.0, entry_z: 50.0, floor_z: -16.0, through: false, stepped: false };
     let params = OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(60.0),
         retract_z: None,
         top_z: Height::fixed(50.0),

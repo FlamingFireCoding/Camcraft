@@ -122,6 +122,7 @@ pub fn bore_world() -> (World, History) {
     );
     let cmd = LoadMachine::new(&world, "lathe.mch".into(), Some(machine("lathe")));
     history.execute(&world, cmd.expect("lathe"));
+    history.execute(&world, camcraft_app::commands::SelectPost::new(&world, camcraft_app::schema::PostRef::Named("Fanuc Lathe".into())).expect("lathe post"));
     add_tool(&world, &mut history, "BR-1000");
     add_tool(&world, &mut history, "TN-1600-0R8");
     add_tool(&world, &mut history, "EM-0400-2FL");
@@ -176,6 +177,7 @@ pub fn pilot(world: &World, history: &mut History) {
 pub fn pilot_of(world: &World, history: &mut History, drill: &str, radius: f64) {
     let hole = Hole { xy: Point2::new(0.0, 0.0), radius, entry_z: 50.0, floor_z: -16.0, through: false, stepped: false };
     let params = OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(60.0),
         retract_z: None,
         top_z: Height::fixed(50.0),

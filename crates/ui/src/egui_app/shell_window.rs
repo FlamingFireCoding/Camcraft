@@ -42,6 +42,12 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // through the guarded Quit instead of ending the process.
     let _ = super::os_quit::install();
     let mut shell = Shell::new(pick, want);
+    // #1946: wake the Wait event loop whenever the AI chat worker queues
+    // an event or dispatches an in-process MCP request.
+    let ai_proxy = event_loop.create_proxy();
+    shell.state.set_ai_wake(std::sync::Arc::new(move || {
+        let _ = ai_proxy.send_event(());
+    }));
     // #183: the opt-in live MCP server. Its waker posts an empty user
     // event, which wakes the idle loop for a frame that answers the call.
     if let Some(port) = mcp_port {
@@ -189,7 +195,8 @@ impl Shell {
     }
 
     fn init_gpu(&mut self, el: &ActiveEventLoop) {
-        let attrs = Window::default_attributes()
+        // #1754: with_icons also sets the taskbar icon (ICON_BIG) on Windows.
+        let attrs = super::app_icon::with_icons(Window::default_attributes())
             .with_title(self.window_title.clone())
             .with_inner_size(LogicalSize::new(1280.0, 800.0));
         let window = match el.create_window(attrs) {
@@ -317,6 +324,8 @@ impl Shell {
         // `state` (and its world) drops after all GPU objects.
         // #183: the MCP listener stops (and its thread is joined) first,
         // so no wake-up reaches a closing loop.
+        self.state.ai_chat.shutdown();
+        self.state.ai_mcp_inbox = None;
         self.state.mcp = None;
         self.renderer = None;
         self.view = None;

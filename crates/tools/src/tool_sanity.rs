@@ -18,6 +18,7 @@ impl Tool {
             ("corner radius", self.corner_r),
             ("tip angle", self.tip_angle),
             ("pitch", self.pitch),
+            ("finest pitch", self.pitch_min),
             ("nose radius", self.nose_radius),
             ("width", self.width),
             ("flute length", self.flute_len),
@@ -46,6 +47,7 @@ impl Tool {
         }
         let lengths = [
             ("pitch", self.pitch),
+            ("finest pitch", self.pitch_min),
             ("nose radius", self.nose_radius),
             ("width", self.width),
             ("shank diameter", self.shank_d),
@@ -59,11 +61,12 @@ impl Tool {
         if self.flute_len <= 0.0 {
             return Some(format!("flute length {} mm must be over 0", self.flute_len));
         }
-        // A torch turns no spindle (#670): its rpm is 0 by law, and
-        // every spinning kind states a positive one.
-        if self.kind == ToolKind::Torch {
+        // A torch, a sinker electrode (#541) and a waterjet nozzle turn
+        // no spindle: their rpm is 0 by law, and every spinning kind
+        // states a positive one.
+        if matches!(self.kind, ToolKind::Torch | ToolKind::Electrode | ToolKind::Waterjet) {
             if self.rpm != 0.0 {
-                return Some(format!("a plasma torch turns no spindle: its spindle speed must be 0, not {} rpm", self.rpm));
+                return Some(format!("a {} turns no spindle: its spindle speed must be 0, not {} rpm", self.kind, self.rpm));
             }
         } else if self.rpm <= 0.0 {
             return Some(format!("spindle speed {} rpm must be over 0", self.rpm));
@@ -76,6 +79,14 @@ impl Tool {
         }
         if let Some(q) = self.orientation.filter(|q| !crate::orientation::is_valid(*q)) {
             return Some(format!("lathe orientation code {q} is outside 1..9"));
+        }
+        // #898 catalog facts and #890 cutting data carry their own named
+        // refusals.
+        if let Some(why) = self.catalog.refusal() {
+            return Some(why);
+        }
+        if let Some(why) = crate::cutting_rows::refusal_for_kind(&self.cutting, self.kind) {
+            return Some(why);
         }
         // #891: stated turning data is sane, and the constant rpm the
         // tool states never runs over its own max-rpm clamp.
@@ -138,8 +149,46 @@ impl Tool {
             ToolKind::Torch if self.corner_r != 0.0 => {
                 Some(format!("a plasma torch carries no corner radius, not {} mm", self.corner_r))
             }
+            ToolKind::Waterjet => crate::waterjet::refusal(self),
+            ToolKind::Electrode => self.electrode_rule(),
+            ToolKind::ThreadMill | ToolKind::ThreadMillSingle => self.thread_mill_rule(),
             _ => None,
         }
+    }
+
+    /// A sinker electrode (#541): a stated Y size within the diameter's
+    /// bound, a sharp-cornered face, and a sound outline record.
+    fn electrode_rule(&self) -> Option<String> {
+        let w = self.width;
+        if !(w > 0.0 && w <= 500.0) {
+            return Some(format!("a sinker electrode's Y size (width) {w} mm is outside 0..500 mm (it must be over 0)"));
+        }
+        if self.corner_r != 0.0 {
+            return Some(format!("a sinker electrode's face is sharp-cornered: its corner radius must be 0, not {} mm", self.corner_r));
+        }
+        crate::electrode_outline::record_refusal(self)
+    }
+
+    /// A thread mill (#894): a V form, a core left under the teeth at
+    /// the coarsest pitch, and a pitch (range) the cutter can cut.
+    fn thread_mill_rule(&self) -> Option<String> {
+        let (d, a, p, pm) = (self.diameter, self.tip_angle, self.pitch, self.pitch_min);
+        if !(a > 0.0 && a < 180.0) {
+            return Some(format!("a thread mill's form angle {a} degrees must be over 0 and under 180"));
+        }
+        if p <= 0.0 {
+            return Some(format!("a thread mill's pitch {p} mm must be over 0"));
+        }
+        if d * 0.5 <= crate::thread_mill::EXTERNAL_DEPTH_PER_PITCH * p {
+            return Some(format!("a thread mill of {d} mm diameter leaves no core under the teeth of a {p} mm pitch"));
+        }
+        if self.kind == ToolKind::ThreadMill && self.flute_len < p {
+            return Some(format!("a thread mill's cutting length {} mm is shorter than one {p} mm pitch", self.flute_len));
+        }
+        if self.kind == ToolKind::ThreadMillSingle && !(pm > 0.0 && pm <= p) {
+            return Some(format!("a single-form thread mill's finest pitch {pm} mm must be over 0 and at most its {p} mm coarsest pitch"));
+        }
+        None
     }
 }
 

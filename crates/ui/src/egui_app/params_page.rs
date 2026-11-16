@@ -21,9 +21,71 @@ pub(super) struct Cx<'a> {
     pub cycle_note: &'a Option<String>,
     pub engrave: bool,
     pub detect_holes: bool,
+    /// #1171: the Wire Contour sync pick is armed (in), and the page
+    /// asks to arm or disarm it (out; applied after the arms ran).
+    pub sync_armed: bool,
+    pub sync_toggle: bool,
     /// The Circular op's circle read off its picks (`Some(Ok)`), or the
     /// fit's refusal; `None` while the typed centre and radius rule.
     pub circle_fit: &'a Option<Result<(camcraft_app::geo2d::Point2, f64), String>>,
+    /// #1504: the Slot's room read off its picks (`Some(Ok)` when the
+    /// slot fits it), or the refusal; `None` while the typed slot rules.
+    pub slot_fit: &'a Option<Result<String, String>>,
+    /// #1815: diameter of the currently selected tool for seeding rest params.
+    pub tool_diameter: Option<f64>,
+}
+
+/// The note explaining what `PocketStrategy::Auto` will generate: when rest
+/// machining is on in the draft, generation resolves `Auto` via `rest_strategy`
+/// rather than the pocket's outline.
+fn pocket_auto_note(
+    world: &World,
+    op: Option<&camcraft_app::schema::Operation>,
+    stepover: f64,
+    rest_on: bool,
+) -> String {
+    let pick = "Auto picks the shape from the pocket's outline at generate.";
+    if rest_on {
+        return match camcraft_app::machining2d::rest_strategy(PocketStrategy::Auto) {
+            Ok(PocketStrategy::Waterline) => {
+                "Auto -> Waterline: rest machining cuts concentric rings along each rest area."
+            }
+            Ok(PocketStrategy::OffsetRings) => {
+                "Auto -> Offset rings: rest machining uses concentric rings along each rest area."
+            }
+            Ok(PocketStrategy::Zigzag) => {
+                "Auto -> Zigzag: rest machining fills each rest area with back-and-forth rows."
+            }
+            Ok(PocketStrategy::Adaptive) => {
+                "Auto -> Adaptive: rest machining clears each rest area with adaptive passes."
+            }
+            Ok(PocketStrategy::Auto) | Err(_) => pick,
+        }
+        .into();
+    }
+    let Some(o) = op else {
+        return pick.into();
+    };
+    let region = operation::region_of(world, o).unwrap_or_default();
+    let diameter = model::find_by_name(world, &o.tool)
+        .as_ref()
+        .and_then(|t| model::tool_of(world, t))
+        .map_or(6.0, |t| t.diameter);
+    let outer: Vec<camcraft_app::geo2d::Point2> = region
+        .loops()
+        .iter()
+        .max_by(|a, b| a.area().abs().total_cmp(&b.area().abs()))
+        .map(|l| l.points().to_vec())
+        .unwrap_or_default();
+    if outer.is_empty() {
+        return pick.into();
+    }
+    match PocketStrategy::Auto.resolve(&outer, stepover, diameter, ARC_FIT_TOL) {
+        PocketStrategy::Waterline => {
+            "Auto -> Waterline: the outline is round and the rings reach every band.".into()
+        }
+        _ => "Auto -> Zigzag: rings would not suit this outline.".into(),
+    }
 }
 
 pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
@@ -74,6 +136,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
                     camcraft_app::cl::CycleKind::FloatingTap => "Tap (floating holder)",
                     camcraft_app::cl::CycleKind::Bore => "Bore",
                     camcraft_app::cl::CycleKind::BackBore => "Back bore",
+                    camcraft_app::cl::CycleKind::Ream => "Ream (feed in, feed out)",
                 };
                 Some(format!(
                     "Auto -> {name} for this tool and a depth of {}",
@@ -109,36 +172,11 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     if let OpParams::Pocket {
         strategy: PocketStrategy::Auto,
         stepover,
+        rest,
         ..
     } = &state.op_ui.params
     {
-        let pick = "Auto picks the shape from the pocket's outline at generate.".to_owned();
-        auto_note = Some(match op.as_ref() {
-            Some(o) => {
-                let region = operation::region_of(&state.world, o).unwrap_or_default();
-                let diameter = model::find_by_name(&state.world, &o.tool)
-                    .as_ref()
-                    .and_then(|t| model::tool_of(&state.world, t))
-                    .map_or(6.0, |t| t.diameter);
-                let outer: Vec<camcraft_app::geo2d::Point2> = region
-                    .loops()
-                    .iter()
-                    .max_by(|a, b| a.area().abs().total_cmp(&b.area().abs()))
-                    .map(|l| l.points().to_vec())
-                    .unwrap_or_default();
-                if outer.is_empty() {
-                    pick
-                } else {
-                    match PocketStrategy::Auto.resolve(&outer, *stepover, diameter, ARC_FIT_TOL) {
-                        PocketStrategy::Waterline => {
-                            "Auto -> Waterline: the outline is round and the rings reach every band.".into()
-                        }
-                        _ => "Auto -> Zigzag: rings would not suit this outline.".into(),
-                    }
-                }
-            }
-            None => pick,
-        });
+        auto_note = Some(pocket_auto_note(&state.world, op.as_ref(), *stepover, rest.is_some()));
     }
 
     // Which Trace-shape name the arm below renders: the engrave twin
@@ -148,6 +186,23 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
 
     // The picks' circle, through the same law generation runs, for the
     // draft's own source (the typed fields stay untouched beneath it).
+    let draft_op = || camcraft_app::schema::Operation {
+        tool: state.op_ui.tool.clone(),
+        src: state.op_ui.src(),
+        params: state.op_ui.params.clone(),
+        stamp: None,
+        setup: op_ctx.clone(),
+        area: Default::default(),
+        coolant: Default::default(),
+        after: Default::default(),
+        suppressed: false,
+    };
+    // #1504: the Slot's picks, through the same law generation runs.
+    let slot_fit = if matches!(&state.op_ui.params, OpParams::Slot { .. }) {
+        operation::slot_fit_of(&state.world, &draft_op())
+    } else {
+        None
+    };
     let circle_fit = if matches!(&state.op_ui.params, OpParams::Circular { .. }) {
         let draft = camcraft_app::schema::Operation {
             tool: state.op_ui.tool.clone(),
@@ -164,6 +219,10 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     } else {
         None
     };
+    let tool_diameter = model::find_by_name(&state.world, &state.op_ui.tool)
+        .as_ref()
+        .and_then(|t| model::tool_of(&state.world, t))
+        .map(|t| t.diameter);
     let mut cx = Cx {
         u,
         tab,
@@ -173,7 +232,11 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         cycle_note: &cycle_note,
         engrave,
         detect_holes: false,
+        sync_armed: state.wire_sync.armed,
+        sync_toggle: false,
         circle_fit: &circle_fit,
+        slot_fit: &slot_fit,
+        tool_diameter,
     };
     let world = &state.world;
     let params = &mut state.op_ui.params;
@@ -182,13 +245,23 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     super::holes_page::fields(ui, world, params, &mut cx);
     super::probe_page::fields(ui, world, params, &mut cx);
     super::plasma_page::fields(ui, world, params, &mut cx);
+    super::wire_page::fields(ui, world, params, &mut cx);
+    super::sinker_page::fields(ui, world, params, &mut cx);
     super::trochoid_page::fields(ui, world, params, &mut cx);
     super::mill3d_page::fields(ui, world, params, &mut cx);
     super::multiaxis_page::fields(ui, world, params, &mut cx);
     super::rotary_page::fields(ui, world, params, &mut cx);
     super::turning_page::fields(ui, world, params, &mut cx);
     super::turning_more_page::fields(ui, world, params, &mut cx);
+    let sync_toggle = cx.sync_toggle;
     let detect_holes = cx.detect_holes;
+    if sync_toggle {
+        if state.wire_sync.armed {
+            crate::wire_sync_pick::disarm(state);
+        } else {
+            crate::wire_sync_pick::arm(state);
+        }
+    }
     if detect_holes {
         state.detect_holes(&nm);
     }

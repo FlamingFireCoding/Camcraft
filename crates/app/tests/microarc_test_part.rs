@@ -101,6 +101,8 @@ fn flat(tilt: Option<Tilt>) -> OpParams {
         helix_radius: 1.0,
         links: camcraft_app::links::Links::PLANAR,
         tilt,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
@@ -126,6 +128,8 @@ fn cross() -> OpParams {
         helix_radius: 0.5,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
@@ -138,6 +142,8 @@ fn build() -> World {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
     h.execute(&world, ok(LoadMachine::builtin(&world, "Tormach 770MX + microARC 4"), "machine"));
+    // #902: the inch program these numbers read is an inch document's.
+    h.execute(&world, ok(camcraft_app::commands::SetUnits::new(&world, camcraft_app::units::Unit::Inches), "inch document"));
     h.execute(&world, ok(SelectPost::new(&world, PostRef::Named("Tormach PathPilot".into())), "post"));
     // The bar's bounding box as stock: tangent to the round bar on the
     // four faces the job cuts, so every cut starts at the real surface.

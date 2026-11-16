@@ -70,7 +70,7 @@ fn an_open_chain_splits_the_stock_and_either_side_is_faced_from_the_air_up_to_it
 }
 
 #[test]
-fn a_containment_that_puts_the_tool_in_the_part_is_caught_by_the_depth_aware_verify() {
+fn a_containment_that_puts_the_tool_in_the_part_is_refused_by_name() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/Milling-test.step");
     let world = world_with(Some(ImportModel::new(&path).expect("STEP")), -7.0, 27.0);
     let name = model::named_entities(&world)
@@ -81,25 +81,51 @@ fn a_containment_that_puts_the_tool_in_the_part_is_caught_by_the_depth_aware_ver
     // The bore's rim at the mouth: a closed chain of radius 12.5.
     let e = model::find_by_name(&world, &name).expect("model");
     let f = model::features_of(&world, &e).expect("features");
-    let rim = feature::chains(&f)
+    let (rim, wall) = feature::chains(&f)
         .into_iter()
-        .find(|c| {
-            let p = feature::chain_points(&f, c);
-            c.closed && p.iter().all(|q| (q[2] - 20.0).abs() < 1e-6 && (q[0].hypot(q[1]) - 12.5).abs() < 0.01)
+        .find_map(|c| {
+            let p = feature::chain_points(&f, &c);
+            (c.closed && p.iter().all(|q| (q[2] - 20.0).abs() < 1e-6 && (q[0].hypot(q[1]) - 12.5).abs() < 0.01))
+                .then_some((FeatureSel::Chain(c.id), p))
         })
-        .map(|c| FeatureSel::Chain(c.id))
         .expect("the bore rim");
-    let p = contour(20.0, 10.0, Side::Auto);
-    let (_, clean) = run(&world, &op(sel(&name, rim), p.clone(), AreaControls::default())).expect("default");
-    assert_eq!(clean, 0, "the bore wall contour is clean by default");
+    let p = contour(20.0, 10.0, Side::Inside);
+    let (inside, clean) = operation::generate(&world, &op(sel(&name, rim), p.clone(), AreaControls::default()), "")
+        .map(|(t, w)| (t, w.len()))
+        .expect("default");
+    assert_eq!(clean, 0, "the bore wall contour is clean from inside");
     let out = AreaControls { containment: Some(Containment::Outside), ..Default::default() };
-    let (t, warns) = run(&world, &op(sel(&name, rim), p, out)).expect("generated, then judged");
-    // The ring 10 mm into the wall: the part-aware walk stops it at the
-    // mouth (named), and the depth-aware verify of what is left is
-    // silent - the tool never enters the part.
+    // The ring 10 mm into the wall: the part-aware walk keeps only the
+    // mouth, where it cuts air. Before #1927 that top-plane pass posted
+    // with no word; the picked-ring law now refuses it by name, before a
+    // move, and points at the containment.
+    let err = run(&world, &op(sel(&name, rim), p, out)).expect_err("refused");
+    assert!(err.contains("meets its wall at no level below the part top Z 20.000"), "{err}");
+    assert!(err.contains("tool containment"), "{err}");
+    // Auto reads the material at the rim's own level (#1933): air inside
+    // the mouth, metal outside it - Inside, the same clean pass of the
+    // bore wall from inside. Before, the floor filled the XY silhouette,
+    // Auto resolved Outside and the pass was refused by name.
+    let (t, warns) = run(&world, &op(sel(&name, rim), contour(20.0, 10.0, Side::Auto), AreaControls::default()))
+        .expect("Auto resolves Inside on a blind bore rim");
     assert_eq!(warns, 0, "{:?}", t.notes);
-    assert!(t.notes.iter().any(|n| n.contains("levels below skipped")), "{:?}", t.notes);
-    assert!(feeds(&t).iter().all(|q| q.z >= 20.0 - 1e-9 || q.x.hypot(q.y) <= 12.5 - R + EPS));
+    assert_eq!(t.moves, inside.moves, "Auto takes the Inside pass");
+    // Every cutting move ends one tool radius inside the rim polygon (the
+    // entry's first feed starts in the bore's air, off the wall).
+    let cut: Vec<Point3> = t.moves.iter().filter(|m| m.kind == MoveKind::Feed).map(|m| m.to).collect();
+    assert!(!cut.is_empty(), "Auto cuts the bore wall");
+    for q in &cut {
+        let d = wall
+            .iter()
+            .zip(wall.iter().cycle().skip(1))
+            .map(|(a, b)| {
+                let (ex, ey) = (b[0] - a[0], b[1] - a[1]);
+                let s = (((q.x - a[0]) * ex + (q.y - a[1]) * ey) / (ex * ex + ey * ey)).clamp(0.0, 1.0);
+                (q.x - a[0] - s * ex).hypot(q.y - a[1] - s * ey)
+            })
+            .fold(f64::INFINITY, f64::min);
+        assert!((d - R).abs() < EPS && q.x.hypot(q.y) < 12.5, "tool centre one radius inside the wall: {q:?} at {d}");
+    }
 }
 
 /// A 40 x 40 x 5 plate with a 10 x 10 boss standing to Z 10, in a
@@ -229,6 +255,30 @@ fn a_contour_rides_its_open_boundary_offset_to_the_chosen_side() {
     assert!(!cut.is_empty());
     assert!(cut.iter().all(|p| (p.y - (20.0 - R)).abs() < EPS), "one radius south of the edge: {cut:?}");
     assert!(warns > 0, "a pass inside the part must be flagged");
+}
+
+/// #1555: the open pass keeps the material on its RIGHT under climb (M3):
+/// north of the block's north edge that is west to east; conventional
+/// runs it east to west. The chain's own order (west to east here) says
+/// nothing - the side does.
+#[test]
+fn the_open_pass_runs_climb_with_the_material_on_its_right() {
+    let world = block_world();
+    let top = top_face(&world, "part", 10.0);
+    let north = rim_edge(&world, |q| (q[1] - 20.0).abs() < 1e-9);
+    for climb in [true, false] {
+        let a = AreaControls { extension: 3.0, open: Some(OpenBoundary { picks: pick("part", north), side: ChainSide::Outside }), ..Default::default() };
+        let mut p = contour(10.0, 5.0, Side::Auto);
+        if let OpParams::Contour { climb: c, .. } = &mut p {
+            *c = climb;
+        }
+        let (t, warns) = run(&world, &op(sel("part", top), p, a)).expect("open contour");
+        assert_eq!(warns, 0, "{:?}", t.notes);
+        let level = t.moves.iter().filter(|m| m.kind == MoveKind::Feed && m.to.z < 10.0 - EPS && m.from.z == m.to.z);
+        let dx: f64 = level.map(|m| m.to.x - m.from.x).sum();
+        assert!(dx != 0.0, "the pass moves along the edge");
+        assert_eq!(dx > 0.0, climb, "climb={climb}: net travel {dx} (climb runs west to east north of the block)");
+    }
 }
 
 /// The viewport's fill of an open Contour (M11.5 owed): the band its

@@ -13,9 +13,10 @@
 //! line "CLI: headless project processing and regression runs".
 //! Clean-room, public sources only.
 
+use crate::posting;
 use crate::script;
 
-use serde_json::json;
+use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 const USAGE: &str = "\
@@ -27,6 +28,7 @@ USAGE:
     camcraft-cli mcp      [--connect <host:port>]
     camcraft-cli help
     camcraft-cli version
+    camcraft-cli <command> --help    the flags of one command
 
 COMMANDS:
     script    run a job script through the cam verbs (assets/scripts/
@@ -42,13 +44,94 @@ A clean run prints its logs, then the last verb's JSON answer on
 stdout; refusals print on stderr. Exit: 0 stood, 1 refused, 2 usage.
 ";
 
+/// Per-command usage (`camcraft-cli <command> --help` or `-h`): printed
+/// to stdout, exit 0, and the command never runs - `mcp --help` does
+/// not start the server.
+const SCRIPT_USAGE: &str = "\
+camcraft-cli script <job.js>
+
+    run a job script through the cam verbs (assets/scripts/cam.d.ts
+    types them; every world write rides the commands)
+
+ARGUMENTS:
+    <job.js>          the job file; must end in .js
+
+OPTIONS:
+    -h, --help        print this usage and exit 0
+
+Exit: 0 stood, 1 refused, 2 usage.
+";
+
+const PROCESS_USAGE: &str = "\
+camcraft-cli process <job.camproj> [-o <out.nc>] [--cps <name|file.cps>] [--post-option <k=v>]...
+
+    headless project processing: load, generate, and - with -o - post;
+    verify's verdict is the exit code
+
+ARGUMENTS:
+    <job.camproj>     the project to bring current
+
+OPTIONS:
+    -o, --out <out.nc>          post the program to this file
+    --cps <name|file.cps>       the post to use (takes effect with -o)
+    --post-option <k=v>         override a post script option (repeatable; with -o)
+    -h, --help                  print this usage and exit 0
+
+Exit: 0 stood, 1 refused, 2 usage.
+";
+
+const MCP_USAGE: &str = "\
+camcraft-cli mcp [--connect <host:port>]
+
+    a Model Context Protocol server on stdio (JSON-RPC 2.0): an AI agent
+    drives one headless document through tools. Stdout carries the
+    protocol, so --help prints here and does not start the server.
+
+OPTIONS:
+    --connect <host:port>   bridge stdio to a running app started with
+                            --mcp-port (the agent drives the open window)
+    -h, --help              print this usage and exit 0
+
+Exit: 0 stood, 1 session ended with an error, 2 usage.
+";
+
+/// Every lane that takes `--help`: its name paired with its usage
+/// text. The one list `command_usage` reads and the help test walks,
+/// so a lane added here is checked and a lane added elsewhere is
+/// caught by the test's cross-check against the top-level COMMANDS.
+pub const HELP_LANES: [(&str, &str); 3] = [
+    ("script", SCRIPT_USAGE),
+    ("process", PROCESS_USAGE),
+    ("mcp", MCP_USAGE),
+];
+
+/// The top-level usage text (`camcraft-cli help`).
+pub const TOP_USAGE: &str = USAGE;
+
+/// The usage text for a lane that takes `--help`, or `None` for any
+/// other word. Keeps the flag list next to the parser it describes.
+fn command_usage(cmd: &str) -> Option<&'static str> {
+    HELP_LANES
+        .iter()
+        .find(|(name, _)| *name == cmd)
+        .map(|(_, text)| *text)
+}
+
 /// The process lane's generated job: the verbs a headless project
 /// run always means, spelled exactly as a hand-written script would.
 /// No second code path: the CLI's project processing IS a script run.
-fn process_script(proj: &Path, out: Option<&Path>, cps: Option<&str>) -> String {
+fn process_script(
+    proj: &Path,
+    out: Option<&Path>,
+    cps: Option<&str>,
+    post_options: &Map<String, Value>,
+) -> String {
     let mut opts = json!({ "to": out.map(|p| p.display().to_string()) });
     if let Some(c) = cps {
         opts["cps"] = json!(c);
+    }
+    if !post_options.is_empty() {
+        opts["options"] = Value::Object(post_options.clone());
     }
     let mut s = format!(
         "cam.load({});\ncam.generate();\n",
@@ -102,13 +185,23 @@ pub fn run(args: &[String]) -> i32 {
             println!("camcraft-cli {} (boa_engine)", env!("CARGO_PKG_VERSION"));
             0
         }
-        "script" => lane_script(&args[1..]),
-        "process" => lane_process(&args[1..]),
-        "mcp" => lane_mcp(&args[1..]),
-        other => {
-            eprintln!("camcraft-cli: unknown command {other:?} (try help)");
-            2
-        }
+        // Any position: `process x.camproj --help` answers too. Checked
+        // before the lane parses, so no lane starts (or reads stdin).
+        lane => match command_usage(lane) {
+            Some(text) if args[1..].iter().any(|a| a == "--help" || a == "-h") => {
+                print!("{text}");
+                0
+            }
+            _ => match lane {
+                "script" => lane_script(&args[1..]),
+                "process" => lane_process(&args[1..]),
+                "mcp" => lane_mcp(&args[1..]),
+                other => {
+                    eprintln!("camcraft-cli: unknown command {other:?} (try help)");
+                    2
+                }
+            },
+        },
     }
 }
 
@@ -140,6 +233,7 @@ fn lane_process(args: &[String]) -> i32 {
     let mut proj: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
     let mut cps: Option<String> = None;
+    let mut post_opt_specs: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -156,6 +250,24 @@ fn lane_process(args: &[String]) -> i32 {
                     return 2;
                 };
                 cps = Some(c.clone());
+            }
+            "--post-option" => {
+                let Some(spec) = it.next() else {
+                    eprintln!("camcraft-cli: --post-option needs key=value");
+                    return 2;
+                };
+                match spec.split_once('=') {
+                    Some((k, _)) if !k.trim().is_empty() => {}
+                    Some(_) => {
+                        eprintln!("camcraft-cli: --post-option key must not be empty in '{spec}'");
+                        return 2;
+                    }
+                    None => {
+                        eprintln!("camcraft-cli: --post-option expects key=value, got '{spec}'");
+                        return 2;
+                    }
+                }
+                post_opt_specs.push(spec.clone());
             }
             other if other.starts_with('-') => {
                 eprintln!("camcraft-cli: unknown option {other:?} (try help)");
@@ -178,7 +290,18 @@ fn lane_process(args: &[String]) -> i32 {
         eprintln!("camcraft-cli: {} is not a .camproj project", path.display());
         return 2;
     }
-    let source = process_script(&path, out.as_deref(), cps.as_deref());
+    if out.is_none() && !post_opt_specs.is_empty() {
+        eprintln!("camcraft-cli: --post-option takes effect only with -o / --out");
+        return 2;
+    }
+    let post_options = match posting::parse_cli_post_options(&post_opt_specs, cps.as_deref()) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("camcraft-cli: {e}");
+            return 1;
+        }
+    };
+    let source = process_script(&path, out.as_deref(), cps.as_deref(), &post_options);
     report(&script::run(&source), out.is_some())
 }
 

@@ -26,6 +26,7 @@ fn old_is_sane(t: &Tool) -> bool {
         t.corner_r,
         t.tip_angle,
         t.pitch,
+        t.pitch_min,
         t.nose_radius,
         t.width,
         t.flute_len,
@@ -44,6 +45,7 @@ fn old_is_sane(t: &Tool) -> bool {
         && t.corner_r <= t.diameter * 0.5
         && t.tip_angle < 180.0
         && t.pitch >= 0.0
+        && t.pitch_min >= 0.0
         && t.nose_radius >= 0.0
         && t.width >= 0.0
         && t.flute_len > 0.0
@@ -51,10 +53,16 @@ fn old_is_sane(t: &Tool) -> bool {
         && t.shank_len >= 0.0
         && t.holder_d >= 0.0
         && t.holder_len >= 0.0
-        && (if t.kind == ToolKind::Torch { t.rpm == 0.0 } else { t.rpm > 0.0 })
+        && (if matches!(t.kind, ToolKind::Torch | ToolKind::Electrode | ToolKind::Waterjet) {
+            t.rpm == 0.0
+        } else {
+            t.rpm > 0.0
+        })
         && t.feed > 0.0
         && t.flutes.is_none_or(|z| (1..=32).contains(&z))
         && t.orientation.is_none_or(crate::orientation::is_valid)
+        && t.catalog.refusal().is_none()
+        && crate::cutting_rows::refusal_for_kind(&t.cutting, t.kind).is_none()
         && t.turning.is_none_or(|d| old_turning_sane(&d) && d.max_rpm.is_none_or(|m| t.rpm <= m))
         && match t.kind {
             ToolKind::Drill => t.tip_angle > 60.0,
@@ -81,11 +89,14 @@ fn old_is_sane(t: &Tool) -> bool {
                     && t.flute_len >= t.diameter
             }
             ToolKind::Torch => t.corner_r == 0.0,
+            ToolKind::Waterjet => crate::waterjet::refusal(t).is_none(),
+            ToolKind::Electrode => crate::electrode::is_sane(t),
+            ToolKind::ThreadMill | ToolKind::ThreadMillSingle => crate::thread_mill::is_sane(t),
             _ => true,
         }
 }
 
-const KINDS: [ToolKind; 13] = [
+const KINDS: [ToolKind; 17] = [
     ToolKind::EndMill,
     ToolKind::BallNose,
     ToolKind::BullNose,
@@ -99,6 +110,10 @@ const KINDS: [ToolKind; 13] = [
     ToolKind::Taper,
     ToolKind::Probe,
     ToolKind::Torch,
+    ToolKind::Waterjet,
+    ToolKind::Electrode,
+    ToolKind::ThreadMill,
+    ToolKind::ThreadMillSingle,
 ];
 
 fn agree(t: &Tool, what: &str) {
@@ -116,11 +131,12 @@ fn the_named_law_gives_the_old_verdict_everywhere() {
             let tool = Tool { kind, ..base.clone() };
             agree(&tool, name);
             for &v in &values {
-                let fields: [fn(&mut Tool, f64); 13] = [
+                let fields: [fn(&mut Tool, f64); 14] = [
                     |t, v| t.diameter = v,
                     |t, v| t.corner_r = v,
                     |t, v| t.tip_angle = v,
                     |t, v| t.pitch = v,
+                    |t, v| t.pitch_min = v,
                     |t, v| t.nose_radius = v,
                     |t, v| t.width = v,
                     |t, v| t.flute_len = v,
@@ -173,4 +189,16 @@ fn a_milling_field_is_named() {
     );
     let t = Tool { feed: -5.0, ..base };
     assert_eq!(t.why_not_sane().as_deref(), Some("feed -5 mm/min must be over 0"));
+}
+
+#[test]
+fn the_newer_kinds_are_named() {
+    let (_, base) = catalog().into_iter().find(|(_, t)| t.kind == ToolKind::EndMill).expect("an end mill");
+    let t = Tool { kind: ToolKind::Electrode, rpm: 1000.0, ..base.clone() };
+    assert_eq!(t.why_not_sane().as_deref(), Some("a sinker electrode turns no spindle: its spindle speed must be 0, not 1000 rpm"));
+    let t = Tool { kind: ToolKind::ThreadMillSingle, tip_angle: 60.0, pitch: 1.5, pitch_min: 2.0, ..base };
+    assert_eq!(
+        t.why_not_sane().as_deref(),
+        Some("a single-form thread mill's finest pitch 2 mm must be over 0 and at most its 1.5 mm coarsest pitch")
+    );
 }

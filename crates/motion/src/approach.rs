@@ -100,6 +100,13 @@ pub struct Approach {
     /// turn when `0`) runs tangentially onto the first pass. `false` -
     /// the default - descends onto the pass start itself, as before.
     pub arc_xy: bool,
+    /// Enter down holes an earlier drilling operation opened (#1449, the
+    /// 2-D pocket only): where the application has PROVED a hole open
+    /// under the tool's disc to a level's depth, the level's entry is a
+    /// straight plunge down it instead of the chosen helix or ramp. The
+    /// holes themselves ride the generator call, never this flag.
+    /// `false` - the default - never reads a hole.
+    pub predrilled: bool,
     /// Height above the material (mm) a plunge rapids down to before it
     /// feeds (held under the retract plane); also where an angle-bounded
     /// ramp starts on the first level. `0` feeds the whole way from the
@@ -139,6 +146,18 @@ pub struct Approach {
     /// Where the cutter radius is compensated (M13.11, the contour's
     /// choice; every other ladder reads it as `Computer`).
     pub compensation: Compensation,
+    /// The user's start point (#1448, model XY in mm): the closed 2D
+    /// contour ring nearest it begins its cut at the pick's projection
+    /// onto it, with the lead-in there - or the operation is refused by
+    /// name. `None` - every earlier file - keeps the automatic seam.
+    /// Only the closed contour reads it; every other kind refuses it.
+    pub start_point: Option<crate::geo2d::Point2>,
+    /// The user's exit point (#1473, model XY in mm): the closed 2D
+    /// contour ring nearest it is cut all the way round, then on along
+    /// itself to the pick's projection, where the lead-out leaves - or
+    /// the operation is refused by name. `None` - every earlier file -
+    /// leaves at the seam (or after the overlap).
+    pub exit_point: Option<crate::geo2d::Point2>,
     /// Can the tool plunge axially into solid (M11.3, the user's safety
     /// call)? Not a saved parameter: the application lays the tool's own
     /// `center_cutting` over it for each generation, so a stored op
@@ -146,6 +165,15 @@ pub struct Approach {
     /// into the level's solid - the helix, then the ramp, stand in, or
     /// the operation is refused by name.
     pub center_cutting: bool,
+    /// The top of the material standing over the operation's region when
+    /// it is above the top of the cut (#1559): the stock a Top set below
+    /// the faced or raw top carries. Not a saved parameter: the
+    /// application lays it over each generation's copy, read from the
+    /// stock and the program ahead. `Some` starts the first descent at the
+    /// plunge height over it and feeds down through the carried stock to
+    /// the first level - never a rapid into it. `None` (every stored op):
+    /// the top of the cut is the material's top, as before.
+    pub material_top: Option<f64>,
 }
 
 /// The note prefix of a non-centre-cutting fallback.
@@ -192,6 +220,7 @@ impl Approach {
         arc_radius: 0.0,
         arc_sweep: 0.0,
         arc_xy: false,
+        predrilled: false,
         plunge_height: DEFAULT_PLUNGE_HEIGHT,
         ramp_feed: 0.0,
         plunge_feed: 0.0,
@@ -205,8 +234,29 @@ impl Approach {
         axis_start: false,
         axis_tol: DEFAULT_AXIS_TOL,
         compensation: Compensation::Computer,
+        start_point: None,
+        exit_point: None,
         center_cutting: true,
+        material_top: None,
     };
+
+    /// The material's top over the first level (#1559): the top of the
+    /// cut, or the carried stock's top where the application stated one
+    /// above it.
+    #[must_use]
+    pub fn entry_top(&self, top_z: f64) -> f64 {
+        match self.material_top {
+            Some(m) if m.is_finite() && m > top_z => m,
+            _ => top_z,
+        }
+    }
+
+    /// Does the first descent feed through stock above the top of the
+    /// cut (#1559)?
+    #[must_use]
+    pub fn carries_stock(&self, top_z: f64) -> bool {
+        self.entry_top(top_z) > top_z
+    }
 
     #[must_use]
     pub fn is_default(&self) -> bool {
@@ -259,6 +309,13 @@ impl Approach {
             Some(Lead::Linear { length } | Lead::Perpendicular { length }) if len(length) => {}
             Some(Lead::Arc { radius } | Lead::Tangential { radius }) if radius > 0.0 && len(radius) => {}
             Some(_) => return Err("bad lead-out parameters"),
+        }
+        let coord = |v: f64| v.is_finite() && v.abs() <= 1.0e6;
+        if self.start_point.is_some_and(|q| !(coord(q.x) && coord(q.y))) {
+            return Err("the start point must be two finite coordinates within 1 km of the origin");
+        }
+        if self.exit_point.is_some_and(|q| !(coord(q.x) && coord(q.y))) {
+            return Err("the exit point must be two finite coordinates within 1 km of the origin");
         }
         Ok(())
     }

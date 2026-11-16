@@ -9,6 +9,8 @@ pub mod cli;
 pub mod clock;
 pub mod commands;
 pub mod cutting;
+// #890: which row of a tool's per-material cutting data the document picks.
+pub mod cutting_rows;
 // #891: turning cutting data - CSS ops, working diameter, the suggestion.
 pub mod cutting_turn;
 pub mod smoothing;
@@ -44,6 +46,7 @@ pub mod mcp;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
+pub mod mesh_open;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;
@@ -57,7 +60,20 @@ pub mod lathe_voice;
 // #155: standalone Pause / Home entries in the operation list.
 pub mod program_entry;
 pub use camcraft_motion::plasma;
+pub use camcraft_motion::wire_edm;
 pub use camcraft_motion::probing;
+// #541: sinker EDM burn to depth.
+pub use camcraft_motion::sinker;
+// #543: sinker rough and finish with undersize.
+pub use camcraft_motion::sinker_undersize;
+// #547: electrode generation from part faces.
+pub use camcraft_motion::sinker_cavity;
+pub use camcraft_motion::sinker_electrode;
+pub use camcraft_motion::sinker_wear;
+// #544: sinker EDM orbit patterns.
+pub use camcraft_motion::sinker_orbit;
+// #545: sinker EDM side burning.
+pub use camcraft_motion::sinker_side;
 pub mod project;
 // #35: pocket and slot recognition on the model's faces.
 pub mod recognize;
@@ -68,15 +84,19 @@ pub mod prefs;
 pub mod recent;
 pub mod rest;
 pub mod ribbon;
+pub mod rotary_stack;
 pub mod schema;
 pub mod script;
 pub mod setup;
+pub mod setup_offsets;
 // #326: the part's alignment per setup.
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
 // #316: transforms between setups and the setup-relative link.
 pub mod setup_relative;
+// #1510: a tilted milling WCS is refused at generation.
+pub mod setup_wcs_tilt;
 pub mod setup_post_options;
 // #1031: a setup's workholding (chuck/collet) rpm limit.
 pub mod setup_workholding;
@@ -95,6 +115,8 @@ pub use camcraft_geometry::geometry::stock;
 pub mod stock_sim;
 // #1094: the model that is only the stock's source is not the part.
 pub mod stock_source;
+// #1538: fit-to-models measures the parts, never the fixtures.
+pub mod stock_fit;
 // #1094: the geometry fingerprint a raw-stock-only mark is checked by.
 pub mod stock_print;
 pub mod stock_export;
@@ -109,8 +131,13 @@ pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.
 pub mod tool_numbers;
 pub use camcraft_tools::tools;
+// #894: the thread mills' form constants, sanity law and pitch door.
+pub use camcraft_tools::thread_mill;
 // #630: the lathe tool orientation code (LinuxCNC 1-9) and its control point.
 pub use camcraft_tools::orientation;
+pub use camcraft_tools::catalog_fields;
+pub use camcraft_tools::cutting_rows as tool_cutting_rows;
+pub use camcraft_tools::waterjet as waterjet_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;
 // #93 slice 2: the drawn cutter law, and the tool's stored drawn cutter.
@@ -126,6 +153,13 @@ pub mod tool_body;
 pub mod tool_body_view;
 // #369: lathe-held tool bodies (the turning tool frame).
 pub mod tool_body_lathe;
+// #369/#396: the turning tool frame and the insert zone, for the UI.
+pub use camcraft_tools::{lathe_holder, lathe_insert_zone};
+// #361: the one door a body file is read through; the lathe placement reads.
+pub mod tool_body_file;
+pub mod tool_body_lathe_view;
+// #361 / #1040: modular multi-piece tool bodies assembled by ISO 13399 CSYS.
+pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.

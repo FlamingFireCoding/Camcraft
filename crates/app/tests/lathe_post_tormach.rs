@@ -37,7 +37,7 @@ use camcraft_app::post::{cnc, engine};
 use camcraft_app::posting;
 use camcraft_app::schema::{PostOptions, PostRef};
 use camcraft_app::world::new_world;
-use tormach_lathe_support::{create, gated, lathe_mch, linuxcnc_sane, program_with, revolve, world_with, CPS, NAME};
+use tormach_lathe_support::{create, gated, lathe_mch, linuxcnc_sane, program_with, revolve, stock_params, world_with, CPS, NAME};
 
 // ------------------------------------------------------------ fixtures
 
@@ -77,6 +77,7 @@ fn drill_world(inch: bool) -> (World, History) {
     let (world, mut history) = world_with(bar, stock, -20.0, &["DR-0400"], inch);
     let hole = Hole { xy: Point2::new(0.0, 0.0), radius: 2.05, entry_z: 20.0, floor_z: 10.0, through: false, stepped: false };
     let params = OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(30.0),
         retract_z: None,
         top_z: Height::fixed(20.0),
@@ -149,14 +150,21 @@ fn mv(kind: MoveKind, x: f64, y: f64, z: f64, feed: Option<f64>) -> cnc::Record 
     cnc::Record::Move(cnc::MoveRec { kind, x, y, z, feed, center: None, ccw: false, plane: Default::default(), abc: None })
 }
 
+/// A Ø8 bar, its face at Z0, the ClearancePlane at Z30 (#1604).
+fn bar() -> Vec<cnc::Record> {
+    stock_params(4.0, 0.0, 30.0)
+}
+
 fn preface() -> Vec<cnc::Record> {
-    vec![
+    let mut r = vec![
         cnc::Record::Param { name: "SpindleSpeed".into(), value: json!(1000.0) },
         cnc::Record::Param { name: "WorkOffset".into(), value: json!("G54") },
         cnc::Record::Param { name: "OperationName".into(), value: json!("OP1") },
-        cnc::Record::Tool { number: 1, name: "TN-1600-0R8".into() },
-        cnc::Record::Section { begin: true },
-    ]
+    ];
+    r.extend(bar());
+    r.push(cnc::Record::Tool { number: 1, name: "TN-1600-0R8".into() });
+    r.push(cnc::Record::Section { begin: true });
+    r
 }
 
 fn run(records: Vec<cnc::Record>) -> engine::PostOutput {
@@ -201,7 +209,9 @@ fn css_arcs_part_load_and_a_trip_home_speak_linuxcnc() {
             ccw: false, plane: camcraft_app::cl::ArcPlane::Yz, abc: None,
         }));
         r.push(cnc::Record::Section { begin: false });
-        let out = engine::run(CPS, &lathe_mch(inch), &cnc::serialize(&r)).expect("runs");
+        // #902: the inch run is an inch document's.
+        let units = serde_json::json!({ "Units": if inch { "inch" } else { "mm" } });
+        let out = engine::run_with(CPS, &lathe_mch(inch), &cnc::serialize(&r), &units).expect("runs");
         assert!(out.warnings.is_empty(), "{:?}", out.warnings);
         let p = &out.program;
         if inch {
@@ -231,6 +241,7 @@ fn a_section_without_surface_speed_posts_g97_after_one_with_it() {
     r.push(mv(MoveKind::Feed, 0.0, 6.0, 0.0, Some(100.0)));
     r.push(cnc::Record::Section { begin: false });
     r.push(cnc::Record::Param { name: "SpindleSpeed".into(), value: json!(500.0) });
+    r.extend(bar());
     r.push(cnc::Record::Tool { number: 2, name: "DRILL-6".into() });
     r.push(cnc::Record::Section { begin: true });
     r.push(cycle(CycleKind::Drill, 0.0, 0.0));

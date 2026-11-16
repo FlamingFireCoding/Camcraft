@@ -31,7 +31,7 @@ fn every_op_kind_has_its_own_svg_mastered_icon() {
 /// Every tool kind the editor can set, read from the editor's own kind
 /// numbering (`ToolUi::tool_kind`, exhaustive in `from_tool`) - not a hand
 /// list: a kind the numbering gains is enumerated here with it.
-fn every_tool_kind() -> Vec<camcraft_app::tools::ToolKind> {
+pub(super) fn every_tool_kind() -> Vec<camcraft_app::tools::ToolKind> {
     let mut ui = crate::state::ToolUi::default();
     let mut kinds = Vec::new();
     for i in 0..64 {
@@ -65,6 +65,23 @@ fn every_tool_kind_has_its_own_svg_mastered_icon() {
             camcraft_app::operation::KindInfo::ALL.iter().all(|o| crate::egui_app::op_icons::op_icon(o.ty) != icon),
             "{k:?} wears an operation's glyph"
         );
+    }
+}
+
+/// The operation page's six section tabs wear their own `sec-*` glyphs,
+/// one per tab the page can show, each SVG-mastered - the rule the
+/// operation rows follow, applied to the tab bar.
+#[test]
+fn every_section_tab_has_its_own_svg_mastered_icon() {
+    use std::collections::HashSet;
+    let svg = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ui/svg");
+    let mut seen = HashSet::new();
+    for i in 0..crate::egui_app::op_tabs::SECTIONS.len() {
+        let icon = crate::egui_app::op_tabs::sec_icon(i);
+        assert!(seen.insert(icon), "tab {i} shares an icon with another tab");
+        let file = icon.file();
+        assert!(file.starts_with("sec-"), "tab {i} wears the stand-in {file}.png");
+        assert!(svg.join(format!("{file}.svg")).is_file(), "{file}.png has no SVG master");
     }
 }
 

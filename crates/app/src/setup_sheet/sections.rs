@@ -7,7 +7,6 @@ use flecs_ecs::prelude::World;
 use super::mm;
 use crate::fixture;
 use crate::model;
-use crate::schema::WCS_SLOTS;
 use crate::setup;
 use crate::stock::StockShape;
 
@@ -118,13 +117,10 @@ pub(super) fn render_wcs(world: &World, ctx: Option<&str>, out: &mut String) {
         }
         None => out.push_str(&format!("  {label}  (not placed - at the origin)\n")),
     }
-    // #196, #329: the one word the setup's program runs in: the setup's
-    // label, G54 when unset.
-    let slot = setup::wcs_slot(world, ctx);
-    out.push_str(&format!(
-        "  program offset: {}\n",
-        WCS_SLOTS.get(slot).copied().unwrap_or("G54")
-    ));
+    // #196, #329, #931: the one offset the setup's program runs in: the
+    // setup's label (offset 1 when unset), named by the setup's post -
+    // never another offset's name.
+    out.push_str(&format!("  program offset: {}\n", setup::wcs_name(world, ctx)));
     out.push('\n');
 }
 
@@ -149,17 +145,18 @@ pub(super) fn render_datum(world: &World, ctx: Option<&str>, out: &mut String) {
     }
 }
 
-/// #375: one line per inverted linear axis of the machine this setup
-/// mounts - the operator must know the slide runs the other way and the
-/// program is mirrored for it. A standard machine prints nothing (sheets
-/// unchanged).
+/// #375 & #33: one line per inverted linear axis and a notice when
+/// the C rotary turns clockwise (`-Z` axis), so the operator knows the
+/// machine direction and posted negation. A standard machine prints
+/// nothing (sheets unchanged).
 pub(super) fn render_machine_axes(world: &World, ctx: Option<&str>, out: &mut String) {
     let (_, machine) = crate::machine::of_setup(world, ctx);
     let Some(m) = machine else {
         return;
     };
     let letters = m.inverted_axes();
-    if letters.is_empty() {
+    let rev_c = m.reversed_c_rotary();
+    if letters.is_empty() && !rev_c {
         return;
     }
     out.push_str("MACHINE AXES\n");
@@ -168,6 +165,9 @@ pub(super) fn render_machine_axes(world: &World, ctx: Option<&str>, out: &mut St
             "  {} - the program is mirrored in {l} for this machine\n",
             crate::machine::inverted_axis_line(l)
         ));
+    }
+    if rev_c {
+        out.push_str("  C rotary turns clockwise about +Z (-Z axis) - posted C is negated for this machine\n");
     }
     out.push('\n');
 }

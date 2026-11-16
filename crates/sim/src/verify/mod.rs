@@ -56,8 +56,13 @@
 //!   grid in between may not. Area/Boundary paths only; moves (c)
 //!   already convicted are skipped; advisory by nature - the same
 //!   angles the replay timeline turns on screen.
-//! - [`Warning::RapidInStock`] - a lateral rapid below the clearance
-//!   plane whose XY path still has material above it, or (#96) a
+//! - [`Warning::RapidInStock`] - a lateral rapid whose XY path still
+//!   has material above it - under the clearance plane or (#2121) at
+//!   it: a plane set inside the stock is no promise of air, so every
+//!   lateral rapid under the stock top is read against the column,
+//!   and one at the plane is re-read by the operation layer against
+//!   the solids under it ([`acquit_traverses_by_solids`]) and what the
+//!   program ahead cut ([`acquit_traverses_by_prior`]) - or (#96) a
 //!   vertical rapid DOWN whose end lies below the surface standing at
 //!   its column: the stock top, lowered by the cuts before it in this
 //!   path (a peck's re-entry above its own earlier plunge is clean)
@@ -94,7 +99,7 @@
 //!   rapid - with no clearance or kerf exemptions, because steel is
 //!   never removed material. A POSED move (held or stated pose off
 //!   the upright) is also swept with its real pose - the whole stack
-//!   as capsules along the lerped pose ([`posed_steel`], M13.8): a
+//!   as flat-ended bands along the lerped pose ([`posed_steel`], M13.8): a
 //!   radial index under a bar's equator carries its holder toward the
 //!   chuck, and the column enclosures never looked there. Z contact within
 //!   [`crate::fixture::FIXTURE_HIT_TOL`]
@@ -152,6 +157,7 @@ pub use crate::tools::ToolGeom;
 
 
 mod air;
+mod axis_door;
 mod arc_bulge;
 mod arc_wall;
 mod arc_wall_plane;
@@ -163,6 +169,7 @@ mod engine;
 mod excess;
 mod finish;
 mod hidden;
+mod hidden_span;
 mod hole_wall;
 mod laws;
 mod mesh_posed;
@@ -170,8 +177,11 @@ mod mesh_steel;
 mod midpose;
 // #672: the plasma through-cut laws (cut order, kerf crossing, tip-up).
 pub mod plasma;
+// #534: the wire EDM 2.5D laws (kerf, threading, slug).
+pub mod wire;
 mod posed_steel;
 mod prior;
+mod prior_traverse;
 mod body_bands;
 mod probe;
 mod rapids;
@@ -181,6 +191,7 @@ mod reach;
 mod rest;
 mod rotary;
 mod rotary_geom;
+mod seat;
 mod section;
 mod solid;
 mod solid_index;
@@ -188,17 +199,28 @@ mod stack_span;
 mod stock_top;
 mod stock_top_shell;
 mod sweep;
+mod tilt_band;
+mod tilt_span;
+mod traverse_solids;
 mod swept;
+mod thread_bore;
+mod turn_cells;
+mod turn_hidden;
 mod types;
+mod upright;
 mod workholding;
 
 pub use excess::excess_floor;
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};
+pub use laws::CROSSING_TOUCH;
 pub use engine::{verify, verify_bodies};
+pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
 pub use prior::{acquit_by_prior, prior_surface};
+pub use prior_traverse::{acquit_traverses_by_prior, Traverse};
+pub use traverse_solids::acquit_traverses_by_solids;
 pub use stock_top::acquit_by_stock_top;
 pub use laws::{
     bands_vs_fixtures, bands_vs_fixtures_held, rapids_vs_fixtures, rapids_vs_fixtures_held,
@@ -211,8 +233,9 @@ pub use workholding::{
 pub use body_bands::{BodyBands, NeckBands, BODY_BANDS_CAP};
 pub use probe::Cutter;
 pub use rotary::{rotary_hits, RotaryAxis, RotaryLaw};
-pub use hole_wall::{HoleAxis, WALL_SAG};
-pub use solid::{SolidLaw, solid_hits, solid_hits_walled};
+pub use hole_wall::{HoleAxis, WALL_SAG, hole_is_round};
+pub use seat::{seat_skin, undersides, MARK_FLOOR};
+pub use solid::{SolidLaw, solid_hits, solid_hits_threaded, solid_hits_walled, stack_hits};
 pub use mesh_steel::{mesh_refined, steel_stack, MeshSteel, SteelBand};
 #[doc(hidden)]
 pub use contact::posed_contact;

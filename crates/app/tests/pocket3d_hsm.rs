@@ -14,12 +14,12 @@
 //! Pocket3D arm), app::commands, sim::verify.
 
 use camcraft_app::cl::{MoveKind, Toolpath};
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, SetStock};
+use camcraft_app::commands::{AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel, SetStock};
 use camcraft_app::geometry::Point3;
 use camcraft_app::links::Links;
 use camcraft_app::machining2d::PocketStrategy;
 use camcraft_app::machining3d::Entry3D;
-use camcraft_app::operation::{self, Height, HeightReference, OpParams, SrcRef};
+use camcraft_app::operation::{self, AreaControls, Containment, Height, HeightReference, OpParams, SrcRef};
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -54,6 +54,18 @@ fn pocket_op(strategy: PocketStrategy) -> OpParams {
 
 /// The user's part in a 70 x 70 block from Z -7, the 10 mm tool, one op
 /// generated through the commands: its path and its warnings.
+///
+/// The op's area is the part's own silhouette, the whole tool inside it
+/// (Tool containment: Inside). Since #1774 (PR #1780) a whole-model 3D
+/// Pocket with no area control also clears the block around the part,
+/// out to the stock's outline. That is right for the user's job, but it
+/// is not the bore: around the 60 mm disc the 70 x 70 block is one wide
+/// ring with the part as its island, and the planner budgets of #850
+/// were never set for it. The control keeps the pocket on the footprint
+/// this test pins (the source-built silhouette exactly, as before #1749:
+/// `boundary::resolve` gives it back unchanged, and a controlled region
+/// skips the open-side growth), so the triple below still reads the
+/// bore's plan.
 fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     let world = new_world();
     let mut h = History::default();
@@ -65,7 +77,9 @@ fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 70.0, dz: 27.0 }, loc).expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
-    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), params).expect("create"));
+    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), params.clone()).expect("create"));
+    let inside = AreaControls { containment: Some(Containment::Inside), ..Default::default() };
+    h.execute(&world, EditOperationParams::with_area(&world, "Op1", params, inside).expect("area"));
     h.execute(&world, GenerateOperation::new(&world, "Op1").expect("generate"));
     let e = model::find_by_name(&world, "Op1").expect("op");
     let tp = model::toolpath_of(&world, &e).expect("cached path");
@@ -125,12 +139,23 @@ fn the_users_bore_roughs_adaptive_level_by_level_and_verifies_clean() {
 /// The bore's (moves, planar feeds, arcs) on this platform (issue #980).
 fn bore_path_matches(got: (usize, usize, usize)) -> bool {
     if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        // Measured on issue/980-bore-hsm-plan, three release runs, identical.
-        got == (16197, 15458, 1581)
+        // Issue #1402: measured on main 5eeb0370e, release, two runs
+        // identical; every level verifies clean, none falls back, no
+        // planning budget is reached. Before: (16197, 15458, 1581),
+        // measured on issue/980-bore-hsm-plan and stale after #1376.
+        got == (16017, 15360, 1427)
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        // Measured by the contributor's reviewer at 608126a5 on Apple
-        // silicon (https://github.com/NeoTech/Camcraft/pull/1032).
-        got == (16160, 15432, 1571)
+        // Issue #882 (PR #1376): measured by its reviewer at 8cd4c918 on
+        // Apple silicon, release, two runs identical; every level
+        // verifies clean, none falls back. Before: (16160, 15432, 1571).
+        got == (16026, 15382, 1413)
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        // Issue #882: measured in release and debug, identical. Thinning
+        // the growth opening changes its sub-micron geometry and the
+        // fitted arcs (Z 20: 50 microlift returns, 9 rides, 1 retract
+        // hop). Every level verifies clean, none falls back, and no
+        // planning budget is reached. Before: (15561, 14837, 1561).
+        got == (16029, 15372, 1427)
     } else {
         // Not measured here yet: measure this platform and add its exact
         // triple above. Until then a band covering both measured ones.
