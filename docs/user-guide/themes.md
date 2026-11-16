@@ -51,6 +51,7 @@ clamped to the range.
 | `cell_w` | Largest width of a ribbon cell | 24 to 96 |
 | `glyph_px` | Edge of a ribbon glyph | 8 to 64 |
 | `font_label` | Caption under a ribbon glyph | 6 to 32 |
+| `font_label_min` | Smallest size of a ribbon caption that is too long for its cell. It is never larger than `font_label` | 6 to 32 |
 | `font_caption` | Ribbon group caption | 6 to 32 |
 | `font_row` | Browser row label | 6 to 32 |
 | `font_row_suffix` | Browser row suffix | 6 to 32 |
@@ -59,3 +60,19 @@ clamped to the range.
 | `ribbon_caption_gap` | Gap from the cell box to the caption row | 0 to 24 |
 | `ribbon_caption_row_h` | Height of the caption row | 12 to 48 |
 | `ribbon_bottom_gap` | Gap below the caption row | 0 to 24 |
+| `op_tab_h` | Height of the operation tab row | 12 to 64 |
+| `op_tab_pad_x` | Horizontal padding in an operation tab | 0 to 32 |
+| `op_tab_gap` | Gap between two operation tabs | 0 to 32 |
+| `op_tab_bottom_gap` | Gap below the operation tab row | 0 to 24 |
+| `op_tab_icon_px` | Edge of an operation tab icon | 8 to 64 |
+| `op_tab_icon_gap` | Gap from an operation tab icon to its label | 0 to 32 |
+| `op_tab_radius` | Top corner radius of an operation tab | 0 to 12 |
+| `font_op_tab` | Operation tab label | 6 to 32 |
+| `tree_glyph_px` | Edge of a browser tree glyph | 8 to 64 |
+| `tree_inset_x` | Left inset of the browser tree root | 0 to 32 |
+| `tree_indent` | Indent for each level of the browser tree | 0 to 32 |
+| `tree_eye_reserve` | Width kept for the visibility eye of a browser row | 12 to 64 |
+| `tree_pad_x`, `tree_pad_y` | Padding of a browser header and row | 0 to 32 |
+| `tree_suffix_gap` | Gap from a browser row label to its suffix | 0 to 32 |
+| `tree_header_boost` | Extra size of a browser header font | 0 to 12 |
+| `highlight_stroke_px` | Line width of an active rule, a row highlight and a drop target | 0.5 to 8 |
