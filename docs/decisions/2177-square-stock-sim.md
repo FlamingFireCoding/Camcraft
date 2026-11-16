@@ -35,3 +35,29 @@ that the sim finds can now block the post. No posted G-code changes.
 
 **Cost to change.** `sim_frame` is one function; a future oriented lattice
 replaces its refusal arm.
+
+## #2177 review fix - the test device for "the sim does not judge"
+
+**Decided.** Four suites (`engrave_law`, `mark_floor`, `neighbour_law`,
+`stock_source_law`) used a stock turned a quarter about Z to make the
+program sim refuse, so that the operation's own gouge was the only judge of
+the post. The sim now judges that stock, so their nine `by_op` checks saw
+the sim's gouge clause first. The device is now a turn of 1e-6 rad about Z
+(`OBLIQUE`): the sim refuses it by name (`OBLIQUE_STOCK`), and each `by_op`
+check now also asserts that refusal. The corners move by less than 1e-4 mm,
+so the fixture's box check takes 1e-4 mm in X and Y (Z stays at 1e-9). Each
+suite has one new test: the quarter-turned stock is judged by the program
+sim, its gouge blocks the post, and a legal mark posts. The MCP parity test
+of `stock_source_law` moved to `stock_source_law_mcp` to keep the file
+under 400 lines.
+
+**Why.** The new judgment is correct: each red case is a real gouge (the op
+convicts it too), and the post was refused in all nine. Only the device of
+the test was wrong. Deleting the `by_op` checks would lose the pin on the
+generator-time verdict when the sim does not judge.
+
+**Dropped.**
+- A large oblique turn (for example 30 degrees): the stock footprint no
+  longer covers the part, which changes the stock-source cases.
+- A rotary or posed program as the device (`post_not_judged`): it changes
+  the operation under test.
