@@ -819,6 +819,7 @@ dependencies = [
 name = "camcraft-tools"
 version = "0.21.0"
 dependencies = [
+ "camcraft-geometry",
  "serde",
  "serde_json",
 ]

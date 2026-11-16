@@ -17,7 +17,7 @@
   `MIN_SEGMENT` and band count fits `MAX_STEPPED_BANDS = 31` (`<= 64`
   points), strictly preserving outer radius across non-revolved features such
   as drive slots and flats.
-- **STEP / `ToolBody` <-> DXF half-profile pipeline (`crates/app/src/{tool_profile_dxf.rs,tool_profile_dxf_import.rs}`).**
+- **STEP / `ToolBody` <-> DXF half-profile pipeline (`crates/app/src/tool_profile_dxf.rs`, `crates/tools/src/tool_profile_dxf.rs`).**
   Exports `SpunProfile` (lines and signed circular arcs) and spindle
   `ToolBody` envelopes to millimetre ASCII DXF (`$INSUNITS = 4`) with an
   explicit `CENTRELINE` `LINE` (`(0, 0) -> (0, z_top)`) and an open `PROFILE`
@@ -31,6 +31,21 @@
   centrelines, `CIRCLE`, `SPLINE` (via reader), crossing geometry, closed
   loops, branching, disconnected segments, unitless DXF (when no fallback unit
   is supplied), axial reversals (`RunsBack`), and below-tip geometry by name.
+- **DXF importer ownership and dependency (PR #2100 review fix).**
+  The byte-to-`SpunProfile` importer belongs to
+  `camcraft_tools::tool_profile_dxf`; the app preserves its existing public
+  import paths through re-exports. Parsing, chain ordering, projection, and
+  validation use only domain values. Their tests live in `crates/tools/tests/`.
+  `SetToolBody` retains the ECS world and command work in app.
+  This adds `camcraft-geometry` to the tools crate's dependencies. The importer
+  uses `dxf`, `dxf::Document`, `dxf::Primitive`, `dxf::Unit`, `dxf::Units`,
+  `dxf::parse`, and `geo2d::Point2`. Its public contract accepts DXF bytes and
+  returns a validated tool profile, so it needs the format's parser, units,
+  primitive representation, and coordinates together. Passing parsing and
+  projection in from app would leave this domain work there; a recorded file
+  cannot replace conversion of user-supplied bytes. A geometry change can now
+  rebuild tools and its downstream consumers, including app, motion, simulation,
+  post, and UI.
 - **Commands, MCP, and UI (`crates/app/src/{commands/tool_body_dxf.rs,mcp/holder_dxf_tools.rs}`, `crates/ui/src/{state_tool_profile.rs,egui_app/tool_profile_page.rs,egui_app/tool_body_page.rs}`).**
   Added undoable `SetToolBody` constructors (`from_dxf_bytes`, `from_dxf`,
   `from_step_profile`, `from_placed_profile`) over `tool_body::build_spun`.
@@ -48,8 +63,8 @@ actual 3D tool assembly; merging bands only upward in radius guarantees that
 slots, flats, and polygon corners stay enveloped inside the revolved
 silhouette. Refusing STEP conversion when ISO 13399 CSYS is absent or
 ambiguous prevents silently spinning a holder about the wrong axis. Separating
-the new modules (`tool_body_dxf.rs`, `holder_dxf_tools.rs`,
-`tool_profile_dxf_import.rs`) and appending UI helpers avoids overlapping
+the new modules (`tool_body_dxf.rs`, `holder_dxf_tools.rs`, and tools'
+`tool_profile_dxf.rs`) and appending UI helpers avoids overlapping
 edits with open PRs `#2092`, `#2054`, `#2077`, and `#2023`, and keeps every
 file at or under 400 lines.
 
@@ -64,6 +79,10 @@ file at or under 400 lines.
   and `PROFILE` layers represent `SpunProfile` segments losslessly.
 - Writing `ToolBody { ... }` struct literals directly in `tool_body_dxf.rs`:
   dropped so open PR `#2092`'s `library` field causes no unnecessary conflict.
+- Passing geometry-independent adapters or parsing closures from app to avoid
+  the tools-to-geometry dependency: this would duplicate the DXF representation
+  or retain domain conversion in app. The direct dependency keeps the complete
+  byte-to-profile operation and its tests in the owning domain crate.
 
 **Cost to change later.**
 

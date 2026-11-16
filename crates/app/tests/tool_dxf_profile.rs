@@ -2,8 +2,7 @@
 //! - STEP -> DXF half-profile with centreline (sampling STEP mesh proves every
 //!   point lies inside the revolved profile, non-revolved features enveloped)
 //! - Named refusal when converting a STEP body without a clear ISO 13399 axis
-//! - Direct DXF half-profile import (lines + arcs, units) and named error
-//!   refusals (no centreline, spline, crossing centreline, etc.)
+//! - DXF half-profile command import and named refusal for flute overlap
 //! - Round trip STEP -> DXF -> body -> DXF stability within tolerance.
 //!
 //! Gate map (M4.4): covers app::commands, app::tool_body, app::tool_profile_dxf,
@@ -19,9 +18,8 @@ use camcraft_app::project;
 use camcraft_app::spun::{SpunPoint, SpunProfile};
 use camcraft_app::tool_body;
 use camcraft_app::tool_profile_dxf::{
-    CENTRELINE_LAYER, PROFILE_LAYER, dxf_to_spun, dxf_to_spun_with_unit,
-    placed_mesh_to_spun_profile, spun_to_dxf, step_to_dxf, step_to_spun_profile,
-    tool_body_to_dxf,
+    CENTRELINE_LAYER, PROFILE_LAYER, dxf_to_spun, placed_mesh_to_spun_profile, spun_to_dxf,
+    step_to_dxf, step_to_spun_profile, tool_body_to_dxf,
 };
 use camcraft_app::tools::{Tool, catalog};
 use camcraft_app::world::new_world;
@@ -46,7 +44,10 @@ fn catalog_tool(name: &str) -> Tool {
 fn world_with_tool() -> (flecs_ecs::prelude::World, History) {
     let world = new_world();
     let mut history = History::default();
-    history.execute(&world, AddTool::new(&world, TOOL, catalog_tool(TOOL)).expect("tool"));
+    history.execute(
+        &world,
+        AddTool::new(&world, TOOL, catalog_tool(TOOL)).expect("tool"),
+    );
     (world, history)
 }
 
@@ -126,7 +127,10 @@ fn step_to_dxf_half_profile_envelops_every_sampled_mesh_point() {
             saw_corner = true;
         }
     }
-    assert!(saw_corner, "fixture box must exercise corners at r ~ 14.142");
+    assert!(
+        saw_corner,
+        "fixture box must exercise corners at r ~ 14.142"
+    );
     // Flats at x=+/-10 must be conservatively enveloped to >= 14.142, never cut away to 10.
     assert!(profile_radius_at(&spun, 55.0) >= 10.0 * std::f64::consts::SQRT_2 - 1e-4);
 }
@@ -149,7 +153,11 @@ fn non_revolved_step_or_fine_32_plus_band_mesh_is_conservatively_enveloped() {
             let a1 = (s + 1) as f64 * TAU / sides as f64;
             // Drive slot: pull radius inward on one angular sector; envelope must keep r_base!
             let r0 = if s == 2 { r_base * 0.55 } else { r_base };
-            let r1 = if (s + 1) % sides == 2 { r_base * 0.55 } else { r_base };
+            let r1 = if (s + 1) % sides == 2 {
+                r_base * 0.55
+            } else {
+                r_base
+            };
             let p00 = geometry::Point3::new(r0 * a0.cos(), r0 * a0.sin(), z0);
             let p10 = geometry::Point3::new(r1 * a1.cos(), r1 * a1.sin(), z0);
             let p11 = geometry::Point3::new(r1 * a1.cos(), r1 * a1.sin(), z1);
@@ -158,14 +166,19 @@ fn non_revolved_step_or_fine_32_plus_band_mesh_is_conservatively_enveloped() {
             tris.push(Triangle::new(p00, p11, p01));
         }
     }
-    let spun = placed_mesh_to_spun_profile(&tris).expect("40-band tapered mesh simplifies within MAX_POINTS");
+    let spun = placed_mesh_to_spun_profile(&tris)
+        .expect("40-band tapered mesh simplifies within MAX_POINTS");
     assert!(spun.points().len() <= camcraft_app::spun::MAX_POINTS);
     let dxf = spun_to_dxf(&spun).expect("exports to DXF");
     let reparsed = dxf_to_spun(dxf.as_bytes()).expect("re-imports");
     for p in sample_triangles(&tris) {
         let rho = p[0].hypot(p[1]);
         let r_env = profile_radius_at(&reparsed, p[2]);
-        assert!(rho <= r_env + 1e-6, "sample z={} rho={rho} > r_env={r_env}", p[2]);
+        assert!(
+            rho <= r_env + 1e-6,
+            "sample z={} rho={rho} > r_env={r_env}",
+            p[2]
+        );
     }
 }
 
@@ -174,7 +187,9 @@ fn step_conversion_refuses_missing_or_ambiguous_axis_by_name() {
     let err_none = step_to_dxf(&testdata("box.step"))
         .expect_err("STEP without ISO 13399 CSYS must be refused, never guessed as +Z");
     assert!(
-        err_none.contains("coordinate system") || err_none.contains("CIP") || err_none.contains("ISO 13399"),
+        err_none.contains("coordinate system")
+            || err_none.contains("CIP")
+            || err_none.contains("ISO 13399"),
         "{err_none}"
     );
 
@@ -195,7 +210,9 @@ fn step_conversion_refuses_missing_or_ambiguous_axis_by_name() {
     let _ = std::fs::remove_file(&tmp);
     let err_ambig = err_ambig.expect_err("ambiguous CIP STEP must be refused by name");
     assert!(
-        err_ambig.contains("refused") || err_ambig.contains("coordinate system") || err_ambig.contains("2 different placements"),
+        err_ambig.contains("refused")
+            || err_ambig.contains("coordinate system")
+            || err_ambig.contains("2 different placements"),
         "{err_ambig}"
     );
 
@@ -211,10 +228,26 @@ fn dxf_half_profile_import_with_lines_and_arcs_lands_as_tool_body() {
     // Convex and concave arcs in one half-profile.
     let pts = vec![
         SpunPoint::line(z0, 0.0),
-        SpunPoint { z: z0, r: 10.0, arc: 0.0 },
-        SpunPoint { z: z0 + 20.0, r: 18.0, arc: 30.0 },  // convex
-        SpunPoint { z: z0 + 40.0, r: 24.0, arc: -40.0 }, // concave
-        SpunPoint { z: z0 + 55.0, r: 24.0, arc: 0.0 },
+        SpunPoint {
+            z: z0,
+            r: 10.0,
+            arc: 0.0,
+        },
+        SpunPoint {
+            z: z0 + 20.0,
+            r: 18.0,
+            arc: 30.0,
+        }, // convex
+        SpunPoint {
+            z: z0 + 40.0,
+            r: 24.0,
+            arc: -40.0,
+        }, // concave
+        SpunPoint {
+            z: z0 + 55.0,
+            r: 24.0,
+            arc: 0.0,
+        },
         SpunPoint::line(z0 + 55.0, 0.0),
     ];
     let profile = SpunProfile::new(pts.clone()).expect("valid spun profile");
@@ -241,7 +274,8 @@ fn dxf_half_profile_import_with_lines_and_arcs_lands_as_tool_body() {
     assert!(history.redo(&world));
     assert!(tool_body::body_of(&world, &entity).is_some());
 
-    let tmp = std::env::temp_dir().join(format!("camcraft_dxf_body_{}.camproj", std::process::id()));
+    let tmp =
+        std::env::temp_dir().join(format!("camcraft_dxf_body_{}.camproj", std::process::id()));
     project::save(&world, &tmp).expect("save");
     let world2 = new_world();
     project::load(&world2, &tmp).expect("load");
@@ -259,128 +293,8 @@ fn dxf_wrap(units: i32, entities: &str) -> String {
 }
 
 #[test]
-fn dxf_major_bulge_arc_extent_is_preserved_and_axial_reversal_is_named() {
-    for clockwise in [true, false] {
-        // Same open profile in both directions: the major arc reaches z=65,
-        // above its endpoints at z=55 and z=60. A minor-arc replacement loses material.
-        let vertices = if clockwise {
-            "10\n0\n20\n55\n42\n0\n\
-             10\n10\n20\n55\n42\n-2.414213562373095\n\
-             10\n15\n20\n60\n42\n0\n\
-             10\n0\n20\n60\n42\n0\n"
-        } else {
-            "10\n0\n20\n60\n42\n0\n\
-             10\n15\n20\n60\n42\n2.414213562373095\n\
-             10\n10\n20\n55\n42\n0\n\
-             10\n0\n20\n55\n42\n0\n"
-        };
-        let dxf = dxf_wrap(
-            4,
-            &format!(
-                "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n80\n\
-                 0\nLWPOLYLINE\n8\nPROFILE\n90\n4\n70\n0\n{vertices}"
-            ),
-        );
-        let source = parse(dxf.as_bytes()).expect("bulged profile parses");
-        let (center, radius, start_angle, sweep_angle) = source
-            .primitives
-            .iter()
-            .find_map(|item| match item.primitive {
-                Primitive::Arc { center, radius, start_angle, sweep_angle } => {
-                    Some((center, radius, start_angle, sweep_angle))
-                }
-                _ => None,
-            })
-            .expect("source contains the major arc");
-        assert!((center.x - 10.0).abs() < 1e-9 && (center.y - 60.0).abs() < 1e-9);
-        assert!((radius - 5.0).abs() < 1e-9);
-        let expected_sweep = if clockwise { -0.75 * TAU } else { 0.75 * TAU };
-        assert!((sweep_angle - expected_sweep).abs() < 1e-9);
-        let source_top = (0..=96)
-            .map(|i| center.y + radius * (start_angle + sweep_angle * i as f64 / 96.0).sin())
-            .fold(f64::NEG_INFINITY, f64::max);
-        assert!((source_top - 65.0).abs() < 1e-9, "source arc reaches z=65");
-
-        let err = dxf_to_spun(dxf.as_bytes())
-            .expect_err("major arc reverses axially; accepting a z=60 top would truncate material");
-        assert!(err.contains("runs back down the axis"), "{err}");
-    }
-}
-
-#[test]
-fn dxf_half_profile_error_refusals_never_panic_and_name_reasons() {
-    // 1. No centreline
-    let no_cl = dxf_wrap(
-        4,
-        "0\nLINE\n8\nPROFILE\n10\n0\n20\n20\n11\n10\n21\n20\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n20\n11\n10\n21\n40\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n40\n11\n0\n21\n40\n",
-    );
-    let err = dxf_to_spun(no_cl.as_bytes()).expect_err("no centreline");
-    assert!(err.to_lowercase().contains("centreline"), "{err}");
-
-    // 2. SPLINE entity refused
-    let spline = dxf_wrap(
-        4,
-        "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n50\n\
-         0\nSPLINE\n8\nPROFILE\n",
-    );
-    let err = dxf_to_spun(spline.as_bytes()).expect_err("spline unsupported");
-    assert!(err.contains("SPLINE"), "{err}");
-
-    // 3. Crossing centreline (segments on both x > 0 and x < 0)
-    let crossing = dxf_wrap(
-        4,
-        "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n60\n\
-         0\nLINE\n8\nPROFILE\n10\n0\n20\n20\n11\n10\n21\n20\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n20\n11\n-5\n21\n40\n\
-         0\nLINE\n8\nPROFILE\n10\n-5\n20\n40\n11\n0\n21\n50\n",
-    );
-    let err = dxf_to_spun(crossing.as_bytes()).expect_err("crossing centreline");
-    assert!(err.to_lowercase().contains("cross"), "{err}");
-
-    // 4. Multiple centrelines
-    let multi_cl = dxf_wrap(
-        4,
-        "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n50\n\
-         0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n60\n\
-         0\nLINE\n8\nPROFILE\n10\n0\n20\n20\n11\n10\n21\n20\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n20\n11\n10\n21\n40\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n40\n11\n0\n21\n40\n",
-    );
-    assert!(dxf_to_spun(multi_cl.as_bytes()).is_err());
-
-    // 5. Disconnected profile segments
-    let disconnected = dxf_wrap(
-        4,
-        "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n60\n\
-         0\nLINE\n8\nPROFILE\n10\n0\n20\n20\n11\n10\n21\n20\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n30\n11\n0\n21\n40\n",
-    );
-    assert!(dxf_to_spun(disconnected.as_bytes()).is_err());
-
-    // 6. Runs back down the axis
-    let runs_back = dxf_wrap(
-        4,
-        "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n60\n\
-         0\nLINE\n8\nPROFILE\n10\n0\n20\n20\n11\n10\n21\n40\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n40\n11\n15\n21\n30\n\
-         0\nLINE\n8\nPROFILE\n10\n15\n20\n30\n11\n0\n21\n50\n",
-    );
-    assert!(dxf_to_spun(runs_back.as_bytes()).is_err());
-
-    // 7. Unitless DXF refused unless fallback unit supplied
-    let unitless = dxf_wrap(
-        0,
-        "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n60\n\
-         0\nLINE\n8\nPROFILE\n10\n0\n20\n20\n11\n10\n21\n20\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n20\n11\n10\n21\n40\n\
-         0\nLINE\n8\nPROFILE\n10\n10\n20\n40\n11\n0\n21\n40\n",
-    );
-    assert!(dxf_to_spun(unitless.as_bytes()).is_err());
-    assert!(dxf_to_spun_with_unit(unitless.as_bytes(), Some(Unit::Millimeters)).is_ok());
-
-    // 8. Reaches into flutes refused at SetToolBody
+fn dxf_half_profile_reaching_flutes_is_refused_by_command() {
+    // Reaches into flutes refused at SetToolBody
     let low_foot = dxf_wrap(
         4,
         "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n60\n\
@@ -424,7 +338,12 @@ fn round_trip_step_to_dxf_to_body_to_dxf_is_stable_within_tolerance() {
     for (p1, p2) in spun_1.points().iter().zip(spun_2.points().iter()) {
         assert!((p1.z - p2.z).abs() < 1e-9, "z drift {} vs {}", p1.z, p2.z);
         assert!((p1.r - p2.r).abs() < 1e-9, "r drift {} vs {}", p1.r, p2.r);
-        assert!((p1.arc - p2.arc).abs() < 1e-9, "arc drift {} vs {}", p1.arc, p2.arc);
+        assert!(
+            (p1.arc - p2.arc).abs() < 1e-9,
+            "arc drift {} vs {}",
+            p1.arc,
+            p2.arc
+        );
     }
 
     history.execute(

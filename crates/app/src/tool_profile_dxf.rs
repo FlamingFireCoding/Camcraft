@@ -19,11 +19,7 @@ use crate::geometry::Triangle;
 use crate::schema::ToolBody;
 use crate::tool_body::{self, BodyFrame};
 
-#[path = "tool_profile_dxf_import.rs"]
-mod import;
-pub use import::{dxf_to_spun, dxf_to_spun_with_unit};
-
-pub const CENTRELINE_LAYER: &str = "CENTRELINE";
+pub use camcraft_tools::tool_profile_dxf::{CENTRELINE_LAYER, dxf_to_spun, dxf_to_spun_with_unit};
 pub const PROFILE_LAYER: &str = "PROFILE";
 
 /// Export a validated [`SpunProfile`] as ASCII DXF in millimetres with a
@@ -114,10 +110,8 @@ pub fn tool_body_to_spun(body: &ToolBody) -> Result<SpunProfile, String> {
         return Ok(spun.clone());
     }
     match &body.frame {
-        BodyFrame::Spindle { profile, .. } => {
-            SpunProfile::conservative_from_bands(profile.bands())
-                .map_err(|e| format!("holder profile conversion failed: {e}"))
-        }
+        BodyFrame::Spindle { profile, .. } => SpunProfile::conservative_from_bands(profile.bands())
+            .map_err(|e| format!("holder profile conversion failed: {e}")),
         BodyFrame::Lathe { .. } => {
             Err("a lathe-frame holder body has no revolved spindle half-profile".into())
         }

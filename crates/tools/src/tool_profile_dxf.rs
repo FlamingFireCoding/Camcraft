@@ -6,11 +6,12 @@
 
 use std::f64::consts::PI;
 
+use crate::spun::{MIN_SEGMENT, SpunPoint, SpunProfile};
 use camcraft_geometry::dxf::{self, Primitive, Unit, Units, parse};
 use camcraft_geometry::geo2d::Point2;
-use camcraft_tools::spun::{MIN_SEGMENT, SpunPoint, SpunProfile};
 
-use super::CENTRELINE_LAYER;
+/// Layer containing the explicit tool axis in a DXF half-profile.
+pub const CENTRELINE_LAYER: &str = "CENTRELINE";
 
 const JOIN_TOL: f64 = 1e-4;
 const CROSS_TOL: f64 = 1e-5;
@@ -23,7 +24,10 @@ pub fn dxf_to_spun(bytes: &[u8]) -> Result<SpunProfile, String> {
 }
 
 /// Import an ASCII DXF half-profile, using `default_unit` only when unitless.
-pub fn dxf_to_spun_with_unit(bytes: &[u8], default_unit: Option<Unit>) -> Result<SpunProfile, String> {
+pub fn dxf_to_spun_with_unit(
+    bytes: &[u8],
+    default_unit: Option<Unit>,
+) -> Result<SpunProfile, String> {
     let doc = parse(bytes).map_err(|e| e.to_string())?;
     let scale = match doc.units {
         Units::Known(u) => u.millimeters_per_unit(),
@@ -116,7 +120,14 @@ fn extract_segments(doc: &dxf::Document, scale: f64) -> Result<(Centreline, Vec<
             }
             let axis = Point2::new(dc.x / len, dc.y / len);
             let normal = Point2::new(axis.y, -axis.x);
-            Ok((Centreline { start: one.0, axis, normal }, segs))
+            Ok((
+                Centreline {
+                    start: one.0,
+                    axis,
+                    normal,
+                },
+                segs,
+            ))
         }
         many => Err(format!(
             "DXF has {} centreline entities on layer 'CENTRELINE' - expected exactly one LINE",
@@ -130,7 +141,11 @@ fn push_primitive(segs: &mut Vec<Seg>, p: &Primitive, scale: f64) -> Result<(), 
         Primitive::Line { start, end } => {
             let a = scale_pt(start, scale)?;
             let b = scale_pt(end, scale)?;
-            segs.push(Seg { a, b, kind: SegKind::Line });
+            segs.push(Seg {
+                a,
+                b,
+                kind: SegKind::Line,
+            });
         }
         Primitive::Arc {
             center,
@@ -192,7 +207,10 @@ struct OrderedSeg {
 fn order_open_chain(segs: &[Seg], c0: Point2, axis: Point2) -> Result<Vec<OrderedSeg>, String> {
     let mut nodes: Vec<Point2> = Vec::new();
     let mut intern = |p: Point2| -> usize {
-        if let Some(i) = nodes.iter().position(|n| sub2(p, *n).x.hypot(sub2(p, *n).y) <= JOIN_TOL) {
+        if let Some(i) = nodes
+            .iter()
+            .position(|n| sub2(p, *n).x.hypot(sub2(p, *n).y) <= JOIN_TOL)
+        {
             return i;
         }
         nodes.push(p);
@@ -215,9 +233,17 @@ fn order_open_chain(segs: &[Seg], c0: Point2, axis: Point2) -> Result<Vec<Ordere
             nodes[vi].y
         ));
     }
-    let ends: Vec<usize> = adj.iter().enumerate().filter(|(_, l)| l.len() == 1).map(|(i, _)| i).collect();
+    let ends: Vec<usize> = adj
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.len() == 1)
+        .map(|(i, _)| i)
+        .collect();
     if ends.is_empty() {
-        return Err("DXF profile forms a closed loop instead of an open half-profile between axis ends".into());
+        return Err(
+            "DXF profile forms a closed loop instead of an open half-profile between axis ends"
+                .into(),
+        );
     }
     if ends.len() != 2 {
         return Err(format!(
@@ -226,15 +252,27 @@ fn order_open_chain(segs: &[Seg], c0: Point2, axis: Point2) -> Result<Vec<Ordere
         ));
     }
     let z_of = |vi: usize| dot2(sub2(nodes[vi], c0), axis);
-    let mut cur = if z_of(ends[0]) <= z_of(ends[1]) { ends[0] } else { ends[1] };
+    let mut cur = if z_of(ends[0]) <= z_of(ends[1]) {
+        ends[0]
+    } else {
+        ends[1]
+    };
     let mut used = vec![false; segs.len()];
     let mut chain = Vec::with_capacity(segs.len());
     while let Some(&ei) = adj[cur].iter().find(|&&e| !used[e]) {
         used[ei] = true;
         let (u, v) = edges[ei];
         let s = segs[ei];
-        let (start, end, next) = if u == cur { (s.a, s.b, v) } else { (s.b, s.a, u) };
-        chain.push(OrderedSeg { start, end, kind: s.kind });
+        let (start, end, next) = if u == cur {
+            (s.a, s.b, v)
+        } else {
+            (s.b, s.a, u)
+        };
+        chain.push(OrderedSeg {
+            start,
+            end,
+            kind: s.kind,
+        });
         cur = next;
     }
     if chain.len() != segs.len() {
@@ -296,7 +334,10 @@ fn project_to_spun(
                     return Err("DXF half-profile contains a zero-length arc".into());
                 }
                 let mid_ang = start_angle + 0.5 * sweep_angle;
-                let mid = Point2::new(center.x + radius * mid_ang.cos(), center.y + radius * mid_ang.sin());
+                let mid = Point2::new(
+                    center.x + radius * mid_ang.cos(),
+                    center.y + radius * mid_ang.sin(),
+                );
                 let (zm, rm) = proj(mid);
                 let n_zr = (-(rb - ra) / len, (zb - za) / len);
                 let c_mid = ((za + zb) * 0.5, (ra + rb) * 0.5);
@@ -330,7 +371,10 @@ fn sample_seg_points(s: &OrderedSeg) -> Vec<Point2> {
             let mut out = Vec::with_capacity(ARC_SAMPLE_STEPS + 1);
             for i in 0..=ARC_SAMPLE_STEPS {
                 let th = start_angle + sweep_angle * (i as f64 / ARC_SAMPLE_STEPS as f64);
-                out.push(Point2::new(center.x + radius * th.cos(), center.y + radius * th.sin()));
+                out.push(Point2::new(
+                    center.x + radius * th.cos(),
+                    center.y + radius * th.sin(),
+                ));
             }
             out
         }
