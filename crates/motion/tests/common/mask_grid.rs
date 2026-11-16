@@ -169,7 +169,7 @@ impl Grid {
         &self,
         seg: (Point2, Point2),
         r: f64,
-        z: f64,
+        z: (f64, f64),
         in_depth: bool,
         swept_mask: &mut [bool],
         swept_z: &mut [f64],
@@ -211,7 +211,24 @@ impl Grid {
                 let dy = py - (a.y + t * vy);
                 if dx * dx + dy * dy <= r2 {
                     let i = self.idx(ix, iy);
-                    swept_z[i] = swept_z[i].min(z);
+                    // The disc covers this cell over an interval of segment parameters.
+                    // Use its deepest actual position within that interval.
+                    let depth = if vv <= 1e-18 || z.0 == z.1 {
+                        z.0.min(z.1)
+                    } else {
+                        let projection = ((px - a.x) * vx + (py - a.y) * vy) / vv;
+                        let perpendicular2 = ((px - a.x).powi(2) + (py - a.y).powi(2)
+                            - projection * projection * vv)
+                            .max(0.0);
+                        let half = ((r2 - perpendicular2).max(0.0) / vv).sqrt();
+                        let cut_t = if z.1 < z.0 {
+                            (projection + half).min(1.0)
+                        } else {
+                            (projection - half).max(0.0)
+                        };
+                        z.0 + cut_t * (z.1 - z.0)
+                    };
+                    swept_z[i] = swept_z[i].min(depth);
                     if in_depth {
                         swept_mask[i] = true;
                     }

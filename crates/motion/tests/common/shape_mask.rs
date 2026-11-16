@@ -20,14 +20,25 @@ pub enum CutDepth {
 }
 
 impl CutDepth {
-    fn includes(self, a: Point3, b: Point3) -> bool {
-        let zmin = a.z.min(b.z);
-        let zmax = a.z.max(b.z);
-        match self {
-            CutDepth::AllCut => true,
-            CutDepth::AtOrBelow(z) => zmin <= z + Z_EPS,
-            CutDepth::NearZ { z, tol } => (0.5 * (a.z + b.z) - z).abs() <= tol || (zmin <= z && zmax >= z),
+    fn clip(self, a: Point3, b: Point3) -> Option<(Point3, Point3)> {
+        let (lo, hi) = match self {
+            CutDepth::AllCut => return Some((a, b)),
+            CutDepth::AtOrBelow(z) => (f64::NEG_INFINITY, z + Z_EPS),
+            CutDepth::NearZ { z, tol } => (z - tol, z + tol),
+        };
+        let dz = b.z - a.z;
+        if dz.abs() <= f64::EPSILON {
+            return (a.z >= lo && a.z <= hi).then_some((a, b));
         }
+        let t0 = (lo - a.z) / dz;
+        let t1 = (hi - a.z) / dz;
+        let start = t0.min(t1).max(0.0);
+        let end = t0.max(t1).min(1.0);
+        if start > end {
+            return None;
+        }
+        let at = |t: f64| Point3::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * dz);
+        Some((at(start), at(end)))
     }
 }
 
@@ -103,33 +114,12 @@ impl ShapeMask {
         let mut first_out_point = None;
         let mut max_cut_width = 0.0f64;
         let mut worst_cut_point = None;
-        let mut helix_segs: Vec<(Point2, Point2, bool)> = Vec::new();
-        let mut helix_sweep = 0.0f64;
-        let mut helix_z = f64::INFINITY;
-
         for mv in &spec.path.moves {
             if mv.kind == MoveKind::Rapid {
-                flush_helix(&grid, r, &mut helix_segs, &mut helix_sweep, helix_z, &mut swept, &mut swept_z);
                 continue;
             }
-            let is_helix_arc = mv.kind == MoveKind::Feed
-                && mv.arc.is_some_and(|a| a.plane.is_xy())
-                && mv.from.z > mv.to.z + Z_EPS;
-            if is_helix_arc {
-                if let Some(arc) = mv.arc {
-                    helix_sweep += arc_sweep_angle(
-                        Point2::new(mv.from.x, mv.from.y),
-                        Point2::new(mv.to.x, mv.to.y),
-                        arc.center,
-                        arc.ccw,
-                    );
-                }
-                helix_z = mv.to.z;
-            } else {
-                flush_helix(&grid, r, &mut helix_segs, &mut helix_sweep, helix_z, &mut swept, &mut swept_z);
-            }
-
-            let is_planar_feed = mv.kind == MoveKind::Feed && (mv.from.z - mv.to.z).abs() <= Z_EPS;
+            let is_planar_feed =
+                mv.kind == MoveKind::Feed && (mv.from.z - mv.to.z).abs() <= f64::EPSILON;
             for (pa, pb) in mv.segments3(CHORD_TOL) {
                 let p2a = Point2::new(pa.x, pa.y);
                 let p2b = Point2::new(pb.x, pb.y);
@@ -139,7 +129,7 @@ impl ShapeMask {
                         first_out_point = Some(if grid.cell_of(p2a).is_none() { p2a } else { p2b });
                     }
                 }
-                let in_depth = spec.depth.includes(pa, pb);
+                let clipped = spec.depth.clip(pa, pb);
                 let len = (p2b.x - p2a.x).hypot(p2b.y - p2a.y);
                 if is_planar_feed && len > 1e-9 {
                     let steps = (len / grid.cell).ceil().max(1.0) as usize;
@@ -155,19 +145,40 @@ impl ShapeMask {
                             max_cut_width = w;
                             worst_cut_point = Some(cur);
                         }
-                        grid.sweep_capsule((prev, cur), r, z, in_depth, &mut swept, &mut swept_z);
+                        grid.sweep_capsule(
+                            (prev, cur),
+                            r,
+                            (z, z),
+                            clipped.is_some(),
+                            &mut swept,
+                            &mut swept_z,
+                        );
                         prev = cur;
                     }
                 } else {
-                    let z = pa.z.min(pb.z);
-                    if is_helix_arc {
-                        helix_segs.push((p2a, p2b, in_depth));
+                    // Record the lowest actual cutter depth at each covered cell, not
+                    // the segment endpoint depth across its entire XY footprint.
+                    grid.sweep_capsule(
+                        (p2a, p2b),
+                        r,
+                        (pa.z, pb.z),
+                        false,
+                        &mut swept,
+                        &mut swept_z,
+                    );
+                    if let Some((a, b)) = clipped {
+                        grid.sweep_capsule(
+                            (Point2::new(a.x, a.y), Point2::new(b.x, b.y)),
+                            r,
+                            (a.z, b.z),
+                            true,
+                            &mut swept,
+                            &mut swept_z,
+                        );
                     }
-                    grid.sweep_capsule((p2a, p2b), r, z, in_depth, &mut swept, &mut swept_z);
                 }
             }
         }
-        flush_helix(&grid, r, &mut helix_segs, &mut helix_sweep, helix_z, &mut swept, &mut swept_z);
 
         let diff_dir = spec.diff_dir.map_or_else(png::default_diff_dir, Path::to_path_buf);
         Ok(Self {
@@ -354,34 +365,6 @@ fn count_symmetry_mismatch(grid: &Grid, src: &[bool], target_d1: &[bool], sym: S
         }
     }
     miss
-}
-
-fn arc_sweep_angle(from: Point2, to: Point2, center: Point2, ccw: bool) -> f64 {
-    let a0 = (from.y - center.y).atan2(from.x - center.x);
-    let a1 = (to.y - center.y).atan2(to.x - center.x);
-    let mut d = if ccw { a1 - a0 } else { a0 - a1 };
-    while d <= 1e-9 {
-        d += std::f64::consts::TAU;
-    }
-    d.min(std::f64::consts::TAU)
-}
-
-fn flush_helix(
-    grid: &Grid,
-    r: f64,
-    segs: &mut Vec<(Point2, Point2, bool)>,
-    sweep: &mut f64,
-    z_end: f64,
-    swept: &mut [bool],
-    swept_z: &mut [f64],
-) {
-    if *sweep >= std::f64::consts::TAU - 0.05 {
-        for &(a, b, in_depth) in segs.iter() {
-            grid.sweep_capsule((a, b), r, z_end, in_depth, swept, swept_z);
-        }
-    }
-    segs.clear();
-    *sweep = 0.0;
 }
 
 fn move_tangent(arc: Option<ArcMove>, cur: Point2, chord: (f64, f64)) -> (f64, f64) {

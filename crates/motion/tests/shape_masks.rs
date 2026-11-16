@@ -50,6 +50,96 @@ fn line_path(pts: &[(f64, f64, f64)]) -> Toolpath {
 }
 
 #[test]
+fn shape_mask_ramp_only_clears_the_selected_depth_interval() {
+    let Ok(expected) = Region::sweep(&[vec![Point2::new(-7.0, 0.0), Point2::new(7.0, 0.0)]], 3.0)
+    else {
+        panic!("stadium")
+    };
+    let path = line_path(&[(-7.0, 0.0, 0.0), (7.0, 0.0, -4.0)]);
+    let dir = scratch_dir("ramp_depth");
+    for depth in [
+        CutDepth::AtOrBelow(-4.0),
+        CutDepth::NearZ {
+            z: -4.0,
+            tol: 0.001,
+        },
+    ] {
+        let spec = MaskSpec {
+            name: "ramp_depth",
+            expected: &expected,
+            path: &path,
+            tool_diameter: 6.0,
+            cell: 0.25,
+            depth,
+            diff_dir: Some(&dir),
+        };
+        let Ok(mask) = ShapeMask::evaluate(&spec) else {
+            panic!("evaluate")
+        };
+        // Only the final cutter disc reaches the floor, leaving most of the stadium uncut.
+        assert!(mask.metrics().uncut_cells > mask.metrics().expected_cells / 2);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| mask.assert_bounded_leftover(0.0, None))).is_err()
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn shape_mask_ramp_does_not_preclear_a_floor_return() {
+    let expected = rect(-10.0, -3.0, 10.0, 3.0);
+    let path = line_path(&[(-7.0, 0.0, 0.0), (7.0, 0.0, -4.0), (-7.0, 0.0, -4.0)]);
+    let dir = scratch_dir("ramp_floor_return");
+    let spec = MaskSpec {
+        name: "ramp_floor_return",
+        expected: &expected,
+        path: &path,
+        tool_diameter: 6.0,
+        cell: 0.25,
+        depth: CutDepth::AtOrBelow(-4.0),
+        diff_dir: Some(&dir),
+    };
+    let Ok(mask) = ShapeMask::evaluate(&spec) else {
+        panic!("evaluate")
+    };
+    assert!(mask.metrics().max_cut_width > 3.0);
+    assert!(catch_unwind(AssertUnwindSafe(|| mask.assert_max_engagement(0.25))).is_err());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn shape_mask_descending_helix_does_not_preclear_its_floor() {
+    let expected = rect(-4.0, -4.0, 4.0, 4.0);
+    let mut b = PathBuilder::approached(Point3::new(3.0, 0.0, 0.0));
+    let center = Point2::new(0.0, 0.0);
+    for to in [
+        Point3::new(-3.0, 0.0, -2.0),
+        Point3::new(3.0, 0.0, -4.0),
+        Point3::new(-3.0, 0.0, -4.0),
+        Point3::new(3.0, 0.0, -4.0),
+    ] {
+        b.push_arc(MoveKind::Feed, to, Some(600.0), center, true);
+    }
+    let path = b.finish();
+    let dir = scratch_dir("helix_floor");
+    let spec = MaskSpec {
+        name: "helix_floor",
+        expected: &expected,
+        path: &path,
+        tool_diameter: 2.0,
+        cell: 0.125,
+        depth: CutDepth::AtOrBelow(-4.0),
+        diff_dir: Some(&dir),
+    };
+    let Ok(mask) = ShapeMask::evaluate(&spec) else {
+        panic!("evaluate")
+    };
+    assert!(mask.metrics().max_cut_width > 0.25 + 1.5 * spec.cell);
+    assert!(catch_unwind(AssertUnwindSafe(|| mask.assert_max_engagement(0.25))).is_err());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn shape_mask_catches_overcut_and_writes_diff_png() {
     let expected = rect(-10.0, -5.0, 10.0, 5.0);
     // D=6 (r=3): y=0 keeps edges inside [-3, 3], y=4 extends edge to y=7 (2 mm outside [-5, 5]).
@@ -163,12 +253,12 @@ fn shape_mask_catches_over_stepover_engagement_on_planar_cut() {
     // Full slot at y=-7 measures ~10 mm (> 3 mm), failing engagement cap.
     assert!(catch_unwind(AssertUnwindSafe(|| mask.assert_max_engagement(3.0))).is_err());
 
-    // Now simulate valid light side-milling: open slot first via non-planar ramp, then plunge/open end at
+    // Now simulate valid light side-milling: open the whole slot at or below Z=-2 via a slight ramp, then plunge/open end at
     // (15, -5) and side-mill back to (-15, -5) at 2 mm radial stepover.
     let mut ok = PathBuilder::approached(Point3::new(-15.0, -7.0, 5.0));
     ok.push(MoveKind::Rapid, Point3::new(-15.0, -7.0, 5.0), None);
-    ok.push(MoveKind::Plunge, Point3::new(-15.0, -7.0, 0.0), Some(200.0));
-    ok.push(MoveKind::Feed, Point3::new(15.0, -7.0, -2.0), Some(400.0)); // diagonal ramp -> opens slot non-planarly
+    ok.push(MoveKind::Plunge, Point3::new(-15.0, -7.0, -2.0), Some(200.0));
+    ok.push(MoveKind::Feed, Point3::new(15.0, -7.0, -2.01), Some(400.0)); // the entire ramp reaches the measured floor
     ok.push(MoveKind::Rapid, Point3::new(15.0, -7.0, 5.0), None);
     ok.push(MoveKind::Rapid, Point3::new(15.0, -5.0, 5.0), None);
     ok.push(MoveKind::Plunge, Point3::new(15.0, -5.0, -2.0), Some(200.0)); // non-planar bore at end
