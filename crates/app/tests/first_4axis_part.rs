@@ -136,9 +136,9 @@ fn build() -> World {
         (OPS[0].0, "EM 1/4", flat(along.0, along.1, index(-90.0, 0.0))),
         (OPS[1].0, "EM 1/4", flat(along.0, along.1, None)),
         (OPS[2].0, "EM 1/4", flat(along.0, along.1, index(90.0, 0.0))),
-        // The face underneath is tool axis A0 B180. In that plane X lies
-        // along machine Y and Y along machine X, so the ends trade places.
-        (OPS[3].0, "EM 1/4", flat((0.0, -0.75), (0.0, -0.25), index(0.0, 180.0))),
+        // The face underneath is tool axis A0 B180. Plane X stays along machine
+        // X (the A rotary axis), so all four flats use the same ends (#2133).
+        (OPS[3].0, "EM 1/4", flat(along.0, along.1, index(0.0, 180.0))),
         (OPS[4].0, "EM 1/8", slot((-0.5, -0.16), (-0.5, 0.16), 0.125, 0.030, 0.010, 8.0, 2.0, None)),
     ];
     for (name, t, p) in ops {
@@ -218,7 +218,7 @@ fn each_flat_posts_the_same_cut_after_its_index() {
     }
     let under = index(0.0, 180.0).and_then(|t| t.frame()).expect("the A0 B180 frame");
     let p = under.to_local(Point3::new(-0.75 * IN, 0.0, -R));
-    assert!((p.x - 0.0).abs() < 1e-9 && (p.y + 0.75 * IN).abs() < 1e-9 && (p.z - R).abs() < 1e-9, "{p:?}");
+    assert!((p.x + 0.75 * IN).abs() < 1e-9 && p.y.abs() < 1e-9 && (p.z - R).abs() < 1e-9, "{p:?}");
 }
 
 /// The committed project is the built document: it loads on the shipped

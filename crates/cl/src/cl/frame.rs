@@ -74,9 +74,13 @@ impl TiltedFrame {
             });
         }
         let abs = [a[0].abs(), a[1].abs(), a[2].abs()];
-        let seed_idx = if abs[0] <= abs[1] && abs[0] <= abs[2] {
+        // Ignore trigonometric float dust (such as sin(180 deg) ~ 1.22e-16)
+        // when breaking ties for the smallest component, so an axis in the YZ
+        // plane such as A0 B180 keeps plane X along machine +X.
+        let eff = abs.map(|x| if x < 1e-12 { 0.0 } else { x });
+        let seed_idx = if eff[0] <= eff[1] && eff[0] <= eff[2] {
             0
-        } else if abs[1] <= abs[2] {
+        } else if eff[1] <= eff[2] {
             1
         } else {
             2
