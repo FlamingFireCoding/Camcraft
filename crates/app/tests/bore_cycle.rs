@@ -66,6 +66,7 @@ fn params(cycle: CycleChoice, dwell: f64) -> OpParams {
             stepped: false,
         }],
         cross: vec![],
+        break_through: None,
     }
 }
 
