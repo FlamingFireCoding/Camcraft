@@ -19,22 +19,24 @@ use super::sel::OpType;
 /// parameter field is no index - the ordinary prismatic op.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tilt {
+    /// 0 preserves the pre-#2133 frame; 1 ignores trigonometric dust.
+    pub basis_version: u8,
     pub a_deg: f64,
     pub b_deg: f64,
     pub origin: [f64; 3],
 }
 
 impl Tilt {
-    /// The frame this index commands: None only when the angles state
-    /// no direction at all (a non-finite letter - refused at the
-    /// parameter door long before generation, but the frame's law is
-    /// Option, not panic).
+    /// The frame this index commands under its persisted basis version.
+    /// Non-finite angles or an unsupported version return None; the
+    /// parameter door refuses these before generation.
     #[must_use]
     pub fn frame(&self) -> Option<crate::cl::TiltedFrame> {
-        crate::cl::TiltedFrame::from_angles(
+        crate::cl::TiltedFrame::from_angles_versioned(
             crate::geometry::Point3::new(self.origin[0], self.origin[1], self.origin[2]),
             self.a_deg,
             self.b_deg,
+            self.basis_version,
         )
     }
 
@@ -43,6 +45,9 @@ impl Tilt {
     /// explains that the face opposite the top is A 0 B 180.
     #[must_use]
     pub fn refusal(&self) -> Option<String> {
+        if self.basis_version > 1 {
+            return Some("Tilted plane: unsupported frame basis version".into());
+        }
         if !self.a_deg.is_finite() || !self.b_deg.is_finite() {
             return Some(
                 "Tilted plane (3+2): Tool axis A and Tool axis B must be finite numbers (A -90..90 deg, B -180..180 deg)"

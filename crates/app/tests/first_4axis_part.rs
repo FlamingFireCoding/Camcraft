@@ -73,7 +73,7 @@ fn tool(dia_in: f64, flute_in: f64, rpm: f64, feed_ipm: f64) -> Tool {
 /// The index of one face: the tool axis letters and the plane origin on
 /// the A centreline at the bar's free end.
 fn index(a_deg: f64, b_deg: f64) -> Option<Tilt> {
-    Some(Tilt { a_deg, b_deg, origin: [0.0; 3] })
+    Some(Tilt { basis_version: 1, a_deg, b_deg, origin: [0.0; 3] })
 }
 
 /// A slot typed as the guide types it, lengths in inches: the two ends in

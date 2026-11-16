@@ -95,7 +95,9 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
-pub const PROJECT_VERSION: u32 = 62;
+/// v63 (#2133): old readers must not discard the tilted frame basis version.
+/// Version 62 and older tilts retain basis 0; new tilts state basis 1.
+pub const PROJECT_VERSION: u32 = 63;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

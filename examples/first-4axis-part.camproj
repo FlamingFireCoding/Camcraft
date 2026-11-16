@@ -1,5 +1,5 @@
 {
-  "version": 62,
+  "version": 63,
   "units": "in",
   "machine": {
     "path": "built-in: Tormach 770MX + microARC 4",
@@ -539,6 +539,7 @@
             "entry": "plunge",
             "helix_radius": 1.0,
             "tilt": {
+              "basis_version": 1,
               "a_deg": -90.0,
               "b_deg": 0.0,
               "origin": [
@@ -549,7 +550,7 @@
             }
           }
         },
-        "stamp": 13829696788620862963,
+        "stamp": 1299610393734230704,
         "cache": {
           "moves": [
             {
@@ -984,6 +985,7 @@
             "entry": "plunge",
             "helix_radius": 1.0,
             "tilt": {
+              "basis_version": 1,
               "a_deg": 0.0,
               "b_deg": 180.0,
               "origin": [
@@ -994,7 +996,7 @@
             }
           }
         },
-        "stamp": 6392290425088399217,
+        "stamp": 4041033073305325831,
         "cache": {
           "moves": [
             {
@@ -1236,6 +1238,7 @@
             "entry": "plunge",
             "helix_radius": 1.0,
             "tilt": {
+              "basis_version": 1,
               "a_deg": 90.0,
               "b_deg": 0.0,
               "origin": [
@@ -1246,7 +1249,7 @@
             }
           }
         },
-        "stamp": 13587686189647055826,
+        "stamp": 8842722962332246958,
         "cache": {
           "moves": [
             {

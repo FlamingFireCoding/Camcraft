@@ -514,6 +514,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
+        // v62 -> v63 (#2133): absent tilt basis preserves the legacy frame.
+        // Saving writes v63 so old readers cannot drop an explicit basis.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;

@@ -315,7 +315,7 @@ fn a_posed_op_keeps_its_stamp_when_the_program_ahead_moves() {
     let (world, mut history) = faced_world();
     let mut posed = face(5.0);
     if let OpParams::Face { tilt, .. } = &mut posed {
-        *tilt = Some(camcraft_app::operation::Tilt { a_deg: 90.0, b_deg: 0.0, origin: [0.0; 3] });
+        *tilt = Some(camcraft_app::operation::Tilt { basis_version: 1, a_deg: 90.0, b_deg: 0.0, origin: [0.0; 3] });
     }
     let cmd = CreateOperation::new(&world, "Op3Posed", "EM-0600-4FL", SrcRef::Stock, posed);
     history.execute(&world, cmd.expect("create posed face"));

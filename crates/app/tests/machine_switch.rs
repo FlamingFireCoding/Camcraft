@@ -143,7 +143,7 @@ fn tilted_on(via: Via) -> (World, History) {
     let params = OpParams::Pocket {
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
-        tilt: Some(Tilt { a_deg: 0.0, b_deg: 90.0, origin: [-25.0, 0.0, -15.0] }),
+        tilt: Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 90.0, origin: [-25.0, 0.0, -15.0] }),
         stepover: 3.0,
         stock_to_leave: 0.0,
         clearance_z: Height::fixed(80.0),

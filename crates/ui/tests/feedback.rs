@@ -200,6 +200,7 @@ fn apply_hint_names_tilt_limits_and_a0_b180_remedy() {
     let mut bad = face_params();
     if let OpParams::Face { tilt, .. } = &mut bad {
         *tilt = Some(camcraft_app::operation::Tilt {
+            basis_version: 1,
             a_deg: 180.0,
             b_deg: 0.0,
             origin: [0.0; 3],

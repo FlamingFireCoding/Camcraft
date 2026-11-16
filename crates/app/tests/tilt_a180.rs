@@ -124,7 +124,7 @@ fn out_of_range_tilt_refuses_by_name_with_a0_b180_remedy() {
     );
 
     for bad_a in [180.0, -180.0, 95.0] {
-        let tilt = Tilt { a_deg: bad_a, b_deg: 0.0, origin: [0.0; 3] };
+        let tilt = Tilt { basis_version: 1, a_deg: bad_a, b_deg: 0.0, origin: [0.0; 3] };
         let err = CreateOperation::new(&world, "BadA", "EM 1/4", SrcRef::Stock, slot_with_tilt(Some(tilt)))
             .err()
             .expect("out-of-range A must refuse at create");
@@ -138,20 +138,20 @@ fn out_of_range_tilt_refuses_by_name_with_a0_b180_remedy() {
         assert_a_tilt_refusal(&err.to_string());
     }
 
-    let bad_b = Tilt { a_deg: 0.0, b_deg: 200.0, origin: [0.0; 3] };
+    let bad_b = Tilt { basis_version: 1, a_deg: 0.0, b_deg: 200.0, origin: [0.0; 3] };
     let err = EditOperationParams::new(&world, "S", slot_with_tilt(Some(bad_b)))
         .err()
         .expect("out-of-range B must refuse");
     let msg = err.to_string();
     assert!(msg.contains("Tool axis B") && msg.contains("-180..180"), "{msg}");
 
-    let nan_tilt = Tilt { a_deg: f64::NAN, b_deg: 0.0, origin: [0.0; 3] };
+    let nan_tilt = Tilt { basis_version: 1, a_deg: f64::NAN, b_deg: 0.0, origin: [0.0; 3] };
     let err = EditOperationParams::new(&world, "S", slot_with_tilt(Some(nan_tilt)))
         .err()
         .expect("non-finite tilt must refuse");
     assert!(err.to_string().contains("finite"), "{err}");
 
-    let inf_origin = Tilt { a_deg: 0.0, b_deg: 0.0, origin: [0.0, f64::INFINITY, 0.0] };
+    let inf_origin = Tilt { basis_version: 1, a_deg: 0.0, b_deg: 0.0, origin: [0.0, f64::INFINITY, 0.0] };
     let err = EditOperationParams::new(&world, "S", slot_with_tilt(Some(inf_origin)))
         .err()
         .expect("non-finite origin must refuse");
@@ -192,8 +192,8 @@ fn out_of_range_tilt_refuses_by_name_with_a0_b180_remedy() {
 #[test]
 fn a0_b180_slot_cuts_along_machine_x_like_the_other_faces() {
     let (world, mut h) = bar_world();
-    let p90 = slot_with_tilt(Some(Tilt { a_deg: 90.0, b_deg: 0.0, origin: [0.0; 3] }));
-    let p180 = slot_with_tilt(Some(Tilt { a_deg: 0.0, b_deg: 180.0, origin: [0.0; 3] }));
+    let p90 = slot_with_tilt(Some(Tilt { basis_version: 1, a_deg: 90.0, b_deg: 0.0, origin: [0.0; 3] }));
+    let p180 = slot_with_tilt(Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 180.0, origin: [0.0; 3] }));
     h.execute(&world, CreateOperation::new(&world, "Flat A90", "EM 1/4", SrcRef::Stock, p90).expect("A90"));
     h.execute(&world, GenerateOperation::new(&world, "Flat A90").expect("gen A90"));
     h.execute(&world, CreateOperation::new(&world, "Flat A180", "EM 1/4", SrcRef::Stock, p180).expect("A180"));
