@@ -162,3 +162,73 @@ fn contour_side_and_account_walk_once_per_input() {
     });
     assert_eq!(undo(&mut h, "undo the move"), all);
 }
+
+/// The pick overlay lines through the memo, asserted equal to a fresh
+/// build of the same state.
+fn pick_lines(h: &Harness<'static, ShellUi>, why: &str) -> Vec<[f32; 6]> {
+    let st = &h.state().state;
+    let memo = crate::interact::selection_feature_lines(st).to_vec();
+    assert_eq!(memo, crate::interact::selection_feature_lines_fresh(st), "{why}: the cached lines are a fresh build's");
+    memo
+}
+
+/// Run `change`, then assert the lines were built again and are a fresh
+/// build's.
+fn rebuilt(h: &mut Harness<'static, ShellUi>, why: &str, change: impl FnOnce(&mut State)) -> Vec<[f32; 6]> {
+    let before = crate::pick_line_memo::pick_line_builds();
+    run(h, change);
+    let lines = pick_lines(h, why);
+    assert!(crate::pick_line_memo::pick_line_builds() > before, "{why}: a changed input builds again");
+    lines
+}
+
+/// Still frames as the shell runs them: a frame, then a scene collect.
+fn still_frames(h: &mut Harness<'static, ShellUi>, n: usize) {
+    for _ in 0..n {
+        h.step();
+        std::hint::black_box(world::collect(&h.state().state));
+    }
+}
+
+/// #2250: the violet pick lines of the open operation are built once per
+/// input. A still frame builds nothing; a new pick, a hidden model and a
+/// moved part each give the lines a fresh build gives, and each undo
+/// gives the first lines back.
+#[test]
+fn pick_lines_build_once_per_input() {
+    let mut h = fig8();
+    adaptive_preview(&mut h);
+    let first = pick_lines(&h, "one welded face");
+    assert!(!first.is_empty(), "the welded face draws its outline");
+
+    // Still frames build nothing.
+    still_frames(&mut h, 2);
+    let before = crate::pick_line_memo::pick_line_builds();
+    still_frames(&mut h, 3);
+    assert_eq!(crate::pick_line_memo::pick_line_builds() - before, 0, "a still frame builds no pick line");
+    assert_eq!(pick_lines(&h, "still"), first);
+
+    // A new pick: more lines, built again.
+    let mut more = h.state().state.op_ui.geo.clone();
+    more.push(top_chains(&h.state().state).into_iter().next().expect("a top chain"));
+    let two = rebuilt(&mut h, "a chain added", |st| {
+        st.pending.push_back(CommandKind::SetOperationGeometry { name: ADAPTIVE.into(), items: more });
+    });
+    assert!(two.len() > first.len(), "the chain adds lines");
+    run(&mut h, |st| st.pending.push_back(CommandKind::Undo));
+    assert_eq!(pick_lines(&h, "undo the chain"), first);
+
+    // A display-off model draws no pick.
+    let hidden = rebuilt(&mut h, "fig8 hidden", |st| st.hidden_models.push("fig8".into()));
+    assert!(hidden.is_empty(), "a hidden model draws no pick lines");
+    run(&mut h, |st| st.hidden_models.retain(|n| n != "fig8"));
+    assert_eq!(pick_lines(&h, "fig8 shown again"), first);
+
+    // The part's pose: a move draws the outline where the part is now.
+    let moved = rebuilt(&mut h, "fig8 moved", |st| {
+        st.pending.push_back(CommandKind::MoveModel { name: "fig8".into(), pos: [7.0, -3.0, 2.0], roll_deg: 0.0, pitch_deg: 0.0, yaw_deg: 30.0 });
+    });
+    assert_ne!(moved, first, "the moved outline is in a new place");
+    run(&mut h, |st| st.pending.push_back(CommandKind::Undo));
+    assert_eq!(pick_lines(&h, "undo the move"), first);
+}
