@@ -368,7 +368,7 @@ fn tilt_times_picks_and_unverified_stay_refused_and_area_passes_in_phase_two() {
 
     let mut tilted_face = face_params(Height::fixed(9.0), 25.0);
     if let OpParams::Face { tilt, .. } = &mut tilted_face {
-        *tilt = Some(Tilt { a_deg: 30.0, b_deg: 0.0, origin: [0.0; 3] });
+        *tilt = Some(Tilt { basis_version: 1, a_deg: 30.0, b_deg: 0.0, origin: [0.0; 3] });
     }
     h.execute(&world, CreateOperation::new(&world, "TiltedPick", TOOL, sel.clone(), tilted_face).expect("create"));
     let err = generate(&world, &op_of(&world, "TiltedPick"), "TiltedPick").expect_err("tilt x picks refuses");

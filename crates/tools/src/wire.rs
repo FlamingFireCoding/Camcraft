@@ -100,7 +100,7 @@ mod tests {
         assert!(round.torch_refusal().is_some_and(|s| s.contains("corner radius")));
 
         let row = Tool {
-            cutting: vec![CuttingRow { material: WorkMaterial::MildSteel, rpm: 0.0, feed: 100.0, waterjet: None }],
+            cutting: vec![CuttingRow::plain(Some(WorkMaterial::MildSteel), 0.0, 100.0)],
             ..w
         };
         assert!(!row.is_sane());

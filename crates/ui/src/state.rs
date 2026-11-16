@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, GenerateOperation, History, ImportModel,
-    MoveFixture, MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -63,6 +63,9 @@ mod setup_workholding;
 mod fixture_view;
 #[path = "state_locate.rs"]
 mod locate_ui;
+#[path = "state_fixture_turn.rs"]
+mod fixture_turn_ui;
+pub(crate) use fixture_turn_ui::euler_deg;
 #[path = "state_align.rs"]
 mod align_ui;
 use locate_ui::with_warning;
@@ -574,10 +577,21 @@ pub enum CommandKind {
         name: String,
         fixed: bool,
     },
+    /// The place draft's Apply: position plus the Model page's three
+    /// angles (#2174 added roll and pitch to the yaw).
     MoveFixture {
         name: String,
         pos: [f64; 3],
+        roll_deg: f64,
+        pitch_deg: f64,
         yaw_deg: f64,
+    },
+    /// A quarter-turn button (#2174): one `TurnFixture` about world X, Y
+    /// or Z (`axis` 0, 1, 2) through the fixture's origin.
+    TurnFixture {
+        name: String,
+        axis: usize,
+        degrees: f64,
     },
     DeleteFixture(String),
     ImportFixtureDialog,
@@ -843,6 +857,9 @@ pub struct FixtureUi {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    /// #2174: the Model page's tilt angles, beside the yaw.
+    pub roll_deg: f64,
+    pub pitch_deg: f64,
     pub yaw_deg: f64,
 }
 
@@ -2958,9 +2975,29 @@ impl State {
         self.ai_chat.set_wake(wake);
     }
 
+    /// Snapshot active viewport pick mode and geometry picks (#1942) for the
+    /// live `get_selection` MCP tool while keeping `ui -> app` layering.
+    #[must_use]
+    pub fn selection_context(&self) -> camcraft_app::mcp::SelectionContext {
+        let pick_mode = match self.geo_pick {
+            GeoPick::Model => camcraft_app::mcp::PickMode::Model,
+            GeoPick::Face => camcraft_app::mcp::PickMode::Face,
+            GeoPick::Edge => camcraft_app::mcp::PickMode::Edge,
+            GeoPick::Vertex => camcraft_app::mcp::PickMode::Vertex,
+        };
+        camcraft_app::mcp::SelectionContext {
+            pick_mode: Some(pick_mode),
+            geometry_picks: self.op_ui.geo.clone(),
+            active_operation: (!self.op_ui.name.is_empty()).then(|| self.op_ui.name.clone()),
+        }
+    }
+
     pub(crate) fn submit_ai_prompt(&mut self) {
         if self.ai_chat.is_running() {
             return;
+        }
+        while self.history.in_group() {
+            let _ = self.history.cancel_group();
         }
         // Each turn owns a fresh receiver. Old worker senders cannot reach a later turn.
         self.reset_ai_inbox();
@@ -2979,6 +3016,14 @@ impl State {
             None,
             snapshot,
         );
+        if self.ai_chat.is_running() {
+            let label = self
+                .ai_chat
+                .turns()
+                .last()
+                .map_or_else(|| "AI chat turn".to_owned(), |t| format!("AI chat: {}", t.prompt));
+            self.history.begin_group(label);
+        }
     }
 
     fn reset_ai_inbox(&mut self) {
@@ -3024,10 +3069,10 @@ impl State {
             self.run(action);
         }
         let s = span("commands/mcp+chat");
-        self.ai_chat.poll(self.history.done_len());
+        self.ai_chat.poll(&mut self.history);
         // #183: an agent's live calls, after the user's own clicks.
         crate::mcp_host::pump(self);
-        self.ai_chat.poll(self.history.done_len());
+        self.ai_chat.poll(&mut self.history);
         drop(s);
         let s = span("commands/import+files");
         self.poll_import();
@@ -3073,6 +3118,14 @@ impl State {
     }
 
     pub(crate) fn run(&mut self, action: CommandKind) {
+        let before_entries = self.history.done_entry_ids();
+        self.run_action(action);
+        if self.history.in_group() && self.history.done_entry_ids() != before_entries {
+            self.history.cancel_group();
+        }
+    }
+
+    fn run_action(&mut self, action: CommandKind) {
         // Whatever ran, the banner shows only the newest outcome: a later
         // command (even a successful one) retires an old refusal.
         self.feedback = None;
@@ -3871,23 +3924,10 @@ impl State {
                     }
                 }
             }
-            CommandKind::MoveFixture { name, pos, yaw_deg } => {
-                let location = Location {
-                    pos: Point3::new(pos[0], pos[1], pos[2]),
-                    rot: quat_from_yaw(yaw_deg.to_radians()),
-                };
-                match MoveFixture::new(&self.world, &name, location) {
-                    Ok(command) => {
-                        let warning = command.warning().map(str::to_owned);
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        self.status = with_warning(format!("moved fixture {name}"), warning);
-                    }
-                    Err(err) => {
-                        self.refuse(ErrorScope::Setup, format!("fixture not moved: {err}"));
-                    }
-                }
+            CommandKind::MoveFixture { name, pos, roll_deg, pitch_deg, yaw_deg } => {
+                self.dispatch_move_fixture(&name, pos, [roll_deg, pitch_deg, yaw_deg]);
             }
+            CommandKind::TurnFixture { name, axis, degrees } => self.dispatch_turn_fixture(&name, axis, degrees),
             CommandKind::Locate { spec, mover } => self.dispatch_locate(&spec, mover),
             CommandKind::DeleteFixture(name) => match DeleteFixture::new(&self.world, &name) {
                 Ok(command) => {
