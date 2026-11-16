@@ -118,6 +118,7 @@ mod structural;
 mod page_layout;
 mod anchors;
 mod waterjet_recipe;
+mod catalog_filters;
 mod cycle_combo;
 mod radial_step_field;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
@@ -1971,9 +1972,9 @@ fn egui_shell_snapshot_light() {
 }
 
 /// M1.4: the graphical tool editor, end to end through the real drain. The
-/// dock page is the LIBRARY (no field widgets, so every label queried here
-/// resolves in exactly one surface); `Edit` opens the window on the world's
-/// numbers; a drag stages into `tool_ui` WITHOUT touching the world (the
+/// selected tool starts in Properties; opening the explicit editor hides
+/// those fields so every label queried here resolves in one surface.
+/// A drag stages into `tool_ui` WITHOUT touching the world (the
 /// draft law); `Apply` lands it through `ChangeTool`; and the dock's
 /// `Delete` proves the ghost law - the named tool is gone, so the window
 /// is gone the next frame.
@@ -1990,11 +1991,8 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
             .and_then(|e| model::tool_of(&h.state().state.world, &e))
             .map(|t| t.diameter)
     };
-    assert!(
-        harness.query_by_label("Diameter").is_none(),
-        "the dock library must not own the editor's labels"
-    );
-    harness.get_by_label("Edit").click();
+    assert!(harness.query_by_label("Diameter").is_some(), "Properties owns the selected tool's settings");
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run();
     harness.run();
     assert_eq!(harness.state().state.tool_editor.as_deref(), Some("EM-0600-4FL"));
@@ -2004,8 +2002,8 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
         (harness.state().state.tool_ui.diameter - d0).abs() < 1e-12,
         "the window must open on the world's diameter"
     );
-    // The window's first SpinButton is Diameter (the library renders no
-    // DragValues, so "first" is deterministic): 30 px at speed 0.1.
+    // The window's first SpinButton is Diameter (Properties hides its
+    // fields while the explicit editor is open): 30 px at speed 0.1.
     let c = harness
         .get_all_by_role(egui::accesskit::Role::SpinButton)
         .next()
@@ -2058,7 +2056,7 @@ fn tool_editor_snapshot() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
     harness.snapshot_options(
         "egui_tool_editor",
@@ -2999,7 +2997,7 @@ fn inch_mode_drag_keeps_px_parity_and_types_onto_the_lattice() {
 
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run();
     harness.run();
     let world_d = |h: &Harness<'static, ShellUi>| {
@@ -3365,7 +3363,7 @@ fn a_create_cell_darkens_with_the_tool_laws_reason() {
         assert!(model::find_by_name(&st.world, "Drill1").is_none(), "a dark cell creates nothing");
         assert!(st.status.contains(&reason), "the click answers with the reason: {}", st.status);
         // #191: and takes the user to the fix - the tool library.
-        assert_eq!(st.ui_target, UiTarget::Tool(String::new()), "the click opens the tool library");
+        assert!(super::layout::is_open(&harness.state().dock, &Tab::Tools), "the click opens the tool library dock");
         assert!(st.status.ends_with("opened the tool library"), "{}", st.status);
     }
     rack(&mut harness.state_mut().state, &["DR-0400"]);
