@@ -81,7 +81,7 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, 
         // #187: the 3-2-1 alignment reads the picks as datums - a flat
         // face for Z, a straight edge for X, a vertex or bore for the
         // origin. The app builds the frame (or names what to re-pick).
-        let aligned = camcraft_app::pick::align_321(&state.world, &state.op_ui.geo);
+        let aligned = crate::vertex_pick::wcs_321_checked(state);
         let tip = match &aligned {
             Ok(_) => "place the WCS slot chosen in the WCS pane: Z out of the picked flat face, X along the picked \
                       edge, origin at the picked vertex or bore (else the edge's end), on the face"

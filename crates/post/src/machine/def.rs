@@ -221,6 +221,12 @@ pub struct Machine {
     /// tool with no holder body, as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_holder: Option<String>,
+    /// #760: whether the controller supports work-plane / coordinate
+    /// rotation (`G68 X0 Y0 R` / `ROT RPL`) via `controller.coordinate_rotation`.
+    /// Absent or false (the unstated-limit law) keeps `Control` mode refused
+    /// by name; `Bake` works on every machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinate_rotation: Option<bool>,
 }
 
 /// The words a control needs around C-axis live-tool work (issue

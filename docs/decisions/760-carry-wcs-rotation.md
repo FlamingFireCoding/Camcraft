@@ -1,0 +1,19 @@
+## #760 - Carry Z-rotated WCS into milling generation and coordinate-rotation post
+
+**Decision (dual-frame carry with Bake default and opt-in Control G68/ROT):**
+1. **Classify pure Z yaw separately from tilt (`crates/app/src/posting_wcs_rotation.rs`):** Split rotated placements into `OffsetFrame::Yaw { deg, yaw_deg }` when `WCS +Z` aligns with machine `+Z` within `ROT_TOL_RAD`, while keeping off-Z `OffsetFrame::Rotated` and `OffsetFrame::NonFinite` refused by name.
+2. **Generate milling operations in WCS orientation, then return to Setup `S` (`crates/app/src/operation/wcs_yaw.rs`, `generate.rs`, `stamp.rs`, `job.rs`, `drill_prior.rs`, `slot_room.rs`, `dexel.rs`):** Before running strategy generators on a milling setup with Z yaw, rotate geometry/region/prior/params inputs by `-yaw` around the WCS XY origin (`W_gen`) and record `"wcs-yaw"` in the operation stamp digest. Rotate generated `Toolpath`, `Region`, and located/ghosted `GenError` back into Setup/Table `S` (`+yaw`) and restore Setup `S` stock before verification, workholding checks, and fixture linking.
+3. **Two post modes via `WcsRotationOutput` (`Bake` default, `Control` opt-in; `schema.rs`, `posting.rs`, `post/wcs_rotate.rs`, `post/engine.rs`, DTOs, MCP, UI):**
+   - `Bake` (default): posts Setup/Table `S` XY coordinates directly with no `G68`/`ROT` modal so every 3-axis control cuts the WCS-aligned toolpath safely.
+   - `Control`: transforms CL records in-place from `S` into `W` while preserving record indices for `viewer_map`, and emits `G68 X0. Y0. R<deg>` / `G69` (`fanuc`, `haas`, `mazak`, `doosan-dnm`) or `ROT RPL=<deg>` / `ROT` (`sinumerik`). Refused unless the mounted machine `.mch` sets `controller.coordinate_rotation: true` with no inverted machine axes and the `.cps` sets `wcsRotation = true`.
+   - Under any Z-rotated WCS, probing, turning, EDM, rotary/5-axis/3+2 operations, and XZ/YZ arcs are explicitly refused by name.
+4. **Preserve Setup `S` machine travel and guard 3-2-1 mill face picks (`machine/mod.rs`, `setup_wcs_tilt.rs`, `ui/vertex_pick.rs`, `ui/geo_page.rs`):** Both `Bake` and `Control` command the same physical machine table positions `p_S - Origin`, so machine travel checks stay in `S`. `Align WCS (3-2-1)` refuses tilted faces on `Kind::Mill` and directs the user to `Part alignment`.
+
+**Why:** Keeping the work offset strictly visual left milling passes cut along world/table axes instead of the WCS, while posting refused any rotated WCS outright. Transforming across the generator boundary gives every milling strategy WCS-aligned passes while keeping stock verification, collision checks, fixture linking, viewer mapping, and machine limits grounded in physical table space `S`. Defaulting to `Bake` avoids emitting `G68`/`ROT` to controllers that lack it or have axis inversions, while requiring explicit `.mch` and `.cps` opt-in prevents silent mis-rotation in `Control` mode.
+
+**Considered and dropped:**
+- *Keeping generated toolpaths permanently in WCS `W` instead of transforming back to `S`:* Dropped because simulation, workholding checks, fixture routing, and machine limit checks all assume Setup/Table coordinates `S`.
+- *Defaulting `WcsRotationOutput` to `Control` or emitting `G68`/`ROT` without machine/post capability flags:* Dropped because basic 3-axis controls or inverted-axis kinematics can mis-rotate or alarm; explicit `.mch` and `.cps` opt-in keeps unverified combinations refused by name.
+- *Supporting tilted WCS axes (`X`/`Y` rotation) or XZ/YZ arcs under rotated WCS:* Dropped out of scope for #760; milling still aligns parts to `+Z` via `Part alignment`, and non-XY arcs/probing/5-axis moves fail closed with explicit error messages.
+
+**Cost to change later:** Medium-low. `wcs_yaw.rs` isolates generation-frame entry/exit and `wcs_rotate.rs` isolates post modal/coordinate emission, and `"wcs_rotation"` on setup post options is an additive optional JSON field that needs no project schema version bump.

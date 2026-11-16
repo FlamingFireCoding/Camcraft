@@ -171,6 +171,7 @@ use boundary_ctx::*;
 // operation's world reads and CL wrap (part_alignment x Tilt).
 mod frame;
 pub use frame::OpFrame;
+mod wcs_yaw;
 mod job;
 pub use job::*;
 mod generate;

@@ -302,6 +302,44 @@ impl Dexel {
         // arms merge their masks by one body of code.
         super::columns::above_strips(self.x0, self.y0, self.cell, self.nx, self.ny, |k| self.top_at(k), z)
     }
+
+    /// Conservative XY rotation about `origin` (#760): each target cell takes the
+    /// max over 5 inverse-mapped samples, keeping standing rest stock safe.
+    pub fn rotated_z_conservative(&self, origin: Point2, angle_rad: f64) -> Result<Self, StockError> {
+        if !(origin.x.is_finite() && origin.y.is_finite() && angle_rad.is_finite()) {
+            return Err(StockError::Invalid("dexel rotation requires finite origin and angle".into()));
+        }
+        if angle_rad == 0.0 || self.nx == 0 || self.ny == 0 {
+            return Ok(self.clone());
+        }
+        let (s, c) = angle_rad.sin_cos();
+        let rot = |x: f64, y: f64, s: f64| {
+            Point2::new(origin.x + (x - origin.x) * c - (y - origin.y) * s, origin.y + (x - origin.x) * s + (y - origin.y) * c)
+        };
+        let (x1, y1) = (self.x0 + self.nx as f64 * self.cell, self.y0 + self.ny as f64 * self.cell);
+        let pts = [(self.x0, self.y0), (x1, self.y0), (self.x0, y1), (x1, y1)].map(|(x, y)| rot(x, y, s));
+        let lo_x = pts.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let hi_x = pts.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+        let lo_y = pts.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let hi_y = pts.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        let (mut out, h) = (Dexel::block(lo_x, lo_y, hi_x, hi_y, self.stock_z, self.cell)?, 0.5 * self.cell);
+        for iy in 0..out.ny {
+            for ix in 0..out.nx {
+                let q = out.center(ix, iy);
+                let top = [(0.0, 0.0), (-h, -h), (h, -h), (h, h), (-h, h)]
+                    .into_iter()
+                    .filter_map(|(dx, dy)| self.col(rot(q.x + dx, q.y + dy, -s)))
+                    .map(|k| self.top_at(k))
+                    .filter(|z| !z.is_nan())
+                    .reduce(f64::max)
+                    .unwrap_or(f64::NEG_INFINITY);
+                if top.to_bits() != self.stock_z.to_bits() {
+                    out.set(ix + iy * out.nx, top);
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 /// The parameter interval of a chord `0 -> d` whose tool disc of

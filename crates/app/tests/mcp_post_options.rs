@@ -237,7 +237,7 @@ fn post_options_refuses_enum_types_without_applying_valid_fields() {
     let document = c.ok("get_post_options", json!({}));
     let setup = c.ok("get_post_options", json!({ "setup": "Setup1" }));
 
-    for field in ["threading", "end_units", "between_setups"] {
+    for field in ["threading", "end_units", "between_setups", "wcs_rotation"] {
         for invalid in [Value::Null, json!(true), json!(42), json!([]), json!({})] {
             for target in [None, Some("Setup1")] {
                 let mut args = json!({ "skip_stops": true });
@@ -252,4 +252,19 @@ fn post_options_refuses_enum_types_without_applying_valid_fields() {
             }
         }
     }
+}
+
+#[test]
+fn wcs_rotation_round_trips_through_mcp_and_refuses_bad_word() {
+    let mut c = Client::new();
+    let initial = c.ok("get_post_options", json!({}));
+    assert_eq!(initial["options"]["wcs_rotation"], json!("bake"));
+    assert!(c.refused("set_post_options", json!({ "wcs_rotation": "g68" })).contains("wcs_rotation"));
+
+    let updated = c.ok("set_post_options", json!({ "wcs_rotation": "control" }));
+    assert_eq!(updated["options"]["wcs_rotation"], json!("control"));
+    assert_eq!(c.ok("get_post_options", json!({}))["options"]["wcs_rotation"], json!("control"));
+
+    c.ok("undo", json!({}));
+    assert_eq!(c.ok("get_post_options", json!({}))["options"]["wcs_rotation"], json!("bake"));
 }

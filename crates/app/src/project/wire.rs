@@ -213,7 +213,8 @@ pub fn collect(world: &World) -> ProjectFile {
             let o = crate::setup_post_options::document(world);
             (o.threading != crate::schema::ThreadingOutput::default()
                 || o.end_units != crate::schema::EndUnits::default()
-                || o.between_setups != crate::schema::BetweenSetups::default())
+                || o.between_setups != crate::schema::BetweenSetups::default()
+                || o.wcs_rotation != crate::schema::WcsRotationOutput::default())
             .then(|| PostOptionsDto {
                 threading: match o.threading {
                     crate::schema::ThreadingOutput::G32Passes => None,
@@ -228,6 +229,9 @@ pub fn collect(world: &World) -> ProjectFile {
                 // #1532: the default pause writes no key.
                 between_setups: (o.between_setups != crate::schema::BetweenSetups::default())
                     .then(|| o.between_setups.word().to_owned()),
+                // #760: the default bake writes no key.
+                wcs_rotation: (o.wcs_rotation != crate::schema::WcsRotationOutput::default())
+                    .then(|| o.wcs_rotation.word().to_owned()),
             })
         },
         post: match crate::posting::document_post_of(world) {

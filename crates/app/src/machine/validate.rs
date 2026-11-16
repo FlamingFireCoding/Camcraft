@@ -333,6 +333,15 @@ fn coolants(list: Option<&Value>, out: &mut Vec<Refusal>) {
 }
 
 fn controller(v: &Value, out: &mut Vec<Refusal>) {
+    if let Some(x) = v
+        .pointer("/controller/coordinate_rotation")
+        .filter(|x| !x.is_null() && !x.is_boolean())
+    {
+        out.push(Refusal::new(
+            "controller.coordinate_rotation",
+            format!("{x} must be true or false"),
+        ));
+    }
     let Some(parts) = v.pointer("/controller/synced_configuration/parts").filter(|p| !p.is_null()) else {
         return;
     };

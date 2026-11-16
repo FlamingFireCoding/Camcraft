@@ -210,6 +210,11 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
     {
         o.insert("invertedAxes".to_owned(), json!(inverted));
     }
+    if m.coordinate_rotation == Some(true)
+        && let Some(o) = out.as_object_mut()
+    {
+        o.insert("coordinateRotation".to_owned(), json!(true));
+    }
     out
 }
 

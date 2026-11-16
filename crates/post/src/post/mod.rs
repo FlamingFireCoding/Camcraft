@@ -43,6 +43,7 @@ mod program;
 pub mod rotary_cap;
 pub mod work_offset;
 pub mod units;
+pub mod wcs_rotate;
 
 pub use after_op::AfterOperation;
 pub use coolant::CoolantMode;
@@ -108,6 +109,11 @@ pub struct Dump<'a> {
     /// the engine refuses it by name.
     pub wcs: u32,
     pub origin: [f64; 3],
+    /// #760: Z-axis WCS rotation in degrees (`Some` only when `|rad| > 1e-9`;
+    /// `None` writes nothing so unrotated streams stay byte-identical).
+    pub wcs_yaw: Option<f64>,
+    /// #760: true when this section posts in `Control` mode (`G68` / `ROT`).
+    pub wcs_rotation_control: bool,
     /// Stock bounds in mm: left, right, front, back (XY), plus top Z.
     pub stock: [f64; 4],
     pub stock_top_z: f64,
@@ -203,6 +209,8 @@ impl<'a> Default for Dump<'a> {
             top_z: 0.0,
             wcs: 1,
             origin: [0.0; 3],
+            wcs_yaw: None,
+            wcs_rotation_control: false,
             stock: [0.0; 4],
             stock_top_z: 0.0,
             warnings: Vec::new(),
@@ -257,6 +265,13 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     out.push(Record::Param { name: "OriginX".into(), value: json!(d.origin[0]) });
     out.push(Record::Param { name: "OriginY".into(), value: json!(d.origin[1]) });
     out.push(Record::Param { name: "OriginZ".into(), value: json!(d.origin[2]) });
+    if let Some(yaw) = d.wcs_yaw.filter(|y| y.is_finite() && y.to_radians().abs() > 1e-9) {
+        out.push(Record::Param { name: "WcsYaw".into(), value: json!(yaw) });
+        out.push(Record::Param {
+            name: "WcsRotationMode".into(),
+            value: json!(if d.wcs_rotation_control { "control" } else { "bake" }),
+        });
+    }
     out.push(Record::Param { name: "ClearancePlane".into(), value: json!(d.clearance_z) });
     out.push(Record::Param { name: "RetractPlane".into(), value: json!(d.retract_z) });
     out.push(Record::Param { name: "TopOfStock".into(), value: json!(d.top_z) });

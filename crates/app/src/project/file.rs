@@ -229,6 +229,10 @@ pub struct PostOptionsDto {
     /// (M0), additive (no version step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub between_setups: Option<String>,
+    /// How a Z-rotated work offset posts (#760): `"control"`; absent is
+    /// the default `"bake"` (additive, no version step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wcs_rotation: Option<String>,
 }
 
 /// The file mirror of the `PostRef` singleton (M3.3): exactly the two

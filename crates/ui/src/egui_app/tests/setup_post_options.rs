@@ -175,3 +175,22 @@ fn explain_on_the_setup_post_page_leaves_other_setups_unchanged() {
     run(&mut h.state_mut().state, CommandKind::Redo);
     assert!(setup_post_options::of(&h.state().state.world, Some("Setup2")).explain);
 }
+
+#[test]
+fn wcs_rotation_on_the_document_post_page_is_undoable() {
+    use camcraft_app::schema::WcsRotationOutput;
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1280.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    crate::actions::target(&mut h.state_mut().state, UiTarget::SetupNode(String::new(), SetupPage::Post));
+    h.run_steps(3);
+    assert!(h.query_by_label("WCS rotation").is_some(), "document post page shows WCS rotation picker");
+    assert_eq!(setup_post_options::document(&h.state().state.world).wcs_rotation, WcsRotationOutput::Bake);
+
+    super::setup_mount_pages::pick(&mut h, "Bake into XY", "Control rotation (G68 / ROT)");
+    assert_eq!(setup_post_options::document(&h.state().state.world).wcs_rotation, WcsRotationOutput::Control);
+
+    run(&mut h.state_mut().state, CommandKind::Undo);
+    h.run_steps(2);
+    assert_eq!(setup_post_options::document(&h.state().state.world).wcs_rotation, WcsRotationOutput::Bake);
+}

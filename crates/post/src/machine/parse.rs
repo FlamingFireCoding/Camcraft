@@ -195,6 +195,17 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
     m.spindle_mount = mount;
     m.default_holder = holder;
 
+    // #760: optional controller coordinate rotation capability (`G68` / `ROT`).
+    m.coordinate_rotation = match v.pointer("/controller/coordinate_rotation") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Bool(b)) => Some(*b),
+        Some(x) => {
+            return Err(format!(
+                "machine file: controller.coordinate_rotation must be true or false, not {x}"
+            ));
+        }
+    };
+
     let kine = v.pointer("/kinematics/default/parts");
     let f = mm_factor(v.pointer("/kinematics/default/units")).unwrap_or(1.0);
     // #131: keep the stated unit for the posts (the numbers stay mm).

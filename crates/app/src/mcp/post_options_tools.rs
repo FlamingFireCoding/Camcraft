@@ -13,14 +13,14 @@ use serde_json::{Map, Value, json};
 use super::setup_tools::{cmd_err, obj};
 use super::tools::{Tool, opt_str};
 use crate::commands::{SetPostOptions, SetSetupPostOptions};
-use crate::schema::{BetweenSetups, EndUnits, PostOptions, ThreadingOutput};
+use crate::schema::{BetweenSetups, EndUnits, PostOptions, ThreadingOutput, WcsRotationOutput};
 use crate::script::Env;
 use crate::{setup, setup_post_options};
 
 pub(super) const TOOLS: &[Tool] = &[
     Tool {
         name: "get_post_options",
-        description: "Read post options (skip_stops, per_op, threading, end_units, smoothing, between_setups, explain). With setup, reads that declared setup's resolved options and whether it follows the document; without setup, reads the document's.",
+        description: "Read post options (skip_stops, per_op, threading, end_units, smoothing, between_setups, wcs_rotation, explain). With setup, reads that declared setup's resolved options and whether it follows the document; without setup, reads the document's.",
         schema: s_get_post_options,
         run: get_post_options,
     },
@@ -126,6 +126,13 @@ fn apply_patch(mut next: PostOptions, a: &Map<String, Value>) -> Result<(PostOpt
         })?;
         any = true;
     }
+    if let Some(w) = opt_word(a, "wcs_rotation")? {
+        next.wcs_rotation = WcsRotationOutput::from_word(w).ok_or_else(|| {
+            let words: Vec<&str> = WcsRotationOutput::ALL.iter().map(|v| v.word()).collect();
+            format!("\"wcs_rotation\" must be one of {}, not {w:?}", words.join(", "))
+        })?;
+        any = true;
+    }
     Ok((next, any))
 }
 
@@ -177,6 +184,7 @@ fn options_json(o: &PostOptions) -> Value {
         "end_units": end_units,
         "smoothing": o.smoothing,
         "between_setups": o.between_setups.word(),
+        "wcs_rotation": o.wcs_rotation.word(),
         "explain": o.explain,
     })
 }
@@ -192,6 +200,7 @@ fn s_get_post_options() -> Value {
 
 fn s_set_post_options() -> Value {
     let between: Vec<&str> = BetweenSetups::ALL.iter().map(|b| b.word()).collect();
+    let wcs_rot: Vec<&str> = WcsRotationOutput::ALL.iter().map(|v| v.word()).collect();
     obj(
         json!({
             "setup": { "type": ["string", "null"], "description": "Declared setup name to set its own options; omitted or null sets the document's." },
@@ -202,6 +211,7 @@ fn s_set_post_options() -> Value {
             "end_units": { "type": "string", "enum": ["leave", "inch", "mm"], "description": "Length unit word to leave the control in after the program." },
             "smoothing": { "type": "boolean", "description": "Write per-operation smoothing mode words." },
             "between_setups": { "type": "string", "enum": between, "description": "What the post writes where a program moves to the next setup." },
+            "wcs_rotation": { "type": "string", "enum": wcs_rot, "description": "How a Z-rotated work offset posts: bake into XY or emit control G68/ROT." },
             "explain": { "type": "boolean", "description": "Append an explanation comment to each block when the post supports it." }
         }),
         &[],
