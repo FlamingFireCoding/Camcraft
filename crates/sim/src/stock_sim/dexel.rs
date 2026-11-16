@@ -303,8 +303,10 @@ impl Dexel {
         super::columns::above_strips(self.x0, self.y0, self.cell, self.nx, self.ny, |k| self.top_at(k), z)
     }
 
-    /// Conservative XY rotation about `origin` (#760): each target cell takes the
-    /// max over 5 inverse-mapped samples, keeping standing rest stock safe.
+    /// Conservative XY rotation about `origin` (#760). Each target cell takes
+    /// the maximum of every source cell in its inverse-mapped bounding box.
+    /// The box encloses the entire rotated cell, so it can retain extra stock
+    /// but cannot miss a narrow standing region between samples.
     pub fn rotated_z_conservative(&self, origin: Point2, angle_rad: f64) -> Result<Self, StockError> {
         if !(origin.x.is_finite() && origin.y.is_finite() && angle_rad.is_finite()) {
             return Err(StockError::Invalid("dexel rotation requires finite origin and angle".into()));
@@ -326,9 +328,21 @@ impl Dexel {
         for iy in 0..out.ny {
             for ix in 0..out.nx {
                 let q = out.center(ix, iy);
-                let top = [(0.0, 0.0), (-h, -h), (h, -h), (h, h), (-h, h)]
-                    .into_iter()
-                    .filter_map(|(dx, dy)| self.col(rot(q.x + dx, q.y + dy, -s)))
+                let corners = [(-h, -h), (h, -h), (h, h), (-h, h)]
+                    .map(|(dx, dy)| rot(q.x + dx, q.y + dy, -s));
+                // Include a one-cell halo around the inverse AABB. Besides
+                // boundary-touching cells, this covers rounding at grid lines.
+                // Overfetch only raises the answer: it never invents clearance.
+                let bounds = |base: f64, n: usize, coord: fn(&Point2) -> f64| {
+                    let lo = corners.iter().map(coord).fold(f64::INFINITY, f64::min);
+                    let hi = corners.iter().map(coord).fold(f64::NEG_INFINITY, f64::max);
+                    let start = (((lo - base) / self.cell).floor() - 1.0).clamp(0.0, n as f64) as usize;
+                    let end = (((hi - base) / self.cell).floor() + 2.0).clamp(0.0, n as f64) as usize;
+                    start..end
+                };
+                let xs = bounds(self.x0, self.nx, |p| p.x);
+                let ys = bounds(self.y0, self.ny, |p| p.y);
+                let top = ys.flat_map(|y| xs.clone().map(move |x| x + y * self.nx))
                     .map(|k| self.top_at(k))
                     .filter(|z| !z.is_nan())
                     .reduce(f64::max)

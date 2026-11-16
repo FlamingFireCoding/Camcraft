@@ -17,3 +17,7 @@
 - *Supporting tilted WCS axes (`X`/`Y` rotation) or XZ/YZ arcs under rotated WCS:* Dropped out of scope for #760; milling still aligns parts to `+Z` via `Part alignment`, and non-XY arcs/probing/5-axis moves fail closed with explicit error messages.
 
 **Cost to change later:** Medium-low. `wcs_yaw.rs` isolates generation-frame entry/exit and `wcs_rotate.rs` isolates post modal/coordinate emission, and `"wcs_rotation"` on setup post options is an additive optional JSON field that needs no project schema version bump.
+
+**Review corrections (#2136):**
+- Rotate the prior dexel grid by taking each target cell's maximum over source cells in its inverse-mapped bounding box, with a one-cell halo for grid-line rounding. The box encloses every overlapping source cell. This may retain extra stock, which is preferable to reporting standing stock as cleared. Five-point sampling was dropped because an oblique standing cell can overlap between all five samples; exact polygon overlap was deferred because the bounding box already provides the required conservative upper bound.
+- Carry current main's `EdgeBreak::volume` through the WCS adapter by cloning the record and rotating its outward/across frame vectors as directions. Preserve width, profile, depth and slope. Merely cloning the volume was dropped because its frame would remain in generation coordinates; transforming frame vectors as points was dropped because the WCS origin must not translate directions.

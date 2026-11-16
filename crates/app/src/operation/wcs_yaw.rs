@@ -136,7 +136,22 @@ impl Rot2 {
         let breaks = path
             .breaks
             .iter()
-            .map(|b| EdgeBreak { edge: b.edge.iter().copied().map(|p| self.p3(p)).collect(), ..*b })
+            .map(|b| {
+                let mut rotated = EdgeBreak {
+                    edge: b.edge.iter().copied().map(|p| self.p3(p)).collect(),
+                    ..b.clone()
+                };
+                if let Some(volume) = &mut rotated.volume {
+                    // Cap frames are directions, so rotate without translating
+                    // by the work-offset origin. Width and profile stay intact.
+                    let dir = |v: [f64; 3]| [v[0] * self.c - v[1] * self.s, v[0] * self.s + v[1] * self.c, v[2]];
+                    for frame in &mut volume.frames {
+                        frame.outward = dir(frame.outward);
+                        frame.across = dir(frame.across);
+                    }
+                }
+                rotated
+            })
             .collect();
         Toolpath {
             moves,
@@ -316,3 +331,7 @@ fn rotate_params(r: &Rot2, params: &mut OpParams) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+#[path = "wcs_yaw_tests.rs"]
+mod tests;
