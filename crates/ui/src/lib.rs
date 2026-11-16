@@ -18,6 +18,7 @@
 pub mod diag;
 
 pub mod actions;
+pub mod play_precalc;
 pub mod align_pick_viz;
 pub(crate) mod machine_modes;
 mod axis_note;
@@ -80,6 +81,8 @@ mod refusal_ghost_tests;
 mod helix_view_tests;
 #[cfg(test)]
 mod field_view_tests;
+#[cfg(test)]
+mod play_precalc_tests;
 #[cfg(test)]
 mod machined_tests;
 #[cfg(test)]

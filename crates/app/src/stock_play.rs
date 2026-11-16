@@ -42,7 +42,7 @@ use crate::stock_view::{build_stock, build_target, display_inputs, FieldView, DE
 pub const MAX_CHECKPOINTS: usize = 32;
 
 /// The smallest checkpoint stride, in moves.
-const MIN_STRIDE: usize = 64;
+pub const MIN_STRIDE: usize = 64;
 
 /// Where each op's moves sit on the global move count: what the UI
 /// needs to turn a playhead into a move index, without the moves.
@@ -159,6 +159,10 @@ pub struct FieldPlay {
     /// The partial bricks of the last picture taken: the next take
     /// re-sends them, whatever stands there now.
     ghost: HashSet<[i32; 3]>,
+    /// Moves cut since the build: the replay law's yardstick (#2181).
+    moves_cut: usize,
+    /// Cut-layer bytes the checkpoints hold (#2181, `precalc`).
+    key_bytes: usize,
 }
 
 impl FieldPlay {
@@ -216,6 +220,8 @@ impl FieldPlay {
             partial: None,
             partial_bricks: HashSet::new(),
             ghost: HashSet::new(),
+            moves_cut: 0,
+            key_bytes: 0,
         })
     }
 
@@ -243,11 +249,7 @@ impl FieldPlay {
         self.checkpoints.len()
     }
 
-    /// The global move index the playhead `p` stands at, or `None`
-    /// when the plan holds no op of that name. An op's timeline is its
-    /// moves, one segment each, behind at most one connector rapid (the
-    /// air between programs, cut by nothing): a span one longer than
-    /// the op's moves carries that connector, and it is not a move.
+    /// `PlayIndex::index_at` on this playback's plan.
     #[must_use]
     pub fn index_at(&self, p: &Progress) -> Option<usize> {
         self.index.index_at(p)
@@ -303,7 +305,10 @@ impl FieldPlay {
         }
         // The move in flight changes: its partial picture goes.
         self.drop_partial();
-        if k < self.at {
+        // Back, or forward past a whole stride to a checkpoint ahead
+        // (a precalculated keyframe, #2181): restore, then cut the rest.
+        let ahead = self.floor_checkpoint(k) > self.at && k - self.at > self.stride;
+        if k < self.at || ahead {
             let (at, snap) = self
                 .checkpoints
                 .iter()
@@ -387,6 +392,7 @@ impl FieldPlay {
                 (None, None) => self.cur.simulate_display(std::slice::from_ref(&sim)),
             };
             cut.map_err(|e| format!("playback could not cut {}: {e}", op.name))?;
+            self.moves_cut = self.moves_cut.saturating_add(b - a);
         }
         Ok(())
     }
@@ -395,3 +401,7 @@ impl FieldPlay {
 #[path = "stock_play_head.rs"]
 mod head;
 pub use head::{progress, settle_frac, Progress};
+
+#[path = "stock_play_precalc.rs"]
+mod precalc;
+pub use precalc::{Precalc, MAX_KEYFRAMES, PRECALC_BUDGET};

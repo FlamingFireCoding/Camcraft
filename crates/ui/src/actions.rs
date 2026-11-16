@@ -187,7 +187,9 @@ fn follow_playhead(state: &mut State, judged: bool) -> Result<(), String> {
     use camcraft_app::stock_view::DEFAULT_TEXELS;
     if state.field_play.is_none() {
         let seed = PlaySeed::gather(&state.world, judged, DEFAULT_TEXELS)?;
-        state.field_play = Some(PlayWorker::spawn(seed)?);
+        // #2181: the removal is calculated once before playback, then
+        // replayed from keyframes (the transport row shows the progress).
+        state.field_play = Some(PlayWorker::spawn_precalc(seed, camcraft_app::stock_play::PRECALC_BUDGET)?);
     }
     let sc = crate::egui_app::shell::cached_script(state);
     let t = state.sim.as_ref().map_or(0.0, |s| s.t);
