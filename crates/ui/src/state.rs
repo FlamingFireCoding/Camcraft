@@ -3985,7 +3985,7 @@ impl State {
         if !any {
             self.cam = Camera {
                 projection: self.cam.projection,
-                ..Camera::default()
+                ..Camera::default().with_frame(self.cam.frame)
             };
             self.status = String::from("nothing to frame");
             return;
@@ -3999,7 +3999,7 @@ impl State {
             * 3.0f64.sqrt();
         self.cam = Camera {
             projection: self.cam.projection,
-            ..Camera::frame(center, radius)
+            ..Camera::frame(center, radius).with_frame(self.cam.frame)
         };
     }
 
