@@ -20,7 +20,7 @@ use crate::viewport::ProjectionMode;
 use super::browser_tree::{Leaf, browser_rows};
 use super::icons::IconSet;
 use super::painted;
-use super::theme::Tokens;
+use super::theme::{Tokens, clamp};
 
 /// The browser pane.
 pub fn browser(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconSet>) {
@@ -30,7 +30,10 @@ pub fn browser(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&Icon
     // of checkboxes.
     egui::Frame::NONE
         .fill(pal.strip_fill())
-        .inner_margin(egui::Margin::symmetric(6, 2))
+        .inner_margin(egui::Margin::symmetric(
+            clamp::range(pal.tree_pad_x, clamp::SPACING).round() as i8,
+            clamp::range(pal.tree_pad_y, clamp::SPACING).round() as i8,
+        ))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 let _ = egui::containers::menu::MenuButton::new("View")
@@ -250,7 +253,11 @@ fn drag_ops(ui: &mut Ui, state: &mut State, pal: &Tokens, rect: Rect, leaves: &[
     });
     if let Some((ix, target, after)) = drop {
         let y = rect.top() + (ix + usize::from(after)) as f32 * pal.row_height;
-        ui.painter().hline(rect.x_range(), y, egui::Stroke::new(2.0, pal.accent));
+        ui.painter().hline(
+            rect.x_range(),
+            y,
+            egui::Stroke::new(clamp::range(pal.highlight_stroke_px, clamp::STROKE), pal.accent),
+        );
         if released {
             state.pending.push_back(CommandKind::ReorderOperation { name: source, target, after });
         }
