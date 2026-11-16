@@ -155,9 +155,9 @@ impl JudgedOutline {
     /// #2176: draw `drawn` (a drawn holder's outline, tool frame) in
     /// place of the bands, and `stored` (the stored record's cutter and
     /// shank, `JudgedOutline::new(stored tool, ..).cutter`) in place of
-    /// the judged one - the judged shank is widened to any band that
-    /// touches the shank's top (`HolderProfile::enclose`), which the
-    /// user never drew. Refuses an outline that is not finite, runs back
+    /// the judged one as a defensive guard. `HolderProfile::enclose`
+    /// uses strict interior bounds: a band that only touches the shank
+    /// top does not widen it. Refuses an outline that is not finite, runs back
     /// down the axis, or has a point outside every band at its height,
     /// and a `stored` cutter wider or longer than the judged one
     /// ([`OutlineError::PastJudged`]): the picture is never wider than
@@ -273,7 +273,8 @@ pub fn for_operation(world: &World, op: &str) -> Result<Option<JudgedOutline>, S
         .filter(|b| !b.machine_default && matches!(b.frame, tool_body::BodyFrame::Spindle { .. }))
         .and_then(|b| b.spun.map(|s| s.outline()));
     let Some(d) = drawn else { return Ok(Some(outline)) };
-    // The shank as stored, not as widened by a band touching its top.
+    // Keep the stored-cutter guard. With strict interior enclosure, a
+    // holder that only touches the shank top leaves this cutter unchanged.
     let stored = JudgedOutline::new(&tool, &stack).map(|o| o.cutter).unwrap_or_default();
     outline.with_drawn(d, stored).map(Some).map_err(|e| format!("tool {name}: {e}"))
 }

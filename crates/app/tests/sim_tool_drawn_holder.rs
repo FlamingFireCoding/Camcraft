@@ -130,11 +130,14 @@ fn a_drawn_cone_is_drawn_as_a_cone_and_judged_as_its_enclosing_band() {
     assert!(has(&got, z0, 10.0), "the foot is drawn at the drawn 10");
     assert!(!has(&got, z0, 30.0), "not at the judged 30");
     assert!(has(&got, z0 + 20.0, 30.0), "the top rim at 30");
-    // The shank is drawn as stored; the laws read it widened to the
-    // band that touches its top (`HolderProfile::enclose`).
+    // Strict interior enclosure excludes a band that only touches the
+    // shank top. The laws and the display both read the stored shank.
     let (judged, _) = judged_stack(&world);
     let t = catalog_tool();
-    assert!((judged.shank_d - 60.0).abs() < 1e-9, "the judged shank is the enclosing Ø60");
+    assert_eq!(judged.shank_d, t.shank_d, "boundary contact does not widen the judged shank");
+    assert_eq!(JudgedOutline::new(&judged, &stack).expect("sane").cutter,
+        JudgedOutline::new(&t, &stack).expect("sane").cutter,
+        "the stored-cutter guard leaves the judged cutter unchanged");
     assert!(has(&got, z0, t.shank_d * 0.5), "the shank is drawn at its stored radius");
     assert!(!got.iter().any(|q| q.0 < z0 - 1e-9 && q.1 > t.shank_d.max(t.diameter) * 0.5 + 1e-9), "nothing below the holder is drawn wider than the stored tool");
 }
@@ -189,6 +192,7 @@ fn checks_verify_and_simulation_read_one_holder_shape() {
         p.1 += 5.0;
     }
     let plain = JudgedOutline::new(&judged, &stack).expect("sane");
+    assert_eq!(plain.cutter, stored, "strict interior enclosure keeps the picture fixture's stored cutter");
     assert_eq!(plain.clone().with_drawn(wide, stored.clone()), Err(OutlineError::PastJudged));
     // So is a shank drawn wider than the judged one.
     let fat: Vec<(f64, f64)> = stored.iter().map(|&(z, r)| (z, r + 100.0)).collect();
