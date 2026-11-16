@@ -101,7 +101,12 @@ use super::*;
 /// reader must refuse a v63 file rather than drop a stated break-through
 /// and run the tip its default 1.0 mm past the floor, into what the
 /// user kept it out of.
-pub const PROJECT_VERSION: u32 = 63;
+/// v64 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v63 steps up unchanged); an old reader must
+/// refuse a v64 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+pub const PROJECT_VERSION: u32 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

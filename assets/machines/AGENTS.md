@@ -207,6 +207,20 @@ unstated capability into existence.
     work's X span by its box's distance from the line; unstated, or
     steel it cannot read (no facets, a box across the line), is named
     in the gate's not-judged line. The microARC 4 states 3.15 in.
+  - trunnion kinematics fields (#1962, all optional, absent = unstated):
+    `pivot: [x, y, z]` (rotary reference position in machine coordinates,
+    scaled by file length units to mm; `[0,0,0]` is legal), child
+    `offset: [dx, dy, dz]` (child rotary offset from parent rotary,
+    scaled by file length units to mm), `zero_offset` (degrees from
+    kinematic 0 to machine home 0, never unit-scaled), `rollover`
+    (boolean: controller 0..360 deg wrapping), and `sign_convention`
+    (`"tool_rh"` | `"table_rh"`, also accepted on `kinematics.default`
+    or `controller`; unstated defaults to `"tool_rh"` per ISO 841 so
+    checker and post agree). Parent-child nesting order in
+    `kinematics.default.parts` is preserved via `AxisLimits.chain_order`
+    (read in order by `Machine::rotary_axes()`) and `AxisLimits.parent` even
+    when `controller.synced_configuration` sorts `Machine.axes` differently. Invalid vectors, types, or rotary
+    keys on linear parts refuse by name.
   - `type: "head"` parts carry the spindle and station, first match
     wins: `spindle { min_speed, max_speed }` rpm, `power` kW (stated,
     not judged — the sheet renders it, no model consumes it),
@@ -253,6 +267,11 @@ unstated capability into existence.
   deg/min NEVER mirror into a prismatic field: the unit-lie law) and
   `coordinate` is the display/sort order (0=X, 1=Y, 2=Z, rotaries
   from 3 up). A letter absent here simply has unstated rates.
+- `controller.rtcp` (#1962, optional boolean): when `false`, the mirror
+  sets `machine.rtcp = false` even if a rotary tilts off Z (so RTCP
+  posts like `fanuc.cps` and `doosan-dnm.cps` refuse `G43.4` while
+  CAM-side IK posts receive the full rotary chain). Absent infers
+  controller RTCP geometrically from rotary tilt vectors.
 - `tooling.number_of_tools`: DISTINCT tool positions the program may
   call (a double-tier of the same 40 stations is 40, not 80); a
   program asking for a tool number above it is a checker refusal.
@@ -283,11 +302,15 @@ stated LINEAR rates — absent everywhere → 0 → silence, never a fake
 ceiling), `spindleMax` rpm, `coolants[]`, `rotaries[]
 {name, direction, travel}`, and `rtcp`.
 
-`rtcp` is DERIVED GEOMETRICALLY, never a hand-typed flag: true iff
-some rotary states a direction that is not the Z column
-(z² < 0.99·(x²+y²+z²)). A C table ([0,0,1]) is not RTCP; a trunnion
-or tilted axis is. A post may output the tool-center-point promise
-only when this reads true — `machine.rtcp` says so.
+`rtcp` defaults to GEOMETRIC derivation: true iff some rotary states a
+direction that is not the Z column (z² < 0.99·(x²+y²+z²)) AND
+`controller.rtcp` is not `false` (#1962). A C table ([0,0,1]) is not
+RTCP; a trunnion or tilted axis without `controller.rtcp: false` is; an
+AC trunnion with `controller.rtcp: false` keeps `machine.rtcp = false`
+and carries `parent`, `pivot`, `offset`, `zeroOffset`, `rollover`, and
+`signConvention` across the mirrored `rotaries` chain in parent-child
+order. A post may output `G43.4` / controller RTCP only when
+`machine.rtcp === true`.
 
 ## The axis-lettering convention
 

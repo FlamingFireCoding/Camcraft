@@ -37,6 +37,7 @@ pub mod explain;
 pub mod invert;
 pub mod js;
 pub mod machine;
+mod machine_rotary;
 pub mod nose_tip;
 pub mod probe_rec;
 mod program;
