@@ -9,7 +9,7 @@
 //! Gate map: covers camcraft_motion::machining2d (ladder_links,
 //! descent_dive, pocket_hsm, pocket_emit), camcraft_motion::plunge_law.
 
-use camcraft_motion::cl::{MoveKind, Toolpath};
+use camcraft_motion::cl::{ArcPlane, MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
@@ -88,6 +88,24 @@ fn entered_by_motion(t: &Toolpath, z: f64, x0: f64, x1: f64) -> bool {
     })
 }
 
+/// Two descending half-circle feed moves about one center close a full
+/// helix turn at this level. A straight ramp cannot satisfy this check.
+fn entered_by_helix(t: &Toolpath, z: f64, x0: f64, x1: f64) -> bool {
+    t.moves.windows(2).any(|pair| {
+        let (a, b) = (&pair[0], &pair[1]);
+        let (Some(aa), Some(ab)) = (a.arc, b.arc) else { return false };
+        a.kind == MoveKind::Feed && b.kind == MoveKind::Feed
+            && aa.center == ab.center && aa.ccw == ab.ccw && aa.plane == ArcPlane::Xy && ab.plane == ArcPlane::Xy
+            && (a.from.x + a.to.x - 2.0 * aa.center.x).abs() < 2e-6
+            && (a.from.y + a.to.y - 2.0 * aa.center.y).abs() < 2e-6
+            && a.from.z > a.to.z && b.from.z > b.to.z && (b.to.z - z).abs() < 1e-6
+            && a.to == b.from
+            && (a.from.x - b.to.x).abs() < 1e-6 && (a.from.y - b.to.y).abs() < 1e-6
+            && (a.from.x - aa.center.x).hypot(a.from.y - aa.center.y) > 0.01
+            && [a.from.x, a.to.x, b.to.x, aa.center.x].into_iter().all(|x| (x0..=x1).contains(&x))
+    })
+}
+
 /// The law: a plunge into material is never silent - a note names its
 /// site (3 decimals, the ladder's own format).
 fn assert_named(t: &Toolpath) {
@@ -108,8 +126,8 @@ fn each_piece_of_an_adaptive_pocket_gets_the_helix_at_each_level() {
     let reg = region(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 80.0, 30.0)]);
     let t = cut(&reg, PocketStrategy::Adaptive);
     for z in LEVELS {
-        assert!(entered_by_motion(&t, z, 0.0, 30.0), "piece 1 not entered by a helix or ramp at Z {z}");
-        assert!(entered_by_motion(&t, z, 50.0, 80.0), "piece 2 not entered by a helix or ramp at Z {z}");
+        assert!(entered_by_helix(&t, z, 0.0, 30.0), "piece 1 not entered by a helix at Z {z}");
+        assert!(entered_by_helix(&t, z, 50.0, 80.0), "piece 2 not entered by a helix at Z {z}");
     }
     assert!(solid_plunges(&t).is_empty(), "plunges into material: {:?}; notes: {:#?}", solid_plunges(&t), t.notes);
 }
@@ -140,4 +158,39 @@ fn an_outside_channel_and_a_pocket_name_every_plunge_into_material() {
         }
         assert_named(&t);
     }
+}
+
+/// The second pocket fits the tool but has too little center room for
+/// a helix. Its tiny ring also exceeds the ramp leg budget.
+#[test]
+fn a_tiny_second_piece_names_its_plunge_stand_in_at_each_level() {
+    let reg = region(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 60.1, 10.1)]);
+    let t = cut(&reg, PocketStrategy::OffsetRings);
+    let plunges = solid_plunges(&t);
+    assert!(!plunges.is_empty(), "fixture must reach the solid plunge stand-in");
+    for z in LEVELS {
+        let hits: Vec<_> = plunges.iter().filter(|&&(x, _, pz)| x > 50.0 && (pz - z).abs() < 1e-6).collect();
+        assert!(!hits.is_empty(), "no solid plunge on piece 2 at Z {z}");
+        for &&(x, y, pz) in &hits {
+            let site = format!("the pass start ({x:.3}, {y:.3}) at Z {pz:.3} is in material and");
+            assert!(t.notes.iter().any(|n| n.contains(&site) && n.contains("plunged into material")),
+                "no named plunge stand-in for {site}; notes: {:?}", t.notes);
+        }
+    }
+}
+
+/// A larger narrow second piece can ramp along its ring, but cannot
+/// take the asked helix. The diagnostic names the ramp site and level.
+#[test]
+fn a_narrow_second_piece_names_its_ramp_stand_in_at_each_level() {
+    let reg = region(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 61.0, 11.0)]);
+    let t = cut(&reg, PocketStrategy::OffsetRings);
+    for z in LEVELS {
+        assert!(entered_by_motion(&t, z, 50.0, 61.0), "no ramp on piece 2 at Z {z}");
+        assert!(!entered_by_helix(&t, z, 50.0, 61.0), "narrow piece unexpectedly fits a helix");
+        let site = format!("the pass start (56.000, 5.000) at Z {z:.3} is in material and");
+        assert!(t.notes.iter().any(|n| n.contains(&site) && n.contains("ramp along the pass instead")),
+            "no named ramp stand-in for {site}; notes: {:?}", t.notes);
+    }
+    assert!(solid_plunges(&t).is_empty());
 }
