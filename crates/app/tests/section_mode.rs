@@ -125,7 +125,7 @@ fn make_tilted_pocket_world() -> World {
         rest: None,
         blend_radius: None,
         links: Links::PLANAR,
-        tilt: Some(Tilt { a_deg: 0.0, b_deg: 90.0, origin: [0.0; 3] }),
+        tilt: Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 90.0, origin: [0.0; 3] }),
         stepover: 6.0,
         stock_to_leave: 0.0,
         clearance_z: Height::fixed(70.0),
