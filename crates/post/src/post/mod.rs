@@ -40,6 +40,8 @@ mod js_host;
 pub mod preview;
 pub mod machine;
 pub mod nose_tip;
+pub mod options;
+mod options_parse;
 pub mod probe_rec;
 mod program;
 pub mod rotary_cap;

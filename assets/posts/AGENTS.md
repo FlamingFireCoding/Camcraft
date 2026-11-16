@@ -106,8 +106,12 @@ argument semantics in `docs/CNC-INTERMEDIATE.md`):
 | `onComment(text)` | per `WARN` (the PRELUDE default echoes it verbatim) |
 | `onRadiusCompensation(side)` | per `COMP` (M13.11): `"left"` / `"right"` engage G41 / G42 on the NEXT motion record (a straight lead at least a radius long, by the generator's law; `properties.CompensationRadius` is the register's radius), `"off"` cancels (G40) on the next one. The records between are the PART contour - or, when `properties.CompensationType` is `"wear"` (#38), the cutter-centre path with the register holding only the wear delta - so a post that cannot write the words must `message()` a refusal — the engine refuses a script that lacks the hook outright |
 | `onPlasma` / `onTorchOn` / `onTorchOff` | per `PLASMA` header / `TORCH ON` / `TORCH OFF` (#671): a plasma section's kerf and stated heights (`PlasmaKerf`, `PierceHeight`, ... - absent = the controller's AutoFS), then the torch struck before the next motion record and put out after the previous. The engine refuses a script lacking either torch hook when a header arrives, and keeps the torch law (no torch without a header, no ON while lit, no rapid while lit, nothing left lit) - only `tormach-plasma.cps` defines them |
-| `onThreadCycle` / `onThreadCycleEnd` | per `THREAD` / `THREAD END` (issue #34): a threading cycle's numbers bracket its explicit passes; a script that writes the cycle (G76) skips the passes itself, one that does not define the hooks posts them. `postOptions` (global) carries the document's post options |
+| `onThreadCycle` / `onThreadCycleEnd` | per `THREAD` / `THREAD END` (issue #34): a threading cycle's numbers bracket its explicit passes; a script that writes the cycle (G76) skips the passes itself, one that does not define the hooks posts them. `postOptions` (global) carries the document's post options plus resolved `declaredOptions` |
 | `onClose` | once, after all records (retract + `%`-end here) |
+
+### Declared options (`declaredOptions`) and `programTools` (#258)
+
+A script may define a top-level `declaredOptions` map so the host renders typed per-post properties and validates CLI / MCP / script overrides by name and range. Each entry declares `type` (`"boolean"`, `"integer"`, `"number"`, `"string"`, `"enum"`), required matching `default`, optional `title`, `description`, `group`, bounds (`min`/`max`), and non-empty `choices` (`string` or `{ id, title }`) for `"enum"`. Built-in host keys (`Units`, `Threading`, `Smoothing`, `EndUnits`, `Explain`, `BetweenSetups`) are reserved. Defaults must preserve existing golden output byte-for-byte. Before `onOpen`, the engine also publishes `programTools`, an array of `{ number, name, diameter, kind }` for tools in the stream, so header tool-list comments can summarize every tool up front.
 
 Output is only what `writeln`/`write`/`writeBlock` push into `OUT`;
 `message(s)` is a COUNTED WARNING, not text — in-app it blocks the
@@ -270,8 +274,12 @@ the header and each section tell the operator it must exist in the
 control's condition table), `G40` rides the `G00` to the threading point, a coordinate always carries its decimal point,
 `M02` ends. It reads no `edm.codes`. It writes a vertical 2-axis cut
 only: taper, 4-axis, a missing G54-G59 and an arc as the first cut are
-refused by name; G92, the tank and flushing T codes and G41 / G42 are
-never written. It was not run on a control; what is unconfirmed is in
+refused by name; G92 and G41 / G42 are never written. The machine's
+`edm.flushing` / `edm.tank` (#1499), when stated, post T84 / T85 and
+T94 / T89 after each threading, before the C word (the manual's Program
+Example 1 order); unstated, nothing is written and the header says so.
+The tank fill / drain, flushing pump and wire-drive T codes are never
+written. It was not run on a control; what is unconfirmed is in
 `docs/decisions/617-sodick-wire-post.md`. Its golden rides under
 `nc/sodick-wire/` (`sodick_wire_post.rs`).
 
