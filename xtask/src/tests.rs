@@ -111,6 +111,23 @@ fn changed_test_fn_runs_exact_and_heavy_fn_only_builds() {
 }
 
 #[test]
+fn heavy_fn_in_a_second_binary_keeps_the_build_step() {
+    // Review of #1952: a plain fn changed in cmds and a heavy fn changed in ops. The one fn step
+    // compiles cmds only, so the build step must still compile ops.
+    let fx = fixture();
+    let (a, b) = ("crates/app/tests/cmds.rs", "crates/app/tests/ops.rs");
+    let hunks = [(a, "@@ -4 +4 @@"), (b, "@@ -16,0 +16,1 @@")];
+    let got: Vec<String> = steps(quick_plan(&fx.0, &[a, b], &[], &hunks, false)).iter().map(line).collect();
+    assert_eq!(
+        got,
+        [
+            "app build (--no-run) | test -j 6 -p camcraft-app --no-run --test ops --test cmds",
+            "app cmds (1 fn) | test -j 6 -p camcraft-app --test cmds -- --test-threads=6 --exact cmd_undo",
+        ]
+    );
+}
+
+#[test]
 fn suite_edit_outside_fns_and_new_suite_run_whole() {
     let fx = fixture();
     let f = "crates/app/tests/ops.rs";

@@ -129,6 +129,9 @@ pub fn run_suites(root: &Path, dirs: &[&str], skip_slow: bool) -> Vec<Step> {
     out
 }
 
+/// The name of the one build step of batch and release; the executor stops when it fails.
+pub const DEBUG_BUILD: &str = "debug build (--no-run)";
+
 /// One debug `--no-run` build step for `dirs` (`-p` each), run before their per-target steps (#1941).
 pub fn debug_build(dirs: &[&str]) -> Step {
     let mut args: Vec<String> = vec!["test".into(), "-j".into(), J.into()];
@@ -137,7 +140,7 @@ pub fn debug_build(dirs: &[&str]) -> Step {
         args.push(pkg(d));
     }
     args.push("--no-run".into());
-    Step::new("debug build (--no-run)", &[], "").with(&args)
+    Step::new(DEBUG_BUILD, &[], "").with(&args)
 }
 
 pub fn clippy() -> Step {
@@ -249,7 +252,7 @@ pub fn release_with(root: &Path, snapshots: bool) -> Plan {
         build.extend(["-p", p]);
     }
     build.push("--no-run");
-    plan.steps.push(Step::new("debug build (--no-run)", &build, ""));
+    plan.steps.push(Step::new(DEBUG_BUILD, &build, ""));
     let mut heavy = heavy_steps(root).into_iter();
     if let Some(build) = heavy.next() {
         plan.steps.push(build);

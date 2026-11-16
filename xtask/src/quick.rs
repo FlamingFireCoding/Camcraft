@@ -326,9 +326,8 @@ fn steps(mut p: Picks, heavy: bool, xtask: bool) -> Vec<Step> {
         let pk = pkg(d);
         let mine = |k: &String| k.split(':').next() == Some(d);
         let bin = |k: &String| k.split(':').nth(1).unwrap_or("").to_string();
-        // One build for the crate, then one step for each selected target (#1941): the lib, each whole
-        // suite, each suite with changed fns. A suite whose only changed fns are skipped heavy ones
-        // is built here and not run.
+        // One build, then one step for each target (#1941): lib, whole suites, suites with changed fns.
+        // A suite whose only changed fns are skipped heavy ones is built here and not run.
         let mut targets: Vec<(String, Vec<String>)> = Vec::new();
         if p.libs.contains(d) {
             targets.push(("lib".into(), vec!["--lib".into()]));
@@ -340,15 +339,17 @@ fn steps(mut p: Picks, heavy: bool, xtask: bool) -> Vec<Step> {
         let mut seen: BTreeSet<String> = whole.iter().filter(|k| mine(k)).map(&bin).collect();
         let heavy_only = ps_sorted(build_only.iter().cloned());
         let fn_keys = p.fns.iter().map(|(k, _)| k.clone());
+        let mut units = targets.len(); // targets in the build list
         for k in heavy_only.into_iter().chain(ps_sorted(fn_keys)).filter(|k| mine(k)) {
             if seen.insert(bin(&k)) {
                 build.extend(["--test".to_string(), bin(&k)]);
+                units += 1;
             }
         }
-        // A crate that has exactly one run step builds in that step: a separate build adds nothing.
+        // Skip the build only when one run step covers the one target of the build list (review of #1952).
         let fn_steps: BTreeSet<&String> =
             p.fns.iter().map(|(k, _)| k).filter(|k| mine(k) && !p.whole.contains(*k)).collect();
-        if !build.is_empty() && targets.len() + fn_steps.len() != 1 {
+        if !build.is_empty() && !(units == 1 && targets.len() + fn_steps.len() == 1) {
             let name = format!("{d} build (--no-run)");
             out.push(Step::new(name, &["test", "-j", J, "-p", &pk, "--no-run"], d).with(&build));
         }
@@ -391,11 +392,7 @@ fn steps(mut p: Picks, heavy: bool, xtask: bool) -> Vec<Step> {
         }
     }
     if xtask {
-        out.push(Step::new(
-            "xtask unit tests",
-            &["test", "-j", J, "-p", "xtask", "--", T],
-            "",
-        ));
+        out.push(Step::new("xtask unit tests", &["test", "-j", J, "-p", "xtask", "--", T], ""));
     }
     out
 }
