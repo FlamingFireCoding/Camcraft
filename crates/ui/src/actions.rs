@@ -154,7 +154,7 @@ pub(crate) fn ensure_field_view(state: &mut State) {
         return;
     }
     if let Err(err) = follow_playhead(state, judged) {
-        state.status += &format!(" | traced playback refused: {err} - the sheet stands");
+        state.say_once(&format!("simulation shows the uncut stock: {err}"));
         state.field_play = None;
         state.field_view = Some(Err(err));
     }
@@ -172,7 +172,7 @@ fn walk_whole_program(state: &mut State) {
             crate::machined::prime(state);
         }
         Err(err) => {
-            state.status += &format!(" | traced stock refused: {err} - the sheet stands");
+            state.say_once(&format!("simulation shows the uncut stock: {err}"));
             state.field_view = Some(Err(err));
         }
     }

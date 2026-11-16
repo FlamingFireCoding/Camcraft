@@ -60,7 +60,7 @@ pub fn stock_grid(
     setup: Option<&str>,
     tool_r: f64,
 ) -> Result<Dexel, String> {
-    use crate::geometry::{IDENTITY_Q, transform_point};
+    use crate::geometry::transform_point;
     use crate::stock::StockShape;
     use crate::model;
 
@@ -69,10 +69,8 @@ pub fn stock_grid(
         .ok_or_else(|| format!("no stock '{stock_name}' - the program sim judges material, not air"))?;
     let shape = model::stock_def_of(world, &stock_e)
         .ok_or("the stock entity lost its shape")?;
-    let loc = model::transform_of(world, &stock_e).unwrap_or_default();
-    if loc.rot != IDENTITY_Q {
-        return Err("the program sim models an axis-aligned stock; this stock carries a rotation".into());
-    }
+    // #2177: a square-turned stock is its unturned twin; oblique refused.
+    let (shape, loc) = crate::stock_follow::sim_frame(&shape, model::transform_of(world, &stock_e).unwrap_or_default())?;
     let stock_facets: Vec<Triangle> = match &shape {
         StockShape::FromModel { .. } => model::facets_of(world, &stock_e)
             .unwrap_or_default()
