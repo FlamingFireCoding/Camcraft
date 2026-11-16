@@ -83,6 +83,11 @@ impl Kept {
         pass.windows(2).any(|s| cell_range(s[0], s[1]).is_none() || self.hits_but(s[0], s[1], Some(own)))
     }
 
+    /// Does a chord of `pass` cross a kept chord of any pass?
+    pub(super) fn crosses_any(&self, pass: &[Point2]) -> bool {
+        pass.windows(2).any(|s| self.hits(s[0], s[1]))
+    }
+
     /// `pass` cut into the pieces whose chords cross no kept chord: each
     /// crossing chord is dropped, a piece of fewer than two points too.
     /// The pieces are not kept here (`add` each one that is posted).

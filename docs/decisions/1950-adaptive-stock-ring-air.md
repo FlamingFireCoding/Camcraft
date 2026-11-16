@@ -72,7 +72,28 @@
    open runs. The budget of 8 needs a different cut of the open fronts (round
    G). The crossing law, the load law, the bite and the budget were not
    changed.
-8. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
+8. **Round G: the open fronts are cut region by region.** The runs of
+   consecutive fronts in one open region form a chain
+   (`adaptive::air_chain::chains`, matched by start and end within 3r).
+   Each chain is cut whole before the next one. A run that goes on its
+   chain is reached on the floor: back along the run just cut, to the
+   vertex where the normal of the new run start meets that path
+   (`air_chain::onto`), then the lead-in starts on that vertex. The
+   lead-in only touches the path just cut, so it does not cross it. The
+   move back is on the cut path, so it is on cleared area. Where no such
+   vertex is found, a straight feed chord (`air_chain::link`) is tried,
+   read on the stock within the load bound and the crossing law; else the
+   joins run as before. Reading on the D plate level: 23 hops before,
+   10 hops now (budget 8), worst load 0.1538 unchanged, 42 passes, 11784
+   moves. The 3 region entries are hops, as planned. The other 7 hops are
+   wall laps: a lap is parallel to the part wall, and each front run ends
+   on the wall, so a lap piece meets a run end and is split there by the
+   crossing law. A bridge chord across that run end also crosses it.
+   Tried and reverted in round G: a feed chord between lap pieces (each
+   bridge crosses the run end), and a closed lap started beside the last
+   pass (its join still reads over the bite). The crossing law, the load
+   law, the bite, the rim and the budget were not changed.
+9. **Multi-Axis Rough keeps the old band** until the maintainer decides. It
    shares the open-side footprint, but its levels were not read with the
    air planner.
 

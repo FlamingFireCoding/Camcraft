@@ -78,7 +78,7 @@ fn level_center() -> Region {
 /// Round E: red on the hop assert (23 over 8): the round C reading of
 /// 8 hops came from joins whose leads crossed other passes.
 #[test]
-#[ignore = "issue #1950 round G: red - 23 retract hops (over 8): each open run start reads its wall, so it hops (~25 s debug)"]
+#[ignore = "issue #1950 round H: red - 10 retract hops (over 8): 7 are wall lap pieces split where a lap meets a front run end (~25 s debug)"]
 fn the_stock_ring_level_reaches_the_air_planner_with_the_stock() {
     let t = std::time::Instant::now();
     let Ok((passes, notes, rest, _, _, travel, refused)) = hsm_passes(&level_center(), &params(), Some(&stock())) else { panic!("plan") };
@@ -100,7 +100,7 @@ fn the_stock_ring_level_reaches_the_air_planner_with_the_stock() {
 /// whose lead crosses falls back to its hop - 23 hops, over the budget
 /// of 8, so the level still goes to the Offset rings by name. Round F.
 #[test]
-#[ignore = "issue #1950 round G: red - 23 retract hops (over 8): each open run start reads its wall, so it hops (~25 s debug)"]
+#[ignore = "issue #1950 round H: red - 10 retract hops (over 8): 7 are wall lap pieces split where a lap meets a front run end (~25 s debug)"]
 fn the_stock_ring_level_plans_adaptive_with_no_budget_note() {
     let Ok((passes, notes, s, _, _)) = adaptive_passes(&level_center(), &params(), "the level at Z 10.000", false, Some(&stock())) else { panic!("plan") };
     assert_eq!(s, PocketStrategy::Adaptive, "{notes:?}");

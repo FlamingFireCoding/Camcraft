@@ -106,7 +106,7 @@ fn the_air_entry_disc_is_clear_of_the_stock() {
     assert!(!s.contains(q) && boundary_dist(&s, q) >= R, "entry {q:?} is {:.4} from the stock", boundary_dist(&s, q));
 }
 
-/// The hop reading of round F: each pass, where it starts and ends, and
+/// The hop reading of rounds F and G: each pass, where it starts and ends, and
 /// how it is reached (a retract hop, or a return low or over the retract
 /// plane). Each open run of a front reads as a hop: its start stands
 /// beside the last front, where the rim (`r + 1.5` cells) reads its wall.
