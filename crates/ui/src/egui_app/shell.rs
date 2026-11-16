@@ -40,8 +40,6 @@ pub(crate) const VIEW3D_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8
 /// from `theme::current()`; this const is the test fixture's number.
 #[cfg(test)]
 pub(crate) const RIBBON_H: f32 = theme::ribbon_h(&theme::Tokens::DARK);
-/// Status strip height (imgui's single-line bottom bar).
-const STATUS_H: f32 = 22.0;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Tab {
@@ -118,7 +116,7 @@ pub(crate) fn shell_layout(
     layout::settle(state, dock);
     egui::Panel::bottom("status")
         .frame(egui::Frame::NONE)
-        .exact_size(STATUS_H)
+        .exact_size(theme::status_h(&pal))
         .show(ui, |ui| {
             panes::status(ui, &mut *state, &pal, icons);
         });
@@ -422,7 +420,8 @@ fn viewport_panel(
     // global pointer coords imgui's viewport_rect fed the raw-event path.
     let ([rx0, ry0], [rx1, ry1]) = (parr(resp.rect.min), parr(resp.rect.max));
     state.viewport_rect = ([rx0, ry0], [rx1, ry1]);
-    super::file_drop::paint_hint(ui, resp.rect);
+    let pal = theme::current();
+    super::file_drop::paint_hint(ui, resp.rect, &pal);
     let hot = resp.hovered();
     state.viewport_hot = hot;
     let (rw, rh) = (rx1 - rx0, ry1 - ry0);
