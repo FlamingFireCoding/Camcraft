@@ -2,14 +2,22 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const PNG_SIG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
 pub fn default_diff_dir() -> PathBuf {
-    std::env::var_os("CARGO_TARGET_TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("camcraft-shape-masks"))
-        .join("shape-mask-diffs")
+    static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    // Cargo supplies this at compile time, not as a runtime environment variable.
+    loop {
+        let id = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
+        let dir = base.join(format!("shape-mask-diffs-{}-{id}", std::process::id()));
+        match fs::create_dir_all(base).and_then(|()| fs::create_dir(&dir)) {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            _ => return dir, // Leave other errors to the PNG writer's named diagnostic.
+        }
+    }
 }
 
 pub fn write_diff_mask(

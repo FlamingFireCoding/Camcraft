@@ -243,7 +243,7 @@ type Pt = Option<[f64; 2]>;
 
 fn four(pairing: WirePairingRule, sync: &[(Pt, Pt)], tolerance: f64) -> WireContourOp {
     let sync = sync.iter().map(|&(upper, lower)| WireSyncPair { upper, lower }).collect();
-    WireContourOp { four_axis: Some(WireFourAxis { pairing, sync, tolerance }), ..wire_op(WireSide::Punch, Some([-10.0, 25.0])) }
+    WireContourOp { four_axis: Some(WireFourAxis { pairing, sync, tolerance, ..WireFourAxis::default() }), ..wire_op(WireSide::Punch, Some([-10.0, 25.0])) }
 }
 
 /// The punch's stamp with no 4-axis block, as main's wire arm + wire tool
