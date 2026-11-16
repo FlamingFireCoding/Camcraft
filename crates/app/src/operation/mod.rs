@@ -144,6 +144,8 @@ mod run_out;
 use run_out::*;
 mod area;
 use area::*;
+mod pocket_memo;
+pub use pocket_memo::pocket_slices;
 mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;

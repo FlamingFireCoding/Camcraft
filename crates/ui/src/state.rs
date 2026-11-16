@@ -2617,7 +2617,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .map(|f| {
-                                let c = feature::resolve_chain(&f, id)?;
+                                let c = camcraft_app::model::resolve_chain(&f, id)?;
                                 let pts = feature::chain_points(&f, &c);
                                 Some((c, pts))
                             })
