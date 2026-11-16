@@ -188,3 +188,20 @@ fn a_non_z_c_axis_refuses_by_name() {
         out.warnings
     );
 }
+
+#[test]
+fn an_overflowing_non_z_c_axis_refuses_without_live_motion() {
+    let out = run_with_c_axis([1e200, 0.0, 1e200]);
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("C rotary") && w.contains("not along Z")),
+        "expected named refusal for tilted C axis: {:?}",
+        out.warnings
+    );
+    assert!(
+        !out.program.lines().any(|line| line.contains("G01")),
+        "{}",
+        out.program
+    );
+}

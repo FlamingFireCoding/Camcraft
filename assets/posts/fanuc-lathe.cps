@@ -614,8 +614,13 @@ function liveStart() {
         refuse(coolantWho() + "C-axis live-tool work, but the C rotary states a non-vector direction");
         return;
       }
-      var n2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-      if (!(n2 > 0) || d[2] * d[2] < 0.998 * n2) {
+      // Scale before squaring: finite directions can still overflow.
+      var scale = Math.max(Math.abs(d[0]), Math.abs(d[1]), Math.abs(d[2]));
+      var dx = scale > 0 ? d[0] / scale : 0;
+      var dy = scale > 0 ? d[1] / scale : 0;
+      var dz = scale > 0 ? d[2] / scale : 0;
+      var n2 = dx * dx + dy * dy + dz * dz;
+      if (!(n2 > 0) || dz * dz < 0.998 * n2) {
         refuse(coolantWho() + "C-axis live-tool work, but the C rotary states direction [" + d[0].toFixed(3) + ", " + d[1].toFixed(3) + ", " + d[2].toFixed(3) + "], not along Z");
         return;
       }

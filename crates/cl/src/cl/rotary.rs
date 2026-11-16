@@ -119,7 +119,32 @@ pub fn stamp_c(path: &Toolpath, center: [f64; 2], tol: f64) -> Result<Toolpath, 
             if !arc.center.x.is_finite() || !arc.center.y.is_finite() {
                 return Err(format!("C-axis move {i} has a non-finite arc center"));
             }
-            segs_per_move.push((true, m.segments3(tol * 0.5)));
+            let segs = m.segments3(tol * 0.5);
+            // segments3 caps the chord count. Check the original arc's
+            // sagitta before splitting its chords: splitting cannot recover
+            // curvature already lost at that cap. Normal (helical) motion is
+            // linear in the sweep and adds no chord error.
+            let (au, av, _) = arc.plane.uvw(m.from);
+            let (bu, bv, _) = arc.plane.uvw(m.to);
+            let (cu, cv) = arc.plane.center_uv(arc.center);
+            let ra = (au - cu).hypot(av - cv);
+            let rb = (bu - cu).hypot(bv - cv);
+            let start = (av - cv).atan2(au - cu);
+            let end = (bv - cv).atan2(bu - cu);
+            let mut sweep =
+                if arc.ccw { end - start } else { start - end }.rem_euclid(std::f64::consts::TAU);
+            if sweep == 0.0 {
+                sweep = std::f64::consts::TAU;
+            }
+            let half_step_sin = (sweep / (4.0 * segs.len() as f64)).sin();
+            let error = ra.max(rb) * (2.0 * half_step_sin * half_step_sin) + (ra - rb).abs();
+            if !error.is_finite() || error > tol * 0.5 {
+                return Err(format!(
+                    "C-axis move {i} arc subdivision limit cannot meet the chord error budget of {} mm",
+                    tol * 0.5
+                ));
+            }
+            segs_per_move.push((true, segs));
         } else {
             segs_per_move.push((false, vec![(m.from, m.to)]));
         }
@@ -275,6 +300,27 @@ mod tests {
             .with_axis([0.0, 1.0, 0.0]);
         let e = stamp_c(&Toolpath::new(vec![bad_arc]), [0.0, 0.0], 0.01).err();
         assert!(e.is_some_and(|e| e.contains("arc")));
+    }
+
+    #[test]
+    fn an_arc_at_the_chord_limit_refuses_before_rotary_splitting() {
+        let tol = 0.001;
+        let m = Move::new(
+            MoveKind::Feed,
+            Point3::new(1000.0, 0.0, 0.0),
+            Point3::new(0.0, -1000.0, 0.0),
+            Some(300.0),
+        )
+        .with_arc(crate::geo2d::Point2::new(0.0, 0.0), true)
+        .with_axis([0.0, -1.0, 0.0]);
+        assert_eq!(m.segments3(tol * 0.5).len(), crate::cl::MAX_ARC_CHORDS);
+        let error = stamp_c(&Toolpath::new(vec![m]), [0.0, 0.0], tol)
+            .expect_err("capped chords exceed the original arc's error budget");
+        assert!(
+            error.contains("move 0") && error.contains("arc subdivision limit"),
+            "{error}"
+        );
+        assert!(error.contains("0.0005 mm"), "{error}");
     }
 
     #[test]

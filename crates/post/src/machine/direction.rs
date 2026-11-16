@@ -102,8 +102,16 @@ impl AxisLimits {
         if !d.iter().all(|v| v.is_finite()) {
             return Err(format!("C rotary states non-finite axis {d:?}"));
         }
-        let n2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-        if n2 <= 0.0 || d[2] * d[2] < 0.998 * n2 {
+        // Scale before squaring so finite machine vectors cannot overflow
+        // (or underflow) and silently pass the alignment check.
+        let scale = d.iter().map(|v| v.abs()).fold(0.0, f64::max);
+        let unit = if scale > 0.0 {
+            d.map(|v| v / scale)
+        } else {
+            [0.0; 3]
+        };
+        let n2 = unit[0] * unit[0] + unit[1] * unit[1] + unit[2] * unit[2];
+        if n2 <= 0.0 || unit[2] * unit[2] < 0.998 * n2 {
             return Err(format!(
                 "C rotary states axis [{:.3}, {:.3}, {:.3}], not along Z",
                 d[0], d[1], d[2]
@@ -219,6 +227,24 @@ mod c_sense_tests {
 
     fn c_rot(axis: Option<[f64; 3]>, travel: Option<(f64, f64)>) -> AxisLimits {
         AxisLimits { name: "C".into(), rotary: true, axis, travel, ..Default::default() }
+    }
+
+    #[test]
+    fn c_z_sense_is_independent_of_finite_vector_scale() {
+        for scale in [1e200, 1e-200] {
+            let tilted = c_rot(Some([scale, 0.0, scale]), None);
+            let error = tilted
+                .c_z_sense()
+                .expect_err("45-degree C is never Z-aligned");
+            assert!(
+                error.contains("C rotary") && error.contains("not along Z"),
+                "{error}"
+            );
+            for sign in [-1.0, 1.0] {
+                let aligned = c_rot(Some([0.0, 0.0, sign * scale]), None);
+                assert_eq!(aligned.c_z_sense().expect("scaled Z axis"), sign);
+            }
+        }
     }
 
     #[test]

@@ -56,3 +56,15 @@ machines post byte-identical output. No goldens moved.
 **Cost to change later.** Self-contained across
 `AxisLimits::c_z_sense`, `stamp_c`, `rotary_gate`, `judge::c_letter_problem`,
 `render_machine_axes`, and `liveCSense` in `fanuc-lathe.cps`.
+
+**Latest review corrections (PR #2103).**
+
+- `stamp_c` checks the original arc's sagitta against `tol * 0.5` using
+  the actual generated chord count before splitting those chords. If the
+  subdivision cap prevents that budget, it refuses by move name and error
+  budget. Chose bounded refusal over changing the shared tessellation cap;
+  splitting an inaccurate chord cannot recover the original arc.
+- `c_z_sense` and `fanuc-lathe.cps` scale a finite C direction by its
+  largest absolute component before comparing squared lengths. This keeps
+  the existing alignment threshold and Z sign. Dropped the raw squared
+  norm because finite components can overflow and admit a tilted axis.
