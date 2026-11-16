@@ -23,6 +23,7 @@ capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 9;      // LinuxCNC G-code reference: G54-G59.3 select coordinate systems 1-9 (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "G20 G21";     // #596 / #2189: switches end units before M30 when asked
 
 declaredOptions = {
   showSequenceNumbers: {

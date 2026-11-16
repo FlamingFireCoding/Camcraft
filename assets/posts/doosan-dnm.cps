@@ -46,6 +46,7 @@ afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a st
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets are an option not verified here (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -1302,6 +1303,15 @@ function onProbeResult() {
 }
 
 // ------------------------------------------------------------ footer
+// #2189: Fanuc modal Group 06 unit word (G20 / G21) after the final
+// retract, right before M30, when postOptions.EndUnits asks for the
+// other unit.
+function endUnitsWord() {
+  var want = typeof postOptions !== "undefined" && postOptions ? postOptions.EndUnits : undefined;
+  if (want === "inch" && !inch) return "G20";
+  if (want === "mm" && inch) return "G21";
+  return "";
+}
 function onClose() {
   endPreamble();
   if (chipConveyorStarted) {
@@ -1314,6 +1324,8 @@ function onClose() {
   if (linesWritten() !== homedAt) {
     retractHome(true);
   }
+  var u = endUnitsWord();
+  if (u) block([u]);
   block(["M30"]);
   writeln("%");
 }

@@ -20,6 +20,7 @@ probeAxisInversion = true; // probing blocks verified on the mirrored stream (#3
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G154 P extended offsets not verified against Haas' manual here (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "note";        // #2189: G20/G21 alarms against Setting 9; notes once when asked to switch
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -972,6 +973,14 @@ function onProbeResult() {
 }
 
 // ------------------------------------------------------------ footer
+// #2189: on Haas, G20 / G21 verifies Setting 9 and alarms on mismatch,
+// so switching units at program end is unsafe; note the ask once.
+function noteEndUnits() {
+  var want = typeof postOptions !== "undefined" && postOptions ? postOptions.EndUnits : undefined;
+  if ((want === "inch" && !inch) || (want === "mm" && inch)) {
+    note("END UNITS NOT WRITTEN - HAAS G20/G21 ALARMS AGAINST SETTING 9");
+  }
+}
 function onClose() {
   endPreamble();
   // #504: a trip home with nothing written after it (a trailing Go
@@ -979,6 +988,7 @@ function onClose() {
   if (linesWritten() !== homedAt) {
     retractHome(true);
   }
+  noteEndUnits();
   block(["M30"]);
   writeln("%");
 }
