@@ -36,6 +36,8 @@ pub mod engine;
 pub mod explain;
 pub mod invert;
 pub mod js;
+mod js_host;
+pub mod preview;
 pub mod machine;
 pub mod nose_tip;
 pub mod probe_rec;
