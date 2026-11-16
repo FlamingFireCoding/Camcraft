@@ -1073,14 +1073,14 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
     );
     let current = camcraft_app::machine::kind_of(&state.world);
     let font = egui::FontId::proportional(pal.font_label);
-    let mut x = strip.left() + 8.0;
+    let mut x = strip.left() + pal.item_spacing_x;
     for (kind, caption, machine) in machine_modes::MACHINE_MODES {
         let active = kind == current;
         let ink = if active { pal.text } else { pal.text_dim };
         let galley = ui
             .painter()
             .layout_no_wrap(caption.to_uppercase(), font.clone(), ink);
-        let w = galley.size().x + 24.0;
+        let w = galley.size().x + pal.ribbon_tab_pad_x * 2.0;
         let r = Rect::from_min_max(
             egui::Pos2::new(x, band.top()),
             egui::Pos2::new(x + w, band.bottom()),
@@ -1093,12 +1093,13 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
                 0.0,
                 pal.strip_fill(),
             );
+            let pad = (pal.ribbon_tab_pad_x * 0.5).min(w * 0.25);
             painter.line_segment(
                 [
-                    egui::Pos2::new(r.left() + 6.0, r.bottom() - 1.0),
-                    egui::Pos2::new(r.right() - 6.0, r.bottom() - 1.0),
+                    egui::Pos2::new(r.left() + pad, r.bottom() - 1.0),
+                    egui::Pos2::new(r.right() - pad, r.bottom() - 1.0),
                 ],
-                egui::Stroke::new(2.0, pal.accent),
+                egui::Stroke::new(pal.ribbon_tab_stroke, pal.accent),
             );
         } else if resp.clicked() || resp.is_pointer_button_down_on() {
             painter.rect_filled(r, pal.radius_widget, pal.accent);
@@ -1118,7 +1119,7 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
         if clicked {
             machine_modes::set_machine_mode(state, kind);
         }
-        x += w + 2.0;
+        x += w + pal.ribbon_tab_gap;
     }
 }
 

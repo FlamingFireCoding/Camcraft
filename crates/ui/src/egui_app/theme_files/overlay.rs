@@ -28,7 +28,8 @@ pub(super) fn apply_overlay(
         control_height, row_height, cell_h, cell_w, glyph_px, font_label,
         font_caption, font_row, font_row_suffix, ribbon_ink, ribbon_tab_h,
         ribbon_cell_top_gap, ribbon_caption_gap, ribbon_caption_row_h,
-        ribbon_bottom_gap,
+        ribbon_bottom_gap, window_margin, status_h, ribbon_tab_pad_x,
+        ribbon_tab_gap, ribbon_tab_stroke,
     } = base;
     let c = |name: &str, keep: Color32| colors.get(name).copied().unwrap_or(keep);
     let f = |name: &str, keep: f32, win: (f32, f32)| {
@@ -57,8 +58,8 @@ pub(super) fn apply_overlay(
         viewport: c(names::VIEWPORT, viewport),
         ribbon_ink: c(names::RIBBON_INK, ribbon_ink),
         radius_widget: rad(names::RADIUS_WIDGET, radius_widget, clamp::RADIUS as f32),
-        radius_window: rad(names::RADIUS_WINDOW, radius_window, 24.0),
-        radius_menu: rad(names::RADIUS_MENU, radius_menu, 24.0),
+        radius_window: rad(names::RADIUS_WINDOW, radius_window, f32::from(clamp::RADIUS_WINDOW)),
+        radius_menu: rad(names::RADIUS_MENU, radius_menu, f32::from(clamp::RADIUS_WINDOW)),
         item_spacing_x: f(names::ITEM_SPACING_X, item_spacing_x, clamp::SPACING),
         item_spacing_y: f(names::ITEM_SPACING_Y, item_spacing_y, clamp::SPACING),
         button_padding_x: f(names::BUTTON_PADDING_X, button_padding_x, clamp::SPACING),
@@ -77,5 +78,10 @@ pub(super) fn apply_overlay(
         ribbon_caption_gap: f(names::RIBBON_CAPTION_GAP, ribbon_caption_gap, clamp::RIBBON_GAP),
         ribbon_caption_row_h: f(names::RIBBON_CAPTION_ROW_H, ribbon_caption_row_h, clamp::RIBBON_ROW),
         ribbon_bottom_gap: f(names::RIBBON_BOTTOM_GAP, ribbon_bottom_gap, clamp::RIBBON_GAP),
+        window_margin: f(names::WINDOW_MARGIN, window_margin, clamp::WINDOW_MARGIN),
+        status_h: f(names::STATUS_H, status_h, clamp::STATUS_H),
+        ribbon_tab_pad_x: f(names::RIBBON_TAB_PAD_X, ribbon_tab_pad_x, clamp::RIBBON_TAB_PAD_X),
+        ribbon_tab_gap: f(names::RIBBON_TAB_GAP, ribbon_tab_gap, clamp::RIBBON_GAP),
+        ribbon_tab_stroke: f(names::RIBBON_TAB_STROKE, ribbon_tab_stroke, clamp::RIBBON_STROKE),
     }
 }

@@ -48,6 +48,11 @@ impl Tokens {
         ribbon_caption_gap: 8.0,
         ribbon_caption_row_h: 18.0,
         ribbon_bottom_gap: 4.0,
+        window_margin: 6.0,
+        status_h: 22.0,
+        ribbon_tab_pad_x: 12.0,
+        ribbon_tab_gap: 2.0,
+        ribbon_tab_stroke: 2.0,
     };
 
     /// The same shell, inverted: paper grounds, dark ink, the steel
@@ -96,5 +101,10 @@ impl Tokens {
         ribbon_caption_gap: 8.0,
         ribbon_caption_row_h: 18.0,
         ribbon_bottom_gap: 4.0,
+        window_margin: 6.0,
+        status_h: 22.0,
+        ribbon_tab_pad_x: 12.0,
+        ribbon_tab_gap: 2.0,
+        ribbon_tab_stroke: 2.0,
     };
 }

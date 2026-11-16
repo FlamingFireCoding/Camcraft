@@ -89,6 +89,13 @@ pub struct Tokens {
     pub ribbon_caption_gap: f32,
     pub ribbon_caption_row_h: f32,
     pub ribbon_bottom_gap: f32,
+    /// Shell metrics (#2064): window inner margin, status strip height, and
+    /// ribbon tab horizontal padding, gap and active underline thickness.
+    pub window_margin: f32,
+    pub status_h: f32,
+    pub ribbon_tab_pad_x: f32,
+    pub ribbon_tab_gap: f32,
+    pub ribbon_tab_stroke: f32,
 }
 
 /// The painted path's clamps: geometry a theme file supplies can make
@@ -114,6 +121,16 @@ pub mod clamp {
     pub const RIBBON_ROW: (f32, f32) = (12.0, 48.0);
     /// Ribbon gaps between rows (px).
     pub const RIBBON_GAP: (f32, f32) = (0.0, 24.0);
+    /// Window and menu corner radius upper bound (#2064).
+    pub const RADIUS_WINDOW: u8 = 24;
+    /// Floating window inner margin (px).
+    pub const WINDOW_MARGIN: (f32, f32) = (0.0, 24.0);
+    /// Bottom status strip height (px).
+    pub const STATUS_H: (f32, f32) = (16.0, 64.0);
+    /// Ribbon tab per-side horizontal padding (px).
+    pub const RIBBON_TAB_PAD_X: (f32, f32) = (2.0, 32.0);
+    /// Ribbon active tab underline thickness (px).
+    pub const RIBBON_STROKE: (f32, f32) = (1.0, 8.0);
 
     #[must_use]
     pub fn range(v: f32, lo_hi: (f32, f32)) -> f32 {
@@ -132,6 +149,13 @@ pub const fn ribbon_h(t: &Tokens) -> f32 {
         + t.ribbon_caption_gap
         + t.ribbon_caption_row_h
         + t.ribbon_bottom_gap
+}
+
+/// Bottom status strip height (px), tracking typography and controls (#2064).
+#[must_use]
+pub const fn status_h(t: &Tokens) -> f32 {
+    let a = if t.control_height + 4.0 > t.status_h { t.control_height + 4.0 } else { t.status_h };
+    if t.font_row * 1.3 + 4.0 > a { t.font_row * 1.3 + 4.0 } else { a }
 }
 
 impl Tokens {
@@ -162,6 +186,8 @@ impl Tokens {
             font_row: _, font_row_suffix: _, ribbon_tab_h: _,
             ribbon_cell_top_gap: _, ribbon_caption_gap: _,
             ribbon_caption_row_h: _, ribbon_bottom_gap: _,
+            window_margin: _, status_h: _, ribbon_tab_pad_x: _,
+            ribbon_tab_gap: _, ribbon_tab_stroke: _,
         } = *self;
         let mut v = Visuals::dark();
         v.panel_fill = ink;
@@ -245,7 +271,8 @@ impl Tokens {
             vec2(clamp::range(self.button_padding_x, clamp::SPACING), clamp::range(self.button_padding_y, clamp::SPACING));
         s.spacing.interact_size =
             vec2(s.spacing.interact_size.x, clamp::range(self.control_height, clamp::CONTROL_H));
-        s.spacing.window_margin = Margin::same(self.item_spacing_y.max(6.0) as i8);
+        s.spacing.window_margin =
+            Margin::same(clamp::range(self.window_margin, clamp::WINDOW_MARGIN).round() as i8);
         s
     }
 }
@@ -266,11 +293,12 @@ const fn geom_legal(t: &Tokens) -> bool {
         control_height, row_height, cell_h, cell_w, glyph_px,
         font_label, font_caption, font_row, font_row_suffix,
         ribbon_tab_h, ribbon_cell_top_gap, ribbon_caption_gap,
-        ribbon_caption_row_h, ribbon_bottom_gap,
+        ribbon_caption_row_h, ribbon_bottom_gap, window_margin, status_h,
+        ribbon_tab_pad_x, ribbon_tab_gap, ribbon_tab_stroke,
     } = *t;
     radius_widget <= clamp::RADIUS
-        && radius_window <= 24
-        && radius_menu <= 24
+        && radius_window <= clamp::RADIUS_WINDOW
+        && radius_menu <= clamp::RADIUS_WINDOW
         && item_spacing_x >= 0.0
         && item_spacing_y >= 0.0
         && button_padding_x >= 0.0
@@ -303,6 +331,16 @@ const fn geom_legal(t: &Tokens) -> bool {
         && ribbon_caption_gap <= clamp::RIBBON_GAP.1
         && ribbon_bottom_gap >= clamp::RIBBON_GAP.0
         && ribbon_bottom_gap <= clamp::RIBBON_GAP.1
+        && window_margin >= clamp::WINDOW_MARGIN.0
+        && window_margin <= clamp::WINDOW_MARGIN.1
+        && status_h >= clamp::STATUS_H.0
+        && status_h <= clamp::STATUS_H.1
+        && ribbon_tab_pad_x >= clamp::RIBBON_TAB_PAD_X.0
+        && ribbon_tab_pad_x <= clamp::RIBBON_TAB_PAD_X.1
+        && ribbon_tab_gap >= clamp::RIBBON_GAP.0
+        && ribbon_tab_gap <= clamp::RIBBON_GAP.1
+        && ribbon_tab_stroke >= clamp::RIBBON_STROKE.0
+        && ribbon_tab_stroke <= clamp::RIBBON_STROKE.1
 }
 
 const _: () = assert!(geom_legal(&Tokens::DARK));
