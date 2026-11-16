@@ -31,3 +31,28 @@ policy).
 modules, five undoable commands/MCP handlers, and lenient `.camproj`/library
 deserializers; multi-region or island profiles can extend `FixtureProfile` in
 place while older files fall back cleanly.
+
+### Review corrections for PR #2101
+
+**Chosen:** Calculate a chord-error bound for revolved sections and curved
+extrusions. Expand fixture collision boxes by that bound. Do not use those
+approximate meshes to clear a box collision. Keep mesh refinement for exact
+straight extrusions. Show the box-only collision status for approximate profiles
+in the fixture row, so the UI describes the actual collision check. Refuse DXF input when conversion leaves no segments.
+Preserve the closing endpoint and edge bulge for closed spun sections.
+Pass each new STEP source through both UI and script re-import commands.
+
+**Why:** An inscribed mesh can miss steel between its vertices. A conservative
+box keeps the collision warning. Empty chains must return a named error.
+Closed annular sections need their closing edge. Re-import must retain the
+new source for library saves and preserve undo and redo behavior.
+
+**Dropped:** Increasing the mesh resolution without a proven error bound,
+clearing collision warnings with approximate facets, rejecting valid annular
+sections, or retaining old STEP text after the model changes.
+
+**Evidence:** Before and after images show the actual fixture page, profile
+editor, and STEP derivation controls. The before images use the two presentation
+files from this PR's parent commit with the same fixture state. The capture
+harness and images stay outside the PR history. Images are stored only on the
+fork's `pr-screenshots` branch and linked in the PR body.

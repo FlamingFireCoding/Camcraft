@@ -191,6 +191,9 @@ fn primitives_to_segs(prims: &[&LayeredPrimitive], scale: f64) -> Result<Vec<Seg
 }
 
 fn stitch_chain(mut segs: Vec<Seg>) -> Result<(Vec<ProfileVertex>, bool), ProfileError> {
+    if segs.is_empty() {
+        return Err(ProfileError("DXF profile contains no non-degenerate segments".into()));
+    }
     let first = segs.remove(0);
     let mut chain = vec![first];
     while !segs.is_empty() {
@@ -313,7 +316,12 @@ pub fn spun_from_dxf(bytes: &[u8]) -> Result<HalfProfile, ProfileError> {
             }
         })
         .collect();
-    let (verts, _) = stitch_chain(zr_segs)?;
+    let (mut verts, closed) = stitch_chain(zr_segs)?;
+    // HalfProfile encodes closure with a repeated endpoint. The preceding
+    // vertex keeps the closing edge bulge, including for annular sections.
+    if closed && let Some(&first) = verts.first() {
+        verts.push(ProfileVertex { bulge: 0.0, ..first });
+    }
     let half = HalfProfile { points: verts };
     let _ = spun_loop(&half)?;
     Ok(half)

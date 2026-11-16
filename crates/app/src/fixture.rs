@@ -160,13 +160,16 @@ pub fn named_boxes_for(world: &World, declared: Option<&str>) -> Vec<(String, Fi
 /// so a curved face can stand that far outside the box of its facets.
 fn steel_box(world: &World, e: &Entity) -> Option<FixtureBox> {
     let b = model::entity_world_aabb(world, e)?;
-    // Full fidelity: the box itself, bit for bit (no `+ 0.0`).
-    // #1056: unknown fidelity has no honest growth; the gate refuses the
-    // program by name (`model_fidelity::gate_problems`), so the plain box
-    // stands in rather than one that collides with everything.
-    let Some(g) = crate::model_fidelity::chord_of(world, e).filter(|g| !crate::model_fidelity::is_unknown(*g)) else {
+    // Profile facets are also chords of the intended curved solid. Grow the
+    // broad phase, and never let those facets acquit the resulting box hit.
+    let profile_error = def_of(world, e).and_then(|d| d.profile)
+        .map_or(0.0, |p| p.collision_chord_error());
+    let imported_error = crate::model_fidelity::chord_of(world, e)
+        .filter(|g| !crate::model_fidelity::is_unknown(*g)).unwrap_or(0.0);
+    let g = profile_error.max(imported_error);
+    if g == 0.0 {
         return Some(FixtureBox { min: b.min, max: b.max });
-    };
+    }
     Some(FixtureBox {
         min: Point3::new(b.min.x - g, b.min.y - g, b.min.z - g),
         max: Point3::new(b.max.x + g, b.max.y + g, b.max.z + g),
@@ -211,6 +214,8 @@ pub fn meshes_for(world: &World, declared: Option<&str>) -> Vec<MeshedFixture> {
         // #864: a fixture imported coarser than promised is judged by its
         // (grown) box alone - its mesh is never trusted to acquit a hit.
         .filter(|(_, e)| crate::model_fidelity::chord_of(world, e).is_none())
+        .filter(|(_, e)| def_of(world, e).and_then(|d| d.profile)
+            .is_none_or(|p| p.collision_chord_error() == 0.0))
         .filter_map(|(name, e)| {
             let b = model::entity_world_aabb(world, &e)?;
             let tris = model::world_facets(world, &e)?;

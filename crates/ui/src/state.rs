@@ -4065,7 +4065,7 @@ impl State {
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
                     let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget)) {
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget).with_step_source(command.step_source)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);

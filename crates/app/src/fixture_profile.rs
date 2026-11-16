@@ -165,6 +165,16 @@ impl FixtureProfile {
         Ok(Mesh::from_facets(tris))
     }
 
+    /// Bound the visual mesh approximation error for collision checks.
+    /// A positive bound prevents the mesh from clearing a fixture box hit.
+    #[must_use]
+    pub fn collision_chord_error(&self) -> f64 {
+        match self {
+            Self::Spun { .. } => camcraft_geometry::profile_mesh::spun_chord_error(&self.to_half()),
+            Self::Extruded { .. } => camcraft_geometry::profile_mesh::profile_chord_error(&self.to_closed().points, true),
+        }
+    }
+
     /// Validate profile coordinates, arc parameters, and manifold constraints.
     pub fn check(&self) -> Result<(), String> {
         self.mesh().map(|_| ())

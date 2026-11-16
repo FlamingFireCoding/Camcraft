@@ -19,7 +19,7 @@ use camcraft_app::fixture;
 use camcraft_app::fixture_library::{self, DatumChoice, entry_from_model};
 use camcraft_app::fixture_profile::{ExtrudeAxis, FixtureProfile, ProfilePoint};
 use camcraft_app::fixture_struck;
-use camcraft_app::fixture_view::{self, MeshState};
+use camcraft_app::fixture_view::{self, BoxReason, MeshState};
 use camcraft_app::geometry::{IDENTITY_Q, Point3};
 use camcraft_app::model;
 use camcraft_app::operation::{Height, OpParams, SrcRef};
@@ -69,7 +69,7 @@ fn spun_dxf_fixture_imports_meshes_edits_and_roundtrips() {
     let name = cmd.name().to_owned();
     history.execute(&world, cmd);
 
-    assert_eq!(fixture_view::mesh_states(&world, None), [(name.clone(), MeshState::Mesh)]);
+    assert_eq!(fixture_view::mesh_states(&world, None), [(name.clone(), MeshState::BoxOnly(BoxReason::ProfileChord))]);
     let e = model::find_by_name(&world, &name).expect("chuck entity");
     let rev1 = model::rev_of(&world, &e);
     let bb1 = model::entity_world_aabb(&world, &e).expect("aabb");

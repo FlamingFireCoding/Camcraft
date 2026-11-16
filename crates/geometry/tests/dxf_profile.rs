@@ -209,3 +209,33 @@ fn dxf_profile_malformed_inputs_give_named_errors_never_panic() {
     let _ = ClosedProfile { points: vec![] };
     let _ = PI;
 }
+
+#[test]
+fn dxf_profile_all_segments_dropped_returns_named_refusal_for_both_imports() {
+    let dxf = dxf_wrap(4, "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n20\n21\n0\n0\nLINE\n8\nPROFILE\n10\n0\n20\n0\n11\n0.0000000001\n21\n0\n");
+    for error in [
+        extruded_from_dxf(dxf.as_bytes(), Some(10.0)).unwrap_err(),
+        spun_from_dxf(dxf.as_bytes()).unwrap_err(),
+    ] {
+        assert_eq!(error.to_string(), "DXF profile contains no non-degenerate segments");
+    }
+}
+
+#[test]
+fn closed_annular_spun_section_preserves_closing_edge_and_bulge_on_dxf_roundtrip() {
+    for bulge in [0.0, 0.25] {
+        let dxf = dxf_wrap(4, &format!("0\nLINE\n8\nCENTRELINE\n10\n-5\n20\n0\n11\n15\n21\n0\n0\nLWPOLYLINE\n8\nPROFILE\n90\n4\n70\n1\n10\n0\n20\n10\n10\n10\n20\n10\n10\n10\n20\n20\n10\n0\n20\n20\n42\n{bulge}\n"));
+        let half = spun_from_dxf(dxf.as_bytes()).expect("closed annular section imports");
+        assert_eq!(half.points.len(), 5, "closure is explicit");
+        assert_eq!(half.points[3].bulge, bulge, "closing edge retains its bulge");
+        assert_eq!((half.points[0].u, half.points[0].v), (half.points[4].u, half.points[4].v));
+        let facets = spun_mesh(&half).expect("annular solid");
+        assert_closed_outward_solid(&facets, "annular section");
+        // The bore remains empty; closure must not substitute axis endpoints.
+        assert!(facets.iter().flat_map(|t| [t.a, t.b, t.c]).all(|p| p.x.hypot(p.y) >= 10.0 - 1e-6));
+        let written = spun_to_dxf(&half).expect("annular DXF export");
+        let again = spun_from_dxf(written.as_bytes()).expect("annular DXF reimport");
+        assert_eq!(again.points, half.points);
+        assert_closed_outward_solid(&spun_mesh(&again).unwrap(), "roundtripped annulus");
+    }
+}

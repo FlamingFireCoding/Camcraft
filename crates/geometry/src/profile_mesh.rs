@@ -13,6 +13,47 @@ const DEDUP_TOL: f64 = 1e-6;
 const CROSS_TOL: f64 = 1e-8;
 const AREA_MIN: f64 = 1e-6;
 
+fn arc_steps(theta: f64) -> usize {
+    ((theta.abs() / (10.0_f64.to_radians())).ceil() as usize).clamp(4, 72)
+}
+
+/// Upper bound on the distance from a curved profile to its flattened edges.
+/// Each circular subarc differs from its chord by at most its sagitta.
+#[must_use]
+pub fn profile_chord_error(points: &[ProfileVertex], closed: bool) -> f64 {
+    let count = if closed { points.len() } else { points.len().saturating_sub(1) };
+    (0..count).filter_map(|i| {
+        let a = points.get(i)?;
+        let b = points.get((i + 1) % points.len())?;
+        let chord = (b.u - a.u).hypot(b.v - a.v);
+        if a.bulge == 0.0 { return Some(0.0); }
+        // flatten_edges omits arcs below its numeric thresholds. Bound
+        // those by the whole edge sagitta instead of a sampled subarc.
+        if a.bulge.abs() <= 1e-9 || chord <= DEDUP_TOL {
+            return Some(chord * a.bulge.abs() * 0.5 + DEDUP_TOL);
+        }
+        let theta = 4.0 * a.bulge.atan();
+        let radius = chord * (1.0 + a.bulge * a.bulge) / (4.0 * a.bulge.abs());
+        Some(radius * (1.0 - (theta / (2.0 * arc_steps(theta) as f64)).cos()) + DEDUP_TOL)
+    }).fold(0.0, f64::max)
+}
+
+/// Upper bound for both section flattening and azimuthal revolution chords.
+/// The original section radius cannot exceed its endpoint radius plus the
+/// whole edge sagitta. Rotation preserves the section approximation error.
+#[must_use]
+pub fn spun_chord_error(profile: &HalfProfile) -> f64 {
+    let section_error = profile_chord_error(&profile.points, false);
+    let radius = profile.points.windows(2).map(|edge| {
+        let a = edge[0];
+        let b = edge[1];
+        a.v.max(b.v) + (b.u - a.u).hypot(b.v - a.v) * a.bulge.abs() * 0.5
+    }).fold(0.0, f64::max);
+    // spun_loop snaps radii within 0.1 um to the axis. Include that
+    // normalization and flattening deduplication in the bound.
+    section_error + radius * (1.0 - (TAU / (2.0 * REVOLVE_RING as f64)).cos()) + 1e-4 + DEDUP_TOL
+}
+
 /// Flatten consecutive `(p0 -> p1, bulge)` edge into intermediate points `[p0, ...]`.
 pub(crate) fn flatten_edges(points: &[ProfileVertex], closed: bool) -> Result<Vec<[f64; 2]>, ProfileError> {
     if points.len() < 2 {
@@ -45,7 +86,7 @@ pub(crate) fn flatten_edges(points: &[ProfileVertex], closed: bool) -> Result<Ve
                 let cy = 0.5 * (a.v + b.v) + ny * h;
                 let radius = (a.u - cx).hypot(a.v - cy);
                 let a0 = (a.v - cy).atan2(a.u - cx);
-                let steps = ((theta.abs() / (10.0_f64.to_radians())).ceil() as usize).clamp(4, 72);
+                let steps = arc_steps(theta);
                 for s in 1..steps {
                     let ang = a0 + theta * (s as f64 / steps as f64);
                     push_unique(&mut out, [cx + radius * ang.cos(), cy + radius * ang.sin()]);
