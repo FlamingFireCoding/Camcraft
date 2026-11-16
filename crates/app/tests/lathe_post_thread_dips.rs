@@ -352,3 +352,26 @@ fn dips_ride_the_command_door_the_stream_and_the_project_file() {
     let _ = std::fs::remove_file(&file);
     assert!(!saved.contains("\"dips\"") && !saved.contains("chip_break_dips"), "no dips key on a plain thread");
 }
+
+#[test]
+fn every_dip_dimension_changes_the_operation_stamp() {
+    let (world, _history) = thread_world(dips());
+    let e = camcraft_app::model::find_by_name(&world, "TH1").expect("op");
+    let op = camcraft_app::model::operation_of(&world, &e).expect("an operation");
+    let stamp = camcraft_app::operation::op_stamp(&world, &op, "TH1");
+    for (dimension, changed) in [
+        ("interval", ThreadDips { interval: 6.0, ..dips().dips }),
+        ("height", ThreadDips { height: 0.2, ..dips().dips }),
+        ("length", ThreadDips { length: 0.8, ..dips().dips }),
+    ] {
+        let mut edited = op.clone();
+        if let OpParams::Threading { infeed_plan, .. } = &mut edited.params {
+            infeed_plan.dips = changed;
+        }
+        assert_ne!(
+            camcraft_app::operation::op_stamp(&world, &edited, "TH1"),
+            stamp,
+            "changing dip {dimension} must invalidate the cached path"
+        );
+    }
+}
