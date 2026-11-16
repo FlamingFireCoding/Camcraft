@@ -1115,6 +1115,11 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
             ink,
         );
         let clicked = resp.clicked();
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, caption));
+        ui.ctx().accesskit_node_builder(resp.id, |b| {
+            b.set_role(egui::accesskit::Role::Tab);
+            b.set_selected(active);
+        });
         resp.on_hover_text(format!("{caption} workspace - mounts {machine} (undoable)"));
         if clicked {
             machine_modes::set_machine_mode(state, kind);
@@ -1187,7 +1192,10 @@ pub fn ribbon(
         // proves it.
         let gated = resp.clicked() && !fired && matches!(c, Cmd::Create(_));
         let pin = resp.secondary_clicked();
-        resp.on_hover_text(tip_of(c, state));
+        let tip = tip_of(c, state);
+        ui.ctx()
+            .accesskit_node_builder(resp.id, |b| b.set_description(tip.as_str()));
+        resp.on_hover_text(tip);
         if fired {
             run_cmd(c, state);
         }
@@ -1263,6 +1271,7 @@ pub fn ribbon(
                                 Cmd::Create(i) => TYPES.get(i).copied().unwrap_or("op"),
                                 other => label_of(other),
                             };
+                            painted::menu_item(&resp, label, en, None);
                             // The kind's own glyph at the row's left edge,
                             // in the row's ink - the door lists operations
                             // the way the tree shows them. Headless frames
@@ -1415,6 +1424,7 @@ pub fn ribbon(
                             } else {
                                 machine_modes::mode_label(*kind)
                             };
+                            painted::menu_item(&resp, &label, !current, Some(current));
                             p.text(
                                 r.left_center() + Vec2::new(8.0, 0.0),
                                 egui::Align2::LEFT_CENTER,
