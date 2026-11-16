@@ -299,6 +299,11 @@ impl WcsYaw {
         Ok(saved)
     }
 
+    /// Map a generated location back into Setup `S`, including break-through notes.
+    pub(super) fn exit_point(self, point: Point3) -> Point3 {
+        Rot2::new(self.origin, self.yaw_rad).p3(point)
+    }
+
     /// Map a generated `W_gen` region back into Setup `S` (`+yaw` about `origin`).
     pub(super) fn exit_region(self, reg: &Region) -> Result<Region, GenError> {
         Rot2::new(self.origin, self.yaw_rad).region(reg)

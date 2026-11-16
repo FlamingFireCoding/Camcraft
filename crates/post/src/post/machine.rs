@@ -202,6 +202,16 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
             eo.insert("pickup".to_owned(), json!(e.pickup));
             eo.insert("conditions".to_owned(), serde_json::to_value(&e.conditions).unwrap_or_else(|_| json!([])));
         }
+        // #1499: a wire's stated tank and flushing, as their words - only
+        // when stated, so a mirror that states neither is main's.
+        if let (Some(e), Some(eo)) = (m.edm.as_ref(), edm.as_object_mut()) {
+            if let Some(t) = e.tank {
+                eo.insert("tank".to_owned(), json!(t.word()));
+            }
+            if let Some(f) = e.flushing {
+                eo.insert("flushing".to_owned(), json!(f.word()));
+            }
+        }
         o.insert("edm".to_owned(), edm);
     }
     let inverted = m.inverted_axes();
