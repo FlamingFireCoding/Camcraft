@@ -95,7 +95,7 @@ pub fn cell(
         painter.image(tex.id(), r, UV_FULL, tint);
     }
     let ink = if enabled { pal.text } else { pal.text_faint };
-    // The label shrinks to fit its cell (down to MIN_LABEL_PX) so a short
+    // The label shrinks to fit its cell (down to the theme's font_label_min) so a short
     // word reads whole at the narrow 1280 px cell (#948); only a label
     // that still does not fit at the floor truncates with an ellipsis, so
     // it can never collide with the neighbour's.
@@ -110,9 +110,6 @@ pub fn cell(
     );
     resp
 }
-
-/// The smallest default ribbon caption/label size (px); below it a label elides instead.
-pub const MIN_LABEL_PX: f32 = 10.0;
 
 /// Lay `label` out on one line at the largest whole size from `start_px`
 /// down to `min_px` whose width fits `max_w`; at the floor it truncates
