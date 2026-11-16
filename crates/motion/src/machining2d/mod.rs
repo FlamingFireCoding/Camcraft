@@ -148,7 +148,7 @@ pub(crate) use adaptive::PLAN_SAG;
 // The HSM planner's door, its arc proofs and its microlift link, read
 // by the 3-D ladder's per-level port (`machining3d::hsm`, M11.4).
 pub(crate) use adaptive::Return;
-pub(crate) use arc_cross::crossing_free;
+pub(crate) use arc_cross::{crossing_free, moves_cross_prior, seg_crosses_prior};
 pub(crate) use arc_proof::{ProofTally, fit_proved};
 pub(crate) use arcs::push_segs;
 pub(crate) use microlift::link_at as microlift_link;
