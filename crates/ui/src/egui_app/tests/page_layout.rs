@@ -44,7 +44,7 @@ fn assert_page_layout(h: &H, page: &str, anchors: &[&str]) {
     };
     let mut last: Option<(&str, f32)> = None;
     for a in anchors {
-        let Some(node) = h.query_by_label(a) else {
+        let Some(node) = h.query_all_by_label(a).find(|node| leaf.contains(node.rect().center())) else {
             panic!("{page} page: no widget labelled {a:?}");
         };
         let r = node.rect();

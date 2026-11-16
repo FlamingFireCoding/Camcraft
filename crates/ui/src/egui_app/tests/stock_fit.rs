@@ -28,7 +28,11 @@ fn stock_fit_controls_follow_the_selected_shape() {
     let active = camcraft_app::setup::active(&h.state().state.world);
     let stock = camcraft_app::setup::stock_entity_name(&h.state().state.world, active.as_deref());
     assert!(model::find_by_name(&h.state().state.world, &stock).is_some());
-    h.get_by_label("Delete").click();
+    let properties = super::layout::leaf_rect(&h.state().dock, &Tab::Properties).expect("Properties is laid out");
+    h.get_all_by_label("Delete")
+        .find(|node| properties.contains(node.rect().center()))
+        .expect("stock Delete is in Properties")
+        .click();
     h.run_steps(2);
     assert!(model::find_by_name(&h.state().state.world, &stock).is_none(), "Delete still deletes stock");
     h.get_by_label("Box").click();
