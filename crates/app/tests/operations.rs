@@ -1401,8 +1401,12 @@ fn threaded_batch_matches_the_serial_loop_bit_for_bit() {
         let world = new_world();
         let mut history = History::default();
         // Box stock: what every Entity-source op reads at collect
-        // time as the swarf column around the smaller model.
-        box_stock(&world, &mut history, 60.0, 60.0, 20.0);
+        // time as the swarf column around the smaller model. It stands
+        // to the cube's top, Z 5 (#96, #1924): the pocket starts at 5,
+        // and the old 20 mm block left uncut stock from Z 5 to 20, where
+        // the ball's Ø8 shank (15 mm above the tip) would sit at Bottom
+        // Z 0 - #1844's reach law rightly refuses that.
+        box_stock(&world, &mut history, 60.0, 60.0, 5.0);
         add_tool(&world, &mut history, "EM-0400-2FL");
         add_tool(&world, &mut history, "BN-0600");
         history.execute(
@@ -6637,6 +6641,7 @@ fn stub_tool() -> Tool {
         flutes: None,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
         outline: Vec::new(),
