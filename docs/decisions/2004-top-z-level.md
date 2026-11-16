@@ -157,6 +157,25 @@
     | `turning_face_approach::every_facing_retract_lifts_z...` | the pass at the stock end Z 16 is air (item 5); passes `[15.5, 15]` |
     | `turning_face_seed::a_seeded_facing_faces_the_allowance_not_the_part` | passes `[49.5 .. 48]`; the full 2 mm is removed |
     | `wall_arc_entry` (6 tests) | stock top 20 is Top Z; one level and one fan fewer; the second level now plunges onto Z 15; each entry's last rapid ends at Z 20 or above (new assert) |
+12. Round 10, the floor review of head `68b5315c8`. Rest Adaptive
+    (`crates/motion/src/machining2d/adaptive/rest/mod.rs`, from `main`)
+    called `cut_levels`. In a rest operation the stock that the earlier
+    operations left stands over the rest Top Z. A plain `cut_levels`
+    dropped the level at Top Z, and the band Z-2..Z-4 of the
+    `rest_adaptive` fixtures had no cut and no refusal.
+    - Chosen: `cut_levels_under(top_z, material_top.or(Some(INFINITY)),
+      ...)`. With no material top stated, the rest ladder keeps the plane
+      at Top Z (the pre-#2004 ladder). A material top that is stated and
+      is at or under Top Z still drops it, as for the other callers.
+    - Dropped: to read the top from `RestStock`. The rest stock holds
+      floors (proved depths), not a top Z, so it cannot state one. The
+      safe default "material over Top Z" can only add a level that cuts
+      air; it never leaves material.
+    - Pinned by `adaptive::rest::tests::the_first_rest_level_at_top_z_is_cut_without_a_stated_material_top`
+      and the 4 `rest_adaptive` tests of the review.
+    - The merge of `main` regenerated `examples/first-router-part.camproj`
+      with `WRITE_GOLDEN=1` (main moved the stamp salt to
+      `camcraft-op-stamp-v3`); the stamps were not merged by hand.
 
 **Why:** a level at the material top removes nothing and doubles the cycle
 time of a one-level cut (the maintainer's report on v0.21.0). The fix at the
