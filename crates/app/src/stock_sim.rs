@@ -124,10 +124,7 @@ pub fn stock_grid(
             // The analytic grids are built origin-centered; the stock
             // entity's place moves the lattice itself, so the moves
             // stay in the world frame the viewport and post read.
-            d.x0 += loc.pos.x;
-            d.y0 += loc.pos.y;
-            d.stock_z += loc.pos.z;
-            d.translate_finite(loc.pos.z); // stored heights ride with it
+            d.translate_origin(loc.pos.x, loc.pos.y, loc.pos.z);
             d
         }
     };

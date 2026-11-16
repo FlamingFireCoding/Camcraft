@@ -95,13 +95,19 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
-/// v63 (#2015): a tool's cutting data holds an `unknown` row and rows
+/// v63 (#1557): a Drill, Bore or Thread may state its through-hole
+/// break-through (`break_through`). Absent is the kind's default - what
+/// every v62 file posted - so a v62 file steps up unchanged. An old
+/// reader must refuse a v63 file rather than drop a stated break-through
+/// and run the tip its default 1.0 mm past the floor, into what the
+/// user kept it out of.
+/// v64 (#2015): a tool's cutting data holds an `unknown` row and rows
 /// may state a stepdown and a stepover; a setup's stock may state its
 /// workpiece material. An old reader must refuse the file rather than
-/// drop the rows or the stock material the feeds were picked by. A v62
+/// drop the rows or the stock material the feeds were picked by. A v63
 /// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
 /// row (derived at read).
-pub const PROJECT_VERSION: u32 = 63;
+pub const PROJECT_VERSION: u32 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
