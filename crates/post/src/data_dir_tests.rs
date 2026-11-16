@@ -17,7 +17,7 @@ fn dirs(accept: &[&str]) -> impl Fn(&Path) -> bool {
 }
 
 const EXE: &str = "/opt/cc/target/release/camcraft-ui.exe";
-const USER: &str = "/home/u/.local/share/camcraft";
+const FINGERPRINT: &str = "/opt/cc/target/release/.fingerprint";
 const MANIFEST: &str = "/src/camcraft/crates/post";
 
 /// A fresh, empty scratch directory for one test.
@@ -29,23 +29,35 @@ fn scratch(tag: &str) -> PathBuf {
 }
 
 #[test]
-fn the_order_is_exe_user_dev_manifest() {
-    let got = candidates("posts", Some(&p(EXE)), Some(&p(USER)), Some(&p(MANIFEST)));
+fn the_order_is_exe_dev_manifest_in_a_cargo_tree() {
+    let got = candidates("posts", Some(&p(EXE)), Some(&p(MANIFEST)), &dirs(&[FINGERPRINT]));
     assert_eq!(
         got,
-        vec![
-            p("/opt/cc/target/release/assets/posts"),
-            p("/home/u/.local/share/camcraft/assets/posts"),
-            p("/opt/cc/assets/posts"),
-            p("/src/camcraft/assets/posts"),
-        ]
+        vec![p("/opt/cc/target/release/assets/posts"), p("/opt/cc/assets/posts"), p("/src/camcraft/assets/posts")]
     );
+    let test_bin = p("/opt/cc/target/debug/deps/posting-1234.exe");
+    let got = candidates("posts", Some(&test_bin), Some(&p(MANIFEST)), &dirs(&["/opt/cc/target/debug/.fingerprint"]));
+    assert_eq!(got.last(), Some(&p("/src/camcraft/assets/posts")), "a test binary in deps/ finds the source tree");
+}
+
+/// Review of #2293: an installed exe never falls back to the build
+/// machine's checkout or to `<exe>/../../assets` (`/usr/assets`, `C:/assets`).
+#[test]
+fn an_installed_exe_without_assets_is_refused_not_redirected() {
+    for exe in ["/usr/lib/camcraft/camcraft-ui", "/Program Files/CamCraft/camcraft-ui.exe"] {
+        let exe = p(exe);
+        assert_eq!(candidates("posts", Some(&exe), Some(&p(MANIFEST)), &|_| false).len(), 1, "{}", exe.display());
+        let elsewhere = dirs(&["/usr/assets/posts", "/assets/posts", "/src/camcraft/assets/posts"]);
+        let why = resolve("posts", Some(&exe), Some(&p(MANIFEST)), elsewhere).expect_err("no assets beside the exe");
+        assert!(why.starts_with("no posts folder found"), "{why}");
+        assert!(!why.contains("src"), "{why}");
+    }
 }
 
 #[test]
-fn beside_the_exe_wins_over_the_user_copy() {
-    let both = dirs(&["/opt/cc/target/release/assets/machines", "/home/u/.local/share/camcraft/assets/machines"]);
-    let got = resolve("machines", Some(&p(EXE)), Some(&p(USER)), None, both);
+fn beside_the_exe_wins_over_the_source_tree() {
+    let both = dirs(&["/opt/cc/target/release/assets/machines", "/src/camcraft/assets/machines", FINGERPRINT]);
+    let got = resolve("machines", Some(&p(EXE)), Some(&p(MANIFEST)), both);
     assert_eq!(got, Ok(p("/opt/cc/target/release/assets/machines")));
 }
 
@@ -53,33 +65,20 @@ fn beside_the_exe_wins_over_the_user_copy() {
 fn the_macos_bundle_resources_are_found() {
     let exe = p("/Applications/CamCraft.app/Contents/MacOS/camcraft-ui");
     let want = "/Applications/CamCraft.app/Contents/Resources/assets/posts";
-    assert_eq!(resolve("posts", Some(&exe), None, None, dirs(&[want])), Ok(p(want)));
-}
-
-#[test]
-fn the_user_data_root_follows_each_platform() {
-    let env = |k: &str| match k {
-        "APPDATA" => Some(OsString::from(p("/Users/u/AppData/Roaming"))),
-        "HOME" => Some(OsString::from(p("/home/u"))),
-        _ => None,
-    };
-    assert_eq!(user_data_for("windows", env), Some(p("/Users/u/AppData/Roaming/camcraft")));
-    assert_eq!(user_data_for("linux", env), Some(p("/home/u/.local/share/camcraft")));
-    assert_eq!(user_data_for("macos", env), Some(p("/home/u/Library/Application Support/camcraft")));
-    assert_eq!(user_data_for("linux", |_| None), None);
+    assert_eq!(resolve("posts", Some(&exe), None, dirs(&[want])), Ok(p(want)));
 }
 
 /// Done means (#2282): a test pins the error for a missing directory.
 #[test]
 fn a_missing_directory_is_a_named_error_not_a_crash() {
-    let why = resolve("posts", Some(&p(EXE)), Some(&p(USER)), None, dirs(&[])).expect_err("nothing exists");
+    let why = resolve("posts", Some(&p(EXE)), None, dirs(&[])).expect_err("nothing exists");
     assert!(why.starts_with("no posts folder found"), "{why}");
     assert!(why.contains("assets/posts directory beside the executable"), "{why}");
-    let first = candidates("posts", Some(&p(EXE)), None, None)[0].display().to_string();
+    let first = candidates("posts", Some(&p(EXE)), None, &|_| false)[0].display().to_string();
     assert!(why.contains(&first), "{why}");
     let files = DataFiles::new(Err(why.clone()));
     assert_eq!(files.read("fanuc.cps").map(|_| ()), Err(why), "a read names the missing directory");
-    let none = resolve("machines", None, None, None, dirs(&[])).expect_err("no exe path");
+    let none = resolve("machines", None, None, dirs(&[])).expect_err("no exe path");
     assert!(none.contains("nowhere"), "{none}");
 }
 
@@ -125,4 +124,21 @@ fn the_dev_run_finds_the_repository_assets() {
         assert!(dir.join(file).is_file(), "{}", dir.display());
         assert!(!files.read(file).expect("reads").is_empty());
     }
+}
+
+/// The 4 MiB hostile-input cap: a file of exactly `MAX_BYTES` reads, one
+/// byte more is refused by name (zero bytes are valid UTF-8, so only the
+/// cap can refuse it).
+#[test]
+fn a_file_over_the_size_cap_is_refused_by_name() {
+    let dir = scratch("cap");
+    let at = std::fs::File::create(dir.join("at.cps")).expect("create");
+    at.set_len(MAX_BYTES).expect("size");
+    let over = std::fs::File::create(dir.join("over.cps")).expect("create");
+    over.set_len(MAX_BYTES + 1).expect("size");
+    drop((at, over));
+    assert_eq!(read_file(&dir, "at.cps").map(|t| t.len() as u64), Ok(MAX_BYTES));
+    let why = read_file(&dir, "over.cps").expect_err("over the cap");
+    assert!(why.starts_with("over.cps in ") && why.contains("byte limit - refused"), "{why}");
+    let _ = std::fs::remove_dir_all(dir);
 }

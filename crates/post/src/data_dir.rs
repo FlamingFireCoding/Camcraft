@@ -11,10 +11,16 @@
 //! 1. `<exe dir>/assets/<kind>` - the zip, the installer, the Linux
 //!    tarball, deb/rpm (`/usr/lib/camcraft`), AppImage, flatpak, snap;
 //! 2. `<app>/Contents/Resources/assets/<kind>` - the macOS app bundle;
-//! 3. `<per-user data dir>/camcraft/assets/<kind>` - a user copy;
-//! 4. `<exe dir>/../../assets/<kind>` - a dev run from `target/<profile>/`;
-//! 5. `<this crate>/../../assets/<kind>` - the source tree, for the test
+//! 3. `<exe dir>/../../assets/<kind>` - a dev run from `target/<profile>/`;
+//! 4. `<this crate>/../../assets/<kind>` - the source tree, for the test
 //!    binaries in `target/*/deps/` (a path, not a compiled-in copy).
+//!
+//! Candidates 3 and 4 apply only when the exe is in a cargo build tree
+//! (its folder, or the folder above `deps`/`examples`, holds cargo's
+//! `.fingerprint`). An installed exe without its `assets/<kind>` folder
+//! is refused by name: it never reads the build machine's checkout, nor
+//! `/usr/assets` or `C:\assets`. There is no per-user copy: it could
+//! shadow the shipped files with no warning (review of #2293).
 //!
 //! No directory found, or a file missing or unreadable in it, is an
 //! `Err` that names the file and the directory - never a panic, never a
@@ -22,12 +28,9 @@
 //! compiled-in copy for `wasm32` only.
 //!
 //! Provenance: our own resolver, specced from the package layouts of
-//! this repository and the platforms' published per-user data locations
-//! (Windows `%APPDATA%`, macOS `~/Library/Application Support`, the XDG
-//! Base Directory spec's `$XDG_DATA_HOME` / `~/.local/share`).
+//! this repository and cargo's documented build-directory layout.
 
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -35,24 +38,23 @@ use std::sync::{Arc, Mutex};
 /// post script is far below it.
 pub const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
-/// The per-user data root for the named platform (`std::env::consts::OS`),
-/// pure so the order is testable without the process environment.
-#[must_use]
-pub fn user_data_for(os: &str, get: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
-    let abs = |k: &str| get(k).map(PathBuf::from).filter(|p| p.is_absolute());
-    let data = match os {
-        "windows" => abs("APPDATA"),
-        "macos" => abs("HOME").map(|h| h.join("Library").join("Application Support")),
-        _ => abs("XDG_DATA_HOME").or_else(|| abs("HOME").map(|h| h.join(".local").join("share"))),
-    }?;
-    Some(data.join("camcraft"))
+/// The profile folder of a cargo build tree that holds `exe_dir`
+/// (`target/<profile>`, or its `deps` / `examples` child), known by
+/// cargo's `.fingerprint` folder in it. `None` for an installed exe.
+pub fn cargo_profile_dir<'a>(exe_dir: &'a Path, is_dir: &dyn Fn(&Path) -> bool) -> Option<&'a Path> {
+    let profile = match exe_dir.file_name().and_then(std::ffi::OsStr::to_str) {
+        Some("deps" | "examples") => exe_dir.parent()?,
+        _ => exe_dir,
+    };
+    is_dir(&profile.join(".fingerprint")).then_some(profile)
 }
 
 /// The directory candidates for one kind (`posts`, `machines`) in
-/// precedence order (see the module doc).
+/// precedence order (see the module doc). `is_dir` decides if the exe is
+/// in a cargo build tree, which alone allows the dev candidates.
 #[must_use]
-pub fn candidates(kind: &str, exe: Option<&Path>, user_data: Option<&Path>, manifest: Option<&Path>) -> Vec<PathBuf> {
-    let mut out = Vec::with_capacity(5);
+pub fn candidates(kind: &str, exe: Option<&Path>, manifest: Option<&Path>, is_dir: &dyn Fn(&Path) -> bool) -> Vec<PathBuf> {
+    let mut out = Vec::with_capacity(4);
     let exe_dir = exe.and_then(Path::parent);
     if let Some(dir) = exe_dir {
         out.push(dir.join("assets").join(kind));
@@ -62,10 +64,10 @@ pub fn candidates(kind: &str, exe: Option<&Path>, user_data: Option<&Path>, mani
             out.push(contents.join("Resources").join("assets").join(kind));
         }
     }
-    if let Some(user) = user_data {
-        out.push(user.join("assets").join(kind));
-    }
-    if let Some(repo) = exe_dir.and_then(Path::parent).and_then(Path::parent) {
+    let Some(profile) = exe_dir.and_then(|d| cargo_profile_dir(d, is_dir)) else {
+        return out;
+    };
+    if let Some(repo) = profile.parent().and_then(Path::parent) {
         out.push(repo.join("assets").join(kind));
     }
     if let Some(repo) = manifest.and_then(Path::parent).and_then(Path::parent) {
@@ -76,14 +78,8 @@ pub fn candidates(kind: &str, exe: Option<&Path>, user_data: Option<&Path>, mani
 
 /// The first candidate `is_dir` accepts, or a sentence that names each
 /// place looked at.
-pub fn resolve(
-    kind: &str,
-    exe: Option<&Path>,
-    user_data: Option<&Path>,
-    manifest: Option<&Path>,
-    is_dir: impl Fn(&Path) -> bool,
-) -> Result<PathBuf, String> {
-    let all = candidates(kind, exe, user_data, manifest);
+pub fn resolve(kind: &str, exe: Option<&Path>, manifest: Option<&Path>, is_dir: impl Fn(&Path) -> bool) -> Result<PathBuf, String> {
+    let all = candidates(kind, exe, manifest, &is_dir);
     if let Some(dir) = all.iter().find(|p| is_dir(p)) {
         return Ok(dir.clone());
     }
@@ -109,14 +105,13 @@ impl DataFiles {
         Self { dir, cache: Mutex::new(HashMap::new()) }
     }
 
-    /// [`resolve`] wired to the running process: the real exe path, the
-    /// real per-user data root, this crate's source tree as the last resort.
+    /// [`resolve`] wired to the running process: the real exe path, and
+    /// this crate's source tree as the last resort of a cargo build tree.
     #[must_use]
     pub fn from_process(kind: &str) -> Self {
         let exe = std::env::current_exe().ok();
-        let user = user_data_for(std::env::consts::OS, |k| std::env::var_os(k));
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        Self::new(resolve(kind, exe.as_deref(), user.as_deref(), Some(manifest), Path::is_dir))
+        Self::new(resolve(kind, exe.as_deref(), Some(manifest), Path::is_dir))
     }
 
     /// The resolved directory, or why none.

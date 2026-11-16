@@ -233,7 +233,7 @@ pub fn shipped_machines() -> Result<&'static [(&'static str, &'static str)], Str
         .map_err(Clone::clone)
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 fn embedded(kind: &str, file: &str) -> Option<&'static str> {
     match (kind, file) {
         ("posts", "fanuc.cps") => Some(include_str!("../../../assets/posts/fanuc.cps")),
@@ -297,5 +297,20 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("machines", "sodick-alc400g.mch") => Some(include_str!("../../../assets/machines/sodick-alc400g.mch")),
         ("machines", "3axis-vmc.mch") => Some(include_str!("../../../assets/machines/3axis-vmc.mch")),
         _ => None,
+    }
+}
+
+/// Review of #2293: the browser list holds every table file, with the
+/// same text as on disk - a post added to a table but not to `embedded`
+/// fails here, not only in the `wasm32` build.
+#[cfg(test)]
+#[test]
+fn the_browser_list_matches_the_disk_tables() {
+    let posts = BUILTINS.iter().map(|(_, f)| ("posts", f.0));
+    let machines = MACHINES.iter().map(|(_, f)| ("machines", f.0)).chain([("machines", DEFAULT_MCH_FILE.0)]);
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    for (kind, file) in posts.chain(machines) {
+        let disk = std::fs::read_to_string(assets.join(kind).join(file)).unwrap_or_else(|e| panic!("{kind}/{file}: {e}"));
+        assert_eq!(embedded(kind, file), Some(disk.as_str()), "{kind}/{file} is missing from embedded() or differs");
     }
 }
