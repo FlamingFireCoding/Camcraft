@@ -187,15 +187,22 @@ fn a_square_bar_program_has_no_g30_rapid_inside_the_corners_circle() {
     let (program, warnings) = post(&world, &records, PostOptions::default());
     assert!(warnings.is_empty(), "{warnings:?}");
     let lines: Vec<&str> = program.lines().collect();
+    let g30: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| **l == "G30").map(|(i, _)| i).collect();
+    assert_eq!(g30.len(), 2, "the program has an approach and departure G30:\n{program}");
+    // Follow motion blocks, skipping tool, spindle and coolant commands.
+    // The departure may carry both X and Z words.
+    let moves: Vec<&&str> = lines[g30[0] + 1..g30[1]]
+        .iter()
+        .filter(|l| matches!(l.split_whitespace().next(), Some("G0" | "G1" | "G2" | "G3")))
+        .collect();
+    assert!(moves.len() >= 2, "distinct approach and departure moves:\n{program}");
     let mut checked = 0;
-    for (i, _) in lines.iter().enumerate().filter(|(_, l)| **l == "G30") {
-        // The X words of the one-axis rapids next to this G30.
-        let near = lines[i.saturating_sub(3)..(i + 3).min(lines.len())].iter().filter(|l| l.starts_with("G0 X") && word(l, 'Z').is_none());
-        for n in near {
-            let x = word(n, 'X').unwrap_or(0.0);
-            assert!(x >= 2.0 * diag() - 1e-3, "a G30 rapid inside the corners' circle: {n}\n{program}");
-            checked += 1;
-        }
+    for (phase, line) in [("approach", moves.first()), ("departure", moves.last())] {
+        let line = line.expect("motion blocks exist");
+        assert!(line.starts_with("G0 "), "the G30 {phase} is rapid: {line}\n{program}");
+        let x = word(line, 'X').expect("the G30 motion states X");
+        assert!(x >= 2.0 * diag() - 1e-3, "a G30 {phase} inside the corners' circle: {line}\n{program}");
+        checked += 1;
     }
-    assert!(checked > 0, "the program has G30 rapids to check:\n{program}");
+    assert_eq!(checked, 2, "both G30 motion blocks were checked:\n{program}");
 }
