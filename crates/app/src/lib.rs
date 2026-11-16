@@ -46,6 +46,7 @@ pub mod mcp;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
+pub mod mesh_open;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;
@@ -136,6 +137,7 @@ pub use camcraft_tools::thread_mill;
 pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;
 pub use camcraft_tools::cutting_rows as tool_cutting_rows;
+pub use camcraft_tools::waterjet as waterjet_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;
 // #93 slice 2: the drawn cutter law, and the tool's stored drawn cutter.
@@ -156,6 +158,8 @@ pub use camcraft_tools::{lathe_holder, lathe_insert_zone};
 // #361: the one door a body file is read through; the lathe placement reads.
 pub mod tool_body_file;
 pub mod tool_body_lathe_view;
+// #361 / #1040: modular multi-piece tool bodies assembled by ISO 13399 CSYS.
+pub mod tool_body_assembly;
 // #743: the simulated tool as the collision laws read it, revolved.
 pub mod sim_tool_body;
 // #1038: a lathe-held body drawn as modelled in the holder law's frame.

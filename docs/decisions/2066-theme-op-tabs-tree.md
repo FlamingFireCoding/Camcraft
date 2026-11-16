@@ -1,0 +1,13 @@
+## #2066 - Themes: operation tab strip and browser tree spacing/glyph sizes
+
+- **What was decided**: Added 18 geometry tokens on `theme::Tokens` (`op_tab_h`, `op_tab_pad_x`, `op_tab_gap`, `op_tab_bottom_gap`, `op_tab_icon_px`, `op_tab_icon_gap`, `op_tab_radius`, `font_op_tab`, `tree_glyph_px`, `tree_inset_x`, `tree_indent`, `tree_eye_reserve`, `tree_pad_x`, `tree_pad_y`, `tree_suffix_gap`, `tree_header_boost`, `font_label_min`, `highlight_stroke_px`), extracted `theme/clamp.rs` and `theme_files/names.rs`, wired `op_tabs`, `painted`, `tree_badges`, `browser_pane`, `op_page` and `geo_page` to read the clamped tokens, and stacked on `#2027`. Built-in `Tokens::DARK` and `Tokens::LIGHT` keep identical pixel defaults to the prior constants.
+- **Why**: JSON theme files previously could not style operation tabs, browser tree indentation/icons/eye reserve, ribbon min-label shrinking, or geometry row highlight radius and stroke. Extracting `theme/clamp.rs` and `theme_files/names.rs` keeps `theme.rs` and `theme_files.rs` under ~400 lines while keeping `GEOM_NAMES` (39 keys) within `MAX_MAP_ENTRIES = 64`. Leaving `painted::caption`'s `MIN_LABEL_PX` untouched avoids conflicting with `#2086`, and leaving `assets/themes/theme.json.example` alone avoids inventing a file owned by `#2038`.
+- **What was considered and dropped**:
+  - Adding separate per-widget stroke tokens (`op_tab_rule_stroke_px`, `drag_rule_stroke_px`, `geo_highlight_stroke_px`): rejected to conserve `GEOM_NAMES` budget under `MAX_MAP_ENTRIES = 64` in favor of a single `highlight_stroke_px` token.
+  - Also rewiring `painted::caption` and its hover-chip helper in `#2066`: dropped because `#2086` already owns `caption`.
+  - Editing `crates/ui/AGENTS.md` or merging without stacking on `#2027`: rejected because `#2027` owns adjacent token additions in `theme.rs`, `theme/tables.rs`, and `theme_files/overlay.rs`.
+- **What it would cost to change later**: Low; splitting `highlight_stroke_px` or renaming keys in `theme_files/names.rs` only affects theme JSON overlay parsing and has compile-time exhaustiveness via `Tokens` fields.
+
+### PR #2095 review: tree control click targets
+
+Clip the eye and setup-radio input rectangles to their own rows. Preserve the painted glyph dimensions. This prevents adjacent rows from receiving each other's clicks when glyphs exceed the row height. Joint token constraints were considered and dropped because large glyphs remain valid theme settings.

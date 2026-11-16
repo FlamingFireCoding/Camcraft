@@ -90,6 +90,9 @@ pub use tool_body_ui::{BodyDraft, BodyPickMode, ToolBodyUi, ZOOM_MAX, ZOOM_MIN, 
 #[path = "state_tool_body_lathe.rs"]
 mod tool_body_lathe_ui;
 pub use tool_body_lathe_ui::{LatheBodyDraft, LatheDraft};
+#[path = "state_tool_body_assembly.rs"]
+mod tool_body_assembly_ui;
+pub use tool_body_assembly_ui::AssemblyUi;
 #[path = "state_tool_profile.rs"]
 mod tool_profile_ui;
 #[path = "state_tool_cutter.rs"]
@@ -291,6 +294,19 @@ pub enum CommandKind {
     SetLatheToolBody {
         name: String,
         body: LatheBodyDraft,
+    },
+    /// #361 / #1040: attach a modular piece onto a tool's landed body
+    /// as one `SetToolBody::attach_piece`.
+    AttachToolBodyPiece {
+        name: String,
+        path: PathBuf,
+        place: camcraft_app::tool_body_assembly::PiecePlace,
+    },
+    /// #361 / #1040: remove a piece from a multi-piece tool body
+    /// assembly as one `SetToolBody::remove_piece`.
+    RemoveToolBodyPiece {
+        name: String,
+        index: usize,
     },
     /// #93: set a milling tool's drawn spun holder (`Some` points) or
     /// return it to its parametric cylinder (`None`) - the tool editor's
@@ -1047,6 +1063,8 @@ pub struct ToolUi {
     pub pitch: f64,
     /// A single-form thread mill's finest pitch (#894); inert elsewhere.
     pub pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    pub thread_hand: camcraft_app::tools::ThreadHand,
     /// Insert nose radius; the turning kind's cutting ball, inert on
     /// the mills (the app's `Tool` field's law, mirrored).
     pub nose_radius: f64,
@@ -1086,6 +1104,9 @@ pub struct ToolUi {
     /// #891: the turning cutting data (Vc, f/rev, max rpm), None = not
     /// stated - carried so an Apply never drops it.
     pub turning: Option<camcraft_app::tools::TurningData>,
+    /// #1152: a sinker body electrode's section - carried so an Apply
+    /// never turns the body into the rectangle of its two sizes.
+    pub outline: Vec<[f64; 2]>,
 }
 
 impl Default for ToolUi {
@@ -1121,12 +1142,14 @@ impl ToolUi {
                 ToolKind::Electrode => 13,
                 ToolKind::ThreadMill => 14,
                 ToolKind::ThreadMillSingle => 15,
+                ToolKind::Waterjet => 16,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
             tip_angle: t.tip_angle,
             pitch: t.pitch,
             pitch_min: t.pitch_min,
+            thread_hand: t.thread_hand,
             nose_radius: t.nose_radius,
             width: t.width,
             flute_len: t.flute_len,
@@ -1148,6 +1171,7 @@ impl ToolUi {
             notes: t.catalog.notes.clone().unwrap_or_default(),
             cutting: t.cutting.clone(),
             turning: t.turning,
+            outline: t.outline.clone(),
         }
     }
 
@@ -1171,6 +1195,7 @@ impl ToolUi {
             13 => ToolKind::Electrode,
             14 => ToolKind::ThreadMill,
             15 => ToolKind::ThreadMillSingle,
+            16 => ToolKind::Waterjet,
             _ => ToolKind::EndMill,
         }
     }
@@ -1205,6 +1230,7 @@ impl ToolUi {
             tip_angle: self.tip_angle,
             pitch: self.pitch,
             pitch_min: self.pitch_min,
+            thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,
@@ -1222,6 +1248,7 @@ impl ToolUi {
             catalog: self.catalog(),
             cutting: self.cutting.clone(),
             turning: self.turning,
+            outline: self.outline.clone(),
         };
         tool.corner_r = tool.tip_corner_r();
         tool
@@ -1242,6 +1269,7 @@ pub fn quat_yaw_deg(q: [f64; 4]) -> f64 {
 pub enum DragMode {
     Orbit,
     Pan,
+    Zoom,
 }
 
 /// Where a Face/Edge viewport pick lands while the Boundary group is
@@ -1404,6 +1432,9 @@ pub enum Panel {
     /// The Machines pane (#287): closed by default, opened from the View
     /// door beside the properties pane.
     Machines,
+    /// The in-app AI Chat pane (#1946): closed by default, opened from the
+    /// View door beside the properties pane.
+    AiChat,
 }
 
 /// A dock-layout ask from the View door, applied by the shell on the
@@ -1414,6 +1445,10 @@ pub enum Panel {
 pub enum LayoutRequest {
     /// Close the panel if open, reopen it at its default side if not.
     Toggle(Panel),
+    /// Open and focus a panel without toggling it closed.
+    Show(Panel),
+    /// Open and focus the independent tool library.
+    ToolLibrary,
     /// Rebuild the default three-pane dock.
     Reset,
 }
@@ -1426,6 +1461,7 @@ pub struct PanelsOpen {
     pub browser: bool,
     pub properties: bool,
     pub machines: bool,
+    pub ai_chat: bool,
 }
 
 impl PanelsOpen {
@@ -1435,6 +1471,7 @@ impl PanelsOpen {
             Panel::Browser => self.browser,
             Panel::Properties => self.properties,
             Panel::Machines => self.machines,
+            Panel::AiChat => self.ai_chat,
         }
     }
 }
@@ -1476,6 +1513,9 @@ pub struct State {
     /// #225: the Feeds tab shows the spindle speed as surface (cutting)
     /// speed instead of rpm. View state - never a command, never saved.
     pub spindle_as_vc: bool,
+    /// Catalog filters are temporary view state, outside the document and history.
+    pub tool_catalog_kind: Option<camcraft_app::tools::ToolKind>,
+    pub tool_catalog_name: String,
     /// #899: how the Tool library page's Import treats a name the
     /// document already has. View state - the import itself is the command.
     pub tool_import_mode: camcraft_app::commands::ImportMode,
@@ -1487,8 +1527,14 @@ pub struct State {
     /// Viewport image rect in logical screen coords; the shell publishes it
     /// each frame, `interact` hit-tests pointer events against it.
     pub viewport_rect: ([f32; 2], [f32; 2]),
-    /// Live viewport drag (orbit/pan), driven by the shell's pointer layer.
+    /// Live viewport drag (orbit/pan/zoom), driven by the shell's pointer layer.
     pub drag: Option<DragMode>,
+    /// The nav tool latched on the viewport's control ribbon: `None`
+    /// keeps the stock gestures (LMB bends into orbit, MMB orbits, RMB
+    /// pans); `Some` hands the next drag to that tool regardless of
+    /// the mouse button (#1198's tool-mode buttons). View state like
+    /// `drag` - not undoable, never saved.
+    pub nav_tool: Option<DragMode>,
     /// #979: the live box-select rubber band (press point, current point),
     /// logical px. View state like `drag` - its release queues one command.
     pub pick_box: Option<[[f32; 2]; 2]>,
@@ -1522,6 +1568,9 @@ pub struct State {
     /// Setups other than the active one whose eye is on (#1494); the active
     /// setup is always drawn. View state, never saved: display only.
     pub shown_setups: Vec<String>,
+    /// The Browser's "Show work envelope" box (#1567): view state, never
+    /// saved, never a command; display only.
+    pub show_work_envelope: bool,
     pub operation_clipboard: Option<OperationClipboard>,
     /// Expanded state of Setup, Models, Tools, and Operations in the browser.
     pub browser_expanded: [bool; 3],
@@ -1664,6 +1713,12 @@ pub struct State {
     /// #183: the live MCP session's inbox when the app was started with
     /// `--mcp-port` / `CAMCRAFT_MCP_PORT`; drained with `pending`.
     pub mcp: Option<camcraft_app::mcp::Inbox>,
+    /// #1946: in-app AI chat panel state (conversations, worker handle, toggles).
+    pub ai_chat: crate::egui_app::ai_chat::AiChatState,
+    /// Sender used by the AI chat worker to dispatch MCP requests in-process.
+    pub ai_mcp_tx: mpsc::Sender<camcraft_app::mcp::Request>,
+    /// In-process AI chat MCP inbox drained alongside `mcp` inside `mcp_host::pump`.
+    pub ai_mcp_inbox: Option<camcraft_app::mcp::Inbox>,
     pub request_quit: bool,
     /// #107: a New / Open / Quit held back because the document has
     /// unsaved changes; while Some, the shell shows the Save / Don't Save
@@ -1754,6 +1809,9 @@ pub struct State {
     /// The Setups page's three-points draft (#555); `Some` routes Vertex
     /// picks into it (and refuses faces and edges by name).
     pub points_pick: Option<crate::points_pick::PointsPick>,
+    /// The Wire Contour page's sync-point pick (#1171); armed, Vertex
+    /// picks state the draft's sync pairs.
+    pub wire_sync: crate::wire_sync_pick::WireSync,
     /// The Setups page's cylinder-angle draft (#771); while it is
     /// collecting, Face picks land in it ahead of everything else.
     pub cylinder_pick: Option<crate::cylinder_pick::CylinderPick>,
@@ -1787,6 +1845,11 @@ pub struct State {
     /// highlight (#1507) reads last frame's answer - a one-frame lag, with a
     /// repaint requested whenever the two differ. Ephemeral, never a command.
     pub geo_hover_drawn: Option<GeoSel>,
+    /// The Geometry-tab rows marked this frame because the viewport pointer
+    /// is over their picked face, chain or vertex (#1519, the reverse of
+    /// `geo_hover`). Cleared at the frame edge, set by the page as it draws
+    /// each row. Ephemeral view state, never a command.
+    pub geo_row_marked: Vec<GeoSel>,
     /// Which named section of the operation page is open (the M1.4 tab
     /// bar, restored after M9.1 B's stack on user feedback). An index into
     /// `egui_app::op_tabs::SECTIONS`. Ephemeral pane state like the drafts
@@ -1795,6 +1858,8 @@ pub struct State {
     /// [`OpUi`]: the drafts rebuild on every sync, and a tab reset on
     /// Apply or on reselecting the same op would read as a bug.
     pub op_tab: usize,
+    /// Whether Properties is the visible dock tab this frame.
+    pub properties_shown: bool,
     pub tool_ui: ToolUi,
     /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
     /// that tool, `Some("")` the blank creation form. Ephemeral window
@@ -1958,6 +2023,7 @@ impl State {
         // here, on the status line - the built-in rows stand regardless.
         let themes = crate::theme_dir::from_process();
         let status = crate::theme_dir::startup_status(&themes, cfg!(target_arch = "wasm32"));
+        let (ai_mcp_tx, ai_mcp_inbox) = camcraft_app::mcp::Inbox::channel();
         State {
             world: new_world(),
             history: History::default(),
@@ -1967,11 +2033,14 @@ impl State {
             debug_info_open: false,
             gpu_line: None,
             spindle_as_vc: false,
+            tool_catalog_kind: None,
+            tool_catalog_name: String::new(),
             tool_import_mode: camcraft_app::commands::ImportMode::default(),
             doc_version: 0,
             selection_version: 0,
             viewport_rect: ([0.0, 0.0], [0.0, 0.0]),
             drag: None,
+            nav_tool: None,
             pick_box: None,
             hover: None,
             hover_mesh: None,
@@ -1983,6 +2052,7 @@ impl State {
             locate_form_drawn: false,
             axis_pick: None,
             points_pick: None,
+            wire_sync: crate::wire_sync_pick::WireSync::default(),
             cylinder_pick: None,
             origin_pick: None,
             axis_rows_shown: false,
@@ -1992,12 +2062,15 @@ impl State {
             incoming_view: Default::default(),
             geo_hover: None,
             geo_hover_drawn: None,
+            properties_shown: true,
+            geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
             hidden_stocks: Vec::new(),
             hidden_offsets: Vec::new(),
             hidden_paths: Vec::new(),
             shown_setups: Vec::new(),
+            show_work_envelope: false,
             operation_clipboard: None,
             browser_expanded: [true; 3],
             cam: Camera::default(),
@@ -2026,7 +2099,7 @@ impl State {
             view_store: None,
             prefs_store: None,
             import_tool_holders: true,
-            panels_open: PanelsOpen { browser: true, properties: true, machines: false },
+            panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
             tree_menu: None,
             retype_confirm: None,
@@ -2035,6 +2108,9 @@ impl State {
             pending: VecDeque::new(),
             picker_in_click: false,
             mcp: None,
+            ai_chat: crate::egui_app::ai_chat::AiChatState::new(),
+            ai_mcp_tx,
+            ai_mcp_inbox: Some(ai_mcp_inbox),
             request_quit: false,
             unsaved_prompt: None,
             discard_confirmed: false,
@@ -2822,14 +2898,77 @@ impl State {
         }
     }
 
+    pub fn set_ai_wake(&mut self, wake: crate::egui_app::ai_chat::WakeFn) {
+        self.ai_chat.set_wake(wake);
+    }
+
+    pub(crate) fn submit_ai_prompt(&mut self) {
+        if self.ai_chat.is_running() {
+            return;
+        }
+        // Each turn owns a fresh receiver. Old worker senders cannot reach a later turn.
+        self.reset_ai_inbox();
+        let snapshot = if self.ai_chat.selected_preset().fallback_mode
+            != camcraft_app::mcp::provider::FallbackMode::Native
+        {
+            self.project_snapshot_json()
+        } else {
+            serde_json::Value::Null
+        };
+        self.ai_chat.submit(
+            &self.world,
+            self.selected_operation(),
+            &self.history,
+            &self.ai_mcp_tx,
+            None,
+            snapshot,
+        );
+    }
+
+    fn reset_ai_inbox(&mut self) {
+        let (tx, inbox) = camcraft_app::mcp::Inbox::channel();
+        self.ai_mcp_tx = tx;
+        self.ai_mcp_inbox = Some(inbox);
+    }
+
+    fn reset_ai_document(&mut self) {
+        self.ai_chat.invalidate_document();
+        self.reset_ai_inbox();
+    }
+
+    fn project_snapshot_json(&mut self) -> serde_json::Value {
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "tools/call",
+            "params": { "name": "get_job", "arguments": {} }
+        })
+        .to_string();
+        let ans = camcraft_app::mcp::answer_live(
+            &self.world,
+            &mut self.history,
+            self.project_path.as_deref(),
+            &req,
+        );
+        let Some(reply) = ans.reply else {
+            return serde_json::json!({});
+        };
+        serde_json::from_str::<serde_json::Value>(&reply)
+            .ok()
+            .and_then(|v| v.get("result")?.get("structuredContent").cloned())
+            .unwrap_or_else(|| serde_json::json!({}))
+    }
+
     /// Run every queued action, then poll the import worker once. Safe to
     /// call every frame; never blocks.
     pub fn drain_actions(&mut self) {
         while let Some(action) = self.pending.pop_front() {
             self.run(action);
         }
+        self.ai_chat.poll(self.history.done_len());
         // #183: an agent's live calls, after the user's own clicks.
         crate::mcp_host::pump(self);
+        self.ai_chat.poll(self.history.done_len());
         self.poll_import();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
@@ -2891,6 +3030,7 @@ impl State {
             CommandKind::OpenModelDialog => self.open_model_dialog(),
             CommandKind::ImportFile(path) => self.import_path(path),
             CommandKind::NewDocument => {
+                self.reset_ai_document();
                 self.abandon_imports();
                 self.project_path = None;
                 self.hidden_stocks.clear();
@@ -3156,6 +3296,12 @@ impl State {
             }
             CommandKind::SetToolBody { name, body } => self.run_set_tool_body(&name, body),
             CommandKind::SetLatheToolBody { name, body } => self.run_set_lathe_tool_body(&name, body),
+            CommandKind::AttachToolBodyPiece { name, path, place } => {
+                self.run_attach_tool_body_piece(&name, &path, place)
+            }
+            CommandKind::RemoveToolBodyPiece { name, index } => {
+                self.run_remove_tool_body_piece(&name, index)
+            }
             CommandKind::SetToolProfile { name, points } => self.run_set_tool_profile(&name, points),
             CommandKind::SetToolCutter { name, points } => self.run_set_tool_cutter(&name, points),
             CommandKind::ReshapeTool { name, tool, points } => self.run_reshape_tool(&name, tool, points),
@@ -3839,7 +3985,7 @@ impl State {
         if !any {
             self.cam = Camera {
                 projection: self.cam.projection,
-                ..Camera::default()
+                ..Camera::default().with_frame(self.cam.frame)
             };
             self.status = String::from("nothing to frame");
             return;
@@ -3853,7 +3999,7 @@ impl State {
             * 3.0f64.sqrt();
         self.cam = Camera {
             projection: self.cam.projection,
-            ..Camera::frame(center, radius)
+            ..Camera::frame(center, radius).with_frame(self.cam.frame)
         };
     }
 
@@ -3952,8 +4098,8 @@ impl State {
                     return;
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
-                    let (coarse, budget) = (command.coarse_mm, command.facet_budget);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_budget(budget)) {
+                    let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
@@ -3972,10 +4118,10 @@ impl State {
                 }
                 // #864: an import kept coarser than promised is said, not
                 // only logged.
-                if let Some(chord) = model::find_by_name(&self.world, &name)
-                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e))
+                if let Some((e, chord)) = model::find_by_name(&self.world, &name)
+                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e).map(|c| (e, c)))
                 {
-                    let said = camcraft_app::model_fidelity::summary(&self.world, chord);
+                    let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
                 }
             }
@@ -4177,6 +4323,7 @@ impl State {
         use camcraft_app::commands::{color_vision_of, color_vision_set, theme_set};
         theme_set(&loaded, &theme_of(&self.world));
         color_vision_set(&loaded, color_vision_of(&self.world));
+        self.reset_ai_document();
         self.abandon_imports();
         self.project_path = None;
         self.hidden_stocks.clear();
@@ -4194,6 +4341,9 @@ impl State {
         self.rename_draft = None;
         self.dragging_op = None;
         self.world = loaded;
+        // #1997: the orbit pivot is the new document's part and stock, never
+        // the old document's target (the envelope is not in the bounds).
+        self.frame_all();
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {

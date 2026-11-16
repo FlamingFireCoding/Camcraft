@@ -47,6 +47,8 @@ var compOff = false;       // the section's first cut has been written
 var cutZ = null;           // the section's one programmed plane (2-axis)
 var awt = false;
 var taper = 0;             // the section's stated taper, degrees (0: vertical)
+var angleWord = false;    // WireAngle is unsupported, including a stated zero
+var controlOffset = false; // a COMP record refuses this section, even before SECTION
 var fourAxis = "";         // the section's 4-axis pairing rule ("": one profile)
 var leaning = false;       // the next move states an upper guide offset
 var machineGood = false;
@@ -145,6 +147,13 @@ function onParameter(name, value) {
   else if (name === "WireTaper" && has(value)) taper = Number(value);
   else if (name === "WireFourAxis") fourAxis = clean(value);
   else if (name === "WireU" || name === "WireV") leaning = true;
+  else if (name === "WireAngle") {
+    angleWord = true;
+    // #1496: guard the move itself even when the section omits WireTaper.
+    // The angle stream's plane/corner mapping is not confirmed for Mark 21.
+    refuse("angle" + opName, who() + "an angle-word move - the Sodick wire post writes a vertical 2-axis cut only; programmed-plane and corner mapping for G51 / G52 A is not confirmed");
+    sectionOk = false;
+  }
   else if (name === "SpindleSpeed" && has(value) && Number(value) > 0) {
     refuse("rpm" + opName, who() + "states " + Math.round(Number(value)) + " rpm - a wire EDM turns no spindle");
   }
@@ -152,6 +161,16 @@ function onParameter(name, value) {
 
 function onToolChange(number, name) {
   refuse("tool" + opName, who() + "changes to tool " + number + " - a wire EDM mounts no tool (the wire is the condition's)");
+}
+
+// #1498: the wire laws judge the generated wire-centre path. No stored
+// H-register value ties a control-offset path to that judged geometry.
+// Refuse every COMP record (including wear and OFF); OFF cannot make a
+// refused section safe again. Section end resets the refusal.
+function onRadiusCompensation() {
+  controlOffset = true;
+  sectionOk = false;
+  refuse("offset" + opName, who() + "Sodick: control-side wire offset (G41/G42 H) is not supported - no verified H-register value is stored; post a generated wire-centre path without control or wear compensation");
 }
 
 // ------------------------------------------------------------- section
@@ -165,7 +184,7 @@ function onSection() {
     refuse("op" + opName, who() + "is not wire EDM work (no EDM condition) - the Sodick wire post posts Wire Contour operations only");
     return;
   }
-  var ok = machineGood;
+  var ok = machineGood && !controlOffset;
   // The manual's condition word: C and three digits (C000 to C999). The
   // operation's condition id is that word; anything else is refused.
   if (!/^C[0-9]{3}$/.test(condition)) {
@@ -177,6 +196,10 @@ function onSection() {
     ok = false;
   } else if (taper !== 0) {
     refuse("taper" + opName, who() + "is tapered - the Sodick wire post writes a vertical 2-axis cut only (no G51 / G52 or A words)");
+    ok = false;
+  }
+  if (angleWord) {
+    refuse("angle" + opName, who() + "an angle-word move - the Sodick wire post writes a vertical 2-axis cut only; programmed-plane and corner mapping for G51 / G52 A is not confirmed");
     ok = false;
   }
   if (!/^G5[4-9]$/.test(wcsWord)) {
@@ -250,6 +273,7 @@ function cutOk(p) {
 }
 
 function onRapid() {
+  var lean = leaning;
   leaning = false;
   if (threaded) {
     refuse("rapid" + opName, who() + "a rapid with the wire threaded through the work - refused");
@@ -257,7 +281,19 @@ function onRapid() {
   }
   // Before the first cut the wire is not threaded: the G00 to the first
   // cut's start (written by startCut) stands for every positioning move.
-  if (!inSection || condition === "") refuse("free" + opName, who() + "a move outside a wire section - refused");
+  if (!inSection || condition === "") {
+    refuse("free" + opName, who() + "a move outside a wire section - refused");
+    return;
+  }
+  // #1497: a positioning move that states an upper guide offset (WireU /
+  // WireV) leans the wire before it is threaded. The G00 this post writes
+  // stands the wire upright, so the lean would be dropped and the cut
+  // threaded at a different pose than the verified one: refuse the
+  // section by name, never thread or cut it.
+  if (lean) {
+    refuse("uvrapid" + opName, who() + "a leaning positioning move (upper guide offset) - the Sodick wire post writes a vertical 2-axis cut only (no G74 / G75 or U V words)");
+    sectionOk = false;
+  }
 }
 
 function onLinear() {
@@ -320,6 +356,8 @@ function onSectionEnd() {
   side = "";
   afterOp = "";
   taper = 0;
+  angleWord = false;
+  controlOffset = false;
   fourAxis = "";
   leaning = false;
 }

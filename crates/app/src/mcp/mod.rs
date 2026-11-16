@@ -15,6 +15,11 @@
 //! and every failure is an MCP tool error (`isError: true`) naming the
 //! reason - never a panic, never a silent success.
 
+pub mod provider;
+mod provider_calls;
+mod fallback;
+mod schema_validation;
+
 mod align_tools;
 mod area;
 mod body_tools;
@@ -38,6 +43,8 @@ mod pick;
 // #979: the box pick, the viewport's Ctrl+drag box select headless.
 mod box_pick;
 mod pockets;
+// #1534: document and per-setup post options (`SetPostOptions` / `SetSetupPostOptions`).
+mod post_options_tools;
 mod render;
 mod setup_tools;
 mod tool_delete;

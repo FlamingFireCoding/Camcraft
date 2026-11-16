@@ -26,8 +26,8 @@ use camcraft_app::world::new_world;
 use flecs_ecs::prelude::World;
 use serde_json::{Value, json};
 
-const STEEL: CuttingRow = CuttingRow { material: WorkMaterial::MildSteel, rpm: 3100.0, feed: 410.0 };
-const BRASS: CuttingRow = CuttingRow { material: WorkMaterial::Brass, rpm: 8200.0, feed: 950.0 };
+const STEEL: CuttingRow = CuttingRow { material: WorkMaterial::MildSteel, rpm: 3100.0, feed: 410.0, waterjet: None };
+const BRASS: CuttingRow = CuttingRow { material: WorkMaterial::Brass, rpm: 8200.0, feed: 950.0, waterjet: None };
 
 fn base() -> Tool {
     catalog().into_iter().find(|(n, _)| *n == "EM-0600-4FL").map(|(_, t)| t).expect("catalog entry")
@@ -69,6 +69,8 @@ fn slot(feed: f64) -> OpParams {
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: None,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 

@@ -35,11 +35,9 @@ use super::theme;
 use super::viewcube;
 
 pub(crate) const VIEW3D_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-/// Ribbon strip height: the cell box plus the caption row and the pad
-/// (`theme::ribbon_h` = `cell_h + 26`), imgui's `height()` formula restated
-/// as one derivation off the token - 61 at the dark defaults. The panel
-/// sizes it live from `theme::current()`; this const is the test fixture's
-/// number (a theme that grows the cells grows the ribbon with it).
+/// Ribbon strip height: the rows and gaps of the theme plus its cell box
+/// (`theme::ribbon_h`) - 88 at the dark defaults. The panel sizes it live
+/// from `theme::current()`; this const is the test fixture's number.
 #[cfg(test)]
 pub(crate) const RIBBON_H: f32 = theme::ribbon_h(&theme::Tokens::DARK);
 /// Status strip height (imgui's single-line bottom bar).
@@ -51,6 +49,8 @@ pub(crate) enum Tab {
     Browser,
     Properties,
     Machines,
+    AiChat,
+    Tools,
 }
 
 impl Tab {
@@ -60,6 +60,8 @@ impl Tab {
             Tab::Browser => "Browser",
             Tab::Properties => "Properties",
             Tab::Machines => "Machines",
+            Tab::AiChat => "AI Chat",
+            Tab::Tools => "Tool library",
         }
     }
 }
@@ -96,6 +98,7 @@ pub(crate) fn shell_layout(
     // imgui App::draw law); the viewport's update_hover and the property-page
     // chip hovers then own it until the pointer moves on.
     state.geo_hover_drawn = state.geo_hover.take();
+    state.geo_row_marked.clear();
     panes::shortcuts(ui, state);
     // #1450: a model file dropped on the window goes through Model's import.
     super::file_drop::take_drop(ui, state);
@@ -129,7 +132,8 @@ pub(crate) fn shell_layout(
     // AFTER it. A pick left armed at a frame's end therefore had its rows
     // on screen that frame, and the next frame's click sees the result:
     // no frame where a hidden draft takes a click.
-    if !layout::is_shown(dock, &Tab::Properties) {
+    state.properties_shown = layout::is_shown(dock, &Tab::Properties);
+    if !state.properties_shown {
         crate::axis_pick::disarm_all(state);
         // #673: the locate draft's form is on that pane too - dropped
         // here, before the dock routes a viewport release to it.
@@ -255,10 +259,12 @@ impl TabViewer for ShellTabs<'_> {
                 let pal = theme::current();
                 pages::properties(ui, self.state, &pal);
             }
+            Tab::Tools => super::tool_library::draw(ui, self.state),
             Tab::Machines => {
                 let pal = theme::current();
                 machines_pane::draw(ui, self.state, &pal);
             }
+            Tab::AiChat => super::ai_chat::draw(ui, self.state),
         }
     }
 }
@@ -280,6 +286,9 @@ fn viewport_panel(
     viewport_points: &mut [f32; 2],
     left_press: &mut Option<[f32; 2]>,
 ) {
+    // The camera orbits in the mounted machine's frame (#1993): a lathe
+    // shows its spindle axis across the screen.
+    crate::view_frame::sync(state);
     // M1.7c move simulation: the timeline is rebuilt from the world on
     // every document change (`cached_script` below, keyed on
     // `doc_version`), which is why a document switch needs no reset -
@@ -467,14 +476,23 @@ fn viewport_panel(
             viewcube::click(state, h, p);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if mid_press {
-                state.drag = Some(DragMode::Orbit);
-            }
-            if right_press {
-                state.drag = Some(DragMode::Pan);
-            }
-            if left_pressed {
-                *left_press = Some(parr(p));
+            if let Some(tool) = state.nav_tool {
+                // A nav tool owns the drag whatever the button is;
+                // a press remembers nothing, so the release's pick
+                // law sees no press to resolve.
+                if left_pressed || mid_press || right_press {
+                    state.drag = Some(tool);
+                }
+            } else {
+                if mid_press {
+                    state.drag = Some(DragMode::Orbit);
+                }
+                if right_press {
+                    state.drag = Some(DragMode::Pan);
+                }
+                if left_pressed {
+                    *left_press = Some(parr(p));
+                }
             }
         }
         if let (Some(steps), Some(p)) = (wheel, pos)
@@ -491,7 +509,7 @@ fn viewport_panel(
     // frame press+release (fast click) is handled here, not at the press.
     if left_released {
         let press = left_press.take();
-        if state.drag == Some(DragMode::Orbit) {
+        if state.drag.is_some() {
             state.drag = None;
         }
         // #979: a pick box's release adds what it holds, as one command.
@@ -520,6 +538,7 @@ fn viewport_panel(
         match state.drag {
             Some(DragMode::Orbit) => state.cam.orbit(motion.x, motion.y),
             Some(DragMode::Pan) => state.cam.pan(motion.x, motion.y),
+            Some(DragMode::Zoom) => state.cam.zoom(-motion.y * 0.05),
             None => {
                 if let Some(b) = state.pick_box.as_mut()
                     && let Some(p) = pos
@@ -589,6 +608,10 @@ fn viewport_panel(
         for (a, b) in crate::vertex_pick::picked_point_marks(state, aspect) {
             ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(2.0, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
         }
+        // #1171: the wire sync pairs' rulings, violet like the other pick marks.
+        for (a, b) in crate::wire_sync_pick::segments(state, aspect) {
+            ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(1.5, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
+        }
         // #1505/#1507: selected picks and the viewport hover
         // as thick, haloed strokes over the model.
         crate::pick_ink::paint(ui.painter(), state, aspect, to_px, rgb8);
@@ -638,6 +661,13 @@ fn viewport_panel(
                     egui::pos2(rx0 + m.a[0] * rw, ry0 + m.a[1] * rh),
                     egui::pos2(rx0 + m.b[0] * rw, ry0 + m.b[1] * rh),
                 ],
+                egui::Stroke::new(m.width, super::colorvision::ink(m.rgb)),
+            );
+        }
+        // #1732: a Slot's hand-typed A and B, following the page draft.
+        for m in crate::slot_manual_viz::slot_marks(state, aspect) {
+            ui.painter().line_segment(
+                [to_px(m.a), to_px(m.b)],
                 egui::Stroke::new(m.width, super::colorvision::ink(m.rgb)),
             );
         }
@@ -780,6 +810,7 @@ fn viewport_panel(
         let hint = match state.drag {
             Some(DragMode::Orbit) => "orbit",
             Some(DragMode::Pan) => "pan",
+            Some(DragMode::Zoom) => "zoom",
             None => super::viewport_layout::LEGEND,
         };
         if (hot || state.drag.is_some())
