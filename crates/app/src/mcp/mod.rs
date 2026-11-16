@@ -47,6 +47,7 @@ mod pockets;
 // #1534: document and per-setup post options (`SetPostOptions` / `SetSetupPostOptions`).
 mod post_options_tools;
 mod render;
+mod selection;
 mod setup_tools;
 mod tool_delete;
 mod tool_edit;
@@ -70,7 +71,11 @@ mod workholding_tools;
 // loopback socket, against the app's own document and History.
 pub use bridge::bridge;
 pub use listen::{port_from, Inbox, Request, Wake, IDLE_TIMEOUT};
-pub use live::{answer_live, LiveAnswer};
+pub use live::{
+    answer_live, answer_live_with, requires_approval, ApprovedCall, GateKind, LiveAnswer,
+    LiveGate, LiveOptions,
+};
+pub use selection::{PickMode, SelectionContext};
 
 use crate::script::Env;
 
