@@ -90,9 +90,9 @@ fn chat_submission_dispatches_tools_through_inbox_shows_cards_and_opt_in_attachm
             fallback_override: None,
         }),
         Ok(TransportOutput::AssistantResponse {
-            text: "Inspected attached selection and screenshot.".to_owned(),
+            text: "Inspected attached selection.".to_owned(),
             envelope: json!({
-                "content": [{ "type": "text", "text": "Inspected attached selection and screenshot." }]
+                "content": [{ "type": "text", "text": "Inspected attached selection." }]
             }),
             fallback_override: None,
         }),
@@ -120,9 +120,8 @@ fn chat_submission_dispatches_tools_through_inbox_shows_cards_and_opt_in_attachm
         assert!(first_user.screenshot.is_none(), "screenshot must not be sent without opt-in");
     }
 
-    // Turn 2: opt IN to both selection and screenshot -> both are attached cleanly.
+    // Turn 2: selection can be attached; screenshot capture remains unavailable.
     h.get_by_role_and_label(Role::CheckBox, "Attach selection").click();
-    h.get_by_role_and_label(Role::CheckBox, "Attach screenshot").click();
     h.run_steps(2);
     submit_prompt(&mut h, "Inspect current state");
     pump_until_idle(&mut h);
@@ -136,9 +135,7 @@ fn chat_submission_dispatches_tools_through_inbox_shows_cards_and_opt_in_attachm
             || sel.selected_operation.as_deref() == Some("Face1"),
         "expected selected entity or operation in snapshot: {sel:?}"
     );
-    let shot = last_user.screenshot.as_ref().expect("screenshot attached when opted in");
-    assert_eq!(shot.mime_type, "image/png");
-    assert!(!shot.data_base64.is_empty());
+    assert!(last_user.screenshot.is_none(), "unavailable capture must not attach a placeholder");
 }
 
 #[test]

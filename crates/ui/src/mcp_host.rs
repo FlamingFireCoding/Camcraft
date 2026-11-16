@@ -21,12 +21,15 @@ pub fn pump(state: &mut State) {
         .as_ref()
         .map_or_else(Vec::new, |inbox| std::iter::from_fn(|| inbox.next()).collect());
     for request in ai_waiting {
-        answer_request(state, request, true);
+        if state.ai_chat.accepts_mcp_requests() {
+            answer_request(state, request, true);
+        }
+        // Dropping a stale request disconnects its reply channel without executing it.
     }
 }
 
 fn answer_request(state: &mut State, request: camcraft_app::mcp::Request, track_ai_turn: bool) {
-    let before_done = state.history.done_len();
+    let before_entries = state.history.done_entry_ids();
     let answer = camcraft_app::mcp::answer_live(
         &state.world,
         &mut state.history,
@@ -34,8 +37,7 @@ fn answer_request(state: &mut State, request: camcraft_app::mcp::Request, track_
         request.line(),
     );
     if track_ai_turn {
-        let delta = state.history.done_len().saturating_sub(before_done);
-        state.ai_chat.note_mcp_execution(delta);
+        state.ai_chat.note_mcp_execution(&before_entries, &state.history);
     }
     if let Some(tool) = &answer.tool {
         // A tool may have changed the document: every view keyed on

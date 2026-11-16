@@ -9,7 +9,7 @@ mod worker;
 #[cfg(not(target_arch = "wasm32"))]
 mod worker_mcp;
 
-pub(crate) use panel::{draw, fallback_viewport_png};
+pub(crate) use panel::draw;
 pub(crate) use state::AiChatState;
 pub(crate) use transport::EndpointKind;
 pub(crate) use worker::WakeFn;

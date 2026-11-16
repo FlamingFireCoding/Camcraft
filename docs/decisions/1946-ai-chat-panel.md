@@ -4,7 +4,7 @@
 opened from the View door beside `Tab::Properties` (`layout/mod.rs`), switching
 `LayoutRequest::Toggle` to `show(dock, tab_of(p))` so newly opened tabs beside
 Properties activate immediately. Keep panel state (`AiChatState`) isolated
-from the CAM document on UI `State`, reset/shut it down on `CommandKind::NewDocument`
+from the CAM document on UI `State`, reset/shut it down on New, successful Open,
 and `Shell::shutdown`, and pass `ai_proxy.send_event(())` via `State::set_ai_wake`
 so background events wake the `Wait` event loop.
 
@@ -24,11 +24,16 @@ Enforce safety gates in UI/worker code:
   an inline Allow/Deny prompt; `FallbackMode::PromptJson` gates every tool outside
   the read-only allowlist behind Allow/Deny after schema validation; `FallbackMode::ReadOnly`
   displays a banner and disables tool parsing and MCP dispatch completely.
-- `Attach selection` and `Attach screenshot` default to `false` and capture
-  `SelectionSnapshot` / PNG only when explicitly checked.
-- `ChatTurn::can_undo(done_len)` records `start_depth`, `end_depth`, and `change_count`
-  via `History::done_len()`, enabling one-click `Undo Turn` only while no later
-  manual edit has pushed `done_len` past `end_depth`.
+- `Attach selection` defaults to `false` and captures `SelectionSnapshot` only
+  when explicitly checked. Disable `Attach screenshot` with the visible message
+  “Viewport screenshot capture is unavailable.” until actual viewport capture
+  is wired; a solid-color fallback does not represent the model or toolpath.
+- Bind `Undo Turn` to globally unique History command identities and the document
+  identity, in addition to its depth span. Replacement at the same stack depth
+  must refuse undo just like a later edit.
+- Give each submitted turn a fresh inbox. Stop the worker and discard its inbox
+  on New or successful Open, invalidate prior turn undo records, and reject
+  queued calls when the active turn is cancelled before UI dispatch.
 
 **Why:** Routing in-app worker tool calls through `Inbox::channel()` avoids a
 parallel command interpreter or off-thread `World` mutation and keeps document
@@ -40,7 +45,11 @@ prompts, fallback banners, opt-in attachments, and Turn Undo deterministically i
 **Dropped:** Spawning commands off-thread or duplicating TCP JSON-RPC over loopback
 for in-app chat would add socket framing overhead and race with UI state. Allowing
 `Undo Turn` to pop across later manual edits would silently undo the user's own
-work instead of refusing safely once `done_len != end_depth`. Storing chat history
+work. Depth alone was rejected because ordinary Undo followed by a manual edit
+can replace the AI entry at the same depth. Reusing the inbox was rejected
+because old queued calls could reach a replacement document or a later turn.
+Sending a solid-color PNG was rejected because valid image encoding does not
+prove viewport capture. Storing chat history
 inside `.cam` project files was omitted so conversations never pollute part geometry
 or git/fixture state.
 
@@ -49,3 +58,6 @@ or git/fixture state.
 panel layout, `Inbox::channel()` dispatch, or safety gates. Changing the native
 confirmation set or read-only allowlist edits `requires_confirmation` /
 `is_read_only_tool` in `crates/ui/src/egui_app/ai_chat/transport.rs`.
+
+Actual screenshot attachment will require a viewport capture callback and tests
+that inspect model/toolpath image content before the control can be enabled.

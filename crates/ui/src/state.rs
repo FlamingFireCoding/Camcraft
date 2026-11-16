@@ -2903,12 +2903,11 @@ impl State {
     }
 
     pub(crate) fn submit_ai_prompt(&mut self) {
-        let screenshot = if self.ai_chat.attach_screenshot {
-            let bg = crate::egui_app::theme::current().viewport;
-            Some(crate::egui_app::ai_chat::fallback_viewport_png(bg))
-        } else {
-            None
-        };
+        if self.ai_chat.is_running() {
+            return;
+        }
+        // Each turn owns a fresh receiver. Old worker senders cannot reach a later turn.
+        self.reset_ai_inbox();
         let snapshot = if self.ai_chat.selected_preset().fallback_mode
             != camcraft_app::mcp::provider::FallbackMode::Native
         {
@@ -2919,11 +2918,22 @@ impl State {
         self.ai_chat.submit(
             &self.world,
             self.selected_operation(),
-            self.history.done_len(),
+            &self.history,
             &self.ai_mcp_tx,
-            screenshot,
+            None,
             snapshot,
         );
+    }
+
+    fn reset_ai_inbox(&mut self) {
+        let (tx, inbox) = camcraft_app::mcp::Inbox::channel();
+        self.ai_mcp_tx = tx;
+        self.ai_mcp_inbox = Some(inbox);
+    }
+
+    fn reset_ai_document(&mut self) {
+        self.ai_chat.invalidate_document();
+        self.reset_ai_inbox();
     }
 
     fn project_snapshot_json(&mut self) -> serde_json::Value {
@@ -3020,7 +3030,7 @@ impl State {
             CommandKind::OpenModelDialog => self.open_model_dialog(),
             CommandKind::ImportFile(path) => self.import_path(path),
             CommandKind::NewDocument => {
-                self.ai_chat.shutdown();
+                self.reset_ai_document();
                 self.abandon_imports();
                 self.project_path = None;
                 self.hidden_stocks.clear();
@@ -4313,6 +4323,7 @@ impl State {
         use camcraft_app::commands::{color_vision_of, color_vision_set, theme_set};
         theme_set(&loaded, &theme_of(&self.world));
         color_vision_set(&loaded, color_vision_of(&self.world));
+        self.reset_ai_document();
         self.abandon_imports();
         self.project_path = None;
         self.hidden_stocks.clear();

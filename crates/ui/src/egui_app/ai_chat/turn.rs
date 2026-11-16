@@ -28,6 +28,8 @@ pub(crate) struct ChatTurn {
     pub end_depth: Option<usize>,
     pub change_count: usize,
     pub undone: bool,
+    document_id: u64,
+    expected_entries: Option<Vec<u64>>,
     selection: Option<SelectionSnapshot>,
     screenshot: Option<ScreenshotAttachment>,
 }
@@ -45,6 +47,8 @@ impl ChatTurn {
             end_depth: None,
             change_count: 0,
             undone: false,
+            document_id: 0,
+            expected_entries: None,
             selection: None,
             screenshot: None,
         }
@@ -54,7 +58,7 @@ impl ChatTurn {
     pub(super) fn running(
         id: u64,
         prompt: String,
-        start_depth: usize,
+        history: &History,
         selection: Option<SelectionSnapshot>,
         screenshot: Option<ScreenshotAttachment>,
     ) -> Self {
@@ -64,10 +68,12 @@ impl ChatTurn {
             assistant_text: String::new(),
             tool_cards: Vec::new(),
             status: TurnStatus::Running,
-            start_depth,
+            start_depth: history.done_len(),
             end_depth: None,
             change_count: 0,
             undone: false,
+            document_id: history.identity(),
+            expected_entries: Some(history.done_entry_ids()),
             selection,
             screenshot,
         }
@@ -75,11 +81,29 @@ impl ChatTurn {
 
     /// True only while this turn sits at the very top of `History` and has not yet been undone.
     #[must_use]
-    pub(crate) fn can_undo(&self, current_done_len: usize) -> bool {
+    pub(crate) fn can_undo(&self, history: &History) -> bool {
         !matches!(self.status, TurnStatus::Running)
             && !self.undone
             && self.change_count > 0
-            && self.end_depth == Some(current_done_len)
+            && self.end_depth == Some(history.done_len())
+            && self.document_id == history.identity()
+            && self.expected_entries.as_ref() == Some(&history.done_entry_ids())
+    }
+
+    /// Extend the owned span only when no manual command intervened.
+    pub(super) fn record_execution(&mut self, before: &[u64], history: &History) {
+        let after = history.done_entry_ids();
+        self.change_count += after.len().saturating_sub(before.len());
+        self.expected_entries = (self.document_id == history.identity()
+            && self.expected_entries.as_deref() == Some(before)
+            && after.starts_with(before))
+        .then_some(after);
+    }
+
+    /// Retire undo permissions when the document is replaced.
+    pub(super) fn invalidate(&mut self) {
+        self.expected_entries = None;
+        self.end_depth = None;
     }
 
     /// Append assistant output streamed from the worker.
@@ -127,7 +151,7 @@ impl ChatTurn {
         history: &mut History,
         doc_version: &mut u64,
     ) -> Result<String, String> {
-        if !self.can_undo(history.done_len()) {
+        if !self.can_undo(history) {
             return Err(
                 "cannot undo AI turn: later document edits exist or turn already undone".to_owned(),
             );

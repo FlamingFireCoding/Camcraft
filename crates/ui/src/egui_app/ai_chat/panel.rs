@@ -2,7 +2,7 @@
 //! Provenance: our own egui layout using CamCraft tokens and colorvision text inks; no vendor material involved.
 
 use camcraft_app::mcp::provider::FallbackMode;
-use egui::{Color32, RichText, ScrollArea, Ui};
+use egui::{RichText, ScrollArea, Ui};
 
 use crate::state::State;
 
@@ -28,14 +28,14 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State) {
                 ui.add_space(4.0);
             }
 
-            let done_len = state.history.done_len();
+            let history = &state.history;
             let avail_h = (ui.available_height() - 88.0).max(80.0);
             ScrollArea::vertical()
                 .id_salt("ai_chat_transcript")
                 .max_height(avail_h)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    draw_transcript(ui, state.ai_chat.turns(), done_len, inks, &pal, &mut actions);
+                    draw_transcript(ui, state.ai_chat.turns(), history, inks, &pal, &mut actions);
                 });
 
             ui.add_space(6.0);
@@ -85,8 +85,13 @@ fn draw_header(ui: &mut Ui, state: &mut State, pal: &theme::Tokens) {
     ui.horizontal_wrapped(|ui| {
         ui.checkbox(&mut state.ai_chat.offline_only, "Offline only");
         ui.checkbox(&mut state.ai_chat.attach_selection, "Attach selection");
-        ui.checkbox(&mut state.ai_chat.attach_screenshot, "Attach screenshot");
+        ui.add_enabled(
+            false,
+            egui::Checkbox::new(&mut state.ai_chat.attach_screenshot, "Attach screenshot"),
+        );
     });
+
+    ui.label("Viewport screenshot capture is unavailable.");
 
     let preset = state.ai_chat.selected_preset();
     ui.label(
@@ -164,7 +169,7 @@ fn draw_confirm_banner(
 fn draw_transcript(
     ui: &mut Ui,
     turns: &[ChatTurn],
-    done_len: usize,
+    history: &camcraft_app::commands::History,
     inks: colorvision::TextInks,
     pal: &theme::Tokens,
     actions: &mut PanelActions,
@@ -235,7 +240,7 @@ fn draw_transcript(
                         };
                         ui.label(RichText::new(note).small().color(pal.text_dim));
                         if ui
-                            .add_enabled(turn.can_undo(done_len), egui::Button::new("Undo Turn"))
+                            .add_enabled(turn.can_undo(history), egui::Button::new("Undo Turn"))
                             .clicked()
                         {
                             actions.undo_turn_id = Some(turn.id);
@@ -295,14 +300,4 @@ fn apply_panel_actions(state: &mut State, actions: PanelActions) {
     if actions.submit {
         state.submit_ai_prompt();
     }
-}
-
-/// Default 32x32 RGBA viewport fill PNG used when no GPU frame hook is installed.
-pub(crate) fn fallback_viewport_png(bg: Color32) -> Result<Vec<u8>, String> {
-    let pixel = [bg.r(), bg.g(), bg.b(), 255];
-    let mut buf = Vec::with_capacity(32 * 32 * 4);
-    for _ in 0..(32 * 32) {
-        buf.extend_from_slice(&pixel);
-    }
-    super::transport::encode_png_rgba(32, 32, buf)
 }

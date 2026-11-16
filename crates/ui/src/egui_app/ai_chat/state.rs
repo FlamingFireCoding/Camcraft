@@ -127,7 +127,7 @@ impl AiChatState {
         &mut self,
         world: &World,
         selected_op: Option<String>,
-        history_done_len: usize,
+        history: &History,
         mcp_tx: &mpsc::Sender<Request>,
         screenshot_png: Option<Result<Vec<u8>, String>>,
         project_snapshot: Value,
@@ -149,7 +149,7 @@ impl AiChatState {
             let turn_id = self.next_turn_id;
             self.next_turn_id += 1;
             self.turns
-                .push(ChatTurn::failed(turn_id, prompt, history_done_len, err));
+                .push(ChatTurn::failed(turn_id, prompt, history.done_len(), err));
             return;
         }
 
@@ -176,7 +176,7 @@ impl AiChatState {
         self.turns.push(ChatTurn::running(
             turn_id,
             prompt,
-            history_done_len,
+            history,
             selection,
             screenshot,
         ));
@@ -218,14 +218,26 @@ impl AiChatState {
     }
 
     /// Record command commits performed by an in-app MCP tool call on the running turn.
-    pub(crate) fn note_mcp_execution(&mut self, delta_commands: usize) {
-        if delta_commands == 0 {
-            return;
-        }
+    pub(crate) fn note_mcp_execution(&mut self, before: &[u64], history: &History) {
         if let Some((turn_id, _)) = &self.worker
             && let Some(turn) = self.turns.iter_mut().find(|t| t.id == *turn_id)
         {
-            turn.change_count += delta_commands;
+            turn.record_execution(before, history);
+        }
+    }
+
+    /// Only the active, uncancelled turn may execute requests from its inbox.
+    pub(crate) fn accepts_mcp_requests(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_some_and(|(_, handle)| !handle.cancel.load(Ordering::Relaxed))
+    }
+
+    /// A replacement document must never inherit an earlier turn's Undo permission.
+    pub(crate) fn invalidate_document(&mut self) {
+        self.shutdown();
+        for turn in &mut self.turns {
+            turn.invalidate();
         }
     }
 

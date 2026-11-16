@@ -2,6 +2,7 @@
 //! Provenance: our own tests over our own shell and egui_kittest; no external SDKs or vendor material.
 
 mod basic;
+mod regressions;
 mod safety;
 
 use std::collections::VecDeque;
@@ -170,10 +171,11 @@ pub(super) fn seed_postable_face_job(h: &mut Harness<'static, ShellUi>) {
         serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"generate","arguments":{}}}),
     ];
     for line in calls {
-        let (req, rx) = camcraft_app::mcp::Request::pair(line.to_string());
-        h.state().state.ai_mcp_tx.send(req).expect("inbox");
-        h.run_steps(2);
-        let reply = rx.try_recv().expect("answered").expect("reply");
+        let st = &mut h.state_mut().state;
+        let answer = camcraft_app::mcp::answer_live(
+            &st.world, &mut st.history, st.project_path.as_deref(), &line.to_string(),
+        );
+        let reply = answer.reply.expect("reply");
         let v: Value = serde_json::from_str(&reply).expect("json");
         assert_eq!(v["result"]["isError"], serde_json::json!(false), "{v}");
     }

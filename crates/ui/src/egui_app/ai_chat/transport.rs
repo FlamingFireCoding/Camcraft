@@ -1,6 +1,7 @@
 //! Provider transport abstraction, offline/confirmation guards, and envelope helpers (#1946).
 //! Provenance: our own code wrapping camcraft-app's provider schemas and fallback helpers; no vendor material involved.
 
+#[cfg(test)]
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -291,6 +292,7 @@ pub(crate) fn extract_assistant_text(
 }
 
 /// Encode RGBA pixels into an in-memory PNG byte buffer without unwrap/expect.
+#[cfg(test)]
 pub(crate) fn encode_png_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Result<Vec<u8>, String> {
     let img = image::RgbaImage::from_raw(width, height, rgba)
         .ok_or_else(|| "screenshot buffer size did not match image dimensions".to_owned())?;
