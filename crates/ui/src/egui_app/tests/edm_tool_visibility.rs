@@ -98,9 +98,10 @@ fn sinker_electrode_is_hidden_when_sinker_edm_is_not_selectable_and_wire_is_offe
 
 #[test]
 fn sinker_electrode_is_offered_only_when_sinker_edm_is_selectable_or_mounted() {
+    let without_sinker = [(MachineKind::Mill, "Milling", "VMC 3-axis")];
     assert!(!crate::machine_modes::tool_kind_offered_for(
         ToolKind::Electrode,
-        &crate::machine_modes::MACHINE_MODES,
+        &without_sinker,
         &[MachineKind::Mill],
     ));
     let with_sinker = [
@@ -114,7 +115,7 @@ fn sinker_electrode_is_offered_only_when_sinker_edm_is_selectable_or_mounted() {
     ));
     assert!(crate::machine_modes::tool_kind_offered_for(
         ToolKind::Electrode,
-        &crate::machine_modes::MACHINE_MODES,
+        &without_sinker,
         &[MachineKind::SinkerEdm],
     ));
 
