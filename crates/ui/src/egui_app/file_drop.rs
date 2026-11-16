@@ -1,7 +1,7 @@
 //! Drag and drop a model file onto the window (issue #1450). While a file
 //! is dragged over the window the viewport wears a plain "Drop to load
 //! model" hint; a single drop of a mesh the Model dialog reads (`stl`,
-//! `obj`, `step`, `stp`) queues `CommandKind::ImportFile` - the Model
+//! `obj`, `step`, `stp`, and a Solidcraft `sc`, #1456) queues `CommandKind::ImportFile` - the Model
 //! dialog's own import path, so the worker, the update-or-spawn decision
 //! and the one undoable command are shared, not copied. Several files, an
 //! unsupported extension, a folder or a path that is no file (the
@@ -22,7 +22,7 @@ use crate::state::{CommandKind, State};
 pub(super) const HINT: &str = "Drop to load model";
 
 /// The extensions the Model dialog's filter offers, lower case.
-const MESH_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
+use crate::state::MODEL_EXTENSIONS as MESH_EXTENSIONS;
 
 fn label(path: &Path) -> String {
     path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
@@ -39,8 +39,9 @@ pub(super) fn classify(paths: &[PathBuf]) -> Result<PathBuf, String> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     if !MESH_EXTENSIONS.contains(&ext.as_str()) {
         return Err(format!(
-            "drop refused: {} is not a model file (read: .stl, .obj, .step, .stp)",
-            label(path)
+            "drop refused: {} is not a model file (read: .{})",
+            label(path),
+            MESH_EXTENSIONS.join(", .")
         ));
     }
     if !path.is_file() {
@@ -86,5 +87,14 @@ mod tests {
         assert!(classify(&[d("a.stl"), d("b.stl")]).expect_err("two").contains("2 files"));
         assert!(classify(&[d("notes.txt")]).expect_err("ext").contains("notes.txt is not a model file"));
         assert!(classify(&[d("missing.STEP")]).expect_err("gone").contains("missing.STEP is not a readable file"));
+    }
+
+    #[test]
+    fn a_solidcraft_design_drop_queues_the_import() {
+        // #1456: `.sc` is a model file; the import refuses a damaged one by name.
+        let sample = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/solidcraft_for_beginners.sc");
+        assert_eq!(classify(std::slice::from_ref(&sample)), Ok(sample.clone()));
+        assert!(classify(&[d("gone.SC")]).expect_err("gone").contains("gone.SC is not a readable file"));
+        assert!(classify(&[d("notes.txt")]).expect_err("ext").contains(".sc)"));
     }
 }

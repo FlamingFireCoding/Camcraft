@@ -4512,8 +4512,16 @@ fn pick_mesh_file() -> Option<PathBuf> {
 /// async picker (#31) ask with the same one.
 fn mesh_dialog() -> crate::file_dialog::FileDialog {
     // STEP arrives tessellated through truck (mesh, not B-rep).
-    crate::file_dialog::FileDialog::new().add_filter("Mesh", &["stl", "obj", "step", "stp"])
+    crate::file_dialog::FileDialog::new().add_filter("Mesh", MODEL_EXTENSIONS)
 }
+
+/// The model files Model > Open and a viewport drop read, lower case. A
+/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// build does not read it, so its picker does not offer it.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+#[cfg(target_arch = "wasm32")]
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 
 fn project_dialog() -> crate::file_dialog::FileDialog {
     crate::file_dialog::FileDialog::new().add_filter("CamCraft Project", &["camproj"])

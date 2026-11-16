@@ -720,6 +720,7 @@ dependencies = [
  "boa_engine",
  "camcraft-cl",
  "camcraft-geometry",
+ "camcraft-kernel",
  "camcraft-motion",
  "camcraft-post",
  "camcraft-sim",
