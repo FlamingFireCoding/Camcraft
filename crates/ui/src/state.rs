@@ -241,6 +241,19 @@ pub enum CommandKind {
     /// The post's user options (issue #34): the undoable
     /// `SetPostOptions` with the picked value.
     SetPostOptions(camcraft_app::schema::PostOptions),
+    /// Per-post declared script option overrides (#258), routed by setup target.
+    SetPostScriptOptions {
+        setup: Option<String>,
+        post: camcraft_app::schema::PostRef,
+        overrides: std::collections::BTreeMap<String, camcraft_app::post::options::OptionValue>,
+    },
+    /// Commit settings staged in the desktop Post dialog as one undo unit, optionally posting afterwards (#258).
+    ApplyPostDialog {
+        edit: camcraft_app::commands::PostSettingsEdit,
+        post_path: Option<PathBuf>,
+        per_op_dir: Option<PathBuf>,
+        program_prefix: Option<String>,
+    },
     /// The user's theme (M6.1 C; a preference since #877, never on the
     /// history): the two built-ins and a discovered file arrive as a
     /// reference (what the headless tests queue too), and the dialog arm
@@ -1432,6 +1445,9 @@ pub enum Panel {
     /// The Machines pane (#287): closed by default, opened from the View
     /// door beside the properties pane.
     Machines,
+    /// The in-app AI Chat pane (#1946): closed by default, opened from the
+    /// View door beside the properties pane.
+    AiChat,
 }
 
 /// A dock-layout ask from the View door, applied by the shell on the
@@ -1442,6 +1458,10 @@ pub enum Panel {
 pub enum LayoutRequest {
     /// Close the panel if open, reopen it at its default side if not.
     Toggle(Panel),
+    /// Open and focus a panel without toggling it closed.
+    Show(Panel),
+    /// Open and focus the independent tool library.
+    ToolLibrary,
     /// Rebuild the default three-pane dock.
     Reset,
 }
@@ -1454,6 +1474,7 @@ pub struct PanelsOpen {
     pub browser: bool,
     pub properties: bool,
     pub machines: bool,
+    pub ai_chat: bool,
 }
 
 impl PanelsOpen {
@@ -1463,6 +1484,7 @@ impl PanelsOpen {
             Panel::Browser => self.browser,
             Panel::Properties => self.properties,
             Panel::Machines => self.machines,
+            Panel::AiChat => self.ai_chat,
         }
     }
 }
@@ -1504,6 +1526,9 @@ pub struct State {
     /// #225: the Feeds tab shows the spindle speed as surface (cutting)
     /// speed instead of rpm. View state - never a command, never saved.
     pub spindle_as_vc: bool,
+    /// Catalog filters are temporary view state, outside the document and history.
+    pub tool_catalog_kind: Option<camcraft_app::tools::ToolKind>,
+    pub tool_catalog_name: String,
     /// #899: how the Tool library page's Import treats a name the
     /// document already has. View state - the import itself is the command.
     pub tool_import_mode: camcraft_app::commands::ImportMode,
@@ -1701,6 +1726,12 @@ pub struct State {
     /// #183: the live MCP session's inbox when the app was started with
     /// `--mcp-port` / `CAMCRAFT_MCP_PORT`; drained with `pending`.
     pub mcp: Option<camcraft_app::mcp::Inbox>,
+    /// #1946: in-app AI chat panel state (conversations, worker handle, toggles).
+    pub ai_chat: crate::egui_app::ai_chat::AiChatState,
+    /// Sender used by the AI chat worker to dispatch MCP requests in-process.
+    pub ai_mcp_tx: mpsc::Sender<camcraft_app::mcp::Request>,
+    /// In-process AI chat MCP inbox drained alongside `mcp` inside `mcp_host::pump`.
+    pub ai_mcp_inbox: Option<camcraft_app::mcp::Inbox>,
     pub request_quit: bool,
     /// #107: a New / Open / Quit held back because the document has
     /// unsaved changes; while Some, the shell shows the Save / Don't Save
@@ -1864,6 +1895,12 @@ pub struct State {
     /// edit are a copy of the machine until Apply pushes `LoadMachine`,
     /// which is the command, which is the undo.
     pub machine_editor: Option<crate::egui_app::machine_editor::MachineEditor>,
+    /// Floating desktop Post dialog draft state (#258): `None` when closed.
+    pub post_dialog: Option<crate::egui_app::post_dialog::PostDialogState>,
+    /// Remembered desktop Post dialog output folder for this document (#258).
+    pub post_last_dir: Option<PathBuf>,
+    /// Remembered desktop Post dialog output file name for this document (#258).
+    pub post_last_name: Option<String>,
     /// The Machines pane's view state (#287): the cached catalogue and
     /// the selected row. Ephemeral like the dock itself - browsing a
     /// machine is not a command; assigning one will be.
@@ -2005,6 +2042,7 @@ impl State {
         // here, on the status line - the built-in rows stand regardless.
         let themes = crate::theme_dir::from_process();
         let status = crate::theme_dir::startup_status(&themes, cfg!(target_arch = "wasm32"));
+        let (ai_mcp_tx, ai_mcp_inbox) = camcraft_app::mcp::Inbox::channel();
         State {
             world: new_world(),
             history: History::default(),
@@ -2014,6 +2052,8 @@ impl State {
             debug_info_open: false,
             gpu_line: None,
             spindle_as_vc: false,
+            tool_catalog_kind: None,
+            tool_catalog_name: String::new(),
             tool_import_mode: camcraft_app::commands::ImportMode::default(),
             doc_version: 0,
             selection_version: 0,
@@ -2078,7 +2118,7 @@ impl State {
             view_store: None,
             prefs_store: None,
             import_tool_holders: true,
-            panels_open: PanelsOpen { browser: true, properties: true, machines: false },
+            panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
             tree_menu: None,
             retype_confirm: None,
@@ -2087,6 +2127,9 @@ impl State {
             pending: VecDeque::new(),
             picker_in_click: false,
             mcp: None,
+            ai_chat: crate::egui_app::ai_chat::AiChatState::new(),
+            ai_mcp_tx,
+            ai_mcp_inbox: Some(ai_mcp_inbox),
             request_quit: false,
             unsaved_prompt: None,
             discard_confirmed: false,
@@ -2133,6 +2176,9 @@ impl State {
             tool_profile_ui: ToolProfileUi::default(),
             tool_cutter_ui: ToolCutterUi::default(),
             machine_editor: None,
+            post_dialog: None,
+            post_last_dir: None,
+            post_last_name: None,
             machines_pane: Default::default(),
             theme_cache: theme_files::Cache::new(),
             // One walk per window, at construction: the switcher's file
@@ -2874,14 +2920,77 @@ impl State {
         }
     }
 
+    pub fn set_ai_wake(&mut self, wake: crate::egui_app::ai_chat::WakeFn) {
+        self.ai_chat.set_wake(wake);
+    }
+
+    pub(crate) fn submit_ai_prompt(&mut self) {
+        if self.ai_chat.is_running() {
+            return;
+        }
+        // Each turn owns a fresh receiver. Old worker senders cannot reach a later turn.
+        self.reset_ai_inbox();
+        let snapshot = if self.ai_chat.selected_preset().fallback_mode
+            != camcraft_app::mcp::provider::FallbackMode::Native
+        {
+            self.project_snapshot_json()
+        } else {
+            serde_json::Value::Null
+        };
+        self.ai_chat.submit(
+            &self.world,
+            self.selected_operation(),
+            &self.history,
+            &self.ai_mcp_tx,
+            None,
+            snapshot,
+        );
+    }
+
+    fn reset_ai_inbox(&mut self) {
+        let (tx, inbox) = camcraft_app::mcp::Inbox::channel();
+        self.ai_mcp_tx = tx;
+        self.ai_mcp_inbox = Some(inbox);
+    }
+
+    fn reset_ai_document(&mut self) {
+        self.ai_chat.invalidate_document();
+        self.reset_ai_inbox();
+    }
+
+    fn project_snapshot_json(&mut self) -> serde_json::Value {
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "tools/call",
+            "params": { "name": "get_job", "arguments": {} }
+        })
+        .to_string();
+        let ans = camcraft_app::mcp::answer_live(
+            &self.world,
+            &mut self.history,
+            self.project_path.as_deref(),
+            &req,
+        );
+        let Some(reply) = ans.reply else {
+            return serde_json::json!({});
+        };
+        serde_json::from_str::<serde_json::Value>(&reply)
+            .ok()
+            .and_then(|v| v.get("result")?.get("structuredContent").cloned())
+            .unwrap_or_else(|| serde_json::json!({}))
+    }
+
     /// Run every queued action, then poll the import worker once. Safe to
     /// call every frame; never blocks.
     pub fn drain_actions(&mut self) {
         while let Some(action) = self.pending.pop_front() {
             self.run(action);
         }
+        self.ai_chat.poll(self.history.done_len());
         // #183: an agent's live calls, after the user's own clicks.
         crate::mcp_host::pump(self);
+        self.ai_chat.poll(self.history.done_len());
         self.poll_import();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
@@ -2943,6 +3052,7 @@ impl State {
             CommandKind::OpenModelDialog => self.open_model_dialog(),
             CommandKind::ImportFile(path) => self.import_path(path),
             CommandKind::NewDocument => {
+                self.reset_ai_document();
                 self.abandon_imports();
                 self.project_path = None;
                 self.hidden_stocks.clear();
@@ -2970,6 +3080,9 @@ impl State {
                 self.field_play = None;
                 self.stock_mesh.clear();
                 self.machine_editor = None;
+                self.post_dialog = None;
+                self.post_last_dir = None;
+                self.post_last_name = None;
                 self.rename_draft = None;
                 self.dragging_op = None;
                 self.doc_version += 1;
@@ -3139,6 +3252,12 @@ impl State {
             // #389: routed to the active setup's own options when it has them.
             CommandKind::SetPostOptions(next) => {
                 self.route_post_options(next, "post options set", "post options not set", ErrorScope::Setup);
+            }
+            CommandKind::SetPostScriptOptions { setup, post, overrides } => {
+                self.route_post_script_options(setup.as_deref(), &post, overrides);
+            }
+            CommandKind::ApplyPostDialog { edit, post_path, per_op_dir, program_prefix } => {
+                self.apply_post_dialog(edit, post_path, per_op_dir, program_prefix);
             }
             CommandKind::SelectTheme(next) => self.select_theme(next),
             CommandKind::SelectColorVision(next) => self.select_color_vision(next),
@@ -3897,7 +4016,7 @@ impl State {
         if !any {
             self.cam = Camera {
                 projection: self.cam.projection,
-                ..Camera::default()
+                ..Camera::default().with_frame(self.cam.frame)
             };
             self.status = String::from("nothing to frame");
             return;
@@ -3911,7 +4030,7 @@ impl State {
             * 3.0f64.sqrt();
         self.cam = Camera {
             projection: self.cam.projection,
-            ..Camera::frame(center, radius)
+            ..Camera::frame(center, radius).with_frame(self.cam.frame)
         };
     }
 
@@ -4235,6 +4354,7 @@ impl State {
         use camcraft_app::commands::{color_vision_of, color_vision_set, theme_set};
         theme_set(&loaded, &theme_of(&self.world));
         color_vision_set(&loaded, color_vision_of(&self.world));
+        self.reset_ai_document();
         self.abandon_imports();
         self.project_path = None;
         self.hidden_stocks.clear();
@@ -4249,6 +4369,9 @@ impl State {
         self.field_play = None; // nor its playback
         self.stock_mesh.clear(); // nor the mesh extracted from it
         self.machine_editor = None; // nor a draft over its machine's numbers
+        self.post_dialog = None;
+        self.post_last_dir = None;
+        self.post_last_name = None;
         self.rename_draft = None;
         self.dragging_op = None;
         self.world = loaded;
@@ -4292,12 +4415,28 @@ impl State {
             Ok(files) if files.len() > 1 => {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
+                self.post_last_dir = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(PathBuf::from);
+                self.post_last_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_owned);
                 self.post_refusal = None;
                 self.show_posted_mounts(files);
             }
             Ok(files) => {
                 let Some(first) = files.into_iter().next() else { return };
                 let (path, posted) = (first.path, first.posted);
+                self.post_last_dir = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .map(PathBuf::from);
+                self.post_last_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_owned);
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
@@ -4491,12 +4630,9 @@ pub(crate) fn save_project_dialog(current: Option<&Path>) -> Option<PathBuf> {
     dialog.set_file_name(filename).save_file()
 }
 
-/// The Post dialog, opened where `crate::post_file::post_target` says
-/// (#258: the last post's folder and name, else the project's).
-fn post_program_dialog(target: &crate::post_file::PostTarget) -> Option<PathBuf> {
-    // The extension law lives with the script (fanuc.cps's `extension`
-    // is "nc"); the dialog just offers it.
-    let mut dialog = crate::file_dialog::FileDialog::new().add_filter("NC Program", &["nc"]);
+/// Open the save-file picker for a single-program NC export with dialect extension (#258).
+pub(crate) fn save_program_dialog(target: &crate::post_file::PostTarget, ext: &str) -> Option<PathBuf> {
+    let mut dialog = crate::file_dialog::FileDialog::new().add_filter("NC Program", &[ext]);
     if let Some(dir) = &target.dir {
         dialog = dialog.set_directory(dir);
     }

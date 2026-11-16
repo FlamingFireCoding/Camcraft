@@ -348,6 +348,8 @@ interface PostOptions {
   cps?: string;
   /** Also return the program text in the result. */
   program?: boolean;
+  /** Per-post declared option overrides for this run. */
+  options?: Record<string, boolean | number | string>;
 }
 
 interface PostResult {
@@ -412,12 +414,6 @@ pub(crate) fn inventory(env: &Env) -> Vec<(String, flecs_ecs::prelude::Entity, c
             (name, e, status)
         })
         .collect()
-}
-
-/// The embedded post-processor source a `cps: "<name>"` option picks:
-/// the registry posting::script_source reads, mirrored by name.
-pub(crate) fn builtin_cps(name: &str) -> Option<&'static str> {
-    crate::posting::BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, text)| *text)
 }
 
 /// Keys an options object must not carry, named by the verb that
