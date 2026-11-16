@@ -20,6 +20,7 @@ pub mod fixture_mesh;
 // #2181: the playback keyframes and the calculation before playback.
 pub mod play_keys;
 pub mod play_precalc;
+pub mod play_precalc_mailbox;
 pub mod sim;
 pub mod solid_rest;
 pub mod stock_sim;

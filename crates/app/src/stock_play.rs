@@ -303,8 +303,7 @@ impl FieldPlay {
         self.drop_partial();
         // Back, or forward past a whole stride to a checkpoint ahead
         // (a precalculated keyframe, #2181): restore, then cut the rest.
-        let ahead = self.floor_checkpoint(k) > self.at && k - self.at > self.keys.stride();
-        if k < self.at || ahead {
+        if self.keys.restores(self.at, k) {
             let (at, snap) = self.keys.floor(k).ok_or("playback lost its uncut stock")?;
             self.cur = snap.clone();
             self.at = *at;
@@ -394,5 +393,4 @@ pub use head::{progress, settle_frac, Progress};
 
 #[path = "stock_play_precalc.rs"]
 mod precalc;
-pub(crate) use precalc::PrecalcPlay;
 pub use camcraft_sim::play_keys::{Keyframes, Precalc, MAX_KEYFRAMES, PRECALC_BUDGET};

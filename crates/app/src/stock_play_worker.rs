@@ -44,7 +44,7 @@
 //!   playback outlives its document.
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use crate::clock::Instant;
@@ -54,7 +54,8 @@ use crate::stock_play::{settle_frac, FieldPlay, PlayIndex, PlaySeed, Precalc};
 
 #[path = "stock_play_worker_precalc.rs"]
 mod precalc;
-use precalc::{precalc, refuse, set_precalc};
+use precalc::{precalc, refuse};
+use camcraft_sim::play_precalc_mailbox::Mailbox;
 use crate::stock_view::{CutLayer, FieldView, Packed, PackedBase};
 use crate::stock_sim::preview::{pack_cut, pack_cut_patch, LatticeMeta};
 
@@ -105,9 +106,9 @@ struct Shared {
     wake: Condvar,
     out: Mutex<Slot>,
     published: Condvar,
-    /// The calculation before playback (#2181) and the UI's cancel.
-    precalc: Mutex<Option<Precalc>>,
-    cancel: AtomicBool,
+    /// The calculation before playback (#2181) and the UI's cancel
+    /// (`camcraft_sim::play_precalc_mailbox`).
+    precalc: Mailbox,
 }
 
 /// The playback worker's handle (see the module law).
@@ -137,7 +138,7 @@ impl PlayWorker {
         let index = seed.index();
         let shared = Arc::new(Shared::default());
         if budget.is_some() {
-            set_precalc(&shared, Precalc::Running { done: 0, total: index.total() });
+            shared.precalc.set(Precalc::Running { done: 0, total: index.total() });
         }
         let inner = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
@@ -361,10 +362,9 @@ fn run(shared: &Shared, seed: PlaySeed, budget: Option<usize>) {
         play.set_batched(jump);
         // A backward target, or a keyframe more than a stride ahead
         // (#2181), restores its checkpoint first (no cutting), then
-        // walks forward in chunks like any other.
-        let floor = play.floor_checkpoint(k);
-        let step = if k < play.at() || (floor > play.at() && k - play.at() > play.stride()) {
-            floor
+        // walks forward in chunks like any other (the sim crate's law).
+        let step = if play.keyframes().restores(play.at(), k) {
+            play.floor_checkpoint(k)
         } else if jump {
             k.min(play.next_boundary())
         } else {

@@ -67,6 +67,30 @@ moved to the simulation crate:
   crate in this PR. They existed before #2181 and their move touches
   the playback suites of other issues. Issue #2268 tracks it.
 
+**Second review fix (#2192, finding 4 again).** The rest of the new
+domain logic moved to the simulation crate as well:
+
+- `camcraft_sim::play_precalc::{begin, step, Calc, Playback}`: the
+  stride choice, the store restart and the offer of each boundary.
+  `FieldPlay` implements `Playback` with bindings only (its total, its
+  playhead, its store, a rewind and a cut). `begin_precalc` and
+  `precalc_step` stay as one-line calls for the app tests.
+- `camcraft_sim::play_precalc_mailbox::{Mailbox, MailboxOwner}`: the
+  progress slot, the cancel flag and the "lost state reads incomplete"
+  law. The worker binds its stop flag and its clock as closures. The
+  wakeup, the thread and the frame publication stay in app.
+- `Keyframes::restores`: one seek law ("restore when behind, or when a
+  keyframe is more than one stride ahead") for `FieldPlay::seek` and
+  the worker's step choice. Before, the two places had their own copy.
+- Chosen: closures for the stop and the clock, not a new trait. The
+  owner has only two bindings, and a test passes them in directly.
+- Dropped: a move of the `Shared` struct of the worker. It also holds
+  the request and the frame slots of the playback before #2181; #2268
+  moves it with `PlayWorker`.
+- The behaviour does not change. The `stock_play_precalc` suite pins
+  the bit-identical cut, the replay law, the budget, the cancel and the
+  equal post gate result before and after.
+
 **Cost to change later.** The budget and the keyframe count are
 constants in `crates/sim/src/play_keys.rs`. Moving the start to
 Generate needs only a different call site of `PlayWorker::spawn_precalc`.

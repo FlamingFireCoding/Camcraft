@@ -140,6 +140,14 @@ impl<T: KeyCost + Clone> Keyframes<T> {
         self.floor(k).map_or(0, |c| c.0)
     }
 
+    /// A seek from `at` to `k` restores `floor(k)` before it cuts: `k`
+    /// is behind, or a keyframe stands more than one stride ahead (the
+    /// replay law: a seek cuts at most one stride past a keyframe).
+    #[must_use]
+    pub fn restores(&self, at: usize, k: usize) -> bool {
+        k < at || (self.floor_at(k) > at && k.saturating_sub(at) > self.stride)
+    }
+
     /// The first stride boundary past `at`, clamped to `total`.
     #[must_use]
     pub fn next_boundary(&self, at: usize, total: usize) -> usize {
