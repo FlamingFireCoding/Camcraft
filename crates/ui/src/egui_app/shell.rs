@@ -175,6 +175,7 @@ pub(crate) fn shell_layout(
     // (in-app egui::Window over the dock, None on a fresh State, so
     // snapshots never move until the Setup pane opens it).
     machine_editor::window(ui.ctx(), state);
+    super::post_dialog::window(ui.ctx(), state);
     // #157: the Debug info window - same window law (closed on a fresh
     // State, opened from the status strip's bug button).
     super::debug_info::window(ui.ctx(), state);
