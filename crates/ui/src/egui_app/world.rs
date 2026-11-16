@@ -176,7 +176,8 @@ fn contour_params() -> OpParams {
 /// upload.
 #[must_use]
 pub fn collect(state: &State) -> Scene {
-    Scene { parts: collect_parts(state), overlay: collect_overlay(state) }
+    // #2235: one region build per operation for the whole scene.
+    crate::frame_memo::scene_scope(|| Scene { parts: collect_parts(state), overlay: collect_overlay(state) })
 }
 
 // ---------------------------------------------------------------- parts

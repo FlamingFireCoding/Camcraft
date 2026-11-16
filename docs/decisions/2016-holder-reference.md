@@ -99,3 +99,14 @@ not readable by v0.21.0 and older. `ToolBody` has a new public field.
 
 **Cost to change.** Small. The reference type, `build_library`, the
 `holder` key (`project/tool_body_wire.rs`) and its readers.
+
+**Merge refresh (`upstream/main` post-v0.22.0).** `v0.22.0` shipped
+project v62 and `.camtools` v2 (`LEFT_HAND_VERSION`), and `upstream/main`
+advanced projects to v65 (#1557 v63, #2015 v64, #2133 v65) and
+`.camtools` to v3 (`CUTTING_STEPS_VERSION`, #2015). Keeping v62/v65 or
+`.camtools` v2 would let `v0.22.0` or v65/v3 readers accept the file and
+drop `holder`, judging only the smaller holder cylinder. Retained all
+upstream v63-v65 and `.camtools` v3 migrations and barriers, moved the
+project barrier to `PROJECT_VERSION = 66` and the `.camtools` barrier to
+`HOLDER_REF_VERSION = 4`. Future format changes must advance beyond
+project v66 and `.camtools` v4.

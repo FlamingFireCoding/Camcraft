@@ -25,7 +25,7 @@
 //! tool's numbers on load (`spun_to_dto`, `cutter_from_dto`).
 
 //!
-//! A library holder (#2016, project v62) is written as a reference on
+//! A library holder (#2016, project v66) is written as a reference on
 //! the tool (`holder`: the entry's name, the gauge length, the
 //! projection) and no `body`: the outline is drawn from the library on
 //! load (`tool_body::build_library`), the same call that drew it when

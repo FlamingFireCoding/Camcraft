@@ -90,7 +90,7 @@ fn doc(len: f64) -> (World, History) {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         links: camcraft_app::links::Links::PLANAR,
-        tilt: Some(Tilt { a_deg: 90.0, b_deg: 0.0, origin: [0.0; 3] }),
+        tilt: Some(Tilt { basis_version: 1, a_deg: 90.0, b_deg: 0.0, origin: [0.0; 3] }),
         extend_start: 0.0,
         extend_end: 0.0,
     };
