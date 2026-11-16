@@ -80,6 +80,24 @@ added as an open boundary.
 | Lead in / Lead out | Tab count / width / height | 0 / 5 / 1 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
+**Side Auto on a picked ring** reads the part at the ring's own level. It
+looks just under the top and just over the bottom of the picks' height
+span and asks which side holds material. A blind-bore rim is therefore cut
+from inside, even though the bore floor fills the part's outline from
+above. If the two levels disagree, or material is on both sides, Auto
+refuses by name: "Side Auto cannot tell which side of the picked ring holds
+the material at Z ...: ... - set Side to Inside or Outside". Set Side
+yourself then. If no level shows material either side (a sheet part), the
+part's outline decides.
+
+A picked ring whose chosen side stands in the part at every level is
+refused too, instead of cutting only the top plane in air. For example,
+Outside on a hole wall: the message names the ring, the part top and the
+fix: "the picked ring at (x, y) meets its wall at no level below the part
+top Z ...: the cutter Outside this ring stands in the part material - if
+the ring bounds a hole, set Side to Inside; else check the tool
+containment". A whole-model Contour is unchanged.
+
 An open run picked on a part cuts on its air side, offset by the tool
 radius plus stock to leave. For a run picked on the stock instead,
 **Side** chooses the offset: Inside goes toward the stock and Outside
@@ -210,6 +228,13 @@ typed in or seeded from suitable picked slot geometry;
 | Passes | Stepover / Stock to leave | 3 / 0 |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
+
+The A and B fields sit in their own **Manual** section on the Geometry tab;
+Slot width and the extension rows stay outside it. While the Geometry tab
+is open on the operation, with nothing picked and Properties visible,
+the viewport marks A and B with crosses and draws the line between them.
+The marks follow each edit before you choose Apply. They are display only;
+the committed edit is the undoable parameter change.
 
 **Common refusals:** "slot is narrower than the tool"; "slot width must be
 positive".
@@ -358,6 +383,13 @@ a positive verification tolerance. CamCraft increases the required
 stand-off, entry, reach and holder clearance to account for that error.
 It also tightens the part and radial rapid checks. If the error uses the
 full tolerance, import the model again at a higher step budget.
+
+The **Bore** cycle (an expanded bore: feed in, then rapid out) needs a
+spindle stop before the retract. Heidenhain, TinyG and Carvera cannot do
+that, so they refuse it, with or without a dwell: "bore (G86) requires a
+spindle stop before rapid retract - expanded boring is not supported by
+this post; refused, not posted". Ordinary drilling stays available on
+those posts. Choose another post, or another cycle.
 
 **Common refusals:** "no holes to drill"; "the tip meets steel ... past the
 mouth, short of the ... mm asked - ... match the depth and size to the
