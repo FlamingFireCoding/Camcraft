@@ -104,3 +104,22 @@ operate on domain values. They do not access the document or ECS world.
 **Dropped:** Placing the complete module in geometry. Its tool-profile
 conversion would add a dependency from geometry to tools. The existing sim
 dependencies support the complete module without that new dependency.
+
+
+### Arithmetic and project-format review corrections (PR #2101)
+
+**Chosen:** Refuse non-finite or out-of-range profile arithmetic before a
+fixture command exists. Check the arc intermediates, generated mesh coordinates,
+and the conservative collision envelope against the existing geometry coordinate
+limit. Preserve main's v63 through-hole break-through format and assign v64 to
+the cutting-data additions. Existing additive defaults migrate older files.
+
+**Why:** Finite input values can overflow while flattening a bulged edge. A
+successful command must not put NaN facets or infinite collision bounds into a
+project that then cannot reopen. Main already owns v63, so retaining that number
+would let its reader silently discard this PR's cutting-data additions.
+
+**Dropped:** Accepting finite inputs without checking computed geometry,
+sanitizing invalid output after modifying the document, or reusing main's
+project version. Refusal preserves steel and undo/redo; distinct format versions
+preserve the old-reader refusal rule.

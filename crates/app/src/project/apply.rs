@@ -514,7 +514,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
-        // v62 -> v63 (#2015): each tool's own rpm / feed is its Unknown
+        // v62 -> v63 (#1557): absent break-through keeps the kind default.
+        // v63 -> v64 (#2015): each tool's own rpm / feed is its Unknown
         // cutting row (derived where the tool is read); absent stock
         // material states none.
         notes = super::wcs_one::settle(&mut file, from)?;

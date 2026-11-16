@@ -627,7 +627,7 @@ pub struct EntityDto {
     /// flag without it (an early file, or by hand) loads unmarked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_stock_print: Option<String>,
-    /// #2015 (v63): the stock's workpiece material word, which picks
+    /// #2015 (v64): the stock's workpiece material word, which picks
     /// the tools' cutting-data rows for its setup. Absent states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stock_material: Option<super::StockMaterialWord>,

@@ -6,12 +6,36 @@ use std::f64::consts::TAU;
 
 use crate::dxf_profile::{ClosedProfile, ExtrudeAxis, HalfProfile, ProfileError, ProfileVertex};
 use crate::geometry::{Point3, Triangle};
+use crate::geo2d::COORD_LIMIT;
 
 /// Azimuthal subdivisions around the spindle axis (matches holder revolution).
 pub const REVOLVE_RING: usize = 32;
 const DEDUP_TOL: f64 = 1e-6;
 const CROSS_TOL: f64 = 1e-8;
 const AREA_MIN: f64 = 1e-6;
+
+fn checked_values(values: &[f64], what: &str) -> Result<(), ProfileError> {
+    if values.iter().any(|v| !v.is_finite() || v.abs() >= COORD_LIMIT) {
+        return Err(ProfileError(format!("profile {what} is non-finite or outside the permitted coordinate range")));
+    }
+    Ok(())
+}
+
+// Validate the actual collision envelope as well as the visual facets. A finite
+// mesh alone is insufficient when its conservative chord allowance overflows.
+fn check_mesh(tris: &[Triangle], error: f64) -> Result<(), ProfileError> {
+    checked_values(&[error], "collision bound")?;
+    for t in tris {
+        for p in [t.a, t.b, t.c] {
+            checked_values(&[p.x, p.y, p.z], "mesh coordinate")?;
+            checked_values(&[
+                p.x - error, p.x + error, p.y - error, p.y + error,
+                p.z - error, p.z + error,
+            ], "collision bound")?;
+        }
+    }
+    Ok(())
+}
 
 fn arc_steps(theta: f64) -> usize {
     ((theta.abs() / (10.0_f64.to_radians())).ceil() as usize).clamp(4, 72)
@@ -71,6 +95,7 @@ pub(crate) fn flatten_edges(points: &[ProfileVertex], closed: bool) -> Result<Ve
         {
             return Err(ProfileError("profile contains non-finite coordinate".into()));
         }
+        checked_values(&[a.u, a.v, b.u, b.v], "coordinate")?;
         push_unique(&mut out, [a.u, a.v]);
         if a.bulge.abs() > 1e-9 {
             let theta = 4.0 * a.bulge.atan();
@@ -78,18 +103,25 @@ pub(crate) fn flatten_edges(points: &[ProfileVertex], closed: bool) -> Result<Ve
             let dy = b.v - a.v;
             let chord = dx.hypot(dy);
             if chord > DEDUP_TOL {
+                let squared_bulge = a.bulge * a.bulge;
+                if !squared_bulge.is_finite() {
+                    return Err(ProfileError("profile arc arithmetic overflow".into()));
+                }
                 let half = chord * 0.5;
-                let h = half * (1.0 - a.bulge * a.bulge) / (2.0 * a.bulge);
+                let h = half * (1.0 - squared_bulge) / (2.0 * a.bulge);
                 let nx = -dy / chord;
                 let ny = dx / chord;
                 let cx = 0.5 * (a.u + b.u) + nx * h;
                 let cy = 0.5 * (a.v + b.v) + ny * h;
                 let radius = (a.u - cx).hypot(a.v - cy);
+                checked_values(&[h, cx, cy, radius], "arc arithmetic")?;
                 let a0 = (a.v - cy).atan2(a.u - cx);
                 let steps = arc_steps(theta);
                 for s in 1..steps {
                     let ang = a0 + theta * (s as f64 / steps as f64);
-                    push_unique(&mut out, [cx + radius * ang.cos(), cy + radius * ang.sin()]);
+                    let p = [cx + radius * ang.cos(), cy + radius * ang.sin()];
+                    checked_values(&p, "arc coordinate")?;
+                    push_unique(&mut out, p);
                 }
             }
         }
@@ -291,6 +323,7 @@ pub fn spun_mesh(profile: &HalfProfile) -> Result<Vec<Triangle>, ProfileError> {
     if tris.is_empty() {
         return Err(ProfileError("spun mesh is empty".into()));
     }
+    check_mesh(&tris, spun_chord_error(profile))?;
     Ok(tris)
 }
 
@@ -305,6 +338,7 @@ pub fn extruded_mesh(
             "extrusion depth must be positive and finite (got {depth_mm})"
         )));
     }
+    checked_values(&[depth_mm], "extrusion depth")?;
     let poly = validate_and_orient_closed(&profile.points)?;
     let cap_tris = ear_clip(&poly)?;
     let n = poly.len();
@@ -343,6 +377,7 @@ pub fn extruded_mesh(
             tris.push(Triangle::new(a0, ad, bd));
         }
     }
+    check_mesh(&tris, profile_chord_error(&profile.points, true))?;
     Ok(tris)
 }
 

@@ -263,3 +263,76 @@ fn profile_fixture_roundtrips_library_and_malformed_project_key_loads_safely() {
     let e3 = model::find_by_name(&loaded, &inserted_name).expect("kept entity");
     assert!(model::facets_of(&loaded, &e3).is_some(), "saved steel preserved");
 }
+
+
+#[test]
+fn profile_arithmetic_refusal_preserves_fixture_history_and_project() {
+    use camcraft_app::fixture_profile::SpunPoint;
+
+    let valid = FixtureProfile::Spun { points: vec![
+        SpunPoint::line(0.0, 0.0), SpunPoint::line(0.0, 10.0),
+        SpunPoint::line(10.0, 10.0), SpunPoint::line(10.0, 0.0),
+    ] };
+    let world = new_world();
+    let mut history = History::default();
+    history.execute(&world, InsertProfileFixture::new(&world, "Steel", valid.clone(), None, Location::default()).unwrap());
+    let edited = FixtureProfile::Spun { points: vec![
+        SpunPoint::line(0.0, 0.0), SpunPoint::line(0.0, 20.0),
+        SpunPoint::line(10.0, 20.0), SpunPoint::line(10.0, 0.0),
+    ] };
+    history.execute(&world, SetFixtureProfile::new(&world, "Steel", edited.clone()).unwrap());
+    assert!(history.undo(&world));
+    history.mark_clean();
+    let before = project::save_text(&world).unwrap();
+    let entries = history.done_entry_ids();
+    let boxes = fixture::boxes_for(&world, None);
+    let invalid = [
+        FixtureProfile::Spun { points: vec![
+            SpunPoint::line(0.0, 0.0), SpunPoint { z: 0.0, r: 10.0, bulge: 1e200 },
+            SpunPoint::line(10.0, 10.0), SpunPoint::line(10.0, 0.0),
+        ] },
+        FixtureProfile::Extruded { points: vec![
+            ProfilePoint { u: 0.0, v: 0.0, bulge: 1e200 }, ProfilePoint::line(10.0, 0.0),
+            ProfilePoint::line(10.0, 10.0), ProfilePoint::line(0.0, 10.0),
+        ], axis: ExtrudeAxis::Z, depth: 10.0 },
+        FixtureProfile::Spun { points: vec![
+            SpunPoint::line(0.0, 0.0), SpunPoint::line(0.0, 1e12),
+            SpunPoint::line(10.0, 1e12), SpunPoint::line(10.0, 0.0),
+        ] },
+        FixtureProfile::Extruded { points: vec![
+            ProfilePoint::line(0.0, 0.0), ProfilePoint::line(10.0, 0.0),
+            ProfilePoint::line(10.0, 10.0), ProfilePoint::line(0.0, 10.0),
+        ], axis: ExtrudeAxis::X, depth: 1e12 },
+        // Finite facets can still have an out-of-range conservative collision envelope.
+        FixtureProfile::Spun { points: vec![
+            SpunPoint::line(0.0, 0.0), SpunPoint::line(0.0, 9.99e11),
+            SpunPoint::line(10.0, 9.99e11), SpunPoint::line(10.0, 0.0),
+        ] },
+        // Finite endpoints and bulge still compute an out-of-range arc.
+        FixtureProfile::Extruded { points: vec![
+            ProfilePoint { u: 0.0, v: 0.0, bulge: 1e12 }, ProfilePoint::line(10.0, 0.0),
+            ProfilePoint::line(10.0, 10.0), ProfilePoint::line(0.0, 10.0),
+        ], axis: ExtrudeAxis::Y, depth: 10.0 },
+    ];
+    for (index, profile) in invalid.into_iter().enumerate() {
+        let error = SetFixtureProfile::new(&world, "Steel", profile.clone()).err().expect("unsafe arithmetic refused before entering history").to_string();
+        assert!(error.contains("profile") || error.contains("extrusion"), "named refusal: {error}");
+        if index < 2 { assert!(error.contains("arc arithmetic overflow"), "{error}"); }
+        if index == 4 { assert!(error.contains("collision bound"), "{error}"); }
+        assert!(InsertProfileFixture::new(&world, "Unsafe", profile, None, Location::default()).is_err());
+        assert_eq!(history.done_entry_ids(), entries);
+        assert!(history.can_undo() && history.can_redo() && !history.is_dirty());
+        assert_eq!(fixture::boxes_for(&world, None), boxes);
+        let saved = project::save_text(&world).unwrap();
+        assert_eq!(saved, before, "refusal must preserve all fixture data and facets");
+        let reopened = new_world();
+        project::open(&reopened, &saved).expect("refused edit cannot corrupt the saved project");
+        let entity = model::find_by_name(&reopened, "Steel").unwrap();
+        assert_eq!(fixture::def_of(&reopened, &entity).unwrap().profile, Some(valid.clone()));
+    }
+    assert!(history.redo(&world), "refusal preserves the pending redo");
+    let entity = model::find_by_name(&world, "Steel").unwrap();
+    assert_eq!(fixture::def_of(&world, &entity).unwrap().profile, Some(edited));
+    assert!(history.undo(&world));
+    assert_eq!(project::save_text(&world).unwrap(), before);
+}
