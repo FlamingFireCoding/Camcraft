@@ -24,3 +24,11 @@
 ### PR #2162 merge refresh
 
 **Decided.** Merge `upstream/main` (`4e0b9abef`) bringing #2126's merged `camcraft_motion::break_through` (internal `Z_TOL = 1e-6`, 5-arg `judge`), #2015's v64, and #2133's v65. Take `upstream/main`'s `break_through` module, test, and `generate.rs` call instead of altering #2126's merged signature. Advance `PROJECT_VERSION` from 65 to 66 so v65 and older readers refuse files carrying `controller_rtcp: false` rather than dropping it.
+
+### PR #2162 compatibility metadata correction
+
+**Decided.** Record the project format v65 -> v66 compatibility change in a new commit's `BREAKING CHANGE:` footer and in the release-note Changelog text. v66 preserves the new trunnion machine fields, including explicit non-RTCP capability; v65 and older readers refuse v66 files.
+
+**Considered and dropped.** Rewriting existing commits would discard the reviewed history. Leaving the bump unmarked would hide the incompatible file-format change from release tooling.
+
+**Cost to change.** Commit metadata and release-note text only.
