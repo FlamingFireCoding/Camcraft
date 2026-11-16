@@ -22,9 +22,10 @@
 //!   then calls the very function it called before #326, so an untouched
 //!   setup is byte-identical (paths, stamps, posts and saved files).
 //! - **Refuse what is not verified.** Generation in an aligned setup is
-//!   wired for `Face`, `Contour`, `Pocket`, `Adaptive2D`, `Pocket3D`
-//!   and `Finish3D` over a whole model, the stock, or picked features,
-//!   area controls included (#1743 3D, #2210 2D): every world read of
+//!   wired for `Face`, `Contour`, `Pocket`, `Adaptive2D`, `Offset2D`,
+//!   `Trace`, `Engrave`, `Pocket3D` and `Finish3D` over a whole model,
+//!   the stock, or picked features, area controls included (#1743 3D,
+//!   #2210 2D, #2276 the region kinds): every world read of
 //!   `boundary_ctx` - picks, part material, heights, silhouette - goes
 //!   through the same setup-frame doors as the model, and the stock
 //!   outline is furniture. Other kinds, a tilt and a non-mill machine
@@ -368,6 +369,7 @@ fn verified_kind(params: &crate::operation::OpParams) -> bool {
     matches!(
         params,
         OpParams::Face { .. } | OpParams::Pocket { .. } | OpParams::Contour { .. } | OpParams::Adaptive2D { .. }
+            | OpParams::Offset2D { .. } | OpParams::Trace { .. } | OpParams::Engrave { .. }
             | OpParams::Pocket3D { .. } | OpParams::Finish3D { .. }
     )
 }
@@ -390,7 +392,7 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
     if !verified_kind(&op.params) {
         return Some(format!(
             "{head} - {} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket, \
-             2D Adaptive, 3D Pocket and 3D Finish are); set the setup's part alignment back to As modelled, or machine it in another setup",
+             2D Adaptive, 2D Offset, Trace, Engrave, 3D Pocket and 3D Finish are); set the setup's part alignment back to As modelled, or machine it in another setup",
             op.params.kind().info().label
         ));
     }
