@@ -1292,6 +1292,8 @@ pub enum BoundaryPick {
     Open,
     /// An existing entry of `AreaControls::extra` (M11.5 UX re-pick).
     Extra(usize),
+    /// Protected faces and edges for "Do not touch" (#2055).
+    DoNotTouch,
 }
 
 /// What a viewport click selects. Transient view state - the mode

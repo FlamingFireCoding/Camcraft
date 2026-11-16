@@ -28,6 +28,7 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         | Warning::SweepHit { at, .. }
         | Warning::RapidInStock { at }
         | Warning::FixtureHit { at, .. }
+        | Warning::AvoidHit { at, .. }
         | Warning::HolderHit { at, .. }
         | Warning::NonFinite { at }
         | Warning::Envelope { at, .. }

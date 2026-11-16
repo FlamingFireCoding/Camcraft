@@ -2,6 +2,8 @@
 //! M11.2 C/D adds the user's level transitions and links - provenance in
 //! `links.rs`, the descents in `descent.rs`).
 
+use camcraft_sim::verify::{AVOID_PAD, AvoidSpec};
+
 use super::descent::{self, Ask, descend};
 use super::hsm;
 use super::level_ctx::{LevelCtx, feed_leg, walk_pass};
@@ -71,6 +73,7 @@ pub(super) fn ladder(
     start: Point3,
     shell: bool,
     seam: Option<&hsm::Seam>,
+    avoid: Option<&AvoidSpec>,
 ) -> Result<Toolpath, GenError> {
     let r = p.tool_diameter * 0.5;
     let hop_z = p.retract_z.unwrap_or(p.clearance_z).min(p.clearance_z);
@@ -78,7 +81,7 @@ pub(super) fn ladder(
     // ladder never pays for it and never reads it (every leg then
     // lands at its plane, exactly as always).
     let field = match shell {
-        true => Some(Field::new(facets).map_err(GenError::Invalid)?),
+        true => Some(Field::new_with_avoid(facets, avoid).map_err(GenError::Invalid)?),
         false => None,
     };
 
@@ -94,6 +97,7 @@ pub(super) fn ladder(
     // that plane, which the Crossing law reads like any pass.)
     let mut lifted = LinkTally::default();
     let mut too_narrow = false;
+    let mut avoid_blocked = 0usize;
     for &z in zs {
         // The level law, in two region ops: the footprint minus the part
         // material standing above the plane - its cross-section and the
@@ -137,6 +141,21 @@ pub(super) fn ladder(
                       // staircase (or a wall this tool cannot enter) -
                       // rest material's later problem, never a lie now
         }
+        let center = match avoid.filter(|a| !a.is_empty()) {
+            None => center,
+            Some(av) => {
+                let top_above = prev_state.as_ref().map_or(p.clearance_z, |(pz, _)| *pz);
+                let ko = av
+                    .keepout_region(z, top_above.max(z), AVOID_PAD)
+                    .map_err(GenError::Invalid)?;
+                let c = if ko.is_empty() { center } else { center.difference(&ko)? };
+                if c.is_empty() {
+                    avoid_blocked += 1;
+                    continue;
+                }
+                c
+            }
+        };
         // The level's plan: the strategy's tiling, or the HSM plan
         // (M11.4, `hsm`) - whose entry bore the level's params carry.
         // #871: a part-way refusal hands back the levels so far.
@@ -216,7 +235,9 @@ pub(super) fn ladder(
                 let proof = if !p.links.within_stay_down((s.x - leg.x).hypot(s.y - leg.y)) {
                     Err(TOO_LONG)
                 } else if (s.x == leg.x && s.y == leg.y)
-                    || (chord_clears(&center, leg, s) && !chord_hits_plan(leg, s, &prev_passes))
+                    || (chord_clears(&center, leg, s)
+                        && (avoid.is_none() || prev_state.as_ref().is_none_or(|(_, pc)| chord_clears(pc, leg, s)))
+                        && !chord_hits_plan(leg, s, &prev_passes))
                 {
                     Ok(())
                 } else {
@@ -346,6 +367,12 @@ pub(super) fn ladder(
         b.note_once(&n);
     }
     let cur = b.at();
+    if avoid_blocked > 0 && let Some(av) = avoid.filter(|a| !a.is_empty()) {
+        b.note(format!(
+            "Do not touch ({}) blocked {avoid_blocked} cut level(s); remaining levels stayed clear",
+            av.names_list()
+        ));
+    }
     b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
     let path = b.finish();
     if let Some(why) = crate::approach::refusal(&path) {
@@ -353,6 +380,12 @@ pub(super) fn ladder(
         return Err(GenError::Invalid(why).with_ghost(&path));
     }
     if path.moves.is_empty() {
+        if avoid_blocked > 0 && let Some(av) = avoid.filter(|a| !a.is_empty()) {
+            return Err(GenError::Invalid(format!(
+                "cannot cut clear of protected 'Do not touch' {}: no safe cutting room remains",
+                av.names_list()
+            )));
+        }
         let why = if too_narrow {
             format!(
                 "nothing to cut: the open area is too narrow for the {} mm tool and {} mm stock to leave at every level",

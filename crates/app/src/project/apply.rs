@@ -517,6 +517,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v62 -> v63 (#2015): each tool's own rpm / feed is its Unknown
         // cutting row (derived where the tool is read); absent stock
         // material states none.
+        // v63 -> v64 (#2055): absent `do_not_touch` protection defaults to
+        // empty picks and zero clearance.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;

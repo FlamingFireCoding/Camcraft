@@ -19,6 +19,7 @@ pub mod diag;
 
 pub mod actions;
 pub mod align_pick_viz;
+pub mod avoid_viz;
 pub(crate) mod machine_modes;
 mod axis_note;
 mod build_info;

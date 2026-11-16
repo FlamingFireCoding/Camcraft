@@ -85,7 +85,7 @@ pub struct PocketParams {
 }
 
 impl PocketParams {
-    pub(super) fn validate(&self) -> Result<(), GenError> {
+    pub(crate) fn validate(&self) -> Result<(), GenError> {
         let mut finite = [
             self.tool_diameter,
             self.stock_to_leave,
@@ -186,7 +186,7 @@ impl PocketParams {
     /// step under `Adaptive`, the stated stepover otherwise. The pass
     /// plan and the reach door both ask this one function, mirroring
     /// `Pocket3DParams::tiling_step` (M5.1 H).
-    fn tiling_step(&self) -> f64 {
+    pub(super) fn tiling_step(&self) -> f64 {
         if self.strategy.steps_by_load() { load_step(self.tool_diameter, self.optimal_load) } else { self.stepover }
     }
 }

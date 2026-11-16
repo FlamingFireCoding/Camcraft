@@ -86,6 +86,7 @@ mod slot_ends;
 mod slot_room;
 mod unreached;
 mod waterscan;
+mod pocket_avoid;
 
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -122,6 +123,7 @@ pub use fillet::{fillet_corners, Legal};
 pub use fillet_tally::{corner_arc_radius, fillet_floor, FilletTally};
 pub(crate) use levels::cut_levels;
 pub use pocket::{pocket, pocket_entered, PocketParams, PocketStrategy};
+pub use pocket_avoid::pocket_avoid;
 pub use predrilled::PreHole;
 pub use rest2d::{rest_plan, rest_pocket, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
 pub use ring::{on_boundary, ring_is_circular};

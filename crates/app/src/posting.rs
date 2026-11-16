@@ -832,6 +832,7 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     // what came after it). The law and lines live in
     // `operation::probe_problems`.
     problems.extend(crate::operation::probe_problems(world));
+    problems.extend(crate::operation::avoid::live_avoid_problems(world));
     let plasma_line = match (plasma.line, wire.line) {
         (Some(p), Some(w)) => Some(format!("{p}; {w}")),
         (p, w) => p.or(w),

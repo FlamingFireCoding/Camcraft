@@ -21,7 +21,11 @@ area they work in is the model's shadow seen from above, and the levels,
 surfaces and edges come from the model's facets. Picking faces or edges
 does not draw a different region for them. 3D Pocket and 3D Finish take
 the Boundary settings on the Geometry tab (containment, offset, extra
-boundaries) to work a smaller area; Deburr has no area to bound.
+boundaries) to work a smaller area; **3D Pocket** also supports **Do not
+touch** protected faces and edges (keeping flutes, shank and holder
+clear across every cut, entry, shell lift, rest pass and rapid link at the
+configured **Clearance** plus **Stock to leave**, highlighted in the
+viewport while selected). Deburr has no area to bound.
 
 In a part-aligned milling setup, **3D Pocket**, **3D Adaptive** and
 **3D Finish** read the model, heights and area controls in that setup's

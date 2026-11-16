@@ -69,6 +69,16 @@ impl SetOperationGeometry {
         // #1504: a Slot's picks seed the slot that fills them, in this
         // same command - one undo takes back the pick and the seed.
         let params = crate::operation::slot_from_picks(world, &params, src_items(&src)).unwrap_or(params);
+        if !prev.area.do_not_touch.is_empty()
+            && let Some(why) = crate::operation::avoid_overlap_issue(
+                world,
+                &prev.area.do_not_touch.picks,
+                Some(&src),
+                &prev.area,
+            )
+        {
+            return Err(CommandError::Invalid(why));
+        }
         let next = Operation { src, params, ..prev.clone() };
         Ok(SetOperationGeometry { name: name.to_string(), prev, next })
     }

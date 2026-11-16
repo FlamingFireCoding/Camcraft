@@ -226,6 +226,34 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
                     dto.name
                 )));
             }
+            if !op.area.do_not_touch.is_default() {
+                let cl = op.area.do_not_touch.clearance;
+                if !cl.is_finite() || cl < 0.0 || cl > crate::operation::AREA_DISTANCE_MAX {
+                    return Err(corrupt(format!("'{}' has invalid Do not touch clearance", dto.name)));
+                }
+                if op.area.do_not_touch.items.iter().any(|g| {
+                    g.entity.is_empty() || matches!(g.feature, FeatureSelDto::Vertex { .. })
+                }) {
+                    return Err(corrupt(format!("'{}' has invalid Do not touch pick", dto.name)));
+                }
+                let ctrl = op.area.to_controls();
+                let params = op.params.to_params();
+                if let Some(why) = crate::operation::do_not_touch_unsupported(params.kind()) {
+                    return Err(corrupt(format!("'{}': {why}", dto.name)));
+                }
+                let src_ref = match &op.src {
+                    SrcDto::Stock => crate::operation::SrcRef::Stock,
+                    SrcDto::Entity { name } => crate::operation::SrcRef::Entity(name.clone()),
+                    SrcDto::Selection { items } => crate::operation::SrcRef::Selection(super::area::sel_of(items)),
+                };
+                if let Some(why) = crate::operation::do_not_touch_overlap_issue(
+                    &ctrl.do_not_touch.picks,
+                    Some(&src_ref),
+                    &ctrl,
+                ) {
+                    return Err(corrupt(format!("'{}': {why}", dto.name)));
+                }
+            }
             if let SrcDto::Selection { items } = &op.src
                 && (items.is_empty() || items.iter().any(|g| g.entity.is_empty()))
             {

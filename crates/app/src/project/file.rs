@@ -101,7 +101,11 @@ use super::*;
 /// drop the rows or the stock material the feeds were picked by. A v62
 /// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
 /// row (derived at read).
-pub const PROJECT_VERSION: u32 = 63;
+/// v64 (#2055): an operation's `area` controls may state `"do_not_touch"`
+/// protected faces/edges and standoff clearance. An old reader must
+/// refuse the file rather than ignore the protection and cut across a
+/// protected feature. A v63 file steps up unchanged with empty protection.
+pub const PROJECT_VERSION: u32 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

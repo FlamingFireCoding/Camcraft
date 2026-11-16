@@ -6,7 +6,7 @@
 //! Provenance: our own tool surface over this repo's commands and the
 //! script verbs; schemas are JSON Schema as the MCP spec carries them.
 
-use super::{area, edit, features, holders, job, pick, pockets, render, tool_delete, tool_edit};
+use super::{area, do_not_touch, edit, features, holders, job, pick, pockets, render, tool_delete, tool_edit};
 use crate::commands::ImportMode;
 use crate::script::{api, Env};
 
@@ -46,6 +46,8 @@ const TOOLS: &[Tool] = &[
     Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, or picked features), its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
     Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
     Tool { name: "set_operation_area", description: "Replace an operation's area controls (containment, offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step.", schema: area::s_set_area, run: area::set_operation_area },
+    Tool { name: "get_operation_do_not_touch", description: "Read an operation's 'Do not touch' protected faces/edges and standoff clearance (mm).", schema: pick::s_op, run: do_not_touch::get_operation_do_not_touch },
+    Tool { name: "set_operation_do_not_touch", description: "Set protected faces or edge chains (plus standoff clearance, mm) that 2D Offset and 3D Pocket paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step.", schema: do_not_touch::s_set_do_not_touch, run: do_not_touch::set_operation_do_not_touch },
     Tool { name: "undo", description: "Undo the last document change.", schema: s_empty, run: edit::undo },
     Tool { name: "redo", description: "Redo the last undone change.", schema: s_empty, run: edit::redo },
     Tool { name: "generate", description: "Generate toolpaths: one named operation (always regenerated) or, with no name, every operation that is not current.", schema: s_opt_name, run: generate },

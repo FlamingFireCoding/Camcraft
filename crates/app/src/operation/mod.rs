@@ -143,6 +143,8 @@ mod run_out;
 use run_out::*;
 mod area;
 use area::*;
+pub mod avoid;
+pub use avoid::{overlap_issue as avoid_overlap_issue, route_links as route_avoid_links, verify_avoid};
 mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;

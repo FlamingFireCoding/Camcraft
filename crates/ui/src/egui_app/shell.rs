@@ -597,6 +597,8 @@ fn viewport_panel(
         }
         // #738: the alignment draft's picks - filled faces, bold edges, discs.
         crate::align_pick_viz::paint(ui.painter(), egui::Rect::from_min_size(to_px([0.0, 0.0]), egui::vec2(rw, rh)), state, aspect);
+        // #2055: "Do not touch" protected faces and edges while this operation is selected.
+        crate::avoid_viz::paint(ui.painter(), egui::Rect::from_min_size(to_px([0.0, 0.0]), egui::vec2(rw, rh)), state, aspect);
         // #709: picked points, violet and never occluded; the hover over them.
         for (a, b) in crate::vertex_pick::picked_point_marks(state, aspect) {
             ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(2.0, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
