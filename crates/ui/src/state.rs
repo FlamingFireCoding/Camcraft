@@ -1493,6 +1493,8 @@ pub enum LayoutRequest {
     Show(Panel),
     /// Open and focus the independent tool library.
     ToolLibrary,
+    /// Open the Debug info panel (#2262) as a dock tab, or close it.
+    ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
     Reset,
 }
@@ -1661,9 +1663,12 @@ pub struct State {
     /// document is switched. The status line says it too, but the next
     /// click or command writes over that line; this keeps the reason.
     pub post_refusal: Option<crate::egui_app::post_refusal::PostRefusal>,
-    /// #157: the Debug info window is open. View state - never a
-    /// command, never saved.
+    /// #157, #2262: the Debug info panel is in the dock (docked or
+    /// floating). Mirrored from the dock each frame by `layout::settle`;
+    /// view state - never a command.
     pub debug_info_open: bool,
+    /// #2262: the frame-rate reading and its log rule, fed once a frame.
+    pub frame_rate: crate::egui_app::frame_rate::FrameRate,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
     /// set once by the windowed shell; `None` headless.
     pub gpu_line: Option<String>,
@@ -2083,6 +2088,7 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            frame_rate: crate::egui_app::frame_rate::FrameRate::default(),
             gpu_line: None,
             spindle_as_vc: false,
             tool_catalog_kind: None,

@@ -24,6 +24,7 @@
 // pub(crate) for its own unit tests and the shell's init path: the M4.2
 // GPU backend pick - parse, honest fallback chain, adapter log line.
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod frame_rate;
 pub(crate) mod frame_watch;
 pub(crate) mod gpu;
 #[cfg(not(target_arch = "wasm32"))]

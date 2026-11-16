@@ -133,3 +133,35 @@ fn the_viewport_row_is_inert_and_the_door_dismisses_outside() {
     assert!(!h.state().state.ribbon_view_open, "an outside press closes the list");
     assert_no_commands(&h);
 }
+
+// ---------------------------------------------------------- Debug info
+
+/// #2262: the Debug info panel is a dock tab, not a fixed window.
+#[test]
+fn the_debug_info_panel_is_present_docked_and_undocked() {
+    let mut h = blank_harness();
+    h.run();
+    assert!(h.query_by_label("Copy").is_none(), "closed on a fresh state");
+    assert!(!h.state().state.debug_info_open);
+    // The status strip's door docks it, beside the properties pane.
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Debug info").click();
+    h.run_steps(3);
+    assert!(layout::is_open(&h.state().dock, &Tab::DebugInfo), "the door docks the panel");
+    assert!(h.state().state.debug_info_open, "the flag mirrors the dock");
+    assert!(h.query_by_label("Copy").is_some(), "the docked panel draws its Copy button");
+    assert_no_commands(&h);
+    // Undock: drag the tab out to a floating window.
+    let path = h.state().dock.find_tab(&Tab::DebugInfo).expect("docked");
+    h.state_mut().dock.remove_tab(path);
+    h.state_mut().dock.add_window(vec![Tab::DebugInfo]);
+    h.run_steps(3);
+    assert!(layout::is_open(&h.state().dock, &Tab::DebugInfo), "a float still counts as open");
+    assert!(h.query_by_label("Copy").is_some(), "the floating panel draws its Copy button");
+    // The door closes it wherever it is.
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Debug info").click();
+    h.run_steps(3);
+    assert!(!layout::is_open(&h.state().dock, &Tab::DebugInfo));
+    assert!(!h.state().state.debug_info_open);
+    assert!(h.query_by_label("Copy").is_none());
+    assert_no_commands(&h);
+}

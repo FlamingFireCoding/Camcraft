@@ -1599,7 +1599,8 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // icon set is up, its name when it is not (headless frames
             // and a failed decode degrade to text, never to nothing).
             if super::debug_info::button(ui, icons).clicked() {
-                state.debug_info_open = !state.debug_info_open;
+                // #2262: a dock tab like the other panels; the shell lands it.
+                state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
             }
             // #183: the live MCP server says it is listening.
             if let Some(note) = crate::mcp_host::badge(state) {
