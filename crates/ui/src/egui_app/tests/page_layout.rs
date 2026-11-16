@@ -42,10 +42,14 @@ fn assert_page_layout(h: &H, page: &str, anchors: &[&str]) {
     let Some(leaf) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
         panic!("{page} page: the Properties leaf is not laid out");
     };
-    let properties = h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties");
     let mut last: Option<(&str, f32)> = None;
     for a in anchors {
-        let Some(node) = properties.query_by_label(a) else {
+        let node = if *a == "Delete" {
+            h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").query_by_label(a)
+        } else {
+            h.query_by_label(a)
+        };
+        let Some(node) = node else {
             panic!("{page} page: no widget labelled {a:?}");
         };
         let r = node.rect();
