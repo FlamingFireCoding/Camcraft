@@ -39,6 +39,7 @@ pub mod g93;
 pub mod invert;
 pub mod js;
 pub mod machine;
+mod machine_rotary;
 pub mod nose_tip;
 pub mod options;
 mod options_parse;

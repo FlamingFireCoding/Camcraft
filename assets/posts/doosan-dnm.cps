@@ -488,6 +488,11 @@ function reversedLoneXRotary() {  // the rotary's name, else ""
 function tilt(p) {  // words to append, [] if none, null if refused
   if (!has(p.A)) return [];
   if (typeof machine === "undefined" || machine.rtcp !== true) {
+    var rs = (typeof machine !== "undefined" && machine.rotaries) || [];
+    if (rs.length > 1) {
+      if (!tiltRefused) { tiltRefused = true; msg("tilted move on a multi-axis machine without controller RTCP"); }
+      return null;
+    }
     var rc = getRotaryCodes();
     if (!rc.clamp || !rc.unclamp) {
       if (!rotaryRefused) {

@@ -109,7 +109,12 @@ use super::*;
 /// row (derived at read).
 /// v65 (#2133): old readers must not discard the tilted frame basis version.
 /// Version 64 and older tilts retain basis 0; new tilts state basis 1.
-pub const PROJECT_VERSION: u32 = 65;
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+pub const PROJECT_VERSION: u32 = 66;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
