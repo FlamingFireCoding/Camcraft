@@ -49,7 +49,10 @@ mod stock_page;
 pub mod colorvision;
 pub mod ground_ink;
 pub mod window_chrome;
+pub(crate) mod post_dialog;
+mod post_dialog_tabs;
 mod post_options;
+mod post_script_options;
 mod program_info;
 pub mod cvd;
 mod app_icon;
@@ -163,6 +166,8 @@ mod trochoid_page;
 mod kind_editors;
 mod mill2d_more_page;
 mod mill2d_page;
+// #1815: 2D Pocket's "Rest machining" group on the Passes tab.
+mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
 mod op_page;
@@ -267,6 +272,8 @@ mod after_op_tests;
 #[cfg(test)]
 mod program_info_tests;
 #[cfg(test)]
+mod post_dialog_tests;
+#[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]
 mod viewport_ground_tests;
@@ -321,6 +328,8 @@ mod gate_route_tests;
 mod sinker_pass_tests;
 #[cfg(test)]
 mod sinker_machine_tests;
+#[cfg(test)]
+mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, fallback adapter, View3D
