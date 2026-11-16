@@ -80,6 +80,9 @@ struct Def {
     /// A single-form thread mill's finest pitch (#894).
     #[serde(default)]
     pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    #[serde(default)]
+    thread_hand: crate::thread_hand::ThreadHand,
     #[serde(default)]
     nose_radius: f64,
     #[serde(default)]
@@ -140,6 +143,7 @@ impl Def {
             tip_angle: self.tip_angle,
             pitch: self.pitch,
             pitch_min: self.pitch_min,
+            thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,

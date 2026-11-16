@@ -39,6 +39,7 @@ mod trochoid_bore;
 mod trochoid_loops;
 mod trochoid_slot;
 mod contour;
+mod contour_auto;
 mod contour_bore;
 mod contour_chain;
 mod contour_comp;
@@ -109,6 +110,7 @@ pub use bore_core::{bore_core_gap, bore_floor_reach, bore_leaves_core, cutting_r
 pub use chamfer::{chamfer, ChamferParams};
 pub use circular::{circular, CircularParams};
 pub use contour::{contour, contour_on_bodies, contour_on_part, contour_on_picked, ContourParams, Lead, Side};
+pub use contour_auto::{auto_side, AutoSide, AUTO_BAND, AUTO_PROBE_DZ};
 pub use contour_chain::contour_along_chain;
 pub use contour_run_side::{contour_open_run, SectionAt};
 pub use contour_run_stock::contour_open_run_sided;
