@@ -93,6 +93,7 @@ mod wcs_page;
 mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
+mod stock_material_row;
 // #371: the tool editor's Body section and its picking preview.
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
@@ -166,6 +167,8 @@ mod trochoid_page;
 mod kind_editors;
 mod mill2d_more_page;
 mod mill2d_page;
+// #1815: 2D Pocket's "Rest machining" group on the Passes tab.
+mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
 mod op_page;
@@ -199,6 +202,8 @@ mod fixture_plate_rows;
 mod fixture_modvise_rows;
 pub(crate) mod fixture_accessory_dialog;
 mod fixture_accessory_rows;
+mod fixture_profile_dialog;
+mod fixture_profile_rows;
 pub(crate) mod shell;
 // #31: the winit window, loop and per-frame draw - native only; the
 // browser build keeps `shell` (the shared frame) and refuses `run` below.
@@ -251,6 +256,8 @@ mod fixture_plate_tests;
 mod fixture_modvise_tests;
 #[cfg(test)]
 mod fixture_accessory_tests;
+#[cfg(test)]
+mod fixture_profile_tests;
 #[cfg(test)]
 mod footer_tests;
 #[cfg(test)]
@@ -326,6 +333,8 @@ mod gate_route_tests;
 mod sinker_pass_tests;
 #[cfg(test)]
 mod sinker_machine_tests;
+#[cfg(test)]
+mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, fallback adapter, View3D

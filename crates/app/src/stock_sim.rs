@@ -124,10 +124,7 @@ pub fn stock_grid(
             // The analytic grids are built origin-centered; the stock
             // entity's place moves the lattice itself, so the moves
             // stay in the world frame the viewport and post read.
-            d.x0 += loc.pos.x;
-            d.y0 += loc.pos.y;
-            d.stock_z += loc.pos.z;
-            d.translate_finite(loc.pos.z); // stored heights ride with it
+            d.translate_origin(loc.pos.x, loc.pos.y, loc.pos.z);
             d
         }
     };
@@ -329,7 +326,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         // order, kerf crossings, the through-cut) are #672's laws, and
         // the generator certified that no lit move's kerf reaches the
         // part - so the torch carves nothing here, said not silenced.
-        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) {
+        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) {
             continue;
         }
         let cache = model::toolpath_of(world, e)

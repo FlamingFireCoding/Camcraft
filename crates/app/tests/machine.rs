@@ -760,6 +760,11 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Sienci AltMill 4x8", Kind::Mill),
         ("Doosan DNM 5700", Kind::Mill),
         ("Doosan DNM 5700 + rotary table", Kind::Mill),
+        ("Haas VF-2", Kind::Mill),
+        ("Haas VF-2SS", Kind::Mill),
+        ("Haas Mini Mill", Kind::Mill),
+        ("Haas DT-1", Kind::Mill),
+        ("Haas DM-1", Kind::Mill),
         ("Sinker EDM 3-axis (template)", Kind::SinkerEdm),
         ("Sodick ALC400G", Kind::WireEdm),
     ];
