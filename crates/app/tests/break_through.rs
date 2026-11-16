@@ -214,7 +214,7 @@ fn the_parameter_round_trips_the_file_and_the_mcp_params() {
 
 
 #[test]
-fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
+fn v66_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     use camcraft_app::commands::ChangeTool;
     use camcraft_app::tool_cutting_rows::CuttingRow;
     use serde_json::json;
@@ -229,8 +229,9 @@ fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     history.execute(&world, CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(0.4))).unwrap());
     let saved = project::save_text(&world).unwrap();
     let current: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    assert_eq!(current["version"], json!(65), "the tilt-basis format follows main's v64 cutting-data format");
-    for version in [62, 63, 64, 65] {
+    assert!(project::PROJECT_VERSION >= 66, "the holder-reference format follows main's v65 tilt-basis format");
+    assert_eq!(current["version"], json!(project::PROJECT_VERSION));
+    for version in 62..=project::PROJECT_VERSION {
         let mut file = current.clone();
         file["version"] = json!(version);
         for row in file["entities"].as_array_mut().unwrap() {
@@ -253,6 +254,6 @@ fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
         if version >= 64 { assert_eq!(actual.cutting, tool.cutting); }
         else { assert!(actual.cutting.is_empty(), "older tools keep their derived Unknown row"); }
         let rewritten: serde_json::Value = serde_json::from_str(&project::save_text(&loaded).unwrap()).unwrap();
-        assert_eq!(rewritten["version"], json!(65), "old documents migrate forward");
+        assert_eq!(rewritten["version"], json!(project::PROJECT_VERSION), "old documents migrate forward");
     }
 }
