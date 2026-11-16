@@ -75,6 +75,27 @@ pub(super) fn pick_ring(loops: &[&Loop], p: &ContourParams) -> Result<Option<(us
             ap.compensation.label()
         )));
     }
+    // The part-boundary room law does not include the standing tabs.
+    // Only normal departures are certified here; tangential motion can
+    // cut the tab ending at the pick, including an extension with no lead.
+    if p.tab_count > 0 {
+        let normal = |lead| matches!(lead, Lead::None | Lead::Perpendicular { .. });
+        let unsafe_part = if !normal(p.lead) {
+            Some("lead-in")
+        } else if !normal(p.lead_out_shape()) {
+            Some("lead-out")
+        } else if ap.ext_in > 0.0 || ap.ext_out > 0.0 {
+            Some("extension")
+        } else {
+            None
+        };
+        if let Some(part) = unsafe_part {
+            return Err(GenError::Invalid(format!(
+                "{at}: the {part} is not certified with standing tabs at a picked start - \
+                 use no lead or perpendicular leads without extensions, or clear the start point"
+            )));
+        }
+    }
     nearest_ring(loops, q, &at, "start", p).map(Some)
 }
 

@@ -31,3 +31,15 @@ wear compensation with a pick stay refused by name (item 4).
 
 **Cost to change later.** One function (`Ring::tab_keeps_from_start`) and
 one branch in `contour`; no file format change.
+
+**Review fix (#1822).** A picked start with tabs accepts only no lead or
+perpendicular leads. It refuses linear, arc and tangential leads by name,
+including an independent lead-out. It also refuses either extension,
+even when the lead shape is None. These shapes and extensions can cross
+a standing tab that the part-boundary room check does not include.
+
+The fix uses a conservative refusal instead of new tab collision geometry.
+The refusal applies whenever tabs are configured, even above the tab top.
+The existing perpendicular entry and tab layout stay available. Separate
+lead-in and lead-out tests pin the reported cases. Tests also pin the other
+lead shapes, both extensions, and the no-lead case.

@@ -159,6 +159,66 @@ fn a_picked_start_with_tabs_enters_every_level_at_its_projection() {
 }
 
 #[test]
+fn a_picked_start_with_tabs_refuses_a_linear_lead_in() {
+    let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+    p.lead = Lead::Linear { length: 5.0 };
+    p.links.approach.lead_out = Some(Lead::None);
+    let why = refusal(&p);
+    assert!(why.contains("start point (44.000, 20.000)") && why.contains("tabs") && why.contains("lead-in"), "{why}");
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_an_independent_linear_lead_out() {
+    let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+    p.links.approach.lead_out = Some(Lead::Linear { length: 5.0 });
+    let why = refusal(&p);
+    assert!(why.contains("start point (44.000, 20.000)") && why.contains("tabs") && why.contains("lead-out"), "{why}");
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_arc_and_tangential_leads() {
+    for shape in [Lead::Arc { radius: 2.0 }, Lead::Tangential { radius: 2.0 }] {
+        for incoming in [true, false] {
+            let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+            if incoming {
+                p.lead = shape;
+                p.links.approach.lead_out = Some(Lead::None);
+            } else {
+                p.links.approach.lead_out = Some(shape);
+            }
+            let why = refusal(&p);
+            let name = if incoming { "lead-in" } else { "lead-out" };
+            assert!(why.contains("start point") && why.contains("tabs") && why.contains(name), "{why}");
+        }
+    }
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_extensions_even_without_leads() {
+    for lead in [Lead::None, Lead::Perpendicular { length: 5.0 }] {
+        for incoming in [true, false] {
+            let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+            p.lead = lead;
+            if incoming {
+                p.links.approach.ext_in = 5.0;
+            } else {
+                p.links.approach.ext_out = 5.0;
+            }
+            let why = refusal(&p);
+            assert!(why.contains("start point") && why.contains("tabs") && why.contains("extension"), "{why}");
+        }
+    }
+}
+
+#[test]
+fn a_picked_start_with_tabs_without_leads_keeps_the_tab() {
+    let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+    p.lead = Lead::None;
+    let t = contour(&square(), &p).unwrap();
+    assert!(!cut_at(&t, -4.0, Point2::new(43.0, 22.0)), "the tab before the pick stands");
+}
+
+#[test]
 fn tabs_without_a_pick_keep_their_automatic_windows() {
     let base = contour(&square(), &ContourParams { links: Links::PLANAR, ..tabbed(None) }).unwrap();
     let unset = contour(&square(), &tabbed(None)).unwrap();
