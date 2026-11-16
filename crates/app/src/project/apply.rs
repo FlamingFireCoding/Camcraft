@@ -520,9 +520,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // material states none.
         // v64 -> v65 (#2133): absent tilt basis preserves the legacy frame.
         // Saving writes v65 so old readers cannot drop an explicit basis.
-        // v65 -> v66 (#1862): a DXF profile row arrives; a v65 file has
-        // none, so it steps up unchanged. Stated tilt bases and
-        // break-through values remain unchanged in their parameter DTOs.
+        // v65 -> v66 (#1962): absent trunnion fields and `controller_rtcp`
+        // read as before (tool_rh, RTCP inferred from tilt). Saving writes
+        // v66 so old readers cannot drop `controller_rtcp: false`.
+        // v66 -> v67 (#1862): a DXF profile row arrives; a v66 file has
+        // none, so it steps up unchanged. Stated trunnion fields, tilt bases
+        // and break-through values remain unchanged in their DTOs.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;

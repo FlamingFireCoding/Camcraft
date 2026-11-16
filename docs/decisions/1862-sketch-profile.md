@@ -112,11 +112,11 @@ The operation has no toolpath, and the post gate refuses it.
 - Each profile is read and chained before any world write. A profile off its
   face, with an unknown unit code or with primitives that do not chain refuses
   the file by name.
-- **`PROJECT_VERSION` 65 -> 66.** Main uses v65 for the tilted-frame
-  basis from #2133. Profiles use the next version, v66. A v65 file steps
-  up unchanged; the tilt basis, earlier cutting-data rows and breakthrough
-  values remain intact. An older reader refuses a v66 file before
-  it can discard a profile. Dropped: sharing a version with main, which
+- **`PROJECT_VERSION` 66 -> 67.** Main uses v66 for the trunnion schema
+  from #1962. Profiles use the next version, v67. A v66 file steps
+  up unchanged; the trunnion data, stated RTCP mode, tilt basis, earlier
+  cutting-data rows and breakthrough values remain intact. An older reader
+  refuses a v67 file before it can discard a profile. Dropped: sharing a version with main, which
   lets an older reader discard data it cannot represent.
 
 ### What it costs to change later
@@ -195,7 +195,8 @@ The operation has no toolpath, and the post gate refuses it.
 
 ### PR #2134 tilt-basis format refresh
 
-- Merge main's v65 tilted-frame basis format and give profiles v66. Keep
+- This choice is superseded by the trunnion-format refresh below. Merge
+  main's v65 tilted-frame basis format and give profiles v66. Keep
   main's basis fields, format history and earlier migration steps; add the
   v65-to-v66 profile step without rewriting document data. Dropped: sharing
   v65, which lets an older reader discard the stated basis and change the
@@ -205,3 +206,17 @@ The operation has no toolpath, and the post gate refuses it.
   the v63 breakthrough and v64 cutting-data pins, and update the profile
   persistence assertions to v66. These checks protect the earlier motion
   and cutting limits while the profile format advances.
+
+### PR #2134 trunnion-format refresh
+
+- Merge main's v66 trunnion format and give profiles v67. Keep main's
+  trunnion fields, format history, earlier migrations and both MCP additions.
+  Add the v66-to-v67 profile step without rewriting document data. Dropped:
+  sharing v66, which lets a reader discard `controller_rtcp: false` and
+  change the RTCP mode used for tool motion. This supersedes the earlier
+  v66 profile choice.
+- Pin a v66 file with `controller_rtcp: false` and stated trunnion data
+  through load, save as v67, and reload. Keep the legacy-basis and basis-1
+  tilt pins and the earlier breakthrough and cutting-data pins. Update the
+  profile persistence assertions to v67. These checks preserve the stated
+  machine contract while the profile format advances.

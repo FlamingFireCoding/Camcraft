@@ -77,6 +77,8 @@ pub(crate) struct Env {
     /// pull (`cam.result()`, and the non-string read of a parked
     /// object). One value pushed into the sandbox on demand.
     pub last_value: Value,
+    /// Optional UI selection snapshot passed into live MCP calls (#1942).
+    pub selection: Option<crate::mcp::SelectionContext>,
 }
 
 /// The `cam` methods, as data: name, arity, TypeScript line, and the
@@ -123,6 +125,7 @@ impl Env {
             doc_path: None,
             posted: None,
             last_value: Value::Null,
+            selection: None,
         }
     }
 }

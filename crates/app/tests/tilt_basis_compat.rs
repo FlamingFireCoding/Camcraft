@@ -240,7 +240,7 @@ fn v65_tilt_steps_up(basis: Option<u8>) {
     let point = tilt.frame().unwrap().to_world(Point3::new(7.0, 11.0, 13.0));
     let text = project::save_text(&loaded).unwrap();
     let saved: Value = serde_json::from_str(&text).unwrap();
-    file["version"] = 66.into();
+    file["version"] = 67.into();
     file["entities"][row]["operation"]["params"]["contour"]["tilt"]["basis_version"] = expected_basis.into();
     assert_eq!(saved, file, "only the version and an unstated legacy basis may change");
     let reloaded = opened(&text);

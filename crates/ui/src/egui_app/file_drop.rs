@@ -50,15 +50,83 @@ pub(super) fn classify(paths: &[PathBuf]) -> Result<PathBuf, String> {
 }
 
 /// Once a frame: take a finished drop (queue the import or refuse it).
+/// Disk paths run through `classify` -> `CommandKind::ImportFile`;
+/// bare-name drops with bytes (browser drops, or in-memory drops) route
+/// through `file_pick`.
 pub(super) fn take_drop(ui: &Ui, state: &mut State) {
-    let files: Vec<PathBuf> = ui.ctx().input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
+    let files = ui.ctx().input(|i| i.raw.dropped_files.clone());
     if files.is_empty() {
         return;
     }
-    match classify(&files) {
-        Ok(path) => state.pending.push_back(CommandKind::ImportFile(path)),
-        Err(msg) => state.refuse_drop(msg),
+    #[cfg(not(target_arch = "wasm32"))]
+    if files.len() != 1 || files[0].path().is_file() {
+        let paths: Vec<PathBuf> = files.iter().map(|f| f.path().to_path_buf()).collect();
+        match classify(&paths) {
+            Ok(path) => state.pending.push_back(CommandKind::ImportFile(path)),
+            Err(msg) => state.refuse_drop(msg),
+        }
+        return;
     }
+    let [file] = files.as_slice() else {
+        state.refuse_drop(format!(
+            "drop refused: {} files were dropped; drop one model file at a time",
+            files.len()
+        ));
+        return;
+    };
+    let path = file.path().to_path_buf();
+    let name = label(&path);
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if !MESH_EXTENSIONS.contains(&ext.as_str()) {
+        state.refuse_drop(format!(
+            "drop refused: {name} is not a model file (read: .{})",
+            MESH_EXTENSIONS.join(", .")
+        ));
+        return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    match file.bytes() {
+        Ok(bytes) => match check_drop_bytes(&name, Ok(bytes)) {
+            Ok(data) => deliver_model_bytes(ui.ctx(), name, Ok(data)),
+            Err(why) => state.refuse_drop(format!("drop refused: {why}")),
+        },
+        Err(why) => state.refuse_drop(format!("drop refused: {name} is not a readable file ({why})")),
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(wf) = file.web_file()
+            && let Some(why) = crate::file_pick::too_big(&name, wf.size())
+        {
+            state.refuse_drop(format!("drop refused: {why}"));
+            return;
+        }
+        state.status = format!("reading {name}…");
+        let file = std::sync::Arc::clone(file);
+        let ctx = ui.ctx().clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let bytes = check_drop_bytes(&name, file.bytes_async().await);
+            if let Err(why) = &bytes {
+                diag_warn!("file drop: {name}: {why}");
+            }
+            deliver_model_bytes(&ctx, name, bytes);
+        });
+    }
+}
+
+fn check_drop_bytes(name: &str, bytes: Result<Vec<u8>, String>) -> Result<Vec<u8>, String> {
+    bytes.and_then(|data| match crate::file_pick::too_big(name, data.len() as f64) {
+        Some(why) => Err(why),
+        None => Ok(data),
+    })
+}
+
+fn deliver_model_bytes(ctx: &egui::Context, name: String, bytes: Result<Vec<u8>, String>) {
+    crate::file_pick::deliver(crate::file_pick::PickedFile {
+        purpose: crate::file_pick::PickFor::Model,
+        name,
+        bytes,
+    });
+    ctx.request_repaint();
 }
 
 /// The hint over the viewport's rect while a file hovers the window.

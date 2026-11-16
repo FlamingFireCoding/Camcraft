@@ -109,11 +109,16 @@ use super::*;
 /// row (derived at read).
 /// v65 (#2133): old readers must not discard the tilted frame basis version.
 /// Version 64 and older tilts retain basis 0; new tilts state basis 1.
-/// v66 (#1862): a DXF profile is an entity row of kind `sketch`, placed
-/// on the stock of a setup. A v65 file has none and steps up unchanged.
-/// An old reader must refuse a v66 file rather than open a setup without
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+/// v67 (#1862): a DXF profile is an entity row of kind `sketch`, placed
+/// on the stock of a setup. A v66 file has none and steps up unchanged.
+/// An old reader must refuse a v67 file rather than open a setup without
 /// the profiles its operations cut.
-pub const PROJECT_VERSION: u32 = 66;
+pub const PROJECT_VERSION: u32 = 67;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

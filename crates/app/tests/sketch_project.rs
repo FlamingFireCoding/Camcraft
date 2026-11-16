@@ -1,5 +1,5 @@
 //! #1862: a setup with only a stock and a placed DXF profile saves and
-//! loads - the profile row (`kind: sketch`, project v66), its placement
+//! loads - the profile row (`kind: sketch`, project v67), its placement
 //! on the stock face, its chains made again from the stored primitives,
 //! and the 2D operation on it. A v62 file steps up unchanged; a corrupt
 //! profile row refuses the file by name.
@@ -95,8 +95,8 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
     let world = sheet_job();
     let text = saved(&world);
     let (file, row) = file_and_row(&text);
-    assert_eq!(PROJECT_VERSION, 66, "the DXF profile row arrives at v66");
-    assert_eq!(file["version"], json!(66));
+    assert_eq!(PROJECT_VERSION, 67, "the DXF profile row arrives at v67");
+    assert_eq!(file["version"], json!(67));
     let dto = &file["entities"][row];
     assert_eq!(dto["name"], json!("plate"));
     assert_eq!(dto["sketch"]["setup"], json!("Sheet"));
@@ -130,7 +130,7 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
 }
 
 #[test]
-fn rest_parameters_and_profile_rows_share_the_v66_project_file() {
+fn rest_parameters_and_profile_rows_share_the_v67_project_file() {
     let world = sheet_job();
     let mut history = History::default();
     let mut pocket = operation::seed_params(OpType::Pocket.ordinal());
@@ -150,7 +150,7 @@ fn rest_parameters_and_profile_rows_share_the_v66_project_file() {
     run(&world, &mut history, CreateOperation::new(&world, "Rest", TOOL, SrcRef::Entity("plate".into()), pocket), "Rest");
     let text = saved(&world);
     let file: Value = serde_json::from_str(&text).expect("json");
-    assert_eq!(file["version"], json!(66), "main's additive rest keys do not consume the profile version");
+    assert_eq!(file["version"], json!(67), "main's additive rest keys do not consume the profile version");
     let again = reopened(&text);
     let op = model::find_by_name(&again, "Rest").and_then(|e| model::operation_of(&again, &e)).expect("the rest operation loads");
     assert!(matches!(op.params, operation::OpParams::Pocket { rest: Some(r), .. } if r == previous));
@@ -169,7 +169,7 @@ fn a_v62_file_steps_up_unchanged() {
     let mut v62: Value = serde_json::from_str(&text).expect("json");
     v62["version"] = json!(62);
     let again = reopened(&v62.to_string());
-    assert_eq!(saved(&again), text, "the v62 file loads unchanged and saves as v66");
+    assert_eq!(saved(&again), text, "the v62 file loads unchanged and saves as v67");
 }
 
 #[test]
@@ -198,9 +198,9 @@ fn a_v63_break_through_file_steps_up_without_losing_the_stated_limit() {
     let op = model::find_by_name(&again, "Drill").and_then(|e| model::operation_of(&again, &e)).expect("the drill loads");
     assert_eq!(op.params, drill, "migration preserves the stated zero allowance");
     let text = saved(&again);
-    v63["version"] = json!(66);
+    v63["version"] = json!(67);
     assert_eq!(serde_json::from_str::<Value>(&text).expect("json"), v63, "only the project version changes");
-    assert_eq!(saved(&reopened(&text)), text, "the v66 file has a byte-stable round trip");
+    assert_eq!(saved(&reopened(&text)), text, "the v67 file has a byte-stable round trip");
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn a_v64_cutting_row_steps_up_without_losing_its_limits() {
     tool["tool"]["feed"] = json!(410.0);
     file["version"] = json!(64);
     let again = reopened(&file.to_string());
-    file["version"] = json!(66);
+    file["version"] = json!(67);
     let text = saved(&again);
     assert_eq!(serde_json::from_str::<Value>(&text).expect("json"), file, "only the version changes; cutting limits survive");
     assert_eq!(saved(&reopened(&text)), text);
