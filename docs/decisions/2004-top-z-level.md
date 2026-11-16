@@ -141,6 +141,22 @@
       old ladder. It is now written from the test's command build under
       `WRITE_GOLDEN=1` (as #1917's decision says). The diff removes 37
       moves and changes the stamp; the verification gate stays silent.
+11. Round 8, the 18 red app tests after round 7. Each one is class (a):
+    the test kept the old air level at Top Z. No code changed in this
+    round, and no golden changed.
+
+    | Test | Why (a) |
+    |---|---|
+    | `operations::an_open_run_contours_on_its_air_side` | part top 5 is Top Z; levels `[2.5, 0]` |
+    | `operations::a_mixed_pick_list_cuts_boundary_then_run...` | each kind loses its level at Top Z; plunges 6 to 4 |
+    | `operations::contour_outside_forces_outside_on_bore` | still refused; the #1927 named text comes first (item 10b) |
+    | `project_roundtrip::side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate` | still refused; asserts the #1927 named text and the side advice |
+    | `predrilled_entry` (2 tests) | stock top 20 is Top Z; plunges `[16, 12]`; no descent onto Z 20 |
+    | `remachining` (2 tests) | the unmasked marker moves from Z 20 to Z 15; the masked asserts also forbid Z 15 |
+    | `stitch_cross` (2 tests) | stepdown 10 = the span, so the ladder is `[0]`; the ring across two boxes is still cut at Z 0 as the one-block reference; the self-touching body is still refused by name |
+    | `turning_face_approach::every_facing_retract_lifts_z...` | the pass at the stock end Z 16 is air (item 5); passes `[15.5, 15]` |
+    | `turning_face_seed::a_seeded_facing_faces_the_allowance_not_the_part` | passes `[49.5 .. 48]`; the full 2 mm is removed |
+    | `wall_arc_entry` (6 tests) | stock top 20 is Top Z; one level and one fan fewer; the second level now plunges onto Z 15; each entry's last rapid ends at Z 20 or above (new assert) |
 
 **Why:** a level at the material top removes nothing and doubles the cycle
 time of a one-level cut (the maintainer's report on v0.21.0). The fix at the
