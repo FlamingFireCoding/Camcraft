@@ -98,6 +98,27 @@ pub struct ShapeMask {
 
 impl ShapeMask {
     pub fn evaluate(spec: &MaskSpec<'_>) -> Result<Self, String> {
+        Self::evaluate_stock(spec, None)
+    }
+
+    /// Start with a separately drilled region cleared only down to `cleared_z`.
+    /// This is initial stock, not a cut attributed to the path under test:
+    /// overcut and leftover still use only that path's actual swept footprint.
+    pub fn evaluate_with_precleared(
+        spec: &MaskSpec<'_>,
+        precleared: &Region,
+        cleared_z: f64,
+    ) -> Result<Self, String> {
+        if !cleared_z.is_finite() {
+            return Err("precleared depth must be finite".into());
+        }
+        Self::evaluate_stock(spec, Some((precleared, cleared_z)))
+    }
+
+    fn evaluate_stock(
+        spec: &MaskSpec<'_>,
+        precleared: Option<(&Region, f64)>,
+    ) -> Result<Self, String> {
         if !spec.tool_diameter.is_finite() || spec.tool_diameter <= 0.0 {
             return Err("tool_diameter must be finite and positive".into());
         }
@@ -110,6 +131,13 @@ impl ShapeMask {
 
         let mut swept = vec![false; grid.len()];
         let mut swept_z = vec![f64::INFINITY; grid.len()];
+        if let Some((region, z)) = precleared {
+            for (depth, cleared) in swept_z.iter_mut().zip(grid.rasterize_region(region)) {
+                if cleared {
+                    *depth = z;
+                }
+            }
+        }
         let mut out_of_grid_moves = 0usize;
         let mut first_out_point = None;
         let mut max_cut_width = 0.0f64;

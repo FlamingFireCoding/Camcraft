@@ -541,7 +541,15 @@ fn adaptive_pocket_shape_mask_holds_shape_and_engagement() {
         depth: CutDepth::AllCut,
         diff_dir: None,
     };
-    let Ok(mask) = ShapeMask::evaluate(&spec) else { panic!("evaluate") };
+    // Radial engagement fixture: a separately drilled starter bore reaches the
+    // floor before this operation. A descending helix alone does not clear its
+    // whole floor footprint. The bore radius is helix radius (3) + cutter radius (5).
+    let Ok(starter_bore) = Reg::sweep(&[vec![P2::new(0.0, 0.0)]], 8.0) else {
+        panic!("starter bore");
+    };
+    let Ok(mask) = ShapeMask::evaluate_with_precleared(&spec, &starter_bore, p.bottom_z) else {
+        panic!("evaluate");
+    };
     mask.assert_no_overcut();
     mask.assert_bounded_leftover(25.0, None);
     // Match adaptive_hsm's +35% debug engagement budget over nominal optimal_load * D while still catching overloads.

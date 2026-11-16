@@ -140,6 +140,73 @@ fn shape_mask_descending_helix_does_not_preclear_its_floor() {
 }
 
 #[test]
+fn shape_mask_precleared_bore_respects_its_radius_and_depth() {
+    let circle = |radius| {
+        let Ok(region) = Region::sweep(&[vec![Point2::new(0.0, 0.0)]], radius) else {
+            panic!("circle")
+        };
+        region
+    };
+    let orbit = |radius| {
+        let mut b = PathBuilder::approached(Point3::new(radius, 0.0, -2.0));
+        for x in [-radius, radius] {
+            b.push_arc(
+                MoveKind::Feed,
+                Point3::new(x, 0.0, -2.0),
+                Some(600.0),
+                Point2::new(0.0, 0.0),
+                true,
+            );
+        }
+        b.finish()
+    };
+    let expected = circle(8.0);
+    let bore = circle(5.0);
+    let path = orbit(4.2);
+    let dir = scratch_dir("precleared_bore");
+    let spec = MaskSpec {
+        name: "precleared_bore",
+        expected: &expected,
+        path: &path,
+        tool_diameter: 2.0,
+        cell: 0.125,
+        depth: CutDepth::AtOrBelow(-2.0),
+        diff_dir: Some(&dir),
+    };
+    let Ok(mask) = ShapeMask::evaluate_with_precleared(&spec, &bore, -2.0) else {
+        panic!("evaluate precleared")
+    };
+    // A 5 mm starter bore leaves a 0.2 mm radial cut on this 4.2 mm orbit.
+    mask.assert_max_engagement(0.5);
+    let Ok(solid) = ShapeMask::evaluate(&spec) else { panic!("evaluate solid") };
+    assert!(catch_unwind(AssertUnwindSafe(|| solid.assert_max_engagement(0.5))).is_err());
+
+    for (region, floor) in [(&circle(3.0), -2.0), (&bore, -1.0)] {
+        let Ok(insufficient) = ShapeMask::evaluate_with_precleared(&spec, region, floor) else {
+            panic!("evaluate insufficient bore")
+        };
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| insufficient.assert_max_engagement(0.5))).is_err()
+        );
+    }
+
+    // Starting stock is independent of the generated path's shape coverage.
+    // The unvisited bore centre must still be reported as unswept by this path.
+    assert_eq!(mask.metrics().swept_cells, solid.metrics().swept_cells);
+    assert_eq!(mask.metrics().uncut_cells, solid.metrics().uncut_cells);
+    assert!(catch_unwind(AssertUnwindSafe(|| mask.assert_bounded_leftover(0.0, None))).is_err());
+
+    // The same bore cannot conceal a full-width orbit outside its radius.
+    let outside = orbit(6.0);
+    let outside_spec = MaskSpec { path: &outside, ..spec };
+    let Ok(outside_mask) = ShapeMask::evaluate_with_precleared(&outside_spec, &bore, -2.0) else {
+        panic!("evaluate outside bore")
+    };
+    assert!(catch_unwind(AssertUnwindSafe(|| outside_mask.assert_max_engagement(0.5))).is_err());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn shape_mask_catches_overcut_and_writes_diff_png() {
     let expected = rect(-10.0, -5.0, 10.0, 5.0);
     // D=6 (r=3): y=0 keeps edges inside [-3, 3], y=4 extends edge to y=7 (2 mm outside [-5, 5]).
