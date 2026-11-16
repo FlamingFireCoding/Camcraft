@@ -17,6 +17,11 @@ use crate::links::{Link, LinkTally, NOT_PROVED, TOO_LONG};
 use crate::machining2d::{chord_clears, GenError};
 use crate::plunge_law;
 use crate::stock_sim::Columns;
+
+/// Half the width, in lattice cells, of the narrowest standing strip
+/// the re-machining mask still sends the cutter to (#1749): a strip
+/// one cell wide along a wall is the lattice's sampling, not stock.
+const MASK_RESIDUE: f64 = 1.0;
 /// One ladder run: the level loop shared by both entry points. `zs` is
 /// the plane list, `rest` the post-coarse state whose still-standing
 /// columns the pass is aimed at (None: the pure level law), `mask` the
@@ -113,24 +118,42 @@ pub(super) fn ladder(
             None => target,
             Some(dex) => target.intersect(&dex.above(z)?)?,
         };
-        let target = match mask {
-            // The same intersection for what EARLIER operations left
-            // standing (M3.1 D): a column they machined to at or below
-            // this plane must not be tiled again. Pure subtraction -
-            // the masked target is a subset of the unmasked one, and
-            // skipping a column with nothing standing above the plane
-            // cannot cut anything.
-            None => target,
-            Some(dex) => target.intersect(&dex.above(z)?)?,
+        // What EARLIER operations left standing (M3.1 D): a column they
+        // machined to at or below this plane must not be tiled again.
+        // The lattice reads a column standing where its cell straddles
+        // a wall the earlier op cut flush; a strip under `MASK_RESIDUE`
+        // cells wide is that sampling residue, never stock to chase
+        // (the old erosion ignored strips up to a diameter wide).
+        let standing = match mask {
+            None => None,
+            Some(dex) => {
+                let s = target.intersect(&dex.above(z)?)?;
+                let k = MASK_RESIDUE * dex.cell();
+                Some(if k.is_finite() && k > 0.0 && !s.is_empty() { s.offset(-k)?.offset(k)? } else { s })
+            }
         };
-        if target.is_empty() {
+        if standing.as_ref().unwrap_or(&target).is_empty() {
             continue; // nothing above this plane: model material across
                       // the whole footprint, or nothing standing at all
         }
         // The center's erosion: the XY law, both rungs of the ladder -
         // the shell lifts the legs' tips, never this region (the dive
         // superset law reads exactly this set at exactly this plane).
+        // It erodes the UNMASKED target: only the part islands are
+        // walls. #1749: the masked boundary is air an earlier op cut,
+        // never a wall - eroding the masked target kept the cutter a
+        // radius off it, so a band one radius wide stood along every
+        // edge an earlier op had cleared past (a notch's open side
+        // beside an outside profile), while the op read ok. The mask
+        // then only drops the centers whose disc meets nothing still
+        // standing (`standing` grown by the radius): pure subtraction,
+        // a subset of the unmasked centers, so no new gouge and no
+        // entry law changes.
         let center = target.offset(-(r + p.stock_to_leave))?;
+        let center = match &standing {
+            None => center,
+            Some(s) => center.intersect(&s.offset(r)?)?,
+        };
         if center.is_empty() {
             too_narrow = true;
             continue; // narrower than the tool at this level: the
