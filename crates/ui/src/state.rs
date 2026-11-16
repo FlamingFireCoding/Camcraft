@@ -252,6 +252,7 @@ pub enum CommandKind {
         edit: camcraft_app::commands::PostSettingsEdit,
         post_path: Option<PathBuf>,
         per_op_dir: Option<PathBuf>,
+        program_prefix: Option<String>,
     },
     /// The user's theme (M6.1 C; a preference since #877, never on the
     /// history): the two built-ins and a discovered file arrive as a
@@ -3255,8 +3256,8 @@ impl State {
             CommandKind::SetPostScriptOptions { setup, post, overrides } => {
                 self.route_post_script_options(setup.as_deref(), &post, overrides);
             }
-            CommandKind::ApplyPostDialog { edit, post_path, per_op_dir } => {
-                self.apply_post_dialog(edit, post_path, per_op_dir);
+            CommandKind::ApplyPostDialog { edit, post_path, per_op_dir, program_prefix } => {
+                self.apply_post_dialog(edit, post_path, per_op_dir, program_prefix);
             }
             CommandKind::SelectTheme(next) => self.select_theme(next),
             CommandKind::SelectColorVision(next) => self.select_color_vision(next),

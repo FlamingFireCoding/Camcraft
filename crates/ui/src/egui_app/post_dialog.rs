@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use camcraft_app::commands::PostSettingsEdit;
 use camcraft_app::post::options::{DeclaredOption, OptionValue};
 use camcraft_app::schema::{PostOptions, PostRef, ProgramInfo};
-use camcraft_app::{posting, setup_mount, setup_post_options};
+use camcraft_app::{posting, setup_post_options};
 use egui::{RichText, ScrollArea, Window};
 
 use super::colorvision::text_inks;
@@ -47,10 +47,9 @@ pub struct PostDialogState {
 impl PostDialogState {
     pub fn open(state: &State) -> Self {
         let setup_target = state.post_options_target();
-        let post = match setup_target.as_deref() {
-            Some(s) => setup_mount::post_of(&state.world, Some(s)),
-            None => posting::document_post_of(&state.world),
-        };
+        // Options can follow the document while the active setup owns its post.
+        // Keep the write target separate from the post whose schema is edited.
+        let post = posting::post_of(&state.world);
         let schema = posting::declared_options_for_post(&post).unwrap_or_default();
         let baseline =
             setup_post_options::script_for_post(&state.world, setup_target.as_deref(), &post);
@@ -224,6 +223,7 @@ pub(crate) fn window(ctx: &egui::Context, state: &mut State) {
                 edit,
                 post_path: None,
                 per_op_dir: None,
+                program_prefix: None,
             });
             ctx.request_repaint();
             return;
@@ -262,11 +262,14 @@ fn queue_post_after_apply(
         if let Some(dir) = picked {
             dlg.target_dir = dir.display().to_string();
             state.post_last_dir = Some(dir.clone());
+            let program_prefix = Some(dlg.file_name.trim().to_owned());
+            state.post_last_name = program_prefix.clone();
             state.post_dialog = Some(dlg);
             state.pending.push_back(CommandKind::ApplyPostDialog {
                 edit,
                 post_path: None,
                 per_op_dir: Some(dir),
+                program_prefix,
             });
             return;
         }
@@ -303,6 +306,7 @@ fn queue_post_after_apply(
             edit,
             post_path: Some(path),
             per_op_dir: None,
+            program_prefix: None,
         });
     } else {
         state.post_dialog = Some(dlg);

@@ -129,3 +129,100 @@ fn setup_post_page_also_renders_declared_script_options() {
         "Setup -> Post must expose declared script options"
     );
 }
+
+/// A small legal skim gives the UI tests real files without the demo's deep wall cut.
+fn postable_face() -> State {
+    use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, SetStock};
+    use camcraft_app::operation::{Height, OpParams, SrcRef};
+    use camcraft_app::stock::StockShape;
+    let mut state = State::new();
+    state.pending.push_back(CommandKind::CreateSetup { name: None, datum_from: None });
+    state.drain_actions();
+    state.history.execute(&state.world, SetStock::new(
+        &state.world, StockShape::Box { dx: 60.0, dy: 60.0, dz: 20.0 }, Default::default(),
+    ).expect("stock"));
+    let tool = camcraft_app::tools::catalog().into_iter()
+        .find(|(name, _)| *name == "EM-0400-2FL").expect("catalog tool").1;
+    state.history.execute(&state.world, AddTool::new(&state.world, "Mill", tool).expect("tool"));
+    let params = OpParams::Face {
+        holes: Default::default(), blend_turns: false, tilt: None, stepover: 3.0,
+        clearance_z: Height::fixed(25.0), cut_z: Height::fixed(19.5), top_z: None,
+        stepdown: None, feed: 1200.0, plunge_feed: 300.0, climb: true,
+    };
+    state.history.execute(&state.world, CreateOperation::new(
+        &state.world, "Face1", "Mill", SrcRef::Stock, params,
+    ).expect("face"));
+    state.history.execute(&state.world, GenerateOperation::new(&state.world, "Face1").expect("generate"));
+    state
+}
+
+#[test]
+fn dialog_uses_setups_own_post_while_options_follow_document() {
+    use camcraft_app::commands::SetSetupPost;
+    use camcraft_app::post::options::OptionValue;
+    let mut state = postable_face();
+    let haas = PostRef::Named("Haas".into());
+    state.history.execute(&state.world,
+        SetSetupPost::new(&state.world, "Setup1", Some(haas.clone())).expect("own Haas"));
+    assert_eq!(posting::document_post_of(&state.world), PostRef::Builtin);
+    assert_eq!(state.post_options_target(), None, "only setup follows document options");
+    assert!(setup_post_options::script_own(&state.world, Some("Setup1")).is_none());
+    let path = std::env::temp_dir().join(format!("camcraft-dialog-haas-{}.nc", std::process::id()));
+    let before = posting::post_setup(&state.world, &path).expect("legal Haas program").program;
+    assert!(!before.contains("POST: Haas"));
+    state.pending.push_back(CommandKind::PostProgramDialog);
+    state.drain_actions();
+    let dlg = state.post_dialog.as_mut().expect("dialog");
+    assert_eq!(dlg.post, haas, "the options owner must not select the post");
+    assert_eq!(dlg.schema, posting::declared_options_for_post(&haas).expect("Haas schema"));
+    dlg.values.insert("writeVersion".into(), OptionValue::Bool(true));
+    let mut h = Harness::builder().with_size(Vec2::new(1100.0, 1100.0)).build_ui_state(frame, state);
+    h.run();
+    h.get_by_role_and_label(Role::Button, "Apply").click();
+    h.run_steps(2);
+    let key = setup_post_options::post_key(&haas);
+    let doc = setup_post_options::script_document(&h.state().world);
+    assert_eq!(doc.for_post(&key).get("writeVersion"), Some(&OptionValue::Bool(true)));
+    assert!(doc.for_post(&setup_post_options::post_key(&PostRef::Builtin)).is_empty());
+    assert!(setup_post_options::script_own(&h.state().world, Some("Setup1")).is_none());
+    let after = posting::post_setup(&h.state().world, &path).expect("Haas with option").program;
+    assert!(after.contains("POST: Haas"), "the actual post reads the changed options: {after}");
+    h.state_mut().pending.push_back(CommandKind::Undo);
+    h.state_mut().drain_actions();
+    assert_eq!(posting::post_setup(&h.state().world, &path).expect("undo posts").program, before);
+    std::fs::remove_file(path).expect("remove posted file");
+}
+
+#[test]
+fn dialog_per_operation_post_uses_entered_prefix_in_filenames() {
+    let dir = std::env::temp_dir().join(format!("camcraft-dialog-prefix-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("output folder");
+    let mut state = postable_face();
+    state.project_path = Some(dir.join("part.camproj"));
+    state.pending.push_back(CommandKind::SetPerOpOutput(true));
+    state.pending.push_back(CommandKind::PostProgramDialog);
+    state.drain_actions();
+    state.post_dialog.as_mut().expect("dialog").target_dir = dir.display().to_string();
+    let mut h = Harness::builder().with_size(Vec2::new(1100.0, 1100.0)).build_ui_state(frame, state);
+    h.run();
+    h.get_by_role_and_label(Role::TextInput, "Program prefix").click();
+    h.run();
+    h.input_mut().events.push(Event::Key {
+        key: Key::A, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND,
+    });
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::TextInput, "Program prefix").type_text("finish");
+    h.run_steps(2);
+    assert_eq!(h.state().post_dialog.as_ref().expect("dialog").file_name, "finish");
+    h.get_by_role_and_label(Role::Button, "Post…").click();
+    h.run_steps(3);
+    assert!(h.state().status.starts_with("posted 1 file(s)"), "{}", h.state().status);
+    let mut names: Vec<_> = std::fs::read_dir(&dir).expect("output folder").map(|entry| {
+        entry.expect("output file").file_name().to_string_lossy().into_owned()
+    }).collect();
+    names.sort();
+    assert_eq!(names, ["finish_01_Face1.nc"], "the entered prefix names the actual files");
+    assert_eq!(h.state().post_view.as_ref().expect("viewer").path, dir.join("finish_01_Face1.nc"));
+    std::fs::remove_dir_all(dir).expect("remove output folder");
+}

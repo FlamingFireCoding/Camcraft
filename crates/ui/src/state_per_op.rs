@@ -36,7 +36,12 @@ impl State {
     /// file; the status line names how many were written and where.
     pub(super) fn post_program_folder(&mut self, dir: PathBuf) {
         let program = self.program_name();
-        match posting::post_per_op(&self.world, &dir, &program) {
+        self.post_program_folder_named(dir, &program);
+    }
+
+    /// Post with the program prefix entered in the Post dialog.
+    pub(super) fn post_program_folder_named(&mut self, dir: PathBuf, program: &str) {
+        match posting::post_per_op(&self.world, &dir, program) {
             Ok(files) => {
                 self.post_last_dir = Some(dir.clone());
                 let lines: usize = files.iter().map(|f| f.posted.lines).sum();

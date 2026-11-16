@@ -106,6 +106,7 @@ impl State {
         edit: PostSettingsEdit,
         post_path: Option<PathBuf>,
         per_op_dir: Option<PathBuf>,
+        program_prefix: Option<String>,
     ) {
         match SetPostSettings::new(&self.world, edit) {
             Ok(cmd) => {
@@ -118,7 +119,8 @@ impl State {
                     self.feedback = None;
                 }
                 if let Some(dir) = per_op_dir {
-                    self.post_program_folder(dir);
+                    let program = program_prefix.unwrap_or_else(|| self.program_name());
+                    self.post_program_folder_named(dir, &program);
                     if self.status.starts_with("post refused:") {
                         if let Some(d) = self.post_dialog.as_mut() {
                             d.error = Some(self.status.clone());
