@@ -54,10 +54,10 @@ fn the_sinker_template_has_its_own_mode_row() {
 }
 
 #[test]
-fn waterjet_without_a_mode_keeps_the_generic_door_caption() {
+fn waterjet_without_a_mode_keeps_the_specific_door_caption() {
     assert!(!MACHINE_MODES.iter().any(|(kind, _, _)| *kind == Kind::Waterjet));
     assert_eq!(machine_modes::caption(Kind::Waterjet), "Machine");
-    assert_eq!(machine_modes::short_caption(Kind::Waterjet), "Machine");
+    assert_eq!(machine_modes::short_caption(Kind::Waterjet), "Waterjet");
     let draft = machine::draft::MachineDraft::blank(Kind::Waterjet);
     let machine = machine::parse_mch(&draft.value.to_string()).expect("waterjet draft parses");
     let mut state = State::new();
@@ -66,7 +66,7 @@ fn waterjet_without_a_mode_keeps_the_generic_door_caption() {
     ).expect("waterjet mounts");
     state.history.execute(&state.world, load);
     assert_eq!(machine::kind_of(&state.world), Kind::Waterjet);
-    assert_eq!(panes::text_of(Cmd::Machine, &state), "Machine");
+    assert_eq!(panes::text_of(Cmd::Machine, &state), "Waterjet");
 }
 
 #[test]
@@ -146,4 +146,23 @@ fn plasma_cutting_mode_shows_the_plasma_profile_and_switching_back_restores_the_
     assert_eq!(machine::kind_of(&state.world), Kind::Plasma, "one undo: back to plasma");
     run(&mut state, CommandKind::Undo);
     assert_eq!(machine::kind_of(&state.world), Kind::Mill, "two undos: back to the mill");
+}
+
+#[test]
+fn every_machine_kind_has_a_short_caption() {
+    let kinds = [
+        Kind::Mill,
+        Kind::Lathe,
+        Kind::MillTurn,
+        Kind::Plasma,
+        Kind::Waterjet,
+        Kind::WireEdm,
+        Kind::SinkerEdm,
+    ];
+    for kind in kinds {
+        let short = machine_modes::short_caption(kind);
+        assert!(!short.is_empty(), "{kind:?} has a short caption");
+        assert!(!machine_modes::caption(kind).is_empty(), "{kind:?} has a caption");
+    }
+    assert_eq!(machine_modes::short_caption(Kind::Waterjet), "Waterjet");
 }

@@ -132,6 +132,25 @@ rulings and an ambiguous whole turn at one endpoint are refused. Separate
 open runs are not stitched into a profile; select a face or one closed
 edge chain.
 
+Where the two profiles turn against each other, a straight wire cannot
+lie in the surface between them: it stands off by up to the twist
+tolerance. **Stand off** says where. **Only where the surface twists**
+(the default) cuts every straight stretch to size and stands the wire
+off at the twist alone. **The same all round** stands every stretch off
+as far as the worst one needs. A twist that needs more than the
+tolerance is refused where it stands.
+
+**Verify tolerance.** The check before posting reads the model's facets.
+A lofted model's facets stand past its true surface by up to the chord
+tolerance the model was faceted at, so a correct 4-axis cut can read as
+a gouge of a few microns. State that tolerance as the cut's **Verify
+tolerance**: the check then lets the kerf into the facets by that much
+and no more, and the report says the deepest reading it let pass. 0 (the
+default) checks the facets as they are. A gouge is always refused with
+the deepest reading at any height, so you can see whether the model's
+tolerance explains it. The value must be below the kerf offset and at
+most 0.25 mm.
+
 **Inside corners.** No inside corner can be cut tighter than the kerf
 offset. A corner, slot or neck the wire cannot reach is refused by name,
 never rounded for you; round it in the model or cut with a thinner wire
