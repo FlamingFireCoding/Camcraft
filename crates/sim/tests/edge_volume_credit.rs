@@ -110,3 +110,28 @@ fn malformed_volume_and_mismatched_lattice_cannot_credit() {
     assert_eq!(credit_breaks(&mut dev, &d, &facets, &[record(BreakProfile::Flat)]), 0);
     assert_eq!(dev.gouge_cells, 1);
 }
+
+#[test]
+fn extreme_scale_circle_cannot_credit_a_real_gouge() {
+    let b = EdgeBreak {
+        edge: vec![p(-5.0, 9e-201, 0.0), p(5.0, 9e-201, 0.0)],
+        depth: 1e-200,
+        slope: 0.0,
+        volume: Some(EdgeBreakVolume {
+            width: 1.0,
+            frames: vec![BreakFrame { outward: [0.0, 1.0, 0.0], across: [0.0, 0.0, 1.0] }],
+            profile: BreakProfile::ConcaveBall { radius: 1e200 },
+        }),
+    };
+    assert!(b.is_sane(), "finite extreme-scale records reach the verifier");
+    let facets = cube(p(-2.0, -2.0, -1.0), p(2.0, 2.0, 0.0)).facets.to_vec();
+    let mut d = Dexel::block(-0.0625, -0.0625, 0.0625, 0.0625, 0.0, 0.125).expect("stock");
+    d.cut_chord(p(-0.1, 0.0, -0.48), p(0.1, 0.0, -0.48), 0.1);
+    let mut dev = deviate(&d, &facets, 0.01).expect("sharp verdict");
+    assert_eq!(dev.gouge_cells, 1);
+    credit_breaks(&mut dev, &d, &facets, &[b]);
+    // The declared floor is -sqrt(0.2), so this cut is about
+    // 0.0327864 mm too deep. Refusing an ill-conditioned record is safe too.
+    assert_eq!(dev.gouge_cells, 1, "circle underflow forgave a real gouge");
+    assert!(dev.max_gouge >= 0.48 - 0.2_f64.sqrt() - 1e-9, "{:?}", dev);
+}

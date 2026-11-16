@@ -180,6 +180,20 @@ fn clip(bounds: &mut (f64, f64), value: f64, rate: f64, min: f64, max: f64) -> b
 }
 
 fn circle_roots(a: f64, b: f64, c: f64, bounds: (f64, f64), cuts: &mut Vec<f64>) -> bool {
+    // Roots are unchanged by a common scale. Normalize before products:
+    // finite, tiny coefficients can otherwise lose a positive discriminant.
+    let scale = a.abs().max(b.abs()).max(c.abs());
+    if !scale.is_finite() {
+        return false;
+    }
+    if scale == 0.0 {
+        return true;
+    }
+    let (aa, bb, cc) = (a / scale, b / scale, c / scale);
+    if (a != 0.0 && aa == 0.0) || (b != 0.0 && bb == 0.0) || (c != 0.0 && cc == 0.0) {
+        return false; // lost coefficients cannot safely grant credit
+    }
+    let (a, b, c) = (aa, bb, cc);
     let mut take = |h: f64| {
         if h.is_finite() && h > bounds.0 && h < bounds.1 {
             cuts.push(h);
@@ -191,7 +205,12 @@ fn circle_roots(a: f64, b: f64, c: f64, bounds: (f64, f64), cuts: &mut Vec<f64>)
         }
         return true;
     }
-    let disc = b * b - 4.0 * a * c;
+    let square = b * b;
+    let product = 4.0 * a * c;
+    if (b != 0.0 && square == 0.0) || (a != 0.0 && c != 0.0 && product == 0.0) {
+        return false;
+    }
+    let disc = square - product;
     if !disc.is_finite() {
         return false;
     }

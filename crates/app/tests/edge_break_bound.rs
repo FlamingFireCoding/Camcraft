@@ -72,7 +72,7 @@ fn gouge(world: &World) -> Option<String> {
 /// Save, scale every cached break's depth by `k` in the file text (a
 /// hand edit), and load it back.
 fn edited(world: &World, k: f64) -> World {
-    let path = std::env::temp_dir().join(format!("camcraft-529-{}-{k}.ccp", std::process::id()));
+    let path = edited_path(k);
     project::save(world, &path).expect("save");
     let mut v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
     fn scale(v: &mut serde_json::Value, k: f64, hits: &mut usize) {
@@ -102,6 +102,25 @@ fn edited(world: &World, k: f64) -> World {
     project::load(&loaded, &path).expect("load");
     let _ = std::fs::remove_file(&path);
     loaded
+}
+
+#[test]
+fn parallel_project_edits_use_distinct_paths() {
+    let paths: Vec<_> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8).map(|_| scope.spawn(|| {
+            (0..16).map(|_| edited_path(1.0)).collect::<Vec<_>>()
+        })).collect();
+        workers.into_iter().flat_map(|worker| worker.join().expect("path worker")).collect()
+    });
+    let unique: std::collections::HashSet<_> = paths.iter().collect();
+    assert_eq!(unique.len(), paths.len(), "parallel helper calls must never share a project file");
+}
+
+fn edited_path(k: f64) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("camcraft-529-{}-{k}-{id}.ccp", std::process::id()))
 }
 
 #[test]
