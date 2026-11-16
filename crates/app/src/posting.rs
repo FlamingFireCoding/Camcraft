@@ -253,6 +253,12 @@ pub const MACHINES: &[(&str, &str)] = &[
     // published nose_to_axis, so that one refuses until a setup states it).
     ("Doosan DNM 5700", include_str!("../../../assets/machines/doosan-dnm-3axis.mch")),
     ("Doosan DNM 5700 + rotary table", include_str!("../../../assets/machines/doosan-dnm.mch")),
+    // #1976: public Haas specifications; configurations and sources in docs/decisions/1976-haas-machines.md.
+    ("Haas VF-2", include_str!("../../../assets/machines/haas-vf2.mch")),
+    ("Haas VF-2SS", include_str!("../../../assets/machines/haas-vf2ss.mch")),
+    ("Haas Mini Mill", include_str!("../../../assets/machines/haas-mini-mill.mch")),
+    ("Haas DT-1", include_str!("../../../assets/machines/haas-dt1.mch")),
+    ("Haas DM-1", include_str!("../../../assets/machines/haas-dm1.mch")),
     // #1135: the empty sinker template (no `edm.codes`); pairs with the
     // "Sinker EDM (ISO)" post, which refuses by name until the user fills the codes.
     ("Sinker EDM 3-axis (template)", include_str!("../../../assets/machines/sinker-edm.mch")),
@@ -307,8 +313,8 @@ pub fn document_post_of(world: &World) -> PostRef {
 /// one answer the post and the machine's spindle-range check both read.
 #[must_use]
 pub fn posted_rpm(tool: &crate::tools::Tool) -> f64 {
-    // A torch states rpm 0 by law (#670): no spindle word, like a probe.
-    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) { 0.0 } else { tool.rpm }
+    // A torch or wire states rpm 0 by law (#670, #2011): no spindle word, like a probe.
+    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) { 0.0 } else { tool.rpm }
 }
 
 /// Write the singleton. For the `SelectPost` command and the project
@@ -478,7 +484,7 @@ pub use program::{
 pub(crate) use program::normalised as normalised_program_info;
 #[path = "posting_units.rs"]
 mod program_unit;
-pub use program_unit::{program_options, unit_word};
+pub use program_unit::{end_units_words, program_options, unit_word};
 
 /// Declared per-post options read from a [`PostRef`]'s `.cps` source (#258).
 pub fn declared_options_for_post(post: &PostRef) -> Result<Vec<DeclaredOption>, String> {
@@ -1108,6 +1114,7 @@ pub fn fixture_findings(world: &World) -> Result<FixtureFindings, String> {
 /// through one script without the verification gate, which the
 /// posting suites lock separately - the golden locks the translation.
 pub fn stream_records(world: &World) -> Result<Vec<cnc::Record>, String> {
+    mounts::refuse_per_op(world, "one combined stream")?;
     Ok(join_streams(op_streams(world)?))
 }
 

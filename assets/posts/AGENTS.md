@@ -19,7 +19,7 @@ the property table there is the vocabulary, this file is the grammar.
 
 Manifest: top-level assignments only — `description`, `vendor`, `legal`,
 `certificationLevel`, `minimumRevision`, `extension`, `setCodePage`,
-`capabilities`, `serves`, `coolantModes`, `programUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`. All but `serves` and the last nine are
+`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`. All but `serves` and the last ten are
 text the engine reads none of; `serves = ["plasma"];` (#1266; one word or a list of kind words: mill, lathe, mill-turn, plasma, wire_edm, sinker_edm) names the machine kinds a script of the user's own posts to - the app refuses it by name on any other kind, and a script that states none is accepted only on a mill (non-turning dialect), a lathe (turning) or a mill-turn, never on a plasma table or an EDM; shipped posts are judged by registry name and need no `serves`; `programUnits = "mm inch"` (#902) says
 the script writes the program in the document's unit -
 `postOptions.Units`, `"mm"` or `"inch"`, absent = mm: the dialect's
@@ -27,7 +27,12 @@ unit word (G21 / G20, the 840D's G710 / G700) before any motion, every
 length / 25.4 at four decimals and every feed in in/min, angles,
 seconds and rpm as they come - and an inch document on a script whose
 `programUnits` lacks `inch` (Carvera and Heidenhain say `"mm"`) is
-refused by name before any hook runs; `explains = "paren"` or `"semi"`
+refused by name before any hook runs; `endUnits = "G20 G21"` (or
+`"G700 G710"`, or `"note"` when a dialect cannot switch units at program
+end and notes the ask once instead, #2189) states how the script handles
+`postOptions.EndUnits` (`"inch"` / `"mm"`) - a script without `endUnits`
+is refused by name when `EndUnits` is set, and the UI offers the picker
+only when two unit words are declared; `explains = "paren"` or `"semi"`
 (#1386, optionally `commentMax`, the longest comment the control keeps,
 delimiters included, 60 when unstated) says the script's `block()`
 appends `explain(words)` after its words - the PRELUDE helper that

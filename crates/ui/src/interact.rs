@@ -803,7 +803,9 @@ const GRID_MAX_COORD: f64 = 1.0e9;
 /// Every fifth line is a major one (0.5, 1, 5, 10, 50 ... on a 1-2-5 step).
 const GRID_MAJOR_EVERY: i64 = 5;
 
-/// The Z=0 ground grid: the machine table plane under the part, one line
+/// The ground grid: the floor under the bodies (#2172: at
+/// [`crate::floor::floor_z`], the lowest point of the model, the stock and
+/// the setup's fixtures, so they all stand on it), one line
 /// per 1-2-5 step of `dist / 10`, centred on the camera target and snapped
 /// to round machine coordinates so the spacing reads in whole millimetres
 /// at any zoom. World-space geometry in the overlay buffer, not a
@@ -829,6 +831,7 @@ pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
     {
         return Vec::new();
     }
+    let z = crate::floor::floor_z(state);
     let reach = step * GRID_HALF_STEPS as f64;
     let (k0x, k1x) = (
         ((cx - reach) / step).floor() as i64,
@@ -845,12 +848,12 @@ pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
     for k in k0y..=k1y {
         let y = k as f64 * step;
         let c = grid_ink(k, ciy);
-        push_line(&mut out, Point3::new(cx - reach, y, 0.0), Point3::new(cx + reach, y, 0.0), c);
+        push_line(&mut out, Point3::new(cx - reach, y, z), Point3::new(cx + reach, y, z), c);
     }
     for k in k0x..=k1x {
         let x = k as f64 * step;
         let c = grid_ink(k, cix);
-        push_line(&mut out, Point3::new(x, cy - reach, 0.0), Point3::new(x, cy + reach, 0.0), c);
+        push_line(&mut out, Point3::new(x, cy - reach, z), Point3::new(x, cy + reach, z), c);
     }
     out
 }

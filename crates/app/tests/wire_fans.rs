@@ -122,6 +122,11 @@ fn world(mesh: Mesh) -> (World, History) {
         &world,
         LoadMachine::new(&world, "wire-iso.mch".into(), Some(machine)).expect("mount"),
     );
+    history.execute(
+        &world,
+        camcraft_app::commands::AddTool::new(&world, "EDM-W025", camcraft_app::wire_tools::wire_tool(0.25))
+            .expect("wire"),
+    );
     history.execute(&world, ImportModel::from_mesh("part", mesh));
     (world, history)
 }
@@ -156,7 +161,7 @@ fn generate(
     let command = CreateOperation::new(
         world,
         "Fan",
-        "",
+        "EDM-W025",
         SrcRef::Selection(picks),
         OpParams::WireContour(wire),
     )

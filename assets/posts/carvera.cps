@@ -23,6 +23,7 @@ workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (
 workOffsetMax = 6;      // G54..G59; extended offsets not verified for this firmware (#931)
 coolantModes = true; // reads PARAM Coolant (#869): the op's ask is posted, or refused by name
 programUnits = "mm"; // #902: millimetres only - the engine refuses an inch document by name
+endUnits = "note";   // #2189: mm-only firmware halts on G20; notes once when asked for inch
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -539,7 +540,15 @@ function owedDwell() {
 // The program ends where its last retract left the tool - no machine-
 // coordinate move is guessed (the manual puts machine zero at the top
 // right, but states no safe retract height for a G53 move).
+// #2189: Carvera firmware is mm-only (G20 halts); note an inch ask once.
+function noteEndUnits() {
+  var want = typeof postOptions !== "undefined" && postOptions ? postOptions.EndUnits : undefined;
+  if (want === "inch") {
+    note("END UNITS NOT WRITTEN - CARVERA IS MM ONLY, G20 HALTS");
+  }
+}
 function onClose() {
   endPreamble();
+  noteEndUnits();
   block(["M2"]);
 }
