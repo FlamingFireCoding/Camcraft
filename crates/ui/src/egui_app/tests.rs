@@ -85,6 +85,7 @@ mod geo_row_hover;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_material;
 mod setup_settings_page;
 mod machine_page;
 mod tool_list_page;

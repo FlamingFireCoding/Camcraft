@@ -23,6 +23,9 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         }
         crate::geometry::import::step_budget::check(b).map_err(|e| corrupt(format!("'{}': {e}", dto.name)))?;
     }
+    if dto.step_source.is_some() && !matches!(kind, EntityKind::Model) {
+        return Err(corrupt(format!("'{}' records STEP source but is not a model", dto.name)));
+    }
     // #1056: the unknown-fidelity mark rides a mesh row only, and never
     // beside a recorded chord - one entity cannot both know and not know.
     if dto.fidelity_unknown {

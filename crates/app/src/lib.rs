@@ -16,8 +16,11 @@ pub mod cutting_turn;
 pub mod smoothing;
 pub use camcraft_motion::drilling;
 pub mod fixture;
+// #744: editable spun & extruded fixture profiles + DXF/STEP integration.
+pub mod fixture_profile;
 // #339 slice 6: the user fixture library file.
 pub mod fixture_library;
+pub mod step_source;
 pub mod fixture_carried;
 // #561: locate the part in a fixture (or the fixture on the part) by mates.
 pub mod fixture_clash;
@@ -115,6 +118,7 @@ pub use camcraft_geometry::geometry::stock;
 pub mod stock_sim;
 // #1094: the model that is only the stock's source is not the part.
 pub mod stock_source;
+pub mod stock_material;
 // #1538: fit-to-models measures the parts, never the fixtures.
 pub mod stock_fit;
 // #1094: the geometry fingerprint a raw-stock-only mark is checked by.

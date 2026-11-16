@@ -283,7 +283,7 @@ impl EditOperationLinks {
                 // #890: the new tool's row for the document material
                 // seeds the op's milling feed (same undo step).
                 if let Some(t) = model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e))
-                    && let Some(p) = crate::cutting_rows::reseeded_params(&next.params, &t, crate::cutting::material_of(world))
+                    && let Some(p) = crate::cutting_rows::reseeded_params(&next.params, &t, crate::stock_material::in_force(world, prev.setup.as_deref()))
                 {
                     next.params = p;
                 }
