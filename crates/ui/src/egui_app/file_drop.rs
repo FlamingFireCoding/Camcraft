@@ -63,14 +63,23 @@ pub(super) fn take_drop(ui: &Ui, state: &mut State) {
 }
 
 /// The hint over the viewport's rect while a file hovers the window.
-pub(super) fn paint_hint(ui: &Ui, rect: Rect) {
+pub(super) fn paint_hint(ui: &Ui, rect: Rect, pal: &super::theme::Tokens) {
     if !ui.ctx().input(|i| !i.raw.hovered_files.is_empty()) {
         return;
     }
     let painter = ui.painter_at(rect);
+    let inset = pal.window_margin.clamp(0.0, (rect.width().min(rect.height()) * 0.4).max(0.0));
+    let radius = f32::from(pal.radius_window);
+    let stroke_w = (pal.font_label / 5.5).clamp(1.0, 6.0);
+    let font_px = (pal.font_label * 2.0).max(12.0);
     painter.rect_filled(rect, 0.0, Color32::from_black_alpha(140));
-    painter.rect_stroke(rect.shrink(6.0), 6.0, Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
-    painter.text(rect.center(), Align2::CENTER_CENTER, HINT, FontId::proportional(22.0), Color32::WHITE);
+    painter.rect_stroke(
+        rect.shrink(inset),
+        radius,
+        Stroke::new(stroke_w, Color32::WHITE),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(rect.center(), Align2::CENTER_CENTER, HINT, FontId::proportional(font_px), Color32::WHITE);
 }
 
 #[cfg(test)]

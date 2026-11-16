@@ -159,12 +159,15 @@ uncut stock.
 
 **Fix.** The same as above: more stickout or a smaller holder.
 
-### `rapid move <n> travels below the clearance plane inside stock`
+### `rapid move <n> travels through stock (below the clearance plane, or at it below the stock top)`
 
-**Means.** A fast move would run through stock instead of above it.
+**Means.** A fast move would run through stock instead of above it. The
+move is under the clearance plane, or it is at the clearance plane and the
+plane itself is inside the stock. In the second case the operation also
+carries the note `Clearance in stock: ...` with the heights.
 
-**Fix.** Raise the clearance height on the operation's Heights tab so
-rapids stay above the stock, and regenerate.
+**Fix.** Raise the clearance height on the operation's Heights tab to the
+stock top or above, or face the stock down first, and regenerate.
 
 ### `<shank|holder|spindle housing|rapid|flute> at move <n> strikes a fixture`
 

@@ -51,7 +51,7 @@ pub fn slot_bound_of(world: &World, items: &[GeoSel]) -> Result<SlotBound, GenEr
                 areas += 1;
             }
             FeatureSel::Chain(cid) => {
-                let c = feature::resolve_chain(&features, cid).ok_or_else(gone)?;
+                let c = crate::model::resolve_chain(&features, cid).ok_or_else(gone)?;
                 let pts: Vec<Point2> = feature::chain_points(&features, &c).iter().map(xy).collect();
                 if c.closed {
                     rings.push(Loop::new(pts).map_err(|_| {
