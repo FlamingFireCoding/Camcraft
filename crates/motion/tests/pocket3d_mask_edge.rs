@@ -14,7 +14,7 @@
 //! Gate map (#1749): covers camcraft_motion::machining3d (ladder, open_side).
 
 use camcraft_motion::cl::{MoveKind, Toolpath};
-use camcraft_motion::geo2d::Region;
+use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::machining2d::PocketStrategy;
 use camcraft_motion::machining3d::{open_sides, pocket3d_offset_prev, pocket3d_prev, Entry3D, Pocket3DParams};
@@ -182,4 +182,164 @@ fn the_mask_still_keeps_the_cutter_off_cleared_ground() {
     }
     let done = Dexel::block(-30.0, -30.0, 30.0, 30.0, FLOOR, 0.5).expect("dexel");
     assert!(pocket3d_prev(&f, &region, &params(), Some(&Columns::of_grid(&done))).is_err(), "nothing standing, nothing to cut");
+}
+
+/// Rounded-corner polyline extruded between `z0` and `z1`, star-shaped about `center`.
+fn extrude_star(ring: &[(f64, f64)], center: (f64, f64), z0: f64, z1: f64) -> Vec<Triangle> {
+    let n = ring.len();
+    let mut out = Vec::with_capacity(n * 4);
+    let c0 = p(center.0, center.1, z0);
+    let c1 = p(center.0, center.1, z1);
+    for i in 0..n {
+        let (x0, y0) = ring[i];
+        let (x1, y1) = ring[(i + 1) % n];
+        out.push(Triangle::new(c1, p(x0, y0, z1), p(x1, y1, z1)));
+        out.push(Triangle::new(c0, p(x1, y1, z0), p(x0, y0, z0)));
+        out.push(Triangle::new(p(x0, y0, z0), p(x1, y1, z0), p(x1, y1, z1)));
+        out.push(Triangle::new(p(x0, y0, z0), p(x1, y1, z1), p(x0, y0, z1)));
+    }
+    out
+}
+
+/// CCW quarter-arc from `a0` to `a1` radians around `(cx, cy)` with radius `rad`.
+fn arc_pts(cx: f64, cy: f64, rad: f64, a0: f64, a1: f64, steps: usize) -> Vec<(f64, f64)> {
+    (0..=steps)
+        .map(|k| {
+            let a = a0 + (a1 - a0) * (k as f64) / (steps as f64);
+            (cx + rad * a.cos(), cy + rad * a.sin())
+        })
+        .collect()
+}
+
+/// 30 mm cube ([-15, 15]^2) with R3.125 outer corner fillets, notched in ++
+/// above Z 19.826 up to Z 34.826, with R3.125 outer corner fillets on the walls.
+fn filleted_cube_notch() -> Vec<Triangle> {
+    let f = 3.125;
+    let h = 15.0;
+    let mut base = Vec::new();
+    base.extend(arc_pts(h - f, h - f, f, 0.0, std::f64::consts::FRAC_PI_2, 8));
+    base.extend(arc_pts(-(h - f), h - f, f, std::f64::consts::FRAC_PI_2, std::f64::consts::PI, 8));
+    base.extend(arc_pts(-(h - f), -(h - f), f, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2, 8));
+    base.extend(arc_pts(h - f, -(h - f), f, 3.0 * std::f64::consts::FRAC_PI_2, std::f64::consts::TAU, 8));
+    let mut wall = Vec::new();
+    wall.extend(arc_pts(-f, h - f, f, 0.0, std::f64::consts::FRAC_PI_2, 8));
+    wall.extend(arc_pts(-(h - f), h - f, f, std::f64::consts::FRAC_PI_2, std::f64::consts::PI, 8));
+    wall.extend(arc_pts(-(h - f), -(h - f), f, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2, 8));
+    wall.extend(arc_pts(h - f, -(h - f), f, 3.0 * std::f64::consts::FRAC_PI_2, std::f64::consts::TAU, 8));
+    wall.extend(arc_pts(h - f, -f, f, 0.0, std::f64::consts::FRAC_PI_2, 8));
+    wall.push((0.0, 0.0));
+    let mut tris = extrude_star(&base, (0.0, 0.0), 4.826, 19.826);
+    tris.extend(extrude_star(&wall, (-7.5, -7.5), 19.826, 34.826));
+    tris
+}
+
+/// Reproduces the user's sc_logo Setup 1 notch geometry and mask:
+/// 30 mm cube with R3.125 fillets, 35.08 mm stock, 6.35 mm flat endmill,
+/// outside-profile mask leaving 0.254 mm outside the silhouette, and
+/// checks Soft jaw (9) (X 0.05..3.17, Y 3.18..15) and Soft jaw (8) (X 3.18..15).
+#[test]
+fn filleted_notch_after_outside_profile_clears_open_edge_corner_for_jaws() {
+    let f = filleted_cube_notch();
+    let r = 3.175;
+    let h = 15.0;
+    let floor = 19.826;
+    let stock_top = 34.826;
+    let silhouette = camcraft_motion::geometry::slice::project(&f, 64).expect("silhouette");
+    let stock_rect = Region::new(vec![
+        Loop::new(vec![
+            Point2::new(-17.54, -17.54),
+            Point2::new(17.54, -17.54),
+            Point2::new(17.54, 17.54),
+            Point2::new(-17.54, 17.54),
+        ])
+        .expect("stock loop"),
+    ])
+    .expect("stock region");
+    let region = open_sides(&silhouette, r, &Region::empty(), Some(&stock_rect)).expect("open sides");
+
+    // Outside-profile mask: cleared outside silhouette + 0.254 mm down to Z 3.81
+    // at auto_cell(3.175, 35.08, 35.08) = 0.396875 mm.
+    let cell = 3.175 * 0.125;
+    let mut grid = Dexel::block(-17.54, -17.54, 17.54, 17.54, stock_top, cell).expect("dexel");
+    let keep = silhouette.offset(0.254).expect("keep");
+    for iy in 0..grid.ny {
+        for ix in 0..grid.nx {
+            let x = grid.x0 + (ix as f64 + 0.5) * grid.cell;
+            let y = grid.y0 + (iy as f64 + 0.5) * grid.cell;
+            if !keep.contains(Point2::new(x, y)) {
+                grid.set(iy * grid.nx + ix, 3.81);
+            }
+        }
+    }
+    let cols = Columns::of_grid(&grid);
+    let p3 = Pocket3DParams {
+        links: camcraft_motion::links::Links::ROUGH3D,
+        tool_diameter: 2.0 * r,
+        stepover: 2.032,
+        stock_to_leave: 0.0,
+        clearance_z: 60.0,
+        top_z: stock_top,
+        bottom_z: floor,
+        stepdown: 0.15,
+        feed: 762.0,
+        plunge_feed: 457.2,
+        climb: true,
+        strategy: PocketStrategy::OffsetRings,
+        retract_z: None,
+        entry: Entry3D::Helix,
+        helix_radius: 1.524,
+        optimal_load: 0.12,
+    };
+    let path = pocket3d_offset_prev(&f, &region, &p3, Some(&cols)).expect("filleted notch generates");
+    let s = feed_samples(&path);
+    let carried_at = |x: f64, y: f64| {
+        s.iter()
+            .filter(|q| (q.x - x).hypot(q.y - y) <= r - 1e-6)
+            .map(|q| q.z)
+            .fold(stock_top, f64::min)
+    };
+    // Jaw (9) zone: X 0.05..3.17, Y 3.18..15.0 (Z 23.4+)
+    // Jaw (8) zone: X 3.18..15.0, Y 3.18..15.0, plus symmetric +X open edge.
+    for k in 0..=20 {
+        let a = 3.18 + f64::from(k) * (h - 0.05 - 3.18) / 20.0;
+        for b in [0.05, 1.5, 3.17, 7.5, 14.95] {
+            if b == 14.95 && a > h - 3.125 {
+                continue; // outside the R3.125 outer corner of the cube
+            }
+            for (x, y) in [(b, a), (a, b)] {
+                let z_left = carried_at(x, y);
+                assert!(
+                    z_left <= floor + 1e-3,
+                    "ridge left at ({x:.3}, {y:.3}): Z={z_left:.3} > floor {floor}"
+                );
+            }
+        }
+    }
+}
+
+/// A duplicate roughing op with positive `stock_to_leave` leaves that
+/// collar on every wall; the mask must ignore that collar and refuse
+/// rather than re-cutting around the walls. A subsequent pass with a
+/// smaller `stock_to_leave` still cuts the excess allowance down.
+#[test]
+fn a_redundant_duplicate_with_stock_to_leave_refuses() {
+    let f = notched_part();
+    let region = footprint(&f);
+    let mut p3 = params();
+    p3.stock_to_leave = 1.5;
+    let first = pocket3d_prev(&f, &region, &p3, None).expect("first pass generates");
+    let mut grid = Dexel::block(-30.0, -30.0, 30.0, 30.0, STOCK_TOP, 0.25).expect("dexel");
+    for m in &first.moves {
+        grid.subtract(m, R, 0.005);
+    }
+    let cols = Columns::of_grid(&grid);
+    let err = pocket3d_prev(&f, &region, &p3, Some(&cols))
+        .expect_err("redundant duplicate with stock_to_leave must refuse");
+    assert!(err.to_string().contains("nothing to cut"), "{err}");
+
+    let mut finish = params();
+    finish.stock_to_leave = 0.2;
+    let pass = pocket3d_prev(&f, &region, &finish, Some(&cols))
+        .expect("smaller stock_to_leave pass must still cut the roughing collar");
+    assert!(pass.moves.iter().any(|m| m.kind == MoveKind::Feed), "finish cuts remaining collar");
 }
