@@ -214,7 +214,7 @@ mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
-pub use top_stock::TOP_STOCK_WARNING;
+pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
 mod turning_axis;
 mod turning_feeds;

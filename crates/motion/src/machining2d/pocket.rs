@@ -296,7 +296,7 @@ pub(super) fn pocket_over(
         .with_entry(p.entry, helix_r)
         .with_arc_radius(p.tool_diameter)
         .with_links(p.links, helix_r)
-        .with_top(p.top_z)
+        .with_top(p.links.approach.entry_top(p.top_z))
         .with_xy_arc(p.links.approach.arc_xy)
         .with_microlift(joins)
         .with_holes(holes);
