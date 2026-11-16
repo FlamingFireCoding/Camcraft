@@ -1142,7 +1142,9 @@ impl ParamsDto {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
             } => ParamsDto::Drill {
+                break_through: *break_through,
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -1181,7 +1183,9 @@ impl ParamsDto {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => ParamsDto::Bore {
+                break_through: *break_through,
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -1209,7 +1213,9 @@ impl ParamsDto {
                 hand,
                 external,
                 passes,
+                break_through,
             } => ParamsDto::Thread {
+                break_through: *break_through,
                 external: *external,
                 passes: (*passes).into(),
                 pitch: *pitch,
@@ -2357,7 +2363,9 @@ impl ParamsDto {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
             } => OpParams::Drill {
+                break_through: *break_through,
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -2396,7 +2404,9 @@ impl ParamsDto {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => OpParams::Bore {
+                break_through: *break_through,
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),
@@ -2424,7 +2434,9 @@ impl ParamsDto {
                 hand,
                 external,
                 passes,
+                break_through,
             } => OpParams::Thread {
+                break_through: *break_through,
                 external: *external,
                 passes: (*passes).into(),
                 pitch: *pitch,

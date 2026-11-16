@@ -170,6 +170,7 @@ fn stamp_follows_every_input() {
     // flip made outside EditOperationParams must not leave a cached
     // internal path reading Ok on an external op).
     let thread = |external: bool| OpParams::Thread {
+        break_through: None,
         clearance_z: Height::fixed(5.0),
         retract_z: None,
         top_z: Height::fixed(0.0),

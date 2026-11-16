@@ -417,6 +417,10 @@ pub enum ParamsDto {
         /// byte-identical to a pre-v40 one - is "no cross holes".
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cross: Vec<CrossHoleDto>,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// Declared at v11 with the 3-D pocket. No footprint on the wire:
     /// a 3-D op's machine area is the model's silhouette at generation
@@ -1037,6 +1041,10 @@ pub enum ParamsDto {
         climb: bool,
         tolerance: f64,
         holes: Vec<HoleDto>,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// Helical thread milling (M2.4 C). The pitch rides no DTO -
     /// it lives on the tool, like every other tool number.
@@ -1070,6 +1078,10 @@ pub enum ParamsDto {
         /// hand. Flattened keys, each absent when at the #894 default.
         #[serde(flatten)]
         passes: ThreadPassesDto,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// The probe (#108): an additive variant in the v50 grammar.
     Probe(ProbeDto),

@@ -142,6 +142,7 @@ fn pocket() -> OpParams {
 /// ladder's top is the hole's `entry_z`, not the op's top height.
 fn bore() -> OpParams {
     OpParams::Bore {
+        break_through: None,
         links: camcraft_app::links::Links::PLANAR,
         clearance_z: Height::fixed(40.0),
         retract_z: None,
