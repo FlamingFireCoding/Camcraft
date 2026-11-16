@@ -14,6 +14,12 @@ use egui_kittest::kittest::NodeT;
 
 use super::*;
 
+#[path = "tool_properties.rs"]
+mod tool_properties;
+
+#[path = "break_through.rs"]
+mod break_through;
+
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {
     fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Pos2)>) {
@@ -191,12 +197,13 @@ fn tool_editor_structure() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
+    assert_eq!(harness.query_all_by_label("Diameter").count(), 1, "the explicit window owns the only editable tool surface");
     let win = harness
         .query_all_by_role(egui::accesskit::Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
-        .expect("Edit must open the editor window titled by the tool");
+        .expect("the explicit editor window is titled by the tool");
     let wr = win.rect();
     assert!(
         wr.min.x > 0.0 && wr.max.x < 1280.0 && wr.min.y > 0.0 && wr.max.y <= 720.0,
@@ -310,7 +317,11 @@ fn setup_page_alignment_rows_structure() {
     // (#326/#606) are not drawn while Axes is selected.
     assert!(h.query_by_label_contains("Lay on a plane - pick a face").is_none(), "the face row waits behind the dropdown");
     assert!(h.query_by_label_contains("Lay on a plane - pick three points").is_none(), "the points row waits behind the dropdown");
-    assert!(h.query_by_label_contains("Turn").is_none(), "the manual picker waits behind the dropdown");
+    assert!(
+        h.query_all_by_label_contains("Turn")
+            .all(|n| n.accesskit_node().role() == egui::accesskit::Role::Tab),
+        "the manual picker waits behind the dropdown"
+    );
     // The origin side shows the model box reading: the box point combo
     // and Place origin, with the box readout beside it.
     assert!(point_combo.max.y < h.get_by_label("Place origin").rect().min.y, "the origin controls expand under the dropdown");

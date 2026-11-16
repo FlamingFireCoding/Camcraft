@@ -30,6 +30,20 @@ fn heavy_lanes_are_one_build_then_one_step_per_target() {
 }
 
 #[test]
+fn lathe_field_sim_multi_pass_is_in_the_heavy_lane() {
+    let source = scan::read(&root().join("crates/app/tests/lathe_field_sim.rs"));
+    let before = source.split_once("fn multi_pass_contour_simulates_with_meridian_parity()").expect("test source").0;
+    let attributes = before.rsplit("#[test]").next().expect("test attributes");
+    assert!(attributes.contains("#[ignore = \""), "multi-pass parity must be ignored in debug");
+    assert!(attributes.contains("heavy lane"), "ignore reason must name the heavy lane");
+    let steps = heavy();
+    let step = steps.iter().find(|s| s.name == "app heavy: lathe_field_sim").expect("release heavy step");
+    assert!(step.args.contains(&"--release".to_string()));
+    assert!(step.args.contains(&"--ignored".to_string()));
+    assert!(step.args.windows(2).any(|w| w == ["--test", "lathe_field_sim"]));
+}
+
+#[test]
 fn heavy_steps_skip_only_binaries_without_ignored_tests() {
     // The old step was `cargo test --release -p <crate> --no-fail-fast -- --test-threads=6 --ignored`: it ran the
     // lib, the bins, every tests/ binary and the doc tests. The lib, bins and doc steps are always planned; a
@@ -70,6 +84,39 @@ fn heavy_steps_skip_only_binaries_without_ignored_tests() {
             assert!(sel.iter().any(|x| x == s), "{d}: {s} step missing");
         }
     }
+}
+
+#[test]
+fn kernel_ignored_binaries_have_release_heavy_steps() {
+    let root = root();
+    let tests = root.join("crates/kernel/tests");
+    let bins = scan::binaries(&root, "kernel");
+    let mut ignored = BTreeSet::new();
+    for file in scan::rs_files_recursive(&tests) {
+        let text = std::fs::read_to_string(&file).expect("read kernel test source");
+        if !text.contains("#[ignore") {
+            continue;
+        }
+        let rel = file.strip_prefix(&tests).expect("kernel test path");
+        let first = rel.components().next().expect("test source name");
+        let bin = first.as_os_str().to_string_lossy().trim_end_matches(".rs").to_string();
+        if bins.contains(&bin) {
+            ignored.insert(bin);
+        }
+    }
+    assert!(!ignored.is_empty(), "kernel ignored-test fixture must exercise the planner");
+    let release = plan::release(&root);
+    for bin in ignored {
+        let name = format!("kernel heavy: {bin}");
+        let steps: Vec<&Step> = release.steps.iter().filter(|s| s.name == name).collect();
+        assert_eq!(steps.len(), 1, "{name} must have exactly one release step");
+        assert_eq!(steps[0].args, [
+            "test", "--release", "-j", plan::J, "-p", "camcraft-kernel", "--no-fail-fast",
+            "--test", &bin, "--", plan::T, "--ignored",
+        ]);
+    }
+    let build = release.steps.iter().find(|s| s.name == "heavy build (release --no-run)").expect("heavy prebuild");
+    assert!(build.args.windows(2).any(|w| w == ["-p", "camcraft-kernel"]), "kernel needs the release prebuild");
 }
 
 #[test]

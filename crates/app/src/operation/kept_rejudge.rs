@@ -27,13 +27,13 @@ use crate::cl::{Move, Toolpath};
 use crate::schema::Operation;
 use crate::verify;
 
-use super::generate::{contain_into, depth_law_of, stock_to_leave_of, DepthLaw};
+use super::generate::{contain_into, stock_to_leave_of, DepthLaw};
 use super::{keep_law, mark_law};
 
 /// Whether `op`'s kind can read parts beside its source at all - a cheap
 /// door before a job is collected (most ops carry no such law).
 fn may_keep(op: &Operation) -> bool {
-    keep_law::is_stock_kept_kind(&op.params) || depth_law_of(&op.params, &op.src, true) != DepthLaw::None
+    keep_law::is_stock_kept_kind(&op.params) || keep_law::is_part_kept_kind(&op.params, &op.src)
 }
 
 /// `None` when the cached `path` of program op `name` cuts none of the

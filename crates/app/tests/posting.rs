@@ -74,6 +74,7 @@ fn contour_params() -> OpParams {
 
 fn drill_params(hole: camcraft_app::drilling::Hole, top_z: f64, clearance_z: f64) -> OpParams {
     OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(clearance_z),
         retract_z: None,
         top_z: Height::fixed(top_z),
@@ -202,7 +203,7 @@ fn two_ops_post_to_one_program_cycles_stay_in_their_section() {
         "the cycle returns to R (#994)"
     );
     assert!(
-        parts[2].contains("G73 X20 Y20"),
+        parts[2].contains("G73 X20. Y20."),
         "the peck block, at its hole: {}",
         parts[2]
     );

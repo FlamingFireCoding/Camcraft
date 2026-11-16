@@ -478,8 +478,10 @@ fn cycle_tool(kind: ToolKind, diameter: f64, tip_angle: f64, pitch: f64) -> Tool
         flutes: None,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }
@@ -510,6 +512,7 @@ fn drill_plate_matches_golden() {
         },
     ];
     let p = CycleParams {
+        through_clear: camcraft_app::drilling::THROUGH_CLEAR,
         clearance_z: 5.0,
         r_z: 0.0,
         hop_z: None,
@@ -546,6 +549,7 @@ fn drill_peck_matches_golden() {
         stepped: false,
     }];
     let p = CycleParams {
+        through_clear: camcraft_app::drilling::THROUGH_CLEAR,
         clearance_z: 6.0,
         r_z: 0.0,
         hop_z: None,
@@ -580,6 +584,7 @@ fn tap_plate_matches_golden() {
         stepped: false,
     }];
     let p = CycleParams {
+        through_clear: camcraft_app::drilling::THROUGH_CLEAR,
         clearance_z: 5.0,
         r_z: 0.0,
         hop_z: None,
@@ -1084,6 +1089,7 @@ fn thread_params(
 ) -> camcraft_app::machining2d::ThreadParams {
     use camcraft_app::machining2d::{ThreadHole, ThreadParams};
     ThreadParams {
+        through_run: None,
         holes: vec![
             ThreadHole { xy: Point2::new(10.0, 10.0), radius: 5.0, top_z: 0.0, floor_z: -8.0, stepped: false, through },
             ThreadHole { xy: Point2::new(40.0, 10.0), radius: 5.0, top_z: 0.0, floor_z: -8.0, stepped: false, through },

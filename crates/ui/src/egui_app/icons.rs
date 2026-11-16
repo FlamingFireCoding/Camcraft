@@ -172,7 +172,9 @@ icon_table! {
     ToolChamferMill => "tool-chamfer-mill", "icon-tool-chamfer-mill";
     ToolProbe => "tool-probe", "icon-tool-probe";
     ToolTorch => "tool-torch", "icon-tool-torch";
+    ToolWaterjet => "tool-waterjet", "icon-tool-waterjet";
     ToolElectrode => "tool-electrode", "icon-tool-electrode";
+    ToolWire => "tool-wire", "icon-tool-wire";
     // #894: the thread mills - a neck over a toothed head (multi-form)
     // or over one form tooth (single-form).
     ToolThreadMill => "tool-thread-mill", "icon-tool-thread-mill";
