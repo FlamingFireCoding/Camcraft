@@ -61,6 +61,8 @@ pub(super) struct StockSnap {
     /// The stock's own reduced-fidelity flag (#1056): a clone of a coarse
     /// copy is as coarse as the copy, and an undone delete restores it.
     pub(super) coarse_mm: Option<f64>,
+    /// #2015: the stock's workpiece material, cloned and restored with it.
+    pub(super) material: Option<crate::tools::WorkMaterial>,
 }
 
 /// Create a setup, optionally transferring a datum: cloning the named
@@ -182,6 +184,7 @@ impl CreateSetup {
                     location: model::transform_of(world, &entity).unwrap_or_default(),
                     facets: model::facets_of(world, &entity).unwrap_or_default(),
                     coarse_mm: crate::model_fidelity::chord_of(world, &entity),
+                    material: crate::stock_material::of_entity(world, &entity),
                 });
             }
             if let Some(loc) = setup::wcs_entity(world, Some(from))
@@ -222,6 +225,7 @@ impl Command for CreateSetup {
             e.entity_view(world).set(StockDef {
                 shape: s.shape.clone(),
             });
+            crate::stock_material::land_entity(world, &e, s.material);
         }
         if let Some((wname, loc)) = &self.wcs {
             let e = match model::find_by_name(world, wname) {

@@ -1,5 +1,5 @@
 //! #1862: a setup with only a stock and a placed DXF profile saves and
-//! loads - the profile row (`kind: sketch`, project v64), its placement
+//! loads - the profile row (`kind: sketch`, project v65), its placement
 //! on the stock face, its chains made again from the stored primitives,
 //! and the 2D operation on it. A v62 file steps up unchanged; a corrupt
 //! profile row refuses the file by name.
@@ -95,8 +95,8 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
     let world = sheet_job();
     let text = saved(&world);
     let (file, row) = file_and_row(&text);
-    assert_eq!(PROJECT_VERSION, 64, "the DXF profile row arrives at v64");
-    assert_eq!(file["version"], json!(64));
+    assert_eq!(PROJECT_VERSION, 65, "the DXF profile row arrives at v65");
+    assert_eq!(file["version"], json!(65));
     let dto = &file["entities"][row];
     assert_eq!(dto["name"], json!("plate"));
     assert_eq!(dto["sketch"]["setup"], json!("Sheet"));
@@ -130,7 +130,7 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
 }
 
 #[test]
-fn rest_parameters_and_profile_rows_share_the_v64_project_file() {
+fn rest_parameters_and_profile_rows_share_the_v65_project_file() {
     let world = sheet_job();
     let mut history = History::default();
     let mut pocket = operation::seed_params(OpType::Pocket.ordinal());
@@ -150,7 +150,7 @@ fn rest_parameters_and_profile_rows_share_the_v64_project_file() {
     run(&world, &mut history, CreateOperation::new(&world, "Rest", TOOL, SrcRef::Entity("plate".into()), pocket), "Rest");
     let text = saved(&world);
     let file: Value = serde_json::from_str(&text).expect("json");
-    assert_eq!(file["version"], json!(64), "main's additive rest keys do not consume the profile version");
+    assert_eq!(file["version"], json!(65), "main's additive rest keys do not consume the profile version");
     let again = reopened(&text);
     let op = model::find_by_name(&again, "Rest").and_then(|e| model::operation_of(&again, &e)).expect("the rest operation loads");
     assert!(matches!(op.params, operation::OpParams::Pocket { rest: Some(r), .. } if r == previous));
@@ -169,7 +169,7 @@ fn a_v62_file_steps_up_unchanged() {
     let mut v62: Value = serde_json::from_str(&text).expect("json");
     v62["version"] = json!(62);
     let again = reopened(&v62.to_string());
-    assert_eq!(saved(&again), text, "the v62 file loads unchanged and saves as v64");
+    assert_eq!(saved(&again), text, "the v62 file loads unchanged and saves as v65");
 }
 
 #[test]
@@ -198,9 +198,27 @@ fn a_v63_break_through_file_steps_up_without_losing_the_stated_limit() {
     let op = model::find_by_name(&again, "Drill").and_then(|e| model::operation_of(&again, &e)).expect("the drill loads");
     assert_eq!(op.params, drill, "migration preserves the stated zero allowance");
     let text = saved(&again);
-    v63["version"] = json!(64);
+    v63["version"] = json!(65);
     assert_eq!(serde_json::from_str::<Value>(&text).expect("json"), v63, "only the project version changes");
-    assert_eq!(saved(&reopened(&text)), text, "the v64 file has a byte-stable round trip");
+    assert_eq!(saved(&reopened(&text)), text, "the v65 file has a byte-stable round trip");
+}
+
+#[test]
+fn a_v64_cutting_row_steps_up_without_losing_its_limits() {
+    let world = sheet_job();
+    let mut file: Value = serde_json::from_str(&saved(&world)).expect("json");
+    // Main's v64 document has no profiles, but can state the Unknown row's limits.
+    file["entities"].as_array_mut().expect("entities").retain(|e| e["kind"] != json!("sketch") && e["name"] != json!("Cut"));
+    let tool = file["entities"].as_array_mut().expect("entities").iter_mut().find(|e| e["name"] == json!(TOOL)).expect("tool");
+    tool["tool"]["cutting_data"] = json!([{ "material": "unknown", "rpm": 3100.0, "feed": 410.0, "stepdown": 1.5, "stepover": 2.0 }]);
+    tool["tool"]["rpm"] = json!(3100.0);
+    tool["tool"]["feed"] = json!(410.0);
+    file["version"] = json!(64);
+    let again = reopened(&file.to_string());
+    file["version"] = json!(65);
+    let text = saved(&again);
+    assert_eq!(serde_json::from_str::<Value>(&text).expect("json"), file, "only the version changes; cutting limits survive");
+    assert_eq!(saved(&reopened(&text)), text);
 }
 
 #[test]
@@ -333,4 +351,21 @@ fn valid_stored_profile_summary_loads_and_get_job_reports_its_total() {
     assert_ne!(reply["result"]["isError"], json!(true), "{reply}");
     assert_eq!(reply["result"]["structuredContent"]["profiles"][0]["skipped_total"], json!(3));
     assert_eq!(reply["result"]["structuredContent"]["profiles"][0]["skipped"], json!({ "TEXT": 2, "DIMENSION": 1 }));
+}
+
+#[test]
+fn delete_undo_keeps_both_stock_material_and_profile_drawing() {
+    use camcraft_app::commands::{DeleteEntity, SetStockMaterial};
+    use camcraft_app::tools::WorkMaterial;
+    let world = sheet_job();
+    let mut history = History::default();
+    history.execute(&world, SetStockMaterial::new(&world, Some(WorkMaterial::Brass)).expect("material"));
+    let before = saved(&world);
+    let stock_name = camcraft_app::setup::stock_entity_name(&world, Some("Sheet"));
+    for name in ["plate", stock_name.as_str()] {
+        history.execute(&world, DeleteEntity::new(&world, name).expect("delete"));
+        assert!(model::find_by_name(&world, name).is_none());
+        assert!(history.undo(&world));
+        assert_eq!(saved(&world), before, "undo restores every payload of {name}");
+    }
 }

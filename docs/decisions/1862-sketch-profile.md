@@ -112,12 +112,12 @@ The operation has no toolpath, and the post gate refuses it.
 - Each profile is read and chained before any world write. A profile off its
   face, with an unknown unit code or with primitives that do not chain refuses
   the file by name.
-- **`PROJECT_VERSION` 63 -> 64.** Main uses v63 for the through-hole
-  `break_through` field from #1557. Profiles use the next version, v64.
-  A v63 file keeps its breakthrough values and steps up unchanged. A v62
-  file still loads through the earlier migration. An older reader refuses
-  a v64 file before it can discard a profile. Dropped: sharing v63 with
-  main, which lets a reader discard a field that controls tool travel.
+- **`PROJECT_VERSION` 64 -> 65.** Main uses v64 for the cutting-data
+  rows and stock material from #2015. Profiles use the next version, v65.
+  A v64 file steps up unchanged; the earlier v63 breakthrough values and
+  v62 migration remain intact. An older reader refuses a v65 file before
+  it can discard a profile. Dropped: sharing a version with main, which
+  lets an older reader discard data it cannot represent.
 
 ### What it costs to change later
 
@@ -169,3 +169,24 @@ The operation has no toolpath, and the post gate refuses it.
 - Pin a v63 breakthrough file through load, save as v64, and load again.
   Pin the profile and rest payloads in the v64 round trip. These checks
   protect the stored travel limit and the profile data together.
+
+
+### PR #2134 cutting-data format refresh
+
+- The breakthrough refresh's choice of v64 for profiles is superseded:
+  main now uses v64 for #2015's cutting-data rows and stock material.
+  Merge that format intact and give the profile row v65. Keep main's
+  v63-to-v64 migration and add the v64-to-v65 step; neither needs a data
+  rewrite. Dropped: sharing v64, because an older build could open and
+  save away data belonging to the other format.
+- Keep both profile and stock-material state in `DeleteEntity`, and both
+  DXF unit-code APIs. They serve separate callers and can coexist.
+  Dropped: taking either conflict side alone, which removes the other
+  feature's state restoration or unit API.
+- Keep the v63 breakthrough pin and update the profile and combined
+  persistence pins to write v65. The earlier migration must continue to
+  preserve the stated travel limit through save and load.
+- Additional refresh pins: `a_v64_cutting_row_steps_up_without_losing_its_limits`,
+  `delete_undo_keeps_both_stock_material_and_profile_drawing`, and
+  `all_drawing_units_keep_both_persistence_code_apis`. They cover the v64
+  cutting data, both undo payloads, and the two unit-code APIs.

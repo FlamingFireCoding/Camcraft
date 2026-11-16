@@ -144,6 +144,8 @@ mod run_out;
 use run_out::*;
 mod area;
 use area::*;
+mod pocket_memo;
+pub use pocket_memo::pocket_slices;
 mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;
@@ -222,7 +224,7 @@ mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
 pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
-pub use top_stock::TOP_STOCK_WARNING;
+pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
 mod turning_axis;
 mod turning_feeds;

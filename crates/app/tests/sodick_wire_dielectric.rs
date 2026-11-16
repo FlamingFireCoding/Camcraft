@@ -16,7 +16,7 @@
 
 use flecs_ecs::prelude::World;
 
-use camcraft_app::commands::{CreateOperation, GenerateOperation, History, ImportModel, LoadMachine};
+use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine};
 use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::{parse_mch, Flushing, Machine, Tank};
 use camcraft_app::operation::{self, Height, OpParams, SrcRef, WireContourOp, WireSide};
@@ -63,6 +63,7 @@ fn punch_doc(m: Machine) -> World {
     let world = new_world();
     let mut h = History::default();
     h.execute(&world, LoadMachine::new(&world, "wire.mch".into(), Some(m)).expect("mount"));
+    h.execute(&world, AddTool::new(&world, "EDM-W025", camcraft_app::wire_tools::wire_tool(0.25)).expect("wire tool"));
     h.execute(&world, ImportModel::from_mesh("slug", slug()));
     let op = WireContourOp {
         top_z: Height::fixed(12.0),
@@ -78,7 +79,7 @@ fn punch_doc(m: Machine) -> World {
         clearance: operation::DEFAULT_CLEARANCE,
         skims: Vec::new(),
     };
-    let c = CreateOperation::new(&world, "Punch1", "", SrcRef::Entity("slug".into()), OpParams::WireContour(op)).expect("op");
+    let c = CreateOperation::new(&world, "Punch1", "EDM-W025", SrcRef::Entity("slug".into()), OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
     h.execute(&world, GenerateOperation::new(&world, "Punch1").expect("generates"));
     world

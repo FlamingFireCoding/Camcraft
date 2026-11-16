@@ -134,7 +134,7 @@ pub use probe_dto::*;
 mod plasma_dto;
 // #890: a tool's cutting data per workpiece material.
 mod cutting_rows_dto;
-pub use cutting_rows_dto::{CuttingRowDto, MaterialWord};
+pub use cutting_rows_dto::{CuttingRowDto, MaterialWord, StockMaterialWord};
 pub use plasma_dto::*;
 mod wire_edm_dto;
 pub use wire_edm_dto::*;

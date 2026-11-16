@@ -21,12 +21,16 @@ pub struct DeleteEntity {
     facet_budget: Option<u64>,
     /// #1610: an incomplete model comes back with its hole named.
     hole: Option<String>,
+    /// #744: raw STEP text preserved across delete/undo.
+    step_source: Option<String>,
     /// Non-`None` restores the `StockDef` component; `wcs` restores the
     /// `Wcs` tag. Together with the CAM components below they keep every
     /// kind of named entity undoable with its kind intact.
     stock: Option<StockShape>,
     /// #1862: a DXF profile's setup and drawing; shared, not copied.
     sketch: Option<crate::schema::Sketch>,
+    /// #2015: a stock's workpiece material, restored with it.
+    stock_material: Option<crate::tools::WorkMaterial>,
     wcs: bool,
     tool: Option<Tool>,
     /// #221: a deleted tool's number, restored with it on undo.
@@ -71,8 +75,10 @@ impl DeleteEntity {
             coarse_mm: crate::model_fidelity::chord_of(world, &entity),
             facet_budget: crate::model_fidelity::budget_of(world, &entity),
             hole: crate::mesh_open::hole_of(world, &entity),
+            step_source: crate::step_source::of(world, &entity),
             stock: model::stock_def_of(world, &entity),
             sketch: crate::sketch::sketch_of(world, &entity),
+            stock_material: crate::stock_material::of_entity(world, &entity),
             wcs: model::is_wcs(world, &entity),
             tool: model::tool_of(world, &entity),
             tool_number: model::tool_number_of(world, &entity),
@@ -112,10 +118,12 @@ impl Command for DeleteEntity {
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
         crate::mesh_open::set(world, &entity, self.hole.as_deref());
+        crate::step_source::set(world, &entity, self.step_source.as_deref());
         if let Some(shape) = &self.stock {
             entity
                 .entity_view(world)
                 .set(StockDef { shape: shape.clone() });
+            crate::stock_material::land_entity(world, &entity, self.stock_material);
         }
         if self.wcs {
             entity.entity_view(world).add(Wcs);

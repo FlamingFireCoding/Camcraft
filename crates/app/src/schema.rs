@@ -102,6 +102,10 @@ pub struct StepBudget {
     pub facets: u64,
 }
 
+/// Raw STEP text preserved for models/fixtures imported from STEP (#744).
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct StepSource(pub String);
+
 /// The hole of a model imported from a STEP closed shell that meshes open
 /// (#1610), said in words: the model rides fidelity unknown
 /// (`ReducedFidelity` at `model_fidelity::UNKNOWN_MM`) and every refusal
@@ -141,6 +145,14 @@ pub struct StockSourceOnly {
     pub source: String,
     pub print: GeomPrint,
 }
+
+/// #2015: the workpiece material a setup's stock states. Rides the stock
+/// entity; absent (every older file) states none, and the document's
+/// material speaks for the setup. It picks the tool cutting-data row the
+/// setup's operations are seeded from. Only `SetStockMaterial`, the
+/// project loader and the stock's delete/undo write it.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StockMaterial(pub crate::tools::WorkMaterial);
 
 /// A model's geometry as the program verdict reads it (#1094,
 /// `stock_print`): its facet count and two independent 64-bit hashes over
@@ -363,6 +375,8 @@ pub struct FixtureDef {
     /// A built-in accessory's parameters (#789: parallels, blocks, a
     /// strap clamp, a soft jaw); `None` - not one.
     pub accessory: Option<crate::accessory::Accessory>,
+    /// Editable 2D profile when built from DXF/profile or derived (#744).
+    pub profile: Option<crate::fixture_profile::FixtureProfile>,
 }
 
 /// The document's active setup, stored as a flecs singleton like `Units`:
@@ -775,10 +789,12 @@ pub fn register_schema(world: &World) {
     world.component::<GeoSig>();
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
+    world.component::<StepSource>();
     world.component::<MeshOpen>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();
+    world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
     world.component::<Sketch>();

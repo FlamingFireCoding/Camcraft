@@ -100,21 +100,36 @@ pub(super) fn draw_program_section(ui: &mut Ui, dlg: &mut PostDialogState) {
                 });
             fields::named(cb.response, "Between setups");
         });
-        prop_row(ui, "End units", |ui| {
-            let eu_label = |u: EndUnits| match u {
-                EndUnits::Leave => "Leave modal",
-                EndUnits::Inch => "Inch (G20)",
-                EndUnits::Millimeters => "mm (G21)",
-            };
-            let cb = ComboBox::from_id_salt("post_dlg_end_units")
-                .selected_text(eu_label(dlg.options.end_units))
-                .show_ui(ui, |ui| {
-                    for u in [EndUnits::Leave, EndUnits::Inch, EndUnits::Millimeters] {
-                        ui.selectable_value(&mut dlg.options.end_units, u, eu_label(u));
-                    }
-                });
-            fields::named(cb.response, "End units");
-        });
+        if let Some((inch_word, mm_word)) = &dlg.end_units_words {
+            prop_row(ui, "End units", |ui| {
+                let inch_label = format!("Inch ({inch_word})");
+                let mm_label = format!("mm ({mm_word})");
+                let eu_label = |u: EndUnits| match u {
+                    EndUnits::Leave => "Leave modal",
+                    EndUnits::Inch => inch_label.as_str(),
+                    EndUnits::Millimeters => mm_label.as_str(),
+                };
+                let cb = ComboBox::from_id_salt("post_dlg_end_units")
+                    .selected_text(eu_label(dlg.options.end_units))
+                    .show_ui(ui, |ui| {
+                        for u in [EndUnits::Leave, EndUnits::Inch, EndUnits::Millimeters] {
+                            ui.selectable_value(&mut dlg.options.end_units, u, eu_label(u));
+                        }
+                    });
+                fields::named(cb.response, "End units");
+            });
+        } else if let Some(asked) = match dlg.options.end_units {
+            EndUnits::Inch => Some("Inch"),
+            EndUnits::Millimeters => Some("mm"),
+            EndUnits::Leave => None,
+        } {
+            prop_row(ui, "End units", |ui| {
+                ui.label(format!("{asked} (not supported by this post)"));
+                if ui.button("Clear to Leave modal").clicked() {
+                    dlg.options.end_units = EndUnits::Leave;
+                }
+            });
+        }
         if let Some(pass) = super::post_options::pass_word(&dlg.post) {
             prop_row(ui, "Threading", |ui| {
                 let passes = format!("{pass} passes");
