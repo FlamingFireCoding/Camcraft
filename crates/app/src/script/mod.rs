@@ -356,6 +356,7 @@ interface PostResult {
   path: string;
   ops: number;
   lines: number;
+  warning?: string;
   program?: string;
   /** Setups on different machines or posts: every file written, one per mount. */
   files?: string[];

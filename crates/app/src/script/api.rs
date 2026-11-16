@@ -295,7 +295,7 @@ pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     // Omitted: each mount's own post (#388); named: that script for all.
     let cps = match opts.get("cps") {
         None | Some(Value::Null) => None,
-        Some(Value::String(s)) => Some(posting::resolve_cps_text(s)?),
+        Some(Value::String(s)) => Some(posting::resolve_cps(s)?),
         Some(_) => return Err("\"cps\" must be a built-in name or a .cps path".into()),
     };
     let with_program = match opts.get("program") {
@@ -309,10 +309,19 @@ pub(crate) fn v_post(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     };
     let files = match &cps {
         None => posting::post_mounts_with_script_options(&env.world, &to, extra.as_ref()),
-        Some(text) => posting::post_mounts_script_with_options(&env.world, &to, text, extra.as_ref()),
+        Some((post_ref, text)) => {
+            posting::post_mounts_for_post_with_options(&env.world, &to, post_ref, text, extra.as_ref())
+        }
     }
     .map_err(|e| e.to_string())?;
-    Ok(super::report::posted_view(env, files, with_program))
+    let warning = cps.as_ref().and_then(|(post_ref, _)| {
+        let setups: Vec<Vec<String>> = files.iter().map(|f| f.mount.setups.clone()).collect();
+        crate::setup_post_options::unapplied_script_warning(&env.world, &setups, post_ref)
+    });
+    if let Some(w) = &warning {
+        env.logs.push(w.clone());
+    }
+    Ok(super::report::posted_view(env, files, with_program, warning.as_deref()))
 }
 
 /// `cam.report()` - the job on one page: the tree, the tool list, the

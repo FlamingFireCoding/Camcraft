@@ -546,23 +546,29 @@ pub(crate) fn json_map_to_overrides(val: &Value) -> Result<BTreeMap<String, Opti
     Ok(out)
 }
 
-/// Resolve a built-in post name or `.cps` file path to its script text (#258).
-pub fn resolve_cps_text(cps: &str) -> Result<String, String> {
-    if let Some((_, text)) = BUILTINS.iter().find(|(n, _)| *n == cps) {
-        return Ok((*text).to_owned());
+/// Resolve a built-in post name or `.cps` file path to its [`PostRef`] and script text (#258, #2190).
+pub fn resolve_cps(cps: &str) -> Result<(PostRef, String), String> {
+    if let Some((name, text)) = BUILTINS.iter().find(|(n, _)| *n == cps) {
+        return Ok((PostRef::Named((*name).to_owned()), (*text).to_owned()));
     }
     if Path::new(cps)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("cps"))
     {
-        return std::fs::read_to_string(cps)
-            .map_err(|e| format!("cannot read post script {cps}: {e}"));
+        let text = std::fs::read_to_string(cps)
+            .map_err(|e| format!("cannot read post script {cps}: {e}"))?;
+        return Ok((PostRef::File(cps.to_owned()), text));
     }
     let names: Vec<&str> = BUILTINS.iter().map(|(n, _)| *n).collect();
     Err(format!(
         "unknown built-in post '{cps}' - names: {}; or give a .cps file path",
         names.join(", ")
     ))
+}
+
+/// Resolve a built-in post name or `.cps` file path to its script text (#258).
+pub fn resolve_cps_text(cps: &str) -> Result<String, String> {
+    resolve_cps(cps).map(|(_, text)| text)
 }
 
 fn scalar_from_cli(raw: &str) -> Value {
@@ -630,8 +636,9 @@ pub mod index_swing;
 pub mod swing_standing;
 pub(crate) use wcs_rotation::{offset_frame, OffsetFrame};
 pub use mounts::{
-    machine_checks, machine_value_for, machine_value_of, post_mounts, post_mounts_script,
-    post_mounts_script_with_options, post_mounts_with_script_options, post_of_setup, PostedMount,
+    machine_checks, machine_value_for, machine_value_of, post_mounts,
+    post_mounts_for_post_with_options, post_mounts_script, post_mounts_script_with_options,
+    post_mounts_with_script_options, post_of_setup, PostedMount,
 };
 pub use per_op::{
     file_stem, post_per_op, post_per_op_script, post_per_op_script_with_options,
@@ -687,6 +694,18 @@ pub fn post_script_with_script_options(
     extra: Option<&BTreeMap<String, OptionValue>>,
 ) -> Result<Posted, String> {
     post_script_as(world, out_path, cps, None, None, extra)
+}
+
+/// [`post_script`] for a resolved [`PostRef`] with temporary per-run script option overrides (#258, #2190).
+pub fn post_script_for_post_with_options(
+    world: &World,
+    out_path: &Path,
+    post: &PostRef,
+    cps: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
+    let label = post_ref_label(post);
+    post_script_as(world, out_path, cps, Some(&label), Some(post), extra)
 }
 
 /// [`post_script`] with the script's label (a post file's path), for

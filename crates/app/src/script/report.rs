@@ -46,7 +46,12 @@ pub(crate) fn summary(env: &Env) -> Value {
 /// ops, lines); a program over several mounts adds `files` (every path,
 /// program order) and `mounts` (each file's setups, machine, post, ops,
 /// lines - and its text when asked), `path` naming the first.
-pub(crate) fn posted_view(env: &mut Env, files: Vec<crate::posting::PostedMount>, with_program: bool) -> Value {
+pub(crate) fn posted_view(
+    env: &mut Env,
+    files: Vec<crate::posting::PostedMount>,
+    with_program: bool,
+    warning: Option<&str>,
+) -> Value {
     let several = files.len() > 1;
     let ops: usize = files.iter().map(|f| f.posted.ops).sum();
     let lines: usize = files.iter().map(|f| f.posted.lines).sum();
@@ -59,6 +64,9 @@ pub(crate) fn posted_view(env: &mut Env, files: Vec<crate::posting::PostedMount>
     });
     if let Some(line) = first.and_then(|f| f.posted.not_judged.as_ref()) {
         out["not_judged"] = json!(line);
+    }
+    if let Some(w) = warning {
+        out["warning"] = json!(w);
     }
     if !several {
         if with_program && let Some(f) = first {
