@@ -97,8 +97,15 @@ fn the_fixtures_page_is_laid_out_in_groups_like_the_wcs_page() {
     assert!(line.top() > hold.top() && line.top() < add.top());
     assert!(h.query_by_label(EMPTY).is_none(), "the empty line is not shown with fixtures");
     // Each fixture's row and verbs stay in the first group.
+    let pane = h
+        .state()
+        .dock
+        .iter_leaves()
+        .find(|(_, l)| l.tabs.contains(&Tab::Properties))
+        .map(|(_, l)| l.viewport)
+        .expect("the properties leaf");
     for l in ["cube", "Place…", "Locate part…", "Unmark", "Delete", "Place on plate…"] {
-        let n: Vec<egui::Rect> = h.query_all_by_label(l).map(|n| n.rect()).filter(|r| r.min.x > 300.0).collect();
+        let n: Vec<egui::Rect> = h.query_all_by_label(l).map(|n| n.rect()).filter(|r| pane.contains(r.center())).collect();
         assert!(!n.is_empty(), "the page draws {l:?}");
         assert!(n.iter().all(|r| r.top() > hold.top() && r.bottom() < add.top()), "{l:?} in Workholding: {n:?}");
     }

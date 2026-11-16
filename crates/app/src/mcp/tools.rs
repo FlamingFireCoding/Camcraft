@@ -61,6 +61,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .iter()
         .chain(super::setup_tools::TOOLS)
         .chain(super::fixture_tools::TOOLS)
+        .chain(super::fixture_profile_tools::TOOLS)
         .chain(super::align_tools::TOOLS)
         .chain(super::wcs_circle::TOOLS)
         .chain(super::coolant_tools::TOOLS)
@@ -278,8 +279,8 @@ fn s_add_tool() -> Value {
         json!({
             "name": { "type": "string", "description": "Tool name in the document; defaults to the catalog name." },
             "catalog": { "type": "string", "description": "A list_tool_catalog name to copy." },
-            "definition": { "type": "object", "description": "A full tool definition (get_job's tool shape). Optional catalog keys part_number, vendor, coating, helix_deg (0-90) and notes ride it; unusable ones refuse the add by tool name. Optional cutting_data: [{material, rpm, feed}] per workpiece material word (aluminium_6061, mild_steel, stainless_304, grey_cast_iron, brass, plastics_pom), feed mm/min; a material twice or a non-positive rpm/feed refuses the add by tool name. When the document states a material the tool has a row for, the tool lands running that row's rpm/feed, and add_operation seeds a milling op's feed from it." },
-            "holder": { "type": "string", "description": "A built-in library holder for it (\"BT30 ER20\"), or \"none\" for no holder body. Omitted: the active setup's machine's default holder (tooling.default_holder), when it states one and the holder takes the tool. The reply names the holder it landed with (holder, holder_from) or why the default was left off (note)." }
+            "definition": { "type": "object", "description": "A full tool definition (get_job's tool shape). Optional catalog keys part_number, vendor, coating, helix_deg (0-90) and notes ride it; unusable ones refuse the add by tool name. Optional cutting_data: [{material, rpm, feed, stepdown?, stepover?}] per workpiece material word (aluminium_6061, mild_steel, stainless_304, grey_cast_iron, brass, plastics_pom) or unknown (the tool's default row; added from its own rpm/feed when absent), feed mm/min, stepdown/stepover mm; a material twice, a non-positive rpm/feed/step or a stepover wider than the cutter refuses the add by tool name. The tool runs its row for the document material (else its unknown row); add_operation seeds a milling op's feed from a row naming the material in force (the active setup stock's, else the document's) and its stepdown/stepover from that row, each missing one from the unknown row." },
+            "holder": { "type": "string", "description": "A built-in library holder for it (\"BT30 ER20\", or a taper's Weldon pick \"BT40 Weldon\": the bore for the tool's shank), or \"none\" for no holder body. Omitted: the active setup's machine's default holder (tooling.default_holder), when it states one and the holder takes the tool. The reply names the holder it landed with (holder, holder_from) or why the default was left off (note)." }
         }),
         &[],
     )
@@ -318,7 +319,7 @@ fn s_add_op() -> Value {
     obj(
         json!({
             "kind": { "type": "string", "description": "Operation kind: label or key from list_operation_types." },
-            "tool": { "type": "string", "description": "A document tool name (add_tool first). Required, except for a kind that mounts no tool (list_operation_types says \"mounts_tool\": false - the Wire Contour): omit it there; naming one is refused." },
+            "tool": { "type": "string", "description": "A document tool name (add_tool first). Required, except for a kind that mounts no tool (list_operation_types says \"mounts_tool\": false): omit it there; naming one is refused." },
             "name": { "type": "string", "description": "Operation name; defaults to the kind's label plus a number." },
             "source": { "type": "string", "description": "\"stock\" (default) or a model name." },
             "params": { "type": "object", "description": "Fields to change from the kind's defaults." }

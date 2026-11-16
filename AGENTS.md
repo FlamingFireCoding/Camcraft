@@ -561,9 +561,9 @@ tests are in `crates/ui/tests/`; they start the real app through
 
   | Tier | When | Target | Runs |
   |---|---|---|---|
-  | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | each debug suite that is not slow, the kernel suites, the ui suites, clippy |
-  | release | only at a cut | - | all debug suites and the `--ignored` heavy lanes in release |
+  | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
@@ -605,6 +605,10 @@ tests are in `crates/ui/tests/`; they start the real app through
   outputs in `tests/golden/`), stock simulation and post processing. Add fuzz
   tests for the geometry importers and the toolpath generators: degenerate
   input must give an error, never a crash or a hang.
+- **2D toolpath shape-mask tests** (`crates/motion/tests/common/shape_mask.rs`):
+  compare a generated `Toolpath`'s swept disc footprint against the expected
+  `Region` (overcut, leftover, progressive rim engagement, symmetry, stock
+  extension) and write an RGB diff PNG on failure (do not commit the PNG).
 - **GitHub Actions minutes are budgeted** (3000 each month; Windows counts
   2x, macOS 10x).
   - Nothing runs on a PR trigger.

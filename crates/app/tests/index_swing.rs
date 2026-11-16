@@ -65,7 +65,7 @@ fn doc(machine: Machine, len: f64, a: Option<f64>) -> World {
     t.holder_len = len - t.flute_len - t.shank_len;
     assert!(t.holder_len > 0.0, "the holder takes up the rest of the length");
     h.execute(&world, ok(AddTool::new(&world, "EM 1/4", t), "tool"));
-    let tilt = a.map(|a_deg| Tilt { a_deg, b_deg: 0.0, origin: [0.0; 3] });
+    let tilt = a.map(|a_deg| Tilt { basis_version: 1, a_deg, b_deg: 0.0, origin: [0.0; 3] });
     let flat = OpParams::Slot {
         a: Point2::new(-0.75 * IN, 0.0),
         b: Point2::new(-0.25 * IN, 0.0),
