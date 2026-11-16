@@ -131,3 +131,22 @@ fn plasma_cutting_mode_shows_the_plasma_profile_and_switching_back_restores_the_
     run(&mut state, CommandKind::Undo);
     assert_eq!(machine::kind_of(&state.world), Kind::Mill, "two undos: back to the mill");
 }
+
+#[test]
+fn every_machine_kind_has_a_short_caption() {
+    let kinds = [
+        Kind::Mill,
+        Kind::Lathe,
+        Kind::MillTurn,
+        Kind::Plasma,
+        Kind::Waterjet,
+        Kind::WireEdm,
+        Kind::SinkerEdm,
+    ];
+    for kind in kinds {
+        let short = machine_modes::short_caption(kind);
+        assert!(!short.is_empty(), "{kind:?} has a short caption");
+        assert!(!machine_modes::caption(kind).is_empty(), "{kind:?} has a caption");
+    }
+    assert_eq!(machine_modes::short_caption(Kind::Waterjet), "Waterjet");
+}
