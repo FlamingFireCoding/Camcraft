@@ -628,6 +628,8 @@ pub mod nose;
 pub mod index_swing;
 #[path = "posting_swing_standing.rs"]
 pub mod swing_standing;
+#[path = "posting_section_mode.rs"]
+mod section_mode;
 pub(crate) use wcs_rotation::{offset_frame, OffsetFrame};
 pub use mounts::{
     machine_checks, machine_value_for, machine_value_of, post_mounts, post_mounts_script,
@@ -1318,6 +1320,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             post::ask_reverse_spindle(&mut records);
         }
         setup_change::ask(&changes, name, &mut records);
+        section_mode::insert(&op.params, &posted, &mut records);
         streams.push((name.clone(), records));
     }
     Ok(streams)
