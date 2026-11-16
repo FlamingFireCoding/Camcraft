@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, GenerateOperation, History, ImportModel,
-    MoveFixture, MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveFixture, MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -436,6 +436,7 @@ pub enum CommandKind {
     DeleteOperation(String),
     RenameOperation { name: String, label: String },
     ReorderOperation { name: String, target: String, after: bool },
+    MarkOperationReviewed(String),
     /// Throw away the operation's generated path and keep the operation
     /// (undoable: the cache comes back byte for byte).
     ClearToolpath(String),
@@ -3574,6 +3575,14 @@ impl State {
                     self.status = format!("operation {name} moved");
                 }
                 Err(err) => self.refuse(ErrorScope::Operation, format!("reorder failed: {err}")),
+            },
+            CommandKind::MarkOperationReviewed(name) => match MarkOperationReviewed::new(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("marked {name} reviewed");
+                }
+                Err(err) => self.refuse(ErrorScope::Operation, format!("mark reviewed failed: {err}")),
             },
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes

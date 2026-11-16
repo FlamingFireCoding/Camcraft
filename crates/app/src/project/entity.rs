@@ -420,6 +420,10 @@ pub struct OperationDto {
     /// Position within the setup; absent preserves legacy name order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<u32>,
+    /// Un-carriable parameters dropped on a version migration (#1517);
+    /// non-empty blocks posting until reviewed and cleared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs_review: Vec<String>,
     pub tool: String,
     pub src: SrcDto,
     pub params: ParamsDto,

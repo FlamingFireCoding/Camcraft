@@ -101,7 +101,12 @@ use super::*;
 /// reader must refuse a v63 file rather than drop a stated break-through
 /// and run the tip its default 1.0 mm past the floor, into what the
 /// user kept it out of.
-pub const PROJECT_VERSION: u32 = 63;
+/// v64 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
+/// to `adaptive2d`), and migrated operations may carry `needs_review`
+/// reasons naming turned-off un-carriable fields. Pre-v64 `Pocket` +
+/// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
+/// refuse v64 files rather than silently drop `needs_review` and post.
+pub const PROJECT_VERSION: u32 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

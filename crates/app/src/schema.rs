@@ -388,12 +388,14 @@ pub struct Operation {
     pub suppressed: bool,
 }
 
-/// User-facing operation label and explicit position within its setup.
+/// User-facing operation label, explicit position within its setup, and
+/// un-carriable migration notes requiring review (#1517).
 /// The entity's `Name` remains a stable key for commands and undo history.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct OperationMeta {
     pub label: Option<String>,
     pub order: Option<u32>,
+    pub needs_review: Vec<String>,
 }
 
 /// A standalone Pause or Home entry in the operation list (#155): an

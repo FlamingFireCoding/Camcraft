@@ -23,4 +23,4 @@ pub use create::{CreateOperation, DeleteOperation, PasteOperation};
 pub use edit::{ChangeOperationKind, EditOperationLinks, EditOperationParams};
 pub use generate::{GenerateOperation, RegenerateAll};
 pub use geometry::SetOperationGeometry;
-pub use meta::{RenameOperation, ReorderOperation};
+pub use meta::{MarkOperationReviewed, RenameOperation, ReorderOperation};

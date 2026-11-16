@@ -122,7 +122,7 @@ impl CreateOperation {
             .map_or_else(Default::default, |m| crate::operation::CoolantMode::machine_default(&m.coolants));
         Ok(CreateOperation {
             name: name.to_string(),
-            meta: OperationMeta { label: None, order: Some(order) },
+            meta: OperationMeta { label: None, order: Some(order), needs_review: Vec::new() },
             reordered,
             operation: Operation {
                 tool: tool.to_string(),
@@ -183,6 +183,9 @@ impl PasteOperation {
         valid_src(world, context, &operation.src)?;
         infeed_plan_gate(world, &operation.params, &operation.tool)?;
         sinker_gate(world, context, &operation.params)?;
+        if let Some(why) = operation.params.named_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
         if !operation.params.is_sane() {
             return Err(CommandError::Invalid("copied operation parameters are not usable".into()));
         }
@@ -200,7 +203,7 @@ impl PasteOperation {
         Ok(Self {
             name: name.to_owned(),
             operation,
-            meta: OperationMeta { label: None, order: Some(order) },
+            meta: OperationMeta { label: None, order: Some(order), needs_review: Vec::new() },
             reordered,
         })
     }

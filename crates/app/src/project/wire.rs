@@ -102,9 +102,11 @@ pub fn collect(world: &World) -> ProjectFile {
                     on_plate: super::plate_dto::on_plate_value(&d.plate),
                     mod_jaw: super::modvise_dto::value(d.mod_jaw.as_ref()),
                 });
+            let op_meta = model::operation_meta_of(world, &entity);
             let operation = model::operation_of(world, &entity).map(|op| OperationDto {
-                label: model::operation_meta_of(world, &entity).label,
-                order: model::operation_meta_of(world, &entity).order,
+                label: op_meta.label,
+                order: op_meta.order,
+                needs_review: op_meta.needs_review,
                 tool: op.tool,
                 src: match &op.src {
                     SrcRef::Stock => SrcDto::Stock,

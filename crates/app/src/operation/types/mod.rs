@@ -19,6 +19,7 @@ mod params;
 mod plasma;
 mod sinker;
 mod sane;
+pub use sane::POCKET_ADAPTIVE_RETIRED;
 mod sel;
 mod wire_edm;
 

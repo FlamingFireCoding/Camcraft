@@ -78,6 +78,7 @@ fn op_full(env: &Env, key: &str, e: &flecs_ecs::prelude::Entity, status: operati
     let w = &env.world;
     let op = model::operation_of(w, e);
     let warnings = model::toolpath_of(w, e).map_or(0, |t| t.warnings.len());
+    let needs_review = model::operation_meta_of(w, e).needs_review;
     json!({
         "name": model::operation_label(w, key, e),
         "key": key,
@@ -88,6 +89,7 @@ fn op_full(env: &Env, key: &str, e: &flecs_ecs::prelude::Entity, status: operati
         "coolant": op.as_ref().and_then(|o| serde_json::to_value(o.coolant).ok()),
         "status": api::st_str(status),
         "warnings": warnings,
+        "needs_review": needs_review,
         "params": op.as_ref().map(|o| project::params_to_json(&o.params)),
     })
 }

@@ -156,6 +156,7 @@ mod json;
 pub use json::*;
 mod apply;
 mod fidelity_migrate;
+mod pocket_adaptive_migrate;
 use apply::*;
 // #813: the load note for a machine embedded before #804.
 mod swing_note;

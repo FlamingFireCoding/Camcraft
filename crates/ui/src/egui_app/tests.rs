@@ -199,6 +199,8 @@ mod import_outward;
 mod ribbon_accesskit;
 // #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
 mod ai_chat;
+// #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
+mod pocket_no_adaptive;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.

@@ -514,8 +514,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
+        // v62 -> v63 (#1557): absent `break_through` is the kind's default.
+        // v63 -> v64 (#1517): pre-v64 Pocket Adaptive ops migrate to 2D
+        // Adaptive (Spiral); un-carriable params record `needs_review`.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
+        notes.extend(super::pocket_adaptive_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
         // an older file opens on the unit it posted in (`units_migrate`).
         if from < 60 {
@@ -807,10 +811,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     after: odto.after,
                     suppressed: odto.suppressed,
                 });
-                if odto.label.is_some() || odto.order.is_some() {
+                if odto.label.is_some() || odto.order.is_some() || !odto.needs_review.is_empty() {
                     entity.entity_view(world).set(OperationMeta {
                         label: odto.label,
                         order: odto.order,
+                        needs_review: odto.needs_review,
                     });
                 }
                 if let Some(cache) = &odto.cache {
