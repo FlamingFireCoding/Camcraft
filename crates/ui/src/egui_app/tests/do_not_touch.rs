@@ -105,7 +105,7 @@ fn geometry_boundaries_shows_do_not_touch_controls_rows_and_viewport_marks() {
         crate::boundary_draft::take_pick(
             st,
             crate::state::BoundaryPick::DoNotTouch,
-            edge,
+            edge.clone(),
             crate::boundary_draft::PickMods::default(),
         );
         st.op_ui.area.do_not_touch.clearance = 1.25;
@@ -116,6 +116,16 @@ fn geometry_boundaries_shows_do_not_touch_controls_rows_and_viewport_marks() {
         assert!(!marks.edges.is_empty(), "protected edge must render in viewport overlay");
     }
     h.run_steps(2);
+
+    // Both selected item descriptions stay visible below the clearance control.
+    // This is the structural twin of the review's populated Boundaries view.
+    let clearance = h.get_by_label("Clearance").rect();
+    let face_row = h.get_by_label(&camcraft_app::operation::describe_sel(&face_other)).rect();
+    let edge_row = h.get_by_label(&camcraft_app::operation::describe_sel(&edge)).rect();
+    assert!(clearance.bottom() < face_row.top(), "protected face row below clearance");
+    assert!(face_row.bottom() < edge_row.top(), "protected rows preserve selection order");
+    let page = h.get_by_label("Operation: OpTest").rect();
+    assert!(face_row.left() >= page.left() && edge_row.left() >= page.left());
 
     // Clicking the remove button removes one row from Do not touch.
     assert_eq!(h.query_all_by_label("×").count(), 2 + h.state().state.op_ui.geo.len());
