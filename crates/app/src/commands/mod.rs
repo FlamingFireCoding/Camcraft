@@ -320,6 +320,18 @@ impl History {
         self.done.iter().map(|entry| entry.id).collect()
     }
 
+    /// Cheap fingerprint of the timeline state for frame-level view caches.
+    #[must_use]
+    pub fn revision_token(&self) -> (u64, usize, u64, usize, u64) {
+        (
+            self.identity,
+            self.done.len(),
+            self.done.last().map_or(0, |e| e.id),
+            self.redo.len(),
+            self.redo.last().map_or(0, |e| e.id),
+        )
+    }
+
     pub fn is_empty(&self) -> bool {
         self.done.is_empty() && self.redo.is_empty()
     }

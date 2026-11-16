@@ -79,7 +79,7 @@ pub fn face_origin(world: &World, entity: &str, sel: FeatureSel) -> Result<FaceO
             (f.facets.iter().map(|&i| i as usize).collect(), Some(f.normal))
         }
         FeatureSel::Patch(pid) => {
-            let p = feature::patches(&features).into_iter().find(|p| p.id == pid).ok_or(gone)?;
+            let p = feature::patches_arc(&features).into_iter().find(|p| p.id == pid).ok_or(gone)?;
             let facets = features
                 .faces
                 .iter()

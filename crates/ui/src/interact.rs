@@ -516,14 +516,13 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
 /// the whole feature, so a ring half off-screen still draws honestly.
 /// Gone entities, hidden models, deleted features and stale ids draw
 /// nothing - a highlight must never promise a pick the click cannot make.
+#[cfg(test)]
 pub(crate) fn hover_features(state: &State, aspect: f64) -> Vec<([f32; 2], [f32; 2])> {
-    let mut out = Vec::new();
-    if let Some(hit) = &state.hover
-        && let Some(sel) = hit.feature
-    {
-        feature_segments(state, &hit.entity, sel, aspect, &mut out);
+    if !aspect.is_finite() || aspect <= 0.0 || state.hover.as_ref().and_then(|h| h.feature).is_none() {
+        return Vec::new();
     }
-    out
+    let resolved = crate::pick_highlight::resolved_hover(state);
+    crate::pick_highlight::project_segments(&resolved, true, &state.cam.mvp(aspect), aspect)
 }
 
 /// Stroke width of the Geometry-list row hover (#1507), over a
@@ -537,12 +536,13 @@ pub(crate) const ROW_HOVER_HALO_PX: f32 = 7.0;
 /// button) is hovered over (`state.geo_hover_drawn`, #1507), drawn strongly by the
 /// shell. Same resolution rules as [`hover_features`]: stale, hidden and
 /// gone draw nothing.
+#[cfg(test)]
 pub(crate) fn row_hover_segments(state: &State, aspect: f64) -> Vec<([f32; 2], [f32; 2])> {
-    let mut out = Vec::new();
-    if let Some(g) = &state.geo_hover_drawn {
-        feature_segments(state, &g.entity, g.feature, aspect, &mut out);
+    if !aspect.is_finite() || aspect <= 0.0 || state.geo_hover_drawn.is_none() {
+        return Vec::new();
     }
-    out
+    let resolved = crate::pick_highlight::resolved_row_hover(state);
+    crate::pick_highlight::project_segments(&resolved, true, &state.cam.mvp(aspect), aspect)
 }
 
 /// One (entity, feature) resolved to viewport-uv segments: gone entities,
@@ -580,14 +580,14 @@ pub(crate) fn feature_segments(
             }
         }
         FeatureSel::Chain(cid) => {
-            let Some(chain) = feature::resolve_chain(&features, cid) else {
+            let Some(chain) = feature::resolve_chain_arc(&features, cid) else {
                 return;
             };
             let pts = feature::chain_points(&features, &chain);
             push_poly(&mvp, &loc, &pts, chain.closed, out);
         }
         FeatureSel::Patch(pid) => {
-            let Some(rings) = feature::patch_rings(&features, pid) else {
+            let Some(rings) = feature::patch_rings_arc(&features, pid) else {
                 return; // stale id: the model re-meshed under the hover
             };
             for r in &rings {
@@ -994,40 +994,42 @@ pub(crate) fn ftoz(v: f64) -> f32 {
 /// can drift from what the viewport actually paints.
 #[must_use]
 pub fn toolpath_lines(state: &State) -> Vec<[f32; 6]> {
-    let mut out = Vec::new();
     let arm = chevron_arm(state);
-    // M13.4: the move kinds wear the viewer's colour-vision palette
-    // (Off = the three consts above, unchanged).
-    let pal = crate::egui_app::colorvision::palette_of(&state.world);
-    for (name, entity) in camcraft_app::setup::operation_order(&state.world) {
-        // Browser-eye hidden: the cache still exists and still posts, it
-        // just does not draw (display state, never a geometry change).
-        if state.hidden_paths.contains(&name) || state.op_hidden_by_setup(&name) {
-            continue;
-        }
-        let Some(cache) = model::toolpath_of(&state.world, &entity) else {
-            continue;
-        };
-        let selected = model::is_selected(&state.world, &entity);
-        if !selected && !state.show_all_paths {
-            continue;
-        }
-        let dim = if selected { 1.0 } else { OTHERS_DIM };
-        // #261: warned moves wear the gouge colour (crate::path_lines).
-        if !crate::path_lines::cache_lines(&mut out, &cache, pal, dim, arm) {
+    let selected = crate::frame_cache::selected_entity_names(state);
+    let ops = state
+        .frame_cache
+        .toolpath_lines_cached(state, selected, arm.to_bits(), || {
+            let mut out = Vec::new();
+            let pal = crate::egui_app::colorvision::palette_of(&state.world);
+            for (name, entity) in camcraft_app::setup::operation_order(&state.world) {
+                if state.hidden_paths.contains(&name) || state.op_hidden_by_setup(&name) {
+                    continue;
+                }
+                let Some(cache) = model::toolpath_of(&state.world, &entity) else {
+                    continue;
+                };
+                let selected = model::is_selected(&state.world, &entity);
+                if !selected && !state.show_all_paths {
+                    continue;
+                }
+                let dim = if selected { 1.0 } else { OTHERS_DIM };
+                if !crate::path_lines::cache_lines(&mut out, &cache, pal, dim, arm) {
+                    return out;
+                }
+            }
+            out
+        });
+    let mut out = ops.as_ref().clone();
+    if state.refusal_ghost().is_some() || state.refusal_focus().is_some() {
+        let pal = crate::egui_app::colorvision::palette_of(&state.world);
+        if let Some(g) = state.refusal_ghost()
+            && !crate::refusal_ghost::ghost_lines(&mut out, g, pal, arm)
+        {
             return out;
         }
-    }
-    // #261 part 3: and draws the moves it had built as a dashed ghost
-    // (crate::refusal_ghost) - off the refusal, never off the operation.
-    if let Some(g) = state.refusal_ghost()
-        && !crate::refusal_ghost::ghost_lines(&mut out, g, pal, arm)
-    {
-        return out;
-    }
-    // #261 part 2: a standing generate refusal marks the spot it names.
-    if let Some(at) = state.refusal_focus() {
-        crate::path_lines::refusal_mark(&mut out, at, pal, arm);
+        if let Some(at) = state.refusal_focus() {
+            crate::path_lines::refusal_mark(&mut out, at, pal, arm);
+        }
     }
     out
 }
@@ -1124,46 +1126,63 @@ pub(crate) fn capped(mut lines: Vec<[f32; 6]>) -> Vec<[f32; 6]> {
 /// one source each - so the outline cannot disagree with the path, and an
 /// operation whose source vanished shows nothing rather than a stale
 /// outline.
+fn regions_and_lines_cached(
+    state: &State,
+) -> (
+    crate::frame_cache::RegionsArc,
+    crate::frame_cache::LinesArc,
+) {
+    let selected = crate::frame_cache::selected_entity_names(state);
+    let light = crate::frame_cache::viewport_is_light();
+    state.frame_cache.regions_and_lines(state, selected, light, || {
+        let mut regs = Vec::new();
+        let mut lines = Vec::new();
+        let region_rgb = overlay(Overlay::Region);
+        for (name, entity) in model::named_entities(&state.world) {
+            if state.hidden_paths.contains(&name)
+                || !model::is_operation(&state.world, &entity)
+                || !model::is_selected(&state.world, &entity)
+            {
+                continue;
+            }
+            let Some(op) = model::operation_of(&state.world, &entity) else {
+                continue;
+            };
+            let Some(z) = operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params) else {
+                continue;
+            };
+            let region = operation::region_of(&state.world, &op);
+            let chains = operation::chains_of(&state.world, &op);
+            if let Some(r) = &region {
+                for l in r.loops() {
+                    let pts = l.points();
+                    if pts.len() < 3 {
+                        continue;
+                    }
+                    for i in 0..pts.len() {
+                        let a = Point3::new(pts[i].x, pts[i].y, z);
+                        let q = pts[(i + 1) % pts.len()];
+                        push_line(&mut lines, a, Point3::new(q.x, q.y, z), region_rgb);
+                    }
+                }
+            }
+            for run in &chains {
+                for w in run.windows(2) {
+                    let a = Point3::new(w[0].x, w[0].y, z);
+                    let b = Point3::new(w[1].x, w[1].y, z);
+                    push_line(&mut lines, a, b, region_rgb);
+                }
+            }
+            if region.is_some() || !chains.is_empty() {
+                regs.push((z, region));
+            }
+        }
+        (regs, lines)
+    })
+}
+
 pub(crate) fn region_lines(state: &State) -> Vec<[f32; 6]> {
-    let mut out = Vec::new();
-    for (name, entity) in model::named_entities(&state.world) {
-        if state.hidden_paths.contains(&name)
-            || !model::is_operation(&state.world, &entity)
-            || !model::is_selected(&state.world, &entity)
-        {
-            continue;
-        }
-        let Some(op) = model::operation_of(&state.world, &entity) else {
-            continue;
-        };
-        let Some(z) = operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params) else {
-            continue; // the region plane's source is gone - draw nothing
-                      // rather than an outline at a guessed level
-        };
-        if let Some(region) = operation::region_of(&state.world, &op) {
-            for l in region.loops() {
-                let pts = l.points();
-                if pts.len() < 3 {
-                    continue; // a closed ring needs three corners; never mod 0
-                }
-                for i in 0..pts.len() {
-                    let a = Point3::new(pts[i].x, pts[i].y, z);
-                    let q = pts[(i + 1) % pts.len()];
-                    push_line(&mut out, a, Point3::new(q.x, q.y, z), overlay(Overlay::Region));
-                }
-            }
-        }
-        // Centerline runs: open polylines, no closing chord - the run's
-        // ends are where the path stops, and the outline says so.
-        for run in operation::chains_of(&state.world, &op) {
-            for w in run.windows(2) {
-                let a = Point3::new(w[0].x, w[0].y, z);
-                let b = Point3::new(w[1].x, w[1].y, z);
-                push_line(&mut out, a, b, overlay(Overlay::Region));
-            }
-        }
-    }
-    out
+    regions_and_lines_cached(state).1.as_ref().clone()
 }
 
 /// The region outline's orange, shared by `region_lines` and the height
@@ -1180,25 +1199,7 @@ pub(crate) const REGION_RGB: [f32; 3] = [0.95, 0.58, 0.15];
 /// with the selection about who is shown - and a translucent fill never
 /// covers where no outline stands.
 pub(crate) fn shown_regions(state: &State) -> Vec<(f64, Option<Region>)> {
-    let mut out = Vec::new();
-    for (name, entity) in model::named_entities(&state.world) {
-        if state.hidden_paths.contains(&name)
-            || !model::is_operation(&state.world, &entity)
-            || !model::is_selected(&state.world, &entity)
-        {
-            continue;
-        }
-        let Some(op) = model::operation_of(&state.world, &entity) else {
-            continue;
-        };
-        let region = operation::region_of(&state.world, &op);
-        if let Some(z) = operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params)
-            && (region.is_some() || !operation::chains_of(&state.world, &op).is_empty())
-        {
-            out.push((z, region));
-        }
-    }
-    out
+    regions_and_lines_cached(state).0.as_ref().clone()
 }
 
 /// The levels of [`shown_regions`] - one truth, read at the height-plane
@@ -1683,7 +1684,37 @@ pub(crate) fn height_plane_lines(state: &State) -> Vec<[f32; 6]> {
 /// place while orbiting. A vanished pick - hidden model, deleted entity,
 /// stale id - draws nothing rather than a ghost, the hover rule again.
 pub(crate) fn selection_feature_lines(state: &State) -> Vec<[f32; 6]> {
-    feature_lines(state, &shown_picks(state))
+    let resolved = crate::pick_highlight::resolved_selected(state);
+    let pick_rgb = overlay(Overlay::Pick);
+    let mut out = Vec::new();
+    for poly in &resolved.polylines {
+        let n = poly.pts.len();
+        if n < 2 || (poly.closed && n < 3) {
+            continue;
+        }
+        let last = if poly.closed { n } else { n - 1 };
+        for i in 0..last {
+            let p = poly.pts[i];
+            let q = poly.pts[(i + 1) % n];
+            push_line(
+                &mut out,
+                Point3::new(p[0], p[1], p[2]),
+                Point3::new(q[0], q[1], q[2]),
+                pick_rgb,
+            );
+        }
+    }
+    if !resolved.vertices.is_empty() {
+        let arm = (gizmo_len(state) * 0.05).max(0.5);
+        for &c in &resolved.vertices {
+            for d in [[arm, 0.0, 0.0], [0.0, arm, 0.0], [0.0, 0.0, arm]] {
+                let a = Point3::new(c[0] - d[0], c[1] - d[1], c[2] - d[2]);
+                let b = Point3::new(c[0] + d[0], c[1] + d[1], c[2] + d[2]);
+                push_line(&mut out, a, b, pick_rgb);
+            }
+        }
+    }
+    out
 }
 
 /// The picks shown: the collecting Setups page draft, else the open operation's.
@@ -1717,87 +1748,3 @@ pub(crate) fn shown_picks(state: &State) -> Vec<GeoSel> {
 
 /// The pick violet: the 3D outlines and the picked points' screen marks.
 pub(crate) const PICK_RGB: [f32; 3] = [0.72, 0.44, 0.86];
-
-/// The picks' outlines in 3D, violet (see [`selection_feature_lines`]).
-fn feature_lines(state: &State, items: &[GeoSel]) -> Vec<[f32; 6]> {
-    let mut out = Vec::new();
-    for item in items {
-        if state.hidden_in_view(&item.entity) {
-            continue; // display-off models are transparent to picking and drawing
-        }
-        let Some(entity) = model::find_by_name(&state.world, &item.entity) else {
-            continue;
-        };
-        let Some(features) = model::features_of(&state.world, &entity) else {
-            continue;
-        };
-        let loc = camcraft_app::setup_align::view_pose(&state.world, &entity).unwrap_or_default(); // #326
-        let draw = |out: &mut Vec<[f32; 6]>, pts: &[[f64; 3]], closed: bool| {
-            let n = pts.len();
-            if n < 2 || (closed && n < 3) {
-                return; // never mod 0; a ring needs three corners
-            }
-            let last = if closed { n } else { n - 1 };
-            for i in 0..last {
-                let a = transform_point(Point3::new(pts[i][0], pts[i][1], pts[i][2]), loc.pos, loc.rot);
-                let q = &pts[(i + 1) % n];
-                let b = transform_point(Point3::new(q[0], q[1], q[2]), loc.pos, loc.rot);
-                push_line(out, a, b, overlay(Overlay::Pick));
-            }
-        };
-        match item.feature {
-            FeatureSel::Face(fid) => {
-                let Some(face) = features.faces.iter().find(|f| f.id == fid) else {
-                    continue; // stale id: the model re-meshed since the pick
-                };
-                for l in &face.loops {
-                    let pts: Vec<[f64; 3]> = l
-                        .verts
-                        .iter()
-                        .filter_map(|&vi| features.verts.get(vi as usize).copied())
-                        .collect();
-                    draw(&mut out, &pts, !matches!(l.kind, feature::LoopKind::Open));
-                }
-            }
-            FeatureSel::Chain(cid) => {
-                let Some(chain) = feature::resolve_chain(&features, cid) else {
-                    continue;
-                };
-                let pts = feature::chain_points(&features, &chain);
-                draw(&mut out, &pts, chain.closed);
-            }
-            FeatureSel::Patch(pid) => {
-                // The weld's outline, not the seams inside it: the seam
-                // edges are exactly what the patch dissolved, and
-                // drawing them would advertise strips the pick is not.
-                let Some(rings) = feature::patch_rings(&features, pid) else {
-                    continue; // stale id: the model re-meshed since the pick
-                };
-                for r in &rings {
-                    let pts: Vec<[f64; 3]> = r
-                        .verts
-                        .iter()
-                        .filter_map(|&vi| features.verts.get(vi as usize).copied())
-                        .collect();
-                    draw(&mut out, &pts, r.closed);
-                }
-            }
-            FeatureSel::Vertex(vid) => {
-                // A point has no outline: a small 3-axis cross pins it.
-                let Some(v) = feature::resolve_vertex(&features, vid)
-                    .and_then(|vi| features.verts.get(vi as usize))
-                else {
-                    continue; // stale id: the model re-meshed since the pick
-                };
-                let c = transform_point(Point3::new(v[0], v[1], v[2]), loc.pos, loc.rot);
-                let arm = (gizmo_len(state) * 0.05).max(0.5);
-                for d in [[arm, 0.0, 0.0], [0.0, arm, 0.0], [0.0, 0.0, arm]] {
-                    let a = Point3::new(c.x - d[0], c.y - d[1], c.z - d[2]);
-                    let b = Point3::new(c.x + d[0], c.y + d[1], c.z + d[2]);
-                    push_line(&mut out, a, b, overlay(Overlay::Pick));
-                }
-            }
-        }
-    }
-    out
-}

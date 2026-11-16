@@ -35,6 +35,7 @@ use crate::viewport::GpuPart;
 
 /// The shell's whole scene for one frame: what `View3D::set_document` and
 /// `set_overlay` take.
+#[derive(Clone)]
 pub struct Scene {
     pub parts: Vec<GpuPart>,
     pub overlay: Vec<[f32; 6]>,
@@ -176,23 +177,97 @@ fn contour_params() -> OpParams {
 /// upload.
 #[must_use]
 pub fn collect(state: &State) -> Scene {
+    collect_shared(state).0.as_ref().clone()
+}
+
+pub(crate) fn collect_shared(state: &State) -> (std::sync::Arc<Scene>, u64) {
+    let transient = state.sim.is_some()
+        || state.program_sim.is_some()
+        || crate::machined::mesh(state).is_some()
+        || state.boundary_view.shown
+        || state.boundary_pick.is_some()
+        || state.locate_pick.is_some()
+        || state.plane_pick.is_some()
+        || state.points_pick.is_some()
+        || state.axis_pick.is_some()
+        || state.feedback_live();
+    if transient {
+        let s = collect_uncached(state);
+        let d = s.digest();
+        return (std::sync::Arc::new(s), d);
+    }
+    let key = scene_cache_key(state);
+    state.frame_cache.scene_cached(&key, || {
+        let s = collect_uncached(state);
+        let d = s.digest();
+        (s, d)
+    })
+}
+
+fn collect_uncached(state: &State) -> Scene {
     Scene { parts: collect_parts(state), overlay: collect_overlay(state) }
+}
+
+fn scene_cache_key(state: &State) -> crate::frame_cache::SceneCacheKey {
+    let ui_target_op = match state.pane_target() {
+        UiTarget::Operation(n) => Some(n),
+        _ => None,
+    };
+    crate::frame_cache::SceneCacheKey {
+        stamp: crate::frame_cache::WorldStamp::of(state),
+        selected: crate::frame_cache::selected_entity_names(state),
+        ui_target_op,
+        hidden_models: state.hidden_models.clone(),
+        hidden_stocks: state.hidden_stocks.clone(),
+        hidden_offsets: state.hidden_offsets.clone(),
+        hidden_paths: state.hidden_paths.clone(),
+        shown_setups: state.shown_setups.clone(),
+        active_setup: camcraft_app::setup::active(&state.world),
+        incoming_key: (
+            crate::incoming_view::mesh(state).is_some(),
+            crate::incoming_view::wanted(state),
+            state.incoming_view.measured,
+        ),
+        show_world_axes: state.show_world_axes,
+        show_all_paths: state.show_all_paths,
+        show_work_envelope: state.show_work_envelope,
+        show_gizmo_names: state.show_gizmo_names,
+        cam_dist_bits: state.cam.dist.to_bits(),
+        cam_target_bits: state.cam.target.map(f64::to_bits),
+        wcs_pick_anchor: state.wcs_ui.pick_anchor,
+        wcs_anchor_xy: state.wcs_ui.anchor_xy,
+        wcs_anchor_z: state.wcs_ui.anchor_z,
+        wcs_anchor_source: state.wcs_ui.anchor_source,
+        op_name: state.op_ui.name.clone(),
+        op_params: state.op_ui.params.clone(),
+        op_area: state.op_ui.area.clone(),
+        op_src_kind: state.op_ui.src_kind,
+        op_src_name: state.op_ui.src_name.clone(),
+        op_geo: state.op_ui.geo.clone(),
+        viewport_rgba: super::theme::current().viewport.to_array(),
+        cvd_idx: crate::frame_cache::cvd_code(state),
+    }
 }
 
 // ---------------------------------------------------------------- parts
 
 fn world_verts(state: &State, entity: &flecs_ecs::prelude::Entity) -> Vec<[f32; 3]> {
     let tris = model::facets_of(&state.world, entity).unwrap_or_default();
-    // #326: the part where the active setup holds it.
-    let loc = camcraft_app::setup_align::view_pose(&state.world, entity).unwrap_or_default();
-    let mut verts = Vec::with_capacity(tris.len() * 3);
-    for t in tris.iter() {
-        for p in [t.a, t.b, t.c] {
-            let p = transform_point(p, loc.pos, loc.rot);
-            verts.push([ftoz(p.x), ftoz(p.y), ftoz(p.z)]);
+    let ptr = std::sync::Arc::as_ptr(&tris).cast::<()>() as usize;
+    let pose = crate::frame_cache::pose_bits(state, entity);
+    let cached = state.frame_cache.world_verts_cached(ptr, tris.len(), pose, || {
+        // #326: the part where the active setup holds it.
+        let loc = camcraft_app::setup_align::view_pose(&state.world, entity).unwrap_or_default();
+        let mut verts = Vec::with_capacity(tris.len() * 3);
+        for t in tris.iter() {
+            for p in [t.a, t.b, t.c] {
+                let p = transform_point(p, loc.pos, loc.rot);
+                verts.push([ftoz(p.x), ftoz(p.y), ftoz(p.z)]);
+            }
         }
-    }
-    verts
+        verts
+    });
+    (*cached).clone()
 }
 
 /// Models (minus browser-eye-hidden), then the stock solid, then the

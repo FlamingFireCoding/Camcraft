@@ -133,7 +133,7 @@ pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Po
         let label = format!("{} of '{}'", g.feature, g.entity);
         match g.feature {
             FeatureSel::Chain(cid) => {
-                let Some(c) = feature::resolve_chain(&features, cid) else {
+                let Some(c) = feature::resolve_chain_arc(&features, cid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -348,7 +348,7 @@ pub(super) fn selection_geometry_in(
                 }
             }
             FeatureSel::Chain(cid) => {
-                let Some(c) = feature::resolve_chain(&features, cid) else {
+                let Some(c) = feature::resolve_chain_arc(&features, cid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -407,7 +407,7 @@ pub(super) fn selection_geometry_in(
                 push_loop(&label, xy, &mut loops, &mut rims)?;
             }
             FeatureSel::Patch(pid) => {
-                let Some(rings) = feature::patch_rings(&features, pid) else {
+                let Some(rings) = feature::patch_rings_arc(&features, pid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));

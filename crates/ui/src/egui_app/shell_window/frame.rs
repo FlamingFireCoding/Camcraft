@@ -37,7 +37,7 @@ impl Shell {
         // #866: a modal file dialog's open time is the user's, not ours.
         self.frame_watch.excuse(crate::file_dialog::take_waited(), now());
         self.frame_watch.mark("commands", now());
-        let scene = world::collect(&self.state);
+        let (scene, digest) = world::collect_shared(&self.state);
 
         let Self {
             window,
@@ -87,7 +87,7 @@ impl Shell {
             return;
         };
 
-        view_pass::sync_scene(view, device, queue, &scene, scene_digest);
+        view_pass::sync_scene(view, device, queue, &scene, digest, scene_digest);
 
         let scale = window.scale_factor().clamp(0.1, 8.0);
         let raw_input = winit_state.take_egui_input(window);

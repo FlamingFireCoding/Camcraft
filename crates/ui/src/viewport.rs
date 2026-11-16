@@ -193,6 +193,7 @@ const OVERLAY_STRIDE: u64 = 24;
 /// colour. Above every stock class (0..=3), which only `fs_stock` reads.
 pub const STRUCK_CLASS: f32 = 4.0;
 
+#[derive(Clone)]
 pub struct GpuPart {
     pub verts: Vec<[f32; 3]>,
     pub selected: bool,

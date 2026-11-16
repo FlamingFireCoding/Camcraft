@@ -213,8 +213,8 @@ impl eframe::App for WebShell {
             return;
         };
         let (device, queue) = (&rs.device, &rs.queue);
-        let scene = world::collect(&self.state);
-        view_pass::sync_scene(&mut self.view, device, queue, &scene, &mut self.scene_digest);
+        let (scene, digest) = world::collect_shared(&self.state);
+        view_pass::sync_scene(&mut self.view, device, queue, &scene, digest, &mut self.scene_digest);
 
         // Size the 3D target from last frame's layout, like the native shell.
         let scale = f64::from(ui.ctx().pixels_per_point()).clamp(0.1, 8.0);

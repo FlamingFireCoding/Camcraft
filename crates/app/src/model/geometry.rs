@@ -22,7 +22,13 @@ thread_local! {
     /// per-frame hover (M1.5).
     static FEATURES_CACHE: std::cell::RefCell<Vec<(u64, std::sync::Arc<Features>)>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// Pointer-keyed MRU over the live `Arc<[Triangle]>` on each entity so
+    /// repeated `features_of` calls on an unchanged mesh skip `digest_of`.
+    static SHARED_FEATURES_CACHE: std::cell::RefCell<Vec<SharedFeaturesEntry>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
+
+type SharedFeaturesEntry = (std::sync::Weak<[Triangle]>, std::sync::Arc<Features>);
 
 /// Feature topology (faces, loops, feature edges) of a model's LOCAL
 /// facets, memoized by content. `None` only for a facet-less entity;
@@ -30,7 +36,34 @@ thread_local! {
 #[must_use]
 pub fn features_of(world: &World, entity: &Entity) -> Option<std::sync::Arc<Features>> {
     let tris = facets_of(world, entity)?;
-    Some(features_of_local(&tris))
+    Some(features_of_shared(&tris))
+}
+
+fn features_of_shared(tris: &std::sync::Arc<[Triangle]>) -> std::sync::Arc<Features> {
+    if tris.is_empty() {
+        return std::sync::Arc::new(Features::default());
+    }
+    if let Some(hit) = SHARED_FEATURES_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|(w, _)| w.strong_count() > 0);
+        let i = cache
+            .iter()
+            .position(|(w, _)| std::ptr::eq(w.as_ptr(), std::sync::Arc::as_ptr(tris)))?;
+        cache[i..].rotate_left(1);
+        cache.last().map(|(_, f)| f.clone())
+    }) {
+        return hit;
+    }
+    let f = features_of_local(tris);
+    SHARED_FEATURES_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|(w, _)| w.strong_count() > 0);
+        if cache.len() >= 32 {
+            cache.remove(0);
+        }
+        cache.push((std::sync::Arc::downgrade(tris), f.clone()));
+    });
+    f
 }
 
 /// The cache chokepoint, exposed for callers already holding the facets.

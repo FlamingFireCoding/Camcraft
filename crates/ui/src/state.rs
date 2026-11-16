@@ -1947,6 +1947,9 @@ pub struct State {
     /// Display-only and ephemeral: never cached on the operation, freed
     /// with the refusal it belongs to.
     pub feedback_ghost: Option<camcraft_app::machining2d::Ghost>,
+    pub(crate) pick_highlight: crate::pick_highlight::HighlightCache,
+    pub(crate) frame_cache: crate::frame_cache::FrameCache,
+    pub(crate) panel_cache: crate::panel_cache::PanelCache,
 }
 
 /// Which page of the Operations pane a refused command's message belongs
@@ -2194,6 +2197,9 @@ impl State {
             feedback_ctx: None,
             feedback_at: None,
             feedback_ghost: None,
+            pick_highlight: Default::default(),
+            frame_cache: Default::default(),
+            panel_cache: Default::default(),
         }
     }
 
@@ -2519,6 +2525,12 @@ impl State {
     /// "missing" - removing it is always safe, because the reduced list
     /// only gets shorter.
     pub fn geo_chips(&self) -> Vec<GeoChip> {
+        self.panel_cache.geo_chips_cached(self, || {
+            self.geo_chips_uncached()
+        })
+    }
+
+    fn geo_chips_uncached(&self) -> Vec<GeoChip> {
         // Open runs are pieces of one loop the user watches get
         // completed: the "2 of 3" in a run's label counts chain picks
         // of the same entity, in pick order.
@@ -2583,7 +2595,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .map(|f| {
-                                let c = feature::resolve_chain(&f, id)?;
+                                let c = feature::resolve_chain_arc(&f, id)?;
                                 let pts = feature::chain_points(&f, &c);
                                 Some((c, pts))
                             })
@@ -2651,7 +2663,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
-                                let strips = feature::patches(&f)
+                                let strips = feature::patches_arc(&f)
                                     .into_iter()
                                     .find(|p| p.id == id)?
                                     .faces
@@ -2659,7 +2671,7 @@ impl State {
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in feature::patch_rings(&f, id)? {
+                                for r in feature::patch_rings_arc(&f, id)? {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()

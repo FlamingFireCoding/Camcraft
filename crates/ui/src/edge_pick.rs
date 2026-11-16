@@ -74,7 +74,7 @@ fn edges_of(state: &State, g: &GeoSel) -> Vec<u32> {
     let FeatureSel::Chain(id) = g.feature else { return Vec::new() };
     model::find_by_name(&state.world, &g.entity)
         .and_then(|e| model::features_of(&state.world, &e))
-        .and_then(|f| feature::resolve_chain(&f, id))
+        .and_then(|f| feature::resolve_chain_arc(&f, id))
         .map_or(Vec::new(), |c| c.edges)
 }
 

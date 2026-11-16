@@ -198,6 +198,8 @@ mod import_outward;
 mod ribbon_accesskit;
 // #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
 mod ai_chat;
+// #2201: edge/face selection highlight draw & rebuild count per frame.
+mod highlight_perf;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.

@@ -137,9 +137,9 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
             // the picks that say where it is.
             super::boundary::boundary_group(ui, state);
         }
-        if let Some(note) =
+        if let Some(note) = state.panel_cache.unresolved_note_cached(state, live_setup.as_deref(), || {
             unresolved_note(&state.world, live_setup.as_deref(), Some(&state.op_ui.src()), &state.op_ui.params)
-        {
+        }) {
             ui.colored_label(text_inks(ui, &state.world).warn, note);
         }
     });
@@ -285,55 +285,86 @@ fn coolant_row(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Opera
     ui.end_row();
 }
 
+fn tone_to_u8(tone: super::layout::Tone) -> u8 {
+    match tone {
+        super::layout::Tone::Ok => 0,
+        super::layout::Tone::Warn => 1,
+        super::layout::Tone::Error => 2,
+        super::layout::Tone::Quiet => 3,
+    }
+}
+
+fn tone_from_u8(code: u8) -> super::layout::Tone {
+    match code {
+        0 => super::layout::Tone::Ok,
+        1 => super::layout::Tone::Warn,
+        2 => super::layout::Tone::Error,
+        _ => super::layout::Tone::Quiet,
+    }
+}
+
+fn status_banner_data(state: &State, target: &str) -> crate::panel_cache::OpBannerCached {
+    state.panel_cache.op_banner_cached(state, target, || {
+        use super::layout::Tone;
+        let ent = model::find_by_name(&state.world, target);
+        let tp = ent.as_ref().and_then(|e| model::toolpath_of(&state.world, e));
+        let focus: Vec<Option<[f64; 3]>> = tp
+            .as_ref()
+            .map(crate::path_lines::warning_focus)
+            .unwrap_or_default();
+        let (moves, warnings, notes): (usize, Vec<Warning>, Vec<String>) = tp
+            .map(|t| (t.path.len(), t.warnings, t.path.notes))
+            .unwrap_or((0, Vec::new(), Vec::new()));
+        let blocked = ent
+            .as_ref()
+            .and_then(|e| operation::tool_gate::tool_problem_of(&state.world, e));
+        let st = ent.as_ref().map(|e| operation::status_of(&state.world, e));
+        let mut details: Vec<String> = fold_warnings(&warnings);
+        details.extend(super::approach_page::entry_status_lines(&notes));
+        details.extend(state.struck_lines(target));
+        let n = details.len();
+        let tail = match n {
+            0 => String::new(),
+            1 => " · 1 warning".to_owned(),
+            n => format!(" · {n} warnings"),
+        };
+        let (line, tone) = match (blocked, st) {
+            (Some(why), _) => (format!("Blocked · {why} · {moves} moves cached"), Tone::Error),
+            (None, Some(OpStatus::Never) | None) => ("Status: never generated".to_owned(), Tone::Quiet),
+            (None, Some(OpStatus::Ok)) => (
+                format!("OK · {moves} moves{tail}"),
+                if n > 0 { Tone::Warn } else { Tone::Ok },
+            ),
+            (None, Some(OpStatus::Stale)) => {
+                let reason = ent
+                    .as_ref()
+                    .and_then(|e| operation::stale_reason(&state.world, e))
+                    .unwrap_or_else(|| "inputs moved since generation".to_owned());
+                (format!("Stale · {reason} · {moves} moves cached{tail}"), Tone::Warn)
+            }
+        };
+        crate::panel_cache::OpBannerCached {
+            line,
+            tone: tone_to_u8(tone),
+            details,
+            focus,
+        }
+    })
+}
+
 /// The status banner's line and details, from the world (pure; the
 /// tests read it). M10.1 C: the tool law's verdict outranks the stamp.
+#[cfg(test)]
 pub(super) fn status_text(state: &State, target: &str) -> (String, super::layout::Tone, Vec<String>) {
-    use super::layout::Tone;
-    let ent = model::find_by_name(&state.world, target);
-    let (moves, warnings, notes): (usize, Vec<Warning>, Vec<String>) = ent
-        .as_ref()
-        .and_then(|e| model::toolpath_of(&state.world, e))
-        .map(|tp| (tp.path.len(), tp.warnings, tp.path.notes))
-        .unwrap_or((0, Vec::new(), Vec::new()));
-    let blocked = ent.as_ref().and_then(|e| operation::tool_gate::tool_problem_of(&state.world, e));
-    let st = ent.as_ref().map(|e| operation::status_of(&state.world, e));
-    let mut details: Vec<String> = fold_warnings(&warnings);
-    details.extend(super::approach_page::entry_status_lines(&notes));
-    // #339 slice 4: who the fixture warnings strike, or that no single
-    // fixture reproduces them - said, never guessed.
-    details.extend(state.struck_lines(target));
-    let n = details.len();
-    let tail = match n {
-        0 => String::new(),
-        1 => " · 1 warning".to_owned(),
-        n => format!(" · {n} warnings"),
-    };
-    let (line, tone) = match (blocked, st) {
-        (Some(why), _) => (format!("Blocked · {why} · {moves} moves cached"), Tone::Error),
-        (None, Some(OpStatus::Never) | None) => ("Status: never generated".to_owned(), Tone::Quiet),
-        (None, Some(OpStatus::Ok)) => (format!("OK · {moves} moves{tail}"), if n > 0 { Tone::Warn } else { Tone::Ok }),
-        (None, Some(OpStatus::Stale)) => {
-            // M3.1 C: say which input moved, not just that one did.
-            let reason = ent
-                .as_ref()
-                .and_then(|e| operation::stale_reason(&state.world, e))
-                .unwrap_or_else(|| "inputs moved since generation".to_owned());
-            (format!("Stale · {reason} · {moves} moves cached{tail}"), Tone::Warn)
-        }
-    };
-    (line, tone, details)
+    let cached = status_banner_data(state, target);
+    (cached.line, tone_from_u8(cached.tone), cached.details)
 }
 
 fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
     use super::layout::Tone;
-    let (line, tone, details) = status_text(state, target);
-    // #261: a warning line that names a move frames it on click (the
-    // fold lines lead `details`, aligned with `warning_focus`).
-    let focus: Vec<Option<[f64; 3]>> = model::find_by_name(&state.world, target)
-        .and_then(|e| model::toolpath_of(&state.world, &e))
-        .map(|tp| crate::path_lines::warning_focus(&tp))
-        .unwrap_or_default();
-    let links: Vec<bool> = focus.iter().map(Option::is_some).collect();
+    let cached = status_banner_data(state, target);
+    let tone = tone_from_u8(cached.tone);
+    let links: Vec<bool> = cached.focus.iter().map(Option::is_some).collect();
     let inks = text_inks(ui, &state.world);
     let ink = match tone {
         Tone::Ok => pal.accent,
@@ -341,8 +372,8 @@ fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
         Tone::Error => inks.error,
         Tone::Quiet => pal.text_dim,
     };
-    if let Some(p) = status_banner_located(ui, "op_status", &line, ink, &details, &links)
-        .and_then(|i| focus.get(i).copied().flatten())
+    if let Some(p) = status_banner_located(ui, "op_status", &cached.line, ink, &cached.details, &links)
+        .and_then(|i| cached.focus.get(i).copied().flatten())
     {
         // View state, like every camera move: no command (AGENTS.md).
         crate::actions::frame_at(state, p);
@@ -355,8 +386,8 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
     // Apply never reads as a dead button: the hint says why it is dark,
     // or which edited field the door will refuse (crate::feedback).
     let apply_hint = crate::feedback::apply_hint(live.map(|o| &o.params), &state.op_ui.params, unchanged);
-    let has_path =
-        exists && model::find_by_name(&state.world, target).and_then(|e| model::toolpath_of(&state.world, &e)).is_some();
+    let has_path = exists
+        && model::find_by_name(&state.world, target).is_some_and(|e| model::has_toolpath(&state.world, &e));
     let inks = text_inks(ui, &state.world);
     if let Some(msg) = state.error_for(ErrorScope::Operation).map(str::to_owned) {
         // #261 part 2: a refusal that names its spot is a link that

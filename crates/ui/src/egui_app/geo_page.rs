@@ -81,9 +81,11 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, 
         // #187: the 3-2-1 alignment reads the picks as datums - a flat
         // face for Z, a straight edge for X, a vertex or bore for the
         // origin. The app builds the frame (or names what to re-pick).
-        let aligned = camcraft_app::pick::align_321(&state.world, &state.op_ui.geo);
+        let aligned = state.panel_cache.align_321_cached(state, || {
+            camcraft_app::pick::align_321(&state.world, &state.op_ui.geo).map(|_| ())
+        });
         let tip = match &aligned {
-            Ok(_) => "place the WCS slot chosen in the WCS pane: Z out of the picked flat face, X along the picked \
+            Ok(()) => "place the WCS slot chosen in the WCS pane: Z out of the picked flat face, X along the picked \
                       edge, origin at the picked vertex or bore (else the edge's end), on the face"
                 .to_owned(),
             Err(why) => format!("3-2-1 alignment: {why}"),
@@ -96,8 +98,9 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, 
             crate::vertex_pick::queue_wcs_321(state);
         }
     }
-    let (notes, refusal) =
-        operation::selection_account(&state.world, live_setup, &state.op_ui.geo.clone(), &state.op_ui.params.clone());
+    let (notes, refusal) = state.panel_cache.selection_account_cached(state, live_setup, || {
+        operation::selection_account(&state.world, live_setup, &state.op_ui.geo, &state.op_ui.params)
+    });
     for note in notes {
         ui.label(RichText::new(note).weak());
     }

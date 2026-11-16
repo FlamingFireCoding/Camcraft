@@ -24,13 +24,13 @@ pub(crate) fn sync_scene(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     scene: &world::Scene,
+    digest: u64,
     scene_digest: &mut u64,
 ) {
-    let d = scene.digest();
-    if d != *scene_digest {
+    if digest != *scene_digest {
         view.set_document(device, queue, &scene.parts);
         view.set_overlay(device, queue, &scene.overlay);
-        *scene_digest = d;
+        *scene_digest = digest;
     }
 }
 
