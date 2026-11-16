@@ -153,8 +153,10 @@ fn read(name: &str, dto: &SketchDto) -> Result<Sketch, ProjectError> {
 pub(super) fn read_all(entities: &[EntityDto]) -> Result<HashMap<String, Sketch>, ProjectError> {
     let mut out = HashMap::new();
     for dto in entities {
-        if let Some(sketch) = &dto.sketch {
-            out.insert(dto.name.clone(), read(&dto.name, sketch)?);
+        if let Some(sketch) = &dto.sketch
+            && out.insert(dto.name.clone(), read(&dto.name, sketch)?).is_some()
+        {
+            return Err(corrupt(format!("two DXF profiles are named '{}'", dto.name)));
         }
     }
     Ok(out)

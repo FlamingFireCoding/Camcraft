@@ -179,6 +179,12 @@ fn a_corrupt_profile_row_refuses_the_file_by_name() {
     assert!(why.contains("DXF profile 'plate'"), "{why}");
     let why = with(&|e| e["sketch"]["setup"] = json!(""));
     assert!(why.contains("names an empty setup"), "{why}");
+    // Two profile rows under one name.
+    let mut twice = file.clone();
+    let copy = twice["entities"][row].clone();
+    twice["entities"].as_array_mut().expect("entities").push(copy);
+    let why = refused(&twice);
+    assert!(why.contains("two DXF profiles are named 'plate'"), "{why}");
     // The untouched file still opens.
     reopened(&file.to_string());
 }
