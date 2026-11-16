@@ -148,3 +148,14 @@ The operation has no toolpath, and the post gate refuses it.
   saturating addition that hides invalid saved data. Changing these limits
   later requires changing the constructor validation and its pins; no new
   project field or version is needed for the derived total.
+
+### PR #2134 merge refresh
+
+- Keep both `rest_dto` and `sketch_dto` in the project module. They store
+  separate data. Dropped: taking either module list alone, which loses the
+  other feature's file types.
+- Keep project version 63. Main still writes version 62 after #1817. Its
+  rest parameters are additive optional keys. The new profile row still
+  needs version 63 to make an older reader refuse the file. Dropped: an
+  extra version step without a competing version change. The combined
+  round-trip pin keeps both payloads in one version 63 project.

@@ -327,6 +327,7 @@ pub struct SetupDef {
     pub relative_to: Option<String>,
     pub stock_source: Option<crate::setup_stock::StockSource>,
     pub post_options: Option<PostOptions>,
+    pub post_properties: Option<PostScriptOptions>,
     pub nose_to_axis: Option<f64>,
     pub workholding_max_rpm: Option<f64>,
 }
@@ -498,6 +499,56 @@ pub enum PostRef {
     Builtin,
     Named(String),
     File(String),
+}
+
+/// Per-post declared script option overrides (`declaredOptions`), keyed by
+/// canonical post key (`builtin:<Name>` or `file:<Path>`). Empty maps are pruned
+/// so untouched documents store zero extra keys.
+#[derive(Component, Debug, Clone, Default, PartialEq)]
+pub struct PostScriptOptions {
+    pub by_post: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    >,
+}
+
+static EMPTY_SCRIPT_OPTIONS: std::sync::LazyLock<
+    std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+> = std::sync::LazyLock::new(std::collections::BTreeMap::new);
+
+impl PostScriptOptions {
+    /// True when every post entry is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.by_post.values().all(std::collections::BTreeMap::is_empty)
+    }
+
+    /// Borrow the overrides map for `key`, or an empty map when none are set.
+    #[must_use]
+    pub fn for_post(
+        &self,
+        key: &str,
+    ) -> &std::collections::BTreeMap<String, crate::post::options::OptionValue> {
+        self.by_post.get(key).unwrap_or(&EMPTY_SCRIPT_OPTIONS)
+    }
+
+    /// Replace overrides for `key`, removing the entry when empty.
+    pub fn set_for_post(
+        &mut self,
+        key: &str,
+        overrides: std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    ) {
+        if overrides.is_empty() {
+            self.by_post.remove(key);
+        } else {
+            self.by_post.insert(key.to_owned(), overrides);
+        }
+    }
+
+    /// Remove empty per-post maps.
+    pub fn normalize(&mut self) {
+        self.by_post.retain(|_, v| !v.is_empty());
+    }
 }
 
 /// The user's choices for the document's post (issue #34), a flecs
@@ -744,6 +795,7 @@ pub fn register_schema(world: &World) {
     world.component::<PostOptions>();
     world.component::<ThemeRef>();
     world.component::<PostOptions>();
+    world.component::<PostScriptOptions>();
     world.component::<ProgramInfo>();
     world.component::<ColorVision>();
     world.component::<WorkMaterialDef>();

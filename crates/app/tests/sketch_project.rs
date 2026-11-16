@@ -130,6 +130,35 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
 }
 
 #[test]
+fn rest_parameters_and_profile_rows_share_the_v63_project_file() {
+    let world = sheet_job();
+    let mut history = History::default();
+    let mut pocket = operation::seed_params(OpType::Pocket.ordinal());
+    let previous = camcraft_app::machining2d::RestParams {
+        previous_tool_diameter: 12.0,
+        previous_corner_radius: 1.0,
+        previous_stock_to_leave: 0.2,
+        allowance: 0.1,
+    };
+    if let operation::OpParams::Pocket { rest, strategy, entry, .. } = &mut pocket {
+        *rest = Some(previous);
+        *strategy = camcraft_app::machining2d::PocketStrategy::Waterline;
+        *entry = camcraft_app::machining3d::Entry3D::Plunge;
+    } else {
+        panic!("the pocket seed must be a pocket");
+    }
+    run(&world, &mut history, CreateOperation::new(&world, "Rest", TOOL, SrcRef::Entity("plate".into()), pocket), "Rest");
+    let text = saved(&world);
+    let file: Value = serde_json::from_str(&text).expect("json");
+    assert_eq!(file["version"], json!(63), "main's additive rest keys do not consume the profile version");
+    let again = reopened(&text);
+    let op = model::find_by_name(&again, "Rest").and_then(|e| model::operation_of(&again, &e)).expect("the rest operation loads");
+    assert!(matches!(op.params, operation::OpParams::Pocket { rest: Some(r), .. } if r == previous));
+    assert!(sketch::find(&again, "plate").is_some(), "the profile DTO remains registered beside the rest DTO");
+    assert_eq!(saved(&again), text, "both DTO payloads survive a round trip");
+}
+
+#[test]
 fn a_v62_file_steps_up_unchanged() {
     // A document with no profile writes the bytes a v62 build wrote, but the version.
     let world = new_world();

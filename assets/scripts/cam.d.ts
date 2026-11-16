@@ -71,6 +71,8 @@ interface PostOptions {
   cps?: string;
   /** Also return the program text in the result. */
   program?: boolean;
+  /** Per-post declared option overrides for this run. */
+  options?: Record<string, boolean | number | string>;
 }
 
 interface PostResult {
