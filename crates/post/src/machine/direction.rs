@@ -91,9 +91,49 @@ impl AxisLimits {
             AxisDirection::Inverted => (-hi, -lo),
         })
     }
+
+    /// Spindle-C sense for a rotary named `C`: `+1.0` for standard right-handed
+    /// `+Z` (or an unstated axis vector), `-1.0` for clockwise about `+Z`
+    /// (`[0, 0, -1]`). Refuses any non-finite, zero or non-Z vector by name.
+    pub fn c_z_sense(&self) -> Result<f64, String> {
+        let Some(d) = self.axis else {
+            return Ok(1.0);
+        };
+        if !d.iter().all(|v| v.is_finite()) {
+            return Err(format!("C rotary states non-finite axis {d:?}"));
+        }
+        let n2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        if n2 <= 0.0 || d[2] * d[2] < 0.998 * n2 {
+            return Err(format!(
+                "C rotary states axis [{:.3}, {:.3}, {:.3}], not along Z",
+                d[0], d[1], d[2]
+            ));
+        }
+        Ok(if d[2] < 0.0 { -1.0 } else { 1.0 })
+    }
+
+    /// Stated C travel expressed in the canonical right-hand `+Z` program C
+    /// frame (`[lo, hi]` for `+Z`, `[-hi, -lo]` for `-Z`). Refuses any non-Z
+    /// axis via [`AxisLimits::c_z_sense`].
+    pub fn c_program_travel(&self) -> Result<Option<(f64, f64)>, String> {
+        let sign = self.c_z_sense()?;
+        Ok(self.travel.map(|(lo, hi)| if sign < 0.0 { (-hi, -lo) } else { (lo, hi) }))
+    }
 }
 
 impl Machine {
+    /// The rotary named `C` (case-insensitive), if the machine states one.
+    #[must_use]
+    pub fn c_axis(&self) -> Option<&AxisLimits> {
+        self.axes.iter().find(|a| a.rotary && a.name.eq_ignore_ascii_case("C"))
+    }
+
+    /// True when the machine's C rotary turns clockwise about `+Z` (`[0, 0, -1]`).
+    #[must_use]
+    pub fn reversed_c_rotary(&self) -> bool {
+        self.c_axis().is_some_and(|a| a.c_z_sense().is_ok_and(|s| s < 0.0))
+    }
+
     /// The letters of the linear axes the file states inverted, in table
     /// order. Empty for every standard machine.
     #[must_use]
@@ -171,4 +211,35 @@ pub fn untranslated_inversion(model: &str, letters: &[&str]) -> Option<String> {
         inverted_phrase(model, letters),
         bad.join(" / ")
     ))
+}
+
+#[cfg(test)]
+mod c_sense_tests {
+    use super::*;
+
+    fn c_rot(axis: Option<[f64; 3]>, travel: Option<(f64, f64)>) -> AxisLimits {
+        AxisLimits { name: "C".into(), rotary: true, axis, travel, ..Default::default() }
+    }
+
+    #[test]
+    fn c_z_sense_and_program_travel_reflect_axis_sign() {
+        let plus = c_rot(Some([0.0, 0.0, 1.0]), Some((0.0, 360.0)));
+        assert_eq!(plus.c_z_sense().ok(), Some(1.0));
+        assert_eq!(plus.c_program_travel().ok(), Some(Some((0.0, 360.0))));
+
+        let unstated = c_rot(None, Some((-360.0, 360.0)));
+        assert_eq!(unstated.c_z_sense().ok(), Some(1.0));
+
+        let minus = c_rot(Some([0.0, 0.0, -1.0]), Some((0.0, 360.0)));
+        assert_eq!(minus.c_z_sense().ok(), Some(-1.0));
+        assert_eq!(minus.c_program_travel().ok(), Some(Some((-360.0, 0.0))));
+
+        let m = Machine { axes: vec![minus], ..Default::default() };
+        assert!(m.reversed_c_rotary());
+
+        let tilted = c_rot(Some([1.0, 0.0, 0.0]), None);
+        assert!(tilted.c_z_sense().is_err());
+        let zero = c_rot(Some([0.0, 0.0, 0.0]), None);
+        assert!(zero.c_z_sense().is_err());
+    }
 }
