@@ -24,10 +24,17 @@ fn assert_curved_fixture_keeps_hit(profile: FixtureProfile, angle: f64, check_y_
         &world,
         InsertProfileFixture::new(&world, "Curved", profile, None, Location::default()).unwrap(),
     );
-    let status = camcraft_app::fixture_view::mesh_states(&world, None);
+    assert_world_keeps_hit(&world, angle, check_y_bound);
+}
+
+/// The single profile fixture of `world` keeps its chord bound: box only,
+/// and a rapid just inside the true curve stays a `FixtureHit` after mesh
+/// refinement.
+fn assert_world_keeps_hit(world: &flecs_ecs::prelude::World, angle: f64, check_y_bound: bool) {
+    let status = camcraft_app::fixture_view::mesh_states(world, None);
     assert_eq!(status[0].1, camcraft_app::fixture_view::MeshState::BoxOnly(camcraft_app::fixture_view::BoxReason::ProfileChord));
     assert!(status[0].1.detail().contains("approximates curved surfaces"));
-    let boxes = fixture::boxes_for(&world, None);
+    let boxes = fixture::boxes_for(world, None);
     if check_y_bound {
         assert!(
             boxes[0].max.y >= 1000.0,
@@ -35,7 +42,7 @@ fn assert_curved_fixture_keeps_hit(profile: FixtureProfile, angle: f64, check_y_
             boxes[0]
         );
     }
-    let meshes = fixture::meshes_for(&world, None);
+    let meshes = fixture::meshes_for(world, None);
     assert!(
         meshes.is_empty(),
         "approximate facets cannot acquit real steel"
@@ -87,20 +94,89 @@ fn assert_curved_fixture_keeps_hit(profile: FixtureProfile, angle: f64, check_y_
     );
 }
 
+fn cylinder_r1000() -> FixtureProfile {
+    FixtureProfile::Spun {
+        points: vec![
+            SpunPoint::line(0.0, 0.0),
+            SpunPoint::line(0.0, 1000.0),
+            SpunPoint::line(50.0, 1000.0),
+            SpunPoint::line(50.0, 0.0),
+        ],
+    }
+}
+
 #[test]
 fn spun_fixture_facets_cannot_clear_true_cylinder_collision() {
-    assert_curved_fixture_keeps_hit(
-        FixtureProfile::Spun {
-            points: vec![
-                SpunPoint::line(0.0, 0.0),
-                SpunPoint::line(0.0, 1000.0),
-                SpunPoint::line(50.0, 1000.0),
-                SpunPoint::line(50.0, 0.0),
-            ],
-        },
-        PI / 32.0,
-        false,
+    assert_curved_fixture_keeps_hit(cylinder_r1000(), PI / 32.0, false);
+}
+
+/// PR #2101 review P1: deriving a reference profile from a generated
+/// fixture replaced its spun profile with a bulge-free polygon, so the
+/// chord bound fell to zero and mesh refinement cleared a real hit.
+fn assert_derivation_refused(world: &flecs_ecs::prelude::World, name: &str, why: &str) {
+    let derives = [
+        DeriveFixtureProfile::spun(world, name).err(),
+        DeriveFixtureProfile::extruded(world, name, ExtrudeAxis::X).err(),
+        DeriveFixtureProfile::extruded(world, name, ExtrudeAxis::Y).err(),
+        DeriveFixtureProfile::extruded(world, name, ExtrudeAxis::Z).err(),
+    ];
+    for err in derives {
+        let msg = err.expect("derivation must be refused").to_string();
+        assert!(msg.contains(name) && msg.contains(why), "{msg}");
+    }
+}
+
+#[test]
+fn generated_fixture_refuses_reference_derivation_and_keeps_its_collision_bound() {
+    use camcraft_app::fixture_library::{self, DatumChoice};
+    use camcraft_app::model;
+
+    let world = new_world();
+    let mut history = History::default();
+    history.execute(
+        &world,
+        InsertProfileFixture::new(&world, "Curved", cylinder_r1000(), None, Location::default())
+            .unwrap(),
     );
+    let entity = model::find_by_name(&world, "Curved").unwrap();
+    assert_derivation_refused(&world, "Curved", "generated from its own profile");
+    assert_eq!(fixture::def_of(&world, &entity).unwrap().profile, Some(cylinder_r1000()));
+    assert_world_keeps_hit(&world, PI / 32.0, false);
+    assert!(history.undo(&world), "the insert is the only history step");
+    assert!(model::find_by_name(&world, "Curved").is_none());
+    assert!(!history.undo(&world), "a refused derivation adds no history step");
+    assert!(history.redo(&world));
+    assert_world_keeps_hit(&world, PI / 32.0, false);
+
+    let entry =
+        fixture_library::entry_from_model(&world, "Curved", DatumChoice::ModelOrigin, None)
+            .unwrap();
+    assert_eq!(entry.profile, Some(cylinder_r1000()));
+    let entries = fixture_library::parse(&fixture_library::to_text(&[entry]).unwrap()).unwrap();
+    let fresh = new_world();
+    let insert = InsertFixture::new(&fresh, &entries[0], None, Location::default()).unwrap();
+    let inserted = insert.name().to_owned();
+    History::default().execute(&fresh, insert);
+    assert_derivation_refused(&fresh, &inserted, "generated from its own profile");
+    assert_world_keeps_hit(&fresh, PI / 32.0, false);
+}
+
+#[test]
+fn mesh_fixture_without_step_source_refuses_reference_derivation() {
+    use camcraft_app::model;
+    let bytes = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/cube.stl"),
+    )
+    .unwrap();
+    let world = new_world();
+    let mut history = History::default();
+    let import = ImportModel::from_bytes("cube.stl", &bytes, None).unwrap();
+    let insert = ImportFixture::new(&world, import, None).unwrap();
+    let name = insert.name().to_owned();
+    history.execute(&world, insert);
+    let entity = model::find_by_name(&world, &name).unwrap();
+    assert_derivation_refused(&world, &name, "no STEP source");
+    assert!(fixture::def_of(&world, &entity).unwrap().profile.is_none());
 }
 
 #[test]

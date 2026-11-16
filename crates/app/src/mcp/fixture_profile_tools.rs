@@ -31,7 +31,7 @@ pub(super) const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "derive_fixture_profile",
-        description: "Derive a reference spun or extruded profile from an existing fixture's solid mesh while keeping its STEP source and facets intact. One undoable step.",
+        description: "Derive a reference spun or extruded profile from an imported STEP fixture's solid mesh while keeping its STEP source and facets intact. Refused by name for a fixture without a STEP source (a DXF/profile fixture: edit its profile with set_fixture_profile). One undoable step.",
         schema: s_derive_profile,
         run: derive_fixture_profile,
     },

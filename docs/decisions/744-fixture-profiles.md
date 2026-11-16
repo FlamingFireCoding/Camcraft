@@ -70,3 +70,23 @@ through derivation, undo, redo, library save, and re-insertion.
 
 **Dropped:** Applying a reference profile's chord bound to original STEP facets.
 That choice expands unchanged steel and causes false collision warnings.
+
+### Reference derivation only from STEP fixtures (PR #2101 review P1)
+
+**Chosen:** `DeriveFixtureProfile` (and the MCP tool `derive_fixture_profile`)
+refuses, by name, every fixture without a STEP source. A DXF/profile fixture
+gets "is generated from its own profile; edit that profile". An imported mesh
+fixture (STL, OBJ) gets "has no STEP source".
+
+**Why:** Without a STEP source, the stored profile is the steel. Collision
+reads its chord bound, and library re-insertion re-meshes from it. A derived
+profile is a bulge-free approximation. On a generated spun cylinder it set the
+chord bound to zero, and mesh refinement cleared a real hit. On an imported
+mesh, library re-insertion would re-mesh the fixture from the approximation,
+which can be smaller than the real steel. The GUI already offers derivation
+only on STEP fixtures, so no GUI workflow is lost.
+
+**Dropped:** A separate `reference_profile` field beside the generating
+profile. It keeps derivation open for every fixture, but it changes the
+project and library formats and every reader of `FixtureDef::profile`. That
+is more surface than the review finding needs.

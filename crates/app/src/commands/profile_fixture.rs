@@ -167,8 +167,9 @@ impl Command for SetFixtureProfile {
     }
 }
 
-/// Optionally derive a spun or extruded profile from a fixture's mesh while
-/// keeping STEP source and STEP facets unchanged (#744).
+/// Optionally derive a spun or extruded reference profile from a STEP
+/// fixture's mesh while keeping STEP source and STEP facets unchanged (#744).
+/// A fixture without a STEP source is refused by name.
 pub struct DeriveFixtureProfile {
     name: String,
     prev: FixtureDef,
@@ -198,6 +199,22 @@ fn target_fixture(world: &World, name: &str) -> Result<(FixtureDef, std::sync::A
     let entity = require_writable(world, name)?;
     let def = fixture::def_of(world, &entity)
         .ok_or_else(|| CommandError::Invalid(format!("'{name}' is not a fixture")))?;
+    // A derived profile is a reference only while a STEP source keeps the
+    // facets. Without one, the profile is what collision, library save and
+    // re-insertion read as the steel: a derived approximation there could
+    // drop a generated fixture's chord bound or re-mesh an imported mesh
+    // smaller than the real steel (PR #2101 review).
+    if crate::step_source::of(world, &entity).is_none() {
+        return Err(CommandError::Invalid(if def.profile.is_some() {
+            format!(
+                "'{name}' is generated from its own profile; edit that profile instead of deriving a reference profile"
+            )
+        } else {
+            format!(
+                "'{name}' has no STEP source; a reference profile is derived only from an imported STEP fixture"
+            )
+        }));
+    }
     let facets = model::facets_of(world, &entity)
         .filter(|f| !f.is_empty())
         .ok_or_else(|| CommandError::Invalid(format!("'{name}' has no mesh facets to derive from")))?;

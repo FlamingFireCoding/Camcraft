@@ -107,3 +107,40 @@ fn mcp_fixture_profile_workflow_imports_edits_exports_and_keeps_step() {
     .expect_err("must refuse overwriting STEP fixture");
     assert!(err.contains("STEP"), "{err}");
 }
+
+/// PR #2101 review P1: `derive_fixture_profile` must not replace the
+/// generating profile of a DXF/profile fixture. That replaced its curved
+/// chord bound with a bulge-free polygon and cleared a real collision.
+#[test]
+fn mcp_derive_fixture_profile_refuses_generated_fixture_and_keeps_its_profile() {
+    let mut srv = Server::new();
+    let imp = call(
+        &mut srv,
+        "import_dxf_fixture",
+        json!({ "kind": "spun", "name": "Jaw", "dxf": spun_dxf() }),
+    )
+    .expect("import spun DXF");
+    let profile = imp["profile"].clone();
+    assert_eq!(profile["kind"], "spun");
+
+    for args in [
+        json!({ "name": "Jaw", "kind": "spun" }),
+        json!({ "name": "Jaw", "kind": "extruded", "axis": "z" }),
+        json!({ "name": "Jaw", "kind": "extruded", "axis": "x" }),
+    ] {
+        let err = call(&mut srv, "derive_fixture_profile", args).expect_err("derive is refused");
+        assert!(err.contains("'Jaw'") && err.contains("generated from its own profile"), "{err}");
+        let now = call(&mut srv, "get_fixture_profile", json!({ "name": "Jaw" })).expect("get");
+        assert_eq!(now["profile"], profile, "a refused derive leaves the profile");
+    }
+
+    // The import is the only history step: a refusal adds none.
+    call(&mut srv, "undo", json!({})).expect("undo the import");
+    call(&mut srv, "get_fixture_profile", json!({ "name": "Jaw" })).expect_err("fixture gone");
+    call(&mut srv, "undo", json!({})).expect_err("nothing else to undo");
+    call(&mut srv, "redo", json!({})).expect("redo the import");
+    let back = call(&mut srv, "get_fixture_profile", json!({ "name": "Jaw" })).expect("get");
+    assert_eq!(back["profile"], profile);
+    call(&mut srv, "derive_fixture_profile", json!({ "name": "Jaw", "kind": "spun" }))
+        .expect_err("still refused after redo");
+}
