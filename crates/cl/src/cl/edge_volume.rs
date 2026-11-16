@@ -88,9 +88,10 @@ impl EdgeBreakVolume {
         spans.sort_by(|a, b| a.0.total_cmp(&b.0));
         let mut bottom: f64 = 0.0;
         for (lo, hi) in spans {
-            // Only numerical roundoff may join adjacent segments. A
-            // disconnected pocket never grants permission through a gap.
-            let slack = 64.0 * f64::EPSILON * self.width.max(depth).max(bottom);
+            // Only roundoff in vertical coordinates and distances may
+            // join spans. Include world Z for translated/rotated caps;
+            // unrelated width and depth must not bridge a real gap.
+            let slack = 64.0 * f64::EPSILON * top.z.abs().max(lo.abs()).max(bottom);
             if lo > bottom + slack {
                 break;
             }

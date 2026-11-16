@@ -135,3 +135,34 @@ fn extreme_scale_circle_cannot_credit_a_real_gouge() {
     assert_eq!(dev.gouge_cells, 1, "circle underflow forgave a real gouge");
     assert!(dev.max_gouge >= 0.48 - 0.2_f64.sqrt() - 1e-9, "{:?}", dev);
 }
+
+#[test]
+fn large_cross_edge_width_cannot_connect_a_detached_cap() {
+    let facets = cube(p(-2.0, -2.0, -1.0), p(2.0, 2.0, 0.0)).facets.to_vec();
+    for (edge_z, cut_z, expected_credit) in [(-0.1, -0.55, 0), (0.0, -0.5, 1)] {
+        let b = EdgeBreak {
+            edge: vec![p(-5.0, 0.0, edge_z), p(5.0, 0.0, edge_z)],
+            depth: 0.5,
+            slope: 0.0,
+            volume: Some(EdgeBreakVolume {
+                width: 1e14,
+                frames: vec![BreakFrame { outward: [0.0, 0.0, 1.0], across: [0.0, 1.0, 0.0] }],
+                profile: BreakProfile::Flat,
+            }),
+        };
+        assert!(b.is_sane(), "large finite widths reach the verifier");
+        let mut d = Dexel::block(-0.0625, -0.0625, 0.0625, 0.0625, 0.0, 0.125).expect("stock");
+        d.cut_chord(p(-0.1, 0.0, cut_z), p(0.1, 0.0, cut_z), 0.1);
+        let mut dev = deviate(&d, &facets, 0.01).expect("sharp verdict");
+        assert_eq!(dev.gouge_cells, 1);
+        assert!((dev.max_gouge + cut_z).abs() < 1e-9);
+        assert_eq!(credit_breaks(&mut dev, &d, &facets, &[b]), expected_credit,
+            "cross-edge width must not bridge the vertical gap at edge_z={edge_z}");
+        if expected_credit == 0 {
+            assert_eq!(dev.gouge_cells, 1, "a detached cap forgave a real gouge");
+            assert!((dev.max_gouge - 0.55).abs() < 1e-9, "{dev:?}");
+        } else {
+            assert!(dev.is_clean(), "a connected cap must retain its credit: {dev:?}");
+        }
+    }
+}

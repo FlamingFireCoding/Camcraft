@@ -63,3 +63,10 @@ and new frame/profile types. Changing the cap convention would require
 updating its geometry and project DTO conversion together. The wire
 format remains local to the edge-break DTO; no dependency change is
 needed.
+
+**Review fix: vertical connection slack.** Scale the roundoff allowance
+only by the vertical endpoint distances and the model surface Z coordinate.
+The Z coordinate retains roundoff allowance for translated, tilted caps.
+Drop width and depth from that scale: an unrelated cross-edge width of
+`1e14` must not bridge a real `0.1` mm gap below the surface. This keeps roundoff joining for
+vertical intervals while detached caps retain the sharp gouge verdict.
