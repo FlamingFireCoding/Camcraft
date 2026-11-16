@@ -229,6 +229,11 @@ fn each_flat_posts_the_same_cut_after_its_index() {
 /// posts the committed program.
 #[test]
 fn the_committed_project_posts_the_committed_program() {
+    let file: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo(PROJECT)).expect("the example project"),
+    ).expect("example JSON");
+    assert!(file["version"].as_u64().unwrap() >= 65,
+        "version-64 readers must refuse the explicit tilt basis");
     let world = camcraft_app::world::new_world();
     let notes = ok(project::load_noted(&world, &repo(PROJECT)), "load the example project");
     assert!(notes.is_empty(), "the example loads without migration notes: {notes:?}");

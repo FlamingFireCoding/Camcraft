@@ -868,6 +868,7 @@ impl OpParams {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
                 ..
             } => {
                 // An empty hole list is sane here: a new Drill op exists
@@ -886,6 +887,8 @@ impl OpParams {
                     && *dwell >= 0.0
                     && holes.iter().all(|h| h.is_usable())
                     && cross.iter().all(|h| h.is_usable())
+                    // #1557: a stated break-through is a length.
+                    && break_through.is_none_or(nneg)
             }
             // The facing ladder's door (M5.2 stage A): the wrap
             // ladder's numbers without the pattern's - a positive
@@ -1191,6 +1194,7 @@ impl OpParams {
                 plunge_feed,
                 tolerance,
                 holes,
+                break_through,
                 ..
             } => {
                 clearance_z.is_sane()
@@ -1203,6 +1207,7 @@ impl OpParams {
                     && pos(*plunge_feed)
                     && pos(*tolerance)
                     && holes.iter().all(|h| h.is_usable())
+                    && break_through.is_none_or(nneg)
             }
             OpParams::Thread {
                 clearance_z,
@@ -1215,6 +1220,7 @@ impl OpParams {
                 holes,
                 pitch,
                 passes,
+                break_through,
                 ..
             } => {
                 clearance_z.is_sane()
@@ -1229,6 +1235,7 @@ impl OpParams {
                     && pos(*feed)
                     && pos(*plunge_feed)
                     && holes.iter().all(|h| h.is_usable())
+                    && break_through.is_none_or(nneg)
             }
         }
     }

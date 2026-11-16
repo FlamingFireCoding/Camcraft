@@ -481,6 +481,11 @@ pub enum OpParams {
         /// kind or the other - the mill's Z holes or the turret's
         /// cross holes - and the generator refuses a mix by name.
         cross: Vec<camcraft_motion::drilling::CrossHole>,
+        /// How far past a through hole's floor the tip runs (#1557), mm.
+        /// `None` is the kind's own default - 1.0 mm, the drill's full diameter clean through - which every file
+        /// before the option posted; checked at generation against the
+        /// stock bottom, refused by name below it.
+        break_through: Option<f64>,
     },
     /// Mesh-driven 3D pocketing. The model is the final part: every
     /// level cuts the footprint minus the model's section strictly above
@@ -1196,6 +1201,11 @@ pub enum OpParams {
         tolerance: f64,
         holes: Vec<Hole>,
         links: Links,
+        /// How far past a through hole's floor the tip runs (#1557), mm.
+        /// `None` is the kind's own default - 1.0 mm, as the drill - which every file
+        /// before the option posted; checked at generation against the
+        /// stock bottom, refused by name below it.
+        break_through: Option<f64>,
     },
     /// Helical thread milling (M2.4 C, reworked by #894): internal
     /// threads in the listed holes - or, `external`, on the listed
@@ -1233,6 +1243,11 @@ pub enum OpParams {
         /// ([`crate::machining2d::ThreadPasses`]). The default is the
         /// #894 ride every older file meant.
         passes: crate::machining2d::ThreadPasses,
+        /// How far past a through hole's floor the tip runs (#1557), mm.
+        /// `None` is the kind's own default - one pitch, so the thread is whole at the exit - which every file
+        /// before the option posted; checked at generation against the
+        /// stock bottom, refused by name below it.
+        break_through: Option<f64>,
     },
     /// Probing (#108): a spindle touch probe finds a face, an edge, an
     /// outside corner or a bore / boss centre, then sets a work offset

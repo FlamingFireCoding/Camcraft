@@ -298,7 +298,7 @@ fn flipped_finish3d_picked_source_and_boundary_match_baked_geometry() {
 }
 
 #[test]
-fn enabling_aligned_3d_keeps_tilt_and_2d_area_refusals() {
+fn enabling_aligned_3d_keeps_tilt_refused_and_passes_2d_area() {
     let (world, _) = document(true, "EM-0400-2FL");
     let mut params = camcraft_app::operation::retype_params(
         &rough(PocketStrategy::OffsetRings),
@@ -332,7 +332,6 @@ fn enabling_aligned_3d_keeps_tilt_and_2d_area_refusals() {
     };
     *tilt = None;
     op.area.offset = 0.25;
-    let why = camcraft_app::setup_align::generation_problem(&world, &op)
-        .expect("2D area is still refused");
-    assert!(why.contains("area controls are not supported yet"), "{why}");
+    // #2210: the 2D area controls resolve in the setup frame now.
+    assert_eq!(camcraft_app::setup_align::generation_problem(&world, &op), None);
 }

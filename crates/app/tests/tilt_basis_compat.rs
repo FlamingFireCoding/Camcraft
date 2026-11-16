@@ -205,8 +205,8 @@ fn saved_basis_contract_requires_a_version_that_legacy_readers_refuse() {
     let world = opened(OLD);
     let saved: Value = serde_json::from_str(&project::save_text(&world).unwrap()).unwrap();
     assert!(
-        saved["version"].as_u64().unwrap() >= 63,
-        "a version-62 reader ignores the new basis field and must refuse this file"
+        saved["version"].as_u64().unwrap() >= 65,
+        "a version-64 reader ignores the new basis field and must refuse this file"
     );
     // The version guard also refuses future basis contracts in this reader.
     let mut future = saved;
