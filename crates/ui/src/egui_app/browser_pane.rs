@@ -56,9 +56,13 @@ pub fn browser(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&Icon
     ui.separator();
     ui.add_space(2.0);
     let (rows, leaves) = browser_rows(state);
+    // The top button row can widen `ScrollArea`'s virtual width past the
+    // visible pane; clamp to the clip edge so eye toggles stay unclipped and
+    // hit-testable at their AccessKit centers.
+    let vis_w = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
     let rect = Rect::from_min_size(
         ui.cursor().min,
-        Vec2::new(ui.available_width(), rows.len() as f32 * pal.row_height),
+        Vec2::new(ui.available_width().min(vis_w), rows.len() as f32 * pal.row_height),
     );
     let hit = painted::tree(ui, rect, &rows, pal, icons);
     drag_ops(ui, state, pal, rect, &leaves, hit.drag_started);

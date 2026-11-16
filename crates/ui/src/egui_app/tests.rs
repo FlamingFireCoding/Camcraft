@@ -59,19 +59,6 @@ use super::shell::{Tab, build_dock, headless, shell_layout};
 use super::viewcube;
 use super::{theme, world};
 
-/// The y of the browser tree's first row at the default window: the ribbon
-/// (its tab strip + cells) plus the browser's own header row, as the
-/// shipping layout resolves them. Pointer tests aim at rows through this
-/// one number; a header change moves it here, once.
-// 172 = 150 + the 22 px the ribbon gained with its own tab and caption rows (#2021).
-const BROWSER_TREE_TOP: f32 = 172.0;
-
-
-/// The x of the tree's eye column: the browser pane's right edge less the
-/// eye's inset (see `painted::tree`). Pointer tests aim at a row's eye
-/// through this one number, beside `BROWSER_TREE_TOP`.
-const BROWSER_EYE_X: f32 = 220.0;
-
 
 
 #[test]
@@ -4689,22 +4676,16 @@ fn stock_eye_hides_the_viewport_stock_without_removing_it_from_the_document() {
     let mut harness = shell_harness();
     harness.run_steps(2);
     let stock_name = camcraft_app::setup::stock_entity_name(&harness.state().state.world, None);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Stock(_))).expect("stock row");
-    let eye = egui::pos2(BROWSER_EYE_X, BROWSER_TREE_TOP + (row as f32 + 0.5) * theme::current().row_height);
     assert!(world::collect(&harness.state().state).parts.iter().any(|part| part.stock));
 
-    set_pos(&mut harness, eye);
-    button_at(&mut harness, egui::PointerButton::Primary, eye, true);
-    button_at(&mut harness, egui::PointerButton::Primary, eye, false);
+    harness.get_by_label("Hide Stock").click();
     harness.run();
     let state = &harness.state().state;
     assert!(state.active_stock_hidden());
     assert!(model::find_by_name(&state.world, &stock_name).is_some());
     assert!(!world::collect(state).parts.iter().any(|part| part.stock));
 
-    button_at(&mut harness, egui::PointerButton::Primary, eye, true);
-    button_at(&mut harness, egui::PointerButton::Primary, eye, false);
+    harness.get_by_label("Show Stock").click();
     harness.run();
     assert!(!harness.state().state.active_stock_hidden());
     assert!(world::collect(&harness.state().state).parts.iter().any(|part| part.stock));
@@ -4879,19 +4860,11 @@ fn dragging_an_operation_row_reorders_within_global_setup() {
     let mut harness = Harness::builder().with_size(Vec2::new(1280.0, 720.0))
         .build_ui_state(frame, shell);
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let first = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Op(name) if name == "Contour1"))
-        .expect("first row");
-    let second = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Op(name) if name == "Contour2"))
-        .expect("second row");
-    assert_eq!(second, first + 1);
-    // The browser tree begins at y=200 below its view controls (the
-    // projection radios joined them for #434) in the
-    // 1280x720 shell. The row indices come from the current flat browser,
-    // so the drag follows the rows after setup nesting was removed.
-    let row_h = theme::current().row_height;
-    let from = egui::pos2(120.0, BROWSER_TREE_TOP + (second as f32 + 0.5) * row_h);
-    let to = egui::pos2(120.0, BROWSER_TREE_TOP + (first as f32 + 0.25) * row_h);
+    let r2 = harness.get_by_label("Browser: Contour2").rect();
+    let r1 = harness.get_by_label("Browser: Contour1").rect();
+    assert!(r2.top() > r1.top());
+    let from = r2.center();
+    let to = egui::pos2(r1.center().x, r1.top() + r1.height() * 0.25);
     set_pos(&mut harness, from);
     button_at(&mut harness, egui::PointerButton::Primary, from, true);
     set_pos(&mut harness, to);
@@ -5028,22 +5001,12 @@ fn operations_heading_menu_pastes_the_copied_operation() {
     let mut harness = shell_harness();
     harness.state_mut().state.copy_operation("Contour1");
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf,
-        panes::Leaf::SetupOps(_)))
-        .expect("Operations heading");
-    let row_height = theme::current().row_height;
-    let heading = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 0.5) * row_height);
-    set_pos(&mut harness, heading);
-    button_at(&mut harness, egui::PointerButton::Secondary, heading, true);
-    button_at(&mut harness, egui::PointerButton::Secondary, heading, false);
+    harness.get_by_label("Browser: Operations").click_secondary();
+    harness.run();
     assert_eq!(harness.state().state.tree_menu, Some(TreeMenuTarget::Operations));
+    assert!(harness.query_by_label("Operation").is_some());
 
-    let paste = egui::pos2(90.0,
-        BROWSER_TREE_TOP + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 1.5 * row_height);
-    set_pos(&mut harness, paste);
-    button_at(&mut harness, egui::PointerButton::Primary, paste, true);
-    button_at(&mut harness, egui::PointerButton::Primary, paste, false);
+    harness.get_by_label("Paste operation").click();
     harness.run_steps(2);
     assert!(model::find_by_name(&harness.state().state.world, "Contour1 Copy").is_some());
 }
@@ -5052,33 +5015,20 @@ fn operations_heading_menu_pastes_the_copied_operation() {
 fn operation_type_menu_requires_confirmation() {
     let mut harness = shell_harness();
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf,
-        panes::Leaf::Op(name) if name == "Contour1"))
-        .expect("operation row");
-    let row_height = theme::current().row_height;
-    let operation = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 0.5) * row_height);
-    set_pos(&mut harness, operation);
-    button_at(&mut harness, egui::PointerButton::Secondary, operation, true);
-    button_at(&mut harness, egui::PointerButton::Secondary, operation, false);
+    harness.get_by_label("Browser: Contour1").click_secondary();
+    harness.run();
     assert_eq!(harness.state().state.tree_menu,
         Some(TreeMenuTarget::Operation("Contour1".into())));
 
-    // Operation, Rename, Copy, Paste, Clear, Delete, Suppress, After
-    // (#110), add pause / home / optional stop (#155), section header, Face.
-    let face = egui::pos2(90.0,
-        BROWSER_TREE_TOP + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 12.5 * row_height);
-    set_pos(&mut harness, face);
-    button_at(&mut harness, egui::PointerButton::Primary, face, true);
-    button_at(&mut harness, egui::PointerButton::Primary, face, false);
+    harness.get_by_label("Face").click();
+    harness.run();
     assert_eq!(harness.state().state.retype_confirm,
         Some(("Contour1".into(), camcraft_app::operation::OpType::Face as usize)));
     let entity = model::find_by_name(&harness.state().state.world, "Contour1").unwrap();
     assert_eq!(model::operation_of(&harness.state().state.world, &entity).unwrap().params.kind(),
         camcraft_app::operation::OpType::Contour);
 
-    button_at(&mut harness, egui::PointerButton::Primary, face, true);
-    button_at(&mut harness, egui::PointerButton::Primary, face, false);
+    harness.get_by_label("Confirm change to Face").click();
     harness.run_steps(2);
     let entity = model::find_by_name(&harness.state().state.world, "Contour1").unwrap();
     assert_eq!(model::operation_of(&harness.state().state.world, &entity).unwrap().params.kind(),
@@ -5091,38 +5041,22 @@ fn operation_type_menu_requires_confirmation() {
 fn operation_menu_suppresses_and_sets_the_after_action() {
     let mut harness = shell_harness();
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf,
-        panes::Leaf::Op(name) if name == "Contour1"))
-        .expect("operation row");
-    let row_height = theme::current().row_height;
-    let operation = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 0.5) * row_height);
-    let open_menu = |harness: &mut Harness<'static, ShellUi>| {
-        set_pos(harness, operation);
-        button_at(harness, egui::PointerButton::Secondary, operation, true);
-        button_at(harness, egui::PointerButton::Secondary, operation, false);
-    };
-    let click_row = |harness: &mut Harness<'static, ShellUi>, k: f32| {
-        let at = egui::pos2(90.0, BROWSER_TREE_TOP + (row as f32 + 1.0) * row_height + panes::DROP_GAP + k * row_height);
-        set_pos(harness, at);
-        button_at(harness, egui::PointerButton::Primary, at, true);
-        button_at(harness, egui::PointerButton::Primary, at, false);
+    let open_and_pick = |harness: &mut Harness<'static, ShellUi>, item: &str| {
+        harness.get_by_label("Browser: Contour1").click_secondary();
+        harness.run();
+        harness.get_by_label(item).click();
         harness.run_steps(2);
     };
     let op = |harness: &Harness<'static, ShellUi>| {
         let world = &harness.state().state.world;
         model::find_by_name(world, "Contour1").and_then(|e| model::operation_of(world, &e)).expect("op")
     };
-    // Operation, Rename, Copy, Paste, Clear, Delete, then Suppress.
-    open_menu(&mut harness);
-    click_row(&mut harness, 6.5);
+    open_and_pick(&mut harness, "Suppress operation");
     assert!(op(&harness).suppressed, "the Suppress row suppresses");
     // ... then the After row, which steps Continue -> Optional -> Program stop.
-    open_menu(&mut harness);
-    click_row(&mut harness, 7.5);
+    open_and_pick(&mut harness, "After: continue (click to change)");
     assert_eq!(op(&harness).after, camcraft_app::operation::AfterOperation::OptionalStop);
-    open_menu(&mut harness);
-    click_row(&mut harness, 7.5);
+    open_and_pick(&mut harness, "After: optional stop (M1)");
     assert_eq!(op(&harness).after, camcraft_app::operation::AfterOperation::ProgramStop);
 }
 

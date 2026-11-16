@@ -298,6 +298,9 @@ pub fn tree(
         // creation order; the eye pixel is created later so the eye
         // claims the click, not the row.
         let row_resp = ui.interact(rr, ui.id().with(("tree-row", ix)), Sense::click_and_drag());
+        row_resp.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Browser: {}", row.label))
+        });
         let eye_rect = if has_eye(row.kind) {
             let er = Rect::from_center_size(
                 Pos2::new(rr.right() - 12.0, rr.center().y),
@@ -425,6 +428,7 @@ pub fn tree(
     // after the loop so the response lives past its borrow of `ui`.
     for (ix, r) in eye_resps {
         let tip = if rows[ix].hidden { "Show" } else { "Hide" };
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{tip} {}", rows[ix].label)));
         r.on_hover_text(format!("{tip} in the viewport (view state; geometry still cuts)"));
     }
     hit
