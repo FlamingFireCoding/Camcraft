@@ -87,6 +87,7 @@ mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_material;
 mod setup_settings_page;
 mod machine_page;
 mod tool_list_page;
@@ -203,6 +204,8 @@ mod import_outward;
 mod ribbon_accesskit;
 // #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
 mod ai_chat;
+// #2011: EDM tool visibility matches selectable machine kinds.
+mod edm_tool_visibility;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
@@ -2837,11 +2840,6 @@ fn tips_match_the_imgui_table() {
     }
     // Every Create button shares the swap while the tool list is empty.
     for i in 0..panes::TYPES.len() {
-        // #535: a kind that mounts no library tool (the wire EDM's) is not
-        // held by an empty rack.
-        if camcraft_app::operation::KindInfo::ALL.get(i).is_some_and(|k| !k.mounts_tool()) {
-            continue;
-        }
         assert_eq!(
             panes::tip_of(Cmd::Create(i), &empty),
             "No tool yet - add one (Setup > Tools)",

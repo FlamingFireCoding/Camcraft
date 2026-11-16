@@ -60,6 +60,11 @@ fn punch_with(text: &str, taper: f64, burnout: Option<f64>) -> (World, Result<()
     let mut h = History::default();
     let m = parse_mch(text).expect("the fixture parses");
     h.execute(&world, LoadMachine::new(&world, "wire-iso.mch".into(), Some(m)).expect("mount"));
+    h.execute(
+        &world,
+        camcraft_app::commands::AddTool::new(&world, "EDM-W025", camcraft_app::wire_tools::wire_tool(0.25))
+            .expect("wire"),
+    );
     h.execute(&world, ImportModel::from_mesh("block", block()));
     let op = WireContourOp {
         top_z: Height::fixed(12.0),
@@ -77,7 +82,7 @@ fn punch_with(text: &str, taper: f64, burnout: Option<f64>) -> (World, Result<()
         skims: Vec::new(),
     };
     // #1800: the taper door refuses at the command, so its words come back as `made`.
-    let c = match CreateOperation::new(&world, "Punch1", "", SrcRef::Entity("block".into()), OpParams::WireContour(op)) {
+    let c = match CreateOperation::new(&world, "Punch1", "EDM-W025", SrcRef::Entity("block".into()), OpParams::WireContour(op)) {
         Ok(c) => c,
         Err(e) => return (world, Err(e.to_string())),
     };

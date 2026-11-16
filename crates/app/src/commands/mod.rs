@@ -18,6 +18,8 @@ pub mod import_fixture;
 pub mod import_model;
 // #339 slice 6: a fixture library entry placed into a setup.
 pub mod insert_fixture;
+// #744: DXF/profile fixtures and STEP profile derivation.
+pub mod profile_fixture;
 pub mod load_machine;
 // #561: locate the part in a fixture (or the fixture on the part) by mates.
 pub mod locate;
@@ -37,6 +39,7 @@ pub mod ribbon_pins;
 pub mod select_entity;
 pub mod set_stock;
 pub mod stock_source_only;
+pub mod stock_material;
 pub mod setup;
 pub mod setup_delete;
 // #196: a setup's picked program offset.
@@ -90,6 +93,7 @@ pub use mod_vise_edit::{RefitModVise, SetModJaw};
 pub use import_fixture::ImportFixture;
 pub use import_model::ImportModel;
 pub use insert_fixture::InsertFixture;
+pub use profile_fixture::{DeriveFixtureProfile, InsertProfileFixture, SetFixtureProfile};
 pub use load_machine::LoadMachine;
 pub use locate::{Locate, LocateFixture, LocatePart};
 pub use move_model::MoveModel;
@@ -110,6 +114,7 @@ pub use ribbon_pins::SetRibbonPins;
 pub use select_entity::SelectEntity;
 pub use set_stock::SetStock;
 pub use stock_source_only::SetStockSourceOnly;
+pub use stock_material::SetStockMaterial;
 pub use setup::{ActivateSetup, CreateSetup, DeleteSetup, SetOperationSetup};
 pub use setup_align::AlignPartToSetup;
 pub use setup_wcs::SetSetupWorkOffset;

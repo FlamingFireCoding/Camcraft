@@ -29,6 +29,8 @@
 pub(crate) mod api;
 pub use api::refusal_text;
 mod report;
+#[cfg(test)]
+mod step_source_tests;
 
 use crate::commands::History;
 use crate::world;
@@ -356,6 +358,7 @@ interface PostResult {
   path: string;
   ops: number;
   lines: number;
+  warning?: string;
   program?: string;
   /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];

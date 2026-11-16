@@ -1,7 +1,7 @@
 //! #763 Phase 2: picked features (faces, closed chains, stitched open runs)
 //! read through OpFrame in an aligned setup for the four verified kinds
-//! (Face, 2D Contour, 2D Pocket, 2D Adaptive), while Tilt x picks,
-//! unverified kinds, and area controls stay refused by name.
+//! (Face, 2D Contour, 2D Pocket, 2D Adaptive), while Tilt x picks and
+//! unverified kinds stay refused by name (area controls pass, #2210).
 //!
 //! Provenance: our own fixtures over plain re-clamp and two-sided step
 //! machining practice; no vendor material consulted.
@@ -361,7 +361,7 @@ fn aligned_stitched_open_runs_and_stamp_staleness() {
 }
 
 #[test]
-fn tilt_times_picks_and_unverified_and_area_stay_refused_in_phase_two() {
+fn tilt_times_picks_and_unverified_stay_refused_and_area_passes_in_phase_two() {
     let (world, mut h) = setup_world("block", cube(Point3::ZERO, Point3::new(20.0, 20.0, 10.0)), 40.0, 40.0, 30.0, -5.0);
     let top = face_by_normal_and_offset(&world, "block", [0.0, 0.0, 1.0], 10.0);
     let sel = SrcRef::Selection(vec![top]);
@@ -386,6 +386,10 @@ fn tilt_times_picks_and_unverified_and_area_stay_refused_in_phase_two() {
     let mut area_op = op_of(&world, "TiltedPick");
     area_op.params = face_params(Height::fixed(5.0), 25.0);
     area_op.area = AreaControls { offset: 1.0, ..Default::default() };
-    let err = generate(&world, &area_op, "AreaPick").expect_err("area controls refuse aligned");
-    assert!(err.to_string().contains("area controls are not supported yet in an aligned setup"), "{err}");
+    // #2210: the 2D kinds' area controls resolve in the setup frame now;
+    // the aligned door passes them (`setup_align_2d_area` pins the cut).
+    assert_eq!(camcraft_app::setup_align::generation_problem(&world, &area_op), None);
+    if let Err(err) = generate(&world, &area_op, "AreaPick") {
+        assert!(!err.to_string().contains("aligned setup"), "{err}");
+    }
 }
