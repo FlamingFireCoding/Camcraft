@@ -226,7 +226,7 @@ fn the_travel_budget_refuses_by_name_past_each_limit() {
 #[test]
 fn the_first_rest_level_at_top_z_is_cut_without_a_stated_material_top() {
     let (region, p) = pocket();
-    assert!(p.links.approach.material_top.is_none(), "the fixture states no material top");
+    assert!(p.links.approach.stock_top.is_none(), "the fixture states no material top");
     let s = stock(-4.0, Region::empty());
     let feeds_at = |path: &Toolpath, z: f64| path.moves.iter().filter(|m| m.kind == MoveKind::Feed && (m.to.z - z).abs() < 1e-9).count();
     let path = plan(&s, Guards::ALL);
@@ -234,7 +234,7 @@ fn the_first_rest_level_at_top_z_is_cut_without_a_stated_material_top() {
     assert!(feeds_at(&path, -4.0) > 0, "the last rest level (Z-4) has no cut");
     // A stated material top over Top Z keeps the same ladder.
     let mut over = p;
-    over.links.approach.material_top = Some(0.0);
+    over.links.approach.stock_top = Some(0.0);
     let Ok(path) = guarded(&region, &over, &s, Guards::ALL) else { panic!("the fixture plans with a material top") };
     assert!(feeds_at(&path, -2.0) > 0, "a material top over Top Z drops the first rest level");
 }

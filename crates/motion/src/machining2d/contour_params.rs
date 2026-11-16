@@ -209,9 +209,15 @@ impl ContourParams {
         self.links.approach.lead_out.unwrap_or(self.lead)
     }
 
+    /// The material's top over the first level (#1559): the top of the
+    /// cut, or the stock the application says is carried above it.
+    pub(super) fn entry_top(&self) -> f64 {
+        self.links.approach.entry_top(self.top_z)
+    }
+
     /// Cut levels from `top_z` down to `bottom_z`, always ending exactly
     /// at the bottom (same snap rule as facing rows).
     pub(super) fn levels(&self) -> Result<Vec<f64>, GenError> {
-        super::levels::cut_levels_under(self.top_z, self.links.approach.material_top, self.bottom_z, self.stepdown)
+        super::levels::cut_levels_under(self.top_z, self.links.approach.stock_top, self.bottom_z, self.stepdown)
     }
 }

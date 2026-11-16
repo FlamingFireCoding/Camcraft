@@ -14,6 +14,7 @@ use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::links::{Approach, Compensation, Links};
 use camcraft_motion::machining2d::{contour, contour_along_chain, ContourParams, Lead, Side};
+use camcraft_motion::verify::{crossed_pairs, verify, Mode, ToolGeom, VerifyContext, Warning};
 
 fn square() -> Region {
     let pts = [(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)];
@@ -257,4 +258,59 @@ fn a_picked_exit_no_lead_out_fits_at_is_refused_not_moved() {
         Err(e) => e.to_string(),
     };
     assert!(why.contains("exit point (20.000, 3.000)") && why.contains("no lead-out fits"), "{why}");
+}
+
+fn plate() -> Region {
+    let pts = [(-30.0, -20.0), (30.0, -20.0), (30.0, 20.0), (-30.0, 20.0)];
+    Region::new(vec![Loop::new(pts.iter().map(|&(x, y)| Point2::new(x, y)).collect()).unwrap()]).unwrap()
+}
+
+fn assert_no_crossings_or_gouges(region: &Region, p: &ContourParams) -> Toolpath {
+    let path = contour(region, p).unwrap();
+    let pairs = crossed_pairs(&path, 0.01);
+    assert!(pairs.is_empty(), "expected no XY feed crossings, got {pairs:?}");
+    let tool = ToolGeom { radius: 3.0, nose_radius: 0.0, flute_len: 20.0, shank_radius: 3.0, shank_len: 10.0, holder_radius: 15.0, holder_len: 30.0 };
+    let cx = VerifyContext { region, tool: &tool, mode: Mode::Boundary, stock_top_z: p.top_z, clearance_z: p.clearance_z, gouge_tol: 0.01, z_tol: 0.05, ..VerifyContext::default() };
+    let bad: Vec<Warning> = verify(&path, &cx).into_iter().filter(|w| matches!(w, Warning::Crossing { .. } | Warning::Gouge { .. })).collect();
+    assert!(bad.is_empty(), "expected no Crossing/Gouge warnings, got {bad:?}");
+    path
+}
+
+#[test]
+fn an_exit_past_a_rounded_corner_retraces_the_corner_arc_with_no_crossing() {
+    let reg = plate();
+    let p = ContourParams { top_z: 10.0, bottom_z: 7.0, stepdown: 3.0, clearance_z: 15.0, retract_z: 12.0, lead: Lead::Linear { length: 8.0 }, ..with_exit(Some(Point2::new(30.0, 0.0)), Point2::new(0.0, -20.0)) };
+    let t = assert_no_crossings_or_gouges(&reg, &p);
+    let corner_arcs: Vec<_> = t.moves.iter().filter(|m| m.kind == MoveKind::Feed && m.arc.is_some_and(|a| (a.center.x - 30.0).abs() < 1e-3 && (a.center.y + 20.0).abs() < 1e-3)).collect();
+    let mut zs: Vec<f64> = corner_arcs.iter().map(|m| m.to.z).collect();
+    zs.dedup();
+    assert!(!zs.is_empty() && corner_arcs.len() == 2 * zs.len(), "each level cuts the (30,-20) corner once per lap as one arc: {corner_arcs:?}");
+    let last_feed = t.moves.iter().rfind(|m| m.kind == MoveKind::Feed).unwrap();
+    assert!((last_feed.from.x - 0.0).abs() < 1e-6 && (last_feed.from.y + 23.0).abs() < 1e-6, "lead-out leaves at exit projection (0,-23): {last_feed:?}");
+}
+
+#[test]
+fn an_exit_inside_a_rounded_corner_arc_splits_both_laps_with_no_crossing() {
+    let reg = plate();
+    let p = ContourParams { top_z: 10.0, bottom_z: 7.0, stepdown: 3.0, clearance_z: 15.0, retract_z: 12.0, ..with_exit(Some(Point2::new(30.0, 0.0)), Point2::new(32.5, -21.5)) };
+    let t = assert_no_crossings_or_gouges(&reg, &p);
+    let last_feed = t.moves.iter().rfind(|m| m.kind == MoveKind::Feed).unwrap();
+    let r = (last_feed.from.x - 30.0).hypot(last_feed.from.y + 20.0);
+    assert!((r - 3.0).abs() < 1e-4, "lead-out starts on the r=3 corner arc (r={r}): {last_feed:?}");
+
+    // Also a full circle (tessellated 96-gon, fitted into half-turn arcs) with an interior exit angle.
+    let circle_pts: Vec<Point2> = (0..96).map(|i| {
+        let a = std::f64::consts::TAU * (i as f64) / 96.0;
+        Point2::new(20.0 * a.cos(), 20.0 * a.sin())
+    }).collect();
+    let disk = Region::new(vec![Loop::new(circle_pts).unwrap()]).unwrap();
+    assert_no_crossings_or_gouges(&disk, &with_exit(Some(Point2::new(20.0, 0.0)), Point2::new(13.0, -15.0)));
+}
+
+#[test]
+fn an_exit_on_an_oblique_wall_and_across_a_blended_corner_has_no_crossing() {
+    let oblique_pts = [(30.0, 0.0), (10.0, 35.0), (-30.0, 15.0), (-10.0, -25.0)];
+    let poly = Region::new(vec![Loop::new(oblique_pts.iter().map(|&(x, y)| Point2::new(x, y)).collect()).unwrap()]).unwrap();
+    assert_no_crossings_or_gouges(&poly, &with_exit(Some(Point2::new(20.0, 18.0)), Point2::new(10.0, -13.0)));
+    assert_no_crossings_or_gouges(&square(), &ContourParams { blend_turns: true, ..with_exit(Some(Point2::new(44.0, 20.0)), Point2::new(20.0, -4.0)) });
 }

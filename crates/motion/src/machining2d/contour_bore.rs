@@ -57,11 +57,14 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
     // #2004: a transition whose column no earlier descent opened meets the
     // core at the top of the cut - the bore side's rings sweep only their
     // band - so it starts over the top, never at the plane above.
+    // #1559: on the first engagement and in an unopened column, the top is
+    // the carried stock's where the application stated one (`entry_top`;
+    // the top of the cut otherwise, as before).
     let fresh = !s.first && !s.opened && prev_z < p.clearance_z && tz > prev_z;
     let mat_top = if s.first || prev_z >= p.clearance_z {
-        p.top_z.min(prev_z)
+        p.entry_top().min(prev_z)
     } else if fresh {
-        p.top_z.max(prev_z)
+        p.entry_top().max(prev_z)
     } else {
         prev_z
     };
@@ -114,7 +117,7 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
         Entry3D::Ramp if a.ramp_zigs() => {
             // M11.3 B: zig-zag at the angle along the lead-in and the
             // ring - every point on a path the room law proved.
-            let zf = if a.ramp_to_depth { (p.top_z + a.plunge_height).min(prev_z) } else { from };
+            let zf = if a.ramp_to_depth { (p.entry_top() + a.plunge_height).min(prev_z) } else { from };
             if zig_onto(b, &path, leg, tz, zf, z, a.ramp_angle, a.ramp_max_len, fd) {
                 None
             } else {
@@ -132,7 +135,7 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
             // angle instead, and where they are too short the dive is
             // named and flown at the plunge feed - never a straight-down
             // feed at the cutting feed.
-            let zf = if a.ramp_to_depth { (p.top_z + a.plunge_height).min(prev_z) } else { from };
+            let zf = if a.ramp_to_depth { (p.entry_top() + a.plunge_height).min(prev_z) } else { from };
             let angle = if !s.first && p.links.transition == Some(Entry3D::Ramp) {
                 level_angle(p.links.ramp_angle)
             } else {

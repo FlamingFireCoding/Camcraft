@@ -448,7 +448,7 @@ fn trace_plate_with_hole_matches_golden() {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
-        material_top: None,
+        stock_top: None,
     };
     let t = trace(&plate_with_hole(), &p).unwrap();
     write_golden("trace_plate_with_hole.cl", &gen_to_cltext(&t));
@@ -1066,7 +1066,7 @@ fn trochoid_slot_small_matches_golden() {
         return_feed: 2000.0,
         plunge_feed: 200.0,
         climb: true,
-        material_top: None,
+        stock_top: None,
     };
     let t = camcraft_app::machining2d::trochoidal_slot(&[Point2::new(0.0, 0.0), Point2::new(12.0, 0.0)], &p).unwrap();
     assert!(t.has_arcs());

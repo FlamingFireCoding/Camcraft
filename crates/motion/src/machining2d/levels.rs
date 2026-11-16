@@ -84,14 +84,14 @@ pub fn cut_levels(top: f64, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenE
     cut_levels_under(top, None, bottom, stepdown)
 }
 
-/// [`cut_levels`] with the material's top stated (#2004): `material_top`
+/// [`cut_levels`] with the material's top stated (#2004): `stock_top`
 /// above `top` means the stock stands over Top Z, so Top Z cuts material
 /// and stays the first level (`top 10, material 13, step 5` gives `[10,
 /// 5, 0]` - each bite at most one stepdown under Top Z, the pre-#2004
 /// ladder byte for byte). `None`, or a material top at or under `top`,
 /// is [`cut_levels`]'s law: Top Z is the material top and never a level
 /// (`top 13, material 12, step 5` gives `[8, 3, 0]`).
-pub fn cut_levels_under(top: f64, material_top: Option<f64>, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenError> {
+pub fn cut_levels_under(top: f64, stock_top: Option<f64>, bottom: f64, stepdown: f64) -> Result<Vec<f64>, GenError> {
     let span = top - bottom;
     if span <= 0.0 {
         return Ok(vec![bottom]);
@@ -100,7 +100,7 @@ pub fn cut_levels_under(top: f64, material_top: Option<f64>, bottom: f64, stepdo
     let tol = span * 1e-9;
     let mut zs = Vec::new();
     // Material over Top Z: the plane at Top Z bites it, so it is cut.
-    let over = material_top.is_some_and(|m| m > top + tol.max(1e-9));
+    let over = stock_top.is_some_and(|m| m > top + tol.max(1e-9));
     // The same subtraction chain as before #2004 (one step on when Top Z
     // is the material top): every level below the first is the same
     // float it always was.

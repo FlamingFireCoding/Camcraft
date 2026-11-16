@@ -43,7 +43,7 @@ fn params() -> TrochoidParams {
         return_feed: 3000.0,
         plunge_feed: 300.0,
         climb: true,
-        material_top: None,
+        stock_top: None,
     }
 }
 
@@ -341,7 +341,7 @@ fn trochoid_slot_shape_mask_holds_shape_and_engagement() {
         retract_z: Some(2.0),
         top_z: 0.0,
         // No material above Top Z (#2004): the ladder is the one cut level -6.
-        material_top: None,
+        stock_top: None,
         bottom_z: -6.0,
         stepdown: 6.0,
         feed: 800.0,

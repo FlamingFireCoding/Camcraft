@@ -181,7 +181,7 @@ fn a_slot_and_a_trace_whose_stepdown_spans_the_depth_cut_one_level() {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
-        material_top: None,
+        stock_top: None,
     };
     one_level("trace", &trace(&square(0.0, 0.0, 30.0), &tp).expect("trace"));
 }
@@ -338,13 +338,13 @@ fn a_trace_under_stock_over_top_z_keeps_the_level_at_top_z() {
         feed: 500.0,
         plunge_feed: 100.0,
         climb: true,
-        material_top: Some(13.0),
+        stock_top: Some(13.0),
     };
     let reg = square(0.0, 0.0, 30.0);
     assert_eq!(cut_planes(&trace(&reg, &tp).expect("trace")), vec![10.0, 5.0, 0.0], "stock over Top Z");
-    let flush = TraceParams { material_top: Some(10.0), ..tp };
+    let flush = TraceParams { stock_top: Some(10.0), ..tp };
     assert_eq!(cut_planes(&trace(&reg, &flush).expect("trace")), vec![5.0, 0.0], "stock at Top Z");
-    let none = TraceParams { material_top: None, ..tp };
+    let none = TraceParams { stock_top: None, ..tp };
     assert_eq!(cut_planes(&trace(&reg, &none).expect("trace")), vec![5.0, 0.0], "no stock stated");
 }
 
@@ -371,7 +371,7 @@ fn a_trochoidal_slot_under_stock_over_top_z_keeps_the_level_at_top_z() {
         return_feed: 3000.0,
         plunge_feed: 300.0,
         climb: true,
-        material_top: Some(3.0),
+        stock_top: Some(3.0),
     };
     let chain = [Point2::new(0.0, 0.0), Point2::new(40.0, 0.0)];
     let levels = |p: &TrochoidParams| -> Vec<f64> {
@@ -379,6 +379,6 @@ fn a_trochoidal_slot_under_stock_over_top_z_keeps_the_level_at_top_z() {
         cut_planes(&t).into_iter().filter(|z| (z / 3.0 - (z / 3.0).round()).abs() < 1e-6).collect()
     };
     assert_eq!(levels(&tp), vec![0.0, -3.0, -6.0], "stock over Top Z");
-    assert_eq!(levels(&TrochoidParams { material_top: Some(0.0), ..tp }), vec![-3.0, -6.0], "stock at Top Z");
-    assert_eq!(levels(&TrochoidParams { material_top: None, ..tp }), vec![-3.0, -6.0], "no stock stated");
+    assert_eq!(levels(&TrochoidParams { stock_top: Some(0.0), ..tp }), vec![-3.0, -6.0], "stock at Top Z");
+    assert_eq!(levels(&TrochoidParams { stock_top: None, ..tp }), vec![-3.0, -6.0], "no stock stated");
 }

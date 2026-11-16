@@ -16,7 +16,7 @@ pub(super) fn trochoid_params(
     retract_z: Option<f64>,
     top_z: f64,
     bottom_z: f64,
-    material_top: Option<f64>,
+    stock_top: Option<f64>,
 ) -> Result<TrochoidParams, GenError> {
     let OpParams::TrochoidalSlot {
         width,
@@ -54,6 +54,6 @@ pub(super) fn trochoid_params(
         return_feed: *return_feed,
         plunge_feed: *plunge_feed,
         climb: *climb,
-        material_top,
+        stock_top,
     })
 }

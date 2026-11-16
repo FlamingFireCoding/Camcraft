@@ -182,6 +182,8 @@ pub fn approach_from_dto(d: Option<&ApproachDto>) -> Approach {
         exit_point: d.exit_point.map(|[x, y]| crate::geo2d::Point2::new(x, y)),
         center_cutting: true,
         // #2004: runtime only - the generation lays the stock top over it.
+        stock_top: None,
+        // #1559: runtime only - the generation lays the carried top over it.
         material_top: None,
     }
 }

@@ -207,3 +207,42 @@ shared law reaches each caller at once.
 **Cost to change later:** one function (`cut_levels`) and the turning face
 rung count. Posted G-code of each depth-stepping operation changes (one level
 fewer) - this is under the safety floor.
+
+## Merge with #1559 (PR #2129): two fields on `Approach`
+
+Taken unattended by the orchestrating session for the absent maintainer,
+at the merge-time refresh of PR #2013 (2026-11-16).
+
+**Chosen:** two separate fields on `camcraft_motion::approach::Approach`.
+
+- `material_top` keeps the #1559 meaning and readers exactly as `main`
+  has them: the carried stock over one region, set only where the plain
+  entry dives into it, read by `entry_top()`, `carries_stock()` and
+  `top_stock::carried_note`.
+- This PR's field is renamed `stock_top`: the top of the setup's stock in
+  the generator's frame, set for every operation in `generate.rs`, read
+  only by the level law `cut_levels_under` (and its callers in the
+  ladders, `TraceParams::stock_top`, `TrochoidParams::stock_top`,
+  `area.rs`). The entry never reads it.
+- `contour_bore.rs::bore_entry`: main's `p.entry_top()` on the first
+  engagement, and this PR's `fresh` arm (an unopened column starts over
+  the top of the cut). The `fresh` arm also reads `p.entry_top()`: where
+  #1559 carries stock, the unopened column has that stock over it, so the
+  descent starts over it. With no carried stock, `entry_top()` is the top
+  of the cut, so this PR's path is unchanged.
+- `generate.rs`: this PR's `lk.approach.stock_top = ...` line and main's
+  `carried_top!` / `carry_need!` macros, both kept.
+
+**Why:** one field with the two meanings sets a carried entry on every
+operation. #2129 avoids that on purpose (a finish that enters through a
+cleared bore keeps its path byte for byte).
+
+**Dropped:**
+
+- One field with the #1559 meaning, read also by the level law: the law
+  then sees the stock top only on carried operations. Where stock stands
+  over Top Z and no carry is set (a slot, a trace, a tilted frame), the
+  law reads no stock over Top Z and drops the level at Top Z. That level
+  cuts stock, so the change loses a cut, not only an air level.
+- One field with this PR's meaning: every operation gets the carried
+  entry.

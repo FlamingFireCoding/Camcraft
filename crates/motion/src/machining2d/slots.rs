@@ -157,7 +157,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         pass.push(e);
     }
 
-    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.material_top, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     let mut motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed);
     // `Plunge` passes no center and the ladder dives at the pass start
@@ -193,7 +193,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         None if p.links == Links::PLANAR => None,
         None => stadium_center(a, b, h),
     };
-    motion = motion.with_arc_radius(p.tool_diameter).with_links(p.links, p.helix_radius).with_top(p.top_z);
+    motion = motion.with_arc_radius(p.tool_diameter).with_links(p.links, p.helix_radius).with_top(p.links.approach.entry_top(p.top_z));
     let link_cert = match (&tess, &link_tess) {
         (Some(t), _) | (None, Some(t)) => Some(Cert::Stadium { a, b, h, tess: t }),
         (None, None) => None,
@@ -283,7 +283,7 @@ pub struct TraceParams {
     /// The stock top in this frame (#2004): stock over Top Z keeps a
     /// level at Top Z, so no first bite is deeper than one stepdown.
     /// `None` reads Top Z as the material top.
-    pub material_top: Option<f64>,
+    pub stock_top: Option<f64>,
 }
 
 impl TraceParams {
@@ -344,7 +344,7 @@ pub fn trace(region: &Region, p: &TraceParams) -> Result<Toolpath, GenError> {
         passes.push(pass);
     }
 
-    let zs = super::levels::cut_levels_under(p.top_z, p.material_top, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.stock_top, p.bottom_z, p.stepdown)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     // Trace engraves the region's own vertices - the point is to ride
     // the boundary as picked, so no arc fitter runs here.
