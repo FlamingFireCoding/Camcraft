@@ -32,6 +32,7 @@ pub struct PostDialogState {
     pub tab: PostDialogTab,
     pub setup_target: Option<String>,
     pub post: PostRef,
+    pub end_units_words: Option<(String, String)>,
     pub target_dir: String,
     pub file_name: String,
     pub program_number: String,
@@ -50,6 +51,7 @@ impl PostDialogState {
         // Options can follow the document while the active setup owns its post.
         // Keep the write target separate from the post whose schema is edited.
         let post = posting::post_of(&state.world);
+        let end_units_words = posting::end_units_words(&post).ok().flatten();
         let schema = posting::declared_options_for_post(&post).unwrap_or_default();
         let baseline =
             setup_post_options::script_for_post(&state.world, setup_target.as_deref(), &post);
@@ -64,6 +66,7 @@ impl PostDialogState {
             tab: PostDialogTab::Settings,
             setup_target,
             post,
+            end_units_words,
             target_dir: target
                 .dir
                 .map(|p| p.display().to_string())
