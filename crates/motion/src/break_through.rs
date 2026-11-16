@@ -9,11 +9,9 @@ use crate::geo2d::Point2;
 use crate::geometry::Point3;
 use crate::units::{self, Unit};
 
-use super::Z_TOL;
-
 /// The through holes' run and the deepest tip it takes them to.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Broke {
+pub struct Broke {
     /// How far past each through floor the tip runs, mm.
     pub run: f64,
     /// The deepest tip of any through hole: its centre and Z.
@@ -23,7 +21,7 @@ pub(super) struct Broke {
 /// The deepest through tip of `tips` (each through hole's centre and the
 /// Z its tip reaches), run `run` past its floor; `None` when no hole runs
 /// through (a blind list, or a Bottom stated by hand).
-pub(super) fn deepest(tips: impl IntoIterator<Item = (Point2, f64)>, run: f64) -> Option<Broke> {
+pub fn deepest(tips: impl IntoIterator<Item = (Point2, f64)>, run: f64) -> Option<Broke> {
     tips.into_iter()
         .filter(|(_, z)| z.is_finite())
         .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -33,6 +31,8 @@ pub(super) fn deepest(tips: impl IntoIterator<Item = (Point2, f64)>, run: f64) -
 /// The prefix of the note a break-through below the stock bottom carries.
 pub const BELOW_STOCK_NOTE: &str = "Break-through below stock:";
 
+/// `z_tol` is the caller's stock-bottom comparison tolerance, in mm.
+///
 /// The note every op with a through hole carries, and the warning when
 /// the tip leaves the stock's bottom with nothing modelled under it.
 /// `stock_bottom` is the stock's lowest Z (None: no stock, or a frame the
@@ -43,7 +43,7 @@ pub const BELOW_STOCK_NOTE: &str = "Break-through below stock:";
 /// modelled, what the stock sits on is unknown (a table, a spoil board,
 /// parallels): the program posts as it always has, and the note says the
 /// tip leaves the stock and by how much.
-pub(super) fn judge(mut path: Toolpath, broke: Option<Broke>, stock_bottom: Option<f64>, steel: bool, unit: Unit) -> Toolpath {
+pub fn judge(mut path: Toolpath, broke: Option<Broke>, stock_bottom: Option<f64>, steel: bool, unit: Unit, z_tol: f64) -> Toolpath {
     let Some(b) = broke else {
         return path;
     };
@@ -55,7 +55,7 @@ pub(super) fn judge(mut path: Toolpath, broke: Option<Broke>, stock_bottom: Opti
     ));
     if let Some(sb) = stock_bottom.filter(|z| z.is_finite())
         && !steel
-        && b.tip.z < sb - Z_TOL
+        && b.tip.z < sb - z_tol
     {
         path.notes.push(format!(
             "{BELOW_STOCK_NOTE} the through hole at ({}, {}) runs to Z{}, {} under the stock bottom Z{} - \
@@ -83,7 +83,7 @@ mod tests {
     fn the_deepest_tip_is_picked_and_said() {
         let b = deepest([(Point2::new(1.0, 2.0), -1.0), (Point2::new(3.0, 4.0), -2.5)], 1.0).expect("a through hole");
         assert_eq!(b.tip, Point3::new(3.0, 4.0, -2.5));
-        let p = judge(tp(), Some(b), None, false, Unit::Millimeters);
+        let p = judge(tp(), Some(b), None, false, Unit::Millimeters, 1e-6);
         assert!(p.notes.iter().any(|n| n.contains("run 1.000 mm past the part bottom") && n.contains("Z-2.500")), "{:?}", p.notes);
         assert!(deepest(Vec::<(Point2, f64)>::new(), 1.0).is_none());
     }
@@ -92,16 +92,16 @@ mod tests {
     fn below_an_unmodelled_stock_bottom_is_said_and_modelled_steel_is_left_to_its_laws() {
         let below = |p: &Toolpath| p.notes.iter().any(|n| n.starts_with(BELOW_STOCK_NOTE));
         let b = Some(Broke { run: 1.0, tip: Point3::new(0.0, 0.0, -1.0) });
-        let p = judge(tp(), b, Some(0.0), false, Unit::Millimeters);
+        let p = judge(tp(), b, Some(0.0), false, Unit::Millimeters, 1e-6);
         assert!(below(&p) && p.notes.iter().any(|n| n.contains("1.000 mm under the stock bottom Z0.000")), "{:?}", p.notes);
-        assert!(!below(&judge(tp(), b, Some(0.0), true, Unit::Millimeters)), "the fixture laws judge modelled steel");
-        assert!(!below(&judge(tp(), b, Some(-1.0), false, Unit::Millimeters)), "on the stock bottom exactly");
+        assert!(!below(&judge(tp(), b, Some(0.0), true, Unit::Millimeters, 1e-6)), "the fixture laws judge modelled steel");
+        assert!(!below(&judge(tp(), b, Some(-1.0), false, Unit::Millimeters, 1e-6)), "on the stock bottom exactly");
     }
 
     #[test]
     fn an_inch_document_reads_inches() {
         let b = Some(Broke { run: 0.508, tip: Point3::new(0.0, 0.0, 5.0) });
-        let p = judge(tp(), b, Some(0.0), false, Unit::Inches);
+        let p = judge(tp(), b, Some(0.0), false, Unit::Inches, 1e-6);
         assert!(p.notes.iter().any(|n| n.contains("0.02000 in")), "{:?}", p.notes);
     }
 }

@@ -2784,7 +2784,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // #1557: the break-through said, and named below an unmodelled stock bottom.
     let steel = !fixtures.is_empty() || !fixture_meshes.is_empty() || !workholding.0.is_empty() || !workholding.1.is_empty();
     let stock_bottom = if frame.is_none() { stock_aabb.map(|(lo, _)| lo.z) } else { None };
-    let path = super::break_through::judge(path, broke, stock_bottom, steel, unit);
+    let path = super::break_through::judge(path, broke, stock_bottom, steel, unit, Z_TOL);
     // #369: a turning steel with no lathe body says its holder went unjudged.
     let path = super::turning_holder::noted(path, &params, &tool, lathe_body.is_some());
     // #1037: ...and a bodied one names the fixtures its law cannot read.

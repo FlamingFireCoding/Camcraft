@@ -12,3 +12,11 @@
 - Keeping `PROJECT_VERSION` unchanged: dropped because `MachineDto` serializes `Machine` with serde defaults and older readers would silently drop `controller_rtcp: false` and infer `rtcp = true` from `A`'s tilt vector.
 
 **Cost to change.** Local to `crates/post/src/machine/trunnion.rs`, `post/machine_rotary.rs`, and `project/file.rs`.
+
+### PR #2162 review correction
+
+**Decided.** Move the value-only Break-through helper and its unit tests to `camcraft-motion`. App keeps the setup reads and passes the values and `Z_TOL` to the helper. App re-exports the helper. The existing dependency supplies the API; no dependency was added.
+
+**Considered and dropped.** Keeping the helper in app violates the domain ownership rule. The helper reads no document state.
+
+**Cost to change.** Local to the motion helper and the app generation call.

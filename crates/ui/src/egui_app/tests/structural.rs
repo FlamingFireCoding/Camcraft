@@ -17,6 +17,9 @@ use super::*;
 #[path = "tool_properties.rs"]
 mod tool_properties;
 
+#[path = "break_through.rs"]
+mod break_through;
+
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {
     fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Pos2)>) {
