@@ -125,6 +125,38 @@ MIT License (tracing)
 
 Copyright (c) 2019 Tokio Contributors
 
+## AI provider transport (crates/app/src/ai/http.rs, keychain.rs - #1945; native builds only)
+
+`ureq` (HTTP client) with `rustls`, `rustls-webpki`, `rustls-pki-types`,
+`ring` and `untrusted` (TLS), `webpki-roots` (the Mozilla CA roots), and
+`keyring` with `keyring-core` and its per-OS stores
+(`apple-native-keyring-store` and `security-framework`,
+`windows-native-keyring-store`, `zbus-secret-service-keyring-store` and
+`secret-service` with the RustCrypto `aes`, `cbc`, `hkdf`, `hmac`, `sha2`,
+`subtle` and `zeroize` crates) are crates.io dependencies. Licences, as each
+crate declares them: MIT OR Apache-2.0 (ureq, keyring, keyring-core and its
+stores, rustls-pki-types, security-framework, secret-service, the RustCrypto
+crates except subtle, zeroize); Apache-2.0 OR ISC OR MIT (rustls); ISC
+(rustls-webpki, untrusted); Apache-2.0 AND ISC (ring); BSD-3-Clause
+(subtle); CDLA-Permissive-2.0 (webpki-roots: the root certificate data,
+from Mozilla's CA programme). Retained as a licence condition, same posture
+as the egui notice; the CDLA-Permissive-2.0 text is at
+https://cdla.dev/permissive-2-0/.
+
+ISC License (ring, rustls-webpki, untrusted)
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 ## truck (STEP import and tessellation, crates/app/src/geometry/import/step.rs; reference kernel in crates/kernel's tests)
 
 `truck-stepio`, `truck-meshalgo`, `truck-modeling`, `truck-polymesh`,

@@ -4,6 +4,8 @@
 mod panel;
 mod state;
 mod transport;
+#[cfg(not(target_arch = "wasm32"))]
+mod transport_http;
 mod turn;
 mod worker;
 #[cfg(not(target_arch = "wasm32"))]
