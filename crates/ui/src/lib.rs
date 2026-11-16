@@ -41,6 +41,7 @@ pub mod headless_gpu;
 pub mod interact;
 pub mod locate_pick;
 pub mod move_drag;
+pub mod turn_drag;
 pub mod machined;
 mod setup_display;
 mod work_envelope;
@@ -97,6 +98,8 @@ mod pockets_tests;
 mod wcs_gizmo_tests;
 #[cfg(test)]
 mod move_drag_tests;
+#[cfg(test)]
+mod turn_drag_tests;
 #[cfg(test)]
 mod axis_note_tests;
 

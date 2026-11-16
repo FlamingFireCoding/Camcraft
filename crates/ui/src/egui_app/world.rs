@@ -192,6 +192,12 @@ fn world_verts_by(state: &State, entity: &flecs_ecs::prelude::Entity, by: [f64; 
     // #326: the part where the active setup holds it.
     let mut loc = camcraft_app::setup_align::view_pose(&state.world, entity).unwrap_or_default();
     loc.pos = Point3::new(loc.pos.x + by[0], loc.pos.y + by[1], loc.pos.z + by[2]);
+    // #2047: a ring drag's preview turns the shown pose about the centre.
+    if state.body_turn.is_some()
+        && let Some(turn) = model::name_of(&state.world, entity).and_then(|n| crate::turn_drag::preview_turn(state, &n))
+    {
+        loc = camcraft_app::setup_align::compose(turn, loc);
+    }
     let mut verts = Vec::with_capacity(tris.len() * 3);
     for t in tris.iter() {
         for p in [t.a, t.b, t.c] {

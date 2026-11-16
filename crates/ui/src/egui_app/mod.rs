@@ -223,6 +223,7 @@ pub mod theme_files;
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
 pub(crate) mod move_handles;
+pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
 
