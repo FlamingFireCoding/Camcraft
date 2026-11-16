@@ -999,7 +999,7 @@ fn every_field_lives_on_exactly_one_section() {
                     ],
                 ),
                 ("Passes", vec!["Stock to leave"]),
-                ("Lead in / Lead out", vec!["Lead in/out", "Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Lead out", "Before lead-in", "After lead-out", "Vertical lead-in height", "Overlap past the start", "Compensation", "Tab count", "Tab width", "Tab height"]),
+                ("Lead in / Lead out", vec!["Lead in/out", "Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Lead out", "Before lead-in", "After lead-out", "Vertical lead-in height", "Overlap past the start", "Start point", "Exit point", "Compensation", "Tab count", "Tab width", "Tab height"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
         ),
@@ -2838,7 +2838,7 @@ fn tips_match_the_imgui_table() {
         (Cmd::Tools, "Tool library"),
         (
             Cmd::Machine,
-            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting or Wire EDM (mounts the kind's built-in machine, undoable)",
+            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting, Wire EDM or Sinker EDM (mounts the kind's built-in machine, undoable)",
         ),
         (Cmd::Undo, undo.as_str()),
         (Cmd::Redo, redo.as_str()),

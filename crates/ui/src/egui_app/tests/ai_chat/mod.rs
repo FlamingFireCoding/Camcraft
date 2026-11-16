@@ -65,10 +65,10 @@ pub(super) fn select_provider(h: &mut Harness<'static, ShellUi>, preset_label: &
 pub(super) fn submit_prompt(h: &mut Harness<'static, ShellUi>, text: &str) {
     let input = h.get_by_role_and_label(Role::TextInput, "Prompt");
     input.click();
-    h.run();
+    h.run_steps(2);
     h.get_by_role_and_label(Role::TextInput, "Prompt")
         .type_text(text);
-    h.run();
+    h.run_steps(2);
     h.get_by_role_and_label(Role::Button, "Send").click();
     h.run_steps(2);
 }
@@ -81,7 +81,9 @@ pub(super) fn pump_until_idle(h: &mut Harness<'static, ShellUi>) {
             "AI chat worker timed out still running"
         );
         std::thread::sleep(Duration::from_millis(5));
-        h.run();
+        // One step, not `run()`: a scroll-area animation keeps asking for repaints
+        // and `run()` panics past max_steps (#2137).
+        h.step();
     }
     h.run_steps(2);
 }
@@ -94,7 +96,9 @@ pub(super) fn pump_until_confirm(h: &mut Harness<'static, ShellUi>) {
             "timed out waiting for inline Allow/Deny confirmation prompt"
         );
         std::thread::sleep(Duration::from_millis(5));
-        h.run();
+        // One step, not `run()`: a scroll-area animation keeps asking for repaints
+        // and `run()` panics past max_steps (#2137).
+        h.step();
     }
     h.run_steps(2);
 }
