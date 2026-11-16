@@ -113,6 +113,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod radial_step_field;
+mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
