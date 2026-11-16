@@ -104,6 +104,8 @@ mod work_envelope;
 mod camera_target;
 mod structural;
 mod ribbon_rows;
+mod theme_op_tabs_tree;
+mod theme_tree_hits;
 mod waterjet_recipe;
 mod catalog_filters;
 mod cycle_combo;

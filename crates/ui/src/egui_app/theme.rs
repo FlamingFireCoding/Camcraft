@@ -20,6 +20,7 @@ use egui::{Color32, CornerRadius, Margin, Stroke, Style, Visuals, vec2};
 
 use super::contrast;
 
+pub mod clamp;
 mod tables;
 
 /// One theme's whole truth: colours, then geometry.
@@ -89,36 +90,30 @@ pub struct Tokens {
     pub ribbon_caption_gap: f32,
     pub ribbon_caption_row_h: f32,
     pub ribbon_bottom_gap: f32,
-}
-
-/// The painted path's clamps: geometry a theme file supplies can make
-/// the shell ugly, never impossible - each value is clamped to the
-/// window it must live in at the draw site (M6.1 law: a 400-point
-/// radius cannot blow out a checkbox, a 0-height cell cannot eat the
-/// viewport).
-pub mod clamp {
-    /// Widget/cell corner radius.
-    pub const RADIUS: u8 = 12;
-    /// Item spacing and button padding (px per axis): a window, so a
-    /// file can space the shell out or in, never apart.
-    pub const SPACING: (f32, f32) = (0.0, 32.0);
-    /// Input-field height, browser row height (px).
-    pub const CONTROL_H: (f32, f32) = (12.0, 64.0);
-    /// Ribbon cell height/width (px).
-    pub const CELL: (f32, f32) = (24.0, 96.0);
-    /// Ribbon glyph edge (px).
-    pub const GLYPH: (f32, f32) = (8.0, 64.0);
-    /// Caption/row font sizes (px).
-    pub const FONT: (f32, f32) = (6.0, 32.0);
-    /// Ribbon tab row and caption row heights (px).
-    pub const RIBBON_ROW: (f32, f32) = (12.0, 48.0);
-    /// Ribbon gaps between rows (px).
-    pub const RIBBON_GAP: (f32, f32) = (0.0, 24.0);
-
-    #[must_use]
-    pub fn range(v: f32, lo_hi: (f32, f32)) -> f32 {
-        if v.is_finite() { v.clamp(lo_hi.0, lo_hi.1) } else { lo_hi.0 }
-    }
+    /// Minimum point size when shrinking an overflowing ribbon cell label.
+    pub font_label_min: f32,
+    /// Operation tab strip (#2066): row height, inner horizontal pad, inter-tab gap, bottom gap.
+    pub op_tab_h: f32,
+    pub op_tab_pad_x: f32,
+    pub op_tab_gap: f32,
+    pub op_tab_bottom_gap: f32,
+    /// Operation tab icon edge, icon-to-label gap, top corner radius and font size.
+    pub op_tab_icon_px: f32,
+    pub op_tab_icon_gap: f32,
+    pub op_tab_radius: u8,
+    pub font_op_tab: f32,
+    /// Browser tree & pane (#2066): glyph edge, root left inset, per-depth indent.
+    pub tree_glyph_px: f32,
+    pub tree_inset_x: f32,
+    pub tree_indent: f32,
+    /// Eye reserve width, header/row pad x/y, label-to-suffix gap, header font boost.
+    pub tree_eye_reserve: f32,
+    pub tree_pad_x: f32,
+    pub tree_pad_y: f32,
+    pub tree_suffix_gap: f32,
+    pub tree_header_boost: f32,
+    /// Active rule / row highlight / drop-target stroke thickness (px).
+    pub highlight_stroke_px: f32,
 }
 
 /// The ribbon strip's height: the tab row, its gap, the cell box, the
@@ -162,6 +157,11 @@ impl Tokens {
             font_row: _, font_row_suffix: _, ribbon_tab_h: _,
             ribbon_cell_top_gap: _, ribbon_caption_gap: _,
             ribbon_caption_row_h: _, ribbon_bottom_gap: _,
+            font_label_min: _, op_tab_h: _, op_tab_pad_x: _, op_tab_gap: _,
+            op_tab_bottom_gap: _, op_tab_icon_px: _, op_tab_icon_gap: _,
+            op_tab_radius: _, font_op_tab: _, tree_glyph_px: _, tree_inset_x: _,
+            tree_indent: _, tree_eye_reserve: _, tree_pad_x: _, tree_pad_y: _,
+            tree_suffix_gap: _, tree_header_boost: _, highlight_stroke_px: _,
         } = *self;
         let mut v = Visuals::dark();
         v.panel_fill = ink;
@@ -267,6 +267,11 @@ const fn geom_legal(t: &Tokens) -> bool {
         font_label, font_caption, font_row, font_row_suffix,
         ribbon_tab_h, ribbon_cell_top_gap, ribbon_caption_gap,
         ribbon_caption_row_h, ribbon_bottom_gap,
+        font_label_min, op_tab_h, op_tab_pad_x, op_tab_gap, op_tab_bottom_gap,
+        op_tab_icon_px, op_tab_icon_gap, op_tab_radius, font_op_tab,
+        tree_glyph_px, tree_inset_x, tree_indent, tree_eye_reserve,
+        tree_pad_x, tree_pad_y, tree_suffix_gap, tree_header_boost,
+        highlight_stroke_px,
     } = *t;
     radius_widget <= clamp::RADIUS
         && radius_window <= 24
@@ -303,6 +308,42 @@ const fn geom_legal(t: &Tokens) -> bool {
         && ribbon_caption_gap <= clamp::RIBBON_GAP.1
         && ribbon_bottom_gap >= clamp::RIBBON_GAP.0
         && ribbon_bottom_gap <= clamp::RIBBON_GAP.1
+        && font_label_min >= clamp::FONT.0
+        && font_label_min <= clamp::FONT.1
+        && font_label_min <= font_label
+        && op_tab_h >= clamp::CONTROL_H.0
+        && op_tab_h <= clamp::CONTROL_H.1
+        && op_tab_pad_x >= clamp::SPACING.0
+        && op_tab_pad_x <= clamp::SPACING.1
+        && op_tab_gap >= clamp::SPACING.0
+        && op_tab_gap <= clamp::SPACING.1
+        && op_tab_bottom_gap >= clamp::RIBBON_GAP.0
+        && op_tab_bottom_gap <= clamp::RIBBON_GAP.1
+        && op_tab_icon_px >= clamp::GLYPH.0
+        && op_tab_icon_px <= clamp::GLYPH.1
+        && op_tab_icon_gap >= clamp::SPACING.0
+        && op_tab_icon_gap <= clamp::SPACING.1
+        && op_tab_radius <= clamp::RADIUS
+        && font_op_tab >= clamp::FONT.0
+        && font_op_tab <= clamp::FONT.1
+        && tree_glyph_px >= clamp::GLYPH.0
+        && tree_glyph_px <= clamp::GLYPH.1
+        && tree_inset_x >= clamp::SPACING.0
+        && tree_inset_x <= clamp::SPACING.1
+        && tree_indent >= clamp::SPACING.0
+        && tree_indent <= clamp::SPACING.1
+        && tree_eye_reserve >= clamp::EYE_RESERVE.0
+        && tree_eye_reserve <= clamp::EYE_RESERVE.1
+        && tree_pad_x >= clamp::SPACING.0
+        && tree_pad_x <= clamp::SPACING.1
+        && tree_pad_y >= clamp::SPACING.0
+        && tree_pad_y <= clamp::SPACING.1
+        && tree_suffix_gap >= clamp::SPACING.0
+        && tree_suffix_gap <= clamp::SPACING.1
+        && tree_header_boost >= clamp::HEADER_BOOST.0
+        && tree_header_boost <= clamp::HEADER_BOOST.1
+        && highlight_stroke_px >= clamp::STROKE.0
+        && highlight_stroke_px <= clamp::STROKE.1
 }
 
 const _: () = assert!(geom_legal(&Tokens::DARK));
