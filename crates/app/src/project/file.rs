@@ -94,7 +94,8 @@ use super::*;
 /// v60 file posted - so a v60 file steps up unchanged. An old reader
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
-pub const PROJECT_VERSION: u32 = 61;
+/// v62 (#1453): old readers must not discard a tap's thread hand.
+pub const PROJECT_VERSION: u32 = 62;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -228,6 +229,13 @@ pub struct PostOptionsDto {
     /// (M0), additive (no version step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub between_setups: Option<String>,
+    /// Per-post declared script option overrides keyed by `post_key` (#258),
+    /// additive (no version step); absent leaves all script defaults intact.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub script: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    >,
 }
 
 /// The file mirror of the `PostRef` singleton (M3.3): exactly the two
@@ -329,6 +337,9 @@ pub struct ToolDto {
     /// only when set; absent is the inert 0.0 every other kind means.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    #[serde(default, skip_serializing_if = "camcraft_tools::thread_hand::ThreadHand::is_right")]
+    pub thread_hand: camcraft_tools::thread_hand::ThreadHand,
     /// M5.2 addition (v33): absent from any older file, serde-defaults
     /// to the inert 0.0 every mill kind already meant - the `tip_angle`
     /// / `pitch` law restated.
@@ -519,6 +530,7 @@ impl ToolDto {
             tip_angle: t.tip_angle,
             pitch: t.pitch,
             pitch_min: t.pitch_min,
+            thread_hand: t.thread_hand,
             nose_radius: t.nose_radius,
             width: t.width,
             flute_len: t.flute_len,
@@ -576,6 +588,7 @@ impl ToolDto {
             tip_angle: self.tip_angle,
             pitch: self.pitch,
             pitch_min: self.pitch_min,
+            thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,

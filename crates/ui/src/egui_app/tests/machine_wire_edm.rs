@@ -197,3 +197,27 @@ fn the_mill_machine_editor_names_every_input() {
     assert!(seen >= 20, "only {seen} inputs found in mill machine editor");
     assert!(bad.is_empty(), "unnamed inputs in mill machine editor: {bad:?}");
 }
+
+/// #1499: the wire section states the tank and the flushing, each "not
+/// stated" until chosen; a choice lands in the editor's draft (Apply
+/// mounts it as one undoable `EditMachineApply`, as every key above).
+#[test]
+fn the_wire_machine_editor_states_tank_and_flushing() {
+    let mut m = wire_machine();
+    if let Some(e) = m.edm.as_mut() {
+        e.tank = Some(camcraft_app::machine::Tank::Submerged);
+    }
+    let mut h = editor_harness(m, "wire-test.mch");
+    let combo = |h: &Harness<'static, crate::state::State>, label: &str| {
+        h.get_by(|n| n.role() == Role::ComboBox && n.label().as_deref() == Some(label)).value()
+    };
+    assert_eq!(combo(&h, "Tank").as_deref(), Some("submerged"));
+    assert_eq!(combo(&h, "Flushing").as_deref(), Some("not stated"));
+    h.get_by(|n| n.role() == Role::ComboBox && n.label().as_deref() == Some("Flushing")).click();
+    h.run_steps(3);
+    h.get_by_label("high").click();
+    h.run_steps(3);
+    let draft = h.state().machine_editor.as_ref().and_then(|ed| ed.machine.edm.clone()).expect("the draft states edm");
+    assert_eq!(draft.flushing, Some(camcraft_app::machine::Flushing::High));
+    assert_eq!(draft.tank, Some(camcraft_app::machine::Tank::Submerged), "the other choice is untouched");
+}
