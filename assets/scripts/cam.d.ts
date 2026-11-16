@@ -49,6 +49,8 @@ interface PostOptions {
   cps?: string;
   /** Also return the program text in the result. */
   program?: boolean;
+  /** Per-post declared option overrides for this run. */
+  options?: Record<string, boolean | number | string>;
 }
 
 interface PostResult {
@@ -56,9 +58,11 @@ interface PostResult {
   ops: number;
   lines: number;
   program?: string;
-  /** Setups on different machines or posts: every file written, one per mount. */
+  /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];
   mounts?: PostedMountInfo[];
+  /** One file per operation (`per_op` enabled): per-operation summaries when multiple files are written. */
+  operations?: PostedOpInfo[];
 }
 
 interface PostedMountInfo {
@@ -67,6 +71,13 @@ interface PostedMountInfo {
   machine: string;
   post: string;
   ops: number;
+  lines: number;
+  program?: string;
+}
+
+interface PostedOpInfo {
+  path: string;
+  operation: string;
   lines: number;
   program?: string;
 }

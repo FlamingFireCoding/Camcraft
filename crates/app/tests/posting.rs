@@ -74,6 +74,7 @@ fn contour_params() -> OpParams {
 
 fn drill_params(hole: camcraft_app::drilling::Hole, top_z: f64, clearance_z: f64) -> OpParams {
     OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(clearance_z),
         retract_z: None,
         top_z: Height::fixed(top_z),
