@@ -588,6 +588,18 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
     for dto in &file.entities {
         validate_kind(dto, dto.kind.unwrap_or(EntityKind::Model))?;
     }
+    for dto in &mut file.entities {
+        if let Some(op) = &mut dto.operation
+            && op.tool.is_empty()
+            && matches!(op.params.to_params(), OpParams::WireContour(_))
+        {
+            // Never trust a pre-tool generation stamp or cached path. Keep the
+            // machine's condition (including its wire diameter) unchanged.
+            op.stamp = None;
+            op.cache = None;
+            notes.push(format!("operation '{}': legacy Wire Contour has no wire tool; assign a wire tool before generating or posting", dto.name));
+        }
+    }
     super::setup_links::check(&file)?;
     let keys: std::collections::HashSet<&str> = file.entities.iter()
         .filter(|e| e.kind == Some(EntityKind::Operation))

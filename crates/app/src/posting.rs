@@ -313,8 +313,8 @@ pub fn document_post_of(world: &World) -> PostRef {
 /// one answer the post and the machine's spindle-range check both read.
 #[must_use]
 pub fn posted_rpm(tool: &crate::tools::Tool) -> f64 {
-    // A torch states rpm 0 by law (#670): no spindle word, like a probe.
-    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) { 0.0 } else { tool.rpm }
+    // A torch or wire states rpm 0 by law (#670, #2011): no spindle word, like a probe.
+    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) { 0.0 } else { tool.rpm }
 }
 
 /// Write the singleton. For the `SelectPost` command and the project
