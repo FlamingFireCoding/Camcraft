@@ -1,0 +1,22 @@
+## #1968 - Clean-room Mach4 milling postprocessor (mach4.cps)
+
+**What was decided.**
+- Added `assets/posts/mach4.cps`, registered `"Mach4"` in `crates/app/src/posting.rs` (`BUILTINS`), and added Mach4 conformance entries and `.nc` goldens in `crates/app/tests/conformance.rs`.
+- 3-axis programs use standard Mach4 Mill `G94` modal blocks (`G21`/`G20`, `G90 G94 G91.1 G40 G49 G17 G64`), `T.. M6` / `G43 H..`, `G54..G59` and `G54.1 P1..P248`, `G17`/`G18`/`G19` arcs, `G41`/`G42`/`G40` cutter compensation, `G73/G81/G82/G83/G84/G85/G86/G89` canned cycles with dwell `P` in seconds, and `G31` Macro B probing.
+- 3+2 indexed AC trunnion sections (using `#1962`'s schema: `A` parent of `C`, `pivot`, `offset`, `zeroOffset`, `rollover`, `signConvention`, `controller.rtcp = false`) retract safely to home/clearance Z, optionally unclamp/clamp on separate blocks, position `G00 A.. C..`, and emit transformed `G94` XYZ coordinates and re-mapped cardinal arcs (`G17/G18/G19`) without `G43.4`.
+- Refuses tilted moves by name when `controller.rtcp = true` (since Mach4 lacks `G43.4`), when required AC trunnion geometry/limits/orientation are invalid or unreachable, and refuses simultaneous 4/5-axis moves within a section by name containing `"needs #1966: inverse-time feed"`.
+- Places G54 work datum at the C platter center at kinematic home (`work_datum = a_pivot + c_offset`, `wcs_offset = [0, 0, 0]`) so 3-axis G54 matches `A=0, C=0` while compensating `C.offset` during A tilts identically to `camcraft_post::kinematics::forward_part`.
+- Defaults `safeRetract` to `"G28"` while supporting `"G53"` (requiring `safeRetractZ` on named machines) and `"G30"`, and enforces `rollover_360` `[0, 360)` rewrap only after safe Z retract.
+- Stacked on PR `#2162` (`base-2162`, branch of PR target `--base main`) because `#1962`'s trunnion `.mch` schema lives in `#2162` and has not merged to `upstream/main` yet.
+
+**Why.**
+Mach4 Mill controllers do not support Fanuc `G43.4` RTCP, and #1966 (`G93` inverse-time feed) has not landed yet. Computing exact AC trunnion inverse kinematics and part-to-machine datum transformation in G94 makes both 3-axis and 3+2 indexed milling safe immediately while keeping simultaneous 5-axis gated cleanly until `#1966`. Putting the work datum at platter center preserves G54 continuity between 3-axis and 3+2 operations.
+
+**What was considered and dropped.**
+- Emitting simultaneous 4/5-axis feeds with `G94` or heuristic `G93` before `#1966` lands: dropped as unsafe feedrate math; refused explicitly instead.
+- Defaulting `safeRetract` to `"G53"`: dropped because custom trunnion configs that omit `safe_retract` would fail unconditionally unless `safeRetract = "G28"` or explicit `safe_retract` is chosen; `"G53"` remains explicitly selectable and enforces `safeRetractZ`.
+- Silently assuming `[0, 0, 0]` when `A.pivot` or `C.offset` is omitted from `.mch`: dropped so incomplete machine definitions are refused by name rather than crashing into trunnion arms.
+- Leaving oblique 3+2 arcs as `G17` IJK: dropped; only cardinally aligned machine planes (`G17/G18/G19`) emit arcs (with CW/CCW sign flip if normal points along `-axis`) and oblique arcs are refused cleanly.
+
+**Cost to change later.**
+When `#1966` introduces `G93` inverse-time feed support, `preparePose` and `onLinear` in `assets/posts/mach4.cps` can branch on `G93` for simultaneous multi-axis feeds while leaving 3-axis and 3+2 `G94` paths untouched. If arbitrary non-platter work datums are later streamed explicitly, subtracting `workDatum - (aPivot + cOffset)` in `transformPt` is a one-line adjustment.

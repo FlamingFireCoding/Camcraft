@@ -43,6 +43,7 @@ pub const BUILTINS: &[(&str, &str)] = &[
     ("TinyG", include_str!("../../../assets/posts/tinyg.cps")),
     ("Doosan DNM", include_str!("../../../assets/posts/doosan-dnm.cps")),
     ("Makera Carvera", include_str!("../../../assets/posts/carvera.cps")),
+    ("Mach4", include_str!("../../../assets/posts/mach4.cps")),
     ("Fanuc Lathe", include_str!("../../../assets/posts/fanuc-lathe.cps")),
     ("Tormach PathPilot Lathe", include_str!("../../../assets/posts/tormach-lathe.cps")),
     // #671: the plasma dialect, from UM10720 §6-7 and the PathPilot
