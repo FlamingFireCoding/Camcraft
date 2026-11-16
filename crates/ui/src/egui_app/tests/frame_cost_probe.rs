@@ -195,30 +195,7 @@ fn still_frames_on_fig8_name_their_costs() {
 
     // (c) 2D Adaptive, Containment Outside, one welded face: the
     // Boundary group open and its filled area preview shown (#2246).
-    let patch = biggest_patch(&h.state().state);
-    create(&mut h, ADAPTIVE, OpType::Adaptive2D, vec![patch]);
-    run(&mut h, |st| {
-        let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
-        let area = AreaControls { containment: Some(Containment::Outside), ..AreaControls::default() };
-        st.pending.push_back(CommandKind::EditOperationBoundary { name: ADAPTIVE.into(), params: op.params, area });
-    });
-    open(&mut h, UiTarget::Operation(ADAPTIVE.into()));
-    if !h.state().state.boundary_view.shown {
-        // The group remembers that (b) left it closed: open it as a user does.
-        // The header's arrow sits left of its title.
-        let r = h.get_by_label("Boundary").rect();
-        let p = egui::pos2(r.left() - 10.0, r.center().y);
-        h.input_mut().events.push(egui::Event::PointerMoved(p));
-        h.run_steps(1);
-        for pressed in [true, false] {
-            let m = egui::Modifiers::NONE;
-            h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: m });
-            h.run_steps(1);
-        }
-        h.run_steps(2);
-    }
-    assert!(h.state().state.boundary_view.shown, "the Boundary group is open: {}", h.state().state.status);
-    assert!(crate::boundary_viz::preview_fill(&h.state().state).is_some(), "the area preview is filled");
+    adaptive_preview(&mut h);
     let c = still(&mut h);
     report("c adaptive outside preview", &c);
 
@@ -250,4 +227,80 @@ fn still_frames_on_fig8_name_their_costs() {
     // the UI pass, its fill in the scene.
     assert_eq!(calls(&c, "ui/properties.boundary.preview"), N);
     assert_eq!(calls(&a, "ui/properties.boundary.preview"), 0);
+    // #2246: the fill draws every frame, but its triangles were made with
+    // the preview - a still frame triangulates nothing.
+    assert_eq!(calls(&c, "scene/parts.boundary_preview"), N);
+    assert_eq!(calls(&c, "ui/properties.boundary.preview.triangulate"), 0, "c: no preview triangulation");
+}
+
+/// The 2D Adaptive operation of state (c), open with its Boundary group
+/// and its filled area preview.
+fn adaptive_preview(h: &mut Harness<'static, ShellUi>) {
+    let patch = biggest_patch(&h.state().state);
+    create(h, ADAPTIVE, OpType::Adaptive2D, vec![patch]);
+    run(h, |st| {
+        let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
+        let area = AreaControls { containment: Some(Containment::Outside), ..AreaControls::default() };
+        st.pending.push_back(CommandKind::EditOperationBoundary { name: ADAPTIVE.into(), params: op.params, area });
+    });
+    open(h, UiTarget::Operation(ADAPTIVE.into()));
+    if !h.state().state.boundary_view.shown {
+        // The group remembers that (b) left it closed: open it as a user does.
+        // The header's arrow sits left of its title.
+        let r = h.get_by_label("Boundary").rect();
+        let p = egui::pos2(r.left() - 10.0, r.center().y);
+        h.input_mut().events.push(egui::Event::PointerMoved(p));
+        h.run_steps(1);
+        for pressed in [true, false] {
+            let m = egui::Modifiers::NONE;
+            h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: m });
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+    }
+    assert!(h.state().state.boundary_view.shown, "the Boundary group is open: {}", h.state().state.status);
+    assert!(crate::boundary_viz::preview_fill(&h.state().state).is_some(), "the area preview is filled");
+}
+
+fn fill(h: &Harness<'static, ShellUi>) -> crate::boundary_viz::Fill {
+    let p = h.state().state.boundary_view.preview.as_ref().expect("a preview");
+    p.fill.clone().expect("a filled preview")
+}
+
+/// #2246: the preview's triangles are made when the draft or the document
+/// moves, and only then - the key is the draft plus the document version.
+#[test]
+fn area_preview_fill_is_made_once_per_draft() {
+    let mut h = fig8();
+    adaptive_preview(&mut h);
+    let outside = fill(&h);
+    h.run_steps(3);
+    assert!(std::sync::Arc::ptr_eq(&outside, &fill(&h)), "still frames keep the same triangles");
+
+    // A draft edit (not yet applied) makes new triangles.
+    let set = |h: &mut Harness<'static, ShellUi>, c: Containment| {
+        h.state_mut().state.op_ui.area.containment = Some(c);
+        h.run_steps(2);
+    };
+    set(&mut h, Containment::Inside);
+    let inside = fill(&h);
+    assert_ne!(&*inside, &*outside, "Inside fills another area than Outside");
+    set(&mut h, Containment::Outside);
+    let back = fill(&h);
+    assert!(!std::sync::Arc::ptr_eq(&back, &outside), "the draft moved, so the fill was made again");
+    assert_eq!(&*back, &*outside, "the same draft gives the same triangles");
+
+    // A committed change and its undo move the document: the fill follows.
+    run(&mut h, |st| {
+        let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
+        let area = AreaControls { containment: Some(Containment::Inside), ..AreaControls::default() };
+        st.pending.push_back(CommandKind::EditOperationBoundary { name: ADAPTIVE.into(), params: op.params, area });
+    });
+    set(&mut h, Containment::Inside);
+    assert_eq!(&*fill(&h), &*inside, "the applied Inside fills the Inside area");
+    run(&mut h, |st| st.pending.push_back(CommandKind::Undo));
+    set(&mut h, Containment::Outside);
+    let undone = fill(&h);
+    assert!(!std::sync::Arc::ptr_eq(&undone, &back), "the undo moved the document, so the fill was made again");
+    assert_eq!(&*undone, &*outside, "after the undo the Outside area fills again");
 }

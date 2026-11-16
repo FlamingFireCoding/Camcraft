@@ -298,10 +298,8 @@ fn collect_parts(state: &State) -> Vec<GpuPart> {
     // The Boundary group's preview of the area the draft machines (M11.5
     // UX), filled like the committed region while the group is open.
     let _preview = crate::frame_cost::span("scene/parts.boundary_preview");
-    if let Some((z, region)) = crate::boundary_viz::preview_fill(state)
-        && let Ok(tris) = crate::frame_cost::time("scene/parts.boundary_preview.triangulate", || region.triangles())
-        && !tris.is_empty()
-    {
+    // #2246: the triangles were made with the preview; a frame reads them.
+    if let Some((z, tris)) = crate::boundary_viz::preview_fill(state) {
         let verts = tris.iter().flat_map(|t| t.iter().map(|p| [ftoz(p.x), ftoz(p.y), ftoz(z)])).collect();
         parts.push(GpuPart { verts, selected: false, stock: false, fill: true, classes: Vec::new() });
     }
