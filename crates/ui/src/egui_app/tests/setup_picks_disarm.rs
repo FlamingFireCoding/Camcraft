@@ -211,6 +211,7 @@ fn view_door_toggle(harness: &mut Harness<'static, ShellUi>, panel: crate::state
         crate::state::Panel::Browser => "Browser",
         crate::state::Panel::Properties => "Properties",
         crate::state::Panel::Machines => "Machines",
+        crate::state::Panel::AiChat => "AI Chat",
     };
     harness.get_by_role_and_label(egui::accesskit::Role::Button, "Panels").click();
     harness.run_steps(2);

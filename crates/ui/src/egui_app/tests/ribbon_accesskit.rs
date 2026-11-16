@@ -77,6 +77,7 @@ fn view_dropdown_rows_expose_menu_items() {
     assert_eq!(browser.accesskit_node().toggled(), Some(Toggled::True));
     h.get_by_role_and_label(Role::MenuItem, "Properties");
     h.get_by_role_and_label(Role::MenuItem, "Machines");
+    h.get_by_role_and_label(Role::MenuItem, "AI Chat");
     h.get_by_role_and_label(Role::MenuItem, "Reset layout");
 }
 
