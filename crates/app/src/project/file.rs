@@ -494,6 +494,8 @@ pub enum ToolKindDto {
     /// `pitch`.
     ThreadMill,
     ThreadMillSingle,
+    /// Wire EDM wire (#2011): additive in the same way.
+    Wire,
 }
 
 impl ToolDto {
@@ -517,6 +519,7 @@ impl ToolDto {
                 ToolKind::Electrode => ToolKindDto::Electrode,
                 ToolKind::ThreadMill => ToolKindDto::ThreadMill,
                 ToolKind::ThreadMillSingle => ToolKindDto::ThreadMillSingle,
+                ToolKind::Wire => ToolKindDto::Wire,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -575,6 +578,7 @@ impl ToolDto {
                 ToolKindDto::Electrode => ToolKind::Electrode,
                 ToolKindDto::ThreadMill => ToolKind::ThreadMill,
                 ToolKindDto::ThreadMillSingle => ToolKind::ThreadMillSingle,
+                ToolKindDto::Wire => ToolKind::Wire,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,

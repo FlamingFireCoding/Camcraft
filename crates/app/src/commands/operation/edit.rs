@@ -125,9 +125,9 @@ impl EditOperationParams {
         if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
-        // #532: an edited wire cut still names a condition the machine
-        // states, with its wire and gap.
-        wire_gate(world, prev.setup.as_deref(), &params)?;
+        // #532 / #2011: an edited wire cut still agrees with its wire tool
+        // and states a condition with spark gap < wire radius.
+        wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         let area = area.unwrap_or_else(|| prev.area.clone());
         if !area.is_sane_for(&params) {
             return Err(CommandError::Invalid(match operation::area_unsupported(params.kind()) {
@@ -205,7 +205,6 @@ impl ChangeOperationKind {
         infeed_plan_gate(world, &params, &prev.tool)?;
         sinker_gate(world, prev.setup.as_deref(), &params)?;
         tool_door(world, &params, &prev.tool)?;
-        wire_gate(world, prev.setup.as_deref(), &params)?;
         if !params.is_sane() {
             return Err(CommandError::Invalid(format!(
                 "operation parameters are not usable for a {} operation",
@@ -219,6 +218,7 @@ impl ChangeOperationKind {
         // The retype is a creation of the new kind against the op's
         // current tool: the same tool-law door (M10.1 B).
         tool_gate(world, &params, &prev.tool)?;
+        wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         area_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         // The area controls ride the retype when the new kind has an
         // area (M11.5); a kind without one keeps the identity, never
@@ -287,6 +287,7 @@ impl EditOperationLinks {
                 }
             }
             next.tool = tool.to_string();
+            wire_gate(world, prev.setup.as_deref(), tool, &next.params)?;
         }
         if let Some(src) = src {
             valid_src(world, prev.setup.as_deref(), &src)?;
