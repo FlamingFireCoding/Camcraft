@@ -28,6 +28,9 @@
 use super::boundary_turn::sides_of_chain;
 use super::*;
 
+#[path = "open_slot.rs"]
+mod open_slot;
+
 /// Past this angle between the two walls' chords they are not "facing
 /// each other": the band would be a wedge, and which wedge is a guess.
 pub(super) const FACING_MAX_DEG: f64 = 45.0;
@@ -37,8 +40,8 @@ const LEVEL_TOL: f64 = 1e-3;
 /// Area, mm², under which a band is nothing.
 const AREA_MIN: f64 = 1e-4;
 
-/// The two walls of a band, each a run of points in world XY.
-type Walls = (Vec<Point2>, Vec<Point2>);
+/// A band's two walls, or a blind slot's single U-shaped wall, in XY.
+type Walls = (Vec<Point2>, Option<Vec<Point2>>);
 
 fn refuse(msg: String) -> GenError {
     GenError::Invalid(msg)
@@ -81,7 +84,7 @@ fn walls(
         return Ok(None);
     }
     let runs: Vec<Run> = gather_runs(world, setup, items, None).into_iter().filter(|r| !run_used(r, stitched)).collect();
-    if runs.len() < 2 {
+    if runs.is_empty() || (runs.len() == 1 && runs[0].pts.len() < 3) {
         return Ok(None);
     }
     let kind = params.kind().info().label;
@@ -125,10 +128,8 @@ fn walls(
     }
     let mut welded = weld(runs.into_iter().map(|r| r.pts).collect())?;
     match (welded.pop(), welded.pop(), welded.len()) {
-        (Some(b), Some(a), 0) => Ok(Some((a, b))),
-        (Some(_), None, _) => Err(refuse(format!(
-            "the picked open edges join into one run - a {kind} cannot end mid-edge; pick two separate edges that face each other, or close the chain"
-        ))),
+        (Some(b), Some(a), 0) => Ok(Some((a, Some(b)))),
+        (Some(a), None, _) => Ok(Some((a, None))),
         (_, _, more) => Err(refuse(format!(
             "the picked open edges spell {} separate runs - an open-edge band has exactly two walls; pick two edges that face each other",
             more + 2
@@ -330,10 +331,13 @@ pub(super) fn band(a: &[Point2], b: &[Point2], stock: &Region, extend: f64) -> R
 fn band_of(world: &World, setup: Option<&str>, w: &Walls, extend: f64) -> Result<Region, GenError> {
     let Some(stock) = stock_outline(world, setup) else {
         return Err(refuse(
-            "two open edges are closed by the stock outline, and this setup has no stock - set up stock, or close the pick into a chain".into(),
+            "open slot edges are closed by the stock outline, and this setup has no stock - set up stock, or close the pick into a chain".into(),
         ));
     };
-    band(&w.0, &w.1, &stock, extend)
+    match &w.1 {
+        Some(b) => band(&w.0, b, &stock, extend),
+        None => open_slot::region(&w.0, &stock, extend),
+    }
 }
 
 /// The selection walk's door: when `items` spell a band, its loops go
@@ -355,7 +359,12 @@ pub(super) fn of_selection(
     };
     loops.extend(band_of(world, setup, &w, 0.0)?.loops().iter().cloned());
     if let Some(n) = notes {
-        n.push("2 open edges closed by the stock outline into a band".into());
+        let note = if w.1.is_some() {
+            "2 open edges closed by the stock outline into a band"
+        } else {
+            "1 U-shaped open run closed by the stock outline into a blind slot"
+        };
+        n.push(note.into());
     }
     Ok(true)
 }

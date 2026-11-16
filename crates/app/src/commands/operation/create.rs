@@ -114,8 +114,8 @@ impl CreateOperation {
             return Err(CommandError::Invalid(msg));
         }
         family_gate(world, setup.as_deref(), &params)?;
-        wire_gate(world, setup.as_deref(), &params)?;
         tool_gate(world, &params, tool)?;
+        wire_gate(world, setup.as_deref(), tool, &params)?;
         area_gate(world, setup.as_deref(), &src, &params)?;
         let (reordered, order) = append_position(world, setup.as_deref())?;
         // #869: a new op starts on its machine's default coolant - Air on
@@ -195,8 +195,8 @@ impl PasteOperation {
             return Err(CommandError::Invalid(msg));
         }
         family_gate(world, context, &operation.params)?;
-        wire_gate(world, context, &operation.params)?;
         tool_gate(world, &operation.params, &operation.tool)?;
+        wire_gate(world, context, &operation.tool, &operation.params)?;
         area_gate(world, context, &operation.src, &operation.params)?;
         operation.stamp = None;
 

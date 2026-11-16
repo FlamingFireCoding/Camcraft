@@ -736,6 +736,16 @@ fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_moves_nothing() {
     assert_eq!(status(&world, "Contour1"), OpStatus::Ok, "and exact");
 }
 
+/// The slot fixture's notes: its Top (Z 0) and its clearance plane (Z 5)
+/// both stand inside the 20 mm block, so the two independent height
+/// warnings (#104, #2121) ride the path - and nothing else.
+fn height_notes_only(notes: &[String]) -> bool {
+    use camcraft_app::operation::{CLEARANCE_STOCK_WARNING, TOP_STOCK_WARNING};
+    notes.len() == 2
+        && notes.iter().filter(|n| n.starts_with(TOP_STOCK_WARNING)).count() == 1
+        && notes.iter().filter(|n| n.starts_with(CLEARANCE_STOCK_WARNING)).count() == 1
+}
+
 #[test]
 fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     // The M8.2 C digest law on the slot's own stamp: flipping the entry
@@ -763,7 +773,7 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     );
     assert_eq!(status(&world, "Slot1"), OpStatus::Ok);
     let before = cache(&world, "Slot1").expect("cached").path;
-    assert!(before.notes.len() == 1 && before.notes.iter().all(|n| n.starts_with(camcraft_app::operation::TOP_STOCK_WARNING)), "no entry fallback, only the independent Top/stock warning: {:?}", before.notes);
+    assert!(height_notes_only(&before.notes), "no entry fallback, only the independent height warnings: {:?}", before.notes);
     assert_eq!(
         before.moves.iter().filter(|m| m.arc.is_some()).count(),
         0,
@@ -800,7 +810,7 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
         after.moves.iter().any(|m| m.arc.is_some()),
         "a channel this wide certifies the orbit - it must land"
     );
-    assert!(after.notes.len() == 1 && after.notes.iter().all(|n| n.starts_with(camcraft_app::operation::TOP_STOCK_WARNING)), "a certified orbit adds no entry note; only the Top/stock warning remains: {:?}", after.notes);
+    assert!(height_notes_only(&after.notes), "a certified orbit adds no entry note; only the height warnings remain: {:?}", after.notes);
     assert_ne!(
         before.moves, after.moves,
         "the entry edit changed the path, not just the stamp"
@@ -1401,8 +1411,12 @@ fn threaded_batch_matches_the_serial_loop_bit_for_bit() {
         let world = new_world();
         let mut history = History::default();
         // Box stock: what every Entity-source op reads at collect
-        // time as the swarf column around the smaller model.
-        box_stock(&world, &mut history, 60.0, 60.0, 20.0);
+        // time as the swarf column around the smaller model. It stands
+        // to the cube's top, Z 5 (#96, #1924): the pocket starts at 5,
+        // and the old 20 mm block left uncut stock from Z 5 to 20, where
+        // the ball's Ø8 shank (15 mm above the tip) would sit at Bottom
+        // Z 0 - #1844's reach law rightly refuses that.
+        box_stock(&world, &mut history, 60.0, 60.0, 5.0);
         add_tool(&world, &mut history, "EM-0400-2FL");
         add_tool(&world, &mut history, "BN-0600");
         history.execute(
@@ -1981,7 +1995,7 @@ fn pocket_refuses_an_open_run() {
     let op = Operation {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
-        params: OpParams::Pocket {
+        params: OpParams::Pocket { rest: None,
             blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,
@@ -3802,6 +3816,7 @@ fn drilled_block() -> camcraft_app::geometry::Mesh {
 
 fn drill_params(holes: Vec<Hole>, top_z: f64, clearance_z: f64) -> OpParams {
     OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(clearance_z),
         retract_z: None,
         top_z: Height::fixed(top_z),
@@ -6354,13 +6369,18 @@ fn multiaxis_rough_pocket_twin() -> OpParams {
 /// first (or read Stale against its sibling's path). This law is about
 /// the stock, not a sequence: each kind must see the whole stock.
 fn ladder_job(tag: &str, stamped: bool) -> (World, History, camcraft_app::cl::Toolpath) {
+    ladder_job_on(tag, stamped, 40.0)
+}
+
+/// [`ladder_job`] on a square stock `side` mm across (#1774).
+fn ladder_job_on(tag: &str, stamped: bool, side: f64) -> (World, History, camcraft_app::cl::Toolpath) {
     let world = new_world();
     let mut history = History::default();
     let cmd = SetStock::new(
         &world,
         StockShape::Box {
-            dx: 40.0,
-            dy: 40.0,
+            dx: side,
+            dy: side,
             dz: 20.0,
         },
         Location {
@@ -6396,6 +6416,22 @@ fn ladder_job(tag: &str, stamped: bool) -> (World, History, camcraft_app::cl::To
     );
     let path = cache(&world, tag).expect("cached ladder").path;
     (world, history, path)
+}
+
+/// #1774: a stock reaching 15 mm past the slab is cleared by both kinds
+/// out to its outline - Multi-Axis Rough reads the 3D Pocket's footprint,
+/// so the far stock grows both ladders alike.
+#[test]
+fn multiaxis_rough_clears_the_far_stock_the_pocket_clears() {
+    let (_pw, _ph, near) = ladder_job_on("P3N", false, 40.0);
+    let (_fw, _fh, plain) = ladder_job_on("P3F", false, 70.0);
+    let (_rw, _rh, rough) = ladder_job_on("MARF", true, 70.0);
+    assert!(plain.moves.len() > near.moves.len(), "the far stock adds cuts: {} vs {}", plain.moves.len(), near.moves.len());
+    assert_eq!(plain.moves.len(), rough.moves.len(), "one ladder, two readings, on the far stock too");
+    let reach = |t: &camcraft_app::cl::Toolpath| {
+        t.moves.iter().filter(|m| m.kind == MoveKind::Feed).map(|m| m.to.x.abs().max(m.to.y.abs())).fold(0.0, f64::max)
+    };
+    assert!(reach(&rough) > 31.0, "Multi-Axis Rough reaches the far stock: {}", reach(&rough));
 }
 
 #[test]
@@ -6616,8 +6652,10 @@ fn stub_tool() -> Tool {
         flutes: None,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }

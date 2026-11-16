@@ -18,6 +18,8 @@ pub mod import_fixture;
 pub mod import_model;
 // #339 slice 6: a fixture library entry placed into a setup.
 pub mod insert_fixture;
+// #744: DXF/profile fixtures and STEP profile derivation.
+pub mod profile_fixture;
 pub mod load_machine;
 // #561: locate the part in a fixture (or the fixture on the part) by mates.
 pub mod locate;
@@ -25,6 +27,7 @@ pub mod move_model;
 pub mod operation;
 pub mod post;
 pub mod post_options;
+pub mod post_script_options;
 // #258: the document's program number and comment.
 pub mod program_info;
 // #155: Pause / Home entries of the operation list.
@@ -36,6 +39,7 @@ pub mod ribbon_pins;
 pub mod select_entity;
 pub mod set_stock;
 pub mod stock_source_only;
+pub mod stock_material;
 pub mod setup;
 pub mod setup_delete;
 // #196: a setup's picked program offset.
@@ -89,6 +93,7 @@ pub use mod_vise_edit::{RefitModVise, SetModJaw};
 pub use import_fixture::ImportFixture;
 pub use import_model::ImportModel;
 pub use insert_fixture::InsertFixture;
+pub use profile_fixture::{DeriveFixtureProfile, InsertProfileFixture, SetFixtureProfile};
 pub use load_machine::LoadMachine;
 pub use locate::{Locate, LocateFixture, LocatePart};
 pub use move_model::MoveModel;
@@ -99,6 +104,9 @@ pub use operation::{
 };
 pub use post::SelectPost;
 pub use post_options::SetPostOptions;
+pub use post_script_options::{
+    PostSettingsEdit, SetPostScriptOptions, SetPostSettings, SetSetupPostScriptOptions,
+};
 pub use program_info::SetProgramInfo;
 pub use program_entry::{AddProgramEntry, EditProgramEntry};
 pub use repair_model::RepairModel;
@@ -106,6 +114,7 @@ pub use ribbon_pins::SetRibbonPins;
 pub use select_entity::SelectEntity;
 pub use set_stock::SetStock;
 pub use stock_source_only::SetStockSourceOnly;
+pub use stock_material::SetStockMaterial;
 pub use setup::{ActivateSetup, CreateSetup, DeleteSetup, SetOperationSetup};
 pub use setup_align::AlignPartToSetup;
 pub use setup_wcs::SetSetupWorkOffset;
@@ -188,6 +197,17 @@ pub trait Command {
     fn invert(&self, world: &World);
 }
 
+// Globally unique identities survive Undo/Redo but never a replacement edit or document.
+fn next_history_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+struct HistoryEntry {
+    id: u64,
+    command: Box<dyn Command>,
+}
+
 /// Linear undo/redo over executed commands. Executing a fresh command clears
 /// the redo stack (standard history semantics).
 ///
@@ -198,14 +218,20 @@ pub trait Command {
 /// command executed while the saved point sits on the redo stack discards
 /// that state for good, so the saved point becomes unreachable (`None`).
 pub struct History {
-    done: Vec<Box<dyn Command>>,
-    redo: Vec<Box<dyn Command>>,
+    done: Vec<HistoryEntry>,
+    redo: Vec<HistoryEntry>,
+    identity: u64,
     saved: Option<usize>,
 }
 
 impl Default for History {
     fn default() -> Self {
-        Self { done: Vec::new(), redo: Vec::new(), saved: Some(0) }
+        Self {
+            done: Vec::new(),
+            redo: Vec::new(),
+            saved: Some(0),
+            identity: next_history_id(),
+        }
     }
 }
 
@@ -216,7 +242,10 @@ impl History {
             self.saved = None;
         }
         command.apply(world);
-        self.done.push(Box::new(command));
+        self.done.push(HistoryEntry {
+            id: next_history_id(),
+            command: Box::new(command),
+        });
         self.redo.clear();
     }
 
@@ -224,7 +253,7 @@ impl History {
         match self.done.pop() {
             Some(command) => {
                 tracing::debug!("undo");
-                command.invert(world);
+                command.command.invert(world);
                 self.redo.push(command);
                 true
             }
@@ -235,7 +264,7 @@ impl History {
     pub fn redo(&mut self, world: &World) -> bool {
         match self.redo.pop() {
             Some(command) => {
-                command.apply(world);
+                command.command.apply(world);
                 self.done.push(command);
                 true
             }
@@ -252,6 +281,7 @@ impl History {
     /// Drop all history; used when a document replaces the current one.
     /// The replacing document (blank or loaded) starts clean.
     pub fn clear(&mut self) {
+        self.identity = next_history_id();
         self.done.clear();
         self.redo.clear();
         self.saved = Some(0);
@@ -275,6 +305,24 @@ impl History {
 
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
+    }
+
+    /// Number of committed commands currently on the undo stack.
+    #[must_use]
+    pub fn done_len(&self) -> usize {
+        self.done.len()
+    }
+
+    /// Identity of the document timeline; clearing history starts a new timeline.
+    #[must_use]
+    pub fn identity(&self) -> u64 {
+        self.identity
+    }
+
+    /// Exact committed entries, preserved by Undo/Redo and unique across replacement edits.
+    #[must_use]
+    pub fn done_entry_ids(&self) -> Vec<u64> {
+        self.done.iter().map(|entry| entry.id).collect()
     }
 
     pub fn is_empty(&self) -> bool {
