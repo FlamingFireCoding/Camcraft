@@ -259,6 +259,55 @@ fn dxf_wrap(units: i32, entities: &str) -> String {
 }
 
 #[test]
+fn dxf_major_bulge_arc_extent_is_preserved_and_axial_reversal_is_named() {
+    for clockwise in [true, false] {
+        // Same open profile in both directions: the major arc reaches z=65,
+        // above its endpoints at z=55 and z=60. A minor-arc replacement loses material.
+        let vertices = if clockwise {
+            "10\n0\n20\n55\n42\n0\n\
+             10\n10\n20\n55\n42\n-2.414213562373095\n\
+             10\n15\n20\n60\n42\n0\n\
+             10\n0\n20\n60\n42\n0\n"
+        } else {
+            "10\n0\n20\n60\n42\n0\n\
+             10\n15\n20\n60\n42\n2.414213562373095\n\
+             10\n10\n20\n55\n42\n0\n\
+             10\n0\n20\n55\n42\n0\n"
+        };
+        let dxf = dxf_wrap(
+            4,
+            &format!(
+                "0\nLINE\n8\nCENTRELINE\n10\n0\n20\n0\n11\n0\n21\n80\n\
+                 0\nLWPOLYLINE\n8\nPROFILE\n90\n4\n70\n0\n{vertices}"
+            ),
+        );
+        let source = parse(dxf.as_bytes()).expect("bulged profile parses");
+        let (center, radius, start_angle, sweep_angle) = source
+            .primitives
+            .iter()
+            .find_map(|item| match item.primitive {
+                Primitive::Arc { center, radius, start_angle, sweep_angle } => {
+                    Some((center, radius, start_angle, sweep_angle))
+                }
+                _ => None,
+            })
+            .expect("source contains the major arc");
+        assert!((center.x - 10.0).abs() < 1e-9 && (center.y - 60.0).abs() < 1e-9);
+        assert!((radius - 5.0).abs() < 1e-9);
+        let expected_sweep = if clockwise { -0.75 * TAU } else { 0.75 * TAU };
+        assert!((sweep_angle - expected_sweep).abs() < 1e-9);
+        let source_top = (0..=96)
+            .map(|i| center.y + radius * (start_angle + sweep_angle * i as f64 / 96.0).sin())
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!((source_top - 65.0).abs() < 1e-9, "source arc reaches z=65");
+
+        let err = dxf_to_spun(dxf.as_bytes())
+            .expect_err("major arc reverses axially; accepting a z=60 top would truncate material");
+        assert!(err.contains("runs back down the axis"), "{err}");
+    }
+}
+
+#[test]
 fn dxf_half_profile_error_refusals_never_panic_and_name_reasons() {
     // 1. No centreline
     let no_cl = dxf_wrap(

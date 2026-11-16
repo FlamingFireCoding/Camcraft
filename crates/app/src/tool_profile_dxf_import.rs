@@ -143,7 +143,9 @@ fn push_primitive(segs: &mut Vec<Seg>, p: &Primitive, scale: f64) -> Result<(), 
             if !(r.is_finite() && r > 0.0) {
                 return Err("DXF arc radius is out of range in millimetres".into());
             }
-            if sweep_angle > PI + 1e-6 {
+            // Spun arcs encode a minor arc by signed radius. Split major arcs
+            // in either direction so conversion preserves their full extent.
+            if sweep_angle.abs() > PI + 1e-6 {
                 let half = sweep_angle * 0.5;
                 push_arc(segs, c, r, start_angle, half);
                 push_arc(segs, c, r, start_angle + half, half);
