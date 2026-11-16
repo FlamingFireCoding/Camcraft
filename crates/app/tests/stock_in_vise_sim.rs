@@ -100,7 +100,7 @@ fn located(rot: [f64; 4]) -> (World, History) {
         Mate { part: face(&world, "part", [10.0, 0.0, 4.0]), fixture: face(&world, "vise", [50.0, -1.0, 20.25]) },
         Mate { part: face(&world, "part", [0.0, 5.0, 4.0]), fixture: face(&world, "vise", [-1.0, 30.0, 15.25]) },
     ];
-    let spec = LocateSpec { part: "part".into(), fixture: "vise".into(), mates, offset: LocateOffset::default() };
+    let spec = LocateSpec { part: "part".into(), fixture: "vise".into(), body: Default::default(), mates, offset: LocateOffset::default() };
     h.execute(&world, LocatePart::new(&world, &spec).expect("locate"));
     (world, h)
 }
