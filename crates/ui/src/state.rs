@@ -883,6 +883,8 @@ pub struct OpUi {
     /// The Boundary group's draft (M11.5): rides the same Apply as the
     /// parameters, one undo unit.
     pub area: AreaControls,
+    /// #1448 / #1473 item 2: armed Contour start/exit viewport pick role.
+    pub start_exit_pick: Option<crate::start_exit_pick::StartExitRole>,
 }
 
 impl Default for OpUi {
@@ -894,6 +896,7 @@ impl Default for OpUi {
             src_name: String::new(),
             geo: Vec::new(),
             area: AreaControls::default(),
+            start_exit_pick: None,
             // A facing pass over a small billet, in references: 25 above
             // the stock top, skimming the stock top itself. `retype`
             // carries this clearance into every kind, so the draft
@@ -937,6 +940,7 @@ impl OpUi {
             geo,
             params: op.params.clone(),
             area: op.area.clone(),
+            start_exit_pick: None,
         }
     }
 
@@ -2805,6 +2809,7 @@ impl State {
         self.op_synced = (String::new(), self.doc_version);
         self.boundary_pick = None;
         self.boundary_view.shown = false;
+        self.op_ui.start_exit_pick = None;
         self.rename_draft = None;
     }
 
