@@ -171,6 +171,7 @@ fn face_square_40x40_matches_golden() {
         plunge_feed: 100.0,
         climb: true,
         blend_turns: false,
+        stock_top: None,
     };
     let t = face(&rect(0.0, 0.0, 40.0, 40.0), &p).unwrap();
     write_golden("face_square_40x40.cl", &gen_to_cltext(&t));
@@ -195,6 +196,7 @@ fn face_square_40x40_blended_matches_golden() {
         plunge_feed: 100.0,
         climb: true,
         blend_turns: true,
+        stock_top: None,
     };
     let t = face(&rect(0.0, 0.0, 40.0, 40.0), &p).unwrap();
     assert_eq!(t.arc_count(), 4);
@@ -219,6 +221,7 @@ fn face_square_40x40_stepped_matches_golden() {
         plunge_feed: 100.0,
         climb: true,
         blend_turns: false,
+        stock_top: None,
     };
     let t = face(&rect(0.0, 0.0, 40.0, 40.0), &p).unwrap();
     assert_eq!(

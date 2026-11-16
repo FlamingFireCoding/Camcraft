@@ -7,8 +7,8 @@
 //! Provenance: our own fixtures; the depth-of-cut ladder is general
 //! machining knowledge.
 //!
-//! Gate map (#2004): covers app::operation (generate, trochoid_op),
-//! motion::machining2d (slots::trace, trochoid_slot, levels).
+//! Gate map (#2004): covers app::operation (generate, trochoid_op, face),
+//! motion::machining2d (slots::trace, trochoid_slot, levels, face, circular).
 
 use camcraft_app::cl::{MoveKind, Toolpath};
 use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, SetStock};
@@ -91,4 +91,50 @@ fn a_trochoidal_slot_under_stock_over_top_z_keeps_the_level_at_top_z() {
         climb: true,
     });
     assert_eq!(levels(&t), vec![18.0, 15.0, 12.0], "the first bite is 2 mm, not 5 mm");
+}
+
+/// #2004 review: the staged Face reads the stock top too. On the box
+/// (stock top 20) a Face from Top Z 18 to Cut Z 12 starts at Z 18.
+#[test]
+fn a_staged_face_under_stock_over_top_z_keeps_the_level_at_top_z() {
+    let t = generated(OpParams::Face {
+        holes: Default::default(),
+        blend_turns: false,
+        tilt: None,
+        stepover: 4.0,
+        clearance_z: Height::fixed(30.0),
+        cut_z: Height::fixed(12.0),
+        top_z: Some(Height::fixed(18.0)),
+        stepdown: Some(3.0),
+        feed: 1200.0,
+        plunge_feed: 300.0,
+        climb: true,
+    });
+    assert_eq!(levels(&t), vec![18.0, 15.0, 12.0], "the first bite is 2 mm, not 5 mm");
+}
+
+/// #2004 review: the vault rim ring reads the stock top. On the box
+/// (stock top 20) a vault with Top Z 18 cuts its rim ring at Z 18.
+#[test]
+fn a_vault_under_stock_over_top_z_cuts_its_rim_ring_at_top_z() {
+    let t = generated(OpParams::Circular {
+        links: camcraft_app::links::Links::PLANAR,
+        center: Point2::new(0.0, 0.0),
+        radius: 12.0,
+        vault: true,
+        stepover: 2.0,
+        stock_to_leave: 0.0,
+        clearance_z: Height::fixed(30.0),
+        retract_z: None,
+        top_z: Height::fixed(18.0),
+        bottom_z: Height::fixed(12.0),
+        stepdown: 3.0,
+        feed: 800.0,
+        plunge_feed: 200.0,
+        climb: true,
+        entry: camcraft_app::machining3d::Entry3D::Plunge,
+        helix_radius: 1.0,
+        tilt: None,
+    });
+    assert_eq!(levels(&t).first().copied(), Some(18.0), "the rim ring cuts at Top Z");
 }

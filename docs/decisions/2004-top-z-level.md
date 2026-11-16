@@ -27,9 +27,10 @@
    or a material top at Top Z gives the new ladder. The stock top is the
    raw setup stock: an earlier facing operation is not read, so that
    case keeps the old (one air level) answer. That errs to the safe side.
-   Callers with no `links` (face, vault, trace, trochoidal slot) keep
-   `cut_levels`: face and vault have their own law (items 4, 4b), and
-   the trace and trochoidal slot are on the remaining list.
+   Face (`FaceParams::stock_top`) and the vault rim ring
+   (`links.approach.stock_top`) follow the same law since the review of
+   head `eacc74c78` (see the last section). The trace and trochoidal
+   slot are on the remaining list.
    Dropped: a new field on each params struct (about 350 literals); an
    app shift of Top Z by one stepdown (float noise, and the plunge
    starts higher); a thread-local.
@@ -246,3 +247,43 @@ cleared bore keeps its path byte for byte).
   cuts stock, so the change loses a cut, not only an air level.
 - One field with this PR's meaning: every operation gets the carried
   entry.
+
+## Review of head `eacc74c78`: Face and the vault rim ring read the stock top
+
+Taken unattended by the issue worker for the absent maintainer, at the
+fix of the safety-tier review of head `eacc74c78` (2026-11-17).
+
+**Chosen:** Face and the vault rim ring follow item 3 (stock over Top Z
+keeps the level at Top Z). This replaces the sentence of item 3 that
+Face and the vault keep `cut_levels` (stated at head `eacc74c78`).
+
+- `FaceParams` gets the runtime field `stock_top: Option<f64>`. The app
+  sets it from `lk.approach.stock_top` (`generate.rs`). The staged Face
+  takes its levels from `cut_levels_under(top_z, stock_top, cut_z,
+  stepdown)`. A stated value that is not finite is refused in `validate`:
+  a NaN must not read as "no stock over" and drop the level at Top Z.
+  The field is never saved in the project file. Each test literal sets
+  `None` (the #2004 law).
+- Vault (`circular.rs`): the rim ring takes `cut_levels_under` with
+  `p.links.approach.stock_top`. When stock stands over Top Z,
+  `under_top` is not applied, so no plane at Top Z is dropped. That is
+  the vault ladder of `main`. Without stock over Top Z, items 4 and 4b
+  do not change.
+- The test `one_descent::the_bore_contour_under_carried_stock_never_rapids_into_it`
+  pins the `fresh` arm of `bore_entry` under carried stock (the
+  reviewer's open edge). `main` fails its case `lead none Ramp helix
+  transition` with `RapidInStock`; this branch passes it. The cases
+  `lead linear Ramp planar/retract` give `RapidInStock` on `main` and on
+  this branch alike. They do not pass through the `fresh` arm. The test
+  skips them by name and #2301 tracks them.
+
+**Why:** with stock 2 mm over Top Z and a stepdown of 3 mm, the Face of
+the review cut `[15, 12]` from a stock top 20: a first bite of 5 mm. A
+first bite deeper than one stepdown is not permitted.
+
+**Dropped:**
+
+- A refusal or a warning when stock stands over Top Z: the old ladder
+  cuts that stock safely, so a refusal would stop a legal program.
+- A second `face` entry point with the stock top as a parameter: the
+  field follows the pattern of `TraceParams` and `TrochoidParams`.

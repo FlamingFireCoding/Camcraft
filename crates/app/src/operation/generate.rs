@@ -339,6 +339,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 climb: *climb,
                 blend_turns: *blend_turns,
                 holes: *holes,
+                // #2004 review: stock over the face's Top keeps the
+                // level at Top (a first bite of at most one stepdown).
+                stock_top: lk.approach.stock_top,
             };
             // M13.11: under the cut-across law the facer needs to know
             // which holes of its region hold material standing above

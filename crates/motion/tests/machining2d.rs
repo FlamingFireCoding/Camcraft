@@ -40,6 +40,7 @@ fn params() -> FaceParams {
         plunge_feed: 100.0,
         climb: true,
         blend_turns: false,
+        stock_top: None,
     }
 }
 

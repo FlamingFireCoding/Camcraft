@@ -268,6 +268,7 @@ fn a_staged_face_cuts_no_level_at_top_z_and_a_plain_face_stays_one_pass() {
         plunge_feed: 300.0,
         climb: true,
         blend_turns: false,
+        stock_top: None,
     };
     one_level("staged face", &face(&square(0.0, 0.0, 30.0), &p).expect("face"));
     let plain = FaceParams { top_z: None, stepdown: None, ..p };

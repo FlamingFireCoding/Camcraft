@@ -33,6 +33,7 @@ fn p(stepover: f64, blend: bool) -> FaceParams {
         plunge_feed: 100.0,
         climb: true,
         blend_turns: blend,
+        stock_top: None,
     }
 }
 

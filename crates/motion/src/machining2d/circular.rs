@@ -265,6 +265,10 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
         let ring = ring_loop(p.center, rho, p.climb);
         let runs = vec![ring_walk(p.center, &ring, p.climb)];
         let pass = vec![ring];
+        // #2004 review: stock over Top Z makes the plane at Top Z a cut
+        // on the vault too - the rim keeps it as its first level and no
+        // plane at Top Z is dropped (the pre-#2004 vault ladder).
+        let over = super::levels::stock_over(p.top_z, p.links.approach.stock_top, 1e-9 * p.top_z.abs().max(1.0));
         let zs = if p.vault {
             // This ring's floor: the bowl at the band's outer edge.
             // The ladder starts where the previous ring settled (the
@@ -272,8 +276,8 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
             let floor = p.bowl_z((rho + r).min(p.radius));
             if k == 0 {
                 // The rim ring: Top Z is the material top, never a
-                // level of its own (#2004).
-                cut_levels(p.top_z, floor, p.stepdown)
+                // level of its own (#2004), unless stock stands over it.
+                super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, floor, p.stepdown)
             } else {
                 // An inner ring: the previous ring's floor is a real
                 // cut for this one - the strip inside the previous
@@ -290,8 +294,8 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
         // #2004: a vault plane at Top Z cuts air - the rim ring's floor
         // (the bowl meets the top at the radius) and an inner ring's
         // opening plane under a rim that cut nothing. A ring with no
-        // plane under Top Z is not walked.
-        let zs = if p.vault { under_top(zs, p.top_z) } else { zs };
+        // plane under Top Z is not walked. Stock over Top Z keeps them.
+        let zs = if p.vault && !over { under_top(zs, p.top_z) } else { zs };
         if zs.is_empty() {
             k += 1;
             continue;

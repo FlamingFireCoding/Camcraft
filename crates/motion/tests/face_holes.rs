@@ -42,6 +42,7 @@ fn p(holes: FaceHoles) -> FaceParams {
         climb: true,
         blend_turns: false,
         holes,
+        stock_top: None,
     }
 }
 
