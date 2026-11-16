@@ -10,7 +10,7 @@
           ] }
         ] },
         { "id": "head", "name": "head", "type": "head",
-          "spindle": { "max_speed": 8000.0, "power": 7.5, "rigid_tapping": true },
+          "spindle": { "max_speed": 8000.0, "power": 5.6, "rigid_tapping": true },
           "tool_station": { "coolants": [ { "name": "Flood", "mCode": "M8" } ] } }
       ] }
     ] } },

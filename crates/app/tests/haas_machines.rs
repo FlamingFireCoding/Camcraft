@@ -46,7 +46,7 @@ const SPECS: [Spec; 5] = [
         name: "Haas Mini Mill",
         travel: [406.0, 356.0, 381.0],
         rpm: 8000.0,
-        kw: 7.5,
+        kw: 5.6,
         feed: 10160.0,
         rapid: 10160.0,
         slots: 10,

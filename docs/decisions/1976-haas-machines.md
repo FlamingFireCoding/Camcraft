@@ -24,6 +24,11 @@ that every Mini Mill has those options. The current standard Mini Mill
 lists faster rates: 650 ipm cutting and 800 ipm rapid. Older Mini Mill
 travel figures and Super Mini Mill specifications do not define this entry.
 
+State the Mini Mill spindle power as 5.6 kW. The Haas CNC Guide, Issue 18,
+lists 7.5 hp for this model; conversion gives about 5.6 kW. Do not retain
+the 7.5 kW requested in #1976: that value treats horsepower as kilowatts
+and overstates the published power.
+
 The EDU page contains conflicting spindle information. Its redesigned-model
 overview states 8,000 rpm, while its specification and standard-feature
 rows still state 6,000 rpm. Retain the 8,000 rpm required by #1976 and
@@ -46,8 +51,8 @@ They do not certify the physical machine or a complete post/control pair.
 
 **Sources.** Haas Automation publishes all sources below. Consulted
 2026-11-16. These web pages state no document revision or publication date.
-The table names identify the source sections. No redistribution license
-was identified. Only numeric facts and short control identifiers inform
+The table names identify the source sections. The guide below is Issue 18.
+No redistribution license was identified. Only numeric facts and short control identifiers inform
 these original definitions; no vendor files, manuals, images or substantial
 prose are copied into this contribution.
 
@@ -73,6 +78,9 @@ prose are copied into this contribution.
 - [Mini Mill product page](https://legacy-aem.haascnc.com/machines/vertical-mills/mini-mills/models/minimill.html):
   redesigned-model overview, Travels, Spindle and Feedrates. Establishes
   the current standard-model comparison described above.
+- [Haas CNC Guide, Issue 18](https://haas.co.uk/wp-content/uploads/2026/02/Haas-CNC-Guide-Issue-18.pdf):
+  the Mini Mill specification on printed page 10 states 7.5 hp, which converts
+  to about 5.6 kW. This source corrects the power unit in #1976.
 - [Mini Mill-EDU product page](https://legacy-aem.haascnc.com/content/haascnc/en/machines/vertical-mills/mini-mills/models/minimill-edu.html):
   redesigned-model overview, Travels, Spindle, Feedrates, Tool Changer,
   and Coolant Management. Supports the EDU baseline and optional changer.
