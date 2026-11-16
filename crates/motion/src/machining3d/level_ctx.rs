@@ -95,6 +95,17 @@ fn hop_over_leg(b: &mut PathBuilder, lvl: &LevelCtx, q: Point2, zq: f64) {
     if h > 0.0 && hz.is_finite() && hz < b.at().z && hz > zq {
         b.push(MoveKind::Rapid, Point3::new(q.x, q.y, hz), None);
     }
+    // Crossing an earlier leg does not prove the destination column clear.
+    // Refuse an unsafe axial re-entry just as `plunge_from_top` does.
+    plunge_law::guard(
+        b,
+        lvl.p.links.approach.center_cutting,
+        lvl.p.tool_diameter * 0.5,
+        q,
+        zq,
+        top,
+        "a crossing hop",
+    );
     b.push(MoveKind::Plunge, Point3::new(q.x, q.y, zq), Some(lvl.p.plunge_feed));
     let left = lvl.settle.get();
     if left > 0.0 && !left.is_nan() && zq >= at.z - 1e-9 {
