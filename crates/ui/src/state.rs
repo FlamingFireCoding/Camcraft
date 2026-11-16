@@ -2984,21 +2984,28 @@ impl State {
     /// Run every queued action, then poll the import worker once. Safe to
     /// call every frame; never blocks.
     pub fn drain_actions(&mut self) {
+        use crate::frame_cost::span;
         while let Some(action) = self.pending.pop_front() {
+            let _s = span("commands/run");
             self.run(action);
         }
+        let s = span("commands/mcp+chat");
         self.ai_chat.poll(self.history.done_len());
         // #183: an agent's live calls, after the user's own clicks.
         crate::mcp_host::pump(self);
         self.ai_chat.poll(self.history.done_len());
+        drop(s);
+        let s = span("commands/import+files");
         self.poll_import();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
+        drop(s);
         // A refusal that no longer describes the page retires, with its
         // status-strip mirror (crate::feedback).
-        self.retire_stale_feedback();
+        crate::frame_cost::time("commands/retire_feedback", || self.retire_stale_feedback());
         // #406: the incoming stock's sheet follows the open setup page.
-        crate::incoming_view::refresh(self);
+        crate::frame_cost::time("commands/incoming_view", || crate::incoming_view::refresh(self));
+        let _s = span("commands/tool_editor");
         // The editor window's ghost law (M1.4), mirroring `pane_target`:
         // an open editor never keeps pointing at a name the document lost
         // under it - deleted, undone, or swapped by New/Open all land here.

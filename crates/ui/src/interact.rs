@@ -944,11 +944,12 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
             }
         }
     }
-    out.extend(toolpath_lines(state));
-    out.extend(region_lines(state));
-    out.extend(height_plane_lines(state));
-    out.extend(crate::work_envelope::envelope_lines(state));
-    out.extend(selection_feature_lines(state));
+    use crate::frame_cost::time;
+    out.extend(time("scene/overlay.toolpaths", || toolpath_lines(state)));
+    out.extend(time("scene/overlay.regions", || region_lines(state)));
+    out.extend(time("scene/overlay.height_planes", || height_plane_lines(state)));
+    out.extend(time("scene/overlay.envelope", || crate::work_envelope::envelope_lines(state)));
+    out.extend(time("scene/overlay.selection_features", || selection_feature_lines(state)));
     capped(out)
 }
 

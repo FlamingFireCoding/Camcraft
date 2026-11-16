@@ -40,6 +40,7 @@ pub mod egui_app;
 pub mod feedback;
 pub mod file_dialog;
 pub mod file_pick;
+pub mod frame_cost;
 pub mod frame_memo;
 pub mod incoming_view;
 pub mod headless_gpu;
