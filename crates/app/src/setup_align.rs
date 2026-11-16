@@ -23,10 +23,12 @@
 //!   setup is byte-identical (paths, stamps, posts and saved files).
 //! - **Refuse what is not verified.** Generation in an aligned setup is
 //!   wired for `Face`, `Contour`, `Pocket`, `Adaptive2D`, `Pocket3D`
-//!   and `Finish3D` over a whole model, the stock, or picked features.
-//!   The 3D kinds also resolve area controls in the setup frame.
-//!   Other kinds, 2D area controls, a tilt and a non-mill machine are
-//!   refused by name ([`generation_problem`]).
+//!   and `Finish3D` over a whole model, the stock, or picked features,
+//!   area controls included (#1743 3D, #2210 2D): every world read of
+//!   `boundary_ctx` - picks, part material, heights, silhouette - goes
+//!   through the same setup-frame doors as the model, and the stock
+//!   outline is furniture. Other kinds, a tilt and a non-mill machine
+//!   are refused by name ([`generation_problem`]).
 
 use flecs_ecs::core::EntityViewGet; // try_get is not re-exported in prelude (0.2.2)
 use flecs_ecs::prelude::{Entity, World};
@@ -395,10 +397,10 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
     if op.params.tilt().is_some() {
         return Some(format!("{head} - a tilted plane is not supported yet in an aligned setup"));
     }
-    // #1743: 3D boundaries read the same aligned facets and picks as generation.
-    let area_verified = matches!(op.params, crate::operation::OpParams::Pocket3D { .. } | crate::operation::OpParams::Finish3D { .. });
-    if !op.area.is_default() && !area_verified {
-        return Some(format!("{head} - area controls are not supported yet in an aligned setup"));
-    }
+    // #1743 (3D) / #2210 (2D): the area controls of every verified kind
+    // resolve in the setup frame - `boundary_ctx` reads the picks
+    // (`selection_geometry_in` -> `OpFrame::pose_in_setup`), the part
+    // material and heights (`setup_align::facets_in`) through the very
+    // transform the model reads, and the stock outline as furniture.
     None
 }

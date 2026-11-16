@@ -179,3 +179,18 @@ fn writer_refuses_invalid_inputs_by_name() {
     };
     assert!(matches!(write(&unsupported_unit), Err(DxfError(msg)) if msg.contains("$INSUNITS")));
 }
+
+#[test]
+fn merged_export_writer_retains_main_zero_length_line_refusal() {
+    use camcraft_geometry::dxf::{ExportEntity, to_text};
+
+    let origin = Point2::new(0.0, 0.0);
+    let entity = ExportEntity::Line {
+        layer: "PROFILE".into(),
+        start: origin,
+        end: origin,
+    };
+    let err = to_text(Some(Unit::Millimeters), &[], &[entity], &[])
+        .expect_err("main's writer must still refuse zero-length LINE after the merge");
+    assert!(err.0.contains("LINE") && err.0.contains("zero-length"), "{err}");
+}

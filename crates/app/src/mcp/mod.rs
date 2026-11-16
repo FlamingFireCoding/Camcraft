@@ -30,6 +30,7 @@ mod cutter_tools;
 mod cutting_tools;
 mod edit;
 mod features;
+mod fixture_profile_tools;
 mod fixture_tools;
 mod holders;
 mod holder_dxf_tools;

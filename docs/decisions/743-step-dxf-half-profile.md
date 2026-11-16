@@ -89,3 +89,22 @@ file at or under 400 lines.
 Low. Conversions sit behind dedicated modules and `SetToolBody` constructors,
 and saved `.camproj` files continue storing `SpunProfile` without format
 migration.
+
+### PR #2100 main-merge resolution
+
+**What was decided.** Keep upstream's `dxf/writer.rs` (`ExportEntity` and
+`to_text`) byte-for-byte and move this PR's document writer into
+`dxf/document_writer.rs`. Re-export `write` and `write_bytes` alongside
+upstream's API. Both implementations retain every existing guard and refusal.
+This resolution adds no dependency.
+
+**Why.** Main and this PR independently added writer APIs with different
+input types and existing callers. Separate private modules preserve both
+contracts without changing their validation behavior.
+
+**Considered and dropped.** Taking either writer alone would lose the other
+API's callers and refusal checks. Combining their implementations during the
+conflict fix would add behavior changes beyond the requested refresh.
+
+**Cost to change later.** Low. The public APIs remain unchanged; any future
+writer consolidation can be reviewed separately with both refusal suites.

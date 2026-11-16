@@ -131,6 +131,7 @@ mod probe_pick_round;
 pub use probe_pick::{PROBE_AXIS_TOL_DEG, ProbeSeed, probe_account, probe_from_picks, probe_seed, seeded_params};
 pub(crate) use probe::*;
 mod selection;
+mod contour_auto_pick;
 pub use selection::*;
 mod picks;
 pub use picks::*;
@@ -143,6 +144,8 @@ mod run_out;
 use run_out::*;
 mod area;
 use area::*;
+mod pocket_memo;
+pub use pocket_memo::pocket_slices;
 mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;
@@ -183,13 +186,19 @@ mod cross_spindle;
 mod cross_stock;
 mod drill_reach;
 mod bore_reach;
+use camcraft_motion::break_through;
 pub use bore_reach::DetectedHoles;
+pub use break_through::BELOW_STOCK_NOTE;
 mod drill_prior;
 mod carried_stock;
 pub use carried_stock::{CARRIED_OUTSIDE_DECLARED, CARRIED_OUTSIDE_NOTED, carried_problems};
 pub(crate) use drill_prior::reads_prior;
 mod plunge_solid;
 mod predrilled_entry;
+pub mod rest_op;
+pub use rest_op::REST_PREDRILLED;
+#[cfg(test)]
+mod rest_op_tests;
 #[cfg(test)]
 mod predrilled_entry_tests;
 #[cfg(test)]
@@ -209,11 +218,13 @@ mod open_side;
 pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
 pub(crate) mod fidelity_law;
+mod clearance_stock;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
 mod tap_core;
-pub use top_stock::TOP_STOCK_WARNING;
+pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
+pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
 mod turning_axis;
 mod turning_feeds;

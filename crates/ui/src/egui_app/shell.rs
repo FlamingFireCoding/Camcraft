@@ -35,15 +35,11 @@ use super::theme;
 use super::viewcube;
 
 pub(crate) const VIEW3D_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-/// Ribbon strip height: the cell box plus the caption row and the pad
-/// (`theme::ribbon_h` = `cell_h + 26`), imgui's `height()` formula restated
-/// as one derivation off the token - 61 at the dark defaults. The panel
-/// sizes it live from `theme::current()`; this const is the test fixture's
-/// number (a theme that grows the cells grows the ribbon with it).
+/// Ribbon strip height: the rows and gaps of the theme plus its cell box
+/// (`theme::ribbon_h`) - 88 at the dark defaults. The panel sizes it live
+/// from `theme::current()`; this const is the test fixture's number.
 #[cfg(test)]
 pub(crate) const RIBBON_H: f32 = theme::ribbon_h(&theme::Tokens::DARK);
-/// Status strip height (imgui's single-line bottom bar).
-const STATUS_H: f32 = 22.0;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Tab {
@@ -51,6 +47,7 @@ pub(crate) enum Tab {
     Browser,
     Properties,
     Machines,
+    AiChat,
     Tools,
 }
 
@@ -61,6 +58,7 @@ impl Tab {
             Tab::Browser => "Browser",
             Tab::Properties => "Properties",
             Tab::Machines => "Machines",
+            Tab::AiChat => "AI Chat",
             Tab::Tools => "Tool library",
         }
     }
@@ -118,7 +116,7 @@ pub(crate) fn shell_layout(
     layout::settle(state, dock);
     egui::Panel::bottom("status")
         .frame(egui::Frame::NONE)
-        .exact_size(STATUS_H)
+        .exact_size(theme::status_h(&pal))
         .show(ui, |ui| {
             panes::status(ui, &mut *state, &pal, icons);
         });
@@ -175,6 +173,7 @@ pub(crate) fn shell_layout(
     // (in-app egui::Window over the dock, None on a fresh State, so
     // snapshots never move until the Setup pane opens it).
     machine_editor::window(ui.ctx(), state);
+    super::post_dialog::window(ui.ctx(), state);
     // #157: the Debug info window - same window law (closed on a fresh
     // State, opened from the status strip's bug button).
     super::debug_info::window(ui.ctx(), state);
@@ -264,6 +263,7 @@ impl TabViewer for ShellTabs<'_> {
                 let pal = theme::current();
                 machines_pane::draw(ui, self.state, &pal);
             }
+            Tab::AiChat => super::ai_chat::draw(ui, self.state),
         }
     }
 }
@@ -285,6 +285,9 @@ fn viewport_panel(
     viewport_points: &mut [f32; 2],
     left_press: &mut Option<[f32; 2]>,
 ) {
+    // The camera orbits in the mounted machine's frame (#1993): a lathe
+    // shows its spindle axis across the screen.
+    crate::view_frame::sync(state);
     // M1.7c move simulation: the timeline is rebuilt from the world on
     // every document change (`cached_script` below, keyed on
     // `doc_version`), which is why a document switch needs no reset -
@@ -418,7 +421,8 @@ fn viewport_panel(
     // global pointer coords imgui's viewport_rect fed the raw-event path.
     let ([rx0, ry0], [rx1, ry1]) = (parr(resp.rect.min), parr(resp.rect.max));
     state.viewport_rect = ([rx0, ry0], [rx1, ry1]);
-    super::file_drop::paint_hint(ui, resp.rect);
+    let pal = theme::current();
+    super::file_drop::paint_hint(ui, resp.rect, &pal);
     let hot = resp.hovered();
     state.viewport_hot = hot;
     let (rw, rh) = (rx1 - rx0, ry1 - ry0);
