@@ -81,6 +81,9 @@ pub use modvise_ui::ModViseDraft;
 #[path = "state_accessory.rs"]
 mod accessory_ui;
 pub use accessory_ui::{AccessoryDraft, AccessorySizeDraft};
+#[path = "state_fixture_profile.rs"]
+mod fixture_profile_ui;
+pub use fixture_profile_ui::{FixtureProfileDraft, ProfileEditDraft, ProfileKindChoice};
 #[path = "state_program_entry.rs"]
 mod program_entry;
 pub use program_entry::EntryVerb;
@@ -658,6 +661,28 @@ pub enum CommandKind {
         name: String,
         params: camcraft_app::accessory::Accessory,
     },
+    /// #744: open "Add profile / DXF fixture…" dialog over a setup's Fixtures node.
+    ProfileFixtureDialog(String),
+    /// Place spun or extruded DXF/profile fixture - one `InsertProfileFixture`.
+    InsertProfileFixture {
+        setup: Option<String>,
+        name: String,
+        profile: camcraft_app::fixture_profile::FixtureProfile,
+        pos: [f64; 3],
+        yaw_deg: f64,
+    },
+    /// Edit placed profile fixture `name` and regenerate its mesh - one `SetFixtureProfile`.
+    SetFixtureProfile {
+        name: String,
+        profile: camcraft_app::fixture_profile::FixtureProfile,
+    },
+    /// Derive reference profile from STEP/mesh fixture `name` without replacing STEP source/facets.
+    DeriveFixtureProfile {
+        name: String,
+        axis: Option<camcraft_app::fixture_profile::ExtrudeAxis>,
+    },
+    /// Export fixture `name`'s profile to ASCII DXF path.
+    ExportFixtureDxf { name: String, path: PathBuf },
     /// Part orientation (M5.2 G): a model's full rigid placement -
     /// position plus yaw-pitch-roll degrees (R = Rz ⊗ Ry ⊗ Rx, the
     /// `SetWcs` voice). The world stores a unit quaternion; the
@@ -1749,6 +1774,8 @@ pub struct State {
     /// #789: each built-in accessory row's size draft, by name - view
     /// state; Apply lands it through `SetAccessory`.
     pub accessory_sizes: HashMap<String, AccessorySizeDraft>,
+    /// #744: per-fixture profile edit / STEP derive draft, by name.
+    pub profile_edits: HashMap<String, ProfileEditDraft>,
     /// #339 slice 4: each fixture's mesh state, per document version
     /// (view cache - never truth, never saved).
     pub fixture_mesh_cache: camcraft_app::fixture_view::MeshStateCache,
@@ -2113,6 +2140,7 @@ impl State {
             import_as_fixture: None,
             step_budget: StepBudgetUi::default(),
             accessory_sizes: HashMap::new(),
+            profile_edits: HashMap::new(),
             fixture_mesh_cache: Default::default(),
             fixture_lib: None,
             fixture_lib_dir: None,
@@ -3819,6 +3847,13 @@ impl State {
                 self.insert_accessory(setup, &params, placement);
             }
             CommandKind::SetAccessory { name, params } => self.set_accessory(&name, params),
+            CommandKind::ProfileFixtureDialog(setup) => self.open_profile_fixture_dialog(setup),
+            CommandKind::InsertProfileFixture { setup, name, profile, pos, yaw_deg } => {
+                self.insert_profile_fixture(setup, name, profile, pos, yaw_deg);
+            }
+            CommandKind::SetFixtureProfile { name, profile } => self.set_fixture_profile(&name, profile),
+            CommandKind::DeriveFixtureProfile { name, axis } => self.derive_fixture_profile(&name, axis),
+            CommandKind::ExportFixtureDxf { name, path } => self.export_fixture_dxf_path(&name, path),
             CommandKind::InsertBuiltinVise { setup, params, fit_stock, pos, yaw_deg } => {
                 self.insert_builtin_vise(setup, &params, fit_stock, pos, yaw_deg);
             }

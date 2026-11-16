@@ -191,6 +191,8 @@ mod fixture_plate_rows;
 mod fixture_modvise_rows;
 pub(crate) mod fixture_accessory_dialog;
 mod fixture_accessory_rows;
+mod fixture_profile_dialog;
+mod fixture_profile_rows;
 pub(crate) mod shell;
 // #31: the winit window, loop and per-frame draw - native only; the
 // browser build keeps `shell` (the shared frame) and refuses `run` below.
@@ -243,6 +245,8 @@ mod fixture_plate_tests;
 mod fixture_modvise_tests;
 #[cfg(test)]
 mod fixture_accessory_tests;
+#[cfg(test)]
+mod fixture_profile_tests;
 #[cfg(test)]
 mod footer_tests;
 #[cfg(test)]

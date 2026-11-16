@@ -698,6 +698,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
+                crate::step_source::set(world, &entity, dto.step_source.as_deref());
             }
             EntityKind::Stock => {
                 // validate_kind already refused these; Result, never unwrap.

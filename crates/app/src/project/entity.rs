@@ -396,6 +396,9 @@ pub struct FixtureDto {
     /// one. Same lenient read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accessory: Option<serde_json::Value>,
+    /// Editable 2D profile (spun / extruded, #744); same lenient read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<serde_json::Value>,
 }
 
 /// An operation as files hold it: definition, the stamp the last generate
@@ -596,6 +599,9 @@ pub struct EntityDto {
     /// reader dropping it loses only the record: the facets are stored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facet_budget: Option<u64>,
+    /// Raw STEP text preserved on entities imported from STEP (#744).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_source: Option<String>,
     /// Absent means Model; only non-model entities carry the tag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<EntityKind>,
