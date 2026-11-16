@@ -85,23 +85,31 @@ impl EdgeBreakVolume {
         for (seg, f) in edge.windows(2).zip(&self.frames) {
             self.column_spans(seg[0], seg[1], *f, depth, top, &mut spans);
         }
-        spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // Each span is used at its certain part only: it joins where even
+        // its latest possible start is within GAP of material already
+        // credited, and it credits down to its earliest possible end.
+        // GAP is a fixed length, never a multiple of a coordinate or a
+        // dimension: translating the part or widening the cap must not
+        // turn a real gap into a joined span.
         let mut bottom: f64 = 0.0;
-        for (lo, hi) in spans {
-            // Only roundoff in vertical coordinates and distances may
-            // join spans. Include world Z for translated/rotated caps;
-            // unrelated width and depth must not bridge a real gap.
-            let slack = 64.0 * f64::EPSILON * top.z.abs().max(lo.abs()).max(bottom);
-            if lo > bottom + slack {
+        let mut joined = vec![false; spans.len()];
+        loop {
+            let before = bottom;
+            for (span, joined) in spans.iter().zip(&mut joined) {
+                if !*joined && span.start <= bottom + GAP {
+                    *joined = true;
+                    bottom = bottom.max(span.end);
+                }
+            }
+            if bottom <= before {
                 break;
             }
-            bottom = bottom.max(hi);
         }
         let floor = top.z - bottom;
         (bottom > 0.0 && floor.is_finite()).then_some(floor)
     }
 
-    fn column_spans(&self, a: Point3, b: Point3, f: BreakFrame, depth: f64, top: Point3, spans: &mut Vec<(f64, f64)>) {
+    fn column_spans(&self, a: Point3, b: Point3, f: BreakFrame, depth: f64, top: Point3, spans: &mut Vec<Span>) {
         let delta = b - a;
         let len = delta.x.hypot(delta.y).hypot(delta.z);
         let tangent = [delta.x / len, delta.y / len, delta.z / len];
@@ -110,13 +118,27 @@ impl EdgeBreakVolume {
         let (s, ds) = (dot(q, f.across), -f.across[2]);
         let (d, dd) = (-dot(q, f.outward), f.outward[2]);
         let half = self.width / 2.0;
-        let mut bounds = (0.0, len + self.width + depth);
-        if !clip(&mut bounds, dot(q, tangent), -tangent[2], 0.0, len)
-            || !clip(&mut bounds, s, ds, -half, half)
-            || !clip(&mut bounds, d, dd, 0.0, depth)
-        {
+        // Each end plane is measured from its own endpoint, so a column
+        // at a polyline vertex meets that plane without roundoff.
+        let p = top - b;
+        let p = [p.x, p.y, p.z];
+        let (Some(from), Some(to), Some(cross), Some(inward)) = (
+            slab(dot(q, tangent), reach(q, tangent), -tangent[2], 0.0, f64::INFINITY),
+            slab(dot(p, tangent), reach(p, tangent), -tangent[2], f64::NEG_INFINITY, 0.0),
+            slab(s, reach(q, f.across), ds, -half, half),
+            slab(d, reach(q, f.outward), dd, 0.0, depth),
+        ) else {
+            return;
+        };
+        let slabs = [from, to, cross, inward];
+        let bounds = slabs.iter().fold((0.0_f64, len + self.width + depth), |b, s| (b.0.max(s.lo), b.1.min(s.hi)));
+        if !(bounds.0.is_finite() && bounds.1.is_finite() && bounds.1 > bounds.0) {
             return;
         }
+        // How far roundoff can move each end of the interval: the error
+        // of the plane that sets it, or of one that nearly does.
+        let late = slabs.iter().fold(0.0_f64, |w, s| w.max(s.lo + s.lo_error - bounds.0));
+        let early = slabs.iter().fold(0.0_f64, |w, s| w.max(bounds.1 - (s.hi - s.hi_error)));
         let mut cuts = vec![bounds.0, bounds.1];
         let speed = ds.hypot(dd);
         if let Some(radius) = self.radius().filter(|_| speed > 0.0) {
@@ -143,14 +165,43 @@ impl EdgeBreakVolume {
             cuts.extend(roots.into_iter().map(|distance| distance / speed));
         }
         cuts.sort_by(f64::total_cmp);
+        // A profile crossing is solved from the same offsets as the
+        // planes, so it is no more certain than they are.
+        let wobble = |h: f64| {
+            let root = late.max(early) + ROUND * h.abs();
+            if h == bounds.0 { late } else if h == bounds.1 { early } else { root }
+        };
+        // Pieces that share a crossing are one span.
+        let mut run: Option<(f64, f64)> = None;
+        let mut close = |run: Option<(f64, f64)>| {
+            if let Some((lo, hi)) = run {
+                let span = Span { start: lo + wobble(lo), end: hi - wobble(hi) };
+                if span.end > span.start {
+                    spans.push(span);
+                }
+            }
+        };
         for pair in cuts.windows(2) {
             let (lo, hi) = (pair[0], pair[1]);
+            if hi <= lo {
+                continue;
+            }
             let mid = lo + (hi - lo) / 2.0;
-            if hi > lo && d + dd * mid <= self.profile_depth(s + ds * mid, depth) {
-                spans.push((lo, hi));
+            if d + dd * mid <= self.profile_depth(s + ds * mid, depth) {
+                run = Some((run.map_or(lo, |r| r.0), hi));
+            } else {
+                close(run.take());
             }
         }
+        close(run);
     }
+}
+
+/// The certain part of one column interval inside a cap: its latest
+/// possible start and its earliest possible end, as depths below the top.
+struct Span {
+    start: f64,
+    end: f64,
 }
 
 fn unit(v: [f64; 3]) -> bool {
@@ -167,17 +218,50 @@ fn sag(s: f64, radius: f64) -> f64 {
     s.abs() * t / (1.0 + ((1.0 - t) * (1.0 + t)).sqrt())
 }
 
-fn clip(bounds: &mut (f64, f64), value: f64, rate: f64, min: f64, max: f64) -> bool {
-    if !value.is_finite() {
-        return false;
+/// The largest real gap, in mm, that a connection may bridge, and the
+/// largest roundoff an interval end may carry before its segment is
+/// refused. An absolute length: it does not grow with world position,
+/// width or depth.
+const GAP: f64 = 1e-9;
+
+/// Roundoff of a three-term dot product of a rounded difference, with margin.
+const ROUND: f64 = 16.0 * f64::EPSILON;
+
+/// Size of the terms summed in `dot(q, v)`: what its roundoff scales with.
+/// `q` is the offset from the edge to the column, so this is local.
+fn reach(q: [f64; 3], v: [f64; 3]) -> f64 {
+    (q[0] * v[0]).abs() + (q[1] * v[1]).abs() + (q[2] * v[2]).abs()
+}
+
+/// Column heights inside one slab, each end with a bound on its roundoff.
+struct Slab {
+    lo: f64,
+    hi: f64,
+    lo_error: f64,
+    hi_error: f64,
+}
+
+/// Heights where `min <= value + rate * h <= max`. `None` outside the
+/// slab, or where the answer is too uncertain to grant credit.
+fn slab(value: f64, reach: f64, rate: f64, min: f64, max: f64) -> Option<Slab> {
+    if !value.is_finite() || !reach.is_finite() {
+        return None;
     }
     if rate == 0.0 {
-        return value >= min && value <= max;
+        let inside = value >= min && value <= max && ROUND * reach <= GAP;
+        return inside.then_some(Slab { lo: f64::NEG_INFINITY, hi: f64::INFINITY, lo_error: 0.0, hi_error: 0.0 });
     }
-    let (a, b) = ((min - value) / rate, (max - value) / rate);
-    bounds.0 = bounds.0.max(a.min(b));
-    bounds.1 = bounds.1.min(a.max(b));
-    bounds.0.is_finite() && bounds.1.is_finite() && bounds.1 > bounds.0
+    // An infinite plane is no bound: it has no crossing to be unsure of.
+    let end = |plane: f64| {
+        let error = if plane.is_finite() { ROUND * (reach + plane.abs()) / rate.abs() } else { 0.0 };
+        ((plane - value) / rate, error)
+    };
+    let (mut lo, mut hi) = (end(min), end(max));
+    if lo.0 > hi.0 {
+        std::mem::swap(&mut lo, &mut hi);
+    }
+    let known = !lo.0.is_nan() && !hi.0.is_nan() && lo.1.is_finite() && hi.1.is_finite();
+    known.then_some(Slab { lo: lo.0, hi: hi.0, lo_error: lo.1, hi_error: hi.1 })
 }
 
 fn circle_roots(a: f64, b: f64, c: f64, bounds: (f64, f64), cuts: &mut Vec<f64>) -> bool {

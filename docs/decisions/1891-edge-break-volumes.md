@@ -70,3 +70,30 @@ The Z coordinate retains roundoff allowance for translated, tilted caps.
 Drop width and depth from that scale: an unrelated cross-edge width of
 `1e14` must not bridge a real `0.1` mm gap below the surface. This keeps roundoff joining for
 vertical intervals while detached caps retain the sharp gouge verdict.
+
+**Review fix: the connection allowance is a fixed length.** (Replaces the
+paragraph above.) Scaling the allowance by the model surface Z let a
+translation to `z = 1e14` join a cap that sits a representable `0.09375`
+mm under the surface. A span now joins only across `1e-9` mm, a constant
+that does not grow with world position, width or depth; float steps are
+larger than that far from the origin, so every representable gap there
+stays a gap.
+
+Roundoff is handled per span instead of in the allowance. Each plane
+crossing carries a bound, `16 eps * (sum |q_i v_i| + |plane|) / |rate|`,
+where `q` is the offset from the segment start to the column: a local
+quantity, unchanged by translation. A span is used at its certain part
+only: it joins at its latest possible start and credits to its earliest
+possible end. Each segment end plane is measured from its own endpoint,
+so a column standing on a polyline vertex meets it without roundoff even
+when mesh noise leaves the plane picoradians off vertical. A column that meets a nearly vertical plane where roundoff
+moves the crossing by more than the allowance therefore gets no credit
+there, and a floor is never deeper than the declared cap. Profile
+crossings take the planes' bound plus a relative term.
+
+Dropped: an allowance relative to the span's own depth (a tall cap would
+again bridge a real gap), and refusing a whole segment for one uncertain
+plane (it refused steep caps whose doubtful plane is not the one that
+ends the span). `tiny_circle_direction_rates_do_not_underflow_into_extra_credit`
+now starts its column at the segment start, where the offset is exact;
+its old column sat on a plane `1e-200` off vertical and is refused.

@@ -98,7 +98,10 @@ fn tiny_circle_direction_rates_do_not_underflow_into_extra_credit() {
     let eps = 1e-200;
     let length = 1e201;
     let mut b = flat();
-    b.edge = vec![p(-length * eps, 0.0, -length), p(length * eps, 0.0, length)];
+    // The column starts at the segment's own start, so its offset from
+    // the edge is exact: a cap this steep is refused anywhere roundoff
+    // could move where the column enters it.
+    b.edge = vec![p(0.0, 0.0, 0.0), p(-length * eps, 0.0, -length)];
     let v = b.volume.as_mut().expect("volume");
     v.frames[0].outward = [-1.0, 0.0, eps];
     v.profile = BreakProfile::ConcaveBall { radius: 0.5 };
@@ -212,4 +215,78 @@ fn legacy_cones_keep_their_law_and_reject_nonfinite_width() {
     assert_eq!(legacy.width(), 0.5);
     assert_eq!(legacy.floor_at(0.0, 0.25), Some((-0.25, 0.0)));
     assert!(!EdgeBreak { depth: f64::MAX, slope: f64::MIN_POSITIVE, ..legacy }.is_sane());
+}
+
+#[test]
+fn connection_allowance_does_not_grow_with_world_position() {
+    // Far from the origin a float step is large, so every gap here is a
+    // real distance between representable heights, never lost roundoff.
+    for z in [0.0, 1e3, 1e6, 1e9, 1e12, 1e14, -1e14] {
+        let mut b = flat();
+        for q in &mut b.edge { q.z = z; }
+        assert!(b.is_sane());
+        let floor = b.floor_below(0.0, 0.0, z).expect("a cap that starts at the surface is connected");
+        assert!((floor - (z - 0.5)).abs() <= 1e-9, "z={z}: {floor}");
+        assert!(floor >= z - 0.5, "z={z}: credit below the declared depth");
+        let micron = 1.0 / 1024.0;
+        if z.abs() <= 1e6 {
+            assert_eq!(b.floor_below(0.0, 0.0, z + micron), None, "z={z}: a micron gap was joined");
+        }
+        for gap in [0.09375, 0.25, 0.375] {
+            let top = z + gap;
+            assert_eq!(top - z, gap, "the gap is exact at z={z}");
+            assert_eq!(b.floor_below(0.0, 0.0, top), None, "z={z}: a {gap} mm gap was joined");
+        }
+    }
+    // The same law for a tilted cap moved far along every axis.
+    for shift in [0.0, 1e3, 1e14] {
+        let frame = TiltedFrame::from_angles(p(shift, -shift, shift), 25.0, 35.0).expect("frame");
+        let path = Toolpath { breaks: vec![flat()], ..Toolpath::default() };
+        let world = frame.world_path(&path, 0.01);
+        let mapped = &world.breaks[0];
+        let top = frame.to_world(p(0.0, 0.0, 0.0));
+        if shift <= 1e3 {
+            assert!(mapped.floor_below(top.x, top.y, top.z).is_some(), "shift={shift}: connected cap lost");
+        }
+        assert_eq!(mapped.floor_below(top.x, top.y, top.z + 0.25), None, "shift={shift}: a 0.25 mm gap was joined");
+    }
+}
+
+#[test]
+fn an_uncertain_interval_end_is_never_read_in_favour_of_the_cut() {
+    // The side planes are one nanoradian off vertical, so where a column
+    // meets one, roundoff moves that height by microns.
+    let side = |tilt: f64| {
+        let mut b = flat();
+        b.volume.as_mut().expect("volume").frames[0] =
+            BreakFrame { outward: [0.0, tilt.sin(), tilt.cos()], across: [0.0, tilt.cos(), -tilt.sin()] };
+        assert!(b.is_sane());
+        b
+    };
+    let b = side(1e-9);
+    near(b.floor_below(0.0, 0.0, 0.0), -0.5);
+    // The cap ends near 0.2 mm here: credit stops short of the doubt.
+    let floor = b.floor_below(0.0, 0.5 - 2e-10, 0.0).expect("the certain part is credited");
+    assert!(floor > -0.2 && floor < -0.19, "{floor}");
+    // The column may enter this cap as late as a micron down: no credit.
+    assert_eq!(side(-1e-9).floor_below(0.0, 0.5 - 1e-15, 0.0), None);
+    // An unrelated huge width leaves a well-conditioned column alone.
+    let mut wide = side(1e-9);
+    wide.volume.as_mut().expect("volume").width = 1e14;
+    near(wide.floor_below(0.0, 0.0, 0.0), -0.5);
+}
+
+#[test]
+fn a_column_at_a_vertex_of_barely_sloped_segments_keeps_its_credit() {
+    // Mesh noise leaves both end planes a few picoradians off vertical.
+    // The column stands exactly on the shared vertex, so it meets them
+    // with no roundoff and the cap below it stays connected.
+    let mut b = flat();
+    b.edge = vec![p(-5.0, 0.0, -1e-11), p(0.0, 0.0, 0.0), p(5.0, 0.0, -1e-11)];
+    let frame = b.volume.as_ref().expect("volume").frames[0];
+    b.volume.as_mut().expect("volume").frames = vec![frame, frame];
+    assert!(b.is_sane());
+    near(b.floor_below(0.0, 0.0, 0.0), -0.5);
+    near(b.floor_below(-2.5, 0.0, -5e-12), -0.5);
+    assert_eq!(b.floor_below(0.0, 0.0, 1.0 / 1024.0), None, "a micron above the vertex is a gap");
 }

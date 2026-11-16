@@ -166,3 +166,41 @@ fn large_cross_edge_width_cannot_connect_a_detached_cap() {
         }
     }
 }
+
+#[test]
+fn a_far_z_translation_cannot_connect_a_detached_cap() {
+    // At z = 1e14 the cap sits a real, representable 0.09375 mm (six
+    // float steps) under the model top. World Z must not widen the join.
+    for z in [1e14, -1e14, 1e9, 1e6, 1e3] {
+        let facets = cube(p(-2.0, -2.0, z - 1.0), p(2.0, 2.0, z)).facets.to_vec();
+        for (drop, cut, expected_credit) in [(0.1, 0.55, 0), (0.0, 0.5, 1)] {
+            let edge_z = z - drop;
+            let b = EdgeBreak {
+                edge: vec![p(-5.0, 0.0, edge_z), p(5.0, 0.0, edge_z)],
+                depth: 0.5,
+                slope: 0.0,
+                volume: Some(EdgeBreakVolume {
+                    width: 1.0,
+                    frames: vec![BreakFrame { outward: [0.0, 0.0, 1.0], across: [0.0, 1.0, 0.0] }],
+                    profile: BreakProfile::Flat,
+                }),
+            };
+            assert!(b.is_sane(), "translated records reach the verifier");
+            let gap = z - edge_z;
+            assert!(drop == 0.0 || gap > 0.09, "the gap is representable at z={z}: {gap}");
+            let mut d = Dexel::block(-0.0625, -0.0625, 0.0625, 0.0625, z, 0.125).expect("stock");
+            d.cut_chord(p(-0.1, 0.0, z - cut), p(0.1, 0.0, z - cut), 0.1);
+            let mut dev = deviate(&d, &facets, 0.01).expect("sharp verdict");
+            assert_eq!(dev.gouge_cells, 1, "z={z}");
+            let sharp = dev.max_gouge;
+            assert!((sharp - cut).abs() < 0.01, "z={z}: {dev:?}");
+            assert_eq!(credit_breaks(&mut dev, &d, &facets, &[b]), expected_credit, "z={z} drop={drop}");
+            if expected_credit == 0 {
+                assert_eq!(dev.gouge_cells, 1, "z={z}: a detached cap must not clear a real gouge");
+                assert_eq!(dev.max_gouge, sharp, "z={z}: {dev:?}");
+            } else {
+                assert!(dev.is_clean(), "z={z}: a connected cap must retain its credit: {dev:?}");
+            }
+        }
+    }
+}
