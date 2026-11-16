@@ -77,7 +77,7 @@ fn viewport(h: &mut Harness<'static, ShellUi>) {
 #[ignore = "manual PR review evidence capture; requires GPU and writes evidence PNGs"]
 fn review_1710_wcs_page_and_viewport_evidence() {
     let _guard = snapshot_guard();
-    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/reviews/1710");
+    let out = std::env::temp_dir().join("camcraft-review-1710");
     let before =
         std::env::var_os("PR1710_BEFORE").is_some() || out.join(".before-capture").is_file();
     std::fs::create_dir_all(&out).expect("evidence directory");

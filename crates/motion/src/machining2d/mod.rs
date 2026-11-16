@@ -48,6 +48,7 @@ mod contour_entry;
 mod contour_link;
 mod contour_params;
 mod contour_run_side;
+mod contour_run_stock;
 mod contour_start;
 mod contour_step;
 mod descent;
@@ -107,9 +108,10 @@ pub use bore::{bore, BoreHole, BoreParams};
 pub use bore_core::{bore_core_gap, bore_floor_reach, bore_leaves_core, cutting_radius_at, max_bore_diameter};
 pub use chamfer::{chamfer, ChamferParams};
 pub use circular::{circular, CircularParams};
-pub use contour::{contour, contour_on_bodies, contour_on_part, ContourParams, Lead, Side};
+pub use contour::{contour, contour_on_bodies, contour_on_part, contour_on_picked, ContourParams, Lead, Side};
 pub use contour_chain::contour_along_chain;
 pub use contour_run_side::{contour_open_run, SectionAt};
+pub use contour_run_stock::contour_open_run_sided;
 pub use contour_link::DEFAULT_LEVEL_RAMP_ANGLE;
 pub use crate::links::{Link, Links};
 pub use face::{face, face_led, face_over, FaceParams, GenError, MAX_PASSES};
@@ -128,7 +130,7 @@ pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use unreached::{unreached_note, unreached_pieces};
 pub use adaptive_method::AdaptiveMethod;
-pub use adaptive_troch::adaptive_trochoidal;
+pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
 pub use trochoid_air::lifted_cut;
 pub use trochoid_slot::{
     plan_trochoidal_slot, trochoidal_slot, TrochoidParams, TrochoidPlan, TrochoidReturn, DEFAULT_MAX_ENGAGEMENT,

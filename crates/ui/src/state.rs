@@ -1063,6 +1063,8 @@ pub struct ToolUi {
     pub pitch: f64,
     /// A single-form thread mill's finest pitch (#894); inert elsewhere.
     pub pitch_min: f64,
+    /// Tap thread hand; older tools default to right-hand.
+    pub thread_hand: camcraft_app::tools::ThreadHand,
     /// Insert nose radius; the turning kind's cutting ball, inert on
     /// the mills (the app's `Tool` field's law, mirrored).
     pub nose_radius: f64,
@@ -1102,6 +1104,9 @@ pub struct ToolUi {
     /// #891: the turning cutting data (Vc, f/rev, max rpm), None = not
     /// stated - carried so an Apply never drops it.
     pub turning: Option<camcraft_app::tools::TurningData>,
+    /// #1152: a sinker body electrode's section - carried so an Apply
+    /// never turns the body into the rectangle of its two sizes.
+    pub outline: Vec<[f64; 2]>,
 }
 
 impl Default for ToolUi {
@@ -1137,12 +1142,14 @@ impl ToolUi {
                 ToolKind::Electrode => 13,
                 ToolKind::ThreadMill => 14,
                 ToolKind::ThreadMillSingle => 15,
+                ToolKind::Waterjet => 16,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
             tip_angle: t.tip_angle,
             pitch: t.pitch,
             pitch_min: t.pitch_min,
+            thread_hand: t.thread_hand,
             nose_radius: t.nose_radius,
             width: t.width,
             flute_len: t.flute_len,
@@ -1164,6 +1171,7 @@ impl ToolUi {
             notes: t.catalog.notes.clone().unwrap_or_default(),
             cutting: t.cutting.clone(),
             turning: t.turning,
+            outline: t.outline.clone(),
         }
     }
 
@@ -1187,6 +1195,7 @@ impl ToolUi {
             13 => ToolKind::Electrode,
             14 => ToolKind::ThreadMill,
             15 => ToolKind::ThreadMillSingle,
+            16 => ToolKind::Waterjet,
             _ => ToolKind::EndMill,
         }
     }
@@ -1221,6 +1230,7 @@ impl ToolUi {
             tip_angle: self.tip_angle,
             pitch: self.pitch,
             pitch_min: self.pitch_min,
+            thread_hand: self.thread_hand,
             nose_radius: self.nose_radius,
             width: self.width,
             flute_len: self.flute_len,
@@ -1238,6 +1248,7 @@ impl ToolUi {
             catalog: self.catalog(),
             cutting: self.cutting.clone(),
             turning: self.turning,
+            outline: self.outline.clone(),
         };
         tool.corner_r = tool.tip_corner_r();
         tool
@@ -1431,6 +1442,10 @@ pub enum Panel {
 pub enum LayoutRequest {
     /// Close the panel if open, reopen it at its default side if not.
     Toggle(Panel),
+    /// Open and focus a panel without toggling it closed.
+    Show(Panel),
+    /// Open and focus the independent tool library.
+    ToolLibrary,
     /// Rebuild the default three-pane dock.
     Reset,
 }
@@ -1493,6 +1508,9 @@ pub struct State {
     /// #225: the Feeds tab shows the spindle speed as surface (cutting)
     /// speed instead of rpm. View state - never a command, never saved.
     pub spindle_as_vc: bool,
+    /// Catalog filters are temporary view state, outside the document and history.
+    pub tool_catalog_kind: Option<camcraft_app::tools::ToolKind>,
+    pub tool_catalog_name: String,
     /// #899: how the Tool library page's Import treats a name the
     /// document already has. View state - the import itself is the command.
     pub tool_import_mode: camcraft_app::commands::ImportMode,
@@ -1829,6 +1847,8 @@ pub struct State {
     /// [`OpUi`]: the drafts rebuild on every sync, and a tab reset on
     /// Apply or on reselecting the same op would read as a bug.
     pub op_tab: usize,
+    /// Whether Properties is the visible dock tab this frame.
+    pub properties_shown: bool,
     pub tool_ui: ToolUi,
     /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
     /// that tool, `Some("")` the blank creation form. Ephemeral window
@@ -2001,6 +2021,8 @@ impl State {
             debug_info_open: false,
             gpu_line: None,
             spindle_as_vc: false,
+            tool_catalog_kind: None,
+            tool_catalog_name: String::new(),
             tool_import_mode: camcraft_app::commands::ImportMode::default(),
             doc_version: 0,
             selection_version: 0,
@@ -2028,6 +2050,7 @@ impl State {
             incoming_view: Default::default(),
             geo_hover: None,
             geo_hover_drawn: None,
+            properties_shown: true,
             geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
@@ -3996,8 +4019,8 @@ impl State {
                     return;
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
-                    let (coarse, budget) = (command.coarse_mm, command.facet_budget);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_budget(budget)) {
+                    let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
@@ -4016,10 +4039,10 @@ impl State {
                 }
                 // #864: an import kept coarser than promised is said, not
                 // only logged.
-                if let Some(chord) = model::find_by_name(&self.world, &name)
-                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e))
+                if let Some((e, chord)) = model::find_by_name(&self.world, &name)
+                    .and_then(|e| camcraft_app::model_fidelity::chord_of(&self.world, &e).map(|c| (e, c)))
                 {
-                    let said = camcraft_app::model_fidelity::summary(&self.world, chord);
+                    let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
                 }
             }
@@ -4238,6 +4261,9 @@ impl State {
         self.rename_draft = None;
         self.dragging_op = None;
         self.world = loaded;
+        // #1997: the orbit pivot is the new document's part and stock, never
+        // the old document's target (the envelope is not in the bounds).
+        self.frame_all();
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {

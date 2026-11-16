@@ -16,9 +16,9 @@
 //!   their products: the eight signed permutations that keep Z on +-Z)
 //!   maps every column centre onto a column centre of an image lattice
 //!   exactly. Such a carry moves numbers between cells and loses
-//!   nothing; every other rotation (a side-on turn, 30 degrees about Z)
-//!   would need a re-sample at the grid pitch, and is refused by name
-//!   ([`CARRY_TURN_REFUSAL`]), never guessed.
+//!   nothing. A side-on quarter turn is `carry_side`'s (#874); a turn
+//!   off the quarter (30 degrees about Z) would need a re-sample at an
+//!   angle, and is refused by name ([`CARRY_TURN_REFUSAL`]), never guessed.
 //! - **Two sides.** A column holds material from its floor up to its
 //!   top. Upright cuts only lower tops; a flip swaps the sides
 //!   (`top' = tz - floor`, `floor' = tz - top`). A column cut through
@@ -31,16 +31,15 @@
 //!   one-sided column verdict always was (single-setup verdicts do not
 //!   move).
 
-use super::deviate::{Deviation, deviate};
 use super::dexel::Dexel;
-use super::kernel::{StockError, part_surface};
+use super::kernel::part_surface;
 
 use crate::geometry::{Point3, Triangle};
 
-/// The refusal for a turn the lattice cannot carry exactly.
-/// Plain words (#866): what the simulation can carry, and why this turn
-/// is not one of those - the caller says which turn and what to do.
-pub const CARRY_TURN_REFUSAL: &str = "the stock simulation can carry machined stock only through a flip over X or Y or a quarter turn about Z (turns that keep the tool axis vertical) - any other turn would have to re-sample the stock and lose its detail";
+/// The refusal for a turn no carry holds exactly (off the quarter turns).
+/// Plain words (#866, shortened by #874): what the simulation carries -
+/// the caller says which turn and what to do.
+pub const CARRY_TURN_REFUSAL: &str = "the stock simulation carries machined stock only through quarter turns (steps of 90° about X, Y or Z)";
 
 /// How close a rotation entry must sit to -1, 0 or 1 to be read as one.
 const UNIT_EPS: f64 = 1e-9;
@@ -54,7 +53,7 @@ pub struct LatticeTurn {
     t: [f64; 3],
 }
 
-fn unit(v: f64) -> Option<i8> {
+pub(super) fn unit(v: f64) -> Option<i8> {
     if (v - 1.0).abs() <= UNIT_EPS {
         Some(1)
     } else if (v + 1.0).abs() <= UNIT_EPS {
@@ -176,7 +175,7 @@ impl LatticeTurn {
 #[derive(Clone, Debug)]
 pub struct Body {
     pub dex: Dexel,
-    floor: Vec<f64>,
+    pub(super) floor: Vec<f64>,
     floor_judged: bool,
 }
 
@@ -184,7 +183,10 @@ impl Body {
     /// A body whose every material column stands on one floor height
     /// (the box and cylinder stocks).
     #[must_use]
-    pub fn on_floor(dex: Dexel, z: f64) -> Self {
+    pub fn on_floor(mut dex: Dexel, z: f64) -> Self {
+        if let Some(h) = &mut dex.history {
+            std::sync::Arc::make_mut(h).lo.z = z;
+        }
         let floor = (0..dex.nx * dex.ny).map(|k| if dex.top_at(k).is_finite() { z } else { f64::INFINITY }).collect();
         Body { dex, floor, floor_judged: false }
     }
@@ -192,7 +194,8 @@ impl Body {
     /// A body whose floor is the lowest surface of a stock mesh (the
     /// from-model stock): the mesh read from below.
     #[must_use]
-    pub fn on_mesh(dex: Dexel, facets: &[Triangle]) -> Self {
+    pub fn on_mesh(mut dex: Dexel, facets: &[Triangle]) -> Self {
+        dex.history = None;
         let floor = bottom_surface(facets, &dex).into_iter().map(|b| if b.is_finite() { b } else { f64::INFINITY }).collect();
         Body { dex, floor, floor_judged: false }
     }
@@ -222,7 +225,8 @@ impl Body {
         let a = self.dex.cell * self.dex.cell;
         (0..self.dex.nx * self.dex.ny)
             .filter(|&k| !self.empty_at(k))
-            .map(|k| (self.dex.top_at(k) - self.floor_at(k)) * a)
+            .map(|k| self.material_spans_at(k).map_or(self.dex.top_at(k) - self.floor_at(k),
+                |spans| spans.iter().map(|(lo, hi)| hi - lo).sum()) * a)
             .sum()
     }
 
@@ -263,6 +267,7 @@ impl Body {
     /// # Errors
     /// A lattice the image cannot hold (never for a well-formed body).
     pub fn carry(&self, turn: &LatticeTurn) -> Result<Body, String> {
+        if let Some(body) = self.exact_lattice(turn) { return body; }
         let d = &self.dex;
         let (w, h) = (d.nx as f64 * d.cell, d.ny as f64 * d.cell);
         let corners = [(d.x0, d.y0), (d.x0 + w, d.y0), (d.x0, d.y0 + h), (d.x0 + w, d.y0 + h)];
@@ -299,32 +304,11 @@ impl Body {
         }
         let stock_z = top.iter().copied().filter(|v| v.is_finite()).fold(f64::NEG_INFINITY, f64::max);
         let stock_z = if stock_z.is_finite() { stock_z } else { 0.0 };
-        let dex = Dexel::from_grid(x0, y0, d.cell, nx, ny, stock_z, top);
+        let mut dex = Dexel::from_grid(x0, y0, d.cell, nx, ny, stock_z, top);
+        dex.history = d.history.as_ref().map(|h| std::sync::Arc::new(
+            h.turned(super::carry_exact::Frame::lattice(turn))
+        ));
         Ok(Body { dex, floor, floor_judged: self.floor_judged || turn.flips() })
-    }
-
-    /// The verdict against the part, in the body's frame: the top
-    /// against the part's top as the column verdict always read it, and,
-    /// once the floor has faced a tool, the floor against the part's
-    /// bottom. Per column the worse of the two stands (a gouge before
-    /// rest); the aggregates add up.
-    ///
-    /// # Errors
-    /// A non-finite tolerance.
-    pub fn deviate(&self, facets: &[Triangle], tol: f64) -> Result<Deviation, StockError> {
-        let top = deviate(&self.dex, facets, tol)?;
-        if !self.floor_judged {
-            return Ok(top);
-        }
-        let d = &self.dex;
-        let neg: Vec<f64> = self.floor.iter().map(|f| -f).collect();
-        let mirror = Dexel::from_grid(d.x0, d.y0, d.cell, d.nx, d.ny, -d.stock_z, neg);
-        let flipped: Vec<Triangle> = facets.iter().map(mirror_z).collect();
-        let mut bot = deviate(&mirror, &flipped, tol)?;
-        let back = |p: Option<Point3>| p.map(|p| Point3::new(p.x, p.y, -p.z));
-        bot.max_rest_at = back(bot.max_rest_at);
-        bot.max_gouge_at = back(bot.max_gouge_at);
-        Ok(merge(top, bot))
     }
 
     /// The tops as the eye should draw them: a column with no material
@@ -344,7 +328,7 @@ impl Body {
     }
 }
 
-fn mirror_z(t: &Triangle) -> Triangle {
+pub(super) fn mirror_z(t: &Triangle) -> Triangle {
     let m = |p: Point3| Point3::new(p.x, p.y, -p.z);
     Triangle::new(m(t.a), m(t.c), m(t.b))
 }
@@ -355,42 +339,4 @@ fn mirror_z(t: &Triangle) -> Triangle {
 fn bottom_surface(facets: &[Triangle], dex: &Dexel) -> Vec<f64> {
     let flipped: Vec<Triangle> = facets.iter().map(mirror_z).collect();
     part_surface(&flipped, dex.x0, dex.y0, dex.cell, dex.nx, dex.ny).into_iter().map(|z| -z).collect()
-}
-
-fn merge(top: Deviation, bot: Deviation) -> Deviation {
-    let tol = top.tol;
-    let dev = top
-        .dev
-        .iter()
-        .zip(&bot.dev)
-        .map(|(&a, &b)| match (a.is_nan(), b.is_nan()) {
-            (true, true) => f64::NAN,
-            (true, false) => b,
-            (false, true) => a,
-            (false, false) if a < -tol || b < -tol => a.min(b),
-            (false, false) => a.max(b),
-        })
-        .collect();
-    let (max_rest, max_rest_at) =
-        if bot.max_rest > top.max_rest { (bot.max_rest, bot.max_rest_at) } else { (top.max_rest, top.max_rest_at) };
-    let (max_gouge, max_gouge_at) = if bot.max_gouge > top.max_gouge {
-        (bot.max_gouge, bot.max_gouge_at)
-    } else {
-        (top.max_gouge, top.max_gouge_at)
-    };
-    Deviation {
-        cells_x: top.cells_x,
-        cells_y: top.cells_y,
-        cell: top.cell,
-        tol,
-        dev,
-        rest_cells: top.rest_cells + bot.rest_cells,
-        gouge_cells: top.gouge_cells + bot.gouge_cells,
-        rest_volume: top.rest_volume + bot.rest_volume,
-        gouge_volume: top.gouge_volume + bot.gouge_volume,
-        max_rest,
-        max_gouge,
-        max_rest_at,
-        max_gouge_at,
-    }
 }

@@ -1,0 +1,97 @@
++++
+title = "First run"
+description = "The window, the ribbon, and a first toolpath."
+weight = 2
+aliases = ["guide/first-run/"]
++++
+
+## Trying it in the browser first
+
+When this site's release has a browser version,
+[CamCraft in the browser](@/app.md) opens it with nothing to install (it
+needs a browser with WebGL2: a current Chrome, Firefox, Edge or Safari), so
+you can look around the window described below; if it does not, that page
+says so, and the front page says which it is. The browser version opens a
+model or a project with the browser's file picker. Save and Save As download
+the project. Post downloads the program when Output is set to one combined
+program; one file for each operation is refused. Its other file commands
+(recent files, machine, post, theme, fixture and tool library files, and the
+setup sheet, tool list and stock exports) are greyed, or refused with the
+reason on the status line. For real work, install a
+[desktop build](@/guide/getting-started/install.md).
+
+## The window
+
+Shortcuts on this page are written with Ctrl. On macOS, press Cmd in their place
+(Cmd+N, Cmd+Shift+O and so on): CamCraft binds them to the command key there.
+
+- **The ribbon** across the top holds the commands, in groups:
+  - **File:** {{ <icon name="file-plus" /> }} **New** (Ctrl+N), {{ <icon name="folder-open" /> }} **Model** (open a mesh model, Ctrl+O), {{ <icon name="file-import" /> }} **Open** (a
+    project, Ctrl+Shift+O), {{ <icon name="device-floppy" /> }} **Save** (Ctrl+S), {{ <icon name="device-floppy" /> }} **Save As** (Ctrl+Shift+S) and {{ <icon name="act-post" /> }} **Post**
+    (Ctrl+P).
+  - **Setup:** {{ <icon name="tree-setup" /> }} **Setups**, {{ <icon name="tree-stock" /> }} **Stock**, {{ <icon name="tree-wcs" /> }} **Origin** (the work offset), {{ <icon name="tools" /> }} **Tools** and the
+    machine button, which switches the workspace between Milling, Turning
+    and Mill-turning.
+  - **Operation groups** for the machine you are on: Milling 2D, Milling
+    3D, Drilling and Multi-axis on a mill; Turning on a lathe. Each group
+    opens a list of its operations. Right-click (Control-click or a two-finger
+    click on a Mac) an operation to pin it to the ribbon (up to four pins).
+  - **Modify:** {{ <icon name="arrow-back-up" /> }} **Undo** (Ctrl+Z), {{ <icon name="arrow-forward-up" /> }} **Redo** (Ctrl+Y), {{ <icon name="act-generate" /> }} **Run** (generate the selected
+    operation) and {{ <icon name="trash" /> }} **Delete**.
+  - **Inspect:** {{ <icon name="act-frame-all" /> }} **Frame** (F), {{ <icon name="act-show-paths" /> }} **Paths** (show every toolpath), {{ <icon name="act-simulate" /> }} **Simulate** and
+    {{ <icon name="tree-stock" /> }} **Deviate**.
+  - **View:** Panels (show or hide the browser, properties and machines
+    panes, or reset the layout) and Theme.
+- **The browser** lists the document: {{ <icon name="tree-part" /> }} models, {{ <icon name="tree-setup" /> }} setups with their {{ <icon name="tree-stock" /> }} stock,
+  {{ <icon name="tree-machine" /> }} machine, {{ <icon name="act-post" /> }} post, {{ <icon name="tree-fixture" /> }} fixtures and {{ <icon name="tools" /> }} tools, and the {{ <icon name="tree-op-group" /> }} operations.
+- **The properties pane** shows the page of whatever you selected.
+- **The viewport** shows the model, stock, toolpaths and simulation.
+
+Hover any ribbon button to read what it does. A greyed-out operation says
+why in its tooltip, for example "No tool yet - add one (Setup > Tools)" or
+"No stock yet - set up stock first (Setup > Stock)".
+
+Every keyboard shortcut and mouse gesture, for Windows, Linux and macOS, is
+on the [Keyboard and mouse](@/guide/getting-started/keyboard-and-mouse.md) page.
+
+## A first toolpath
+
+1. **Import a model.** Click {{ <icon name="folder-open" /> }} **Model** and pick an STL, OBJ or STEP file. If
+   an imported mesh has holes, the model's page has **Repair mesh**, which
+   welds vertices and fills holes and reports what it changed.
+   Closed STL and OBJ shells with inward winding are turned outward on
+   import, so their solid checks use the outside of the part.
+   A STEP closed shell that meshes with missing walls can load as
+   **Incomplete** for viewing and setup. Its page names the hole; every
+   operation on it is refused at the post. Re-export a sound model or
+   import an STL; raising the facet budget does not repair missing walls.
+2. **Set the stock.** Click {{ <icon name="tree-stock" /> }} **Stock**. The stock is a box, a cylinder, or a
+   copy of a model.
+3. **Place the work offset.** Click {{ <icon name="tree-wcs" /> }} **Origin** to set the work coordinate
+   system (WCS) the program is written in.
+4. **Add a tool.** Click {{ <icon name="tools" /> }} **Tools**, then **New tool…**. Fill in the
+   cutter's type and size, then choose **Add tool**. See
+   [Tools and tool libraries](@/guide/set-up/tools.md) for holders, tool numbers,
+   and import and export of `.camtools` libraries.
+5. **Add an operation.** Pick one from an operation group, for example
+   {{ <icon name="op-face" /> }} **Face** under Milling 2D. Its page opens with tabs: {{ <icon name="sec-geometry" /> }} Geometry, {{ <icon name="sec-heights" /> }} Heights,
+   {{ <icon name="sec-passes" /> }} Passes, {{ <icon name="sec-leads" /> }} Lead in / Lead out, {{ <icon name="sec-feeds" /> }} Feeds (and {{ <icon name="sec-machine" /> }} Machine for a few kinds). A kind
+   only shows the tabs it has settings for.
+6. **Generate.** Click {{ <icon name="act-generate" /> }} **Generate** at the bottom of the page. **Apply**
+   commits edited settings without generating; **Clear toolpath** removes
+   the path but keeps the operation.
+7. **Check it.** Use {{ <icon name="act-simulate" /> }} **Simulate** to play the program against the stock,
+   and {{ <icon name="tree-stock" /> }} **Deviate** to compare the machined stock with the model.
+8. {{ <icon name="device-floppy" /> }} **Save** the project (`.camproj`) and {{ <icon name="act-post" /> }} [post](@/guide/check-and-post/posting.md) it.
+
+More tasks: [Common workflows](@/guide/getting-started/workflows.md).
+
+## Undo
+
+Every change to the document is a command, so Ctrl+Z and Ctrl+Y (Cmd+Z and Cmd+Y on
+macOS) step through all of it: imports, stock, tools, operation settings, setups and
+theme changes. Moving the view, hovering and the simulation's playback
+position are not part of the history.
+
+Before you import a model, read [Units and coordinates](@/guide/reference/units-and-coordinates.md): an
+STL or OBJ file has no unit, and a 25.4 times error is easy to miss.
