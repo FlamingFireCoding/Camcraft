@@ -107,8 +107,7 @@ pub fn mesh_states(world: &World, declared: Option<&str>) -> Vec<(String, MeshSt
         .map(|(name, e)| {
             let tris = model::world_facets(world, &e).unwrap_or_default();
             let aabb = model::entity_world_aabb(world, &e).map(|b| FixtureBox { min: b.min, max: b.max });
-            let curved = fixture::def_of(world, &e).and_then(|d| d.profile)
-                .is_some_and(|p| p.collision_chord_error() > 0.0);
+            let curved = fixture::profile_collision_chord_error(world, &e) > 0.0;
             (name, tris, aabb, curved)
         })
         .collect();

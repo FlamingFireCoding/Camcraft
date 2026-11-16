@@ -76,6 +76,18 @@ pub fn def_of(world: &World, entity: &Entity) -> Option<FixtureDef> {
         .try_get::<&FixtureDef>(|d| d.clone())
 }
 
+/// The chord bound of a profile that generates this fixture's facets.
+/// A STEP fixture can carry a derived reference profile; its original
+/// facets and imported fidelity remain the collision geometry.
+#[must_use]
+pub(crate) fn profile_collision_chord_error(world: &World, entity: &Entity) -> f64 {
+    if crate::step_source::of(world, entity).is_some() {
+        return 0.0;
+    }
+    def_of(world, entity).and_then(|d| d.profile)
+        .map_or(0.0, |p| p.collision_chord_error())
+}
+
 /// Every tagged model sharing `declared`'s EFFECTIVE setup (the
 /// implicit-setup law resolves both sides), name-sorted - THE entity
 /// list of stage B: boxes, digests, lists and the fixtures page all
@@ -162,8 +174,7 @@ fn steel_box(world: &World, e: &Entity) -> Option<FixtureBox> {
     let b = model::entity_world_aabb(world, e)?;
     // Profile facets are also chords of the intended curved solid. Grow the
     // broad phase, and never let those facets acquit the resulting box hit.
-    let profile_error = def_of(world, e).and_then(|d| d.profile)
-        .map_or(0.0, |p| p.collision_chord_error());
+    let profile_error = profile_collision_chord_error(world, e);
     let imported_error = crate::model_fidelity::chord_of(world, e)
         .filter(|g| !crate::model_fidelity::is_unknown(*g)).unwrap_or(0.0);
     let g = profile_error.max(imported_error);
@@ -214,8 +225,7 @@ pub fn meshes_for(world: &World, declared: Option<&str>) -> Vec<MeshedFixture> {
         // #864: a fixture imported coarser than promised is judged by its
         // (grown) box alone - its mesh is never trusted to acquit a hit.
         .filter(|(_, e)| crate::model_fidelity::chord_of(world, e).is_none())
-        .filter(|(_, e)| def_of(world, e).and_then(|d| d.profile)
-            .is_none_or(|p| p.collision_chord_error() == 0.0))
+        .filter(|(_, e)| profile_collision_chord_error(world, e) == 0.0)
         .filter_map(|(name, e)| {
             let b = model::entity_world_aabb(world, &e)?;
             let tris = model::world_facets(world, &e)?;

@@ -56,3 +56,17 @@ editor, and STEP derivation controls. The before images use the two presentation
 files from this PR's parent commit with the same fixture state. The capture
 harness and images stay outside the PR history. Images are stored only on the
 fork's `pr-screenshots` branch and linked in the PR body.
+
+### Reference profile collision correction for PR #2101
+
+**Chosen:** Apply the profile chord bound only when the profile generates the
+fixture facets. Use the same STEP-source distinction as `InsertFixture` for
+collision boxes, mesh eligibility, and the fixture row. Keep the existing
+reduced-fidelity and unknown-fidelity checks for imported STEP geometry.
+
+**Why:** A derived reference profile leaves STEP facets unchanged. Its chord
+bound does not describe those facets. Collision results must remain unchanged
+through derivation, undo, redo, library save, and re-insertion.
+
+**Dropped:** Applying a reference profile's chord bound to original STEP facets.
+That choice expands unchanged steel and causes false collision warnings.
