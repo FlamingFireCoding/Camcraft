@@ -326,7 +326,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         // order, kerf crossings, the through-cut) are #672's laws, and
         // the generator certified that no lit move's kerf reaches the
         // part - so the torch carves nothing here, said not silenced.
-        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) {
+        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) {
             continue;
         }
         let cache = model::toolpath_of(world, e)

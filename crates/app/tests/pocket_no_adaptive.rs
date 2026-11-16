@@ -193,6 +193,17 @@ fn v63_pocket_adaptive_opens_as_adaptive2d_with_identical_toolpath() {
         notes.iter().any(|n| n.contains("P1") && n.contains("2D Adaptive")),
         "migration notes: {notes:?}"
     );
+    let v64 = v63.replace("\"version\": 63", "\"version\": 64");
+    let w64 = new_world();
+    let notes64 = project::open_noted(&w64, &v64).expect("v64 Pocket Adaptive must also migrate to v65");
+    assert!(
+        notes64.iter().any(|n| n.contains("P1") && n.contains("2D Adaptive")),
+        "v64 migration notes: {notes64:?}"
+    );
+    assert!(matches!(
+        model::operation_of(&w64, &model::find_by_name(&w64, "P1").expect("P1")).expect("op").params,
+        OpParams::Adaptive2D { method: AdaptiveMethod::Spiral, .. }
+    ));
     let e = model::find_by_name(&world, "P1").expect("migrated op P1");
     let op = model::operation_of(&world, &e).expect("operation");
     let OpParams::Adaptive2D {

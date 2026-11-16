@@ -196,10 +196,9 @@ pub fn tool_problem(world: &World, op_name: &str, op: &Operation) -> Option<Stri
         kinds_phrase(info.tool_kinds)
     );
     let tool = &op.tool;
-    // #532: a wire EDM kind names no tool - and must not.
     if !info.mounts_tool() {
         return (!tool.is_empty()).then(|| {
-            format!("{op_name} names tool '{tool}'; a {} operation mounts none - the wire is the machine's EDM condition", info.label)
+            format!("{op_name} names tool '{tool}'; a {} operation mounts none", info.label)
         });
     }
     let Some(entity) = model::find_by_name(world, tool) else {
