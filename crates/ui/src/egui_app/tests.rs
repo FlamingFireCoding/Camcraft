@@ -63,7 +63,8 @@ use super::{theme, world};
 /// (its tab strip + cells) plus the browser's own header row, as the
 /// shipping layout resolves them. Pointer tests aim at rows through this
 /// one number; a header change moves it here, once.
-const BROWSER_TREE_TOP: f32 = 150.0;
+// 172 = 150 + the 22 px the ribbon gained with its own tab and caption rows (#2021).
+const BROWSER_TREE_TOP: f32 = 172.0;
 
 
 /// The x of the tree's eye column: the browser pane's right edge less the
@@ -115,6 +116,7 @@ mod work_envelope;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+mod ribbon_rows;
 mod waterjet_recipe;
 mod catalog_filters;
 mod cycle_combo;
