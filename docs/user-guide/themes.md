@@ -76,3 +76,8 @@ clamped to the range.
 | `tree_suffix_gap` | Gap from a browser row label to its suffix | 0 to 32 |
 | `tree_header_boost` | Extra size of a browser header font | 0 to 12 |
 | `highlight_stroke_px` | Line width of an active rule, a row highlight and a drop target | 0.5 to 8 |
+| `window_margin` | Space between the edge of a floating window and its contents | 0 to 24 |
+| `status_h` | Height of the bottom status strip | 16 to 64 |
+| `ribbon_tab_pad_x` | Space on each side of a ribbon tab name | 2 to 32 |
+| `ribbon_tab_gap` | Gap between two ribbon tabs | 0 to 24 |
+| `ribbon_tab_stroke` | Thickness of the underline of the active ribbon tab | 1 to 8 |
