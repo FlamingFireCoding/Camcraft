@@ -16,6 +16,9 @@ pub mod mod_vise;
 pub mod mod_vise_edit;
 pub mod import_fixture;
 pub mod import_model;
+// #1862: a DXF profile placed on a setup's stock, and its move on the stock face.
+pub mod import_dxf;
+pub mod move_sketch;
 // #339 slice 6: a fixture library entry placed into a setup.
 pub mod insert_fixture;
 pub mod load_machine;
@@ -87,7 +90,9 @@ pub use fixture_plate::{InsertPlate, PlaceOnPlate, PlatePlacement, SetPlate, Set
 pub use mod_vise::PlaceModVisePair;
 pub use mod_vise_edit::{RefitModVise, SetModJaw};
 pub use import_fixture::ImportFixture;
+pub use import_dxf::{DxfOptions, ImportDxf};
 pub use import_model::ImportModel;
+pub use move_sketch::MoveSketch;
 pub use insert_fixture::InsertFixture;
 pub use load_machine::LoadMachine;
 pub use locate::{Locate, LocateFixture, LocatePart};
@@ -144,6 +149,16 @@ pub enum CommandError {
     Import(#[from] crate::geometry::ImportError),
     #[error("'{0}' import is not supported yet; import a STEP, STL, or OBJ file instead")]
     UnsupportedType(String),
+    /// #1862: the DXF file states no units and the caller stated none.
+    /// The extents are in drawing units, so a caller can show them in
+    /// each candidate unit before it asks. Clear it with a stated unit.
+    #[error(
+        "the DXF file states no units ($INSUNITS is absent or 0) - state \"mm\" or \"in\"; the drawing is {width} x {height} drawing units"
+    )]
+    DxfUnitsMissing { width: f64, height: f64 },
+    /// #1862: every other refusal of a DXF import, in the reader's words.
+    #[error("DXF import: {0}")]
+    Dxf(String),
     #[error("could not generate the toolpath: {0}")]
     Machining(String),
     /// A [`Machining`](CommandError::Machining) refusal about one spot

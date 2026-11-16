@@ -53,6 +53,8 @@ pub fn collect(world: &World) -> ProjectFile {
                 Some(EntityKind::Setup)
             } else if crate::program_entry::is_entry(world, &entity) {
                 Some(EntityKind::Entry)
+            } else if crate::sketch::is_sketch(world, &entity) {
+                Some(EntityKind::Sketch)
             } else {
                 None
             };
@@ -140,6 +142,7 @@ pub fn collect(world: &World) -> ProjectFile {
                 | Some(EntityKind::Tool)
                 | Some(EntityKind::Operation)
                 | Some(EntityKind::Setup)
+                | Some(EntityKind::Sketch)
                 | Some(EntityKind::Entry) => None,
                 Some(EntityKind::Stock)
                     if matches!(
@@ -181,6 +184,7 @@ pub fn collect(world: &World) -> ProjectFile {
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                sketch: super::sketch_dto::collect(world, &entity),
             }
         })
         .collect();

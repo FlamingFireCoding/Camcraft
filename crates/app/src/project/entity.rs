@@ -633,4 +633,8 @@ pub struct EntityDto {
     /// `kind == Some(Entry)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<super::program_entry_dto::ProgramEntryDto>,
+    /// A DXF profile's drawing (#1862); present exactly when
+    /// `kind == Some(Sketch)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sketch: Option<super::sketch_dto::SketchDto>,
 }

@@ -44,6 +44,13 @@ impl DeleteSetup {
         }
         // #316: a setup placed relative to this one would lose the setup
         // its edits follow - refused by name, like an operation.
+        // #1862: a DXF profile lies on this setup's stock - it is not
+        // deleted with the setup behind the user's back.
+        if let Some(profile) = crate::sketch::placed_in(world, Some(name)).first() {
+            return Err(CommandError::Invalid(format!(
+                "the DXF profile '{profile}' is placed in '{name}' - delete it first"
+            )));
+        }
         if let Some(child) = crate::setup_relative::dependents(world, name).first() {
             return Err(CommandError::Invalid(format!(
                 "'{child}' is placed relative to '{name}' - unlink it first"

@@ -27,6 +27,8 @@
 //! context and every function registered inside it is dropped first.
 
 pub(crate) mod api;
+// #1862: `cam.importDxf` and the profile view.
+pub(crate) mod dxf;
 pub use api::refusal_text;
 mod report;
 
@@ -83,6 +85,7 @@ pub(crate) const VERBS: &[Verb] = &[
     Verb::new("load", 1, api::v_load, "load(path: string): DocumentInfo"),
     Verb::new("save", -1, api::v_save, "save(path?: string): { path: string }"),
     Verb::new("import", -1, api::v_import, "import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] }"),
+    Verb::new("importDxf", -1, dxf::v_import_dxf, "importDxf(path: string, options?: { setup?: string; units?: \"mm\" | \"in\"; join_tol?: number; name?: string }): DxfProfile"),
     Verb::new("exportTools", 1, api::v_export_tools, "exportTools(path: string): { path: string; tools: number }"),
     Verb::new("importTools", -1, api::v_import_tools, "importTools(path: string, mode?: \"add\" | \"update\" | \"replace\", holders?: boolean): { path: string; mode: string; added: string[]; renamed: { from: string; to: string }[]; skipped: string[]; updated: string[]; replaced: string[]; removed: string[]; holders: number; holders_left_out: number; summary: string }"),
     Verb::new("operations", 0, api::v_operations, "operations(): OperationInfo[]"),
@@ -320,6 +323,28 @@ interface OperationInfo {
   status: OpStatus;
   /** Generation warnings carried by the cached path, if any. */
   warnings?: string[];
+}
+
+/** A DXF profile placed on the stock of a setup (not a model). */
+interface DxfProfile {
+  profile: string;
+  /** null for the implicit first setup. */
+  setup: string | null;
+  /** stated: the file's own unit (null: none stated); used: the unit the drawing was read in. */
+  units: { stated: string | null; used: string; from: "file" | "caller"; mm_per_unit: number };
+  layers: string[];
+  primitives: number;
+  join_tol: number;
+  chains: { closed: number; open: number; rejected: number };
+  /** Skipped DXF entities, counted by kind (TEXT, DIMENSION, ...). */
+  skipped: { [kind: string]: number };
+  skipped_total: number;
+  bounds: { min: number[]; max: number[] } | null;
+  /** On the top face of the setup's stock, from the stock origin: mm and degrees. */
+  placement: { x: number; y: number; angle: number };
+  origin: number[] | null;
+  rotation: number[] | null;
+  summary?: string;
 }
 
 interface DocumentInfo {

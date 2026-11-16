@@ -514,6 +514,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
         // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
+        // v62 -> v63 (#1862): a DXF profile row arrives; a v62 file has
+        // none, so it steps up unchanged.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -580,6 +582,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         validate_kind(dto, dto.kind.unwrap_or(EntityKind::Model))?;
     }
     super::setup_links::check(&file)?;
+    // #1862: every DXF profile is read and chained before any world write.
+    let mut sketches = super::sketch_dto::read_all(&file.entities)?;
     let keys: std::collections::HashSet<&str> = file.entities.iter()
         .filter(|e| e.kind == Some(EntityKind::Operation))
         .map(|e| e.name.as_str()).collect();
@@ -744,6 +748,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 entity.entity_view(world).add(Wcs);
             }
             EntityKind::Entry => super::program_entry_dto::apply(world, &entity, dto.entry)?,
+            EntityKind::Sketch => match sketches.remove(&dto.name) {
+                Some(sketch) => {
+                    entity.entity_view(world).set(sketch);
+                }
+                None => return Err(corrupt(format!("'{}' is a DXF profile without its drawing", dto.name))),
+            },
             EntityKind::Tool => {
                 // validate_kind already refused a missing or insane one.
                 let tdto = dto

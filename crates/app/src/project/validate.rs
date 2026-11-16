@@ -15,6 +15,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         )));
     }
     super::program_entry_dto::validate(dto, kind)?; // #155
+    super::sketch_dto::validate(dto, kind)?; // #1862
     // #1054: a recorded STEP facet budget rides a model row only, inside
     // the bounds an import would accept.
     if let Some(b) = dto.facet_budget {
@@ -38,7 +39,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
     }
     match kind {
-        EntityKind::Entry => {}
+        EntityKind::Entry | EntityKind::Sketch => {}
         EntityKind::Model => {
             if dto.stock.is_some()
                 || dto.tool.is_some()

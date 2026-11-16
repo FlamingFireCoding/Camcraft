@@ -186,6 +186,12 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
+    // #1862: an operation on a DXF profile, or a 3D kind in a setup
+    // whose model is virtual, is refused by name - never cut for want
+    // of a solid to check against.
+    if let Some(why) = crate::sketch_model::generation_problem(world, op) {
+        return Err(GenError::Invalid(why));
+    }
     // #763: the one machining-frame seam. Built before the first read;
     // the tilt's own refusal keeps its place below (`checked_frame`,
     // after the heights resolve) exactly where the old head raised it -

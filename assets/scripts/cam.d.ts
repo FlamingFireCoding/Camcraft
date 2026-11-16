@@ -23,6 +23,28 @@ interface OperationInfo {
   warnings?: string[];
 }
 
+/** A DXF profile placed on the stock of a setup (not a model). */
+interface DxfProfile {
+  profile: string;
+  /** null for the implicit first setup. */
+  setup: string | null;
+  /** stated: the file's own unit (null: none stated); used: the unit the drawing was read in. */
+  units: { stated: string | null; used: string; from: "file" | "caller"; mm_per_unit: number };
+  layers: string[];
+  primitives: number;
+  join_tol: number;
+  chains: { closed: number; open: number; rejected: number };
+  /** Skipped DXF entities, counted by kind (TEXT, DIMENSION, ...). */
+  skipped: { [kind: string]: number };
+  skipped_total: number;
+  bounds: { min: number[]; max: number[] } | null;
+  /** On the top face of the setup's stock, from the stock origin: mm and degrees. */
+  placement: { x: number; y: number; angle: number };
+  origin: number[] | null;
+  rotation: number[] | null;
+  summary?: string;
+}
+
 interface DocumentInfo {
   path: string;
   operations: OperationInfo[];
@@ -94,6 +116,7 @@ interface CamApi {
   load(path: string): DocumentInfo;  // arity 1
   save(path?: string): { path: string };  // variadic
   import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] };  // variadic
+  importDxf(path: string, options?: { setup?: string; units?: "mm" | "in"; join_tol?: number; name?: string }): DxfProfile;  // variadic
   exportTools(path: string): { path: string; tools: number };  // arity 1
   importTools(path: string, mode?: "add" | "update" | "replace", holders?: boolean): { path: string; mode: string; added: string[]; renamed: { from: string; to: string }[]; skipped: string[]; updated: string[]; replaced: string[]; removed: string[]; holders: number; holders_left_out: number; summary: string };  // variadic
   operations(): OperationInfo[];  // arity 0

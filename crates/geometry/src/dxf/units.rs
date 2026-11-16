@@ -38,7 +38,17 @@ pub enum Unit {
 }
 
 impl Units {
-    pub(super) fn from_code(code: i32) -> Self {
+    /// The `$INSUNITS` code this value reads back as: 0 for missing or unitless.
+    pub fn code(self) -> i32 {
+        match self {
+            Self::Known(unit) => unit.code(),
+            Self::MissingOrUnitless => 0,
+            Self::Unsupported(code) => code,
+        }
+    }
+
+    /// The value of a `$INSUNITS` code (the DXF reference's table).
+    pub fn from_code(code: i32) -> Self {
         let unit = match code {
             0 => return Self::MissingOrUnitless,
             1 => Unit::Inches,
@@ -72,6 +82,13 @@ impl Units {
 }
 
 impl Unit {
+    /// The `$INSUNITS` code of this unit: the inverse of [`Units::from_code`].
+    pub fn code(self) -> i32 {
+        (1..=24)
+            .find(|code| Units::from_code(*code) == Units::Known(self))
+            .unwrap_or(0)
+    }
+
     /// Metadata only. Scaling geometry is a caller decision and needs another range check.
     pub fn millimeters_per_unit(self) -> f64 {
         match self {

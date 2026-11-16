@@ -25,6 +25,8 @@ pub struct DeleteEntity {
     /// `Wcs` tag. Together with the CAM components below they keep every
     /// kind of named entity undoable with its kind intact.
     stock: Option<StockShape>,
+    /// #1862: a DXF profile's setup and drawing; shared, not copied.
+    sketch: Option<crate::schema::Sketch>,
     wcs: bool,
     tool: Option<Tool>,
     /// #221: a deleted tool's number, restored with it on undo.
@@ -70,6 +72,7 @@ impl DeleteEntity {
             facet_budget: crate::model_fidelity::budget_of(world, &entity),
             hole: crate::mesh_open::hole_of(world, &entity),
             stock: model::stock_def_of(world, &entity),
+            sketch: crate::sketch::sketch_of(world, &entity),
             wcs: model::is_wcs(world, &entity),
             tool: model::tool_of(world, &entity),
             tool_number: model::tool_number_of(world, &entity),
@@ -116,6 +119,9 @@ impl Command for DeleteEntity {
         }
         if self.wcs {
             entity.entity_view(world).add(Wcs);
+        }
+        if let Some(sketch) = &self.sketch {
+            entity.entity_view(world).set(sketch.clone());
         }
         if let Some(tool) = &self.tool {
             entity

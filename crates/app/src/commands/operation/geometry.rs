@@ -101,6 +101,13 @@ fn valid_pick(world: &World, g: &GeoSel) -> Result<(), CommandError> {
             g.entity
         )));
     }
+    // #1862: a DXF profile has chains of its own, not mesh features.
+    if crate::sketch::is_sketch(world, &e) {
+        return Err(CommandError::Invalid(format!(
+            "'{}' is a DXF profile - an operation takes the whole profile as its source; picked chains of a profile are not supported yet",
+            g.entity
+        )));
+    }
     let Some(features) = model::features_of(world, &e) else {
         return Err(CommandError::Invalid(format!(
             "'{}' has no geometry to select from",
