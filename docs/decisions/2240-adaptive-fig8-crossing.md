@@ -33,3 +33,23 @@ refuses only true crossing arcs back to their plan chords.
 
 **Cost to change.** One `matches!` arm and two tally lines in
 `emit_pocket_passes` (`crates/motion/src/machining2d/pocket_emit.rs`).
+
+## #2240 - Preserve the opening rapid during crossing retries
+
+**Decided.** Make `PathBuilder` cloneable. Use a shared
+`crossing_free_from` factory to copy the input builder for each
+`post_crossing_free` reconstruction. The 3D `crossing_free` caller keeps
+its existing `PathBuilder::new(start)` contract.
+
+**Why.** Reconstructing from the cursor alone loses the pending opening
+rapid. At entry X0 Y0, that loss lets the path start with a plunge. Copying
+the builder retains its approach state, notes and other recorded state
+on the first attempt and each retry.
+
+**Considered and dropped.** An unconditional `PathBuilder::approached`
+would add a rapid to callers that supply a builder without that contract.
+Disabling the crossing guard would remove the safety check required by
+this fix.
+
+**Cost to change.** Remove the `Clone` derive and replace the private
+factory with another way to preserve the input builder state.
