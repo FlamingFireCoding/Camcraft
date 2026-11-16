@@ -271,11 +271,10 @@ fn read_against_the_simulated_roughing_pass() {
     }
     assert!(rapids_in.is_empty(), "rapids into uncut stock: {rapids_in:?}");
     assert!(plunges_in.is_empty(), "plunges into uncut stock: {plunges_in:?}");
-    // One ring per corner per level, each cutting the corner. The ring's
-    // inner leg crosses floor the 12 mm tool cleared (measured: 6.7 of
-    // 14.8 to 15.3 mm per ring); a ring that is mostly air fails.
+    // One ring per corner per level, each cutting the corner without
+    // feeding its inner leg over cleared floor (#1816).
     assert_eq!(runs.len(), 8, "{runs:?}");
-    assert!(runs.iter().all(|r| r.0 && r.2 < 0.5 * r.1), "a pass over cleared floor: {runs:?}");
+    assert!(runs.iter().all(|r| r.0 && r.2 < 0.5), "a pass feeds over cleared floor: {runs:?}");
 }
 
 #[test]

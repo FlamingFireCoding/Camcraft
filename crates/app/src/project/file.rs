@@ -95,7 +95,13 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
-pub const PROJECT_VERSION: u32 = 62;
+/// v63 (#1557): a Drill, Bore or Thread may state its through-hole
+/// break-through (`break_through`). Absent is the kind's default - what
+/// every v62 file posted - so a v62 file steps up unchanged. An old
+/// reader must refuse a v63 file rather than drop a stated break-through
+/// and run the tip its default 1.0 mm past the floor, into what the
+/// user kept it out of.
+pub const PROJECT_VERSION: u32 = 63;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
