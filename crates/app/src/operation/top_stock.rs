@@ -62,10 +62,10 @@ pub(super) fn carried(
     (remaining > top + Z_TOL).then_some(remaining)
 }
 
-/// #1559: does the plain entry of `path` (generated with nothing carried)
-/// dive into the material `m` stands for? A vertical rapid down, before
-/// the path first engages under `m`, that ends under the material standing
-/// under the tool's disc: the declared stock's own top there (a stepped or
+/// #1559: does any plain entry of `path` (generated with nothing carried)
+/// dive into the material `m` stands for? A vertical rapid down that ends
+/// under the material standing under the tool's disc: the declared stock's
+/// own top there (a stepped or
 /// modelled stock may stand lower than its highest point, #1091), lowered
 /// by the program ahead's surface (`verify::prior_surface`, #96) - the two
 /// re-reads the rapid law makes, so this is the dive it would convict.
@@ -80,9 +80,9 @@ pub(super) fn dives_into(
     use crate::cl::MoveKind;
     for mv in &path.moves {
         if mv.kind != MoveKind::Rapid {
-            if mv.to.z < m - Z_TOL {
-                return false;
-            }
+            // A feed below the regional maximum may still be in air
+            // over lower stock. Keep checking later entries, including
+            // entries into separate regions with taller stock.
             continue;
         }
         let vertical = (mv.to.x - mv.from.x).hypot(mv.to.y - mv.from.y) <= Z_TOL;
@@ -322,3 +322,7 @@ mod tests {
         assert_eq!(prior_top_grid(&patch(1.0, 3.0), &dex), None);
     }
 }
+
+#[cfg(test)]
+#[path = "top_stock_entry_tests.rs"]
+mod entry_tests;

@@ -50,3 +50,11 @@ it to another kind is one `carried_top!` call in its generate arm.
 legal program refused with a workaround (an air pass), not a silent
 collision - no P1. A separate silent case found while pinning it (a
 clearance plane set inside the stock is never judged) is filed as #2121.
+
+**Review correction (#2129).** Read every descending rapid in the plain
+path before deciding that nothing needs carrying. A first-region feed
+below the region-wide maximum can be in air over a lower stock step, so
+stopping there hides a later entry into taller stock. Keep the existing
+local stock and prior-cut readings at each disc; carrying unconditionally
+would discard credit for cleared material. Real Pocket and Contour pins
+cover both separate stepped-stock regions and retained prior-cut credit.
