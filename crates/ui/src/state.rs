@@ -2975,9 +2975,29 @@ impl State {
         self.ai_chat.set_wake(wake);
     }
 
+    /// Snapshot active viewport pick mode and geometry picks (#1942) for the
+    /// live `get_selection` MCP tool while keeping `ui -> app` layering.
+    #[must_use]
+    pub fn selection_context(&self) -> camcraft_app::mcp::SelectionContext {
+        let pick_mode = match self.geo_pick {
+            GeoPick::Model => camcraft_app::mcp::PickMode::Model,
+            GeoPick::Face => camcraft_app::mcp::PickMode::Face,
+            GeoPick::Edge => camcraft_app::mcp::PickMode::Edge,
+            GeoPick::Vertex => camcraft_app::mcp::PickMode::Vertex,
+        };
+        camcraft_app::mcp::SelectionContext {
+            pick_mode: Some(pick_mode),
+            geometry_picks: self.op_ui.geo.clone(),
+            active_operation: (!self.op_ui.name.is_empty()).then(|| self.op_ui.name.clone()),
+        }
+    }
+
     pub(crate) fn submit_ai_prompt(&mut self) {
         if self.ai_chat.is_running() {
             return;
+        }
+        while self.history.in_group() {
+            let _ = self.history.cancel_group();
         }
         // Each turn owns a fresh receiver. Old worker senders cannot reach a later turn.
         self.reset_ai_inbox();
@@ -2996,6 +3016,14 @@ impl State {
             None,
             snapshot,
         );
+        if self.ai_chat.is_running() {
+            let label = self
+                .ai_chat
+                .turns()
+                .last()
+                .map_or_else(|| "AI chat turn".to_owned(), |t| format!("AI chat: {}", t.prompt));
+            self.history.begin_group(label);
+        }
     }
 
     fn reset_ai_inbox(&mut self) {
@@ -3038,10 +3066,10 @@ impl State {
         while let Some(action) = self.pending.pop_front() {
             self.run(action);
         }
-        self.ai_chat.poll(self.history.done_len());
+        self.ai_chat.poll(&mut self.history);
         // #183: an agent's live calls, after the user's own clicks.
         crate::mcp_host::pump(self);
-        self.ai_chat.poll(self.history.done_len());
+        self.ai_chat.poll(&mut self.history);
         self.poll_import();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
@@ -3083,6 +3111,14 @@ impl State {
     }
 
     pub(crate) fn run(&mut self, action: CommandKind) {
+        let before_entries = self.history.done_entry_ids();
+        self.run_action(action);
+        if self.history.in_group() && self.history.done_entry_ids() != before_entries {
+            self.history.cancel_group();
+        }
+    }
+
+    fn run_action(&mut self, action: CommandKind) {
         // Whatever ran, the banner shows only the newest outcome: a later
         // command (even a successful one) retires an old refusal.
         self.feedback = None;
