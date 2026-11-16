@@ -25,6 +25,10 @@
   stop the spindle before the rapid retract, and the expanded chain
   would pull a turning bar out of the hole. The test pins the refusal
   and no longer pins an expanded chain or a Heidenhain golden.
+  The engine warning blocks app posting; rejected intermediate program
+  text can still contain fallback moves. The app pin
+  `refused_expanded_bores_write_no_nc_file` checks that all three posts,
+  with and without a dwell, refuse by name and write no NC file.
   **Dropped:** restoring the expanded bore. A spindle stop at the bottom
   is the follow-up #1819.
 - **Chosen:** a drilling dwell is a time from 0 to 3600 s
