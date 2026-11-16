@@ -19,7 +19,7 @@ use crate::frame_cost::{self, Cost};
 /// Still frames measured per state, after the warm-up frames.
 const N: u32 = 6;
 const CONTOUR: &str = "Probe contour";
-const ADAPTIVE: &str = "Probe adaptive";
+pub(super) const ADAPTIVE: &str = "Probe adaptive";
 const FACE: &str = "Probe face";
 
 fn fig8_path() -> std::path::PathBuf {
@@ -32,6 +32,7 @@ struct Counts {
     walks: u64,
     digests: u64,
     slices: u64,
+    patches: u64,
 }
 
 fn counts() -> Counts {
@@ -40,6 +41,7 @@ fn counts() -> Counts {
         walks: model::chain_walks(),
         digests: model::feature_digests(),
         slices: operation::pocket_slices(),
+        patches: model::patch_builds(),
     }
 }
 
@@ -55,14 +57,14 @@ struct Probe {
     redraw: Option<Duration>,
 }
 
-fn run(h: &mut Harness<'static, ShellUi>, st: impl FnOnce(&mut State)) {
+pub(super) fn run(h: &mut Harness<'static, ShellUi>, st: impl FnOnce(&mut State)) {
     st(&mut h.state_mut().state);
     h.state_mut().state.settle();
     h.run_steps(2);
 }
 
 /// fig8.step beside the seed document, in a wide window.
-fn fig8() -> Harness<'static, ShellUi> {
+pub(super) fn fig8() -> Harness<'static, ShellUi> {
     let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_ui_state(frame, ShellUi::seeded());
     h.run_steps(2);
     run(&mut h, |st| st.pending.push_back(CommandKind::ImportFile(fig8_path())));
@@ -76,7 +78,7 @@ fn features(st: &State) -> std::sync::Arc<feature::Features> {
 }
 
 /// Up to ten edge chains that run along the part's top.
-fn top_chains(st: &State) -> Vec<GeoSel> {
+pub(super) fn top_chains(st: &State) -> Vec<GeoSel> {
     let f = features(st);
     let runs = feature::edge_runs(&f);
     let top = runs
@@ -143,6 +145,7 @@ fn still(h: &mut Harness<'static, ShellUi>) -> Probe {
         walks: after.walks - before.walks,
         digests: after.digests - before.digests,
         slices: after.slices - before.slices,
+        patches: after.patches - before.patches,
     };
     let egui_delay =
         h.output().viewport_output.get(&egui::ViewportId::ROOT).map_or(Duration::MAX, |v| v.repaint_delay);
@@ -219,6 +222,7 @@ fn still_frames_on_fig8_name_their_costs() {
     // and slices no part in any state (#2235's law, now over fig8).
     for (name, p) in [("a", &a), ("b", &b), ("c", &c), ("d", &d), ("e", &e)] {
         assert_eq!((p.delta.walks, p.delta.digests), (0, 0), "{name}: no chain walk, no digest on a still frame");
+        assert_eq!(p.delta.patches, 0, "{name}: no patch grouping on a still frame (#2247)");
         // Each piece of the scene is collected once per scene.
         assert_eq!(calls(p, "scene/collect"), N, "{name}");
         assert_eq!(calls(p, "scene/parts.models"), N, "{name}");
@@ -235,7 +239,7 @@ fn still_frames_on_fig8_name_their_costs() {
 
 /// The 2D Adaptive operation of state (c), open with its Boundary group
 /// and its filled area preview.
-fn adaptive_preview(h: &mut Harness<'static, ShellUi>) {
+pub(super) fn adaptive_preview(h: &mut Harness<'static, ShellUi>) {
     let patch = biggest_patch(&h.state().state);
     create(h, ADAPTIVE, OpType::Adaptive2D, vec![patch]);
     run(h, |st| {

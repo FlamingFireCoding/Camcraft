@@ -2685,15 +2685,12 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
-                                let strips = feature::patches(&f)
-                                    .into_iter()
-                                    .find(|p| p.id == id)?
-                                    .faces
-                                    .len();
+                                // #2247: both memoized per feature set.
+                                let strips = model::patches(&f).iter().find(|p| p.id == id)?.faces.len();
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in feature::patch_rings(&f, id)? {
+                                for r in model::patch_rings(&f, id)?.iter() {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()
