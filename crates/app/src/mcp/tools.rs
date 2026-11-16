@@ -83,6 +83,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::machine_tools::TOOLS)
         .chain(super::tool_number_tools::TOOLS)
         .chain(super::post_options_tools::TOOLS)
+        .chain(super::holder_dxf_tools::TOOLS)
 }
 
 /// The `tools/list` rows.

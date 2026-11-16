@@ -32,6 +32,7 @@ mod edit;
 mod features;
 mod fixture_tools;
 mod holders;
+mod holder_dxf_tools;
 mod job;
 mod listen;
 mod live;
