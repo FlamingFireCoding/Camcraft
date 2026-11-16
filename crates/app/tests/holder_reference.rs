@@ -94,7 +94,7 @@ fn a_library_holder_is_the_reference_in_the_document_and_the_file() {
 
     let text = project::save_text(&world).expect("save");
     let file: Value = serde_json::from_str(&text).expect("json");
-    assert!(project::PROJECT_VERSION >= 66, "v65 and earlier readers must refuse the holder reference");
+    const { assert!(project::PROJECT_VERSION >= 66, "v65 and earlier readers must refuse the holder reference"); }
     assert_eq!(file["version"], json!(project::PROJECT_VERSION));
     let mut future = file.clone();
     future["version"] = json!(project::PROJECT_VERSION + 1);
@@ -280,7 +280,7 @@ fn an_older_tool_library_loads_as_custom_holders_and_a_new_one_round_trips_the_r
     let (world, _history) = walled_world();
     let text = export_tool_library(&world).expect("export");
     let file: Value = serde_json::from_str(&text).expect("json");
-    assert!(HOLDER_REF_VERSION > CUTTING_STEPS_VERSION, "v0.22.0 (v2) and v3 readers must refuse holder references");
+    const { assert!(HOLDER_REF_VERSION > CUTTING_STEPS_VERSION, "v0.22.0 (v2) and v3 readers must refuse holder references"); }
     assert_eq!(file["version"], json!(HOLDER_REF_VERSION), "a reader that would drop the reference must refuse the file");
     let mut future = file.clone();
     future["version"] = json!(HOLDER_REF_VERSION + 1);

@@ -229,7 +229,7 @@ fn v66_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     history.execute(&world, CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(0.4))).unwrap());
     let saved = project::save_text(&world).unwrap();
     let current: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    assert!(project::PROJECT_VERSION >= 66, "the holder-reference format follows main's v65 tilt-basis format");
+    const { assert!(project::PROJECT_VERSION >= 66, "the holder-reference format follows main's v65 tilt-basis format"); }
     assert_eq!(current["version"], json!(project::PROJECT_VERSION));
     for version in 62..=project::PROJECT_VERSION {
         let mut file = current.clone();
