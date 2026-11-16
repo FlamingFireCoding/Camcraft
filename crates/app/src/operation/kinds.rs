@@ -748,6 +748,7 @@ fn seed_contour(c: &Carried) -> OpParams {
 fn seed_pocket(c: &Carried) -> OpParams {
     OpParams::Pocket {
         blend_radius: None,
+        rest: None,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -966,6 +967,8 @@ fn seed_drill(c: &Carried) -> OpParams {
         // refuses to run one, and Detect holes fills it.
         holes: Vec::new(),
         cross: Vec::new(),
+        // #1557: the kind's default break-through.
+        break_through: None,
     }
 }
 
@@ -989,6 +992,7 @@ fn seed_standalone_bore(c: &Carried) -> OpParams {
         climb: c.climb,
         tolerance: 0.01,
         holes: Vec::new(),
+        break_through: None,
     }
 }
 
@@ -1014,6 +1018,7 @@ fn seed_thread_mill(c: &Carried) -> OpParams {
         external: false,
         // #988: the #894 ride - equal passes, M3, right-hand-cut mill.
         passes: crate::machining2d::ThreadPasses::default(),
+        break_through: None,
     }
 }
 
