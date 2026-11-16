@@ -13,6 +13,7 @@ use serde_json::Value;
 
 const OLD: &str = include_str!("fixtures/legacy-tilt-basis.camproj");
 const NAME: &str = "Flat A180";
+const PROGRAM: &str = include_str!("../../../examples/first-4axis-part.nc");
 
 fn opened(text: &str) -> World {
     let world = camcraft_app::world::new_world();
@@ -46,22 +47,31 @@ fn old_project_keeps_basis_status_regeneration_and_posted_cut() {
     );
     assert_eq!(
         operation::status_of(&world, &entity),
-        OpStatus::Ok,
-        "the unchanged legacy frame keeps its compatible cache"
+        OpStatus::Stale,
+        "the v2 verification verdict must not be current under the v3 law"
     );
-    let cached = model::toolpath_of(&world, &entity)
-        .expect("saved cache")
-        .path;
-    let before = post(&world, "before");
-    let mut history = History::default();
-    history.execute(
-        &world,
-        GenerateOperation::new(&world, NAME).expect("regenerate old cut"),
+    let error = posting::post_setup_unwritten(&world).expect_err("old verdict must not post");
+    assert!(
+        error.contains("inputs moved since generation") && error.contains("regenerate"),
+        "{error}"
     );
+    let cached: Vec<_> = camcraft_app::setup::operation_order(&world)
+        .into_iter()
+        .map(|(name, _)| {
+            let entity = model::find_by_name(&world, &name).expect("saved operation");
+            (
+                name,
+                model::toolpath_of(&world, &entity)
+                    .expect("saved cache")
+                    .path,
+            )
+        })
+        .collect();
+    regenerate(&world);
     assert_eq!(operation::status_of(&world, &entity), OpStatus::Ok);
     assert_eq!(
         post(&world, "after"),
-        before,
+        PROGRAM,
         "regeneration must preserve the intended machine program"
     );
     let saved = project::save_text(&world).expect("save explicit basis");
@@ -80,42 +90,68 @@ fn old_project_keeps_basis_status_regeneration_and_posted_cut() {
         operation::status_of(&reopened, &reopened_entity),
         OpStatus::Ok
     );
-    // The file quantizes CL coordinates to its documented lattice.
-    assert_eq!(
-        model::toolpath_of(&reopened, &reopened_entity)
-            .unwrap()
-            .path,
-        cached
-    );
-    assert_eq!(post(&reopened, "reopened"), before);
+    // Compare after save/load: the file quantizes CL coordinates to its lattice.
+    for (name, old_path) in cached {
+        let entity = model::find_by_name(&reopened, &name).expect("reopened operation");
+        assert_eq!(
+            model::toolpath_of(&reopened, &entity).unwrap().path,
+            old_path,
+            "{name}"
+        );
+    }
+    assert_eq!(post(&reopened, "reopened"), PROGRAM);
+}
+
+fn regenerate(world: &World) {
+    let mut history = History::default();
+    for (name, _) in camcraft_app::setup::operation_order(world) {
+        history.execute(
+            world,
+            GenerateOperation::new(world, &name).expect("regenerate saved cut"),
+        );
+        let entity = model::find_by_name(world, &name).expect("saved operation");
+        assert_eq!(operation::status_of(world, &entity), OpStatus::Ok, "{name}");
+    }
 }
 
 #[test]
 fn corrected_basis_rejects_a_legacy_cache_stamp() {
-    let mut file: Value = serde_json::from_str(OLD).unwrap();
+    let world = opened(OLD);
+    // Generate under the current verification law. This isolates the basis change.
+    regenerate(&world);
+    let saved = project::save_text(&world).expect("save current-law legacy basis cache");
+    let unchanged = opened(&saved);
+    let entity = model::find_by_name(&unchanged, NAME).unwrap();
+    assert_eq!(operation::status_of(&unchanged, &entity), OpStatus::Ok);
+    assert_eq!(post(&unchanged, "basis-unchanged"), PROGRAM);
+    let mut file: Value = serde_json::from_str(&saved).unwrap();
     let entity = file["entities"]
         .as_array_mut()
         .unwrap()
         .iter_mut()
         .find(|e| e["name"] == NAME)
         .unwrap();
-    // Keep the exact old stamp and cached path. Change only the basis contract.
+    // Keep the current-law stamp and cached path. Change only the basis contract.
     entity["operation"]["params"]["slot"]["tilt"]["basis_version"] = 1.into();
     let world = opened(&file.to_string());
     let entity = model::find_by_name(&world, NAME).unwrap();
     assert_eq!(operation::status_of(&world, &entity), OpStatus::Stale);
+    let error =
+        posting::post_setup_unwritten(&world).expect_err("incompatible cache must not post");
     assert!(
-        posting::verification_gate(&world)
-            .iter()
-            .any(|w| w.to_string().contains(NAME)),
-        "post must name the incompatible cache"
+        error.contains(NAME)
+            && error.contains("inputs moved since generation")
+            && error.contains("regenerate"),
+        "{error}"
     );
     let out = std::env::temp_dir().join(format!("legacy-tilt-{}-stale.nc", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    let error = posting::post_setup(&world, &out).expect_err("incompatible cache must not post");
     assert!(
-        posting::post_setup(&world, &out).is_err(),
-        "incompatible cache must not post"
+        error.contains(NAME) && error.contains("regenerate"),
+        "{error}"
     );
-    let _ = std::fs::remove_file(out);
+    assert!(!out.exists(), "a refused post writes nothing");
 }
 
 #[test]
