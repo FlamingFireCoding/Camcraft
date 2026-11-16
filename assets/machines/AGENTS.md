@@ -215,7 +215,8 @@ unstated capability into existence.
     `rigid_tapping` (#786: `true` | `false`, anything else refuses the
     file by name; absent is "not limited" - a stated `false` makes the
     program gate refuse every tap cycle by name, whatever the post; the
-    Tormach mills and routers state it); and
+    Tormach mills, routers and lathes state it - the lathes from their
+    G33.1 rigid-tap pages, #795); and
     `tool_station { max_tool_length, max_tool_diameter, coolants }`.
     Separately from first-match, the checker also COUNTS (M5.3 C):
     `Machine.spindles` is how many head parts anywhere in the tree

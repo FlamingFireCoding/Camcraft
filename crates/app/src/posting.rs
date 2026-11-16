@@ -106,6 +106,8 @@ pub fn post_serves(name: &str, kind: crate::machine::Kind) -> bool {
         // EDM control, and neither EDM post to the other kind.
         Kind::WireEdm => wire_post,
         Kind::SinkerEdm => sinker_post,
+        // No waterjet post ships in this data-model slice.
+        Kind::Waterjet => false,
     }
 }
 
@@ -132,7 +134,7 @@ pub fn default_post_for(kind: crate::machine::Kind) -> PostRef {
         crate::machine::Kind::SinkerEdm => SINKER_POSTS
             .first()
             .map_or(PostRef::Builtin, |n| PostRef::Named((*n).to_owned())),
-        crate::machine::Kind::Mill | crate::machine::Kind::MillTurn => PostRef::Builtin,
+        crate::machine::Kind::Mill | crate::machine::Kind::MillTurn | crate::machine::Kind::Waterjet => PostRef::Builtin,
     }
 }
 
