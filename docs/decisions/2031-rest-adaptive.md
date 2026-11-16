@@ -92,17 +92,18 @@ budget.
 
 **Known limits (each a named refusal, pinned by a test)**
 
-- A pocket corner the cutter's center has to turn in on an arc under
-  about 0.35 tool radii (a pocket fillet under about 1.35 tool radii plus
-  the stock to leave): the last sliver wraps a quarter of the cutter
-  however thin it is. Refused: "cannot hold the optimal load at (x, y)".
-  Follow-up issue filed (leave corner rest with a note, or cut it over
-  the load by name - the maintainer's call).
+- A pocket corner the cutter's center has to turn in on a tight arc: the
+  last sliver wraps a quarter of the cutter however thin it is. With a
+  4 mm tool a center arc of 1.0 mm is cut and one of 0.7 mm is refused
+  ("cannot hold the optimal load at (x, y)"); a square corner always is.
+  Follow-up #2108 (leave corner rest with a note, or cut it over the load
+  by name - the maintainer's call).
 - A neck under about 2.5 tool diameters wide. The 10 mm neck of the test
-  is cut by a 4 mm tool; the 6 mm one is refused.
+  is cut by a 4 mm tool; the 6 mm one is refused (#2108).
 - One entry per area and depth is the aim; a neck takes more (37 per
   depth on the test's 10 mm neck), because a half loop whose way back
-  would cross an earlier feed is reached by a retract.
+  would cross an earlier feed is reached by a retract. Follow-up #2109
+  (air feed and retract budget).
 
 **Readings** (debug build, 4 mm tool after a 12 mm tool, two depths)
 
@@ -121,7 +122,7 @@ The air feed is high (about four times the cut length): every pass of an
 area rides the wall in from the area's first landing and out to its first
 exit, and returns on one chord. That is the price of retracing instead of
 crossing (point 8). The plain Adaptive holds its plans to 1.5 times; this
-one is not held to that budget yet (named in the follow-up issue).
+one is not held to that budget yet (#2109).
 
 **Considered and dropped**
 
