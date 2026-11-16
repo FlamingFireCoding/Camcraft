@@ -318,3 +318,52 @@ fn rest_group_respects_document_unit_lens() {
     assert!((committed.previous_tool_diameter - 12.7).abs() < 1e-6, "0.5 in -> 12.7 mm, got {}", committed.previous_tool_diameter);
     assert!((committed.allowance - 2.54).abs() < 1e-6, "0.1 in -> 2.54 mm, got {}", committed.allowance);
 }
+
+#[test]
+fn rest_group_auto_note_shows_waterline_when_rest_is_on() {
+    let mut h = page(opened_pocket(PocketStrategy::Auto, None));
+    h.run();
+    assert!(
+        h.query_by_label_contains("Auto -> Zigzag").is_some(),
+        "rectangular pocket with rest off shows Auto -> Zigzag"
+    );
+    assert!(
+        h.query_by_label_contains("Auto -> Waterline").is_none(),
+        "rest off on rectangular pocket must not show Waterline"
+    );
+
+    on_row(&h, "Rest machining", Role::CheckBox).click();
+    h.run();
+    assert!(
+        h.query_by_label_contains("Auto -> Waterline").is_some(),
+        "Auto note uses rest_strategy(Auto) -> Waterline when rest is on in draft"
+    );
+    assert!(
+        h.query_by_label_contains("Auto -> Zigzag").is_none(),
+        "Auto note must not advertise Zigzag when rest machining is on"
+    );
+
+    on_row(&h, "Rest machining", Role::CheckBox).click();
+    h.run();
+    assert!(
+        h.query_by_label_contains("Auto -> Zigzag").is_some(),
+        "switching rest off restores outline-based Auto -> Zigzag note"
+    );
+    assert!(h.query_by_label_contains("Auto -> Waterline").is_none());
+
+    let mut h_saved = page(opened_pocket(
+        PocketStrategy::Auto,
+        Some(RestParams {
+            previous_tool_diameter: 8.0,
+            previous_corner_radius: 0.0,
+            previous_stock_to_leave: 0.0,
+            allowance: 0.0,
+        }),
+    ));
+    h_saved.run();
+    assert!(
+        h_saved.query_by_label_contains("Auto -> Waterline").is_some(),
+        "persisted rest machining on Auto pocket shows Auto -> Waterline"
+    );
+    assert!(h_saved.query_by_label_contains("Auto -> Zigzag").is_none());
+}
