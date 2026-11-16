@@ -17,3 +17,5 @@
 - Rejecting any nonzero `|r0 - r1| > 1e-6`. Dropped: recorded real `.cl` fixtures exhibit up to ~4.7 µm lattice endpoint variation (`finish3d_waterline_cone.cl`, `thread_mill_m8_multi_form.cl`) that R-averaging + quadrant splitting handles safely.
 
 **Cost to change later.** Confined strictly to `emitArcWithRadius` in the six `.cps` post scripts and the `crates/post/tests/radius_arcs.rs` integration suite.
+
+**PR #2202 review fix.** Fanuc and Doosan keep the original I/J/K arc when the block writes rotary words. This preserves continuous orientation and the existing whole-arc feed cap. Fixed-orientation arcs retain R splitting. Per-segment rotary interpolation was considered and dropped because it requires extra angle and feed state changes that the native arc does not need.

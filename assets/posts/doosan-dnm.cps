@@ -1059,6 +1059,9 @@ function onCircular() {
   heldAngles(properties, tw);
 }
 function emitArcWithRadius(p, g, tw, fwd) {
+  // Keep the original I/J/K arc when it writes rotary angles. Splitting
+  // would put the complete turn on the first segment and invalidate its feed cap.
+  if (tw && tw.length) return false;
   var c = p.IJKIncrement || {};
   var axes = p.CircularPlane === "XZ" ? [2, 0, 1] : (p.CircularPlane === "YZ" ? [1, 2, 0] : [0, 1, 2]);
   var u = axes[0], v = axes[1], h = axes[2];

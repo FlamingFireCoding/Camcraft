@@ -317,3 +317,69 @@ fn recorded_arc_streams_post_valid_r_arcs() {
         }
     }
 }
+
+// PR #2202: an R split must not put the whole rotary turn on its first
+// segment. Keep the native I/J/K arc and its whole-arc feed cap instead.
+fn assert_rotary_half_turn_preserved(stem: &str) {
+    let mch = json!({ "kinematics": { "static": { "rotaries": [
+        { "letter": "A", "type": "rotary", "direction": [1.0, 0.0, 0.0],
+          "travel": [-120.0, 120.0], "speeds": { "normal": 90.0 } }
+    ] } } });
+    let with_a = |mut record: Record, a: f64| {
+        if let Record::Move(m) = &mut record {
+            m.abc = Some([a, 0.0, 0.0]);
+        }
+        record
+    };
+    let word = |line: &str, letter: char| {
+        line.split_whitespace().find_map(|w| w.strip_prefix(letter).and_then(|v| v.parse::<f64>().ok()))
+    };
+    for feed in [10.0, 600.0] {
+        let stream = stream_with_origin(
+            [0.0; 3],
+            [10.0, 0.0, 20.0],
+            vec![
+                with_a(mv(MoveKind::Rapid, 10.0, 0.0, 0.0, None), 0.0),
+                with_a(arc(-10.0, 0.0, 0.0, (0.0, 0.0), true, ArcPlane::Xy, feed), 90.0),
+                with_a(arc(10.0, 0.0, 0.0, (0.0, 0.0), true, ArcPlane::Xy, feed), 0.0),
+                with_a(arc(-10.0, 0.0, 0.0, (0.0, 0.0), true, ArcPlane::Xy, feed), 0.0),
+                mv(MoveKind::Rapid, -10.0, 0.0, 20.0, None),
+            ],
+        );
+        let cps = read(&format!("assets/posts/{stem}.cps"));
+        let out = engine::run_with(&cps, &mch, &stream, &json!({ "useRadiusArcs": true, "rotaryBrake": true })).unwrap();
+        assert!(out.warnings.is_empty(), "{stem}: {:?}", out.warnings);
+        let arcs = parse_posted_arcs(&out.program);
+        assert_eq!(arcs.len(), 4, "{stem}: two rotary arcs and two fixed-angle segments:\n{}", out.program);
+        let mut held_a = 0.0;
+        for (a, target_a) in arcs[..2].iter().zip([90.0, 0.0]) {
+            assert!(a.r.is_none(), "{stem}: changing rotary must keep one I/J/K arc: {}", a.line);
+            assert_eq!(a.ijk[0], Some(-a.start[0]), "{stem}: original center");
+            assert_eq!(a.ijk[1], Some(0.0), "{stem}: original center");
+            let posted_a = word(&a.line, 'A').expect("rotary endpoint");
+            assert_eq!(posted_a, target_a, "{stem}: endpoint angle");
+            // With one continuous half-circle block, the control reaches
+            // the halfway angle at X0 Y10 (then X0 Y-10 on the return).
+            assert_eq!((held_a + posted_a) * 0.5, 45.0, "{stem}: midpoint angle");
+            let posted_f = word(&a.line, 'F').expect("arc feed");
+            assert_eq!(posted_f, feed.min(20.0), "{stem}: preserve the whole-arc feed cap");
+            let minutes = std::f64::consts::PI * 10.0 / posted_f;
+            assert!((posted_a - held_a).abs() / minutes <= 90.0, "{stem}: rotary rate exceeds 90 deg/min");
+            held_a = posted_a;
+        }
+        for a in &arcs[2..] {
+            assert_r_arc_valid(a, [0.0; 3], 10.0, 0.003, stem);
+            assert!(word(&a.line, 'A').is_none(), "{stem}: unchanged rotary stays modal");
+        }
+    }
+}
+
+#[test]
+fn fanuc_rotary_half_turn_keeps_continuous_angles_and_rate() {
+    assert_rotary_half_turn_preserved("fanuc");
+}
+
+#[test]
+fn doosan_rotary_half_turn_keeps_continuous_angles_and_rate() {
+    assert_rotary_half_turn_preserved("doosan-dnm");
+}
