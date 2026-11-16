@@ -51,6 +51,22 @@ a long jump without a second simulation path.
 - Pausing the transport until the calculation ends: the transport keeps
   its own clock; the picture follows when the calculation is done.
 
+**Review fix (#2192).** The keyframe store and the calculation loop
+moved to the simulation crate:
+
+- `camcraft_sim::play_keys`: `Keyframes`, `Precalc`, `PRECALC_BUDGET`,
+  `MAX_KEYFRAMES`. Each keyframe goes in through `Keyframes::offer`. The
+  calculation and the live seek use the same path, so the byte budget
+  also holds when live playback seeks after a cancel.
+- `camcraft_sim::play_precalc`: the loop `drive`, with the
+  `PrecalcCut` and `PrecalcOwner` seams.
+- `app` keeps only the methods of its own types (`FieldPlay`,
+  `PlayWorker`) and re-exports the sim items from `stock_play`.
+- No new crate edge: `camcraft-app` already depends on `camcraft-sim`.
+- Dropped: a move of `FieldPlay` and `PlayWorker` to the simulation
+  crate in this PR. They existed before #2181 and their move touches
+  the playback suites of other issues. Issue #2268 tracks it.
+
 **Cost to change later.** The budget and the keyframe count are
-constants in `crates/app/src/stock_play_precalc.rs`. Moving the start to
+constants in `crates/sim/src/play_keys.rs`. Moving the start to
 Generate needs only a different call site of `PlayWorker::spawn_precalc`.

@@ -104,6 +104,8 @@ mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+// #2181: the transport row of the calculation before playback.
+mod transport_precalc;
 mod stock_fit;
 mod ribbon_rows;
 mod theme_op_tabs_tree;

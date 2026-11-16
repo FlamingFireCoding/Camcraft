@@ -17,6 +17,9 @@ pub mod chuck;
 pub mod fixture;
 // #339: a fixture's closed mesh as the narrow phase of the steel laws.
 pub mod fixture_mesh;
+// #2181: the playback keyframes and the calculation before playback.
+pub mod play_keys;
+pub mod play_precalc;
 pub mod sim;
 pub mod solid_rest;
 pub mod stock_sim;

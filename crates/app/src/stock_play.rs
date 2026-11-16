@@ -135,9 +135,9 @@ pub struct FieldPlay {
     ops: Vec<PlayOp>,
     index: PlayIndex,
     total: usize,
-    stride: usize,
-    /// (moves cut, the stock after them), ascending; [0] is uncut.
-    checkpoints: Vec<(usize, Stock)>,
+    /// The checkpoints: the stock after each kept move count, ascending;
+    /// key 0 is uncut (`camcraft_sim::play_keys`, #2181).
+    keys: Keyframes<Stock>,
     cur: Stock,
     at: usize,
     /// A checkpoint replaced `cur` since the last `take_dirty`: its
@@ -161,8 +161,6 @@ pub struct FieldPlay {
     ghost: HashSet<[i32; 3]>,
     /// Moves cut since the build: the replay law's yardstick (#2181).
     moves_cut: usize,
-    /// Cut-layer bytes the checkpoints hold (#2181, `precalc`).
-    key_bytes: usize,
 }
 
 impl FieldPlay {
@@ -206,8 +204,7 @@ impl FieldPlay {
             ops,
             index,
             total,
-            stride,
-            checkpoints: vec![(0, stock.clone())],
+            keys: Keyframes::new(stock.clone(), stride, MAX_CHECKPOINTS),
             cur: stock,
             at: 0,
             restored: true,
@@ -221,7 +218,6 @@ impl FieldPlay {
             partial_bricks: HashSet::new(),
             ghost: HashSet::new(),
             moves_cut: 0,
-            key_bytes: 0,
         })
     }
 
@@ -246,7 +242,7 @@ impl FieldPlay {
     /// Snapshots held (bounded by `MAX_CHECKPOINTS` + 1).
     #[must_use]
     pub fn checkpoints(&self) -> usize {
-        self.checkpoints.len()
+        self.keys.len()
     }
 
     /// `PlayIndex::index_at` on this playback's plan.
@@ -265,14 +261,14 @@ impl FieldPlay {
     /// to `k` restarts cutting from (0 when none is nearer).
     #[must_use]
     pub fn floor_checkpoint(&self, k: usize) -> usize {
-        self.checkpoints.iter().rev().find(|(n, _)| *n <= k).map_or(0, |c| c.0)
+        self.keys.floor_at(k)
     }
 
     /// The next checkpoint boundary past `at` (the end at the latest):
     /// a jump cuts checkpoint to checkpoint, one batch per stride.
     #[must_use]
     pub fn next_boundary(&self) -> usize {
-        (self.at / self.stride.max(1)).saturating_add(1).saturating_mul(self.stride).min(self.total)
+        self.keys.next_boundary(self.at, self.total)
     }
 
     /// Jump mode on or off (M13.1 leftover): on, the field keeps no
@@ -307,30 +303,24 @@ impl FieldPlay {
         self.drop_partial();
         // Back, or forward past a whole stride to a checkpoint ahead
         // (a precalculated keyframe, #2181): restore, then cut the rest.
-        let ahead = self.floor_checkpoint(k) > self.at && k - self.at > self.stride;
+        let ahead = self.floor_checkpoint(k) > self.at && k - self.at > self.keys.stride();
         if k < self.at || ahead {
-            let (at, snap) = self
-                .checkpoints
-                .iter()
-                .rev()
-                .find(|(n, _)| *n <= k)
-                .ok_or("playback lost its uncut stock")?;
+            let (at, snap) = self.keys.floor(k).ok_or("playback lost its uncut stock")?;
             self.cur = snap.clone();
             self.at = *at;
             self.restored = true;
             // The snapshot carries the ledger mode of its own time.
             self.cur.set_dirty_tracking(!self.batched);
         }
-        // Forward in stride-sized runs, snapshotting each boundary
-        // passed for the first time.
+        // Forward in stride-sized runs, offering each boundary passed
+        // to the store: its count cap and byte budget decide (#2181).
         while self.at < k {
-            let boundary = (self.at / self.stride + 1).saturating_mul(self.stride);
+            let boundary = (self.at / self.keys.stride()).saturating_add(1).saturating_mul(self.keys.stride());
             let to = k.min(boundary);
             self.cut(self.at, to)?;
             self.at = to;
-            let last = self.checkpoints.last().map_or(0, |c| c.0);
-            if to == boundary && to > last && self.checkpoints.len() <= MAX_CHECKPOINTS {
-                self.checkpoints.push((to, self.cur.clone()));
+            if to == boundary {
+                self.keys.offer(to, &self.cur);
             }
         }
         Ok(true)
@@ -404,4 +394,5 @@ pub use head::{progress, settle_frac, Progress};
 
 #[path = "stock_play_precalc.rs"]
 mod precalc;
-pub use precalc::{Precalc, MAX_KEYFRAMES, PRECALC_BUDGET};
+pub(crate) use precalc::PrecalcPlay;
+pub use camcraft_sim::play_keys::{Keyframes, Precalc, MAX_KEYFRAMES, PRECALC_BUDGET};

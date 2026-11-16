@@ -7,7 +7,7 @@
 //! Provenance: our own fixtures over the M7.1 field engine; nothing
 //! from vendor binaries.
 //!
-//! Gate map (M4.4): covers app::stock_play_precalc, app::stock_play_worker_precalc, app::stock_play, app::stock_play_worker.
+//! Gate map (M4.4): covers app::stock_play_precalc, app::stock_play_worker_precalc, app::stock_play, app::stock_play_worker, camcraft_sim::play_keys, camcraft_sim::play_precalc.
 
 use std::time::{Duration, Instant};
 
@@ -73,8 +73,8 @@ fn bits(s: &Stock, base: &PackedBase) -> Vec<u32> {
 
 fn precalculated(world: &World, keys: usize, min_stride: usize, budget: usize) -> FieldPlay {
     let mut play = FieldPlay::from_seed(PlaySeed::gather(world, false, CELLS).expect("seed")).expect("play");
-    play.begin_precalc(keys, min_stride).expect("begin");
-    while !play.precalc_step(budget).expect("a stride cuts") {}
+    play.begin_precalc(keys, min_stride, budget).expect("begin");
+    while !play.precalc_step().expect("a stride cuts") {}
     play
 }
 
@@ -135,13 +135,44 @@ fn the_keyframes_stay_within_the_memory_budget() {
 fn a_stopped_calculation_leaves_exact_keyframes_and_cuts_the_rest_live() {
     let world = small();
     let mut play = FieldPlay::from_seed(PlaySeed::gather(&world, false, CELLS).expect("seed")).expect("play");
-    play.begin_precalc(8, 1).expect("begin");
-    assert!(!play.precalc_step(PRECALC_BUDGET).expect("one stride"), "one stride is not the program");
+    play.begin_precalc(8, 1, PRECALC_BUDGET).expect("begin");
+    assert!(!play.precalc_step().expect("one stride"), "one stride is not the program");
     let total = play.total();
     play.seek(total).expect("the rest cuts live");
     let full = field_view_with(&world, CELLS).expect("deviate view");
     let base = PackedBase::of(&full.stock, None).expect("packs").0;
     assert_eq!(bits(&play.view().stock, &base), bits(&full.stock, &base), "a partial calculation never changes the picture");
+}
+
+/// The #2192 review case: the calculation stops after it thinned once,
+/// then live playback seeks over the whole program. Each keyframe the
+/// live cut keeps is counted against the same budget, and the replay is
+/// still the live cut.
+#[test]
+fn a_live_seek_after_a_cancel_keeps_the_byte_budget() {
+    let world = small();
+    let roomy = precalculated(&world, 64, 1, PRECALC_BUDGET);
+    let budget = roomy.keyframe_bytes() / roomy.checkpoints().max(1) * 3;
+    assert!(budget > 0, "a keyframe costs bytes");
+    let mut play = FieldPlay::from_seed(PlaySeed::gather(&world, false, CELLS).expect("seed")).expect("play");
+    play.begin_precalc(64, 1, budget).expect("begin");
+    let first = play.stride();
+    while play.stride() == first {
+        assert!(!play.precalc_step().expect("a stride cuts"), "the budget thins before the end");
+    }
+    // Cancelled here: from now on the playback cuts live.
+    let (total, done) = (play.total(), play.at());
+    assert!(done < total, "the stop is before the end: {done} of {total}");
+    let mut live = FieldPlay::from_seed(PlaySeed::gather(&world, false, CELLS).expect("seed")).expect("live");
+    let base = PackedBase::of(&live.view().stock, None).expect("packs").0;
+    for k in [total, 0, total / 2, total, total / 3, 1, total] {
+        play.seek(k).expect("live cut past the cancel");
+        live.seek(k).expect("live");
+        let held = play.keyframes().held_bytes();
+        assert_eq!(play.keyframe_bytes(), held, "move {k}: every keyframe the live cut kept is counted");
+        assert!(held <= budget, "move {k}: {held} bytes in {} keyframes over a {budget} budget", play.checkpoints());
+        assert_eq!(bits(&play.view().stock, &base), bits(&live.view().stock, &base), "move {k}: the replay IS the live cut");
+    }
 }
 
 fn wait_precalc(w: &PlayWorker) -> Precalc {

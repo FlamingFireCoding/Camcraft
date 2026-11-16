@@ -1,20 +1,23 @@
-//! The playback worker's calculation before playback (#2181): drives
-//! `FieldPlay::precalc_step` stride by stride on the worker thread,
-//! with its state and the UI's cancel on the shared handle. Provenance:
-//! the worker's own latest-wins mailbox (`stock_play_worker`); nothing
-//! from vendor binaries.
+//! The playback worker's mailbox for the calculation before playback
+//! (#2181): the UI's progress read and cancel on the shared handle, and
+//! the owner seam that `camcraft_sim::play_precalc::drive` reports to.
+//! The loop, its ends and the keyframe store are the sim crate's; only
+//! `PlayWorker`'s own state stays here (#2192 review). Provenance: the
+//! worker's own latest-wins mailbox (`stock_play_worker`); nothing from
+//! vendor binaries.
 //!
 //! A worker started with `spawn_precalc` first cuts the whole program
-//! once, keeping keyframes (`stock_play_precalc`); its progress is
-//! `precalc()` and the UI may `cancel_precalc()`. Requests wait until
-//! it ends. A cancel or a stop leaves `Precalc::Incomplete` by name,
-//! and the moves past the last keyframe are cut live.
+//! once, keeping keyframes; its progress is `precalc()` and the UI may
+//! `cancel_precalc()`. Requests wait until it ends. A cancel or a stop
+//! leaves `Precalc::Incomplete` by name, and the moves past the last
+//! keyframe are cut live, within the same byte budget.
 
 use std::sync::atomic::Ordering;
 
 use super::{lock, publish, PlayWorker, Shared};
 use crate::clock::Instant;
-use crate::stock_play::{FieldPlay, PlaySeed, Precalc, MAX_KEYFRAMES, MIN_STRIDE};
+use crate::stock_play::{FieldPlay, PlaySeed, Precalc, PrecalcPlay, MAX_KEYFRAMES, MIN_STRIDE};
+use camcraft_sim::play_precalc::{drive, PrecalcEnd, PrecalcOwner};
 
 impl PlayWorker {
     /// Where the calculation before playback stands (`Off` when the
@@ -35,7 +38,7 @@ impl PlayWorker {
     }
 
     /// `spawn`, but the worker first calculates the whole removal with
-    /// keyframes held to `budget` bytes (the module law).
+    /// keyframes held to `budget` bytes (the sim crate's law).
     pub fn spawn_precalc(seed: PlaySeed, budget: usize) -> Result<Self, String> {
         Self::start(seed, Some(budget))
     }
@@ -56,41 +59,48 @@ pub(super) fn set_precalc(shared: &Shared, p: Precalc) {
     }
 }
 
-/// The calculation before playback (the module law): `false` when the
-/// worker must end (stopped, or a cut refused and published).
+/// The worker as the calculation's owner.
+struct Owner<'a> {
+    shared: &'a Shared,
+    t0: Instant,
+}
+
+impl PrecalcOwner for Owner<'_> {
+    fn stopped(&self) -> bool {
+        lock(&self.shared.req).is_none_or(|g| g.stop)
+    }
+
+    fn cancelled(&self) -> bool {
+        self.shared.cancel.load(Ordering::Relaxed)
+    }
+
+    fn elapsed(&self) -> f64 {
+        self.t0.elapsed().as_secs_f64()
+    }
+
+    fn report(&self, p: Precalc) {
+        if matches!(p, Precalc::Ready { .. }) {
+            tracing::info!("playback precalculated: {p:?}");
+        }
+        set_precalc(self.shared, p);
+    }
+}
+
+/// Run the calculation on the worker: `false` when the worker must end
+/// (stopped, or a cut refused and published).
 pub(super) fn precalc(shared: &Shared, play: &mut FieldPlay, budget: usize) -> bool {
-    let total = play.total();
-    let t0 = Instant::now();
-    if let Err(e) = play.begin_precalc(MAX_KEYFRAMES, MIN_STRIDE) {
-        set_precalc(shared, Precalc::Incomplete { done: 0, total, why: e.clone() });
-        publish(shared, Err(e));
-        return false;
-    }
-    loop {
-        if lock(&shared.req).is_none_or(|g| g.stop) {
-            set_precalc(shared, Precalc::Incomplete { done: play.at(), total, why: "stopped".into() });
-            return false;
+    let owner = Owner { shared, t0: Instant::now() };
+    let end = drive(&mut PrecalcPlay { play: &mut *play, keys: MAX_KEYFRAMES, min_stride: MIN_STRIDE, budget }, &owner);
+    match end {
+        PrecalcEnd::Play => {
+            // The ledger starts fresh from the next (whole) picture.
+            play.set_batched(false);
+            true
         }
-        if shared.cancel.load(Ordering::Relaxed) {
-            set_precalc(shared, Precalc::Incomplete { done: play.at(), total, why: "cancelled".into() });
-            break;
-        }
-        match play.precalc_step(budget) {
-            Ok(true) => {
-                let p = Precalc::Ready { keys: play.checkpoints(), bytes: play.keyframe_bytes(), stride: play.stride(), secs: t0.elapsed().as_secs_f64() };
-                tracing::info!("playback precalculated: {p:?}");
-                set_precalc(shared, p);
-                break;
-            }
-            Ok(false) => set_precalc(shared, Precalc::Running { done: play.at(), total }),
-            Err(e) => {
-                set_precalc(shared, Precalc::Incomplete { done: play.at(), total, why: e.clone() });
-                publish(shared, Err(e));
-                return false;
-            }
+        PrecalcEnd::Stopped => false,
+        PrecalcEnd::Refused(e) => {
+            publish(shared, Err(e));
+            false
         }
     }
-    // The ledger starts fresh from the next (whole) picture.
-    play.set_batched(false);
-    true
 }

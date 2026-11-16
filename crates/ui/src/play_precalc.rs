@@ -27,21 +27,30 @@ pub fn precalc_readout(p: &Precalc) -> Option<String> {
     }
 }
 
+/// The Cancel button's label.
+pub const CANCEL: &str = "Cancel";
+
 /// Draw the line under the transport bar, when there is one.
 pub(crate) fn transport_row(ui: &mut egui::Ui, state: &State) {
     let Some(play) = state.field_play.as_ref() else {
         return;
     };
-    let p = play.precalc();
-    let Some(text) = precalc_readout(&p) else {
-        return;
+    if precalc_row(ui, &play.precalc()) {
+        play.cancel_precalc();
+    }
+}
+
+/// The line for a calculation state: the readout, and Cancel while it
+/// runs. `true` when Cancel was clicked this frame. Draws nothing when
+/// the readout has nothing to say.
+pub(crate) fn precalc_row(ui: &mut egui::Ui, p: &Precalc) -> bool {
+    let Some(text) = precalc_readout(p) else {
+        return false;
     };
     ui.horizontal(|ui| {
         ui.label(text);
-        if matches!(p, Precalc::Running { .. })
-            && ui.button("Cancel").on_hover_text("Stop the calculation and calculate the stock during playback").clicked()
-        {
-            play.cancel_precalc();
-        }
-    });
+        matches!(p, Precalc::Running { .. })
+            && ui.button(CANCEL).on_hover_text("Stop the calculation and calculate the stock during playback").clicked()
+    })
+    .inner
 }
