@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(classify(&sample_face(None), &empty), Some(SectionMode::ThreeAxis));
         assert_eq!(
             classify(
-                &sample_face(Some(Tilt { a_deg: 0.0, b_deg: 45.0, origin: [0.0; 3] })),
+                &sample_face(Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 45.0, origin: [0.0; 3] })),
                 &empty
             ),
             Some(SectionMode::Indexed3Plus2)
