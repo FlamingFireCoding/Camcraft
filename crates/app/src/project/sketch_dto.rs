@@ -104,8 +104,12 @@ pub(super) fn validate(dto: &EntityDto, kind: EntityKind) -> Result<(), ProjectE
     if !is_sketch {
         return Ok(());
     }
-    if dto.name.is_empty() {
-        return Err(corrupt("a DXF profile must be named"));
+    if dto.name.trim().is_empty()
+        || dto.name.eq_ignore_ascii_case(STOCK_NAME)
+        || LEGACY_WCS_NAMES.contains(&dto.name.as_str())
+        || crate::setup::is_furniture_shape(&dto.name)
+    {
+        return Err(corrupt(format!("'{}' is not a usable name for a DXF profile", dto.name)));
     }
     if dto.facets.is_some() || dto.stock.is_some() || dto.tool.is_some() || dto.operation.is_some() || dto.setup.is_some() {
         return Err(corrupt(format!("'{}' is a DXF profile, not a solid, tool, operation or setup", dto.name)));

@@ -189,6 +189,51 @@ fn a_corrupt_profile_row_refuses_the_file_by_name() {
     reopened(&file.to_string());
 }
 
+fn assert_reserved_profile_name_refused(name: &str) {
+    let text = saved(&sheet_job());
+    let (mut corrupt, row) = file_and_row(&text);
+    corrupt["entities"][row]["name"] = json!(name);
+    let expected = format!("'{name}' is not a usable name for a DXF profile");
+    let why = refused(&corrupt);
+    assert!(why.contains(&expected), "{why}");
+
+    // Refusing an older file with a reserved name must preserve the current job.
+    let existing = sheet_job();
+    let before = saved(&existing);
+    let profile = model::find_by_name(&existing, "plate").expect("existing profile");
+    let why = project::open(&existing, &corrupt.to_string()).expect_err("reserved name must refuse").to_string();
+    assert!(why.contains(&expected), "{why}");
+    assert_eq!(saved(&existing), before, "a refusal made no world writes");
+    assert_eq!(model::find_by_name(&existing, "plate"), Some(profile), "the current profile entity survives");
+
+    // The unchanged file is a valid control and still loads its profile.
+    let control = reopened(&text);
+    assert!(sketch::find(&control, "plate").is_some());
+    assert_eq!(saved(&control), text);
+}
+
+#[test]
+fn stored_stock_profile_name_refuses_before_world_writes() {
+    assert_reserved_profile_name_refused("stock");
+}
+
+#[test]
+fn stored_uppercase_stock_profile_name_refuses_before_world_writes() {
+    assert_reserved_profile_name_refused("STOCK");
+}
+
+#[test]
+fn stored_mixed_case_stock_profile_name_refuses_before_world_writes() {
+    assert_reserved_profile_name_refused("sToCk");
+}
+
+#[test]
+fn stored_profile_names_follow_the_import_naming_rules() {
+    for name in ["Stock", "G54", "Other/Stock", "Other/WCS", "Other/G55", "   "] {
+        assert_reserved_profile_name_refused(name);
+    }
+}
+
 fn assert_overflowing_profile_summary_refused(empty: bool) {
     let text = saved(&sheet_job());
     let (mut corrupt, row) = file_and_row(&text);
