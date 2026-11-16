@@ -7,3 +7,7 @@
   - Also rewiring `painted::caption` and its hover-chip helper in `#2066`: dropped because `#2086` already owns `caption`.
   - Editing `crates/ui/AGENTS.md` or merging without stacking on `#2027`: rejected because `#2027` owns adjacent token additions in `theme.rs`, `theme/tables.rs`, and `theme_files/overlay.rs`.
 - **What it would cost to change later**: Low; splitting `highlight_stroke_px` or renaming keys in `theme_files/names.rs` only affects theme JSON overlay parsing and has compile-time exhaustiveness via `Tokens` fields.
+
+### PR #2095 review: tree control click targets
+
+Clip the eye and setup-radio input rectangles to their own rows. Preserve the painted glyph dimensions. This prevents adjacent rows from receiving each other's clicks when glyphs exceed the row height. Joint token constraints were considered and dropped because large glyphs remain valid theme settings.

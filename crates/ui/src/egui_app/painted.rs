@@ -308,7 +308,7 @@ pub fn tree(
                 Pos2::new(rr.right() - eye_reserve * 0.5, rr.center().y),
                 Vec2::new(eye_w, glyph_px),
             );
-            let r = ui.interact(er, ui.id().with(("tree-eye", ix)), Sense::click());
+            let r = ui.interact(er.intersect(rr), ui.id().with(("tree-eye", ix)), Sense::click());
             if r.clicked() {
                 hit.eye = Some(ix);
             }
@@ -339,8 +339,8 @@ pub fn tree(
         }
         let gx = rr.left() + inset_x + row.depth as f32 * indent;
         if matches!(row.kind, Kind::Setup(_)) {
-            let rr = Rect::from_center_size(Pos2::new(gx, rr.center().y), Vec2::splat(glyph_px));
-            if ui.interact(rr, ui.id().with(("tree-radio", ix)), Sense::click()).clicked() {
+            let radio_rect = Rect::from_center_size(Pos2::new(gx, rr.center().y), Vec2::splat(glyph_px));
+            if ui.interact(radio_rect.intersect(rr), ui.id().with(("tree-radio", ix)), Sense::click()).clicked() {
                 hit.radio = Some(ix);
             }
         }

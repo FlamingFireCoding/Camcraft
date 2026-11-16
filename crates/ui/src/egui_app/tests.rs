@@ -118,6 +118,7 @@ mod camera_target;
 mod structural;
 mod ribbon_rows;
 mod theme_op_tabs_tree;
+mod theme_tree_hits;
 mod waterjet_recipe;
 mod cycle_combo;
 mod radial_step_field;
