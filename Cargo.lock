@@ -720,7 +720,6 @@ dependencies = [
  "boa_engine",
  "camcraft-cl",
  "camcraft-geometry",
- "camcraft-kernel",
  "camcraft-motion",
  "camcraft-post",
  "camcraft-sim",
@@ -753,8 +752,10 @@ dependencies = [
 name = "camcraft-geometry"
 version = "0.21.0"
 dependencies = [
+ "camcraft-kernel",
  "clipper2-rust",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

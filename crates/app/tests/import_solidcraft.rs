@@ -4,7 +4,7 @@
 //! A damaged or unsupported `.sc` is refused by name, with the kernel
 //! reader's own reason, and enters no history.
 //!
-//! Gate map (M4.4): covers app::geometry::import::solidcraft,
+//! Gate map (M4.4): covers camcraft_geometry::solidcraft,
 //! app::geometry::import, app::commands::import_model, app::mcp::tools.
 
 use std::path::{Path, PathBuf};

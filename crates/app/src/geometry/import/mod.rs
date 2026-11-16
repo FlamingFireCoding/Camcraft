@@ -25,7 +25,6 @@ pub mod step_depth;
 mod step_refine;
 mod step_orient;
 mod step_seams;
-mod solidcraft;
 mod step_stretch;
 #[cfg(test)]
 mod step_thread_fixture;
@@ -176,7 +175,11 @@ pub fn parse_model_open_within(data: &[u8], format: Format, budget: usize) -> Re
     let (mesh, coarse_mm, notes, open) = match format {
         // #1456: the machining mesh is watertight and outward, at the chord cap.
         Format::Solidcraft => {
-            let (mesh, notes) = solidcraft::parse(data, budget)?;
+            let (mesh, notes) = camcraft_geometry::solidcraft::parse(data, budget, step::CHORD_CAP)
+                .map_err(|error| match error {
+                    camcraft_geometry::solidcraft::SolidcraftError::TooLarge => ImportError::TooLarge,
+                    camcraft_geometry::solidcraft::SolidcraftError::Refused(reason) => ImportError::Solidcraft(reason),
+                })?;
             (mesh, None, notes, None)
         }
         Format::Stl | Format::Obj => {

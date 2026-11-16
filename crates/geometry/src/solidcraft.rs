@@ -1,25 +1,30 @@
 //! Solidcraft `.sc` design import (#1456): the kernel reads the design's
 //! cached final body (`camcraft_kernel::solidcraft`) and meshes it with the
 //! machining mesh at the importer's chord cap; this module turns that mesh
-//! into the model's facets and every kernel refusal into
-//! [`ImportError::Solidcraft`] with the kernel's own reason.
+//! into geometry facets and preserves every kernel refusal reason.
 //! Provenance: our own glue over camcraft-kernel's public API (its reader
 //! follows Solidcraft's published source, tangency-labs, Apache-2.0); no
 //! HSMWorks material consulted.
 
-use super::{step, ImportError};
 use crate::geometry::Mesh;
 
-/// The longest a `.sc` import may run (read, check, mesh) before it is
-/// refused by name. The sample design takes about 100 s in a debug build
-/// and under a minute in release; the bound stops a hang, not a slow build.
+#[derive(Debug, thiserror::Error)]
+pub enum SolidcraftError {
+    #[error("model exceeds the import limit")]
+    TooLarge,
+    #[error("{0}")]
+    Refused(String),
+}
+
+/// Request cooperative cancellation after 300 seconds. The planner has no
+/// cancellation hook, so this is not a deadline for completion.
 #[cfg(not(target_arch = "wasm32"))]
 const TIME_BOUND: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// The final body of a Solidcraft design as a watertight mesh, in mm,
 /// with what the import did (one note each). At most `budget` facets.
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn parse(data: &[u8], budget: usize) -> Result<(Mesh, Vec<String>), ImportError> {
+pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<(Mesh, Vec<String>), SolidcraftError> {
     use crate::geometry::{Point3, Triangle};
     use camcraft_kernel::machining_mesh::machining_mesh;
     use camcraft_kernel::solidcore_impl::SolidcoreKernel;
@@ -28,17 +33,17 @@ pub(super) fn parse(data: &[u8], budget: usize) -> Result<(Mesh, Vec<String>), I
     let stop = camcraft_kernel::CancelToken::new();
     let _watch = Watchdog::start(stop.clone());
     let design = import_solidcraft(&mut SolidcoreKernel::default(), data, &stop)
-        .map_err(|e| ImportError::Solidcraft(e.to_string()))?;
-    let mesh = machining_mesh(&design.solid, step::CHORD_CAP, &stop)
-        .map_err(|e| ImportError::Solidcraft(e.to_string()))?;
+        .map_err(|e| SolidcraftError::Refused(e.to_string()))?;
+    let mesh = machining_mesh(&design.solid, chord_cap, &stop)
+        .map_err(|e| SolidcraftError::Refused(e.to_string()))?;
     if mesh.triangles.len() > budget {
-        return Err(ImportError::TooLarge);
+        return Err(SolidcraftError::TooLarge);
     }
-    let at = |i: u32| -> Result<Point3, ImportError> {
+    let at = |i: u32| -> Result<Point3, SolidcraftError> {
         let p = mesh
             .positions
             .get(i as usize)
-            .ok_or_else(|| ImportError::Solidcraft(format!("the body's mesh names vertex {i}, which it does not have")))?;
+            .ok_or_else(|| SolidcraftError::Refused(format!("the body's mesh names vertex {i}, which it does not have")))?;
         Ok(Point3::new(p[0], p[1], p[2]))
     };
     let mut facets = Vec::with_capacity(mesh.triangles.len());
@@ -55,8 +60,8 @@ pub(super) fn parse(data: &[u8], budget: usize) -> Result<(Mesh, Vec<String>), I
 /// The browser build keeps solidcore out of its wasm: a `.sc` is refused
 /// by name there.
 #[cfg(target_arch = "wasm32")]
-pub(super) fn parse(_data: &[u8], _budget: usize) -> Result<(Mesh, Vec<String>), ImportError> {
-    Err(ImportError::Solidcraft("Solidcraft designs open in the desktop app only, not in the browser build".into()))
+pub fn parse(_data: &[u8], _budget: usize, _chord_cap: f64) -> Result<(Mesh, Vec<String>), SolidcraftError> {
+    Err(SolidcraftError::Refused("Solidcraft designs open in the desktop app only, not in the browser build".into()))
 }
 
 /// Cancels the import's token after [`TIME_BOUND`]; ends at once when the
