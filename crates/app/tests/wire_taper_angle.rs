@@ -97,6 +97,11 @@ fn punch(machine: &str, mesh: Mesh, pick: bool, four_axis: Option<WireFourAxis>)
     let mut h = History::default();
     let m = parse_mch(machine).expect("the fixture parses");
     h.execute(&world, LoadMachine::new(&world, "wire-angle.mch".into(), Some(m)).expect("mount"));
+    h.execute(
+        &world,
+        camcraft_app::commands::AddTool::new(&world, "EDM-W025", camcraft_app::wire_tools::wire_tool(0.25))
+            .expect("wire"),
+    );
     h.execute(&world, ImportModel::from_mesh("part", mesh));
     let src = if pick { SrcRef::Selection(vec![top_face(&world)]) } else { SrcRef::Entity("part".into()) };
     let op = WireContourOp {
@@ -114,7 +119,7 @@ fn punch(machine: &str, mesh: Mesh, pick: bool, four_axis: Option<WireFourAxis>)
         four_axis,
         skims: Vec::new(),
     };
-    let c = CreateOperation::new(&world, "Punch1", "", src, OpParams::WireContour(op)).expect("op");
+    let c = CreateOperation::new(&world, "Punch1", "EDM-W025", src, OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
     let made = GenerateOperation::new(&world, "Punch1").map(|g| h.execute(&world, g)).map_err(|e| e.to_string());
     (world, made)
@@ -242,7 +247,7 @@ fn the_corner_rule_and_the_dialect_each_move_the_stamp() {
         made.expect("generates");
         let e = model::find_by_name(&world, "Punch1").expect("op");
         let op = model::operation_of(&world, &e).expect("op");
-        operation::current_stamp(&world, "", &op.src, &op.params, "", None).expect("a stamp")
+        operation::current_stamp(&world, &op.tool, &op.src, &op.params, "", None).expect("a stamp")
     };
     let (uv, mitre, cone) = (stamp(UV), stamp(&angle_machine(&rules("mitre"))), stamp(&angle_machine(&rules("cone"))));
     assert_ne!(mitre, cone, "mitre and cone stamp alike");

@@ -3816,6 +3816,7 @@ fn drilled_block() -> camcraft_app::geometry::Mesh {
 
 fn drill_params(holes: Vec<Hole>, top_z: f64, clearance_z: f64) -> OpParams {
     OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(clearance_z),
         retract_z: None,
         top_z: Height::fixed(top_z),

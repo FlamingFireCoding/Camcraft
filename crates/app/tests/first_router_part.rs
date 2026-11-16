@@ -169,6 +169,7 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
     let top_clr = Height::of(HeightReference::TopOfStock, 15.0);
     let top_ret = Height::of(HeightReference::TopOfStock, 5.0);
     let drill_base = OpParams::Drill {
+        break_through: None,
         clearance_z: top_clr, retract_z: Some(top_ret), top_z: Height::of(HeightReference::TopOfStock, 0.0), bottom_z: None,
         cycle: CycleChoice::Auto, peck: 4.0, dwell: 0.0, feed: 150.0, plunge_feed: 150.0, holes: Vec::new(), cross: Vec::new(),
     };

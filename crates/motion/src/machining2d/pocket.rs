@@ -2,7 +2,7 @@
 //! M11.1 C adds the optional corner/link fillets - provenance in
 //! `fillet.rs` (tangent circle to two lines, RS-274 / ISO 6983 G2/G3).
 
-use crate::cl::{MoveKind, PathBuilder, Toolpath};
+use crate::cl::{PathBuilder, Toolpath};
 use crate::entry::Entry3D;
 use crate::load::{load_in_door, load_step};
 use crate::geo2d::{Point2, Region};
@@ -10,13 +10,10 @@ use crate::geometry::Point3;
 use crate::links::Links;
 
 use super::face::GenError;
-use super::levels::{Cert, Motion, cut_levels, run_level_walks};
-use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
-use super::arc_cross::post_crossing_free;
-use super::arc_proof::{ProofTally, fit_proved};
-use super::fillet::{Legal, fillet_corners};
-use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
+use super::arcs::ARC_FIT_TOL;
+use super::fillet_tally::corner_arc_radius;
 use super::waterscan::waterline_passes;
+use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::adaptive_passes;
 use super::pocket_zigzag::{rest_passes, zigzag_passes};
 use super::predrilled::PreHole;
@@ -186,7 +183,7 @@ impl PocketParams {
     /// step under `Adaptive`, the stated stepover otherwise. The pass
     /// plan and the reach door both ask this one function, mirroring
     /// `Pocket3DParams::tiling_step` (M5.1 H).
-    fn tiling_step(&self) -> f64 {
+    pub(super) fn tiling_step(&self) -> f64 {
         if self.strategy.steps_by_load() { load_step(self.tool_diameter, self.optimal_load) } else { self.stepover }
     }
 }
@@ -272,103 +269,20 @@ pub(super) fn pocket_over(
     if hold_crossings && strategy == PocketStrategy::Zigzag {
         passes = rest_passes(center, p.tiling_step(), p.climb)?;
     }
-    // The horizontal arc entry (M11.3) lands on the first pass: a closed
-    // first ring starts mid its longest edge, where an arc has room.
-    let passes = if p.links.approach.arc_xy && room.is_none() { super::descent_xy::reseat_first(passes) } else { passes };
-    // #1449: a proved hole re-seats the plan on itself (not the HSM plan's own bore).
-    let passes = super::predrilled::reseat(passes, holes, center, p.links.approach.predrilled && room.is_none());
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
-    // Waterline rings circle around material, so they get the arc fitter
-    // (rings straight enough to be lines stay exactly that); zigzag rows
-    // are straight by construction and keep the plain walk.
-    // The HSM plan's chords are fitted at the ring budget (a quarter of
-    // the chord tolerance: the walk is already a tessellation) and every
-    // arc is proved inside the center area or stays chords (`arc_proof`).
-    let fit = match strategy {
-        PocketStrategy::Zigzag | PocketStrategy::Auto => None,
-        PocketStrategy::Waterline | PocketStrategy::OffsetRings => Some(ARC_FIT_TOL),
-        PocketStrategy::Adaptive => Some(ARC_FIT_TOL * 0.25),
-    };
-    let mut proof = ProofTally::default();
-    let mut fit_pass = |pass: &[Point2], tol: f64| -> Vec<Seg> {
-        if strategy == PocketStrategy::Adaptive { fit_proved(pass, tol, center, &mut proof) } else { fit_arcs(pass, tol) }
-    };
-    // The HSM plan's entry may orbit a narrowed helix (`pocket_hsm`).
-    let helix_r = room.as_ref().map_or(p.helix_radius, |e| e.helix_r);
-    let motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed)
-        .with_entry(p.entry, helix_r)
-        .with_arc_radius(p.tool_diameter)
-        .with_links(p.links, helix_r)
-        .with_top(p.top_z)
-        .with_xy_arc(p.links.approach.arc_xy)
-        .with_microlift(joins)
-        .with_holes(holes);
-    // The walks: fitted where the strategy fits, then - opted in - the
-    // corner fillets, proved inside the cutter-center area. Passes are
-    // one plan at every level, so the plan's refusals are said once.
-    let runs: Option<Vec<Vec<Seg>>> = if p.blend_turns {
-        let legal = Legal { region: center, inside: true, air_left: None };
-        let rho = corner_arc_radius(p.blend_radius, p.tool_diameter).map_err(GenError::Invalid)?;
-        let mut tally = FilletTally::default();
-        let runs = passes
-            .iter()
-            .map(|pass| {
-                let Some((first, rest)) = pass.split_first() else {
-                    return Vec::new();
-                };
-                let walk = match fit {
-                    Some(tol) => fit_pass(pass, tol),
-                    None => vec![Seg::Line(rest.to_vec())],
-                };
-                let (walk, t) = fillet_corners(&walk, *first, rho, ARC_FIT_TOL, &legal);
-                tally.add(t);
-                walk
-            })
-            .collect();
-        for n in tally.notes("pass", fillet_floor(ARC_FIT_TOL)) {
-            b.note(n);
-        }
-        Some(runs)
-    } else {
-        fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect())
-    };
-    // The entry room: the plan's spot as a zero-length stadium (its disc
-    // certifies the chords, its triangle is where `dive_room` finds it).
-    // The entry and a "same as entry" level change are planned by the
-    // shared descents (`descent::plan`: one entry per level, plunge
-    // height, centre cutting) against it - the helix closes on the pass
-    // start exactly around the spot the plan bored. Keep-down links and
-    // a user-set transition are proved against the whole center area.
-    let cert = match &room {
-        Some(e) => Cert::Stadium { a: e.seed, b: e.seed, h: e.clear, tess: &e.tess },
-        None => Cert::Region(center),
-    };
-    let post = |b: &mut PathBuilder, runs: Option<&[Vec<Seg>]>| {
-        run_level_walks(b, &passes, &zs, &motion, runs, Some(&cert), Some(&Cert::Region(center)));
-        let cur = b.at();
-        b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
-    };
-    // The HSM plan's arcs are held to the crossing law on the posted
-    // path too (`arc_proof`): an arc that would cross another feed is
-    // given up and the walks are posted again.
-    let mut path = match runs {
-        Some(runs) if strategy == PocketStrategy::Adaptive || hold_crossings => post_crossing_free(b, &passes, runs, &mut proof, post),
-        runs => {
-            post(&mut b, runs.as_deref());
-            b.finish()
-        }
-    };
-    if let Some(n) = proof.note() {
-        path.notes.push(n);
-    }
-    if let Some(why) = crate::approach::refusal(&path) {
-        // #261 part 3: the moves built so far ride the refusal, display-only.
-        return Err(GenError::Invalid(why).with_ghost(&path));
-    }
-    if !path.all_finite() {
-        return Err(GenError::Invalid("path left the finite horizon".into()));
-    }
-    Ok(path)
+    emit_pocket_passes(
+        b,
+        p,
+        PocketWalks {
+            center,
+            links_center: center,
+            strategy,
+            passes,
+            room,
+            joins,
+            hold_crossings,
+            holes,
+        },
+    )
 }
 
 /// Concentric rings marching inward: ring k is the cutter-center area

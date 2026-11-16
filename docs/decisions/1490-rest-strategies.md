@@ -85,3 +85,10 @@ the old inline tests would duplicate main's moved tests; changing unrelated
 product code is outside this review. Both alternatives were dropped.
 Parent #1817 remains open and must merge first. Verification is recorded
 separately in the PR comment after the checks complete.
+
+**Shared-emitter conflict resolution (2026-11-16).** Keep both
+`pocket_zigzag` and main's `pocket_emit` modules. Select the Zigzag rest
+passes before shared emission on both rest paths. The selection and
+emission changes are compatible; keeping either conflict side alone would
+lose the selected strategy or main's entry and link safety checks. Keep
+main's emitter unchanged rather than duplicating its emission logic.

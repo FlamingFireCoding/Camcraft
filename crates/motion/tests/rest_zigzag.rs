@@ -110,6 +110,16 @@ fn check_rest(climb: bool, stepover: f64) {
         .flat_map(|m| m.chords(0.005))
         .collect();
     assert!(!cuts.is_empty(), "the path must cut at the floor");
+    // Closing rings alone can cover these narrow corners. Require a row
+    // strictly inside the planned center area to pin the chosen strategy.
+    let plan = camcraft_motion::machining2d::rest_plan(&region, p.tool_diameter, p.stock_to_leave, &previous).unwrap();
+    assert!(cuts.iter().any(|&(a, b)| {
+        (a.y - b.y).abs() < 1e-9 && (a.x - b.x).abs() > 0.02
+            && plan.center.loops().iter().all(|ring| {
+                let points = ring.points();
+                (0..points.len()).all(|i| distance(a, points[i], points[(i + 1) % points.len()]) > 0.005)
+            })
+    }), "Zigzag rest must retain interior rows before shared emission");
     let mut measured = 0;
     let mut missed = 0;
     for i in 0..=300 {
@@ -163,6 +173,10 @@ fn tiny_rest_pocket_keeps_interior_rows_when_previous_tool_fits_nowhere() {
         optimal_load: camcraft_motion::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
     };
+    let mut non_center_cutting = p;
+    non_center_cutting.links.approach.center_cutting = false;
+    let refusal = rest_pocket(&region, &non_center_cutting, &previous).expect_err("shared emission must refuse a non-center-cutting plunge into stock");
+    assert!(refusal.to_string().contains(camcraft_motion::approach::CENTER_CUT_REFUSAL), "{refusal}");
     let path = rest_pocket(&region, &p, &previous).expect("tiny rest pocket must retain its interior passes");
     let cuts: Vec<_> = path.moves.iter()
         .filter(|m| m.kind == MoveKind::Feed && (m.from.z - p.bottom_z).abs() < 1e-9 && (m.to.z - p.bottom_z).abs() < 1e-9)

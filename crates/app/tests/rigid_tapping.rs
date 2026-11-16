@@ -169,6 +169,7 @@ fn tap_job(machine: &str, post: &str) -> (Result<posting::Posted, String>, Vec<S
     let tap = catalog().into_iter().find(|(n, _)| *n == "TAP-M6").map(|(_, t)| t).expect("tap");
     h.execute(&world, AddTool::new(&world, "TAP-M6", tap).expect("add tap"));
     let drill = OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(25.0),
         retract_z: None,
         top_z: Height::fixed(12.0),
