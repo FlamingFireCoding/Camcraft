@@ -71,6 +71,8 @@ pub(crate) mod post_refusal;
 pub(crate) mod error_text;
 // pub(crate) for the same reason: `State::machines_pane` (#287).
 pub(crate) mod machines_pane;
+// pub(crate) for `State::ai_chat` and its `WakeFn` (#1946).
+pub(crate) mod ai_chat;
 // pub(crate): `MachinesPane::editor` names its type (#383).
 pub(crate) mod machine_file_editor;
 mod feeds_page;
