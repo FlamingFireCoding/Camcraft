@@ -36,3 +36,10 @@
 **Cost to change later:** low. Each test is a short anchor list in
 `page_layout.rs`. If UI modals gain dedicated AccessKit dialog nodes later,
 update `assert_modal_layout` to query that container rect.
+
+**Review refresh (2026-11-16, Codex):** Keep upstream's `stock_pane_delete`
+helper when resolving `stock_fit.rs`. Both sides select Delete inside
+Properties; upstream also asserts that this button is unique. Retain all four
+stock-fit tests, including the fit-refusal and feedback checks. Dropped: the
+branch's equivalent inline lookup, which would duplicate the helper and omit
+its uniqueness assertion. No product logic required conflict resolution.

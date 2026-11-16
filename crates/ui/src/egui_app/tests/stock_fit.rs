@@ -8,6 +8,22 @@ fn disabled(h: &Harness<'static, ShellUi>, label: &str) -> bool {
     h.get_by_label(label).accesskit_node().is_disabled()
 }
 
+/// The Delete button of the Stock page. The ribbon has its own Delete
+/// button (#1988), so the lookup keeps only the node inside the Properties pane.
+fn stock_pane_delete<'h>(h: &'h Harness<'static, ShellUi>) -> egui_kittest::Node<'h> {
+    let pane = h
+        .state()
+        .dock
+        .iter_leaves()
+        .find(|(_, l)| l.tabs.contains(&Tab::Properties))
+        .map(|(_, l)| l.viewport)
+        .expect("the properties leaf");
+    let mut nodes = h.get_all_by_label("Delete").filter(|n| pane.contains(n.rect().center()));
+    let node = nodes.next().expect("a Delete button on the Stock page");
+    assert!(nodes.next().is_none(), "one Delete button on the Stock page");
+    node
+}
+
 /// #1683: only parametric stock can be fitted around the models.
 #[test]
 fn stock_fit_controls_follow_the_selected_shape() {
@@ -28,11 +44,7 @@ fn stock_fit_controls_follow_the_selected_shape() {
     let active = camcraft_app::setup::active(&h.state().state.world);
     let stock = camcraft_app::setup::stock_entity_name(&h.state().state.world, active.as_deref());
     assert!(model::find_by_name(&h.state().state.world, &stock).is_some());
-    let properties = super::layout::leaf_rect(&h.state().dock, &Tab::Properties).expect("Properties is laid out");
-    h.get_all_by_label("Delete")
-        .find(|node| properties.contains(node.rect().center()))
-        .expect("stock Delete is in Properties")
-        .click();
+    stock_pane_delete(&h).click();
     h.run_steps(2);
     assert!(model::find_by_name(&h.state().state.world, &stock).is_none(), "Delete still deletes stock");
     h.get_by_label("Box").click();
