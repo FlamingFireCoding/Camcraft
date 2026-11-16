@@ -197,10 +197,10 @@ fn batch_skips_slow_binaries_and_release_runs_everything() {
     assert!(b.contains(&"[ui] ui suites: lib | test -j 6 -p camcraft-ui --no-fail-fast --lib -- --test-threads=6".to_string()), "{b:#?}");
     assert!(b[b.len() - 1].starts_with("clippy -D warnings | clippy -j 6 -p camcraft-geometry -p camcraft-cl"));
     let r: Vec<String> = plan::release(&fx.0).steps.iter().map(line).collect();
-    // Two prebuilds, then one step for each target (#1941): lib, bins and doc of 9 crates plus the 5 fixture
+    // Two prebuilds, then one step for each target (#1941): lib, bins and doc of ALL_CRATES plus the 5 fixture
     // binaries (3 app, 2 motion); clippy; heavy lib+bins+doc of kernel and motion, and of app with its ops
     // binary (the only fixture binary holding an ignore); 2 snapshot lanes.
-    assert_eq!(r.len(), 2 + (9 * 3 + 5) + 1 + (3 + 3 + 4) + 2);
+    assert_eq!(r.len(), 2 + (plan::ALL_CRATES.len() * 3 + 5) + 1 + (3 + 3 + 4) + 2);
     assert!(r.iter().any(|s| s.starts_with("kernel suites")));
     assert_eq!(r[r.len() - 2], "[ui] ui snapshot lane (debug --ignored, cwd crates/ui) | test -j 6 -p camcraft-ui --lib --no-fail-fast -- --test-threads=6 --ignored snapshot");
     assert_eq!(r[r.len() - 1], "[ui] ui gpu_render snapshot lane (debug --ignored) | test -j 6 -p camcraft-ui --test gpu_render --no-fail-fast -- --test-threads=6 --ignored snapshot");
