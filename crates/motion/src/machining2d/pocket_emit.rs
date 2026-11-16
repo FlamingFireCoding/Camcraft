@@ -86,7 +86,8 @@ pub(super) fn emit_pocket_passes(
         .with_top(p.links.approach.entry_top(p.top_z))
         .with_xy_arc(p.links.approach.arc_xy)
         .with_microlift(joins)
-        .with_holes(holes);
+        .with_holes(holes)
+        .with_solid_restart();
     let runs: Option<Vec<Vec<Seg>>> = if p.blend_turns {
         let legal = Legal { region: center, inside: true, air_left: None };
         let rho = corner_arc_radius(p.blend_radius, p.tool_diameter).map_err(GenError::Invalid)?;

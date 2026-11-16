@@ -195,6 +195,19 @@ pub(crate) fn choose_entry(center: &Region, p: &PocketParams, notes: &mut Vec<St
     Ok(Some(EntryRoom { seed, clear: boundary_dist(center, seed) - 1e-6, helix_r: hr, tess }))
 }
 
+/// Where a piece after the first starts (#2265): for a helix entry the
+/// west side of the orbit [`choose_entry`] finds room for in the piece,
+/// so the ladder's helix closes on it; else (or with no such room) the
+/// piece's dive room.
+fn piece_entry(comp: &Region, p: &PocketParams, notes: &mut Vec<String>) -> Result<Option<Point2>, GenError> {
+    if p.entry == Entry3D::Helix
+        && let Some(e) = choose_entry(comp, p, notes)?
+    {
+        return Ok(Some(Point2::new(e.seed.x - e.helix_r, e.seed.y)));
+    }
+    Ok(dive_room(comp, 0.0))
+}
+
 /// Cutter-center walks for an Adaptive pocket, the plan's notes, the
 /// share of the reachable stock it leaves standing and its entry.
 fn hsm_passes(center: &Region, p: &PocketParams) -> Result<HsmPlanned, GenError> {
@@ -243,14 +256,18 @@ fn hsm_passes(center: &Region, p: &PocketParams) -> Result<HsmPlanned, GenError>
         let spec = if i == 0 {
             first
         } else {
-            let Some(d) = dive_room(comp, 0.0) else {
+            let Some(d) = piece_entry(comp, p, &mut notes)? else {
                 notes.push("adaptive: a piece of the area has no entry room - left uncut".into());
                 continue;
             };
-            notes.push(format!(
-                "adaptive: a separate piece of the area is entered by an axial dive at ({:.2}, {:.2})",
-                d.x, d.y
-            ));
+            // #2265: the ladder enters this piece's solid start by the
+            // asked entry (`ladder_links::pass_link`); the plan counts on
+            // the tool's own disc there only, which every entry clears.
+            notes.push(if p.entry == Entry3D::Plunge {
+                format!("adaptive: a separate piece of the area is entered by an axial dive at ({:.2}, {:.2})", d.x, d.y)
+            } else {
+                format!("adaptive: a separate piece of the area is entered at ({:.2}, {:.2})", d.x, d.y)
+            });
             AdaptiveSpec { seed: d, start: d, bore: r, helix_r: 0.0, ..first }
         };
         let pl = plan(&reach, comp, &spec)?;
