@@ -30,6 +30,11 @@ pub(super) fn apply_overlay(
         ribbon_cell_top_gap, ribbon_caption_gap, ribbon_caption_row_h,
         ribbon_bottom_gap, window_margin, status_h, ribbon_tab_pad_x,
         ribbon_tab_gap, ribbon_tab_stroke,
+        font_label_min, op_tab_h, op_tab_pad_x, op_tab_gap,
+        op_tab_bottom_gap, op_tab_icon_px, op_tab_icon_gap, op_tab_radius,
+        font_op_tab, tree_glyph_px, tree_inset_x, tree_indent,
+        tree_eye_reserve, tree_pad_x, tree_pad_y, tree_suffix_gap,
+        tree_header_boost, highlight_stroke_px,
     } = base;
     let c = |name: &str, keep: Color32| colors.get(name).copied().unwrap_or(keep);
     let f = |name: &str, keep: f32, win: (f32, f32)| {
@@ -40,6 +45,8 @@ pub(super) fn apply_overlay(
             .map(|v| clamp::range(*v as f32, (0.0, cap)).round() as u8)
             .unwrap_or(keep)
     };
+    let font_label = f(names::FONT_LABEL, font_label, clamp::FONT);
+    let font_label_min = f(names::FONT_LABEL_MIN, font_label_min, clamp::FONT).min(font_label);
     Tokens {
         ink: c(names::INK, ink),
         ink_alt: c(names::INK_ALT, ink_alt),
@@ -69,7 +76,8 @@ pub(super) fn apply_overlay(
         cell_h: f(names::CELL_H, cell_h, clamp::CELL),
         cell_w: f(names::CELL_W, cell_w, clamp::CELL),
         glyph_px: f(names::GLYPH_PX, glyph_px, clamp::GLYPH),
-        font_label: f(names::FONT_LABEL, font_label, clamp::FONT),
+        font_label,
+        font_label_min,
         font_caption: f(names::FONT_CAPTION, font_caption, clamp::FONT),
         font_row: f(names::FONT_ROW, font_row, clamp::FONT),
         font_row_suffix: f(names::FONT_ROW_SUFFIX, font_row_suffix, clamp::FONT),
@@ -83,5 +91,22 @@ pub(super) fn apply_overlay(
         ribbon_tab_pad_x: f(names::RIBBON_TAB_PAD_X, ribbon_tab_pad_x, clamp::RIBBON_TAB_PAD_X),
         ribbon_tab_gap: f(names::RIBBON_TAB_GAP, ribbon_tab_gap, clamp::RIBBON_GAP),
         ribbon_tab_stroke: f(names::RIBBON_TAB_STROKE, ribbon_tab_stroke, clamp::RIBBON_STROKE),
+        op_tab_h: f(names::OP_TAB_H, op_tab_h, clamp::CONTROL_H),
+        op_tab_pad_x: f(names::OP_TAB_PAD_X, op_tab_pad_x, clamp::SPACING),
+        op_tab_gap: f(names::OP_TAB_GAP, op_tab_gap, clamp::SPACING),
+        op_tab_bottom_gap: f(names::OP_TAB_BOTTOM_GAP, op_tab_bottom_gap, clamp::RIBBON_GAP),
+        op_tab_icon_px: f(names::OP_TAB_ICON_PX, op_tab_icon_px, clamp::GLYPH),
+        op_tab_icon_gap: f(names::OP_TAB_ICON_GAP, op_tab_icon_gap, clamp::SPACING),
+        op_tab_radius: rad(names::OP_TAB_RADIUS, op_tab_radius, clamp::RADIUS as f32),
+        font_op_tab: f(names::FONT_OP_TAB, font_op_tab, clamp::FONT),
+        tree_glyph_px: f(names::TREE_GLYPH_PX, tree_glyph_px, clamp::GLYPH),
+        tree_inset_x: f(names::TREE_INSET_X, tree_inset_x, clamp::SPACING),
+        tree_indent: f(names::TREE_INDENT, tree_indent, clamp::SPACING),
+        tree_eye_reserve: f(names::TREE_EYE_RESERVE, tree_eye_reserve, clamp::EYE_RESERVE),
+        tree_pad_x: f(names::TREE_PAD_X, tree_pad_x, clamp::SPACING),
+        tree_pad_y: f(names::TREE_PAD_Y, tree_pad_y, clamp::SPACING),
+        tree_suffix_gap: f(names::TREE_SUFFIX_GAP, tree_suffix_gap, clamp::SPACING),
+        tree_header_boost: f(names::TREE_HEADER_BOOST, tree_header_boost, clamp::HEADER_BOOST),
+        highlight_stroke_px: f(names::HIGHLIGHT_STROKE_PX, highlight_stroke_px, clamp::STROKE),
     }
 }

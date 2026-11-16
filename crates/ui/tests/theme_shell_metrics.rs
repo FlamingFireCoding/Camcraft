@@ -118,3 +118,28 @@ fn status_h_and_ribbon_tab_keys_parse_and_clamp() {
         assert_eq!(parsed.tokens.window_margin, 6.0, "{file}: default window_margin");
     }
 }
+
+#[test]
+fn merged_shell_and_main_geometry_keep_overrides_clamps_and_refusals() {
+    let geometry = r#""window_margin": 11.0, "status_h": 35.0,
+        "ribbon_tab_pad_x": 19.0, "ribbon_tab_gap": 7.0, "ribbon_tab_stroke": 4.0,
+        "font_label": 9.0, "font_label_min": 30.0,
+        "op_tab_h": 999.0, "tree_indent": -1.0"#;
+    let parsed = theme_files::parse_text(&theme_json(geometry), "pin-merged-geometry")
+        .expect("shell metrics and main geometry must parse together");
+    assert!(parsed.notes.is_empty(), "unexpected notes: {:?}", parsed.notes);
+    let t = parsed.tokens;
+    assert_eq!(t.window_margin, 11.0);
+    assert_eq!(t.status_h, 35.0);
+    assert_eq!(t.ribbon_tab_pad_x, 19.0);
+    assert_eq!(t.ribbon_tab_gap, 7.0);
+    assert_eq!(t.ribbon_tab_stroke, 4.0);
+    assert_eq!(t.font_label_min, 9.0, "minimum label font cannot exceed label font");
+    assert_eq!(t.op_tab_h, theme::clamp::CONTROL_H.1);
+    assert_eq!(t.tree_indent, theme::clamp::SPACING.0);
+
+    let unknown = format!(r#"{geometry}, "unknown_shell_metric": 1.0"#);
+    let why = theme_files::parse_text(&theme_json(&unknown), "pin-merged-unknown")
+        .expect_err("an unknown token must still refuse the whole theme");
+    assert!(why.contains("unknown_shell_metric"), "refusal must name the token: {why}");
+}

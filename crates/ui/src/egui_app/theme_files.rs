@@ -31,6 +31,8 @@ use serde_json::Value;
 use super::contrast;
 use super::theme::Tokens;
 
+mod names;
+pub use names::{COLOR_NAMES, GEOM_NAMES};
 mod overlay;
 use overlay::apply_overlay;
 
@@ -46,13 +48,6 @@ pub const MAX_KEY_LEN: usize = 48;
 pub const MAX_NAME_LEN: usize = 64;
 pub const MAX_CREATOR_LEN: usize = 64;
 pub const MAX_DESCRIPTION_LEN: usize = 200;
-
-/// The token names the format speaks, spelled exactly once; the
-/// parser's membership check and the overlay's field wiring both read
-/// these constants, so the file's vocabulary and the code's fields
-/// cannot drift (the all-names-equal-DARK test closes the other way).
-mod names;
-pub use names::{COLOR_NAMES, GEOM_NAMES};
 
 /// One theme, read and applied: what it is called, the token table it
 /// describes, and the honest notes gathered on the way (reported

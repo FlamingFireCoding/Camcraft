@@ -55,7 +55,7 @@ a real control.
 
 ## Wire Contour
 
-![Top view of wire travel from a start hole around a die profile.](../../../operation-paths.svg#WireContour)
+{{ <icon name="op-wire-contour" /> }} ![Top view of wire travel from a start hole around a die profile.](../../../operation-paths.svg#WireContour)
 
 **For:** cutting one profile through the workpiece with a vertical or tapered
 wire. A **die** keeps the opening (the wire runs inside the profile and
@@ -261,7 +261,7 @@ atom) judges the burn".
 
 ## Sinker Burn
 
-![Side view of an electrode plunging into a cavity and retracting.](../../../operation-paths.svg#SinkerBurn)
+{{ <icon name="op-sinker-burn" /> }} ![Side view of an electrode plunging into a cavity and retracting.](../../../operation-paths.svg#SinkerBurn)
 
 **For:** burning a cavity the shape of the electrode's face, straight
 down Z. The electrode rapids to the approach plane above the burn point,
@@ -326,7 +326,7 @@ electrode-length checks.
 
 ## Sinker Side Burn
 
-![Side view of an electrode plunging, moving toward one wall and returning.](../../../operation-paths.svg#SinkerSideBurn)
+{{ <icon name="op-sinker-side-burn" /> }} ![Side view of an electrode plunging, moving toward one wall and returning.](../../../operation-paths.svg#SinkerSideBurn)
 
 **For:** moving one wall of a burned cavity outward by a small amount,
 after the plunge. The electrode plunges as a Sinker Burn does, then feeds
