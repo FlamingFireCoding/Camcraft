@@ -256,6 +256,8 @@ pub(super) fn list_features(env: &mut Env, a: &Map<String, Value>) -> Result<Val
     // #561: a fixture's faces are pickable too - `locate_part` mates them.
     let e = match model::find_by_name(&env.world, name) {
         Some(e) if model::is_fixture(&env.world, &e) => e,
+        // #2173: so is a stock's - `locate_part` with body "stock" mates them.
+        Some(e) if model::is_stock(&env.world, &e) => e,
         _ => req_model(env, name)?,
     };
     let w = &env.world;
