@@ -719,26 +719,69 @@ function emitArcWithRadius(p, g, fwd) {
   var axes = p.CircularPlane === "XZ" ? [2, 0, 1] : (p.CircularPlane === "YZ" ? [1, 2, 0] : [0, 1, 2]);
   var u = axes[0], v = axes[1], h = axes[2];
   var from = [p.StartX, p.StartY, p.StartZ], to = [p.X, p.Y, p.Z], center = [c.I, c.J, c.K];
+  var org = [orgX, orgY, orgZ];
   if (!has(from[u]) || !has(from[v]) || !has(to[u]) || !has(to[v]) || !has(center[u]) || !has(center[v])) return false;
   var du = from[u] - center[u], dv = from[v] - center[v];
-  var r = Math.sqrt(du * du + dv * dv);
-  if (!(r > 0) || !isFinite(r)) return false;
+  var r0 = Math.sqrt(du * du + dv * dv);
+  var eu = to[u] - center[u], ev = to[v] - center[v];
+  var r1 = Math.sqrt(eu * eu + ev * ev);
+  if (!(r0 > 0) || !isFinite(r0) || !(r1 > 0) || !isFinite(r1)) return false;
+  var r = (r0 + r1) * 0.5;
+  if (Math.abs(r0 - r1) > Math.min(0.02, Math.max(0.002, r * 0.005))) return false;
   var a0 = Math.atan2(dv, du), ccw = p.CircularDirection !== "CW";
-  if (Math.abs(to[u] - from[u]) < 1e-5 && Math.abs(to[v] - from[v]) < 1e-5) {
-    var am = a0 + (ccw ? Math.PI : -Math.PI);
-    var mid = [from[0], from[1], from[2]];
-    mid[u] = center[u] + r * Math.cos(am);
-    mid[v] = center[v] + r * Math.sin(am);
-    if (has(from[h]) && has(to[h])) mid[h] = (from[h] + to[h]) * 0.5;
-    block([planeWord(planeOf(p)), g, wo("X", mid[0], orgX), wo("Y", mid[1], orgY), wo("Z", mid[2], orgZ), w("R", r), fwd]);
-    block([g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), w("R", r), fwd]);
-    return true;
+  var full = Math.abs(to[u] - from[u]) < 1e-5 && Math.abs(to[v] - from[v]) < 1e-5;
+  var sweep = 2 * Math.PI;
+  if (!full) {
+    var a1 = Math.atan2(ev, eu);
+    sweep = ccw ? a1 - a0 : a0 - a1;
+    if (sweep <= 0) sweep += 2 * Math.PI;
   }
-  var a1 = Math.atan2(to[v] - center[v], to[u] - center[u]);
-  var sweep = ccw ? a1 - a0 : a0 - a1;
-  if (sweep <= 0) sweep += 2 * Math.PI;
-  var rSigned = sweep > Math.PI + 1e-6 ? -r : r;
-  block([planeWord(planeOf(p)), g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), w("R", rSigned), fwd]);
+  // #2191: near-180 deg arcs lose center accuracy and can put chord > 2R
+  // after rounding; near-360 deg arcs collapse or cannot take one R.
+  // Split into quadrant-sized segments and verify every posted segment.
+  var nearPi = Math.PI / 9;
+  var n = 1;
+  if (full || sweep >= 2 * Math.PI - nearPi) n = 4;
+  else if (Math.abs(sweep - Math.PI) <= nearPi) n = 2;
+  function buildSegs(count) {
+    var segs = [], dir = ccw ? 1 : -1, prev = [from[0], from[1], from[2]];
+    var rSigned = sweep / count > Math.PI + 1e-6 ? -r : r;
+    var rp = Number(fu(r));
+    if (!(rp > 0) || !isFinite(rp)) return null;
+    for (var k = 1; k <= count; k++) {
+      var next;
+      if (k === count) {
+        next = [to[0], to[1], to[2]];
+      } else {
+        var ak = a0 + dir * sweep * (k / count);
+        next = [from[0], from[1], from[2]];
+        next[u] = center[u] + r * Math.cos(ak);
+        next[v] = center[v] + r * Math.sin(ak);
+        if (has(from[h]) && has(to[h])) next[h] = from[h] + (to[h] - from[h]) * (k / count);
+        else if (has(to[h])) next[h] = to[h];
+      }
+      var su = Number(fu(prev[u] - org[u])), sv = Number(fu(prev[v] - org[v]));
+      var pu = Number(fu(next[u] - org[u])), pv = Number(fu(next[v] - org[v]));
+      var qdu = pu - su, qdv = pv - sv;
+      var chord = Math.sqrt(qdu * qdu + qdv * qdv);
+      if (!(chord > 0) || chord > 2 * rp - 1e-7) return null;
+      if (count === 1 && chord > 2 * rp * 0.99) return null;
+      segs.push({ pt: next, rSigned: rSigned });
+      prev = next;
+    }
+    return segs;
+  }
+  var segs = buildSegs(n);
+  if (!segs && n === 1) {
+    segs = buildSegs(Math.max(2, Math.ceil(sweep / (Math.PI / 2))));
+  }
+  if (!segs) return false;
+  for (var i = 0; i < segs.length; i++) {
+    var pt = segs[i].pt;
+    var words = i === 0 ? [planeWord(planeOf(p)), g] : [g];
+    words.push(wo("X", pt[0], orgX), wo("Y", pt[1], orgY), wo("Z", pt[2], orgZ), w("R", segs[i].rSigned), fwd);
+    block(words);
+  }
   return true;
 }
 function onCircular() {
