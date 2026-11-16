@@ -40,11 +40,13 @@ Shortcuts on this page are written with Ctrl. On macOS, press Cmd in their place
     operation) and {{ <icon name="trash" /> }} **Delete**.
   - **Inspect:** {{ <icon name="act-frame-all" /> }} **Frame** (F), {{ <icon name="act-show-paths" /> }} **Paths** (show every toolpath), {{ <icon name="act-simulate" /> }} **Simulate** and
     {{ <icon name="tree-stock" /> }} **Deviate**.
-  - **View:** Panels (show or hide the browser, properties and machines
-    panes, or reset the layout) and Theme.
+  - **View:** Panels (show or hide the browser, properties, machines and
+    AI Chat panes, or reset the layout) and Theme.
 - **The browser** lists the document: {{ <icon name="tree-part" /> }} models, {{ <icon name="tree-setup" /> }} setups with their {{ <icon name="tree-stock" /> }} stock,
   {{ <icon name="tree-machine" /> }} machine, {{ <icon name="act-post" /> }} post, {{ <icon name="tree-fixture" /> }} fixtures and {{ <icon name="tools" /> }} tools, and the {{ <icon name="tree-op-group" /> }} operations.
-- **The properties pane** shows the page of whatever you selected.
+- **The properties pane** shows the page of whatever you selected. For a
+  tool, it shows that tool's settings; browsing the tool library happens in
+  the separate **Tool library** pane (see [Tools](@/guide/set-up/tools.md)).
 - **The viewport** shows the model, stock, toolpaths and simulation.
 
 Hover any ribbon button to read what it does. A greyed-out operation says
@@ -53,6 +55,33 @@ why in its tooltip, for example "No tool yet - add one (Setup > Tools)" or
 
 Every keyboard shortcut and mouse gesture, for Windows, Linux and macOS, is
 on the [Keyboard and mouse](@/guide/getting-started/keyboard-and-mouse.md) page.
+
+### Open an example project
+
+A release package ships example projects in an `examples` folder beside
+the program. Choose {{ <icon name="file-import" /> }} **Open** in the File
+group, then **Open example**, and pick a project. The list shows the
+`.camproj` files in that folder in name order. If the folder holds none,
+the entry reads **No example projects**. The entry is absent when the
+folder is missing and in the browser build. Opening an example asks first
+if you have unsaved changes, as any project open does.
+
+### What you see after opening a document
+
+Opening a document frames the camera on the opened part and stock, so
+orbiting turns about the part and not about the old view's target. Press F
+to frame again at any time. On a lathe, the viewport lays the spindle axis
+from left to right with the cross-slide up (a mill-turn keeps the milling
+view). This changes only the view,
+not the work offset or the posted program.
+
+### Themes and screen readers
+
+The ribbon, its group captions, the operation tabs and the browser tree
+take their sizes and colours from the theme, so text and glyphs read
+clearly in both Horizon Day and Teal Night. Browser rows, their eye
+toggles and context-menu rows carry accessibility labels, so a screen
+reader or an automated test can name them.
 
 ## A first toolpath
 
