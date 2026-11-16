@@ -212,7 +212,7 @@ impl Shell {
         queue.present(st);
         frame_watch.mark("submit+present", now());
         if let Some(line) = frame_watch.end(now()) {
-            eprintln!("{line}");
+            diag_warn!("{line}");
         }
 
         if state.request_quit {
