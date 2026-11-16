@@ -20,3 +20,7 @@
 **Considered and dropped.** Keeping the helper in app violates the domain ownership rule. The helper reads no document state.
 
 **Cost to change.** Local to the motion helper and the app generation call.
+
+### PR #2162 merge refresh
+
+**Decided.** Merge `upstream/main` (`4e0b9abef`) bringing #2126's merged `camcraft_motion::break_through` (internal `Z_TOL = 1e-6`, 5-arg `judge`), #2015's v64, and #2133's v65. Take `upstream/main`'s `break_through` module, test, and `generate.rs` call instead of altering #2126's merged signature. Advance `PROJECT_VERSION` from 65 to 66 so v65 and older readers refuse files carrying `controller_rtcp: false` rather than dropping it.

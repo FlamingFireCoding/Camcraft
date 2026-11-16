@@ -30,12 +30,31 @@ fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
 }
 
 fn scratch_dir(tag: &str) -> PathBuf {
-    let base = std::env::var_os("CARGO_TARGET_TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("shape-mask-unit-diffs").join(tag);
-    let _ = fs::remove_dir_all(&dir);
-    dir
+    common::png::default_diff_dir().join(tag)
+}
+
+#[test]
+fn shape_mask_scratch_dirs_preserve_other_runs() {
+    let first = scratch_dir("independent_runs");
+    fs::create_dir_all(&first).expect("create first run directory");
+    let sentinel = first.join("first-run.txt");
+    fs::write(&sentinel, b"keep first run").expect("write first run sentinel");
+    let second = scratch_dir("independent_runs");
+    assert!(sentinel.is_file(), "allocating a scratch directory deleted another run");
+    assert_ne!(first, second, "scratch directories must be unique per allocation");
+    fs::remove_dir_all(first).expect("remove first run directory");
+    if second.exists() {
+        fs::remove_dir_all(second).expect("remove second run directory");
+    }
+}
+
+#[test]
+fn shape_mask_default_diff_dirs_are_independent() {
+    let first = common::png::default_diff_dir();
+    let second = common::png::default_diff_dir();
+    assert_ne!(first, second, "default diagnostic directories must not share output");
+    fs::remove_dir_all(first).expect("remove first default directory");
+    fs::remove_dir_all(second).expect("remove second default directory");
 }
 
 fn line_path(pts: &[(f64, f64, f64)]) -> Toolpath {

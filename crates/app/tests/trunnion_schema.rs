@@ -160,8 +160,8 @@ fn project_roundtrips_non_rtcp_trunnion_and_protects_version() {
     let saved = std::fs::read_to_string(&path).expect("read");
     const {
         assert!(
-            project::PROJECT_VERSION >= 64,
-            "PROJECT_VERSION must bump past v63 so older builds do not discard controller_rtcp"
+            project::PROJECT_VERSION >= 66,
+            "PROJECT_VERSION must bump past v65 so older builds do not discard controller_rtcp"
         );
     }
     assert!(

@@ -109,7 +109,7 @@ fn valid_pick(world: &World, g: &GeoSel) -> Result<(), CommandError> {
     };
     let found = match g.feature {
         FeatureSel::Face(id) => features.faces.iter().any(|f| f.id == id),
-        FeatureSel::Chain(id) => feature::resolve_chain(&features, id).is_some(),
+        FeatureSel::Chain(id) => crate::model::resolve_chain(&features, id).is_some(),
         FeatureSel::Patch(id) => feature::patches(&features).iter().any(|p| p.id == id),
         FeatureSel::Vertex(id) => feature::resolve_vertex(&features, id).is_some(),
     };
