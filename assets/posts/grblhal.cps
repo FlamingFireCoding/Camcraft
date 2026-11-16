@@ -17,6 +17,8 @@ minimumRevision = 1;
 extension = "nc";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+workOffsetIndex = true; // reads the 1-based WorkOffset number (#1385)
+workOffsetMax = 6;      // G54..G59, per the public control documentation cited above
 coolantModes = true; // reads PARAM Coolant (#112/#150)
 afterModes = true;   // reads PARAM AfterOperation (#110)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
@@ -36,6 +38,7 @@ var retractSet = false;    // G98 written once per program
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
+var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
@@ -292,14 +295,18 @@ function onRadiusCompensation() {
   msg("control cutter compensation (G41/G42) is not supported by grblHAL - choose In computer");
 }
 
+// #1385: the engine validates the offset index before this script receives it.
+function workOffsetName(n) { return "G" + (53 + n); }
+
 function onParameter(name, value) {
   commentParam(name, value);
   if (name === "OperationName") coolantOp = String(value || "");
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
+  if (name === "SetupChange") { setupNext = clean(value); return; }
   if (name === "Smoothing") { smoothTol = Number(value) || 0; return; }
   if (name === "SmoothingMode") { smoothMode = String(value || ""); return; }
-  if (name === "WorkOffset" && value) wcsWord = String(value);
+  if (name === "WorkOffset" && value) wcsWord = workOffsetName(Number(value));
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
@@ -372,8 +379,15 @@ function startPreamble() {
 // (machine zero when unset), and homing itself ($H) is not a G-code.
 function afterOp() {
   var ask = afterAsk;
+  var next = setupNext;
   afterAsk = "";
+  setupNext = null;
   if (!ask) return;
+  if (next !== null && (ask === "optional-stop" || ask === "stop")) {
+    // #1647: lift Z before inviting the operator to re-clamp the part.
+    retract();
+    note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
+  }
   if (ask === "optional-stop") { block(["M1"]); return; }
   if (ask === "stop") { block(["M0"]); return; }
   if (ask === "home") {

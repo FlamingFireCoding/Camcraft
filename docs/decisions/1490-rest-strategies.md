@@ -73,3 +73,15 @@ describes parallel rows and boundary connections. His
 (Computer-Aided Design 35, 2003) provides the coverage context.
 The capped inset, closing passes, and stock-proof contracts are our decisions.
 No other CAM product's code or output was used.
+
+**PR #2037 review refresh (2026-11-16).** Merge `upstream/main` at
+`a49322b9`, preserving its move of the level-links choices tests and all
+of its safety tests. Carry `rest: None` into the moved Pocket fixture and
+main's new `first_router_part` fixture. Extend
+`choices::links_round_trip_and_the_defaults_write_no_key` to assert that
+both default and picked links still load a non-rest Pocket. These fixture
+changes are compatible and keep the checks from both branches. Restoring
+the old inline tests would duplicate main's moved tests; changing unrelated
+product code is outside this review. Both alternatives were dropped.
+Parent #1817 remains open and must merge first. Verification is recorded
+separately in the PR comment after the checks complete.

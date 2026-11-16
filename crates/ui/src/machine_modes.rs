@@ -19,11 +19,13 @@ use crate::state::{CommandKind, State};
 /// machines, not which five axes it owns. The table is explicit (one
 /// reference per kind, named here); `machine_mode_tests` fails when a
 /// kind with a shipped machine has no row, or a row mounts nothing.
-pub(crate) const MACHINE_MODES: [(MachineKind, &str, &str); 4] = [
+pub(crate) const MACHINE_MODES: [(MachineKind, &str, &str); 6] = [
     (MachineKind::Mill, "Milling", "VMC 3-axis"),
     (MachineKind::Lathe, "Turning", "Lathe"),
     (MachineKind::MillTurn, "Mill-turning", "Mill-turn"),
     (MachineKind::Plasma, "Plasma cutting", "Tormach 1300PL"),
+    (MachineKind::WireEdm, "Wire EDM", "Sodick ALC400G"),
+    (MachineKind::SinkerEdm, "Sinker EDM", "Sinker EDM 3-axis (template)"),
 ];
 
 /// The plain caption a mode wears on the door and in the status line.
@@ -43,7 +45,9 @@ pub(crate) fn short_caption(kind: MachineKind) -> &'static str {
         MachineKind::Lathe => "Turn",
         MachineKind::MillTurn => "M-Turn",
         MachineKind::Plasma => "Plasma",
-        _ => "Machine",
+        MachineKind::WireEdm => "Wire",
+        MachineKind::SinkerEdm => "Sinker",
+        MachineKind::Waterjet => "Waterjet",
     }
 }
 

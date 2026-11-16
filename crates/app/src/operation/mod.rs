@@ -131,6 +131,7 @@ mod probe_pick_round;
 pub use probe_pick::{PROBE_AXIS_TOL_DEG, ProbeSeed, probe_account, probe_from_picks, probe_seed, seeded_params};
 pub(crate) use probe::*;
 mod selection;
+mod contour_auto_pick;
 pub use selection::*;
 mod picks;
 pub use picks::*;
@@ -207,6 +208,8 @@ mod air_law;
 pub mod mark_law;
 // #1603: the part a pocket-family op keeps, judged on the op.
 pub mod keep_law;
+// #1749: the 3D Pocket's footprint past its open edges.
+mod open_side;
 // #1628: the post's live re-judge of the parts `keep_law` keeps.
 pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.

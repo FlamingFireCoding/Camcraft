@@ -513,6 +513,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // mesh the file holds no fidelity record for is marked unknown.
         // v60 -> v61 (#258): the document may state its program number
         // and comment; absent states neither (O0001, the machine's name).
+        // v61 -> v62 (#1453): absent tap hand defaults to right-hand.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -690,6 +691,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // #864: the flag lands with the facets it describes; an
                 // absent key, or a value that is no coarse chord, is none.
                 crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
+                // #1610: validate_kind refused a hole without the mark.
+                crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
             }

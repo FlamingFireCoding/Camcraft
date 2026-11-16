@@ -24,7 +24,7 @@ pub(super) struct Tool {
 const TOOLS: &[Tool] = &[
     Tool { name: "open_project", description: "Open a .camproj project file, replacing the current document and clearing undo history.", schema: s_path, run: open_project },
     Tool { name: "save_project", description: "Save the document as a .camproj file. Without a path, saves over the file last opened or saved.", schema: s_opt_path, run: save_project },
-    Tool { name: "import_model", description: "Import a mesh model (STL, STEP or OBJ) through the app's importers. A name already used by a model updates that model. A STEP model too large to import at full detail answers with reduced_fidelity: how closely its surfaces are approximated, in mm - gouge checks against it are stricter, and its operations are refused at the post when it is too coarse to check; import it again with a larger facet_budget to clear that. notes lists what the importer changed, e.g. a STEP face wound against its neighbours that was flipped, by name, or a closed STEP solid wound inward that was turned outward.", schema: s_import, run: import_model },
+    Tool { name: "import_model", description: "Import a mesh model (STL, STEP or OBJ) through the app's importers. A name already used by a model updates that model. A STEP model too large to import at full detail answers with reduced_fidelity: how closely its surfaces are approximated, in mm - gouge checks against it are stricter, and its operations are refused at the post when it is too coarse to check; import it again with a larger facet_budget to clear that. A STEP closed shell that meshes open imports incomplete: reduced_fidelity then says incomplete and names the hole, and every operation on the model is refused at the post. notes lists what the importer changed, e.g. a STEP face wound against its neighbours that was flipped, by name, or a closed STEP solid wound inward that was turned outward.", schema: s_import, run: import_model },
     Tool { name: "get_job", description: "The whole document as JSON: setups, stock, work offsets, models (one imported at reduced fidelity carries reduced_fidelity), tools, and operations with their parameters and status.", schema: s_empty, run: job::get_job },
     Tool { name: "list_operation_types", description: "Every operation kind with its parameter fields, JSON types and default values, and the tool kinds it accepts.", schema: s_empty, run: job::list_operation_types },
     Tool { name: "list_tool_catalog", description: "The built-in tool catalog: names and definitions add_tool can copy into the document.", schema: s_empty, run: job::list_tool_catalog },
@@ -279,7 +279,7 @@ fn s_add_tool() -> Value {
             "name": { "type": "string", "description": "Tool name in the document; defaults to the catalog name." },
             "catalog": { "type": "string", "description": "A list_tool_catalog name to copy." },
             "definition": { "type": "object", "description": "A full tool definition (get_job's tool shape). Optional catalog keys part_number, vendor, coating, helix_deg (0-90) and notes ride it; unusable ones refuse the add by tool name. Optional cutting_data: [{material, rpm, feed}] per workpiece material word (aluminium_6061, mild_steel, stainless_304, grey_cast_iron, brass, plastics_pom), feed mm/min; a material twice or a non-positive rpm/feed refuses the add by tool name. When the document states a material the tool has a row for, the tool lands running that row's rpm/feed, and add_operation seeds a milling op's feed from it." },
-            "holder": { "type": "string", "description": "A built-in library holder for it (\"BT30 ER20\"), or \"none\" for no holder body. Omitted: the active setup's machine's default holder (tooling.default_holder), when it states one and the holder takes the tool. The reply names the holder it landed with (holder, holder_from) or why the default was left off (note)." }
+            "holder": { "type": "string", "description": "A built-in library holder for it (\"BT30 ER20\", or a taper's Weldon pick \"BT40 Weldon\": the bore for the tool's shank), or \"none\" for no holder body. Omitted: the active setup's machine's default holder (tooling.default_holder), when it states one and the holder takes the tool. The reply names the holder it landed with (holder, holder_from) or why the default was left off (note)." }
         }),
         &[],
     )
@@ -351,7 +351,7 @@ fn s_post() -> Value {
     obj(
         json!({
             "output": { "type": "string", "description": "The .nc file to write." },
-            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak) or a .cps path." },
+            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak, Tormach PathPilot Plasma) or a .cps path." },
             "between_setups": {
                 "type": "string",
                 "enum": ["pause", "optional-stop", "continue", "file-per-setup"],

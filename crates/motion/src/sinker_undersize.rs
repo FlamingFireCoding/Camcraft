@@ -19,6 +19,14 @@
 //!   under size, refused by name;
 //! - the orbit moves only in XY: the tip stops `u - r` above the finished
 //!   floor, so a rough leaves `u - r - g` on the floor as on the walls.
+//!
+//! A body electrode (#1152) is judged on its outline's X and Y extents:
+//! a section grown by `g + r` on every side is exactly that much wider
+//! per side on each axis, so the two burn clauses hold as they stand.
+//! The first clause holds one way only: an inward offset moves a sharp
+//! corner that is not square to the axes MORE than `u`, so the outline's
+//! extent may be under `c - 2u` - never over it. The shape inside those
+//! extents is the stock sim's to judge (the outline atom).
 
 use crate::machining2d::GenError;
 use crate::sinker_orbit::{Orbit, OrbitKind};
@@ -67,6 +75,9 @@ pub struct Undersize {
     pub undersize: f64,
     /// The lateral sweep; absent for a straight plunge.
     pub orbit: Option<Orbit>,
+    /// A body electrode (#1152): `electrode` is its outline's X and Y
+    /// extents, not a rectangular face.
+    pub outline: bool,
 }
 
 /// Judge one undersized burn, by name: the cavity it burns against the
@@ -119,7 +130,16 @@ pub fn judge(u: &Undersize, condition: &str) -> Result<f64, GenError> {
             )));
         }
         let wanted = c - 2.0 * u.undersize;
-        if (e - wanted).abs() > SIZE_SLACK {
+        // A body electrode's extent may be under the condition's size
+        // (a sharp corner offsets further than the undersize), never
+        // over it.
+        if u.outline && e > wanted + SIZE_SLACK {
+            return Err(GenError::Invalid(format!(
+                "sinker {pass}: condition {condition:?} undersizes its electrode {:.3} per side, so under the {c:.3} cavity its outline spans at most {wanted:.3} in {axis} - the electrode's outline spans {e:.3}",
+                u.undersize
+            )));
+        }
+        if !u.outline && (e - wanted).abs() > SIZE_SLACK {
             return Err(GenError::Invalid(format!(
                 "sinker {pass}: condition {condition:?} undersizes its electrode {:.3} per side, so under the {c:.3} cavity it is {wanted:.3} in {axis} - the electrode is {e:.3}",
                 u.undersize
@@ -153,7 +173,7 @@ mod tests {
     use super::*;
 
     fn pair(pass: SinkerPass, e: f64, gap: f64, undersize: f64) -> Undersize {
-        Undersize { pass, cavity: (20.0, 12.0), electrode: (e, e - 8.0), gap, undersize, orbit: None }
+        Undersize { pass, cavity: (20.0, 12.0), electrode: (e, e - 8.0), gap, undersize, orbit: None, outline: false }
     }
 
     #[test]
@@ -187,6 +207,28 @@ mod tests {
         let overburn = Undersize { orbit: orbit(0.21), ..rough };
         let err = judge(&overburn, "R").expect_err("orbit overburn").to_string();
         assert!(err.contains("orbit") && err.contains("past size"), "{err}");
+    }
+
+    #[test]
+    fn sinker_undersize_judges_an_outline_on_its_extents() {
+        let body = |pass, e, gap, undersize| Undersize { outline: true, ..pair(pass, e, gap, undersize) };
+        // The extents the condition calls for: judged as a face is.
+        assert_eq!(judge(&body(SinkerPass::Rough, 19.4, 0.1, 0.3), "R").expect("rough"), 0.3);
+        assert_eq!(judge(&body(SinkerPass::Finish, 19.96, 0.02, 0.02), "F").expect("finish"), 0.02);
+        // An outline under the condition's extents (a sharp corner that
+        // offset further than the undersize) is the right electrode: a
+        // rectangular face that size is not.
+        assert_eq!(judge(&body(SinkerPass::Rough, 19.2, 0.1, 0.3), "R").expect("a sharp-cornered rough"), 0.3);
+        let e = judge(&pair(SinkerPass::Rough, 19.2, 0.1, 0.3), "R").expect_err("a face is held both ways");
+        assert!(e.to_string().contains("undersizes its electrode"), "{e}");
+        // An outline over them is the wrong electrode, by name.
+        let e = judge(&body(SinkerPass::Rough, 19.5, 0.04, 0.3), "R").expect_err("too large").to_string();
+        assert!(e.contains("its outline spans at most 19.400 in X") && e.contains("spans 19.500"), "{e}");
+        // The burn clauses hold for an outline as they stand.
+        let e = judge(&body(SinkerPass::Rough, 19.8, 0.2, 0.1), "R").expect_err("overburn");
+        assert!(e.to_string().contains("past size"), "{e}");
+        let e = judge(&body(SinkerPass::Finish, 19.9, 0.02, 0.05), "F").expect_err("under size");
+        assert!(e.to_string().contains("leaves the cavity under size"), "{e}");
     }
 
     #[test]

@@ -8,6 +8,9 @@
 mod asset_tests;
 mod assets;
 mod braces;
+mod budget;
+#[cfg(test)]
+mod budget_tests;
 mod checkout;
 #[cfg(test)]
 mod checkout_tests;
@@ -15,6 +18,7 @@ mod decisions;
 #[cfg(test)]
 mod directory_tests;
 mod exec;
+mod lanes;
 #[cfg(test)]
 mod gate_maps_tests;
 #[cfg(test)]
@@ -23,6 +27,8 @@ mod icon_font;
 mod icons;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod lanes_tests;
 mod logo;
 #[cfg(test)]
 mod logo_tests;

@@ -78,6 +78,7 @@ impl OpParams {
         match self {
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
+            OpParams::Adaptive2D { troch, .. } => troch.refusal(),
             _ => None,
         }
     }
@@ -263,6 +264,7 @@ impl OpParams {
                 plunge_feed,
                 helix_radius,
                 optimal_load,
+                troch,
                 ..
             } => {
                 pos(*stepover)
@@ -276,6 +278,7 @@ impl OpParams {
                     && pos(*plunge_feed)
                     && pos(*helix_radius)
                     && crate::load::load_in_door(*optimal_load)
+                    && troch.is_sane()
             }
             OpParams::Offset2D {
                 stepover,
@@ -1235,13 +1238,21 @@ impl OpParams {
     /// resolved; the motion layer holds the same law as a backstop.
     #[must_use]
     pub fn microlift_refusal(&self, clearance: f64, top: f64) -> Option<String> {
-        let OpParams::TrochoidalSlot { ret: crate::machining2d::TrochoidReturn::Microlift { height }, .. } = self else {
-            return None;
+        let (who, height) = match self {
+            OpParams::TrochoidalSlot { ret: crate::machining2d::TrochoidReturn::Microlift { height }, .. } => {
+                ("the trochoidal slot's", *height)
+            }
+            OpParams::Adaptive2D {
+                method: crate::machining2d::AdaptiveMethod::Trochoidal,
+                troch: crate::machining2d::AdaptiveTrochParams { ret: Some(crate::machining2d::TrochoidReturn::Microlift { height }), .. },
+                ..
+            } => ("the 2D Adaptive (Trochoidal)", *height),
+            _ => return None,
         };
         let room = clearance - top;
-        (*height > room + 1e-9).then(|| {
+        (height > room + 1e-9).then(|| {
             format!(
-                "a {height:.3} mm microlift would feed the trochoidal slot's return above the clearance plane - at most {room:.3} mm (the clearance above the top) fits; use the Retract return to hop higher"
+                "a {height:.3} mm microlift would feed {who} return above the clearance plane - at most {room:.3} mm (the clearance above the top) fits; use the Retract return to hop higher"
             )
         })
     }
