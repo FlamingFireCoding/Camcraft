@@ -68,6 +68,7 @@ pub(crate) fn tab_of(p: Panel) -> Tab {
         Panel::Browser => Tab::Browser,
         Panel::Properties => Tab::Properties,
         Panel::Machines => Tab::Machines,
+        Panel::AiChat => Tab::AiChat,
     }
 }
 
@@ -90,6 +91,7 @@ pub(crate) fn panels_open(dock: &DockState<Tab>) -> PanelsOpen {
         browser: is_open(dock, &Tab::Browser),
         properties: is_open(dock, &Tab::Properties),
         machines: is_open(dock, &Tab::Machines),
+        ai_chat: is_open(dock, &Tab::AiChat),
     }
 }
 
@@ -111,7 +113,7 @@ fn reopen(dock: &mut DockState<Tab>, tab: Tab) {
     // #287: the Machines pane opens as a tab beside the properties pane
     // when that is open (same side, same width - one more context pane),
     // else alone at the right like the properties pane would.
-    if matches!(tab, Tab::Machines | Tab::Tools)
+    if matches!(tab, Tab::Machines | Tab::Tools | Tab::AiChat)
         && let Some(props) = dock.find_tab(&Tab::Properties)
         && let Ok(leaf) = dock.leaf_mut(props.node_path())
     {
@@ -147,7 +149,7 @@ pub(crate) fn apply(dock: &mut DockState<Tab>, req: LayoutRequest) {
         LayoutRequest::Show(p) => show(dock, tab_of(p)),
         LayoutRequest::ToolLibrary => show(dock, Tab::Tools),
         LayoutRequest::Toggle(p) if is_open(dock, &tab_of(p)) => close(dock, p),
-        LayoutRequest::Toggle(p) => reopen(dock, tab_of(p)),
+        LayoutRequest::Toggle(p) => show(dock, tab_of(p)),
         LayoutRequest::Reset => *dock = build_dock(),
     }
 }
@@ -174,11 +176,12 @@ pub(crate) enum ViewRow {
     Reset,
 }
 
-const ROWS: [ViewRow; 5] = [
+const ROWS: [ViewRow; 6] = [
     ViewRow::Viewport,
     ViewRow::Panel(Panel::Browser),
     ViewRow::Panel(Panel::Properties),
     ViewRow::Panel(Panel::Machines),
+    ViewRow::Panel(Panel::AiChat),
     ViewRow::Reset,
 ];
 
@@ -188,6 +191,7 @@ fn row_label(r: ViewRow) -> &'static str {
         ViewRow::Panel(Panel::Browser) => "Browser",
         ViewRow::Panel(Panel::Properties) => "Properties",
         ViewRow::Panel(Panel::Machines) => "Machines",
+        ViewRow::Panel(Panel::AiChat) => "AI Chat",
         ViewRow::Reset => "Reset layout",
     }
 }

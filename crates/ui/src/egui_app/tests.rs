@@ -200,6 +200,8 @@ mod setup_machine_bleed;
 mod setup_post_options_bleed;
 // #1617: a closed STEP solid wound inward is turned outward, and said.
 mod import_outward;
+// #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
+mod ai_chat;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
