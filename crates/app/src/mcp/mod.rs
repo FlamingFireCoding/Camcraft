@@ -32,6 +32,7 @@ mod edit;
 mod features;
 mod fixture_profile_tools;
 mod fixture_tools;
+mod fixture_turn_tools;
 mod holders;
 mod job;
 mod listen;

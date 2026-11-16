@@ -11,6 +11,8 @@ pub mod delete_entity;
 pub mod fixture;
 pub mod fixture_move;
 pub mod fixture_plate;
+// #2174: a fixture turned about a world axis (quarter turns, typed angles).
+pub mod fixture_turn;
 pub mod mod_vise;
 // #832: edit and re-fit a placed mod vise pair.
 pub mod mod_vise_edit;
@@ -87,6 +89,7 @@ pub use delete_entity::DeleteEntity;
 pub use fixture::{
     AddFixtureModel, DeleteFixture, MoveFixture, SetFixtureFixed, TagFixture, UntagFixture,
 };
+pub use fixture_turn::TurnFixture;
 pub use fixture_plate::{InsertPlate, PlaceOnPlate, PlatePlacement, SetPlate, SetPlateGrid};
 pub use mod_vise::PlaceModVisePair;
 pub use mod_vise_edit::{RefitModVise, SetModJaw};
