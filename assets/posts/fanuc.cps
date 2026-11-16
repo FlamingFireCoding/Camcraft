@@ -22,6 +22,7 @@ workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (
 workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets are an option not verified here (#931)
 millSpindleReverse = true; // reads PARAM MillSpindle (#988): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -1167,6 +1168,14 @@ function onProbeResult() {
 }
 
 // ------------------------------------------------------------ footer
+// #2189: modal Group 06 unit word (G20 / G21) after the final retract,
+// right before M30, when postOptions.EndUnits asks for the other unit.
+function endUnitsWord() {
+  var want = typeof postOptions !== "undefined" && postOptions ? postOptions.EndUnits : undefined;
+  if (want === "inch" && !inch) return "G20";
+  if (want === "mm" && inch) return "G21";
+  return "";
+}
 function onClose() {
   endPreamble();
   // #504: a trip home with nothing written after it (a trailing Go
@@ -1174,6 +1183,8 @@ function onClose() {
   if (linesWritten() !== homedAt) {
     retractHome(true);
   }
+  var u = endUnitsWord();
+  if (u) block([u]);
   block(["M30"]);
   writeln("%");
 }

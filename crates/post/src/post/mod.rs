@@ -32,6 +32,7 @@ pub mod cnc_thread;
 pub mod cnc_torch;
 mod coolant;
 pub mod dialect;
+pub mod end_units;
 pub mod engine;
 pub mod explain;
 pub mod invert;
