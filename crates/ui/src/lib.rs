@@ -42,6 +42,7 @@ pub mod interact;
 pub mod locate_pick;
 pub mod machined;
 mod setup_display;
+mod floor;
 mod work_envelope;
 pub mod view_frame;
 pub mod mcp_host;
