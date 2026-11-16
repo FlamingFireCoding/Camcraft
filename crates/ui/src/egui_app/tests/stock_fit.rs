@@ -28,7 +28,9 @@ fn stock_fit_controls_follow_the_selected_shape() {
     let active = camcraft_app::setup::active(&h.state().state.world);
     let stock = camcraft_app::setup::stock_entity_name(&h.state().state.world, active.as_deref());
     assert!(model::find_by_name(&h.state().state.world, &stock).is_some());
-    h.get_by_role_and_label(egui::accesskit::Role::Button, "Delete").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties")
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Delete")
+        .click();
     h.run_steps(2);
     assert!(model::find_by_name(&h.state().state.world, &stock).is_none(), "Delete still deletes stock");
     h.get_by_label("Box").click();
