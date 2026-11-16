@@ -7,6 +7,8 @@
 //! face with a second tool. Each operation is an indexed A, then an ordinary
 //! 3-axis cut (3+1). The guide page quotes this program, and
 //! `site/tests/test_first_4axis_part.py` holds the page to these two files.
+//! The model `examples/models/first-4axis-part.obj` is the bar as the program
+//! cuts it, and one test here holds it to the cached toolpaths.
 //! Provenance: our own test over our own commands, machine file and post.
 //!
 //! Regenerate the project and the program after an intentional change:
@@ -21,14 +23,15 @@ use camcraft_app::commands::{
     SetStock, SetUnits,
 };
 use camcraft_app::geo2d::Point2;
-use camcraft_app::geometry::Point3;
+use camcraft_app::cl::MoveKind;
+use camcraft_app::geometry::{Point3, Triangle};
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::operation::{Height, HeightReference, OpParams, SrcRef, Tilt};
 use camcraft_app::schema::{Location, PostRef};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::{Tool, ToolKind, catalog};
 use camcraft_app::units::Unit;
-use camcraft_app::{machine, posting, project};
+use camcraft_app::{machine, model, posting, project};
 use flecs_ecs::prelude::World;
 use std::path::{Path, PathBuf};
 
@@ -241,4 +244,111 @@ fn the_committed_project_posts_the_committed_program() {
     assert!(gate.is_empty(), "the post gate is silent: {gate:?}");
     let want = std::fs::read_to_string(repo(PROGRAM)).expect("the example program");
     assert_eq!(post(&world, "loaded"), want, "{PROJECT} posts {PROGRAM}");
+}
+
+/// The height of the model's surface over a point of a face's plan: the
+/// highest hit of a ray that comes down the face normal `n` at `x` along
+/// the bar and `s` across it (`t` is the face's cross direction).
+fn model_height(facets: &[Triangle], n: [f64; 3], t: [f64; 3], x: f64, s: f64) -> Option<f64> {
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let arr = |p: Point3| [p.x, p.y, p.z];
+    let mut best: Option<f64> = None;
+    for f in facets {
+        let (a, b, c) = (arr(f.a), arr(f.b), arr(f.c));
+        // The triangle in plan coordinates (x, s); the ray is the point (x, s).
+        let plan = |p: [f64; 3]| (p[0], dot(p, t));
+        let ((ax, ay), (bx, by), (cx, cy)) = (plan(a), plan(b), plan(c));
+        let den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if den.abs() < 1e-12 {
+            continue; // edge-on: a wall
+        }
+        let u = ((by - cy) * (x - cx) + (cx - bx) * (s - cy)) / den;
+        let v = ((cy - ay) * (x - cx) + (ax - cx) * (s - cy)) / den;
+        let w = 1.0 - u - v;
+        if u < -1e-9 || v < -1e-9 || w < -1e-9 {
+            continue;
+        }
+        let h = u * dot(a, n) + v * dot(b, n) + w * dot(c, n);
+        best = Some(best.map_or(h, |m: f64| m.max(h)));
+    }
+    best
+}
+
+/// PR #2135 review: the model is the bar as the program cuts it, round
+/// flat ends included. On each of the four faces, the model's surface is
+/// compared with the surface the cached toolpaths leave: the bar's skin,
+/// lowered to the tool tip wherever a cutting move's flat end mill covers
+/// the point. A model with square-ended flats fails here: at X-0.87, 0.05"
+/// off the centre line, the 1/4" tool never arrives and the skin stays.
+#[test]
+fn the_model_is_the_bar_as_the_program_cuts_it() {
+    let world = camcraft_app::world::new_world();
+    ok(project::load_noted(&world, &repo(PROJECT)), "load the example project");
+    let model_e = model::find_by_name(&world, "first-4axis-part").expect("the model");
+    let facets = model::facets_of(&world, &model_e).expect("the model's facets");
+    let obj = std::fs::read_to_string(repo(MODEL)).expect("the model file");
+    assert_eq!(facets.len(), obj.lines().filter(|l| l.starts_with("f ")).count(), "the project holds {MODEL}");
+    // Each cutting move as (tool axis, from, to, tool radius).
+    let mut cuts: Vec<([f64; 3], Point3, Point3, f64)> = Vec::new();
+    for (name, _) in OPS {
+        let e = model::find_by_name(&world, name).expect("the operation");
+        let op = model::operation_of(&world, &e).expect("an operation");
+        let tool_e = model::find_by_name(&world, &op.tool).expect("its tool");
+        let radius = model::tool_of(&world, &tool_e).expect("a tool").diameter / 2.0;
+        let path = model::toolpath_of(&world, &e).expect("a generated path");
+        for m in path.path.moves.iter().filter(|m| !matches!(m.kind, MoveKind::Rapid)) {
+            cuts.push((m.axis.unwrap_or([0.0, 0.0, 1.0]), m.from, m.to, radius));
+        }
+    }
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let arr = |p: Point3| [p.x, p.y, p.z];
+    let faces: [[f64; 3]; 4] = [[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]];
+    let (tol, edge) = (0.02, 0.05); // mm: the facet error, and the band about a wall that is skipped
+    let mut compared = [0usize; 4];
+    let mut lowered = [0usize; 4];
+    for (k, n) in faces.into_iter().enumerate() {
+        let t = [0.0, -n[2], n[1]];
+        let on_face: Vec<_> = cuts.iter().filter(|c| dot(c.0, n) > 0.999_999).collect();
+        assert!(!on_face.is_empty(), "face {n:?} has a cut");
+        // The plan of the face: X from -1.0" to 0, 0.2" to each side, in 0.0125" steps.
+        for i in 0..=80 {
+            for j in -16..=16 {
+                let (x, s) = (-IN + 0.0125 * IN * f64::from(i), 0.0125 * IN * f64::from(j));
+                let mut want = (R * R - s * s).sqrt();
+                let mut near_wall = false;
+                for (_, from, to, radius) in &on_face {
+                    let (p, q) = ((from.x, dot(arr(*from), t)), (to.x, dot(arr(*to), t)));
+                    let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+                    let len2 = dx * dx + dy * dy;
+                    let along = if len2 > 0.0 { (((x - p.0) * dx + (s - p.1) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+                    let d = ((x - p.0 - along * dx).powi(2) + (s - p.1 - along * dy).powi(2)).sqrt();
+                    let tip = dot(arr(*from), n).min(dot(arr(*to), n));
+                    if (d - radius).abs() < edge && tip < want {
+                        near_wall = true;
+                    }
+                    if d <= *radius {
+                        want = want.min(tip);
+                    }
+                }
+                if near_wall {
+                    continue;
+                }
+                let have = model_height(&facets, n, t, x, s).unwrap_or_else(|| panic!("no model under x {x} s {s} on face {n:?}"));
+                assert!(
+                    (have - want).abs() <= tol,
+                    "face {n:?} at X{:.4} in, {:.4} in off the centre line: the model is at {:.5} in, the cut leaves {:.5} in",
+                    x / IN, s / IN, have / IN, want / IN
+                );
+                compared[k] += 1;
+                if want < (R * R - s * s).sqrt() - tol {
+                    lowered[k] += 1;
+                }
+            }
+        }
+    }
+    assert!(compared.iter().all(|c| *c > 2000), "{compared:?}");
+    assert!(lowered.iter().all(|c| *c > 100), "each face has cut points: {lowered:?}");
+    // The reviewer's point: past the round end of the top flat the skin stays.
+    let h = model_height(&facets, faces[0], [0.0, -1.0, 0.0], -0.87 * IN, -0.05 * IN).expect("the model");
+    assert!((h / IN - 0.371_65).abs() < 0.000_5, "the skin at X-0.87 Y0.05 is {:.5} in", h / IN);
 }

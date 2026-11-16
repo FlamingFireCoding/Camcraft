@@ -231,6 +231,13 @@ pub struct PostOptionsDto {
     /// (M0), additive (no version step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub between_setups: Option<String>,
+    /// Per-post declared script option overrides keyed by `post_key` (#258),
+    /// additive (no version step); absent leaves all script defaults intact.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub script: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    >,
 }
 
 /// The file mirror of the `PostRef` singleton (M3.3): exactly the two

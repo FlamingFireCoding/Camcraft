@@ -23,3 +23,5 @@
   - **Exact PathPilot screen labels in the Hub steps:** not written, because the repository holds no checked source for them.
 
 - **Cost to change later:** Low. The page is additive Markdown. The project and the program regenerate with `WRITE_GOLDEN=1 cargo test -p camcraft-app --test first_4axis_part`. When #2133 changes the A180 input or the plane axes, the page's Flat A180 row and the builder change with it. When #796 lands, the continuous walkthrough is a second page.
+
+- **PR #2135 review correction:** The first model had square-ended flats from X-0.875 to X-0.125 across the full chord. The 1/4 in tool cuts round ends, so the model was up to 0.0117 in below the real part near each end. The generator now makes the round ends (the skin as lines along X, with 1 degree samples on the flats), and the project holds the new model. `the_model_is_the_bar_as_the_program_cuts_it` compares the model with the surface that the cached toolpaths leave, on a grid over each of the four faces. Changing the operations to cut square ends was dropped: it needs more passes for no gain on a first part.

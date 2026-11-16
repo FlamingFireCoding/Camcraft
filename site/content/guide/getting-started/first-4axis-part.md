@@ -50,6 +50,11 @@ is shallow, so a first run has a small risk.
 The finished bar measures 0.720 in across each pair of flats
 (0.750 - 2 x 0.015). The cross slot marks the face that was up at A0.
 
+Each flat has round ends, because the 1/4 in tool makes it in one pass
+along the bar. The flat is 7/8 in to 1/8 in from the free end on its centre
+line only, and it is about 0.21 in wide. The model
+`first-4axis-part.obj` has the same round ends.
+
 CamCraft does not make one setup for each angle. One setup holds all five
 operations, and each operation carries its own index. See
 [Indexed work](@/guide/multi-axis/indexed.md) for the rules behind this page.
