@@ -176,6 +176,19 @@
     - The merge of `main` regenerated `examples/first-router-part.camproj`
       with `WRITE_GOLDEN=1` (main moved the stamp salt to
       `camcraft-op-stamp-v3`); the stamps were not merged by hand.
+13. Round 10, the tests that `main` added and that keep the old air
+    level at Top Z. Each one is class (a): the stock top is Top Z.
+    - `rest_pocket::the_rest_pass_cuts_only_the_corners_posts_and_matches_its_golden`:
+      stock top 20 is Top Z, stepdown 2. `golden/pocket_rest_corners.cl`
+      is regenerated (126 to 85 moves): the Z 20 level is gone, the
+      levels Z 18 and Z 16 are the same paths.
+    - `first_4axis_part` (3 tests): the stock box touches the bar, so
+      the stock top is the skin Z0.375 and Top Z. The pass at the skin
+      is gone. `examples/first-4axis-part.nc` and `.camproj` are
+      regenerated with `WRITE_GOLDEN=1`. The test now asserts one plunge
+      and one pass at the flat (Z0.36). The guide page
+      `site/content/guide/getting-started/first-4axis-part.md` quotes
+      the new program and says why no pass runs at the skin.
 
 **Why:** a level at the material top removes nothing and doubles the cycle
 time of a one-level cut (the maintainer's report on v0.21.0). The fix at the

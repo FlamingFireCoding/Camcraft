@@ -244,11 +244,6 @@ G0 A-90
 G0 X-0.75 Y0
 G0 X-0.75 Y0 Z0.875
 G0 X-0.75 Y0 Z0.4537
-G1 X-0.75 Y0 Z0.375 F4
-G1 X-0.25 Y0 Z0.375 F15
-G0 X-0.25 Y0 Z0.875
-G0 X-0.75 Y0 Z0.875
-G0 X-0.75 Y0 Z0.4537
 G1 X-0.75 Y0 Z0.36 F4
 G1 X-0.25 Y0 Z0.36 F15
 G0 X-0.25 Y0 Z0.875
@@ -264,8 +259,8 @@ Read it in this order:
   must be, and that the program writes no clamp code. The microARC 4 has
   no clamp.
 - **The cut.** After the index, Z is the distance from the centreline.
-  The first pass is at the bar's skin (Z0.375) and the second pass cuts the
-  flat (Z0.36).
+  The one pass cuts the flat (Z0.36). The bar's skin (Z0.375) is the top
+  of the stock, so no pass runs there: it would cut only air.
 
 The other three flats post the same X, Y and Z lines after their own
 index. The fourth flat is the A 0, B 180 pose, and it posts as A180:
