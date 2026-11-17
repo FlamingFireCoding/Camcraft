@@ -34,6 +34,9 @@ pub use files::{
     builtin_machine_text, builtin_post_path, builtin_post_text, default_mch_text, shipped_machines, shipped_posts, AssetFile, BUILTINS,
     DEFAULT_MCH_FILE, MACHINES,
 };
+#[path = "posting_default_machine.rs"]
+mod default_mch;
+pub use default_mch::{default_machine, default_machine_checked, parse_default_machine};
 
 /// The registry entries that speak TURNING (M13.5): X as a diameter
 /// on one meridian, G18, G99, the face cycles. Everything else in
@@ -164,44 +167,6 @@ pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
 #[must_use]
 pub fn builtin_path(name: &str) -> String {
     format!("built-in: {name}")
-}
-
-/// The default machine: a plain 3-axis VMC with flood coolant. For the
-/// readers that only time or show a machine (the sim's traverse clock):
-/// a missing or malformed file reads as `Value::Null` here. The post
-/// never reads this - it reads [`default_machine_checked`], which refuses
-/// by the file's name (#2319).
-pub fn default_machine() -> Value {
-    default_machine_checked().unwrap_or(Value::Null)
-}
-
-/// The default machine, or the refusal that names its file (#2319). Read
-/// from disk once (#2282); the refusal is logged once, by name.
-pub fn default_machine_checked() -> Result<Value, String> {
-    static M: std::sync::OnceLock<Result<Value, String>> = std::sync::OnceLock::new();
-    M.get_or_init(|| {
-        let parsed = parse_default_machine(default_mch_text());
-        if let Err(why) = &parsed {
-            tracing::error!("{why}");
-        }
-        parsed
-    })
-    .clone()
-}
-
-/// The default machine file's text read as the post's machine, or a
-/// plain-English refusal that names the file (#2319). A file that does
-/// not read, is not JSON, or is not a JSON object is refused: a null or
-/// empty machine would post with no limits and no coolant words.
-pub fn parse_default_machine(text: Result<&str, String>) -> Result<Value, String> {
-    let file = DEFAULT_MCH_FILE.0;
-    let advice = "mount a machine on the setup, or reinstall the file";
-    let text = text.map_err(|why| format!("the default machine file {file} cannot be read ({why}) - {advice}"))?;
-    match serde_json::from_str::<Value>(text) {
-        Ok(v) if v.is_object() => Ok(v),
-        Ok(_) => Err(format!("the default machine file {file} is malformed (not a machine object) - {advice}")),
-        Err(e) => Err(format!("the default machine file {file} is malformed ({e}) - {advice}")),
-    }
 }
 
 /// The machine this document posts to (M3.3 A): the mounted `.mch`
