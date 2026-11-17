@@ -22,8 +22,9 @@ the damage: the header changes from `O0001 (VMC 3-AXIS)` to
 `O0001 (CAMCRAFT)`, and all three `M8` and all three `M9` lines are gone.
 The motion is the same, so the program looks correct but runs dry.
 
-**A refusal is not kept.** A good read of the file is kept for the life of
-the process. A failed read or a refused file is not kept: the next post
+**A refusal is not kept.** Only a machine that passed the check is kept for
+the life of the process (`posting::KeptMachine`). The file text is not kept
+before the check. A failed read or a refused file is not kept: the next post
 reads the file again. A user who repairs the file can post again without a
 restart, so the text "reinstall the file" stays true.
 

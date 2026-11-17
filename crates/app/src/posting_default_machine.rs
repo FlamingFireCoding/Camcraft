@@ -20,16 +20,36 @@ pub fn default_machine() -> Value {
 /// good file is parsed once (#2282). A refusal is not kept: the next post
 /// reads the file again, so a repaired file posts without a restart.
 pub fn default_machine_checked() -> Result<Value, String> {
-    static M: OnceLock<Value> = OnceLock::new();
-    if let Some(v) = M.get() {
-        return Ok(v.clone());
+    static KEPT: KeptMachine = KeptMachine::new();
+    KEPT.get_or_read(default_mch_text).inspect_err(|why| tracing::error!("{why}"))
+}
+
+/// The cell behind [`default_machine_checked`]: it keeps only a machine
+/// that passed [`parse_default_machine`]. A read that fails, or a text that
+/// is refused, is not kept - the next call reads again. The reader is an
+/// argument so a test can give a sequence of files (#2319).
+pub struct KeptMachine(OnceLock<Value>);
+
+impl KeptMachine {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(OnceLock::new())
     }
-    match parse_default_machine(default_mch_text()) {
-        Ok(v) => Ok(M.get_or_init(|| v).clone()),
-        Err(why) => {
-            tracing::error!("{why}");
-            Err(why)
+
+    /// The kept machine, or a new read through `read` and the check.
+    pub fn get_or_read(&self, read: impl FnOnce() -> Result<String, String>) -> Result<Value, String> {
+        if let Some(v) = self.0.get() {
+            return Ok(v.clone());
         }
+        let text = read();
+        let v = parse_default_machine(text.as_deref().map_err(Clone::clone))?;
+        Ok(self.0.get_or_init(|| v).clone())
+    }
+}
+
+impl Default for KeptMachine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

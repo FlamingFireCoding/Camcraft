@@ -36,7 +36,7 @@ pub use files::{
 };
 #[path = "posting_default_machine.rs"]
 mod default_mch;
-pub use default_mch::{default_machine, default_machine_checked, parse_default_machine};
+pub use default_mch::{default_machine, default_machine_checked, parse_default_machine, KeptMachine};
 
 /// The registry entries that speak TURNING (M13.5): X as a diameter
 /// on one meridian, G18, G99, the face cycles. Everything else in

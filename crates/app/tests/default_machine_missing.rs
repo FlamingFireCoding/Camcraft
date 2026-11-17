@@ -17,7 +17,7 @@
 use camcraft_app::commands::{AddTool, CreateOperation, CreateSetup, History, SetPostOptions, SetSetupMachine, SetStock};
 use camcraft_app::machine::Machine;
 use camcraft_app::operation::{Height, OpParams, SrcRef};
-use camcraft_app::posting::parse_default_machine;
+use camcraft_app::posting::{parse_default_machine, KeptMachine};
 use camcraft_app::project;
 use camcraft_app::schema::PostOptions;
 use camcraft_app::stock::StockShape;
@@ -204,6 +204,26 @@ fn the_default_machine_file_must_be_a_machine_object() {
     }
     let err = parse_default_machine(Err("gone".into())).expect_err("unreadable");
     assert!(err.contains("3axis-vmc.mch cannot be read (gone)"), "{err}");
+}
+
+#[test]
+fn a_repaired_default_machine_file_is_read_again_and_a_good_one_is_kept() {
+    // Missing, then `{}`, then the good file: Err, Err, Ok - no refusal or
+    // refused text is kept until restart. After that the good machine is
+    // kept: a later broken file is not read.
+    let good = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/machines/3axis-vmc.mch"),
+    )
+    .expect("shipped default machine");
+    let kept = KeptMachine::new();
+    let missing = kept.get_or_read(|| Err("not found".into())).expect_err("missing");
+    assert!(missing.contains("cannot be read"), "{missing}");
+    let empty = kept.get_or_read(|| Ok("{}".into())).expect_err("empty object");
+    assert!(empty.contains("no machine name"), "{empty}");
+    let v = kept.get_or_read(|| Ok(good)).expect("the repaired file posts");
+    assert_eq!(v["name"], "VMC 3-AXIS");
+    let again = kept.get_or_read(|| Ok("{}".into())).expect("the good machine is kept");
+    assert_eq!(again, v);
 }
 
 #[test]
