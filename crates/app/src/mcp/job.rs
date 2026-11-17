@@ -56,6 +56,8 @@ fn setups_view(env: &Env) -> Vec<Value> {
                 "entity": setup::wcs_entity_name(w, d),
                 "origin": wcs.as_ref().map(|(_, loc)| vec![fnum(loc.pos.x), fnum(loc.pos.y), fnum(loc.pos.z)]),
                 "rotation": wcs.as_ref().map(|(_, loc)| loc.rot.iter().map(|v| fnum(*v)).collect::<Vec<_>>()),
+                // #1720: the reversed axes (all false: no flip).
+                "flip": super::wcs_flip_tools::flip_view(crate::setup_wcs_flip::of_setup(w, d)),
             });
             json!({
                 "name": s,
