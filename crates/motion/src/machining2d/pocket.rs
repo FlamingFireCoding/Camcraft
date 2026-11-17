@@ -214,12 +214,34 @@ pub fn pocket_entered(region: &Region, p: &PocketParams, holes: &[PreHole]) -> R
     if region.is_empty() {
         return Err(GenError::Empty("empty pocket region".into()));
     }
-    let center = region.offset(-(p.tool_diameter * 0.5 + p.stock_to_leave))?;
+    let center = non_sliver_center(region, p.tool_diameter * 0.5 + p.stock_to_leave)?;
     if center.is_empty() {
         // Material exists that no legal tool position can reach.
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     pocket_over(region, &center, p, Vec::new(), false, holes)
+}
+
+/// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
+/// slivers (`<= 0.01 mm^2` area and `<= 0.008 mm` half-width) that hold
+/// no cuttable pass and would spin on empty bores (#2232).
+pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, GenError> {
+    let center = region.offset(-erode)?;
+    if center.is_empty() {
+        return Ok(center);
+    }
+    let outers = center.loops().iter().filter(|l| l.is_ccw()).count();
+    if outers <= 1 && center.area().abs() > 1e-2 {
+        return Ok(center);
+    }
+    let clean = Region::from_slices(center.loops().to_vec())?;
+    let mut kept = Vec::new();
+    for c in super::pocket_hsm::components(&clean)? {
+        if c.area().abs() > 1e-2 || crate::entry::dive_room(&c, 0.008).is_some() {
+            kept.extend(c.loops().iter().cloned());
+        }
+    }
+    Ok(Region::from_slices(kept)?)
 }
 
 /// The pocket passes over a given cutter-center area: [`pocket`]'s body
