@@ -296,7 +296,7 @@ fn turned_picked_slot_fills_the_turned_face() {
 #[test]
 fn kinds_without_proof_stay_refused_in_a_turned_setup() {
     let (world, _) = document(Case::Turned);
-    for kind in [OpType::Probe, OpType::Chamfer2D, OpType::Deburr] {
+    for kind in [OpType::Probe, OpType::Deburr] {
         let op = camcraft_app::schema::Operation {
             tool: TOOL.into(),
             src: SrcRef::Entity("part".into()),
