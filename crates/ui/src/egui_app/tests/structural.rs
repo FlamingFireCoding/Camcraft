@@ -17,6 +17,9 @@ use super::*;
 #[path = "tool_properties.rs"]
 mod tool_properties;
 
+#[path = "structural/thread_repeat.rs"]
+mod thread_repeat;
+
 #[path = "break_through.rs"]
 mod break_through;
 
