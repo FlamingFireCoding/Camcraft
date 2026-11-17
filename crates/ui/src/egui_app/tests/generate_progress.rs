@@ -134,3 +134,22 @@ fn the_overlay_text_counts_a_batch() {
     let many = GenProgress { index: 2, total: 5, ..one };
     assert_eq!(overlay_text(&many), "Generating Adaptive1 (2 of 5) - 3 s");
 }
+
+#[test]
+fn repaints_reuse_the_label_and_a_rename_resolves_it_once() {
+    let mut h = shell_harness();
+    h.run();
+    let (_tx, rx) = mpsc::channel();
+    h.state_mut().state.gen_jobs.run_with("Contour1", rx);
+    let before = crate::gen_worker::label_lookups();
+    h.run_steps(10);
+    for _ in 0..100 {
+        let _ = h.state().state.gen_progress();
+    }
+    assert_eq!(crate::gen_worker::label_lookups() - before, 1, "one search for the job, none for each repaint");
+    h.state_mut().state.pending.push_back(CommandKind::RenameOperation { name: "Contour1".into(), label: "Outer wall".into() });
+    h.run_steps(10);
+    assert_eq!(crate::gen_worker::label_lookups() - before, 2, "the rename resolves the label one more time");
+    let (text, _) = overlay(&h).expect("the overlay shows while the job runs");
+    assert!(text.starts_with("Generating Outer wall - "), "{text}");
+}

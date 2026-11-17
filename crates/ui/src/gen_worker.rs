@@ -29,10 +29,38 @@ pub struct GenJobs {
     /// interactive shell turns it on.
     pub background: bool,
     rx: Option<Receiver<Outcome>>,
-    running: Option<(String, Instant)>,
+    running: Option<Running>,
     queue: VecDeque<String>,
     /// Jobs that ended in this batch, for the "2 of 5" count.
     done: usize,
+}
+
+/// The job on the worker. Its label is resolved once, and again only when
+/// the document changes, never in a repaint: the name search scans every
+/// named entity, and frame work must not grow with the model (#2257).
+struct Running {
+    name: String,
+    started: Instant,
+    label: String,
+    /// The `doc_version` the label was resolved at; `None` until resolved.
+    label_doc: Option<u64>,
+}
+
+impl Running {
+    fn new(name: String) -> Self {
+        Self { label: name.clone(), name, started: Instant::now(), label_doc: None }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static LABEL_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// For tests: how many label searches ran on this thread.
+#[cfg(test)]
+pub(crate) fn label_lookups() -> usize {
+    LABEL_LOOKUPS.with(std::cell::Cell::get)
 }
 
 /// What the overlay shows: the operation's label, its place in the batch
@@ -60,14 +88,15 @@ impl GenJobs {
         self.rx = None;
         self.queue.clear();
         self.done = 0;
-        self.running.take().map(|(name, _)| name)
+        self.running.take().map(|r| r.name)
     }
 
-    /// For tests: a running job whose result arrives through `rx`.
+    /// For tests: a running job whose result arrives through `rx`. Its
+    /// label resolves at the next poll, as a started job's does.
     #[cfg(test)]
     pub(crate) fn run_with(&mut self, name: &str, rx: Receiver<Outcome>) {
         self.rx = Some(rx);
-        self.running = Some((name.to_owned(), Instant::now()));
+        self.running = Some(Running::new(name.to_owned()));
     }
 }
 
@@ -79,18 +108,32 @@ pub fn overlay_text(p: &GenProgress) -> String {
 }
 
 impl State {
-    /// The overlay's readout, `None` while nothing generates.
+    /// The overlay's readout, `None` while nothing generates. It reads the
+    /// stored label and does no world search.
     #[must_use]
     pub fn gen_progress(&self) -> Option<GenProgress> {
-        let (name, t0) = self.gen_jobs.running.as_ref()?;
-        let label = model::find_by_name(&self.world, name)
-            .map_or_else(|| name.clone(), |e| model::operation_label(&self.world, name, &e));
+        let running = self.gen_jobs.running.as_ref()?;
         Some(GenProgress {
-            label,
+            label: running.label.clone(),
             index: self.gen_jobs.done + 1,
             total: self.gen_jobs.done + 1 + self.gen_jobs.queue.len(),
-            secs: t0.elapsed().as_secs_f64(),
+            secs: running.started.elapsed().as_secs_f64(),
         })
+    }
+
+    /// Resolve the running job's label if the document changed since the
+    /// last resolve (a rename, an undo). The label falls back to the name.
+    fn refresh_gen_label(&mut self) {
+        let doc = self.doc_version;
+        let Some(running) = self.gen_jobs.running.as_mut() else { return };
+        if running.label_doc == Some(doc) {
+            return;
+        }
+        #[cfg(test)]
+        LABEL_LOOKUPS.with(|n| n.set(n.get() + 1));
+        running.label = model::find_by_name(&self.world, &running.name)
+            .map_or_else(|| running.name.clone(), |e| model::operation_label(&self.world, &running.name, &e));
+        running.label_doc = Some(doc);
     }
 
     /// Generate `name`: on the worker when background generation is on,
@@ -124,7 +167,7 @@ impl State {
         };
         if let Some(outcome) = outcome {
             self.gen_jobs.rx = None;
-            let name = self.gen_jobs.running.take().map(|(n, _)| n).unwrap_or_default();
+            let name = self.gen_jobs.running.take().map(|r| r.name).unwrap_or_default();
             self.gen_jobs.done += 1;
             match outcome {
                 Some(result) => self.land_generation(&name, result, true),
@@ -132,6 +175,7 @@ impl State {
             }
         }
         self.start_next_generation();
+        self.refresh_gen_label();
         if !self.gen_jobs.busy() {
             self.gen_jobs.done = 0;
         }
@@ -163,7 +207,8 @@ impl State {
             });
             if spawned.is_ok() {
                 self.gen_jobs.rx = Some(rx);
-                self.gen_jobs.running = Some((name, Instant::now()));
+                self.gen_jobs.running = Some(Running::new(name));
+                self.refresh_gen_label();
             } else {
                 let job = slot.lock().ok().and_then(|mut s| s.take());
                 self.gen_jobs.done += 1;
