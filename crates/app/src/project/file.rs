@@ -114,11 +114,15 @@ use super::*;
 /// Absent reads as before (v65 steps up unchanged); an old reader must
 /// refuse a v66 file rather than discard `controller_rtcp: false` and
 /// emit G43.4 RTCP from tilt vectors.
-/// v67 (#2055): an operation's `area` controls may state `"do_not_touch"`
+/// v67 (#1720): a WCS row may record flipped axes (`flip`). Absent is
+/// no flip - what every v66 file posted - so a v66 file steps up
+/// unchanged. An old reader must refuse a v67 file rather than drop the
+/// flip and post the setup in the unflipped frame.
+/// v68 (#2055): an operation's `area` controls may state `"do_not_touch"`
 /// protected faces/edges and standoff clearance. An old reader must
 /// refuse the file rather than ignore the protection and cut across a
-/// protected feature. A v66 file steps up unchanged with empty protection.
-pub const PROJECT_VERSION: u32 = 67;
+/// protected feature. A v67 file steps up unchanged with empty protection.
+pub const PROJECT_VERSION: u32 = 68;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

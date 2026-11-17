@@ -286,6 +286,9 @@ pub enum CommandKind {
     /// #739: the active setup's WCS on the centre of a picked circular
     /// edge (`SetWcsAtCircleCentre`), at the pane's angles.
     SetWcsCircle { pick: GeoSel, roll_deg: f64, pitch_deg: f64, yaw_deg: f64 },
+    /// #1720: the active setup's WCS axis flips (X, Y, Z) as one undoable
+    /// `SetWcsFlip`; the origin and rotation do not change.
+    SetWcsFlip { flip: [bool; 3] },
     /// Tool library: create a tool entity (catalog row or hand-typed page).
     AddTool {
         name: String,
@@ -3406,6 +3409,7 @@ impl State {
             CommandKind::SetWcsCircle { pick, roll_deg, pitch_deg, yaw_deg } => {
                 self.dispatch_set_wcs_circle(&pick, [roll_deg, pitch_deg, yaw_deg]);
             }
+            CommandKind::SetWcsFlip { flip } => self.dispatch_set_wcs_flip(flip),
             // #828: a new tool starts with the machine's default holder,
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {

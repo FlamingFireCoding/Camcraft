@@ -326,6 +326,9 @@ pub enum Warning {
         part: FixturePart,
         short_mm: f64,
     },
+    /// The same for a stock-source Deburr (#2313): it breaks the stock's
+    /// edge, and the part under that edge is cut. Blocking like `Gouge`.
+    StockDeburrGouge { at: usize },
 }
 
 impl Warning {
@@ -366,6 +369,9 @@ impl core::fmt::Display for Warning {
                     f,
                     "move {at} cuts past the finish surface (stock-source chamfer breaks into a part; chamfer with the part as source)"
                 )
+            }
+            Warning::StockDeburrGouge { at } => {
+                write!(f, "move {at} cuts past the finish surface (stock-source deburr breaks into a part; use the part as source)")
             }
             Warning::HolderHit { at, part, short_mm } => write!(
                 f,

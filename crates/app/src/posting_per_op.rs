@@ -16,7 +16,7 @@
 //! writes nothing: never a folder with ops 1 and 3 but not 2.
 
 use super::{
-    machine_value_of, op_streams, post_of_setup, script_of, script_source, viewer_map, Posted,
+    mounts::posted_machine_for, op_streams, post_of_setup, script_of, script_source, viewer_map, Posted,
 };
 use crate::post::{cnc, engine, options::OptionValue};
 use crate::schema::PostRef;
@@ -212,7 +212,9 @@ fn post_per_op_with(
         let id = super::document_program_id(world, index)?;
         let ext = engine::extension_of(&cps).map_err(|e| format!("post engine: {e}"))?;
         let ext = sanitise(&ext, "nc");
-        let mch = machine_value_of(world, setup.as_deref());
+        // #2319: a missing or malformed default machine file refuses by name.
+        let mch = posted_machine_for(&crate::machine::of_setup(world, setup.as_deref()))
+            .map_err(|why| format!("{name}: {why}"))?;
         let post_ref = match script_post {
             ScriptPost::Setup => Some(post_of_setup(world, setup.as_deref())),
             ScriptPost::Explicit(post) => Some(post.clone()),

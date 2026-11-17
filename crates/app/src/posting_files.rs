@@ -149,7 +149,6 @@ fn machine_dir() -> &'static DataFiles {
 type Cell = OnceLock<Result<String, String>>;
 static POST_TEXT: [Cell; BUILTINS.len()] = [const { OnceLock::new() }; BUILTINS.len()];
 static MACHINE_TEXT: [Cell; MACHINES.len()] = [const { OnceLock::new() }; MACHINES.len()];
-static DEFAULT_TEXT: Cell = OnceLock::new();
 
 fn read(kind: &'static str, file: AssetFile) -> Result<String, String> {
     #[cfg(target_arch = "wasm32")]
@@ -209,9 +208,12 @@ pub fn builtin_machine_text(name: &str) -> Result<&'static str, String> {
     cached(cell, "machines", *file).map_err(|why| format!("built-in machine {name}: {why}"))
 }
 
-/// The default machine's text (`assets/machines/3axis-vmc.mch`), read once.
-pub fn default_mch_text() -> Result<&'static str, String> {
-    cached(&DEFAULT_TEXT, "machines", DEFAULT_MCH_FILE).map_err(|why| format!("default machine: {why}"))
+/// The default machine's text (`assets/machines/3axis-vmc.mch`), read
+/// from disk at each call. Nothing is kept here: the post keeps only the
+/// parsed machine that passed its check (`default_machine_checked`), so a
+/// broken file that the user repairs posts without a restart (#2319).
+pub fn default_mch_text() -> Result<String, String> {
+    read("machines", DEFAULT_MCH_FILE).map_err(|why| format!("default machine: {why}"))
 }
 
 /// Every shipped post as (registry name, text), in registry order - or

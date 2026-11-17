@@ -34,6 +34,9 @@ pub use files::{
     builtin_machine_text, builtin_post_path, builtin_post_text, default_mch_text, shipped_machines, shipped_posts, AssetFile, BUILTINS,
     DEFAULT_MCH_FILE, MACHINES,
 };
+#[path = "posting_default_machine.rs"]
+mod default_mch;
+pub use default_mch::{default_machine, default_machine_checked, parse_default_machine, KeptMachine};
 
 /// The registry entries that speak TURNING (M13.5): X as a diameter
 /// on one meridian, G18, G99, the face cycles. Everything else in
@@ -164,22 +167,6 @@ pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
 #[must_use]
 pub fn builtin_path(name: &str) -> String {
     format!("built-in: {name}")
-}
-
-/// The default machine: a plain 3-axis VMC with flood coolant.
-pub fn default_machine() -> Value {
-    static M: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    M.get_or_init(|| {
-        // #2282: read from disk once; a missing or malformed file is logged
-        // by name, and the null machine refuses the post downstream.
-        let parsed = default_mch_text()
-            .and_then(|t| serde_json::from_str(t).map_err(|e| format!("default machine {}: {e}", DEFAULT_MCH_FILE.0)));
-        parsed.unwrap_or_else(|why| {
-            tracing::error!("{why}");
-            Value::Null
-        })
-    })
-    .clone()
 }
 
 /// The machine this document posts to (M3.3 A): the mounted `.mch`
@@ -700,7 +687,9 @@ fn post_script_body_with(
         .cloned()
         .or_else(|| crate::setup::active(world));
     let opts = program_options_for_script(world, cps, post, mount_setup.as_deref(), extra)?;
-    let out = engine::run_program_with(cps, &machine_value_for(&machine), &stream, &opts, &id)
+    // #2319: no mounted machine and a bad default file refuses by name.
+    let mch = mounts::posted_machine_for(&machine)?;
+    let out = engine::run_program_with(cps, &mch, &stream, &opts, &id)
         .map_err(|e| format!("post engine: {e}"))?;
     if !out.warnings.is_empty() {
         return Err(format!(
@@ -895,6 +884,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     problems.extend(suppressed::suppressed_problems(world));
     // The rotated-offset clause (#315): the post carries translation only.
     problems.extend(wcs_rotation::rotated_wcs_problems(world));
+    // #1720: nor a flipped axis - refused by name until it is carried.
+    problems.extend(crate::setup_wcs_flip::post_problems(world));
     // The offset-range clause (#931): each setup's offset index against
     // its own post's maximum - never posted at offset 1.
     problems.extend(crate::setup_offsets::range_problems(world));
