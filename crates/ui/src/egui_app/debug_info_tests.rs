@@ -26,9 +26,21 @@ fn the_report_names_build_platform_gpu_and_document() {
 }
 
 #[test]
-fn the_report_gives_the_frame_rate_or_says_idle() {
+fn the_report_gives_the_frame_rate_value_then_idle_when_stale() {
     // #2262: a fresh state has drawn no frame, so the panel says idle.
-    let state = State::new();
-    let text = debug_info::report(&state);
-    assert!(text.contains("Frame rate: idle"), "{text}");
+    let mut state = State::new();
+    assert!(debug_info::report(&state).contains("Frame rate: idle"));
+    // Feed steady 16 ms frames for 1 s: the panel carries the value.
+    let t0 = camcraft_app::clock::Instant::now();
+    let mut t = t0;
+    let _ = state.frame_rate.frame(t);
+    while t < t0 + std::time::Duration::from_secs(1) {
+        t += std::time::Duration::from_millis(16);
+        let _ = state.frame_rate.frame(t);
+    }
+    let line = state.frame_rate.report_line(t);
+    assert!(line.starts_with("Frame rate: 62 fps (16.0 ms per frame)"), "{line}");
+    // Two seconds with no frame: stale, so idle again.
+    let later = state.frame_rate.report_line(t + std::time::Duration::from_secs(2));
+    assert!(later.contains("idle"), "{later}");
 }

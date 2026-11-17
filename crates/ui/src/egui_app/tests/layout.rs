@@ -165,3 +165,64 @@ fn the_debug_info_panel_is_present_docked_and_undocked() {
     assert!(h.query_by_label("Copy").is_none());
     assert_no_commands(&h);
 }
+
+/// Click the status strip's Debug info door and let the dock settle.
+fn debug_door(h: &mut Harness<'static, ShellUi>) {
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Debug info").click();
+    h.run_steps(3);
+}
+
+/// #2262: the door lands the panel as a tab in the properties pane's leaf,
+/// like the Machines pane, not as a window of its own.
+#[test]
+fn the_debug_info_door_docks_a_tab_beside_properties() {
+    let mut h = blank_harness();
+    h.run();
+    debug_door(&mut h);
+    let dock = &h.state().dock;
+    let d = dock.find_tab(&Tab::DebugInfo).expect("the door docked the panel");
+    let p = dock.find_tab(&Tab::Properties).expect("properties still open");
+    assert_eq!(d.node_path(), p.node_path(), "a tab in the properties pane's leaf");
+    assert_eq!(h.state().state.layout_request, None, "the request was settled");
+    assert_no_commands(&h);
+}
+
+/// #2262: the tab's own X (the dock removes the tab, no door press) closes
+/// the panel and the open flag follows the dock. Replaces the old window's
+/// close-button test (#698).
+#[test]
+fn closing_the_debug_info_tab_clears_the_flag_and_the_panel() {
+    let mut h = blank_harness();
+    h.run();
+    debug_door(&mut h);
+    assert!(h.state().state.debug_info_open);
+    let path = h.state().dock.find_tab(&Tab::DebugInfo).expect("docked");
+    h.state_mut().dock.remove_tab(path);
+    h.run_steps(3);
+    assert!(!h.state().state.debug_info_open, "the flag follows the dock");
+    assert!(h.query_by_label("Copy").is_none(), "the panel is gone");
+    // The door opens it again: closing left no stale state behind.
+    debug_door(&mut h);
+    assert!(layout::is_open(&h.state().dock, &Tab::DebugInfo));
+    assert!(h.query_by_label("Copy").is_some());
+    assert_no_commands(&h);
+}
+
+/// #2262: Copy puts the report on the clipboard and says so (the old
+/// window's Copy test, kept for the docked panel).
+#[test]
+fn the_docked_debug_info_copy_button_copies_the_report() {
+    let mut h = blank_harness();
+    h.run();
+    debug_door(&mut h);
+    h.get_by_label("Copy").click();
+    h.step();
+    let copied = h.output().platform_output.commands.iter().any(|c| {
+        matches!(c, egui::OutputCommand::CopyText(t)
+            if t.starts_with("CamCraft ") && t.contains("Frame rate:"))
+    });
+    assert!(copied, "Copy put the report, frame-rate line included, on the clipboard");
+    h.run();
+    assert_eq!(h.state().state.status, "debug info copied to the clipboard");
+    assert_no_commands(&h);
+}
