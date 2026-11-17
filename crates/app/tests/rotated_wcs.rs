@@ -114,7 +114,24 @@ fn a_tilted_work_offset_is_refused_by_name() {
         "named refusal, got: {err}"
     );
     let report = posting::verification_report(&world);
-    assert_eq!(report.problems.len(), 1, "one line per offset: {:?}", report.problems);
+    assert_eq!(report.problems.len(), 2, "both live-source and offset refusals: {:?}", report.problems);
+    assert_eq!(
+        report.problems.iter().filter(|problem| {
+            problem.contains("the WCS (G54) is rotated 30.000 deg about X")
+                && problem.contains("(operations: Face1)")
+        }).count(),
+        1,
+        "one named offset refusal: {:?}", report.problems
+    );
+    assert_eq!(
+        report.problems.iter().filter(|problem| {
+            problem.contains("Face1: the parts beside its source cannot be read again")
+                && problem.contains("the WCS (G54) has its Z axis tilted 30.000 deg")
+                && problem.contains("regenerate it")
+        }).count(),
+        1,
+        "main's live-source check still refuses the tilted WCS: {:?}", report.problems
+    );
 }
 
 #[test]
