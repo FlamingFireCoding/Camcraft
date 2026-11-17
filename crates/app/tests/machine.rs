@@ -721,7 +721,6 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
     // parseable, sane, and its declared kind matches what its own
     // axis inventory infers - the files are honest both ways.
     use camcraft_app::machine::{Kind, kind};
-    use camcraft_app::posting::MACHINES;
     let expectations = [
         ("VMC 3-axis", Kind::Mill),
         ("Tilt-head 5-axis", Kind::Mill),
@@ -768,8 +767,8 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Sinker EDM 3-axis (template)", Kind::SinkerEdm),
         ("Sodick ALC400G", Kind::WireEdm),
     ];
-    assert_eq!(MACHINES.len(), expectations.len(), "the pane offers what the tests pin");
-    for ((name, text), (want_name, want_kind)) in MACHINES.iter().zip(expectations) {
+    assert_eq!(camcraft_app::posting::shipped_machines().expect("the shipped machines read").len(), expectations.len(), "the pane offers what the tests pin");
+    for ((name, text), (want_name, want_kind)) in camcraft_app::posting::shipped_machines().expect("the shipped machines read").iter().zip(expectations) {
         assert_eq!(*name, want_name);
         let m = parse_mch(text).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(m.is_sane(), "{name} must be a machine this app can check");
