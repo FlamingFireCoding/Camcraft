@@ -182,6 +182,21 @@ fn debug_door(h: &mut Harness<'static, ShellUi>) {
     h.run_steps(3);
 }
 
+/// #2262 review: on a document with operations the "N Operations" label
+/// sat on the door centre and swallowed a pointer press. A press at the
+/// centre of the door rect opens the panel on the seeded document.
+#[test]
+fn the_debug_info_door_opens_at_its_centre_on_a_document_with_operations() {
+    let mut h = shell_harness();
+    h.run();
+    let st = &h.state().state;
+    let ops = camcraft_app::model::named_entities(&st.world).into_iter().filter(|(_, e)| camcraft_app::model::is_operation(&st.world, e)).count();
+    assert!(ops > 0, "the seed has operations: the status strip draws its count label");
+    let door = h.get_by_role_and_label(egui::accesskit::Role::Button, "Debug info").rect();
+    click(&mut h, door.center());
+    assert!(layout::is_open(&h.state().dock, &Tab::DebugInfo), "a press at the door centre {door:?} opens the panel");
+}
+
 /// #2262: the door lands the panel as a tab in the properties pane's leaf,
 /// like the Machines pane, not as a window of its own.
 #[test]

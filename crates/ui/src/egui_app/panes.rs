@@ -1612,6 +1612,11 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                     state.pending.push_back(CommandKind::RegenerateAll);
                 }
             }
+            // #2262: placed before the status line, which fills what is
+            // left; behind it the label ran past the line onto the door.
+            if ops_n > 0 {
+                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
+            }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())
                     .on_hover_text(text.as_str())
@@ -1621,9 +1626,6 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                             ui.close();
                         }
                     });
-                if ops_n > 0 {
-                    ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
-                }
             });
         });
     });
