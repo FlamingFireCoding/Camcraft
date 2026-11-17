@@ -74,7 +74,7 @@ CYCLE REAM X 70000 Y 20000 R 2000 Z -10000 F 150000
 Rapid X 70000 Y 20000 Z 2000
 Plunge X 70000 Y 20000 Z -10000 F 150000
 Rapid X 70000 Y 20000 Z 2000
-CYCLE BORE X 80000 Y 20000 R 2000 Z -10000 P 250 F 120000
+CYCLE BORE X 80000 Y 20000 R 2000 Z -10000 F 120000
 Rapid X 80000 Y 20000 Z 2000
 Plunge X 80000 Y 20000 Z -10000 F 120000
 Rapid X 80000 Y 20000 Z 2000
@@ -123,7 +123,11 @@ ENDSECTION
     assert!(p.contains("G73") && p.contains("Q4."), "expected G73:\n{p}");
     assert!(p.contains("G83") && p.contains("Q5."), "expected G83:\n{p}");
     assert!(p.contains("G85"), "expected G85:\n{p}");
-    assert!(p.contains("G86") && p.contains("P0.25"), "expected G86 with P0.25s dwell:\n{p}");
+    assert!(
+        p.lines().any(|line| line.split_whitespace().any(|w| w == "G86")
+            && !line.split_whitespace().any(|w| w.starts_with('P'))),
+        "expected G86 without a dwell word:\n{p}"
+    );
     assert!(p.contains("G89") && p.contains("P0.25"), "expected G89 with P0.25s dwell:\n{p}");
     assert!(p.contains("G84"), "expected G84:\n{p}");
     assert!(p.contains("G80"), "expected G80:\n{p}");
@@ -199,4 +203,81 @@ ENDSECTION
         .expect("runs G30");
     assert!(out_g30.warnings.is_empty(), "G30 warnings: {:?}", out_g30.warnings);
     assert!(out_g30.program.contains("G91 G30 Z0."), "expected G91 G30 Z0.:\n{}", out_g30.program);
+}
+
+fn cycle_stream(cycle: &str, dwell: i32) -> String {
+    format!(
+        "PARAM WorkOffset G54\nPARAM ClearancePlane 25\nPARAM RetractPlane 5\n\
+         TOOL 1 \"6MM TOOL\"\nPARAM SpindleSpeed 600\nSECTION Cycle\n\
+         Rapid X 0 Y 0 Z 5000\n\
+         CYCLE {cycle} X 0 Y 0 R 2000 Z -10000 Q 2000 P {dwell} F 120000\n\
+         Rapid X 0 Y 0 Z 2000\nPlunge X 0 Y 0 Z -10000 F 120000\n\
+         Rapid X 0 Y 0 Z 2000\nENDSECTION\n"
+    )
+}
+
+#[test]
+fn mach4_refuses_dwell_on_g73_and_g84_by_name() {
+    assert_unsupported_cycle_dwells(&[("PECK", "G73"), ("TAP", "G84")]);
+}
+
+#[test]
+fn mach4_refuses_dwell_on_g83_g85_and_g86_by_name() {
+    assert_unsupported_cycle_dwells(&[("DEEP", "G83"), ("REAM", "G85"), ("BORE", "G86")]);
+}
+
+fn assert_unsupported_cycle_dwells(cycles: &[(&str, &str)]) {
+    let cps = mach4_post();
+    let mch = default_vmc();
+    for &(cycle, g) in cycles {
+        let out = engine::run(&cps, &mch, &cycle_stream(cycle, 250)).expect("cycle runs");
+        assert!(
+            out.warnings
+                .iter()
+                .any(|w| w.contains(&format!("canned cycle {g} cannot write a dwell on Mach4"))),
+            "{cycle} must refuse unsupported dwell by name: {:?}",
+            out.warnings
+        );
+        assert!(
+            !out.program
+                .lines()
+                .any(|line| line.split_whitespace().any(|w| w == g)),
+            "refused {g} must not be emitted:\n{}",
+            out.program
+        );
+        let zero = engine::run(&cps, &mch, &cycle_stream(cycle, 0)).expect("zero dwell runs");
+        assert!(
+            zero.warnings.is_empty(),
+            "{cycle} zero dwell: {:?}",
+            zero.warnings
+        );
+        let line = zero
+            .program
+            .lines()
+            .find(|line| line.split_whitespace().any(|w| w == g))
+            .unwrap_or_else(|| panic!("missing {g} for zero dwell:\n{}", zero.program));
+        assert!(
+            !line.split_whitespace().any(|w| w.starts_with('P')),
+            "{g} must not write P: {line}"
+        );
+    }
+}
+
+#[test]
+fn mach4_supported_cycle_dwells_use_seconds_on_g82_and_g89_only() {
+    let cps = mach4_post();
+    let mch = default_vmc();
+    for (cycle, g) in [("DRILL", "G82"), ("SPOT", "G82"), ("BACKBORE", "G89")] {
+        let out = engine::run(&cps, &mch, &cycle_stream(cycle, 250)).expect("dwell cycle runs");
+        assert!(out.warnings.is_empty(), "{cycle}: {:?}", out.warnings);
+        let line = out
+            .program
+            .lines()
+            .find(|line| line.split_whitespace().any(|w| w == g))
+            .unwrap_or_else(|| panic!("missing {g}:\n{}", out.program));
+        assert!(
+            line.split_whitespace().any(|w| w == "P0.25"),
+            "{g} needs seconds dwell: {line}"
+        );
+    }
 }

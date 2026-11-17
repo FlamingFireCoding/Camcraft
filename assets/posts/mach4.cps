@@ -781,6 +781,10 @@ function onCycle() {
   else if (p.CycleType === "REAM") g = "G85";
   else { msg(who() + "canned cycle " + p.CycleType + " is not supported by Mach4 post"); return; }
 
+  if (secDwell > 0 && g !== "G82" && g !== "G89") {
+    msg(who() + "canned cycle " + g + " cannot write a dwell on Mach4");
+    return;
+  }
   if (!(has(p.FeedRate) && Number(p.FeedRate) > 0)) {
     msg(who() + "canned cycle " + g + " has no feed rate");
     return;
@@ -801,7 +805,7 @@ function onCycle() {
     block(["G99"]);
     var ws = [g, "X" + fu(qBot[0]), "Y" + fu(qBot[1]), "Z" + fu(qBot[2]), "R" + fu(qR[2])];
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && Number(p.Q) > 0) ws.push("Q" + fu(Number(p.Q)));
-    if (secDwell > 0 && g !== "G73" && g !== "G84") ws.push("P" + trimDec(secDwell, 3, false));
+    if (secDwell > 0 && (g === "G82" || g === "G89")) ws.push("P" + trimDec(secDwell, 3, false));
     ws.push(ff(Number(p.FeedRate)));
     block(ws);
     cycleSig = sig;
