@@ -885,6 +885,12 @@ function onCycle() {
     msg("canned cycle G86 (bore) has no dwell word on this control - a " + (ms / 1000) + " s dwell is refused, not dropped; set the dwell to 0");
     return;
   }
+  // #1820: Matrix 2 section 13-2-14 omits P from the G83 format;
+  // its summary mentions P, so dwell support is not verified here.
+  if (g === "G83" && p.P > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);

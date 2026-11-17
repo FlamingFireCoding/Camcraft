@@ -1221,6 +1221,12 @@ function onCycle() {
     msg("canned cycle G86 (bore) has no dwell word on this control - a " + (ms / 1000) + " s dwell is refused, not dropped; set the dwell to 0");
     return;
   }
+  // #1820: standard Fanuc G83 (B-64604EN-2/01, 5.1.6) has no P.
+  // Doosan OEM MV0009OPE241_v0 dwell behavior is not publicly verified.
+  if (g === "G83" && p.P > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
