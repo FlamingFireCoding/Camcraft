@@ -11,7 +11,7 @@
 //! Provenance: our own port of the M-c operation page (no vendor
 //! material, strings or layouts consulted).
 
-use egui::{ScrollArea, Ui};
+use egui::{RichText, ScrollArea, Ui};
 
 use camcraft_app::model;
 use camcraft_app::operation::{self, OpStatus};
@@ -19,13 +19,14 @@ use camcraft_app::schema::Operation;
 use camcraft_app::verify::Warning;
 
 use crate::operations::{fold_warnings, unresolved_note};
+use crate::start_exit_pick::{self, StartExitAct, act_id, armed_id};
 use crate::state::{CommandKind, ErrorScope, State};
 use crate::shortcut_keys::chord;
 
 use super::colorvision::text_inks;
 use super::fields::combo_owned;
 use super::layout::{Action, ActionKind, BarInks, action_bar, group, prop_grid, status_banner_located};
-use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_MACHINE, SEC_PASSES};
+use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_LEADS, SEC_MACHINE, SEC_PASSES};
 use super::theme::Tokens;
 
 /// The hover text of a refusal line that names its spot (#261 part 2);
@@ -110,7 +111,17 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         // (`State::op_tab`), never a command, never saved.
         let kind = state.op_ui.params.kind();
         let tab = super::op_tabs::tab_bar(ui, kind, &mut state.op_tab, pal);
-        super::geo_page::pick_mode_line(ui, state);
+        if tab != SEC_LEADS {
+            start_exit_pick::disarm(state);
+        }
+        if let Some(role) = state.op_ui.start_exit_pick.filter(|_| start_exit_pick::collecting(state)) {
+            ui.label(
+                RichText::new(format!("Picking {} - click on the part or stock in the viewport", role.label()))
+                    .strong(),
+            );
+        } else {
+            super::geo_page::pick_mode_line(ui, state);
+        }
         if tab == SEC_GEO {
             crate::frame_cost::time("ui/properties.op.picks", || super::geo_page::pick_block(ui, state, &target, live_setup.as_deref(), pal));
         }
@@ -122,12 +133,27 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
             SEC_MACHINE => Some("Bar feeder"),
             _ => None,
         };
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(armed_id(), state.op_ui.start_exit_pick);
+            d.insert_temp(act_id(), None::<StartExitAct>);
+        });
         let fields = crate::frame_cost::span("ui/properties.op.fields");
         match title {
             Some(t) => {
                 group(ui, t, None, |ui| super::params_page::params_fields(ui, state, tab));
             }
             None => super::params_page::params_fields(ui, state, tab),
+        }
+        if let Some(act) = ui.ctx().data(|d| d.get_temp::<Option<StartExitAct>>(act_id())).flatten() {
+            match act {
+                StartExitAct::Toggle(role) => start_exit_pick::toggle(state, role),
+                StartExitAct::ClearIf(role) => {
+                    if state.op_ui.start_exit_pick == Some(role) {
+                        start_exit_pick::disarm(state);
+                    }
+                }
+            }
+            ui.ctx().request_repaint();
         }
         drop(fields);
         if tab == SEC_FEEDS {
@@ -415,8 +441,14 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
     ];
     let bar_inks = BarInks { accent: pal.accent, on_accent: super::contrast::on_fill(pal.accent), danger: inks.error };
     match action_bar(ui, &bar, &bar_inks) {
-        Some(0) => state.generate_operation(target),
-        Some(1) => state.apply_operation_params(target),
+        Some(0) => {
+            start_exit_pick::disarm(state);
+            state.generate_operation(target);
+        }
+        Some(1) => {
+            start_exit_pick::disarm(state);
+            state.apply_operation_params(target);
+        }
         Some(2) => state.pending.push_back(CommandKind::ClearToolpath(target.to_owned())),
         Some(3) => state.close_operation_editor(target),
         Some(4) => state.pending.push_back(CommandKind::DeleteOperation(target.to_owned())),

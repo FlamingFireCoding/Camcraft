@@ -19,7 +19,7 @@ use crate::shortcut_keys::chord;
 use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
-    EditOperationLinks, EditOperationParams, GenerateOperation, History, ImportModel,
+    EditOperationLinks, EditOperationParams, History, ImportModel,
     MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
@@ -930,6 +930,8 @@ pub struct OpUi {
     /// The Boundary group's draft (M11.5): rides the same Apply as the
     /// parameters, one undo unit.
     pub area: AreaControls,
+    /// #1448 / #1473 item 2: armed Contour start/exit viewport pick role.
+    pub start_exit_pick: Option<crate::start_exit_pick::StartExitRole>,
 }
 
 impl Default for OpUi {
@@ -941,6 +943,7 @@ impl Default for OpUi {
             src_name: String::new(),
             geo: Vec::new(),
             area: AreaControls::default(),
+            start_exit_pick: None,
             // A facing pass over a small billet, in references: 25 above
             // the stock top, skimming the stock top itself. `retype`
             // carries this clearance into every kind, so the draft
@@ -984,6 +987,7 @@ impl OpUi {
             geo,
             params: op.params.clone(),
             area: op.area.clone(),
+            start_exit_pick: None,
         }
     }
 
@@ -1513,6 +1517,8 @@ pub enum LayoutRequest {
     Show(Panel),
     /// Open and focus the independent tool library.
     ToolLibrary,
+    /// Open the Debug info panel (#2262) as a dock tab, or close it.
+    ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
     Reset,
 }
@@ -1681,9 +1687,12 @@ pub struct State {
     /// document is switched. The status line says it too, but the next
     /// click or command writes over that line; this keeps the reason.
     pub post_refusal: Option<crate::egui_app::post_refusal::PostRefusal>,
-    /// #157: the Debug info window is open. View state - never a
-    /// command, never saved.
+    /// #157, #2262: the Debug info panel is in the dock (docked or
+    /// floating). Mirrored from the dock each frame by `layout::settle`;
+    /// view state - never a command.
     pub debug_info_open: bool,
+    /// #2262: the frame-rate reading and its log rule, fed once a frame.
+    pub frame_rate: crate::egui_app::frame_rate::FrameRate,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
     /// set once by the windowed shell; `None` headless.
     pub gpu_line: Option<String>,
@@ -1800,6 +1809,9 @@ pub struct State {
     import_started: Option<Instant>,
     /// Imports queued while one is already running (drained FIFO on finish).
     import_queue: VecDeque<PathBuf>,
+    /// #2257: toolpath generation on a worker, for the viewport's
+    /// progress overlay (`crate::gen_worker`).
+    pub gen_jobs: crate::gen_worker::GenJobs,
     /// Setup pane drafts (ephemeral; see [`StockUi`]).
     pub stock_ui: StockUi,
     pub wcs_ui: WcsUi,
@@ -2103,6 +2115,7 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            frame_rate: crate::egui_app::frame_rate::FrameRate::default(),
             gpu_line: None,
             spindle_as_vc: false,
             tool_catalog_kind: None,
@@ -2190,6 +2203,7 @@ impl State {
             import_file: None,
             import_started: None,
             import_queue: VecDeque::new(),
+            gen_jobs: crate::gen_worker::GenJobs::default(),
             stock_ui: StockUi::default(),
             wcs_ui: WcsUi {
                 // Neutral highlight: center-middle, before any pick.
@@ -2296,7 +2310,7 @@ impl State {
         self.status = msg;
     }
 
-    fn refuse(&mut self, scope: ErrorScope, msg: String) {
+    pub(crate) fn refuse(&mut self, scope: ErrorScope, msg: String) {
         self.status.clone_from(&msg);
         // The page's draft as the next frame will show it: a document
         // bump earlier in this drain re-mirrors now, not after the
@@ -2856,6 +2870,7 @@ impl State {
         self.op_synced = (String::new(), self.doc_version);
         self.boundary_pick = None;
         self.boundary_view.shown = false;
+        self.op_ui.start_exit_pick = None;
         self.rename_draft = None;
     }
 
@@ -3076,6 +3091,8 @@ impl State {
         drop(s);
         let s = span("commands/import+files");
         self.poll_import();
+        // #2257: a background generation that finished since the last frame.
+        self.poll_generation();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
         drop(s);
@@ -3104,7 +3121,7 @@ impl State {
         let deadline = Instant::now() + Duration::from_secs(120);
         loop {
             self.drain_actions();
-            if self.pending.is_empty() && self.import_rx.is_none() && self.import_queue.is_empty() {
+            if self.pending.is_empty() && self.import_rx.is_none() && self.import_queue.is_empty() && !self.gen_jobs.busy() {
                 return;
             }
             if Instant::now() >= deadline {
@@ -3688,28 +3705,9 @@ impl State {
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes
                 // nothing); the status line reports what was produced.
-                match GenerateOperation::new(&self.world, &name) {
-                    Ok(command) => {
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        let cache = model::find_by_name(&self.world, &name)
-                            .and_then(|e| model::toolpath_of(&self.world, &e));
-                        // The feed in the summary reads in the document's
-                        // unit (M1.1); the path itself is mm law, always.
-                        let unit = self.units();
-                        self.status = match cache {
-                            Some(tp) => tp.path.status_summary(&name, tp.warnings.len(), unit),
-                            None => format!("generated {name}"),
-                        };
-                    }
-                    Err(err) => {
-                        self.refuse(ErrorScope::Operation, format!("generate failed: {err}"));
-                        // #261 part 2: where the generator refused, if it said.
-                        self.feedback_at = err.location().map(|p| [p.x, p.y, p.z]);
-                        // Part 3: the moves it had built, drawn as a ghost.
-                        self.feedback_ghost = err.ghost().cloned();
-                    }
-                }
+                // #2257: in the interactive app it runs on a worker and
+                // lands in `poll_generation` (`crate::gen_worker`).
+                self.generate_now_or_queue(name);
             }
             CommandKind::ClearToolpath(name) => match ClearToolpath::new(&self.world, &name) {
                 Ok(command) => {
@@ -4324,6 +4322,8 @@ impl State {
     /// Drop any live/queued imports because the document is being replaced.
     /// A worker still running finishes in the background and discards itself.
     fn abandon_imports(&mut self) {
+        // #2257: a generation of the old document never lands in the new.
+        self.gen_jobs.abandon();
         if self.import_rx.take().is_some() {
             diag_warn!("import: document changed; pending import discarded");
         }
@@ -4666,8 +4666,16 @@ fn pick_mesh_file() -> Option<PathBuf> {
 /// async picker (#31) ask with the same one.
 fn mesh_dialog() -> crate::file_dialog::FileDialog {
     // STEP arrives tessellated through truck (mesh, not B-rep).
-    crate::file_dialog::FileDialog::new().add_filter("Mesh", &["stl", "obj", "step", "stp"])
+    crate::file_dialog::FileDialog::new().add_filter("Mesh", MODEL_EXTENSIONS)
 }
+
+/// The model files Model > Open and a viewport drop read, lower case. A
+/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// build does not read it, so its picker does not offer it.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+#[cfg(target_arch = "wasm32")]
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 
 fn project_dialog() -> crate::file_dialog::FileDialog {
     crate::file_dialog::FileDialog::new().add_filter("CamCraft Project", &["camproj"])

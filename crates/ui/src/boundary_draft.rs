@@ -314,7 +314,7 @@ fn picks_mut(state: &mut State, at: EntryRef) -> Option<&mut Vec<GeoSel>> {
 /// Close an entry's edge picks around their face loop.
 pub fn extend(state: &mut State, at: EntryRef) -> Result<(), String> {
     let picks = picks_mut(state, at).map(|p| p.clone()).ok_or("that boundary has no picks")?;
-    let closed = operation::extend_to_loop(&state.world, &picks)?;
+    let closed = operation::extend_to_loop_in(&state.world, setup_of(state).as_deref(), &picks)?;
     if let Some(p) = picks_mut(state, at) {
         *p = closed;
     }

@@ -256,3 +256,27 @@ fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
         assert_eq!(rewritten["version"], json!(project::PROJECT_VERSION), "old documents migrate forward");
     }
 }
+
+#[test]
+fn yawed_break_through_note_reports_the_hole_in_setup_coordinates() {
+    use camcraft_app::commands::SetWcsOrigin;
+    use camcraft_app::geometry::quat_from_euler;
+    use camcraft_app::schema::Location;
+
+    for (name, tool, params) in [("D", "DR-0600", drill(Some(0.3))), ("B", "EM-0400-2FL", bore(Some(0.3)))] {
+        let (world, mut h) = world();
+        let placement = Location {
+            pos: Point3::new(5.0, 7.0, 0.0),
+            rot: quat_from_euler(0.0, 0.0, 30f64.to_radians()),
+        };
+        h.execute(&world, SetWcsOrigin::new(&world, placement).expect("yaw WCS"));
+        let (path, _) = run(&world, &mut h, name, tool, params);
+        let note = path.notes.iter().find(|n| n.starts_with(BELOW_STOCK_NOTE)).expect("below stock note");
+        let xy = note.split_once('(').unwrap().1.split_once(')').unwrap().0;
+        for coord in xy.split(',') {
+            let value: f64 = coord.split_whitespace().next().unwrap().parse().unwrap();
+            assert!(value.abs() < 1e-6, "the source hole is (0, 0) in Setup S: {note}");
+        }
+        assert!(note.contains("Z-0.300"), "{note}");
+    }
+}

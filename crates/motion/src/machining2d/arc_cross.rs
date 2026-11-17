@@ -70,9 +70,65 @@ struct Chord {
     touch: Option<usize>,
 }
 
+/// Shared-vertex snap matching `verify::crossing::CROSSING_TOUCH` (mm).
+const CROSSING_TOUCH_SQ: f64 = 1e-18;
+
 /// Twice the signed area of `a b c`.
 fn orient(a: Point2, b: Point2, c: Point2) -> f64 {
     (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+}
+
+/// Depth overlap matching `verify::crossing`'s pair predicate: planar
+/// pairs share one plane, descending chords share an open depth range.
+fn z_depths_overlap(az0: f64, az1: f64, bz0: f64, bz1: f64) -> bool {
+    if az0 == az1 && bz0 == bz1 {
+        az0 == bz0
+    } else {
+        az0.max(az1).min(bz0.max(bz1)) - az0.min(az1).max(bz0.min(bz1)) > 0.0
+    }
+}
+
+/// True proper crossing between XY segments `(a0, a1)` and `(b0, b1)`,
+/// treating vertices within `1e-9` as a shared-endpoint touch (#1129).
+fn proper_cross_touch(a0: Point2, a1: Point2, b0: Point2, b1: Point2) -> bool {
+    if a0.x.max(a1.x) < b0.x.min(b1.x) - 1e-9
+        || a0.x.min(a1.x) > b0.x.max(b1.x) + 1e-9
+        || a0.y.max(a1.y) < b0.y.min(b1.y) - 1e-9
+        || a0.y.min(a1.y) > b0.y.max(b1.y) + 1e-9
+    {
+        return false;
+    }
+    let touch = [a0, a1].iter().any(|p| [b0, b1].iter().any(|q| (p.x - q.x).powi(2) + (p.y - q.y).powi(2) <= CROSSING_TOUCH_SQ));
+    if touch {
+        return false;
+    }
+    let (oa, ob) = (orient(a0, a1, b0), orient(a0, a1, b1));
+    let (oc, od) = (orient(b0, b1, a0), orient(b0, b1, a1));
+    oa != 0.0 && ob != 0.0 && oc != 0.0 && od != 0.0 && ((oa > 0.0) != (ob > 0.0)) && ((oc > 0.0) != (od > 0.0))
+}
+
+/// Does a candidate straight segment `(a0 -> a1)` over `[az0, az1]`
+/// cross any prior `Feed` move in `prior` under the verifier's law?
+pub(crate) fn seg_crosses_prior(a0: Point2, a1: Point2, az0: f64, az1: f64, prior: &[Move]) -> bool {
+    prior.iter().any(|m| {
+        if m.kind != MoveKind::Feed || !z_depths_overlap(az0, az1, m.from.z, m.to.z) {
+            return false;
+        }
+        if m.arc.is_none() {
+            return proper_cross_touch(a0, a1, Point2::new(m.from.x, m.from.y), Point2::new(m.to.x, m.to.y));
+        }
+        m.chords(ARC_FIT_TOL).into_iter().any(|(b0, b1)| proper_cross_touch(a0, a1, b0, b1))
+    })
+}
+
+/// Does any `Feed` move in `cand` cross any prior `Feed` move in `prior`?
+pub(crate) fn moves_cross_prior(cand: &[Move], prior: &[Move]) -> bool {
+    cand.iter().filter(|m| m.kind == MoveKind::Feed).any(|m| {
+        if m.arc.is_none() {
+            return seg_crosses_prior(Point2::new(m.from.x, m.from.y), Point2::new(m.to.x, m.to.y), m.from.z, m.to.z, prior);
+        }
+        m.chords(ARC_FIT_TOL).into_iter().any(|(a0, a1)| seg_crosses_prior(a0, a1, m.from.z, m.to.z, prior))
+    })
 }
 
 /// The verifier's pair predicate: two chords of different moves cross
@@ -80,16 +136,7 @@ fn orient(a: Point2, b: Point2, c: Point2) -> f64 {
 /// descending chord only over a shared depth RANGE - a touch at a
 /// single endpoint is the graze every entry makes by construction).
 fn crosses(p: &Chord, q: &Chord) -> bool {
-    if p.mv == q.mv {
-        return false;
-    }
-    let planar = p.z0 == p.z1 && q.z0 == q.z1;
-    let z_hit = if planar {
-        p.z0 == q.z0
-    } else {
-        p.z0.max(p.z1).min(q.z0.max(q.z1)) - p.z0.min(p.z1).max(q.z0.min(q.z1)) > 0.0
-    };
-    if !z_hit {
+    if p.mv == q.mv || !z_depths_overlap(p.z0, p.z1, q.z0, q.z1) {
         return false;
     }
     let (oa, ob) = (orient(p.a, p.b, q.a), orient(p.a, p.b, q.b));

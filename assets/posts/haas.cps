@@ -19,6 +19,7 @@ axisInversion = true; // verified on the engine's mirrored stream for an inverte
 probeAxisInversion = true; // probing blocks verified on the mirrored stream (#392): macro interpreter on a simulated inverted machine
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G154 P extended offsets not verified against Haas' manual here (#931)
+wcsRotation = true;        // #760: writes G68 X0. Y0. R / G69 in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 endUnits = "note";        // #2189: G20/G21 alarms against Setting 9; notes once when asked to switch
 
@@ -92,6 +93,9 @@ var compD = "";            // the D word riding the engage block ("" when the to
 var compOn = false;        // compensation is engaged (G41/G42 written, no G40 yet)
 var compNoted = false;     // the section's operator note was written
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
+var wcsYaw = 0;            // #760: Z rotation (deg) for Control mode (G68)
+var wcsRotMode = "";       // #760: "control" | "bake" | ""
+var wcsRotActive = false;  // #760: G68 is currently engaged in this section
 
 // ------------------------------------------------------------ helpers
 function has(v) { return v !== null && v !== undefined && isFinite(v); }
@@ -115,6 +119,7 @@ function fn(v) {  // a length as text (comments): mm at three decimals, or inch 
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
 function fu(v) { return pt(fn(v)); }  // a length word, with its point
+function fa(v) { return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0"); }  // angle (deg) at 3 decimals with point
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
   return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
@@ -505,6 +510,13 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsYaw" && has(value)) wcsYaw = Number(value);
+  else if (name === "WcsRotationMode") wcsRotMode = String(value || "");
+}
+
+function wcsRotControl() {
+  var m = wcsRotMode || ((typeof postOptions !== "undefined" && postOptions.WcsRotation) ? String(postOptions.WcsRotation) : "");
+  return m === "control" && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6;
 }
 
 function onSpindleSpeed() {
@@ -571,6 +583,10 @@ function startPreamble() {
   coolant = probeStop ? "" : coolantFor(coolantAsk);
   if (coolant) block([coolant]);
   smoothOn();
+  if (wcsRotControl()) {
+    block(["G68", "X0.", "Y0.", "R" + fa(wcsYaw)]);
+    wcsRotActive = true;
+  }
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -607,6 +623,9 @@ function endPreamble() {
   smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
+  wcsYaw = 0;
+  wcsRotMode = "";
   if (compOn || compG) {
     msg("cutter compensation still engaged at section end - no cancel block");
     compG = ""; compD = ""; compOn = false;
@@ -896,10 +915,21 @@ function onCycle() {
     msg("canned cycle G86 (bore) has no dwell word on this control - a " + (ms / 1000) + " s dwell is refused, not dropped; set the dwell to 0");
     return;
   }
+  // #2356: this post does not map G73/G84 dwell across control modes.
+  // Use the raw positive ask so rounding and the open-cycle shortcut cannot drop it.
+  if ((g === "G73" || g === "G84") && p.P > 0) {
+    msg("canned cycle " + g + " dwell is not supported by this post - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #1820, #2350: Haas keeps P modal on its dwell cycles (G82, G83, G89 -
+  // Haas G82/G89 formats read P as the bottom dwell). A changed dwell must
+  // reopen the cycle so every hole posts its own P, never the last one's.
+  var dwellCycle = g === "G82" || g === "G83" || g === "G89";
+  if (dwellCycle) sig += "|" + ms;
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -910,7 +940,10 @@ function onCycle() {
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
       words.push(w("Q", p.Q));
     }
-    if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
+    // Haas G83/G04 documentation: integer P is milliseconds. P0 clears
+    // a previous dwell; omitting P would reuse it even after a new G82,
+    // G83 or G89 (#2350).
+    if (dwellCycle || (ms > 0 && g !== "G73" && g !== "G84")) words.push("P" + ms);
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;

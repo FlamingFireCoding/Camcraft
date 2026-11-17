@@ -87,6 +87,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::machine_tools::TOOLS)
         .chain(super::tool_number_tools::TOOLS)
         .chain(super::post_options_tools::TOOLS)
+        .chain(super::holder_dxf_tools::TOOLS)
 }
 
 /// The `tools/list` rows.
@@ -261,7 +262,7 @@ fn s_import_library() -> Value {
 fn s_import() -> Value {
     obj(
         json!({
-            "path": { "type": "string", "description": "An .stl, .step/.stp or .obj file." },
+            "path": { "type": "string", "description": "An .stl, .step/.stp, .obj or Solidcraft .sc file (a .sc imports its cached final body)." },
             "name": { "type": "string", "description": "Model name; defaults to the file stem." },
             "facet_budget": { "type": "integer", "minimum": crate::geometry::import::step_budget::MIN, "maximum": crate::geometry::import::step_budget::CEILING, "description": "STEP facet budget: the most triangles a STEP model may be meshed into (default 30000000). Raise it to import a large model at full detail; STEP files only." }
         }),

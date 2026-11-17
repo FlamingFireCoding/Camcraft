@@ -149,6 +149,8 @@ pub use camcraft_tools::waterjet as waterjet_tools;
 pub use camcraft_tools::wire as wire_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;
+// #743 part 2: STEP/SpunProfile <-> DXF half-profile conversion.
+pub mod tool_profile_dxf;
 // #93 slice 2: the drawn cutter law, and the tool's stored drawn cutter.
 pub use camcraft_tools::cutter_profile;
 // #93 slice 3: the drawn cutter carried onto new numbers, and its neck.

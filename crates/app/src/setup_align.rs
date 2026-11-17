@@ -24,7 +24,7 @@
 //! - **Refuse what is not verified.** Generation in an aligned setup is
 //!   wired for `Face`, `Contour`, `Pocket`, `Adaptive2D`, `Offset2D`,
 //!   `Trace`, `Engrave`, `Circular`, `Slot`, `TrochoidalSlot`, `Drill`,
-//!   `Bore`, `Thread`, `Pocket3D` and `Finish3D` over a whole model,
+//!   `Bore`, `Thread`, `Deburr`, `Pocket3D` and `Finish3D` over a whole model,
 //!   the stock, or picked features, area controls included (#1743 3D,
 //!   #2210 2D, #2276 the region, typed and hole-list kinds; Detect holes and the
 //!   Slot's picks read the op's setup frame): every world read of
@@ -372,8 +372,8 @@ fn verified_kind(params: &crate::operation::OpParams) -> bool {
         params,
         OpParams::Face { .. } | OpParams::Pocket { .. } | OpParams::Contour { .. } | OpParams::Adaptive2D { .. }
             | OpParams::Offset2D { .. } | OpParams::Trace { .. } | OpParams::Engrave { .. }
-            | OpParams::Circular { .. } | OpParams::TrochoidalSlot { .. } | OpParams::Slot { .. }
-            | OpParams::Drill { .. } | OpParams::Bore { .. } | OpParams::Thread { .. }
+            | OpParams::Chamfer2D { .. } | OpParams::Circular { .. } | OpParams::TrochoidalSlot { .. } | OpParams::Slot { .. }
+            | OpParams::Drill { .. } | OpParams::Bore { .. } | OpParams::Thread { .. } | OpParams::Deburr { .. }
             | OpParams::Pocket3D { .. } | OpParams::Finish3D { .. }
     )
 }
@@ -396,7 +396,7 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
     if !verified_kind(&op.params) {
         return Some(format!(
             "{head} - {} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket, \
-             2D Adaptive, 2D Offset, Trace, Engrave, Circular, Slot, Trochoidal Slot, Drill, Bore, Thread, 3D Pocket and 3D Finish are); set the setup's part alignment back to As modelled, or machine it in another setup",
+             2D Adaptive, 2D Offset, Trace, Engrave, 2D Chamfer, Circular, Slot, Trochoidal Slot, Drill, Bore, Thread, Deburr, 3D Pocket and 3D Finish are); set the setup's part alignment back to As modelled, or machine it in another setup",
             op.params.kind().info().label
         ));
     }

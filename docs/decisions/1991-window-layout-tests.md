@@ -34,7 +34,7 @@
    `layout::leaf_rect(&dock, &Tab::Machines)`.
 
 **Cost to change later:** low. Each test is a short anchor list in
-`page_layout.rs`. If UI modals gain dedicated AccessKit dialog nodes later,
+`page_layout_windows.rs`. If UI modals gain dedicated AccessKit dialog nodes later,
 update `assert_modal_layout` to query that container rect.
 
 **Review refresh (2026-11-16, Codex):** Keep upstream's `stock_pane_delete`
@@ -52,3 +52,15 @@ the Properties-scoped Delete anchor because the selected Tool page still
 renders that button. All checks from both sides remain. Dropped: a panicking
 `get_all_by_role` lookup for optional menu items, and omitting Delete layout
 coverage. No product logic required conflict resolution.
+
+
+**Review refresh (2026-11-18, Codex):** The latest current-head review
+requested no changes. The `conflicts` label required a merge of main.
+Keep `page_layout.rs` identical to main. This retains the Properties-scoped
+Delete lookup, the docked Debug info test, the fixture Mark test, and the
+G-code wrapping and trace test. Keep this PR's independent window and modal
+checks in `page_layout_windows.rs`. This split keeps both modules within the
+file size limit. It supersedes the original single-module choice above.
+Dropped: keeping the obsolete floating Debug info assertion, dropping either
+side's tests, or adding all window tests to the larger page module. No
+product logic required conflict resolution.
