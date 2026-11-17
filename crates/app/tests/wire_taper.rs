@@ -20,7 +20,7 @@ use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::model;
 use camcraft_app::operation::{Height, OpParams, SrcRef, WireContourOp, WireSide};
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::world::new_world;
 
 const FIXTURE: &str = include_str!("edm/wire-iso-fixture.mch");
@@ -30,7 +30,7 @@ const NC: &str = "tests/golden/nc/wire-iso/wire_taper_punch.nc";
 const CL: &str = "tests/golden/wire_taper_punch.cl";
 
 fn cps() -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == WIRE).map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text(WIRE).expect("registered")
 }
 
 /// A sharp 40 x 20 block from z = 0 to 12, centred on the origin.
