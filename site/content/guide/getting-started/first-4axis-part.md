@@ -157,7 +157,7 @@ The cut of each operation (inches):
 | Flat A-90 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
 | Flat A0 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
 | Flat A90 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
-| Flat A180 | 0, -0.75 | 0, -0.25 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
+| Flat A180 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
 | Cross slot A0 | -0.5, -0.16 | -0.5, 0.16 | 0.125 | 0.5 | 0 | -0.03 | 0.01 | 8 | 2 |
 
 Keep the other settings at their defaults. A new operation has **Coolant**
@@ -169,18 +169,13 @@ Three facts explain these numbers:
   its heights along the tool axis from the plane origin. The plane origin
   is on the A centreline and the stock box is centred on it, so the top of
   the stock is 0.375 in from the centreline on all four faces.
-- **The slot ends are typed in the tilted plane.** For A-90 and A90 the
-  plane's X is the machine's X, along the bar. The three flats thus have
-  the same ends.
+- **The slot ends are typed in the tilted plane.** For A-90, A90 and
+  A 0 B 180 the plane's X is the machine's X, along the bar. All four
+  flats thus have the same ends (`-0.75, 0` and `-0.25, 0`).
 - **The face opposite the top is A 0, B 180.** The page accepts
-  **Tool axis A** from -90 to 90 only. Type A 0 and B 180 for that face.
-  The machine check and the post read this pose as A180. In this plane the
-  axes change places: the plane's X is the machine's Y, and the plane's Y
-  is the machine's X. Thus the ends of Flat A180 are (0, -0.75) and
-  (0, -0.25). Issue
-  [#2133](https://github.com/NeoTech/Camcraft/issues/2133) tracks the two
-  problems: a typed A of 180 is refused with no reason, and the axes of
-  this plane are exchanged.
+  **Tool axis A** from -90 to 90 only; an angle outside `-90..90` is
+  refused by name and points to A 0, B 180. Type A 0 and B 180 for that
+  face. The machine check and the post read this pose as A180.
 
 A tilted operation takes typed geometry or a whole model. It refuses a
 picked face or edge: "a tilted plane cannot yet index a picked selection -

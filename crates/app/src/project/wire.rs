@@ -101,6 +101,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     plate: super::plate_dto::plate_value(&d.plate),
                     on_plate: super::plate_dto::on_plate_value(&d.plate),
                     mod_jaw: super::modvise_dto::value(d.mod_jaw.as_ref()),
+                    profile: d.profile.as_ref().and_then(super::fixture_keys::profile_value),
                 });
             let operation = model::operation_of(world, &entity).map(|op| OperationDto {
                 label: model::operation_meta_of(world, &entity).label,
@@ -173,15 +174,24 @@ pub fn collect(world: &World) -> ProjectFile {
                     .is_some_and(crate::model_fidelity::is_unknown),
                 mesh_open: crate::mesh_open::hole_of(world, &entity),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
+                step_source: kind.is_none().then(|| crate::step_source::of(world, &entity)).flatten(),
                 kind,
                 raw_stock_only: mark.is_some(),
                 raw_stock_print: mark.as_ref().map(crate::stock_print::to_text),
+                stock_material: model::is_stock(world, &entity)
+                    .then(|| crate::stock_material::of_entity(world, &entity))
+                    .flatten()
+                    .map(super::StockMaterialWord),
                 stock,
                 tool,
                 operation,
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                flip: matches!(kind, Some(EntityKind::Wcs))
+                    .then(|| crate::setup_wcs_flip::of_entity(world, &entity))
+                    .filter(|f| f.iter().any(|v| *v))
+                    .map(|[x, y, z]| super::entity::WcsFlipDto { x, y, z }),
             }
         })
         .collect();
