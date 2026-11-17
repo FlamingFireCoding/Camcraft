@@ -8,6 +8,9 @@
 mod asset_tests;
 mod assets;
 mod braces;
+mod budget;
+#[cfg(test)]
+mod budget_tests;
 mod checkout;
 #[cfg(test)]
 mod checkout_tests;
@@ -15,12 +18,17 @@ mod decisions;
 #[cfg(test)]
 mod directory_tests;
 mod exec;
+mod lanes;
 #[cfg(test)]
 mod gate_maps_tests;
+#[cfg(test)]
+mod heavy_tests;
 mod icon_font;
 mod icons;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod lanes_tests;
 mod logo;
 #[cfg(test)]
 mod logo_tests;
@@ -49,6 +57,8 @@ mod select;
 #[cfg(test)]
 mod select_tests;
 mod single;
+#[cfg(test)]
+mod step_tests;
 mod suites;
 #[cfg(test)]
 mod tests;
@@ -61,8 +71,8 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 usage:
   cargo xtask gate quick [--base main] [--heavy]   tests the diff touches (test fns where it can)
-  cargo xtask gate batch                           every debug suite minus SLOW_BINARIES, ui, clippy
-  cargo xtask gate release [--no-snapshots]        everything, plus the --ignored heavy lanes and the ui snapshot lane
+  cargo xtask gate batch                           one build, then one step for each debug test binary minus SLOW_BINARIES, ui, clippy (#1941)
+  cargo xtask gate release [--no-snapshots]        everything, plus the --ignored heavy lanes (one step per binary) and the ui snapshot lane
                                                    (--no-snapshots: not the Windows-made pixel goldens - cut.yml on Linux, #1413)
   cargo xtask gate test <filter> [--crate c] [--binary b] [--exact]   exactly the matching test(s)
       any gate (not test): --only <step> [--only <step>...]   run only the steps whose name starts with <step> (kernel, clippy, ui)

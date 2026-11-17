@@ -22,7 +22,10 @@ pub(super) use crate::state::State;
 
 pub(super) use super::heights_page::{HEIGHT_SRC_ID, LEVELS, corner_note, height_editor, retract_hop, retract_note};
 pub(super) use super::kind_editors::*;
-pub(super) use super::layout::{CTRL_W, auto_opt, auto_value, check_row, consequence, group, hint, prop_row};
+pub(super) use super::layout::{
+    CTRL_W, auto_opt, auto_value, button, check_row, consequence, group, hint, list_row, prop_row,
+    radio_pair, small_button,
+};
 pub(super) use super::lead_page;
 pub(super) use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_HEIGHTS, SEC_LEADS, SEC_MACHINE, SEC_PASSES};
 pub(super) use super::params_page::Cx;
@@ -89,17 +92,26 @@ const NARROW_W: f32 = 62.0;
 
 fn num_sized(ui: &mut Ui, u: Unit, v: &mut f64, prec: usize, suffix: &str, width: f32) -> egui::Response {
     let h = ui.spacing().interact_size.y;
+    // Long values must overflow forward; add_sized centers overflow and moves the window's origin.
+    let layout = egui::Layout::centered_and_justified(ui.layout().main_dir())
+        .with_main_align(egui::Align::Min)
+        .with_cross_align(egui::Align::Min);
     if u == Unit::Millimeters {
-        ui.add_sized([width, h], DragValue::new(v).speed(0.1).suffix(suffix))
+        ui.allocate_ui_with_layout([width, h].into(), layout, |ui| {
+            ui.add(DragValue::new(v).speed(0.1).suffix(suffix))
+        })
+        .inner
     } else {
         let mut d = units::to_display(*v, u);
-        let resp = ui.add_sized(
-            [width, h],
-            DragValue::new(&mut d)
-                .speed(0.1 / 25.4)
-                .custom_formatter(move |n, _| format!("{n:.prec$}"))
-                .suffix(suffix),
-        );
+        let resp = ui.allocate_ui_with_layout([width, h].into(), layout, |ui| {
+            ui.add(
+                DragValue::new(&mut d)
+                    .speed(0.1 / 25.4)
+                    .custom_formatter(move |n, _| format!("{n:.prec$}"))
+                    .suffix(suffix),
+            )
+        })
+        .inner;
         if resp.changed() {
             *v = units::from_display(d, u);
         }
@@ -172,6 +184,19 @@ pub(crate) fn num_plain_by(ui: &mut Ui, v: &mut f64, label: egui::Id) {
     plain_drag(ui, v).labelled_by(label);
 }
 
+/// Bounded integer count inside a `prop_row`, named by that row's
+/// label (#1119, #1122).
+pub(crate) fn int_range_row<N: egui::emath::Numeric>(
+    ui: &mut Ui,
+    v: &mut N,
+    range: std::ops::RangeInclusive<N>,
+) {
+    let r = ui.add(DragValue::new(v).range(range));
+    if let Some(l) = super::layout::row_label_id(ui) {
+        r.labelled_by(l);
+    }
+}
+
 /// A lens-free number with its unit as the suffix ("°", "s", "%").
 pub(crate) fn num_unit(ui: &mut Ui, v: &mut f64, unit: &str) {
     super::layout::value_with_unit(ui, v, unit, 0.1);
@@ -196,7 +221,7 @@ pub(super) fn orientation_editor(ui: &mut Ui, u: Unit, tilt: &mut Option<Tilt>) 
         }
     });
     if g.toggled {
-        *tilt = if armed { Some(Tilt { a_deg: 0.0, b_deg: 0.0, origin: [0.0; 3] }) } else { None };
+        *tilt = if armed { Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 0.0, origin: [0.0; 3] }) } else { None };
     }
 }
 

@@ -16,6 +16,7 @@ use crate::state::{CommandKind, ErrorScope, GeoPick, State};
 
 use super::colorvision::text_inks;
 use super::layout::group;
+use super::theme::{Tokens, clamp};
 
 /// The Edge mode's one-line hint: how a loop gets closed. The add key is
 /// the platform command key (Cmd on macOS), the one the pick reads
@@ -44,11 +45,11 @@ pub(super) fn pick_mode_line(ui: &mut Ui, state: &State) {
     }
 }
 
-pub(super) fn pick_block(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>) {
-    group(ui, "Selection", None, |ui| body(ui, state, target, live_setup));
+pub(super) fn pick_block(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, pal: &Tokens) {
+    group(ui, "Selection", None, |ui| body(ui, state, target, live_setup, pal));
 }
 
-fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>) {
+fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, pal: &Tokens) {
     // Viewport pick mode - transient view state: the mode itself is not
     // undoable; what a Face/Edge click changes is.
     ui.horizontal_wrapped(|ui| {
@@ -76,11 +77,13 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>) 
         ui.label(RichText::new(edge_hint()).weak());
     }
     if state.op_ui.src_kind == 2 {
-        chips(ui, state, target);
+        crate::frame_cost::time("ui/properties.op.picks.chips", || chips(ui, state, target, pal));
         // #187: the 3-2-1 alignment reads the picks as datums - a flat
         // face for Z, a straight edge for X, a vertex or bore for the
         // origin. The app builds the frame (or names what to re-pick).
-        let aligned = camcraft_app::pick::align_321(&state.world, &state.op_ui.geo);
+        let aligned = crate::frame_cost::time("ui/properties.op.picks.align_321", || {
+            crate::vertex_pick::wcs_321_checked(state)
+        });
         let tip = match &aligned {
             Ok(_) => "place the WCS slot chosen in the WCS pane: Z out of the picked flat face, X along the picked \
                       edge, origin at the picked vertex or bore (else the edge's end), on the face"
@@ -95,8 +98,9 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>) 
             crate::vertex_pick::queue_wcs_321(state);
         }
     }
-    let (notes, refusal) =
-        operation::selection_account(&state.world, live_setup, &state.op_ui.geo.clone(), &state.op_ui.params.clone());
+    let (notes, refusal) = crate::frame_cost::time("ui/properties.op.picks.selection_account", || {
+        operation::selection_account(&state.world, live_setup, &state.op_ui.geo.clone(), &state.op_ui.params.clone())
+    });
     for note in notes {
         ui.label(RichText::new(note).weak());
     }
@@ -121,7 +125,7 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>) 
 /// The picked features, one chip each: hovering lights the feature in
 /// the viewport (the shared interact law), x removes it - the last one
 /// falls back to the stock source.
-fn chips(ui: &mut Ui, state: &mut State, target: &str) {
+fn chips(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
     let chips: Vec<(String, bool, GeoSel)> =
         state.geo_chips().into_iter().map(|c| (c.label, c.missing, c.sel)).collect();
     for (i, (label, missing, sel)) in chips.into_iter().enumerate() {
@@ -179,6 +183,15 @@ fn chips(ui: &mut Ui, state: &mut State, target: &str) {
                 }
                 x.clicked()
             });
+        // #1519: the viewport pointer over this pick's face, chain or vertex
+        // marks its row (an outline in the hover ink); gone with the pointer.
+        if state.hover.as_ref().is_some_and(|h| h.entity == sel.entity && h.feature == Some(sel.feature)) {
+            let ink = pal.selection_stroke;
+            let r = pal.radius_widget.min(clamp::RADIUS);
+            let w = clamp::range(pal.highlight_stroke_px, clamp::STROKE);
+            ui.painter().rect_stroke(row.response.rect, r, egui::Stroke::new(w, ink), egui::StrokeKind::Inside);
+            state.geo_row_marked.push(sel.clone());
+        }
         if row.response.hovered() || ui.rect_contains_pointer(row.response.rect) {
             state.geo_hover = Some(sel);
         }

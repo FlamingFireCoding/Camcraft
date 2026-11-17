@@ -736,6 +736,16 @@ fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_moves_nothing() {
     assert_eq!(status(&world, "Contour1"), OpStatus::Ok, "and exact");
 }
 
+/// The slot fixture's notes: its Top (Z 0) and its clearance plane (Z 5)
+/// both stand inside the 20 mm block, so the two independent height
+/// warnings (#104, #2121) ride the path - and nothing else.
+fn height_notes_only(notes: &[String]) -> bool {
+    use camcraft_app::operation::{CLEARANCE_STOCK_WARNING, TOP_STOCK_WARNING};
+    notes.len() == 2
+        && notes.iter().filter(|n| n.starts_with(TOP_STOCK_WARNING)).count() == 1
+        && notes.iter().filter(|n| n.starts_with(CLEARANCE_STOCK_WARNING)).count() == 1
+}
+
 #[test]
 fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     // The M8.2 C digest law on the slot's own stamp: flipping the entry
@@ -763,7 +773,7 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     );
     assert_eq!(status(&world, "Slot1"), OpStatus::Ok);
     let before = cache(&world, "Slot1").expect("cached").path;
-    assert!(before.notes.len() == 1 && before.notes.iter().all(|n| n.starts_with(camcraft_app::operation::TOP_STOCK_WARNING)), "no entry fallback, only the independent Top/stock warning: {:?}", before.notes);
+    assert!(height_notes_only(&before.notes), "no entry fallback, only the independent height warnings: {:?}", before.notes);
     assert_eq!(
         before.moves.iter().filter(|m| m.arc.is_some()).count(),
         0,
@@ -800,7 +810,7 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
         after.moves.iter().any(|m| m.arc.is_some()),
         "a channel this wide certifies the orbit - it must land"
     );
-    assert!(after.notes.len() == 1 && after.notes.iter().all(|n| n.starts_with(camcraft_app::operation::TOP_STOCK_WARNING)), "a certified orbit adds no entry note; only the Top/stock warning remains: {:?}", after.notes);
+    assert!(height_notes_only(&after.notes), "a certified orbit adds no entry note; only the height warnings remain: {:?}", after.notes);
     assert_ne!(
         before.moves, after.moves,
         "the entry edit changed the path, not just the stamp"
@@ -1401,8 +1411,12 @@ fn threaded_batch_matches_the_serial_loop_bit_for_bit() {
         let world = new_world();
         let mut history = History::default();
         // Box stock: what every Entity-source op reads at collect
-        // time as the swarf column around the smaller model.
-        box_stock(&world, &mut history, 60.0, 60.0, 20.0);
+        // time as the swarf column around the smaller model. It stands
+        // to the cube's top, Z 5 (#96, #1924): the pocket starts at 5,
+        // and the old 20 mm block left uncut stock from Z 5 to 20, where
+        // the ball's Ø8 shank (15 mm above the tip) would sit at Bottom
+        // Z 0 - #1844's reach law rightly refuses that.
+        box_stock(&world, &mut history, 60.0, 60.0, 5.0);
         add_tool(&world, &mut history, "EM-0400-2FL");
         add_tool(&world, &mut history, "BN-0600");
         history.execute(
@@ -1981,7 +1995,8 @@ fn pocket_refuses_an_open_run() {
     let op = Operation {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
-        params: OpParams::Pocket {
+        params: OpParams::Pocket { rest: None,
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,
             stepover: 3.0,
@@ -2172,7 +2187,7 @@ fn open_run_of(world: &World, name: &str) -> u64 {
 }
 
 #[test]
-fn an_open_run_contours_on_its_centerline() {
+fn an_open_run_contours_on_its_air_side() {
     let (world, mut history) = box_part_world();
     let run = open_run_of(&world, "part");
     history.execute(
@@ -2191,8 +2206,8 @@ fn an_open_run_contours_on_its_centerline() {
         GenerateOperation::new(&world, "Edge1").expect("generate"),
     );
 
-    // Preview: the run bounds no area, so no region outline - the
-    // centerline stands in for it, and it is exactly what the path rides.
+    // Preview: the run bounds no area, so no region outline - the picked
+    // run stands in for it; the path rides beside it (#1777).
     let op = model::operation_of(&world, &model::find_by_name(&world, "Edge1").expect("op"))
         .expect("op");
     assert!(
@@ -2215,21 +2230,33 @@ fn an_open_run_contours_on_its_centerline() {
         .find(|c| c.id == run)
         .expect("chain");
     let pts = feature::chain_points(&f, &c);
-    // contour_params: 5.0 -> 0.0 at 2.5 - three levels, one plunge each,
-    // Lead::None so the plunge lands exactly on the stored start vertex.
-    let levels = [5.0, 2.5, 0.0];
+    assert_eq!(pts.len(), 2, "a box rim edge is one straight segment");
+    // #1777: the tool stands one radius (3 mm) off the edge on its air
+    // side - outside the 10 x 10 box - never on the edge itself.
+    let (a, b) = (pts[0], pts[1]);
+    let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let n = (-(b[1] - a[1]) / l, (b[0] - a[0]) / l);
+    let outside = |x: f64, y: f64| !(-1e-9..=10.0 + 1e-9).contains(&x) || !(-1e-9..=10.0 + 1e-9).contains(&y);
+    let off = |e: [f64; 3]| {
+        let (p, q) = ((e[0] + 3.0 * n.0, e[1] + 3.0 * n.1), (e[0] - 3.0 * n.0, e[1] - 3.0 * n.1));
+        if outside(p.0, p.1) { p } else { q }
+    };
+    let ends = [off(a), off(b)];
+    let near = |x: f64, y: f64, e: (f64, f64)| (x - e.0).hypot(y - e.1) < 1e-6;
+    // contour_params: 5.0 -> 0.0 at 2.5 - two levels, one plunge each,
+    // Lead::None so the plunge lands exactly on the offset start. #2004:
+    // Top Z 5 is the part top (no stock), so the air level at Z 5 is gone.
+    let levels = [2.5, 0.0];
     let plunges: Vec<_> = path
         .moves
         .iter()
         .filter(|m| m.kind == MoveKind::Plunge)
         .collect();
     assert_eq!(plunges.len(), levels.len());
+    let start = plunges[0].to;
+    let first = ends.iter().position(|e| near(start.x, start.y, *e)).expect("the plunge enters at an offset end of the run");
     for (lvl, m) in plunges.iter().enumerate() {
-        assert_eq!(
-            (m.to.x, m.to.y),
-            (pts[0][0], pts[0][1]),
-            "plunge {lvl} enters at the run start, not short of it"
-        );
+        assert!(near(m.to.x, m.to.y, ends[first]), "plunge {lvl} enters at the same offset end: {:?}", m.to);
         assert_eq!(m.to.z, levels[lvl]);
     }
     for (lvl, &z) in levels.iter().enumerate() {
@@ -2238,18 +2265,20 @@ fn an_open_run_contours_on_its_centerline() {
             .iter()
             .filter(|m| m.kind == MoveKind::Feed && m.to.z == z)
             .collect();
-        assert_eq!(
-            feeds.len(),
-            pts.len() - 1,
-            "one feed per segment, level {lvl}"
+        assert_eq!(feeds.len(), 1, "one feed along the straight offset, level {lvl}");
+        let last = feeds[0];
+        assert!(
+            near(last.to.x, last.to.y, ends[1 - first]),
+            "the ride stops at the run's other offset end, never beyond: {:?}",
+            last.to
         );
-        let last = feeds.last().expect("a level feeds somewhere");
-        assert_eq!(
-            (last.to.x, last.to.y),
-            (pts[pts.len() - 1][0], pts[pts.len() - 1][1]),
-            "the run stops at its end, never beyond"
-        );
+        assert!(outside(last.to.x, last.to.y), "the tool centre stays off the part");
     }
+    assert!(
+        path.notes.iter().any(|s| s.contains("air side")),
+        "the path says how it read the run: {:?}",
+        path.notes
+    );
 }
 
 // ============ M1.5.1 step 4: picked runs stitch into rings ============
@@ -2632,20 +2661,25 @@ fn a_mixed_pick_list_cuts_boundary_then_run_and_says_what_overlap_means() {
             .iter()
             .filter(|m| m.kind == MoveKind::Plunge)
             .count(),
-        6,
-        "three levels of boundary, three of run"
+        // #2004: Top Z 5 is the part top (no stock): no air level there.
+        4,
+        "two levels of boundary, two of run"
     );
-    // The run's edge lies on the face's own wall, so a full-width cutter
-    // centered there half-cuts air and half-cuts the finished boundary -
-    // the verifier sees exactly that and says so, instead of pretending
-    // the pick list was coherent. (Pick the run WITHOUT the face, or use
-    // a chamfer tool, for a clean edge-of-part pass.)
+    // The run's edge lies on the face's own wall. Before #1777 the cutter
+    // rode the edge on its centre and half-cut the finished boundary; now
+    // it stands one radius off the edge on its air side, so the run
+    // repeats the wall's pass and cuts nothing it must keep.
     assert!(
-        out.warnings
+        !out.warnings
             .iter()
             .any(|w| matches!(w, Warning::Gouge { .. })),
-        "a centerline inside a picked wall is flagged, never silent: {:?}",
+        "a run on a picked wall rides beside the wall, never into it: {:?}",
         out.warnings
+    );
+    assert!(
+        out.path.notes.iter().any(|s| s.contains("air side")),
+        "the run says how it was cut: {:?}",
+        out.path.notes
     );
 }
 
@@ -3530,12 +3564,17 @@ fn contour_outside_forces_outside_on_bore() {
     // The explicit Outside stands as asked - and on a bore it puts the
     // Ø6 cutter on the ring at r 15, IN the plate around the Ø24 bore:
     // the old path cut that groove silently. The part-solid depth law
-    // refuses it by name instead (the silent-gouge fix).
+    // refuses it by name instead (the silent-gouge fix). #2004: with no
+    // air level at Top Z the ring walks no level, and the picked-ring
+    // law (#1927) now speaks first: the same refusal, with the side
+    // named as the cause and Inside advised - the right advice on a bore.
     let err = GenerateOperation::new(&world, "BoreO")
         .err()
         .expect("an Outside ring around a bore stands in the plate - refused");
-    assert!(err.to_string().contains("cuts into the part"), "{err}");
-    assert!(err.to_string().contains("not walked at any level"), "{err}");
+    let err = err.to_string();
+    assert!(err.contains("meets its wall at no level below the part top"), "{err}");
+    assert!(err.contains("the cutter Outside this ring stands in the part material"), "{err}");
+    assert!(err.contains("set Side to Inside"), "{err}");
 }
 
 #[test]
@@ -3784,6 +3823,7 @@ fn drilled_block() -> camcraft_app::geometry::Mesh {
 
 fn drill_params(holes: Vec<Hole>, top_z: f64, clearance_z: f64) -> OpParams {
     OpParams::Drill {
+        break_through: None,
         clearance_z: Height::fixed(clearance_z),
         retract_z: None,
         top_z: Height::fixed(top_z),
@@ -6336,13 +6376,18 @@ fn multiaxis_rough_pocket_twin() -> OpParams {
 /// first (or read Stale against its sibling's path). This law is about
 /// the stock, not a sequence: each kind must see the whole stock.
 fn ladder_job(tag: &str, stamped: bool) -> (World, History, camcraft_app::cl::Toolpath) {
+    ladder_job_on(tag, stamped, 40.0)
+}
+
+/// [`ladder_job`] on a square stock `side` mm across (#1774).
+fn ladder_job_on(tag: &str, stamped: bool, side: f64) -> (World, History, camcraft_app::cl::Toolpath) {
     let world = new_world();
     let mut history = History::default();
     let cmd = SetStock::new(
         &world,
         StockShape::Box {
-            dx: 40.0,
-            dy: 40.0,
+            dx: side,
+            dy: side,
             dz: 20.0,
         },
         Location {
@@ -6378,6 +6423,22 @@ fn ladder_job(tag: &str, stamped: bool) -> (World, History, camcraft_app::cl::To
     );
     let path = cache(&world, tag).expect("cached ladder").path;
     (world, history, path)
+}
+
+/// #1774: a stock reaching 15 mm past the slab is cleared by both kinds
+/// out to its outline - Multi-Axis Rough reads the 3D Pocket's footprint,
+/// so the far stock grows both ladders alike.
+#[test]
+fn multiaxis_rough_clears_the_far_stock_the_pocket_clears() {
+    let (_pw, _ph, near) = ladder_job_on("P3N", false, 40.0);
+    let (_fw, _fh, plain) = ladder_job_on("P3F", false, 70.0);
+    let (_rw, _rh, rough) = ladder_job_on("MARF", true, 70.0);
+    assert!(plain.moves.len() > near.moves.len(), "the far stock adds cuts: {} vs {}", plain.moves.len(), near.moves.len());
+    assert_eq!(plain.moves.len(), rough.moves.len(), "one ladder, two readings, on the far stock too");
+    let reach = |t: &camcraft_app::cl::Toolpath| {
+        t.moves.iter().filter(|m| m.kind == MoveKind::Feed).map(|m| m.to.x.abs().max(m.to.y.abs())).fold(0.0, f64::max)
+    };
+    assert!(reach(&rough) > 31.0, "Multi-Axis Rough reaches the far stock: {}", reach(&rough));
 }
 
 #[test]
@@ -6598,8 +6659,10 @@ fn stub_tool() -> Tool {
         flutes: None,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }

@@ -20,7 +20,7 @@
 //! stays a direct field flip (view state, mirroring imgui ribbon.rs) and the
 //! browser pushes its `Select` alongside `actions::target` (the tree law).
 
-use egui::{Color32, Key, Label, Rect, RichText, Sense, Ui, Vec2};
+use egui::{Key, Label, Rect, RichText, Sense, Ui, Vec2};
 
 use camcraft_app::model;
 use camcraft_app::operation;
@@ -720,6 +720,7 @@ pub(super) fn icon_of(c: Cmd, state: &State) -> Option<Icon> {
             camcraft_app::machine::Kind::SinkerEdm => Icon::Pocket,
             // #669: a plasma table cuts 2D profiles - the contour glyph.
             camcraft_app::machine::Kind::Plasma => Icon::Contour,
+            camcraft_app::machine::Kind::Waterjet => Icon::ToolWaterjet,
         }),
         Cmd::Undo => Some(Icon::Undo),
         Cmd::Redo => Some(Icon::Redo),
@@ -974,9 +975,8 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
         .unwrap_or(0.0);
     let cell_w = ((strip.width() - overhead - badge_w) / n_cells.max(1) as f32)
         .clamp(FLOOR_W, pal.cell_w);
-    // PAD_V (ribbon.rs): cells start 4 below the tab strip, inside the
-    // strip the caller passes (the whole panel: the tab band sits on top).
-    let cell_top = strip.top() + super::theme::RIBBON_TAB_H + 4.0;
+    // The cells start below the tab row and its gap, both theme tokens.
+    let cell_top = strip.top() + pal.ribbon_tab_h + pal.ribbon_cell_top_gap;
     let mut cells = Vec::new();
     let mut captions = Vec::new();
     let mut dividers = Vec::new();
@@ -1073,16 +1073,16 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
     );
     let current = camcraft_app::machine::kind_of(&state.world);
     let font = egui::FontId::proportional(pal.font_label);
-    let mut x = strip.left() + 8.0;
+    let mut x = strip.left() + pal.item_spacing_x;
     for (kind, caption, machine) in machine_modes::MACHINE_MODES {
         let active = kind == current;
         let ink = if active { pal.text } else { pal.text_dim };
         let galley = ui
             .painter()
             .layout_no_wrap(caption.to_uppercase(), font.clone(), ink);
-        let w = galley.size().x + 24.0;
+        let w = galley.size().x + pal.ribbon_tab_pad_x * 2.0;
         let r = Rect::from_min_max(
-            egui::Pos2::new(x, band.top() + 4.0),
+            egui::Pos2::new(x, band.top()),
             egui::Pos2::new(x + w, band.bottom()),
         );
         let resp = ui.interact(r, ui.id().with(("ribbon-tab", caption)), Sense::click());
@@ -1093,12 +1093,13 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
                 0.0,
                 pal.strip_fill(),
             );
+            let pad = (pal.ribbon_tab_pad_x * 0.5).min(w * 0.25);
             painter.line_segment(
                 [
-                    egui::Pos2::new(r.left() + 6.0, r.bottom() - 1.0),
-                    egui::Pos2::new(r.right() - 6.0, r.bottom() - 1.0),
+                    egui::Pos2::new(r.left() + pad, r.bottom() - 1.0),
+                    egui::Pos2::new(r.right() - pad, r.bottom() - 1.0),
                 ],
-                egui::Stroke::new(2.0, pal.accent),
+                egui::Stroke::new(pal.ribbon_tab_stroke, pal.accent),
             );
         } else if resp.clicked() || resp.is_pointer_button_down_on() {
             painter.rect_filled(r, pal.radius_widget, pal.accent);
@@ -1114,37 +1115,17 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
             ink,
         );
         let clicked = resp.clicked();
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, caption));
+        ui.ctx().accesskit_node_builder(resp.id, |b| {
+            b.set_role(egui::accesskit::Role::Tab);
+            b.set_selected(active);
+        });
         resp.on_hover_text(format!("{caption} workspace - mounts {machine} (undoable)"));
         if clicked {
             machine_modes::set_machine_mode(state, kind);
         }
-        x += w + 2.0;
+        x += w + pal.ribbon_tab_gap;
     }
-}
-
-/// A per-family hue for the Create cells and their section doors: 2D a
-/// steel blue, 3D a teal, drilling a leaf green, turning warm rust - our
-/// own palette picks, no asset or palette lifted from another product
-/// (the colours are derived from the toolpath families' own hues).
-/// Returns `None` for the command cells; `painted::cell` falls back to
-/// the theme's on-fill ink there.
-fn family_tint(c: Cmd) -> Option<Color32> {
-    use camcraft_app::operation::Section;
-    let sec = match c {
-        Cmd::Create(i) => camcraft_app::operation::KindInfo::ALL.get(i).map(|k| k.section)?,
-        Cmd::More(s) => s,
-        _ => return None,
-    };
-    Some(match sec {
-        Section::Mill2D => Color32::from_rgb(0x3D, 0x6C, 0xB8),
-        Section::Mill3D => Color32::from_rgb(0x0F, 0x8B, 0x8D),
-        Section::Drilling => Color32::from_rgb(0x2E, 0x7D, 0x32),
-        Section::MultiAxis => Color32::from_rgb(0x7A, 0x3F, 0xD0),
-        Section::Turning => Color32::from_rgb(0xB3, 0x55, 0x1E),
-        Section::Plasma => Color32::from_rgb(0xB5, 0x3A, 0x3A),
-        Section::WireEdm => Color32::from_rgb(0x4A, 0x5B, 0x66),
-        Section::Sinker => Color32::from_rgb(0x6B, 0x4B, 0x2A),
-    })
 }
 
 /// The ribbon strip: painted cells over a fixed-height top panel. Group
@@ -1166,7 +1147,7 @@ pub fn ribbon(
     // undoable `LoadBuiltinMachine` the Machine door queues.
     let band = Rect::from_min_max(
         rect.min,
-        egui::Pos2::new(rect.right(), rect.top() + super::theme::RIBBON_TAB_H),
+        egui::Pos2::new(rect.right(), rect.top() + pal.ribbon_tab_h),
     );
     ribbon_tabs(ui, state, pal, rect, band);
     let body = Rect::from_min_max(egui::Pos2::new(rect.left(), band.bottom()), rect.max);
@@ -1197,7 +1178,6 @@ pub fn ribbon(
             enabled(c, state),
             toggled(c, state),
             icon_of(c, state).and_then(|i| icons.and_then(|s| s.texture(i))),
-            family_tint(c),
         );
         // The pin gesture lives at the cell, not in a command: the
         // right-click that answers it names itself in every live tip
@@ -1212,7 +1192,10 @@ pub fn ribbon(
         // proves it.
         let gated = resp.clicked() && !fired && matches!(c, Cmd::Create(_));
         let pin = resp.secondary_clicked();
-        resp.on_hover_text(tip_of(c, state));
+        let tip = tip_of(c, state);
+        ui.ctx()
+            .accesskit_node_builder(resp.id, |b| b.set_description(tip.as_str()));
+        resp.on_hover_text(tip);
         if fired {
             run_cmd(c, state);
         }
@@ -1227,8 +1210,9 @@ pub fn ribbon(
     // group's span. A single-door group (Milling 2D, Drilling ...) is one
     // narrow cell that already names its section, so its caption is
     // skipped rather than run under the neighbour's.
+    let caption_top = body.top() + pal.ribbon_cell_top_gap + pal.cell_h + pal.ribbon_caption_gap;
     for (mid, width, title) in captions {
-        painted::caption(ui, mid, width, title, body, pal, body.top() + 4.0 + pal.cell_h);
+        painted::caption(ui, mid, width, title, body, pal, caption_top);
     }
     for dx in dividers {
         painted::divider(ui.painter(), dx, body, pal);
@@ -1287,6 +1271,7 @@ pub fn ribbon(
                                 Cmd::Create(i) => TYPES.get(i).copied().unwrap_or("op"),
                                 other => label_of(other),
                             };
+                            painted::menu_item(&resp, label, en, None);
                             // The kind's own glyph at the row's left edge,
                             // in the row's ink - the door lists operations
                             // the way the tree shows them. Headless frames
@@ -1439,6 +1424,7 @@ pub fn ribbon(
                             } else {
                                 machine_modes::mode_label(*kind)
                             };
+                            painted::menu_item(&resp, &label, !current, Some(current));
                             p.text(
                                 r.left_center() + Vec2::new(8.0, 0.0),
                                 egui::Align2::LEFT_CENTER,
@@ -1613,7 +1599,8 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // icon set is up, its name when it is not (headless frames
             // and a failed decode degrade to text, never to nothing).
             if super::debug_info::button(ui, icons).clicked() {
-                state.debug_info_open = !state.debug_info_open;
+                // #2262: a dock tab like the other panels; the shell lands it.
+                state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
             }
             // #1696: the Report door, next to it - opens the window that
             // fills GitHub's new-issue form in (the forms' promised
@@ -1631,6 +1618,11 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                     state.pending.push_back(CommandKind::RegenerateAll);
                 }
             }
+            // #2262: placed before the status line, which fills what is
+            // left; behind it the label ran past the line onto the door.
+            if ops_n > 0 {
+                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
+            }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())
                     .on_hover_text(text.as_str())
@@ -1640,9 +1632,6 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                             ui.close();
                         }
                     });
-                if ops_n > 0 {
-                    ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
-                }
             });
         });
     });

@@ -19,11 +19,19 @@ pub struct DeleteEntity {
     coarse_mm: Option<f64>,
     /// #1054: the STEP facet budget it was imported under comes back too.
     facet_budget: Option<u64>,
+    /// #1610: an incomplete model comes back with its hole named.
+    hole: Option<String>,
+    /// #744: raw STEP text preserved across delete/undo.
+    step_source: Option<String>,
     /// Non-`None` restores the `StockDef` component; `wcs` restores the
     /// `Wcs` tag. Together with the CAM components below they keep every
     /// kind of named entity undoable with its kind intact.
     stock: Option<StockShape>,
+    /// #2015: a stock's workpiece material, restored with it.
+    stock_material: Option<crate::tools::WorkMaterial>,
     wcs: bool,
+    /// #1720: a deleted WCS's flipped axes come back with its undo.
+    wcs_flip: [bool; 3],
     tool: Option<Tool>,
     /// #221: a deleted tool's number, restored with it on undo.
     tool_number: Option<u32>,
@@ -66,8 +74,12 @@ impl DeleteEntity {
             facets: model::facets_of(world, &entity),
             coarse_mm: crate::model_fidelity::chord_of(world, &entity),
             facet_budget: crate::model_fidelity::budget_of(world, &entity),
+            hole: crate::mesh_open::hole_of(world, &entity),
+            step_source: crate::step_source::of(world, &entity),
             stock: model::stock_def_of(world, &entity),
+            stock_material: crate::stock_material::of_entity(world, &entity),
             wcs: model::is_wcs(world, &entity),
+            wcs_flip: crate::setup_wcs_flip::of_entity(world, &entity),
             tool: model::tool_of(world, &entity),
             tool_number: model::tool_number_of(world, &entity),
             tool_body: crate::tool_body::body_of(world, &entity),
@@ -105,13 +117,17 @@ impl Command for DeleteEntity {
         }
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
+        crate::mesh_open::set(world, &entity, self.hole.as_deref());
+        crate::step_source::set(world, &entity, self.step_source.as_deref());
         if let Some(shape) = &self.stock {
             entity
                 .entity_view(world)
                 .set(StockDef { shape: shape.clone() });
+            crate::stock_material::land_entity(world, &entity, self.stock_material);
         }
         if self.wcs {
             entity.entity_view(world).add(Wcs);
+            crate::setup_wcs_flip::set(world, &entity, self.wcs_flip);
         }
         if let Some(tool) = &self.tool {
             entity

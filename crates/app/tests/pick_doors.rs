@@ -68,7 +68,8 @@ fn pick(id: u64) -> GeoSel {
 }
 
 fn pocket() -> OpParams {
-    OpParams::Pocket {
+    OpParams::Pocket { rest: None,
+        blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: None,
         stepover: 3.0,

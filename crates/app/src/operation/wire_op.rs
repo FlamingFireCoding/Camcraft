@@ -17,7 +17,7 @@ use crate::machine::{ConditionField, Kind};
 use crate::machining2d::GenError;
 use crate::verify::Warning;
 use crate::wire_edm::{
-    check_passes, clearance_door, wire_burnout, wire_contour_tapered, wire_passes, TabParams, WireParams, WirePass, WireTaper,
+    check_passes, clearance_door, wire_burnout, wire_contour_tapered, wire_passes, TabParams, WireCorner, WireParams, WirePass, WireTaper,
 };
 
 use super::kinds::Carried;
@@ -59,34 +59,73 @@ pub struct WireCondition {
     /// taper's door.
     pub machine: String,
     pub max_taper_deg: Option<f64>,
+    /// The machine's angle-word taper dialect (#1164), as stated;
+    /// `None` = it tapers by U/V moves.
+    pub taper_angle: Option<crate::machine::TaperAngle>,
 }
 
-/// The condition door (#531, #532): the op's condition on the machine
-/// its setup mounts, with the wire diameter and the gap both stated -
-/// or the refusal that names what is missing. Called at command
-/// creation, so a missing wire diameter, gap or condition never
-/// reaches a generator.
+/// Read the wire diameter in mm from the mounted [`ToolKind::Wire`] tool.
 ///
 /// # Errors
-/// No wire EDM mounted, no condition chosen, no such condition on the
-/// machine, or a condition that states no gap or no wire diameter.
-pub fn condition_of(world: &World, setup: Option<&str>, op: &WireContourOp) -> Result<WireCondition, String> {
+/// No wire tool mounted, the named entity is not a wire tool, or its wire
+/// definition violates [`camcraft_tools::wire::refusal`].
+pub fn wire_diameter_of(world: &World, tool_name: &str) -> Result<f64, String> {
+    if tool_name.trim().is_empty() {
+        return Err("a Wire Contour needs a wire tool mounted from the library".into());
+    }
+    let Some(entity) = crate::model::find_by_name(world, tool_name) else {
+        return Err(format!("a Wire Contour's tool '{tool_name}' is not in the library"));
+    };
+    let Some(tool) = crate::model::tool_of(world, &entity) else {
+        return Err(format!("'{tool_name}' is not a tool"));
+    };
+    if tool.kind != crate::tools::ToolKind::Wire {
+        return Err(format!("tool '{tool_name}' is a {}; a Wire Contour cuts with a wire", tool.kind));
+    }
+    if let Some(why) = camcraft_tools::wire::refusal(&tool) {
+        return Err(format!("tool '{tool_name}': {why}"));
+    }
+    Ok(tool.diameter)
+}
+
+/// The condition door (#531, #532, #2011): the op's mounted wire tool and
+/// its condition on the setup's wire EDM machine, with the spark gap stated
+/// and smaller than the wire's radius, matching `edm.wire_diameters` and any
+/// condition-stated `wire_diameter` within [`crate::machine::WIRE_MATCH_MM`].
+///
+/// # Errors
+/// Missing/invalid wire tool, no wire EDM mounted, wire diameter mismatch,
+/// missing condition/gap, or gap >= wire radius.
+pub fn condition_of(world: &World, setup: Option<&str>, tool_name: &str, op: &WireContourOp) -> Result<WireCondition, String> {
+    let wire_diameter = wire_diameter_of(world, tool_name)?;
     let (_, mounted) = crate::machine::of_setup(world, setup);
     let Some(machine) = mounted.filter(|m| crate::machine::kind(Some(m)) == Kind::WireEdm) else {
         return Err(
-            "a Wire Contour needs a wire EDM machine mounted on its setup - the machine's EDM conditions state the wire diameter and the spark gap".into(),
+            "a Wire Contour needs a wire EDM machine mounted on its setup - the machine's EDM conditions state the spark gap".into(),
         );
     };
-    let (id, wire_diameter, gap) = one_condition(&machine, &op.condition, "a Wire Contour")?;
+    if let Some(edm) = machine.edm.as_ref()
+        && !edm.wire_diameters.is_empty()
+        && !edm.wire_diameters.iter().any(|w| (*w - wire_diameter).abs() <= crate::machine::WIRE_MATCH_MM)
+    {
+        let list: Vec<String> = edm.wire_diameters.iter().map(|w| format!("{w}")).collect();
+        return Err(format!(
+            "tool '{tool_name}' wire diameter {wire_diameter} mm is not one of machine {}'s edm.wire_diameters ({} mm)",
+            machine.model,
+            list.join(", ")
+        ));
+    }
+    let (id, gap) = one_condition(&machine, &op.condition, tool_name, wire_diameter, "a Wire Contour")?;
     let mut skims = Vec::with_capacity(op.skims.len());
     for (i, s) in op.skims.iter().enumerate() {
         let who = format!("skim {} of the Wire Contour", i + 1);
-        let (condition, wire_diameter, gap) =
-            one_condition(&machine, &s.condition, &who).map_err(|e| if e.starts_with(&who) { e } else { format!("{who}: {e}") })?;
+        let (condition, gap) =
+            one_condition(&machine, &s.condition, tool_name, wire_diameter, &who).map_err(|e| if e.starts_with(&who) { e } else { format!("{who}: {e}") })?;
         skims.push(WirePass { condition, wire_diameter, gap, reverse: s.reverse });
     }
     let max_taper_deg = machine.edm.as_ref().and_then(|e| e.max_taper_deg);
-    let c = WireCondition { id, wire_diameter, gap, skims, machine: machine.model.clone(), max_taper_deg };
+    let taper_angle = machine.edm.as_ref().and_then(|e| e.taper_angle);
+    let c = WireCondition { id, wire_diameter, gap, skims, machine: machine.model.clone(), max_taper_deg, taper_angle };
     // The burnout's clearance against the condition's kerf (#540).
     if let Some(clear) = op.burnout {
         clearance_door(clear, c.wire_diameter * 0.5 + c.gap)?;
@@ -117,10 +156,16 @@ pub fn condition_of(world: &World, setup: Option<&str>, op: &WireContourOp) -> R
     Ok(c)
 }
 
-/// One condition `id` on `machine`, with its gap and wire diameter
-/// both stated - or the refusal naming what is missing; `who` is the
-/// pass that names it.
-fn one_condition(machine: &crate::machine::Machine, id: &str, who: &str) -> Result<(String, f64, f64), String> {
+/// One condition `id` on `machine`, with its gap stated and matching the
+/// mounted wire diameter (`c.wire_diameter` within `WIRE_MATCH_MM` when
+/// stated, and `gap < wire_diameter * 0.5`).
+fn one_condition(
+    machine: &crate::machine::Machine,
+    id: &str,
+    tool_name: &str,
+    wire_diameter: f64,
+    who: &str,
+) -> Result<(String, f64), String> {
     let stated = || match machine.edm.as_ref().map(|e| e.conditions.as_slice()) {
         None | Some([]) => "it states none - add edm.conditions to the machine file".to_owned(),
         Some(cs) => format!("it states {}", cs.iter().map(|c| c.id.as_str()).collect::<Vec<_>>().join(", ")),
@@ -133,19 +178,32 @@ fn one_condition(machine: &crate::machine::Machine, id: &str, who: &str) -> Resu
     };
     let known = edm.conditions.iter().any(|c| c.id == id);
     let c = edm
-        .condition(&machine.model, id, &[ConditionField::Gap, ConditionField::WireDiameter])
+        .condition(&machine.model, id, &[ConditionField::Gap])
         .map_err(|e| if known { e } else { format!("{e} ({})", stated()) })?;
-    // The door above promised both; a `None` here is its law broken,
-    // named rather than read as zero.
-    let (Some(gap), Some(wire_diameter)) = (c.gap, c.wire_diameter) else {
-        return Err(format!("machine {}: EDM condition {:?} states no gap or no wire diameter", machine.model, c.id));
+    let Some(gap) = c.gap else {
+        return Err(format!("machine {}: EDM condition {:?} states no gap", machine.model, c.id));
     };
-    Ok((c.id.clone(), wire_diameter, gap))
+    if let Some(d) = c.wire_diameter
+        && (d - wire_diameter).abs() > crate::machine::WIRE_MATCH_MM
+    {
+        return Err(format!(
+            "machine {}: EDM condition {:?} expects wire diameter {d} mm, but tool '{tool_name}' is {wire_diameter} mm",
+            machine.model, c.id
+        ));
+    }
+    if gap >= wire_diameter * 0.5 {
+        return Err(format!(
+            "machine {}: EDM condition {:?} spark gap {gap} mm must be smaller than tool '{tool_name}' wire radius ({} mm)",
+            machine.model,
+            c.id,
+            wire_diameter * 0.5
+        ));
+    }
+    Ok((c.id.clone(), gap))
 }
 
-/// The condition a wire EDM kind's generation cuts with, read where
-/// `collect_job` reads every other kind's tool: `None` for a kind that
-/// mounts a library tool.
+/// The condition a wire EDM kind's generation cuts with, validated against
+/// the mounted library tool (`op.tool`).
 ///
 /// # Errors
 /// [`condition_of`]'s refusals, as a generation refusal.
@@ -153,8 +211,8 @@ pub(super) fn job_wire(world: &World, op: &crate::schema::Operation) -> Result<O
     match &op.params {
         OpParams::WireContour(w) => {
             let setup = op.setup.as_deref();
-            let main = condition_of(world, setup, w).map_err(GenError::Invalid)?;
-            let cutoff = cutoff_of(world, setup, w).map_err(GenError::Invalid)?;
+            let main = condition_of(world, setup, &op.tool, w).map_err(GenError::Invalid)?;
+            let cutoff = cutoff_of(world, setup, &op.tool, w).map_err(GenError::Invalid)?;
             Ok(Some((main, cutoff)))
         }
         _ => Ok(None),
@@ -163,36 +221,30 @@ pub(super) fn job_wire(world: &World, op: &crate::schema::Operation) -> Result<O
 
 /// The tab cut-off's condition (#539): `None` when tabs are off or no
 /// cut-off condition is named (the generator refuses the latter by
-/// name); a named one the machine does not state is refused here.
+/// name); a named one the machine does not state or incompatible with
+/// the wire tool is refused here.
 ///
 /// # Errors
 /// The condition lookup's refusal, by name.
-pub fn cutoff_of(world: &World, setup: Option<&str>, op: &WireContourOp) -> Result<Option<WireCondition>, String> {
+pub fn cutoff_of(world: &World, setup: Option<&str>, tool_name: &str, op: &WireContourOp) -> Result<Option<WireCondition>, String> {
     let Some(t) = op.tabs.as_ref().filter(|t| !t.cutoff_condition.trim().is_empty()) else {
         return Ok(None);
     };
     // The probe is the cut-off's condition alone: the skims' laws read
     // the rough pass, not the cut-off.
     let probe = WireContourOp { condition: t.cutoff_condition.clone(), skims: Vec::new(), ..op.clone() };
-    condition_of(world, setup, &probe).map(Some).map_err(|e| format!("the tab cut-off's condition: {e}"))
+    condition_of(world, setup, tool_name, &probe)
+        .map(Some)
+        .map_err(|e| format!("the tab cut-off's condition: {e}"))
 }
 
-/// What stands in the job's tool slot for a wire cut: a spindle-less
-/// cylinder of the wire's diameter (the torch's shape - the one kind
-/// no cutting law, spindle word or stock engine reads as a cutter).
-/// No library entity backs it and the wire arm never reads it; it only
-/// keeps the job's shared head (the carried-stock note's radius) whole.
-pub(super) fn job_tool(cond: &WireCondition) -> crate::tools::Tool {
-    crate::tools::torch_tool(cond.wire_diameter)
-}
-
-/// The condition's share of the operation's stamp (#532): its id, wire
-/// diameter and gap as the machine states them now - or one byte for
-/// "not stated", which no generated path's stamp carries.
-pub(super) fn stamp_condition(world: &World, setup: Option<&str>, op: &WireContourOp, h: &mut std::hash::DefaultHasher) {
+/// The condition's share of the operation's stamp (#532, #2011): its id,
+/// wire diameter and gap as the machine and mounted wire tool state them
+/// now - or one byte for "not stated", which no generated path's stamp carries.
+pub(super) fn stamp_condition(world: &World, setup: Option<&str>, tool_name: &str, op: &WireContourOp, h: &mut std::hash::DefaultHasher) {
     use std::hash::Hasher;
     h.write(b"wire-condition");
-    match condition_of(world, setup, op) {
+    match condition_of(world, setup, tool_name, op) {
         Ok(c) => {
             h.write_u8(1);
             h.write(c.id.as_bytes());
@@ -214,6 +266,12 @@ pub(super) fn stamp_condition(world: &World, setup: Option<&str>, op: &WireConto
             // cut's stamp stays what it was.
             if op.taper_deg != 0.0 || op.four_axis.is_some() {
                 h.write(&c.max_taper_deg.map_or(u64::MAX, f64::to_bits).to_le_bytes());
+                // #1164: an angle-word machine's rules shape the path;
+                // a U/V machine's stamp stays what it was.
+                if let Some(a) = c.taper_angle {
+                    h.write(b"taper-angle");
+                    h.write(format!("{:?}{:?}", a.positive, a.corner).as_bytes());
+                }
             }
         }
         Err(_) => h.write_u8(0),
@@ -221,7 +279,7 @@ pub(super) fn stamp_condition(world: &World, setup: Option<&str>, op: &WireConto
     // #539: the cut-off's condition, only when tabs are on.
     if op.tabs.is_some() {
         h.write(b"wire-cutoff");
-        match cutoff_of(world, setup, op) {
+        match cutoff_of(world, setup, tool_name, op) {
             Ok(Some(c)) => {
                 h.write_u8(1);
                 h.write(&c.wire_diameter.to_bits().to_le_bytes());
@@ -345,10 +403,12 @@ pub(super) fn generate_wire(
     if let Some(why) = skims_refusal(op) {
         return Err(GenError::Invalid(why));
     }
+    let corner = corner_rule(op, &cond)?;
     // #537: two profiles paired into rulings - its own generator, read
     // from its own picks. A burnout (#540), tabs (#539) and an open run
     // (#1109) are not cut along rulings: each refused by name, never
-    // cut as something else.
+    // cut as something else; on an angle-word machine `corner_rule`
+    // has refused it already (#1164).
     if let Some(four) = &op.four_axis {
         if op.burnout.is_some() {
             return Err(GenError::Invalid(
@@ -382,6 +442,7 @@ pub(super) fn generate_wire(
         top_z: hs.top.unwrap_or(p.plane_z),
         max_deg: cond.max_taper_deg,
         machine: cond.machine.clone(),
+        corner,
     };
     let path = match op.burnout {
         // #536 x #540: the burnout's rings are cut vertical; a taper
@@ -403,4 +464,28 @@ pub(super) fn generate_wire(
         }
     };
     Ok((path, Vec::new()))
+}
+
+/// The corner rule a leaning cut is generated under (#1164): on a U/V
+/// machine CamCraft's own mitre (#536); on an angle-word machine the
+/// control's stated rule - unstated is refused by name, and so is a
+/// 4-axis cut, which one angle cannot state.
+///
+/// # Errors
+/// A 4-axis cut on an angle-word machine, or its rules incomplete.
+pub(super) fn corner_rule(op: &WireContourOp, cond: &WireCondition) -> Result<WireCorner, GenError> {
+    let Some(angle) = cond.taper_angle.filter(|_| op.taper_deg != 0.0 || op.four_axis.is_some()) else {
+        return Ok(WireCorner::Mitre);
+    };
+    if op.four_axis.is_some() {
+        return Err(GenError::Invalid(format!(
+            "wire contour: a 4-axis cut, and machine {} tapers by angle word (edm.taper_angle) - one angle cannot state different upper and lower profiles; a 4-axis cut needs a U/V machine",
+            cond.machine
+        )));
+    }
+    let (_, corner) = angle.complete(&cond.machine).map_err(|e| GenError::Invalid(format!("wire contour: {e}")))?;
+    Ok(match corner {
+        crate::machine::TaperCorner::Mitre => WireCorner::Mitre,
+        crate::machine::TaperCorner::Cone => WireCorner::Cone,
+    })
 }

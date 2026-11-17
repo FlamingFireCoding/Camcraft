@@ -26,8 +26,9 @@
 //! (`serves = ["plasma"];`, #1266): it then posts to exactly those
 //! kinds. One that states none is accepted only where its dialect
 //! proves it (turning serves a lathe and a mill-turn, a non-turning
-//! one a mill and a mill-turn); a plasma table and an EDM are refused
-//! for it, and the refusal says to declare `serves`.
+//! one a mill and a mill-turn). A script declaring `wireEdm = true`
+//! serves only a wire EDM (#1335). Other undeclared scripts are refused
+//! on a plasma table or EDM, with a request to declare `serves`.
 //!
 //! And per section (maintainer, 2026-11-12, on a mill-turn): a section
 //! that turns the work - a turning op or an on-centre drill, as
@@ -45,7 +46,11 @@ use crate::post::dialect::{declared_serves, work_voice, WorkVoice};
 
 /// The registry name of a script text, when it is a shipped post's.
 fn registry_name(cps: &str) -> Option<&'static str> {
-    super::BUILTINS.iter().find(|(_, text)| *text == cps).map(|(name, _)| *name)
+    // #2282: the shipped text is the cached disk read, not a compiled-in copy.
+    super::BUILTINS
+        .iter()
+        .find(|(name, _)| super::builtin_post_text(name).is_ok_and(|text| text == cps))
+        .map(|(name, _)| *name)
 }
 
 /// Whether the script `cps` serves a machine of `kind`.
@@ -56,6 +61,9 @@ fn serves(cps: &str, kind: Kind) -> Result<bool, String> {
     if let Some(kinds) = declared_serves(cps).map_err(|e| format!("post engine: {e}"))? {
         return Ok(kinds.contains(&kind));
     }
+    if crate::post::js::Script::load(cps).map_err(|e| format!("post engine: {e}"))?.voices_wire_edm() {
+        return Ok(kind == Kind::WireEdm);
+    }
     let turning = work_voice(cps).map_err(|e| format!("post engine: {e}"))? == WorkVoice::WorkSpindle;
     Ok(match kind {
         Kind::Lathe => turning,
@@ -63,7 +71,7 @@ fn serves(cps: &str, kind: Kind) -> Result<bool, String> {
         Kind::Mill => !turning,
         // The mask cannot tell a plasma script from a milling one, so an
         // undeclared script is not proven to serve a torch or a wire.
-        Kind::Plasma | Kind::WireEdm | Kind::SinkerEdm => false,
+        Kind::Plasma | Kind::WireEdm | Kind::SinkerEdm | Kind::Waterjet => false,
     })
 }
 
@@ -133,3 +141,7 @@ pub(super) fn refusal(
         }
     )))
 }
+
+#[cfg(test)]
+#[path = "posting_serves/tests.rs"]
+mod tests;

@@ -9,6 +9,9 @@ use crate::operation::Tilt;
 /// the normalized axis vectors the CL stream stores).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct TiltDto {
+    /// Missing in old projects: keep their original in-plane coordinates.
+    #[serde(default)]
+    pub basis_version: u8,
     pub a_deg: f64,
     pub b_deg: f64,
     pub origin: [f64; 3],
@@ -17,6 +20,7 @@ pub struct TiltDto {
 impl From<Tilt> for TiltDto {
     fn from(t: Tilt) -> Self {
         TiltDto {
+            basis_version: t.basis_version,
             a_deg: t.a_deg,
             b_deg: t.b_deg,
             origin: t.origin,
@@ -27,6 +31,7 @@ impl From<Tilt> for TiltDto {
 impl From<TiltDto> for Tilt {
     fn from(d: TiltDto) -> Self {
         Tilt {
+            basis_version: d.basis_version,
             a_deg: d.a_deg,
             b_deg: d.b_deg,
             origin: d.origin,
@@ -164,6 +169,14 @@ pub enum ParamsDto {
         /// is the sharp walk every earlier file held - no version step.
         #[serde(default, skip_serializing_if = "is_false")]
         blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
+        /// #1489 rest machining: absent is off on every earlier file -
+        /// no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest: Option<RestDto>,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
@@ -190,11 +203,10 @@ pub enum ParamsDto {
         entry: EntryDto,
         #[serde(default = "default_helix_radius")]
         helix_radius: f64,
-        /// The pre-M11.4 word: the contact angle in degrees. Still READ
-        /// (absent meant the law's 45 deg), converted to `optimal_load`
-        /// in memory on load - exact, `crate::load` - and never written
-        /// again: a saved file carries `optimal_load` instead (additive,
-        /// the format version does not move; M11.4 B).
+        /// Pre-M11.4 Spiral files stored the contact angle in `max_engagement`
+        /// with `optimal_load` absent (converted via `load_from_file`). For
+        /// M11.4+ files (`optimal_load` present), this holds #1588's
+        /// Trochoidal engagement limit (deg; absent means 90 deg).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_engagement: Option<f64>,
         /// M11.4 B: the adaptive optimal load, radial width as a fraction
@@ -206,6 +218,27 @@ pub enum ParamsDto {
         /// which reads as `spiral` - the path those files always cut.
         #[serde(default)]
         method: AdaptiveMethodDto,
+        /// #1588: return between trochoidal loops (`auto`, `microlift`,
+        /// `retract`); absent reads as `auto`.
+        #[serde(default, rename = "return")]
+        troch_return: AdaptiveTrochReturnDto,
+        /// #1588: microlift height (mm); read when `return` is `microlift`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lift: Option<f64>,
+        /// #1588: return feed (mm/min); absent uses cutting `feed`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        return_feed: Option<f64>,
+        /// #1588: loop width (mm); absent uses all medial room.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        loop_width: Option<f64>,
+        /// #1733 arc turns: absent (written only when ON) is the sharp
+        /// walk every earlier file held - no version step.
+        #[serde(default, skip_serializing_if = "is_false")]
+        blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -230,6 +263,14 @@ pub enum ParamsDto {
         entry: EntryDto,
         #[serde(default = "default_helix_radius")]
         helix_radius: f64,
+        /// #1733 arc turns: absent (written only when ON) is the sharp
+        /// walk every earlier file held - no version step.
+        #[serde(default, skip_serializing_if = "is_false")]
+        blend_turns: bool,
+        /// #1733 corner arc radius: absent (the tool radius) on every
+        /// earlier file - no version step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        blend_radius: Option<f64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -385,6 +426,10 @@ pub enum ParamsDto {
         /// byte-identical to a pre-v40 one - is "no cross holes".
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cross: Vec<CrossHoleDto>,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// Declared at v11 with the 3-D pocket. No footprint on the wire:
     /// a 3-D op's machine area is the model's silhouette at generation
@@ -1005,6 +1050,10 @@ pub enum ParamsDto {
         climb: bool,
         tolerance: f64,
         holes: Vec<HoleDto>,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// Helical thread milling (M2.4 C). The pitch rides no DTO -
     /// it lives on the tool, like every other tool number.
@@ -1038,6 +1087,10 @@ pub enum ParamsDto {
         /// hand. Flattened keys, each absent when at the #894 default.
         #[serde(flatten)]
         passes: ThreadPassesDto,
+        /// #1557 (v63): the through-hole break-through, mm. Absent - every
+        /// older file - is the kind's own default; written only when stated.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        break_through: Option<f64>,
     },
     /// The probe (#108): an additive variant in the v50 grammar.
     Probe(ProbeDto),
@@ -1536,6 +1589,18 @@ pub enum AdaptiveMethodDto {
     #[default]
     Spiral,
     Trochoidal,
+}
+
+/// The file mirror of 2D Adaptive Trochoidal's return choice (#1588);
+/// `default` is `auto` (0.3 mm microlift when clearance room permits,
+/// else retract).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdaptiveTrochReturnDto {
+    #[default]
+    Auto,
+    Microlift,
+    Retract,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

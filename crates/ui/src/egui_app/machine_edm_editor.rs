@@ -55,15 +55,27 @@ pub(super) fn draw(ui: &mut Ui, u: Unit, m: &mut Machine) {
 const GAP_SEED_MM: f64 = 0.01;
 /// What ticking a condition's undersize seeds, mm (within (0, 1] mm).
 const UNDERSIZE_SEED_MM: f64 = 0.1;
+/// What ticking a condition's wear rate seeds: a ratio the wear law
+/// (`wear_rate_ok`, [0, 1)) accepts. It is the user's to correct.
+const WEAR_SEED: f64 = 0.1;
 
 fn stated_num(ui: &mut Ui, u: Unit, label: &str, v: &mut Option<f64>, seed: f64) {
+    stated_with(ui, label, v, seed, |ui, x, name| fields::num_named(ui, u, x, name));
+}
+
+/// A stated number with no unit (a ratio): the same tick-in row.
+fn stated_plain(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64) {
+    stated_with(ui, label, v, seed, fields::num_plain_named);
+}
+
+fn stated_with(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl FnOnce(&mut Ui, &mut f64, &str)) {
     ui.horizontal(|ui| {
         let mut on = v.is_some();
         if ui.checkbox(&mut on, label).changed() {
             *v = on.then_some(seed);
         }
         match v {
-            Some(x) => fields::num_named(ui, u, x, &format!("{label} value")),
+            Some(x) => show(ui, x, &format!("{label} value")),
             None => {
                 ui.label("not stated");
             }
@@ -151,6 +163,16 @@ fn conditions(ui: &mut Ui, u: Unit, e: &mut Edm) {
             if ui.button(format!("Remove condition {n}")).clicked() {
                 remove = Some(i);
             }
+        });
+        // A second line keeps the row inside the window (#1381): the wear
+        // rate and the notes.
+        ui.horizontal(|ui| {
+            ui.add_space(24.0);
+            // The axial wear rate (#1381): a ratio, so no unit lens. A value
+            // outside [0, 1) is named below and refused at Apply.
+            stated_plain(ui, &format!("Condition {n} wear rate"), &mut c.wear, WEAR_SEED);
+            let l = ui.label(format!("Condition {n} notes"));
+            ui.add(TextEdit::singleline(&mut c.notes).desired_width(120.0).hint_text("free text")).labelled_by(l.id);
         });
     }
     if let Some(i) = remove {

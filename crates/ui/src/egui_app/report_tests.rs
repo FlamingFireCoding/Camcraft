@@ -19,7 +19,6 @@ use crate::state::State;
 fn frame(ui: &mut egui::Ui, st: &mut State) {
     let pal = theme::current();
     panes::status(ui, st, &pal, None);
-    debug_info::window(ui.ctx(), st);
     report::window(ui.ctx(), st);
 }
 
