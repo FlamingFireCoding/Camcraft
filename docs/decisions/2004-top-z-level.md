@@ -313,3 +313,23 @@ let generation and area planning disagree.
 **Cost to change later:** update the shared cap function and its indexed
 pins together. A changed cap can change posted depth levels and remains
 under the safety floor.
+
+## #2004 - Review of head `f5a112d37`: merge compatibility and domain ownership
+
+**Chosen:** merge `upstream/main`, keeping its pocket fillet and crossing
+behavior (`Legal` and `corner_arc_radius` imports) together with this PR's
+`cut_levels_under` import. Move the unchanged pure `stock_top_in_frame`
+calculation and its material-bound test to `camcraft-motion`. Keep the
+ECS stock lookup and indexed area command test in app.
+
+**Why:** the import conflict joins compatible changes; neither the level
+law nor main's crossing fix may be lost. The cap calculation depends only
+on geometry and a cutting frame, so the motion domain owns it while app
+continues to own document lookup and command orchestration.
+
+**Dropped:** choosing either side of the import conflict wholesale, or
+leaving the pure geometry calculation in app. The former loses a reviewed
+fix; the latter violates the required crate boundary.
+
+**Cost to change later:** keep the shared domain calculation and its
+material-bound pin together; retain the app command pin for its wiring.

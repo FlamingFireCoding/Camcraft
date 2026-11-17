@@ -143,8 +143,9 @@ mod open_band;
 mod run_out;
 use run_out::*;
 mod area;
+#[cfg(test)]
 mod stock_top_frame;
-use stock_top_frame::stock_top_in_frame;
+use camcraft_motion::stock_top_frame::stock_top_in_frame;
 use area::*;
 mod pocket_memo;
 pub use pocket_memo::pocket_slices;
