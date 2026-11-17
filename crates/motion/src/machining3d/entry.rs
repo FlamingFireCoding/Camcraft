@@ -10,7 +10,7 @@ use crate::cl::Toolpath;
 use crate::geo2d::Region;
 use crate::geometry::Triangle;
 use crate::machining2d::{
-    cut_levels, GenError,
+    cut_levels_under, GenError,
 };
 use crate::stock_sim::{Columns, StockReport};
 /// The per-level cutter plan and its walk, level after level - the 3-D
@@ -92,7 +92,7 @@ pub fn pocket3d_open_prev(
     mask: Option<&Columns<'_>>,
 ) -> Result<Toolpath, GenError> {
     guard_input(facets, footprint, p)?;
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     ladder(facets, footprint, p, &zs, None, mask, home(p), false, None, stock)
 }
 
@@ -104,7 +104,7 @@ fn run_plain(
     mask: Option<&Columns<'_>>,
 ) -> Result<Toolpath, GenError> {
     guard_input(facets, footprint, p)?;
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, None)
 }
 
@@ -138,7 +138,7 @@ pub fn pocket3d_air_split(
         Some(Seam { lo: lo.x, hi: hi.x, period, reach })
     };
     let (sm_air, sm_cut) = (seam_of(air_footprint), seam_of(footprint));
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let k = air_levels(&zs, air_above);
     if k == 0 || air_footprint.is_empty() {
         return ladder(facets, footprint, p, &zs, None, None, home(p), false, sm_cut.as_ref(), None);
@@ -251,7 +251,7 @@ fn run_rest(
 ) -> Result<(Toolpath, StockReport), GenError> {
     guard_input(facets, footprint, p)?;
     let r = p.tool_diameter * 0.5;
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let coarse = ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, None)?;
 
     // What the coarse ladder leaves standing, column by column: the
@@ -273,7 +273,7 @@ fn run_rest(
     let rest = dex.columns()?;
 
     // The rest ladder: same laws, half the step, rest-shaped targets.
-    let zs_r = cut_levels(p.top_z, p.bottom_z, p.stepdown * 0.5)?;
+    let zs_r = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown * 0.5)?;
     let start = coarse.moves.last().map_or_else(|| home(p), |m| m.to);
     let mut moves = coarse.moves;
     // The coarse leg's notes join the rest leg's below, in program

@@ -7,6 +7,7 @@
 use crate::geo2d::{Point2, Region};
 
 use crate::machining2d::GenError;
+mod conservative;
 
 mod walk;
 

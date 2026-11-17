@@ -62,6 +62,8 @@ mod medial;
 mod morph;
 mod near;
 mod raster;
+// Issue 2031: rest machining over proved remaining stock.
+mod rest;
 mod rings;
 mod rounds;
 mod route;
@@ -93,6 +95,7 @@ pub(crate) use morph::SAG as PLAN_SAG;
 
 use super::GenError;
 use raster::Raster;
+pub use rest::{REST_STOCK_FILM, RestStock, StockFloor, rest_adaptive};
 
 /// The worst contact angle a trial walk read, and where.
 type Worst = (f64, Point2);
