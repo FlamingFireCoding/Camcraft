@@ -720,7 +720,7 @@ function indexFor(p, what) {
     }
     var to = aSection + d, tw = ax.sign * to;
     if (ax.travel && (tw < ax.travel[0] - A_EPS || tw > ax.travel[1] + A_EPS)) {
-      return aRefuse("A" + fa(tw) + inOp() + " is beyond the A axis travel " + fa(ax.travel[0]) + ".." + fa(ax.travel[1]) + " degrees - A counts on through 360 (PathPilot does not roll A over), so the operation turns too far in one direction");
+      return aRefuse("A" + fa(tw) + inOp() + " is beyond the A axis travel " + fa(ax.travel[0]) + ".." + fa(ax.travel[1]) + " degrees - A counts on through 360 (PathPilot does not roll A over), so the operation turns too far in one direction; use a machine with verified A travel wide enough for the whole operation. For Rotary Offset, cutting levels cover two laps plus seam padding");
     }
     aNext = { a: to, word: tw };
     return true;
