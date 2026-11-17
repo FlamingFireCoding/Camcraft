@@ -107,14 +107,6 @@ impl Camera {
         let sy = f64::from(self.height) * 0.5 - (p.dot(self.up) - self.mid_y) * self.scale;
         (sx, sy, p.dot(self.toward))
     }
-
-    /// Pixels per world unit of the fitted view - the reading a caller
-    /// needs to space world-unit furniture (the report picture's ground
-    /// grid, #1696) to the picture's own framing.
-    #[must_use]
-    pub fn scale(&self) -> f64 {
-        self.scale
-    }
 }
 
 /// An RGB image with a depth buffer.
@@ -212,28 +204,6 @@ impl Canvas {
         }
     }
 
-    /// A one-pixel segment with the ground's law (#1696): depth-tested,
-    /// and it writes its own depth, so a nearer triangle hides it and it
-    /// hides what was under it - the viewport's floor grid occluded by
-    /// the part like a real table. The depth along the walk interpolates
-    /// between the ends (the same DDA as `overlay_line`).
-    pub fn ground_line(&mut self, a: Point3, b: Point3, c: [u8; 3]) {
-        if !(a.is_finite() && b.is_finite()) {
-            return;
-        }
-        let (p, q) = (self.cam.project(a), self.cam.project(b));
-        let (dx, dy) = (q.0 - p.0, q.1 - p.1);
-        let cap = 2.0 * f64::from(self.cam.width + self.cam.height);
-        let steps = dx.abs().max(dy.abs()).ceil().clamp(1.0, cap);
-        let n = steps as i64;
-        for i in 0..=n {
-            let t = i as f64 / steps;
-            let (x, y) = (p.0 + dx * t, p.1 + dy * t);
-            let z = p.2 + (q.2 - p.2) * t;
-            self.put(x.floor() as i64, y.floor() as i64, z, c, true);
-        }
-    }
-
     /// The image's RGB bytes, row-major from the top-left.
     #[must_use]
     pub fn rgb(&self) -> &[u8] {
@@ -257,58 +227,5 @@ impl Canvas {
         wr.write_image_data(&self.rgb).map_err(|e| format!("png data: {e}"))?;
         wr.finish().map_err(|e| format!("png finish: {e}"))?;
         Ok(out)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn px(rgb: &[u8], w: u32, x: u32, y: u32) -> [u8; 3] {
-        let k = usize::try_from((y * w + x) * 3).unwrap();
-        [rgb[k], rgb[k + 1], rgb[k + 2]]
-    }
-
-    #[test]
-    fn ground_lines_take_the_viewports_floor_law() {
-        // Top view, 10 mm of points on a 64 px canvas: the world (x, y)
-        // lands at screen (32 + s*x, 32 - s*y) with the fitted scale s.
-        let cam = Camera::fit(
-            ViewDir::Top,
-            [Point3::new(-5.0, -5.0, 0.0), Point3::new(5.0, 5.0, 0.0)].into_iter(),
-            64,
-            64,
-        )
-        .unwrap();
-        // The fitted scale, read from the camera (6 % margins, the
-        // module's own law): the screen test of the triangle below is
-        // its hypotenuse, the screen line x + y = 64.
-        let mut c = Canvas::new(cam, [0, 0, 0]);
-        // A ground row along y = 0, drawn first: it paints the empty floor.
-        c.ground_line(Point3::new(-5.0, 0.0, 0.0), Point3::new(5.0, 0.0, 0.0), [0xAA, 0x11, 0x11]);
-        // A nearer triangle (z = 2 toward the Top camera's +Z) over the
-        // canvas's lower-right half: its screen test is x + y >= 64.
-        c.triangle(
-            Point3::new(-5.0, -5.0, 2.0),
-            Point3::new(5.0, -5.0, 2.0),
-            Point3::new(5.0, 5.0, 2.0),
-            [0x00, 0xFF, 0x00],
-        );
-        // The triangle's ink is flat-shaded, never its raw base: read
-        // the cover by its green-dominant channel instead of an exact
-        // match. (Lines are not shaded, so those stay exact.)
-        let over = px(c.rgb(), 64, 43, 32);
-        assert!(over[1] > 120 && over[0] < 60 && over[2] < 60, "a nearer triangle hides the floor row, got {over:?}");
-        assert_eq!(px(c.rgb(), 64, 9, 32), [0xAA, 0x11, 0x11], "the floor still paints where nothing covers it");
-        // A later ground line is hidden by the triangle already there,
-        // top to bottom, and still paints over the empty floor above it.
-        // Its screen column follows the fitted scale, not a hard-coded
-        // pixel: the row at world x = 0.5 lands at screen x floor(32 +
-        // 0.5 * scale).
-        c.ground_line(Point3::new(0.5, -5.0, 0.0), Point3::new(0.5, 5.0, 0.0), [0x11, 0x11, 0xAA]);
-        let col = f64::floor(32.0 + 0.5 * cam.scale()) as u32;
-        let still = px(c.rgb(), 64, col, 32);
-        assert!(still[1] > still[2], "the floor never paints over a nearer part, got {still:?}");
-        assert_eq!(px(c.rgb(), 64, col, 10), [0x11, 0x11, 0xAA], "the floor paints its own empty ground");
     }
 }

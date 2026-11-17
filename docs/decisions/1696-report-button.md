@@ -43,26 +43,63 @@ changes one constant. If GitHub later lets a URL prefill an issue form,
 the blank template can go and `template=` changes - no Rust change
 beyond that constant.
 
-## #1696 follow-up - the screenshot's ground grid (GUI test finding)
+## #1696 follow-up - the screenshot's ground grid (GUI test finding,
+superseded by the full-window design below)
 
-**What was decided.** The maintainer's GUI test found the screenshot's
-background grid wrong: dark scratch lines over the part. The shot now
-builds its own floor for the shot's fitted camera: the viewport's grid
-law (`interact::nice_step` spacing, `GRID_MAJOR_EVERY` heavy lines, the
-cubed rim fade) at a 40 px wanted spacing, with light inks on a light
-ground, drawn through a new depth-tested `Canvas::ground_line` before
-the parts so the part occludes the floor. The live camera's overlay grid
-copy is dropped from the shot.
+**What was decided.** The maintainer's first GUI test found the CPU-raster
+shot's background grid wrong: dark scratch lines over the part. The fix
+gave the raster shot its own floor grid. That whole path was then
+superseded (next section): the shot is now the real window, so the grid
+problem cannot occur. The raster additions it needed (`Canvas::ground_line`,
+`Camera::scale`, the `interact` visibility widenings) were reverted;
+nothing else used them.
 
-**Why.** `world::collect`'s overlay grid is spaced and centred for the
-live camera; through the shot's fitted camera it landed at the wrong
-scale and position, and `raster()` drew every overlay line with no
-depth test, so it painted over the part. Pinning test:
-`raster::tests::ground_lines_take_the_viewports_floor_law`, plus the
-grid-ink assertions in `report_tests::the_screenshot_paints_the_document`.
+## #1696 follow-up - a full-window shot from the real renderer (GUI test
+finding)
 
-**Considered and dropped.**
-- Fading or deleting the grid: the floor helps the reader place the
-  part; the viewport shows one, so the shot should show its own.
-- Reusing the overlay lines with a depth test only: the spacing bug
-  stayed - the lines were still the live camera's.
+**What was decided.** The maintainer's second GUI test said the shot must
+be the whole application window, not just the 3D model area. The door now
+asks the shell for a window picture the way egui intends: the report path
+pushes `egui::ViewportCommand::Screenshot` with a private token. The frame
+loop (`shell_window/capture.rs`) sees the command in the root viewport's
+output and, in the same frame after the normal egui pass, draws the same
+tessellated shapes a second time into a private texture
+(`RENDER_ATTACHMENT | COPY_SRC`, the surface config's size and format)
+in its own render pass. It then copies the texture to a mapped buffer and
+answers egui with `egui::Event::Screenshot`, which the door reads: on a
+matching token it copies the picture to the clipboard with
+`Context::copy_image` and says so in the status line. SolidCraft
+(tangency-labs/solidcraft) was read as mechanism reference only -
+their public API use, no code, no look (their brand licence).
+
+**Why.** egui's own screenshot responder lives in eframe; our shell
+drives winit and `egui_wgpu::Renderer` itself, so nobody else answers the
+command. A second pass in the same frame is the only way to catch the
+window as the user just saw it: the report dialog the user pressed is
+still up, and its shapes are already tessellated. Reading back the
+surface texture itself is not possible: wgpu does not make the swap-chain
+texture a copy source. `egui_wgpu`'s own `capture` feature was dropped
+without trying: its readback rejects the `Bgra8UnormSrgb` surface format
+ours uses, and enabling the feature edits Cargo.toml for one call we must
+rewrite anyway. A CPU raster cannot show panels, the ribbon or the dialog -
+that was exactly the complaint.
+
+**Sub-decisions taken with it.**
+- Token law: `egui::UserData::eq` compares `Arc::ptr_eq`, and Rust
+  allocates nothing for a zero-sized payload, so every `UserData::new(())`
+  shares one pointer and all tokens compare equal. The shot token is a
+  `OnceLock` `UserData` over a non-zero string; the unit test
+  `the_shot_token_matches_only_itself` pins both halves of the law.
+- Delivery: egui 0.36.2 has no `Context::send_event`, so the map callback
+  posts over an `mpsc` channel and the frame loop drains it into
+  `raw_input.events` before `ctx.run_ui`. The loop keeps
+  `request_redraw` alive while a readback is in flight, so the answer
+  lands without user input.
+- Format: the swizzle table maps RGBA (0,1,2,3) and BGRA (2,1,0,3);
+  the raw read-back of an sRGB format is already sRGB-encoded, so no
+  gamma step runs. Any other surface format refuses with a logged status
+  line - a wrong-byte-order picture would mis-report colours silently.
+- Test law: the kittest harness (wgpu/snapshot features) answers
+  screenshot requests itself with the requester's own token. The
+  foreign-token test therefore makes no request at all: only the injected
+  foreign answer could trigger a copy there.

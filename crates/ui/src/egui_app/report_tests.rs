@@ -1,7 +1,12 @@
 //! Issue #1696: the status strip's Report door opens a window that fills
 //! GitHub's new-issue form in (title, body, label) and copies a picture
-//! of the document to the clipboard.
+//! of the whole application window to the clipboard.
 //! Provenance: our own tests over our own window.
+//!
+//! The picture itself is the shell's work (shell_window/capture.rs) and
+//! needs a real GPU: that half rides the gpu_render lane. The harness
+//! covers the door's own half: the request it sends, the reply answer,
+//! the token gate, and the clipboard command.
 
 use egui::accesskit::Role;
 use egui::Vec2;
@@ -24,6 +29,29 @@ fn harness() -> Harness<'static, State> {
         .build_ui_state(frame, State::new())
 }
 
+/// A picture to answer a request with: two pixels, no GPU.
+fn sample_shot() -> egui::ColorImage {
+    egui::ColorImage::new([2, 2], vec![egui::Color32::RED; 4])
+}
+
+/// The event a real shell sends when its capture is ready.
+fn shot_event(token: egui::UserData) -> egui::Event {
+    egui::Event::Screenshot {
+        viewport_id: egui::ViewportId::ROOT,
+        user_data: token,
+        image: std::sync::Arc::new(sample_shot()),
+    }
+}
+
+/// Did this frame ask the shell to copy a picture?
+fn copied_a_picture(h: &Harness<'static, State>) -> bool {
+    h.output()
+        .platform_output
+        .commands
+        .iter()
+        .any(|c| matches!(c, egui::OutputCommand::CopyImage(_)))
+}
+
 #[test]
 fn url_encode_keeps_safe_words_and_plains_the_rest() {
     assert_eq!(report::url_encode("Contour-1_2.3~ok"), "Contour-1_2.3~ok");
@@ -34,10 +62,9 @@ fn url_encode_keeps_safe_words_and_plains_the_rest() {
 }
 
 #[test]
-fn the_url_prefills_the_blank_template_with_title_body_and_label() {
+fn the_url_prefills_the_new_issue_with_title_body_and_label() {
     let url = report::issue_url(report::ReportKind::Bug, "Crash on post", "line one\nline two");
-    assert!(url.starts_with("https://github.com/NeoTech/Camcraft/issues/new?template=blank-issue.md"), "{url}");
-    assert!(url.contains("&title=Crash+on+post"), "{url}");
+    assert!(url.starts_with("https://github.com/NeoTech/Camcraft/issues/new?title="), "{url}");
     assert!(url.contains("&body=line+one%0Aline+two"), "{url}");
     assert!(url.ends_with("&labels=bug"), "{url}");
     let feat = report::issue_url(report::ReportKind::Feature, "", "");
@@ -52,7 +79,7 @@ fn the_body_carries_the_questions_and_the_debug_report() {
     assert!(body.contains("**Steps to reproduce**"), "{body}");
     // Same fields, one source: the Debug info window's own report.
     assert!(body.contains(&debug_info::report(&state)), "the body must embed the debug report");
-    assert!(body.contains("Copy screenshot"), "the body tells the reporter to paste the picture");
+    assert!(body.contains("clipboard"), "the body tells the reporter to paste the picture");
 }
 
 #[test]
@@ -72,7 +99,7 @@ fn the_door_opens_the_window_and_a_kind_button_files_the_url() {
     });
     assert!(opened, "the kind button opened the prefilled new-issue URL");
     h.run();
-    assert!(h.state().status.starts_with("Request a feature:"), "status: {}", h.state().status);
+    assert!(h.state().status.contains("clipboard"), "status: {}", h.state().status);
     // The door closes it again. The window's title row reads "Report an
     // issue" too, so only the button answers (the Debug info window's law).
     h.get_by(|n| n.role() == Role::Button && n.label().as_deref() == Some("Report an issue")).click();
@@ -91,54 +118,96 @@ fn the_title_field_travels_into_the_url() {
     h.run();
     h.get_by_label("Report a bug").click();
     h.step();
+    // The builder puts the title first, so the separator before it is "?"
+    // and the ones after it are "&" (GitHub's blank-issue query order).
     let opened = h.output().platform_output.commands.iter().any(|c| {
-        matches!(c, egui::OutputCommand::OpenUrl(u) if u.url.contains("&title=Pocket+leaves+a+witness+line"))
+        matches!(c, egui::OutputCommand::OpenUrl(u) if u.url.contains("?title=Pocket+leaves+a+witness+line"))
     });
     assert!(opened, "the typed title rides into the URL");
 }
 
 #[test]
-fn copy_screenshot_says_the_word_on_an_empty_document() {
-    // The headless State has no model: the raster finds nothing to frame,
-    // so the copy must refuse in words, not fail silent (Prime Directive).
+fn a_kind_button_asks_the_shell_for_the_whole_window() {
+    // The request is the whole-window picture, not a model-area picture:
+    // egui's viewport screenshot command, aimed at the root window, with
+    // the door's own token (#1696, the maintainer's GUI finding).
     let mut h = harness();
     h.get_by_label("Report an issue").click();
     h.run();
-    h.get_by_label("Copy screenshot").click();
-    h.run();
-    assert!(h.state().status.starts_with("no picture to copy"), "status: {}", h.state().status);
-    let copied = h
+    h.get_by_label("Report a bug").click();
+    h.step();
+    let asked = h
         .output()
-        .platform_output
-        .commands
-        .iter()
-        .any(|c| matches!(c, egui::OutputCommand::CopyImage(_)));
-    assert!(!copied, "nothing was copied from an empty document");
+        .viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .map(|v| {
+            v.commands.iter().any(|c| {
+                matches!(c, egui::ViewportCommand::Screenshot(t) if t == report::shot_token())
+            })
+        })
+        .unwrap_or(false);
+    assert!(asked, "the kind button asked the shell for the root window");
 }
 
 #[test]
-fn the_screenshot_paints_the_document() {
-    use camcraft_app::commands::ImportModel;
-    use camcraft_app::geometry::{cube, Point3};
-    let mut state = State::new();
-    state
-        .history
-        .execute(&state.world, ImportModel::from_mesh("cube", cube(Point3::ZERO, Point3::new(10.0, 10.0, 10.0))));
-    let img = report::screenshot_image(&state).expect("a cube frames a camera");
-    assert_eq!(img.size, [800, 600], "the agreed picture size");
-    let bg = egui::Color32::from_rgb(0xF2, 0xF2, 0xF2);
-    assert!(
-        img.pixels.iter().any(|p| *p != bg),
-        "the cube paints over the background"
-    );
-    // The maintainer's GUI finding: the floor must read like the
-    // viewport's, not like dark scratch lines over the part. A cube at
-    // 0..10 frames at ~50 px per mm, so the 1-2-5 law gives a 1 mm step
-    // and the cube centre (5, 5) lands on a major line at full ink;
-    // that line crosses the cube's centre and keeps its exact ink
-    // (fade 1.0) where the part does not cover it.
-    let major = egui::Color32::from_rgb(198, 198, 204);
-    let minor = egui::Color32::from_rgb(218, 218, 222);
-    assert!(img.pixels.iter().any(|p| *p == major), "the floor paints a major grid line");
-    assert!(img.pixels.iter().any(|p| *p == minor), "the floor paints a minor grid line");
+fn the_answer_copies_the_picture_and_says_the_word() {
+    let mut h = harness();
+    h.get_by_label("Report an issue").click();
+    h.run();
+    h.get_by_label("Report a bug").click();
+    h.step();
+    assert!(!copied_a_picture(&h), "the shell has not answered yet");
+    h.input_mut().events.push(shot_event(report::shot_token().clone()));
+    h.step();
+    assert!(copied_a_picture(&h), "the answer went to the clipboard");
+    assert!(h.state().status.contains("clipboard"), "status: {}", h.state().status);
+}
+
+#[test]
+fn the_picture_is_still_copied_after_the_window_is_closed() {
+    // The answer lands a frame after the press. A user who closes the
+    // window in that moment must still get the clipboard picture they
+    // were told was coming.
+    let mut h = harness();
+    h.get_by_label("Report an issue").click();
+    h.run();
+    h.get_by_label("Report a bug").click();
+    h.step();
+    h.state_mut().report_open = false;
+    h.step();
+    h.input_mut().events.push(shot_event(report::shot_token().clone()));
+    h.step();
+    assert!(copied_a_picture(&h), "a late answer still reaches the clipboard");
+}
+
+#[test]
+fn an_answer_for_another_token_is_left_alone() {
+    // A reply for another door's request must not be read here: the token
+    // is the only thing that tells the requests apart. No request is made
+    // in this test on purpose: the harness (wgpu feature) fulfils every
+    // real request with the door's own token, which would copy first and
+    // say nothing about the foreign answer.
+    let mut h = harness();
+    h.get_by_label("Report an issue").click();
+    h.run();
+    h.state_mut().status = "keep me".to_owned();
+    h.step();
+    h.input_mut().events.push(shot_event(egui::UserData::new("some-other-door")));
+    h.step();
+    assert!(!copied_a_picture(&h), "another door's answer must not be copied");
+    assert_eq!(h.state().status, "keep me", "an unread answer says nothing");
+}
+
+#[test]
+fn no_answer_copies_nothing() {
+    // No shell, no picture: the report still opens (the URL and the text
+    // are the whole point), and the door must not claim a copy it never
+    // made (Prime Directive: log or say, never silence).
+    let mut h = harness();
+    h.get_by_label("Report an issue").click();
+    h.run();
+    h.get_by_label("Report a bug").click();
+    h.run();
+    assert!(!copied_a_picture(&h), "nothing to copy with no answer from the shell");
+    assert!(h.state().report_open, "the report stays open for the story");
 }

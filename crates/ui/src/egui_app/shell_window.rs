@@ -25,6 +25,7 @@ use super::frame_watch::FrameWatch;
 use super::shell::*;
 use super::{gpu, gpu_init, icons, theme, world};
 
+mod capture;
 mod frame;
 
 /// The windowed shell (the `--ui egui` entry without `--headless`); returns
@@ -129,6 +130,9 @@ struct Shell {
     /// the newest size when the next resize frame is due.
     pending_resize: Option<PhysicalSize<u32>>,
     last_resize_frame: Option<std::time::Instant>,
+    /// #1696: the whole-window picture the Report door asks for; idle
+    /// until a `ViewportCommand::Screenshot` reaches the frame loop.
+    capture: capture::Capture,
     state: State,
 }
 
@@ -177,6 +181,7 @@ impl Shell {
             occluded: false,
             pending_resize: None,
             last_resize_frame: None,
+            capture: capture::Capture::new(),
             state,
         }
     }
