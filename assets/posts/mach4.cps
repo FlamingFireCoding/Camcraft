@@ -853,9 +853,10 @@ function onProbeGuard() {
   var p = properties;
   if (!xyFirst(p.StartX, p.StartY, null, false, null, null)) return;
   block(["G31", "X" + fu(p.X - orgX), "Y" + fu(p.Y - orgY), "Z" + fu(p.Z - orgZ), ff(p.Feed)]);
-  var to = [p.X, p.Y, p.Z], from = [p.StartX, p.StartY, p.StartZ], org = [orgX, orgY, orgZ];
+  // The clearance approach can change the actual start from the stream start.
+  // Validate every commanded coordinate, including a descent back to StartZ.
+  var to = [p.X, p.Y, p.Z], org = [orgX, orgY, orgZ];
   for (var ai = 0; ai < 3; ai++) {
-    if (has(from[ai]) && Math.abs(to[ai] - from[ai]) < 1e-6) continue;
     block(["IF[ABS[" + minusU("#" + (5061 + ai), to[ai] - org[ai]) + "]GT" + eps() + "]THEN#3000=3(PROBE HIT ON POSITIONING)"]);
   }
 }

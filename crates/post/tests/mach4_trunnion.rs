@@ -529,6 +529,60 @@ ENDSECTION
 }
 
 #[test]
+fn mach4_cli_guard_checks_clearance_descent_when_stream_start_equals_target() {
+    use std::process::Command;
+    let dir = std::env::temp_dir().join(format!("camcraft-mach4-guard-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let input = dir.join("input.cnc");
+    let output = dir.join("output.nc");
+    let trunnion = dir.join("trunnion.mch");
+    let spec = TrunnionSpec {
+        unit: "mm", rtcp: Some(false), sign_conv: "table_rh", a_zero: 0.0, c_zero: 0.0,
+        c_rollover: false, pivot: [0.0; 3], offset: [0.0; 3],
+    };
+    std::fs::write(&trunnion, trunnion_mch_json(&spec)).expect("write machine");
+    for indexed in [false, true] {
+        let cutting = if indexed {
+            VERTICAL_THEN_TILTED.replace(
+                "Feed X 10000 Y 5000 Z 0 F 400000 A -45000",
+                "Feed X 10000 Y 5000 Z 10000 F 400000 A -45000",
+            )
+        } else {
+            "PARAM WorkOffset G54\nPARAM ClearancePlane 25\nTOOL 1 \"6MM EM\"\n\
+PARAM SpindleSpeed 8000\nSECTION Vertical\nRapid X 10000 Y 5000 Z 25000\n\
+Feed X 10000 Y 5000 Z 10000 F 400000\nENDSECTION\n".to_owned()
+        };
+        let stream = format!("{cutting}TOOL 99 \"3D TOUCH PROBE\"
+PARAM ToolKind Touch Probe
+PARAM SpindleSpeed 0
+PARAM ClearancePlane 25
+PARAM RetractPlane 10
+SECTION ProbeZ
+GUARD 10000 5000 10000 F 1200000
+TOUCH 10000 5000 -5000 EXPECT 10000 5000 0 F 100000 M 0
+RETREAT 10000 5000 5000 EXPECT 10000 5000 5000 F 1200000
+FOUND SET 0 TOL 500 AXIS Z 0 0
+ENDSECTION
+");
+        std::fs::write(&input, stream).expect("write stream");
+        let machine = if indexed { trunnion.clone() } else { repo("assets/machines/3axis-vmc.mch") };
+        let result = Command::new(env!("CARGO_BIN_EXE_post"))
+            .arg("--machine").arg(machine).arg(repo("assets/posts/mach4.cps"))
+            .arg(&input).arg(&output).output().expect("run CLI");
+        assert!(result.status.success(), "indexed={indexed}: {}", String::from_utf8_lossy(&result.stderr));
+        let nc = std::fs::read_to_string(&output).expect("output");
+        let guard = nc.find("G31 X10. Y5. Z10. F1200").expect("guard descent");
+        let touch = nc.find("G31 X10. Y5. Z-5. F100").expect("touch");
+        assert!(guard < touch, "guard must precede touch:\n{nc}");
+        assert!(nc[..guard].ends_with("G00 Z25.\nG00 X10. Y5.\n"), "probe must approach at clearance:\n{nc}");
+        assert!(nc[guard..touch].contains("IF[ABS[[#5063-10]]GT0.005]THEN#3000=3(PROBE HIT ON POSITIONING)"),
+            "clearance descent must check Z contact before TOUCH, even when stream start equals target (indexed={indexed}):\n{nc}");
+        assert!(nc[touch..].contains("G10 L2 P1 Z[#5223+#190]"), "offset update must post:\n{nc}");
+    }
+    std::fs::remove_dir_all(&dir).expect("remove temp dir");
+}
+
+#[test]
 fn mach4_cli_validates_declared_options_and_posts_overrides() {
     use std::process::Command;
     let dir = std::env::temp_dir().join(format!("camcraft-mach4-options-{}", std::process::id()));
