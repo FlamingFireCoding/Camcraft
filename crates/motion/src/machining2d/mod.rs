@@ -71,6 +71,7 @@ mod levels;
 mod microlift;
 mod pocket;
 mod pocket_emit;
+mod pocket_zigzag;
 mod pocket_hsm;
 mod pocket_strategy;
 mod pocket_troch;
