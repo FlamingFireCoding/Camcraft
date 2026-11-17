@@ -25,6 +25,9 @@ mod stock_source_holes_support;
 use camcraft_app::geometry::quat_from_yaw;
 use stock_source_holes_support::*;
 
+/// The way out every stock-source Deburr refusal names.
+const WAY_OUT: &str = "stock-source deburr breaks into a part; use the part as source";
+
 /// Aligned stock, and stock turned a quarter about Z: both judged by the
 /// program sim (#2177).
 const TURNS: [(&str, f64); 2] = [("aligned", 0.0), ("quarter", std::f64::consts::FRAC_PI_2)];
@@ -80,9 +83,14 @@ fn a_stock_source_deburr_into_a_part_known_at_generation_never_posts() {
         // The op's own verdict: a blocking gouge on S1 (before #2313 it
         // had none, and the credited bevel hid the cut from the sim).
         assert!(gouges(&warns) > 0, "{label}: the solid law finds the cut into 'other': {warns:?}");
-        assert_not_posted(&world, &format!("deburr-known-{label}"), "gouge: program cuts below the model");
-        // With the part known, the post's line is the sim's located
-        // gouge; the live re-judge names only a part added later.
+        let named: Vec<String> = warns.iter().filter(|w| matches!(w, Warning::StockDeburrGouge { .. })).map(ToString::to_string).collect();
+        assert!(named.iter().any(|w| w.contains(WAY_OUT)), "{label}: the op's finding says the cause and the way out: {warns:?}");
+        // The post names the op, the part and the way out beside the
+        // sim's located gouge.
+        let tag = format!("deburr-known-{label}");
+        assert_not_posted(&world, &tag, "gouge: program cuts below the model");
+        assert_not_posted(&world, &tag, "S1 breaks into part 'other'");
+        assert_not_posted(&world, &tag, WAY_OUT);
     }
 }
 
@@ -115,19 +123,25 @@ fn a_stock_source_deburr_clear_of_every_part_still_posts() {
 /// ride the links cross) with the stock made from it (the stock IS the
 /// part), and an S1 Deburr off `src` generated clean round its edges.
 fn from_model(src: SrcRef) -> World {
+    let (world, warns) = from_model_at(src, Location::default());
+    let blocking: Vec<_> = warns.iter().filter(|w| w.blocks_post()).collect();
+    assert!(blocking.is_empty(), "a clean generation: {blocking:?}");
+    world
+}
+
+/// [`from_model`] with the stock placed at `at`; the op's findings.
+fn from_model_at(src: SrcRef, at: Location) -> (World, Vec<Warning>) {
     let (world, mut h) = job_without_part(HALF);
     let mut f = Vec::new();
     common::solid_part::plate(&common::solid_part::rect(-15.0, -15.0, 15.0, 15.0), None, 0.0, TOP, &mut f);
     h.execute(&world, ImportModel::from_mesh("part", Mesh::from_facets(f)));
-    h.execute(&world, SetStock::new(&world, StockShape::FromModel { source: "part".into() }, Location::default()).expect("stock"));
+    h.execute(&world, SetStock::new(&world, StockShape::FromModel { source: "part".into() }, at).expect("stock"));
     h.execute(&world, CreateOperation::new(&world, "S1", CHAMFER, src, deburr()).expect("create"));
     h.execute(&world, GenerateOperation::new(&world, "S1").expect("generate"));
     let e = model::find_by_name(&world, "S1").expect("op");
     let tp = model::toolpath_of(&world, &e).expect("cached path");
     assert!(!tp.path.moves.is_empty(), "the cut was generated");
-    let blocking: Vec<_> = tp.warnings.iter().filter(|w| w.blocks_post()).collect();
-    assert!(blocking.is_empty(), "a clean generation: {blocking:?}");
-    world
+    (world, tp.warnings.clone())
 }
 
 #[test]
@@ -135,4 +149,19 @@ fn a_deburr_of_the_parts_own_edge_still_posts() {
     assert_posts(&from_model(SrcRef::Entity("part".into())), "deburr-part-source");
     // The stock IS the part: the edges it breaks are the part's own.
     assert_posts(&from_model(SrcRef::Stock), "deburr-from-model-stock");
+}
+
+#[test]
+fn a_from_model_stock_moved_off_its_part_is_not_the_part() {
+    // The stock copies the part's facets, but it stands 0.5 mm off in X
+    // (aligned, and turned a quarter about Z): its edges are not the
+    // part's, so the Deburr off it breaks into 'part' and is refused.
+    for (label, yaw) in TURNS {
+        let at = Location { pos: Point3::new(0.5, 0.0, 0.0), rot: quat_from_yaw(yaw) };
+        let (world, warns) = from_model_at(SrcRef::Stock, at);
+        assert!(gouges(&warns) > 0, "{label}: the solid law finds the cut into 'part': {warns:?}");
+        let tag = format!("deburr-moved-from-model-{label}");
+        assert_not_posted(&world, &tag, "S1 breaks into part 'part'");
+        assert_not_posted(&world, &tag, WAY_OUT);
+    }
 }

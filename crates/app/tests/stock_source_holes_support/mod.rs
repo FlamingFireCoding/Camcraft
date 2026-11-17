@@ -301,7 +301,7 @@ pub fn thread_refused_on_a_turned_stock(world: &World, h: &mut History, cut: Cut
 }
 
 pub fn gouges(w: &[Warning]) -> usize {
-    w.iter().filter(|w| matches!(w, Warning::Gouge { .. } | Warning::StockChamferGouge { .. })).count()
+    w.iter().filter(|w| matches!(w, Warning::Gouge { .. } | Warning::StockChamferGouge { .. } | Warning::StockDeburrGouge { .. })).count()
 }
 
 fn nc(tag: &str) -> std::path::PathBuf {

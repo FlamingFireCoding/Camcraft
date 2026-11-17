@@ -99,7 +99,9 @@ fn judge_clause(world: &World) -> SimClause {
             // #2308: a part moved or added since generation names the op
             // and the part it cuts - said beside the sim's verdict, which
             // already blocks, so it never refuses a program on its own.
-            let moved = kept_moved(world).map(|why| format!(" - {why}")).unwrap_or_default();
+            // #2313: and a stock-source chamfer or deburr convicted at
+            // generation names the part it breaks into, and the way out.
+            let moved = kept_moved(world).or_else(|| stock_edge_named(world)).map(|why| format!(" - {why}")).unwrap_or_default();
             SimClause {
                 problem: Some(format!(
                     "gouge: program cuts below the model in {} cell(s), worst {} {}{at}{}{moved}",
@@ -175,5 +177,20 @@ fn kept_moved(world: &World) -> Option<String> {
             return None;
         }
         operation::kept_rejudge::moved_part_problem(world, name, &op, &tp.path)
+    })
+}
+
+/// The first program op convicted of a stock-edge gouge (#2313: a
+/// stock-source chamfer or deburr that breaks into a part), with the part
+/// it enters named by the live judge. Said only beside the sim's own
+/// gouge verdict, which already blocks.
+fn stock_edge_named(world: &World) -> Option<String> {
+    use crate::verify::Warning;
+    let ops = crate::posting::program_ops(world).ok()?;
+    ops.iter().find_map(|(name, e)| {
+        let tp = model::toolpath_of(world, e)?;
+        let w = tp.warnings.iter().find(|w| matches!(w, Warning::StockChamferGouge { .. } | Warning::StockDeburrGouge { .. }))?;
+        let op = model::operation_of(world, e)?;
+        Some(operation::kept_rejudge::stock_edge_problem(world, name, &op, &tp.path).unwrap_or_else(|| format!("{name}: {w}")))
     })
 }

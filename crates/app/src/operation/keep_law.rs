@@ -291,18 +291,23 @@ pub(super) fn kept_parts_named(
 /// #1637: a stock-source 2D Chamfer whose solid-law check hits a part
 /// breaks an edge belonging to the part rather than stock-only material.
 /// Rewrite `Warning::Gouge` into `Warning::StockChamferGouge` so every
-/// channel names the cause and the part-source workaround.
+/// channel names the cause and the part-source workaround. #2313: a
+/// stock-source Deburr the same, as `Warning::StockDeburrGouge`.
 pub(super) fn note_stock_chamfer_gouges(
     params: &OpParams,
     part_solid: bool,
     warns: &mut [crate::verify::Warning],
 ) {
-    if part_solid || !matches!(params, OpParams::Chamfer2D { .. }) {
-        return;
-    }
+    use crate::verify::Warning;
+    let named: fn(usize) -> Warning = match params {
+        _ if part_solid => return,
+        OpParams::Chamfer2D { .. } => |at| Warning::StockChamferGouge { at },
+        OpParams::Deburr { .. } => |at| Warning::StockDeburrGouge { at },
+        _ => return,
+    };
     for w in warns {
-        if let crate::verify::Warning::Gouge { at } = *w {
-            *w = crate::verify::Warning::StockChamferGouge { at };
+        if let Warning::Gouge { at } = *w {
+            *w = named(at);
         }
     }
 }

@@ -41,13 +41,26 @@ stock-edge break.
   its source, now takes the solid law. If its cone reaches a part, it is a
   gouge. The workaround is to deburr with the part as source.
 
+**The refusal (review fix).** A stock-source Deburr whose solid-law check
+hits a part gets its own finding, `Warning::StockDeburrGouge`: "move N cuts
+past the finish surface (stock-source deburr breaks into a part; use the
+part as source)". The stock-source Chamfer keeps its #1637 finding. When
+the sim's gouge verdict blocks the post, the post line also names the op
+and the part through the live judge: "S1 breaks into part 'other' (...)".
+A part added after generation keeps the #2308 text ("S1 now cuts part
+'other' ... regenerate it"), now with the Deburr way out.
+
 **Not covered.**
 
-- For a part known at generation, the post line is the sim's located gouge
-  (`gouge: program cuts below the model ...`) plus the op's own blocking
-  gouge finding. The post line does not name the part. The part is named
-  only when it is added after generation (the live re-judge).
-- On a turned stock that the sim cannot judge, only the live re-judge acts.
+- On a turned stock that the sim cannot judge, only the live re-judge acts
+  for a part added after generation. A convicted op there is refused by its
+  own cached finding, which names the op and the way out, not the part.
+- When the stock IS the part, the sim credits the bevel over the columns of
+  all parts, not only the source part. The solid law (generation) and the
+  live re-judge (post) catch a cut into a second part; the sim is not a
+  second net for that part.
+- The 1e-6 vertex test reads the facet order of the stock copy. A future
+  re-mesh of the copy would remove the exemption (stricter, so safe).
 
 **Cost to change.** Small: the exemption is one function
 (`stock_part_of`), read by `breaks_stock_edge` and `keep_law::parts_in_stock`
