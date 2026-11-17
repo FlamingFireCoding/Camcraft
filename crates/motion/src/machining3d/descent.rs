@@ -13,13 +13,13 @@
 //! and machining handbooks; the legality laws are M8.1's superset law and
 //! the shell's tip law (`machining3d::shell`). No vendor material.
 
-use super::descent_place::{Hel, helix, plunge_at};
-use super::level_ctx::{LevelCtx, dive_link, feed_leg, substituted_dive, traverse};
+use super::descent_place::{Hel, along_pass, helix, plunge_at};
+use super::level_ctx::{LevelCtx, bore_meets_lifted_leg, dive_link, feed_leg, substituted_dive, traverse};
 use super::params::Entry3D;
 
 use crate::approach::{CENTER_CUT_REFUSAL, NOT_CENTER_CUTTING};
-use crate::cl::{MoveKind, PathBuilder};
-use crate::entry::helix_about;
+use crate::cl::{MoveKind, PathBuilder, lattice};
+use crate::entry::{disc_clears, dive_room, helix_about};
 use crate::entry_arc::{arc_lead_swept, pts_dir, push_arc_lead};
 use crate::geo2d::Point2;
 use crate::geometry::Point3;
