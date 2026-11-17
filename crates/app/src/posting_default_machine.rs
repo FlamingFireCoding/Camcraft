@@ -114,6 +114,49 @@ pub fn default_limits(v: &Value) -> Machine {
     }
 }
 
+/// The limit clause for the mounts with no machine (#2321): their ops
+/// post with the default machine file, so they are judged against the
+/// limits that file states. A file that does not read refuses here by
+/// its name (#2319). With nothing to post, the program's own refusal
+/// answers, as for a mounted machine.
+pub(super) fn default_machine_problems(world: &World) -> Vec<String> {
+    let mut mounts = crate::setup_mount::program_mounts(world, false);
+    if mounts.is_empty() {
+        mounts.push(super::mounts::active(world));
+    }
+    let bare: Vec<String> = mounts.into_iter().filter(|m| m.machine.1.is_none()).flat_map(|m| m.setups).collect();
+    let Ok(program) = super::program_ops(world) else { return Vec::new() };
+    let ops: Vec<(String, Entity)> = program.into_iter().filter(|(_, e)| super::mounts::member(world, e, &bare)).collect();
+    if ops.is_empty() {
+        return Vec::new();
+    }
+    let v = match default_machine_checked() {
+        Ok(v) => v,
+        Err(why) => {
+            // #2319: the refusal names the setups that post with it.
+            let named: Vec<&str> = bare.iter().map(String::as_str).filter(|n| !n.is_empty()).collect();
+            let who = if named.is_empty() { "the setup".to_owned() } else { named.join(", ") };
+            return vec![format!("machine of {who}: {why}")];
+        }
+    };
+    let m = default_limits(&v);
+    let advice = "no machine is mounted, so the program is judged against the default machine; \
+                  mount a machine on the setup, or change the operation";
+    match default_limit_check(world, &m, &ops) {
+        Ok(c) if !c.is_ok() => {
+            let more = if c.more > 0 { format!(" (+{} more)", c.more) } else { String::new() };
+            vec![format!(
+                "default machine {}: {} limit problem(s): {}{more} - {advice}",
+                m.model,
+                c.problems.len(),
+                c.problems.join("; ")
+            )]
+        }
+        Ok(_) => Vec::new(),
+        Err(err) => vec![format!("default machine: {err}")],
+    }
+}
+
 /// The ops of a mount with no machine judged against the default
 /// machine's stated limits (#2321): each op's spindle speed against the
 /// spindle range, and each feed move against the slowest axis it drives.
