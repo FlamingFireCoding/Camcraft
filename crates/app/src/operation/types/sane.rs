@@ -47,6 +47,9 @@ impl OpParams {
     /// commands' generic "not usable".
     #[must_use]
     pub fn named_refusal(&self) -> Option<String> {
+        if let Some(why) = self.tilt().and_then(|t| t.refusal()) {
+            return Some(why);
+        }
         if self.predrilled_elsewhere() {
             return Some(PREDRILLED_POCKET_ONLY.into());
         }

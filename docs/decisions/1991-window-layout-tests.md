@@ -43,3 +43,12 @@ Properties; upstream also asserts that this button is unique. Retain all four
 stock-fit tests, including the fit-refusal and feedback checks. Dropped: the
 branch's equivalent inline lookup, which would duplicate the helper and omit
 its uniqueness assertion. No product logic required conflict resolution.
+
+**Review refresh (2026-11-16, Codex; main `0a4a86ca1`):** The latest
+current-head review requested no changes; the `conflicts` label required a
+merge of main. In `layout.rs`, keep main's `query_all_by_role(MenuItem)`
+lookup because the menu may already be closed. In `page_layout.rs`, retain
+the Properties-scoped Delete anchor because the selected Tool page still
+renders that button. All checks from both sides remain. Dropped: a panicking
+`get_all_by_role` lookup for optional menu items, and omitting Delete layout
+coverage. No product logic required conflict resolution.
