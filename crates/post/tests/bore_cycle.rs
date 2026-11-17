@@ -2,12 +2,13 @@
 //! through every shipped mill post. A post with the canned cycle writes
 //! G86 (RS-274/NGC's G86 - NIST IR 6556, The NIST RS274NGC Interpreter
 //! v3; LinuxCNC's G-code reference), never a different cycle. A post
-//! without canned cycles posts the expanded chain. A post with no
-//! drilling refuses by name. A bore dwell is posted only where the G86
+//! without canned cycles and without a spindle stop (heidenhain, tinyg,
+//! carvera) refuses a bore by name. A post with no drilling refuses by name.
+//! A bore dwell is posted only where the G86
 //! format has a P word (LinuxCNC/PathPilot and grblHAL, P in seconds);
 //! the Fanuc-family posts and Sinumerik refuse it by name, because their
 //! G86 has no dwell word (the published Fanuc and Haas G86 formats are
-//! X Y Z R F). Goldens for the six posts the issue names sit in
+//! X Y Z R F). Goldens for the five canned posts the issue names sit in
 //! `tests/golden/bore/` - our mapping's regression record, not a reading
 //! taken on a control.
 //!
@@ -31,12 +32,12 @@ use std::path::{Path, PathBuf};
 const NO_DWELL: [&str; 5] = ["fanuc", "haas", "mazak", "doosan-dnm", "sinumerik"];
 /// Posts that write G86 with a dwell P in seconds.
 const SECONDS: [&str; 2] = ["tormach", "grblhal"];
-/// Posts that write the expanded chain for a bore.
+/// Posts that refuse a bore: they cannot stop the spindle before the rapid retract.
 const EXPANDED: [&str; 3] = ["heidenhain", "tinyg", "carvera"];
 /// Posts that write no drilling at all.
 const REFUSING: [&str; 3] = ["sinker-iso", "wire-iso", "tormach-plasma"];
 /// The posts #1445 names, each with a golden.
-const GOLDEN: [&str; 6] = ["fanuc", "haas", "heidenhain", "sinumerik", "grblhal", "tormach"];
+const GOLDEN: [&str; 5] = ["fanuc", "haas", "sinumerik", "grblhal", "tormach"];
 
 const R: f64 = 2.0;
 const HOP: f64 = 10.0;
@@ -180,30 +181,30 @@ fn a_bore_dwell_posts_as_p_in_seconds_on_the_linuxcnc_family() {
 }
 
 #[test]
-fn expanding_posts_rapid_out_of_the_bored_hole_and_keep_the_dwell() {
+fn expanding_posts_refuse_a_bore_they_cannot_stop_the_spindle_for() {
+    // Heidenhain, TinyG and Carvera cannot stop the spindle before the
+    // rapid retract. The expanded chain would pull a turning boring bar
+    // out of the hole, so each post refuses by name and sets a counted warning that blocks the post.
     for stem in EXPANDED {
-        let prog = post(stem, 0.0);
-        let ws = words(&prog);
-        for canned in ["G85", "G81", "G86", "G89"] {
-            assert!(!ws.iter().any(|w| w == canned), "{stem}: no canned {canned} in an expanded post: {prog}");
+        for dwell in [0.0, 0.5] {
+            let out = run(stem, dwell).unwrap_or_else(|e| panic!("{stem}: runs: {e}"));
+            assert!(
+                out.warnings.iter().any(|w| w.contains("bore (G86) requires a spindle stop before rapid retract")
+                    && w.contains("refused, not posted")),
+                "{stem}: the bore is refused by name (dwell {dwell}): {:?}",
+                out.warnings
+            );
+            // The refusal is the counted warning (the host blocks the post
+            // on it). The cycle is not expanded: no dwell block is written.
+            assert!(
+                !out.program.contains("FUNCTION DWELL TIME")
+                    && !out.program.lines().any(|l| l.split_whitespace().any(|w| w == "G4")),
+                "{stem}: the refused bore writes no dwell block:
+{}",
+                out.program
+            );
+            assert!(!words(&out.program).iter().any(|w| w == "G86"), "{stem}: no G86 is written");
         }
-        let lines: Vec<&str> = prog.lines().collect();
-        // Heidenhain ends each block with `*`: read the word without it.
-        let at = |l: &str, z: &str| {
-            l.split_whitespace().map(|w| w.trim_end_matches('*')).any(|w| w == format!("Z{z}") || w == format!("Z+{z}"))
-        };
-        let bottoms: Vec<usize> = (0..lines.len()).filter(|&i| at(lines[i], "-12")).collect();
-        assert_eq!(bottoms.len(), 2, "{stem}: two holes reach the bottom:\n{prog}");
-        for i in bottoms {
-            let next = lines.get(i + 1).copied().unwrap_or("");
-            assert!(at(next, "2"), "{stem}: the move after the bottom returns to R:\n{prog}");
-        }
-        // A dwell is written at the bottom, never dropped.
-        let dwelt = post(stem, 0.5);
-        assert!(
-            dwelt.contains("FUNCTION DWELL TIME") || dwelt.lines().any(|l| l.split_whitespace().any(|w| w == "G4")),
-            "{stem}: the bore dwell is written:\n{dwelt}"
-        );
     }
 }
 

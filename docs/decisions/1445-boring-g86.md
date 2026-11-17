@@ -18,11 +18,19 @@
 - **Chosen:** tormach and grblhal keep `G86 ... P<seconds>`. **Why:**
   LinuxCNC's G86 takes P as a dwell in seconds. grblHAL follows the
   LinuxCNC form (the post's own comment, from the grblHAL core list).
-- **Chosen:** the expanding posts (heidenhain, tinyg, carvera) keep the
-  chain as it is: feed in, dwell, rapid out with the spindle on. **Why:**
-  the chain is what the verifier and the simulation read, and a change
-  would change the posted output of every bore on those posts. A spindle
-  stop at the bottom is a follow-up issue.
+- **Chosen:** the expanding posts (heidenhain, tinyg, carvera) refuse a
+  bore by name: "bore (G86) requires a spindle stop before rapid
+  retract - expanded boring is not supported by this post; refused, not
+  posted". **Why:** main has this safety refusal. These posts cannot
+  stop the spindle before the rapid retract, and the expanded chain
+  would pull a turning bar out of the hole. The test pins the refusal
+  and no longer pins an expanded chain or a Heidenhain golden.
+  The engine warning blocks app posting; rejected intermediate program
+  text can still contain fallback moves. The app pin
+  `refused_expanded_bores_write_no_nc_file` checks that all three posts,
+  with and without a dwell, refuse by name and write no NC file.
+  **Dropped:** restoring the expanded bore. A spindle stop at the bottom
+  is the follow-up #1819.
 - **Chosen:** a drilling dwell is a time from 0 to 3600 s
   (`MAX_DWELL_S`). `CreateOperation` and `EditOperationParams` (and so
   MCP `edit_operation`) refuse other values by name. **Why:** validate

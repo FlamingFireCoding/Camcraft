@@ -22,6 +22,7 @@ use camcraft_app::geometry::cube;
 use camcraft_app::mcp::Server;
 use camcraft_app::model;
 use camcraft_app::operation::{Height, OpParams, SrcRef, MAX_DWELL_S};
+use camcraft_app::posting;
 use camcraft_app::tools::catalog;
 use camcraft_app::world::new_world;
 
@@ -66,6 +67,7 @@ fn params(cycle: CycleChoice, dwell: f64) -> OpParams {
             stepped: false,
         }],
         cross: vec![],
+        break_through: None,
     }
 }
 
@@ -74,6 +76,34 @@ fn dwell_of(world: &World) -> (CycleChoice, f64) {
     match model::operation_of(world, &e).expect("operation").params {
         OpParams::Drill { cycle, dwell, .. } => (cycle, dwell),
         _ => panic!("a drill operation stays one"),
+    }
+}
+
+#[test]
+fn refused_expanded_bores_write_no_nc_file() {
+    for stem in ["heidenhain", "tinyg", "carvera"] {
+        let script = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../assets/posts/{stem}.cps")),
+        )
+        .expect("shipped post");
+        for dwell in [0.0, 0.5] {
+            let (world, mut history) = world_with_tool();
+            history.execute(
+                &world,
+                CreateOperation::new(&world, OP, TOOL, SrcRef::Entity("block".into()), params(CycleChoice::Bore, dwell))
+                    .expect("create bore"),
+            );
+            history.execute(&world, GenerateOperation::new(&world, OP).expect("generate bore"));
+            let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("clock").as_nanos();
+            let path = std::env::temp_dir().join(format!("camcraft-bore-{stem}-{}-{nonce}.nc", std::process::id()));
+            assert!(!path.exists(), "fresh output path");
+            let err = posting::post_script(&world, &path, &script).expect_err("unsafe expanded bore must not post");
+            assert!(
+                err.contains("bore (G86) requires a spindle stop before rapid retract") && err.contains("refused, not posted"),
+                "{stem}, dwell {dwell}: named safety refusal: {err}"
+            );
+            assert!(!path.exists(), "{stem}, dwell {dwell}: refusal writes no cutting output");
+        }
     }
 }
 

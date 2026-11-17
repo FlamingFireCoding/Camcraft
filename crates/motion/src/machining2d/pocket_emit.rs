@@ -75,7 +75,9 @@ pub(super) fn emit_pocket_passes(
         if strategy == PocketStrategy::Adaptive {
             fit_proved(pass, tol, center, &mut proof)
         } else {
-            fit_arcs(pass, tol)
+            let segs = fit_arcs(pass, tol);
+            proof.arcs += segs.iter().filter(|s| matches!(s, Seg::Arc { .. })).count();
+            segs
         }
     };
     let helix_r = room.as_ref().map_or(p.helix_radius, |e| e.helix_r);
@@ -130,10 +132,16 @@ pub(super) fn emit_pocket_passes(
         let cur = b.at();
         b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
     };
+    // #2240: enforce the crossing law on every arc-fitted pocket pass,
+    // including Offset rings (used directly or as Adaptive's fallback) and
+    // Waterline, so arcs across micron-quantized vertices never cross.
+    let hold_fitted = hold_crossings
+        || matches!(
+            strategy,
+            PocketStrategy::Adaptive | PocketStrategy::OffsetRings | PocketStrategy::Waterline
+        );
     let mut path = match runs {
-        Some(runs) if strategy == PocketStrategy::Adaptive || hold_crossings => {
-            post_crossing_free(b, &passes, runs, &mut proof, post)
-        }
+        Some(runs) if hold_fitted => post_crossing_free(b, &passes, runs, &mut proof, post),
         runs => {
             post(&mut b, runs.as_deref());
             b.finish()
@@ -149,4 +157,77 @@ pub(super) fn emit_pocket_passes(
         return Err(GenError::Invalid("path left the finite horizon".into()));
     }
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry::Entry3D;
+    use crate::geo2d::Loop;
+    use crate::links::Links;
+
+    #[test]
+    fn offset_rings_across_one_micron_vertex_step_post_crossing_free() {
+        // A circular pass with a 1e-6 mm step along its circumference (as
+        // produced by Clipper2 integer offsets on STEP-faceted circles like
+        // fig8.step): fit_arcs splits into [Arc, 1um-Line, Arc] whose chord
+        // brackets cross unless post_crossing_free enforces the crossing law.
+        let r = 26.0;
+        let n = 175usize;
+        let mid = n / 4;
+        let mut pass = Vec::with_capacity(n + 2);
+        let mut loop_pts = Vec::with_capacity(n);
+        for k in 0..n {
+            let th = k as f64 * std::f64::consts::TAU / n as f64;
+            let p = Point2::new(r * th.cos(), r * th.sin());
+            loop_pts.push(p);
+            pass.push(p);
+            if k == mid {
+                // Backward 1e-6 mm tangent jog at 12 o'clock (exact pattern of move [198] on fig8.step).
+                pass.push(Point2::new(p.x + 1e-6, p.y));
+            }
+        }
+        pass.push(pass[0]);
+        let Ok(ring) = Loop::new(loop_pts) else { panic!("loop") };
+        let Ok(center) = Region::new(vec![ring]) else { panic!("region") };
+        let pp = PocketParams {
+            tool_diameter: 8.0,
+            stepover: 3.0,
+            stock_to_leave: 0.0,
+            clearance_z: 25.0,
+            retract_z: None,
+            top_z: 20.0,
+            bottom_z: 18.0,
+            stepdown: 2.0,
+            feed: 2400.0,
+            plunge_feed: 500.0,
+            climb: true,
+            strategy: PocketStrategy::OffsetRings,
+            entry: Entry3D::Helix,
+            helix_radius: 1.0,
+            optimal_load: 0.25,
+            blend_turns: false,
+            blend_radius: None,
+            links: Links::PLANAR,
+        };
+        let b = PathBuilder::approached(Point3::new(0.0, 0.0, pp.clearance_z));
+        let Ok(path) = emit_pocket_passes(
+            b,
+            &pp,
+            PocketWalks {
+                center: &center,
+                links_center: &center,
+                strategy: PocketStrategy::OffsetRings,
+                passes: vec![pass],
+                room: None,
+                joins: Vec::new(),
+                hold_crossings: false,
+                holes: &[],
+            },
+        ) else {
+            panic!("emit_pocket_passes")
+        };
+        let crossed = crate::verify::crossed_pairs(&path, ARC_FIT_TOL);
+        assert!(crossed.is_empty(), "OffsetRings fitted arcs must never cross: {crossed:?}");
+    }
 }
