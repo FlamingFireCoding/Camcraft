@@ -49,7 +49,10 @@ mod stock_page;
 pub mod colorvision;
 pub mod ground_ink;
 pub mod window_chrome;
+pub(crate) mod post_dialog;
+mod post_dialog_tabs;
 mod post_options;
+mod post_script_options;
 mod program_info;
 pub mod cvd;
 mod app_icon;
@@ -71,13 +74,16 @@ pub(crate) mod post_refusal;
 pub(crate) mod error_text;
 // pub(crate) for the same reason: `State::machines_pane` (#287).
 pub(crate) mod machines_pane;
+// pub(crate) for `State::ai_chat` and its `WakeFn` (#1946).
+pub(crate) mod ai_chat;
 // pub(crate): `MachinesPane::editor` names its type (#383).
 pub(crate) mod machine_file_editor;
 mod feeds_page;
 mod spindle_row;
 mod approach_page;
 mod lead_page;
-mod op_tabs;
+mod start_exit_rows;
+pub(crate) mod op_tabs;
 mod painted;
 mod tree_badges;
 mod tree_glyphs;
@@ -87,6 +93,7 @@ mod wcs_page;
 mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
+mod stock_material_row;
 // #371: the tool editor's Body section and its picking preview.
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
@@ -99,6 +106,9 @@ mod thread_page;
 mod tool_thread_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
+mod tool_settings;
+mod tool_library;
+mod tool_preview;
 // #890: the tool editor's per-material cutting data.
 mod tool_cutting_rows;
 mod tool_turning_row;
@@ -157,6 +167,8 @@ mod trochoid_page;
 mod kind_editors;
 mod mill2d_more_page;
 mod mill2d_page;
+// #1815: 2D Pocket's "Rest machining" group on the Passes tab.
+mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
 mod op_page;
@@ -190,6 +202,8 @@ mod fixture_plate_rows;
 mod fixture_modvise_rows;
 pub(crate) mod fixture_accessory_dialog;
 mod fixture_accessory_rows;
+mod fixture_profile_dialog;
+mod fixture_profile_rows;
 pub(crate) mod shell;
 // #31: the winit window, loop and per-frame draw - native only; the
 // browser build keeps `shell` (the shared frame) and refuses `run` below.
@@ -243,6 +257,8 @@ mod fixture_modvise_tests;
 #[cfg(test)]
 mod fixture_accessory_tests;
 #[cfg(test)]
+mod fixture_profile_tests;
+#[cfg(test)]
 mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
@@ -255,9 +271,13 @@ mod thread_mill_page_tests;
 #[cfg(test)]
 mod slot_pick_page_tests;
 #[cfg(test)]
+mod slot_manual_tests;
+#[cfg(test)]
 mod after_op_tests;
 #[cfg(test)]
 mod program_info_tests;
+#[cfg(test)]
+mod post_dialog_tests;
 #[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]
@@ -315,6 +335,8 @@ mod gate_route_tests;
 mod sinker_pass_tests;
 #[cfg(test)]
 mod sinker_machine_tests;
+#[cfg(test)]
+mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, fallback adapter, View3D

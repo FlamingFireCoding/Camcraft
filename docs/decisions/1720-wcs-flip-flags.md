@@ -12,7 +12,7 @@
    keys `x`, `y`, `z`; only a flipped axis is written (`{"x": true}`), and
    a row with no flip writes no key. A file without the key opens with no
    flip. A `flip` on a row that is not a WCS is refused as corrupt by
-   name. `PROJECT_VERSION` goes from 61 to 62, because an older reader
+   name. `PROJECT_VERSION` goes from 66 to 67, because an older reader
    would silently drop the flip and post a program that does not match
    the stored frame once part 2 lands.
 3. **Refusal, not output.** Part 1 changes no posted G-code. A flipped
@@ -44,6 +44,6 @@
 **Considered and dropped:** a signed scale per axis (`[f64; 3]` of +-1):
 it admits values that mean nothing; three booleans do not.
 
-**Cost to change later:** the key shape is in v62 files; renaming it needs
+**Cost to change later:** the key shape is in v67 files; renaming it needs
 a migration step. Part 2 (posting with a flip) replaces the two refusals
 with the frame work and keeps the stored flags.

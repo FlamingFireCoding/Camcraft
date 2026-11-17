@@ -89,7 +89,8 @@ fn the_wcs_page_shows_the_work_offset_dropdown_and_no_setups_page_pointer() {
         {
             break;
         }
-        wheel(&mut h, egui::pos2(1100.0, 500.0), -220.0);
+        let pane = super::anchors::pane_center(&h, &Tab::Properties);
+        wheel(&mut h, pane, -220.0);
     }
     let texts = super::structural::painted(&h);
     assert!(
@@ -132,4 +133,7 @@ fn the_work_offset_control_is_on_the_wcs_page_and_not_the_setup_page() {
     crate::actions::target(&mut h.state_mut().state, UiTarget::Wcs);
     h.run_steps(3);
     assert_eq!(combos(&h), 1, "the WCS page has the work offset combo");
+    // The row label carries no Setup-page indent inside its own group.
+    assert_eq!(h.query_all_by_label("Work offset").count(), 1, "one plain row label");
+    assert!(h.query_all_by_label("    Work offset").next().is_none(), "no indented row label");
 }
