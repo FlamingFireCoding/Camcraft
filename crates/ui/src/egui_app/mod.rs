@@ -93,6 +93,7 @@ mod wcs_page;
 mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
+mod stock_material_row;
 // #371: the tool editor's Body section and its picking preview.
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
@@ -201,6 +202,8 @@ mod fixture_plate_rows;
 mod fixture_modvise_rows;
 pub(crate) mod fixture_accessory_dialog;
 mod fixture_accessory_rows;
+mod fixture_profile_dialog;
+mod fixture_profile_rows;
 pub(crate) mod shell;
 // #31: the winit window, loop and per-frame draw - native only; the
 // browser build keeps `shell` (the shared frame) and refuses `run` below.
@@ -253,6 +256,8 @@ mod fixture_plate_tests;
 mod fixture_modvise_tests;
 #[cfg(test)]
 mod fixture_accessory_tests;
+#[cfg(test)]
+mod fixture_profile_tests;
 #[cfg(test)]
 mod footer_tests;
 #[cfg(test)]

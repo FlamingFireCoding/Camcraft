@@ -101,7 +101,7 @@ fn the_machines_sheet_states_rigid_tapping_in_words() {
 #[test]
 fn every_tormach_mill_router_and_lathe_file_states_rigid_tapping() {
     let (mut mills, mut lathes) = (0, 0);
-    for (name, text) in posting::MACHINES.iter().filter(|(n, _)| n.starts_with("Tormach")) {
+    for (name, text) in camcraft_app::posting::shipped_machines().expect("the shipped machines read").iter().filter(|(n, _)| n.starts_with("Tormach")) {
         let m = parse_mch(text).unwrap_or_else(|e| panic!("{name}: {e}"));
         match camcraft_app::machine::kind(Some(&m)) {
             Kind::Plasma => continue,

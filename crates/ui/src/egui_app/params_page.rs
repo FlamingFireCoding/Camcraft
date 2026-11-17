@@ -154,6 +154,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     } = &state.op_ui.params
     {
         let resolved = op.as_ref().and_then(|o| {
+            let _s = crate::frame_cost::span("ui/properties.op.fields.contour_auto_side");
             operation::contour_auto_side(
                 &state.world,
                 o.setup.as_deref(),
@@ -176,6 +177,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         ..
     } = &state.op_ui.params
     {
+        let _s = crate::frame_cost::span("ui/properties.op.fields.pocket_auto_note");
         auto_note = Some(pocket_auto_note(&state.world, op.as_ref(), *stepover, rest.is_some()));
     }
 
