@@ -62,26 +62,44 @@ fn reach(p: &ContourParams) -> f64 {
 
 /// Which ring (index into `loops`) takes the user's start point, with the
 /// pick; `Ok(None)` when no start point is set. Refused by name: a pick
-/// farther than [`reach`] from every ring, and the cases this first slice
-/// does not certify - tabs (their windows are measured from the automatic
-/// start) and compensation in the control (its seam is the comp law's).
+/// farther than [`reach`] from every ring, and compensation in the
+/// control (its seam is the comp law's), which this slice does not
+/// certify. Tabs take the pick (#1473): [`seat`] starts the picked ring
+/// at the pick on every level, tabbed ones too, so the tab windows are
+/// measured from the picked start and the first window begins there.
 pub(super) fn pick_ring(loops: &[&Loop], p: &ContourParams) -> Result<Option<(usize, Point2)>, GenError> {
     let ap = &p.links.approach;
     let Some(q) = ap.start_point else {
         return Ok(None);
     };
     let at = format!("start point ({:.3}, {:.3})", q.x, q.y);
-    if p.tab_count > 0 {
-        return Err(GenError::Invalid(format!(
-            "{at}: a picked start is not taken with tabs yet - clear the start point or the tabs"
-        )));
-    }
     if ap.compensation.in_control() {
         return Err(GenError::Invalid(format!(
             "{at}: a picked start is not taken with {} compensation yet - its seam is the \
              compensation law's; clear the start point or compensate in the computer",
             ap.compensation.label()
         )));
+    }
+    // The part-boundary room law does not include the standing tabs.
+    // Only normal departures are certified here; tangential motion can
+    // cut the tab ending at the pick, including an extension with no lead.
+    if p.tab_count > 0 {
+        let normal = |lead| matches!(lead, Lead::None | Lead::Perpendicular { .. });
+        let unsafe_part = if !normal(p.lead) {
+            Some("lead-in")
+        } else if !normal(p.lead_out_shape()) {
+            Some("lead-out")
+        } else if ap.ext_in > 0.0 || ap.ext_out > 0.0 {
+            Some("extension")
+        } else {
+            None
+        };
+        if let Some(part) = unsafe_part {
+            return Err(GenError::Invalid(format!(
+                "{at}: the {part} is not certified with standing tabs at a picked start - \
+                 use no lead or perpendicular leads without extensions, or clear the start point"
+            )));
+        }
     }
     nearest_ring(loops, q, &at, "start", p).map(Some)
 }

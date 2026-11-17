@@ -20,7 +20,7 @@ use camcraft_app::geo2d::Point2;
 use camcraft_app::machine::{Machine, parse_mch};
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::operation::{Height, OpParams, SrcRef, Tilt};
-use camcraft_app::posting::{MACHINES, index_swing::MARGIN_MM, verification_gate};
+use camcraft_app::posting::{index_swing::MARGIN_MM, verification_gate};
 use camcraft_app::schema::{Location, PostRef};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -35,7 +35,7 @@ const ARC4: &str = "Tormach 770MX + microARC 4";
 const NOSE: f64 = 10.6 * IN;
 
 fn shipped(name: &str) -> Machine {
-    let text = MACHINES.iter().find(|(n, _)| *n == name).map(|(_, t)| *t).expect("shipped");
+    let text = camcraft_app::posting::builtin_machine_text(name).expect("shipped");
     parse_mch(text).expect("parses")
 }
 
@@ -182,7 +182,7 @@ fn a_machine_with_no_a_is_unaffected() {
 /// #813: the shipped microARC text with its A's `axis` vector struck -
 /// a user's own table-A file that never states the line.
 fn arc4_without_axis_vector() -> Machine {
-    let text = MACHINES.iter().find(|(n, _)| *n == ARC4).map(|(_, t)| *t).expect("shipped");
+    let text = camcraft_app::posting::builtin_machine_text(ARC4).expect("shipped");
     let custom = text.replacen("\"axis\": [1.0, 0.0, 0.0],", "", 1);
     assert_ne!(custom, text, "the A's axis vector was struck");
     let m = parse_mch(&custom).expect("a table A with no axis vector still parses");

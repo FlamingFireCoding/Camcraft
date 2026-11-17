@@ -492,6 +492,11 @@ function reversedLoneXRotary() {  // the rotary's name, else ""
 function tilt(p) {  // words to append, [] if none, null if refused
   if (!has(p.A)) return [];
   if (typeof machine === "undefined" || machine.rtcp !== true) {
+    var rs = (typeof machine !== "undefined" && machine.rotaries) || [];
+    if (rs.length > 1) {
+      if (!tiltRefused) { tiltRefused = true; msg("tilted move on a multi-axis machine without controller RTCP"); }
+      return null;
+    }
     var rc = getRotaryCodes();
     if (!rc.clamp || !rc.unclamp) {
       if (!rotaryRefused) {
@@ -1223,6 +1228,15 @@ function onCycle() {
   // feed), so a cycle the stream gives no positive feed is refused by name.
   if (!(has(p.FeedRate) && p.FeedRate > 0)) {
     msg("canned cycle " + g + " has no feed rate - refused: without F the control drills at whatever feed was last modal");
+    return;
+  }
+  // #1445: G86 (feed in, spindle stop, rapid out) has no dwell word on
+  // this control (Fanuc's and Haas's published G86 formats are X Y Z R F,
+  // with P only on G82/G88/G89). A P written on G86 is not read, so a
+  // bore dwell is refused by name, never dropped. Sinumerik's ISO mode is
+  // not verified for a G86 P either, so it refuses the same.
+  if (g === "G86" && ms > 0) {
+    msg("canned cycle G86 (bore) has no dwell word on this control - a " + (ms / 1000) + " s dwell is refused, not dropped; set the dwell to 0");
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;

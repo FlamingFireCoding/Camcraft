@@ -183,6 +183,15 @@ pub struct GeomPrintMemo {
 #[derive(Component, Debug)]
 pub struct Wcs;
 
+/// #1720: the axes of a WCS that run reversed (X+ becomes X-), in X, Y,
+/// Z order. Rides the `Wcs` entity beside its `Location`: a unit
+/// quaternion cannot hold a mirror. Absent is no flip (every older
+/// file); written only through `SetWcsFlip`, the project loader and the
+/// undo of a delete (`setup_wcs_flip::set`). The post and generation
+/// refuse a set flag by name until a flip is carried into the program.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WcsFlip(pub [bool; 3]);
+
 /// A cutting tool definition, on the entity named by the catalog or the
 /// user. Tools never have facets; operations and the verifier read their
 /// numbers through `model::tool_of`.
@@ -820,6 +829,7 @@ pub fn register_schema(world: &World) {
     world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
+    world.component::<WcsFlip>();
     world.component::<ToolDef>();
     world.component::<ToolBody>();
     world.component::<ToolCutter>();

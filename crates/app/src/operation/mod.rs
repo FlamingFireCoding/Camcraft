@@ -146,6 +146,8 @@ mod area;
 use area::*;
 mod pocket_memo;
 pub use pocket_memo::pocket_slices;
+mod selection_memo;
+pub use selection_memo::{contour_auto_side_fresh, selection_account_fresh, selection_walks};
 mod boundary;
 pub use boundary::AreaCtx;
 use boundary::AreaApplied;

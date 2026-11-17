@@ -172,7 +172,7 @@ fn every_builtin_handles_or_refuses_end_units_by_name() {
     use camcraft_app::post::PostError;
     use camcraft_app::schema::PostRef;
     let ask = posting::options_value(PostOptions { end_units: EndUnits::Inch, ..PostOptions::default() });
-    for (name, cps) in posting::BUILTINS {
+    for (name, cps) in camcraft_app::posting::shipped_posts().expect("the shipped posts read") {
         let declares = cps.lines().any(|l| l.trim_start().starts_with("endUnits ="));
         let words = posting::end_units_words(&PostRef::Named((*name).to_owned())).expect("reads manifest");
         match engine::run_with(cps, &serde_json::Value::Null, "", &ask) {

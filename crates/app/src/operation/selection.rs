@@ -90,17 +90,9 @@ pub fn contour_auto_side(
 ) -> Option<bool> {
     match src {
         SrcRef::Stock | SrcRef::Entity(_) => Some(false),
-        SrcRef::Selection(items) => {
-            let (loops, _runs, auto) =
-                selection_geometry_impl(world, setup, items, params, None).ok()?;
-            match auto {
-                _ if loops.is_empty() => None,
-                machining2d::AutoSide::Inside => Some(true),
-                machining2d::AutoSide::Outside => Some(false),
-                // No verdict to quote: generation refuses it by name.
-                machining2d::AutoSide::Undecided(_) => None,
-            }
-        }
+        // The display's ask, one walk per input (#2249): generation
+        // reads the side from its own walk in `job`, never from here.
+        SrcRef::Selection(items) => super::selection_memo::answer(world, setup, items, params).inside,
     }
 }
 
