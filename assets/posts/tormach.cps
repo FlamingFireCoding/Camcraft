@@ -1043,7 +1043,9 @@ function onCycle() {
   else if (p.CycleType === "PECK") g = "G73";
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = dwell > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";   // #1445: feed in, feed out at F, no dwell
   // Tormach documents G84 for PathPilot: F is the pitch times the rpm
   // (the stream's synthesized tap feed), no P - PathPilot sizes the
@@ -1086,6 +1088,9 @@ function onCycle() {
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1614: refused - not written)
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #2360 (as #2350 for Haas): P is sticky in the dwell cycles, so a
+  // changed dwell reopens the cycle and each hole posts its own P.
+  if (g === "G82" || g === "G86" || g === "G89") sig += "|" + secs(dwell);
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
