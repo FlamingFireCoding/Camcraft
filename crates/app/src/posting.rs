@@ -166,20 +166,42 @@ pub fn builtin_path(name: &str) -> String {
     format!("built-in: {name}")
 }
 
-/// The default machine: a plain 3-axis VMC with flood coolant.
+/// The default machine: a plain 3-axis VMC with flood coolant. For the
+/// readers that only time or show a machine (the sim's traverse clock):
+/// a missing or malformed file reads as `Value::Null` here. The post
+/// never reads this - it reads [`default_machine_checked`], which refuses
+/// by the file's name (#2319).
 pub fn default_machine() -> Value {
-    static M: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    default_machine_checked().unwrap_or(Value::Null)
+}
+
+/// The default machine, or the refusal that names its file (#2319). Read
+/// from disk once (#2282); the refusal is logged once, by name.
+pub fn default_machine_checked() -> Result<Value, String> {
+    static M: std::sync::OnceLock<Result<Value, String>> = std::sync::OnceLock::new();
     M.get_or_init(|| {
-        // #2282: read from disk once; a missing or malformed file is logged
-        // by name, and the null machine refuses the post downstream.
-        let parsed = default_mch_text()
-            .and_then(|t| serde_json::from_str(t).map_err(|e| format!("default machine {}: {e}", DEFAULT_MCH_FILE.0)));
-        parsed.unwrap_or_else(|why| {
+        let parsed = parse_default_machine(default_mch_text());
+        if let Err(why) = &parsed {
             tracing::error!("{why}");
-            Value::Null
-        })
+        }
+        parsed
     })
     .clone()
+}
+
+/// The default machine file's text read as the post's machine, or a
+/// plain-English refusal that names the file (#2319). A file that does
+/// not read, is not JSON, or is not a JSON object is refused: a null or
+/// empty machine would post with no limits and no coolant words.
+pub fn parse_default_machine(text: Result<&str, String>) -> Result<Value, String> {
+    let file = DEFAULT_MCH_FILE.0;
+    let advice = "mount a machine on the setup, or reinstall the file";
+    let text = text.map_err(|why| format!("the default machine file {file} cannot be read ({why}) - {advice}"))?;
+    match serde_json::from_str::<Value>(text) {
+        Ok(v) if v.is_object() => Ok(v),
+        Ok(_) => Err(format!("the default machine file {file} is malformed (not a machine object) - {advice}")),
+        Err(e) => Err(format!("the default machine file {file} is malformed ({e}) - {advice}")),
+    }
 }
 
 /// The machine this document posts to (M3.3 A): the mounted `.mch`
@@ -700,7 +722,9 @@ fn post_script_body_with(
         .cloned()
         .or_else(|| crate::setup::active(world));
     let opts = program_options_for_script(world, cps, post, mount_setup.as_deref(), extra)?;
-    let out = engine::run_program_with(cps, &machine_value_for(&machine), &stream, &opts, &id)
+    // #2319: no mounted machine and a bad default file refuses by name.
+    let mch = mounts::posted_machine_for(&machine)?;
+    let out = engine::run_program_with(cps, &mch, &stream, &opts, &id)
         .map_err(|e| format!("post engine: {e}"))?;
     if !out.warnings.is_empty() {
         return Err(format!(
