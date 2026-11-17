@@ -5,9 +5,8 @@
 use camcraft_sim::verify::{AVOID_PAD, AvoidSpec};
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
-use crate::geo2d::{Point2, Region};
+use crate::geo2d::Region;
 use crate::geometry::Point3;
-use crate::machining3d::Entry3D;
 
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::fillet::{Legal, fillet_corners};
@@ -193,7 +192,5 @@ pub fn pocket_avoid(
     if !path.all_finite() {
         return Err(GenError::Invalid("path left the finite horizon".into()));
     }
-    let _ = Entry3D::Plunge;
-    let _ = Point2::new(0.0, 0.0);
     Ok(path)
 }

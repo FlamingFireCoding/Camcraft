@@ -21,3 +21,15 @@
 
 ### Cost to change later
 - Extending `"Do not touch"` to additional operation kinds (`Pocket`, `Adaptive2D`, `Contour`, `Finish3D`, etc.) is additive: add the `OpType` variant to `do_not_touch_applies` and pass `avoid_spec` to that generator arm; `verify_avoid`, `route_links`, UI, commands, MCP, and v64 project format already work unchanged.
+
+### Merge refresh against main v66
+
+Main now writes project v66 for the trunnion schema (#1962), following
+cutting rows (v64) and the tilt basis (v65). The protected-pick format must
+therefore write v67. Reusing v64 or v66 would let an existing reader accept
+the file and silently discard `do_not_touch`. All earlier migrations and
+refusals remain. The project test pins a version beyond v66, protection
+round trips, future-version refusal, and blocked posting after a moved
+protected item. Reusing main's version was rejected because it would weaken
+that protection. Main's carried-stock replan and previous-stock mask are
+kept together with the protected-item planners.

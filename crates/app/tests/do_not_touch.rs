@@ -423,7 +423,7 @@ fn pocket3d_do_not_touch_keeps_clear_raises_links_and_blocks_impossible_cut() {
 }
 
 #[test]
-fn do_not_touch_post_gate_blocks_violations_and_project_v64_persists() {
+fn do_not_touch_post_gate_blocks_violations_and_project_v67_persists() {
     let (dir, mut c, plate_top, tower_top_face, tower_edge, _vert) = setup_plate_and_tower("proj_gate");
     let op_name = c.ok("add_operation", json!({
         "kind": "2D Offset",
@@ -452,13 +452,13 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v64_persists() {
     }));
     c.ok("generate", json!({ "name": op_name }));
 
-    // Save -> inspect version 64 -> reload into fresh server -> still intact & clean.
+    // Save -> inspect current version -> reload into fresh server -> still intact & clean.
     let proj_path = dir.join("protected.camproj");
     c.ok("save_project", json!({ "path": proj_path.display().to_string() }));
     let raw = std::fs::read_to_string(&proj_path).expect("read saved project");
     let mut parsed: Value = serde_json::from_str(&raw).expect("valid json");
     assert_eq!(parsed["version"], json!(PROJECT_VERSION));
-    assert_eq!(PROJECT_VERSION, 64);
+    const { assert!(PROJECT_VERSION >= 67, "v66 and earlier readers must refuse Do not touch protection"); }
     assert!(raw.contains("do_not_touch"));
 
     let mut c2 = Client::new();
@@ -468,13 +468,13 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v64_persists() {
     assert_eq!(got2["picks"].as_array().map(Vec::len), Some(2));
     assert_eq!(c2.ok("verify", json!({}))["ok"], json!(true));
 
-    // A future version (65) is refused with UnsupportedVersion instead of ignoring protection.
-    parsed["version"] = json!(65);
+    // A future version is refused with UnsupportedVersion instead of ignoring protection.
+    parsed["version"] = json!(PROJECT_VERSION + 1);
     let future_path = dir.join("future.camproj");
     std::fs::write(&future_path, serde_json::to_string(&parsed).unwrap()).unwrap();
     let future_world = new_world();
     let err = project::load(&future_world, &future_path).expect_err("newer version must be refused");
-    assert!(matches!(err, ProjectError::UnsupportedVersion(65)), "{err:?}");
+    assert!(matches!(err, ProjectError::UnsupportedVersion(v) if v == PROJECT_VERSION + 1), "{err:?}");
 
     // Moving the protected tower into the cut path stales the op AND is caught by live_avoid_problems,
     // blocking both verify and post without writing NC output.
