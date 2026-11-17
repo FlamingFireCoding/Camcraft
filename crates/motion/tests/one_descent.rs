@@ -271,10 +271,6 @@ fn the_bore_contour_under_carried_stock_never_rapids_into_it() {
                 links.approach.material_top = Some(CARRIED);
                 links.approach.stock_top = Some(CARRIED);
                 let what = format!("carried bore lead {lname} {entry:?} {ln}");
-                // #2301: `main` gives the same verify flag for this case
-                // (an axial dive after a blocked ramp). Tracked there; it
-                // does not pass through the `fresh` arm.
-                let known = lname == "linear" && entry == Entry3D::Ramp && ln != "helix transition";
                 let t = contour(&hole, &bore(entry, lead, links)).expect("bore contour");
                 let tool = tool(3.0);
                 let cx = VerifyContext {
@@ -295,7 +291,7 @@ fn the_bore_contour_under_carried_stock_never_rapids_into_it() {
                     ..Default::default()
                 };
                 let w = verify(&t, &cx);
-                if !w.is_empty() && !known {
+                if !w.is_empty() {
                     bad.push(format!("{what}: verify {w:?}"));
                 }
                 // The stock over Top Z is cut: the first level is Top Z.

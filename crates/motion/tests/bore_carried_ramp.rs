@@ -84,6 +84,7 @@ fn the_bore_dive_under_carried_stock_starts_over_the_core() {
     for (ln, links) in [("planar", Links::PLANAR), ("retract", Links { level: Link::Retract, ..Links::PLANAR })] {
         let mut links = links;
         links.approach.material_top = Some(CARRIED);
+        links.approach.stock_top = Some(CARRIED);
         let t = contour(&hole, &bore(Entry3D::Ramp, 2.0, links)).expect("bore contour");
         assert!(t.notes.iter().any(|n| n.contains("axial dive")), "{ln}: the case takes no substituted dive: {:?}", t.notes);
         let w = check(&t, &hole, CARRIED);
@@ -108,6 +109,7 @@ fn the_later_bore_dives_start_over_the_plane_above() {
     let hole = round(10.0);
     let mut links = Links::PLANAR;
     links.approach.material_top = Some(5.0);
+    links.approach.stock_top = Some(5.0);
     let h = links.approach.plunge_height;
     let t = contour(&hole, &bore(Entry3D::Ramp, 2.0, links)).expect("bore contour");
     let starts: Vec<f64> = t.moves.iter().filter(|m| m.kind == MoveKind::Plunge).map(|m| m.from.z).collect();
