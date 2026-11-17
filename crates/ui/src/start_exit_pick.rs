@@ -233,7 +233,7 @@ mod tests {
     fn tilted_contour_pick_is_refused_by_name() {
         let mut st = contour_state();
         if let OpParams::Contour { tilt, .. } = &mut st.op_ui.params {
-            *tilt = Some(Tilt { a_deg: 15.0, b_deg: 0.0, origin: [0.0; 3] });
+            *tilt = Some(Tilt { basis_version: 1, a_deg: 15.0, b_deg: 0.0, origin: [0.0; 3] });
         }
         arm(&mut st, StartExitRole::Start);
         take(&mut st, &wall_hit("Block", [60.0, 18.0, 15.0]));
