@@ -65,6 +65,8 @@ mod units_tools;
 mod stock_fit_tools;
 mod tool_number_tools;
 mod wcs_tools;
+// #1720: a setup's WCS flipped axes.
+mod wcs_flip_tools;
 mod rotary_tools;
 mod workholding_tools;
 

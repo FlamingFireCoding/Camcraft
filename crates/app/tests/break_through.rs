@@ -214,7 +214,7 @@ fn the_parameter_round_trips_the_file_and_the_mcp_params() {
 
 
 #[test]
-fn v67_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
+fn v68_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     use camcraft_app::commands::ChangeTool;
     use camcraft_app::tool_cutting_rows::CuttingRow;
     use serde_json::json;
@@ -229,7 +229,7 @@ fn v67_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     history.execute(&world, CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(0.4))).unwrap());
     let saved = project::save_text(&world).unwrap();
     let current: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    const { assert!(project::PROJECT_VERSION >= 67, "the holder-reference format follows main's v66 trunnion-schema format"); }
+    const { assert!(project::PROJECT_VERSION >= 68, "the holder-reference format follows main's v67 WCS-flip format"); }
     assert_eq!(current["version"], json!(project::PROJECT_VERSION));
     for version in 62..=project::PROJECT_VERSION {
         let mut file = current.clone();

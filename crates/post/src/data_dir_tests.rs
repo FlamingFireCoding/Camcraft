@@ -40,6 +40,32 @@ fn the_order_is_exe_dev_manifest_in_a_cargo_tree() {
     assert_eq!(got.last(), Some(&p("/src/camcraft/assets/posts")), "a test binary in deps/ finds the source tree");
 }
 
+/// #2316: the new cargo build-dir layout (the post-merge runner's cargo)
+/// puts a test exe in `target/<profile>/build/<pkg>/<hash>/out` and has
+/// no `target/<profile>/.fingerprint`. The test exes and the uplifted
+/// binaries still find the repository assets; nothing else is let in.
+#[test]
+fn the_new_cargo_build_dir_layout_finds_the_repository_assets() {
+    let tree = dirs(&["/opt/cc/target/debug/build/camcraft-post", "/opt/cc/assets/posts"]);
+    for exe in [
+        "/opt/cc/target/debug/build/camcraft-app/022e328e1d2fcaa4/out/posting-022e328e1d2fcaa4",
+        "/opt/cc/target/debug/build/camcraft-post/4d4a6b2fbedf41a7/out/camcraft_post-4d4a6b2fbedf41a7",
+        "/opt/cc/target/debug/camcraft-cli",
+    ] {
+        let exe = p(exe);
+        let got = candidates("posts", Some(&exe), Some(&p(MANIFEST)), &tree);
+        assert_eq!(got[1..], [p("/opt/cc/assets/posts"), p("/src/camcraft/assets/posts")], "{}", exe.display());
+        assert_eq!(resolve("posts", Some(&exe), Some(&p(MANIFEST)), &tree), Ok(p("/opt/cc/assets/posts")));
+    }
+    // An exe in an `out` folder that is not a cargo unit folder stays an
+    // installed exe: only the folder beside it.
+    let stray = p("/opt/app/build/x/y/out/camcraft-ui");
+    let elsewhere = dirs(&["/opt/assets/posts", "/src/camcraft/assets/posts"]);
+    assert_eq!(candidates("posts", Some(&stray), Some(&p(MANIFEST)), &elsewhere).len(), 1);
+    let why = resolve("posts", Some(&stray), Some(&p(MANIFEST)), elsewhere).expect_err("not a cargo tree");
+    assert!(why.starts_with("no posts folder found"), "{why}");
+}
+
 /// Review of #2293: an installed exe never falls back to the build
 /// machine's checkout or to `<exe>/../../assets` (`/usr/assets`, `C:/assets`).
 #[test]

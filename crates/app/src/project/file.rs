@@ -114,14 +114,18 @@ use super::*;
 /// Absent reads as before (v65 steps up unchanged); an old reader must
 /// refuse a v66 file rather than discard `controller_rtcp: false` and
 /// emit G43.4 RTCP from tilt vectors.
-/// v67 (#2016): a tool may name its library holder (`holder` on the
+/// v67 (#1720): a WCS row may record flipped axes (`flip`). Absent is
+/// no flip - what every v66 file posted - so a v66 file steps up
+/// unchanged. An old reader must refuse a v67 file rather than drop the
+/// flip and post the setup in the unflipped frame.
+/// v68 (#2016): a tool may name its library holder (`holder` on the
 /// tool) in place of a drawn `body`. Absent is what every older file
 /// states: a `body` (a drawn copy of a library holder included) or the
-/// holder cylinder, read and judged as before, so a v66 file steps up
-/// unchanged. An old reader (including v0.22.0 at v62 and v66 builds)
-/// must refuse a v67 file rather than drop the reference and judge the
+/// holder cylinder, read and judged as before, so a v67 file steps up
+/// unchanged. An old reader (including v0.22.0 at v62 and v67 builds)
+/// must refuse a v68 file rather than drop the reference and judge the
 /// smaller cylinder in its place.
-pub const PROJECT_VERSION: u32 = 67;
+pub const PROJECT_VERSION: u32 = 68;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

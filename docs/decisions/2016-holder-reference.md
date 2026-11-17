@@ -119,3 +119,10 @@ was dropped because a v66 reader would accept the document and discard
 RTCP refusal checks. The holder-reference pin requires v67 or later and
 continues to reject future versions; the break-through migration pin
 covers older versions through the current format.
+
+**WCS-flip refresh (PR #2092).** Main now writes project v67 for #1720's
+WCS flip fields. Advance the holder-reference barrier to v68. Keep main's
+flip format, migration, and refusal checks. Reusing v67 was rejected
+because its readers can discard `holder` and weaken collision checks.
+The holder-reference pin requires v68 or later. The migration pin covers
+all older formats through the current version.
