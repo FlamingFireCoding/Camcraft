@@ -708,6 +708,12 @@ function onCycle() {
     msg("canned cycle " + g + " has no feed rate - refused: without F the control drills at whatever feed was last modal");
     return;
   }
+  // #2348: grblHAL's code list and the LinuxCNC reference it follows
+  // give G83 no P word, so a deep-peck dwell is refused, not dropped.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1682: refused - not written)
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
