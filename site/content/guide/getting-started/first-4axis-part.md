@@ -31,6 +31,7 @@ camcraft-cli process examples/first-4axis-part.camproj -o first-4axis-part.nc
 Continuous 4-axis work, where A turns during the cut, is a different job
 and is not walked through here. `tormach.cps` posts it (issue #796), but it
 has been run in the PathPilot simulator only. See
+[Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md),
 [Continuous 4-axis](@/guide/multi-axis/continuous-4-axis.md) and
 [What the post refuses](#what-the-post-refuses) below.
 

@@ -32,13 +32,24 @@ A table the axis goes along X.
 
 ## Feed on a rotary move
 
-The feed is written as a plain F word. CamCraft has no inverse-time feed
-mode (G93) in its shipped posts, so a move that turns the rotary does not
-get a degrees-per-minute or inverse-time conversion from the post. Where the
-machine file states a rotary's rate, the machine check judges the move
-against it, and `fanuc-lathe.cps` refuses a C-axis rapid when the machine states no C rate. On a
-control that wants inverse-time feed for simultaneous moves, the posted
-program is not ready for it as it stands.
+One post writes inverse-time feed: `tormach.cps`, for an A about X (issue
+#796). A feed move that turns A together with X, Y or Z is written in
+`G93`, and its time is the longer of two: the time for the tool to go
+along its path at the operation's feed, and the time for A to turn at the
+rate that the machine file states. A move that turns A only stays in `G94`
+with F in degrees per minute. `G94` comes back before each move that is
+not a `G93` feed. The machine file must state the A rate
+(`max_normal_speed`), or the post refuses.
+[Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md)
+reads such a program line by line.
+
+Each other post writes the feed as a plain F word. A move that turns the
+rotary does not get a degrees-per-minute or inverse-time conversion from
+those posts. Where the machine file states a rotary's rate, the machine
+check judges the move against it, and `fanuc-lathe.cps` refuses a C-axis
+rapid when the machine states no C rate. On a control that wants
+inverse-time feed for simultaneous moves, the program from those posts is
+not ready for it as it stands.
 
 ## Posts for continuous rotary moves
 
@@ -58,6 +69,23 @@ the fitted skin, the stock and the part, for gouges. A mesh imported coarser
 than promised gives its excess back from the allowance, and past that the
 operation is refused. The stock is the setup's stock solid.
 
+## End faces and the chuck
+
+Rotary Parallel finishes the whole model, and that includes its two end
+faces, down to the axis. A bar on a rotary is held at one end. If the
+model ends where the bar goes on into the chuck, the pass on that end
+face is a cut through the bar. No setting keeps the pass off an end face
+(issue [#2343](https://github.com/NeoTech/Camcraft/issues/2343)). A tool
+whose flute is too short for that depth is blocked at post by the shank
+check. A tool with a long flute is not. Make the stock as long as the real
+bar, so that the checks see the material that is there, and prove a
+program with an air cut.
+
+Rotary Offset takes two turns of the rotary for each level that cuts. On
+the microARC 4 file, with its A travel of -360 to 360 degrees, the
+PathPilot post refuses it (issue
+[#2344](https://github.com/NeoTech/Camcraft/issues/2344)).
+
 ## Recipe: finishing a shaft on an A table
 
 1. Mount the Doosan DNM or microARC 4 machine, and its post.
@@ -75,4 +103,6 @@ operation is refused. The stock is the setup's stock solid.
   Engrave and Trace cut flat planes; no operation unrolls a drawing onto a
   rotary.
 - A stated rotary position: the axis comes from the mesh.
-- Inverse-time feed.
+- Inverse-time feed in a post other than `tormach.cps`.
+- An axial limit for Rotary Parallel, or a way to leave an end face
+  (issue #2343).
