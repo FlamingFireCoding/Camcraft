@@ -23,6 +23,9 @@
 //! post::post (tormach.cps), app::operation (Rotary Parallel), app::project,
 //! app::machine (check_document).
 
+#[path = "common/wrapped_nc.rs"]
+mod wrapped_nc;
+
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SelectPost,
     SetStock, SetUnits,
@@ -307,5 +310,6 @@ fn the_committed_project_posts_the_committed_program() {
     let gate = posting::verification_gate(&world);
     assert!(gate.is_empty(), "the post gate is silent: {gate:?}");
     let want = std::fs::read_to_string(repo(PROGRAM)).expect("the example program");
-    assert_eq!(post(&world, "loaded").program, want, "{PROJECT} posts {PROGRAM}");
+    wrapped_nc::compare(&post(&world, "loaded").program, &want)
+        .unwrap_or_else(|e| panic!("{PROJECT} posts {PROGRAM}: {e}"));
 }

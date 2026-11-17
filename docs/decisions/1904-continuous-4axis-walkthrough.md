@@ -55,3 +55,23 @@ Fusion or HSMWorks material was consulted.
 - **Not exercised:** the program has not been run in the PathPilot Hub or
   on a machine. The issue's "Done means" asks for a Hub run to M30; the
   page lists what to check and asks for the result on #1904.
+- **Review decision: compare the NC examples with tightly bounded numeric
+  differences.** **Why:** supported platforms can differ at rounding
+  boundaries in A and inverse-time F words. Keep the committed programs
+  and the independent rate checks. Reject changes outside the numeric
+  bounds, and reject changes to line structure or other words.
+  **Dropped:** replacing each golden with one platform's output, which
+  does not establish agreement across platforms. **Cost to change:** a
+  post-format change needs new bounds and pins.
+- **Review decision: this partial delivery uses `Refs #1904`.** **Why:**
+  neither program has a recorded PathPilot Hub run to M30, and the wrapped
+  engraving or slot is not available. The guide does not complete the
+  issue's acceptance work. **Dropped:** keeping a closing keyword without
+  that evidence. **Cost to change:** complete and record the missing work
+  before closing #1904.
+- **Review decision: inherit the feed-time fix and trajectory pin from
+  parent PR #2342.** **Why:** the defect originates in that parent, whose
+  head `b93fe06131248f91e41e90104e0d050409add852` has a review that clears
+  the original feed-time and NC-comparison code findings. **Dropped:** a
+  separate safety fix in this child. Refresh this child from the parent
+  and validate the merged head before claiming the finding is fixed.
