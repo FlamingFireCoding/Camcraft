@@ -103,7 +103,11 @@ pub struct VerifyContext<'a> {
     pub mode: Mode,
     /// Top of the stock column in Z (the surface the tool starts from).
     pub stock_top_z: f64,
-    /// Safe plane: rapids must live at or above it.
+    /// The op's safe plane. Law (d) no longer stands down at it (issue
+    /// #2121: a plane inside the stock is not safe) - it reads every
+    /// lateral rapid under the stock top; the plane only says which
+    /// convictions the operation layer may re-read against the program
+    /// ahead (`acquit_traverses_by_prior`).
     pub clearance_z: f64,
     /// Finish allowance already baked into the path offsets.
     pub stock_to_leave: f64,
@@ -251,7 +255,8 @@ pub enum Warning {
     /// move, at most: moves law (c) already convicted are not
     /// re-tried here, and `part` reads like (c)'s.
     SweepHit { at: usize, part: bool },
-    /// Rapid `move` travels under the clearance plane through stock.
+    /// Rapid `move` travels through stock: under the clearance plane,
+    /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
@@ -311,6 +316,9 @@ pub enum Warning {
     /// part (#1637): choosing the part as source instead of the stock
     /// avoids cutting into the part edge. Blocking like `Gouge`.
     StockChamferGouge { at: usize },
+    /// The same for a stock-source Deburr (#2313): it breaks the stock's
+    /// edge, and the part under that edge is cut. Blocking like `Gouge`.
+    StockDeburrGouge { at: usize },
 }
 
 impl Warning {
@@ -352,6 +360,9 @@ impl core::fmt::Display for Warning {
                     "move {at} cuts past the finish surface (stock-source chamfer breaks into a part; chamfer with the part as source)"
                 )
             }
+            Warning::StockDeburrGouge { at } => {
+                write!(f, "move {at} cuts past the finish surface (stock-source deburr breaks into a part; use the part as source)")
+            }
             Warning::HolderHit { at, part, short_mm } => write!(
                 f,
                 "holder body at move {at} rubs the {} - {short_mm:.3} mm short of clearance",
@@ -368,7 +379,7 @@ impl core::fmt::Display for Warning {
                 if *part { "part or an island" } else { "uncut stock" }
             ),
             Warning::RapidInStock { at } => {
-                write!(f, "rapid move {at} travels below the clearance plane inside stock")
+                write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
