@@ -11,13 +11,13 @@
 //! 1. `<exe dir>/assets/<kind>` - the zip, the installer, the Linux
 //!    tarball, deb/rpm (`/usr/lib/camcraft`), AppImage, flatpak, snap;
 //! 2. `<app>/Contents/Resources/assets/<kind>` - the macOS app bundle;
-//! 3. `<exe dir>/../../assets/<kind>` - a dev run from `target/<profile>/`;
+//! 3. `<profile>/../../assets/<kind>` - a dev run from `target/<profile>/`;
 //! 4. `<this crate>/../../assets/<kind>` - the source tree, for the test
 //!    binaries in `target/*/deps/` (a path, not a compiled-in copy).
 //!
 //! Candidates 3 and 4 apply only when the exe is in a cargo build tree
-//! (its folder, or the folder above `deps`/`examples`, holds cargo's
-//! `.fingerprint`). An installed exe without its `assets/<kind>` folder
+//! of the old or the new cargo build-dir layout ([`cargo_profile_dir`]).
+//! An installed exe without its `assets/<kind>` folder
 //! is refused by name: it never reads the build machine's checkout, nor
 //! `/usr/assets` or `C:\assets`. There is no per-user copy: it could
 //! shadow the shipped files with no warning (review of #2293).
@@ -38,15 +38,30 @@ use std::sync::{Arc, Mutex};
 /// post script is far below it.
 pub const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
-/// The profile folder of a cargo build tree that holds `exe_dir`
-/// (`target/<profile>`, or its `deps` / `examples` child), known by
-/// cargo's `.fingerprint` folder in it. `None` for an installed exe.
+/// The profile folder of a cargo build tree that holds `exe_dir`, or
+/// `None` for an installed exe. Cargo has two layouts (#2316):
+///
+/// - old: the exe is in `target/<profile>` or its `deps` / `examples`
+///   child, and the profile folder holds cargo's `.fingerprint`;
+/// - new build-dir layout: a test or example exe is in
+///   `target/<profile>/build/<pkg>/<hash>/out`, the uplifted binaries
+///   stay in `target/<profile>`, and there is no `.fingerprint` there.
+///   The profile folder then holds `build/camcraft-post`, the unit folder
+///   of this crate, which every exe that reads data files links.
 pub fn cargo_profile_dir<'a>(exe_dir: &'a Path, is_dir: &dyn Fn(&Path) -> bool) -> Option<&'a Path> {
-    let profile = match exe_dir.file_name().and_then(std::ffi::OsStr::to_str) {
+    let name = |p: &Path| p.file_name().and_then(std::ffi::OsStr::to_str).map(str::to_owned);
+    let profile = match name(exe_dir).as_deref() {
         Some("deps" | "examples") => exe_dir.parent()?,
+        Some("out") => {
+            // out -> <hash> -> <pkg> -> build -> <profile>
+            let build = exe_dir.parent()?.parent()?.parent()?;
+            if name(build).as_deref() == Some("build") { build.parent()? } else { exe_dir }
+        }
         _ => exe_dir,
     };
-    is_dir(&profile.join(".fingerprint")).then_some(profile)
+    let in_tree =
+        is_dir(&profile.join(".fingerprint")) || is_dir(&profile.join("build").join(env!("CARGO_PKG_NAME")));
+    in_tree.then_some(profile)
 }
 
 /// The directory candidates for one kind (`posts`, `machines`) in
