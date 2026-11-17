@@ -110,3 +110,12 @@ upstream v63-v65 and `.camtools` v3 migrations and barriers, moved the
 project barrier to `PROJECT_VERSION = 66` and the `.camtools` barrier to
 `HOLDER_REF_VERSION = 4`. Future format changes must advance beyond
 project v66 and `.camtools` v4.
+
+**Current-main refresh (PR #2092).** Main now writes project v66 for
+#1962's explicit RTCP contract. Advance this PR's holder-reference barrier
+to project v67 while retaining the `.camtools` v4 barrier. Reusing v66
+was dropped because a v66 reader would accept the document and discard
+`holder`, weakening collision judgement. Preserve all main trunnion and
+RTCP refusal checks. The holder-reference pin requires v67 or later and
+continues to reject future versions; the break-through migration pin
+covers older versions through the current format.

@@ -109,14 +109,19 @@ use super::*;
 /// row (derived at read).
 /// v65 (#2133): old readers must not discard the tilted frame basis version.
 /// Version 64 and older tilts retain basis 0; new tilts state basis 1.
-/// v66 (#2016): a tool may name its library holder (`holder` on the
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+/// v67 (#2016): a tool may name its library holder (`holder` on the
 /// tool) in place of a drawn `body`. Absent is what every older file
 /// states: a `body` (a drawn copy of a library holder included) or the
-/// holder cylinder, read and judged as before, so a v65 file steps up
-/// unchanged. An old reader (including v0.22.0 at v62 and v65 builds)
-/// must refuse a v66 file rather than drop the reference and judge the
+/// holder cylinder, read and judged as before, so a v66 file steps up
+/// unchanged. An old reader (including v0.22.0 at v62 and v66 builds)
+/// must refuse a v67 file rather than drop the reference and judge the
 /// smaller cylinder in its place.
-pub const PROJECT_VERSION: u32 = 66;
+pub const PROJECT_VERSION: u32 = 67;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -400,7 +405,7 @@ pub struct ToolDto {
     /// holder cylinder, what every older tool judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<super::tool_body_wire::ToolBodyDto>,
-    /// #2016 (v66): the library holder the tool sits in, by reference
+    /// #2016 (v67): the library holder the tool sits in, by reference
     /// (`tool_body_wire::HolderRefDto`). Written in place of `body`,
     /// never beside it; the body is drawn from the named entry on
     /// load. An entry this build's library does not hold refuses the

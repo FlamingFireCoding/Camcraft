@@ -19,7 +19,6 @@ mod common;
 
 use camcraft_app::machine::{Machine, parse_mch};
 use camcraft_app::post::{engine, machine};
-use camcraft_app::posting::MACHINES;
 use std::path::{Path, PathBuf};
 
 const IN: f64 = 25.4;
@@ -32,11 +31,8 @@ fn read(rel: &str) -> String {
 }
 
 fn shipped(name: &str) -> Machine {
-    let text = MACHINES
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, t)| *t)
-        .unwrap_or_else(|| panic!("{name} is not a shipped machine"));
+    let text = camcraft_app::posting::builtin_machine_text(name)
+        .unwrap_or_else(|why| panic!("{name} is not a shipped machine: {why}"));
     parse_mch(text).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 

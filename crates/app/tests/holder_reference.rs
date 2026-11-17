@@ -94,7 +94,7 @@ fn a_library_holder_is_the_reference_in_the_document_and_the_file() {
 
     let text = project::save_text(&world).expect("save");
     let file: Value = serde_json::from_str(&text).expect("json");
-    const { assert!(project::PROJECT_VERSION >= 66, "v65 and earlier readers must refuse the holder reference"); }
+    const { assert!(project::PROJECT_VERSION >= 67, "v66 and earlier readers must refuse the holder reference"); }
     assert_eq!(file["version"], json!(project::PROJECT_VERSION));
     let mut future = file.clone();
     future["version"] = json!(project::PROJECT_VERSION + 1);
