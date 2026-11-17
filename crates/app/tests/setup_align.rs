@@ -242,9 +242,13 @@ fn two_setups_hold_the_part_differently_without_touching_each_other() {
 #[test]
 fn unverified_kinds_are_refused_while_verified_picks_generate_aligned() {
     let (world, mut h) = document(60.0);
-    let seed = (KindInfo::ALL[OpType::Offset2D.ordinal()].seed)(&Carried::of(&contour_params()));
-    let op = CreateOperation::new(&world, "Offset2D", TOOL, SrcRef::Entity("part".into()), seed);
-    h.execute(&world, op.expect("create offset pocket"));
+    // #2276 / #2283 / #2284: 2D Offset, Circular, 2D Chamfer and Deburr have proof;
+    // Probe stays unverified (the op keeps its old name).
+    let seed = (KindInfo::ALL[OpType::Probe.ordinal()].seed)(&Carried::of(&contour_params()));
+    let probe = catalog().into_iter().find(|(n, _)| *n == "PRB-0400").map(|(_, t)| t).expect("probe");
+    h.execute(&world, AddTool::new(&world, "PRB-0400", probe).expect("add probe"));
+    let op = CreateOperation::new(&world, "Circular", "PRB-0400", SrcRef::Entity("part".into()), seed);
+    h.execute(&world, op.expect("create the Probe"));
     // The modelled BOTTOM face (Z 0, the plain 40 x 40 square):
     // flipped over Y it is the setup's top, and Outside of its ring is
     // air at every level - the legal pick of an aligned face contour.
@@ -280,7 +284,7 @@ fn unverified_kinds_are_refused_while_verified_picks_generate_aligned() {
     h.execute(&world, control.expect("create the control contour"));
     generate(&world, &mut h, "InMaterial").expect("as modelled the hole ring trims its wall");
     align(&world, &mut h, AlignPreset::FlipY);
-    let err = generate(&world, &mut h, "Offset2D").expect_err("offset pocket is not verified aligned");
+    let err = generate(&world, &mut h, "Circular").expect_err("Probe is not verified aligned");
     assert!(err.contains("part alignment") && err.contains("not supported yet"), "{err}");
     generate(&world, &mut h, "Picked").expect("verified-kind picks generate aligned");
     let e = model::find_by_name(&world, "Picked").expect("picked op");
