@@ -196,6 +196,33 @@ fn g94_comes_back_before_an_xyz_only_feed_and_a_turns_in_deg_per_min() {
 }
 
 #[test]
+fn g94_comes_back_before_a_turning_rapid_after_a_g93_feed() {
+    let mut recs = head();
+    let mut moves = approach();
+    moves.extend([
+        mv(MoveKind::Feed, 30.0, [10.0, 0.0, 0.0], Some(600.0)),
+        mv(MoveKind::Rapid, 60.0, [20.0, 0.0, 0.0], None),
+    ]);
+    section(&mut recs, "TURNING RAPID", moves);
+    let out = run(&mirrored(), &cnc::serialize(&recs));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let tail = after(&out.program, "G93 G1 X10 Y0 Z0 A30 F12");
+    assert_eq!(&tail[1..3], ["G94", "G0 X20 Y0 Z0 A60"], "{}", out.program);
+
+    // Read the modal state through the whole program: section-end G94
+    // alone cannot repair a rapid that already ran in inverse-time mode.
+    let mut g93 = false;
+    for line in out.program.lines() {
+        let words: Vec<_> = line.split_whitespace().collect();
+        if words.contains(&"G93") { g93 = true; }
+        if words.contains(&"G94") { g93 = false; }
+        if words.contains(&"G0") {
+            assert!(!g93, "rapid in G93: {line}\n{}", out.program);
+        }
+    }
+}
+
+#[test]
 fn a_counts_on_through_180_and_360_never_back_through_0() {
     let out = run(&wide(), &wrap_stream(361.0));
     let a: Vec<f64> = lines(&out.program)

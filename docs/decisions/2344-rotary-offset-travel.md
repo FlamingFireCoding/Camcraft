@@ -44,3 +44,23 @@ small cumulative-A streams to test the refusal and travel boundaries.
 **Cost to change later:** verify the controller's actual limits before
 changing the machine file, or design and independently test seam coverage
 and safe unwind behavior before changing the roughing path.
+
+
+**PR #2386 review follow-up:** retain the wrapped golden and its exact
+motion topology, XYZ, and ordinary feed words. Compare G93 inverse-time
+feeds within 0.2% of the smaller positive feed rather than an absolute
+0.04. A one-step 0.001-degree endpoint rounding difference changes short,
+rate-limited turns proportionally more in absolute F; the reported 0.749
+spread is about 0.15% near F519. A flat 0.75 allowance was rejected because
+it would hide much larger timing changes at slow feeds. The existing
+independent part-relative feed and A-rate checks remain unchanged. Also
+restore G94 immediately before a turning G0, so a prior G93 feed cannot
+leave a rapid in inverse-time mode; a section-end reset alone is too late.
+The comparator pin covers the reported F209.668/F209.79 pair, representative
+larger spreads, and low/high-feed rejection controls. The turning-rapid
+pin reads both the exact feed/reset/rapid sequence and the modal state of
+every rapid in its program.
+Both follow-up pins were mutation-checked: reverting the comparator to
+0.04 made its new platform-spread case fail, and removing the pre-rapid
+G94 made the feed/reset/rapid sequence fail. Restoring each fix passed;
+the complete microARC and wrapped-A suites passed (3 and 12 tests).

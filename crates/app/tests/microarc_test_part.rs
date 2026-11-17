@@ -252,8 +252,14 @@ fn num(t: &str) -> Option<f64> {
 
 /// The wrapped job's trig differs at last-place rounding boundaries across
 /// platforms. Keep topology, mode words, XYZ and ordinary feeds byte exact;
-/// only motion A (one 0.001-degree step) and G93 F (0.04 inverse minutes,
-/// the observed adjacent-step rate-cap swap) have a numeric allowance.
+/// only motion A (one 0.001-degree step) and G93 F have numeric allowances.
+/// G93 F is inverse time: a 0.001-degree endpoint rounding change has a
+/// larger absolute effect on short, high-F turns. The 0.749 spread
+/// reported in #2342 is reproduced by 360/0.693 versus 360/0.694
+/// (floored to 0.001), near F519: about 0.15%. Allow 0.2%
+/// relative to the smaller F, including headroom for word flooring. Unlike
+/// an absolute 0.75 allowance, this permits only 0.01067 at the slowest
+/// turning feed F5.335. Independent tip-feed and A-rate checks still apply.
 fn compare_wrap_golden(actual: &str, expected: &str) -> Result<(), String> {
     let actual: Vec<_> = actual.lines().collect();
     let expected: Vec<_> = expected.lines().collect();
@@ -276,7 +282,10 @@ fn compare_wrap_golden(actual: &str, expected: &str) -> Result<(), String> {
             let tolerance = if turning_motion && got.starts_with('A') && want.starts_with('A') {
                 0.001
             } else if turning_feed && got.starts_with('F') && want.starts_with('F') {
-                0.04
+                match (num(got), num(want)) {
+                    (Some(a), Some(b)) if a > 0.0 && b > 0.0 => 0.002 * a.min(b),
+                    _ => return Err(format!("line {}: invalid G93 feed {got} or {want}", line + 1)),
+                }
             } else {
                 return Err(format!("line {}: {got} != {want}", line + 1));
             };
@@ -295,9 +304,30 @@ fn wrap_golden_allows_only_bounded_platform_rounding() {
     let windows = "G93 G1 X0 Y0 Z0 A-41.921 F116.959\nG1 X0 Y0 Z0 A-45 F116.921";
     let linux = "G93 G1 X0 Y0 Z0 A-41.922 F116.921\nG1 X0 Y0 Z0 A-45 F116.959";
     assert!(compare_wrap_golden(linux, windows).is_ok());
+    // The exact Windows pair from the parent review, plus representative
+    // rate-capped pairs reproducing its other reported absolute spreads.
+    for (actual, expected) in [
+        ("209.668", "209.79"),
+        ("132.109", "132.158"),
+        ("385.852", "386.266"),
+        ("518.731", "519.48"),
+    ] {
+        let actual = format!("G93 G1 X0 A1 F{actual}");
+        let expected = format!("G93 G1 X0 A1 F{expected}");
+        assert!(compare_wrap_golden(&actual, &expected).is_ok());
+        assert!(compare_wrap_golden(&expected, &actual).is_ok());
+    }
+    // A relative allowance stays tight at low F and rejects larger
+    // timing changes at high F, in either comparison direction.
+    for (actual, expected) in [("5.35", "5.335"), ("520.52", "519.48")] {
+        let actual = format!("G93 G1 X0 A1 F{actual}");
+        let expected = format!("G93 G1 X0 A1 F{expected}");
+        assert!(compare_wrap_golden(&actual, &expected).is_err());
+        assert!(compare_wrap_golden(&expected, &actual).is_err());
+    }
     for changed in [
         linux.replace("A-41.922", "A-41.923"),
-        linux.replace("F116.921", "F116.918"),
+        linux.replace("F116.921", "F116.65"),
         linux.replace("X0", "X0.0001"),
         linux.replace("G93", "G94"),
         linux.replace("G1", "G0"),

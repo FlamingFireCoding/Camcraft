@@ -888,6 +888,7 @@ function turnMove(p, rapid) {
     var aw = "A" + fa(ax.sign * b1);
     var dA = Math.abs(Number(fa(ax.sign * b1)) - Number(fa(ax.sign * bPrev)));
     if (rapid) {
+      g94();
       block(["G0", xw, yw, zw, aw]);
     } else if (!(dA > 0)) {                   // the turn rounds away: plain G94
       g94();
