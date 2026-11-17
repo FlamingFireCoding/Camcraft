@@ -91,6 +91,9 @@ fn g76_refuses_by_name_when_no_grid_j_cuts_the_records_passes() {
         t.height = 0.15;
         t.first_depth = 0.012;
         t.min_depth = 0.012;
+        // The thirteenth pass takes the remaining 0.006, so the
+        // allowance check must pass before the grid refusal is tested.
+        t.finish_allowance = 0.006;
         t.major_diameter = t.minor_diameter + 0.3;
     });
     let (text, refused) = post(&world, &fine, g76());
