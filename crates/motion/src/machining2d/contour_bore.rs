@@ -12,7 +12,7 @@
 //! material consulted.
 
 use crate::approach::{CENTER_CUT_REFUSAL, NOT_CENTER_CUTTING};
-use crate::cl::{MoveKind, PathBuilder, lattice};
+use crate::cl::{Move, MoveKind, PathBuilder, lattice};
 use crate::entry::{Entry3D, disc_clears, dive_room, helix_about};
 use crate::entry_arc::{arc_lead_swept, push_arc_lead, seg_dir};
 use crate::geo2d::Point2;
@@ -22,7 +22,7 @@ use crate::links::{helix_turns, plan_zig_capped, push_zig};
 use super::arcs::Seg;
 use super::contour_entry::{Engage, flatten};
 use super::descent::{Lvl, dive_link, feed_down, substituted_dive};
-use super::descent_dive::{along_pass, links_to};
+use super::descent_dive::{along_pass, dive_point, links_to};
 use super::slots::chord_clears;
 
 /// One bore-side descent's level facts.
@@ -64,11 +64,18 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
     let pf = a.plunge(p.plunge_feed);
     let cur = b.at();
     let leg = Point2::new(cur.x, cur.y);
+    // #2301: the material's top over an axial dive at `d` (the plane
+    // above only where that column was opened, else the uncut core's).
+    let top_at = |b: &PathBuilder, d: Point2| {
+        if s.first || prev_z >= p.clearance_z { mat_top } else { column_top(b.moves(), &path, d, prev_z, p.entry_top()) }
+    };
     let sub = |b: &mut PathBuilder, why: &str| {
         if !a.center_cutting {
             b.note_once(&format!("{CENTER_CUT_REFUSAL} - {why}, on the bore side at ({:.3}, {:.3})", e2.x, e2.y));
         }
-        substituted_dive(b, &lvl, e2, z, m, why, tz)
+        let d = dive_point(&lvl, e2, m).unwrap_or(e2);
+        let at_d = Lvl { mat_top: top_at(b, d), ..lvl };
+        substituted_dive(b, &at_d, e2, z, m, why, tz)
     };
     if !a.center_cutting && arm == Entry3D::Plunge {
         b.note_once(&format!("{NOT_CENTER_CUTTING} - the bore side's plunge entry"));
@@ -86,7 +93,7 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
                     if leg.x != d.x || leg.y != d.y {
                         b.push(MoveKind::Rapid, Point3::new(d.x, d.y, tz), None);
                     }
-                    feed_down(b, d, z, mat_top, m, pf);
+                    feed_down(b, d, z, top_at(b, d), m, pf);
                     dive_link(b, &lvl, d, e2, z, m)
                 }
                 None => sub(b, "the disc fits nowhere here"),
@@ -205,6 +212,37 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
             sub(b, why)
         }
     }
+}
+
+/// The material's top over an axial dive at `d` on a later level
+/// (#2301). The bore side cuts only its ring and never the core inside
+/// it, so the plane above `prev_z` is the top only where the column at
+/// `d` was opened: `d` on the level's path (the lead-in and the ring,
+/// cut on every level above), or an earlier plunge at `d` down to the
+/// plane above. Elsewhere the dive's footprint meets the core, which
+/// stands at the top of the material `top` (carried stock included).
+fn column_top(done: &[Move], path: &[Point2], d: Point2, prev_z: f64, top: f64) -> f64 {
+    /// How far off the path a dive still counts as on it (mm): a sliver
+    /// this thin is far under verify's footprint tolerance.
+    const ON_PATH: f64 = 1e-4;
+    let on_path = (path.len() == 1 && dist(path[0], d) <= ON_PATH)
+        || path.windows(2).any(|w| seg_dist(w[0], w[1], d) <= ON_PATH);
+    let dived = done.iter().any(|mv| {
+        mv.kind == MoveKind::Plunge && mv.to.x == d.x && mv.to.y == d.y && mv.to.z <= prev_z + 1e-9
+    });
+    if on_path || dived { prev_z } else { top.max(prev_z) }
+}
+
+fn dist(a: Point2, b: Point2) -> f64 {
+    (a.x - b.x).hypot(a.y - b.y)
+}
+
+/// The distance from `q` to the segment `a -> b`.
+fn seg_dist(a: Point2, b: Point2, q: Point2) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let l2 = dx * dx + dy * dy;
+    let t = if l2 > 0.0 && l2.is_finite() { (((q.x - a.x) * dx + (q.y - a.y) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+    dist(Point2::new(a.x + dx * t, a.y + dy * t), q)
 }
 
 /// The level ramp's angle (degrees): the links' own where it is a real
