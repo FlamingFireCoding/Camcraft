@@ -295,7 +295,7 @@ pub fn post_ref_label(post: &PostRef) -> String {
 #[must_use]
 pub fn post_path(post: &PostRef) -> Option<String> {
     let shipped = |name: &str| -> Option<String> {
-        files::builtin_post_path(name)
+        builtin_post_path(name)
             .map(|p| p.to_string_lossy().to_string())
     };
     match post {
