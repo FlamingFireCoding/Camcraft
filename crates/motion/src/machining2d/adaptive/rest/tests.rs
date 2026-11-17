@@ -231,3 +231,21 @@ fn the_raster_half_of_the_entry_proof_refuses_on_its_own() {
     assert!(entries.proved(clear), "a plunge clear of the raster's material was refused");
     assert!(entries.any());
 }
+
+/// The travel budget (issue 2109) refuses by name past each limit: the
+/// feed out of cut, then the retract hops beyond one per rest area.
+#[test]
+fn the_travel_budget_refuses_by_name_past_each_limit() {
+    use super::budget::{REST_NONCUT_PER_CUT, Travel, check, hop_budget};
+    let within = Travel { cut: 100.0, air: REST_NONCUT_PER_CUT * 100.0, hops: hop_budget(4) };
+    assert!(check(&within, 4, -2.0).is_ok());
+    let refused = |t: Travel| match check(&t, 4, -2.0) {
+        Err(e) => e.to_string(),
+        Ok(()) => panic!("{t:?} passed the budget"),
+    };
+    let msg = refused(Travel { air: within.air + 1.0, ..within });
+    assert!(msg.contains("rest Adaptive at Z-2.000 would feed 301 mm out of cut for 100 mm in cut (over 3.0x)"), "{msg}");
+    let msg = refused(Travel { hops: hop_budget(4) + 1, ..within });
+    assert!(msg.contains("would reach 12 passes by a retract (over 11") && msg.contains("4 rest areas"), "{msg}");
+    assert_eq!(hop_budget(0), hop_budget(1));
+}
