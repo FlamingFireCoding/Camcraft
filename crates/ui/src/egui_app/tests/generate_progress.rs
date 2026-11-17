@@ -136,7 +136,7 @@ fn the_overlay_text_counts_a_batch() {
 }
 
 #[test]
-fn repaints_reuse_the_label_and_a_rename_resolves_it_once() {
+fn one_search_for_each_job_and_a_rename_shows_without_another() {
     let mut h = shell_harness();
     h.run();
     let (_tx, rx) = mpsc::channel();
@@ -149,7 +149,22 @@ fn repaints_reuse_the_label_and_a_rename_resolves_it_once() {
     assert_eq!(crate::gen_worker::label_lookups() - before, 1, "one search for the job, none for each repaint");
     h.state_mut().state.pending.push_back(CommandKind::RenameOperation { name: "Contour1".into(), label: "Outer wall".into() });
     h.run_steps(10);
-    assert_eq!(crate::gen_worker::label_lookups() - before, 2, "the rename resolves the label one more time");
+    assert_eq!(crate::gen_worker::label_lookups() - before, 1, "a rename needs no new search");
     let (text, _) = overlay(&h).expect("the overlay shows while the job runs");
-    assert!(text.starts_with("Generating Outer wall - "), "{text}");
+    assert!(text.starts_with("Generating Outer wall - "), "the rename shows at once: {text}");
+}
+
+#[test]
+fn a_deleted_operation_shows_its_name_and_no_dead_entity_is_read() {
+    let mut h = shell_harness();
+    h.run();
+    let (_tx, rx) = mpsc::channel();
+    h.state_mut().state.gen_jobs.run_with("Contour1", rx);
+    h.state_mut().state.pending.push_back(CommandKind::RenameOperation { name: "Contour1".into(), label: "Outer wall".into() });
+    h.run_steps(2);
+    h.state_mut().state.pending.push_back(CommandKind::DeleteOperation("Contour1".into()));
+    h.run_steps(2);
+    assert!(model::find_by_name(&h.state().state.world, "Contour1").is_none(), "the op is gone");
+    let (text, _) = overlay(&h).expect("the overlay stays while the job runs");
+    assert!(text.starts_with("Generating Contour1 - "), "the name, not the dead label: {text}");
 }

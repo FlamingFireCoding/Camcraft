@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use camcraft_app::clock::Instant;
 use camcraft_app::commands::{CommandError, GenerateOperation, StagedGeneration};
 use camcraft_app::model;
+use flecs_ecs::prelude::Entity;
 
 use crate::state::{ErrorScope, State};
 
@@ -35,20 +36,22 @@ pub struct GenJobs {
     done: usize,
 }
 
-/// The job on the worker. Its label is resolved once, and again only when
-/// the document changes, never in a repaint: the name search scans every
-/// named entity, and frame work must not grow with the model (#2257).
+/// The job on the worker. The name search scans every named entity, so it
+/// runs once, when the job starts; a frame reads the label straight from
+/// the found entity, which a rename updates in place. No cache, so no key
+/// to go stale (#2257, the #2238 frame-cost rule).
 struct Running {
     name: String,
     started: Instant,
-    label: String,
-    /// The `doc_version` the label was resolved at; `None` until resolved.
-    label_doc: Option<u64>,
+    /// The operation's entity; `None` until found, or if it was not found.
+    entity: Option<Entity>,
+    /// The search ran.
+    searched: bool,
 }
 
 impl Running {
     fn new(name: String) -> Self {
-        Self { label: name.clone(), name, started: Instant::now(), label_doc: None }
+        Self { name, started: Instant::now(), entity: None, searched: false }
     }
 }
 
@@ -92,7 +95,7 @@ impl GenJobs {
     }
 
     /// For tests: a running job whose result arrives through `rx`. Its
-    /// label resolves at the next poll, as a started job's does.
+    /// entity is found at the next poll, as a started job's is.
     #[cfg(test)]
     pub(crate) fn run_with(&mut self, name: &str, rx: Receiver<Outcome>) {
         self.rx = Some(rx);
@@ -109,31 +112,33 @@ pub fn overlay_text(p: &GenProgress) -> String {
 
 impl State {
     /// The overlay's readout, `None` while nothing generates. It reads the
-    /// stored label and does no world search.
+    /// label from the job's entity and does no world search. A deleted
+    /// entity, or one not found, shows the operation's name.
     #[must_use]
     pub fn gen_progress(&self) -> Option<GenProgress> {
         let running = self.gen_jobs.running.as_ref()?;
+        let label = running
+            .entity
+            .and_then(|e| model::live_operation_label(&self.world, &running.name, &e))
+            .unwrap_or_else(|| running.name.clone());
         Some(GenProgress {
-            label: running.label.clone(),
+            label,
             index: self.gen_jobs.done + 1,
             total: self.gen_jobs.done + 1 + self.gen_jobs.queue.len(),
             secs: running.started.elapsed().as_secs_f64(),
         })
     }
 
-    /// Resolve the running job's label if the document changed since the
-    /// last resolve (a rename, an undo). The label falls back to the name.
-    fn refresh_gen_label(&mut self) {
-        let doc = self.doc_version;
+    /// Find the running job's entity, once for each job.
+    fn find_gen_entity(&mut self) {
         let Some(running) = self.gen_jobs.running.as_mut() else { return };
-        if running.label_doc == Some(doc) {
+        if running.searched {
             return;
         }
         #[cfg(test)]
         LABEL_LOOKUPS.with(|n| n.set(n.get() + 1));
-        running.label = model::find_by_name(&self.world, &running.name)
-            .map_or_else(|| running.name.clone(), |e| model::operation_label(&self.world, &running.name, &e));
-        running.label_doc = Some(doc);
+        running.entity = model::find_by_name(&self.world, &running.name);
+        running.searched = true;
     }
 
     /// Generate `name`: on the worker when background generation is on,
@@ -175,7 +180,7 @@ impl State {
             }
         }
         self.start_next_generation();
-        self.refresh_gen_label();
+        self.find_gen_entity();
         if !self.gen_jobs.busy() {
             self.gen_jobs.done = 0;
         }
@@ -208,7 +213,7 @@ impl State {
             if spawned.is_ok() {
                 self.gen_jobs.rx = Some(rx);
                 self.gen_jobs.running = Some(Running::new(name));
-                self.refresh_gen_label();
+                self.find_gen_entity();
             } else {
                 let job = slot.lock().ok().and_then(|mut s| s.take());
                 self.gen_jobs.done += 1;

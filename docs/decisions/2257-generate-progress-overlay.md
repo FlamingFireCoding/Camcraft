@@ -15,8 +15,9 @@
   - **Dropped:** stopping the generator itself. The generators have no cancel point.
 - **Decided:** New and Open drop a running generation (`abandon_imports` now drops it too). A result for the old document never lands in the new one.
 - **Decided:** the viewport takes no press inside the overlay's panel. A click on Cancel is not also a viewport pick.
-- **Decided (review of f04c549a):** the running job stores its label. The label is resolved when the job starts, and again only when `doc_version` changes (for example a rename). A repaint reads the stored label and does no world search.
-  - **Why:** `model::find_by_name` scans each named entity. The overlay repaints each 50 ms, and frame work must not grow with the model.
-  - **Dropped:** storing the operation entity and reading its label in each frame. The entity can be deleted while the job runs. The `doc_version` check gives the same freshness with one search for each document change.
+- **Decided (review of f04c549a):** the job finds its operation entity one time, when it starts. Each frame reads the label from that entity (`model::live_operation_label`). A frame does no world search, and a rename shows at once. If the entity is deleted, the overlay shows the operation name.
+  - **Why:** `model::find_by_name` scans each named entity. The overlay repaints each 50 ms, and frame work must not grow with the model. A direct read is not a cache, so it has no key that can become stale.
+  - **Dropped:** a stored label that is resolved again when `doc_version` changes (4ac78101). The #2238 frame-cost rule does not permit a cache key on `doc_version` alone.
+  - **Note:** `live_operation_label` checks `World::is_alive` first. A read of a deleted entity stops the process in flecs; `a_deleted_operation_shows_its_name_and_no_dead_entity_is_read` pins this. The helper adds 7 lines to `model.rs`, which was 482 lines before this change.
 - **Not changed:** `RegenerateAll` (the batch fix of the stale operations) stays synchronous. Its rounds write the world between rounds, so it does not split at one seam. The overlay's "n of m" counts single generations that wait in the queue.
 - **Cost to change later:** the overlay reads only `State::gen_progress`. A fraction from the generators would change `GenProgress` and the bar, and nothing else.
