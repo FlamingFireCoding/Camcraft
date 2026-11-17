@@ -287,3 +287,29 @@ first bite deeper than one stepdown is not permitted.
   cuts that stock safely, so a refusal would stop a legal program.
 - A second `face` entry point with the stock top as a parameter: the
   field follows the pattern of `TraceParams` and `TrochoidParams`.
+
+## #2004 - Review of head `7cb6472cb`: stock caps in the cutting frame
+
+**Chosen:** generation and area planning share `stock_top_frame.rs`'s
+stock-cap calculation. For an indexed operation it transforms every corner
+of the setup-stock and material bounds into the cutting frame and takes
+the highest local Z. Upright operations retain their existing reading.
+B90 and translated oblique Face pins cover generation; area-plane and
+material-bound pins cover the shared calculation.
+
+The two opening-rapid tests from `main` now expect the first cut at Bottom
+Z -1 for their Top Z 0, stepdown 1 fixture. Their opening rapid, plunge,
+feed and chained-path assertions remain in place.
+
+**Why:** subtracting `origin.z` alone misses the stock cap after rotation.
+The review's B90 Face saw 20 instead of 40 and silently took a 5 mm first
+bite with a 3 mm stepdown. Generation and area planning must use the same
+local cap so they retain the same cutting planes.
+
+**Dropped:** retaining the setup-frame Z shift, or calculating a separate
+cap for each caller; the former misses indexed stock, and the latter can
+let generation and area planning disagree.
+
+**Cost to change later:** update the shared cap function and its indexed
+pins together. A changed cap can change posted depth levels and remains
+under the safety floor.

@@ -1031,7 +1031,8 @@ fn assert_pocket_origin_approach(strategy: PocketStrategy) {
     assert_eq!(rapid.feed, None);
     assert_eq!(plunge.kind, MoveKind::Plunge);
     assert_eq!(plunge.from, rapid.to);
-    assert_eq!(plunge.to.z, p.top_z);
+    // #2004: with no stock above Top Z, the first cut is one step below it.
+    assert_eq!(plunge.to.z, p.bottom_z);
     assert_eq!(plunge.feed, Some(p.plunge_feed));
     assert!(path.is_chained() && path.all_finite());
 }

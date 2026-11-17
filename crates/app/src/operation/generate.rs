@@ -255,7 +255,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     lk.approach.center_cutting = tool.center_cutting;
     // #2004: the stock top in the generator's frame - where stock stands
     // over Top Z the level law keeps a level at Top Z (the old ladder).
-    lk.approach.stock_top = stock_top_z.is_finite().then_some(stock_top_z - oz);
+    lk.approach.stock_top = stock_top_in_frame(&material.facets, material.top, stock_aabb, frame.as_ref());
     // #1559: the stock a 2D ladder's Top leaves standing over its region
     // (the declared stock less the program ahead's cuts): laid over the
     // generation's copy, so the first descent starts over it and feeds

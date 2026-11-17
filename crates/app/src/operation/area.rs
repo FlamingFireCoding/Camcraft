@@ -71,7 +71,7 @@ pub(super) fn pocket_ladder(
     else {
         return Ok(None);
     };
-    let mt = stock_top(world, setup, material.top, 0.0);
+    let mt = stock_top(world, setup, &material.facets, material.top, None);
     Ok(Some((material.facets, ladder_planes(t, mt, b, stepdown))))
 }
 
@@ -176,7 +176,7 @@ pub(super) fn whole_model_pocket(
         Err(e) => return Some(Err(e)),
     };
     let oz = frame.map_or(0.0, |f| f.origin.z);
-    let mt = stock_top(world, setup, part_top, oz);
+    let mt = stock_top(world, setup, &part, part_top, frame);
     let (part, stock) = match frame {
         Some(f) => (f.local_facets(&part), f.local_facets(&stock)),
         None => (part, stock),
@@ -220,6 +220,7 @@ pub(super) fn stock_pocket(
     let t = resolve_height(world, setup, Some(src), top)?;
     let b = resolve_height(world, setup, Some(src), bottom)?;
     let oz = frame.map_or(0.0, |f| f.origin.z);
+    let mt = stock_top(world, setup, &parts, f64::NEG_INFINITY, frame);
     let (parts, stock) = match frame {
         Some(f) => (f.local_facets(&parts), f.local_facets(&stock)),
         None => (parts, stock),
@@ -232,7 +233,6 @@ pub(super) fn stock_pocket(
             units::len(z, unit, 3)
         )
     };
-    let mt = stock_top(world, setup, f64::NEG_INFINITY, oz);
     let planes = ladder_planes(t - oz, mt, b - oz, stepdown);
     let enclosed = match slice::project(&stock, FOOTPRINT_SAMPLES).map_err(from_slice) {
         Ok(r) if !r.is_empty() => r,
@@ -296,13 +296,10 @@ pub(super) fn ladder_planes(top: f64, stock_top: Option<f64>, bottom: f64, stepd
     crate::machining2d::cut_levels_under(top, stock_top, bottom, stepdown).unwrap_or_else(|_| vec![bottom])
 }
 
-/// The material top in a frame `oz` up (#2004): the generator's own
-/// reading (`generate.rs`, `stock_top_z`) - the part top or the setup's
-/// stock top, the higher - so the region planes are the generator's levels.
-fn stock_top(world: &World, setup: Option<&str>, part_top: f64, oz: f64) -> Option<f64> {
-    let stock = model::stock_world_aabb_for(world, setup).map_or(f64::NEG_INFINITY, |b| b.max.z);
-    let top = part_top.max(stock);
-    top.is_finite().then_some(top - oz)
+/// The same stock cap generation reads, in the cutting frame.
+pub(super) fn stock_top(world: &World, setup: Option<&str>, part: &[Triangle], part_top: f64, frame: Option<&crate::cl::TiltedFrame>) -> Option<f64> {
+    let stock = model::stock_world_aabb_for(world, setup).map(|b| (b.min, b.max));
+    stock_top_in_frame(part, part_top, stock, frame)
 }
 
 #[cfg(test)]

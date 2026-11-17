@@ -138,3 +138,68 @@ fn a_vault_under_stock_over_top_z_cuts_its_rim_ring_at_top_z() {
     });
     assert_eq!(levels(&t).first().copied(), Some(18.0), "the rim ring cuts at Top Z");
 }
+
+/// Indexed stock caps include rotation and translation, not only origin.z.
+fn indexed_face(tilt: camcraft_app::operation::Tilt, stock_top: f64) {
+    let frame = tilt.frame().expect("finite frame");
+    let top = stock_top - 2.0;
+    let t = generated(OpParams::Face {
+        holes: Default::default(),
+        blend_turns: false,
+        tilt: Some(tilt),
+        stepover: 4.0,
+        clearance_z: Height::fixed(70.0),
+        cut_z: Height::fixed(top - 6.0 + tilt.origin[2]),
+        top_z: Some(Height::fixed(top + tilt.origin[2])),
+        stepdown: Some(3.0),
+        feed: 1200.0,
+        plunge_feed: 300.0,
+        climb: true,
+    });
+    let mut zs: Vec<f64> = t
+        .moves
+        .iter()
+        .filter(|m| m.kind == MoveKind::Feed)
+        .filter_map(|m| {
+            let (a, b) = (frame.z_local(m.from), frame.z_local(m.to));
+            ((a - b).abs() < 1e-8).then_some(b)
+        })
+        .collect();
+    zs.sort_by(|a, b| b.total_cmp(a));
+    zs.dedup_by(|a, b| (*a - *b).abs() < 1e-8);
+    let expected = [top, top - 3.0, top - 6.0];
+    assert_eq!(zs.len(), expected.len(), "cutting-frame levels: {zs:?}");
+    for (got, want) in zs.iter().zip(expected) {
+        assert!(
+            (got - want).abs() < 1e-8,
+            "levels {zs:?}, expected {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn a_b90_face_keeps_top_z_under_rotated_stock() {
+    indexed_face(
+        camcraft_app::operation::Tilt {
+            basis_version: 1,
+            a_deg: 0.0,
+            b_deg: 90.0,
+            origin: [0.0; 3],
+        },
+        40.0,
+    );
+}
+
+#[test]
+fn an_oblique_face_keeps_top_z_under_rotated_and_translated_stock() {
+    // B45 axis = (1, 0, 1)/sqrt(2): max z_local = (40 + 20 - 4 - 2)/sqrt(2).
+    indexed_face(
+        camcraft_app::operation::Tilt {
+            basis_version: 1,
+            a_deg: 0.0,
+            b_deg: 45.0,
+            origin: [4.0, 0.0, 2.0],
+        },
+        54.0 / 2.0_f64.sqrt(),
+    );
+}
