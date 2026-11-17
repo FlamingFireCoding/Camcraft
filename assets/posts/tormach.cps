@@ -1077,6 +1077,11 @@ function onCycle() {
     }
     return;
   }
+  // #2348: PathPilot's and LinuxCNC's G83 formats have no P word.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1614: refused - not written)
   cycleSeat(p);
