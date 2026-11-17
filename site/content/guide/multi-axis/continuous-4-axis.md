@@ -32,13 +32,17 @@ A table the axis goes along X.
 
 ## Feed on a rotary move
 
-The feed is written as a plain F word. CamCraft has no inverse-time feed
-mode (G93) in its shipped posts, so a move that turns the rotary does not
-get a degrees-per-minute or inverse-time conversion from the post. Where the
-machine file states a rotary's rate, the machine check judges the move
-against it, and `fanuc-lathe.cps` refuses a C-axis rapid when the machine states no C rate. On a
-control that wants inverse-time feed for simultaneous moves, the posted
-program is not ready for it as it stands.
+`tormach.cps` uses inverse-time feed (`G93`) for simultaneous A-about-X
+moves. It bounds the feed along the posted trajectory and the machine's
+stated A rate, then restores units-per-minute feed (`G94`) at the section
+end.
+
+The other shipped posts write a plain F word without inverse-time or
+degrees-per-minute conversion for a turning move. Where the machine file
+states a rotary's rate, the machine check judges the move against it, and
+`fanuc-lathe.cps` refuses a C-axis rapid when the machine states no C rate.
+For those posts, a control that requires inverse-time feed for simultaneous
+moves cannot use the posted program as it stands.
 
 ## Posts for continuous rotary moves
 
@@ -75,4 +79,5 @@ operation is refused. The stock is the setup's stock solid.
   Engrave and Trace cut flat planes; no operation unrolls a drawing onto a
   rotary.
 - A stated rotary position: the axis comes from the mesh.
-- Inverse-time feed.
+- Inverse-time feed in posts other than `tormach.cps`; Tormach supports
+  `G93` for simultaneous A-about-X moves only.

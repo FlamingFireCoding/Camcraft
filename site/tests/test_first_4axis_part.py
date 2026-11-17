@@ -329,7 +329,27 @@ class FirstFourAxisPart(unittest.TestCase):
         text = flat(page())
         self.assertIn("issues/796", text)
         self.assertIn("is not walked through here", text)
-        self.assertIn("has been run in the PathPilot simulator only", text)
+        for section in (text.split("## The part and how it is held")[0],
+                        text.split("## What the post refuses")[1]):
+            with self.subTest(section=section[:60]):
+                self.assertIn("hand-written motion tests in the PathPilot simulator "
+                              "confirm the control behavior", section)
+                self.assertIn("posted continuous program still needs a simulator "
+                              "run and a hardware check", section)
+                self.assertNotIn("has been run in the PathPilot simulator only", section)
+
+    def test_continuous_feed_guide_states_the_tormach_exception_consistently(self):
+        text = flat((ROOT / "site/content/guide/multi-axis/continuous-4-axis.md")
+                    .read_text())
+        feed = text.split("## Feed on a rotary move")[1].split("## Posts")[0]
+        self.assertIn("`tormach.cps` uses inverse-time feed (`G93`) for "
+                      "simultaneous A-about-X moves", feed)
+        self.assertIn("The other shipped posts write a plain F word without "
+                      "inverse-time or degrees-per-minute conversion", feed)
+        self.assertIn("For those posts, a control that requires inverse-time feed", feed)
+        missing = text.split("## Not implemented")[1]
+        self.assertIn("Inverse-time feed in posts other than `tormach.cps`", missing)
+        self.assertIn("Tormach supports `G93` for simultaneous A-about-X moves only", missing)
 
 
 if __name__ == "__main__":

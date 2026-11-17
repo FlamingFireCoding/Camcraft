@@ -29,8 +29,10 @@ camcraft-cli process examples/first-4axis-part.camproj -o first-4axis-part.nc
 ```
 
 Continuous 4-axis work, where A turns during the cut, is a different job
-and is not walked through here. `tormach.cps` posts it (issue #796), but it
-has been run in the PathPilot simulator only. See
+and is not walked through here. `tormach.cps` posts it (issue #796). Four
+hand-written motion tests in the PathPilot simulator confirm the control
+behavior. The posted continuous program still needs a simulator run and a
+hardware check. See
 [Continuous 4-axis](@/guide/multi-axis/continuous-4-axis.md) and
 [What the post refuses](#what-the-post-refuses) below.
 
@@ -376,9 +378,10 @@ It refuses these cases by name and writes no file:
 | An arc in an indexed operation | `arc on an indexed A` ... `the indexed frame posts lines only` |
 
 Continuous 4-axis output for the microARC 4 is new in issue
-[#796](https://github.com/NeoTech/Camcraft/issues/796) and has been run in
-the PathPilot simulator only. Air-cut a continuous program slowly before
-you cut with it.
+[#796](https://github.com/NeoTech/Camcraft/issues/796). Four hand-written
+motion tests in the PathPilot simulator confirm the control behavior. The
+posted continuous program still needs a simulator run and a hardware check.
+Air-cut a continuous program slowly before you cut with it.
 
 Other limits of indexed work today:
 
