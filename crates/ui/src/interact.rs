@@ -109,6 +109,7 @@ pub fn op_pick_locked(state: &State) -> bool {
         && !crate::wcs_pick::collecting(state)
         && !crate::plane_pick::collecting(state)
         && !crate::axis_pick::collecting(state)
+        && !crate::start_exit_pick::collecting(state)
 }
 
 /// A click inside the viewport, routed by the pick mode: models,
@@ -142,7 +143,9 @@ pub(crate) fn pick_at(state: &mut State, p: [f32; 2], mods: Mods) {
 /// `feature_click`, or the draft never receives a pick. Disarmed or
 /// paused, the mode's own click behaviour is back.
 pub(crate) fn feature_routed(state: &State) -> bool {
-    state.geo_pick != GeoPick::Model || crate::wcs_pick::collecting(state)
+    state.geo_pick != GeoPick::Model
+        || crate::wcs_pick::collecting(state)
+        || crate::start_exit_pick::collecting(state)
 }
 
 /// Raycast at a logical-px point inside the viewport; queues Select

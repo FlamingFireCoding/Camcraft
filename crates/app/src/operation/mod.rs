@@ -143,6 +143,9 @@ mod open_band;
 mod run_out;
 use run_out::*;
 mod area;
+#[cfg(test)]
+mod stock_top_frame;
+use camcraft_motion::stock_top_frame::stock_top_in_frame;
 use area::*;
 mod pocket_memo;
 pub use pocket_memo::pocket_slices;
@@ -167,7 +170,8 @@ mod finish_entry;
 mod boundary_ctx;
 mod boundary_picks;
 pub use boundary_picks::{
-    PickShape, area_pick_issue, area_refusal, boundary_pick_shape, extend_to_loop, run_pick, toggle_run,
+    PickShape, area_pick_issue, area_refusal, boundary_pick_shape, extend_to_loop,
+    extend_to_loop_in, run_pick, toggle_run,
 };
 pub use boundary_ctx::op_stamp;
 use boundary_ctx::*;

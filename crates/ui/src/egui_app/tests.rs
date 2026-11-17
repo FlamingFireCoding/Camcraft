@@ -141,6 +141,8 @@ mod setup_picks_disarm;
 mod points_vertex_pick;
 // #1171: real clicks state a wire sync pair.
 mod wire_sync_viewport;
+// #1448: real viewport clicks pick the Contour's start and exit points.
+mod start_exit_viewport;
 mod one_wcs;
 // #1926: the feature picks that set the WCS are on the WCS page.
 mod wcs_page_picks;
@@ -779,9 +781,10 @@ fn click_apply_edits_operation_through_commands() {
     // click law itself.
     harness.get_by_label("Feeds").click();
     harness.run();
-    harness.get_by_label("Climb milling").scroll_to_me();
+    // Keep this caption-click pin explicit now that the checkbox has the same accessible name.
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").scroll_to_me();
     harness.run();
-    harness.get_by_label("Climb milling").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").click();
     harness.run();
     assert!(!staged_climb(&harness), "checkbox did not reach the staged params");
     harness.get_by_label("Apply").scroll_to_me();

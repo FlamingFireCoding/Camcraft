@@ -38,6 +38,7 @@ mod thread_passes;
 mod thread_ride;
 mod trochoid_air;
 mod trochoid_bore;
+mod trochoid_level;
 mod trochoid_loops;
 mod trochoid_slot;
 mod contour;
@@ -128,7 +129,7 @@ pub use ghost::Ghost;
 pub use face_entry::{air_lead, AIR_MARGIN};
 pub use fillet::{fillet_corners, Legal};
 pub use fillet_tally::{corner_arc_radius, fillet_floor, FilletTally};
-pub(crate) use levels::cut_levels;
+pub use levels::{cut_levels, cut_levels_under};
 pub use pocket::{pocket, pocket_entered, PocketParams, PocketStrategy};
 pub use predrilled::PreHole;
 pub use rest2d::{rest_plan, rest_pocket, rest_strategy, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
@@ -151,7 +152,7 @@ pub(crate) use adaptive::PLAN_SAG;
 // The HSM planner's door, its arc proofs and its microlift link, read
 // by the 3-D ladder's per-level port (`machining3d::hsm`, M11.4).
 pub(crate) use adaptive::Return;
-pub(crate) use arc_cross::crossing_free;
+pub(crate) use arc_cross::{crossing_free, moves_cross_prior, seg_crosses_prior};
 pub(crate) use arc_proof::{ProofTally, fit_proved};
 pub(crate) use arcs::push_segs;
 pub(crate) use microlift::link_at as microlift_link;
