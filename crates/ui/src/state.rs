@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, GenerateOperation, History, ImportModel,
-    MoveFixture, MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -63,6 +63,9 @@ mod setup_workholding;
 mod fixture_view;
 #[path = "state_locate.rs"]
 mod locate_ui;
+#[path = "state_fixture_turn.rs"]
+mod fixture_turn_ui;
+pub(crate) use fixture_turn_ui::euler_deg;
 #[path = "state_align.rs"]
 mod align_ui;
 use locate_ui::with_warning;
@@ -283,6 +286,9 @@ pub enum CommandKind {
     /// #739: the active setup's WCS on the centre of a picked circular
     /// edge (`SetWcsAtCircleCentre`), at the pane's angles.
     SetWcsCircle { pick: GeoSel, roll_deg: f64, pitch_deg: f64, yaw_deg: f64 },
+    /// #1720: the active setup's WCS axis flips (X, Y, Z) as one undoable
+    /// `SetWcsFlip`; the origin and rotation do not change.
+    SetWcsFlip { flip: [bool; 3] },
     /// Tool library: create a tool entity (catalog row or hand-typed page).
     AddTool {
         name: String,
@@ -574,10 +580,21 @@ pub enum CommandKind {
         name: String,
         fixed: bool,
     },
+    /// The place draft's Apply: position plus the Model page's three
+    /// angles (#2174 added roll and pitch to the yaw).
     MoveFixture {
         name: String,
         pos: [f64; 3],
+        roll_deg: f64,
+        pitch_deg: f64,
         yaw_deg: f64,
+    },
+    /// A quarter-turn button (#2174): one `TurnFixture` about world X, Y
+    /// or Z (`axis` 0, 1, 2) through the fixture's origin.
+    TurnFixture {
+        name: String,
+        axis: usize,
+        degrees: f64,
     },
     DeleteFixture(String),
     ImportFixtureDialog,
@@ -843,6 +860,9 @@ pub struct FixtureUi {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+    /// #2174: the Model page's tilt angles, beside the yaw.
+    pub roll_deg: f64,
+    pub pitch_deg: f64,
     pub yaw_deg: f64,
 }
 
@@ -910,6 +930,8 @@ pub struct OpUi {
     /// The Boundary group's draft (M11.5): rides the same Apply as the
     /// parameters, one undo unit.
     pub area: AreaControls,
+    /// #1448 / #1473 item 2: armed Contour start/exit viewport pick role.
+    pub start_exit_pick: Option<crate::start_exit_pick::StartExitRole>,
 }
 
 impl Default for OpUi {
@@ -921,6 +943,7 @@ impl Default for OpUi {
             src_name: String::new(),
             geo: Vec::new(),
             area: AreaControls::default(),
+            start_exit_pick: None,
             // A facing pass over a small billet, in references: 25 above
             // the stock top, skimming the stock top itself. `retype`
             // carries this clearance into every kind, so the draft
@@ -964,6 +987,7 @@ impl OpUi {
             geo,
             params: op.params.clone(),
             area: op.area.clone(),
+            start_exit_pick: None,
         }
     }
 
@@ -2685,15 +2709,12 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
-                                let strips = feature::patches(&f)
-                                    .into_iter()
-                                    .find(|p| p.id == id)?
-                                    .faces
-                                    .len();
+                                // #2247: both memoized per feature set.
+                                let strips = model::patches(&f).iter().find(|p| p.id == id)?.faces.len();
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in feature::patch_rings(&f, id)? {
+                                for r in model::patch_rings(&f, id)?.iter() {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()
@@ -2839,6 +2860,7 @@ impl State {
         self.op_synced = (String::new(), self.doc_version);
         self.boundary_pick = None;
         self.boundary_view.shown = false;
+        self.op_ui.start_exit_pick = None;
         self.rename_draft = None;
     }
 
@@ -2958,9 +2980,29 @@ impl State {
         self.ai_chat.set_wake(wake);
     }
 
+    /// Snapshot active viewport pick mode and geometry picks (#1942) for the
+    /// live `get_selection` MCP tool while keeping `ui -> app` layering.
+    #[must_use]
+    pub fn selection_context(&self) -> camcraft_app::mcp::SelectionContext {
+        let pick_mode = match self.geo_pick {
+            GeoPick::Model => camcraft_app::mcp::PickMode::Model,
+            GeoPick::Face => camcraft_app::mcp::PickMode::Face,
+            GeoPick::Edge => camcraft_app::mcp::PickMode::Edge,
+            GeoPick::Vertex => camcraft_app::mcp::PickMode::Vertex,
+        };
+        camcraft_app::mcp::SelectionContext {
+            pick_mode: Some(pick_mode),
+            geometry_picks: self.op_ui.geo.clone(),
+            active_operation: (!self.op_ui.name.is_empty()).then(|| self.op_ui.name.clone()),
+        }
+    }
+
     pub(crate) fn submit_ai_prompt(&mut self) {
         if self.ai_chat.is_running() {
             return;
+        }
+        while self.history.in_group() {
+            let _ = self.history.cancel_group();
         }
         // Each turn owns a fresh receiver. Old worker senders cannot reach a later turn.
         self.reset_ai_inbox();
@@ -2979,6 +3021,14 @@ impl State {
             None,
             snapshot,
         );
+        if self.ai_chat.is_running() {
+            let label = self
+                .ai_chat
+                .turns()
+                .last()
+                .map_or_else(|| "AI chat turn".to_owned(), |t| format!("AI chat: {}", t.prompt));
+            self.history.begin_group(label);
+        }
     }
 
     fn reset_ai_inbox(&mut self) {
@@ -3018,21 +3068,28 @@ impl State {
     /// Run every queued action, then poll the import worker once. Safe to
     /// call every frame; never blocks.
     pub fn drain_actions(&mut self) {
+        use crate::frame_cost::span;
         while let Some(action) = self.pending.pop_front() {
+            let _s = span("commands/run");
             self.run(action);
         }
-        self.ai_chat.poll(self.history.done_len());
+        let s = span("commands/mcp+chat");
+        self.ai_chat.poll(&mut self.history);
         // #183: an agent's live calls, after the user's own clicks.
         crate::mcp_host::pump(self);
-        self.ai_chat.poll(self.history.done_len());
+        self.ai_chat.poll(&mut self.history);
+        drop(s);
+        let s = span("commands/import+files");
         self.poll_import();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
+        drop(s);
         // A refusal that no longer describes the page retires, with its
         // status-strip mirror (crate::feedback).
-        self.retire_stale_feedback();
+        crate::frame_cost::time("commands/retire_feedback", || self.retire_stale_feedback());
         // #406: the incoming stock's sheet follows the open setup page.
-        crate::incoming_view::refresh(self);
+        crate::frame_cost::time("commands/incoming_view", || crate::incoming_view::refresh(self));
+        let _s = span("commands/tool_editor");
         // The editor window's ghost law (M1.4), mirroring `pane_target`:
         // an open editor never keeps pointing at a name the document lost
         // under it - deleted, undone, or swapped by New/Open all land here.
@@ -3066,6 +3123,14 @@ impl State {
     }
 
     pub(crate) fn run(&mut self, action: CommandKind) {
+        let before_entries = self.history.done_entry_ids();
+        self.run_action(action);
+        if self.history.in_group() && self.history.done_entry_ids() != before_entries {
+            self.history.cancel_group();
+        }
+    }
+
+    fn run_action(&mut self, action: CommandKind) {
         // Whatever ran, the banner shows only the newest outcome: a later
         // command (even a successful one) retires an old refusal.
         self.feedback = None;
@@ -3347,6 +3412,7 @@ impl State {
             CommandKind::SetWcsCircle { pick, roll_deg, pitch_deg, yaw_deg } => {
                 self.dispatch_set_wcs_circle(&pick, [roll_deg, pitch_deg, yaw_deg]);
             }
+            CommandKind::SetWcsFlip { flip } => self.dispatch_set_wcs_flip(flip),
             // #828: a new tool starts with the machine's default holder,
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
@@ -3864,23 +3930,10 @@ impl State {
                     }
                 }
             }
-            CommandKind::MoveFixture { name, pos, yaw_deg } => {
-                let location = Location {
-                    pos: Point3::new(pos[0], pos[1], pos[2]),
-                    rot: quat_from_yaw(yaw_deg.to_radians()),
-                };
-                match MoveFixture::new(&self.world, &name, location) {
-                    Ok(command) => {
-                        let warning = command.warning().map(str::to_owned);
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        self.status = with_warning(format!("moved fixture {name}"), warning);
-                    }
-                    Err(err) => {
-                        self.refuse(ErrorScope::Setup, format!("fixture not moved: {err}"));
-                    }
-                }
+            CommandKind::MoveFixture { name, pos, roll_deg, pitch_deg, yaw_deg } => {
+                self.dispatch_move_fixture(&name, pos, [roll_deg, pitch_deg, yaw_deg]);
             }
+            CommandKind::TurnFixture { name, axis, degrees } => self.dispatch_turn_fixture(&name, axis, degrees),
             CommandKind::Locate { spec, mover } => self.dispatch_locate(&spec, mover),
             CommandKind::DeleteFixture(name) => match DeleteFixture::new(&self.world, &name) {
                 Ok(command) => {
