@@ -5,8 +5,9 @@
 //! chamfer's declared edge break (#303) was credited over that part's
 //! columns, the sim found no gouge, the live re-judge of the kept parts
 //! (#1628) did not run, and `G01 X35. Y-35. Z19.` posted along the part's
-//! edge. Now the post refuses by name - the op and the part - and a part
-//! added clear of the cut still posts.
+//! edge. Now the post refuses by name - the op and the part - also for a
+//! cut too shallow for the sim's lattice (0.05 mm), and a part added clear
+//! of the cut still posts.
 //!
 //! Provenance: our own plate fixture (`stock_source_holes_support`) over
 //! the solid law and the column sim; no vendor material consulted.
@@ -63,6 +64,18 @@ fn a_part_added_under_a_judged_stock_source_chamfer_is_refused_by_name() {
         if label != "hair" {
             assert_not_posted(&world, &format!("added-under-{label}-sim"), "gouge: program cuts below the model");
         }
+    }
+}
+
+#[test]
+fn a_part_added_a_hair_under_a_judged_stock_source_chamfer_is_refused_by_name() {
+    // "other" reaches 0.05 mm past the cone's foot at x 34: a cut too
+    // shallow for the sim's lattice, refused by the live re-judge.
+    for (label, yaw) in TURNS.into_iter().filter(|(l, _)| *l != "hair") {
+        let (world, mut h) = clean_chamfer(yaw);
+        add_other(&world, &mut h, 30.0, 34.05);
+        assert_not_posted(&world, &format!("shallow-{label}"), "S1 now cuts part 'other'");
+        assert_not_posted(&world, &format!("shallow-{label}-cause"), "stock-source chamfer breaks into a part");
     }
 }
 

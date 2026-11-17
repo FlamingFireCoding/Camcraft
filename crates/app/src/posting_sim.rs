@@ -38,7 +38,9 @@
 //! a cut into one is a blocking problem naming the op and the part.
 //! Where the sim judges, it judges those parts itself (a stock-source
 //! chamfer's bevel is credited over none of them, #2308), and a gouge it
-//! finds carries the same naming line beside its own verdict.
+//! finds carries the same naming line beside its own verdict. A clean sim
+//! verdict does not end it: a cut under the sim's lattice is still seen by
+//! the live re-judge, which runs in that arm too (#2308).
 
 use crate::model;
 use crate::operation::{self, OpStatus};
@@ -109,7 +111,14 @@ fn judge_clause(world: &World) -> SimClause {
                 not_judged: None,
             }
         }
-        Ok(_) => SimClause::default(),
+        // #2308: a cut too shallow for the sim's lattice (a part added
+        // after generation under a stock-source chamfer, by 0.05 mm) reads
+        // clean, so the kept parts are judged again live here too - once
+        // every op is covered, as in the not-judged arm.
+        Ok(_) => SimClause {
+            problem: if uncovered(world).is_none() { kept_moved(world) } else { None },
+            not_judged: None,
+        },
         Err(reason) => {
             let line = format!("{NOT_JUDGED}: {reason}");
             let problem = uncovered(world)
