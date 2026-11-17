@@ -6,8 +6,8 @@
 //! at A0, each an indexed A then an ordinary 3-axis cut. (The face
 //! underneath, the pose law's A0 B180, is A180 on this table since #797 -
 //! `fourth_axis_pose` pins it; the kit keeps its +-90 pair.) The posted program is the
-//! kit's golden; a continuous wrap op on the same bar must be refused by
-//! name (simultaneous 4-axis is unconfirmed on PathPilot, #785).
+//! kit's golden; a continuous wrap op on the same bar posts as wrapped A
+//! (#796: A cumulative, its turning feeds in G93), pinned by its golden.
 //! Provenance: our own test over our own commands, machine file and post.
 //!
 //! Regenerate the program and the project after an intentional change:
@@ -215,16 +215,18 @@ fn the_microarc_test_part_posts_its_indexed_program() {
     }
 }
 
-/// The continuous op the kit carries for the follow-up: a wrapped pass
-/// around the diameter turns A inside the operation, which PathPilot is
-/// not confirmed to run - the post refuses it by name and writes nothing.
-#[test]
-fn a_wrapped_op_on_the_test_part_is_refused_by_name() {
+/// The continuous op (#796): a Rotary Parallel wrapped round the bar
+/// turns A inside the operation. The post writes it as wrapped A - A
+/// counting on (never back through 0), the turning feeds in G93 - and the
+/// program is pinned by its golden.
+const WRAP_GOLDEN: &str = "crates/app/tests/golden/nc/tormach/wrap_rotary_parallel_microarc4.nc";
+
+fn wrap_world() -> World {
     let world = build();
     let mut h = History::default();
     let wrap = OpParams::RotaryParallel {
-        tolerance: 0.1,
-        stepover: Some(2.0),
+        tolerance: 0.5,
+        stepover: Some(3.0),
         clearance_z: Height::fixed(R + 0.5 * IN),
         retract_z: None,
         top_z: Height::fixed(R),
@@ -241,35 +243,63 @@ fn a_wrapped_op_on_the_test_part_is_refused_by_name() {
     let created = CreateOperation::new(&world, "WRAP", "BN 1/8", SrcRef::Entity("bar core".into()), wrap);
     h.execute(&world, created.expect("create the wrap op"));
     h.execute(&world, GenerateOperation::new(&world, "WRAP").expect("generate"));
+    world
+}
+
+fn num(t: &str) -> Option<f64> {
+    t.get(1..).and_then(|s| s.parse().ok())
+}
+
+#[test]
+fn a_wrapped_op_on_the_test_part_posts_wrapped_a() {
+    let world = wrap_world();
     let out = std::env::temp_dir().join(format!("camcraft_microarc_wrap_{}.nc", std::process::id()));
-    let err = camcraft_app::posting::post_setup(&world, &out).expect_err("a wrap must not post");
-    assert!(!out.exists(), "a refused post writes nothing");
-    // #797: the machine check reads the wrap's poses through the tool
-    // axis - every one is an angle about X this table reaches (the pass
-    // under the bar, A0 B180, is A180) - so the refusal is the post's,
-    // naming the op: the turning A, the wall the follow-up lifts.
-    assert!(err.contains("simultaneous 4-axis motion in operation WRAP"), "{err}");
-    let check = camcraft_app::machine::check_document(
-        &world,
-        &camcraft_app::machine::of(&world).1.expect("the mounted machine"),
-    )
-    .expect("checks");
-    assert!(check.problems.iter().all(|p| !p.starts_with("WRAP:")), "{:?}", check.problems);
-    // The same refusal, straight from the engine on the same stream.
-    let records = camcraft_app::posting::stream_records(&world).expect("the stream");
-    let mch = camcraft_app::post::machine::mirror(
-        &camcraft_app::machine::parse_mch(
-            camcraft_app::posting::builtin_machine_text("Tormach 770MX + microARC 4")
-                .expect("shipped"),
-        )
-        .expect("parses"),
-    );
-    let cps = std::fs::read_to_string(repo("assets/posts/tormach.cps")).expect("the post");
-    let post = camcraft_app::post::engine::run(&cps, &mch, &camcraft_app::post::cnc::serialize(&records))
-        .expect("the engine runs");
-    assert!(
-        post.warnings.iter().any(|w| w.contains("simultaneous 4-axis motion in operation WRAP")),
-        "{:?}",
-        post.warnings
-    );
+    let posted = camcraft_app::posting::post_setup(&world, &out);
+    let _ = std::fs::remove_file(&out);
+    let nc = posted.unwrap_or_else(|e| panic!("the wrapped op must post: {e}")).program;
+    let golden = repo(WRAP_GOLDEN);
+    if std::env::var_os("WRITE_GOLDEN").is_some() {
+        std::fs::write(&golden, &nc).expect("write the wrap golden");
+    } else {
+        let want = std::fs::read_to_string(&golden).expect("the wrap golden");
+        assert_eq!(nc, want, "{} is stale; regenerate with WRITE_GOLDEN=1", golden.display());
+    }
+    let lines: Vec<&str> = nc.lines().collect();
+    let wrap = lines.iter().position(|l| l.contains("OPERATION: WRAP")).expect("the WRAP section");
+    let body = &lines[wrap..];
+    // A counts on: consecutive A words never jump the long way round.
+    let mut last: Option<f64> = None;
+    let mut g93 = false;
+    let mut turned_feeds = 0;
+    for l in body {
+        let ws: Vec<&str> = l.split(' ').collect();
+        if ws.contains(&"G93") {
+            g93 = true;
+        }
+        if ws.contains(&"G94") {
+            g93 = false;
+        }
+        let a = ws.iter().find(|w| w.starts_with('A')).and_then(|w| num(w));
+        if let (Some(p), Some(a)) = (last, a) {
+            assert!((a - p).abs() <= 180.0, "A unwrapped: {p} -> {a} at {l}");
+        }
+        if a.is_some() {
+            last = a;
+        }
+        if ws[0] == "G1" || ws.get(1) == Some(&"G1") {
+            assert!(ws.iter().any(|w| w.starts_with('F')), "every feed carries F: {l}");
+            let xyz = ws.iter().any(|w| w.starts_with('X') || w.starts_with('Y') || w.starts_with('Z'));
+            if a.is_some() && xyz {
+                assert!(g93, "a turning XYZ feed is in G93: {l}");
+                turned_feeds += 1;
+            } else {
+                assert!(!g93, "an XYZ-only or A-only feed is in G94: {l}");
+            }
+        }
+        if ws[0] == "M5" {
+            assert!(!g93, "the section ends in G94");
+            break;
+        }
+    }
+    assert!(turned_feeds > 0, "the wrap turns A on its feeds\n{nc}");
 }

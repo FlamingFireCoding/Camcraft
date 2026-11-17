@@ -42,9 +42,13 @@ program is not ready for it as it stands.
 
 ## Posts for continuous rotary moves
 
-Only posts with TCP output write a rotary that changes while cutting:
-`fanuc.cps` and `doosan-dnm.cps`. `tormach.cps` refuses an A that changes
-inside an operation. The others refuse any tilt. See
+Posts with TCP output write a rotary that changes while cutting:
+`fanuc.cps` and `doosan-dnm.cps`. `tormach.cps` writes an A about X that
+changes inside an operation without TCP: it turns each point into the
+table's frame itself, keeps A counting past 360 (PathPilot does not roll A
+over), and writes the moves that turn A in inverse time (`G93`), held to
+the feed and to the machine's stated A rate (issue #796). The others
+refuse any tilt. See
 [Machines, kinematics and TCP](@/guide/multi-axis/machines-and-tcp.md).
 
 ## Checks

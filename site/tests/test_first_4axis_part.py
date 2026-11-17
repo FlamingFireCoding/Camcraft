@@ -110,7 +110,8 @@ NOT_UI = {
 # Text the page quotes from a refusal or a note, and the source that holds it.
 QUOTED = {
     "simultaneous 4-axis motion": POST,
-    "(A changes inside the operation) - not confirmed on PathPilot; this post indexes A between operations only": POST,
+    "states no A feed rate": POST,
+    "A counts on through 360": POST,
     "the A axis about X cannot reach it": POST,
     "is beyond the A axis travel": POST,
     "arc on an indexed A": POST,
@@ -324,11 +325,11 @@ class FirstFourAxisPart(unittest.TestCase):
         first_run = flat((guide / "getting-started/first-run.md").read_text())
         self.assertRegex(first_run, r"first-router-part\.md\).{0,140}first-4axis-part\.md\)")
 
-    def test_continuous_work_is_stated_as_refused_not_as_a_walkthrough(self):
+    def test_continuous_work_is_pointed_at_not_walked_through(self):
         text = flat(page())
         self.assertIn("issues/796", text)
-        self.assertIn("refuses it today", text)
-        self.assertNotIn("G93", text)
+        self.assertIn("is not walked through here", text)
+        self.assertIn("has been run in the PathPilot simulator only", text)
 
 
 if __name__ == "__main__":
