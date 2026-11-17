@@ -715,14 +715,6 @@ function onCycle() {
     msg("canned cycle G86 (bore) has no dwell word on this control - a " + (ms / 1000) + " s dwell is refused, not dropped; set the dwell to 0");
     return;
   }
-  // #2349: Siemens' published SINUMERIK 840D sl ISO Milling programming
-  // manual gives G83 (deep hole, chip removal) as X Y Z R Q F K, with no
-  // P. A dwell word is not verified for this form, so a G83 dwell is
-  // refused by name before any line of the cycle is written.
-  if (g === "G83" && has(p.P) && p.P > 0) {
-    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
-    return;
-  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
@@ -730,6 +722,13 @@ function onCycle() {
   if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
     words.push(w("Q", p.Q)); // an increment (peck depth): no origin shift
   }
+  // #2349: the bottom dwell is P in whole milliseconds on G82 and G83.
+  // Source for G83: the maintainer's verification on an 840D in ISO
+  // dialect mode (G291), 2026-11-17. This post writes no G291: it assumes
+  // the control runs in ISO dialect mode. Siemens' "ISO dialects" Function
+  // Manual (SINUMERIK ONE / 840D sl / 828D, 07/2021), section 6.3, lists
+  // no P in its G73 and G83 formats, so G73 is left as it was (#2354 is
+  // open for that dispute). G84 takes no P here.
   if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
   words.push(fw(p.FeedRate));
   block(words);

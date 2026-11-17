@@ -1,4 +1,4 @@
-//! Sinumerik G83 dwell refusal, from Siemens' published SINUMERIK 840D sl ISO Milling manual (#2349).
+//! Sinumerik G83 dwell as P in ms, by the maintainer's 840D ISO-mode (G291) check (#2349).
 //! Gate map: covers assets/posts/sinumerik.cps, camcraft_post::post::engine
 //! and camcraft_post::post::cnc.
 
@@ -63,22 +63,22 @@ fn lines_with<'a>(program: &'a str, word: &str) -> Vec<&'a str> {
         .collect()
 }
 
+fn pins_dwell(kind: CycleKind, g: &str) {
+    let out = run(kind, 0.5);
+    assert!(out.warnings.is_empty(), "{g}: {:?}", out.warnings);
+    let lines = lines_with(&out.program, g);
+    assert_eq!(lines.len(), 1, "{}", out.program);
+    let words: Vec<&str> = lines[0].split_whitespace().collect();
+    assert!(words.contains(&"Q3"), "{g} keeps its peck: {}", lines[0]);
+    // P in whole ms, before F (#2349; maintainer, 840D in G291).
+    let p = words.iter().position(|w| *w == "P500");
+    let f = words.iter().position(|w| w.starts_with('F'));
+    assert!(p.is_some() && p < f, "{g} must carry P500 before F: {}", lines[0]);
+}
+
 #[test]
-fn sinumerik_refuses_g83_dwell() {
-    // The stream carries whole ms: 0.001 s is the smallest dwell it holds.
-    for dwell in [0.001, 0.5] {
-        let out = run(CycleKind::Deep, dwell);
-        assert!(
-            out.warnings.iter().any(|w| w.contains("G83") && w.contains("dwell")),
-            "G83 dwell {dwell} must be refused by name: {:?}",
-            out.warnings
-        );
-        assert!(
-            lines_with(&out.program, "G83").is_empty(),
-            "a refused G83 must not be written:\n{}",
-            out.program
-        );
-    }
+fn sinumerik_g83_dwell_posts_p_in_ms() {
+    pins_dwell(CycleKind::Deep, "G83");
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn sinumerik_g83_without_dwell_is_unchanged() {
 
 #[test]
 fn sinumerik_g82_dwell_still_posts() {
-    // The refusal is G83 only: a spot-drill dwell keeps its G82 P word.
+    // A spot-drill dwell keeps its G82 P word in ms.
     let out = run(CycleKind::Drill, 0.5);
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     let lines = lines_with(&out.program, "G82");
