@@ -1,5 +1,6 @@
 //! #743: MCP tests for `import_tool_holder_dxf`, `export_tool_holder_dxf`,
 //! and `convert_tool_step_to_profile` (round trip, undo, and named refusals).
+//! Gate map (M4.4): covers app::mcp, app::tool_profile_dxf, app::commands.
 //! Provenance: original integration test over `camcraft_app::mcp::Server`.
 
 use std::path::PathBuf;

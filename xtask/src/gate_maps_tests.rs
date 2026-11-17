@@ -31,6 +31,19 @@ fn count(file: &str, krate: &str) -> usize {
     selected(file, krate).len()
 }
 
+/// #2411: the DXF profile MCP suite must run when its app entry points change.
+#[test]
+fn tool_dxf_profile_mcp_is_selected_for_its_app_entry_points() {
+    for file in [
+        "crates/app/src/mcp/mod.rs",
+        "crates/app/src/tool_profile_dxf.rs",
+        "crates/app/src/commands/mod.rs",
+    ] {
+        let got = selected(file, "app");
+        assert!(got.iter().any(|b| b == "tool_dxf_profile_mcp"), "{file}: DXF profile MCP suite missing from {got:?}");
+    }
+}
+
 /// #2361: rotated WCS coverage must run when its app entry points change.
 #[test]
 fn wcs_rotation_control_is_selected_for_its_app_entry_points() {
