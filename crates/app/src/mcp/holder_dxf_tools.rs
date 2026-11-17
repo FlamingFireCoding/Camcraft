@@ -20,7 +20,7 @@ use crate::tool_profile_dxf::{tool_body_to_dxf, tool_body_to_spun};
 pub(super) const TOOLS: &[Tool] = &[
     Tool {
         name: "import_tool_holder_dxf",
-        description: "Import a 2D half-profile ASCII DXF (one LINE on layer CENTRELINE plus an open LINE/ARC profile chain wholly on one side) as a tool's revolved holder body. One undo step; missing centreline, crossing geometry, closed loops, splines or missing $INSUNITS (unless \"units\" is stated) refuse by name.",
+        description: "Import a 2D half-profile ASCII DXF (one LINE on layer CENTRELINE plus an open LINE/ARC profile chain wholly on one side) as a tool's revolved holder body. The centreline must be parallel to Y. DXF +Y is tool +Z; z = 0 is the lower end of the centreline, independent of draw direction. One undo step; missing centreline, crossing geometry, closed loops, splines or missing $INSUNITS (unless \"units\" is stated) refuse by name.",
         schema: s_import_dxf,
         run: import_tool_holder_dxf,
     },

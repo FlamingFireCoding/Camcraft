@@ -145,7 +145,7 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
                 ui,
                 state.in_browser(crate::browser_files::NEEDS_PICKER),
                 "Import DXF…",
-                "read an ASCII DXF with a CENTRELINE layer and one open half-profile into Custom",
+                "read an ASCII DXF with a CENTRELINE layer and one open half-profile into Custom. The centreline must be parallel to Y. DXF +Y is tool +Z; z = 0 is the lower end of the centreline, independent of draw direction",
             );
             let exp_dxf = if has_export {
                 crate::browser_files::button(

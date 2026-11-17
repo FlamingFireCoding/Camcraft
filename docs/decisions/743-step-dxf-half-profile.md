@@ -26,8 +26,10 @@
   refusing missing, degenerate, or ambiguous ISO 13399 coordinate systems and
   non-STEP meshes by name rather than guessing `+Z`. Importing DXF
   (`dxf_to_spun`, `dxf_to_spun_with_unit`) accepts one `LINE` on layer
-  `CENTRELINE`/`CENTERLINE` in any 2D orientation plus one continuous open
-  chain wholly on one side of the centreline, refusing missing or multiple
+  `CENTRELINE`/`CENTERLINE` parallel to DXF Y plus one continuous open
+  chain wholly on one side of the centreline. DXF +Y is tool +Z. The lower
+  centreline endpoint is z = 0, independent of the LINE draw direction.
+  The importer refuses nonparallel lines, missing or multiple
   centrelines, `CIRCLE`, `SPLINE` (via reader), crossing geometry, closed
   loops, branching, disconnected segments, unitless DXF (when no fallback unit
   is supplied), axial reversals (`RunsBack`), and below-tip geometry by name.
@@ -108,3 +110,27 @@ conflict fix would add behavior changes beyond the requested refresh.
 
 **Cost to change later.** Low. The public APIs remain unchanged; any future
 writer consolidation can be reviewed separately with both refusal suites.
+
+### PR #2100 centreline placement review fix
+
+**What was decided.** Require the centreline to be parallel to DXF Y.
+Use DXF +Y as tool +Z and the lower centreline endpoint as z = 0.
+The LINE draw direction does not change the profile placement.
+The MCP description and the import tooltip state this convention.
+
+**Why.** A CAD user cannot see the LINE draw direction. The previous frame
+could reverse the holder and move it along the tool axis when that direction
+changed. This could let a holder collision pass. A frame based on the drawing
+coordinates gives the same placement for both LINE directions.
+
+**Considered and dropped.** The previous frame used the start point as the
+origin and the LINE direction as the axis. It made placement depend on an
+invisible property. Refusing a profile whose lower axis end does not touch the
+LINE start would also prevent the reported shift. It would reject a reversed
+LINE and profiles with a deliberate gap above z = 0. The fixed +Y convention
+supports both while keeping the origin explicit. Arbitrary centreline angles
+are refused by name because the +Y convention does not define their placement.
+
+**Cost to change later.** Low. A future orientation option would need an
+explicit origin and axis, updated UI and MCP descriptions, and placement pins.
+This fix adds no dependency and does not change stored profiles.

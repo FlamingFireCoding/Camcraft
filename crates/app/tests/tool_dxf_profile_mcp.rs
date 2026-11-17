@@ -61,7 +61,26 @@ fn testdata(name: &str) -> PathBuf {
 #[test]
 fn mcp_holder_dxf_and_step_profile_tools_list_round_trip_undo_and_refuse() {
     let mut c = Client::new();
-    let listed: Vec<String> = c.request("tools/list", json!({}))["result"]["tools"]
+    let tools = c.request("tools/list", json!({}));
+    let description = tools["result"]["tools"]
+        .as_array()
+        .expect("tools list")
+        .iter()
+        .find(|t| t["name"] == "import_tool_holder_dxf")
+        .and_then(|t| t["description"].as_str())
+        .expect("import description");
+    for convention in [
+        "parallel to Y",
+        "DXF +Y is tool +Z",
+        "z = 0 is the lower end of the centreline",
+        "independent of draw direction",
+    ] {
+        assert!(
+            description.contains(convention),
+            "missing convention: {convention}"
+        );
+    }
+    let listed: Vec<String> = tools["result"]["tools"]
         .as_array()
         .map(|a| a.iter().filter_map(|v| v["name"].as_str().map(str::to_owned)).collect())
         .unwrap_or_default();

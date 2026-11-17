@@ -19,6 +19,7 @@ const AXIS_SNAP_TOL: f64 = 1e-5;
 const ARC_SAMPLE_STEPS: usize = 16;
 
 /// Import an ASCII DXF half-profile requiring explicit `$INSUNITS`.
+/// DXF +Y is tool +Z; the lower end of a Y-parallel centreline is z = 0.
 pub fn dxf_to_spun(bytes: &[u8]) -> Result<SpunProfile, String> {
     dxf_to_spun_with_unit(bytes, None)
 }
@@ -118,11 +119,17 @@ fn extract_segments(doc: &dxf::Document, scale: f64) -> Result<(Centreline, Vec<
             if segs.is_empty() {
                 return Err("DXF has no half-profile geometry beside the centreline".into());
             }
-            let axis = Point2::new(dc.x / len, dc.y / len);
-            let normal = Point2::new(axis.y, -axis.x);
+            if dc.x != 0.0 {
+                return Err("DXF centreline must be parallel to Y (DXF +Y is tool +Z)".into());
+            }
+            // A LINE's draw direction is invisible in CAD. Anchor the frame to
+            // the lower endpoint, so reversing the LINE cannot move the holder.
+            let start = if one.0.y <= one.1.y { one.0 } else { one.1 };
+            let axis = Point2::new(0.0, 1.0);
+            let normal = Point2::new(1.0, 0.0);
             Ok((
                 Centreline {
-                    start: one.0,
+                    start,
                     axis,
                     normal,
                 },
