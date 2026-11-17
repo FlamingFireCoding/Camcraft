@@ -34,6 +34,9 @@ pub use files::{
     builtin_machine_text, builtin_post_path, builtin_post_text, default_mch_text, shipped_machines, shipped_posts, AssetFile, BUILTINS,
     DEFAULT_MCH_FILE, MACHINES,
 };
+#[path = "posting_scan.rs"]
+mod scan;
+pub use scan::{machine_scan, post_scan, rescan, scan_folder, FolderScan};
 #[path = "posting_default_machine.rs"]
 mod default_mch;
 pub use default_mch::{default_limits, default_machine, default_machine_checked, parse_default_machine, KeptMachine};

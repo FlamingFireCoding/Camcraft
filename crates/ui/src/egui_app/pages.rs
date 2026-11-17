@@ -188,17 +188,26 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
         // its turning post, a mill-turn lists both), while the
         // selected text still names whatever the document chose.
         let kind = camcraft_app::machine::kind_of(&state.world);
-        let names: Vec<&str> = posting::BUILTINS.iter().map(|(n, _)| *n).collect();
+        // #2380: the folder as last scanned - a removed file has no entry,
+        // an added `.cps` has one (loaded as a file, like "Load post").
+        let scan = posting::post_scan();
+        let names: Vec<&str> = posting::BUILTINS.iter().map(|(n, _)| *n).filter(|n| scan.present.contains(n)).collect();
         let sel: Option<usize> = match &current {
             PostRef::Builtin => Some(0),
             PostRef::Named(n) => names.iter().position(|m| *m == n.as_str()),
             PostRef::File(_) => None,
         };
-        let text = match sel {
-            Some(i) => names[i].to_owned(),
-            None => "custom".to_owned(),
+        let file_sel = match &current {
+            PostRef::File(f) => scan.extra.iter().find(|(_, p)| p.display().to_string() == *f),
+            _ => None,
+        };
+        let text = match (sel, file_sel) {
+            (Some(i), _) => names[i].to_owned(),
+            (None, Some((n, _))) => n.clone(),
+            (None, None) => "custom".to_owned(),
         };
         let mut pick: Option<String> = None;
+        let mut pick_file: Option<std::path::PathBuf> = None;
         egui::ComboBox::from_id_salt("post_registry")
             .selected_text(text)
             .show_ui(ui, |ui| {
@@ -210,9 +219,20 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
                         pick = Some((*n).to_owned());
                     }
                 }
+                for (n, p) in &scan.extra {
+                    if ui.selectable_label(file_sel.is_some_and(|(_, q)| q == p), n).clicked() {
+                        pick_file = Some(p.clone());
+                    }
+                }
             });
+        if ui.button("Refresh").on_hover_text("Read the post folder again").clicked() {
+            posting::rescan();
+        }
         if let Some(name) = pick {
             state.pending.push_back(CommandKind::SelectPostNamed(name));
+        }
+        if let Some(p) = pick_file {
+            state.pending.push_back(CommandKind::SelectPostFile(p));
         }
         if crate::browser_files::button(ui, state.browser_refusal_of(&CommandKind::SelectPostDialog), "Load post (.cps)", "") {
             state.pending.push_back(CommandKind::SelectPostDialog);

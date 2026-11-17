@@ -133,13 +133,13 @@ pub const MACHINES: &[(&str, AssetFile)] = &[
     ("Sodick ALC400G", AssetFile("sodick-alc400g.mch")),
 ];
 
-fn post_dir() -> &'static DataFiles {
+pub(super) fn post_dir() -> &'static DataFiles {
     static F: OnceLock<DataFiles> = OnceLock::new();
     F.get_or_init(|| DataFiles::from_process("posts"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn machine_dir() -> &'static DataFiles {
+pub(super) fn machine_dir() -> &'static DataFiles {
     static F: OnceLock<DataFiles> = OnceLock::new();
     F.get_or_init(|| DataFiles::from_process("machines"))
 }

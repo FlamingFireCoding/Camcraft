@@ -38,10 +38,12 @@ pub(super) const NO_MACHINE: &str = "No machine loaded - the checker states, it 
 pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
     group(ui, GROUPS[0], None, |ui| ownership(ui, state, ctx, Mount::Machine));
     let (path, m) = machine::of(&state.world);
-    let names: Vec<&str> = posting::MACHINES.iter().map(|(n, _)| *n).collect();
+    // #2380: the folder as last scanned - a removed file has no name here.
+    let scan = posting::machine_scan();
+    let names: Vec<&str> = posting::MACHINES.iter().map(|(n, _)| *n).filter(|n| scan.present.contains(n)).collect();
     group(ui, GROUPS[1], None, |ui| {
         ui.label(RichText::new(FILE_HELP).small().weak());
-        library_row(ui, state, &path, &names);
+        library_row(ui, state, &path, &names, &scan.extra);
         match &m {
             Some(m) => {
                 let source = if path.is_empty() {
@@ -63,10 +65,16 @@ pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
 }
 
 /// Library | combo on one row (the page's label column).
-fn library_row(ui: &mut Ui, state: &mut State, path: &str, names: &[&str]) {
+fn library_row(ui: &mut Ui, state: &mut State, path: &str, names: &[&str], extra: &[(String, std::path::PathBuf)]) {
     let sel: Option<usize> = names.iter().position(|n| path == posting::builtin_path(n));
-    let text = sel.and_then(|i| names.get(i)).map_or("other", |n| *n).to_owned();
+    let extra_sel = extra.iter().find(|(_, p)| p.display().to_string() == path);
+    let text = sel
+        .and_then(|i| names.get(i))
+        .map(|n| (*n).to_owned())
+        .or_else(|| extra_sel.map(|(n, _)| n.clone()))
+        .unwrap_or_else(|| "other".to_owned());
     let mut pick: Option<String> = None;
+    let mut pick_file: Option<std::path::PathBuf> = None;
     prop_grid(ui, "machine_library_grid", |ui| {
         ui.label("Library");
         let cb = egui::ComboBox::from_id_salt("machine_library").selected_text(text).show_ui(ui, |ui| {
@@ -75,10 +83,23 @@ fn library_row(ui: &mut Ui, state: &mut State, path: &str, names: &[&str]) {
                     pick = Some((*n).to_owned());
                 }
             }
+            for (n, p) in extra {
+                if ui.selectable_label(extra_sel.is_some_and(|(_, q)| q == p), n).clicked() {
+                    pick_file = Some(p.clone());
+                }
+            }
         });
         super::fields::named(cb.response, "Machine library");
         ui.end_row();
+        ui.label("");
+        if ui.button("Refresh").on_hover_text("Read the machine folder again").clicked() {
+            posting::rescan();
+        }
+        ui.end_row();
     });
+    if let Some(p) = pick_file {
+        state.pending.push_back(CommandKind::LoadMachineFile(p));
+    }
     if let Some(name) = pick {
         state.pending.push_back(CommandKind::LoadBuiltinMachine(name));
     }
