@@ -81,7 +81,7 @@ pub(super) fn posted_machine_for(machine: &(String, Option<Machine>)) -> Result<
 
 /// The active setup's mount - what a program with nothing to post reads
 /// (its refusal is the post's own, "no operations to post").
-fn active(world: &World) -> Mount {
+pub(super) fn active(world: &World) -> Mount {
     Mount {
         setups: vec![crate::setup::active(world).unwrap_or_default()],
         machine: crate::machine::of(world),
@@ -133,7 +133,7 @@ pub(super) fn single(world: &World, by_post: bool) -> Result<Mount, String> {
 }
 
 /// Whether operation entity `e` belongs to a mount of `setups`.
-fn member(world: &World, e: &Entity, setups: &[String]) -> bool {
+pub(super) fn member(world: &World, e: &Entity, setups: &[String]) -> bool {
     model::operation_of(world, e)
         .map(|op| crate::setup::effective(world, op.setup.as_deref()).unwrap_or_default())
         .is_some_and(|name| setups.contains(&name))
@@ -168,7 +168,8 @@ pub fn machine_checks(world: &World) -> Vec<(Machine, Result<MachineCheck, Strin
 
 /// The limit clause of the program gate (M2.3 D): [`machine_checks`],
 /// worded as the single-machine gate always worded it, so a one-mount
-/// program reads exactly as before.
+/// program reads exactly as before. A mount with no machine is judged
+/// against the default machine's stated limits (#2321).
 pub(super) fn machine_problems(world: &World) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (m, check) in machine_checks(world) {
@@ -186,6 +187,7 @@ pub(super) fn machine_problems(world: &World) -> Vec<String> {
             out.push(line);
         }
     }
+    out.extend(super::default_mch::default_machine_problems(world));
     out
 }
 

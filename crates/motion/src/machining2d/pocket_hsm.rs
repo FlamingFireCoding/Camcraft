@@ -247,10 +247,14 @@ fn hsm_passes(center: &Region, p: &PocketParams) -> Result<HsmPlanned, GenError>
                 notes.push("adaptive: a piece of the area has no entry room - left uncut".into());
                 continue;
             };
-            notes.push(format!(
-                "adaptive: a separate piece of the area is entered by an axial dive at ({:.2}, {:.2})",
-                d.x, d.y
-            ));
+            // #2265: the ladder enters this piece's solid start by the
+            // asked entry (`ladder_links::pass_link`); the plan counts on
+            // the tool's own disc there only, which every entry clears.
+            notes.push(if p.entry == Entry3D::Plunge {
+                format!("adaptive: a separate piece of the area is entered by an axial dive at ({:.2}, {:.2})", d.x, d.y)
+            } else {
+                format!("adaptive: a separate piece of the area is entered at ({:.2}, {:.2})", d.x, d.y)
+            });
             AdaptiveSpec { seed: d, start: d, bore: r, helix_r: 0.0, ..first }
         };
         let pl = plan(&reach, comp, &spec)?;

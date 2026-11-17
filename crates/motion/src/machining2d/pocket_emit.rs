@@ -89,7 +89,8 @@ pub(super) fn emit_pocket_passes(
         .with_top(p.links.approach.entry_top(p.top_z))
         .with_xy_arc(p.links.approach.arc_xy)
         .with_microlift(joins)
-        .with_holes(holes);
+        .with_holes(holes)
+        .with_solid_restart();
     let fitted: Option<Vec<Vec<Seg>>> = fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect());
     // #1733: the corner arcs asked for. They round the walks as fitted
     // (a pass with no fit: its own chords).
