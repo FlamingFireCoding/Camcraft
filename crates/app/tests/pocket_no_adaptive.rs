@@ -193,17 +193,23 @@ fn v63_pocket_adaptive_opens_as_adaptive2d_with_identical_toolpath() {
         notes.iter().any(|n| n.contains("P1") && n.contains("2D Adaptive")),
         "migration notes: {notes:?}"
     );
-    let v64 = v63.replace("\"version\": 63", "\"version\": 64");
-    let w64 = new_world();
-    let notes64 = project::open_noted(&w64, &v64).expect("v64 Pocket Adaptive must also migrate to v65");
-    assert!(
-        notes64.iter().any(|n| n.contains("P1") && n.contains("2D Adaptive")),
-        "v64 migration notes: {notes64:?}"
-    );
-    assert!(matches!(
-        model::operation_of(&w64, &model::find_by_name(&w64, "P1").expect("P1")).expect("op").params,
-        OpParams::Adaptive2D { method: AdaptiveMethod::Spiral, .. }
-    ));
+    // Main already persisted tilt bases, RTCP and WCS flips through v67.
+    // Every pre-retirement version must still migrate the retired strategy.
+    const { assert!(project::PROJECT_VERSION >= 68) };
+    for version in 64..=67 {
+        let legacy = v63.replace("\"version\": 63", &format!("\"version\": {version}"));
+        let legacy_world = new_world();
+        let legacy_notes = project::open_noted(&legacy_world, &legacy)
+            .unwrap_or_else(|e| panic!("v{version} Pocket Adaptive must migrate: {e}"));
+        assert!(
+            legacy_notes.iter().any(|n| n.contains("P1") && n.contains("2D Adaptive")),
+            "v{version} migration notes: {legacy_notes:?}"
+        );
+        assert!(matches!(
+            model::operation_of(&legacy_world, &model::find_by_name(&legacy_world, "P1").expect("P1")).expect("op").params,
+            OpParams::Adaptive2D { method: AdaptiveMethod::Spiral, .. }
+        ));
+    }
     let e = model::find_by_name(&world, "P1").expect("migrated op P1");
     let op = model::operation_of(&world, &e).expect("operation");
     let OpParams::Adaptive2D {
@@ -353,6 +359,12 @@ fn v63_uncarriable_params_mark_needs_review_and_block_posting() {
 
 #[test]
 fn current_version_file_with_pocket_adaptive_is_refused_as_corrupt() {
+    let future = v63_project_with_pocket_adaptive("").replace(
+        "\"version\": 63",
+        &format!("\"version\": {}", project::PROJECT_VERSION + 1),
+    );
+    assert!(matches!(project::open(&new_world(), &future), Err(ProjectError::UnsupportedVersion(_))),
+        "future project formats must be refused before migration");
     let v_cur = v63_project_with_pocket_adaptive("").replace(
         "\"version\": 63",
         &format!("\"version\": {}", project::PROJECT_VERSION),

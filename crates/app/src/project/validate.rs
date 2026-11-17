@@ -15,6 +15,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         )));
     }
     super::program_entry_dto::validate(dto, kind)?; // #155
+    // #1720: a flip rides a WCS row and nothing else.
+    if dto.flip.is_some() && !matches!(kind, EntityKind::Wcs) {
+        return Err(corrupt(format!("'{}' records a flipped axis but is not a WCS", dto.name)));
+    }
     // #1054: a recorded STEP facet budget rides a model row only, inside
     // the bounds an import would accept.
     if let Some(b) = dto.facet_budget {

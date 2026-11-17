@@ -190,6 +190,10 @@ pub fn collect(world: &World) -> ProjectFile {
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                flip: matches!(kind, Some(EntityKind::Wcs))
+                    .then(|| crate::setup_wcs_flip::of_entity(world, &entity))
+                    .filter(|f| f.iter().any(|v| *v))
+                    .map(|[x, y, z]| super::entity::WcsFlipDto { x, y, z }),
             }
         })
         .collect();

@@ -55,6 +55,9 @@ impl OpParams {
         if matches!(self, OpParams::Pocket { strategy: PocketStrategy::Adaptive, .. }) {
             return Some(POCKET_ADAPTIVE_RETIRED.into());
         }
+        if let Some(why) = self.tilt().and_then(|t| t.refusal()) {
+            return Some(why);
+        }
         if self.predrilled_elsewhere() {
             return Some(PREDRILLED_POCKET_ONLY.into());
         }

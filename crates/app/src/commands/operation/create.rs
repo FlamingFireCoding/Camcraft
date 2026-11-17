@@ -87,11 +87,15 @@ impl CreateOperation {
         valid_src(world, setup.as_deref(), &src)?;
         // #1504: a Slot created on picks takes the slot that fills them.
         let params = match &src {
-            SrcRef::Selection(items) => crate::operation::slot_from_picks(world, &params, items).unwrap_or(params),
+            SrcRef::Selection(items) => crate::operation::slot_from_picks(world, setup.as_deref(), &params, items).unwrap_or(params),
             _ => params,
         };
         infeed_plan_gate(world, &params, tool)?;
         if let Some(why) = params.named_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
+        // #1445: a dwell that is not a time from 0 to the bound, by name.
+        if let Some(why) = params.dwell_refusal() {
             return Err(CommandError::Invalid(why));
         }
         sinker_gate(world, setup.as_deref(), &params)?;

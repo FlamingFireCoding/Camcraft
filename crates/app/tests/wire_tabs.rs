@@ -21,7 +21,7 @@ use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::model;
 use camcraft_app::operation::{Height, OpParams, SrcRef, WireContourOp, WireSide, WireTabs};
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::project;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
@@ -117,7 +117,7 @@ fn refusal(op: WireContourOp) -> String {
 }
 
 fn cps() -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == "Generic ISO Wire EDM").map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text("Generic ISO Wire EDM").expect("registered")
 }
 
 /// Done means: a die with two tabs leaves the slug held until the

@@ -14,7 +14,7 @@ use camcraft_app::model;
 use camcraft_app::operation::{
     self, Height, OpParams, OpStatus, OpType, SrcRef, WireContourOp, WireSide, WireSkim, WireTabs,
 };
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::tools::{self, Tool, ToolKind};
 use camcraft_app::wire_tools::wire_tool;
 use camcraft_app::world::new_world;
@@ -103,12 +103,7 @@ fn wire_tool_command_refuses_bad_rpm_diameter_corner_and_cutting_rows_by_name() 
     let err = AddTool::new(&world, "BadCorner", rounded).err().expect("corner refused").to_string();
     assert!(err.contains("corner radius"), "{err}");
 
-    let row = camcraft_app::tool_cutting_rows::CuttingRow {
-        material: tools::WorkMaterial::MildSteel,
-        rpm: 0.0,
-        feed: 50.0,
-        waterjet: None,
-    };
+    let row = camcraft_app::tool_cutting_rows::CuttingRow::plain(Some(tools::WorkMaterial::MildSteel), 0.0, 50.0);
     let with_rows = Tool { cutting: vec![row], ..valid };
     let err = AddTool::new(&world, "BadRows", with_rows).err().expect("cutting rows refused").to_string();
     assert!(err.contains("EDM conditions"), "{err}");
@@ -144,7 +139,7 @@ fn mounted_wire_diameter_drives_kerf_path_post_and_stamp_staleness() {
     let y25 = top_y(&world, "Punch1");
     assert!((y25 - (10.0 + 0.125 + 0.04)).abs() < 1e-6, "0.25 wire kerf: {y25}");
 
-    let cps = BUILTINS.iter().find(|(n, _)| *n == CPS_ISO).map(|(_, s)| *s).expect("cps");
+    let cps = camcraft_app::posting::builtin_post_text(CPS_ISO).expect("cps");
     let out = std::env::temp_dir().join(format!("camcraft-2011-{}.nc", std::process::id()));
     let posted = posting::post_script(&world, &out, cps).expect("posts");
     let _ = std::fs::remove_file(&out);
@@ -250,7 +245,7 @@ fn legacy_wire_project_opens_without_a_tool_and_requires_recovery_before_posting
     let saved_op = saved["entities"].as_array().expect("entities").iter().find(|e| e["name"] == "Legacy").expect("op");
     assert!(saved_op["operation"]["stamp"].is_null(), "legacy generation stamp is discarded");
     assert!(GenerateOperation::new(&loaded, "Legacy").is_err(), "no implicit wire tool");
-    let cps = BUILTINS.iter().find(|(n, _)| *n == CPS_ISO).expect("post").1;
+    let cps = camcraft_app::posting::shipped_posts().expect("the shipped posts read").iter().find(|(n, _)| *n == CPS_ISO).expect("post").1;
     let out = std::env::temp_dir().join(format!("camcraft-2140-legacy-{}.nc", std::process::id()));
     let _ = std::fs::remove_file(&out);
     assert!(posting::post_script(&loaded, &out, cps).is_err(), "legacy operation must not post");

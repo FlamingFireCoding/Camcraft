@@ -107,12 +107,23 @@ use super::*;
 /// drop the rows or the stock material the feeds were picked by. A v63
 /// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
 /// row (derived at read).
-/// v65 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
+/// v65 (#2133): old readers must not discard the tilted frame basis version.
+/// Version 64 and older tilts retain basis 0; new tilts state basis 1.
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+/// v67 (#1720): a WCS row may record flipped axes (`flip`). Absent is
+/// no flip - what every v66 file posted - so a v66 file steps up
+/// unchanged. An old reader must refuse a v67 file rather than drop the
+/// flip and post the setup in the unflipped frame.
+/// v68 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
 /// to `adaptive2d`), and migrated operations may carry `needs_review`
-/// reasons naming turned-off un-carriable fields. Pre-v65 `Pocket` +
+/// reasons naming turned-off un-carriable fields. Pre-v68 `Pocket` +
 /// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
-/// refuse v65 files rather than silently drop `needs_review` and post.
-pub const PROJECT_VERSION: u32 = 65;
+/// refuse v68 files rather than silently drop `needs_review` and post.
+pub const PROJECT_VERSION: u32 = 68;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

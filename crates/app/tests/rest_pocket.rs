@@ -343,9 +343,8 @@ fn values_and_strategies_the_rest_pass_cannot_run_are_refused_by_name() {
     }
     assert!(rest_op(Some(prev())).is_sane() && rest_op(Some(prev())).named_refusal().is_none());
     let with = |strategy: PocketStrategy| pocket(1.5, Entry3D::Plunge, strategy, Some(prev()));
-    let msg = refusal(EditOperationParams::new(&world, "P2", with(PocketStrategy::Zigzag)));
-    assert!(msg.contains("not available with the Zigzag strategy"), "{msg}");
-    // #1517: Adaptive is retired on 2D Pocket altogether; the kernel still rejects it by name.
+    assert!(EditOperationParams::new(&world, "P2", with(PocketStrategy::Zigzag)).is_ok(), "Zigzag rest machining is supported");
+    // #1517: Adaptive is retired on 2D Pocket altogether.
     let msg = refusal(EditOperationParams::new(&world, "P2", with(PocketStrategy::Adaptive)));
     assert!(msg.contains("2D Adaptive"), "{msg}");
     assert!(

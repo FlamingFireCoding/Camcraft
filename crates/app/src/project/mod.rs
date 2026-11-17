@@ -1,4 +1,4 @@
-//! Project save/load: `.camproj`, JSON, version 64 (see `PROJECT_VERSION`).
+//! Project save/load: `.camproj`, JSON, version 67 (see `PROJECT_VERSION`).
 //!
 //! Serialization goes through plain DTO structs (deliberately not flecs
 //! reflection): the file format is our public persistence contract and must

@@ -568,6 +568,19 @@ impl PathDto {
     }
 }
 
+/// #1720 (v67): the reversed axes of a WCS row. Only a set axis writes
+/// its key; an unknown key is a corrupt file.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WcsFlipDto {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub x: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub y: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub z: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct EntityDto {
     pub name: String,
@@ -656,4 +669,9 @@ pub struct EntityDto {
     /// `kind == Some(Entry)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<super::program_entry_dto::ProgramEntryDto>,
+    /// #1720 (v67): a WCS row's flipped axes; present only on a WCS
+    /// with at least one axis flipped. Absent is no flip - every older
+    /// file - and the post refuses a flipped WCS by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flip: Option<WcsFlipDto>,
 }

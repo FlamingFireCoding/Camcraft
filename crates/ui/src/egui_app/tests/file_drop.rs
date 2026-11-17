@@ -223,3 +223,71 @@ mod issue_2064_pins {
         h.run_steps(2);
     }
 }
+
+#[derive(Debug)]
+struct BareDrop {
+    name: PathBuf,
+    data: Result<Vec<u8>, String>,
+}
+
+impl egui::DroppedFile for BareDrop {
+    fn path(&self) -> &Path {
+        &self.name
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        self.data.clone()
+    }
+}
+
+fn drop_bare(h: &mut Harness<'static, ShellUi>, name: &str, data: Result<Vec<u8>, String>) {
+    h.input_mut().dropped_files.push(std::sync::Arc::new(BareDrop {
+        name: PathBuf::from(name),
+        data,
+    }));
+    h.run_steps(2);
+    h.state_mut().state.settle();
+    h.run();
+}
+
+#[test]
+fn a_bare_name_dropped_mesh_with_bytes_imports_and_undoes() {
+    let mut h = shell_harness();
+    let before = names(&h);
+    assert!(!before.iter().any(|n| n == "cube"));
+    let bytes = std::fs::read(cube_path()).expect("cube.stl");
+    drop_bare(&mut h, "cube.stl", Ok(bytes));
+    assert!(
+        names(&h).iter().any(|n| n == "cube"),
+        "the bare-name dropped model is in the document: {}",
+        h.state().state.status
+    );
+    let st = &mut h.state_mut().state;
+    st.history.undo(&st.world);
+    assert_eq!(names(&h), before, "one undo removes the dropped model");
+}
+
+#[test]
+fn a_bare_name_drop_with_bad_extension_or_read_error_is_refused_by_name() {
+    let mut h = shell_harness();
+    let before = names(&h);
+    drop_bare(&mut h, "notes.txt", Ok(b"hello".to_vec()));
+    assert!(
+        h.state().state.status.contains("notes.txt is not a model file"),
+        "{}",
+        h.state().state.status
+    );
+    assert_eq!(names(&h), before);
+
+    drop_bare(&mut h, "unreadable.stl", Err("browser read error".into()));
+    let said = h.state().state.status.clone();
+    assert!(
+        said.contains("unreadable.stl") && said.contains("browser read error"),
+        "{said}"
+    );
+    assert_eq!(names(&h), before);
+
+    drop_bare(&mut h, "broken.step", Ok(b"this is not a STEP file".to_vec()));
+    let said = h.state().state.status.clone();
+    assert!(said.contains("import refused"), "{said}");
+    assert_eq!(names(&h), before);
+}
