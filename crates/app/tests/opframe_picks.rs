@@ -368,7 +368,7 @@ fn tilt_times_picks_and_unverified_stay_refused_and_area_passes_in_phase_two() {
 
     let mut tilted_face = face_params(Height::fixed(9.0), 25.0);
     if let OpParams::Face { tilt, .. } = &mut tilted_face {
-        *tilt = Some(Tilt { a_deg: 30.0, b_deg: 0.0, origin: [0.0; 3] });
+        *tilt = Some(Tilt { basis_version: 1, a_deg: 30.0, b_deg: 0.0, origin: [0.0; 3] });
     }
     h.execute(&world, CreateOperation::new(&world, "TiltedPick", TOOL, sel.clone(), tilted_face).expect("create"));
     let err = generate(&world, &op_of(&world, "TiltedPick"), "TiltedPick").expect_err("tilt x picks refuses");
@@ -378,9 +378,13 @@ fn tilt_times_picks_and_unverified_stay_refused_and_area_passes_in_phase_two() {
     let err = generate(&world, &op_of(&world, "TiltedPick"), "TiltedPick").expect_err("aligned tilt x picks refuses");
     assert!(err.to_string().contains("tilted plane is not supported yet in an aligned setup"), "{err}");
 
-    let offset = (KindInfo::ALL[OpType::Offset2D.ordinal()].seed)(&Carried::of(&face_params(Height::fixed(9.0), 25.0)));
-    h.execute(&world, CreateOperation::new(&world, "OffsetPick", TOOL, sel, offset).expect("create offset pocket"));
-    let err = generate(&world, &op_of(&world, "OffsetPick"), "OffsetPick").expect_err("unverified kind refuses");
+    // #2276 / #2283 / #2284: 2D Offset, Circular, 2D Chamfer and Deburr have proof;
+    // Probe stays unverified (the op keeps its old name).
+    let circular = (KindInfo::ALL[OpType::Probe.ordinal()].seed)(&Carried::of(&face_params(Height::fixed(9.0), 25.0)));
+    let probe = catalog().into_iter().find(|(n, _)| *n == "PRB-0400").map(|(_, t)| t).expect("probe");
+    h.execute(&world, AddTool::new(&world, "PRB-0400", probe).expect("add probe"));
+    h.execute(&world, CreateOperation::new(&world, "CircularPick", "PRB-0400", sel, circular).expect("create the Probe"));
+    let err = generate(&world, &op_of(&world, "CircularPick"), "CircularPick").expect_err("unverified kind refuses");
     assert!(err.to_string().contains("not supported yet in an aligned setup"), "{err}");
 
     let mut area_op = op_of(&world, "TiltedPick");

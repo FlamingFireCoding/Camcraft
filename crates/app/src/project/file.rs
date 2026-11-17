@@ -107,7 +107,18 @@ use super::*;
 /// drop the rows or the stock material the feeds were picked by. A v63
 /// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
 /// row (derived at read).
-pub const PROJECT_VERSION: u32 = 64;
+/// v65 (#2133): old readers must not discard the tilted frame basis version.
+/// Version 64 and older tilts retain basis 0; new tilts state basis 1.
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+/// v67 (#1720): a WCS row may record flipped axes (`flip`). Absent is
+/// no flip - what every v66 file posted - so a v66 file steps up
+/// unchanged. An old reader must refuse a v67 file rather than drop the
+/// flip and post the setup in the unflipped frame.
+pub const PROJECT_VERSION: u32 = 67;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -241,6 +252,10 @@ pub struct PostOptionsDto {
     /// (M0), additive (no version step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub between_setups: Option<String>,
+    /// How a Z-rotated work offset posts (#760): `"control"`; absent is
+    /// the default `"bake"` (additive, no version step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wcs_rotation: Option<String>,
     /// Per-post declared script option overrides keyed by `post_key` (#258),
     /// additive (no version step); absent leaves all script defaults intact.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]

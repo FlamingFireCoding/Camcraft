@@ -160,7 +160,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         ("face_square_40x40_blended.cl", true, None, None),
         ("face_square_40x40_stepped.cl", false, Some(2.0), Some(1.5)),
     ] {
-        let p = FaceParams { holes: Default::default(), tool_diameter: 10.0, stepover: 8.0, clearance_z: 5.0, cut_z: -2.0, top_z: top, stepdown: step, feed: 500.0, plunge_feed: 100.0, climb: true, blend_turns: blend };
+        let p = FaceParams { holes: Default::default(), tool_diameter: 10.0, stepover: 8.0, clearance_z: 5.0, cut_z: -2.0, top_z: top, stepdown: step, feed: 500.0, plunge_feed: 100.0, climb: true, blend_turns: blend, stock_top: None };
         let t = face(&reg, &p).expect("face");
         check(name, &t, section_law(&t, &reg, &part, &g10, Mode::Boundary, top.unwrap_or(-2.0), 5.0));
     }
@@ -289,18 +289,18 @@ fn a_lead_on_the_rings_own_circle_is_refused() {
     // tangent, so the leads meet the ring's arcs as well as each other.
     // These were the contour_disc_hole / contour_tangential_lead
     // goldens' programs until #862; no golden is kept for them, since
-    // no user can post them.
+    // no user can post them. #2004: the air level at Top Z is gone, so
+    // two levels (-2, -4) cross, 23 moves apart, and each still refuses.
     let (reg, part) = disc_hole_plate();
     let g = mill(6.0);
     let crossing = |pairs: &[[usize; 2]]| pairs.iter().map(|&moves| Warning::Crossing { moves }).collect::<Vec<_>>();
     for (lead, want) in [
-        (Lead::Arc { radius: 3.0 }, crossing(&[[17, 20], [18, 21], [40, 43], [41, 44], [63, 66], [64, 67]])),
+        (Lead::Arc { radius: 3.0 }, crossing(&[[17, 20], [18, 21], [40, 43], [41, 44]])),
         (
             Lead::Tangential { radius: 3.0 },
             crossing(&[
                 [17, 19], [17, 20], [18, 21], [19, 21],
                 [40, 42], [40, 43], [41, 44], [42, 44],
-                [63, 65], [63, 66], [64, 67], [65, 67],
             ]),
         ),
     ] {

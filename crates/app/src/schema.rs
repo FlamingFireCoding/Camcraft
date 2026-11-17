@@ -183,6 +183,15 @@ pub struct GeomPrintMemo {
 #[derive(Component, Debug)]
 pub struct Wcs;
 
+/// #1720: the axes of a WCS that run reversed (X+ becomes X-), in X, Y,
+/// Z order. Rides the `Wcs` entity beside its `Location`: a unit
+/// quaternion cannot hold a mirror. Absent is no flip (every older
+/// file); written only through `SetWcsFlip`, the project loader and the
+/// undo of a delete (`setup_wcs_flip::set`). The post and generation
+/// refuse a set flag by name until a flip is carried into the program.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WcsFlip(pub [bool; 3]);
+
 /// A cutting tool definition, on the entity named by the catalog or the
 /// user. Tools never have facets; operations and the verifier read their
 /// numbers through `model::tool_of`.
@@ -584,6 +593,46 @@ pub struct PostOptions {
     /// next (#1532): pause for the operator (the default), an optional
     /// stop, run straight on, or write one file per setup.
     pub between_setups: BetweenSetups,
+    /// How a Z-rotated work offset is expressed at post (#760):
+    /// `Bake` (the default) rotates XY coordinates into the WCS frame so
+    /// every 3-axis control can run them; `Control` emits `G68 X0. Y0. R`
+    /// or `ROT RPL=` when both machine and post script declare support.
+    pub wcs_rotation: WcsRotationOutput,
+}
+
+/// How a Z-rotated work offset posts (#760).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WcsRotationOutput {
+    /// Transform XY coordinates into the rotated WCS frame (works on every control).
+    #[default]
+    Bake,
+    /// Keep WCS coordinates and emit controller coordinate rotation (`G68` / `ROT`).
+    Control,
+}
+
+impl WcsRotationOutput {
+    pub const ALL: [Self; 2] = [Self::Bake, Self::Control];
+
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Bake => "bake",
+            Self::Control => "control",
+        }
+    }
+
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.word() == word)
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Bake => "Bake into XY",
+            Self::Control => "Control rotation (G68 / ROT)",
+        }
+    }
 }
 
 /// The between-setups choice of [`PostOptions`] (#1532). A setup is a
@@ -780,6 +829,7 @@ pub fn register_schema(world: &World) {
     world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
+    world.component::<WcsFlip>();
     world.component::<ToolDef>();
     world.component::<ToolBody>();
     world.component::<ToolCutter>();

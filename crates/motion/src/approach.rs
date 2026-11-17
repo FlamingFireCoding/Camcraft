@@ -113,6 +113,14 @@ pub struct Approach {
     /// traverse plane, as every pre-M11.3 path did; the default is
     /// [`DEFAULT_PLUNGE_HEIGHT`].
     pub plunge_height: f64,
+    /// The top of the setup's stock in the generator's frame, when the
+    /// application knows it (#2004): the input of the level law. Above
+    /// Top Z, the law keeps a level at Top Z (`machining2d::cut_levels_under`).
+    /// `None` - the default - reads Top Z as the stock top. Set for every
+    /// operation; the entry never reads it (that is
+    /// [`Approach::material_top`], #1559, set only where the entry carries
+    /// stock).
+    pub stock_top: Option<f64>,
     // --- D: feeds and engagement at entry ---
     /// Feed of ramp, helix and arc descents (mm/min); `0` is the cutting
     /// feed.
@@ -182,11 +190,13 @@ pub const NOT_CENTER_CUTTING: &str = "entry: the tool is not centre-cutting and 
 /// that is not centre-cutting. Generators turn it into their error.
 pub const CENTER_CUT_REFUSAL: &str = "entry refused: the tool is not centre-cutting";
 
-/// The refusal a ladder raises when its path carries the
-/// [`CENTER_CUT_REFUSAL`] note: `Some(the note)`.
+/// A low return crossed an earlier feed and has no proved rapid landing.
+pub const MICROLIFT_REFUSAL: &str = "entry refused: a crossing microlift has no proved rapid landing; use another entry or pocket strategy";
+
+/// The refusal a ladder raises for an unsafe entry or return.
 #[must_use]
 pub fn refusal(path: &crate::cl::Toolpath) -> Option<String> {
-    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL)).cloned()
+    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL) || n.starts_with(MICROLIFT_REFUSAL)).cloned()
 }
 
 /// The default axis-alignment tolerance, degrees.
@@ -222,6 +232,7 @@ impl Approach {
         arc_xy: false,
         predrilled: false,
         plunge_height: DEFAULT_PLUNGE_HEIGHT,
+        stock_top: None,
         ramp_feed: 0.0,
         plunge_feed: 0.0,
         lead_feed_pct: 100.0,

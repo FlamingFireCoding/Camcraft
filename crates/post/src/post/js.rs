@@ -72,6 +72,10 @@ pub struct Script {
     wire_edm: bool,
     /// Latches once any output-limit check trips so caught exceptions cannot pass truncated output.
     output_limit_exceeded: bool,
+    /// The `wcsRotation = true` manifest flag (#760): the script writes
+    /// controller coordinate rotation (`G68 X0. Y0. R` / `G69` or
+    /// `ROT RPL=` / `ROT`) when requested in `Control` mode.
+    wcs_rotation: bool,
 }
 
 impl Script {
@@ -108,6 +112,7 @@ impl Script {
             mill_spindle_reverse: false,
             wire_edm: false,
             output_limit_exceeded: false,
+            wcs_rotation: false,
         };
         let mut present = Vec::new();
         for h in HOOKS {
@@ -159,6 +164,10 @@ impl Script {
             .map(|v| is_true(&v))
             .unwrap_or(false);
         super::js_host::check_output_limit(&mut s.ctx, &mut s.output_limit_exceeded)?;
+        s.wcs_rotation = s
+            .eval("typeof wcsRotation !== \"undefined\" && wcsRotation === true")
+            .map(|v| is_true(&v))
+            .unwrap_or(false);
         Ok(s)
     }
 
@@ -339,6 +348,13 @@ impl Script {
     /// posts chip-break dips inside one G32 chain (issue #419).
     pub fn voices_continuous_threading(&self) -> bool {
         self.continuous_threading
+    }
+
+    /// True when the script declares `wcsRotation = true` - it writes
+    /// controller coordinate rotation (`G68` / `ROT`) in `Control` mode (#760).
+    #[must_use]
+    pub fn voices_wcs_rotation(&self) -> bool {
+        self.wcs_rotation
     }
 
     /// Lines flushed so far (the driver's section boundary marker).

@@ -308,6 +308,7 @@ fn enabling_aligned_3d_keeps_tilt_refused_and_passes_2d_area() {
         panic!("face params")
     };
     *tilt = Some(camcraft_app::operation::Tilt {
+        basis_version: 1,
         a_deg: 45.0,
         b_deg: 0.0,
         origin: [0.0; 3],

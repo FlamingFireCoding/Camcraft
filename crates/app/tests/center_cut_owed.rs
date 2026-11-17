@@ -131,6 +131,7 @@ fn an_inner_patch_face_runs_its_entry_out_to_air_for_a_tool_that_is_not_centre_c
                 plunge_feed: 300.0,
                 climb,
                 blend_turns: false,
+                stock_top: None,
             },
         )
         .expect("face");

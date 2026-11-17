@@ -98,7 +98,9 @@ pub fn check_row(ui: &mut Ui, label: &str, v: &mut bool) -> Response {
             .inner;
         remember(ui, &lab);
         let hit = ui.interact(lab.rect, lab.id.with("toggle"), egui::Sense::click());
-        let mut r = ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.checkbox(v, "")).inner;
+        let mut r = ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.checkbox(v, "")).inner.labelled_by(lab.id);
+        // The blank checkbox's empty name must not hide its associated caption.
+        r.ctx.accesskit_node_builder(r.id, |node| node.clear_label());
         if hit.clicked() {
             *v = !*v;
             r.mark_changed();

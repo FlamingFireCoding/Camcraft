@@ -23,6 +23,8 @@
 
 // pub(crate) for its own unit tests and the shell's init path: the M4.2
 // GPU backend pick - parse, honest fallback chain, adapter log line.
+// frame_rate is wasm-safe (camcraft_app::clock) and `state.rs` holds it.
+pub(crate) mod frame_rate;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod frame_watch;
 pub(crate) mod gpu;
@@ -187,6 +189,7 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
 // #155: Pause / Home entry rows and their menu.
@@ -305,7 +308,11 @@ mod wcs_page_tests;
 #[cfg(test)]
 mod wcs_circle_tests;
 #[cfg(test)]
+mod wcs_flip_tests;
+#[cfg(test)]
 mod wcs_part_point_tests;
+#[cfg(test)]
+mod wcs_align_guard_tests;
 #[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]

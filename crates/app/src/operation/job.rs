@@ -150,6 +150,8 @@ pub struct GenJob {
     /// it can be. The drill-reach refusals run on worker threads with
     /// no World to read, so they spell their depths through this lens.
     pub(super) unit: crate::units::Unit,
+    /// #760: active Z-rotated WCS on an upright milling operation (`None` when square).
+    pub(super) wcs_yaw: Option<super::wcs_yaw::WcsYaw>,
 }
 
 /// The tripwire phrase for a stored precompute whose arm never collected
@@ -180,6 +182,11 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // #1510: a milling WCS whose Z is tilted off the machine's would
     // cut the part as it lies, not as the WCS shows - refused by name.
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
+        return Err(GenError::Invalid(why));
+    }
+    // #1720: a flipped WCS axis is not carried into a path yet - refused
+    // by name, never cut in the unflipped frame.
+    if let Some(why) = crate::setup_wcs_flip::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
     // #763: the one machining-frame seam. Built before the first read;
@@ -259,7 +266,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         _ => None,
     };
     let slot_bound = match (&op.params, &op.src) {
-        (OpParams::Slot { .. }, SrcRef::Selection(items)) if !items.is_empty() => Some(super::slot_pick::slot_bound_of(world, items)),
+        (OpParams::Slot { .. }, SrcRef::Selection(items)) if !items.is_empty() => Some(super::slot_pick::slot_bound_of(world, setup, items)),
         _ => None,
     };
     let drive_chains = match &op.params {
@@ -373,6 +380,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         (m.model, rot)
     });
 
+    let wcs_yaw = super::wcs_yaw::WcsYaw::from_world(world, setup, machine_kind, &op.params);
     Ok(GenJob {
         op_name: op_name.to_owned(),
         tool,
@@ -423,6 +431,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         sinker_pass,
         sinker_wear,
         unit: crate::units::of(world),
+        wcs_yaw,
     })
 }
 

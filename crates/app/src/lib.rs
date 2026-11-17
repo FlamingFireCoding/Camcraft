@@ -100,6 +100,8 @@ pub mod setup_mount;
 pub mod setup_relative;
 // #1510: a tilted milling WCS is refused at generation.
 pub mod setup_wcs_tilt;
+// #1720: a flipped WCS axis is stored, and refused at post and generation.
+pub mod setup_wcs_flip;
 pub mod setup_post_options;
 // #1031: a setup's workholding (chuck/collet) rpm limit.
 pub mod setup_workholding;
@@ -128,6 +130,8 @@ pub mod stock_export;
 pub mod stock_follow;
 pub mod stock_play;
 pub mod stock_play_worker;
+// #1666: the radius the stock sweeps about the lathe's spindle axis.
+pub mod stock_turn;
 pub mod stock_view;
 pub mod tool_library;
 pub mod tool_list;
@@ -145,6 +149,8 @@ pub use camcraft_tools::waterjet as waterjet_tools;
 pub use camcraft_tools::wire as wire_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;
+// #743 part 2: STEP/SpunProfile <-> DXF half-profile conversion.
+pub mod tool_profile_dxf;
 // #93 slice 2: the drawn cutter law, and the tool's stored drawn cutter.
 pub use camcraft_tools::cutter_profile;
 // #93 slice 3: the drawn cutter carried onto new numbers, and its neck.

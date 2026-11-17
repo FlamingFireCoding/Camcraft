@@ -188,6 +188,10 @@ pub fn collect(world: &World) -> ProjectFile {
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                flip: matches!(kind, Some(EntityKind::Wcs))
+                    .then(|| crate::setup_wcs_flip::of_entity(world, &entity))
+                    .filter(|f| f.iter().any(|v| *v))
+                    .map(|[x, y, z]| super::entity::WcsFlipDto { x, y, z }),
             }
         })
         .collect();
@@ -222,6 +226,7 @@ pub fn collect(world: &World) -> ProjectFile {
             (o.threading != crate::schema::ThreadingOutput::default()
                 || o.end_units != crate::schema::EndUnits::default()
                 || o.between_setups != crate::schema::BetweenSetups::default()
+                || o.wcs_rotation != crate::schema::WcsRotationOutput::default()
                 || !script.is_empty())
             .then(|| PostOptionsDto {
                 threading: match o.threading {
@@ -237,6 +242,9 @@ pub fn collect(world: &World) -> ProjectFile {
                 // #1532: the default pause writes no key.
                 between_setups: (o.between_setups != crate::schema::BetweenSetups::default())
                     .then(|| o.between_setups.word().to_owned()),
+                // #760: the default bake writes no key.
+                wcs_rotation: (o.wcs_rotation != crate::schema::WcsRotationOutput::default())
+                    .then(|| o.wcs_rotation.word().to_owned()),
                 script,
             })
         },
