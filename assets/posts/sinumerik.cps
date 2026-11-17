@@ -17,6 +17,7 @@ coolantModes = true; // reads PARAM Coolant (#112/#150): the engine refuses non-
 afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a stop or home ask for a post without it
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G57, G505, G506 (#934); more G505+ frames need the machine's frame count (#931)
+wcsRotation = true;        // #760: writes ROT RPL=.. / ROT in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G710 / G700
 endUnits = "G700 G710";   // #2189: switches end units before M2 when asked
 
@@ -49,6 +50,9 @@ var compD = "";            // the D word riding the engage block ("" when the to
 var compOn = false;        // compensation is engaged (G41/G42 written, no G40 yet)
 var compNoted = false;     // the section's operator note was written
 var orgX = 0, orgY = 0, orgZ = 0;
+var wcsYaw = 0;            // #760: Z rotation (deg) for Control mode (ROT RPL=)
+var wcsRotMode = "";       // #760: "control" | "bake" | ""
+var wcsRotActive = false;  // #760: ROT is currently active in this section
 var nLine = 0;             // the numbered-block dialect: every written
                            // block advances N by 10 (gap left for hand edits)
 
@@ -391,6 +395,13 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsYaw" && has(value)) wcsYaw = Number(value);
+  else if (name === "WcsRotationMode") wcsRotMode = String(value || "");
+}
+
+function wcsRotControl() {
+  var m = wcsRotMode || ((typeof postOptions !== "undefined" && postOptions.WcsRotation) ? String(postOptions.WcsRotation) : "");
+  return m === "control" && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6;
 }
 
 function onSpindleSpeed() {
@@ -461,6 +472,10 @@ function startPreamble() {
   coolant = probeStop ? "" : coolantFor(coolantAsk);
   if (coolant) block([coolant]);
   smoothOn();
+  if (wcsRotControl()) {
+    block(["ROT", "RPL=" + trimNum(Number(wcsYaw).toFixed(3))]);
+    wcsRotActive = true;
+  }
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -500,6 +515,9 @@ function endPreamble() {
   smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  if (wcsRotActive) { block(["ROT"]); wcsRotActive = false; }
+  wcsYaw = 0;
+  wcsRotMode = "";
   if (compOn || compG) {
     msg("cutter compensation still engaged at section end - no cancel block");
     compG = ""; compD = ""; compOn = false;

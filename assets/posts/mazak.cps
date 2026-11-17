@@ -20,6 +20,7 @@ afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a st
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets not verified here (#931)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+wcsRotation = true;        // #760: writes G68 X0. Y0. R / G69 in Control mode from PARAM WcsYaw & WcsRotationMode
 endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
 declaredOptions = {
@@ -94,6 +95,9 @@ var compD = "";            // the D word riding the engage block ("" when the to
 var compOn = false;        // compensation is engaged (G41/G42 written, no G40 yet)
 var compNoted = false;     // the section's operator note was written
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
+var wcsYaw = 0;            // #760: Z rotation (deg) for Control mode (G68)
+var wcsRotMode = "";       // #760: "control" | "bake" | ""
+var wcsRotActive = false;  // #760: G68 is currently engaged in this section
 
 // ------------------------------------------------------------ helpers
 function has(v) { return v !== null && v !== undefined && isFinite(v); }
@@ -118,6 +122,7 @@ function fn(v) {  // a length as text (comments): mm at three decimals, or inch 
   return trimNum(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 }
 function fu(v) { return pt(fn(v)); }  // a length word, with its point
+function fa(v) { return pt(has(v) ? trimNum(Number(v).toFixed(3)) : "0"); }  // angle (deg) at 3 decimals with point
 function ff(v) {  // a feed: whole mm/min, or in/min at two decimals
   if (!(has(v) && v > 0)) return "0";
   return inch ? trimNum((v / 25.4).toFixed(2)) : String(Math.round(v));
@@ -490,6 +495,13 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsYaw" && has(value)) wcsYaw = Number(value);
+  else if (name === "WcsRotationMode") wcsRotMode = String(value || "");
+}
+
+function wcsRotControl() {
+  var m = wcsRotMode || ((typeof postOptions !== "undefined" && postOptions.WcsRotation) ? String(postOptions.WcsRotation) : "");
+  return m === "control" && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6;
 }
 
 function onSpindleSpeed() {
@@ -560,6 +572,10 @@ function startPreamble() {
   coolant = probeStop ? "" : coolantFor(coolantAsk);
   if (coolant) block([coolant]);
   smoothOn();
+  if (wcsRotControl()) {
+    block(["G68", "X0.", "Y0.", "R" + fa(wcsYaw)]);
+    wcsRotActive = true;
+  }
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -596,6 +612,9 @@ function endPreamble() {
   smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
+  wcsYaw = 0;
+  wcsRotMode = "";
   if (compOn || compG) {
     msg("cutter compensation still engaged at section end - no cancel block");
     compG = ""; compD = ""; compOn = false;

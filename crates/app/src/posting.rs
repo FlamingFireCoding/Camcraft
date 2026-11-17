@@ -255,6 +255,11 @@ pub fn options_value(o: PostOptions) -> Value {
     if let (Some(end), Some(map)) = (end, v.as_object_mut()) {
         map.insert("EndUnits".to_owned(), Value::from(end));
     }
+    if o.wcs_rotation == crate::schema::WcsRotationOutput::Control
+        && let Some(map) = v.as_object_mut()
+    {
+        map.insert("WcsRotation".to_owned(), Value::from("control"));
+    }
     v
 }
 
@@ -673,6 +678,12 @@ fn post_script_body_with(
     let voice = post::dialect::work_voice(cps).map_err(|e| format!("post engine: {e}"))?;
     let mut report = verification_report_by(world, &|_| voice);
     report.problems.splice(0..0, unserved);
+    // #760: Control mode checks against the explicit script when invoked directly.
+    for msg in wcs_rotation::explicit_script_problems(world, cps) {
+        if !report.problems.contains(&msg) {
+            report.problems.push(msg);
+        }
+    }
     // One file, one register per word (#196): two setups posting the same
     // word from different placements refuse here - per-op files are exempt.
     report.problems.extend(wcs_slot::shared_word_problems(world));
@@ -1214,6 +1225,10 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             top_z: stock_top_z, // the TopOfStock PARAM: the stock, not the cut
             wcs,
             origin,
+            wcs_yaw: wcs_yaw(world, setup),
+            wcs_rotation_control: wcs_yaw(world, setup).is_some()
+                && crate::setup_post_options::of(world, op.setup.as_deref()).wcs_rotation
+                    == crate::schema::WcsRotationOutput::Control,
             stock,
             stock_top_z,
             stock_turn_radius,
@@ -1260,6 +1275,18 @@ pub(crate) fn wcs_context(world: &World, setup: Option<&str>) -> (u32, [f64; 3])
         .and_then(|e| model::transform_of(world, &e))
         .map_or([0.0; 3], |t| [t.pos.x, t.pos.y, t.pos.z]);
     (index, origin)
+}
+
+/// #760: signed Z-axis rotation in degrees (`yaw_deg`) for a setup's
+/// WCS when WCS `+Z` stays aligned with machine `+Z` and `|yaw| > 1e-9`
+/// rad; `None` when square, tilted, or non-finite.
+#[must_use]
+pub(crate) fn wcs_yaw(world: &World, setup: Option<&str>) -> Option<f64> {
+    let loc = crate::setup::wcs_entity(world, setup).and_then(|e| model::transform_of(world, &e))?;
+    match offset_frame(&loc) {
+        OffsetFrame::Yaw { yaw_deg, .. } => Some(yaw_deg),
+        _ => None,
+    }
 }
 
 /// Every height a parameter set references (the same walk

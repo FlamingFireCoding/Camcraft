@@ -31,13 +31,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         neck,
         lathe_body,
         tool_name,
-        params,
+        mut params,
         src,
-        material,
+        mut material,
         frame,
         hs,
-        stock_facets,
-        stock_aabb,
+        mut stock_facets,
+        mut stock_aabb,
         analytic_stock,
         stock_fidelity_known,
         mut section_z,
@@ -47,7 +47,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut slot_bound,
         mut prior,
         verify_prior,
-        drills_ahead,
+        mut drills_ahead,
         turned_ahead,
         is_mill,
         machine_kind,
@@ -62,11 +62,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         rotary_axis,
         part_solid,
         around_part,
-        keep_parts,
-        neighbour_parts,
-        area,
+        mut keep_parts,
+        mut neighbour_parts,
+        mut area,
         wcs_origin,
         unit,
+        wcs_yaw,
         spindle_note: _,
         carried_overhang: _,
         op_name: _,
@@ -159,6 +160,31 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let mesh_steel: &[crate::fixture::MeshedFixture] = if is_mill && !lathe_tool { &fixture_meshes } else { &[] };
     // Tool: the diameter drives the path, the body drives the reach law.
     let d = tool.diameter;
+    // #760: carry pure Z-rotated WCS into the generator frame before reading
+    // stock projections and 2D/3D geometry; restored to Setup S after `match`.
+    let yaw_ctx = match wcs_yaw {
+        Some(yw) => {
+            verify_prior.set_yaw(yw.origin, -yw.yaw_rad);
+            let saved = yw.enter(
+                &mut material,
+                &mut stock_facets,
+                &mut stock_aabb,
+                &mut picked_region,
+                &mut contour_sel,
+                &mut drive_chains,
+                &mut slot_bound,
+                &mut prior,
+                &mut drills_ahead,
+                &mut keep_parts,
+                &mut neighbour_parts,
+                &mut area,
+                &mut params,
+            )?;
+            Some((yw, saved))
+        }
+        None => None,
+    };
+    let was_yaw = yaw_ctx.is_some();
 
     // Source stock, when it is not the source itself: the swarf column
     // around a smaller model. The world reads that chose it rode into
@@ -169,8 +195,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // block, which is what the collect read of the setup's stock
     // entity guarantees.
     // #1066: a hole-list kind on the stock itself reads the unpunched stock.
-    let judged_stock = super::material_source::judged_stock(stock_facets.as_deref(), &src, &params, &material);
-    let stock_region = judged_stock
+    let stock_region_gen = super::material_source::judged_stock(stock_facets.as_deref(), &src, &params, &material)
         .and_then(|f| slice::project(f, FOOTPRINT_SAMPLES).ok())
         .filter(|r| !r.is_empty());
     let stock_top_z =
@@ -227,6 +252,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         bodies: material.bodies.clone(),
         excess: material.excess,
     });
+    let (region, path, turn_note, thread_round, mut broke, lk) = match (|| -> Result<_, GenError> {
+    let stock_region = &stock_region_gen;
     let m_gen = material_local.as_ref().unwrap_or(&material);
 
     // The area controls (M11.5): the region every arm takes is the
@@ -2866,6 +2893,33 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             (region, path)
         }
     };
+    Ok((region, path, turn_note, thread_round, broke, lk))
+    })() {
+        Ok(ok) => ok,
+        Err(e) => return Err(match yaw_ctx { Some((yw, _)) => yw.exit_err(e), None => e }),
+    };
+    let (region, path) = if let Some((yw, saved)) = yaw_ctx {
+        material.facets = saved.material_facets;
+        stock_facets = saved.stock_facets;
+        params = saved.params;
+        keep_parts = saved.keep_parts;
+        neighbour_parts = saved.neighbour_parts;
+        verify_prior.clear_yaw();
+        if let Some(b) = &mut broke {
+            b.tip = yw.exit_point(b.tip);
+        }
+        (yw.exit_region(&region)?, yw.exit_path(&path, machining2d::ARC_FIT_TOL))
+    } else {
+        (region, path)
+    };
+    let judged_stock = super::material_source::judged_stock(stock_facets.as_deref(), &src, &params, &material);
+    let stock_region = if was_yaw {
+        judged_stock
+            .and_then(|f| slice::project(f, FOOTPRINT_SAMPLES).ok())
+            .filter(|r| !r.is_empty())
+    } else {
+        stock_region_gen
+    };
     let path = super::turning_stock::noted(path, turn_note);
     // #1557: the break-through said, and named below an unmodelled stock bottom.
     let steel = !fixtures.is_empty() || !fixture_meshes.is_empty() || !workholding.0.is_empty() || !workholding.1.is_empty();
@@ -3313,6 +3367,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // the moves' stamped axes. One path is posted; both are
             // measured.
             let path_world = f.world_path(&path, machining2d::ARC_FIT_TOL);
+            let m_gen = material_local.as_ref().unwrap_or(&material);
             let mut st_local = stock_top_z - oz;
             let mut boxes: Vec<(crate::geometry::Point3, crate::geometry::Point3)> = Vec::new();
             if let Some(b) = stock_aabb {

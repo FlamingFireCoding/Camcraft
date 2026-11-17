@@ -567,6 +567,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
             Some(w) => crate::schema::BetweenSetups::from_word(w)
                 .ok_or_else(|| corrupt(format!("unknown between-setups choice {w:?}")))?,
         },
+        // #760: an absent key is the default bake into XY.
+        wcs_rotation: match file.post_options.as_ref().and_then(|o| o.wcs_rotation.as_deref()) {
+            None => crate::schema::WcsRotationOutput::default(),
+            Some(w) => crate::schema::WcsRotationOutput::from_word(w)
+                .ok_or_else(|| corrupt(format!("unknown wcs-rotation choice {w:?}")))?,
+        },
     };
     let mut doc_script = crate::schema::PostScriptOptions {
         by_post: file

@@ -312,6 +312,8 @@ mod wcs_flip_tests;
 #[cfg(test)]
 mod wcs_part_point_tests;
 #[cfg(test)]
+mod wcs_align_guard_tests;
+#[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]
 mod setup_relative_tests;

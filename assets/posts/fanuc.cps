@@ -21,6 +21,7 @@ probeAxisInversion = true; // probing blocks verified on the mirrored stream (#3
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets are an option not verified here (#931)
 millSpindleReverse = true; // reads PARAM MillSpindle (#988): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
+wcsRotation = true;        // #760: writes G68 X0. Y0. R / G69 in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
@@ -101,6 +102,9 @@ var wearNoted = false;     // the wear-register comment was written this section
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs):
 // the stream speaks world coordinates; the machine measures its program
 // from the work offset. A legacy .cl carries no PARAMs, so these stay 0.
+var wcsYaw = 0;            // #760: Z rotation (deg) for Control mode (G68)
+var wcsRotMode = "";       // #760: "control" | "bake" | ""
+var wcsRotActive = false;  // #760: G68 is currently engaged in this section
 
 // ------------------------------------------------------------ helpers
 function has(v) { return v !== null && v !== undefined && isFinite(v); }
@@ -601,6 +605,13 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsYaw" && has(value)) wcsYaw = Number(value);
+  else if (name === "WcsRotationMode") wcsRotMode = String(value || "");
+}
+
+function wcsRotControl() {
+  var m = wcsRotMode || ((typeof postOptions !== "undefined" && postOptions.WcsRotation) ? String(postOptions.WcsRotation) : "");
+  return m === "control" && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6;
 }
 
 function onSpindleSpeed() {
@@ -672,6 +683,11 @@ function startPreamble() {
   coolant = probeStop ? "" : coolantFor(coolantAsk);
   if (coolant) block([coolant]);
   smoothOn();
+  if (wcsRotControl()) {
+    block(["G17"]);
+    block(["G68", "X0.", "Y0.", "R" + fa(wcsYaw)]);
+    wcsRotActive = true;
+  }
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -713,6 +729,9 @@ function endPreamble() {
   smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
+  wcsYaw = 0;
+  wcsRotMode = "";
   if (compOn || compG) {
     msg("cutter compensation still engaged at section end - no cancel block");
     compG = ""; compD = ""; compOn = false;
