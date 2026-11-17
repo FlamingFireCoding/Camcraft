@@ -9,6 +9,24 @@
 use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use std::path::Path;
 
+/// The stock turn that makes the program sim refuse: [`OBLIQUE`] rad
+/// about Z when `rotated`, else none. The same device as
+/// `area_support::stock_turn`. #2177: a quarter turn is no such device -
+/// the sim judges a square-turned box.
+pub fn stock_turn(rotated: bool) -> [f64; 4] {
+    if rotated { camcraft_app::geometry::quat_from_yaw(OBLIQUE) } else { camcraft_app::schema::Location::default().rot }
+}
+
+/// A turn about Z off the machine axes (rad); a point 40 mm from the
+/// turn's centre moves 4e-5 mm.
+pub const OBLIQUE: f64 = 1e-6;
+
+/// The device holds: the program sim refuses this stock by name
+/// (`stock_follow::OBLIQUE_STOCK`).
+pub fn oblique_refused(world: &flecs_ecs::prelude::World) -> bool {
+    camcraft_app::stock_sim::simulate_document(world).is_err_and(|e| e.contains(camcraft_app::stock_follow::OBLIQUE_STOCK))
+}
+
 /// One facet, wound so its normal agrees with `n`; a sliver is dropped.
 fn tri(out: &mut Vec<Triangle>, a: Point3, b: Point3, c: Point3, n: [f64; 3]) {
     let (u, v) = (b - a, c - a);
