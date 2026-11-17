@@ -36,6 +36,11 @@
 //! un-tagged after generation leaves the op fresh, so with the sim silent
 //! those parts are judged again live (`operation::kept_rejudge`, #1628):
 //! a cut into one is a blocking problem naming the op and the part.
+//! Where the sim judges, it judges those parts itself (a stock-source
+//! chamfer's bevel is credited over none of them, #2308), and a gouge it
+//! finds carries the same naming line beside its own verdict. A clean sim
+//! verdict does not end it: a cut under the sim's lattice is still seen by
+//! the live re-judge, which runs in that arm too (#2308).
 
 use crate::model;
 use crate::operation::{self, OpStatus};
@@ -91,9 +96,13 @@ fn judge_clause(world: &World) -> SimClause {
                     )
                 },
             );
+            // #2308: a part moved or added since generation names the op
+            // and the part it cuts - said beside the sim's verdict, which
+            // already blocks, so it never refuses a program on its own.
+            let moved = kept_moved(world).map(|why| format!(" - {why}")).unwrap_or_default();
             SimClause {
                 problem: Some(format!(
-                    "gouge: program cuts below the model in {} cell(s), worst {} {}{at}{}",
+                    "gouge: program cuts below the model in {} cell(s), worst {} {}{at}{}{moved}",
                     sim.dev.gouge_cells,
                     crate::units::len(sim.dev.max_gouge, u, 2),
                     u.suffix(),
@@ -102,7 +111,14 @@ fn judge_clause(world: &World) -> SimClause {
                 not_judged: None,
             }
         }
-        Ok(_) => SimClause::default(),
+        // #2308: a cut too shallow for the sim's lattice (a part added
+        // after generation under a stock-source chamfer, by 0.05 mm) reads
+        // clean, so the kept parts are judged again live here too - once
+        // every op is covered, as in the not-judged arm.
+        Ok(_) => SimClause {
+            problem: if uncovered(world).is_none() { kept_moved(world) } else { None },
+            not_judged: None,
+        },
         Err(reason) => {
             let line = format!("{NOT_JUDGED}: {reason}");
             let problem = uncovered(world)

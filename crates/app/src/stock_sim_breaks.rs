@@ -24,6 +24,26 @@ pub fn declared_width(params: &OpParams) -> Option<f64> {
     }
 }
 
+/// Whether `op` breaks the STOCK's edge, not a part's (#2308): a 2D
+/// Chamfer whose source names the setup's stock (the stock itself, or
+/// picks off it). Its bevel is no part of the finished part - #1631's
+/// solid law forbids it to enter any part at all - so the program sim
+/// credits none of its records over a part's columns: a part that stands
+/// under the stock's edge (added after generation, where the op's own
+/// verdict never read it) is judged sharp and its cut is a gouge.
+#[must_use]
+pub fn breaks_stock_edge(world: &flecs_ecs::prelude::World, op: &crate::schema::Operation) -> bool {
+    if !matches!(op.params, OpParams::Chamfer2D { .. }) {
+        return false;
+    }
+    let stock = crate::setup::stock_entity_name(world, op.setup.as_deref());
+    match &op.src {
+        crate::operation::SrcRef::Stock => true,
+        crate::operation::SrcRef::Entity(n) => *n == stock,
+        crate::operation::SrcRef::Selection(items) => items.iter().any(|g| g.entity == stock),
+    }
+}
+
 /// The records of op `name` the sim may credit: sane, on a declaring
 /// kind, and no wider than the op's stated width (a micron of slack for
 /// the lattice the file stores the edge on).

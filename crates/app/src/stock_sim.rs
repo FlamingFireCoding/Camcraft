@@ -384,8 +384,9 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         planned.push(Planned {
             name: name.clone(),
             moves,
-            // #529: only what the op itself declared, never wider.
-            breaks: breaks::bounded(name, &op.params, cache.path.breaks),
+            // #529: only what the op itself declared, never wider. #2308:
+            // and never a stock edge's bevel over a part.
+            breaks: if breaks::breaks_stock_edge(world, &op) { Vec::new() } else { breaks::bounded(name, &op.params, cache.path.breaks) },
             mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,
