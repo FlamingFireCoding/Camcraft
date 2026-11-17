@@ -20,3 +20,8 @@ Mach4 Mill controllers do not support Fanuc `G43.4` RTCP, and #1966 (`G93` inver
 
 **Cost to change later.**
 When `#1966` introduces `G93` inverse-time feed support, `preparePose` and `onLinear` in `assets/posts/mach4.cps` can branch on `G93` for simultaneous multi-axis feeds while leaving 3-axis and 3+2 `G94` paths untouched. If arbitrary non-platter work datums are later streamed explicitly, subtracting `workDatum - (aPivot + cOffset)` in `transformPt` is a one-line adjustment.
+
+**PR #2296 review corrections.**
+- Establish both rotary home commands after a safe retract before initial vertical work on a configured trunnion. An inherited controller angle is unknown, so relying on program-end state or retaining C at the vertical pole was rejected; repeated execution can otherwise cut at the previous run's final tilt.
+- Route every probe hook through vertical pose preparation, including result/offset updates. This restores the untransformed probing coordinate frame after indexing and refuses unreachable home positions. Silently probing at the prior indexed angle was rejected.
+- Declare the five existing Mach4 options with enum/string/integer types and their existing defaults. Keep programNumber as the fallback when the host supplies no program identity. Direct engine-only coverage was rejected because it bypasses CLI/app override validation; CLI acceptance and refusal tests exercise the declared schema.

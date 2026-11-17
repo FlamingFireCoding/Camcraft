@@ -15,6 +15,24 @@ workOffsetIndex = true;
 workOffsetMax = 254;
 millSpindleReverse = true;
 
+declaredOptions = {
+  safeRetract: {
+    type: "enum", title: "Safe retract method", group: "Behavior",
+    description: "Z retract before tool changes, indexing and program end",
+    choices: [{ id: "G28", title: "G28 reference return" }, { id: "G30", title: "G30 reference return" }, { id: "G53", title: "G53 machine Z" }],
+    default: "G28"
+  },
+  rolloverMode: {
+    type: "enum", title: "C rotary rollover", group: "Rotary",
+    description: "Use the machine rollover setting or explicitly select wrapped or unwrapped C angles",
+    choices: [{ id: "auto", title: "Machine setting" }, { id: "rollover_360", title: "Wrap to 0..360 degrees" }, { id: "unwrapped", title: "Unwrapped angles" }],
+    default: "auto"
+  },
+  rotaryUnclamp: { type: "string", title: "Rotary unclamp code", group: "Rotary", description: "Machine unclamp block; set together with rotaryClamp", default: "" },
+  rotaryClamp: { type: "string", title: "Rotary clamp code", group: "Rotary", description: "Machine clamp block; set together with rotaryUnclamp", default: "" },
+  programNumber: { type: "integer", title: "Program number", group: "Header", description: "Fallback O number when the host supplies no program number", min: 1, default: 1001 }
+};
+
 var COOLANT_KINDS = ["flood", "mist", "air", "air-blast", "through-spindle", "through-tool"];
 var inch = false;
 var safeRetract = "G28";
@@ -556,7 +574,14 @@ function preparePose(p, isCutting) {
 
   secStarted = true;
   if (isCutting) secHasCut = true;
-  if (!tilted && !hasTilted) {
+  // A repeated program can start with the table still indexed by its last run.
+  var rotaries = typeof machine !== "undefined" && machine && Array.isArray(machine.rotaries) ? machine.rotaries : [];
+  var configuredA = false, configuredC = false;
+  for (var ri = 0; ri < rotaries.length; ri++) {
+    if (rotaries[ri].name === "A") configuredA = true;
+    if (rotaries[ri].name === "C") configuredC = true;
+  }
+  if (!tilted && !hasTilted && !(configuredA && configuredC)) {
     secPose = { tilted: false, partU: [0, 0, 1], phiA: 0, phiC: 0, aCmd: 0, cCmd: 0 };
     return secPose;
   }
@@ -565,7 +590,13 @@ function preparePose(p, isCutting) {
   hasTilted = true;
   var aRef = modalA !== null ? modalA : cfg.aZero;
   var cRef = modalC !== null ? modalC : cfg.cZero;
-  var sol = solveAcPose(cfg, u, aRef, cRef);
+  // Vertical coordinates are unrotated, so restore both kinematic zeros.
+  // Retaining C at the pole would rotate XY even though the tool axis is vertical.
+  var sol = tilted ? solveAcPose(cfg, u, aRef, cRef) : {
+    aCmd: cfg.aZero, cCmd: cfg.cRollover ? mod360(cfg.cZero) : cfg.cZero,
+    phiA: 0, phiC: 0
+  };
+  if (sol && (!inBounds(sol.aCmd, cfg.aTravel) || !inBounds(sol.cCmd, cfg.cTravel))) sol = null;
   if (!sol) {
     msg(who() + "orientation is unreachable within trunnion travel limits on " + cfg.name);
     return null;
@@ -581,7 +612,7 @@ function preparePose(p, isCutting) {
     xyUnknown = true;
     justRetracted = false;
   }
-  secPose = { tilted: true, partU: u, phiA: sol.phiA, phiC: sol.phiC, aCmd: sol.aCmd, cCmd: sol.cCmd };
+  secPose = { tilted: tilted, partU: u, phiA: sol.phiA, phiC: sol.phiC, aCmd: sol.aCmd, cCmd: sol.cCmd };
   return secPose;
 }
 
@@ -779,16 +810,22 @@ function onCycle() {
   seatKnown = true; inCycle = true; justRetracted = false;
 }
 
-function onProbe() {
+function prepareProbePose() {
   startPreamble();
   probeSeat();
+  // Probe coordinates and G54 updates are expressed in the vertical part frame.
+  // Share the retract/index guard, including its named refusal on unsafe changes.
+  return preparePose({ A: 0, B: 0, C: 0 }, false) !== null;
+}
+
+function onProbe() {
+  if (!prepareProbePose()) return;
   var p = properties;
   if (!xyFirst(p.X, p.Y, p.Z, true, null, null)) return;
   block(["G31", "X" + fu(num(p.X, orgX) - orgX), "Y" + fu(num(p.Y, orgY) - orgY), "Z" + fu(num(p.Z, orgZ) - orgZ), ff(num(p.FeedRate, num(p.Feed, 100)))]);
 }
 function onProbeMove() {
-  startPreamble();
-  probeSeat();
+  if (!prepareProbePose()) return;
   var p = properties;
   if (!xyFirst(p.StartX, p.StartY, p.StartZ, true, null, null)) return;
   block(["G31", "X" + fu(p.X - orgX), "Y" + fu(p.Y - orgY), "Z" + fu(p.Z - orgZ), ff(p.Feed)]);
@@ -804,14 +841,13 @@ function onProbeMove() {
   }
 }
 function onProbeRetreat() {
-  probeSeat();
+  if (!prepareProbePose()) return;
   var p = properties;
   block(["G91", "G01", "X" + fu(p.DeltaX), "Y" + fu(p.DeltaY), "Z" + fu(p.DeltaZ), ff(p.Feed)]);
   block(["G90"]);
 }
 function onProbeGuard() {
-  startPreamble();
-  probeSeat();
+  if (!prepareProbePose()) return;
   var p = properties;
   if (!xyFirst(p.StartX, p.StartY, p.StartZ, true, null, null)) return;
   block(["G31", "X" + fu(p.X - orgX), "Y" + fu(p.Y - orgY), "Z" + fu(p.Z - orgZ), ff(p.Feed)]);
@@ -822,6 +858,7 @@ function onProbeGuard() {
   }
 }
 function onProbeResult() {
+  if (!prepareProbePose()) return;
   var p = properties, org = [orgX, orgY, orgZ], axes = p.Axes || [], dev = 190;
   for (var i = 0; i < axes.length; i++) {
     var a = axes[i], ai = a.Axis === "X" ? 0 : (a.Axis === "Y" ? 1 : 2), sum = [];

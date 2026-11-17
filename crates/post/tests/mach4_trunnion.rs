@@ -398,3 +398,163 @@ ENDSECTION
     assert!(out_sim.warnings.iter().any(|w| w.contains("needs #1966: inverse-time feed")));
     assert!(!out_sim.program.contains("A-45") && !out_sim.program.contains("C30"));
 }
+
+fn review_trunnion_with_zeros(a_zero: f64, c_zero: f64) -> Value {
+    let spec = TrunnionSpec {
+        unit: "mm", rtcp: Some(false), sign_conv: "table_rh", a_zero, c_zero,
+        c_rollover: false, pivot: [0.0; 3], offset: [0.0; 3],
+    };
+    machine::mirror(&parse_mch(&trunnion_mch_json(&spec)).expect("review trunnion parses"))
+}
+
+fn review_trunnion() -> Value { review_trunnion_with_zeros(0.0, 0.0) }
+
+const VERTICAL_THEN_TILTED: &str = "\
+PARAM WorkOffset G54
+PARAM ClearancePlane 25
+TOOL 1 \"6MM EM\"
+PARAM SpindleSpeed 8000
+SECTION Vertical
+Rapid X 10000 Y 5000 Z 10000
+Feed X 10000 Y 5000 Z 0 F 400000
+ENDSECTION
+SECTION Tilted
+PARAM ClearancePlane 25
+Rapid X 10000 Y 5000 Z 10000 A -45000 B 0 C 0
+Feed X 10000 Y 5000 Z 0 F 400000 A -45000 B 0 C 0
+ENDSECTION
+";
+
+#[test]
+fn mach4_repeated_program_indexes_vertical_before_first_cut() {
+    for (a_zero, c_zero) in [(0.0, 0.0), (10.0, -45.0)] {
+    let out = engine::run(&mach4_post(), &review_trunnion_with_zeros(a_zero, c_zero), VERTICAL_THEN_TILTED).expect("posts");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let lines: Vec<_> = out.program.lines().collect();
+    let mut a = 0.0;
+    let mut c = 0.0;
+    // Carry the first run's final table position into a repeated run.
+    for line in &lines {
+        if let Some(v) = word_value(line, 'A') { a = v; }
+        if let Some(v) = word_value(line, 'C') { c = v; }
+    }
+    assert!((a - a_zero).abs() > 1.0, "fixture must finish tilted:\n{}", out.program);
+    let mut retracted = false;
+    let mut indexed = false;
+    for line in &lines {
+        if line.contains("G28") || line.starts_with("G53 ") || line.contains("G30") { retracted = true; }
+        if let Some(v) = word_value(line, 'A') {
+            assert!(retracted, "rotary move before retract:\n{}", out.program);
+            a = v;
+            indexed = true;
+        }
+        if let Some(v) = word_value(line, 'C') { c = v; }
+        if line.starts_with("G01 ") {
+            assert!(indexed, "repeat must position rotaries before initial cut:\n{}", out.program);
+            assert!((a - a_zero).abs() < 1e-6 && (c - c_zero).abs() < 1e-6, "repeat begins cutting tilted: A{a} C{c}");
+            break;
+        }
+    }
+}
+
+}
+
+#[test]
+fn mach4_indexed_cut_restores_vertical_before_probe_and_offset_update() {
+    let stream = format!("{VERTICAL_THEN_TILTED}\
+TOOL 99 \"3D TOUCH PROBE\"
+PARAM ToolKind Touch Probe
+PARAM SpindleSpeed 0
+PARAM ClearancePlane 25
+PARAM RetractPlane 10
+SECTION ProbeZ
+GUARD 10000 5000 10000 F 1200000
+TOUCH 10000 5000 -5000 EXPECT 10000 5000 0 F 100000 M 0
+RETREAT 10000 5000 5000 EXPECT 10000 5000 5000 F 1200000
+FOUND SET 0 TOL 500 AXIS Z 0 0
+ENDSECTION
+");
+    let out = engine::run(&mach4_post(), &review_trunnion(), &stream).expect("posts");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    let mut a: f64 = 0.0;
+    let mut c: f64 = 0.0;
+    let mut tilted = false;
+    let mut restored = false;
+    let mut retracted = false;
+    let mut probes = 0;
+    for line in out.program.lines() {
+        if line.contains("G28") || line.contains("G30") || line.starts_with("G53 ") { retracted = true; }
+        if let Some(v) = word_value(line, 'A') {
+            a = v;
+            if a.abs() > 1.0 { tilted = true; retracted = false; }
+            else if tilted {
+                assert!(retracted, "restore must retract first:\n{}", out.program);
+                restored = true;
+            }
+        }
+        if let Some(v) = word_value(line, 'C') { c = v; }
+        if line.starts_with("G31 ") || line.starts_with("G10 L2 P1") {
+            assert!(restored && a.abs() < 1e-6 && c.abs() < 1e-6,
+                "probe or offset write while table is tilted:\n{}", out.program);
+            if line.starts_with("G31 ") { probes += 1; }
+        }
+    }
+    assert_eq!(probes, 2, "guard and touch must both post:\n{}", out.program);
+    assert!(out.program.contains("G10 L2 P1 Z[#5223+#190]"), "offset update must post:\n{}", out.program);
+}
+
+#[test]
+fn mach4_cli_validates_declared_options_and_posts_overrides() {
+    use std::process::Command;
+    let dir = std::env::temp_dir().join(format!("camcraft-mach4-options-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let input = dir.join("input.cnc");
+    let mch = dir.join("machine.mch");
+    let output = dir.join("output.nc");
+    let spec = TrunnionSpec {
+        unit: "mm", rtcp: Some(false), sign_conv: "table_rh", a_zero: 0.0, c_zero: 0.0,
+        c_rollover: false, pivot: [0.0; 3], offset: [0.0; 3],
+    };
+    std::fs::write(&input, VERTICAL_THEN_TILTED).expect("write stream");
+    std::fs::write(&mch, trunnion_mch_json(&spec)).expect("write machine");
+    let run = |options: &[&str]| {
+        let _ = std::fs::remove_file(&output);
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_post"));
+        cmd.arg("--machine").arg(&mch);
+        for option in options { cmd.arg("--option").arg(option); }
+        cmd.arg(repo("assets/posts/mach4.cps")).arg(&input).arg(&output)
+            .output().expect("run CLI")
+    };
+    let schema = camcraft_post::post::options::declared_options(&mach4_post()).expect("schema");
+    let number = schema.iter().find(|o| o.key == "programNumber").expect("programNumber declared");
+    assert_eq!(number.default.to_json(), json!(1001));
+    assert!(matches!(number.kind, camcraft_post::post::options::OptionKind::Integer { min: Some(1), .. }));
+    for name in ["rotaryClamp", "rotaryUnclamp"] {
+        let option = schema.iter().find(|o| o.key == name).expect("clamp option");
+        assert_eq!(option.default.to_json(), json!(""));
+        assert!(matches!(option.kind, camcraft_post::post::options::OptionKind::String));
+    }
+    let defaults = run(&[]);
+    assert!(defaults.status.success(), "{}", String::from_utf8_lossy(&defaults.stderr));
+    let nc = std::fs::read_to_string(&output).expect("default output");
+    assert!(nc.contains("O0001 ") && nc.contains("G91 G28 Z0."), "{nc}");
+    let overrides = run(&[
+        "safeRetract=G53", "rolloverMode=unwrapped", "rotaryUnclamp=M11", "rotaryClamp=M10",
+        "programNumber=4321",
+    ]);
+    assert!(overrides.status.success(), "{}", String::from_utf8_lossy(&overrides.stderr));
+    let nc = std::fs::read_to_string(&output).expect("override output");
+    assert!(nc.contains("O0001 ") && nc.contains("G53 G00 Z0."), "{nc}");
+    assert!(nc.contains("M11\nG00 A0. C0.\nM10"), "{nc}");
+    let g30 = run(&["safeRetract=G30", "rolloverMode=rollover_360"]);
+    assert!(g30.status.success(), "{}", String::from_utf8_lossy(&g30.stderr));
+    assert!(std::fs::read_to_string(&output).unwrap().contains("G91 G30 Z0."));
+    for bad in ["safeRetract=G99", "rolloverMode=bogus", "programNumber=0", "programNumber=1.5", "programNumber=no"] {
+        let result = run(&[bad]);
+        let err = String::from_utf8_lossy(&result.stderr);
+        assert!(!result.status.success(), "CLI accepted {bad}");
+        assert!(err.contains(bad.split('=').next().unwrap()), "{bad}: {err}");
+        assert!(!output.exists(), "invalid {bad} wrote a program");
+    }
+    std::fs::remove_dir_all(&dir).expect("remove temp dir");
+}
