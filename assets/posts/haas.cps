@@ -900,8 +900,11 @@ function onCycle() {
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
-  // #1820: Haas G83 keeps P modal; a changed dwell must reopen the cycle.
-  if (g === "G83") sig += "|" + ms;
+  // #1820, #2350: Haas keeps P modal on its dwell cycles (G82, G83, G89 -
+  // Haas G82/G89 formats read P as the bottom dwell). A changed dwell must
+  // reopen the cycle so every hole posts its own P, never the last one's.
+  var dwellCycle = g === "G82" || g === "G83" || g === "G89";
+  if (dwellCycle) sig += "|" + ms;
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -913,8 +916,9 @@ function onCycle() {
       words.push(w("Q", p.Q));
     }
     // Haas G83/G04 documentation: integer P is milliseconds. P0 clears
-    // a previous dwell; omitting P would reuse it even after a new G83.
-    if (g === "G83" || (ms > 0 && g !== "G73" && g !== "G84")) words.push("P" + ms);
+    // a previous dwell; omitting P would reuse it even after a new G82,
+    // G83 or G89 (#2350).
+    if (dwellCycle || (ms > 0 && g !== "G73" && g !== "G84")) words.push("P" + ms);
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;
