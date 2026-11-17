@@ -250,6 +250,69 @@ fn num(t: &str) -> Option<f64> {
     t.get(1..).and_then(|s| s.parse().ok())
 }
 
+/// The wrapped job's trig differs at last-place rounding boundaries across
+/// platforms. Keep topology, mode words, XYZ and ordinary feeds byte exact;
+/// only motion A (one 0.001-degree step) and G93 F (0.04 inverse minutes,
+/// the observed adjacent-step rate-cap swap) have a numeric allowance.
+fn compare_wrap_golden(actual: &str, expected: &str) -> Result<(), String> {
+    let actual: Vec<_> = actual.lines().collect();
+    let expected: Vec<_> = expected.lines().collect();
+    if actual.len() != expected.len() {
+        return Err(format!("line count {} != {}", actual.len(), expected.len()));
+    }
+    let mut g93 = false;
+    for (line, (got, want)) in actual.iter().zip(&expected).enumerate() {
+        let got: Vec<_> = got.split(' ').collect();
+        let want: Vec<_> = want.split(' ').collect();
+        if got.contains(&"G93") { g93 = true; }
+        if got.contains(&"G94") { g93 = false; }
+        let turning_motion = (got.contains(&"G0") || got.contains(&"G1")) && got.iter().any(|w| w.starts_with('A'));
+        let turning_feed = g93 && got.contains(&"G1") && turning_motion;
+        if got.len() != want.len() {
+            return Err(format!("line {} word count differs", line + 1));
+        }
+        for (got, want) in got.iter().zip(&want) {
+            if got == want { continue; }
+            let tolerance = if turning_motion && got.starts_with('A') && want.starts_with('A') {
+                0.001
+            } else if turning_feed && got.starts_with('F') && want.starts_with('F') {
+                0.04
+            } else {
+                return Err(format!("line {}: {got} != {want}", line + 1));
+            };
+            if !matches!((num(got), num(want)), (Some(a), Some(b))
+                if a.is_finite() && b.is_finite() && (a - b).abs() <= tolerance + 1e-10)
+            {
+                return Err(format!("line {}: {got} != {want} (allowance {tolerance})", line + 1));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn wrap_golden_allows_only_bounded_platform_rounding() {
+    let windows = "G93 G1 X0 Y0 Z0 A-41.921 F116.959\nG1 X0 Y0 Z0 A-45 F116.921";
+    let linux = "G93 G1 X0 Y0 Z0 A-41.922 F116.921\nG1 X0 Y0 Z0 A-45 F116.959";
+    assert!(compare_wrap_golden(linux, windows).is_ok());
+    for changed in [
+        linux.replace("A-41.922", "A-41.923"),
+        linux.replace("F116.921", "F116.918"),
+        linux.replace("X0", "X0.0001"),
+        linux.replace("G93", "G94"),
+        linux.replace("G1", "G0"),
+        linux.replace(" A-45", ""),
+        format!("{linux}\nM5"),
+        linux.replace("F116.921", "FNaN"),
+    ] {
+        assert!(compare_wrap_golden(&changed, windows).is_err(), "accepted {changed}");
+    }
+    assert!(compare_wrap_golden("G0 X0 Y0 Z0.8746 A-42.718", "G0 X0 Y0 Z0.8746 A-42.717").is_ok());
+    assert!(compare_wrap_golden("G0 X0 Y0 Z0.8746 A-42.719", "G0 X0 Y0 Z0.8746 A-42.717").is_err());
+    assert!(compare_wrap_golden("G94 G1 A3 F359.999", "G94 G1 A3 F360").is_err());
+    assert!(compare_wrap_golden("G1 X0 F1.001", "G1 X0 F1").is_err());
+}
+
 #[test]
 fn a_wrapped_op_on_the_test_part_posts_wrapped_a() {
     let world = wrap_world();
@@ -262,7 +325,7 @@ fn a_wrapped_op_on_the_test_part_posts_wrapped_a() {
         std::fs::write(&golden, &nc).expect("write the wrap golden");
     } else {
         let want = std::fs::read_to_string(&golden).expect("the wrap golden");
-        assert_eq!(nc, want, "{} is stale; regenerate with WRITE_GOLDEN=1", golden.display());
+        compare_wrap_golden(&nc, &want).unwrap_or_else(|why| panic!("{}: {why}; regenerate intentional changes with WRITE_GOLDEN=1", golden.display()));
     }
     let lines: Vec<&str> = nc.lines().collect();
     let wrap = lines.iter().position(|l| l.contains("OPERATION: WRAP")).expect("the WRAP section");
@@ -282,6 +345,10 @@ fn a_wrapped_op_on_the_test_part_posts_wrapped_a() {
         let a = ws.iter().find(|w| w.starts_with('A')).and_then(|w| num(w));
         if let (Some(p), Some(a)) = (last, a) {
             assert!((a - p).abs() <= 180.0, "A unwrapped: {p} -> {a} at {l}");
+        }
+        if g93 && let (Some(previous), Some(a)) = (last, a) {
+            let feed = ws.iter().find(|w| w.starts_with('F')).and_then(|w| num(w)).expect("G93 F");
+            assert!(feed > 0.0 && feed * (a - previous).abs() <= 360.0 + 1e-9, "A rate: {l}");
         }
         if a.is_some() {
             last = a;

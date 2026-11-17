@@ -772,9 +772,9 @@ function indexed() { return !!aSection; }
 // time in minutes; the time is the longer of the tool tip's path
 // RELATIVE TO THE PART at the programmed feed and the A turn at the
 // machine's stated A rate (`rotaryRate`, the #885 rule) - neither the
-// cutting feed nor the A rate is passed. The path is judged one posted
-// step longer than it is (rounding of the words), the turn by its posted
-// words, and F is floored, never rounded: rounding only slows a move. A
+// cutting feed nor the A rate is passed. The path is bounded from the
+// rounded posted XYZ/A trajectory, with one extra length step of slack,
+// and F is floored, never rounded: rounding only slows a move. A
 // move that turns A alone (its X Y Z words unchanged) stays in G94 with
 // F in degrees per minute under the same time law; a move that does not
 // turn A is the ordinary G94 move. G94 is restated before any motion that
@@ -837,6 +837,27 @@ function floorWord(letter, v) {  // v floored to 0.001; "" when under 0.001
   var t = Math.floor(Number(v) * 1000 + 1e-9) / 1000;
   return (t >= 0.001 && isFinite(t)) ? letter + trim(t.toFixed(3)) : "";
 }
+// Bound the length of q(u) = R(b0 + w*u) * (m0 + v*u), 0 <= u <= 1,
+// in the part frame. Rotation preserves norms. Its second derivative is
+// R(2*w*J*v + w*w*J*J*m), so |q''| <= M below (the radius of a straight
+// segment is at most its largest endpoint radius). Hence
+// |q'(u)| <= |q'(1/2)| + M*|u-1/2|, whose integral is |q'(1/2)| + M/4.
+// Use the actual rounded words, including the machine's A sign and inch
+// conversion: neither a stream chord nor a rounding allowance bounds
+// the curved trajectory when the stream endpoints nearly coincide.
+function turnLength(x0, y0, z0, x1, y1, z1, b0, b1) {
+  var unit = inch ? 25.4 : 1;
+  var m0 = [Number(x0.slice(1)) * unit, Number(y0.slice(1)) * unit, Number(z0.slice(1)) * unit];
+  var m1 = [Number(x1.slice(1)) * unit, Number(y1.slice(1)) * unit, Number(z1.slice(1)) * unit];
+  var vx = m1[0] - m0[0], vy = m1[1] - m0[1], vz = m1[2] - m0[2];
+  var w = (b1 - b0) * Math.PI / 180;
+  var dy = vy - w * (m0[2] + m1[2]) / 2;
+  var dz = vz + w * (m0[1] + m1[1]) / 2;
+  var r0 = Math.sqrt(m0[1] * m0[1] + m0[2] * m0[2]);
+  var r1 = Math.sqrt(m1[1] * m1[1] + m1[2] * m1[2]);
+  var bound = 2 * Math.abs(w) * Math.sqrt(vy * vy + vz * vz) + w * w * Math.max(r0, r1);
+  return Math.sqrt(vx * vx + dy * dy + dz * dz) + bound / 4;
+}
 // Posts a G0 / G1 that turns A to aNext. False when refused by name.
 function turnMove(p, rapid) {
   var ax = aRotary();
@@ -855,7 +876,7 @@ function turnMove(p, rapid) {
   }
   var rate = rotaryRate("A");
   var slack = (inch ? 0.00254 : 0.001) * Math.sqrt(3);
-  var pPrev = s, bPrev = a0;
+  var bPrev = a0;
   var m0 = tipAt(s[0], s[1], s[2], a0);
   var xw0 = "X" + fu(m0[0]), yw0 = "Y" + fu(m0[1]), zw0 = "Z" + fu(m0[2]);
   for (var i = 1; i <= n; i++) {
@@ -872,7 +893,9 @@ function turnMove(p, rapid) {
       g94();
       block(["G1", xw, yw, zw, fw(f)]);
     } else {
-      var t = Math.max((dist3(p1, pPrev) + slack) / f, dA / rate);  // minutes
+      var length = turnLength(xw0, yw0, zw0, xw, yw, zw,
+        Number(fa(ax.sign * bPrev)) / ax.sign, Number(fa(ax.sign * b1)) / ax.sign);
+      var t = Math.max((length + slack) / f, dA / rate);  // minutes
       var pure = xw === xw0 && yw === yw0 && zw === zw0;
       var word = floorWord("F", pure ? dA / t : 1 / t);
       if (!word) {
@@ -886,7 +909,7 @@ function turnMove(p, rapid) {
         g93 = true;
       }
     }
-    pPrev = p1; bPrev = b1; xw0 = xw; yw0 = yw; zw0 = zw;
+    bPrev = b1; xw0 = xw; yw0 = yw; zw0 = zw;
   }
   aSection = a1;
   aNow = ax.sign * a1;
