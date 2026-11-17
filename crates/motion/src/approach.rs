@@ -182,11 +182,13 @@ pub const NOT_CENTER_CUTTING: &str = "entry: the tool is not centre-cutting and 
 /// that is not centre-cutting. Generators turn it into their error.
 pub const CENTER_CUT_REFUSAL: &str = "entry refused: the tool is not centre-cutting";
 
-/// The refusal a ladder raises when its path carries the
-/// [`CENTER_CUT_REFUSAL`] note: `Some(the note)`.
+/// A low return crossed an earlier feed and has no proved rapid landing.
+pub const MICROLIFT_REFUSAL: &str = "entry refused: a crossing microlift has no proved rapid landing; use another entry or pocket strategy";
+
+/// The refusal a ladder raises for an unsafe entry or return.
 #[must_use]
 pub fn refusal(path: &crate::cl::Toolpath) -> Option<String> {
-    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL)).cloned()
+    path.notes.iter().find(|n| n.starts_with(CENTER_CUT_REFUSAL) || n.starts_with(MICROLIFT_REFUSAL)).cloned()
 }
 
 /// The default axis-alignment tolerance, degrees.

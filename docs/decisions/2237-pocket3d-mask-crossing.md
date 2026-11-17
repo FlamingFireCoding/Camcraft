@@ -3,12 +3,13 @@
 ### What was decided
 
 1. **Exact final Z on helical descents (`crates/motion/src/entry.rs::helix_about`)**: land the final half-turn at exact `z1` (and clamp intermediate `lattice` half-turns monotonically against `z1`) instead of `lattice(z0 - span * frac)`.
-2. **Depth-aware and prior-path-checked microlifts (`crates/motion/src/machining2d/microlift.rs::link_at`)**: cap/scale `ret.lift` monotonically strictly beneath the nearest earlier horizontal `Feed` cut plane above `z` (falling back to a `hop_z` rapid + `Plunge` retract when `gap <= 0.02 mm`), probe candidate microlift moves against prior `Feed` moves via `moves_cross_prior` (`machining2d::arc_cross`), promote a low crossing link to a `high: true` down-only ramp when that clears prior moves, and fall back to a `hop_z` rapid + `Plunge` retract when even the `down` leg crosses.
+2. **Depth-aware and prior-path-checked microlifts (`crates/motion/src/machining2d/microlift.rs::link_at`)**: cap/scale `ret.lift` monotonically strictly beneath the nearest earlier horizontal `Feed` cut plane above `z` (falling back to a `hop_z` rapid + `Plunge` retract when `gap <= 0.02 mm`), probe candidate microlift moves against prior `Feed` moves via `moves_cross_prior` (`machining2d::arc_cross`), refuse a crossing low return because the posting layer has no proof for a rapid landing; planner-proved high returns retain their existing fallback.
 3. **Crossing-safe shell `feed_leg` and `push_helix` (`crates/motion/src/machining3d/{level_ctx.rs, descent.rs}`)**:
    - In `level_ctx::feed_leg`, probe each shell-subdivided chord against `b.moves()` via `seg_crosses_prior` and hop over (`Rapid` at `lvl.hop_z` + `Plunge` to `zq`) any chord that would cross a prior cut at shared depth (e.g., when a penultimate level clamps its `floor_z` down onto `bottom_z` or a flat terrace and the bottom level cuts shifted fillet offsets at the exact same Z).
    - In `descent::push_helix`, probe the planned helix arcs against already-posted `b.moves()` before committing `traverse`, search an uncrossed candidate around `along_pass` / `dive_room` across allowed helix radii if it collides with an earlier level's sloped shell move, and fall back cleanly via `fallback(..., true)` if no uncrossed bore fits.
    - Share `z_depths_overlap`, `proper_cross_touch`, `seg_crosses_prior`, and `moves_cross_prior` from `machining2d::arc_cross` so all three checks follow `verify::crossing`'s exact `CROSSING_TOUCH = 1e-9` and depth-overlap semantics.
 4. **Guard the crossing-hop re-entry (PR #2289 review)**: call the existing `plunge_law::guard` with the actual destination `zq`, tool radius, and material top before posting the axial plunge. An uncleared column refuses a non-centre-cutting tool through the ladder's existing refusal path; a centre-cutting tool or a previously cleared column remains allowed.
+5. **Refuse a crossing low microlift without a rapid landing proof (latest PR #2289 review)**: the posting layer has no stock proof for promoting a low return to a high return. Refuse the operation when the low profile crosses earlier feeds; keep planner-proved high returns unchanged. The regression uses a legal low return above a sub-cell wall strip that the high-return planner refuses.
 
 ### Why
 
@@ -25,6 +26,7 @@ On masked 3D Pockets and `OffsetRings + shell` parts with small stepdowns, `veri
 - **Changing `adaptive::lift_link` planning parameters alone**: rejected because the 2D microlift planner operates per slice without multi-level prior-Z context or entry helix/ramp geometry, whereas guarding `link_at` protects both 2D Adaptive and 3D HSR `hsm::microlift`.
 - **Editing `descent::helix` directly**: dropped both because `b.moves()` belongs to `PathBuilder` at post time and because `#2035` refactors `descent::helix` into `descent_place.rs`.
 - **A new ramp or helix for an unsafe crossing-hop re-entry**: dropped for this review fix because it would require a new entry proof; the existing named refusal safely handles the unproved column. This localized guard can later be replaced by a proved entry without changing the public parameters.
+- **Promoting a crossing low return or substituting an axial entry**: rejected because a legal low return proves neither the whole rapid landing disc nor a plunge column clear. A named refusal preserves the planner's rapid-landing contract without inventing a second stock proof in the posting layer.
 
 ### What it would cost to change later
 

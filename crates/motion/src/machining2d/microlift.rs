@@ -175,11 +175,12 @@ pub(crate) fn link_at(b: &mut PathBuilder, ret: &Return, z: f64, hop_z: f64, fee
         return;
     }
     if !adjusted.high {
-        let hi_ret = Return { high: true, ..adjusted };
-        let hi_prof = profile(Point2::new(at.x, at.y), &hi_ret);
-        if try_prof(b, &hi_prof, z, hop_z, feed, true) {
-            return;
-        }
+        // A low return proves feeds over cleared stock, not a rapid's
+        // whole landing disc. Only the planner's `LinkLaw::high` has
+        // that proof; changing the flag here would bypass it. Neither
+        // a rapid onto the lead nor an axial fallback is proved here.
+        b.note_once(crate::approach::MICROLIFT_REFUSAL);
+        return;
     }
     let hop = hop_z.max(z + lift);
     b.push(MoveKind::Rapid, Point3::new(at.x, at.y, hop), None);
@@ -254,8 +255,8 @@ mod tests {
                 "scaled lift stayed strictly between -0.50 and prior -0.15: {link_feeds:?}"
             );
         }
-        // Case 3: Same-level descending ramp crossing `up` promotes clean `high: true` down leg;
-        // crossing `down` too falls all the way back to Rapid + Plunge.
+        // Case 3: A crossing low return has no proved rapid landing.
+        // Refuse it rather than promoting it or substituting a plunge.
         {
             let ramp_crossing_y = |y: f64| {
                 let mut b = PathBuilder::new(Point3::new(-10.0, y, 5.0));
@@ -271,12 +272,15 @@ mod tests {
                     via: vec![Point2::new(0.0, 3.0)],
                     down: vec![Point2::new(0.0, 5.0)],
                 };
+                let before = b.moves_len();
                 link_at(&mut b, &ret, 0.0, 5.0, 500.0);
-                b.push(MoveKind::Feed, Point3::new(0.0, 10.0, 0.0), Some(500.0));
-                crossed_pairs(&b.finish(), 0.01)
+                let path = b.finish();
+                assert!(crate::approach::refusal(&path).is_some(), "the crossing return refuses the operation");
+                assert_eq!(path.moves.len(), before, "the refused return posts no unproved entry");
+                crossed_pairs(&path, 0.01)
             };
-            assert!(ramp_crossing_y(-4.0).is_empty(), "same-level ramp crossing up leg");
-            assert!(ramp_crossing_y(4.0).is_empty(), "same-level ramp crossing down leg");
+            assert!(ramp_crossing_y(-10.0 / 3.0).is_empty(), "same-level ramp crossing up leg");
+            assert!(ramp_crossing_y(4.25).is_empty(), "same-level ramp crossing down leg");
         }
         // Case 4: Tiny gap (0.01 mm) too thin for safe low lift -> must retract cleanly
         assert!(run_case(0.0, 0.0, -0.01, 0.30).is_empty(), "tiny gap 0.01");
