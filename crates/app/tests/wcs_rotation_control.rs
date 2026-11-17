@@ -2,6 +2,10 @@
 //! `viewer_map` Setup-coordinate invariance, and additional milling operations
 //! (`Pocket`, `Slot`, `Circular`, `Drill`, `Pocket3D` rest) under Z-rotated WCS.
 //!
+//! Gate map (#2361): covers app::commands, motion::drilling, geometry::geo2d, app::geometry,
+//! app::machine, app::model, app::operation, app::posting, app::schema, geometry::geometry::stock,
+//! app::world, tools::catalog.
+//!
 //! Provenance: our own integration suite for rotated work offsets; no vendor material consulted.
 
 use std::fs;
