@@ -1375,14 +1375,13 @@ fn tab_click_navigates_and_queues_nothing() {
 }
 
 /// Every text the properties pane renders right now (labels and checkbox
-/// captions), from the operation heading's left edge rightward - the pane
-/// column, so the browser and ribbon text stay out.
+/// captions), read from the Properties pane subtree so the browser and ribbon
+/// stay out without depending on pixel coordinates.
 fn pane_texts(h: &Harness<'static, ShellUi>) -> Vec<String> {
     use egui::accesskit::Role;
     use egui_kittest::kittest::NodeT;
-    let left = h.get_by_label_contains("Operation: ").rect().left() - 1.0;
-    h.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
-        .filter(|n| n.rect().left() >= left)
+    let pane = h.get_by_role_and_label(Role::Pane, "Properties");
+    pane.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
         .filter_map(|n| {
             let a = n.accesskit_node();
             if a.role() == Role::Label { a.value() } else { a.label() }

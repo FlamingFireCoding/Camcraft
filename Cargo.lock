@@ -752,8 +752,10 @@ dependencies = [
 name = "camcraft-geometry"
 version = "0.22.0"
 dependencies = [
+ "camcraft-kernel",
  "clipper2-rust",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
