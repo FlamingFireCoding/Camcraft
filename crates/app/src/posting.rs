@@ -792,6 +792,25 @@ fn viewer_map(records: &[cnc::Record], out: &engine::PostOutput) -> Vec<Option<[
 /// what would post* holds by construction, not by two copies of the
 /// law agreeing (stage D makes the agreement load-bearing).
 pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
+    gated_ops(world, false).map(|(ops, _)| ops)
+}
+
+/// Operations by name, in program order.
+pub(crate) type OpList = Vec<(String, Entity)>;
+
+/// [`program_ops`] for the stock playback only (#2280): the same order
+/// and the same gates, but the walk ends before the first operation
+/// with no toolpath, which comes back with every op from it on. The
+/// playback shows the program up to there; it never skips that op and
+/// cuts the next ones on a stock the skipped op did not cut. The post
+/// and the Deviate verdict keep [`program_ops`]: it refuses.
+pub(crate) fn program_ops_until_ungenerated(world: &World) -> Result<(OpList, OpList), String> {
+    gated_ops(world, true)
+}
+
+/// The walk under [`program_ops`]; `stop_at_ungenerated` turns the
+/// "no toolpath yet" refusal into the end of the list.
+fn gated_ops(world: &World, stop_at_ungenerated: bool) -> Result<(OpList, OpList), String> {
     // THE order law by call (M3.2 A): setup rank, then operation position - the same
     // walk re-machining, the sim and the machine-limit check make.
     // A suppressed op (#110) is not in the program: skipped before the
@@ -802,7 +821,7 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     if all.is_empty() {
         return Err("no operations to post".into());
     }
-    let ops: Vec<(String, Entity)> = all
+    let mut ops: Vec<(String, Entity)> = all
         .into_iter()
         .filter(|(_, e)| !model::operation_of(world, e).is_some_and(|op| op.suppressed))
         .collect();
@@ -813,6 +832,12 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     // Validate early: every operation must be generated and fresh
     // before a single record is built (a half-posted program is the
     // silent wrong answer this file exists to prevent).
+    // #2280: the playback ends before the first op with no toolpath -
+    // nothing at or after it is cut, so their gates are not read.
+    let rest = match ops.iter().position(|(_, e)| operation::status_of(world, e) == OpStatus::Never) {
+        Some(i) if stop_at_ungenerated => ops.split_off(i),
+        _ => Vec::new(),
+    };
     for (name, e) in &ops {
         // M10.1 C first: an op whose tool is gone or cannot cut its kind
         // is blocked by name - "regenerate" would be the wrong advice,
@@ -842,7 +867,7 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
             OpStatus::Ok => {}
         }
     }
-    Ok(ops)
+    Ok((ops, rest))
 }
 
 /// The program-level verification, made binding (M2.3 D): the two
