@@ -22,20 +22,21 @@ use crate::geo2d::Point2;
 use crate::geometry::Point3;
 
 use super::arc_proof::{ProofTally, bracket, judge, plain};
+use super::arc_touch::Touch;
 use super::arcs::{ARC_FIT_TOL, Seg};
 
 /// Rounds the crossing law may refuse arcs in before the walk gives its
 /// arcs up wholesale (every round re-posts the walk).
-const CROSS_ROUNDS: usize = 3;
+pub(super) const CROSS_ROUNDS: usize = 3;
 
 /// Cells per axis at most in the broad-phase grid.
 const MAX_SIDE: f64 = 1024.0;
 
 /// A fitted arc's identity on the posted path: its end, its centre as
 /// the move carries it (the 1 um lattice) and its sense, as bits.
-type Key = (u64, u64, u64, u64, bool);
+pub(super) type Key = (u64, u64, u64, u64, bool);
 
-fn key(to: Point2, center: Point2, ccw: bool) -> Key {
+pub(super) fn key(to: Point2, center: Point2, ccw: bool) -> Key {
     (to.x.to_bits(), to.y.to_bits(), lattice(center.x).to_bits(), lattice(center.y).to_bits(), ccw)
 }
 
@@ -46,7 +47,7 @@ fn move_key(m: &Move) -> Option<Key> {
 }
 
 /// Every fitted arc's key over the walks.
-fn own_keys(runs: &[Vec<Seg>]) -> HashSet<Key> {
+pub(super) fn own_keys(runs: &[Vec<Seg>]) -> HashSet<Key> {
     runs.iter()
         .flatten()
         .filter_map(|s| match s {
@@ -65,6 +66,8 @@ struct Chord {
     z0: f64,
     z1: f64,
     own: Option<Key>,
+    /// A corner arc's end tangents (`arc_touch`), by index.
+    touch: Option<usize>,
 }
 
 /// Twice the signed area of `a b c`.
@@ -95,9 +98,11 @@ fn crosses(p: &Chord, q: &Chord) -> bool {
 }
 
 /// The feed chords of `path`: a fitted arc (by key) as its bracket's
-/// chords, every other feed as its own chords at [`ARC_FIT_TOL`].
-fn chords(path: &Toolpath, keys: &HashSet<Key>) -> Vec<Chord> {
+/// chords, every other feed as its own chords at [`ARC_FIT_TOL`]; and
+/// the end tangents of the corner arcs (`blends`, by key).
+fn chords(path: &Toolpath, keys: &HashSet<Key>, blends: &HashSet<Key>) -> (Vec<Chord>, Vec<Touch>) {
     let mut out = Vec::new();
+    let mut touches = Vec::new();
     for (i, m) in path.moves.iter().enumerate() {
         if m.kind != MoveKind::Feed {
             continue;
@@ -110,21 +115,33 @@ fn chords(path: &Toolpath, keys: &HashSet<Key>) -> Vec<Chord> {
         });
         match bracketed {
             Some((fan, hull)) => {
+                let touch = own
+                    .filter(|k| blends.contains(k))
+                    .zip(m.arc)
+                    .and_then(|(_, a)| Touch::of(a.center, &fan, &hull))
+                    .map(|t| {
+                        touches.push(t);
+                        touches.len() - 1
+                    });
                 for poly in [fan, hull] {
-                    out.extend(poly.windows(2).map(|w| Chord { mv: i, a: w[0], b: w[1], z0, z1, own }));
+                    out.extend(poly.windows(2).map(|w| Chord { mv: i, a: w[0], b: w[1], z0, z1, own, touch }));
                 }
             }
-            None => out.extend(m.chords(ARC_FIT_TOL).into_iter().map(|(a, b)| Chord { mv: i, a, b, z0, z1, own })),
+            None => out.extend(m.chords(ARC_FIT_TOL).into_iter().map(|(a, b)| Chord { mv: i, a, b, z0, z1, own, touch: None })),
         }
     }
-    out
+    (out, touches)
 }
 
 /// The fitted arcs of `path` (by key) whose true arc crosses another
 /// feed: the uniform-grid broad phase over every feed chord's box, the
-/// predicate above on the pairs that share a cell.
-fn crossing_arcs(path: &Toolpath, keys: &HashSet<Key>) -> HashSet<Key> {
-    let cs = chords(path, keys);
+/// predicate above on the pairs that share a cell. A corner arc
+/// (`blends`, by key) does not cross a chord that only touches the
+/// tangent at one of its ends (`arc_touch`, #2317); no other arc has
+/// that allowance.
+pub(super) fn crossing_arcs(path: &Toolpath, keys: &HashSet<Key>, blends: &HashSet<Key>) -> HashSet<Key> {
+    let (cs, touches) = chords(path, keys, blends);
+    let grazes = |c: &Chord, q: &Chord| c.touch.and_then(|t| touches.get(t)).is_some_and(|t| t.grazes(q.a, q.b));
     let finite = |c: &Chord| c.a.x.is_finite() && c.a.y.is_finite() && c.b.x.is_finite() && c.b.y.is_finite();
     let (mut lo, mut hi) = (Point2::new(f64::INFINITY, f64::INFINITY), Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY));
     for c in cs.iter().filter(|c| finite(c)) {
@@ -164,7 +181,7 @@ fn crossing_arcs(path: &Toolpath, keys: &HashSet<Key>) -> HashSet<Key> {
         'cells: for y in y0..=y1 {
             for x in x0..=x1 {
                 for &o in cells.get(y * nx + x).map(Vec::as_slice).unwrap_or(&[]) {
-                    if o != k && cs.get(o).is_some_and(|q| crosses(c, q)) {
+                    if o != k && cs.get(o).is_some_and(|q| crosses(c, q) && !grazes(c, q) && !grazes(q, c)) {
                         hit.insert(own);
                         break 'cells;
                     }
@@ -176,7 +193,7 @@ fn crossing_arcs(path: &Toolpath, keys: &HashSet<Key>) -> HashSet<Key> {
 }
 
 /// Hand every arc of `runs` keyed in `keys` back to its chords.
-fn refuse(passes: &[Vec<Point2>], runs: &mut [Vec<Seg>], keys: &HashSet<Key>, tally: &mut ProofTally) {
+pub(super) fn refuse(passes: &[Vec<Point2>], runs: &mut [Vec<Seg>], keys: &HashSet<Key>, tally: &mut ProofTally) {
     for (pass, segs) in passes.iter().zip(runs.iter_mut()) {
         let judged = judge(pass, std::mem::take(segs), |_, group| {
             let cross = group.iter().any(|s| matches!(s, Seg::Arc { center, ccw, to } if keys.contains(&key(*to, *center, *ccw))));
@@ -244,7 +261,7 @@ fn crossing_free_from(
         if keys.is_empty() {
             break;
         }
-        let mut crossing = crossing_arcs(&path, &keys);
+        let mut crossing = crossing_arcs(&path, &keys, &HashSet::new());
         if crossing.is_empty() {
             break;
         }

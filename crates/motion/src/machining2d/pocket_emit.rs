@@ -12,11 +12,12 @@ use crate::geometry::Point3;
 
 use super::adaptive::Return;
 use super::arc_cross::post_crossing_free;
+use super::blend_cross::{Bans, Blend, post_blended_crossing_free, round_walks};
 use super::arc_proof::{ProofTally, fit_proved};
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::face::GenError;
-use super::fillet::{Legal, fillet_corners};
-use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
+use super::fillet::Legal;
+use super::fillet_tally::corner_arc_radius;
 use super::levels::{Cert, Motion, cut_levels_under, run_level_walks};
 use super::pocket::{PocketParams, PocketStrategy};
 use super::pocket_hsm::EntryRoom;
@@ -89,31 +90,15 @@ pub(super) fn emit_pocket_passes(
         .with_xy_arc(p.links.approach.arc_xy)
         .with_microlift(joins)
         .with_holes(holes);
-    let runs: Option<Vec<Vec<Seg>>> = if p.blend_turns {
+    let fitted: Option<Vec<Vec<Seg>>> = fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect());
+    // #1733: the corner arcs asked for. They round the walks as fitted
+    // (a pass with no fit: its own chords).
+    let blend = if p.blend_turns {
         let legal = Legal { region: center, inside: true, air_left: None };
         let rho = corner_arc_radius(p.blend_radius, p.tool_diameter).map_err(GenError::Invalid)?;
-        let mut tally = FilletTally::default();
-        let runs = passes
-            .iter()
-            .map(|pass| {
-                let Some((first, rest)) = pass.split_first() else {
-                    return Vec::new();
-                };
-                let walk = match fit {
-                    Some(tol) => fit_pass(pass, tol),
-                    None => vec![Seg::Line(rest.to_vec())],
-                };
-                let (walk, t) = fillet_corners(&walk, *first, rho, ARC_FIT_TOL, &legal);
-                tally.add(t);
-                walk
-            })
-            .collect();
-        for n in tally.notes("pass", fillet_floor(ARC_FIT_TOL)) {
-            b.note(n);
-        }
-        Some(runs)
+        Some(Blend { rho, legal })
     } else {
-        fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect())
+        None
     };
     let cert = match &room {
         Some(e) => Cert::Stadium { a: e.seed, b: e.seed, h: e.clear, tess: &e.tess },
@@ -140,9 +125,25 @@ pub(super) fn emit_pocket_passes(
             strategy,
             PocketStrategy::Adaptive | PocketStrategy::OffsetRings | PocketStrategy::Waterline
         );
-    let mut path = match runs {
-        Some(runs) if hold_fitted => post_crossing_free(b, &passes, runs, &mut proof, post),
-        runs => {
+    let mut path = match (blend, fitted) {
+        (Some(blend), fitted) => {
+            let base = fitted
+                .unwrap_or_else(|| passes.iter().map(|pass| vec![Seg::Line(pass.get(1..).unwrap_or(&[]).to_vec())]).collect());
+            if hold_fitted {
+                // #2317: the law on the rounded walks, one corner arc
+                // at a time - a crossing never costs a pass its arcs.
+                post_blended_crossing_free(b, &passes, base, &blend, &mut proof, post)
+            } else {
+                let rounded = round_walks(&passes, &base, &blend, &Bans::default());
+                for n in rounded.notes() {
+                    b.note(n);
+                }
+                post(&mut b, Some(rounded.runs.as_slice()));
+                b.finish()
+            }
+        }
+        (None, Some(runs)) if hold_fitted => post_crossing_free(b, &passes, runs, &mut proof, post),
+        (None, runs) => {
             post(&mut b, runs.as_deref());
             b.finish()
         }

@@ -69,6 +69,16 @@ pub fn machine_value_for(machine: &(String, Option<Machine>)) -> Value {
     }
 }
 
+/// [`machine_value_for`] as a post reads it (#2319): where the mount says
+/// no machine, the default machine file must read - a missing or
+/// malformed file refuses the post by its name, never posts a null machine.
+pub(super) fn posted_machine_for(machine: &(String, Option<Machine>)) -> Result<Value, String> {
+    match &machine.1 {
+        Some(m) => Ok(crate::post::machine::mirror(m)),
+        None => super::default_machine_checked().map_err(|why| format!("post blocked - {why}")),
+    }
+}
+
 /// The active setup's mount - what a program with nothing to post reads
 /// (its refusal is the post's own, "no operations to post").
 fn active(world: &World) -> Mount {
@@ -323,7 +333,8 @@ fn post_each(
             mount_setup,
             extra,
         )?;
-        let out = engine::run_program_with(&cps, &machine_value_for(&mount.machine), &cnc::serialize(&records), &options, &id)
+        let mch = posted_machine_for(&mount.machine).map_err(|why| format!("{}: {why}", mount.label()))?;
+        let out = engine::run_program_with(&cps, &mch, &cnc::serialize(&records), &options, &id)
             .map_err(|e| format!("{}: post engine: {e}", mount.label()))?;
         if !out.warnings.is_empty() {
             return Err(format!(
