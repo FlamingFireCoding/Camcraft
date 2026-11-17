@@ -259,10 +259,7 @@ fn a_wrapped_op_on_the_test_part_is_refused_by_name() {
     let records = camcraft_app::posting::stream_records(&world).expect("the stream");
     let mch = camcraft_app::post::machine::mirror(
         &camcraft_app::machine::parse_mch(
-            camcraft_app::posting::MACHINES
-                .iter()
-                .find(|(n, _)| *n == "Tormach 770MX + microARC 4")
-                .map(|(_, t)| *t)
+            camcraft_app::posting::builtin_machine_text("Tormach 770MX + microARC 4")
                 .expect("shipped"),
         )
         .expect("parses"),

@@ -389,6 +389,18 @@ pub(crate) struct Gizmo {
     /// dimmed neutral axes. Drawn beside the origin so whose-zero is
     /// whose reads at a glance, with no hover.
     pub name: String,
+    /// #1720: the reversed axes (X, Y, Z) of this WCS; a flipped axis is
+    /// drawn pointing the other way, so the triad shows what is stored.
+    pub flip: [bool; 3],
+}
+
+impl Gizmo {
+    /// The world axis direction `dir` of axis `i`, reversed when that
+    /// axis is flipped.
+    pub(crate) fn axis_dir(&self, i: usize, dir: &[f64; 3]) -> [f64; 3] {
+        let s = if self.flip.get(i).copied().unwrap_or(false) { -1.0 } else { 1.0 };
+        [dir[0] * s, dir[1] * s, dir[2] * s]
+    }
 }
 
 /// The axis inks on a light viewport (#698): the dark set washes out on
@@ -481,6 +493,7 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
             rot: loc.rot,
             world_axes: false,
             name: name.clone(),
+            flip: camcraft_app::setup_wcs_flip::of_entity(&state.world, &entity),
         });
     }
     let claims_origin = out.iter().any(|g| {
@@ -490,7 +503,7 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
             && g.rot[1].abs() < 1e-6
             && g.rot[2].abs() < 1e-6
             && (1.0 - g.rot[3].abs()).abs() < 1e-6;
-        on_spot && unrotated
+        on_spot && unrotated && !g.flip.iter().any(|f| *f)
     });
     if !claims_origin && state.show_world_axes {
         out.push(Gizmo {
@@ -498,6 +511,7 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
             rot: [0.0, 0.0, 0.0, 1.0],
             world_axes: true,
             name: WORLD_LABEL.to_string(),
+            flip: [false; 3],
         });
     }
     out
@@ -725,6 +739,7 @@ pub(crate) fn overlay_labels(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
             out.push(([uv[0], uv[1] + NAME_DROP_UV], c, gizmo.name.clone()));
         }
         for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            let dir = gizmo.axis_dir(axis, dir);
             let p = transform_point(
                 Point3::new(
                     dir[0] * len * 1.08,
@@ -764,7 +779,8 @@ pub(crate) fn gizmo_segments(state: &State, aspect: f64) -> Vec<([f32; 2], [f32;
         let Some(o) = project_uv(&mvp, gizmo.pos) else {
             continue;
         };
-        for (rgb, dir) in &axes() {
+        for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            let dir = gizmo.axis_dir(axis, dir);
             let p = transform_point(Point3::new(dir[0] * len, dir[1] * len, dir[2] * len), base, gizmo.rot);
             let Some(tip) = project_uv(&mvp, [p.x, p.y, p.z]) else {
                 continue;
@@ -909,7 +925,8 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
     let mut out: Vec<[f32; 6]> = Vec::new();
     for gizmo in gizmos(state) {
         let (px, py, pz) = (ftoz(gizmo.pos[0]), ftoz(gizmo.pos[1]), ftoz(gizmo.pos[2]));
-        for (rgb, dir) in &axes() {
+        for (axis, (rgb, dir)) in axes().iter().enumerate() {
+            let dir = gizmo.axis_dir(axis, dir);
             let p = transform_point(
                 Point3::new(dir[0] * len, dir[1] * len, dir[2] * len),
                 Point3::new(gizmo.pos[0], gizmo.pos[1], gizmo.pos[2]),
