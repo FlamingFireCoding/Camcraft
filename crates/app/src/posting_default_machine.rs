@@ -1,7 +1,11 @@
 //! The default machine file (`assets/machines/3axis-vmc.mch`) read as the
 //! post's machine for a mount with none, or refused by the file's name
-//! (#2319). Provenance: our own machine-file format (docs/MACHINE-ONBOARDING.md).
+//! (#2319), and its stated limits judged for such a mount (#2321).
+//! Provenance: our own machine-file format (docs/MACHINE-ONBOARDING.md).
 
+use crate::machine::{AxisLimits, Machine, MachineCheck};
+use crate::model;
+use flecs_ecs::prelude::{Entity, World};
 use serde_json::Value;
 use std::sync::OnceLock;
 
@@ -77,3 +81,86 @@ pub fn parse_default_machine(text: Result<&str, String>) -> Result<Value, String
     }
     Ok(v)
 }
+
+/// The limits the default machine's text states (#2321), read as the
+/// checker's [`Machine`]: its name, the spindle range and each linear
+/// axis's feed and rapid rates. The text is the post grammar
+/// (`kinematics.static`), not the `.mch` file form, so the `.mch` reader
+/// cannot read it. Zero, negative or absent numbers are unstated - the
+/// unstated-limit law - and an unstated limit checks nothing.
+#[must_use]
+pub fn default_limits(v: &Value) -> Machine {
+    let rate = |p: Option<&Value>| p.and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0);
+    let head = v.pointer("/kinematics/static/head/spindle");
+    let axes = v.pointer("/kinematics/static/axes").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+    let axes = axes
+        .iter()
+        .filter_map(|a| {
+            let name = a.get("letter").and_then(Value::as_str)?;
+            ["X", "Y", "Z"].contains(&name).then(|| AxisLimits {
+                name: name.to_owned(),
+                feed: rate(a.pointer("/speeds/normal")),
+                rapid: rate(a.pointer("/speeds/rapid")),
+                ..Default::default()
+            })
+        })
+        .collect();
+    Machine {
+        model: v.get("name").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        spindle_min: rate(head.and_then(|s| s.get("min"))),
+        spindle_max: rate(head.and_then(|s| s.get("max"))),
+        axes,
+        ..Default::default()
+    }
+}
+
+/// The ops of a mount with no machine judged against the default
+/// machine's stated limits (#2321): each op's spindle speed against the
+/// spindle range, and each feed move against the slowest axis it drives.
+/// The same two judgements a mounted machine's check makes, in the same
+/// words. Only these: the default file states no stroke, no tool table
+/// and no rotaries, so nothing else is claimed for it.
+pub(super) fn default_limit_check(world: &World, m: &Machine, ops: &[(String, Entity)]) -> Result<MachineCheck, String> {
+    let mut out = MachineCheck::default();
+    let mut say = |s: String| {
+        if out.problems.len() < REPORT_CAP {
+            out.problems.push(s);
+        } else {
+            out.more += 1;
+        }
+    };
+    for (name, e) in ops {
+        let op = model::operation_of(world, e).ok_or_else(|| format!("{name}: lost its operation"))?;
+        let tool = model::find_by_name(world, &op.tool)
+            .and_then(|t| model::tool_of(world, &t))
+            .ok_or_else(|| format!("{name}: tool {} is not in the library", op.tool))?;
+        let rpm = super::posted_rpm(&tool);
+        if rpm > 0.0 {
+            if let Some(hi) = m.spindle_max
+                && rpm > hi
+            {
+                say(format!("{name}: tool {} runs {rpm:.0} rpm, above the machine's {hi:.0}", op.tool));
+            }
+            if let Some(lo) = m.spindle_min
+                && rpm < lo
+            {
+                say(format!("{name}: tool {} runs {rpm:.0} rpm, below the machine's {lo:.0}", op.tool));
+            }
+        }
+        let cache = model::toolpath_of(world, e).ok_or_else(|| format!("{name}: lost its toolpath"))?;
+        for (i, mv) in cache.path.moves.iter().enumerate() {
+            let Some(feed) = mv.feed else { continue };
+            let d = [mv.to.x - mv.from.x, mv.to.y - mv.from.y, mv.to.z - mv.from.z];
+            if let Some(ceil) = m.feed_ceiling(d)
+                && feed > ceil
+            {
+                let axis = m.axes.iter().find(|a| a.feed == Some(ceil)).map_or("an axis", |a| a.name.as_str());
+                say(format!("{name}: move {i} feeds {feed:.0} mm/min, {axis} tops out at {ceil:.0}"));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The most problems one check lists; the rest are counted.
+const REPORT_CAP: usize = 40;
