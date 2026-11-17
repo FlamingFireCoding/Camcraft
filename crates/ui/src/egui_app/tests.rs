@@ -141,6 +141,8 @@ mod setup_picks_disarm;
 mod points_vertex_pick;
 // #1171: real clicks state a wire sync pair.
 mod wire_sync_viewport;
+// #1448: real viewport clicks pick the Contour's start and exit points.
+mod start_exit_viewport;
 mod one_wcs;
 // #1926: the feature picks that set the WCS are on the WCS page.
 mod wcs_page_picks;
