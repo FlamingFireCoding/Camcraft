@@ -18,7 +18,7 @@ use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::face::GenError;
 use super::fillet::Legal;
 use super::fillet_tally::corner_arc_radius;
-use super::levels::{Cert, Motion, cut_levels, run_level_walks};
+use super::levels::{Cert, Motion, cut_levels_under, run_level_walks};
 use super::pocket::{PocketParams, PocketStrategy};
 use super::pocket_hsm::EntryRoom;
 use super::predrilled::PreHole;
@@ -65,7 +65,7 @@ pub(super) fn emit_pocket_passes(
         center,
         p.links.approach.predrilled && room.is_none(),
     );
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let fit = match strategy {
         PocketStrategy::Zigzag | PocketStrategy::Auto => None,
         PocketStrategy::Waterline | PocketStrategy::OffsetRings => Some(ARC_FIT_TOL),

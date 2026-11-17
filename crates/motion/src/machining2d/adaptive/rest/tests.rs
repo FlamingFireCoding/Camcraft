@@ -217,3 +217,24 @@ fn the_travel_budget_refuses_by_name_past_each_limit() {
     assert!(msg.contains("would reach 12 passes by a retract (over 11") && msg.contains("4 rest areas"), "{msg}");
     assert_eq!(hop_budget(0), hop_budget(1));
 }
+
+/// The first rest level pin (#2004, the floor review of PR 2013): the
+/// rest stock stands over the rest Top Z, so the plane at Top Z (Z-2)
+/// is a cut level. With no material top stated (`Links::PLANAR`) the
+/// rest ladder keeps it; a plain `cut_levels` drops it and leaves the
+/// band Z-2..Z-4 uncut without a word.
+#[test]
+fn the_first_rest_level_at_top_z_is_cut_without_a_stated_material_top() {
+    let (region, p) = pocket();
+    assert!(p.links.approach.stock_top.is_none(), "the fixture states no material top");
+    let s = stock(-4.0, Region::empty());
+    let feeds_at = |path: &Toolpath, z: f64| path.moves.iter().filter(|m| m.kind == MoveKind::Feed && (m.to.z - z).abs() < 1e-9).count();
+    let path = plan(&s, Guards::ALL);
+    assert!(feeds_at(&path, -2.0) > 0, "the first rest level (Z-2) has no cut");
+    assert!(feeds_at(&path, -4.0) > 0, "the last rest level (Z-4) has no cut");
+    // A stated material top over Top Z keeps the same ladder.
+    let mut over = p;
+    over.links.approach.stock_top = Some(0.0);
+    let Ok(path) = guarded(&region, &over, &s, Guards::ALL) else { panic!("the fixture plans with a material top") };
+    assert!(feeds_at(&path, -2.0) > 0, "a material top over Top Z drops the first rest level");
+}
