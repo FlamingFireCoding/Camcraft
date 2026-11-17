@@ -298,3 +298,64 @@ fn a_machine_with_no_a_rate_is_refused_by_name() {
         out.warnings
     );
 }
+
+/// Read the control's rounded words and independently sample its linear
+/// XYZ/A interpolation in the part frame. Endpoint distance alone misses
+/// the bow, even when both stream endpoints are the same world point.
+#[test]
+fn posted_trajectory_length_obeys_the_feed_even_for_coincident_world_endpoints() {
+    let cps = std::fs::read_to_string(repo("assets/posts/tormach.cps")).expect("the post");
+    for (units, unit_mm, places) in [("mm", 1.0, 1_000.0), ("inch", 25.4, 10_000.0)] {
+        for (angle, radius) in [(3.0, 10.0), (-3.0, 10.0), (0.003, 10.0), (3.0, 0.0001)] {
+            let feed = 0.1;
+            let mut recs = head();
+            let mut end = mv(MoveKind::Feed, angle, [0.0, 0.0, radius], Some(feed));
+            if let cnc::Record::Move(m) = &mut end {
+                m.x = 0.0;
+                m.y = 0.0;
+                m.z = radius;
+            }
+            section(&mut recs, "STATIONARY WORLD", vec![
+                mv(MoveKind::Rapid, 0.0, [0.0, 0.0, radius], None),
+                end,
+            ]);
+            let out = engine::run_with(&cps, &mirrored(), &cnc::serialize(&recs), &json!({"Units": units}))
+                .expect("post the coincident endpoints");
+            assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+            let mut xyz0 = [0.0, 0.0, (radius / unit_mm * places).round() / places * unit_mm];
+            let mut a0 = 0.0_f64;
+            let mut inverse = false;
+            let mut checked = 0;
+            for line in out.program.lines() {
+                let words: Vec<_> = line.split_whitespace().collect();
+                if words.contains(&"G93") { inverse = true; }
+                if words.contains(&"G94") { inverse = false; }
+                if !words.contains(&"G1") || !words.iter().any(|w| w.starts_with('A')) { continue; }
+                let mut xyz1 = xyz0;
+                for (i, axis) in ['X', 'Y', 'Z'].iter().enumerate() {
+                    if let Some(v) = words.iter().find_map(|w| w.strip_prefix(*axis).and_then(|s| s.parse::<f64>().ok())) {
+                        xyz1[i] = v * unit_mm;
+                    }
+                }
+                let a1 = words.iter().find_map(|w| w.strip_prefix('A').and_then(|s| s.parse::<f64>().ok())).expect("A");
+                let duration = if inverse { 1.0 / f_of(line) } else { (a1 - a0).abs() / f_of(line) };
+                let mut previous = world(a0, xyz0);
+                let mut length = 0.0;
+                for j in 1..=10_000 {
+                    let u = f64::from(j) / 10_000.0;
+                    let machine = std::array::from_fn(|i| xyz0[i] + (xyz1[i] - xyz0[i]) * u);
+                    let part = world(a0 + (a1 - a0) * u, machine);
+                    length += part.iter().zip(previous).map(|(p, q)| (p - q).powi(2)).sum::<f64>().sqrt();
+                    previous = part;
+                }
+                assert!(length / duration <= feed + 1e-9,
+                    "{units}, A{angle}, radius {radius}: sampled {length} mm in {duration} min exceeds F{feed}: {line}");
+                assert!((a1 - a0).abs() / duration <= 360.0 + 1e-9, "A rate: {line}");
+                xyz0 = xyz1;
+                a0 = a1;
+                checked += 1;
+            }
+            assert!(checked > 0, "no turning feed: {}", out.program);
+        }
+    }
+}

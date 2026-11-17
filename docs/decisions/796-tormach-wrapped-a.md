@@ -20,9 +20,10 @@ output was consulted.
   mostly-rotary move would let A run as fast as its tiny XYZ distance
   allows, and its time would not be the cutting feed relative to the part
   (the part turns under the tool). G93 lets the post state the time
-  exactly (reading 3). The path is the stream's segment in the part frame,
-  so the cutting feed is held where the tool meets the part. Floored F and
-  the slack mean rounding only ever slows a move.
+  exactly (reading 3). The path bound uses the rounded XYZ/A words the
+  control interpolates, transformed back into the part frame; a turning
+  trajectory can be longer than the straight stream segment. Floored F and
+  the rounding allowance slow a move.
   **Dropped:** G94 with the #885 `rotaryFeed` "path" cap - it holds the A
   rate but times the move by the machine XYZ distance, which on a wrapped
   op is not the tip's speed over the part. `rotaryRate` (the #885 reader of
@@ -58,3 +59,25 @@ output was consulted.
   past it is refused, not wrapped back.
 - **Not exercised:** a real 770MX + microARC 4 cut. The PR lists the Hub
   check to run first.
+
+- **Review fix: bound the posted trajectory, not its endpoint chord.**
+  With posted XYZ interpolated as `m(u)` and posted A as `theta(u)`, the
+  part-relative trajectory is `q(u) = R(theta(u)) m(u)`. Its speed is
+  bounded by the midpoint speed plus one quarter of a uniform bound on
+  `|q''|`: `2 |dtheta| |dm_yz| + dtheta^2 max(|m0_yz|, |m1_yz|)`.
+  Integrating `|u - 1/2|` gives the quarter factor. XYZ rounding and angle
+  rounding are included before evaluating this bound; the existing one-step
+  allowance remains conservative. **Dropped:** the stream chord plus a
+  rounding allowance, which misses the curved path even when its two
+  endpoints coincide. Independent dense interpolation tests pin feed and
+  A rate against the posted words.
+- **Review fix: narrowly compare the wrapped golden across platforms.**
+  Keep line count, word order, modes, XYZ and ordinary feeds exact. Allow
+  at most 0.001 degree in G0/G1 A and 0.04 inverse minutes in turning G93 F,
+  matching the observed last-place A boundary and adjacent-step F swap
+  (116.959 versus 116.921). Comparator pins reject values outside either
+  bound, changed motion words, changed XYZ, missing words and extra lines.
+  The program's independent A-rate and feed checks remain in place.
+  **Dropped:** replacing the golden with Linux output alone, which merely
+  moves the same boundary failure to another platform; broad numeric
+  tolerances, which could hide motion or mode changes.
