@@ -19,6 +19,7 @@ mod common;
 mod pocket_support;
 mod stock_source_holes_support;
 
+use camcraft_app::geometry::quat_from_yaw;
 use stock_source_holes_support::*;
 
 /// The three stock turns: aligned, a quarter about Z (both judged by
