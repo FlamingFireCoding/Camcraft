@@ -288,6 +288,8 @@ class FirstContinuousFourAxisProgram(unittest.TestCase):
         self.assertAlmostEqual((178.689 - 176.25) * 147.601, 360.0, delta=0.5)
 
     def test_g93_and_g94_are_as_the_page_says(self):
+        self.assertIn("The path length bound includes the curved trajectory relative to the part "
+                      "between the rounded XYZ and A words.", flat(page()))
         g93 = False
         for line in program():
             words = line.split()

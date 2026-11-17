@@ -294,7 +294,9 @@ ran `G93 G1 X4 A180 F5` in 12 seconds, which is 1/5 minute (Hub reading
 
 The post gives each move the longer of two times: the time for the tool to
 go along its path at the operation's feed, and the time for A to turn at
-the machine file's A rate. Rounding makes a move slower, not faster.
+the machine file's A rate. The path length bound includes the curved
+trajectory relative to the part between the rounded XYZ and A words.
+Rounding makes a move slower, not faster.
 
 ```gcode
 G1 X0.0625 Y0 Z-0.0219 A174.937 F147.722

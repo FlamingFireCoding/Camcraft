@@ -291,6 +291,66 @@ fn each_g93_move_holds_the_a_rate() {
     assert!(checked > 0, "{nc}");
 }
 
+/// Sample the controller's XYZ/A interpolation independently of the CPS time
+/// formula. Work in inches, as posted, and rotate each sample back into the
+/// part frame. Comparing endpoints alone misses a curved turning trajectory.
+fn check_generated_turning_feeds(nc: &str) {
+    let (mut xyz, mut angle, mut inverse_time) = ([0.0; 3], 0.0, false);
+    let mut checked = 0;
+    for line in nc.lines() {
+        let words: Vec<_> = line.split(' ').collect();
+        if words.contains(&"G93") {
+            inverse_time = true;
+        }
+        if words.contains(&"G94") {
+            inverse_time = false;
+        }
+        if !words.contains(&"G0") && !words.contains(&"G1") {
+            continue;
+        }
+        let next_xyz = std::array::from_fn(|i| word(line, ['X', 'Y', 'Z'][i]).unwrap_or(xyz[i]));
+        let next_angle = word(line, 'A').unwrap_or(angle);
+        if inverse_time && words.contains(&"G1") {
+            let inverse_minutes = word(line, 'F').expect("every G93 feed carries F");
+            assert!(
+                inverse_minutes.is_finite() && inverse_minutes > 0.0,
+                "{line}"
+            );
+            let part = |u: f64| {
+                let m: [f64; 3] = std::array::from_fn(|i| xyz[i] + (next_xyz[i] - xyz[i]) * u);
+                let (sin, cos) = (angle + (next_angle - angle) * u).to_radians().sin_cos();
+                [m[0], m[1] * cos - m[2] * sin, m[1] * sin + m[2] * cos]
+            };
+            let mut previous = part(0.0);
+            let mut length = 0.0;
+            for j in 1..=128 {
+                let next = part(f64::from(j) / 128.0);
+                length += next
+                    .iter()
+                    .zip(previous)
+                    .map(|(p, q)| (p - q).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                previous = next;
+            }
+            let feed = length * inverse_minutes;
+            assert!(
+                feed <= 8.0 + 1e-8,
+                "sampled {feed} in/min exceeds the example's F8: {line}"
+            );
+            let a_rate = (next_angle - angle).abs() * inverse_minutes;
+            assert!(a_rate <= 360.0 + 1e-8, "A runs at {a_rate} deg/min: {line}");
+            checked += 1;
+        }
+        xyz = next_xyz;
+        angle = next_angle;
+    }
+    assert!(
+        checked > 100,
+        "the generated example exercises turning feeds: {checked}"
+    );
+}
+
 /// The committed project is the built document: it loads on the shipped
 /// machine and post, passes the machine check and the post gate, and
 /// posts the committed program.
@@ -310,6 +370,8 @@ fn the_committed_project_posts_the_committed_program() {
     let gate = posting::verification_gate(&world);
     assert!(gate.is_empty(), "the post gate is silent: {gate:?}");
     let want = std::fs::read_to_string(repo(PROGRAM)).expect("the example program");
-    wrapped_nc::compare(&post(&world, "loaded").program, &want)
+    let generated = post(&world, "loaded").program;
+    wrapped_nc::compare(&generated, &want)
         .unwrap_or_else(|e| panic!("{PROJECT} posts {PROGRAM}: {e}"));
+    check_generated_turning_feeds(&generated);
 }
