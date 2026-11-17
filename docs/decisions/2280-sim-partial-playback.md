@@ -7,7 +7,7 @@ A separate line under the transport bar names the operation: "Stock
 simulation stops before 2D Contour1: it has no toolpath. Generate it to
 see the rest." The stop is not added to the status line, so the notes of
 a clean operation do not get the error mark. The remaining playback
-refusal reads "stock simulation refused: ... - the stock shows uncut" in
+refusal reads "simulation shows the uncut stock: ..." in
 place of "traced playback refused: ... - the sheet stands".
 
 **Why.** The issue's expected behaviour. A stock after a skipped
