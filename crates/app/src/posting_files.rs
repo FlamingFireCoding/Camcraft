@@ -249,6 +249,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "tinyg.cps") => Some(include_str!("../../../assets/posts/tinyg.cps")),
         ("posts", "doosan-dnm.cps") => Some(include_str!("../../../assets/posts/doosan-dnm.cps")),
         ("posts", "carvera.cps") => Some(include_str!("../../../assets/posts/carvera.cps")),
+        ("posts", "mach4.cps") => Some(include_str!("../../../assets/posts/mach4.cps")),
         ("posts", "fanuc-lathe.cps") => Some(include_str!("../../../assets/posts/fanuc-lathe.cps")),
         ("posts", "tormach-lathe.cps") => Some(include_str!("../../../assets/posts/tormach-lathe.cps")),
         ("posts", "tormach-plasma.cps") => Some(include_str!("../../../assets/posts/tormach-plasma.cps")),

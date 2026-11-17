@@ -461,46 +461,71 @@ fn mach4_repeated_program_indexes_vertical_before_first_cut() {
 
 #[test]
 fn mach4_indexed_cut_restores_vertical_before_probe_and_offset_update() {
-    let stream = format!("{VERTICAL_THEN_TILTED}\
-TOOL 99 \"3D TOUCH PROBE\"
+    for tool_change in [false, true] {
+        for guard in [false, true] {
+            let cutting = VERTICAL_THEN_TILTED.replace(
+                "Feed X 10000 Y 5000 Z 0 F 400000 A -45000",
+                "Feed X 10000 Y 5000 Z -10000 F 400000 A -45000",
+            );
+            let tool = if tool_change { "TOOL 99 \"3D TOUCH PROBE\"\n" } else { "" };
+            let approach = if guard { "GUARD 10000 5000 10000 F 1200000\n" } else { "" };
+            let stream = format!("{cutting}{tool}\
 PARAM ToolKind Touch Probe
 PARAM SpindleSpeed 0
 PARAM ClearancePlane 25
 PARAM RetractPlane 10
 SECTION ProbeZ
-GUARD 10000 5000 10000 F 1200000
-TOUCH 10000 5000 -5000 EXPECT 10000 5000 0 F 100000 M 0
+{approach}TOUCH 10000 5000 -5000 EXPECT 10000 5000 0 F 100000 M 0
 RETREAT 10000 5000 5000 EXPECT 10000 5000 5000 F 1200000
 FOUND SET 0 TOL 500 AXIS Z 0 0
 ENDSECTION
 ");
-    let out = engine::run(&mach4_post(), &review_trunnion(), &stream).expect("posts");
-    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
-    let mut a: f64 = 0.0;
-    let mut c: f64 = 0.0;
-    let mut tilted = false;
-    let mut restored = false;
-    let mut retracted = false;
-    let mut probes = 0;
-    for line in out.program.lines() {
-        if line.contains("G28") || line.contains("G30") || line.starts_with("G53 ") { retracted = true; }
-        if let Some(v) = word_value(line, 'A') {
-            a = v;
-            if a.abs() > 1.0 { tilted = true; retracted = false; }
-            else if tilted {
-                assert!(retracted, "restore must retract first:\n{}", out.program);
-                restored = true;
+            let out = engine::run(&mach4_post(), &review_trunnion(), &stream).expect("posts");
+            assert!(out.warnings.is_empty(), "tool_change={tool_change}, guard={guard}: {:?}", out.warnings);
+            let mut a: f64 = 0.0;
+            let mut c: f64 = 0.0;
+            let mut tilted = false;
+            let mut restored = false;
+            let mut retracted = false;
+            let mut probes = 0;
+            let mut seated_xy = false;
+            let mut seated_z = false;
+            for line in out.program.lines() {
+                if line.contains("G28") || line.contains("G30") || line.starts_with("G53 ") { retracted = true; }
+                if let Some(v) = word_value(line, 'A') {
+                    a = v;
+                    if a.abs() > 1.0 { tilted = true; retracted = false; }
+                    else if tilted {
+                        assert!(retracted, "restore must retract first:\n{}", out.program);
+                        restored = true;
+                    }
+                }
+                if let Some(v) = word_value(line, 'C') { c = v; }
+                if restored && probes == 0 && line.starts_with("G00 ") {
+                    if let Some(z) = word_value(line, 'Z') {
+                        assert!(z >= 25.0, "unguarded probe descent to Z{z}:\n{}", out.program);
+                        seated_z = true;
+                    }
+                    if word_value(line, 'X').is_some() || word_value(line, 'Y').is_some() {
+                        assert!(seated_z, "probe X/Y traverse before known clearance:\n{}", out.program);
+                        assert_eq!(word_value(line, 'X'), Some(10.0));
+                        assert_eq!(word_value(line, 'Y'), Some(5.0));
+                        seated_xy = true;
+                    }
+                }
+                if line.starts_with("G31 ") || line.starts_with("G10 L2 P1") {
+                    assert!(restored && a.abs() < 1e-6 && c.abs() < 1e-6,
+                        "probe or offset write while table is tilted:\n{}", out.program);
+                    if line.starts_with("G31 ") {
+                        assert!(seated_xy && seated_z, "probe must start from known clearance seat:\n{}", out.program);
+                        probes += 1;
+                    }
+                }
             }
-        }
-        if let Some(v) = word_value(line, 'C') { c = v; }
-        if line.starts_with("G31 ") || line.starts_with("G10 L2 P1") {
-            assert!(restored && a.abs() < 1e-6 && c.abs() < 1e-6,
-                "probe or offset write while table is tilted:\n{}", out.program);
-            if line.starts_with("G31 ") { probes += 1; }
+            assert_eq!(probes, if guard { 2 } else { 1 }, "guard and touch must post:\n{}", out.program);
+            assert!(out.program.contains("G10 L2 P1 Z[#5223+#190]"), "offset update must post:\n{}", out.program);
         }
     }
-    assert_eq!(probes, 2, "guard and touch must both post:\n{}", out.program);
-    assert!(out.program.contains("G10 L2 P1 Z[#5223+#190]"), "offset update must post:\n{}", out.program);
 }
 
 #[test]

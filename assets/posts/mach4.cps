@@ -818,16 +818,18 @@ function prepareProbePose() {
   return preparePose({ A: 0, B: 0, C: 0 }, false) !== null;
 }
 
+// After a tool change or rotary reset the stream start is stale. Seat X/Y
+// at clearance and let G31 protect the descent from that known retract state.
 function onProbe() {
   if (!prepareProbePose()) return;
   var p = properties;
-  if (!xyFirst(p.X, p.Y, p.Z, true, null, null)) return;
+  if (!xyFirst(p.X, p.Y, null, false, null, null)) return;
   block(["G31", "X" + fu(num(p.X, orgX) - orgX), "Y" + fu(num(p.Y, orgY) - orgY), "Z" + fu(num(p.Z, orgZ) - orgZ), ff(num(p.FeedRate, num(p.Feed, 100)))]);
 }
 function onProbeMove() {
   if (!prepareProbePose()) return;
   var p = properties;
-  if (!xyFirst(p.StartX, p.StartY, p.StartZ, true, null, null)) return;
+  if (!xyFirst(p.StartX, p.StartY, null, false, null, null)) return;
   block(["G31", "X" + fu(p.X - orgX), "Y" + fu(p.Y - orgY), "Z" + fu(p.Z - orgZ), ff(p.Feed)]);
   var d = [Math.abs(p.X - p.ExpectX), Math.abs(p.Y - p.ExpectY), Math.abs(p.Z - p.ExpectZ)];
   var ai = d[0] >= d[1] && d[0] >= d[2] ? 0 : (d[1] >= d[2] ? 1 : 2);
@@ -849,7 +851,7 @@ function onProbeRetreat() {
 function onProbeGuard() {
   if (!prepareProbePose()) return;
   var p = properties;
-  if (!xyFirst(p.StartX, p.StartY, p.StartZ, true, null, null)) return;
+  if (!xyFirst(p.StartX, p.StartY, null, false, null, null)) return;
   block(["G31", "X" + fu(p.X - orgX), "Y" + fu(p.Y - orgY), "Z" + fu(p.Z - orgZ), ff(p.Feed)]);
   var to = [p.X, p.Y, p.Z], from = [p.StartX, p.StartY, p.StartZ], org = [orgX, orgY, orgZ];
   for (var ai = 0; ai < 3; ai++) {
