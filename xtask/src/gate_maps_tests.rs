@@ -31,6 +31,20 @@ fn count(file: &str, krate: &str) -> usize {
     selected(file, krate).len()
 }
 
+/// #2361: rotated WCS coverage must run when its app entry points change.
+#[test]
+fn wcs_rotation_control_is_selected_for_its_app_entry_points() {
+    for file in [
+        "crates/app/src/commands/mod.rs",
+        "crates/app/src/operation/mod.rs",
+        "crates/app/src/posting.rs",
+        "crates/app/src/stock_sim.rs",
+    ] {
+        let got = selected(file, "app");
+        assert!(got.iter().any(|b| b == "wcs_rotation_control"), "{file}: WCS suite missing from {got:?}");
+    }
+}
+
 #[test]
 fn post_change_selects_the_post_dialect_suites() {
     let got = selected("crates/post/src/post/mod.rs", "app");

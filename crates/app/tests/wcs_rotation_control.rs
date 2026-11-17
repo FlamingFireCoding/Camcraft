@@ -3,6 +3,9 @@
 //! (`Pocket`, `Slot`, `Circular`, `Drill`, `Pocket3D` rest) under Z-rotated WCS.
 //!
 //! Provenance: our own integration suite for rotated work offsets; no vendor material consulted.
+//!
+//! Gate map (#2361): covers app::commands, app::operation (generate),
+//! app::posting, app::stock_sim.
 
 use std::fs;
 use std::path::PathBuf;
