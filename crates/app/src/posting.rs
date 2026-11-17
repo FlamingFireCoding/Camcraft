@@ -46,6 +46,8 @@ pub const BUILTINS: &[(&str, &str)] = &[
     ("grblHAL", include_str!("../../../assets/posts/grblhal.cps")),
     // Synthetos TinyG: the other grbl-family controller, no canned cycles, M0 after each tool change.
     ("TinyG", include_str!("../../../assets/posts/tinyg.cps")),
+    // #2303: stock LinuxCNC (RS274NGC as linuxcnc.org documents it), no PathPilot conventions.
+    ("LinuxCNC", include_str!("../../../assets/posts/linuxcnc.cps")),
     ("Doosan DNM", include_str!("../../../assets/posts/doosan-dnm.cps")),
     ("Makera Carvera", include_str!("../../../assets/posts/carvera.cps")),
     ("Fanuc Lathe", include_str!("../../../assets/posts/fanuc-lathe.cps")),
@@ -227,6 +229,9 @@ pub const MACHINES: &[(&str, &str)] = &[
     ("grblHAL 3-axis", include_str!("../../../assets/machines/grblhal-3axis.mch")),
     // A generic TinyG router / mill; pairs with the "TinyG" post.
     ("TinyG 3-axis", include_str!("../../../assets/machines/tinyg-3axis.mch")),
+    // #2303: a generic LinuxCNC mill; pairs with the "LinuxCNC" post. It states no
+    // safe_retract and no rigid_tapping: the user states them for the real machine.
+    ("LinuxCNC 3-axis", include_str!("../../../assets/machines/linuxcnc-3axis.mch")),
     // #620: the PathPilot routers, each from its own manual / spec sheet
     // (the plain xsTECH from its spec sheet and knowledge base: no manual).
     ("Tormach 24R", include_str!("../../../assets/machines/tormach-24r.mch")),

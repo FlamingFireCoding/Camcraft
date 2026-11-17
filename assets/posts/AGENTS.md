@@ -152,6 +152,9 @@ write (the gate), so the released program never carries one.
   power-on height) reads an unstated `safe_retract` as "not homed" and
   lifts in the work offset to the section's `ClearancePlane` instead,
   refused by name when that height is unknown or not above `StockZTop`.
+  `linuxcnc.cps` (#2303) has no known convention at all: its default
+  G53 retract refuses an unstated `safe_retract` (no machine included),
+  and its `retractMode` option offers G28 / G30 (Z only) or none instead.
 - **A length word carries its decimal point (#1836).** A Fanuc-family
   control with parameter 3401#0 DPI=0 reads a word with no point in least
   increments (`Z14` is 0.014 mm). The Fanuc, Fanuc Lathe, Haas, Mazak and
