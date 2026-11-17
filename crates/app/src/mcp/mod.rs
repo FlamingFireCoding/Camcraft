@@ -34,6 +34,7 @@ mod fixture_profile_tools;
 mod fixture_tools;
 mod fixture_turn_tools;
 mod holders;
+mod holder_dxf_tools;
 mod job;
 mod listen;
 mod live;
