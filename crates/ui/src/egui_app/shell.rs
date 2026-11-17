@@ -358,6 +358,7 @@ fn viewport_panel(
                 });
             }
         });
+        crate::play_precalc::transport_row(ui, state);
         if stop {
             state.sim = None;
         } else if !sc.is_empty()
