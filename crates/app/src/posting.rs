@@ -634,6 +634,8 @@ pub mod nose;
 pub mod index_swing;
 #[path = "posting_swing_standing.rs"]
 pub mod swing_standing;
+#[path = "posting_section_mode.rs"]
+mod section_mode;
 pub(crate) use wcs_rotation::{offset_frame, OffsetFrame};
 pub use mounts::{
     machine_checks, machine_value_for, machine_value_of, post_mounts,
@@ -1229,6 +1231,15 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             Some(a) => ([a.min.x, a.max.x, a.min.y, a.max.y], a.max.z),
             None => ([0.0; 4], 0.0),
         };
+        // #1666: a turning machine's stream states the radius the stock
+        // sweeps about the spindle axis, so a square bar's corners are
+        // known to the post; a mill's stream stays as it was.
+        let stock_turn_radius = matches!(
+            crate::machine::kind_of_setup(world, setup),
+            crate::machine::Kind::Lathe | crate::machine::Kind::MillTurn
+        )
+        .then(|| crate::stock_turn::turn_radius_for(world, setup, [origin[0], origin[1]]))
+        .flatten();
         // The feeder signals ride the section (M5.2 G.2): only a
         // Part operation can carry them, and a load with an advance
         // of 0 is still a load - the ACT, not the number. The
@@ -1317,6 +1328,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             origin,
             stock,
             stock_top_z,
+            stock_turn_radius,
             // The scallop reading (M13.9) is a quality note: shown on
             // the op, never a WARN record - a WARN record holds the
             // post, and a scallop is neither a gouge nor a collision.
@@ -1337,6 +1349,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             post::ask_reverse_spindle(&mut records);
         }
         setup_change::ask(&changes, name, &mut records);
+        section_mode::insert(&op.params, &posted, &mut records);
         streams.push((name.clone(), records));
     }
     Ok(streams)

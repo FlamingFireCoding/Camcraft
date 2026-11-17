@@ -944,11 +944,12 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
             }
         }
     }
-    out.extend(toolpath_lines(state));
-    out.extend(region_lines(state));
-    out.extend(height_plane_lines(state));
-    out.extend(crate::work_envelope::envelope_lines(state));
-    out.extend(selection_feature_lines(state));
+    use crate::frame_cost::time;
+    out.extend(time("scene/overlay.toolpaths", || toolpath_lines(state)));
+    out.extend(time("scene/overlay.regions", || region_lines(state)));
+    out.extend(time("scene/overlay.height_planes", || height_plane_lines(state)));
+    out.extend(time("scene/overlay.envelope", || crate::work_envelope::envelope_lines(state)));
+    out.extend(time("scene/overlay.selection_features", || selection_feature_lines(state)).iter().copied());
     capped(out)
 }
 
@@ -1685,7 +1686,18 @@ pub(crate) fn height_plane_lines(state: &State) -> Vec<[f32; 6]> {
 /// selection gates as the rest of `collect_overlay`, so picks hold their
 /// place while orbiting. A vanished pick - hidden model, deleted entity,
 /// stale id - draws nothing rather than a ghost, the hover rule again.
-pub(crate) fn selection_feature_lines(state: &State) -> Vec<[f32; 6]> {
+///
+/// #2250: the lines are built when the input changes and read from
+/// [`crate::pick_line_memo`] on other frames.
+pub(crate) fn selection_feature_lines(state: &State) -> std::sync::Arc<[[f32; 6]]> {
+    let items = shown_picks(state);
+    crate::pick_line_memo::lines(state, &items, overlay(Overlay::Pick), || gizmo_len(state), || feature_lines(state, &items))
+}
+
+/// [`selection_feature_lines`] without the memo: one real build, for the
+/// pins that prove a hit equals a fresh build.
+#[cfg(test)]
+pub(crate) fn selection_feature_lines_fresh(state: &State) -> Vec<[f32; 6]> {
     feature_lines(state, &shown_picks(state))
 }
 

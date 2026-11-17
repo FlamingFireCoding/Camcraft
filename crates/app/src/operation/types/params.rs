@@ -19,23 +19,60 @@ use super::sel::OpType;
 /// parameter field is no index - the ordinary prismatic op.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tilt {
+    /// 0 preserves the pre-#2133 frame; 1 ignores trigonometric dust.
+    pub basis_version: u8,
     pub a_deg: f64,
     pub b_deg: f64,
     pub origin: [f64; 3],
 }
 
 impl Tilt {
-    /// The frame this index commands: None only when the angles state
-    /// no direction at all (a non-finite letter - refused at the
-    /// parameter door long before generation, but the frame's law is
-    /// Option, not panic).
+    /// The frame this index commands under its persisted basis version.
+    /// Non-finite angles or an unsupported version return None; the
+    /// parameter door refuses these before generation.
     #[must_use]
     pub fn frame(&self) -> Option<crate::cl::TiltedFrame> {
-        crate::cl::TiltedFrame::from_angles(
+        crate::cl::TiltedFrame::from_angles_versioned(
             crate::geometry::Point3::new(self.origin[0], self.origin[1], self.origin[2]),
             self.a_deg,
             self.b_deg,
+            self.basis_version,
         )
+    }
+
+    /// By-name refusal behind [`Tilt::is_sane`] (#2133): names the out-of-range
+    /// field, gives the canonical bounds (A in -90..90, B in -180..180), and
+    /// explains that the face opposite the top is A 0 B 180.
+    #[must_use]
+    pub fn refusal(&self) -> Option<String> {
+        if self.basis_version > 1 {
+            return Some("Tilted plane: unsupported frame basis version".into());
+        }
+        if !self.a_deg.is_finite() || !self.b_deg.is_finite() {
+            return Some(
+                "Tilted plane (3+2): Tool axis A and Tool axis B must be finite numbers (A -90..90 deg, B -180..180 deg)"
+                    .into(),
+            );
+        }
+        if !(-90.0..=90.0).contains(&self.a_deg) {
+            return Some(format!(
+                "Tilted plane (3+2): Tool axis A ({} deg) must be in -90..90 deg (Tool axis B -180..180 deg) - for the face opposite the top, use Tool axis A 0 and Tool axis B 180",
+                self.a_deg
+            ));
+        }
+        if !(-180.0..=180.0).contains(&self.b_deg) {
+            return Some(format!(
+                "Tilted plane (3+2): Tool axis B ({} deg) must be in -180..180 deg (Tool axis A -90..90 deg) - for the face opposite the top, use Tool axis A 0 and Tool axis B 180",
+                self.b_deg
+            ));
+        }
+        if !self.origin.iter().all(|v| v.is_finite() && v.abs() < 1e9) {
+            return Some(
+                "Tilted plane (3+2): Plane origin X, Y and Z must be finite numbers within 1e9 mm"
+                    .into(),
+            );
+        }
+        None
     }
 
     /// Door sanity (M5.1 stage B): every number finite, the anchor
@@ -46,11 +83,7 @@ impl Tilt {
     /// file identities (a stamp that changes for no motion).
     #[must_use]
     pub fn is_sane(&self) -> bool {
-        self.a_deg.is_finite()
-            && self.b_deg.is_finite()
-            && (-90.0..=90.0).contains(&self.a_deg)
-            && (-180.0..=180.0).contains(&self.b_deg)
-            && self.origin.iter().all(|v| v.is_finite() && v.abs() < 1e9)
+        self.refusal().is_none()
     }
 }
 

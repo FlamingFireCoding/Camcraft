@@ -103,12 +103,7 @@ fn wire_tool_command_refuses_bad_rpm_diameter_corner_and_cutting_rows_by_name() 
     let err = AddTool::new(&world, "BadCorner", rounded).err().expect("corner refused").to_string();
     assert!(err.contains("corner radius"), "{err}");
 
-    let row = camcraft_app::tool_cutting_rows::CuttingRow {
-        material: tools::WorkMaterial::MildSteel,
-        rpm: 0.0,
-        feed: 50.0,
-        waterjet: None,
-    };
+    let row = camcraft_app::tool_cutting_rows::CuttingRow::plain(Some(tools::WorkMaterial::MildSteel), 0.0, 50.0);
     let with_rows = Tool { cutting: vec![row], ..valid };
     let err = AddTool::new(&world, "BadRows", with_rows).err().expect("cutting rows refused").to_string();
     assert!(err.contains("EDM conditions"), "{err}");

@@ -107,7 +107,14 @@ use super::*;
 /// drop the rows or the stock material the feeds were picked by. A v63
 /// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
 /// row (derived at read).
-pub const PROJECT_VERSION: u32 = 64;
+/// v65 (#2133): old readers must not discard the tilted frame basis version.
+/// Version 64 and older tilts retain basis 0; new tilts state basis 1.
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+pub const PROJECT_VERSION: u32 = 66;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

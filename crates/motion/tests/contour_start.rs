@@ -4,7 +4,8 @@
 //! case the first slice does not certify is refused by name. #1473: the
 //! exit point - the ring cut all the way round and on to the pick's
 //! projection, the lead-out there - and the picks no lead fits at,
-//! refused by name rather than moved.
+//! refused by name rather than moved. A picked start with tabs: the tab
+//! windows measured from the pick, every level entering there.
 //!
 //! Gate map (M4.4): covers camcraft_motion::machining2d (contour,
 //! contour_start, contour_chain), camcraft_motion::approach.
@@ -114,14 +115,117 @@ fn a_non_finite_pick_is_refused_before_any_move() {
 }
 
 #[test]
-fn tabs_and_control_compensation_with_a_pick_are_refused_by_name() {
+fn control_compensation_with_a_pick_is_refused_by_name() {
     let pick = Some(Point2::new(44.0, 20.0));
-    let tabs = refusal(&ContourParams { tab_count: 2, tab_width: 4.0, tab_height: 1.0, ..params(pick) });
-    assert!(tabs.contains("with tabs"), "{tabs}");
     let mut p = params(pick);
     p.links.approach.compensation = Compensation::Control;
     let comp = refusal(&p);
     assert!(comp.contains("compensation"), "{comp}");
+}
+
+/// Does a feed move at level `z` pass over the point `w`?
+fn cut_at(t: &Toolpath, z: f64, w: Point2) -> bool {
+    t.moves.iter().any(|m| {
+        m.kind == MoveKind::Feed && m.from.z == z && m.to.z == z && {
+            let (a, b) = (Point2::new(m.from.x, m.from.y), Point2::new(m.to.x, m.to.y));
+            let cross = (b.x - a.x) * (w.y - a.y) - (b.y - a.y) * (w.x - a.x);
+            let dot = (w.x - a.x) * (b.x - a.x) + (w.y - a.y) * (b.y - a.y);
+            let ll = (b.x - a.x).powi(2) + (b.y - a.y).powi(2);
+            cross.abs() < 1e-6 && dot >= -1e-9 && dot <= ll + 1e-9
+        }
+    })
+}
+
+fn tabbed(pick: Option<Point2>) -> ContourParams {
+    // The -4 level stands below the 1 mm tab top; -2 stands above it.
+    ContourParams { tab_count: 2, tab_width: 4.0, tab_height: 1.0, ..params(pick) }
+}
+
+#[test]
+fn a_picked_start_with_tabs_enters_every_level_at_its_projection() {
+    // #1473: the tab windows are measured from the pick, so the tabbed
+    // level's first window begins at the pick's foot as well.
+    let t = contour(&square(), &tabbed(Some(Point2::new(44.0, 20.0)))).unwrap();
+    let starts = ring_starts(&t);
+    assert!(starts.len() >= 2, "every level, the tabbed one too: {starts:?} {:?}", t.notes);
+    for s in &starts {
+        assert!((s.x - 43.0).abs() < 1e-9 && (s.y - 20.0).abs() < 1e-9, "starts at the pick's foot: {s:?}");
+    }
+    // Climb walks the outside ring clockwise: down the right wall from
+    // the pick. The last tab ends on the seam, so the 4 mm just above
+    // the pick stand uncut at the tabbed level and are cut above it.
+    assert!(cut_at(&t, -4.0, Point2::new(43.0, 18.0)), "the first window cuts on from the pick");
+    assert!(!cut_at(&t, -4.0, Point2::new(43.0, 22.0)), "the tab before the pick stands");
+    assert!(cut_at(&t, -2.0, Point2::new(43.0, 22.0)), "the untabbed level cuts the whole ring");
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_a_linear_lead_in() {
+    let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+    p.lead = Lead::Linear { length: 5.0 };
+    p.links.approach.lead_out = Some(Lead::None);
+    let why = refusal(&p);
+    assert!(why.contains("start point (44.000, 20.000)") && why.contains("tabs") && why.contains("lead-in"), "{why}");
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_an_independent_linear_lead_out() {
+    let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+    p.links.approach.lead_out = Some(Lead::Linear { length: 5.0 });
+    let why = refusal(&p);
+    assert!(why.contains("start point (44.000, 20.000)") && why.contains("tabs") && why.contains("lead-out"), "{why}");
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_arc_and_tangential_leads() {
+    for shape in [Lead::Arc { radius: 2.0 }, Lead::Tangential { radius: 2.0 }] {
+        for incoming in [true, false] {
+            let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+            if incoming {
+                p.lead = shape;
+                p.links.approach.lead_out = Some(Lead::None);
+            } else {
+                p.links.approach.lead_out = Some(shape);
+            }
+            let why = refusal(&p);
+            let name = if incoming { "lead-in" } else { "lead-out" };
+            assert!(why.contains("start point") && why.contains("tabs") && why.contains(name), "{why}");
+        }
+    }
+}
+
+#[test]
+fn a_picked_start_with_tabs_refuses_extensions_even_without_leads() {
+    for lead in [Lead::None, Lead::Perpendicular { length: 5.0 }] {
+        for incoming in [true, false] {
+            let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+            p.lead = lead;
+            if incoming {
+                p.links.approach.ext_in = 5.0;
+            } else {
+                p.links.approach.ext_out = 5.0;
+            }
+            let why = refusal(&p);
+            assert!(why.contains("start point") && why.contains("tabs") && why.contains("extension"), "{why}");
+        }
+    }
+}
+
+#[test]
+fn a_picked_start_with_tabs_without_leads_keeps_the_tab() {
+    let mut p = tabbed(Some(Point2::new(44.0, 20.0)));
+    p.lead = Lead::None;
+    let t = contour(&square(), &p).unwrap();
+    assert!(!cut_at(&t, -4.0, Point2::new(43.0, 22.0)), "the tab before the pick stands");
+}
+
+#[test]
+fn tabs_without_a_pick_keep_their_automatic_windows() {
+    let base = contour(&square(), &ContourParams { links: Links::PLANAR, ..tabbed(None) }).unwrap();
+    let unset = contour(&square(), &tabbed(None)).unwrap();
+    assert_eq!(base.moves, unset.moves, "an unset start point leaves the tab windows as they were");
+    let picked = contour(&square(), &tabbed(Some(Point2::new(44.0, 20.0)))).unwrap();
+    assert_ne!(base.moves, picked.moves, "the pick moved the tab windows");
 }
 
 #[test]
