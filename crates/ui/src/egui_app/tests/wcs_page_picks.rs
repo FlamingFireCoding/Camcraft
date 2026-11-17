@@ -37,6 +37,14 @@ fn open(h: &mut H, target: UiTarget) {
     h.run_steps(3);
 }
 
+/// Press "Pick for WCS" with the pointer. The pointer rests on the button
+/// for one frame first, so egui's hit test knows the row before the press.
+fn press_pick(h: &mut H) {
+    h.get_by_label("Pick for WCS").hover();
+    h.run();
+    h.get_by_label("Pick for WCS").click();
+}
+
 fn top(h: &H, label: &str) -> f32 {
     h.get_by_label(label).rect().top()
 }
@@ -85,7 +93,7 @@ fn an_armed_row_on_the_wcs_page_stays_armed_and_leaving_the_page_pauses_it() {
     let _g = snapshot_guard();
     let mut h = wcs_harness();
     open(&mut h, UiTarget::Wcs);
-    h.get_by_label("Pick for WCS").click();
+    press_pick(&mut h);
     h.run_steps(5);
     assert!(crate::wcs_pick::collecting(&h.state().state), "armed from the WCS page");
     h.run_steps(5);
@@ -104,7 +112,7 @@ fn picks_from_the_wcs_page_place_the_wcs_undoably() {
     let _g = snapshot_guard();
     let mut h = wcs_harness();
     open(&mut h, UiTarget::Wcs);
-    h.get_by_label("Pick for WCS").click();
+    press_pick(&mut h);
     h.run_steps(3);
     let (z, x) = (pick(&h.state().state, false), pick(&h.state().state, true));
     crate::wcs_pick::take(&mut h.state_mut().state, z);
