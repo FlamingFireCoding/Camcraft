@@ -38,6 +38,9 @@ fn stepped_stock() -> Vec<Triangle> {
 
 fn pocket_path(region: &Region, material_top: Option<f64>) -> Toolpath {
     let mut links = Links::PLANAR;
+    // #2004: the generation lays the setup's stock top (the tall block,
+    // Z10) over every operation, so the level at Top Z stays a level.
+    links.approach.stock_top = Some(10.0);
     links.approach.material_top = material_top;
     pocket(
         region,
@@ -67,6 +70,9 @@ fn pocket_path(region: &Region, material_top: Option<f64>) -> Toolpath {
 
 fn contour_path(region: &Region, material_top: Option<f64>) -> Toolpath {
     let mut links = Links::PLANAR;
+    // #2004: the generation lays the setup's stock top (the tall block,
+    // Z10) over every operation, so the level at Top Z stays a level.
+    links.approach.stock_top = Some(10.0);
     links.approach.material_top = material_top;
     contour(
         region,

@@ -253,6 +253,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // M11.3: the tool says whether an entry may plunge into solid - laid
     // over the generation's copy only, never stored in the op.
     lk.approach.center_cutting = tool.center_cutting;
+    // #2004: the stock top in the generator's frame - where stock stands
+    // over Top Z the level law keeps a level at Top Z (the old ladder).
+    lk.approach.stock_top = stock_top_in_frame(&material.facets, material.top, stock_aabb, frame.as_ref());
     // #1559: the stock a 2D ladder's Top leaves standing over its region
     // (the declared stock less the program ahead's cuts): laid over the
     // generation's copy, so the first descent starts over it and feeds
@@ -336,6 +339,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 climb: *climb,
                 blend_turns: *blend_turns,
                 holes: *holes,
+                // #2004 review: stock over the face's Top keeps the
+                // level at Top (a first bite of at most one stepdown).
+                stock_top: lk.approach.stock_top,
             };
             // M13.11: under the cut-across law the facer needs to know
             // which holes of its region hold material standing above
@@ -1849,6 +1855,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 hl.retract,
                 req_z(hl.top, "Top of Part Z")?,
                 req_z(hl.bottom, "Bottom of Part Z")?,
+                lk.approach.stock_top,
             )?;
             let region = region_for_job(
                     &mut picked_region,
@@ -1893,6 +1900,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
+                    stock_top: lk.approach.stock_top,
                 },
             )?;
             (region, path)
@@ -1930,6 +1938,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     feed: *feed,
                     plunge_feed: *plunge_feed,
                     climb: *climb,
+                    stock_top: lk.approach.stock_top,
                 },
             )?;
             (region, path)

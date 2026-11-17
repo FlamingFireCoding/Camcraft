@@ -135,6 +135,7 @@ fn face_p(top_z: Option<f64>) -> FaceParams {
         plunge_feed: 300.0,
         climb: true,
         blend_turns: false,
+        stock_top: None,
     }
 }
 
