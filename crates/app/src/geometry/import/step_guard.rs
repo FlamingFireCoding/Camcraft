@@ -1,6 +1,6 @@
-//! A metered wrapper around the STEP importer's surfaces, so one face whose
+//! Metered STEP surfaces and edge curves, so a subdivision whose
 //! tessellation never converges ends in a refusal by name instead of a
-//! hang (#1536).
+//! hang (#1536, #1545).
 //!
 //! Provenance: our own design (an evaluation budget on a parametric
 //! surface); the subdivision it meters is truck's published
@@ -35,7 +35,7 @@
 //! and none is left behind.
 
 use std::ops::Bound;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use truck_stepio::r#in::alias::{
@@ -43,6 +43,8 @@ use truck_stepio::r#in::alias::{
 };
 use truck_topology::compress::{CompressedFace, CompressedShell};
 
+pub(super) use super::step_meter::Meter;
+use super::step_meter::Pass;
 use super::step_nearest::Fault;
 use super::step_stretch::Stretch;
 use super::ImportError;
@@ -65,70 +67,6 @@ use super::ImportError;
 /// such a face is never refused once a pass has met.
 pub const FACE_EVAL_CAP: u64 = 150_000_000;
 
-/// One face's evaluation count for the current pass.
-#[derive(Debug)]
-pub(super) struct Meter {
-    used: AtomicU64,
-    cap: u64,
-    /// Some pass of this import divided the surface over a range outside
-    /// its own parameter range (#1568: sc_logo's face #836 was asked for u
-    /// from -2e51, a trimming bound gone wild), where its continuity is not
-    /// proven - a rational surface extrapolated can meet a pole. Sticky
-    /// across passes: truck derives the range from each pass's tolerance,
-    /// so the coarser pass whose mesh a fallback would keep may be the one
-    /// that went wild while the finer pass that tripped stayed in range.
-    outside: AtomicBool,
-    /// A boundary search of this pass that could not be answered soundly
-    /// (`step_nearest::Fault`, 0 for none): the face is refused by name.
-    fault: AtomicU8,
-}
-
-impl Meter {
-    pub(super) fn new(cap: u64) -> Self {
-        Self { used: AtomicU64::new(0), cap, outside: AtomicBool::new(false), fault: AtomicU8::new(0) }
-    }
-    /// Count one evaluation; `false` once the cap is spent.
-    fn spend(&self) -> bool {
-        self.used.fetch_add(1, Ordering::Relaxed) < self.cap
-    }
-    /// Count `n` evaluations done outside `subs` (a boundary search's own
-    /// work, #1602); `false` once the cap is spent. Saturating, never wraps.
-    pub(super) fn spend_many(&self, n: u64) -> bool {
-        let mut used = self.used.load(Ordering::Relaxed);
-        loop {
-            let next = used.saturating_add(n);
-            match self.used.compare_exchange_weak(used, next, Ordering::Relaxed, Ordering::Relaxed) {
-                Ok(_) => return next <= self.cap,
-                Err(now) => used = now,
-            }
-        }
-    }
-    fn tripped(&self) -> bool {
-        self.used.load(Ordering::Relaxed) > self.cap
-    }
-    /// Refuse the face for a boundary search fault. The first one stands.
-    pub(super) fn flag(&self, fault: Fault) {
-        let _ = self.fault.compare_exchange(0, fault as u8, Ordering::Relaxed, Ordering::Relaxed);
-    }
-    pub(super) fn fault(&self) -> Option<Fault> {
-        Fault::from_code(self.fault.load(Ordering::Relaxed))
-    }
-    /// The pass is refused for this face: out of evaluations, or a fault.
-    pub(super) fn refused(&self) -> bool {
-        self.tripped() || self.fault().is_some()
-    }
-    /// Spend the whole budget at once: the face's division did not
-    /// converge (#1602), so the pass is refused as for a runaway.
-    fn exhaust(&self) {
-        self.used.fetch_max(self.cap.saturating_add(1), Ordering::Relaxed);
-    }
-    /// A new pass: the whole budget again. `outside` stays set.
-    fn reset(&self) {
-        self.used.store(0, Ordering::Relaxed);
-        self.fault.store(0, Ordering::Relaxed);
-    }
-}
-
 /// A STEP surface whose evaluations are counted against a [`Meter`].
 #[derive(Clone, Debug)]
 pub(super) struct Metered {
@@ -140,9 +78,14 @@ pub(super) struct Metered {
 }
 
 impl Metered {
+    #[cfg(test)]
     pub(super) fn new(inner: Surface, cap: u64) -> Self {
+        Self::in_pass(inner, cap, Arc::default())
+    }
+    /// A face whose meter shares `pass` with its shell (#1599).
+    pub(super) fn in_pass(inner: Surface, cap: u64, pass: Arc<Pass>) -> Self {
         let stretch = Stretch::of(&inner);
-        Self { inner, meter: Arc::new(Meter::new(cap)), stretch }
+        Self { inner, meter: Arc::new(Meter::in_pass(cap, pass)), stretch }
     }
     /// The surface's own parameters for a point of the mesher's plane.
     pub(super) fn own(&self, u: f64, v: f64) -> (f64, f64) {
@@ -252,6 +195,7 @@ impl ParameterDivision2D for Metered {
                     }
                 }
             }
+            Surface::SweptCurve(s) => super::step_division::swept_division(s, &self.meter, range, tol),
             // Other kinds are never stretched (`Stretch::of`).
             other => other.parameter_division(range, tol),
         }
@@ -277,10 +221,12 @@ type StepShell<S> = CompressedShell<Point3, truck_stepio::r#in::alias::Curve3D, 
 
 /// A shell with every face metered, and the meters in face order.
 pub(super) struct Guarded {
-    pub shell: StepShell<Metered>,
+    pub shell: CompressedShell<Point3, super::step_division::CurveGuard, Metered>,
     meters: Vec<Arc<Meter>>,
     kinds: Vec<&'static str>,
     continuous: Vec<bool>,
+    /// The budget every face and edge of a pass shares (#1599).
+    pass: Arc<Pass>,
 }
 
 /// A face that ran past the cap in a pass, or whose boundary search was
@@ -300,23 +246,42 @@ impl Guarded {
         let mut meters = Vec::with_capacity(shell.faces.len());
         let mut kinds = Vec::with_capacity(shell.faces.len());
         let mut continuous = Vec::with_capacity(shell.faces.len());
+        let pass = Arc::<Pass>::default();
         let faces = shell
             .faces
             .into_iter()
             .map(|f| {
                 kinds.push(kind(&f.surface));
                 continuous.push(super::step_continuity::proven_continuous(&f.surface));
-                let surface = Metered::new(f.surface, cap);
+                let surface = Metered::in_pass(f.surface, cap, Arc::clone(&pass));
                 meters.push(Arc::clone(&surface.meter));
                 CompressedFace { boundaries: f.boundaries, orientation: f.orientation, surface }
             })
             .collect();
-        Self { shell: CompressedShell { vertices: shell.vertices, edges: shell.edges, faces }, meters, kinds, continuous }
+        let edges = shell.edges.into_iter().map(|e| truck_topology::compress::CompressedEdge {
+            vertices: e.vertices, curve: super::step_division::CurveGuard::in_pass(e.curve, cap, Arc::clone(&pass)),
+        }).collect();
+        Self { shell: CompressedShell { vertices: shell.vertices, edges, faces }, meters, kinds, continuous, pass }
     }
 
     /// Start a new pass: every face gets its whole budget again.
     pub(super) fn reset(&self) {
+        self.pass.reset();
         self.meters.iter().for_each(|m| m.reset());
+        self.shell.edges.iter().for_each(|e| e.curve.meter.reset());
+    }
+
+    /// The pass stopped after [`super::step_meter::PASS_TRIPS`] faces or
+    /// edges ran out (#1599): the faces it cut short were never judged, so
+    /// the pass is refused and no coarser mesh is kept.
+    pub(super) fn stopped(&self) -> bool {
+        self.pass.stopped()
+    }
+
+    /// The face meters, in face order.
+    #[cfg(test)]
+    pub(super) fn meters(&self) -> &[Arc<Meter>] {
+        &self.meters
     }
 
     /// The face to report for a pass in which faces ran past the cap. The
@@ -337,7 +302,9 @@ impl Guarded {
             kind: self.kinds.get(index).copied().unwrap_or("surface"),
             // Proven on the surface's own range only: a face any pass
             // divided outside that range is not covered by the proof.
-            continuous: self.continuous.get(index).copied().unwrap_or(false)
+            // A stopped pass cut other faces short: one of them may jump.
+            continuous: !self.stopped()
+                && self.continuous.get(index).copied().unwrap_or(false)
                 && self.meters.get(index).is_some_and(|m| !m.outside.load(Ordering::Relaxed) && m.fault().is_none()),
         }
     }

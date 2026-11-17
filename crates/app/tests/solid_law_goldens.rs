@@ -182,6 +182,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         ("pocket_waterline_plate_with_island.cl", PocketStrategy::Waterline, false),
     ] {
         let p = PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 3.0,
@@ -225,13 +226,15 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         center_cutting: true,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     };
     let hole = |x: f64, y: f64, r: f64, floor: f64, through: bool| Hole { xy: Point2::new(x, y), radius: r, entry_z: 0.0, floor_z: floor, through, stepped: false };
     let cycle = |holes: &[Hole], tool: &Tool, clear: f64| {
-        drill(&CycleParams { clearance_z: clear, r_z: 0.0, hop_z: None, bottom_z: None, cycle: CycleChoice::Auto, peck: 0.0, dwell: 0.0, feed: 200.0, plunge_feed: 60.0, tool, holes })
+        drill(&CycleParams { clearance_z: clear, r_z: 0.0, hop_z: None, bottom_z: None, cycle: CycleChoice::Auto, peck: 0.0, dwell: 0.0, feed: 200.0, plunge_feed: 60.0, tool, holes, through_clear: camcraft_app::drilling::THROUGH_CLEAR })
             .expect("drill")
     };
     let dr6 = tool(ToolKind::Drill, 6.0, 118.0, 0.0);

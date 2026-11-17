@@ -1,5 +1,6 @@
 //! The machine editor's wire EDM section (#535, part of #290): the
-//! `edm` keys (guide planes, taper, wire diameters, AWT), the control's
+//! `edm` keys (guide planes, taper, wire diameters, AWT, tank and
+//! flushing), the control's
 //! words (`edm.codes`) and the condition table, each value drawn with
 //! its "not stated" face - a checkbox decides whether a value
 //! participates, as everywhere in the machine editor. Edits are on the
@@ -9,11 +10,11 @@
 //! Provenance: our own UI over our own machine model (#290 D4/D5,
 //! `camcraft_post::machine::{edm, edm_codes}`); no vendor text.
 
-use camcraft_app::machine::{Condition, Edm, CONDITION_ROLES};
+use camcraft_app::machine::{Condition, Edm, Flushing, Tank, CONDITION_ROLES};
 use camcraft_app::units::Unit;
 use egui::{ComboBox, TextEdit, Ui};
 
-use super::pages;
+use super::{fields, pages};
 
 /// The control words a wire post may ask for (#533) - offered as rows
 /// so each shows "not stated" until the user writes it from their
@@ -48,14 +49,14 @@ fn labelled_text(ui: &mut Ui, label: &str, text: &mut String, width: f32) {
 }
 
 /// A stated/unstated number row. Toggling on seeds `seed`, never 0.
-fn opt_row(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl FnOnce(&mut Ui, &mut f64)) {
+fn opt_row(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl FnOnce(&mut Ui, &mut f64, &str)) {
     ui.horizontal(|ui| {
         let mut stated = v.is_some();
         if ui.checkbox(&mut stated, label).changed() {
             *v = stated.then_some(seed);
         }
         match v {
-            Some(x) => show(ui, x),
+            Some(x) => show(ui, x, &format!("{label} value")),
             None => {
                 ui.label("not stated");
             }
@@ -64,9 +65,9 @@ fn opt_row(ui: &mut Ui, label: &str, v: &mut Option<f64>, seed: f64, show: impl 
 }
 
 fn keys(ui: &mut Ui, u: Unit, e: &mut Edm) {
-    opt_row(ui, "lower guide Z", &mut e.lower_guide_z, 0.0, |ui, v| pages::num(ui, u, v));
-    opt_row(ui, "upper guide Z", &mut e.upper_guide_z, 50.0, |ui, v| pages::num(ui, u, v));
-    opt_row(ui, "max taper (deg)", &mut e.max_taper_deg, 10.0, pages::num_plain);
+    opt_row(ui, "lower guide Z", &mut e.lower_guide_z, 0.0, |ui, v, n| fields::num_named(ui, u, v, n));
+    opt_row(ui, "upper guide Z", &mut e.upper_guide_z, 50.0, |ui, v, n| fields::num_named(ui, u, v, n));
+    opt_row(ui, "max taper (deg)", &mut e.max_taper_deg, 10.0, fields::num_plain_named);
     ui.horizontal(|ui| {
         ui.label("automatic threading");
         let shown = match e.awt {
@@ -74,12 +75,14 @@ fn keys(ui: &mut Ui, u: Unit, e: &mut Edm) {
             Some(true) => "yes",
             Some(false) => "no",
         };
-        ComboBox::from_id_salt("edm_awt").selected_text(shown).show_ui(ui, |ui| {
+        let cb = ComboBox::from_id_salt("edm_awt").selected_text(shown).show_ui(ui, |ui| {
             ui.selectable_value(&mut e.awt, None, "not stated");
             ui.selectable_value(&mut e.awt, Some(true), "yes");
             ui.selectable_value(&mut e.awt, Some(false), "no");
         });
+        fields::named(cb.response, "Automatic wire threading");
     });
+    dielectric(ui, e);
     ui.label("wire diameters the machine takes");
     if e.wire_diameters.is_empty() {
         ui.label("not stated");
@@ -87,7 +90,7 @@ fn keys(ui: &mut Ui, u: Unit, e: &mut Edm) {
     let mut remove = None;
     for (i, d) in e.wire_diameters.iter_mut().enumerate() {
         ui.horizontal(|ui| {
-            pages::num(ui, u, d);
+            fields::num_named(ui, u, d, &format!("Wire diameter {}", i + 1));
             if ui.button("✖").on_hover_text("remove this diameter").clicked() {
                 remove = Some(i);
             }
@@ -99,6 +102,34 @@ fn keys(ui: &mut Ui, u: Unit, e: &mut Edm) {
     if ui.button("add wire diameter").clicked() {
         e.wire_diameters.push(0.25);
     }
+}
+
+/// #1499: the tank and the flushing pressure the job runs with. "not
+/// stated" leaves both to the operator at the control (the post writes
+/// no word for them).
+fn dielectric(ui: &mut Ui, e: &mut Edm) {
+    ui.horizontal(|ui| {
+        ui.label("tank");
+        let shown = e.tank.map_or("not stated", Tank::word);
+        let cb = ComboBox::from_id_salt("edm_tank").selected_text(shown).show_ui(ui, |ui| {
+            ui.selectable_value(&mut e.tank, None, "not stated");
+            for t in [Tank::Submerged, Tank::NonSubmerged] {
+                ui.selectable_value(&mut e.tank, Some(t), t.word());
+            }
+        });
+        fields::named(cb.response, "Tank");
+    });
+    ui.horizontal(|ui| {
+        ui.label("flushing");
+        let shown = e.flushing.map_or("not stated", Flushing::word);
+        let cb = ComboBox::from_id_salt("edm_flushing").selected_text(shown).show_ui(ui, |ui| {
+            ui.selectable_value(&mut e.flushing, None, "not stated");
+            for f in [Flushing::High, Flushing::Low] {
+                ui.selectable_value(&mut e.flushing, Some(f), f.word());
+            }
+        });
+        fields::named(cb.response, "Flushing");
+    });
 }
 
 fn codes(ui: &mut Ui, codes: &mut std::collections::BTreeMap<String, String>) {
@@ -144,8 +175,8 @@ fn conditions(ui: &mut Ui, u: Unit, e: &mut Edm) {
         ui.horizontal_wrapped(|ui| {
             labelled_text(ui, &format!("Condition {} id", i + 1), &mut c.id, 70.0);
             labelled_text(ui, &format!("Condition {} name", i + 1), &mut c.name, 90.0);
-            opt_row(ui, &format!("gap {}", i + 1), &mut c.gap, 0.02, |ui, v| pages::num(ui, u, v));
-            opt_row(ui, &format!("wire {}", i + 1), &mut c.wire_diameter, 0.25, |ui, v| pages::num(ui, u, v));
+            opt_row(ui, &format!("gap {}", i + 1), &mut c.gap, 0.02, |ui, v, n| fields::num_named(ui, u, v, n));
+            opt_row(ui, &format!("wire {}", i + 1), &mut c.wire_diameter, 0.25, |ui, v, n| fields::num_named(ui, u, v, n));
             role(ui, i, c);
             if ui.button("✖").on_hover_text("remove this condition").clicked() {
                 remove = Some(i);
@@ -162,7 +193,7 @@ fn conditions(ui: &mut Ui, u: Unit, e: &mut Edm) {
 
 fn role(ui: &mut Ui, i: usize, c: &mut Condition) {
     let shown = if c.role.is_empty() { "role not stated" } else { c.role.as_str() };
-    ComboBox::from_id_salt(("edm-role", i)).selected_text(shown).show_ui(ui, |ui| {
+    let cb = ComboBox::from_id_salt(("edm-role", i)).selected_text(shown).show_ui(ui, |ui| {
         if ui.selectable_label(c.role.is_empty(), "role not stated").clicked() {
             c.role.clear();
         }
@@ -172,4 +203,5 @@ fn role(ui: &mut Ui, i: usize, c: &mut Condition) {
             }
         }
     });
+    fields::named(cb.response, &format!("Condition {} role", i + 1));
 }

@@ -100,6 +100,9 @@ pub struct Preview {
     /// law does not follow.
     pub footprint: Option<Region>,
     pub refusal: Option<String>,
+    /// #2246: the triangles of the fill (`footprint`, else `region`),
+    /// made with the preview, so a still frame never triangulates.
+    pub fill: Option<crate::boundary_viz::Fill>,
 }
 
 fn key_of(doc: u64, what: &impl std::fmt::Debug) -> u64 {
@@ -170,7 +173,7 @@ pub fn entries(state: &State) -> Vec<Entry> {
             BoundaryShape::Silhouette => (Vec::new(), None, "part silhouette, closed".to_owned()),
         };
         let issue = match &shape {
-            Some(PickShape::Open { .. }) => Some(format!(
+            Some(PickShape::Open { .. } | PickShape::Chains { .. }) => Some(format!(
                 "an {} must enclose an area and these picks are an open chain - Shift-click an edge or 'Extend to loop' to close it, or 'Use as open boundary'",
                 role.label()
             )),
@@ -207,7 +210,7 @@ pub fn role_block(state: &State, entry: &Entry, role: Role) -> Option<String> {
         }
         return None;
     }
-    if matches!(entry.shape, Some(PickShape::Open { .. })) {
+    if entry.shape.as_ref().is_some_and(PickShape::is_open) {
         return Some(format!(
             "these picks are an open chain ({}) - an {} must enclose an area; close it first (Shift-click / Extend to loop)",
             entry.summary,
@@ -411,5 +414,6 @@ pub fn refresh_preview(state: &mut State) {
         (region.is_none() && !op.area.is_default())
             .then(|| "the Boundary settings leave nothing to preview - Generate names the step".to_owned())
     });
-    state.boundary_view.preview = z.map(|z| Preview { key, z, region, footprint, refusal });
+    let fill = z.and(footprint.as_ref().or(region.as_ref())).and_then(crate::boundary_viz::fill_of);
+    state.boundary_view.preview = z.map(|z| Preview { key, z, region, footprint, refusal, fill });
 }

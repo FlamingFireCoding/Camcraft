@@ -235,8 +235,10 @@ fn tool(kind: ToolKind, center_cutting: bool) -> Tool {
         flutes: None,
         orientation: None,
         pitch_min: 0.0,
+        thread_hand: Default::default(),
         catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
         cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     }
 }
@@ -248,6 +250,7 @@ fn holes() -> Vec<Hole> {
 fn cycle(t: &Tool, cycle: CycleChoice) -> Result<Toolpath, GenError> {
     let hs = holes();
     drill(&CycleParams {
+        through_clear: camcraft_motion::drilling::THROUGH_CLEAR,
         clearance_z: 25.0,
         r_z: 12.0,
         hop_z: None,

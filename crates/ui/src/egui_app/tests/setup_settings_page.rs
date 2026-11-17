@@ -24,7 +24,8 @@ const TURN_PREV: &str = "      Turn from previous";
 const PLANE: &str = "    Lay on a plane - pick a face";
 const POINTS: &str = "    Lay on a plane - pick three points";
 const AXES: &str = "    Part axes - pick an edge or two points for +Y and +X; +Z follows by the right-hand rule";
-const OFFSET: &str = "    Work offset";
+/// The work offset row label (#1648: it left this page; no indent now).
+const OFFSET: &str = "Work offset";
 const FEATURES: &str = "    Set WCS from features - each pick sets a role";
 const FIRST_STOCK_NOTE: &str = "The first setup has no setup before it to take stock from.";
 

@@ -245,6 +245,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
         match w {
             Warning::Crossing { .. } => (0, false),
             Warning::Gouge { .. } => (1, false),
+            Warning::StockChamferGouge { .. } => (1, true),
             Warning::ShankHit { part, .. } => (2, *part),
             Warning::RapidInStock { .. } => (3, false),
             Warning::NonFinite { .. } => (4, false),
@@ -274,6 +275,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
         match w {
             Warning::Crossing { moves } => moves[1],
             Warning::Gouge { at }
+            | Warning::StockChamferGouge { at }
             | Warning::ShankHit { at, .. }
             | Warning::HolderHit { at, .. }
             | Warning::SweepHit { at, .. }
@@ -600,7 +602,7 @@ mod warning_fold_tests {
         );
         assert_eq!(
             folded[2],
-            "warning: rapid move 3 travels below the clearance plane inside stock"
+            "warning: rapid move 3 travels through stock (below the clearance plane, or at it below the stock top)"
         );
     }
 }

@@ -17,7 +17,7 @@
 
 use egui::{Label, RichText, Ui};
 
-use camcraft_app::fixture_locate::Mover;
+use camcraft_app::fixture_locate::{LocateBody, Mover};
 
 use crate::locate_pick::{self, LocateDraft};
 use crate::state::{CommandKind, State};
@@ -29,8 +29,7 @@ use super::layout::prop_row;
 /// when the page already knows the part.
 pub(super) fn arm_button(ui: &mut Ui, state: &mut State, label: &str, fixture: &str, part: Option<&str>) {
     let armed = armed_for(state, fixture, part);
-    if ui
-        .selectable_label(armed, if armed { "Stop locating" } else { label })
+    if super::pick_button::pick_button(ui, armed, if armed { "Stop locating" } else { label })
         .on_hover_text("Pick a part face or point, then the fixture face or point it sits on - up to three mates.")
         .clicked()
     {
@@ -55,7 +54,25 @@ pub(super) fn form(ui: &mut Ui, state: &mut State) {
     let Some(d) = state.locate_pick.clone() else { return };
     state.locate_form_drawn = true;
     let u = state.units();
-    ui.label(RichText::new(format!("Locate {} in {}", if d.part.is_empty() { "the part" } else { &d.part }, d.fixture)).strong());
+    let part = if d.part.is_empty() { "the part" } else { &d.part };
+    let title = match d.body {
+        LocateBody::Part => format!("Locate {part} in {}", d.fixture),
+        LocateBody::Stock => format!("Locate the stock of {part} in {}", d.fixture),
+    };
+    ui.label(RichText::new(title).strong());
+    // #2173: which body the first pick of each mate is on. A vise holds
+    // the stock, so the stock is the default when the setup has one.
+    let mut body = d.body;
+    ui.horizontal(|ui| {
+        ui.label("Place by");
+        ui.radio_value(&mut body, LocateBody::Stock, "Stock faces")
+            .on_hover_text("Pick faces of the stock. The part moves and the stock follows it, so the part keeps its place in the stock.");
+        ui.radio_value(&mut body, LocateBody::Part, "Part faces").on_hover_text("Pick faces of the part itself.");
+    });
+    if body != d.body {
+        locate_pick::set_body(state, body);
+        return;
+    }
     for (i, m) in d.mates.iter().enumerate() {
         let (p, f) = (locate_pick::describe(state, &d.fixture, &m.part), locate_pick::describe(state, &d.fixture, &m.fixture));
         ui.add(Label::new(format!("  Mate {}: {p} on {f}", i + 1)).wrap());

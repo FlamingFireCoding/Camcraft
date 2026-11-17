@@ -93,7 +93,7 @@ fn profile(world: &World, g: &GeoSel) -> Result<Picked, GenError> {
             (ring.verts.iter().filter_map(|&vi| features.verts.get(vi as usize)).map(place).collect(), true)
         }
         FeatureSel::Chain(cid) => {
-            let c = feature::resolve_chain(&features, cid).ok_or_else(gone)?;
+            let c = crate::model::resolve_chain(&features, cid).ok_or_else(gone)?;
             (feature::chain_points(&features, &c).iter().map(place).collect(), c.closed)
         }
         _ => {
@@ -120,6 +120,15 @@ fn profile(world: &World, g: &GeoSel) -> Result<Picked, GenError> {
 
 fn read(world: &World, items: &[GeoSel]) -> Result<RuledPicks, GenError> {
     let mut found = items.iter().map(|g| profile(world, g)).collect::<Result<Vec<_>, _>>()?;
+    for pick in found.iter().filter(|p| !p.chains.is_empty()) {
+        let runs = found.iter().filter(|p| !p.chains.is_empty() && (p.z - pick.z).abs() <= FLAT).count();
+        if runs > 1 {
+            return Err(invalid(format!(
+                "a profile stitched from {runs} open runs at Z{:.3} is not supported - pick one face or closed edge chain on that plane",
+                pick.z
+            )));
+        }
+    }
     if found.len() != 2 {
         return Err(invalid(format!(
             "a 4-axis cut pairs two profiles, and {} are picked - pick the upper profile and the lower profile, one face or edge chain each",
@@ -144,6 +153,9 @@ pub(super) fn digest(f: &WireFourAxis, h: &mut std::hash::DefaultHasher) {
     h.write(b"four-axis");
     h.write_u8(u8::from(f.pairing == WirePairingRule::SyncPoints));
     h.write(&f.tolerance.to_bits().to_le_bytes());
+    // #1170: the widening moves the wire. The verify tolerance does not:
+    // the wire verify reads it at each post, never the stored path.
+    h.write_u8(u8::from(f.widening == crate::wire_edm::WireWidening::Uniform));
     h.write_usize(f.sync.len());
     for s in &f.sync {
         for q in [s.upper, s.lower] {
@@ -190,7 +202,14 @@ pub(super) fn generate(
         }
     };
     let ruled =
-        WireRuled { top_z: top, pairing, tolerance: four.tolerance, max_deg: cond.max_taper_deg, machine: cond.machine.clone() };
+        WireRuled {
+        top_z: top,
+        pairing,
+        tolerance: four.tolerance,
+        widening: four.widening,
+        max_deg: cond.max_taper_deg,
+        machine: cond.machine.clone(),
+    };
     let (upper, lower) = (
         WireProfile { loops: &picks.upper.loops, chains: &picks.upper.chains },
         WireProfile { loops: &picks.lower.loops, chains: &picks.lower.chains },

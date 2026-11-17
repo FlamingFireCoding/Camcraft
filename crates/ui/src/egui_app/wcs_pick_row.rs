@@ -37,8 +37,7 @@ pub(super) fn row(ui: &mut Ui, state: &mut State, setup: &str) {
     ui.horizontal_wrapped(|ui| {
         ui.label("    Set WCS from features - each pick sets a role");
         let pick_text = if armed { "Stop picking" } else { "Pick for WCS" };
-        if ui
-            .selectable_label(armed, pick_text)
+        if super::pick_button::pick_button(ui, armed, pick_text)
             .on_hover_text(
                 "Click faces, edges, corners or walls in the viewport; each pick sets the \
                  role in the box. Two axes place the WCS, plus an optional origin.",

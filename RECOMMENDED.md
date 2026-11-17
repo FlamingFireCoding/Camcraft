@@ -45026,3 +45026,5645 @@ it imports with no notes and as three `Outward` bodies.
 **Follow-up:** the message says "the model fills the pocket" when the
 real reason here is "the area is narrower than the tool". Issue #1709
 (`P7`) asks for the two cases to be named apart.
+
+## v0.21.0 - decisions gathered at the cut
+
+## #361 - Modular multi-piece tool body assembly and CSYS mating
+
+- **What was decided:** Extend `ToolBody` with `pieces: Vec<BodyPiece>` (keeping `facets` and `frame` as the merged body), serialize `pieces` additively in `ToolBodyDto` (omitted when a body has at most one piece with no CSYS metadata), support rigid frame mating between ISO 13399 STEP coordinate systems (`MCS` <-> `CSW*`, or explicit parent/child CSYS names) alongside `spindle` / `lathe` piece placement via `attach_piece` / `remove_piece`, expose `attach_tool_body_piece` and `remove_tool_body_piece` MCP tools plus a Modular Assembly section in the Tool Editor, and refuse ambiguous or missing CSYS names by name rather than guessing.
+- **Why:** Keeping `facets` as the merged assembly preserves every existing collision check, spun-profile calculation, renderer, and fixture with zero runtime traversal overhead, while storing per-piece facet counts, labels, and transformed STEP CSYS entries makes piece attachment, removal, inspection, and undo deterministic without altering single-piece `.camproj` or `.camtools` serialization.
+- **What was considered and dropped:**
+  - *Evaluating separate runtime facet arrays per piece in simulation and rendering*: dropped because merging facets on rebuild avoids touching collision/rendering hot paths and guarantees the saved STL-backed body matches what simulation judges.
+  - *Silently picking the first `MCS`/`CSW` frame when multiple mating ports exist*: dropped because guessing masks mis-oriented assemblies; explicit refusal names the candidate frames instead.
+  - *Automatic STEP mesh enlargement (`#1041`) or single-holder `CIP` lathe auto-align (`#1039`)*: kept out of scope for `#361` so multi-piece assembly ships without altering unrelated import tolerances or single-holder workflows.
+- **Cost to change later:** Low. `BodyPiece` metadata sits behind an optional `pieces` field on `ToolBodyDto` with facet-count validation on load, so changing how pieces are stored or split later requires only updating `tool_body_assembly.rs` and `tool_body_wire.rs`.
+
+### PR #1744 review fixes
+
+- **What was decided:** Require the saved pieces' concatenated facets to equal the validated combined mesh exactly, in order. Add an editor target-piece selector that passes the chosen piece index to mating while keeping `None` as “Auto (all pieces)”.
+- **Why:** Attachment and removal rebuild from the pieces, so count-only validation could accept coordinates that later shrink the collision envelope. Exact equality matches the existing concatenation used when saving and rebuilding. Selecting a piece disambiguates repeated CSYS names in three-piece assemblies without changing automatic mating for unambiguous assemblies.
+- **What was considered and dropped:** Tolerant coordinate comparison could permit a smaller collision envelope; canonicalizing or discarding either saved mesh would silently repair inconsistent geometry instead of refusing it. Always selecting the first piece would hide ambiguous mounts and remove the existing automatic search.
+- **Cost to change later:** Low. Validation stays in the shared project/tool-library DTO loader; target selection is ephemeral editor state passed to the existing undoable attachment command.
+
+### PR #1744 reapply review fix
+
+- **What was decided:** Retain all piece records in the editor draft. Apply the same placement to every piece mesh and its coordinate systems, then validate the combined geometry and tool fit through `SetToolBody` before recording the command.
+- **Why:** Applying an unchanged assembly must preserve each piece's identity and mating frames. Changing placement must move those frames with the geometry so adapters remain removable and selectable as mating targets.
+- **What was considered and dropped:** Flattening the assembly into one piece loses its separate records and adapter coordinate systems. Cloning the landed assembly only for unchanged Apply would leave placement changes destructive and would not move all piece geometry and frames together.
+- **Cost to change later:** Low. Piece retention belongs to the ephemeral draft, and placement and validation stay behind the existing undoable body command.
+
+## #417 - G76 output states the passes that were verified
+
+- **Chosen:** the thread-cycle record states the laid passes in the
+  cycle's own terms. With `G76Cycle` the two blocks
+  `G76 P(m)(r)(a) Q(dmin) R(d)` / `G76 X Z P(k) Q(dd) F` describe the
+  same passes the kernel laid and the verdict judged:
+  - dd = the first pass's depth;
+  - dmin = the rung (constant depth) or the plan's minimum (constant area);
+  - d = the finishing pass's own depth;
+  - m = 1 + spring passes;
+  - a = twice the flank angle.
+
+  Anything the cycle cannot state is refused by name in the post:
+  - alternating flank infeed (a new `alternating` flag on the record);
+  - a flank angle whose double is not 0/29/30/55/60/80 (the existing
+    check; a 29.5° modified flank is a=59 and refused);
+  - a one-pass thread (d would equal k).
+- **The control's schedule, as modelled** (GSK988TA manual G76,
+  Fanuc-compatible; LinuxCNC G76 for the flank sign):
+  - roughing pass n reaches `max(dd·√n, previous + dmin)`, up to `k - d`;
+  - the first finishing pass cuts d to k, and m - 1 more repeat k;
+  - with a ≠ 0, each pass starts `depth·tan(a/2)` along Z from the
+    start point.
+
+  The clamp reading follows the manual's definition of Q(Δdmin) as the
+  *minimum cutting travel* of a pass. Its OCR'd formula can be read as
+  clamping against the unclamped previous depth, but then a pass could
+  travel less than dmin, which contradicts that definition.
+  `lathe_post_g76_schedule` computes this schedule from the posted words
+  and checks it against the laid passes' depths and stations to within
+  1 µm, for a constant-area flank thread (new golden `thread_g76_area.nc`)
+  and for the default thread.
+- **The existing mismatch, and the honest fix (golden changed):** the
+  research comment on #363 said the control cut a decreasing ladder
+  because we posted `Q = infeed` as the first depth. That is not what
+  happens: dmin was also posted as the infeed, so the clamp makes every
+  step the rung, and the control's roughing matched ours. The real
+  mismatch was `R0`. With d = 0 the control roughs all the way to k
+  (0.4, 0.8, 1.2) and then cuts its finishing pass at k again, which is a
+  fourth pass at the root that the verdict never judged. It is not a
+  gouge, because it is the same root, but it is not what was verified.
+  The fix: R states the finishing pass's own depth, the last rung's 0.4.
+  The control then roughs 0.4 and 0.8 and finishes at 1.2, the three
+  passes verified. `thread_g76.nc` changes from `G76 P010000 Q400 R0` to
+  `... R0.4`, and nothing else in it changes. The G32 output and the
+  laid passes are unchanged (the #416 default stays byte-identical).
+  The motion `turning_thread_cycle` test now pins `finish_allowance`
+  0.4 instead of 0.
+- **Why not the other way round** (add a root pass so R0 is honest):
+  that would change the default G32 output and every pass the verdict
+  judges, which #416 promised not to do, and it would add a spring pass
+  nobody asked for.
+- **A flank record starts at the crest's flank station** (from #416):
+  the posted `G00 X Z` start is `c_first - k·tan(θ)`, so the control's
+  pass n (at `start + depth_n·tan(a/2)`) lands where the kernel laid it,
+  and the finishing pass lands on the lattice.
+- **Not verifiable from the sources read; open for a Fanuc control run**
+  (corrected after the full review of head be4546ca, 2026-11-15; an
+  earlier text of this entry called items 1 and 2 harmless, which the
+  sources do not show). In the list, k is the thread height and a the
+  tool angle of the first block (twice the flank angle).
+  1. **Z-shift sign, and which pass sits at the programmed Z.** We follow
+     LinuxCNC's "positive angle, leading edge cuts more heavily": deeper
+     passes move in the direction of travel, and the post sets the start
+     Z to `c_first - k·tan(a/2)` so that pass n starts at
+     `start + depth_n·tan(a/2)`. If the control shifts the other way, or
+     if its finishing pass sits at the programmed start Z (the reading of
+     some Fanuc figures), the whole thread moves axially by
+     `k·tan(a/2)` to `2k·tan(a/2)` (0.6 to 1.25 mm for the
+     `thread_g76_area.nc` golden on a 2 mm lead). That is a cut in the
+     wrong place, not a profile detail.
+  2. **End-Z shift.** If the control also shifts the end of each pass by
+     `depth·tan(a/2)`, the root pass ends `k·tan(a/2)` past the
+     programmed end Z. Where the thread ends at a shoulder, that can cut
+     into the shoulder. If the end is fixed, early passes end up to
+     `k·tan(a/2)` off at the runout, shallower than the root.
+  3. **Minimum-depth clamp reading.** We read Q(dmin) as a per-pass
+     minimum against the previous clamped depth (see above). A different
+     reading changes the pass count or the per-pass depth only, never the
+     root. It can give fewer, deeper passes than verified (the tool load
+     is not judged). Equal-depth ladders (the default) are not affected.
+  4. **Rounding.** Words are whole least increments (0.001 mm,
+     0.0001 in). The pass count is fixed by construction (the
+     rounded-ladder R below, refused beyond one increment). Single rungs
+     of a long sqrt ladder can still differ from the laid ones by a few
+     increments. That is not a gouge.
+
+  Items 1 and 2 affect flank threads only (a ≠ 0). The default radial
+  thread (a = 0, the posted default) has no Z shift, so a wrong reading
+  of items 1 and 2 does not change it. Main already carries the risk of
+  items 1 and 2 for flank threads (#416 posts the angle and the start);
+  this PR does not add it. Items 1 and 2 stay unproven until a run on a
+  Fanuc lathe control (or its vendor's simulator). The PathPilot Hub
+  simulation cannot check them: its lathe is LinuxCNC's one-block
+  `G76 P.. J.. K..`, not Fanuc's two-block G76. Items 3 and 4 need the
+  same run for proof, but a wrong reading of them does not move the cut.
+  The follow-up issue for the Fanuc run is named in the PR body.
+  At the boundary, the chosen R puts the last rough depth exactly on a
+  rung (in mm too). A control that tests "reached" in a different way
+  could repeat that rung: at most one pass at a depth already verified.
+- **Record plumbing:** `ThreadCycle.alternating` and `ThreadRec.alternating`.
+  The stream line writes `ALT 1` only when set (absent reads 0), so
+  every earlier stream keeps its bytes. The post property is
+  `Alternating`. The project cache key is written only when set, so no
+  version step. With G76 chosen, an alternating thread now carries a
+  record and is refused by name, instead of meeting "no thread cycle
+  record".
+- **Cost to change later:** a dialect with an alternating cycle (Haas
+  one-block G76 P2/P4, a LinuxCNC post) reads the same flag. Changing
+  the clamp reading is a one-line change in `infeed::area_rungs` and in
+  the test's model.
+- **The Tormach (LinuxCNC) G76 reads the new finish allowance too**
+  (merge with main's #612, 2026-11-13). Main's PathPilot lathe post
+  refused any non-zero `FinishAllowance`, which was right while the
+  field meant an extra allowance (0 on every radial ladder). Under this
+  PR the field is the finishing pass's own step, never 0, so every G76
+  would have been refused. Chosen: LinuxCNC's `R1` ladder (J, 2J, ...
+  clamped at K) has no finish word, but its finishing pass takes the
+  ladder's own last step, `K - (ceil(K/J) - 1)·J`; a record whose
+  finish allowance is that step (within a micron) posts, any other is
+  refused by name, and an alternating record is refused by name.
+  Dropped: dropping the check (a stated allowance the control cannot cut
+  would pass silently), or posting R with another degression (changes
+  the passes the verdict judged). Pinned by
+  `lathe_post_tormach_thread::g76_takes_the_record_whose_finishing_step_is_the_ladders_own`
+  and the alternating case in `a_g76_record_the_cycle_cannot_state_exactly_is_refused_by_name`.
+- **TH1 Stale after a save/load is a main defect** (not this PR's data):
+  the save snaps every move to the 1 um lattice, the in-memory path
+  signature hashes the unsnapped moves, so an off-lattice predecessor's
+  signature moves across a round trip and every op behind it reads
+  Stale. Reproduced on upstream/main with a 12 TPI radial thread;
+  reported to be filed on its own, not patched here. The infeed pin now
+  also asserts `rest::prior_digest` is equal before the save and after
+  the load.
+- **R comes from the rounded words' own ladder** (M3's review of head
+  49d0a3c2, 2026-11-13). Each G76 word rounds to the least increment on
+  its own, and the control works on the words: under G20 the default
+  thread's `Q157 P472 R0.0157` put k - d = 0.0315 one increment past
+  the second rung 0.0314, so the control cut a fourth, unverified pass.
+  Chosen: count the record's rough passes N from its own (mm) ladder,
+  rebuild rungs N-1 and N from the rounded Q/Q/P, and write the R whose
+  last rough depth P - R lies in (rung N-1, rung N] nearest the record's
+  allowance - exactly N rough passes by construction (inch golden:
+  R0.0158). More than one least increment from the record's allowance is
+  refused by name, naming the Q/Q/P words and the window. Dropped:
+  re-rounding R alone with ceil/floor (fixes this golden, not a ladder
+  whose sqrt rungs drift); a tolerance wider than one increment (would
+  let a visibly different finishing depth post); checking every rung's
+  depth against the laid one (long sqrt ladders drift by a few
+  increments with no extra pass, and would refuse legitimate threads).
+  The Tormach (LinuxCNC) G76 has the same class of gap in J/K (inch
+  default `J0.0314 K0.0944` gives ceil(K/J) = 4 passes for a 3-pass
+  record); left out of this PR because its goldens must stay
+  byte-identical to the Hub-run files, and filed on its own.
+- **Takeover check of the R word** (owner account, 2026-11-15, on the
+  maintainer's order to clear the stack). Main's inch work (#902/#977)
+  pinned the inch golden at `R0`. That pin is replaced, not kept, on
+  evidence:
+  - The published Fanuc 0i-TD operator manual and Fanuc-compatible
+    lathe programming references define the first-block `R(d)` of the
+    two-block G76 as the finishing allowance: a radius length in the
+    program unit, written with a decimal point. The second-block
+    `P(k)`, `Q(dd)` and the first-block `Q(dmin)` are in least
+    increments with no decimal point (0.0001 in for IS-B under G20).
+    The post's header already states this unit law.
+  - The value comes from the record's `finish_allowance` (the laid
+    finishing pass, a user parameter through the infeed plan), never
+    from a constant. In inch it is the record's allowance in 0.0001 in,
+    moved by at most one increment so the rounded words cut the
+    verified pass count (0.4 mm = 0.015748 in posts `R0.0158`, not
+    `R0.0157`: the control cuts 0.0157 / 0.0314 / 0.0472). More than
+    one increment is refused by name.
+  - Dialects checked: only `fanuc-lathe.cps` writes a two-block G76 R.
+    `tormach-lathe.cps` writes LinuxCNC's one-block G76 with no finish
+    word (its R is the degression, `R1`), and only takes a record whose
+    finish step is its ladder's own. `tormach-plasma.cps` writes no
+    canned cycle. No other post writes G76.
+  - Chosen: keep `R0.0158` and its pins. Dropped: main's `R0` (one
+    unverified root pass) and the plain conversion `R0.0157` (one
+    unverified 0.0001 in pass).
+- **A project cached before this PR posts `R0`** (M3's non-blocking
+  question). The stale stamp hashes inputs only, so such an op reads
+  Fresh. Its cached record has `finish_allowance` 0, and the new post
+  writes `R0` for it: the same output as main before this PR, not a
+  new wrong word. Chosen: accept, and say so in the PR body. Dropped:
+  a generator version in the stamp (a project-wide change to every
+  cached op, outside this PR). Cost to change later: a stamp field.
+
+## #418 - threading: repeat each roughing depth ("spring at each depth")
+
+- **Chosen:** a bool on the infeed plan, `ThreadInfeed.repeat_each_depth`
+  (default off). When on, `ThreadInfeed::passes` follows every pass that
+  stands above the root with an identical copy of itself, so each
+  roughing depth is cut twice before the next one. Dropped: a count
+  (2, 3, ... cuts per depth). The issue asks for "twice", and nothing in
+  the research asks for more. If a count is ever needed, the bool
+  becomes a `u32` with a DTO default of 1, and the absent key still
+  reads as off.
+- **The repeat is the same pass, so it cannot gouge.** It is pushed as
+  the same `Pass { tip, shift }`, and the kernel lays it from the same
+  lattice start (`c_first + shift`) with the same lead, so the repeat
+  has the same tip, the same station and the same helix phase. Its
+  moves are identical to the first cut's
+  (`a_repeat_is_the_same_pass_on_every_method_and_the_judge_stays_silent`
+  compares the move spans for every method and schedule). The verdict
+  judges the laid passes, the repeats included, and stays silent.
+- **Alternating infeed counts depths, not cuts.** The side flips once per
+  depth, so a repeated depth keeps its side. If the flip counted cuts,
+  the "repeat" would cut the other flank, which would make it a
+  different pass.
+- **What gets repeated:** every pass whose tip is above the root
+  (`tip > root + HAIR`). The finishing pass and the spring passes at
+  the root are not repeated: those passes already exist as spring
+  passes and have their own count. With no finish allowance, the last
+  rung is the root, so it is the finishing pass and is cut once
+  (0.4, 0.4, 0.8, 0.8, 1.2).
+- **G76 refuses by name.** A one-block cycle cuts each depth once, so
+  the record carries a `repeat_each_depth` flag. This follows #417's
+  `alternating` precedent: the stream writes `REP 1` only when the flag
+  is set, the post property is `RepeatEachDepth`, and the project cache
+  key is written only when set. `fanuc-lathe.cps` refuses
+  "repeat each roughing depth is not a G76 cycle". The kernel does not
+  refuse, because the G32 / G76 choice is a document post option, not
+  an op parameter. The refusal therefore happens where that choice is
+  known, the same way alternating infeed is refused.
+- **The Tormach PathPilot lathe G76 refuses it too (takeover,
+  2026-11-15).** Main's #612 added `tormach-lathe.cps` with a one-block
+  LinuxCNC G76 after this PR was written. Its `g76Why` did not read
+  `RepeatEachDepth`, so a repeat plan with G76 chosen posted a cycle
+  that cuts each depth once: not the passes that were verified.
+  - Chosen: refuse by name ("repeat each roughing depth - LinuxCNC's
+    G76 cuts each depth once"), the same rule as Fanuc and as
+    alternating infeed. Pinned by a new case in
+    `lathe_post_tormach_thread::a_g76_record_the_cycle_cannot_state_exactly_is_refused_by_name`.
+  - Dropped: post the G76 and ignore the repeat. The program then
+    differs from the verified passes (#417's law), so it is not an
+    option. G33 passes still post the repeat.
+- **Defaults are byte-identical.** With the default off:
+  - the kernel lays the same passes;
+  - the stamp writes no extra byte (one byte, `0xD5`, only when the
+    flag is set, inside the non-default branch);
+  - the project's `infeed_plan` key and the record key are absent;
+  - the stream writes no `REP` word.
+
+  No golden changed. A #416 file with a non-default plan and no
+  `repeat_each_depth` key loads with the repeat off (serde default).
+- **UI:** one checkbox row, "Repeat each depth", on the Passes tab
+  after "Spring passes". Its tooltip says G32 only, says G76 refuses
+  it, and notes that tooling makers recommend against routine spring
+  passes.
+- **Cost to change later:** one field in the plan and in its DTO, one
+  flag on the record. A dialect with a per-depth repeat would read the
+  same flag. No public cycle we read has one.
+
+## #763 - OpFrame Phase 2: route feature picks through setup alignment
+
+Chosen: add `OpFrame::pose_in_setup` (delegating to `setup_align::pose_in`), route `selection_geometry_in` (`selection.rs`), `stitch_open_runs` (`stitch.rs`), `stitched_rings` (`picks.rs`, reading `setup::active`), and `current_stamp`'s `SrcRef::Selection` arm (`stamp.rs`) through the setup-aligned pose and `OpFrame::furniture_facets` (for stock envelope). Lift only the `SrcRef::Selection(_)` refusal in `setup_align::generation_problem`, leaving `Tilt x picks`, unverified op kinds, non-Mill machines, and area controls (`!op.area.is_default()`) refused by name.
+
+Why: `heights_sel`, `material`, `area::pocket_ladder`, `keep_law`, and the UI/picking helpers (`setup_align::view_pose`) already resolved parts in the setup frame `S` and furniture in `S`; only the 2D selection walk, edge stitching, and selection stamp still read raw document transforms. Routing them through `OpFrame` keeps one owner for frame transforms, lets the four verified kinds (`Face`, `Contour`, `Pocket`, `Adaptive2D`) machine picked features in aligned setups, and preserves byte-identical behavior in unaligned setups (`alignment` is `None`).
+
+Dropped: allowing `Tilt x picks` or `area` picks in aligned setups in this slice (those stay for Phases 3 and 4 once tilted selection projection and `boundary_ctx` picks compose cleanly through `OpFrame::pose_in_local` / `to_local`), and routing unverified multi-axis `drive_chains` (`MultiAxisContour`) without its own alignment verification.
+
+Cost to change later: low. Extending Phase 3 (`Tilt x picks`) or Phase 4 (`area` picks) builds directly on `OpFrame::pose_in_setup` and `stitch_open_runs`'s `setup` argument without changing any Phase 2 signature.
+
+## #874 - Carry machined stock into a setup turned side-on
+
+**What was decided.** The stock one setup leaves is carried through the
+sixteen side-on quarter turns (the old X or Y on the new tool axis) by a
+conservative read of the column body (`Body::carry_side`,
+`crates/sim/src/stock_sim/carry_side.rs`). The eight lattice turns keep
+their exact re-index. Every turn off the quarter turns keeps the named
+refusal (`CARRY_TURN_REFUSAL`), with shorter words.
+
+The read, per new column:
+
+- The level axis that stays level is re-indexed, centre onto centre.
+- The old heights become a level axis in slabs of one cell. The slabs are
+  centred on the old Z range. An old column feeds every slab that its span
+  reaches into. A face inside a slab counts the slab whole.
+- The old level axis becomes the height. The new top and floor are the
+  hull of the old column centres that hold material in the slab. Each end
+  moves out to the next old centre that holds no material there, or to the
+  lattice edge. A cavity between the ends is filled.
+
+The carried body is never smaller than the body the columns hold. It is at
+most one grid cell larger on a turned face. The raw faces of a box stock at
+the lattice edge are read exactly.
+
+**A gouge cut before the turn is kept.** The hull can hide a gouge that an
+earlier setup cut (a face cut too deep becomes a wall that the new tool axis
+does not see). The program walk judges the body before a side-on turn and
+folds those gouges into the final verdict, the same fold a block left for a
+new block gets (#320). A gouge that both verdicts see is counted in both.
+
+**The floor is not judged after a side-on turn.** The new floor is a face
+the earlier setup held level, known to one cell. The gouges of the earlier
+setup are already kept by the fold above. A later flip sets the flag again.
+
+**The verdict says so.** The gate's note line names the first side-on carry
+and what the verdict reads (`side_on_note`).
+
+**The field engine refuses a side-on turn by name**
+(`FIELD_SIDE_CARRY_REFUSAL`). Its column read assumes the cuts came along
+the tool axis. The shipped engine is the column engine.
+
+**Why.** The maintainer's rule on the issue: "a re-sample that never leaves
+the carried stock smaller than the real one, so rest machining cannot run
+into uncut material". A setup that stands the part on its side is the
+ordinary second setup. The refusal blocked it.
+
+**Considered and dropped.**
+
+- An exact carry on the field engine (re-index the 3-D bricks, read the
+  columns along the new axis). It is exact to the field's own resolution,
+  but the cut records (`cut_ups`, `cut_downs`) and the column read
+  (`column_span`) assume cuts along Z. It is a new read law for the field
+  engine, and the field engine does not ship (#589). A follow-up issue
+  tracks it.
+- The cell edge as the turned face (the middle estimate). It can be half a
+  cell short of a wall the tool flank cut. Rejected: the stock must never
+  be smaller than the real one.
+- Sampling the old heights at slab centres only. It can drop up to half a
+  cell at a faced face, and a plate thinner than a cell. Rejected for the
+  same reason. The centred slabs keep both end centres inside the range, so
+  a fixture at an end face meets no column centre outside the real stock.
+- Crediting the earlier setup's edge breaks and marks in the verdict taken
+  before the turn. The fold for a new block (#320) does not credit them
+  either. A follow-up issue tracks both.
+
+**Known limits (stated, not hidden).**
+
+- A wall the tool flank cut, or a step, is read up to one cell outside the
+  real face after the turn. The verdict can show rest of up to one cell on a
+  finished face. The carried-fixture law (#321) can refuse a fixture that
+  touches such a face. The workaround is the setup's own stock.
+- A cavity seen from the side (a pocket of the earlier setup) is filled.
+  Rest machining in the turned setup can cut air there. It never meets
+  uncut material.
+- Rest that the earlier setup left is not carried into the final verdict's
+  rest numbers when the turn hides it. Gouges are.
+
+**Cost to change later.** The exact field carry replaces `carry_side`
+behind `CarriedStock::carry_through`; the app callers hold a `CarryTurn`
+and do not change. The digest text of a lattice turn is unchanged (the
+`Debug` of `CarryTurn` prints the inner turn), so no shipped stamp moves.
+
+## #1053 - Cross drill judged on reduced-fidelity models
+
+**What was decided.** Remove cross drill from `fidelity_law::excess_aware`'s
+refused list and propagate `material.excess` through every construction
+and verification law in the cross-drill chain:
+
+- `fidelity_law::band_growth(excess)` (`(GOUGE_TOL - tightened(GOUGE_TOL, excess)).max(0.0)`)
+  gives the outward standoff growth while `GOUGE_TOL` stays positive and
+  returns `0.0` once past it, where the program gate refuses by name.
+- `cross_stock::standoff` grows measured `r`, `raw`, and `z_max` by `band_growth(excess)`.
+- `cross_entry::tube_max`, `entry_grown`, and `tube_reach` offset each
+  facet's sagitta slab along its normal by `s + grow` (matching a convex
+  Minkowski allowance for chord uncertainty on both flat faces and curved bar
+  sections).
+- `drill_reach::cross_reach` adds `part_grow` (`st.grow` when `st.raw` is
+  `None`, `0.0` when `to_raw_mouths` already shifted mouths via `entry_grown`).
+- `drill_station::material` and `drill_reach::cross_holder_excess` grow
+  `raw`, station slabs, and swing Z-band / radius checks by `band_growth(excess)`.
+- `cross_part::part_clear` and `neighbours_clear` (both in `cross_spindle`
+  and `kept_rejudge`) tighten `SolidLaw::allow` via `tightened(GOUGE_TOL, excess)`.
+- `camcraft_sim::verify::rapids_radial::radial_rapids` grows `top` by
+  `cx.band_growth()` and tightens `disc` using `cx.tightened(...)`.
+
+**Why.** Every construction law that proves a cross drill clear against
+measured part/stock geometry previously read coarse facets directly with no
+tolerance slack. Using `band_growth(excess)` ensures coarse-model standoffs
+grow smoothly when `0 < excess < GOUGE_TOL`, do not blow up on pre-v59
+`UNKNOWN_MM` or past-bound models (since the gate refuses them), and keep
+full-fidelity output bit-for-bit unchanged (`0.0`). Expanding facet slabs along
+normals in `cross_entry::tube_max` rather than adding `grow` only at the end
+catches both outward entry shifts and transverse wall/flange clearances on a
+station move without double-counting when `to_raw_mouths` shifts hole depths.
+
+**Considered and dropped.**
+- Using raw `excess` instead of `band_growth(excess)`: unsafe when `excess` is
+  `UNKNOWN_MM` (`1e12`) or past the floor bound because station standoffs would
+  expand wildly even though verification is supposed to fall back to
+  untightened values behind the gate refusal.
+- Adding `grow` in both `to_raw_mouths` and `cross_reach`: would double-count
+  `excess` on raw-stock cross holes.
+
+**Cost to change later.** Low: `band_growth` lives in one helper in
+`fidelity_law.rs`, and `excess` is explicitly passed through the cross-drill
+entry points.
+
+## #1119 - Accessible names for Machine editor, pane, and page inputs (slice 2)
+
+- **What was decided:** Added `fields::num_named`, `fields::num_feed_named`, and `fields::num_plain_named` (sharing `fields::plain_drag` and `fields::num_sized`) and named every `ComboBox`, `TextEdit`, and `DragValue` across `machine_editor.rs`, `machine_edm.rs`, `machine_edm_editor.rs`, `machine_page.rs`, and `machines_pane.rs` via `fields::named` / `fields::num*_named`, using distinct descriptive names rather than reusing existing visible label IDs where a checkbox or `get_by_label` structural test already owns the label.
+- **Why:** Inline machine editor fields sit beside shared row punctuation (`..`, `mm`, `min`, `max`), checkboxes whose AccessKit labels must stay unique for `kittest::get_by_label` (`"Max orbit radius"`, `"Condition 1 gap"`), or `prop_grid` labels asserted unique by existing layout tests (`"Library"`). Setting distinct descriptive AccessKit labels gives screen readers unambiguous context without duplicating visible labels or disturbing layout/test queries.
+- **Considered and dropped:**
+  - Linking controls to existing labels with `.labelled_by(...)` on `"Library"`, `"Kind"`, or checkbox text: would make `query_by_label` / `query_all_by_label` return two AccessKit nodes and break existing layout and Sinker EDM tests.
+  - Modifying global `pages::num` / `pages::prop_row` / `pages::combo`: would sweep unrelated op-page families where open PRs overlap (`#518`, `#1711`, `#1639`); kept to Slice 2 (the Machine UI family) as specified in `#1119`.
+- **Cost to change later:** Low and mechanical — each site is a one-line `fields::named` / `fields::num*_named` call that can be swapped to `num_by` if a future layout gives each field its own label.
+
+## #1122 - UI form seam: holes family (`holes_page.rs`, `thread_page.rs`)
+
+- **What was decided:**
+  1. Extended the form seam with `layout/controls.rs` (`button`, `small_button`, `list_row`, `radio_value`, `radio_pair`), re-exported through `layout/mod.rs` and `fields.rs`, and added `fields::int_range_row` (which wires `labelled_by` from `row_label_id`).
+  2. Migrated the `holes` page family (`holes_page.rs` and `thread_page.rs`, covering Drill, Bore, and Thread) to draw exclusively through those form-seam helpers, factoring out the duplicated Drill/Bore axial hole loop into `axial_hole_rows`.
+  3. Added `layout/form_seam_tests.rs` to pin zero raw `ui.button`/`small_button`/`checkbox`/`label`/`add`/`add_enabled`/`add_sized`/`radio_value` calls in migrated families (`holes` = 0) and cap the other six unmigrated families at their current baselines so new raw calls fail the guard.
+
+- **Why:**
+  - `layout/form.rs` is already 387 lines (near the 400-line file-size limit), so placing the new basic controls in a dedicated `layout/controls.rs` module keeps `form.rs` under 400 lines while keeping `super::layout::*` and `super::fields::*` as the single import seam.
+  - Putting `int_range_row` in `fields.rs` alongside `num_row` and `num_plain_row` automatically binds AccessKit `labelled_by` to the enclosing `prop_row` label without visual changes.
+  - Migrating one page family (`holes`, zero open PR overlaps) first keeps the PR small, reviewable, and free of merge conflicts with open UI PRs.
+
+- **What was considered and dropped:**
+  - Appending the new helpers directly to `layout/form.rs` (dropped to stay below the ~400-line file-size limit).
+  - Migrating all 7 page families in one PR (dropped per #1122's explicit "one PR per page family" split).
+
+- **What it would cost to change later:**
+  - Trivial: `layout/controls.rs` functions are thin `pub` wrappers under `layout/` and can be backed by any kit widget (or merged/split) without touching page callers.
+
+### PR #1724 review fixes
+
+- **Chosen:** Merge current main and update the tools-and-machine raw-call cap
+  from 202 to its merged baseline of 204, and the multi-axis cap from 9 to
+  its merged baseline of 16. Keep the holes-family zero-call guard
+  and all other family caps. This fixes the reported merge failure without
+  weakening unrelated existing guards; dropping those guards or adding arbitrary
+  slack was considered and rejected.
+- **Chosen then:** Retain the review evidence for
+  [PR #1724](https://github.com/NeoTech/Camcraft/pull/1724), matching existing
+  review evidence from [PR #1756](https://github.com/NeoTech/Camcraft/pull/1756),
+  [PR #1765](https://github.com/NeoTech/Camcraft/pull/1765) and
+  [PR #1711](https://github.com/NeoTech/Camcraft/pull/1711).
+  The PR description already embedded all six images. The decision kept
+  their capture provenance and link-validation script beside them.
+  Issue #1845 supersedes this choice. Git history preserves that evidence.
+
+### PR #1724 latest review: scope the guard to migrated pages
+
+- **Chosen:** Keep the hard zero-call limit for the holes family only. Remove
+  the unrelated family baselines, and pin the guard's scope to holes_page.rs
+  and thread_page.rs. This supersedes the earlier choice to retain all caps.
+- **Why:** Main's wire-page additions exceeded the multi-axis cap again.
+  Unmigrated page work must not block this holes-only migration.
+- **Considered and dropped:** Raising the multi-axis cap to 18 or adding
+  arbitrary slack would only postpone the same failure after future changes.
+
+## #1148 - Edit Wire Contour passes and slug retention on the operation page
+
+**What was decided.** The Wire Contour Passes tab edits the ordered skim
+list, each skim's machine condition and reverse flag, the holding tabs and
+the captured-piece declaration. The list supports add, remove and reorder.
+Tab count and width remain explicitly stated optional values; positions
+and the cut-off condition have their own controls. Every field edits the
+existing operation draft. Apply sends `EditOperationParams`, so an edit
+lands as one undoable command.
+
+**Why.** These parameters already exist in the project file and command
+door. The operation page must expose the same choices without inventing a
+second validation path. Condition choices come from the mounted machine.
+An unknown condition ID stays visible until the user changes it, allowing
+the existing command refusal to name it. This work changes no generator
+or validation rule.
+
+**Considered and dropped.** Direct world writes would bypass command
+validation and undo. Guessing a machine condition, tab count or tab width
+would turn an unstated machining choice into an apparent user decision.
+A new command would duplicate `EditOperationParams` without adding a new
+operation or undo boundary. All three alternatives were dropped in favour
+of the existing draft and Apply workflow.
+
+**Cost to change later.** Control arrangement or editing behaviour can
+change in the wire page's UI helpers. The stored parameter shape, command
+door and generator need no migration for such a change.
+
+**Review evidence (#1765).** Capture the actual egui operation page before
+and after the change with the same populated wire draft. Store these review
+images outside release snapshot goldens and link them from the PR body at
+the pushed commit. This gives the reviewer stable visual evidence without
+refreshing release snapshots or adding production behavior. A small PNG and
+Markdown-reference pin detects missing, corrupt, or duplicated evidence.
+
+## #1152 - Sinker EDM: stock sim atom and tool record for a non-rectangular electrode body
+
+**Decided:**
+- **A second atom, beside the box atom.** `stock_sim::simulate_outline` (`crates/sim/src/stock_sim/dexel_outline.rs`) burns a closed outline extruded along Z, grown by the spark gap, swept along straight chords through the column grid. The box atom (`simulate_box`, #541) is unchanged: a rectangular electrode still burns with it, so no existing verdict moves. A record with an outline burns with the outline atom, a record without one with the box atom.
+- **The atom is exact at each column centre, not sampled.** The section grown by the gap is the polygon's inside joined with a stadium on each edge (the Minkowski sum of a polygon and a disc). A stadium is convex, so a straight chord meets it in one interval, found in closed form (a quadratic for each end disc, two linear windows for the strip). The face height is linear along the chord, so its lowest value over the covered set is at the set's first or last parameter. The first is 0 when the centre starts inside the section, else the least start of an edge interval: a centre can only come inside across an edge. A sampled oracle with an independent distance and inside rule bounds the atom from both sides in `crates/sim/tests/stock_outline.rs`.
+- **The gap is round.** The outline atom grows the section by a disc, so an outer corner of the burn has the gap's radius. The box atom grows a rectangle by a square. The two agree column for column at gap 0; with a gap the outline atom never burns more than the box atom (pinned). The floor is the face lowered by the gap over the whole grown footprint, as the box atom does.
+- **Arcs are refused by name** (`OUTLINE_ARC_REFUSAL`), as under the box atom. A posed move, a non-finite move, a bad gap and an outline that is no section are refused before any column is lowered.
+- **The record: `Tool::outline`.** A list of `[x, y]` points in mm about the burn point; empty for a rectangular face. `diameter` and `width` stay the outline's X and Y extents and the outline is centred on the burn point (`camcraft_tools::electrode_outline::record_refusal`, 1 nm slack), so every reader of the two sizes reads the body's true bounds. The shape law (`shape_refusal`): 3 to 1024 points, finite and within 250 mm, no repeated point, a non-zero area, no fold-back, no two edges that meet. The sim calls the same law at its own door.
+- **1024 points is the bound.** The atom tests every edge against every column under the electrode, and the shape law is quadratic in the point count. A cavity whose offset has more points is refused by name.
+- **The record rides the existing seams.** `Tool::is_sane` and `Tool::torch_refusal` (the door `AddTool`, `ChangeTool`, the library reader and the MCP tools already call) read the outline law. The project file, the library file and the MCP `add_tool` / `edit_tool` definitions carry an `outline` key through `ToolDto`, written only when stated: additive, no version step. The tools crate's catalog reader (`deny_unknown_fields`) takes the key too. The operation stamp digests the outline's points, only for an electrode that states one, so no stored stamp moves.
+- **An older build reads a body electrode as its bounds.** It skips the unknown key and sees the rectangle of the two sizes. That rectangle contains the outline, so the old build burns more, never less: it can report a gouge that is not there, and it cannot hide one.
+- **`electrode_from_faces` yields a body electrode for every outline that is no axis-aligned rectangle** (`crates/motion/src/sinker_electrode_body.rs`). The `NON_RECTANGULAR` refusal is gone. The section is the same mitred inward offset (`Region::offset_sharp`) #547 computed. Each law the offset's answer must keep is a named refusal in `body_of`: no point outside the cavity or nearer its wall than the inset (10 nm slack), a least size, the point bound, the record's size bound, a length that stands above the cavity, and the tool record's own door. `ElectrodeBox` gains `body` and `ring` (the cavity's outline).
+- **The burn point of a body electrode is the centre of its section's bounds.** For a rectangle that is the cavity's centre, as before.
+- **A mitred offset is kept.** It is exact at a cavity's convex corners. At a reflex corner (the inside corner of an L) it stands further from the corner than the inset, so the electrode is smaller there and leaves stock; it never burns past the corner. A round join would put chords inside the true arc and stand nearer the corner than the inset.
+- **The obstruction check uses the cavity's outline as the column** for a body electrode (`standing_in_ring`): the facet's footprint is intersected with the outline shrunk by 0.1 um, and an upright facet's edges are cut at the column's boundary and judged at each piece's middle. The bounds of a rounded pocket or an L contain the part itself, so the #547 box column would refuse every such cavity. `standing_in` now returns a `Result`: a column that cannot be built is a refusal, never "clear".
+- **The size law of #543 judges an outline on its extents** (`Undersize::outline`). A section grown by gap plus orbit on every side is exactly that much wider per side on each axis, so the two burn clauses (never wider than the cavity; a finish burns the cavity's size) hold as they stand. The clause "the electrode is the one the condition calls for" holds one way only for an outline: its extent is never over `cavity - 2 x undersize`, and may be under it. An inward offset moves a sharp corner that is not square to the axes further than the undersize (a diamond's point moves `undersize / sin(half angle)`). The shape inside the extents is the stock sim's to judge.
+- **A finish of a cavity with sharp corners off the axes is refused as under size.** The extents the gap reaches fall short of the cavity's by more than the 1 um slack. That is true to the model: a round gap does not reach a sharp corner. A single pass has no size law and burns it.
+- **The tool page's draft carries the outline** (`ToolUi::outline`). An Apply of the page keeps the body; it does not turn it into the rectangle of its two sizes. A size edited on the page then leaves the outline, and the command refuses it by name. No page shows or edits the points.
+- **The field eye still refuses an electrode** (`ELECTRODE_FIELD_REFUSAL`), for a body as for a box. That stays #548's.
+- **MCP:** no new command, so no new tool. `electrode_from_faces` answers `electrode.shape` (`rectangle` or `outline`) and `electrode.outline`. `edit_tool` takes `"outline": []` to make a body electrode a rectangular face again. The camcraft-mcp skill's table is a process file and is not touched here.
+- **No new dependency between crates.** `camcraft-sim` already depends on `camcraft-tools`; the atom imports the outline law from it.
+
+**Why:** #290 D7 - the sinker is verified with the electrode as the tool solid. The verdict must burn the electrode's own section. The bounds of a rounded pocket's electrode burn its corners (a gouge the electrode never made), and a smaller shape hides one. The Prime Directive decides the rest: each input the atom cannot burn exactly at a column centre is refused by name.
+
+**Considered and dropped:**
+- One atom for both shapes (a rectangle as a four-point outline). The gap's corners would turn round under every existing rectangular burn and move pinned verdicts.
+- Sampling the sweep along the chord. A sample can miss the lowest face height between two steps: an under-burn that hides a gouge.
+- Round joins for the inward offset. The chords of the arc at a reflex corner stand nearer the corner than the inset.
+- Storing the cavity's outline on the Sinker Burn so the size law compares two outlines. It adds a parameter to the op, its file mirror, its MCP schema and its page. The extents plus the sim's verdict state the same law without it. Filed as #1810.
+- Keeping the per-axis equality for an outline. It refuses the correct rough electrode of every cavity with a sharp corner off the axes.
+- A file version step for the `outline` key. An older build's reading is the conservative one (the bounds), and every earlier additive tool key took no step.
+- Refusing an outline on a tool of another kind. An inert field on a retyped tool is carried, as every other kind-scoped field is.
+- Accepting a welded (curved) wall pick, a drafted wall or a stepped floor. A curved wall needs the patch's boundary read (#1808); the other two need a body that is not a prism (#1809).
+
+**Cost to change later:** low for the atom and the record (one module each, behind `simulate_outline` and `Tool::outline`). Medium for the size law: a law on two outlines needs the cavity's outline on the op.
+
+**Not exercised:** a real EDM control (synthetic conditions and blocks built in code only); an orbit or a side burn of a body electrode end to end through an operation (the atom's lateral sweep is pinned in the sim crate against the oracle); the UI pages (no page generates, shows or edits an outline; #548 owns the sinker pages; only the tool draft's round trip is pinned).
+
+## #1164 - Wire EDM: taper by angle word (control-computed lean)
+
+#536 posted a constant taper as U/V moves and refused angle-word controls by not offering them: with an angle word the control decides the lean at corners and lead-ins, which the wire laws could not see. This adds the dialect with that decision stated as machine data.
+
+**Decided:**
+
+- **The dialect is machine data: `edm.taper_angle`, an object of two enumerated words with no default.** `positive` (`top_left` / `top_right`): the side of the direction of travel a positive angle word leans the wire's top toward. `corner` (`mitre` / `cone`): what the control cuts at a corner. Stating the object is stating the dialect: the post writes the angle word and no U/V. A garbled word refuses the file; an unstated one is refused by name at generation ("states no edm.taper_angle.corner (mitre or cone)"), never guessed. The angle code is `edm.codes.taper_angle`, a template with `{angle}`, beside the existing `taper_on` / `taper_off`; each missing code refuses by name. A machine stating neither `uv` nor `edm.taper_angle` is refused by name, and the refusal names both.
+- **The generator and the verify model the stated rule; the post writes only what the control reads.** `mitre`: the sides keep their planes and meet along the mitre - #536's path exactly (its CL golden byte for byte, pinned). `cone`: the wire pivots about each top-plane corner with its lean held at the angle, the lower end on an arc of radius `H tan(angle)`; the CL lays it as posed turning moves at most 2 degrees apart (each chord within `|d| (1 - cos 1 deg)`, 1.5e-4 of the lean offset - 0.1 um on the fixture) so the #534/#536 wire laws read it at every height like any lean. The post drops the turning moves (the control makes them) and writes each move's X Y on the programmed plane.
+- **The programmed plane is the work's top**, where the profile holds (#536) and the control pivots; the section's note says its Z (the control is set to it). The guides' U/V stroke check still runs on every pose, as the control still drives U/V.
+- **Lead-in and lead-out:** the post writes `taper_on` and the angle word before the lead-in and `taper_off` before the lead-out, and the path models the control ramping the lean linearly over each of those moves - #536's lead-in twist and upright lead-out. Under `cone`, a lead-in that meets a corner is refused by name (the corner's turn would be cut by no move); move the start hole.
+- **The word's sign is computed from the path:** the side the top leans relative to the travel on every side move, the same everywhere (else refused), signed by `positive`.
+- **4-axis (#537) on an angle-word machine is refused by name** at generation and at the post: one angle cannot state different upper and lower profiles.
+- **U/V machines are unchanged:** the stamp, CL and NC of every U/V cut are byte-identical (the #536 and #537 goldens pass unedited).
+
+**Considered and dropped:**
+
+- **An `arc` corner rule with a stated radius** (the control rounds the lean change over a radius). A third value is cheap to add later; two rules cover the pinned cases and each value added needs its own model and pin.
+- **A default corner rule.** Guessing what the control cuts is exactly the silent motion #536 refused.
+- **Refusing sharp corners under any angle-word taper.** Safe but needless once the rule is stated and modelled.
+- **XY on the lower guide plane, as the U/V post.** The control's corner rule acts on its programmed contour; the profile and the pivot are on the top plane.
+
+**Not exercised on a real EDM control (D10).** The fixture's codes and words are invented; a user fills `edm.taper_angle` and `edm.codes.taper_angle` from their manual and dry-runs before any cut.
+
+**Sources:** plane trigonometry (a cone's section; the textbook mitre), #290 D2/D5/D7/D10, #536's decision record. No vendor post, control manual or CAM product behaviour was consulted.
+
+**Cost to change later:** low - another corner value is one arm in `motion::wire_edm::taper` and one word in `post::machine::edm_taper`.
+
+## #1171 - Wire sync pairs picked in the viewport
+
+**Decided.** The pick is armed by a button on the Wire Contour page
+(Geometry tab, pairing by sync points). While it is armed, a vertex click
+states one sync point in the page draft. The first click of a pair is the
+upper point. The second click is the lower point and must lie below the
+upper one. A flat or higher second click is refused by name.
+
+**Why.** A vertex click already routes to the operation's geometry list.
+An explicit armed state keeps the two uses apart. The draft rides Apply
+(`EditOperationParams`), so undo works and no new command is needed. For
+that reason no `MCP:` follow-up is filed: an agent states the pairs with
+the existing parameter tool.
+
+**Considered and dropped.**
+- Always-on sync picking while a 4-axis op is open: it would steal the
+  clicks that select the two profiles.
+- A new command per pick: the draft already has Apply and undo.
+- Choosing upper and lower by profile membership: the page cannot know the
+  profiles before generation, so the Z order of the two vertices decides.
+
+**Cost to change.** Small. The pick lives in `crates/ui/src/wire_sync_pick.rs`.
+
+## #1172 - Wire EDM fan pairing and stitched profile refusals
+
+**Decided:** Sync pairs may hold a point of either profile while the other
+profile walks a stated span. The correspondence is weakly monotone in arc
+length. Sync pairs sharing a lower point keep their stated order. Pairs
+sharing an upper point follow their order along the lower ring. A crossed
+order is refused. A zero-length span keeps its apex on the profile plane.
+The existing fold, crossing, kerf and maximum-lean laws still judge the
+stated surface and the offset wire.
+
+A fan may straddle the cyclic profile seam. Once the upper endpoint has
+advanced, returning to its initial point ends the current turn rather
+than starting another. The pin
+`an_upper_apex_fan_can_wrap_the_lower_ring_seam` covers this case.
+
+Identical rulings remain invalid. Several anchors all at one point of
+either profile are also refused: the return span would ambiguously mean
+zero distance or a whole turn around that profile.
+
+Several picked open runs on the same plane receive a named refusal for a
+stitched profile. The user can pick a face or one closed edge chain.
+The reader does not infer a join between independent picks. This follows
+the issue's completion criterion allowing either a single profile or a
+named refusal.
+
+**Why:** A fan is an explicit cone over its stated span. Allowing a
+stationary endpoint preserves that form while retaining the safety laws
+that already judge ruled cuts. An explicit stitched-profile refusal is
+the smallest safe change without introducing a second joining policy.
+
+**Considered and dropped:** Removing duplicate-point checks without
+checking order would admit crossed or ambiguous correspondences. Guessing
+how separate runs join could connect unintended geometry. Inferring fan
+spans from nearby corners would change the surface without a stated sync
+pair.
+
+**Cost to change later:** Supporting stitched runs needs a planar joining
+policy with pins for gaps, branches, duplicates and disconnected rings.
+Changing fan ordering needs a stated representation for the span direction
+and must retain the cyclic-seam pin and existing wire laws.
+
+## #1250 - Add a path picture to each operation reference
+
+**Decided:** Give each of the 44 current `OpType` variants a schematic
+picture in its existing reference section. Keep the pictures in one SVG
+asset with a named view for each kind. Describe each picture in its image
+alternative text and SVG description. Keep the existing parameter and
+refusal reference text.
+
+**Why:** The earlier reference pages explain the operation families but
+have no pictures. A small schematic makes the path pattern visible next
+to the settings. The pictures come from CamCraft's operation descriptions
+and general machining knowledge. They use no vendor help text or images.
+The legend states that these are illustrations without scale, not generated
+NC paths. The change does not alter cutting settings or generation.
+
+**Considered and dropped:** App screenshots need model fixtures and can
+make the reference depend on a specific UI version. Generated NC previews
+would need a complete machine and tool setup for every family. Separate
+image files would repeat the common drawing styles. The named SVG views
+keep the diagrams together and let the coverage test check every kind.
+
+**Cost to change later:** Replace an individual diagram and its alternative
+text when the operation changes. If the operation enum gains a kind, add
+its reference section, picture view and coverage mapping. Replacing the
+schematics with generated previews can keep the same section locations.
+
+**Review correction:** Use `../../operation-paths.svg#<kind>` in each
+reference page. The relative URL keeps the configured site prefix when
+the site is deployed under `/Camcraft/`. A generated HTML test checks all
+44 image URLs against a base URL with that prefix. Root-relative URLs
+were dropped because they request the asset outside the deployed site.
+
+## #1335 - Infer a user's wire post from its manifest
+
+**Decided:** Reuse `Script::voices_wire_edm()` in the posting machine-kind
+door after reading an explicit `serves` declaration. When `serves` is absent,
+`wireEdm = true` proves only `Kind::WireEdm`. An explicit `serves` declaration
+continues to determine the permitted kinds.
+
+**Why:** The engine already reads the strict boolean manifest flag. Using that
+same reading lets a user's wire dialect reach a wire EDM without admitting it
+to milling, turning, plasma, or sinker machines. It preserves the existing
+explicit restriction and the named refusal for a cutting script on a wire EDM.
+
+**Considered and dropped:** Parsing the flag again in the app would duplicate
+the engine's manifest contract. Treating the flag as permission for all EDMs
+or other machine kinds would claim compatibility the script did not declare.
+Inferring sinker support without a matching manifest contract is outside this
+wire-only change.
+
+**Cost to change later:** Another inferred machine kind needs a local change
+to the posting door, a corresponding engine manifest contract, and acceptance
+and refusal pins. Explicit `serves` declarations need no migration.
+
+## #1340 - Sinker Side Burn: electrode wear compensation in Z
+
+**Decided.** A Sinker Side Burn takes a measured electrode wear (length
+lost over depth burned) and a layer step, as a Sinker Burn does (#546).
+The plunge is `sinker_wear::burn_compensated`'s: each layer tip is made
+deeper by the rate, under all of its refusals (rate, layer step,
+electrode length, the deepest-tip bound). The lateral move and its return
+run at the last layer's compensated tip, which is checked against the
+same bound. The stock sim reads the side burn's moves as the worn
+electrode burns them (`sinker_wear_op::as_burned`). The by-name refusals
+`SIDE_WEAR_REFUSAL` and `SIDE_LAYER_REFUSAL` are removed. A half-stated or
+nonsense wear or layer step is still refused by name at every door.
+
+**Only the measured wear applies, not the condition's `wear`.** A side
+burn without a measured wear keeps its plain moves, even when its
+condition states a wear rate. Why: a side burn that the user saved before
+this change has no measured wear, and its posted program must stay byte
+for byte. The condition's rate is applied to a side burn only when the
+user states it on the op. Considered and dropped: apply the condition's
+wear as the Sinker Burn does. That changes the posted Z of every saved
+side burn whose condition states a wear, with no action of the user.
+
+**Only the axial (end) wear is compensated.** The lateral move is not
+lengthened for side wear. A worn electrode is smaller, so the wall is
+left short of the stated amount, never cut past the allowance. The
+allowance law (`undersize - gap`) stays the same. Considered and dropped:
+a side-wear rate. No public source gives a model that we could check, and
+a longer move could go past the allowance.
+
+**Cost to change later.** Opting a side burn in to the condition's wear
+is one line in `sinker_wear_op::side_wear` plus the staleness stamp; it
+changes posted output of saved documents, so it is a breaking change.
+
+## #1355 - Count the sinker orbit in rough and finish sizing
+
+**Decided:** Keep the condition's electrode law, `e = c - 2u`.
+Count the XY orbit radius in the burned width: `e + 2(g + r)`.
+A rough must stay inside the finished cavity. A finish must reach its size.
+Validate the orbit before the size judgment.
+Set the tip's floor stand to `u - r`, because the orbit moves only in XY.
+This leaves `u - r - g` on a rough floor and brings a sized finish to the floor.
+
+**Why:** Radius widens the burn but does not deepen it.
+Keeping the old stand, `u`, leaves one radius of stock on the floor.
+Adding radius to the simulated spark gap would instead deepen the burn incorrectly.
+Remove the interim refusal of every rough or finish orbit.
+Keep a named refusal for a finish vector pattern whose direction count is not a multiple of four.
+Those patterns do not reach all four walls, so radius alone cannot certify the finished cavity.
+
+**Considered and dropped:** Keeping the blanket orbit refusal prevents valid passes.
+Unchecked acceptance can burn past a wall or leave a finish short.
+Keeping the old floor stand leaves stock. Inflating the floor's spark gap misstates the physical burn.
+A generalized law with unequal per-axis offsets would support more vector patterns, but needs separate sizing and floor rules.
+
+**Evidence and limits:** Synthetic circular, four-direction vector, and planetary passes reach a clean stock-simulation verdict with zero gouge.
+The pins check the rough and finish tip heights, wall overburn refusal, partial-vector refusal, and malformed orbit refusal.
+The old implementation and four individual mutations each fail their pins; restoration passes.
+No real EDM control was exercised. No golden files changed.
+The helper lives under `tests/sinker_undersize/` so the quick gate selects its owning suite instead of every app suite.
+
+**Cost to change later:** A per-axis sweep law can replace the conservative vector restriction.
+It must calculate each wall's actual reach, preserve a safe floor stand, and add simulation pins for unequal offsets.
+The current electrode law and non-orbit behavior remain the baseline for that work.
+
+## #1385 - Indexed work offsets for grblHAL and TinyG
+
+**Decided:** Both posts declare `workOffsetIndex = true` and
+`workOffsetMax = 6`. They convert the engine-validated index to G54-G59.
+Their `workOffsetName` functions use the same conversion for display.
+
+**Why:** The engine already validates the offset and refuses an unsupported
+number by setup name. The posts can use that contract without duplicate
+guards. Their supported offsets and posted programs stay the same.
+
+**Tests:** Append both scripts to the existing `work_offset_index` table.
+This keeps the indexes that other tests use. The existing tests check the
+flag, display names, output words, legacy words, and maximum-offset refusal.
+
+**Dropped:** Do not add extended offsets without verified control support.
+Do not refactor the existing oversized scripts in this change. Both changes
+would expand the scope beyond the offset contract.
+
+**Cost to change later:** Extended offsets need public control documentation,
+a new maximum, a word conversion, and tests. A script refactor needs separate
+coverage to prove that the posted programs stay the same.
+
+## #1387 - Explain G-code for the Tormach mill
+
+**Decided:** declare `explains = "paren"` in `tormach.cps` and append the
+shared `explain(a)` result in `block()`, after the executable words.
+The helper supplies the comment guards and returns no text when Explain
+is off. The default program therefore keeps its existing bytes.
+
+The post supplies original wording for `G38.2` ("PROBE TOWARD CONTACT")
+and `G59.1` through `G59.3` ("WORK OFFSET 7" through "WORK OFFSET 9").
+Each entry carries a source note naming the relevant public LinuxCNC
+G-code reference section. Other meanings come from the shared engine
+table, whose provenance names RS-274 and the LinuxCNC reference.
+
+**Why:** the existing helper already keeps comments inert, bounds their
+length and preserves the executable words. The post only needs to opt in
+and state the additional words it uses.
+
+**Considered and dropped:** duplicating the engine dictionary would make
+wording and guards drift between dialects. Rewriting the completed program
+to add comments would create another parser and risk changing executable
+text. Changing the engine is unnecessary for this dialect's opt-in.
+
+The optional lathe change is deferred. Open PRs #1705, #1681, #518, #517
+and #468 touch `tormach-lathe.cps`, and the lathe needs its own word
+semantics. This change stays with the required mill post and its matrix.
+
+**Cost to change later:** another mill word needs a table entry with a
+public source note and a pin. The lathe can opt in separately after its
+overlapping work settles, using its existing tool and feed-mode readings.
+
+## #1388 - Bounded Explain comments for the Fanuc family
+
+- **Decided:** Fanuc, Haas, Mazak, Doosan DNM and Fanuc lathe declare
+  `explains = "paren"`, `commentMax = 60` and `explainBlockMax = 80`.
+  Their existing `block()` helpers filter and join executable words as
+  before, then append the shared `explain()` result only when the entire
+  line, separating space and comment fit the 80-character budget.
+  Otherwise they omit the optional explanation. Explain off preserves
+  the existing program bytes. Fanuc lathe retains its own word meanings
+  and station/offset tool reading.
+- **Why:** the shared helper already guards comment text and bounds its
+  length, but a comment cap alone does not bound the complete block.
+  The 80-character limit is a conservative house budget for added
+  explanations, not a claimed manufacturer maximum. A block that is
+  already longer remains intact; Explain never truncates or splits
+  executable words. Existing header and standalone comments are outside
+  this change.
+- **Considered and dropped:** changing the engine's comment cap for each
+  block or adding a new engine helper would widen this post-only change.
+  Cutting an explanation midway could leave an incomplete meaning.
+  Dropping the complete optional explanation keeps both its meaning and
+  the original machine program intact. Editing executable blocks to make
+  room, or changing unrelated post functions, is unnecessary.
+- **Verification:** per-post Explain goldens, comparison with Explain off
+  after removing only appended comments, line-budget boundaries and
+  per-post mutation checks pin the behavior. No controller simulator or
+  machine execution is part of this verification.
+- **Cost to change later:** a different output budget changes the post's
+  declared limit and its boundary tests and goldens. A future shared
+  block-budget helper could remove the repeated append check across
+  posts, with tests preserving each post's executable output.
+
+## #1496 - Keep Sodick taper refused until its stream mapping is confirmed
+
+**Decided:** Keep the Sodick post's taper refusal. Also refuse every
+`WireAngle` record, including zero and records without `WireTaper`, rather
+than silently post an angle-word move as a vertical cut. No taper words
+or new tapered golden are justified by the evidence available here.
+
+**Public evidence:** Sodick Inc.'s January 2012 *Wire EDM Machine
+Operation Training*, LN1W / LN2W, printed pages 66-70, describes G51 as
+upper-guide movement left of travel, G52 as right, A as degrees, and G50
+as cancellation that returns the wire upright during the next XY move.
+It describes T-Limit, T-Upper and T-Lower as guide settings, TP as the
+table-to-program distance, and TN as the opposite plane's height.
+[Public copy](https://fab.cba.mit.edu/content/tools/sodick_edm/sodick_user_manual_small.pdf).
+This is a newer control than this post's Mark 21 / EX21 target; it does
+not establish compatibility with that target. The existing post cites
+the 1998 manual; attempts to retrieve its taper pages during this work
+failed. No other CAM product's post or output was used.
+
+**Why:** The repository's `guided` path in
+`crates/app/src/posting_wire.rs` sends lower-guide XY and upper-guide
+offsets. Replacing these vectors with the nominal `WireTaper` angle
+would discard the explicit guide motion without proving equivalent
+corner, lead-in and cancellation interpolation. Its `angled` path
+instead sends programmed top-plane XY and signed `WireAngle` values.
+`angle_lean` computes `WirePlane` as top Z minus work-origin Z. That
+work-relative coordinate does not establish a distance from the Sodick
+table. These are conclusions from our stream implementation, not claims
+about undocumented controller behavior.
+
+**Still unconfirmed for Mark 21 / EX21:** Exact TP/TN initialization and
+its correspondence to machine guide calibration and the work datum;
+corner interpolation and lead-in/cancellation equivalence; and the
+signed angle mapping in that control's coordinate frame. The newer
+manual confirms the left/right convention on its own controls, so the
+direction words themselves are not generally unknown.
+
+**Dropped:** Copying `WireTaper` into A while retaining lower-guide XY;
+treating origin-relative `WirePlane` as table-relative TP; or inventing
+machine code templates as evidence that Sodick accepts the mapping.
+
+**Cost to change later:** Obtain public Mark 21 / EX21 documentation or
+machine-owner confirmation for the remaining mappings, verify the
+corner and transition behavior against the generated wire path, then
+add a tapered punch through the app's post gate and its sourced golden.
+
+## #1498 - Keep Sodick control-side wire offsets unsupported
+
+**Decided:** The Sodick post continues to accept generated wire-centre
+paths only. Control-side G41/G42 with an H register, wear offsets, and
+skim passes that reuse one part path with different H values remain
+unsupported. This takes the issue's explicit "supported or not" decision
+option. No H number format is adopted because the post emits no H word.
+
+**Why:** `WireContourOp` and `WireSkim` store conditions, but no H-register
+identifiers or values. The generator uses each condition's wire radius
+and spark gap to generate a centre path. The wire laws judge that path
+against the part and stock. An operator's H value could move the actual
+wire away from the path those laws judged. The existing milling
+`CompSpan` contract assumes Fanuc-style engage and cancel geometry; it
+does not establish Sodick's geometry or the contents of an H register.
+This change makes no claim that those control semantics were verified.
+
+The post now handles every `COMP` record with a Sodick refusal that names
+the operation and explains the missing verified H-register value. It
+suppresses later cutting moves in that section. A request before
+`SECTION` stays refused when the section opens. `COMP OFF` is also
+unsupported and cannot clear a refusal. Section end still cuts an
+already-threaded wire and resets the state for a later plain section.
+The existing skim-condition refusal remains in place.
+
+The engine already counted a warning when the Sodick script lacked the
+compensation hook, so the app already blocked release of that program.
+The change replaces that generic warning and suppresses the affected
+cutting blocks in the diagnostic output; it does not repair a previously
+silent release by the app.
+
+**Considered and dropped:** Writing G41/G42 H around the current centre
+path could apply an additional offset. Posting a part path with an
+operator-chosen H value would disconnect the posted cut from the wire
+laws. Reusing milling compensation would assume control behaviour the
+Sodick implementation has not established. Accepting only `COMP OFF`
+would introduce a partial compensation contract without enabling the
+requested feature. Retaining only the generic engine warning would leave
+the affected cutting blocks in its diagnostic output.
+
+**Cost to change later:** Support needs published control semantics for
+H-register format, range and units, including metric formatting and
+condition changes between passes. The document must store each pass's
+register and offset value. Generation must prove that the programmed
+lead-in, contour and cancellation produce the centre path checked by the
+wire laws, and value changes must invalidate that proof and revalidate
+the cut. A rough-plus-skim punch golden and a refusal of a gouging offset
+must pin the resulting behaviour before the post enables it.
+
+## #1501 - Sodick ALC400G wire EDM machine file
+
+**Decided.** One shipped machine, `assets/machines/sodick-alc400g.mch`
+(picker name "Sodick ALC400G", kind `wire_edm`), registered in
+`posting::MACHINES`. Pinned by `crates/app/tests/sodick_alc400g.rs`.
+
+**Sources (public, Sodick's own pages; read 2026-11-15).**
+- https://sodick.eu/products/wire-edm : ALC400G iG+E, X/Y/Z 400 x 300 x 250 mm, U/V 150 x 150. This page states no taper for the ALC400G.
+- https://www.sodick.co.th/EN/EDW.php : taper angle +-25 deg at work height 130 mm for the ALC400G (the +-30 deg on that page is ALC800GH and ALN800GH, not this model); X 400, Y 300, Z 250, taper +-25 deg at 130 mm, U x V 150 x 150 mm.
+- Sodick ALC series brochure (text copy at https://www.scribd.com/document/479890863/Sodick-ALC-series-wire-cut-EDM-machines): ALC400G X 400, Y 300, Z 250, U x V 150 x 150 mm, taper +-25 deg at 130 mm.
+
+**Stated in the file.** X 400 mm, Y 300 mm, U 150 mm, V 150 mm of travel;
+`edm.max_taper_deg` 25. The sources give a travel length, not a machine
+origin. The file states each travel centred on zero (like the shipped mills),
+so the length is the published one and the position is our convention.
+The 25 deg is the published figure at 130 mm thickness; it is the file's
+limit for any thickness.
+
+**Left out (no public source found; the app refuses what needs them).**
+`edm.lower_guide_z`, `edm.upper_guide_z`, `edm.awt`, `edm.wire_diameters`,
+`edm.conditions`, `edm.codes`, the Z travel (a wire machine has no Z axis in
+our model: the guides carry it). A cut is refused by name ("states no EDM
+condition") until the user adds a condition row from their own control. The
+`C` and three-digit condition names of the issue were not found in a public
+Sodick table, so none ship. The test adds one clearly marked test row to show
+a punch posts.
+
+**Post.** `sodick-wire.cps` is offered for the file (every wire machine lists
+both wire posts; a machine file does not name a post). That post was written
+from the 1998 Mark 21 / EX21 manual. Sodick's ALC-G brochures list a newer
+control (the ALN400G sheet names a "K-SMC-LINK" NC unit), so the ALC400G is NOT
+confirmed to be a Mark 21 machine. The post is offered, not promised: it still
+says "not verified on a control" in every program.
+
+**Considered and dropped.**
+- A Mark 21 model (A320D, AP350, AP500): only dealer listings and a 1998
+  manual give travels, and they disagree (A320D U/V 25, 50 or 1.96 in per
+  listings). Not a maker's published sheet, so not used.
+- Numbers from used-machine dealers: not a public maker source.
+- Guessing guide heights or AWT from the model class: the issue forbids it.
+
+**Cost to change.** Edit the `.mch` and the pinned figures in the test.
+
+**Limit (rework of review of PR 1793; Refs #1800).** The taper figure is
+data only. The file states no guide heights, so a tapered cut is refused at post.
+`crates/app/src/machine/wire_edm.rs` refuses it by name: "states no
+edm.lower_guide_z and edm.upper_guide_z". If a user adds the guide heights, it
+still refuses a lean past `edm.max_taper_deg`, and an upper guide offset outside
+the U/V stroke. The Sodick post (`assets/posts/sodick-wire.cps`) also writes a
+vertical 2-axis cut only, and refuses any taper. Pinned by
+`a_tapered_punch_is_refused_at_post_while_the_file_states_no_guide_heights`. The
+schema and post are not changed here; #1800 tracks them. A review asked for 30
+deg; Sodick's page lists 30 only for other models, so 25 stays.
+
+## #1502 - Part corners and circle centres in the WCS marker pick
+
+**Decided:** with the WCS page's "Pick markers in viewport" armed, a click
+that misses the nine box markers falls through to the part's own feature
+points (corners) and round-edge centres (the opt-in `centres` kind of
+#692, one run per click). A corner queues the existing undoable `SetWcs`
+at the vertex's world position (`pick::align::vertex`, made `pub`); a
+centre queues the existing `SetWcsCircle`. A click on nothing is left to the
+pick mode as before.
+
+**Why:** the issue asks for corners and hole/slot centres beside the markers.
+It reuses the pick rule and commands the page already has; no new command.
+Markers keep priority so the existing grid behaviour is unchanged.
+
+**Dropped:** a new "Part points" anchor source (a third, fourth combo
+entry) - more UI for the same click; hover highlight of the candidate
+points while armed - would change `feature_click::ask` for every pick and
+is a follow-up if wanted. MCP: `set_wcs_from_features` (Origin role takes a
+vertex id or a circular edge's centre) and `set_wcs_circle_centre` already
+reach the same set, so no `MCP:` follow-up.
+
+**Cost to change:** one function in `crates/ui/src/wcs_circle_pick.rs`.
+
+## #1534 - Expose MCP get_post_options and set_post_options tools
+
+**Decided:** Add `get_post_options` and `set_post_options` in `crates/app/src/mcp/post_options_tools.rs` over `SetPostOptions` and `SetSetupPostOptions`, registered in `crates/app/src/mcp/tools.rs`, and document both in `.claude/skills/camcraft-mcp/SKILL.md`. Omit `setup` (or pass `null`) to target the document's `PostOptions`; pass `setup` to target that declared setup's own options (`follow: true` returns it to following the document, `follow: false` snapshots the resolved options as its own). Expose all seven `PostOptions` fields (`skip_stops`, `per_op`, `threading`, `end_units`, `smoothing`, `between_setups`, `explain`), and omit `setup` from implicit active-setup routing.
+
+**Why:** Issue #1534 asks for explicit document-vs-setup targeting like `load_machine` so multi-setup sessions never suffer #1526-style bleed from an omitted `setup` silently editing an active setup. Routing mutations through `SetPostOptions` and `SetSetupPostOptions` keeps undo/redo and no-op refusal semantics identical to the GUI. Exposing all seven `PostOptions` fields on `schema::PostOptions` leaves no unreadable post option behind.
+
+**Considered and dropped:**
+- Routing omitted `setup` to the active setup (`setup_or_active`): dropped because #1534 explicitly forbids implicit routing to prevent #1526-style bleed.
+- Embedding post options inside `get_job` instead of adding `get_post_options`: dropped so agents can inspect and verify document or per-setup `follows_document`/`own`/`options` without parsing the full job dump (and `set_post_options` returns the same shape).
+- Treating `null` option fields as omitted: dropped because explicit `null` on a boolean or enum option is likely a caller mistake and should be refused by field name rather than silently ignored.
+
+**Cost to change later:** Low. The wire schema and command dispatch live in one isolated module (`crates/app/src/mcp/post_options_tools.rs`).
+
+## #1545 - Bound STEP edge and swept-curve subdivision
+
+**Decided:** Meter B-spline, NURBS and pcurve subdivision on shell edges,
+and use the same guarded curve division for extrusion and revolution
+generators. Keep truck's probe positions, subdivision order and healthy
+results. Refuse non-finite probes, exhausted evaluation budgets and splits
+that cannot resolve within floating-point precision or the recursion limit.
+Each edge gets a fresh budget per pass. Swept generators share their face's
+meter, and a failed division cannot keep a coarser mesh as a fallback.
+
+**Why:** A zero-weight rational edge and swept generator each exceeded the
+pin's 20-second limit in the old code. A discontinuous B-spline could instead
+be accepted at a coarse tolerance. Inspect full-multiplicity knots crossed
+by the requested range and refuse unequal one-sided endpoints. Equal joined
+endpoints and ranges trimmed away from a jump remain legal. Name an edge
+refusal by its position and shell; retain the existing named face refusal
+for a swept surface.
+
+Rebuild swept division adapters with their original extrusion vector or
+revolution axis, transform and orientation. A refused revolution generator
+temporarily collapses onto its axis origin, so truck cannot infer a bogus
+radius and allocate an angular grid before the refusal is read. These
+temporary points never become an accepted mesh.
+
+**Considered and dropped:** A wall-clock timeout can leave kernel work
+running after the caller returns. Changing the healthy subdivision algorithm
+would risk changing normal imports. Rejecting every full-multiplicity knot
+would also reject continuous composite curves. No dependency or process
+change is needed.
+
+**Cost to change later:** Replace the curve adapter and its meter wiring,
+then rerun the refusal pins, mutation checks and exact comparisons with
+truck's healthy curve and swept-surface divisions. Changing the budget also
+needs measurements of healthy imports and bounded pathological inputs.
+
+## #1552 - Document the fit_stock MCP tool
+
+**Decided:** Add the shipped `fit_stock` tool beside `set_stock` in the MCP skill. Document the schema, defaults, millimetres, side order, parts-only scope, preserved rotation, single undo step, response and named refusals.
+
+**Why:** Agents need the same stock-fit contract the MCP implementation already exposes. The row follows `stock_fit_tools.rs`, its parameter parsers and `stock_fit.rs`.
+
+**Considered and dropped:** No runtime changes or new dependencies are needed. A separate guide would split the tool reference. Keep the process version and #681 merge announcement with the merging session, as the issue requires.
+
+**Review decision:** Remove the xtask documentation-only pin and keep this PR docs-only, as the pre-review suggests. The pin did not compare the tool schema, did not run for later skill-only changes, and made the PR ineligible for the PR-test runner. Moving or expanding the pin was considered and dropped because it would add test or gate scope to this documentation fix. Add the exact `Process change: yes` line to the PR body.
+
+**Validation:** Temporary review-fix checks pinned the PR body marker and the absence of the introduced xtask test. Each check failed with its correction reverted and passed after restoration. The quick gate passed with a docs-only plan (no tests selected), and xtask clippy passed locally.
+
+**Cost to change later:** Edit the row when the tool contract changes. A future schema-aware documentation check would need its own test location and gate design.
+
+## #1566 - Clear wide bores with concentric rings
+
+**What was decided.** Bore clears each cut level from the centre outward.
+A radial sweep opens each next band, then a closed ring clears it.
+The last ring finishes the wall. The existing cutter-centre disk certifies
+the entry and links through the existing level ladder.
+
+Keep the existing single-ring path when the wall-ring radius is at most
+twice the cutter reach at the floor. Otherwise, use
+`ceil(wall_ring_radius / (0.8 * floor_reach))` rings. Divide the radius
+equally between them. Refuse more than 4,096 rings before allocation.
+Detect holes uses the same bounded plan as generation.
+
+For a blind hole, use the cutter's flat bottom radius:
+`tool_diameter / 2 - corner_radius`. For a through hole, use the corner's
+torus reach at the through allowance. Refuse a floor band too small to
+resolve. This includes a ball cutter at a flat blind floor. The normal
+corner fillet where the floor meets the wall remains intentional.
+
+**Why.** The centre dive and one wall ring leave an uncut band in a wide
+hole. Overlapping rings clear that band. The radial sweep puts each ring
+start in the column just cut. The blind floor needs the flat bottom reach;
+the full cutter radius can hide an interior ridge. A shared plan keeps
+detection and generation consistent. The ring limit bounds allocation.
+
+**Considered and dropped.** A spiral or a new helix entry adds a separate
+algorithm and entry design. Removing only the old width refusal would
+leave an unsafe single-ring path. Keeping the full radius for blind holes
+would retain the floor ridge. Unlimited rings could exhaust resources.
+
+The app verification fixture uses 0.1 mm wall allowance. Its 64-facet STL
+wall lies inside the nominal circle by about 0.045 mm at the large hole.
+The allowance keeps the test path inside that model. Motion coverage tests
+also exercise zero wall allowance.
+
+**Cost to change later.** A configurable stepover or spiral must preserve
+floor coverage, the wall ring, entry and link certification, and the shared
+detection limit. It also needs a bounded allocation rule. The current
+policy adds no project-file field.
+
+## #1567 - Show the machine work envelope in the viewport
+
+**Context:** the maintainer asked for a Browser checkbox that draws the
+mounted machine's work envelope (issue 1567).
+
+**Decided and why:**
+- The envelope is the tool-tip travel volume in program coordinates, put in
+  the world at the setup's work origin. It uses the same travel figures,
+  axis directions and origin law (`posting::wcs_context`) as the program
+  stroke check. The picture cannot disagree with a refusal. The tooltip says
+  "measured from the setup's work origin (not the table)".
+- No table position exists in the machine data, and a stroke is stated in
+  program coordinates (`machine/mod.rs`, #457). So the envelope is not
+  "placed" on a floor under the fixtures. The suggested fallback (floor at
+  the lowest stock point, centred) would invent a number, so it was dropped.
+  The part and the fixtures stand where the work origin puts them.
+- Mill, mill-turn, plasma and EDM: a box of the X, Y and Z travel. Rotary
+  reach is not drawn (first slice, as the issue says).
+- Lathe: a cylinder on the spindle axis through the work origin. The radius
+  is the larger end of the X travel (X is a radius on a lathe, as the lathe
+  stroke check reads it). The length is the Z travel.
+- A missing axis or travel draws nothing. The tooltip names the missing
+  figure. The box is disabled only when no machine is mounted.
+- The box is immediate-mode view state (`State::show_work_envelope`), like
+  "Show world origin axes": no command, not saved, not in history. No MCP
+  tool is needed for display state.
+
+**Considered and dropped:**
+- Faint faces: the overlay buffer is a line list. Faces need a new GPU
+  path. Outline only in this slice.
+- Placing the box on the table or on a fixture stack: needs figures that
+  no machine file states.
+- A new envelope in the `app` crate: the shape maths is pure, so it lives in
+  `camcraft-post` (`machine/envelope.rs`). `app` only reads the world.
+
+## #1584 - Document detect_holes skipped field and Bore refusal in camcraft-mcp skill
+
+**Decided:** Update the `detect_holes` row in `.claude/skills/camcraft-mcp/SKILL.md` to document the `{ operation, holes, radial_holes, skipped, status }` reply shape, the Bore-operation hole filter (`d + 4 * reach + 2 * stock_to_leave`, `3d + 2 * stock_to_leave` for a square end mill or blind hole, less for a bull-nose or ball cutter on a through hole) that omits wider holes and names each sentence in `skipped`, the all-too-wide Bore-operation refusal (`no hole this Bore op can make: ...`) that stores nothing, the external-Thread boss mode, the lathe/mill-turn radial cross-hole detection for Drill, and the single undo step. Keep the PR docs-only without editing `.claude/PROCESS_VERSION` (adding `Process change: yes` to the PR body for the merging session).
+
+**Why:** Matches `crates/app/src/mcp/tools.rs`, `crates/app/src/mcp/edit.rs`, `crates/app/src/operation/material.rs`, and `crates/app/src/operation/bore_reach.rs` so headless MCP agents know why a Bore operation drops wide holes into `skipped` or refuses detection without modifying the operation.
+
+**Considered and dropped:** Adding an `xtask` or `crates/app` Rust test reading `SKILL.md` was dropped to keep this documentation fix docs-only (`Pr::docs()` eligible for read-only review and `pr-test.yml` without adding build scope; runtime behavior is already pinned by `crates/app/tests/bore_core.rs` and `crates/app/tests/mcp.rs`). Editing `.claude/PROCESS_VERSION` on the branch was dropped per current `PROCESS_VERSION >= 63` rules so the merging session sets the next sequential number and announces on `#681`.
+
+**Cost to change later:** Editing the single `detect_holes` row in `.claude/skills/camcraft-mcp/SKILL.md` when the MCP tool's reply or refusal contract changes.
+
+## #1586 - MCP orientation tools
+
+**Decided:** Expose `align_part_cylinder` and `place_setup_origin` in the
+existing MCP alignment tool table. Cylinder alignment calls
+`AlignPartToSetup::align_from_cylinder`. Origin placement resolves through
+`commands::place_setup_origin` and executes `SetWcsOrigin::for_setup`.
+Each successful call adds one undo step and defaults to the active setup.
+
+**Why:** These are the GUI's existing command paths. Reusing them keeps
+the cylinder's target-axis check, setup ownership, stock handling and undo
+behaviour consistent across the GUI and MCP. Origin placement preserves
+the WCS rotation. An explicit unchanged-origin refusal prevents a useless
+history entry because `SetWcsOrigin::for_setup` itself accepts that case.
+
+**Considered and dropped:** Duplicating the cylinder fit or origin math
+in MCP would give safety checks two implementations. Direct ECS writes
+would bypass undo. Silently ignoring a vertex source's `point` or a box
+source's `pick` would accept conflicting requests, so source-specific
+argument guards refuse them by name. New tool modules were unnecessary;
+the existing alignment module remains below 400 lines.
+
+**Cost to change later:** A different public argument shape requires
+updating the MCP schemas, handlers, headless tests and skill rows together.
+The shared commands and saved project format do not need to change.
+
+**Review fix - named vertex origin:** Resolve the vertex through the
+requested setup's pose in the shared origin command. Keep the existing
+active-view vertex reader for viewport callers. Switching the active
+setup temporarily was rejected because reading a named setup must not
+change session state. The MCP pin compares active and inactive requests,
+checks the known aligned coordinate, and checks undo and Setup2 isolation.
+
+## #1587 - Multi-lane, closed-ring, and corner clean-up planning for 2D Adaptive (Trochoidal)
+
+Chosen: keep the single open-channel `Spine::Open` fast path unchanged when its clearance already covers the pocket under `REST_MAX`. For closed rings (`Spine::Closed`), accept a closed lane when `rest_share` stays below a `0.005 * half` tolerance, rotating the closed chain to start on its longest edge (`rotate_to_longest_edge`) and wrapping `Chain::new_closed` (`s.rem_euclid(len)`) with `layout_confined(..., check_cross=true)`. For wide, L-shaped, triangle, and island-bearing regions, recursively decompose each cleared component (`fill_component` across depth `0..3`, `min_w = 0.35 * r`) via oriented scanline bands (`slice_angle` over `candidate_angles`, `b_cap = 0.90 * r`, `0.45 * r` inter-lane pitch, `m = 1` when `span < 2 * b_cap + LANE_GAP`), falling back to residual medial spines (`try_residual_medial`). After all trochoidal lanes per Z level, run concentric wall/corner clean-up peeling (`plan_cleanup` in `adaptive_troch_clean.rs`) capped at `min(0.18 * r, max(0.08 * r, load_step))`, softening acute vertices with `corner_radius` (`cos < -0.15`) and right-angle corners with `0.20 * r`, entering cleared-air peel chains via vertical Z plunges from `from` to `z`.
+
+Why: single medial splines cannot reach wide rectangular pockets (where one loop width is capped at `2 * 0.90 * r`), L/branching pockets (where secondary branches stayed untouched), islands (where open lanes could collide with island keep-outs), or sharp pocket corners (left unpeeled by circular trochoidal loops). Separating scanline lane decomposition (`adaptive_troch_lanes.rs`, `adaptive_troch_slice.rs`), closed-ring loops (`trochoid_loops.rs`), and concentric clean-up (`adaptive_troch_clean.rs`) keeps every module under ~400 lines while reusing `plan_lane_layout` / `emit_level` engagement guarantees (`DEFAULT_MAX_ENGAGEMENT` fallback via `88.5` degree target). Vertical plunge entries for clean-up chains stay inside cleared stock without diagonal ramps triggering `crossed_pairs`.
+
+Dropped: greedy Voronoi skeleton partitioning was dropped as harder to keep collision-free around arbitrary islands and multi-branch necks than oriented scanline sweeps backed by residual medial fill. Split narrow strips (`b = 0.48 * r`) in narrow bands were dropped in favor of keeping `m = 1` so single-lane bores retain full loop width when possible. Diagonal Z entry ramps for short wall peels were dropped because ramp segments triggered self-crossing verification refusals against earlier passes.
+
+Cost to change later: `plan_all_lanes` and `plan_cleanup` sit behind `adaptive_trochoidal`, isolated from `trochoid_slot::plan_trochoidal_slot` and parameter serialization. Replacing the scanline band planner or peel corner radiusing affects only `adaptive_troch_lanes.rs`, `adaptive_troch_slice.rs`, and `adaptive_troch_clean.rs` plus the four `.cl` goldens pinned in `crates/app/tests/adaptive_trochoid.rs`.
+
+## #1588 - 2D Adaptive (Trochoidal): engagement limit, return mode, return feed and loop width
+
+**What was decided.**
+- Added `AdaptiveTrochParams` (`max_engagement`, `ret: Option<TrochoidReturn>`, `return_feed: Option<f64>`, `loop_width: Option<f64>`) to `camcraft_motion::machining2d::adaptive_troch`, exposed `adaptive_trochoidal_with`, and stored a single `troch: AdaptiveTrochParams` field on `OpParams::Adaptive2D`.
+- Reused `ParamsDto::Adaptive2D.max_engagement` for M11.4+ files (`optimal_load.is_some()`), keeping pre-M11.4 legacy `optimal_load: None` files mapped to Spiral's load conversion while defaulting `troch.max_engagement` to `90.0` deg; added `return` (`AdaptiveTrochReturnDto`: `auto`, `microlift`, `retract`), `lift`, `return_feed`, and `loop_width` with `#[serde(default)]` / `skip_serializing_if = "Option::is_none"` so older files default to today's path.
+- Placed `Max engagement`, `Loop width`, and `Return` (+ `Microlift height` when `Microlift`) on the 2D Adaptive `Passes` tab and `Return feed` on the `Feeds` tab, rendered only when `Method = Trochoidal`.
+- Stamped `troch` into the staleness digest (`0xA6`) only when `Method = Trochoidal` and `troch != AdaptiveTrochParams::default()`.
+
+**Why.**
+- Grouping all four fields in `AdaptiveTrochParams` lets the motion planner, `OpParams::is_sane` / `named_refusal`, and `mill2d_page` (`400`-line limit) carry one parameter value without widening pattern matches or adding helper boilerplate.
+- Reusing `max_engagement` on `ParamsDto::Adaptive2D` matches `TrochoidalSlot` and `list_operation_types` / `edit_operation` naming directly without breaking pre-M11.4 Spiral migrations (`optimal_load: None`).
+- Gate-skipping default `troch` values in `stamp_with` preserves every existing Spiral and default Trochoidal staleness hash from #1509.
+
+**What was considered and dropped.**
+- Adding a separate wire key such as `troch_max_engagement` instead of reusing `max_engagement`: dropped because it diverges from `TrochoidalSlot` and MCP's natural `max_engagement` key, while `optimal_load.is_some()` cleanly disambiguates pre-M11.4 Spiral files from modern `Adaptive2D` files.
+- Showing trochoidal return/engagement fields greyed-out under `Method = Spiral`: dropped per the page rule and #1588 acceptance criteria that they appear only when `Method = Trochoidal`.
+
+**Cost to change later.**
+- Low: `AdaptiveTrochParams` is self-contained and only read under `AdaptiveMethod::Trochoidal`; `ParamsDto::Adaptive2D` fields are additive with serde defaults.
+
+**PR #1782 review remediation.**
+- Merged upstream main and retained both the trochoidal parameter set and the corner-arc parameter set, including main's refusal of arc turns with the Trochoidal method. Dropping either parameter set or bypassing that refusal was rejected because saved projects and generation must keep both laws.
+- Captured the actual egui shell for Passes and Feeds with Trochoidal selected. Stored review pictures only on the fork's images-only `pr-screenshots` branch and linked them from the PR body. Keeping screenshots or capture provenance on the PR branch was rejected because review evidence must stay outside the product branch. The before pane uses the original PR parent's rendering body; the after pane uses the merged shipping body. A temporary signature adapter lets the original rendering body read the current grouped method field without changing its widgets.
+- For the later merge-time refresh, retained main's multi-lane planner and cleanup, including its below-4% optimal-load, confinement, and self-crossing refusals, and passed the explicit Trochoidal controls through the production lane and cleanup paths. Leaving the controls only in the test-only `cut_lane` path was rejected because operation parameters would then have no effect on generated toolpaths. Keeping both test blocks preserves coverage of the parameters and main's safety laws. Future planner changes must continue carrying these controls through every production lane.
+
+## #1604 - Tormach lathe: one axis at a time after G30, out to the stock's corner before G30
+
+**Decided.** `tormach-lathe.cps` no longer writes a two-axis rapid next to
+a `G30`. The change is in that post only. The mill post `tormach.cps` does
+not change.
+
+- **After G30** (a tool change, or a "home" after-operation), the section's
+  first point is approached one axis at a time:
+  - The point is outside the stock's diameter: `G0 X<point>`, then
+    `G0 Z<point>`. X goes first.
+  - The point is inside the diameter but in front of the face: `G0 Z`, then
+    `G0 X`. The Z move goes to the point's Z. When the point is ON the face
+    (a hole's entry), the Z move goes to the section's `ClearancePlane`
+    first, then X, then Z down to the point.
+  - The point is inside the diameter and not in front of the face: refused
+    by name.
+- **Before G30** (a tool change, a "home" after-operation and the program
+  end), the tool leaves from the section's last point. It goes `G0 X` out
+  to the stock's diameter (when it is inside), then `G0 Z` out to the face
+  (when it is behind the face). When that corner is not clear of the stock
+  in either axis, the Z move goes to the `ClearancePlane`. These lines are
+  written before the next section's notes and work offset word, because the
+  words are in the old section's frame.
+- **The stock** is the section's `StockXYLeft/Right/Front/Back` box and
+  `StockZTop`, the parameters every stream already carries. The radius is
+  the box's largest half-width from the work-offset origin, and the face is
+  `StockZTop`. No new stream parameter is added.
+- **Refused by name:** no stock box, a first point inside the stock with no
+  `ClearancePlane` in front of the face, a section that ends inside the
+  stock's envelope, a section that ends on the stock's corner with no
+  `ClearancePlane`, and a feed, arc or thread half-turn as the first motion
+  after G30. After a refused approach, the post writes no motion until a
+  point is reached. This is the same rule as #1633.
+
+**Why.** LinuxCNC's G30 with no axis words moves every axis in one straight
+line to the stored position (parameters 5181-5189, from the public LinuxCNC
+G-code reference). The operator stores that position, so the post cannot
+know where the line goes. The approach is safe for every stored G30 outside
+the stock when each move stays outside the stock's diameter or in front of
+its face:
+- X first to a point outside the diameter: the X move runs at G30's Z. That
+  is in front of the face, or G30 is outside the diameter and the move stays
+  outside. The Z move then runs outside the diameter.
+- Z first to a point in front of the face: the Z move runs at G30's X. That
+  is outside the diameter, or G30 is in front of the face and the move stays
+  in front. The X move then runs in front of the face.
+- At the departure, the corner point is outside the diameter and in front of
+  the face. A straight line from the corner to any point outside the stock
+  stays outside it. Thus the control's own G30 line cannot cross the stock.
+
+**X first, except for a point on the axis.** The coordinator asked for X
+first, then Z. That order is kept for every point outside the stock's
+diameter: all turning and threading starts. For a hole on centre, X first
+from a G30 beside the bar moves into the bar. X first to a clearance
+diameter needs a radial clearance number, and the stream does not state
+one. A margin added by the post would be a guess. Z first, to the stated
+`ClearancePlane`, needs no guess, so the post uses it there.
+
+**Turret and gang plate.** On a Tormach turret the T word indexes the
+turret at G30, so the index happens at the operator's safe spot as before.
+On a gang plate the T word changes only the offsets, and the idle tools
+move with the slide. The post knows only the active tool's control point,
+so these rules protect that point only. The idle tools on a gang plate stay
+the operator's layout responsibility. The X-first rule keeps the slide's long Z move outside the
+stock's diameter, which is also the side where a gang plate's tools stand.
+
+**Goldens.** The eight Tormach lathe NC goldens and the recorded
+`tool_change.nc` change only in these lines. A script (run on this PR)
+checked each diff: the first two-axis `G0` after each `G30` becomes one-axis
+`G0` lines that end at the same point, the added lines before a `G30` are
+one-axis `+X` or `+Z` moves, and every other line is the same and in the
+same order.
+
+**Considered and dropped:**
+- A fixed radial margin (for example the stock's diameter plus 2 mm) for
+  the approach to a hole. It is a guess, and the stated `ClearancePlane`
+  does the same work.
+- Write the departure at every section end. It adds moves where no G30
+  follows. The departure is written only before a G30.
+- Use the circumscribed radius of the stock box (half its diagonal). That
+  is correct for a square bar, but the stream does not say if the stock is
+  a round bar or a box. For a round bar it puts every turning start
+  "inside" the stock, so every turning program would be refused. The
+  largest half-width is exact for a round bar. For a box stock on a lathe,
+  the rotating corners are not covered (follow-up below).
+- Add a new stream parameter for the stock's turning radius. It changes the
+  stream for every post and its recorded goldens, so it is not in this
+  post-only change. It is the follow-up.
+
+**Follow-up.** The stream does not state the stock's shape. A box stock
+turned on a lathe sweeps a circle of half its diagonal, and this post uses
+half its width. A follow-up issue (`P3`: a box stock can still be clipped
+by a corner; the workaround is a round-bar stock) asks the stream to state
+the turning radius of the stock.
+
+**Cost to change later.** The rules are in one block of
+`tormach-lathe.cps` (`approach`, `departure`, `g30`). The goldens carry one
+to three added lines for each G30.
+
+## #1608 - Center the fixture stock in trochoid_law and its sibling circular law suites
+
+**What was decided:** Center the `40 x 40 x 8` `StockShape::Box` on `pos (0, 0, 0)` (with `rot` unchanged) and assert `model::stock_world_aabb_for` equals `[-20, 20]^2 x [0, 8]` inside `job()` and dedicated pinning tests in `crates/app/tests/trochoid_law.rs`, `crates/app/tests/circular_pick_law.rs`, and `crates/app/tests/circular_entity_law.rs`. In `trochoid_law::a_whole_model_trochoid_through_the_pocket_wall_gouges_and_never_posts`, assert `by_op = rotated` on `assert_post_refused` so the aligned (`rotated = false`) case allows the program simulator's refusal clause to lead now that the stock covers `[-20, 20]^2`.
+
+**Why:** `SetStock` places a `StockShape::Box` centered on `Location.pos`, so the previous `(-20, -20, 0)` and `(20, -20, 0)` offsets placed the aligned stock on `[-40, 0]^2` and the rotated stock on `[0, 40] x [-40, 0]`, covering only one quarter of the `[-20, 20]^2` part. Both sibling suites `circular_pick_law.rs` and `circular_entity_law.rs` used the same offsets.
+
+**Considered and dropped:** Leaving the post-refusal assertion `by_op = true` on `rotated = false` by bypassing or reordering program simulation; dropped because the program simulator seeing the gouge on the full `[-20, 20]^2` stock and leading `post_setup`'s error list is the expected verification-gate behavior (and the op-level `gouges(&warns) > 0` assertion still checks the operation directly). Also considered fixing only `trochoid_law.rs`; dropped because the issue asked to check `circular_pick_law.rs` and `circular_entity_law.rs` and both had the identical quadrant offset.
+
+**Cost to change later:** Low; test-only fixture change across three integration test files in `crates/app/tests/`.
+
+## #1610 - a STEP closed shell that meshes open loads incomplete
+
+**Decided.** The model import (`ImportModel`, so the GUI, MCP and the
+script API) lands a STEP closed shell that meshes open as a model instead
+of refusing it. The model carries the fidelity-unknown sentinel
+(`model_fidelity::UNKNOWN_MM`, #1056) and, beside it, its hole in words
+(`schema::MeshOpen`, saved as the entity key `mesh_open`). Every operation
+judged against it, a fixture made from it and the program verdict are
+refused at the post by the existing fidelity gate; the refusal, the model
+page, the import status line and the MCP/script `reduced_fidelity` facts
+name the hole ("imported incomplete - closed shell #N ... meshes open: ...")
+instead of the pre-v59 note.
+
+**Why.** The issue asked for exactly this reuse: the sentinel already rides
+every path a chord rides (stock copies, setup clones, undo, save), so the
+refusal cannot be lost on any of them; only the words needed a home.
+
+**Considered and dropped.**
+- A second chord sentinel for "open": every chord path would carry it, but
+  the save writes an unknown chord as the `fidelity_unknown` flag, so the
+  file would need a new key anyway, and the hole could still not be named.
+- A project version bump for `mesh_open`: an older reader drops the key
+  and keeps `fidelity_unknown`, so it still refuses every operation on the
+  model; only the words are lost. Not the unsafe-old-reader case the
+  version bumps exist for. A `mesh_open` without `fidelity_unknown` on a
+  model is refused as corrupt on load.
+- Landing incomplete everywhere: the fixture import, the tool-body import
+  and the mesh-only loaders (`load_model`, `parse_model`,
+  `*_graded_within`) still refuse the file by name - they have no
+  incomplete state to land in. A shell the file does not declare closed
+  with a dropped face, and a closed shell wound inconsistently, are still
+  refused as before.
+
+**Left as is.** A stock copied from an incomplete model carries the mark,
+not the hole: its refusal names the source model and reads the source's
+hole by name, so after the source is deleted the copy's refusal falls back
+to the pre-v59 words (still refused). The real fix for the meshes stays
+#1602.
+
+**Cost to change later.** Small: `mesh_open` is one module, one component
+and one optional file key.
+
+### PR #1699 review follow-up
+
+**Decided.** Pin the incomplete-model page and painted import status with
+structural UI assertions. Capture the same missing-wall STEP fixture in
+the real headless shell for review, with its placeholder viewport disclosed.
+The before image temporarily restores the previous graded-loader entry
+point and shows the actual import refusal; the after image shows the
+current incomplete model page and status. Restore the loader after capture.
+
+**Why.** This checks the displayed behavior and supplies reproducible visual
+evidence without changing the release-only pixel goldens.
+
+**Considered and dropped.** Updating pixel goldens would violate the UI test
+policy. Reconstructing the previous page around an incomplete model would
+misrepresent the prior loader, which refused this input entirely.
+
+## #1612 - Bound every ring-prefix chord's sagitta
+
+**Decided:** Check each prefix segment's closest distance to the ring centre
+with a clamped projection. Require that distance to be at least
+`rho - ARC_FIT_TOL - ON_RING_TOL`. Keep the existing vertex, end and sense
+checks. A prefix that fails keeps the exact `push_zig` chord fallback.
+
+**Why:** Vertices on the circle do not prove that their connecting chords
+follow it closely. A radius-1 prefix with a 0.98-radian flat can otherwise
+fly arcs about 0.118 mm beyond that flat. The closest-point check also
+covers a final segment shortened part-way along a polygon chord.
+`ON_RING_TOL` accounts for the existing lattice tolerance.
+
+**Considered and dropped:** Endpoint-only checks leave the reported gap.
+A midpoint-only check can miss the closest point when the shortened final
+endpoint lies inside the ring. Rejecting every ring ramp would discard
+valid helical arcs that already meet the tolerance.
+
+**Cost to change later:** Adjust the local guard and its pinning tests.
+No format, dependency or caller contract changes are required.
+
+## #1625 - Pin cross-hole stamp digest and correct lattice wording in hole_digest.rs
+
+**What was decided.** Pin every `CrossHole` field (`origin.x`, `origin.y`,
+`origin.z`, `dir.x`, `dir.y`, `dir.z`, `radius`, `entry_d`, `floor_d`,
+and `through`) in `crates/app/src/operation/hole_digest.rs` through both
+`cross()` and `OpParams::Drill::stamp_with`. Each float field is moved by
+one lattice step (`1e-6` mm), an off-lattice `floor_d` (`-(0.190 in -
+0.040 in)`) is checked against its `-3.81` mm snapped form, sub-half-step
+noise (`2e-7` mm) is pinned to keep the stamp unchanged on snapped fields,
+and sub-lattice changes on `dir` are pinned to move the stamp (matching
+`CrossHoleDto`'s verbatim `dir`). The comments in `hole_digest.rs` are
+updated from `1 um` / `half a micron` to `1 nm (1e-6 mm)`.
+
+**Why.** `hole_digest::cross` already digested all ten `CrossHole`
+fields, so the gap was missing test coverage rather than missing hash
+calls. Pinning both `cross()` and `OpParams::Drill::stamp_with` guards
+both the digest helper and its Drill-arm caller in `operation/params.rs`.
+`docs/decisions/1560-hole-digest-lattice.md` was already gathered into
+`RECOMMENDED.md` during the v0.20.0 cut, and `RECOMMENDED.md` is cut-only
+and must not be edited on an issue branch.
+
+**Considered and dropped.**
+- Editing the gathered `#1560` entry in `RECOMMENDED.md`: skipped because
+  issue branches never modify `RECOMMENDED.md`.
+- Editing `crates/cl/src/cl/moves.rs` (`lattice` doc comment) or
+  `crates/app/tests/bore_{core,entry}.rs`: outside #1625's stated scope,
+  and touching `crates/cl` would widen the quick gate to batch.
+- Adding a full project save/open test for `CrossHole`: unneeded here
+  since `CrossHoleDto::from_hole` uses the same `cl::lattice` function
+  and `CrossHole` unit pins prove field coverage directly.
+
+**Cost to change later.** Negligible; the changes are confined to comments
+and `#[cfg(test)]` functions in `crates/app/src/operation/hole_digest.rs`.
+
+## #1626 - Skip a repeated Tormach tool change
+
+**Decided:** Remember the tool for which this program last emitted M6.
+The first tool change remains unconditional because the post cannot know
+which tool is already in the spindle. A consecutive request for that same
+tool skips the pre-change retract and its G30, and skips M6. It keeps the
+tool note, G43 compensation, the machine-Z lift, and the clearance move
+before the first X/Y traverse. A different tool, including a return to an
+earlier tool, still requires a tool change.
+
+**Why:** G30 can lower Z from the top of travel to the operator's stored
+tool-change position. Repeating that trip for the tool this program
+already loaded adds motion without changing the tool. Tracking emitted M6
+commands avoids relying on PathPilot to optimize a same-tool M6.
+
+**Public-document reading:** Tormach's [post-processor guidelines](https://knowledgebase.tormach.com/pcnc-1100/pathpilot-post-processor-guidelines)
+describe M6 as beginning a tool-change sequence, and its [770MX tools page](https://knowledgebase.tormach.com/770mx/pathpilot-tools-and-features-770mx)
+says Txx M06 loads the specified tool. These readings establish no
+guaranteed same-tool exception, so this policy does not rely on one.
+
+**Considered and dropped:** Inferring the tool loaded before the program
+starts would guess at controller state. Skipping compensation or the lift
+would remove the established protection before the next traverse. Keeping
+a set of every tool previously used would incorrectly suppress a change
+back to an earlier tool after another tool was loaded.
+
+**Cost to change later:** A controller-aware policy would need an explicit
+source of trusted spindle state and tests for the initial tool change.
+Changing compensation or clearance behavior would need separate safety
+evidence and pinning tests. The current policy needs only one remembered
+tool number per posted program.
+
+**Review decision (PR #1741):** An emitted M0 or M1 makes the loaded tool
+unknown, including a setup-change stop or a probe-result check. The next
+section emits its tool change even when its tool number is unchanged.
+An operator may remove or exchange the tool during a stop; the post cannot
+trust the earlier M6 after control returns. Optional stops use the same
+conservative rule because the post cannot know whether the control will
+honor M1. Continuing to skip M6 after a stop was rejected because it could
+apply G43 to an empty spindle. Changing this later would require trusted
+controller spindle state. The `tormach_stop_tool` pins cover program stops,
+optional stops, setup changes and probe checks.
+
+## #1627 - scope the program sim's mark credit to the part(s) the operation marks
+
+**Decided:** `stock_sim::Mark` carries `target: Option<&'a [Triangle]>`, and `operation::mark_law::sim_mark_of` pairs `budget_of` with `target_facets(world, op)`:
+- For a stock-source Engrave or Trace (`SrcRef::Stock`, `SrcRef::Entity(stock_name)`, or a `Selection` containing the stock or empty), `target` is `None`, so `credit_marks` credits every setup part (`facets`), matching `generate::run_job` (`parts_marked`).
+- For a part-source Engrave or Trace (`SrcRef::Entity(part)` or a `Selection` on part entities), `target` is `Some(facets)` holding only those judged source entities' facets in the setup's frame (`setup_align::facets_in`, filtered by `stock_source::judged`).
+- In `credit_marks`, a mark with `target: Some(parts)` skips empty targets, computes `part_surface` and `undersides` over `parts` itself, and credits column `k` only when `parts` owns the top surface at `k` (`(p - target_top[k]).abs() <= 1e-9`), bounded by `parts`' own underside (`MARK_FLOOR`).
+
+**Why:** Previously `credit_marks` credited every declared mark against the union of all setup parts (`model_facets`), so a part-source mark on B whose flank entered a neighbouring part A by up to the mark depth was forgiven on A by the program sim while the op's own neighbour law (#1621) convicted it. Scoping each mark to its target parts makes the sim agree with the operation, and using `parts`' own undersides ensures a mark on B stacked over A is bounded by B's own floor rather than A's.
+
+**Considered and dropped:**
+- Filtering `credit_marks` by entity IDs instead of `&[Triangle]`: `camcraft-sim` has no ECS or entity-name model; passing `Option<&'a [Triangle]>` keeps `Mark` `Copy` and pure geometry within `camcraft-sim`.
+- Changing `mark_law::budget_of`'s return type: keeping `budget_of -> Option<f64>` and adding `target_facets` + `sim_mark_of` preserves the existing public signature while exposing the target mesh alongside the budget.
+
+**Cost to change later:** one field on `stock_sim::Mark`, `mark_law::target_facets`, and the one wiring site in `stock_sim_marks::program_marks`.
+
+## #1637 - Stock-source 2D Chamfer refusal names the cause and part-source workaround
+
+**What was decided.** Add `Warning::StockChamferGouge { at: usize }` to
+`camcraft_sim::verify::Warning` (blocking post like `Warning::Gouge`,
+mapped to `"gouge"` in MCP `verify`, located on `at` in `warned_moves`,
+and folded on its own line in UI warning folding). Its `Display` reads
+`"move {at} cuts past the finish surface (stock-source chamfer breaks into a part; chamfer with the part as source)"`.
+In `operation::keep_law::note_stock_chamfer_gouges`, rewrite `Warning::Gouge`
+emitted against kept parts into `Warning::StockChamferGouge` when
+`!part_solid` and the op is `OpParams::Chamfer2D`, called from both
+aligned and tilted generation arms and `operation::kept_rejudge`.
+
+**Why.** `GenerateOperation`, `posting::post_setup`, `mcp::job::verify`,
+and the UI op warning fold all surface `tp.warnings`, not `tp.path.notes`.
+Giving the refusal its own `Warning` variant preserves `kind: "gouge"`,
+`blocks_post: true`, move-index focus, and existing `"move N cuts past the
+finish surface"` assertions while surfacing both the cause and the exact
+`"chamfer with the part as source"` workaround across every channel.
+
+**Considered and dropped.**
+- Attaching a message to `tp.path.notes`: `mcp::job::verify`, `v_verify`,
+  and `post_setup` do not print `path.notes`, so MCP agents would still
+  see a generic gouge.
+- Adding a free-form `String` field to `Warning::Gouge`: `Warning`
+  derives `Copy`, and rewriting only stock-source 2D Chamfer keeps all
+  existing gouge sites zero-allocation.
+- Refusing at generation with `Err(GenError)`: existing suites (#1631)
+  expect the path to generate with blocking warnings rather than fail
+  generation, and the PR #1634 review specifically asked for clearer
+  op-warning wording.
+
+**Cost to change later.** Remove `Warning::StockChamferGouge` and
+`note_stock_chamfer_gouges` if another warning representation carries
+per-law hints.
+
+**Review follow-up (#1771).** For live post refusals on operations with an
+operation frame, retain the stock-chamfer cause and part-source workaround,
+but omit the local move number. The rejudge path's local move indices do
+not identify moves in the posted path. Keep the existing suppression of
+other local warning text. Keeping the full warning `Display` was rejected
+because it would present a misleading posted move number.
+
+## #1647 - Retract and identify mill setup changes
+
+**Decided:** Haas, Mazak, Doosan DNM, Sinumerik, Heidenhain, grblHAL and
+TinyG read `PARAM SetupChange`, sanitize the next setup's name with their
+existing comment cleaner, and retract before naming that setup and writing
+its M0 or M1. The setup marker resets with the after-operation request.
+An ordinary operation stop keeps its existing output.
+
+**Review fix:** The seven posts use `null` for an absent setup marker,
+separate from its cleaned display text. A valid name such as `()` cleans
+to an empty string; that still triggers the dialect's retract and displays
+`UNNAMED SETUP` before M0 or M1. The marker still resets after the section.
+Refusing these names was considered and dropped because a valid setup can
+retain its safe retract and operator stop with replacement display text.
+Changing that replacement later requires updating the posts and their
+empty-name pins, without changing their retract policies.
+
+**Why:** The app already sends the marker beside `AfterOperation` at a setup
+boundary. Reading that marker in each dialect extends the existing Fanuc
+and Tormach behavior without changing the stream or the app's stop policy.
+The next section must state its own request, so a stale marker cannot turn
+an ordinary stop into another setup-change stop.
+
+**Retracts:** Haas and Mazak use their existing Z reference return,
+`G91 G28 Z0`, followed by `G90`. Doosan uses the same return and cancels
+active TCPM first, as its home path already does. Sinumerik uses its
+existing `safeZ()` validation and machine-coordinate Z move. grblHAL and
+TinyG reuse `retract()`, including its machine-safe-height or work-offset
+clearance choice and its existing named refusals.
+
+Heidenhain has no trusted machine-referenced home in this post. Its
+setup-change move uses the current section's work-offset `ClearancePlane`
+only when it is finite and above a finite `StockZTop`. Missing or unsafe
+heights produce a refusal naming the operation. The lift preserves any
+higher current Z, and the stock-top check resets for each section. This
+avoids inventing a G53 home (G53 has another meaning in this dialect) or assuming a builder's
+M91 datum. This clearance move is not a machine-home promise.
+
+**Not applicable to the mill Z-lift contract:** `fanuc-lathe.cps`,
+`tormach-lathe.cps` and `wire-iso.cps` keep their current stop behavior.
+A lathe's Z direction runs along the spindle, not vertically clear of
+the part. Fanuc's existing home path clears X before Z, while Tormach's
+G30 path uses the stock envelope to order departure moves. A generic
+wire EDM mounts no milling tool and finishes by cutting the wire; it
+declares no trusted home position. Applying the mill's Z lift to these
+posts would claim a clearance their motion models do not establish.
+The app can send these posts `SetupChange`; this is a scope decision,
+not an assertion that their setup boundaries are unreachable. Their
+stops remain, but this fix adds no new setup-change notification to them.
+
+**Considered and dropped:** A shared guessed retract would erase the
+dialects' different coordinate and homing rules. Changing every M0/M1
+would also alter stops unrelated to reclamping. Adding a new stream
+record or changing app parameters is unnecessary because the existing
+marker already distinguishes the boundary. Lathe and wire setup-change
+handling needs its own verified departure contract rather than a copied
+mill Z move.
+
+**Cost to change later:** A different retract policy changes the relevant
+post and its setup-change pins. Extending the same operator message to
+lathe or wire posts requires tests of their own departure and wire state;
+it does not require changing the existing `SetupChange` record.
+
+## #1655 - A band of the stock around the part narrower than the tool is named, not cut
+
+**What was decided.** A pocket-family op (2D Pocket, 2D Adaptive, 2D
+Offset) that clears the stock around the part (a whole-model source, #12,
+or the stock source with parts, #1554) now carries a note for each
+connected piece of its area that erodes to nothing by the tool radius plus
+the stock to leave. The note gives the kind, the tool diameter, the stock
+to leave and the XY box of each piece. The cut itself does not change. The
+piece finder (`machining2d::unreached_pieces` / `unreached_note`) is pure
+and lives in `camcraft-motion`; the app calls it once after generation
+(`keep_law::narrow_noted`).
+
+**Why.** The issue allows either outcome. To cut the band, the region's
+outer boundary must grow past the stock outline by the tool radius, so
+that the tool can hang over the stock edge. That moves every cutter
+position of every whole-model and stock-source pocket (also the round
+stock corners), so goldens would change, and the region is also the
+preview and the verify bound. A note changes nothing for a region where
+every piece is reached, so no golden moves.
+
+**Considered and dropped.**
+- Cut the band (tool over the stock edge): the better result for the user,
+  but a behaviour change to every around-part pocket. It is a candidate
+  for a follow-up issue.
+- Put the note in `pocket_entered` for every pocket region: picked pockets
+  with narrow slivers would get new CL notes, and goldens could change
+  (the issue's own risk line).
+- Refuse the op: the cut of the reachable area is correct and useful; a
+  refusal would block it.
+
+**Noise.** A piece narrower than 0.01 mm (it erodes to nothing by
+0.005 mm) or smaller than 1e-4 mm^2 is a sliver where a stock face meets a
+part face. It gets no note.
+
+**Cost to change later.** Low: one call site in `generate.rs` and one pure
+module. A change to cut the band would remove the note for those cases.
+
+## #1664 - Bore-side Contour ramp entry holds the ramp angle
+
+**Decided.** In `contour_bore.rs`, the `Entry3D::Ramp` arm with no entry
+ramp angle set (`approach.ramp_angle == 0`) keeps the single chord only
+when that chord is no steeper than the links' ramp angle (3 deg by
+default; a value that is not a real angle reads as the default). A chord
+with no run (a closed ring: the leg is the ring start) or a steeper chord
+zig-zags along the lead-in and the ring at that angle, with the same
+`plan_zig_capped` / `push_zig` the entry-angle arm uses. When the path is
+too short for the angle, the descent substitutes by name
+("the lead-in and ring are too short to ramp at the angle"): an axial
+dive at the plunge feed with an `entry:` note.
+
+**Why.** On a closed ring the chord has zero length, so the old arm fed
+straight down at the cutting feed at each level with no note (the
+center-cut guard was the only check). That is a plunge called a ramp.
+
+**Considered and dropped.**
+- Route the arm through `descent::plan_arm` / `ramp_fallback` (#1663's
+  `ring_zig` arm). The contour does not use the `Descent` planner; its
+  arms push moves directly, so the same law is applied here with the
+  same zig helpers. No dependency on #1663.
+- Zig-zag also when the chord is blocked. It would move the pinned
+  `a_blocked_bore_entry_substitutes_and_says_it` behaviour; a blocked
+  chord still substitutes by name, which the issue accepts.
+- Change the wall side (`Side::Outside`). It already makes named axial
+  plunges at the plunge feed; unchanged.
+
+**Cost to change later.** One match arm and three small helpers in
+`contour_bore.rs`.
+
+## #1665 - Bore ramp entry descends at the ramp angle
+
+**What was decided.** A Bore with `entry: Ramp` and no entry ramp angle
+no longer takes the single chord from the last ring start to the centre.
+The bore now opts into the ring ladder's ramp (`Motion::with_ring_zig`,
+#1609). The ramp zig-zags along the level's first cut, the radial sweep
+from the centre to the ring, at the transition's ramp angle
+(`Links::ramp_angle`, 3 deg by default). If the sweep is too short for
+the ramp in at most 64 legs, the ladder dives at the plunge feed and an
+`entry:` note names it. The plunge that starts each ring again after the
+sweep (the pass link back down the column just cut) also gets an
+`entry:` note when the entry is not Plunge.
+
+**Why.** The chord is only one ring radius long, so it descends at up to
+84 deg at the cutting feed on a small hole. The ramp angle is already a
+user parameter (the level transition's ramp angle), so no new parameter
+and no hard-wired value are added. This is the same law that #1609 and
+PR #1663 gave to the Circular.
+
+**Considered and dropped.**
+- A new bore-only ramp angle parameter: the transition's angle already
+  exists and the Circular reads it for the same case.
+- Keep the tool down between the sweep and the ring (no lift and no
+  plunge, because the ring starts where the sweep ends): this is better
+  motion, but it changes every bore path and the tests and goldens that
+  read them. The issue asks for a note. A follow-up can remove the hop.
+- A helix about the centre in place of the ramp: the user selected Ramp.
+
+**Cost to change later.** Small. The flag is one call in `bore.rs`, and
+the note is one branch in `ladder_links::pass_link`.
+
+## #1669 - Rim vertex crossing distance band
+
+**Decided:** A rim vertex crosses a straight trace only when its neighbours
+stand on opposite sides farther than the existing `CROSSING_TOUCH` distance
+(1e-9 mm). Scale orientation values by the segment length so this distance
+stays the same for short and long traces. Apply the same band to signed
+radial distances for an XY arc. Polyline footprints keep the straight rule.
+
+**Why:** Exact signs read a nearly coincident wall as an open rim crossing.
+That excuses the whole move from the wall check. A neighbour inside the
+band now counts as a touch, so the move still answers to the walls. True
+crossings beyond the band still pass the rim classification.
+
+**Considered and dropped:** Changing the global crossing tolerance would
+change unrelated crossing laws. Sampling arcs would add approximation and
+miss the exact radial distance already available here. Keep both existing
+algorithms and restrict this change to their vertex-neighbour test.
+
+**Evidence:** Unit pins cover either near neighbour, reversed crossings,
+short and long segments, polyline footprints, and the XY arc branch.
+The wall pin uses nearly vertical lattice vertices: region normalization
+keeps their bends while their perpendicular offsets stay below the band.
+All three pins fail with the old code and pass with the fix. Restoring each
+old guard separately makes its pins fail; restoring the fix makes them pass.
+The quick gate and camcraft-sim all-target clippy both pass.
+
+**Cost to change later:** Local to the two vertex tests and their pins.
+A larger tolerance needs separate evidence about which wall excursions may
+be treated as touches. No global tolerance or posted output changes here.
+
+## #1672 - Turn closed inward STL and OBJ bodies outward
+
+Chosen: reuse the existing STEP per-body orientation helper in both buffered mesh imports and the streaming STL load path. Return its note through Graded so the existing command and status-line plumbing reports the change. Keep the helper filename to avoid an unnecessary module rename.
+
+Why: the helper already distinguishes closed, consistently wound negative-volume bodies from open, mixed, non-manifold and zero-volume bodies. It can correct individual bodies without letting a larger outward body hide an inward one.
+
+Dropped: refusing every inward body would require users to repair a winding that can be corrected deterministically. A whole-mesh signed-volume flip would mishandle multiple bodies. Changing the pencil and deburr generators would duplicate an import concern and broaden this fix.
+
+Cost to change later: replace the two dispatcher normalization calls if import policy changes. The pins cover both formats and the separate streaming STL route. Body classification and its limits remain the existing winding policy.
+
+Review correction: before STL or OBJ normalization, refuse an inward component whose bounds overlap another component. A nested inward shell can be a valid cavity, so its negative volume does not prove an inverted solid. Refusal preserves the cavity instead of silently reversing its normals. The buffered and disk import pins use an outward outer cube and an inward inner cube.
+
+Dropped: a new nesting algorithm would add geometry policy beyond this focused review fix. Bounding-box overlap is deliberately conservative: separate shells with overlapping bounds can also be refused. A later nesting classifier can reduce those refusals without allowing an ambiguous cavity to be reversed.
+
+## #1674 - Keep the entry ramp angle independent of the links
+
+**Decided:** An Inside Contour Ramp entry with no explicit entry angle uses
+`DEFAULT_RAMP_ANGLE` (3 degrees). The shared descent ramp fallback uses the
+explicit approach angle when set, otherwise the same 3 degree default.
+Neither path takes the link ramp angle. Explicit entry angles and explicit
+level transition angles keep their own behavior. The shared fallback also
+applies this default to a helix that falls back to a ramp.
+
+**Why:** Entry and link angles describe separate motions. A 45 degree link
+setting must not silently steepen an entry whose angle was left unset.
+Using the existing default fixes the affected generator paths without a
+project schema change or a global change to legacy approach defaults.
+
+**Considered and dropped:** Taking the smaller of the link angle and the
+default would keep two separate settings coupled. Changing `Approach::DEFAULT`
+globally, or adding schema and UI fields, would broaden this fix and change
+other legacy entry behavior.
+
+**Evidence:** The Contour, Circular and Bore pins failed before the fix.
+All five `entry_ramp_angle` tests pass after it, including an explicit
+5 degree entry and a separate 45 degree transition. Restoring each old
+production file independently makes its affected pins fail; restoring the
+fix makes them pass. The quick gate and motion clippy checks pass.
+
+**Cost to change later:** Small generator and pin changes. No saved-project
+migration is needed.
+
+## #1682 - grblHAL, Carvera and TinyG write no motion after the no-plane refusal
+
+**Decided.** In `grblhal.cps`, `carvera.cps` and `tinyg.cps`, `xyFirst`
+returns `false` when it refuses a first X/Y traverse for want of a stated
+ClearancePlane or RetractPlane, and every caller (rapid, feed, arc, and the
+grblHAL canned cycle) then writes nothing for its move. X/Y stay unknown, so
+every later move of the section is refused the same way (the message once
+per program). This is the Tormach (#1614) and Fanuc-family (#1633) rule.
+
+**Why.** The posts named the refusal but still wrote the combined
+`G0 X.. Y.. Z..` (and the feeds after it). The app blocks posting on the
+warning, but the `post` CLI writes the file with the warning on stderr, so
+the refused move was in the program text.
+
+**TinyG too.** The issue said TinyG already stopped (its `startXY` returned
+false), but its `onRapid` still wrote the combined rapid after the refusal;
+the issue's own "Done means" pin asserts TinyG, so its `onRapid` takes the
+same guard. Considered and dropped: leaving TinyG for a follow-up - the pin
+the issue asks for would be red.
+
+**Cost to change.** Script-only; the pins are
+`first_traverse_clearance::a_first_traverse_with_no_stated_plane_is_refused_by_name`
+and `::no_xy_motion_follows_the_refusal_whatever_the_first_move`.
+
+## #1702 - batch runs the kernel suites; gate gets --only and --failed
+
+**Decided:** `cargo xtask gate batch` runs the debug suites of `camcraft-kernel`
+(`kernel` is now in `BATCH_CRATES`, after `geometry`). Every gate tier but
+`test` takes `--only <step>` (repeatable) and `--failed <gate-logs/run>`. A
+step matches `--only` when its name equals the word or starts with it and a
+non-word character follows (`kernel` selects `kernel suites`). `--failed` reads
+the `NN-<step>.log` files of an earlier run. A log with a `test result: FAILED`
+line or a line that starts with `error:` marks a failed step. Both options
+together keep only the steps that both name. An empty selection is an error
+that lists the step names. `--dry-run` prints the selected steps.
+
+**Why:** the release gate of the v0.20.0 cut failed in the kernel step, which
+no earlier gate ran. A fix for one step cost a full run of about 90 minutes.
+The maintainer, 2026-11-14: "catch kernel lanes in the xtask gate.. so we dont
+have to start over 3 times".
+
+**Considered and dropped:**
+- A `summary.txt` written by each run for `--failed`: it would not exist in
+  the logs of runs made before this change, such as the failed cut run.
+- Selecting by step number: numbers change when the plan changes.
+- Moving kernel out of the release tier: release still runs every crate.
+  `SLOW_BINARIES` is unchanged (no kernel entry; kernel has no suite over 40 s
+  in the list), and `batch` still skips its four slow binaries.
+
+**Cost to change later:** the batch tier grows by about 3 minutes (the
+kernel debug suites). Drop `kernel` from `BATCH_CRATES` to undo it.
+
+## #1703 - Run independent release-gate lanes together
+
+**Decided:** Prebuild the debug test targets and the release heavy targets before
+running release-gate suites. Run independent suites in waves of at most four,
+mixing debug and release steps. Keep app, kernel, UI, build and clippy steps alone.
+Keep invoking Cargo for each suite after the prebuilds, with the existing working
+directories, libtest arguments and separate numbered logs.
+
+**Why:** This preserves the existing suite selection and diagnostics while
+overlapping test execution. App and kernel contain import watchdogs; keeping their
+whole suites alone avoids a fragile list of individual timed tests. UI suites can
+open windows and must also run alone. Debug and release use different profile
+directories. A temporary probe with four prebuilt two-second test runs measured
+8.086 seconds serially and 2.052 seconds concurrently. Cargo briefly held package
+and build locks, then released them before test execution. This supports using the
+existing Cargo commands rather than writing an artifact parser and test launcher.
+
+The gate reports each lane's duration, total elapsed time and the sum of lane wall
+times. The sum is an estimate of serial cost under the current load, not a measured
+serial release benchmark. The full measured comparison is recorded below.
+
+**Also decided:** Compare corresponding removed and added Cargo.lock lines after
+normalizing CRLF line endings. Permit unchanged lines and version-line changes;
+continue refusing changed names, checksums and other content.
+
+**Considered and dropped:** Running every suite concurrently risks watchdog and
+window failures. An unbounded worker pool risks exhausting machine resources.
+Splitting individual app/kernel binaries can improve utilization later but needs
+a reliable inventory of timed suites. A custom Cargo artifact parser duplicates
+Cargo's target selection. Splitting work between uma and m3 adds coordination,
+artifact transfer and failure handling beyond the optional multi-host request.
+
+**Cost to change later:** The wave planner and its tests own concurrency and
+isolation policy. Finer isolation or a queue that immediately fills freed slots
+can change that module without changing suite commands. Multi-host execution
+would additionally need a runner protocol and combined checkout/log validation.
+
+
+### Full release-gate comparison (2026-11-15 UTC, PR #1790 review)
+
+**Revision and machine:** Both measured runs used the unchanged code and tracked
+working tree at `31dc65818dbb341c6ba199979a07e87891f84a21`, on `uma`: Intel Core
+i7-1360P, 12 cores / 16 logical CPUs, 61 GiB RAM, x86_64 Linux
+`7.0.0-43-generic` (Ubuntu), `rustc 1.99.1 (58cf8f9c3 2026-10-13)`.
+No GitHub runner or second machine was used. Both runs retained the plan's
+Cargo `-j 6` and libtest `--test-threads=6` settings.
+
+**Cache and order:** First run the complete parallel release gate as a warmup:
+5086.11 seconds, all 169 steps attempted, three failed steps. Its new worktree
+initially had no product build artifacts; the existing shared sccache was enabled.
+Then measure serial, followed by parallel, in that same worktree. Retain both
+`target/debug` and `target/release` and the shared sccache between runs. The
+inherited `RUSTC_WRAPPER` selected sccache and `SCCACHE_CACHE_SIZE` was `40G`;
+`CARGO_TARGET_DIR` was unset. No cache was cleared and no source, manifest,
+compiler setting or dependency changed. OS page caches, temperature and background
+machine load were not controlled. These are one pair of warm-cache measurements,
+not a cold-build comparison or a statistical speedup claim.
+
+| Full run | Elapsed wall time (`/usr/bin/time -p`, real) | Steps attempted | Failed steps | Exit |
+| --- | ---: | ---: | ---: | ---: |
+| Serial command replay | 3982.32 s (66.37 min) | 169 | 3 | 1 |
+| Parallel release gate | 3851.03 s (64.18 min) | 169 | 3 | 1 |
+
+The measured parallel run took 131.29 seconds less (3.30%, 1.034x). This compares
+actual full-run wall times, not summed lane times. The standalone app and kernel
+barriers and the long `shared_face_bodies` heavy test remain part of both runs.
+The latter alone took 1473.21 seconds in the serial run.
+
+**Results and limits:** Both full measured runs completed every planned command,
+including both prebuilds, all debug suites, every release heavy command, clippy and
+both UI snapshot commands. Both had the same three failed steps:
+
+- Clippy refused existing dead code in `crates/ui/src/egui_app/app_icon.rs`:
+  `PNG_256` at line 12 and `taskbar_icon` at line 40, under `-D warnings`.
+- The UI snapshot step failed `egui_app::tests::egui_shell_snapshot`,
+  `egui_app::tests::egui_shell_snapshot_light` and
+  `egui_app::tests::tool_editor_snapshot`.
+- The GPU documentation snapshot step failed
+  `docs_images_snapshot_match_the_rendered_steps`.
+
+The other 166 commands passed in each measured run. No snapshots were updated.
+These are timings of full gates with identical failures, not passing release-gate
+verdicts; they do not establish the time for a fully green release. Fixing those
+unrelated UI findings was outside this review request.
+
+**Commands and serial method:** The release runner has no serial switch. Replay
+every exact Cargo command printed by its full dry-run sequentially with the
+printed working directory, using an external Python harness; do not change the
+source or revision to disable concurrency. The dry-run contains 169 commands.
+The harness below was used for the serial measurement; its per-step logs and JSON
+retain each command, exit status and elapsed time. It stops on a failed prebuild,
+as the parallel gate does, but neither measured prebuild failed.
+
+From the worktree root, before editing this documentation:
+
+```sh
+mkdir -p gate-logs/pr1790-benchmark
+cargo xtask gate release --dry-run > /tmp/pr1790-release-plan.txt 2>&1
+/usr/bin/time -p -o gate-logs/pr1790-benchmark/warmup.time cargo xtask gate release > gate-logs/pr1790-benchmark/warmup.log 2>&1
+```
+
+Save this harness as `gate-logs/pr1790-benchmark/serial.py`:
+
+```python
+import os, pathlib, re, shlex, subprocess, time, json
+root = pathlib.Path.cwd()
+plan = pathlib.Path('/tmp/pr1790-release-plan.txt').read_text()
+commands = []
+for line in plan.splitlines():
+    m = re.fullmatch(r'     \(cwd ([^)]+)\) cargo (.+)', line)
+    if m:
+        cwd = root / 'crates/ui' if m[1] == 'ui' else root
+        commands.append((cwd, shlex.split(m[2])))
+assert len(commands) == 169, len(commands)
+before = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+start = time.monotonic()
+results = []
+for i, (cwd, args) in enumerate(commands, 1):
+    t = time.monotonic()
+    logfile = root / 'gate-logs/pr1790-benchmark' / f'serial-{i:03}.log'
+    print(f'{i}/169 cwd={cwd.relative_to(root)} cargo {shlex.join(args)}', flush=True)
+    with logfile.open('w') as log:
+        code = subprocess.run(['cargo', *args], cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT).returncode
+    result = dict(step=i, args=args, cwd=str(cwd.relative_to(root)), seconds=time.monotonic()-t, code=code)
+    results.append(result)
+    print(result, flush=True)
+    if '--no-run' in args and code:
+        break
+elapsed = time.monotonic()-start
+assert before == subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+summary = dict(head=before.decode().strip(), elapsed_seconds=elapsed, results=results)
+(root / 'gate-logs/pr1790-benchmark/serial.json').write_text(json.dumps(summary, indent=2))
+print(f'wall {elapsed:.3f}s; {len(results)} steps; {sum(r["code"] != 0 for r in results)} failed', flush=True)
+raise SystemExit(any(r['code'] for r in results))
+```
+
+Then run the two measured commands, in order, retaining their logs:
+
+```sh
+/usr/bin/time -p -o gate-logs/pr1790-benchmark/serial.time python3 gate-logs/pr1790-benchmark/serial.py > gate-logs/pr1790-benchmark/serial.log 2>&1
+/usr/bin/time -p -o gate-logs/pr1790-benchmark/parallel.time cargo xtask gate release > gate-logs/pr1790-benchmark/parallel.log 2>&1
+```
+
+**Coverage check:** Compare the `(cwd, Cargo arguments)` multisets from
+`serial.json` and the measured parallel output: exactly 169 commands in each,
+with equal multisets. Normalize workspace-root cwd to `.` and UI cwd to
+`crates/ui`; sort the strings `cwd + "\t" + arguments joined by spaces`, join
+with newlines and add one final newline. The SHA-256 of that canonical manifest
+was `d9277549caf847a2bdc052ef605c58ab973ef606c6581e52aac31d8fb5f0212b`.
+HEAD and the tracked working tree stayed unchanged during the runs; the parallel
+gate did not report VOID. Raw evidence is retained locally in
+`/tmp/camcraft-pr1790-benchmark`, including the warmup and parallel per-step gate
+logs, all serial per-step logs, the dry-run plan, harness and measured summaries.
+The commands, method and results above are self-contained for re-running the
+comparison without those local files.
+
+## #1709 - Name the reason an empty 3D pocket cannot cut
+
+**Decided:** Record a `too_narrow` boolean when a nonempty level target becomes
+empty after erosion by the tool radius plus stock allowance. If the final path
+is empty, use that evidence to name the tool diameter and stock to leave in the
+refusal. Keep the existing model-filled message when no level reaches that
+case. Both plain and offset-shell pockets use the shared ladder.
+
+**Why:** An empty target and a target that cannot fit the cutter require
+different user corrections. Including the stock allowance explains why an
+opening wider than the tool alone can still be refused. The flag changes only
+the empty-path diagnostic; it changes no target, motion, or refusal boundary.
+
+**Considered and dropped:** Replacing every empty-path message with a tool-width
+message would misdescribe a model that fills the whole pocket. Computing a
+minimum opening width or changing the geometry is unnecessary for this
+diagnostic and would expand the scope. Naming only the tool diameter would
+omit the stock allowance used by the existing erosion.
+
+**Cost to change later:** Small. The flag and message selection live in the
+ladder, and three motion-crate regression tests pin the filled-model,
+tool-width, and stock-allowance cases for both entry points.
+
+## #1714 - Plan one release heavy step for each test binary
+
+- Chosen: the release heavy lanes of motion and app are one `--release --no-run` build, then one step for the lib, the bins, the doc tests and each integration binary that can hold an ignored test.
+- Why: a binary with no `ignore` in its files runs no test in a heavy step. Planning all of them gave 526 steps, one cargo start each. The plan test pins that every binary with an `#[ignore]` has a step.
+- A binary that pulls in other files (`mod x;`, `include!`, `#[path]`) always gets a step. Unreadable source also counts as heavy.
+- Dropped: kernel heavy steps. Release never ran kernel `--ignored` before. Adding them is a coverage change, not a split. Left for a follow-up, #1783.
+- Dropped: a per-test time limit. libtest only reports "running for over 60 seconds" on stable. The step note lists those tests by name. A real limit needs nightly `--report-time`.
+
+## #1715 - The as-imported sample's 3D Finish runs in six level bands
+
+**What was decided.** The release-tier test
+`the_sample_as_imported_still_generates_the_3d_finish` (one 3D Finish
+generate and one verify over the whole 118 mm Z span of
+`sample_ap214.step`, about 28 min in release) is replaced by six tests in
+the new binary `crates/app/tests/shared_face_bodies_finish.rs`. Each test
+sets the S1 top and bottom heights to one sixth of the model's Z span
+(offsets from `top_of_model`; the last band ends on `bottom_of_model`),
+generates S1 alone and verifies it. Each test keeps the old asserts: one
+generated row, status `ok`, no `gouge` problem in the verify gate. The
+bands tile the span with no gap; a default-suite test
+(`the_3d_finish_bands_tile_the_whole_span`) pins that.
+
+**Why.** The issue asks for a split "by level band". Six bands is the
+release gate's `--test-threads=6`, so the bands run at the same time. A
+new sibling binary, not new tests in `shared_face_bodies.rs`, keeps the
+edit away from the 3D Pocket test that open PRs #1772 and #1780 change.
+The heavy-step planner gives each binary with an ignored test its own
+step, so the new binary has a step of its own (`app heavy:
+shared_face_bodies_finish`).
+
+**What it does not prove.** A band program is not the whole-span
+program. The waterline ladder starts its levels at each band's top, so
+the level Z values move by less than one stepdown at a band boundary, and
+the links from one band to the next are not generated or verified. Each
+band's own levels and links are generated and verified. The gouge law is
+local to each cut, so a gouge in the whole program shows as a gouge in
+the band that holds the cut, except for a gouge that only a cross-band
+link makes.
+
+**Found on the way (#1840).** The job keeps the never-generated 3D Pocket
+R1, so `verify` skips its gate ("an operation is stale or never
+generated") and `gate.problems` is empty: the no-gouge assert checked
+nothing in the old test, and checks nothing in the bands. The split keeps
+the assert unchanged (no assert may change in a split); #1840 owns making
+it real.
+
+**Dropped.** (1) Keep the whole-span test and add the bands: the 28 min
+test stays, against the issue's "Done means" (no test over 5 min).
+(2) A lighter fixture: no smaller model has the stacked shared-face walls
+that #1407 is about. (3) Move the helpers into a shared module: that edits
+the top of `shared_face_bodies.rs` too; the new file has its own copy of
+the four small helpers (about 50 lines).
+
+**Cost to change later.** Test-only. `BANDS` and the macro rows change
+together.
+
+## #1716 - Lighter debug fixtures for four HSM suites: a larger adaptive load
+
+**What was decided.** The four debug suites `whole_model_pocket`,
+`pocket_overhead`, `climb_direction` and `adaptive_pinch` (camcraft-app)
+run their adaptive (HSM) plans at an optimal load of 0.4 (40% of D) in
+place of the default 0.1464. The geometry of each fixture does not change.
+`whole_model_pocket` gets one new `#[ignore]`d release-lane twin,
+`a_whole_part_adaptive_at_the_default_load_keeps_the_full_tool_radius_off_the_part`,
+that keeps the disc-law check at the default load.
+
+**Why.** The time is in the HSM plan at the default load, not in the
+fixture size: one 2D Adaptive plan on the 30 mm block took about 130 s in
+debug and takes about 1.5 s at 0.4. The laws these tests pin (island
+region, full tool radius off the part, the chord law between pieces, the
+cut direction, the refusal under a closed floor) do not read the ring
+step. A mutation check of each law at the new load fails each changed
+test (recorded in the PR body).
+
+**Considered and dropped.**
+- A smaller block or stock: the band around the part must stay wider than
+  the tool radius plus 1 mm, or the "stock is cleared" check has nothing
+  to read; and the size was not the cost.
+- One cached generation shared by the three adaptive tests of
+  `whole_model_pocket`: libtest runs them in parallel, so the wall time
+  stays at one plan (130 s).
+- Twins at the default load for the other three suites: their Adaptive
+  cases are one of several strategies or kinds in each test, and the
+  default load stays covered by the `whole_model_pocket` twin and the
+  release lane of `adaptive_pinch`.
+
+**Cost to change later.** Set the load back in four test helpers.
+
+## #1726 - The pick door takes an edge pick whose stitched ring has no area
+
+**What was decided.** The pocket family's flat-area door
+(`operation::selection_refusal`, used by `SetOperationGeometry`,
+`CreateOperation`, `EditOperationLinks` and the kind change) no longer
+refuses a selection when the refusal is the collapse of a ring that only
+the stitcher closed (its label starts "the stitched rim of"). The picks are
+stored. Generate keeps the same refusal, and the Geometry page still shows
+the sentence under the picks (`selection_account` is unchanged).
+
+**Why.** Edges are picked one at a time. The stitcher welds open runs where
+their ends meet seen from above, so one vertical edge, or an edge with the
+edge under it, is a "ring" with no area. In a perspective view such edges
+are under the cursor. The door refused the pick, so a plain click on a
+vertical edge selected nothing and the first Ctrl+click on a second edge
+added nothing. The maintainer saw this as "it just changes between the two
+picked edges". The door's own comment says an open run mid-pick is normal.
+
+**Considered and dropped.**
+- Matching run ends in 3D in the per-entity walk. A rim whose runs lie at
+  different heights and meet only in projection is a ring today, and a 2D
+  Contour takes its side from it. In 3D those runs become open runs and the
+  cutter rides their line. That changes toolpaths, so it was dropped.
+- Not committing a degenerate stitched ring (leave its runs open). This
+  changes what Generate says and what a 2D Contour does with a vertical
+  run. Dropped for the same reason.
+- A structural test (resolve each chain, check that every item is an open
+  run) in place of the label prefix. The door already keys on message text
+  (`LINE_FROM_ABOVE`); one shared constant now names the rings at both
+  stitch sites, so the prefix cannot drift.
+
+**What it does not change.** A wall face pick and a closed chain on a wall
+are refused at every door as before. No toolpath or posted output changes:
+only the door is more lenient, and Generate is the backstop.
+
+**Cost to change later.** One filter in `selection_refusal` and one
+constant. If the door must refuse again, the list must still accept the
+picks that build a chain edge by edge.
+
+## #1727 - Edges as boundaries: any pick mode, and two separate chains bound the area between them
+
+**Decided.**
+- An armed boundary row takes faces and edges whatever the toolbar's pick
+  mode. Before, it took the toolbar's kinds, so in Faces mode (the usual
+  one) no edge could be picked as a boundary.
+- The open boundary may hold two or more separate open chains. Each chain
+  splits the stock as one chain already did; each keeps the side that holds
+  more of the operation's own area; the area kept is where every chain's
+  side agrees (between the chains). The open ends run on to the stock as a
+  single chain's do. The Open - side B role keeps everything beyond them.
+  Face lays its rows along the first chain.
+- Refused by name, never guessed: chains that touch or cross; a chain with
+  the operation's area evenly on both sides (which side is "between" is a
+  guess); a Contour given two chains (it rides one); an include / exclude
+  made of separate chains (the Apply door, as for one open chain).
+- The old refusal "the boundary picks spell N separate open runs" is gone:
+  it is exactly the case the maintainer asked to work. The pick-shape test
+  in `area_picks.rs` that pinned it now pins two chains.
+
+**Why.** The maintainer's report: a face selection must be able to be
+bounded by two edges, the cut staying between them. The law reuses the
+single chain's side construction and region intersection; no new geometry
+kernel.
+
+**Considered and dropped.**
+- Two separate Open entries (one per edge): the page and the file hold one
+  open boundary; a second would change the project file format.
+- Per-chain sides (A/B per edge): one side choice for the whole boundary is
+  what the page offers; "between" is the case asked for.
+- `set_operation_geometry` taking boundary edges: that tool sets the
+  operation's source. The boundary is the area controls, set over MCP by
+  `set_operation_area` (`open.picks` takes edge chain ids, already did); the
+  issue's "Done means" names the first tool, the pin is on the second.
+- Drawing the separate chains in the viewport's boundary overlay: the
+  overlay draws one open chain; the page lists the entry as
+  "2 edges, 2 open chains". Left for a follow-up if wanted.
+
+**Cost to change later.** Small: the law is `camcraft_geometry::boundary_chains`
+and one arm in `boundary::resolve`; nothing new is saved.
+
+## PR #1756 review follow-up
+
+**Chosen.** Keep chain grouping, distance checks and region splitting in
+`camcraft-geometry`, with geometry unit tests beside them. The app passes
+regions and point chains through that interface and maps domain errors into
+its operation errors. World lookup and undoable commands stay in app.
+
+**Why.** These calculations have no ECS or project dependency. Keeping the
+new algorithms in app was considered and dropped because it violates the
+existing domain ownership rule.
+
+**Evidence choice.** Capture the actual egui shell used by the structural
+pin for the Boundary row in Faces mode, including its two-chain entry.
+Review images accompany [PR #1756](https://github.com/NeoTech/Camcraft/pull/1756).
+A painted-text assertion pins the entry without a pixel comparison;
+hand-drawn mockups and updating release snapshot PNGs were dropped because
+they would not show the reviewed behavior or fit the PR snapshot rule.
+
+## #1731 - Slot end extensions
+
+**Decided.** The Slot operation has two new parameters, `extend_start`
+(past A) and `extend_end` (past B), in mm, zero by default. The pass runs
+between `A - extend_start * u` and `B + extend_end * u`, where `u` is the
+unit direction from A to B. The values must be finite and not negative;
+the command refuses other values at creation. The project file writes a
+key only when its value is not zero, and the parameter digest appends the
+pair only when one is not zero. Thus a slot with no extension keeps its
+file text, its stamp and its output.
+
+**The gouge law judges the extended pass.** The Slot's machine area (the
+region that the verifier reads) is the stadium of the extended ends: the
+channel that the user asks for. The part law is not changed. On a part
+source, the part's solid section judges the path; on a stock source, the
+setup's parts judge it (#1607). An extension that enters a part that the
+job keeps is a blocking Gouge, and the post refuses the program.
+
+**The pick room judges the authored slot.** On a Selection source, the
+#1504 room law (`SlotBound::judge`) reads the authored A, B and width, not
+the extended ends. An extension goes past the picks because the user
+asks for it, and the part law then judges where it goes.
+
+**Considered and dropped.**
+- One `extend` value for both ends: the maintainer asked for an
+  extension "in the direction of its length", and a slot that runs out
+  through one edge only needs a different value at each end.
+- Keep the region as the authored stadium: the verifier would then
+  convict every extended move, also in air, and the parameter could not
+  be used.
+- Move the extension into `SlotParams` in motion: the generator is a
+  pure function of two endpoints; the app moves the endpoints with
+  `machining2d::slot_extended_ends`, and the generator does not change.
+- Extend the Trochoidal slot too: not asked for; it can take the same
+  helper later.
+
+**Cost to change later.** Small: two additive fields with serde defaults.
+
+## #1733 - Arc turns at corners with a radius on 2D Pocket, 2D Adaptive and 2D Offset
+
+**What was decided.**
+- The existing "arc turns at corners" option (`blend_turns`, M11.1) gets a
+  radius, `blend_radius`. No radius means the tool radius, which is what
+  every earlier file blended at. So an old file and a new default
+  operation keep their output byte for byte.
+- The radius is bounded: at least 0.01 mm (a smaller arc is not a move a
+  control can cut) and at most the tool radius. A larger arc would leave
+  more corner rest than the sharp pass does. The upper bound is checked in
+  the generator, which knows the tool; the lower bound is checked at the
+  command door (`named_refusal`), even when the option is off, so a stored
+  nonsense radius cannot come back at a later turn-on.
+- 2D Adaptive and 2D Offset get the option and the radius. 2D Adaptive's
+  Trochoidal method refuses the option by name: its loops are arcs
+  already, and the option is never silently dropped.
+- The stamp digest takes the two new values only when they are set, so
+  the digests of existing operations do not change (no false Stale).
+- The project file writes `blend_radius` only when set, with no version
+  step. An old reader ignores the key.
+- The MCP `edit_operation` door accepted `blend_turns: true` but refused
+  `blend_turns: false` as an unknown field, because the flag is written
+  only when ON. A `false` leaf is now kept when the same key set to
+  `true` survives the typed round-trip. A misspelled key is still refused.
+- The UI seeds 0.5 mm when the user first gives a radius.
+
+**Why.** The maintainer asked for arc turns at corners as an option on
+pocket-type operations, with the default output unchanged. The corner rest
+of a smaller arc is stated, as before, by the fillet tally.
+
+**Considered and dropped.**
+- A radius larger than the tool radius with a rest pass: that is a new
+  corner-rest strategy, not this option.
+- Slot: open PR #1745 changes Slot; it is left to a follow-up so the two
+  PRs do not conflict. Face and 2D Contour also go to the follow-up.
+- A pinning test of 2D Adaptive on the large island fixture: one debug run
+  takes about 15 s, so its test uses a small rectangle.
+
+**Cost to change later.** The radius is a plain optional field; a wider
+bound or more kinds add arms to the same door and generator call.
+
+## #1735 - Two open edges are the walls of a band that the stock outline closes
+
+**Decided:** A pocket-family operation (2D Offset, 2D Pocket, 2D Adaptive) whose selection holds two open edges of a part cuts the band between them. The definition is exact:
+
+- Picked open runs that share an end are welded into one wall. Exactly two walls, A and B, must remain. Each wall is level, and both walls are at one height (tolerance 0.001 mm).
+- Each wall is run on straight along the tangent at each of its ends.
+- S is the stock outline in XY, grown by the extension `e` with sharp corners.
+- `band(e) = (side of A that holds B) ∩ (side of B that holds A) ∩ S`.
+- `band(0)` is the region of the selection. The pocket region law then removes the standing material of the part at every cut plane, as it does for a closed pick.
+- `band(e)` is a lane. The area law clips its result to the lane after the extension step. Thus the extension moves the two open ends out of the stock along the walls. The extension does not widen the band, and the tool does not go round the end of a wall.
+
+A selection that does not give one clear band is refused by name: no stock; a wall that is not level; walls at different heights; walls at more than 45 degrees to each other; walls that do not run alongside each other; walls that cross or touch when run on; walls that run together inside the stock; a stock outline that does not cover the space between the walls; a stock outline that closes the band in more than one piece; more than two walls; open edges mixed with closed boundaries; open edges of the stock; three edges at one point. One open edge keeps the old refusal, word for word. Tool containment On or Outside is refused for a band, because the walls are the limit of the tool.
+
+**Why:** The maintainer reported it (issue 1735): two edges of a slot must give a path up to the stock edge, and "Extend past" must extend the reach out of the stock in the direction of the edges. An open slot or open pocket is bounded by its walls and by the stock in general 2.5D machining practice. The definition uses only half-plane splits and region intersections, so each result has one reading. No check was loosened: the region still loses the part's standing material, the operation still answers to the section gouge law and the solid law against the other parts of the setup, and a gouge still blocks the post. The test `a_band_pass_that_cuts_another_part_blocks_the_post` pins that.
+
+**Considered and dropped:**
+
+- Close the band with the shortest walk along the stock outline between the wall ends. Dropped: the walk has two directions at each end, and a wall that stops before the stock edge needs a guess for the gap.
+- Run each wall out with Face's `extend_run_to_footprint` and union the two strips. Dropped: that law asks which side of one run holds the material; a band needs the side that holds the other wall.
+- Cast rays along the wall normals to find the opposite wall. Dropped: it fails for walls of different lengths and for tessellated curved walls.
+- Let the general extension step (`offset_sharp` of the area) do the "Extend past". Dropped: it grows the area sideways where no part material stands, so the tool would go round the end of a wall. The lane clip prevents that.
+- A polygon made of the four wall ends. Dropped: it stops at the wall ends and does not reach the stock edge.
+- A wedge between walls that meet inside the stock (one open end). Dropped for now: it is refused by name. It can be allowed later without a change to the two-open-end case.
+- A separate module in `camcraft-geometry` for the pure law. Dropped: the law calls `sides_of_chain` (`app::operation::boundary_turn`) and the file reads the world (the stock outline and the picked runs).
+
+**Limits of the decision:** The 45 degree limit is a choice, not a derived value. With extension 0 the tool centre stops one tool radius inside the stock edge (the pocket family keeps the tool inside its region); an extension of one radius or more clears the stock edge. A positive boundary offset cannot widen a band, because the lane clips it; a negative offset narrows the band. A blind slot picked as one U-shaped run (three edges) stays refused as one open run.
+
+**Cost to change later:** Small. The law is one function (`open_band::band`) with unit tests, one hook in the selection walk and one clip in `boundary::resolve`. A change of the 45 degree limit or of a refusal is local to `open_band.rs`. A change of the default reach at the open ends (for example tool centre on the stock edge) would change the generated paths of band selections only; no golden holds one.
+
+## #1743 - Run 3D operations in the part-aligned setup frame
+
+**Decided:** Allow `Pocket3D` and `Finish3D` in an aligned milling setup.
+Allow their area controls through the same door. Keep the refusals for
+other operation kinds, 2D area controls, tilted planes and non-mill
+machines.
+
+**Why:** The existing operation frame already reads part facets, model
+heights and picks in the setup frame. Generation and verification use those
+facets. Stock and work offsets already belong to the setup frame. The
+remaining blanket refusal prevented these existing paths from running.
+`Pocket3D` includes the adaptive strategy, so it needs no separate generator.
+
+**Considered and dropped:** Removing every alignment guard would enable
+operation kinds that this change does not verify. A second transform or a
+duplicate generator would repeat the existing frame logic. Mapping the CL
+path back to the document frame would move the path away from the part as
+the setup holds it. The output stays in the setup frame.
+
+**Evidence and limits:** The pins compare an exact X half-turn of an
+asymmetric tapered wedge with the same geometry already transformed in an
+unaligned setup. The toolpaths and posted G-code match. Each case has no
+blocking generation warning, and stock simulation succeeds with zero gouge
+cells. The cases cover offset and adaptive roughing, waterline finishing,
+model-relative heights, a controlled pocket and picked finish geometry.
+The controlled pocket also differs from the default path. Restoring the
+old allowlist or the old area refusal makes the relevant pins fail.
+The pins do not exercise the user's filleted part, other finish patterns,
+all roughing options or a physical machine.
+
+**Cost to change later:** Another operation kind or area-control family
+needs a frame-read audit and equivalent generation, verification and post
+pins before its guard is relaxed. This change adds no stored data or
+project migration.
+
+## #1749 - a whole-model 3D Pocket's centre rides the silhouette edge
+
+**What was decided.** The source-built footprint of a whole-model 3D
+Pocket (no picks, no Boundary settings, no tilt) grows past the model's
+silhouette by the tool radius less 0.01 mm (`machining3d::open_sides`),
+minus the silhouettes of the setup's other parts. The level law's erosion
+by the radius then puts the centre up to the silhouette edge where a
+level is open to the outside (the "tool centre on boundary" containment),
+so a notch open to the part's outside is cut past its open edge instead
+of keeping a band one radius wide at the full stock height. Where a
+level's material stands flush with the silhouette, the band is narrower
+than the erosion and cuts nothing, so a plain block gains no ring.
+
+**Why.** Outside the silhouette no part material stands at any Z, so the
+cutter may go there; the old footprint kept the cutter's edge inside it,
+which leaves the ridge the issue measured while the op reported ok.
+
+**Considered and dropped.**
+- The stock outline as the footprint (the 2D pocket's #12 reading): it
+  would clear all the stock around the part down to Bottom Z, a much
+  larger change to every whole-model 3D Pocket's output - a feature, not
+  this fix. Stock past the silhouette by more than about two radii is
+  still not cleared by a whole-model 3D Pocket.
+- A full-radius band: it erodes to a zero-width sliver along every flush
+  wall, numerically fragile; the 0.01 mm slack keeps it empty.
+- A warning only: the cut can be made safely, so it is made.
+
+**Also decided.**
+- Multi-Axis Rough takes the same footprint: it is the 3D Pocket's
+  ladder stamped with poses, and `operations::multiaxis_rough_peels_the_same_ladder_and_poses_its_walls`
+  pins that the two are one ladder.
+- The setup's other parts now reach both kinds' solid law
+  (`keep_law::neighbour_parts`, the #1621 neighbour law) as a second
+  net. It also names a cut through another part standing inside the
+  model's own silhouette, which the ladder (islands from its own model
+  only) never saw before and which used to read ok.
+- `shared_face_bodies::the_sample_as_imported_refuses_the_3d_pocket_by_name`
+  (#1706) pinned the old law (centre a radius inside the silhouette) on
+  a 6.53 mm strip: no 6 mm tool fit, so the op refused. Under the new
+  law the pocket clears the stock along the strip's sides with no gouge,
+  so the test now pins that (`..._roughs_the_3d_pocket_beside_its_silhouette`).
+  It does not post with the job's tool: see the next entry.
+
+**Not changed.** A picked or Boundary-controlled region stays the user's
+boundary; a tilted (3+2) 3D Pocket keeps the old silhouette reading
+(owed in #1774).
+
+**Fixtures are not in the keep-out.** The grown band assumes that only
+the model and the setup's other parts stand outside the silhouette.
+Fixtures (vise jaws, clamps) are not subtracted from the band. The
+fixture laws of verify still judge the tool against them, so a cut into
+a jaw is a post-blocking `fixture_hit`, not a silent cut. A later
+fixture keep-out law starts here.
+
+## Review of PR #1772 (takeover, 2026-11-15): the sample reads ok but does not post
+
+**What was decided.** Option "make the test and the texts say the
+truth". The sample test now deletes S1 (so the program gate runs),
+generates R1 and verifies. It asserts: status `ok`, the gate ran and
+passed, no gouge, only `shank_hit` (on the part) and `rapid_in_stock`
+findings, all on R1 and all `blocks_post`, `ok: false`, `held_by: [R1]`.
+Then it gives the tool flutes past the part's height (125 mm, shank
+6 mm), generates again and asserts a clean verify. The "verifies clean"
+claim is removed. The owed behaviour is #1844.
+
+**Why.** The evidence says the findings are real and are not caused by
+this PR's footprint:
+- The job's tool `EM-0600-4FL` has 15 mm of flute, an 8 mm shank and a
+  44 mm holder at 55 mm; the part is 118 mm tall. The 3D Pocket ladder
+  keeps only the flute radius off the material above a level, so the
+  shank stands 1 mm into each wall that is taller than the flutes.
+- The 306 `shank_hit` are on rows inside and on the band, at levels from
+  Z 60.85 down. The 30 `rapid_in_stock` are all vertical lifts up out
+  of such a cut (the solid law's lift reading): the shank rises along
+  the wall. No lateral link rapids through stock; the PR adds no links.
+- The same R1 moves, byte for byte, with the long-flute tool give no
+  findings and `ok: true`.
+- A closed 30 mm-deep cavity (no open side) gives 121 `shank_hit` and
+  6 `rapid_in_stock` with main's footprint law and with this PR's law
+  alike. #1840 reports the same kind for the 3D Finish S1. So the
+  shank blindness is main's, and this PR only gives the sample a path.
+
+**Considered and dropped.**
+- Refuse R1 on this sample, as main did: main's refusal came from the
+  footprint (no 6 mm tool fit in the eroded strip), not from the reach.
+  On main a 3D Pocket beside a tall wall reads `ok` and is held at the
+  post by its warnings (the #722 design), as the cavity shows. A
+  refusal here would be a new design for every 3D Pocket: that is #1844.
+- A fix inside this PR (shank-aware levels): it changes the ladder for
+  every 3D Pocket, not this PR's band, and it needs a design choice
+  (leave the levels as named rest, or refuse them). Out of scope.
+- Exact finding counts in the test: they change with any sampling
+  change of the reach laws. The test pins the kinds, the op, the
+  blocking flag and the held post instead.
+
+**Cost to change later.** One call in each of generate's Pocket3D and
+Multi-Axis Rough arms (`operation::open_side`) and one motion function; the other parts' silhouettes come from the job's
+existing `neighbour_parts`.
+
+## #1752 - The inside-out STL fixture test follows the #1672 import turn
+
+Chosen: change the test, not the importer. The test
+`the_inside_out_stl_fixture_reads_inside_out_and_refuses` becomes
+`the_inside_out_stl_fixture_is_turned_outward_at_import_and_lays`. It pins
+that the import of `testdata/models/cube_inside_out.stl` turns the one closed
+body outward, notes the turn (12 facets reversed), and that the top face then
+lays like the outward block.
+
+Why: PR #1686 (#1672) turns a closed, isolated inward STL/OBJ body outward at
+import on purpose, with a decision entry and its own pins. The orientation of
+a closed, consistently wound body with no overlapping neighbour is not
+ambiguous, so the turn loosens no refusal. The old test still expected the
+pre-#1686 refusal. The failure is deterministic (5 of 5 local runs failed on
+origin/main), not a flake.
+
+Kept: the refusal of an inside-out body that reaches the world unturned
+(`an_inside_out_cube_refuses_*`, `bodies_are_judged_one_by_one`, which import
+through `ImportModel::from_mesh`), and the import refusal of a nested inward
+shell that cannot be turned safely (`import_outward.rs`).
+
+Dropped: reverting the import turn (it is the #1672 fix, and the user-facing
+behaviour it gives is correct); deleting the test (the fixture is the GUI
+repro, and it now pins the import turn end to end through `load_model`).
+
+## #1762 - Close a blind slot against the stock outline
+
+**Decided:** A single welded U-shaped open run can define a blind slot for
+the 2D pocket family. The run must close with its endpoint chord into a
+convex cap. Its outward end tangents must be parallel. The mouth must be
+perpendicular to those tangents. The existing level and selection checks
+still apply.
+
+Use `sides_of_chain` to extend the two end tangents and split the stock
+outline. Keep the side that contains the cap's interior seed. Require one
+region that contains the mouth and overlaps the cap. Apply the same rule
+to the stock outline grown by the requested extension. This moves the open
+side without moving the three selected walls. Keep the two-wall band law,
+the gouge check, and the collision check.
+
+**Why:** The cap identifies the slot side without a stock-dependent guess.
+The existing plane split already extends open chains along their end
+tangents. Reuse keeps the boundary and extension rules consistent.
+
+**Considered and dropped:** Do not select the smaller side of the stock.
+Stock size could change that choice. Do not accept arbitrary concave runs
+or converging or diverging end tangents. Those shapes need a separate rule
+and refusal tests. Do not add another plane-split implementation when the
+existing helper provides the required construction.
+
+**Cost to change later:** Extend the supported-shape checks and add tests
+for each accepted shape and each ambiguous case. The plane split and the
+safety checks can stay in place.
+
+### Review correction: geometry ownership
+
+**Decided:** Move the blind-slot calculation and its five unit tests to
+`camcraft-geometry`, in `boundary_chains::open_slot`. Keep the conversion
+from geometry errors to application errors in `app`.
+
+**Why:** The calculation uses only points, regions, and numeric values.
+The geometry crate owns those values. Its guard tests can run without
+building the application.
+
+**Considered and dropped:** Keeping the calculation in `app` would retain
+code in a crate that does not own its domain. The review requires the move.
+
+**Cost to change later:** Callers use the geometry API. Changes to the
+application error type affect only the conversion in `app`.
+
+## #1774 - a whole-model 3D Pocket clears out to the stock outline; a tilted one refuses
+
+**What was decided.**
+- **Far stock: cleared.** The open-side band of #1749 grows from the
+  stock's outline as well as from the silhouette
+  (`machining3d::open_sides(.., stock)`): the footprint is the
+  silhouette united with (silhouette ∪ stock outline) grown by the tool
+  radius less 0.01 mm, minus the setup's other parts. A whole-model 3D
+  Pocket (and Multi-Axis Rough, the same ladder) now clears the stock
+  around the model out to the stock's edge, down to Bottom Z, as the 2D
+  pocket has since #12. With no stock set up, nothing changes from #1749.
+- **Tilted: refused by name.** Neither kind carries a 3+2 index today:
+  `OpParams::tilt` answers `None` for `Pocket3D` and `MultiAxisRough`, so
+  no frame ever reaches their arms and the issue's case 1 cannot be built.
+  The `tilted` branch of `operation::open_side::open_footprint` used to
+  keep the old footprint silently; it now refuses
+  (`TILTED_OPEN_SIDE`), so if a tilt is ever given to these kinds the op
+  says so instead of leaving a ridge along every open edge. The premise
+  is pinned (`pocket3d_open_side::no_3d_pocket_kind_carries_a_tilt`).
+
+**Why.** The Prime Directive: the op must never read ok over standing
+stock. Clearing is safe here: outside the silhouette no part material
+stands at any Z, the ladder's islands still come from the model at every
+level, the other parts are cut out of the band and kept a radius off by
+the erosion, and the solid law (#1749's second net) still judges them.
+The rest-machining mask still trims what earlier ops already cut.
+
+**Considered and dropped.**
+- A warning naming the uncleared band: it would fire on nearly every
+  whole-model 3D Pocket with a stock margin (the default stock has one),
+  while the cut itself can be made safely.
+- Building the open-side law in a tilted frame: no kind can be tilted, so
+  it would be dead code with no way to test it.
+
+**Changes output.** Every whole-model 3D Pocket / Multi-Axis Rough on a
+stock reaching more than about two tool radii past the model now cuts
+that stock too (more moves, longer runs); a picked or Boundary-controlled
+region is unchanged.
+
+**Cost to change later.** One argument to `open_sides` and the
+`stock_region` the generate head already projects.
+
+**Test moved with it.** `level_links::a_helix_under_the_bore_floor_is_never_silent`
+asserted that no move of a whole-model 3D Pocket run to the stock's
+bottom goes below Z 0 anywhere. With the stock around the part now
+cleared to that bottom, moves below Z 0 are expected outside the part;
+the test now asserts that each of them keeps its tool disc (5 mm) off
+every projected part facet, and keeps its no-move-under-the-bore and
+verify-clean asserts.
+
+## #1777 - A Contour on an open run of a part cuts on the run's air side
+
+**What was decided.** A Contour whose selection holds an open run (an edge
+chain that does not close) on a part no longer rides the run on the tool
+centre. The tool centre stands one tool radius plus the stock to leave off
+the run, on the side that holds no part material
+(`machining2d::contour_open_run`, `crates/motion/src/machining2d/contour_run_side.rs`).
+
+- The side is read from the part, not from the Side setting. At every cut
+  level the part's section is taken 0.01 mm above the level (so a floor on
+  the level is not read as material beside the run), and two points
+  0.05 mm left and right of the middle of each run segment are tested.
+- Side (Inside / Outside / Auto) applies to closed rings only. The path
+  note says so, and the selection note now says "Side does not apply to
+  open runs".
+- Climb travels with the material on the right of the tool (#1555);
+  conventional travels the other way.
+- Refused by name, never guessed:
+  - material on both sides of the run at a level ("on both sides");
+  - the part on the left at one level or segment and on the right at
+    another ("its air side is not clear");
+  - the tool beside the run would overlap the part, for example where the
+    run ends at a wall ("the tool beside the open run cuts the part");
+  - an offset that folds onto itself.
+- A run with no part material beside it at any level (for example, a run
+  above the part's top) keeps the old behaviour - the tool centre rides
+  the line, because nothing is there to cut - and the path note says so.
+- Runs of a selection whose material is not a finished part
+  (`part_solid_of` false: picks on the setup's stock, or no part facets)
+  keep the centreline ride unchanged - there is no part to keep there.
+
+**Why.** The maintainer picked one open edge of a block with Side Inside.
+The tool centre rode the edge, so half the cutter cut the part that must
+stay. The verifier flagged the gouge and the post was blocked (so no wrong
+G-code left the program), but the operation could not do what the user
+asked. Cutter compensation to the air side of an open profile is the
+published practice (RS-274 G41/G42); the part's own sections are the one
+source that knows which side is air, so the rule needs no new parameter.
+
+**Considered and dropped.**
+- Choose left/right of the run from the Side setting. Dropped: an open run
+  has no inside, and the run's direction comes from the chain walk, not
+  from the user - the result would look random. The part already tells
+  the side.
+- Read the side from the part's silhouette instead of its sections.
+  Dropped: an undercut or a step gives a silhouette that disagrees with the
+  material at the cut level; the sections are what the tool meets.
+- Share `offset_run` with `contour_open.rs` (the open-boundary ride).
+  Dropped for now: `contour_open.rs` is in draft PR #1756 (issue #1727),
+  and editing it here would conflict. The offset is duplicated in
+  `contour_run_side.rs`; a follow-up can merge the two once #1756 lands.
+
+**Not changed.** The viewport still draws the picked run (`chains_of`),
+not the offset ride; the toolpath preview shows the ride. No golden CL or
+NC file changed.
+
+**Cost to change later.** Small: one function in the motion crate and one
+call in `generate.rs`. A user parameter for the side of open runs could be
+added on top of it; the refusals would stay.
+
+## #1783 - Kernel binaries join the release heavy plan
+
+**Decided:** Add kernel to the existing heavy-crate list. Use the same
+release prebuild and per-target steps as motion and app. A unit test scans
+kernel test sources independently of that list and checks that every binary
+with an ignored test has exactly one release step with the right selector.
+
+**Why:** Kernel's ignored tests had no release gate step. This adds coverage
+for them and lets a failed kernel binary run again on its own. Kernel also
+joins the existing lib, bins and doc targets, so later ignored tests there
+receive the same coverage as the other heavy crates.
+
+**Dropped:** A separate kernel planner would duplicate the target selection
+and prebuild logic. Hard-coding today's two ignored integration binaries
+would miss later additions.
+
+**Cost to change later:** Change the heavy-crate list or shared planner and
+update the coverage pin if the release policy changes. Actual heavy kernel
+tests were not executed for this planner change; validation uses unit tests,
+an old-planner mutation, clippy and the release-plan dry run.
+
+## #1792 - Review the guide against shipped changes
+
+**What was decided.** Review every first-parent merged PR from v0.20.0 to
+the branch's upstream/main base. Map each PR to a guide page, or record why
+it needs no guide change. Describe controls and refusals from CamCraft's
+own source, tests and PR descriptions. Add a tools and tool libraries page.
+
+**Why.** The guide has no tools reference. Several shipped commands,
+parameters and refusals are missing from the existing pages. A complete PR
+list makes the review scope clear and separates user changes from internal
+test and process changes.
+
+**Considered and dropped.** Do not document open PR behavior as shipped.
+Those controls can change before merge. Do not add a recurring release
+issue rule in this PR. The issue leaves that process decision to the
+maintainer. Do not add a Rust crate test for prose. Use an external content
+pin for the new tools page and its three entry links, then use Zola to
+check page rendering and internal links. Keep test logs and the audit
+evidence outside the branch.
+
+**Cost to change later.** Another release review can use the same PR audit
+method with the next tag range. A recurring issue rule needs a separate
+process decision. Permanent content checks can replace the external pin if
+the site gains its own test suite. No product code or file format changes.
+
+## #1794 - Remove committed PR review artifacts
+
+**What was decided.** Remove the review artifacts listed in the issue for
+PRs #1711, #1771, #1765 and #1756. Include #1771 because the issue inventories
+its two images, even though its removal summary names only three folders.
+Replace historical references to the removed folders with their original
+PR links. Pin the absence of all four folders in an xtask integration test.
+For these four folders, this supersedes the earlier rationale for retaining
+review evidence in the product tree; the older entries retain their history.
+
+**Why.** These images and their capture helpers are review evidence rather
+than app or site inputs. Review evidence belongs in PR bodies, with images
+on the author fork's images-only branch. The pin makes reintroducing these
+known artifacts fail without restricting legitimate site assets.
+
+**Considered and dropped.** A general ban on documentation images would
+reject valid site content. Migrating images or removing other review
+folders would expand this cleanup beyond the issue's listed artifacts.
+
+**Cost to change later.** Small: the pin lists four folders. Future policy
+can broaden it separately if the repository adopts a general review check.
+
+## #1799 - Pin the modular STEP fixtures
+
+**What was decided:** Add measured verdict rows and per-file tests for `modular_clamp_unit.step` and `modular_lathe_head.step` to the existing STEP agreement bench. Both importers agree at one millimetre per unit, and both meshes are watertight within the existing tolerance.
+
+**Why:** The fixture-set assertion already requires every STEP file to have a verdict row and a test. The modular fixtures were added without those entries. Measuring them preserves the bench contract without changing production geometry or tolerances.
+
+**Considered and dropped:** Extending the optional quick-gate fixture mapping would add process logic to this mechanical test-data fix. Keep that as a separate mapping change. Do not omit the fixtures or relax the fixture-set assertion.
+
+**Cost to change later:** Update the two verdict rows if a separately justified importer change alters their measured results. Adding fixture-to-suite gate mapping later is a separate tooling task.
+
+## #1800 - A wire taper the machine cannot post is refused at the command door
+
+**What was decided.** The Wire Contour create, paste and edit commands
+(`wire_gate` in `crates/app/src/commands/operation/gates.rs`) now call
+`app::machine::wire_edm::taper_door`. A non-zero `taper_deg` is refused by
+name when the mounted machine states no `edm.max_taper_deg`, when the taper
+is past that maximum, or, on a U/V machine (no `edm.taper_angle`), when the
+machine states no guide planes (`edm.lower_guide_z`, `edm.upper_guide_z`).
+The GUI page and MCP `edit_operation` both pass this door. A zero taper is
+always admitted. An angle-word machine needs no guide planes for the door.
+
+**Why.** Before, a taper the machine cannot post was accepted as a
+parameter and refused later: the maximum at generate, the guide planes at
+the post. A parameter that looks configurable and then always refuses is
+misleading (the issue). The safety floor forbids the other branch of the
+issue's "Done means": no shipped `.mch` gets an invented `max_taper_deg` or
+guide height (the unstated-limits law of `assets/machines/AGENTS.md`). The
+stream half is already pinned on main: `wire_taper.rs::
+a_tapered_punch_posts_its_golden_and_its_cl_shows_the_poses` posts a 3
+degree taper on the synthetic fixture to `wire_taper_punch.nc`.
+
+**Considered and dropped.** Putting the check in `wire_op::condition_of`
+(it also runs at generate): that file is already over 400 lines, and the
+generate and post refusals stay as defence in depth for a machine changed
+after the op was made. Gating 4-axis cuts the same way: out of scope for
+this issue; their generate refusal (motion `ruled.rs`) stays.
+
+**Cost to change later.** One function and one call. The existing tests
+moved two assertions: the "past the maximum" error no longer carries the op
+name (the command error does not name it), and the "no guide planes" case
+moved from the post test to the new door test.
+
+## #1803 - Run the L-shaped adaptive engagement test in the release heavy lane
+
+**What was decided.** Move `l_shaped_pocket_is_cleared_under_engagement_limit` to `#[ignore = "heavy lane: release engagement and rest-area measurement"]`. Keep its fixture, both tool diameters, every assertion, and the `#[test]` count unchanged.
+
+**Why.** The test exceeded 60 seconds in debug on macOS. The testing law assigns such measurements to the heavy lane, and the release tier runs the ignored motion tests. This keeps the batch tier fast while preserving the engagement and rest-area checks.
+
+**What was considered and dropped.** A slimmer L-shaped fixture could reduce debug time, but it could also reduce coverage of the existing lane and cleanup behavior. Keeping the fixture and moving its execution preserves that coverage with a smaller change.
+
+**Cost to change later.** Low: remove the ignore attribute after measuring a fixture or implementation that meets the debug time budget while preserving these checks.
+
+## #1806 - Credit declared cuts before retaining a setup's gouges
+
+**Decided:** apply the existing edge-break and mark credits when the program
+walk judges stock before a new block or a side-on turn. Read only operations
+already cut, and only declarations belonging to the departing setup.
+
+**Why:** the retained verdict compared intentional chamfers, deburrs,
+engravings and traces against the sharp model. The final setup's credit
+could not correct that earlier verdict. Reusing the existing laws preserves
+their width, depth, target-part and remaining-floor limits. A deeper cut
+continues to count at its excess below the declared finish surface.
+
+Read the top verdict with its matching lattice while retaining the stock
+for the next setup. Borrow a carried column body and read a field body once.
+Apply credits to the top before combining it with the body's untouched
+floor verdict. The combined per-cell value stores only the worse face, so
+crediting it afterwards can erase a shallower real underside gouge beneath
+a deeper valid top mark. Keep both faces' counts, depth and location through
+the merge; do not replace the body's verdict with a top-only judgment.
+
+Stack on PR #1804 because it introduces the side-on retained-verdict path.
+PR #1811 also edits `walk`, in the electrode-dispatch block, and edits other
+methods of `Held`. Preserve both changes when the later branch refreshes.
+
+**Considered and dropped:** dropping retained gouges would hide real damage.
+Applying every setup's declarations could excuse a different block's cut.
+Copying the whole held field just to get a lattice would copy unnecessary
+field layers. Duplicating the credit laws would give the final and retained
+verdicts separate definitions of the same intended cut. Restoring underside
+depth after crediting the combined verdict would require recovering face
+information already lost by the merge; crediting first keeps that information
+at its existing source.
+
+Transforming an earlier setup's credits into the final silhouette is outside
+this change. A full-perimeter chamfer visible from the new tool axis can
+still be reported by that final silhouette. The side-on fixture isolates a
+straight generated edge pass away from the new top, so it tests the retained
+verdict. No golden file or posted motion changes.
+
+**Cost to change later:** extending credits across setup frames needs a
+separate geometric rule for transformed cuts and target surfaces, with pins
+that distinguish intended cuts from real damage on the final silhouette.
+The present helper can continue to judge and retain each departing setup.
+
+## #1828 - Require independent review evidence before merge planning
+
+**Decided:** The merge-ready skill reads every page of formal reviews,
+issue comments and label events before it offers a PR. Collaborator status
+alone does not make an author's markers an independent review. The skill
+records the counted review's URL, author and head SHA. A review through the
+author's account also needs a named different agent and a linked review
+dispatch/result that establishes independence. The planner receives only
+the explicit PR numbers retained by these checks.
+
+**Why:** Author-only markers and an author-set label allowed PRs into a
+merge batch without a counted independent review. Planning by label could
+also restore PRs excluded during collection. Issue comments must remain a
+valid review source because reviewer agents normally use them.
+
+**Considered and dropped:** Requiring a different GitHub account would
+reject independent agents that share an account. Trusting the label alone
+would preserve the defect. Adding a review-eligibility engine to the merge
+planner would expand this skill-focused fix into new runtime behavior.
+
+**Validation limit:** Three structural instruction tests and worked
+examples pin the collection, independence and filtered-planning rules.
+They do not prove live GitHub classification or an agent's execution of the
+workflow. Each test fails with the upstream skill and passes with the fix.
+
+**Cost to change later:** Revise the skill, its examples and its three pins
+if review evidence changes. An automated eligibility engine would need
+separate handling and tests for review provenance and GitHub history.
+
+# 1829 - AGENTS.md: shorter, ASD-STE100, procedures in skills
+
+**Chosen.** `AGENTS.md` keeps the rules and loses the procedures. It went
+from 1240 lines (81 kB) to about 700 lines (40 kB). Five new skills under
+`.claude/skills/` hold the procedures that one task uses: `gate`, `runners`,
+`release-cut`, `fork-sync`, `issue-claims`. A table at the top of `AGENTS.md`
+names the skill for each task.
+
+**Why.** Each session and each subagent loads `AGENTS.md` in full. The
+runner installation, the five cut steps and the fork sync were read by all
+agents and used by few. The maintainer asked for a shorter file in
+ASD-STE100, with functions moved into skills (issue 1829 has his words).
+
+**Where each moved section is now.**
+
+| Old section of `AGENTS.md` | New place |
+|---|---|
+| Gate flags (`--only`, `--failed`, `--dry-run`), quick selection, `SLOW_BINARIES`, heavy-lane steps, narrow ladder, `VisualRunner` | `gate` skill |
+| Shared compile cache (sccache) | `gate` skill; one rule line stays |
+| Local batch gate when the post-merge runner is down; hand-test build | `gate` skill |
+| The cut runner: machine, registration, safety | `runners` skill; the trigger and approval rules stay |
+| The post-merge gate: skip, report, issue rules | `runners` skill; a summary stays |
+| The PR test runner: refusal list, labels, per-OS notes | `runners` skill; a summary stays |
+| Billed minutes of one cut | `runners` skill |
+| A cut goes PR review -> merge to main -> tag, steps 1-5 | `release-cut` skill; the four cut rules stay |
+| Changelog row format | `release-cut` skill |
+| Fork sync at cut tags; process-file sync for each session | `fork-sync` skill; the rule and the file list stay |
+| Claim mirror, stale release, withdrawal, maintenance sweep, fixed comment texts | `issue-claims` skill; the liveness rule stays |
+| `needs-research` steps | `issue-claims` skill; the rule stays |
+| PR rules that were in "Issue Law", "Autonomous Work Law" and "Commits and Releases" | one new section, "Pull Request Law" |
+
+**Kept at full strength.** Clean-Room Protocol, Prime Directive, Everything
+Is a Command, Assets, Dependencies, Code shape, the priority table, the
+effort table and safety floor, the lanes, the collaborator rule, the draft
+rule, the gate tier table, the Actions trigger rules, the versioning table.
+Each rule name that a skill, an agent or a code comment cites is still a
+bold name or a heading in `AGENTS.md`.
+
+**Dropped.**
+
+- The dated quotations of the maintainer and the "superseded since" notes.
+  They are in the git history (`git log -p -- AGENTS.md`; the last long form
+  is at commit `b0a95adc9`).
+- The "Was" column of the priority table (the old P0/P1/P2 scale).
+- The history of the M4.x refactor phases in "Code shape" and "Testing".
+
+**Considered and not done.**
+
+- A target of 300-350 lines. The rule text alone does not go below about
+  700 lines without the loss of a rule.
+- A move of the claim rule into the existing `gh-issues` skill. That skill
+  is generic `gh` mechanics; the claim law is ours, thus it has its own
+  skill.
+- Edits to the existing skills and agents. Their citations still resolve,
+  so this PR does not touch them.
+
+**For the maintainer to check.** These rules have new wording, and the
+meaning must be the same: "Every PR opens as a draft" (the merge-time
+refresh classes), "Only collaborators' reviews count" (the disagreement
+case), "A claim must be live", and the four cut rules.
+
+## #1836 - Fanuc-family posts write every length word with a decimal point
+
+**What was decided.** The five Fanuc-family posts (`fanuc.cps`,
+`fanuc-lathe.cps`, `haas.cps`, `mazak.cps`, `doosan-dnm.cps`) write each
+length word with a decimal point: `Z14.`, never `Z14`. The same applies to
+the rotary angle words (`fanuc.cps`, `doosan-dnm.cps` `A`/`B`/`C`, the lathe
+`C` word), the lathe feed per revolution and thread lead (`F0.2`, `F2.`)
+and the G76 `R` finish allowance. The goldens of these posts were made new
+in the same commit.
+
+**Why.** Fanuc parameter 3401 bit 0 (DPI, published Series 0i parameter
+manuals) sets how the control reads a word with no decimal point. With
+DPI=0 the value is in least input increments: `Z14` under IS-B is 0.014 mm.
+A rapid to `Z14` then goes to almost Z0, which can cause a collision. With
+the point, the control reads the same value with DPI=0 and DPI=1. The
+project's other ISO posts (`sinker-iso.cps`, `sodick-wire.cps`) already
+keep the point for the same reason.
+
+**What was kept.**
+- Words that the control documents as "no decimal point" stay in whole
+  least increments: the lathe G76 `P`/`Q` and G83 `Q` words. DPI does not
+  change how the control reads them.
+- Dwell `P` (whole milliseconds), rpm `S`, tool `T`, `H`, `D` and program
+  numbers stay integers.
+- Feeds per minute stay as before: whole mm/min (`F300`), or in/min at two
+  decimals. A no-point F per minute is read in mm/min (or in/min) on these
+  controls, and a wrong feed does not move the tool to a wrong position.
+- Comment text (the tool note `D10 R0.5`, the part-load advance) and
+  macro-B expressions keep the old trimmed form. A macro-B constant is
+  not scaled by DPI.
+
+**Considered and dropped.**
+- State "DPI=1 required" in each post header and in the machine
+  documentation. Dropped: it moves a collision risk to a parameter that
+  the user must check on each machine, and the issue offers the point as
+  the first option.
+- Change the non-Fanuc posts (Sinumerik, Heidenhain DIN/ISO, Tormach,
+  grblHAL, TinyG, Carvera). Dropped: those controls read a no-point
+  value in mm or inch, and their goldens stay as they are.
+
+**Cost to change later.** One helper (`pt`) per post and a golden refresh.
+
+## #1844 - Refuse 3D Pocket depths without proved assembly clearance
+
+**What was decided.** Choose the issue's refusal option. Before an upright
+3D Pocket builds a path, compare its requested Bottom of Part Z with the
+higher of the source material top and stock top. Refuse when a shank or
+holder band wider than the cutter, with positive length, starts at or below
+that top at the requested depth. Equality refuses too: the cavity pin shows
+that contact with the wall top produces shank and rapid findings.
+
+Read the same `Cutter` bands that verification uses. This includes modeled
+holder bodies, necked shanks, and the existing enclosing-cylinder fallback.
+Name the tool and the obstructing band. Tell the user to raise Bottom of
+Part Z strictly above the stated threshold or use a longer-reaching tool.
+
+**Why.** The ladder currently proves only cutter-radius clearance. A wider
+assembly can touch the part even though its flutes clear every level. An
+early named refusal meets the issue's requirement without weakening the
+correct verification laws or returning a path that generation calls `ok`.
+
+This check is deliberately conservative. It credits neither lateral room,
+previously removed stock, nor stock to leave. A deep cut that has enough
+lateral room can therefore refuse. The diagnostic states the lateral-room
+and prior-stock limitations. Tilted jobs defer to their existing generation
+rules; the existing tilted whole-model refusal keeps precedence.
+
+Move the existing `run_job` orchestration into `generate/run_job.rs` and
+keep its public re-export. This gives the preflight a small module and
+shrinks the already oversized `generate.rs`. The move preserves error
+mapping, logging, path notes, and the existing generation arms.
+
+**Considered and dropped.** Widening each level for the shank and holder,
+then reporting unreachable areas as rest, would preserve more usable cuts.
+It also needs new proofs for entries, transitions, links, shells, and rest
+passes. That algorithm is beyond this refusal fix. Deferring the warning
+until verification leaves the generation result misleading. Changing the
+verification laws would hide real contact, so that option was rejected.
+
+**Cost to change later.** Replace this preflight when the ladder can prove
+assembly clearance per level, with pins for both reachable and unreachable
+regions and all connecting moves. Keep the actual tool-band interpretation
+and the named refusal for cases the planner still cannot prove.
+
+**Validation.** The sample and closed-cavity pins fail before the fix and
+pass afterward. Restoring upstream generation, disabling either band's
+check, or allowing equality makes the relevant pin fail; restoring the fix
+makes it pass. Shallow depths, longer flutes, a flute-width shank, and a
+0.001 mm axial gap remain accepted. The quick gate passed in 362 seconds,
+and app all-targets clippy passed with warnings denied. No goldens,
+verification laws, dependencies, or process files changed.
+
+## #1845 - Remove the remaining committed PR review artifacts
+
+**What was decided.** Remove the review artifact folders for
+[PR #1744](https://github.com/NeoTech/Camcraft/pull/1744),
+[PR #1699](https://github.com/NeoTech/Camcraft/pull/1699),
+[PR #1710](https://github.com/NeoTech/Camcraft/pull/1710) and
+[PR #1724](https://github.com/NeoTech/Camcraft/pull/1724).
+Include their readme files and the script that checks the PR #1724 images.
+The xtask guard now checks that these four folders are absent.
+
+Move the PR #1724 evidence out of the current product tree.
+This supersedes the retention decision in the #1122 entry.
+Git history keeps the images, capture provenance and check script.
+The original [capture commit](https://github.com/NeoTech/Camcraft/commit/486b03c91c8b1330f1e79ec47500ad68625fdd5a)
+preserves that record. This cleanup does not upload new images.
+
+Remove the optional boundary capture hook. Keep its structural assertions.
+Keep the manual PR #1710 capture test, but write its output to
+`camcraft-review-1710` under the operating system's temporary directory.
+
+**Why.** Issue #1794 removed the precedent for keeping review evidence in
+the product tree. These files are review artifacts, not product inputs.
+PR screenshots belong in PR bodies, with images on the author's fork
+in its images-only branch. The boundary hook accepted an arbitrary path
+and could recreate a removed folder. The manual capture also wrote into
+a removed folder. Its temporary output keeps the capture useful.
+
+**Considered and dropped.** Keep a special exception for PR #1724:
+its evidence remains available in Git history, so it needs no exception.
+Keep the boundary hook with its arbitrary destination: this could recreate
+the folders that the guard rejects. Delete the manual PR #1710 capture:
+changing its output directory is smaller and preserves the capture tool.
+A general ban on documentation images would reject valid product content.
+
+**Cost to change later.** Small. The guard names four additional folders.
+The manual capture destination is one line. Future review evidence can
+use the images-only branch without restoring files to the product tree.
+
+## #1871 - Plasma Profile through MCP
+
+**What was decided.** Keep the existing plasma commands and safety gates.
+Add a headless MCP suite for the 1300PL workflow, edit undo/redo, named
+tool/rpm/post refusals, and a bad cut-order cache. Add the shipped
+`Tormach PathPilot Plasma` name to the `post` argument description and
+append a dedicated Plasma Profile workflow to the MCP guide.
+
+**Why.** The machine, torch, operation and post already work through the
+shared command layer. MCP clients need to discover the post and see both
+the successful workflow and the refusals at the protocol boundary. The
+schema pin fails before the description change; the workflow coverage
+protects behavior that already shipped. Restoring the old description
+makes the pin fail again, and restoring the fix makes it pass.
+
+**What was dropped.** No new MCP tool or production safety guard is
+needed. No golden refresh is needed: the suite checks emitted NC words
+and refused output files without changing the post. The bad-order case
+reorders a generated saved cache because the normal generator already
+orders holes before outlines; it then reopens the project through MCP.
+This corruption is confined to the test fixture and exercises the
+existing post-gate backstop without adding a production way to reorder
+torch spans. The documentation calls out the 2D plasma verdict and the
+absent 3D stock simulation so that clients do not overstate verification.
+
+**Overlaps.** PR #1738 changes WCS registration and guide rows; #1817
+adds the Pocket rest-machining guide row. They touch the same files but
+different functions or sections. This change appends its own workflow;
+whichever merges second refreshes.
+
+**Cost to change later.** Update the one MCP test suite and workflow
+section when the tool arguments or plasma verdict change. No file-format
+or dependency changes are introduced.
+
+## #1903 - Group the user guide by job stage
+
+**Decided:** Use eight weighted Zola sections: Getting started, Set up the
+job, Operations, Check and post, Multi-axis, Automate, Reference and CAM
+fundamentals. Move existing pages into those sections and update internal
+links. Keep each moved page's old URL as an alias. Make the operations
+overview its section index, so `/guide/operations/` stays the same.
+
+**Why:** The order follows a job and makes reference topics easier to find.
+Aliases preserve existing links; Zola's redirect also preserves fragments.
+Section introductions link to the existing import, stock, work-offset,
+simulation, verification and scripting headings instead of repeating them.
+The guide index gives one linked start path.
+
+**Navigation:** Read sections and pages from Zola's content tree. Use
+native expandable groups and open the current group. This keeps navigation
+usable without JavaScript and avoids a separate hard-coded page list.
+
+**Dropped:** Headings over the flat list would not create reusable sections.
+Copied pages would give readers and search results duplicate instructions.
+Splitting the existing subject pages would expand the change beyond guide
+organization. No machining behavior, safety guard or G-code changes.
+
+**Cost to change later:** Moving a page again requires updating its source
+links, retaining all published aliases and extending the navigation tests.
+Changing the section order requires changing weights and the expected order
+in those tests. Existing page headings remain stable for bookmarked links.
+
+## #1909 - Detect-holes UI tests follow the Bore ring plan
+
+**What was decided.** The two failing tests in
+`crates/ui/src/detect_holes_note_tests.rs` were stale, and the product was
+correct. PR #1839 (#1566) changed the Bore law on purpose. Bore now clears a
+wide hole with concentric rings. Detect holes skips a hole only when the ring
+plan needs more than 4,096 rings, or when the tool has no floor band. The
+tests now pin that law with a Ø10 bull-nose that has a 4.999 mm corner
+(the catalog `BB-1000-R1` with its corner changed):
+
+- A Ø74.3 through hole is stored. The corner reaches R3.001 at the floor
+  plane, so the plan uses 14 rings.
+- A Ø24 blind hole is skipped, and the status names it. Its flat floor band
+  is R0.001, so the plan needs 8,750 rings. The limit is Ø16.554.
+- A plate with only that blind hole is refused, and nothing is stored.
+
+The test count stays at two. Each test keeps its stored-holes assertion and
+its message assertion.
+
+**Why.** The decision `docs/decisions/1566-bore-rings.md` states the new law.
+The motion and app suites of #1839 pin it. The UI tests were the only
+callers that still expected the old one-ring limit. No hole that the tool
+cannot cut is accepted: the ring-budget refusal still stores nothing.
+
+**Considered and dropped.**
+- Restore the one-ring refusal in the product. #1566 removed it by design,
+  and the ring plan clears the hole safely.
+- A ball nose at a blind floor (the zero-band refusal). The Bore tool door
+  refuses a ball nose when the operation is created, so the UI cannot reach
+  that case. The app unit test `detect_refuses_a_blind_ball_floor_but_keeps_the_through_hole`
+  pins it.
+- A catalog flat end mill with a through hole past the ring budget. The
+  smallest one (Ø2) needs a hole wider than Ø6555 mm. That fixture is not
+  practical.
+- Update the `detect_holes` row of the camcraft-mcp skill in this PR. That
+  file is a process file. It is tracked in #1910.
+
+**Cost to change later.** Low. The fixture builder takes a floor height for
+each cell, so a later law can add a cell type.
+
+## #1910 - Document the current Bore detection rule
+
+**Decided:** Update only the `detect_holes` skill row to describe concentric
+rings, the 4096-ring budget, an unusable floor band, and the refusal that
+stores nothing when every detected hole is skipped.
+
+**Why:** PR #1839 (#1566) removed the single-ring width limit. The row must
+match `bore_reach.rs` and `bore_core.rs` so agents can use wide Bore holes.
+
+**Dropped:** Changing runtime behavior, which already implements this rule,
+and adding a Rust test that matches documentation text. A temporary text pin
+checks the correction while keeping this PR documentation-only.
+
+**Cost to change later:** Update this row when the kernel's Bore rules change.
+
+## #1924 - Red main: fix the stale fixture of the threaded-batch test, not the reach law
+
+**What was decided.** `threaded_batch_matches_the_serial_loop_bit_for_bit`
+(`crates/app/tests/operations.rs`) now uses a 60 x 60 x 5 box stock, not
+60 x 60 x 20. The stock stands to the top of the 30 x 30 x 5 cube, as the
+sibling test `the_shell_switch_sends_the_pocket_to_the_offset_engine`
+already does since #96. No production code changed.
+
+**Why.** After #1895 (#1844), generation of the `APocket3D` job refused
+with: "Bottom of Part Z is 20.000 mm below the material top, but its wider
+shank starts 15.000 mm above the tip". The refusal is correct for that
+fixture:
+
+- the stock top was Z 20, the pocket top is Z 5 and Bottom Z is 0;
+- no operation ahead of the pocket removes the stock from Z 5 to Z 20;
+- the catalog BN-0600 has a 15 mm flute and an 8 mm shank, wider than the
+  6 mm ball, so at Bottom Z 0 the shank is in uncut stock from Z 15 to 20.
+
+The test proves that the threaded batch and the serial loop write the same
+bytes. It does not need a deep stock. With the stock at Z 5 the depth is
+5 mm, under the 15 mm reach, and the three jobs (pocket, contour at
+Bottom Z 4, face at Z 4.5) generate again.
+
+**Considered and dropped.**
+
+- A longer-flute BN-0600 for this test (as `add_swarf_ball` does). Dropped:
+  it hides the uncut stock between Z 5 and 20, which the rapids at
+  clearance Z 10 also go into (the #96 note).
+- A change to the reach law. Dropped: the law is correct here, and the
+  task forbids to weaken it.
+
+**Cost to change later.** One fixture value in one test.
+
+The second failure (`docs_troubleshooting.rs`) is a path update only: #1908
+moved the page to `site/content/guide/reference/troubleshooting.md`, by
+design. No decision was needed.
+
+## v0.22.0 - decisions gathered at the cut
+
+## #33 - Continuous C-axis live tooling (slice 3: C rotary sense and arcs)
+
+**Decided.**
+
+- **Machine C rotary sense via `"axis": [0, 0, ±1]`.**
+  `AxisLimits::c_z_sense` (`crates/post/src/machine/direction.rs`) reads
+  `[0, 0, -1]` as clockwise about `+Z` (`-1.0`) and `[0, 0, 1]` (or an
+  unstated axis vector) as right-handed about `+Z` (`+1.0`). Non-finite,
+  zero, or non-Z vectors (`d[2]^2 < 0.998 * |d|^2`, matching
+  `tormach.cps` and `judge::only_x_rotary`) are refused by name in
+  `rotary_gate.rs`, `judge.rs`, and `fanuc-lathe.cps`.
+- **Program-frame C travel and controller word sign.**
+  When C is `-Z`, `rotary_gate::stamp_c_about` maps the machine's stated C
+  travel `[lo, hi]` into canonical `+Z` program coordinates `[-hi, -lo]`
+  before `cl::unwind_c` or the non-unwinding check;
+  `machine::judge::c_letter_problem` checks `sign * c` against the
+  machine travel `[lo, hi]`; and `assets/posts/fanuc-lathe.cps` checks
+  the radial station in canonical `+Z` coordinates (`p.X`, `p.Y`, `p.C`)
+  before posting and rate-capping `outC = liveCSense * p.C`.
+- **Setup sheet notice for `-Z` C only.**
+  `setup_sheet::sections::render_machine_axes` prints `C rotary turns
+  clockwise about +Z (-Z axis) - posted C is negated for this machine`
+  under `MACHINE AXES` when `Machine::reversed_c_rotary()` is true,
+  keeping `+Z` and unstated machines unchanged.
+- **Arcs on a C turn via subdivision (`cl::stamp_c`).**
+  Instead of rejecting every `m.arc.is_some()`, `cl::stamp_c` refuses
+  non-finite coordinates or non-finite arc centers by name, subdivides
+  valid arcs with `Move::segments3(tol * 0.5)`, splits each chord with
+  `split(..., tol * 0.5)`, clears `arc: None`, and rotates each chord's
+  tool axis with `pose_at` so downstream verification, unwind, and
+  `fanuc-lathe.cps` receive chained straight C-turn chords within `tol`.
+
+**Why.** Reuses the existing `.mch` `"axis"` vector convention established
+for `-X` rotaries (`judge::only_x_rotary`, #797) and mirrors the `#373`/`#374`
+program-frame stroke translation so generation, machine checks, posting,
+and the setup sheet never disagree about clockwise C machines. Splitting
+arcs inside `cl::stamp_c` keeps the verifier (`sim::verify::c_steel`) and
+the post reading one sequence of chords.
+
+**What it changes in posted output.** Only machines whose `C` rotary
+states a negative Z axis change: their posted C words and composite-F
+deltas negate to match controller coordinates. Standard `+Z` and unstated
+machines post byte-identical output. No goldens moved.
+
+**Dropped.**
+
+- Reading linear `"direction": -1` on rotaries: explicitly rejected per
+  `axis_direction.rs` (#785).
+- Axial/face live-tool station mode (`G12.1` polar interpolation) and
+  adding unconfirmed `live_tool` codes to shipped `assets/machines/millturn.mch`:
+  deferred to a follow-up slice alongside real-controller verification
+  (left open on #33).
+- Splitting arcs at post time in `fanuc-lathe.cps`: would bypass
+  generator-time `sim::verify` checks.
+
+**Cost to change later.** Self-contained across
+`AxisLimits::c_z_sense`, `stamp_c`, `rotary_gate`, `judge::c_letter_problem`,
+`render_machine_axes`, and `liveCSense` in `fanuc-lathe.cps`.
+
+**Latest review corrections (PR #2103).**
+
+- `stamp_c` checks the original arc's sagitta against `tol * 0.5` using
+  the actual generated chord count before splitting those chords. If the
+  subdivision cap prevents that budget, it refuses by move name and error
+  budget. Chose bounded refusal over changing the shared tessellation cap;
+  splitting an inaccurate chord cannot recover the original arc.
+- `c_z_sense` and `fanuc-lathe.cps` scale a finite C direction by its
+  largest absolute component before comparing squared lengths. This keeps
+  the existing alignment threshold and Z sign. Dropped the raw squared
+  norm because finite components can overflow and admit a tilted axis.
+
+## #795 - Tormach lathes state `spindle.rigid_tapping`
+
+**Decided.** The three Tormach lathe files state `"rigid_tapping": true`:
+`tormach-8l.mch`, `tormach-15l-slant-pro.mch` and
+`tormach-15lx-slant-pro.mch`. The pin
+`every_tormach_mill_router_and_lathe_file_states_rigid_tapping`
+(`crates/app/tests/rigid_tapping.rs`, renamed from
+`every_tormach_mill_and_router_file_states_rigid_tapping`) now checks the
+lathes too. It expects exactly three Tormach lathes. The plasma table
+(`tormach-1300pl.mch`) stays outside the check.
+
+**Why.** Each operator manual has a rigid-tapping section with `G33.1`.
+The research comment on #795 (2026-11-15) holds the full table. The
+sources (behaviour only, clean room):
+
+- 8L: *8L Operator's Manual* (UM10753), section 10.3.18 "Rigid Tapping
+  (G33.1)", p. 151. *PathPilot Tools and Features - 8L* says that Tap uses
+  electronic gearing (G33.1, rigid tapping).
+- 15L Slant-PRO: *15L Slant-PRO Operator's Manual* (UM10225), section
+  6.5.17: "For rigid tapping, program G33.1 Z~ K~." The spindle encoder
+  (PN 32560) is standard.
+- 15LX Slant-PRO: *15LX Slant-PRO Operator's Manual* (UM10860), section
+  10.3.13: "For rigid tapping, program G33.1 Z~ K~". The spindle motor has
+  an integrated encoder on EtherCAT.
+
+**What it changes in posted output.** Nothing. The program gate refuses a
+tap only on a stated `false`; `true` and unstated pass the same way. The
+post mirror now carries `rigidTapping: true` for these machines, and the
+script default is already `true`. `tormach-lathe.cps` still refuses a
+`TAP` cycle by name. No golden moved.
+
+**Dropped.**
+
+- Leaving the files unstated. The manuals settle the question, and #795
+  asks for a stated value when they do.
+- Writing `G84` for the lathes. `G84` is the mill canned cycle; the
+  Tormach lathes rigid-tap with `G33.1`. Lathe tap output is later work,
+  not this change. That work must keep these rules from the manuals: the
+  tap is on the centerline (`X0`), the spindle is in `G97`
+  (PathPilot refuses `G33.1` in `G96`, SB0046), the spindle starts before
+  the block, and the block is `G33.1 Z.. K..`.
+- A separate lathe test. One test over all Tormach files keeps one place
+  that says which Tormach machines state the capability.
+
+**Cost to change later.** One line in each file and one assert in the pin.
+A real PathPilot lathe check is still necessary before a lathe tap post
+cuts a part.
+
+## #1029 - Certify continuous triangle-to-surface deviation bounds and project spline samples
+
+**Decided:** Measure `machining_mesh` deviation with `mesh_deviation::measure_within`, certifying continuous between-sample upper bounds on every triangle (`mesh_bound`, `mesh_bound_blossom`, `mesh_bound_spline`) and judging non-analytic spline and revolved faces by orthogonal projection (`Deviation::projected` via `uv::project_with`) instead of fixed-parameter `parametric` distance. Keep `PLAN_MARGIN = 0.5` for the single finer replan retry, and keep adaptive 4-way sub-triangle refinement bounded at `MAX_REFINE_DEPTH = 3` (`N = 4 -> 8 -> 16 -> 32`).
+
+**Why:** Checking only the 15 discrete barycentric sample points (`N = 4`) leaves a lower bound that misses sag between samples (for example a `0.0054 mm` sphere centroid sag where all 15 samples read `0.004909 mm`, or a cubic B-spline interior bump at `u = 0.125` where all 15 samples read `~2.29e-16 mm`), while `parametric` distance over-reads exact non-uniform spline parameterizations and caused false refusals (`spline_revolved.step @ 0.01 mm`: `parametric = 1.16e-2`, `judged = 1.00e-2`; `solidcraft_for_beginners.sc @ 0.1 mm`: passes after `0.05 mm` replan even with `parametric > 0.1 mm`; `spline_revolved.step @ 0.005 mm`: `0.0050073 mm` on face 2 before `PLAN_MARGIN = 0.5` replan reduces `judged` to `3.17e-3 mm`). Analytic faces use exact Voronoi closest-point / radial-dip bounds (`Plane`, `PlaneThrough`, `Sphere`, `BallPatch`, `Cylinder`, `Cone`, `Torus`); spline and revolved faces compute Peano/Taylor $C^{1,1}$ Hessian bounds (`1/8 ||D^2 S||_inf`) plus $C^0$ kink/seam slope-jump bounds (`0.25 * jump * du`) over de Boor blossom-restricted Bézier sub-intervals (`safe_sub_interval` padded to `1e-3` of span width), lazily projecting non-exact sample points only when a parent bound exceeds `running_gate`.
+
+**Dropped:**
+- Computing NURBS/revolved second-derivative bounds over unrestricted global knot-span control boxes: bloated `r_span` across rational weight/radius variations and triggered excessive refinement.
+- Eagerly calling `uv::project_with` at all 15 samples of every spline triangle: slower than lazy corner-first projection with `ensure_projected`.
+- Retaining `parametric` distance as `gated` on spline and revolved faces: false-refuses exact non-uniform rational splines.
+- Unbounded subdivision depth (`> MAX_REFINE_DEPTH`) or unlimited replanning iterations in `machining_mesh`.
+
+**Cost to change later:** The bound modules (`mesh_bound`, `mesh_bound_blossom`, `mesh_bound_spline`) and `PLAN_MARGIN` / `MAX_REFINE_DEPTH` constants are isolated in `camcraft-kernel`; loosening or replacing any bound requires re-running `machining_mesh`, `machining_mesh_bounds`, `machining_mesh_shortfalls`, `step_agreement`, and `mesh_deviation_bench`.
+
+## #1135 - the empty sinker template joins the machine library
+
+**Decided.** `assets/machines/sinker-edm.mch` ships in `posting::MACHINES`
+as "Sinker EDM 3-axis (template)". Its `edm` section stays empty. The
+sinker post "Sinker EDM (ISO)" is its only post.
+
+**Why.** Every library machine needs a post. The post shipped with #542.
+The user fills the codes from the control manual, and the post refuses by
+name until then.
+
+**Dropped.** Moving the test fixture (`crates/app/tests/edm/sinker-edm.mch`)
+into the assets: about a dozen suites include it by path. The fixture stays
+as a copy, and a test pins that it equals the shipped file. The wire
+template stays a fixture: no issue asked for it.
+
+**Cost to change.** Rename the picker label in one line of `posting.rs`.
+
+## #1135 - the sinker template gets a ribbon mode row
+
+**Decided.** `MACHINE_MODES` (`crates/ui/src/machine_modes.rs`) gets a
+"Sinker EDM" row. The row mounts "Sinker EDM 3-axis (template)". The door
+word is "Sinker". The guard test from #1501 stays as it is: every machine
+kind in the built-in library has a mode row.
+
+**Why.** This PR is the first to ship a `SinkerEdm` machine, so the guard
+failed after the merge of main. The row works like the other rows: the
+switch is the undoable `LoadBuiltinMachine`. The template post still
+refuses by name until the user fills `edm.codes`
+(`sinker_burn::the_shipped_sinker_template_lists_and_refuses_its_unfilled_codes_by_name`).
+
+**Dropped.** Let the guard skip template entries. That makes the guard
+weaker, and it hides a shipped kind from the ribbon.
+
+**Cost to change.** Remove one table row and one `short_caption` arm.
+
+## #1170 - Wire EDM 4-axis: per-ruling widening and a stated verify tolerance
+
+**Decided:**
+
+*Widening.* A 4-axis cut has a `widening` choice. `PerRuling` is the
+default: each ruling stands off the two profiles by what its own twist
+needs. `Uniform` is the earlier behaviour: every ruling stands off as far
+as the worst one. A project file without the key reads as `PerRuling`,
+and the key is written only for `uniform`. The widening is in the stamp
+digest, because it moves the wire.
+
+The per-ruling path adds a transition ruling 1 mm (`TRANSITION`) in from
+each end of a long span, so a widening ends near the twist and not across
+a whole flank. A transition that changes nothing is pruned, and the path
+is read again after the prune. Each end of a ruling takes its own scale;
+the rulings of a fan take one scale together. After the path is built,
+the existing ruled kerf law judges the emitted wire at every height it
+reads (the whole-law guard). A path that fails it is refused by name; it
+is never emitted.
+
+*Verify tolerance.* A 4-axis cut states `verify_tolerance` (mm, default
+0). The wire verify's kerf law lets a reading enter the model's facets by
+no more than that value. The threading law and the slug law never use it.
+The operation door accepts 0 to 0.25 mm (`VERIFY_TOLERANCE_MAX`). The
+verify refuses, as unreadable, a value that is negative, not finite or
+not below the kerf offset. The value is not in the stamp digest: the
+verify reads it at each post, and the stored path does not depend on it.
+The post gate's report line states the tolerance and the deepest reading
+that it let pass.
+
+*Gouge text.* The kerf law now reads every plane and does not stop at the
+first gouge. The finding keeps the first plane's gouge and adds the
+deepest reading at any height. A 4-axis gouge with no stated tolerance
+adds a hint that names the model's chord tolerance. `slugs_said` moved
+from `app` to `sim`, where the words of the other wire findings are.
+
+*Posted gate.* `posted_gates/wire_4axis.rs` compares its direct
+regeneration with the app's golden by `same_program`: the same lines and
+words, each number within 3 counts (3 um). The two goldens
+(`wire_4axis_punch.cl`, `wire-iso/wire_4axis_punch.nc`) are regenerated;
+their pose words moved by 1 um.
+
+**Why:** A uniform widening makes the straight stretches of a punch
+oversize by the worst twist's amount, which the issue names as the
+defect. The per-ruling result is not unique: several wires hold the kerf
+law, and the one found depends on the vertices of the profile rings. The
+whole-law guard therefore decides safety, not the construction. A
+tessellated loft's facets stand past its ruled surface by up to its chord
+tolerance, so a correct cut reads as a gouge of that size. Only the user
+knows the tolerance the model was made with, so it is a stated parameter
+with a strict default, and the report shows what it excused.
+
+**Considered and dropped:**
+
+- An absent `widening` key that reads as `Uniform`. It keeps old files
+  byte-stable, but the default then differs between a new and an old
+  operation. An old operation's stamp is stale after this change in both
+  cases.
+- One scale for each ruling across its two ends. It widens the flat end
+  of a ruling whose other end twists.
+- No transition rulings. The widening then spreads over the whole length
+  of a flank next to a twist.
+- An enum of the app's own for the widening. The motion type has two
+  plain variants; a copy adds a mapping and no meaning.
+- A verify tolerance for each machine or each document. The chord
+  tolerance belongs to the lofted model of one cut.
+- A tolerance derived from the mesh. The verify cannot know the true
+  surface from the facets alone.
+- A tolerance for the 2-axis and tapered cuts. Their walls are planes or
+  cones over the profile, and the issue asks for the 4-axis cut only.
+- An exact compare in the posted gate. It fails on a 1-3 um difference
+  that comes from the ring representation, not from a defect.
+
+**Cost to change later:** A change of the default widening changes
+posted words of each 4-axis cut and makes each stamp stale. A different
+transition length changes the goldens. Moving the tolerance to a
+different owner needs a project-file migration for `verify_tolerance`.
+
+**Known limits:** The `tangled` refusal of the per-ruling path has no
+fixture that reaches it. The uniform widening folds on the sheared
+fixture with one twisted flank and is refused there; per ruling cuts it.
+The posted program was not run on a real EDM control.
+
+## #1390 - Explain G-code switch
+
+**Decided:** Add the Explain G-code checkbox to the shared post section used
+by the document and setup post pages. Queue `CommandKind::SetPostOptions`
+and use its existing routing to `SetPostOptions` or `SetSetupPostOptions`.
+Keep the longer-program consequence visible beside the control.
+
+**Why:** The existing command history already provides undo and redo and
+keeps setup option edits scoped to their intended owner. The engine option
+from #1386 and the MCP tools and skill entries from #1534 already expose
+Explain, so reuse that MCP surface and extend its named-setup test. Pin the
+missing UI control structurally by role, name, checked state, undo/redo,
+and setup isolation. An original one-block CPS fixture proves that the
+switch changes comments while preserving executable text.
+
+**Considered and dropped:** A new command or MCP tool would duplicate the
+existing surface. Engine changes would extend this issue beyond its UI
+scope. Hiding the checkbox for individual posts would duplicate capability
+rules; the engine keeps its named refusal when a post cannot explain its
+output.
+
+**Cost to change later:** Wording and placement are local UI changes. A
+different ownership rule would change the shared command routing and its
+tests; it would not require another Explain engine option or MCP tool.
+
+## #1448 - typed Start point / Exit point rows on the contour's Lead tab
+
+**What was decided.** The closed 2D contour's user-set start and exit
+points (`links.approach.start_point` / `exit_point`, shipped through the
+project file and MCP `edit_operation` by #1478 and #1492) get two optional
+groups on the operation page's "Lead in / Lead out" tab: "Start point" and
+"Exit point". Each is switched on in its group header and holds an X and a
+Y row in model coordinates ("Start X", "Start Y", "Exit X", "Exit Y"),
+with one visible consequence line: a point the lead law cannot hold is
+refused by name, it is never moved. Off writes `None`; on seeds the model
+origin for the user to edit. The rows edit the draft params, and Apply
+commits them through `EditOperationParams`, so undo and redo restore the
+earlier point. Only the 2D Contour page draws the groups: the other kinds
+refuse a point by name (`OpParams::named_refusal`), so they get no row
+that could only produce a refusal.
+
+**Why.** Before this, the feature had no door in the GUI at all - a user
+could set a start or exit only by editing a project file or through MCP.
+Typed coordinates are one of the three pick forms the issue names, and the
+smallest one that needs no new viewport interaction. The header switch
+follows the page's law for an optional feature (Plunge, Engagement), so
+"no point" is never a magic coordinate.
+
+**Dropped.**
+- Seeding the switched-on point at the ring's current automatic seam: the
+  page does not hold the generated path's seam, and a stale seam would
+  read as a promise. The origin is a neutral, obvious seed.
+- Drawing the rows on every kind, greyed out: a row whose only result is a
+  refusal is noise; the refusal still guards a file or MCP edit.
+- The viewport pick (click on the wall): it needs its own pick mode and
+  marker. It stays owed in #1473 item 2.
+
+**Cost to change later.** UI only: one new file
+(`crates/ui/src/egui_app/start_exit_rows.rs`) and one call in
+`approach_page.rs`. No project-file, command, MCP or generator change, so
+no version bump and no golden changes.
+
+## #1453 - Explicit tap hand and refusal before posting
+
+- **Store hand directly on the tool as `ThreadHand::Right` or `Left`.**
+  A missing field means right-hand, which preserves every existing tap.
+  Unknown or malformed values are refused by name. Signed pitch or RPM
+  was dropped because those values already have positive-value laws and
+  must not encode two meanings. Catalog bookkeeping was dropped because
+  its fields explicitly do not affect machining. Changing this choice
+  later requires a tool-format migration and updates to the consumers.
+
+- **Refuse left-hand taps in the shared posting preflight.** The refusal
+  names the operation and tool before records or NC output are emitted.
+  It covers all post choices, including the eight built-in posts that
+  implement tapping: Fanuc, Haas, Siemens 840D, Heidenhain, Mazak,
+  Tormach PathPilot, Doosan DNM and Fanuc Lathe. Implementing dialect
+  cycles in this change was dropped because each needs its own cycle,
+  spindle and modal-state contract. Future support must carry the hand
+  into the post stream and prove the cycle for each supported dialect
+  before relaxing the shared refusal. Right-hand output stays unchanged.
+
+- **Preserve the hand through catalog import, tool JSON, project files,
+  tool libraries, editor drafts and undoable tool commands.** The tap
+  editor states that left-hand posting is unavailable. Keeping hand only
+  in the editor or operation was dropped because another read or edit
+  could lose it. Omitting the right-hand JSON field preserves legacy tool
+  definitions. New behavior can use the same field without another UI
+  state model or a new command.
+
+- **Write project version 62 for saved projects. Use library version 2
+  only for exports containing a left-hand tap.** Older readers ignore unknown tool fields, so an
+  additive field alone could turn a saved left-hand tap into right-hand.
+  The version barriers make those readers refuse the file instead.
+  Right-hand-only libraries retain version 1; new readers accept both
+  library versions and default older tools to right-hand. Reusing the
+  old versions for left-hand data was dropped because it permits silent
+  loss of machining meaning. Future format changes must retain these
+  barriers or provide an equally explicit compatibility rule.
+
+- **Stack on PR #2001.** It changes shared tool conversion functions,
+  including the tool editor and persistence paths. An independent branch
+  from main was dropped because it would duplicate those overlapping
+  edits. The parent must merge first. A second posting dependency was
+  avoided by placing the refusal in the existing preflight rather than
+  the record-building function changed by PR #1681. No dialect scripts,
+  NC/CL goldens, dependencies or process files change for this issue.
+
+## #1463 - Retry the machining mesh at half the chord
+
+**Decided:** If a finite measured deviation exceeds the requested tolerance,
+try one more plan at half the chord. Keep the existing floor of one millionth
+of the body size. Keep the caller's tolerance and all planner-statistics,
+triangle-budget, deviation, topology, volume and cancellation checks.
+Record the finer chord in the mesh report when the retry succeeds.
+
+**Why:** The display planner measures normal distance at triangle midpoints
+and centroids. The verifier uses denser samples and a conservative parametric
+distance on rational-spline faces. The two measures can disagree.
+At 0.005 mm, nine rational-spline faces of the Solidcraft sample fail.
+Face 50 has the largest measured deviation, 0.00684674657 mm.
+Planning at 0.0025 mm reduces that maximum to 0.00323090453 mm.
+The accepted mesh has all 53 faces, 279,600 triangles and no open sides.
+A 0.1 mm request still fails after the retry: face 36 measures 0.13365682857 mm.
+These sampled checks do not prove the continuous closest-surface distance.
+
+**Dropped:** Always planning finer would charge every input for the retry.
+Relaxing the verifier would weaken the machining guarantee.
+A new closest-point solver or dependency update exceeds this fix's scope.
+Unlimited retries would remove the bound on repeated planning.
+
+**Cost to change later:** Change the bounded refinement policy and rerun the
+sample, refusal and old-code mutation checks. Do not infer that other
+previously refused models now pass.
+
+## #1495 - Turn the WCS about its own axes
+
+**Decided:** Compose each quarter turn on the right of the setup orientation
+(`q * turn`), so X, Y and Z name the setup's current axes. Describe the buttons
+as turning about the setup axes. Keep the existing `SetWcs` command, origin
+and undo semantics.
+
+**Why:** The user sees and edits the setup coordinate system. Its visible axes
+must determine the turn even when the setup is oblique to the world axes.
+Right composition expresses that local rotation without changing the command
+or the setup's position.
+
+**Considered and dropped:** Keeping world-axis composition preserves the
+reported problem. Adding a new command or API duplicates the existing
+orientation update and undo path without providing another needed operation.
+
+**Cost to change later:** Change the composition order, the pinning test
+expectations and the UI wording together. No project-file migration is needed.
+
+## #1497 - Sodick wire post: the 4-axis refusal stays; a lean before the first rapid is refused
+
+**What was decided.** `assets/posts/sodick-wire.cps` keeps refusing a
+4-axis Wire Contour (`PARAM WireFourAxis`) by name: no G74 / G75 and no
+U V words are written. The one change is a refusal gap closed: a
+`WireU` / `WireV` stated before (or on) the section's first positioning
+move used to be cleared by `onRapid`, so the post wrote `G40 G00`, `T91`,
+the `C` word and `G01` as if the wire stood upright. That lean is now
+refused by name ("a leaning positioning move (upper guide offset)") and
+the whole section is not threaded or cut; the next section posts as
+before. A vertical 2-axis stream posts byte-identically (the golden
+`nc/sodick-wire/wire_slug_punch.nc` is unchanged).
+
+**Why the refusal stays.** What the public Sodick source states
+(Sodick Inc., "Wire EDM Machine Operation", 1998, Mark 21 / EX21, read on
+easymanua.ls: A600 pp. 6-2 to 6-8 and A320D pp. 8-12 to 8-14):
+
+- G74 "4 Axis On" and G75 "4 Axis Off" are modal (p. 6-4).
+- U and V move the upper guide parallel to X and Y; for 4-axis they
+  are "incremental value from the X or Y-axis plane in an absolute
+  mode" (p. 6-2), and "U or V axis values are incremental from the X Y
+  values, in absolute from it's present position" (p. 6-8). Offsets from
+  X Y, then - but the "absolute" half of both sentences is not
+  explained, and no G74 program example is given.
+- For 4-axis the control's SET screen takes Table To Program ("Distance
+  from worktable to bottom of part - X Y Axis Plane") and Table To Next
+  ("Distance from worktable to top of part") (p. 8-13); TP / TN words can
+  load them from the program (p. 6-3).
+
+So Sodick's X Y are the wire's point on the part's bottom plane and U V
+are (probably) the offset at the part's top plane, both measured from the
+worktable. Camcraft's stream instead carries the lower guide's X Y and
+the upper guide's offset from it, from the machine's `edm` guide planes
+(docs/CNC-INTERMEDIATE.md). Converting one into the other is a straight
+line through two Z heights, but it needs the part's bottom and top as
+heights above the worktable, and neither the machine file (no table
+datum) nor the stream (no workpiece planes in this form) states them.
+Writing the guide offsets as U V would put the taper on the wrong planes
+- a silently wrong 4-axis cut. Under the safety floor (posted G-code),
+the refusal is the honest output until (a) the "absolute" wording and the
+U V plane are confirmed by a later public Sodick source or a machine
+owner, and (b) the machine file states the table height of the guide
+planes (or the stream states the part's bottom and top) so TP / TN and
+the conversion can be written from stated values.
+
+**Considered and dropped.** Writing G74 with U V copied from `WireU` /
+`WireV` (wrong planes: the offset at the guides is larger than at the
+part's top). Assuming the lower guide sits on the worktable (not stated;
+Sodick's own "Table To Lower" constant says it does not). Writing TP / TN
+from `StockZTop` / stock bottom (work-offset frame, not the worktable).
+
+**Cost to change later.** One onParameter / startCut change in the post
+plus a machine-file field for the worktable height of the guide planes;
+the refusal tests in `crates/post/tests/sodick_four_axis.rs` then turn
+into a golden.
+
+## #1542 - Disable X/Y WCS tilt on milling setups and point to Part alignment
+
+**Decision (Option 1, Slice 1):** On the WCS page (`crates/ui/src/egui_app/wcs_page.rs`), milling setups (`machine::kind_of(&state.world) == Kind::Mill`) keep `X/Y/Z origin`, `Turn about Z (yaw)`, `Turn Z+`, `Turn Z-`, `Level`, and `Set Origin` live, while disabling `Tilt about X (roll)`, `Tilt about Y (pitch)`, `Turn X+`, `Turn X-`, `Turn Y+`, and `Turn Y-` with hover and pane guidance pointing users to `Part alignment` on the Setup page. When a milling setup already carries a tilted WCS (from an older file, MCP, or feature pick), the WCS page displays a warning explaining generation will refuse it and pointing to `Level` plus `Part alignment`. Non-mill setups (for example `Kind::Lathe`) keep X/Y tilt fields and quarter-turn buttons live.
+
+**Why:** Issue #1542 presented two competing architectures: (1) keeping `Part alignment` as the single way to orient a milling part while preventing the UI from inviting users into a WCS tilt that generation refuses (`setup_wcs_tilt`, #1510/#1518), consistent with the maintainer's statement ("You should orient the part to Z using Setup.. Not let the WCS orient the part to Z.."), or (2) letting a tilted milling WCS redefine the tool direction across operations, G28/safe-Z, simulation, and posting. Slice 1 removes the UI trap immediately without touching posting/toolpath math and stays trivially reversible.
+
+**Considered and dropped (for now):**
+- *Option 2 (tilted milling WCS defines the tool/spindle axis):* Dropped because it conflicts with the maintainer's stated intent in the issue body and cuts across every milling strategy, safe retract, stock simulation, and post processor (`#760`/`#763` scope).
+- *Hide X/Y controls instead of disabling them:* Dropped because keeping the `PropGrid` rows and `Quarter turns` layout intact preserves structural consistency across machine kinds and lets hover/pane text explain why X/Y tilting is disabled.
+- *Deferring Slice 2 (`wcs_pick_row.rs` Z-tilt guard and MCP `set_wcs` milling guard):* Deferred out of this PR because open PR `#1931` is currently relocating `wcs_pick_row.rs` to the WCS page and `crates/app/src/setup_wcs_tilt.rs` continues to block any tilted milling WCS at generation.
+- *Updating `turn_wcs` itself to reject X/Y on `Kind::Mill`:* Dropped so the helper remains pure WCS rotation math shared with non-mill machines and #1684's unit tests.
+
+**Cost to change later:** Low. Removing the `is_mill` UI guard in `wcs_page.rs` reverts Option 1 in one file if the maintainer later chooses Option 2, and Slice 2 (pick-row / MCP Z-tilt guard) can land independently once `#1931` settles.
+
+## #1599 - STEP import: a pass-wide evaluation budget for runaway faces
+
+**What was decided.** All face meters and edge-curve meters of one shell's
+tessellation pass share one `Pass` budget (`step_meter.rs`). Each meter
+counts its first refusal in the pass one time: a cap run out, a division
+that did not converge (`exhaust`), or a boundary-search fault. When
+`PASS_TRIPS` (3) meters have tripped, the pass stops. After the stop, each
+meter answers its fixed point, and each face in flight ends within one
+sweep. The pass is then refused. The refusal names the first face (or edge)
+that really tripped. It adds "the tessellation stopped after 3 faces or
+edges ran out of evaluations; more of the model may be broken".
+
+**Why.** Each runaway face spends a whole cap (150 M evaluations, 10-15 s)
+before it trips. A file with N runaway faces cost N caps divided by the
+core count. Now a pass spends at most 3 caps plus less than one cap for
+each worker thread, for any face count. The pin measures this bound on a
+shell with 31 runaway faces: 6.2 M evaluations before the change, at most
+2.2 M after.
+
+- The limit counts trips, not the summed evaluations of all faces. A
+  healthy model's total evaluations in a pass were never measured, and a
+  limit on that total could refuse a large healthy model. A trip happens
+  only on a face that spent its whole cap, so healthy models are not
+  affected.
+- 3 trips keeps each pass with one or two trips exactly as before. #1568's
+  case (a proven plane and a jump that trip in the same pass) is still
+  judged face by face.
+- A stopped pass is never "continuous". The faces that the stop cut short
+  were never judged. One of them can be a jump, and a coarser mesh would
+  smear that jump. Thus a refinement pass with 3 or more proven faces that
+  trip is now refused, where before it kept the coarser mesh. The heaviest
+  healthy face measured needs 28 M evaluations (cap 150 M), so 3 healthy
+  trips in one pass is not expected.
+- A meter that the stop cut short is not a trip. Its `exhaust` and its
+  search faults are not recorded, so the refusal never names a healthy face
+  as broken.
+- Edge curves (#1545's `CurveGuard`) share the same pass, as the issue
+  asks.
+
+**Considered and dropped.**
+- Stop the pass at the first trip that is not continuous. That refusal is
+  certain, but the named face would then depend on thread timing for a
+  shell with one or two runaways. The present refusals are deterministic,
+  and the trip limit keeps them so below 3 trips.
+- A limit on the summed evaluations of the pass: dropped for the reason
+  above.
+- A limit that scales with the face count: the time would then grow with
+  the face count, which the issue forbids.
+
+**Known limit.** Above the trip limit, the face that the refusal names can
+change from run to run (the threads decide which faces trip first). The
+model is refused on each run.
+
+**Cost to change later.** `PASS_TRIPS` is one constant. The pins read it,
+except the end-to-end pin's message text ("stopped after 3").
+
+# 1732 - Slot manual A/B section and viewport marks
+
+- Chose: group the four A/B rows under a "Manual" group on the Geometry tab; Slot width and the #1731 extension rows stay outside it (they are not the hand-typed ends).
+- Chose: marks read the page draft (`op_ui.params`), not the committed operation, so they follow typing before Apply; ephemeral, no command. Shown only with no picked selection and the Geometry tab open; drawn at the draft top Z, nothing when it does not resolve (never a guessed height).
+- Chose: stacked on #1745 (it edits the same rows in `mill2d_more_page.rs`).
+- Dropped: a separate "Manual" tab (a section is what the maintainer asked for); drawing the slot's width outline (not asked).
+
+## PR #1760 review fixes
+
+- Chose: show the draft marks only when the Properties pane is visible and its target is the same Slot operation. This prevents retained drafts from drawing on tool or setup pages, or after Properties closes or hides.
+- Dropped: clear `op_ui` when another page opens. The existing synchronization retains that draft by design; the display guard can enforce visibility without changing draft behavior.
+
+## #1768 - Pure-Rust 2D shape-mask verifier and RGB diff PNG reporter
+
+**Chosen:** Added test-only shape-mask helpers under
+`crates/motion/tests/common/` (`png.rs`, `mask_grid.rs`, `shape_mask.rs`,
+`mod.rs`), unit/regression tests in `crates/motion/tests/shape_masks.rs`,
+and initial generator mask tests in `trochoid_slot.rs` and
+`adaptive_hsm.rs`, plus documented the harness in `AGENTS.md`. The encoder
+writes valid uncompressed 8-bit RGB PNG diffs (`IHDR`, zlib stored `IDAT`,
+`IEND` with CRC32/Adler32) to `CARGO_TARGET_TMPDIR` (or temp fallback) only
+on assertion failure. Engagement uses instantaneous XY arc tangent for arcs
+(with chord tangent for linear segments), a `r + 0.75 * cell` rim sample ring
+where out-of-expected cells read as `Rim::Open`, and records the deepest
+actual cutter position covering each cell. Ramps are clipped to the
+selected depth interval for shape coverage. Descending helices retain
+their actual depths; a completed turn never promotes the entire footprint
+to its endpoint floor. The helper checks 1-cell border dilation/erosion
+against swept
+capsules (`assert_no_overcut`, `assert_bounded_leftover`,
+`assert_max_engagement`, `assert_symmetric`,
+`assert_within_stock_extension`). The `2D Adaptive` fixture uses a
+rounded-corner pocket (`30x16` core offset by `8 mm`) with `adaptive_hsm`'s
+`1.35x` debug engagement bound so it runs well under 60 s in debug.
+Both generator engagement fixtures explicitly start with a predrilled
+8 mm radius starter bore at the final floor: the Adaptive bore is centred
+at `(0, 0)`, and the trochoidal bore at `(-20, 0)`. Each radius is the
+3 mm entry orbit plus the 5 mm cutter radius. `evaluate_with_precleared`
+initializes clearance only inside that region and only to the stated
+depth. It gives no swept coverage credit, so overcut, leftover, symmetry
+and stock-extension assertions still judge the generated path itself.
+
+**Why:** Comparing the 2D `Region` mask against the swept cutter footprint
+catches spatial escapes, overcuts, disallowed uncut pockets, missed open-end
+extensions, symmetry breaks, and stepover spikes directly with a visual RGB
+diff PNG, without adding any `Cargo.toml` dependencies (`png`/`image`), touching
+product code, requiring a GPU, or committing binary snapshot goldens.
+Lagging secant chord directions on tight arcs previously over-counted
+contact arcs by ~10 deg and tripped false engagement failures on valid
+trochoidal and spiral passes; computing instantaneous arc tangents aligns the
+rim probe with actual cutter heading. A descending helix does leave stock
+at its final floor; its first floor orbit cannot be assumed to satisfy
+the subsequent radial engagement bound. An explicit starter bore makes
+these fixtures test side cutting under the unchanged Adaptive and
+half-diameter trochoidal bounds. The bore's radius and depth are stated
+starting-stock conditions, not clearance inferred from a future cut.
+Pins reject a smaller or shallower bore, retain overload detection
+outside the bore, and keep the solid-stock ramp and helix regressions.
+
+**Dropped:** Adding an external `png`/`image` dev-dependency (forbidden
+without approval), reading full 360 deg rims or `r + 1.0 * cell` (which
+counted already-swept behind-center discs or diagonal wall curvature as extra
+contact degrees), treating non-cut `Rim::Open` outside `expected` as solid
+stock (which fails boundary finish passes), and keeping a `>= 50 s` raw
+square adaptive pocket in debug (too close to the 60 s debug test ceiling
+and mixes in corner-fallback behavior). Also dropped completed-helix floor
+promotion (it invents clearance), ignoring either generator test, and
+raising engagement limits to accommodate entry-floor cutting (neither
+would preserve the radial-load check).
+
+**Cost to change later:** Localized to `crates/motion/tests/common/` and
+its three integration test files; `quality::measure` and all product crates
+remain untouched.
+
+## #1805 - Retain cut geometry when stock turns side-on
+
+**What was decided.** Retain the original box and the swept tool solids
+alongside the column grid. A side-on carry transforms this geometry through
+the same signed permutation as the stock. It then reads the occupied
+intervals along the new columns. The old column centres no longer determine
+the position of a machined wall.
+
+The retained geometry keeps separate material intervals. A turn does not
+replace a pocket with the hull of its walls. The top and floor remain the
+outer bounds for callers that need a column body. A caller that needs the
+material inside those bounds reads the occupied intervals.
+
+The interval read selects one of three methods:
+
+- A ray parallel to the original tool axis uses the original dexel atom.
+  This preserves its floor and its treatment of contact.
+- A straight flat-tool sweep uses a closed-form capsule intersection. A
+  rising or falling move first restricts the swept segment to the height
+  that the ray reaches.
+- Other rays use the swept-tool distance laws. The Lipschitz bound, or two
+  proven-inside endpoints of a convex sweep, must prove an interval cut
+  before the read removes it. Subdivision stops at 0.0001 mm. An unresolved
+  surface interval remains material.
+
+The cone uses one implicit solid for its tapered nose and cylindrical
+shank. It has no internal cap at the transition. Two separate solids can
+retain a false skin at their shared cap under conservative subtraction.
+
+A ray has a budget of 100,000 work units. A full read also limits the
+estimated column-and-history work to 10,000,000 units. A read that exceeds
+either budget, or produces a non-finite value, refuses by name. These
+choices favour excess reported stock over missing real stock.
+
+The retained geometry includes later cuts and stock clips. Each cut or clip
+keeps its own frame. Further quarter turns compose those frames instead of
+sampling an earlier read-back grid.
+
+**Gouges and fixtures.** Keep a snapshot of the material that enters the
+side-on setup. An empty entry ray must not charge the full turned stock
+height as the depth of a gouge made earlier. The verdict before the turn
+already records that gouge. A later cut that removes material from the
+entry ray still produces a cut-through verdict.
+
+The fixture checks use the occupied intervals both on columns and between
+columns. The latter checks intersect the intervals shared by four adjacent
+columns. A fixture in a retained cavity therefore does not meet the hull
+of its walls. An unread interval query keeps the conservative column hull.
+
+**Why.** The column grid holds top heights at sample points. Those heights
+cannot recover the position of a tool flank between the points. Moving a
+turned face to a cell edge can omit real stock. Keeping the cut that made
+the face supplies the missing information without that estimate.
+
+**Field engine.** Keep `FIELD_SIDE_CARRY_REFUSAL`. The field stores scalar
+cut samples and vertical `cut_ups` and `cut_downs` records. Re-indexing the
+bricks alone does not give these records the meaning needed for a ray along
+a different axis. Its current `column_span` law also assumes one material
+interval. Removing the refusal without replacing those laws could lose
+stock or fill a cavity. Issue #1805 permits the refusal when the reason is
+recorded. This change uses the column engine's retained geometry instead.
+
+**Limits.** The retained source is box stock. A raw grid, a mesh or cylinder
+stock, or an edit that discards the cut history still uses the conservative
+carry introduced by #874. That path can over-read a turned face by one cell
+and fill a cavity. It must not claim the accuracy of the retained-geometry
+path. The read tolerance bounds the interval subdivision; it does not make
+the column sampling an exact representation of every surface between rays.
+
+**Considered and dropped.**
+
+- Move the old column face to a cell edge. This can leave the carried stock
+  smaller than the real stock.
+- Reduce the cell pitch. This adds work but does not recover a wall position
+  or a cavity that the column representation discarded.
+- Keep only the new top and floor. This fills a cavity between them and
+  changes the result of a later turn.
+- Use subdivision for straight flat sweeps. The capsule intersection is
+  both cheaper and more precise at the flank.
+- Split the cone and shank at a shared cap. Conservative subtraction can
+  preserve that internal cap as false material.
+- Charge every empty turned ray through the full stock height. This can
+  increase the reported depth of an earlier gouge without a new cut.
+- Remove the field refusal after a brick permutation. The field's vertical
+  cut records still cannot establish material intervals on the new axis.
+
+**Code placement.** Move the existing ball atom into `dexel_ball.rs` and
+the existing body verdict code into `carry_verdict.rs`. These are structural
+splits to keep the touched files below 400 lines. They do not change those
+algorithms.
+
+**Cost to change later.** Other stock shapes need a retained source that
+can answer conservative ray intersections. Other edit paths must retain
+their geometry before they can use this carry. A field implementation needs
+axis-independent cut records and a read that returns separate intervals.
+The ray budget and subdivision tolerance can change after measurement, but
+the proof required before material is removed must remain.
+
+## #1819 - Refuse expanded bores without spindle-stop support
+
+**What was decided:** Heidenhain, TinyG and Carvera refuse a BORE cycle by
+name, with or without a bottom dwell. The counted diagnostic blocks app
+export. The developer post CLI still exposes diagnostic text; this change
+does not promise that the engine suppresses every program line.
+
+**Why:** Their expanded bore chain feeds in and rapids out with the spindle
+running. It does not implement the spindle stop required before a G86
+retract. Issue #1819 explicitly permits a named refusal instead of posting
+that unsupported cycle. Ordinary drilling and backboring keep their existing
+behavior.
+
+**Considered and dropped:** Adding spindle stop and restart in these scripts
+would need validated spindle modal state and matching verification support.
+That is broader than the smallest safe fix. Keeping the existing chain with
+only a dwell would leave the reported behavior unchanged.
+
+**Cost to change later:** Replace each refusal with a validated spindle
+sequence and pins that prove feed, dwell, spindle stop, rapid retract and
+spindle restart ordering. Check the verifier and simulation against that
+sequence before allowing export.
+
+## #1842 - G76 schedule readings checked against published sources
+
+**What was decided.** Three of the four open G76 readings in
+`assets/posts/fanuc-lathe.cps` (decision #417) agree with two published
+control manuals of two different makers. The post and its goldens stay as
+they are. New tests in `crates/app/tests/lathe_post_g76_sources.rs` pin the
+three readings. The fourth reading stays open on #1842.
+
+Sources (behaviour only; no post-processor text or output of another CAM
+product was read):
+
+- S1: FANUC Series 0i-MODEL F Operator's Manual, Lathe System,
+  B-64604EN-1/01, section 4.2.7 "Multiple Threading Cycle (G76)", text and
+  Fig. 4.2.7 (a) "Cutting path in multiple threading cycle" and
+  Fig. 4.2.7 (b) "Detail of cutting". The same text and figures are in
+  FANUC 0i-D Descriptions B-64302EN/01, section 5.36.7 (same maker, so
+  not counted as a second source).
+- S2: Siemens SINUMERIK ISO Turning Programming Manual 07/2022,
+  A5E52211627B AA, section 4.1 "Multiple-thread cutting cycle (G76)",
+  Fig. 4-25 "Cutting path ..." and Fig. 4-26 "Infeed during thread
+  cutting", pages 87-89. The SINUMERIK 808D ISO manuals (6FC5398-0DP40)
+  have the same text.
+- Contrast only: Hurco WinMax Lathe "G76 - Multiple Threading Cycle"
+  ("Z(w) - Z end position of the cycle", "single-edge"); Haas lathe G76
+  ("The leading edge of the cutter does all of the cutting"; a different
+  word format); GSK988TA G76 (used by #417); LinuxCNC G76.
+
+Readings:
+
+1. **Start point and Z shift - settled, the post agrees.** S1 Fig. (a)/(b)
+   and S2 Fig. 4-25/4-26: the start point A is above the crest point B at
+   the same Z; each pass starts on the line from B at a/2 to the radial
+   direction, deeper passes further along the direction of travel. S2 and
+   S1 both say one edge cuts. The post starts at the record's crest
+   station `c_last + k*tan(a/2)`, and pass n starts `depth_n*tan(a/2)`
+   from it along the travel. Pinned by
+   `each_pass_starts_on_the_crest_flank_line_along_the_travel`.
+2. **End point - settled, the post agrees.** S1: "X_, Z_: Coordinates of
+   the cutting end point (point D ...)"; S2: "Z, W: Endpoint of thread in
+   the direction of Z axis"; both figures end every pass on the one
+   vertical line through D. The post writes the root pass's end as Z. The
+   kernel lays a shallower pass short of D by `(k - depth)*tan(a/2)`; the
+   control runs it to D. That extra length is at a smaller depth inside
+   the groove that the root pass cuts to D, so it removes no material
+   beyond the verified root pass and does not move toward a shoulder.
+   Pinned by `every_pass_runs_to_the_posted_end_z_inside_the_root_pass`.
+   The simulation detail is tracked in #1896.
+3. **Minimum depth - settled, the post agrees.** S1: "When the cutting
+   depth of one cycle operation becomes smaller than this limit, the
+   cutting depth is clamped at this value." S2: the clamp applies "when
+   the cutting depth during a cycle operation (Δd - Δd-1) becomes less
+   than this limiting value". The quantity clamped is the cut of one pass
+   below the pass before it. A clamp against the unclamped rung
+   `dd*sqrt(n-1)` would give cuts smaller than dmin after the first clamp,
+   which contradicts "clamped at this value". Pinned by
+   `the_minimum_depth_clamps_the_cut_of_one_pass`, which also proves that
+   the two readings give different ladders on its fixture.
+4. **Internal rounding - open.** S1's unit table and S2's note 5 confirm
+   that dmin, dd and k are in the least input increment with no decimal
+   point, and that R(d) takes a decimal point. Neither source says how the
+   control rounds `dd*sqrt(n)` inside the cycle. The post's guard (R from
+   the rounded ladder, refusal beyond one increment) stays. Only a run on
+   a control or its simulator can settle this.
+
+**Why.** The launching task permits a reading to be "settled" only on two
+independent published sources that agree with the post. S1 and S2 are from
+two makers. No reading showed the post wrong, so no posted G-code changed.
+
+**Considered and dropped.** Refusing or warning on flank G76 until the
+readings are verified (the issue's open question): dropped, because
+readings 1 and 2 are now settled. Editing the post's header comment to cite
+the sources: dropped, to keep the diff away from the open draft PRs #1866
+and #468 that also edit the post.
+
+**Cost to change later.** If a control run shows reading 4 differs, only
+`g76Allowance` in the post and `control_depths` in
+`crates/app/tests/common/g76.rs` change.
+
+## #1849 - Split `operation/params.rs` along its operation families
+
+**What was decided.** `params.rs` held one function, `OpParams::stamp_with`,
+of about 1780 lines. It is now split into child modules under
+`operation/params/`. The match in `params.rs` stays exhaustive. It keeps the
+Face, Contour, Pocket and Adaptive2D arms inline and sends every other kind
+to one method per family: `mill2d`, `mill3d`, `multiaxis`, `turning`,
+`holes`, `cutting` (wire, sinker, plasma). The shared writers (`w`, `wh`,
+`wh_opt`, `wp2`, `wt`) and the link trailer moved to `params/digest.rs`.
+Every arm body moved verbatim, so no digest byte changed.
+
+**Why.** The 400-line law (AGENTS.md "Code shape"). The pocket family stays
+in `params.rs` because open PRs #1817 and #2037 edit the Pocket arm. Leaving
+it in place lets them merge without a conflict.
+
+**Why child modules of `params`.** `operation/mod.rs` needs no new lines,
+and the public path (`OpParams::stamp_with`, `pub(super)`) is unchanged.
+
+**Considered and dropped.**
+- A `Digest` struct with methods in place of the closures. It would rewrite
+  every arm body (`w(h, x)` -> `d.w(x)`), conflict with #1817/#2037 and make
+  the move hard to check line by line.
+- A pinned digest value per kind as a permanent test. `DefaultHasher` is not
+  stable across Rust releases, so such a pin would break on a toolchain
+  bump. The byte identity was checked once instead: the digests of every
+  kind's seed, with default and edited links (132 cases), matched before and
+  after the split.
+
+**Cost to change later.** Low. A new kind adds its variant to the dispatch
+in `params.rs` (the compiler demands it) and its arm to its family file. Each
+family method ends in `_ => {}`; the exhaustive dispatch is what keeps a kind
+from reaching the wrong family.
+
+## #1853 - 3D Finish band-edge levels and cross-band links
+
+- **What was decided**: Add a default-suite integration test (`the_3d_finish_band_split_levels_move_within_stepdown_and_links_cross_edge` in `crates/app/tests/shared_face_bodies_finish.rs`) running `3D Finish` (`BN-0600`, kind defaults) on `Milling-test.step` (`70 x 70 x 27` mm box stock at `z = -7`) across two adjacent bands (`[20.0, 18.0]`, `[18.0, 16.0]`) and the continuous `[20.0, 16.0]` span across `edge_z = 18.0`.
+- **Why**: Splitting the `sample_ap214.step` finish test into six bands (#1846) meant neither band-edge level shifts (`< scallop_stepdown` relative to the forced split boundary at `edge_z`) nor cross-band clearance `Rapid` + `Plunge` link generation and verification were ever asserted. `Milling-test.step` exercises real STEP-to-toolpath generation, `posting::verification_report`, and `stock_sim::simulate_document` with zero warnings and zero gouges in ~6.6s inside the default suite.
+- **What was considered and dropped**:
+  - Narrow-window `sample_ap214.step` boundary test: hits pre-existing `ShankHit` warnings and a small raster chord gouge (#1840) unrelated to cross-band links, and runs far slower.
+  - Another `#[ignore]` heavy-lane test: skipped by `cargo xtask gate quick` and normal PR runs.
+  - Synthetic 2:1 frustum mesh: introduces a wall scan/dexel artifact unrelated to band splitting.
+- **What it would cost to change later**: Test-only addition in `crates/app/tests/shared_face_bodies_finish.rs`; swapping or extending the fixture affects no production code or file format.
+
+## #1854 - Describe finish-band coverage accurately
+
+**What was decided.** Correct the module documentation in
+`crates/app/tests/shared_face_bodies_finish.rs` to describe each band
+starting its own level ladder. Levels can shift by less than one stepdown
+at a band boundary compared with the whole-span program. Links between
+bands are not generated or verified.
+
+**Why.** The previous claim that the bands run every level of the
+whole-span program contradicted the decision recorded for #1715 in
+PR #1846. The revised comment states that recorded limitation without
+changing test or machining behavior. A temporary text assertion verifies
+the documentation correction; restoring the upstream file makes it fail.
+No permanent test code is needed for this prose correction.
+
+**Dropped.** Changing band generation to reproduce the whole-span level
+ladder would change behavior and exceeds this documentation-only issue.
+Running the heavy finish lanes would exercise machining behavior rather
+than establish whether the comment states the recorded limitation; the
+quick gate and crate clippy check provide the requested validation.
+
+**Cost to change later.** Documentation only. If band generation changes,
+update this explanation alongside the tests that establish its coverage.
+
+## #1860 - Bounded ASCII DXF reader with explicit units
+
+**What was decided.** Add an original reader in `camcraft-geometry::dxf`.
+It accepts an in-memory byte slice and returns plain geometry values.
+It adds no dependencies or application state.
+Records borrow the input text. Polylines retain only their first and previous
+vertices while the reader emits segments.
+This follows Autodesk's published [DXF file structure](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-D939EA11-0CEC-4636-91A8-756640A031D3.htm).
+
+Keep coordinates in drawing units. Report `$INSUNITS` as `Known(Unit)`,
+`MissingOrUnitless`, or `Unsupported(i32)`.
+Provide scales for the 24 defined length-unit codes. A caller must choose the
+units when they are missing, then check the range again after conversion.
+The unit mapping comes from Autodesk's [HEADER reference](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-A85E8E67-27CD-4C59-BE61-4DC9FADBE74A.htm).
+This keeps the API usable by the later DXF import paths without an implicit
+millimeter or inch assumption.
+
+Preserve lines, circles and arcs as analytic primitives. Convert polyline
+bulges into signed arc sweeps, including the closing segment.
+The conversion follows the group-42 definition in Autodesk's
+[VERTEX reference](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-0741E831-599E-4CBF-91E1-8ADBCFD6556D.htm).
+Keep the layer name on each primitive. Keep one common Z elevation for the
+document. Accept extrusion directions only along positive Z.
+Refuse unsupported geometry by name. Also refuse widths, thickness, fitted or
+3D polylines, paper-space geometry, application-defined group 102, and
+unsupported sections. Count skipped annotation entities by kind.
+
+Default limits are 16 MiB of input, 100,000 entity records, and 1,000,000
+polyline vertices. The entity count includes skipped entities, `VERTEX`, and
+`SEQEND`. Layer definitions have the same count limit.
+Check declared vertex counts before reading vertices. Never use an input
+count as an allocation capacity.
+Limit layer names to 255 bytes. The byte limit is a deliberate restriction of
+this ASCII reader, even for UTF-8 names. It bounds the memory used when each
+segment copies its layer name.
+Bound the complete support circle of each arc against `geo2d::COORD_LIMIT`.
+Refuse a bulge whose sweep cannot be represented safely.
+
+For review #1937, evaluate both endpoints from the emitted arc's center,
+radius, start angle and sweep. Require each endpoint error to be at most
+`1e-10` times the source chord length. Otherwise return the entity-named error
+`bulge arc cannot preserve source endpoints`. This relative bound does not
+depend on unresolved drawing units. It also prevents a large support circle
+from hiding endpoint error. Refuse such arcs instead of replacing them with
+lines or adding stored endpoints to the public `Primitive` type. Relaxing
+this bound later needs endpoint tests across scales and both arc directions.
+
+**Why.** The reader must preserve geometry or return a named error.
+Explicit units prevent a silent scale change. Exact arcs retain the source
+curve for later machining work. Borrowed records and count limits bound
+untrusted input before geometry allocation. Conservative circle bounds also
+cover intermediate centers and radii.
+
+**Considered and dropped.** An external DXF library adds a dependency that
+the issue excludes. Guessing missing units can change the part size.
+Polygonizing arcs loses the source curve. Silently discarding unsupported
+geometry can remove a cut. General OCS transforms, block expansion, splines,
+ellipses and GUI integration remain outside this core-reader issue.
+Storing all group pairs or vertices adds allocation that the streaming reader
+does not need.
+
+**Cost to change later.** New entity kinds can extend the parser behind the
+same document API. New public primitive or unit variants require callers to
+update exhaustive matches. Supporting more sections or OCS directions needs
+format-specific tests and refusal checks. A shared layer-name representation
+could reduce memory and permit a larger byte limit, but changes the public
+primitive type. Relaxing the full-circle bound needs tests for the actual arc
+extent and all intermediate values.
+
+## #1881 - Waterjet machine, nozzle and cutting-data seam
+
+- **Declare waterjet explicitly and require linear X/Y, with optional Z.**
+  An axis inventory cannot distinguish a waterjet from another gantry.
+  The parser and editor share the existing `NoSpindle` walker for named
+  spindle, live-tool and milling-coolant refusals; waterjet also refuses
+  rotary axes. Saved machines enforce the same restrictions. Reusing plasma
+  directly was dropped because plasma requires Z. Adding another machine
+  variant later will require its own declared rules, not relaxed waterjet
+  validation. Asymmetric travel ranges retain their existing meaning.
+
+- **Store the stream kerf in the tool's diameter and require zero RPM.**
+  This preserves the existing radius and tool-library paths while giving
+  invalid kerf and RPM values waterjet-specific refusal text. A corner
+  radius is refused because this diameter describes a stream, not a cutter.
+  A milling-tool alias was dropped because it would admit spindle behavior.
+  A separate nozzle-orifice model would need additional fields and file/UI
+  handling when a later slice needs physical nozzle geometry.
+
+- **Add optional waterjet data to each cutting row and select by material
+  and exact thickness.** The row carries cut feed; its waterjet data carries
+  thickness, kerf, pierce time, abrasive delay, re-pierce time and the
+  stationary/dynamic/wiggle method. Existing rows keep no waterjet payload.
+  Dimensions and feed must be finite and positive; delays may be zero.
+  Duplicate material/thickness pairs and waterjet data on other tool kinds
+  are refused. Material-only selection and nearest-thickness substitution
+  were dropped because either could silently choose the wrong recipe.
+  Interpolation or additional recipe keys would need an explicit selection
+  policy and corresponding command, file and UI changes.
+
+- **Check cached moves with waterjet machine rules, while leaving concrete
+  waterjet operations and built-in posts to their later slices.** The
+  checker tests XY feed ceilings and travel, including arc extrema, WCS
+  origin and axis direction. It checks Z travel only when Z exists and
+  names skipped Z/spindle checks. Only `Family::Waterjet` belongs on this
+  machine; existing operation kinds therefore remain refused. Shipped
+  milling/plasma/EDM posts do not serve it. A user script must explicitly
+  declare that it serves waterjet. Reusing a plasma operation or inferring
+  post support from a generic cutting capability was dropped because those
+  paths do not establish waterjet behavior. Future operation and post work
+  must supply that behavior before it can produce waterjet NC output.
+
+- **Preserve recipes through the existing tool editor and undoable command
+  path, with an original nozzle icon.** A new recipe starts with invalid
+  zero thickness so Apply requires a stated thickness. Multiple thicknesses
+  for one material remain editable. Reusing the torch icon was dropped
+  because the tool kinds should be distinguishable. A separate recipe
+  editor was unnecessary for this data seam and would duplicate persistence
+  and command handling. No new crate dependency is needed.
+
+- **Reuse the released local patch on current upstream main.** The previous
+  worktree is preserved as held work, and the issue branch starts at
+  `cda3d5896`. Rebuilding the same implementation from scratch was dropped
+  because it would discard useful work without changing the design. The
+  allowed-kind message assertion is updated with the intentionally extended
+  vocabulary. Process files and NC/CL goldens remain outside this change.
+
+- **Disable waterjet Apply until the recipe is valid.** The latest PR review
+  requested structural coverage of invalid and valid Apply states. The
+  editor uses the existing named recipe refusal as its disabled tooltip;
+  the undoable command still validates the tool when Apply runs. Keeping
+  Apply clickable and reporting an error afterwards was dropped because it
+  does not expose the requested invalid state before the command is sent.
+
+## #1891 - Bounded 3D edge-break volumes beside legacy cones
+
+**Chosen.** Keep legacy vertical-cone records and add an optional framed
+volume. Each nondegenerate polyline segment has one outward bisector and
+one across-edge direction, both unit vectors and perpendicular to each
+other and the segment tangent. Frames rotate with a tilted work path.
+Legacy cones continue to drop when the frame tilts.
+
+**Dimensions and profiles.** A framed width is the full across-edge span,
+from `-width / 2` to `width / 2`. Depth is the maximum inward distance
+from the selected edge. Segment end planes bound the sweep; the actual
+part clips this cap. Width and depth must be finite and positive, and
+depth must not exceed width. The operation's own width still bounds each
+record through the existing #529 check, with its existing lattice slack.
+
+At across coordinate `s`, let `sag(s) = R - sqrt(R² - s²)`. A flat cap
+ends at the declared depth. A concave ball cap ends at `depth - sag(s)`.
+A convex rounded cap ends at `depth - sag(width / 2) + sag(s)`. Radius
+must be finite, positive and at least half the width. The edge sag must
+not exceed depth, so the full profile stays nonnegative. These explicit
+laws avoid inferring permission from the generated cutter moves.
+
+**Why analytic connected intervals.** Clip each world-Z column against
+the segment planes and profile, then join only the intervals connected
+to the model surface. A detached lower cap cannot forgive cutting the
+material above it, and a deeper disconnected interval cannot extend the
+credit through a gap. Cuts below the resulting surface remain gouges.
+This works for vertical and oblique edges without projecting their
+width onto XY. Legacy cones keep their existing surface tolerance.
+
+Circle intersections use exact quadratic roots rather than sampled
+profiles. The sag uses a rationalized expression to retain shallow arcs
+at large radii. The root calculation normalizes the column's direction
+in the cross-section before squaring it; tiny finite rates must not
+underflow into an unbounded arc credit.
+
+**Persistence and refusals.** The volume is an optional project-record
+extension. Framed records require a zero legacy slope, so older readers
+drop them and judge the sharp model instead of misreading them as cones.
+Existing 2D chamfer and v1 deburr records keep their wire shape and law.
+Framed endpoints retain full precision because micron snapping can make
+a short oblique segment disagree with its frame. Legacy endpoints still
+use their existing lattice.
+
+The extension is read as raw JSON before strict typed validation. A bad
+profile, unknown key, invalid dimension or corrupt frame drops that
+record, not the entire project and not merely its extension. Diagnostics
+identify the edge-break record and its index; the operation-bound warning
+names the operation. This preserves conservative verification without
+changing the unrelated project reader API or project version.
+
+**Dropped.** XY distance for 3D breaks loses vertical and oblique bounds.
+Sampled profiles can miss a boundary and forgive material between samples.
+Replacing all cone records would change existing chamfer/deburr behavior
+and require unnecessary migration. A project-version or process change
+is unnecessary because older readers reject the zero-slope extension
+safely. New 3D toolpath generators belong to the surrounding #1827 work;
+this issue adds the records and verification they consume. Existing
+generators, cutter moves and golden files keep their behavior.
+
+**Cost to change.** Moderate: the public CL record has an optional field
+and new frame/profile types. Changing the cap convention would require
+updating its geometry and project DTO conversion together. The wire
+format remains local to the edge-break DTO; no dependency change is
+needed.
+
+**Review fix: vertical connection slack.** Scale the roundoff allowance
+only by the vertical endpoint distances and the model surface Z coordinate.
+The Z coordinate retains roundoff allowance for translated, tilted caps.
+Drop width and depth from that scale: an unrelated cross-edge width of
+`1e14` must not bridge a real `0.1` mm gap below the surface. This keeps roundoff joining for
+vertical intervals while detached caps retain the sharp gouge verdict.
+
+**Review fix: the connection allowance is a fixed length.** (Replaces the
+paragraph above.) Scaling the allowance by the model surface Z let a
+translation to `z = 1e14` join a cap that sits a representable `0.09375`
+mm under the surface. A span now joins only across `1e-9` mm, a constant
+that does not grow with world position, width or depth; float steps are
+larger than that far from the origin, so every representable gap there
+stays a gap.
+
+Roundoff is handled per span instead of in the allowance. Each plane
+crossing carries a bound, `16 eps * (sum |q_i v_i| + |plane|) / |rate|`,
+where `q` is the offset from the segment start to the column: a local
+quantity, unchanged by translation. A span is used at its certain part
+only: it joins at its latest possible start and credits to its earliest
+possible end. Each segment end plane is measured from its own endpoint,
+so a column standing on a polyline vertex meets it without roundoff even
+when mesh noise leaves the plane picoradians off vertical. A column that meets a nearly vertical plane where roundoff
+moves the crossing by more than the allowance therefore gets no credit
+there, and a floor is never deeper than the declared cap. Profile
+crossings take the planes' bound plus a relative term.
+
+Dropped: an allowance relative to the span's own depth (a tall cap would
+again bridge a real gap), and refusing a whole segment for one uncertain
+plane (it refused steep caps whose doubtful plane is not the one that
+ends the span). `tiny_circle_direction_rates_do_not_underflow_into_extra_credit`
+now starts its column at the segment start, where the offset is exact;
+its old column sat on a plane `1e-200` off vertical and is refused.
+
+## #1896 - The laid flank passes keep their present ends
+
+- **Decided: the threading kernel keeps its laid ends.** Each flank pass
+  of a G76-postable plan stays one whole helix of half-turns, shifted
+  along the travel by its flank offset. A shallower pass therefore ends
+  `(k - depth) * tan(a/2)` short of the end point D (`a` is the G76 A
+  word, twice the flank angle). Only the root pass,
+  the finishing pass and the spring passes end at D. The pin
+  `crates/app/tests/lathe_post_g76_sources.rs::every_pass_runs_to_the_posted_end_z_inside_the_root_pass`
+  states this difference and stays as it is.
+
+- **Why it is safe.** The FANUC Series 0i-F lathe operator's manual
+  (B-64604EN-1, section 4.2.7, Fig. 4.2.7 (a)) and the Siemens SINUMERIK
+  ISO Turning programming manual (A5E52211627B, Fig. 4-25) show that a
+  control running G76 ends every pass at D. On the control, the extra
+  length of a shallower pass is its V at that pass's depth, with its
+  centre between D and D plus the flank offset. That V stays inside the
+  root pass's V at D:
+  - The offset at depth `t` is `(k - t) * tan(flank)`.
+  - The kernel refuses a flank angle wider than the insert's half-angle
+    (`infeed.rs`, the "half-angle" refusal, pinned by
+    `plans_that_cannot_cut_refuse_by_name` in
+    `crates/motion/tests/turning_thread_infeed.rs`).
+  - Thus the offset is at most `(k - t) * tan(form/2)`, where `form` is
+    the insert's included angle. That is the distance by which each
+    flank of the root V stands outside the shallower V at the same
+    radius.
+  - So the extra cut never goes deeper than the root pass, and never
+    goes past D toward the chuck by more than the root pass does.
+    No pass ends past D (the pin asserts this).
+
+- **What each output cuts.**
+  - G32 / G33 passes cut exactly the laid passes. The verdict judged
+    those passes.
+  - The G76 cycle cuts the laid passes and also the short run-out
+    described above. The run-out is inside the root pass's groove in
+    the meridian, which is the form the threading verdict judges.
+  - The lathe stock simulation refuses helical passes by name
+    (`LATHE_THREAD_REFUSAL`). So no simulated stock shows a different
+    pass. Only the revolved threading verdict judges the thread, and the
+    containment above holds in that verdict's frame.
+
+- **Considered and dropped: end each flank pass at D with a partial
+  helical arc.** The control's pass reaches D at a spindle angle that is
+  not the start angle (the arc sweeps `2 * pi * offset / pitch`). Thus
+  the last arc ends off the meridian plane. Every other thread arc ends
+  on the meridian or on its antipode. These parts read the arcs that
+  way:
+  - `turning_holder::pieces_of` and `turning_rapids::kerf_of` (the
+    holder-side and rapid laws) need in-plane ends. They would refuse
+    every flank thread as "leaves the turning plane".
+  - The retract rapid would start off the plane, and the meridian
+    rapid law would misread it.
+  - The Fanuc lathe `threadHalfTurn` and the Tormach lathe
+    `threadHalfTurn` refuse arcs that are not antipodal. They also get
+    the lead from the arc's Z travel, so a partial arc would post a
+    wrong F or K word unless the post used the modal lead.
+  - The threading verdict's parity reading (`thread_law.rs`) and the
+    chip-break dip phase law (`thread_dips::dip_warnings`, PR #468)
+    expect every arc to advance half a lead.
+  A change to all of these touches the safety surface of five modules
+  and two posts. It also overlaps the open draft #468 in the same pass
+  loop. The gain is that the verdict reads a run-out that the proof
+  above already contains. For a P7 issue, the cost and the risk are
+  larger than the gain.
+
+- **Considered and dropped: judge the run-out in the verdict as an extra
+  band.** By the containment above, such a band can never convict a
+  path that the kernel lays. It would be a check that cannot fail, with
+  no pin that can show a difference.
+
+- **The held branch.** `mkinney:issue/1896-thread-pass-ends` (commit
+  145dcc86) holds a pin that asserts every pass ends at D. It fails on
+  `main` by design and is superseded by this decision.
+
+- **Cost to change later.** If a future need asks for the laid passes
+  to equal the control's passes exactly (for example a 3D thread
+  simulation), the work is the partial-arc list above: the kernel, the
+  two posts, the holder and rapid laws, and the two thread verdicts,
+  with pins for the end point, the lead and the hand of the partial
+  arc. The pin named above then changes to assert that every pass ends
+  at D.
+
+## #1901 - App icons in the user guide
+
+**What was decided.** Add a global Zola `icon` component using `get_url`
+and an inline CSS class. Start each operation section with its app icon and show
+control and browser icons beside the guide's control names. Copy all 93
+PNG files named by the app's icon table and its licence notice into the
+site. Link the notice from the footer. Use the site tests to check byte
+parity, table names, operation mappings, rendered URLs and notice links.
+
+**Why.** Users can match an operation or control in the guide to the app.
+The deployment pins Zola 0.23.6. Zola 0.23 removed shortcodes in favour of
+components, so calls use `{{ <icon name="op-face" /> }}` and the existing
+`site/templates/shortcodes/icon.html` path contains a global component
+definition. This follows Zola's current content rendering mechanism:
+[Zola content rendering documentation](https://www.getzola.org/documentation/content/overview/).
+`get_url` preserves a deployed site's path prefix. Black icons need light
+ink under the site's dark colour scheme. Table and byte checks make a
+renamed or changed app icon fail a test. Operation icons share their
+existing picture line so the guide pages stay within the file-size law.
+
+**Considered and dropped.** A symlink to `assets/ui` depends on Windows
+checkout settings. A release workflow copy step changes process files and
+does not help a standalone local site build. Inline SVGs duplicate the
+app's raster asset pipeline. The previous attempt's Rust parity test
+duplicates the site tests and makes a documentation-only check compile
+the UI, so this patch keeps the pins in `site/tests`.
+
+**Cost to change later.** Low. Refresh copied PNGs and the notice when the
+app changes; the site test names missing or stale files. A future shared
+asset build can replace those copies without changing guide components.
+
+## #1917 - "Your first router part" guide page, AltMill demo project, and RichAuto DSP A11 notes
+
+- **What was decided:**
+  1. Placed the new walkthrough at `site/content/guide/getting-started/first-router-part.md` (`weight = 5`) and committed `examples/first-router-part.camproj` (`Sienci AltMill 4x4` + `grblHAL`, `140 x 100 x 12 mm` bracket plate in `200 x 160 x 12 mm` box sheet stock, corner `G54` at `(-100, -80, 12)`, `DR-0600` + `EM-0600-4FL`, dry `Drill1` -> `2D Pocket1` -> `2D Contour1` with 4 holding tabs).
+  2. Chose 12 mm sheet stock thickness and ordered operations `Drill1` (`T1 DR-0600`) -> `2D Pocket1` (`T2 EM-0600-4FL`) -> `2D Contour1` (`T2 EM-0600-4FL`, 4× `8 x 3 mm` tabs) with `Coolant = Off` and `Ø6.2 mm` (`r = 3.1 mm`) 24-gon holes.
+  3. Kept the RichAuto DSP A11 notes scoped to controller prep (`FAT16`/`FAT32`, `8.3` filenames, `G Code Setup` with `AbsCntr = Off`, `C.A.D Thickness` Z-puck zeroing, and single-tool `.nc` export) while explicitly noting that `richauto.cps` and Laguna/Grizzly machine profiles (`#1914`, `#1915`, `#1916`) are not on `main` yet.
+  4. Added `guide/getting-started/first-router-part` to `test_sidebar_groups_follow_a_job_on_every_guide_page` in `site/tests/test_guide_navigation.py` rather than adding a synthetic entry to `MOVED`, and backed all checks with a Rust integration test in `crates/app/tests/first_router_part.rs`.
+
+- **Why:**
+  - `EM-0600-4FL` in `assets/tools/catalog.json` has `flute_len = 15.0 mm` and an `8.0 mm` shank (`shank_d > diameter`). Using `12 mm` sheet stock lets readers use the stock catalog cutter cleanly without triggering a shank-reach refusal or fabricating a custom bit first.
+  - Drilling first while the sheet is rigid and grouping `2D Pocket1` and `2D Contour1` afterward uses only one manual tool change (`T1` -> `T2`), keeps perimeter holding tabs intact until the last pass, and splits cleanly into two single-tool files for manual-collet RichAuto DSP A11 routers.
+  - Using `r = 3.1 mm` on a 24-gon hole ensures the inscribed chord midpoint (`3.1 * cos(pi/24) = 3.074 mm`) stays strictly outside the `3.0 mm` radius of `DR-0600` at breakthrough, avoiding polygonal facet grazes in stock verification.
+  - Putting a new page in `MOVED` would have asserted a pre-#1903 `/guide/<slug>/` redirect alias that never existed.
+
+- **What was considered and dropped:**
+  - **18 mm sheet with custom extended-flute end mill:** dropped so the guide uses built-in catalog tools (`EM-0600-4FL`, `DR-0600`) out of the box; changing later only requires updating the stock height and pocket/contour depths.
+  - **Cutting pocket -> drill -> contour:** dropped because it would add an extra `T2 -> T1 -> T2` tool swap on a manual collet router.
+  - **Running `zola` and `python3` in CI here:** `zola` is not installed on PATH in this environment and `python3` is blocked by sandbox policy, so Zola link and sidebar checks are additionally pinned by `crates/app/tests/first_router_part.rs` until CI runs `test_guide_navigation.py` with Zola.
+
+- **Cost to change later:** Low. All documentation is additive markdown under `site/content/guide/`, and `examples/first-router-part.camproj` can be regenerated directly from the command sequence in `crates/app/tests/first_router_part.rs` once `#1902` captures UI screenshots or `#1914`/`#1915`/`#1916` ship RichAuto/router profiles.
+
+- **PR #1920 review corrections:** Use `XY→0` to set the A11 X/Y work origin, with the OEM manual sections 2.3 and 5.4.1 as the source. Dropped the `ORIGIN` instruction because `ORIGIN/OK` returns to the existing origin. State the demo's `G54 Z = -13 mm` drill breakthrough in the setup, drilling and clearance instructions. A contour-only `-12 mm` clearance check omits the drill's `1 mm` penetration below the stock.
+
+## #1927 - 2D Contour: a picked ring whose side stands in the part is refused
+
+**Decided.** A 2D Contour on PICKED rings (the Selection source, on a
+part solid) goes through the new `machining2d::contour_on_picked`. After
+the per-ring depth ladder, `contour_depth::picked_law` refuses the
+operation by name when a picked ring walks no level under the part top
+near it, while the operation's own levels go under that top. The
+message names the ring's position, the part top and the fix: "the
+cutter Outside this ring stands in the part material - if the ring
+bounds a hole, set Side to Inside; else check the tool containment"
+(and the mirror text for Inside). The side the law reads is the
+resolved one (the app turns Auto into Inside or Outside first), and a
+tool containment moves the ring too, so the text names both causes and
+never says "use Auto". The whole-model source (`SrcRef::Entity` / stock) keeps
+`contour_on_bodies` and is not changed.
+
+**Why.** The depth ladder judges each level against the part material
+strictly above that level. At or above the part top nothing stands
+there, so every ring is legal at the top plane. Side Outside on a hole
+wall therefore kept only the top level (Z = part top), cut air there
+with the centre one radius inside the plate's footprint, and posted
+with no warning, at any Bottom. The verifier saw no gouge because the
+tip only touched the top face. The ring did not gouge, but the
+operation did not machine what the user picked and said nothing: a
+silent wrong answer under the Prime Directive. The verifier does
+convict the same ring when it is forced down the full ladder (pinned by
+`the_full_depth_outside_ring_is_a_gouge_to_the_verifier`), so no
+verifier gap was filed.
+
+"Near the ring" is the highest vertex of the facets whose XY box comes
+within the tool radius plus stock to leave of the ring's XY box. This
+keeps a ring on a low body from being judged against a taller,
+unrelated body in a multi-body pick.
+
+**Dropped.**
+- Flip the side silently to Inside: a strategy fork the user chose by
+  name must not change without a word.
+- Refuse in the app Selection arm by reading the path notes: fragile
+  string matching across crates.
+- Apply the law to whole-model sources too: their rings come from the
+  part's own section, and a chamfer or fillet ring near the top could
+  lose its top-only pass today. Out of scope for this defect.
+- A new `ContourParams` field for "picked": it would touch every struct
+  literal in the test suites for no gain over a second entry point.
+
+**Cost to change later.** Low. The law is one function in
+`contour_depth.rs` and one call in `contour_impl`. `contour.rs` was
+already over the 400-line law before this PR (446 lines); this PR adds
+about 20 lines (the entry point, the call and a type alias). A split of
+`contour_impl` is owed separately.
+
+**Seen during the gate.** Two tests pinned the silent top-plane pass:
+- `area_open`: Side Auto on the rim of a BLIND bore resolves to Outside
+  (the bore floor fills the XY silhouette that Auto's fill ratio
+  reads), and a forced Containment Outside puts the ring 10 mm into the
+  wall. Both walked only the mouth, in air, with 0 warnings. Both are
+  now refused by name; Inside is the clean control. The Auto verdict
+  itself is wrong for blind bores: filed as #1933 (P3), not fixed here.
+- `tilt`: the flat control used Inside on a block's top face, the
+  mirror case. It now uses Outside, the legal side for that ring.
+
+**Review fix (two camcraft-app tests red on the PR head).**
+- `stitch_cross::a_self_touching_single_body_still_stops_at_its_top_level`:
+  the ring is Outside of a 40 x 40 outline, so its side is right and
+  Outside is air. The ladder stopped it at the top plane because the one
+  self-touching shell cannot be sectioned below it (a non-manifold slice
+  error, fail closed). The law blamed the side ("set Side to Inside"),
+  which is wrong advice. Decided: the ladder now records, per ring, the
+  slice error that stopped it (`Ladder::unread`). The law still refuses
+  (a top-plane-only pass does not machine the pick), but it names the
+  unreadable mesh and the skipped levels, never the side. Dropped: let
+  the slice-error case through as the old top-only pass with a note -
+  that is the same silent, empty program that #1927 refuses.
+- `setup_align::unverified_kinds_are_refused_while_verified_picks_generate_aligned`:
+  the refusal is correct, and it reads the setup frame. The first
+  horizontal face was the modelled top annulus. Flipped over Y it lies at
+  the setup's Z 0, the blind hole opens down (Z 0..10), and Z 10..20 is
+  solid. Outside of the hole ring the cutter centre ran at +-8 mm, inside
+  that solid at Z 16 and Z 12; the old path kept only a top-plane pass in
+  air. Decided: the test picks the modelled bottom face (the setup's top,
+  Outside is air) with Side Outside, asserts a cut below the top, and
+  keeps the annulus as a control: it generates as modelled and is refused
+  by name once flipped.
+
+## #1928 - A Contour on an open run of the stock stands one radius off the run
+
+**What was decided.** A Contour whose selection holds an open run on the
+setup's stock (`part_solid_of` false) no longer rides the run with the tool
+centre. The tool centre stands one tool radius plus the stock to leave off
+the run, on the side that Side names
+(`machining2d::contour_open_run_sided`,
+`crates/motion/src/machining2d/contour_run_stock.rs`).
+
+- Outside: the tool stands on the side of the run without stock.
+- Inside: the tool stands on the stock's side of the run.
+- Auto: the tool stands on the side away from the part (the setup's parts
+  in the stock, `keep_law::parts_in_stock`).
+- The stock side is read from the stock's sections with the #1777 probes
+  (`material_side`). The part side for Auto is read from the part's section
+  split by the run (`boundary_chains::sides_of_chain`).
+- Climb keeps the stock on the right of the tool (#1555); conventional
+  travels the other way.
+- Refused by name, never guessed:
+  - Inside or Outside with no stock beside the run at any cut level;
+  - Auto with no part at the cut levels, with the part on both sides of the
+    run, or with the part on different sides at different levels;
+  - a tool beside the run that would overlap the part;
+  - an offset that is not positive, or that folds onto itself.
+- The selection note "Side does not apply to open runs" now shows only
+  when no pick is on the stock: for stock runs, Side applies.
+
+**Why.** The maintainer picked an edge of the stock with a D6 tool. The
+tool centre rode the edge, so the tool took 3 mm off the model. #1777 kept
+this centreline ride for stock picks ("there is no part to keep there"),
+but a stock edge is a boundary the user draws to cut beside, and the tool
+must stand off it as on any open profile (RS-274 G41/G42 practice).
+
+**Considered and dropped.**
+- Keep the centreline ride and add a "Tool on the line" choice. Dropped: a
+  new parameter needs a command and an MCP field, and the issue asks for
+  the offset; the centreline is still available through Containment On of
+  an open Boundary.
+- Auto as "off the stock" (the stock's air side). Dropped: a stock edge
+  that the user picks is usually to cut beside the part, and away from the
+  part is the side that cannot gouge. Outside gives the stock's air side.
+- Use the resolved `cp.side` (Auto turned into Inside or Outside by the
+  ring reading). Dropped: that resolution reads closed rings; for an open
+  run it would turn Auto into a fixed side with no reason the user sees.
+
+**Not changed.** Runs on a part (`contour_open_run`, #1777) are unchanged,
+and so is its fallback: a part run with no part material beside it at any
+level still rides its line, with a note. The viewport still draws the
+picked run. No golden CL or NC file changed.
+
+**Cost to change later.** Small: one function in the motion crate and one
+call in `generate.rs`.
+
+## #1933 - Side Auto of a picked Contour reads the material at the ring's level
+
+**Decided.** Side Auto of a 2D Contour on picked rings (chains, face loops,
+wall patches) reads the part's section at the rings' own height, not the
+full XY silhouette. The law is `machining2d::auto_side`
+(`crates/motion/src/machining2d/contour_auto.rs`):
+
+- The Z span of the picks is read in the setup frame (or along a tilted
+  frame's axis). A flat rim has one Z; a wall patch spans its height.
+- Two probe sections are taken: 0.01 mm under the top of the span, then
+  0.01 mm over its bottom (`AUTO_PROBE_DZ`).
+- At each probe, the area inside the rings and a 0.5 mm band just outside
+  them (`AUTO_BAND`) are compared with the section. A side "holds
+  material" at a fill of 0.5 or more (the threshold of the old fill law).
+- Material inside only: Outside. Material outside only: Inside. The first
+  probe that decides wins.
+- The probes disagree, or they see material on both sides and no probe
+  decides: the generate is refused by name, "Side Auto cannot tell ... -
+  set Side to Inside or Outside". Auto never guesses.
+- Neither probe sees material on either side (a sheet part with no
+  volume, a ring that floats over the part): the old law decides, from
+  the part's XY outline. A ring that bounds outline material is cut
+  Outside, a ring that bounds air Inside. The outline is computed only
+  in this case, because it costs a full projection.
+- No readable part (a sketch, no facets) or no pick height: Outside, the
+  side that Auto always took for an outline.
+
+**Why.** A blind bore's floor fills the XY silhouette of its rim, so the
+old fill law read the rim as material and resolved Outside, which the
+#1927 law then refused. At the rim's own level the bore is air and the
+plate is metal, which is the material that the wall bounds. The probe
+under the top suits a mouth rim; the probe over the bottom suits a floor
+rim (both sides are metal under a floor).
+
+**Considered and dropped.**
+- A verdict for each picked ring. Dropped: one Contour op has one Side,
+  and a mixed verdict would need a per-ring side in the generator.
+- Keep the silhouette law and add the bore floor as a special case.
+  Dropped: the section at the level is the general rule and also covers
+  steps and pockets in a pocket.
+- A wider band or a probe deeper under the rim. Dropped: a deeper probe
+  can pass the floor of a shallow counterbore and read the wrong wall.
+
+- Refuse also when no probe sees material. Dropped: the existing sheet
+  fixtures (a flat disc, a bored flat plate in `operations.rs`) have no
+  section at any level, and the outline law gives them the right side.
+
+**Known limit.** Picks at several levels share one verdict, read over
+their combined span. If the probes disagree, the op is refused by name.
+
+**Cost to change.** Local: the law is one function with its own tests
+(`crates/motion/tests/contour_auto_side.rs`,
+`crates/app/tests/contour_auto_level.rs`).
+
+## #1939 - Review the guide after #1802
+
+**Chosen.** Review every PR merged after #1802 through upstream/main
+`cda3d589` and update the existing guide pages by job stage. Keep a
+per-PR audit on the issue, including a reason for each change that needs
+no additional guide text. Also close the explicitly requested earlier
+Trochoidal parallel-lane documentation gap from #1788.
+
+**Why.** The guide must describe shipped behavior and the limits that a
+user must satisfy. The old text omitted the shipped ALC400G, body
+electrodes, wider Bore clearing and aligned 3D operations. New refusal
+and post behavior needs a remedy and its control limitations beside it.
+
+**Dropped.** Do not document unmerged Sodick 4-axis or flushing parameters
+as supported. Issues #1497 and #1499 remain open. Do not add screenshots:
+the change needs factual reference text and the existing operation
+schematics suffice. Do not regroup the guide again; #1908 already did it.
+Do not stack on #1920 or #1921: they change different sections in the same
+files. State the overlaps so the second merge refreshes against main.
+
+**Validation choice.** Add focused guide-content pins in `site/tests/`,
+the existing home for guide tests. Assert supported workflows and reject
+the obsolete no-machine and rectangular-only descriptions. Build the
+site to check internal links. No Rust crate or NC output changes.
+
+**Cost to change later.** A later guide regrouping must move these tests'
+page paths with the content. A later Sodick implementation must replace
+the stated refusals only after its control meanings and output are
+verified. The next release cut must file the v0.23.0 review; this worker
+does not create a future-cut issue early.
+
+## #1940 - Name-pin the three untested #1928 stock open-run refusal branches
+
+**What was decided.** Add three app-level integration tests in
+`crates/app/tests/contour_stock_run.rs` next to the existing #1928 pins,
+each asserting the named refusal error message as well as a valid
+counterpart run:
+
+1. `auto_on_a_stock_run_with_part_changing_sides_between_levels_is_refused_by_name`:
+   places upper and lower part blocks on opposite sides of the stock's
+   north edge across Z `[5, 10]` and `[0, 5]` with a 5 mm stepdown,
+   pinning the `Side::Auto` level-change refusal in `part_left` while
+   confirming explicit `Side::Outside` and `Side::Inside` succeed.
+2. `a_stock_run_with_non_positive_offset_is_refused_by_name`: uses a
+   0.001 mm flat endmill (`r = 0.0005 <= TOL`) with zero stock to leave
+   to trigger and pin the non-positive offset guard in
+   `contour_open_run_sided`, while confirming adding `0.01` mm stock to
+   leave makes the run legal.
+3. `a_stock_run_whose_offset_folds_onto_itself_is_refused_by_name`:
+   imports a slab with a 3 mm-wide U-cove on its north edge as
+   `StockShape::FromModel` (`SetStockSourceOnly`), pinning the shared
+   `offset_run` `"folds onto itself"` refusal with a 10 mm tool while
+   confirming a 1 mm tool succeeds on the same cove.
+
+**Why.** #1928 shipped with tests covering basic offsetting, no-part
+`Side::Auto`, and gouging `Side::Inside`, leaving these three guards in
+`contour_run_stock.rs` and `contour_run_side.rs` unpinned at app level.
+
+**Considered and dropped.**
+- Using negative `stock_to_leave` (`-5.0`) to drive `r + stock_to_leave <= 0`.
+  Dropped: `OpParams::is_sane` already rejects negative `stock_to_leave`
+  before motion planning, so a sub-tolerance tool (`d = 0.001` mm) is the
+  command-valid path that reaches `contour_open_run_sided`'s guard.
+- Adding a shared helper in `crates/app/tests/area_support/mod.rs`.
+  Dropped: two open PRs already touch `area_support/mod.rs`, and keeping
+  `add_flat_tool` / `notched_stock_mesh` local inside
+  `contour_stock_run.rs` avoids cross-PR conflicts while keeping the file
+  under 230 lines.
+- Pinning the guards only via `crates/motion` unit tests. Dropped: #1940
+  specifically asks for the tests in `crates/app/tests/` beside the
+  other #1928 pins.
+
+**Not changed.** No production code, commands, goldens, or UI code changed.
+
+**Cost to change later.** Negligible: self-contained integration tests in
+one file (`crates/app/tests/contour_stock_run.rs`).
+
+## #1943 - Map the live MCP tools to provider formats
+
+**Decided:** Read `mcp::tools::list()` for each request. Map this table to
+Anthropic Messages, OpenAI Chat Completions, OpenAI Responses, and Gemini
+`generateContent`. Keep the mapper and the call/result adapters independent
+of network transport and tool execution.
+
+Set OpenAI `strict` to `false`. This preserves optional MCP arguments and
+schemas with typed `additionalProperties`. For Gemini, change type arrays
+to `anyOf` and remove `$schema` from schema locations. Keep literal values
+in `enum` and `default` unchanged.
+
+Preserve call IDs and MCP errors in provider results. The caller keeps the
+original response for reasoning items and Gemini thought signatures.
+
+Accept one local JSON proposal. Validate its tool name and arguments against
+the live MCP schema. Keep its fields private in `PendingCall`. Require
+explicit user confirmation for each tool outside an explicit read-only
+allowlist. Require confirmation for `detect_pockets`, because its optional
+`create` argument can add an operation.
+
+Select prompt JSON mode when native tool calling is off and prompt JSON is
+available. Otherwise, select read-only Q&A mode. Its context contains the
+project data and an empty tools list.
+
+**Why:** One live table keeps provider schemas current when MCP tools change.
+The adapters prepare calls without changing the existing command and safety
+checks. Named validation errors prevent invalid proposals from reaching
+confirmation. New tools require confirmation until their read-only behaviour
+is explicitly accepted.
+
+The validator implements the schema vocabulary that the live table uses.
+It refuses unsupported validation keywords by name. It applies literal
+constraints: `set_work_material` currently permits a null type but has an
+enum without null. This change preserves that schema and refuses null.
+
+**Dropped:** Copied provider tool tables would drift from MCP. OpenAI
+`strict: true` would require schema changes and reject typed additional
+properties. A new validation dependency is unnecessary for the current
+schema vocabulary. Network transport, provider sessions, and a confirmation
+UI are outside this offline mapper change.
+
+**Cost to change later:** Add a validator branch and a pin for each new
+validation keyword. Extend the read-only allowlist only after checking the
+tool handler. A future transport must present the exact pending proposal,
+pass the user's confirmation, preserve response history, and dispatch
+through MCP. Correct the material enum in a separate change if its schema
+must permit null.
+
+Public format references:
+
+- [Anthropic tool calls and results](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
+- [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
+- [Gemini FunctionDeclaration](https://ai.google.dev/api/caching#FunctionDeclaration)
+- [JSON Schema validation](https://json-schema.org/draft/2020-12/json-schema-validation)
+
+## #1946 - In-app AI chat dock panel, background worker, and offline UI tests
+
+**Decided:** Add a closed-by-default `Tab::AiChat` / `Panel::AiChat` dock pane
+opened from the View door beside `Tab::Properties` (`layout/mod.rs`), switching
+`LayoutRequest::Toggle` to `show(dock, tab_of(p))` so newly opened tabs beside
+Properties activate immediately. Keep panel state (`AiChatState`) isolated
+from the CAM document on UI `State`, reset/shut it down on New, successful Open,
+and `Shell::shutdown`, and pass `ai_proxy.send_event(())` via `State::set_ai_wake`
+so background events wake the `Wait` event loop.
+
+Run each chat turn on a background `std::thread` (with a `wasm32` stub) driven by
+a synchronous `ChatTransport` boundary (`DefaultTransport` enforces offline policy
+until the live HTTP transport from #1945 is plugged in). Execute MCP tool calls from
+the worker over `camcraft_app::mcp::Inbox::channel()` (`State::ai_mcp_tx` /
+`State::ai_mcp_inbox`), drained alongside the TCP `mcp` inbox in `mcp_host::pump`
+via a shared `answer_request` helper so every tool execution runs on the UI main
+thread inside `State` and updates `doc_version` / undo `History` consistently.
+
+Enforce safety gates in UI/worker code:
+- `Offline only` refuses `EndpointKind::Cloud` presets in both `AiChatState::submit`
+  and `check_offline_policy` before any transport call.
+- `FallbackMode::Native` pauses sensitive file/G-code tools (`post`, `open_project`,
+  `save_project`, `import_model`, `import_tool_library`, `export_tool_library`) behind
+  an inline Allow/Deny prompt; `FallbackMode::PromptJson` gates every tool outside
+  the read-only allowlist behind Allow/Deny after schema validation; `FallbackMode::ReadOnly`
+  displays a banner and disables tool parsing and MCP dispatch completely.
+- `Attach selection` defaults to `false` and captures `SelectionSnapshot` only
+  when explicitly checked. Disable `Attach screenshot` with the visible message
+  “Viewport screenshot capture is unavailable.” until actual viewport capture
+  is wired; a solid-color fallback does not represent the model or toolpath.
+- Bind `Undo Turn` to globally unique History command identities and the document
+  identity, in addition to its depth span. Replacement at the same stack depth
+  must refuse undo just like a later edit.
+- Give each submitted turn a fresh inbox. Stop the worker and discard its inbox
+  on New or successful Open, invalidate prior turn undo records, and reject
+  queued calls when the active turn is cancelled before UI dispatch.
+
+**Why:** Routing in-app worker tool calls through `Inbox::channel()` avoids a
+parallel command interpreter or off-thread `World` mutation and keeps document
+changes atomic and undoable. Separating `ChatTransport` lets offline UI and
+safety tests exercise View-door layout, MCP round-trips, cancellation, confirmation
+prompts, fallback banners, opt-in attachments, and Turn Undo deterministically in
+`egui_kittest` without network I/O.
+
+**Dropped:** Spawning commands off-thread or duplicating TCP JSON-RPC over loopback
+for in-app chat would add socket framing overhead and race with UI state. Allowing
+`Undo Turn` to pop across later manual edits would silently undo the user's own
+work. Depth alone was rejected because ordinary Undo followed by a manual edit
+can replace the AI entry at the same depth. Reusing the inbox was rejected
+because old queued calls could reach a replacement document or a later turn.
+Sending a solid-color PNG was rejected because valid image encoding does not
+prove viewport capture. Storing chat history
+inside `.cam` project files was omitted so conversations never pollute part geometry
+or git/fixture state.
+
+**Cost to change later:** Wiring live HTTP providers (#1945) implements
+`ChatTransport` and swaps it via `AiChatState::set_transport` without changing
+panel layout, `Inbox::channel()` dispatch, or safety gates. Changing the native
+confirmation set or read-only allowlist edits `requires_confirmation` /
+`is_read_only_tool` in `crates/ui/src/egui_app/ai_chat/transport.rs`.
+
+Actual screenshot attachment will require a viewport capture callback and tests
+that inspect model/toolpath image content before the control can be enabled.
+
+## #1963 - Stand the displayed work envelope on the table
+
+**Decided:** Translate only the viewport box Z range to `0..(max_z - min_z)`.
+Keep the X/Y bounds relative to the setup work origin.
+Keep lathe cylinders relative to the spindle and work origin.
+Update the checkbox tooltip to state these references.
+
+**Why:** The ground grid represents the table at world Z=0.
+The display previously used the program-space travel range without this translation.
+With `assets/machines/tormach-pcnc1100-s3.mch` and the fresh document implicit setup,
+the bottom was Z=-419.1 mm. It must be Z=0 mm.
+A shifted G54 origin and an inverted Z axis must also preserve the travel height.
+X/Y have no equivalent table-height error: the grid defines a plane, not a table footprint.
+The machine files do not supply a table footprint to justify a new X/Y placement.
+
+**Safety result:** `crates/post/src/machine/envelope.rs` supplies display data only.
+`crates/app/src/machine/mod.rs` checks travel directly against axis limits and program coordinates.
+No travel, reach, collision, posting, or stock simulation check consumes the drawn box.
+The fix does not change those checks or their coordinate reference.
+The effort label stays `effort:medium`.
+
+**Considered and dropped:** Changing machine travel limits or the shared program envelope
+would change their meaning and could affect callers beyond the viewport.
+Moving X/Y would require table placement data that the current files do not state.
+Moving a lathe cylinder onto a mill table would lose its spindle reference.
+
+**Cost to change later:** Replace the viewport translation when machine files provide
+an explicit table transform. Update the value tests and tooltip with that transform.
+No dependency, project format, or saved data changes are required.
+
+## #1965 - Pure-Rust AC table-table kinematics in `camcraft_post::kinematics`
+
+**Chosen:** Placed the shared 5-axis XYZAC trunnion forward/inverse solver in `crates/post/src/kinematics/` under a standalone public module (`camcraft_post::kinematics`), parameterized by explicit rotary vectors, offsets, sign convention, travel bounds, pole tolerance, and joint weights.
+
+**Why:** Keeping the solver inside `camcraft-post` lets both machine verification (#1969) and JavaScript post hooks (#1966/#1968) compute identical coordinates without reading `.mch` schema extensions (#1962) or mutating existing machine parsing modules with open PRs. Closed-form Rodrigues projection solves arbitrary unit rotary axes, handles `A = 0` poles by holding modal `C` while letting weighted step minimization cross zero smoothly, enforces continuous `C` travel through path-level clearance retracts (the pose-level API can re-wrap only when its caller has established a safe transition), and checks quarter-point forward kinematics to subdivide rotary arcs accurately (including C re-indexing when asymmetric `A` limits block negative tilt).
+
+**Dropped:** Hardcoding orthogonal `X`/`Z` Euler `atan2`/`acos` formulas would break machines with aligned offsets or non-orthogonal rotary vectors; extending `.mch` structs or JS post bindings in the same PR would collide with #1962, #1966, #1968, and open PRs in `crates/post/src/machine/mod.rs` and `crates/post/src/post/mod.rs`. Silently re-wrapping `C` mid-cut when travel limits expire was rejected in favor of named refusals so multi-turn continuous cuts never crash through fixtures without a safe retract.
+
+**Cost to change later:** Self-contained behind `AcTrunnionConfig`, `AcSolver`, and `solve_path`/`solve_toolpath`; wiring it into `.mch` loading (#1962), post hooks (#1968), and machine checking (#1969) adds adapters only and requires zero changes to the math core.
+
+
+**Review fixes (PR #2056):** Path-level retracts preserve continuous `C` and use checked subdivision throughout the lift. They do not synthesize an unwind after clearance: exhausted travel returns a named refusal because this API has no checked clearance-unwind planner. Adjacent moves whose part poses do not join return `DiscontinuousPath`, including CL axis changes; an unchecked orientation transition was rejected. Recursive subdivision and pole C reorientation return `SubdivisionLimitExceeded` when their depth or step cap cannot satisfy the angular or chord tolerance. Accepting a segment at a resource cap was rejected because it silently weakens the requested accuracy. The path safety tests pin the lift interpolation, adjacent-axis refusal, and both cap refusals.
+
+**Arc review fix (PR #2056):** `solve_toolpath` refuses every CL arc with `UnsupportedArc`, naming its `source_index`, before solving the path. The review allowed either refusal or checked arc tessellation. Refusal was chosen because `PathMove` represents straight segments and discards arc geometry; silently substituting the endpoint chord can cut across the part. Checked tessellation was deferred as a broader change. Pins cover quarter-circle arcs in XY, XZ, and YZ planes.
+
+## #1989 - AccessKit labels for painted browser tree rows and context menu
+
+**Decided:** Label each painted browser row with `WidgetType::Button` and
+`"Browser: {label}"`, each eye toggle with `WidgetType::Button` and
+`"{Hide|Show} {label}"`, and each context-menu row in `tree_menu` with its
+rendered caption (`WidgetType::Button` with live state `*runnable && !is_current`
+for actionable rows, `WidgetType::Label` with `Sense::hover()` for section
+headers). Clamp the browser tree width in `browser_pane::browser` to the
+visible clip edge (`(ui.clip_rect().right() - ui.cursor().min.x).max(0.0)`) so
+eye toggles stay inside the pane clip rect. Filter `"Browser: ..."` nodes out
+of `setups_declutter::shows`. Remove `BROWSER_TREE_TOP` and `BROWSER_EYE_X`
+from `crates/ui/src/egui_app/tests.rs` and drive all six browser behaviour
+tests through AccessKit queries (deriving drag coordinates from the target
+row's node rect).
+
+**Why:** Bare row labels (`"Machine"`, `"Post"`, `"Tool list"`, `"Setup1"`)
+collided with page-level `query_by_label` and `query_all_by_label` assertions
+because the browser pane stays visible alongside the active property page.
+`"Browser: {label}"` keeps browser rows distinct while still searchable by label.
+In `browser_pane::browser`, the top button strip inside `egui_dock`'s
+`ScrollArea` pushed `ui.available_width()` to `240.8` past the tab's right clip
+edge (`228.0`), placing the `Stock` eye center (`228.8`) outside
+`interact_rect` (`219.8..228.0`) so `get_by_label("Hide Stock").click()`
+missed; clamping the tree rect width to the visible clip edge keeps the eye
+inside `clip_rect` and hit-testable at its AccessKit center.
+
+**Considered and dropped:** Using bare `row.label` on browser rows caused nine
+existing unit tests (`machine_page`, `every_field_lives_on_exactly_one_section`,
+`every_registry_kind_gets_its_tab_bar`, `setup_tree`, and `setups_declutter`)
+to see duplicate or unexpected labels from the persistent browser pane.
+Switching `ShellTabs::scroll_bars` for `Tab::Browser` instead of clamping the
+tree rect was dropped because it would not by itself prevent `ui.available_width()`
+from expanding past `clip_rect.right()` under wide content. Clicking eye toggles
+by hardcoded `er.left()` coordinates instead of clamping the tree rect was
+dropped because it leaves the eye clipped in the UI and breaks AccessKit
+`.click()`.
+
+**Cost to change later:** Browser row queries in UI tests prefix `"Browser: "`;
+changing the prefix only requires updating those test queries and the prefix
+filter in `setups_declutter::shows`.
+
+## #1993 - The lathe envelope lies along the spindle axis: a lathe view frame for the camera
+
+**What was decided.** The cause is in the camera, not in the envelope.
+`crates/post/src/machine/envelope.rs` already gives a lathe a cylinder
+about world Z (the Z travel sets its ends, the largest X limit its
+radius), and the turning paths use world Z as the spindle axis too. But
+`Camera::basis_right` in `crates/ui/src/viewport.rs` always crossed the
+view with world +Z, so world Z could never lie across the screen: every
+cylinder about Z stood vertical.
+
+The fix gives the camera an orbit frame, `crate::view_frame::ViewFrame`
+(`Mill` = identity, `Lathe`). Yaw and pitch are read in the frame; the
+eye and the right/up/forward basis map back to the world through one
+proper rotation (local x = world -Z, local y = world +Y, local z = world
++X). `mvp`, `ray_through`, `dolly_cursor`, `pan`, the traced-stock eye and
+the view cube all read that basis, so draw and pick stay on one matrix.
+`Camera::toward` converts the cube's world direction into the frame.
+`pan` now uses the Z component of the right vector (it was always zero
+before).
+
+The frame comes from the machine data: `view_frame::sync` runs at the
+top of the viewport panel each frame and reads
+`camcraft_app::machine::kind_of` (the active setup's machine). A change
+of frame (a lathe mounted, or a mill again) takes the frame's home view.
+Fit and "nothing to frame" keep the current frame.
+
+The screen rule for a lathe: the right-handed program frame of ISO 841
+stays (the world, WCS, toolpaths and posted G-code do not change). The
+home view puts world +Z (the spindle axis, away from the chuck) to the
+right and world +X (the cross-slide, radial) up, slightly raised toward
++X; world +Y then points at the viewer. No hand is hard-coded per
+machine: the frame is a rotation of the program frame, so a machine
+file with an inverted axis changes only its posted words, as before.
+
+**Why.** Rotating the envelope alone would separate it from the stock
+and the turning paths, which also use world Z. A camera frame turns
+all of them together, and it is the base that #2019 (the gizmo) needs.
+
+**Considered and dropped.**
+- Draw the cylinder about world X: wrong, it would disagree with the
+  turning paths and the travel check (`crates/app/src/machine/lathe_stroke.rs`).
+- A general free up vector (quaternion camera): larger change; every
+  existing yaw/pitch law (view cube roll snap #622, Iso button) would
+  need a new form. The frame keeps them unchanged in local terms.
+- Mill-turn in the lathe frame: its milling operations use the milling
+  convention today. It stays `Mill` until #2019 decides it.
+
+**Cost to change later.** `ViewFrame` is one enum with two rotations;
+a new frame (mill-turn, a front-turret hand) is one more arm in
+`to_world` / `to_local` / `home` and in `for_kind`.
+
+## #1997 - The orbit pivot after a document open
+
+**What was decided.** A document open frames the camera on the opened
+document (the same `frame_all` as the F key: part and stock facets, fixtures
+and WCS origins). The work envelope stays out of every camera bound.
+
+**Why.** No code path puts the work envelope (#1567, `c0b4dfc85`) into
+`Camera::target`: the envelope is only overlay lines
+(`crates/ui/src/work_envelope.rs` into `interact::collect_overlay`), and
+`State::frame_all` reads only facets and WCS origins. The pivot that the
+maintainer saw is the target that an open left in place: `reset_for_open`
+kept the camera of the old document, or the default target at the world
+origin. With a machine mounted, the envelope box is drawn about the work
+origin, so the orbit appeared to turn about the envelope and not about the
+part. Framing on open puts the pivot on the part and the stock.
+
+**Considered and dropped.**
+- Tests only, no code change: the pins would pass, but the reported
+  behaviour (the pivot away from the part after an open) would stay.
+- Orbit about the model point under the pointer: a new feature, filed as
+  #1998 (P6).
+- Keep the old camera across an open: a pivot from another document has no
+  meaning for the new one.
+
+**Cost to change later.** One call in `State::reset_for_open`; the pins are
+in `crates/ui/src/egui_app/tests/camera_target.rs`.
+
+## #2002 - Selected tool settings and a separate tool catalog
+
+- **Show a selected tool's editable settings in Properties.** Geometry,
+  tool kind, material and cutting data, tool number, holder dimensions,
+  and body/profile/cutter controls describe one document tool. They belong
+  beside its browser selection. The existing summary and Edit button add
+  an unnecessary step before reaching those settings. A summary-only page
+  and a separate window for every existing-tool edit were dropped because
+  neither meets the requested browser-to-Properties workflow.
+
+- **Give catalog operations their own dock tab.** Catalog rows and their
+  Add buttons, New tool, library import/export, import mode, and Import
+  tool holders describe library management rather than the selected tool.
+  The Tools ribbon button and browser View > Tool library… open that
+  surface without replacing the selected tool's Properties. The tab is
+  closable and may float like the other context tabs. Keeping these controls under
+  every selected tool was dropped because it hides the tool's settings
+  among unrelated actions. The former page has no control literally named
+  “Support features”; holder/body/profile controls are tool settings and
+  stay with the tool. The per-tool Catalog metadata header becomes
+  Tool information: part number, vendor, coating, helix and notes describe
+  the selected tool rather than the library browser.
+
+- **Reuse the editor and its commands.** Properties and the creation
+  window share `tool_settings::contents`, including Apply/Add. Properties
+  stacks the fields, preview and body/profile controls vertically for its
+  narrow width. The legacy editor and creation window retain their wide
+  arrangement. Tool
+  geometry, cutting data and numbers keep their existing command history
+  paths. The New tool action retains a creation window because there is
+  no document tool to select yet. Duplicating field widgets or introducing
+  direct world writes was dropped to avoid divergent validation and undo
+  behavior. The setup Tool list's Edit action also targets Properties.
+  Selecting a tool closes any open tool-editor draft so the shared fields
+  have one active editor. A legacy window opened directly suppresses the
+  Properties fields until that window closes.
+
+- **Open and focus tabs idempotently through layout requests.**
+  `LayoutRequest::ToolLibrary` opens or focuses `Tab::Tools`, while
+  `Show(Properties)` brings the selected tool's settings into view even
+  after Properties was closed or another tab became active. Repeating the
+  request leaves the tab open. Adding a `Panel::Tools` presence field and
+  changing another State constructor was dropped to avoid a second
+  constructor overlap with #1798. These requests are transient view state;
+  they add neither persisted project data nor command-history entries.
+  Source inspection found no MCP tool or script verb that opens the
+  catalog by page name. Their library import/export commands keep the same
+  behavior and need no navigation change.
+
+- **Stack on #2001 and preserve its nozzle editing behavior.** That PR
+  changes the same tool-editor function. Starting from its head keeps the
+  waterjet fields when the editor is shared with Properties. A second
+  implementation from main would obscure that overlap and require the
+  same integration later.
+
+- **Pin structure instead of pixels.** AccessKit labels and roles check
+  that browser selection exposes editable tool settings and that Tools
+  opens the catalog independently. Dock behavior follows the existing
+  closable panel pattern. A pixel snapshot refresh was dropped because
+  this issue changes navigation and ownership rather than a release
+  baseline. Reversing the split later would require moving the routing
+  and these structural assertions; it needs no project-file migration.
+
+- **Keep catalog filters in temporary UI state.** `Option<ToolKind>` selects
+  one of the kinds present in the catalog; `None` selects All types. A
+  `String` holds the name filter. A row must match both the selected kind
+  and the lowercase name substring. An empty result shows a short message.
+  This meets the requested catalog search without changing the project or
+  command history. Persisted filters and undoable filter commands were
+  dropped because these controls only change which catalog rows are shown.
+  Listing only catalog kinds avoids choices with no catalog entries.
+  Changing the filter rules later needs UI and structural-test changes,
+  but no project migration.
+
+- **Preserve main's waterjet Apply refusal in the shared form.** The merge
+  moves the `torch_refusal()` check into `tool_settings::contents`, where
+  it disables Apply for an invalid waterjet recipe in both Properties and
+  the editor window. Main's check and the form extraction are compatible.
+  Taking either side alone was dropped because it would lose the refusal
+  or the shared settings surface. The Add tool path stays unchanged.
+  A later form split must retain this check on both Apply paths and update
+  the structural tests that pin the refusal.
+
+## #2003 - Keep the tool editor width stable
+
+**Decided:** Align oversized unit-bearing numeric controls toward the
+start of their allocated space in `fields::num_sized`. Keep their existing
+width budgets, units, precision, and editing behavior. Pin the tool editor
+width across 100 frames with pointer movement using UI value tests rather
+than a pixel snapshot.
+Four value pins cover existing tools, new tools, long metric feeds, and
+long inch feeds; long values exercise overflow in both unit-formatting paths.
+
+**Why:** The feed `DragValue` can exceed its 96 px width budget when its
+number and unit suffix are drawn. `ui.add_sized` centers an oversized
+control, moving its left edge outside the column. That overflow feeds the
+window's next-frame width and grew it by 1.8125 px per frame in the
+reproduction. An explicit allocation with the same layout direction and
+justification, but both alignments at the start, lets excess width extend
+forward without moving the column's origin.
+
+**Considered and dropped:** Widening the field column did not stop the
+growth. A larger fixed control budget would fail again for longer feed
+values. A whole-window cap would clip the symptom. Removing the footer
+separator or title bar did not address the cause. Blanket changes to the
+other dialogs would expand the scope without evidence of the same defect.
+The source audit found explicit default sizes or widths in the machine
+editor, G-code viewer, post refusal, and Debug info windows. The fixture
+library and unsaved prompt already cap their content widths. The G-code
+viewer also bounds its trace columns explicitly. This audit does not claim
+runtime coverage for those other dialogs.
+
+**Cost to change later:** Adjust the numeric-control allocation helper
+and its UI value tests if the field layout changes. The tool editor's
+column widths remain unchanged.
+
+## #2005 - A tool body replaces the parameter holder in the editor preview
+
+**Chosen:** When body bands are present, draw the cutter and shank from a
+copy of the tool with zero holder length. Use the body bands to paint and
+size the holder. With no body, keep the original parameter profile.
+
+**Why:** The editor painted the parameter holder as well as the body that
+replaces it. The duplicate fill and outline obscured the displayed shape,
+and the unused holder dimensions distorted the preview's frame. Removing
+the parameter holder before painting fixes all three effects. Collision
+checking and simulation already use the body's band stack.
+
+**Dropped:** An opaque body overlay would leave the unused outline and
+frame dimensions. Changing collision or simulation would change behavior
+that already selects the body. A broader preview refactor would add scope
+without being needed for this fix. The separate mismatch between raw body
+bands and the conservative parameter-cylinder floor for an assumed
+machine-default holder is tracked in #2009.
+
+The existing pages module already exceeds the file-size guideline, so the
+production edit stays small and the paint tests live in a separate file.
+This is pure rendering: it needs no new command or dependency. Revisiting
+the choice costs a localized preview change and updates to the fill,
+outline, framing, and no-body control tests.
+
+## #2009 - Show the checked floor of a machine-default holder
+
+**Chosen:** In `tool_body_page::envelope`, display the landed profile
+floored at the editor tool's parameter cylinder when a machine-default
+body is unchanged. Match its facet allocation, +Z axis, zero offset and
+spindle frame. Explicit bodies and edited or imported drafts keep their
+existing placement preview. Read the current tool dimensions each time.
+
+**Why:** Collision checks retain a conservative parameter-cylinder floor
+for an assumed holder. Rebuilding the mesh preview creates an explicit
+body and loses that floor, so a small default holder appeared smaller than
+the checked shape. Reading the stored profile also preserves its exact
+bands instead of deriving a slightly inflated envelope from its facets.
+This changes only the editor display; collision and post behavior stay as
+they are. It needs no command, dependency or process change.
+
+**Dropped:** Changing the collision rule would weaken its conservative
+assumption. Flooring explicit bodies would prevent their intended
+replacement of the cylinder. Reusing only the rebuilt mesh envelope would
+still lose the stored bands. Caching the effective floor independently of
+the editor dimensions would show stale bands after parameter edits.
+
+**Cost to change later:** Revise the localized envelope selection and its
+seven UI tests for the checked floor, parameter edits, explicit bodies,
+moved and replaced drafts, invalid placement and lathe-frame drafts.
+
+## #2018 - One Weldon pick for each taper, the bore from the tool's shank
+
+**Decided.** The holder picker lists one "<taper> Weldon" row for each
+taper (BT30, BT40, CAT40, TTS) instead of one row for each bore. The
+name "BT40 Weldon" is also accepted by `SetToolBody::library`, by
+`AddTool`'s stated holder and by the MCP `set_tool_holder`/`add_tool`
+`library`/`holder` keys: it resolves (`holder_library::resolve`) to the
+library's existing per-bore entry whose bore takes the tool's shank,
+and from then on is exactly that entry (outline, body diameter, fit
+check, collision bands, and the name `AddTool` records). A shank no
+standard bore of the taper takes is refused with the fit check's own
+`LibraryError::Shank` text, listing the taper's bores.
+
+**Why.** The maintainer: "a weldon is a weldon, and whatever tool will
+fit it". A real side-lock holder still has one fixed bore and a body
+diameter that goes with it, and the body diameter is a collision shape,
+so the data keeps one entry for each bore and only the pick groups them.
+Resolving to an existing entry means the collision and simulation shape
+cannot change (pinned band for band, for every bore of every taper).
+
+**Order.** The issue lists #2016 (holders reference a library entry)
+first. This change does not need it: the grouped pick resolves to a
+concrete entry name at command time, which is what #2016's reference
+will then store. Done ahead of #2016 so the picker change is not held.
+
+**Dropped.** One Weldon shape that fits each shank (no such holder; a
+wrong body diameter changes the collision check). Removing the per-bore
+names (old project files, machine `default_holder` keys and MCP callers
+name them; they keep working). Listing the grouped row in
+`list_holder_library` (it lists the data, which is unchanged; the schema
+text of `library` says a taper's Weldon pick is accepted).
+
+**Cost to change.** Small: one lookup module
+(`crates/tools/src/holder_library_weldon.rs`) and the picker rows.
+
+# 2021: ribbon rows and glyph ink are theme tokens
+
+Issue: #2021. Replaces the closed PR #1999 (hard-coded values).
+
+## Chosen
+
+- `Tokens` gets six fields: `ribbon_ink` (colour) and five geometry values:
+  `ribbon_tab_h`, `ribbon_cell_top_gap`, `ribbon_caption_gap`,
+  `ribbon_caption_row_h`, `ribbon_bottom_gap`. Theme files set them by
+  these names (`colors.ribbon_ink`, `geometry.ribbon_*`).
+- `theme::ribbon_h` is the sum of the rows, the gaps and `cell_h` of the
+  active table. The shell has no row number and no ink literal.
+- Built-in tables: 24 / 4 / 8 / 18 / 4 (ribbon 88 px). `DARK` ink is white.
+  `LIGHT` ink is `#1F242A`.
+- `horizon-day.json`: ink `#1F242A`. The ribbon ground is near white, so white
+  glyphs would vanish. This is the one place where the maintainer's "white"
+  does not apply.
+- `teal-night.json`: ink white.
+- Both theme files set `glyph_px` 22, so the label under the glyph ends 10.3 px
+  below the cell box. Both files use `ribbon_caption_gap` 12 (the table says
+  "or larger"), so the caption does not touch the label.
+- `contrast::readable` refuses a theme whose `ribbon_ink` reads under 4.5:1 on
+  the ribbon ground. A file that spells an unreadable ink is a visible refusal.
+- Family hues (`family_tint`) are removed. A filled cell keeps the on-fill ink.
+
+## Dropped
+
+- A fixed `glyph_ink` function (PR #1999): the rule moves into the tables.
+- Clamp windows: rows 12 to 48 px, gaps 0 to 24 px, so a file cannot make
+  the ribbon impossible.
+
+## #2030 - Offer every machine kind in the Machines pane filter
+
+**Decided:** Append Waterjet, Wire EDM and Sinker EDM to the private
+`KINDS` array. Keep the first four entries in their existing order.
+Use a structural test to check all seven kinds through the dropdown and
+check the filtered machine rows.
+
+**Why:** The filter must offer each kind that the machine library can
+hold. The missing entries include Waterjet as well as the two EDM kinds.
+The existing array controls both the filter and the New blank kind.
+Appending entries preserves the existing filter indices.
+
+**Dropped:** Adding only the EDM kinds would leave Waterjet unavailable.
+A shared enum list or a wider API change is unnecessary for this fix.
+
+**Cost to change later:** Add a filter entry and a test entry when a new
+machine kind becomes available. A shared list can replace the private
+array if more callers need the same complete list.
+
+## #2031 - 2D rest Adaptive: plan engagement from proved remaining stock
+
+**What was decided**
+
+1. **A generator of its own, in the motion crate.**
+   `camcraft_motion::machining2d::rest_adaptive(region, params, stock)`
+   (`crates/motion/src/machining2d/adaptive/rest/`). It takes the pocket,
+   the pocket's own parameters and a `RestStock`. The operation's
+   parameter door (`rest2d::rest_strategy`) still refuses Adaptive by
+   name: the operation only has an entered previous tool, which is no
+   proof. Lifting that refusal is the work of the task that derives the
+   stock from the earlier operations (#2033): it builds a `RestStock`
+   and calls this generator.
+
+2. **The stock contract.** A `RestStock` is a list of proved floors. A
+   floor at depth `z` claims: inside the pocket, at and above `z`,
+   material stands only inside `remaining` or `uncertain`. Below `z` it
+   says nothing. For a cut depth, every floor at least that deep speaks,
+   and the bound is the intersection of what they allow. There is no
+   constructor from a tool diameter.
+
+3. **Three guards, each with a pinning test that fails without it**
+   (`adaptive/rest/tests.rs` runs the planner with one guard off):
+   - stock: `uncertain` stands as material;
+   - depth: a cut depth below every proved floor is refused by name
+     before anything is planned;
+   - entry: a plunge needs the whole footprint, plus a margin (0.1 mm or
+     four grid cells), proved clear by the stock as it was given. What
+     this operation's own passes cleared is never credited to a plunge:
+     a column cleared at this depth says nothing about the depths above.
+     The proof is asked twice, of the polygon and of the raster.
+
+4. **Conservative raster.** The stock bound is grown by a cell's half
+   diagonal (plus two offset tolerances) before it is sampled at cell
+   centers, so every cell the bound touches stands
+   (`adaptive/raster/conservative.rs`). Every load reading stands on this
+   raster.
+
+5. **A film is safety material, not a target.** A bound read large keeps
+   a thin band along every wall the earlier tool rode. Residue thinner
+   than `RestStock::film()` (default 0.02 mm, `rest2d`'s film) gets no
+   pass planned for it. It still stands for every load reading and no
+   plunge lands on it. Without this the planner laps every wall.
+
+6. **The passes: the opened room.** The room is the legal center area
+   minus the material grown by the tool radius less the step. It is
+   opened (eroded, then dilated) by a disc whose radius falls phase by
+   phase, by at most 15% and at most a step and a half, down to an eighth
+   of the tool radius, then zero. A pass is the room's boundary where it
+   bites. In a corner this gives arcs tangent to both walls; across a
+   neck it gives half loops (trochoidal motion); a piece of material that
+   touches no wall is not opened and is cut by closed rings.
+   The first design rode the wall into the corner's wedge with a fixed
+   0.5 r blend. It was dropped on measurement: a wedge 0.03 mm thick
+   already reads 25 degrees of contact, and the second pass of a corner
+   read past the bound at every step of the ladder.
+
+7. **The load is proved or the pass is not cut.** Each candidate feed
+   (lead and link included) is walked on the raster before it is kept.
+   The bound is the optimal load plus the plain Adaptive's 5% planning
+   margin (`PLAN_TOL`). There is no overload fallback (the plain Adaptive
+   cuts up to twice the load and says so; the issue asks for a refusal).
+   What the last, sharp phase cannot cut is left standing; if that is
+   more than 2% of the rest material in reach, the operation is refused
+   and the refusal names the load and the place. Under 2% it is said in a
+   note.
+
+8. **No crossing by construction, then checked.** The verifier reads a
+   feed-feed crossing by exact signs. Passes that ride a wall ride it on
+   one fixed vertex list (`canon.rs`), room vertices within 0.05 mm of a
+   wall are snapped to it, and a pass in an area cut before is stretched
+   along the walls to where the earlier passes of that area landed and
+   left. The way in, the way out and the link between are then retraced
+   chord for chord. Each candidate is still asked the crossing law
+   against the depth's earlier feeds; a crossing candidate is not kept.
+
+9. **Chords, no arc fit.** The posted moves are the chords that were
+   measured. The plain Adaptive fits arcs and gives 5% of margin for it;
+   here the measured path is the posted path.
+
+10. **The entry is always a plunge** into proved air. The `entry` family
+    and the pocket's links describe entries into material, and are not
+    read.
+
+**Why**
+
+The issue's contract: separate legal-center and remaining-material
+regions per depth, cleared space derived from verified stock, engagement
+initialised from the remaining material, the whole footprint and approach
+proved before an entry, named refusals, a conservative raster, a bounded
+budget.
+
+**Known limits (each a named refusal, pinned by a test)**
+
+- A pocket corner the cutter's center has to turn in on a tight arc: the
+  last sliver wraps a quarter of the cutter however thin it is. With a
+  4 mm tool a center arc of 1.0 mm is cut and one of 0.7 mm is refused
+  ("cannot hold the optimal load at (x, y)"); a square corner always is.
+  Follow-up #2108 (leave corner rest with a note, or cut it over the load
+  by name - the maintainer's call).
+- A neck under about 2.5 tool diameters wide. The 10 mm neck of the test
+  is cut by a 4 mm tool; the 6 mm one is refused (#2108).
+- One entry per area and depth is the aim; a neck takes more (37 per
+  depth on the test's 10 mm neck), because a half loop whose way back
+  would cross an earlier feed is reached by a retract. Follow-up #2109
+  (air feed and retract budget).
+
+**Readings** (debug build, 4 mm tool after a 12 mm tool, two depths)
+
+| Fixture | Passes a depth | Plunges a depth | Worst planned load | Measured (D/120 grid) | Cut / air feed / rapid (mm) | Planning time |
+|---|---|---|---|---|---|---|
+| 60 x 40, 3 mm corners | 40 | 4 | 14.4% | 13.1% of D | 224 / 967 / 360 | 3.6 s |
+| 70 x 50 with a 14 x 14 island | 36 | 4 | 13.4% | 13.5% | 250 / 955 / 450 | 4.9 s |
+| two bays, 10 mm neck | 128 | 37 | 15.4% | 15.1% | 954 / 3445 / 1337 | 19 s |
+
+Optimal load 14.6% of D. The measuring stock is on the planner's grid
+(D/120, the heavy lane's): on the default D/80 grid the same paths read
+up to 17.4% in a concave corner, because the yardstick's rim stands a
+cell and a half outside the cutter and takes in more wall there.
+
+The air feed is high (about four times the cut length): every pass of an
+area rides the wall in from the area's first landing and out to its first
+exit, and returns on one chord. That is the price of retracing instead of
+crossing (point 8). The plain Adaptive holds its plans to 1.5 times; this
+one is not held to that budget yet (#2109).
+
+**Considered and dropped**
+
+- Reusing the plain Adaptive's `open_rounds`: it assumes its own bore,
+  re-enters wherever a cut starts, cuts over the load up to a cap and
+  laps the whole wall.
+- A stay-down return on Dubins links: fresh links a few microns from an
+  earlier feed cross it under the exact-sign law.
+- Planning all areas phase by phase: one retract per pass (31 a depth on
+  the corner fixture, against 4).
+
+**Cost to change later**
+
+The stock contract (`RestStock`, `StockFloor`) is the public surface; the
+planner behind it can be replaced. Changing what a floor claims changes
+#2033's producer with it.
+
+## #2043 - Open the installed example projects
+
+**Chosen:** Add an "Open example" submenu to the File ribbon's Open list.
+Read the `examples/` directory beside the executable.
+List its direct regular `.camproj` files in name order.
+Hide the submenu when the directory is absent or the app runs in a browser.
+Show "No example projects" when the directory contains no project files.
+Queue the existing `OpenRecent(Project, path)` command when the user selects a project.
+
+**Why:** The File ribbon is the app's existing file menu.
+The package location matches the installed examples from #2042.
+The existing command keeps the open-project behavior and the unsaved-changes prompt.
+
+**Dropped:** A new project-open command and MCP tool would duplicate the existing command.
+A current-directory or repository fallback could show unrelated development files.
+A recursive scan would include files outside the installed examples list.
+
+**Cost to change later:** Change one UI module and its menu tests.
+
+**Test isolation:** A test-only thread-local directory override keeps fixture projects separate from the installed package path.
+Parallel UI tests keep their original file-menu behavior.
+The first failing pin used the real executable directory before the fix.
+
+## #2051 - troubleshooting stem follows the incomplete-model message
+
+**What was decided.** The troubleshooting heading for the incomplete-model
+refusal now quotes the message as the app prints it: `model '<model>' was`
+then the backticked fixed text `imported incomplete - <hole> - so it has
+walls missing and no gouge check against it can be trusted; ...`. The
+guard stems are the fixed text in the sources, not the old hole wording.
+
+**Why.** Commit 35b422cf made the message a format string
+(`crates/app/src/mesh_open.rs`, `incomplete`), so the old literal
+`closed shell ... meshes open` no longer exists in `crates/*/src`. The
+guard reads sources only, and it must not be weakened to read tests.
+
+**Considered and dropped.** Re-adding the old literal to `mesh_open.rs`:
+that keeps a message wording that no user sees. Keeping `was imported
+incomplete` as one backticked stem: `was` is not literal in the sources
+(it comes from `model_fidelity.rs`), so the guard would still fail.
+
+**Cost to change later.** Low. A new wording of the message needs a new
+heading and passes the guard only when its fixed text is literal in the
+sources.
+
+## #2057 - Gate: one job budget for all lanes of a wave
+
+**Decided:**
+
+- One budget for each gate run: `budget::DEFAULT = 6`, override `CAMCRAFT_GATE_JOBS` (a whole number of 1 or more). A bad value prints a note and keeps 6.
+- The executor sets `-j` and `--test-threads=` of each step when it runs the step (`budget::scale`). The plan builders (`plan.rs`, `quick.rs`, `single.rs`) still write `-j 6` and `--test-threads=6` as before.
+- A wave of N lanes gives each lane `budget / N` (minimum 1). A wave has at most `budget / 2` lanes (minimum 1). `lanes::waves` takes this limit as a parameter; `LIMIT = 4` is gone.
+- A step alone (each quick, batch and test step, and each release step that runs alone) gets the full budget.
+- A value that a step sets on purpose (not the plan default `6`) only goes down to the lane's jobs, never up. Example: `--test-threads=1` stays 1.
+- The gate prints the budget line at the start and `-- wave K: N lane(s) x -j M` before each wave, also in `--dry-run`.
+
+**Why:** the rewrite at run time keeps the plan builders unchanged. Open PR #1952 (#1941, one step per test binary) changes those builders on many lines. This change thus does not conflict with it, and each step that #1941 adds gets the budget too. The quick and batch tiers run their steps one at a time, so the budget applies to them as one step at a time.
+
+**Dropped:**
+
+- A budget parameter in each plan builder: it touches the same lines as #1952 and all plan-string tests.
+- An automatic core count (`std::thread::available_parallelism`): the machine is shared with review and worker builds, and the gate cannot see them. The maintainer set the budget from the shared `-j 6` rule; the skills tell each build to keep the sum at or below the core count.
+
+**Cost to change later:** small. `budget.rs` holds the rule; a different split (for example by step weight) changes `per_lane` and its tests.
+
+## #2063 - Read `Tokens::font_caption` in `painted::caption` and align built-in defaults
+
+Issue: #2063. Stacked on PR #2027 (#2021).
+
+### Chosen
+
+- **Read and clamp `pal.font_caption` in `painted::caption`**: `crates/ui/src/egui_app/painted.rs` now lays out ribbon group captions with `clamp::range(pal.font_caption, clamp::FONT)` instead of `MIN_LABEL_PX` (`10.0`). This matches the existing draw-site clamp law (`6.0..=32.0` px; non-finite values fall back to `6.0`) so custom theme files change caption size without overflowing or breaking layout on corrupt values.
+- **Set built-in `Tokens::DARK.font_caption` and `Tokens::LIGHT.font_caption` to `10.0`**: `crates/ui/src/egui_app/theme/tables.rs` restores the pre-`33cd8b56` caption size (`10.0` px) instead of the orphaned `12.5` px left behind when `painted::caption` was removed and restored. At `10.0` px (`line_h(10.0) + 4.0 = 17.0 <= 18.0`), group captions keep at least 2 px clearance above and below inside `ribbon_caption_row_h: 18.0` and stay smaller than button labels (`font_label: 11.0`).
+- **Track `t.font_caption` in `ribbon_rows` height checks**: `tab_text_and_caption_text_fit_their_rows_in_each_theme` checks `line_h(t.font_caption) + 4.0` instead of literal `line_h(10.0) + 4.0`, and `builtin_caption_font_fits_caption_row` pins `Tokens::DARK` and `Tokens::LIGHT`.
+
+### Considered and dropped
+
+- **Keeping `font_caption: 12.5` and growing `ribbon_caption_row_h` in `DARK`/`LIGHT`**: rejected because `12.5` px captions exceed `font_label` (`11.0` px), inverting the ribbon hierarchy, and would force increasing `ribbon_caption_row_h` (to at least `21.0` px) and shipped `horizon-day.json` / `teal-night.json` ribbon heights away from PR #2027's `18.0` / `88.0` px design.
+- **Using raw `pal.font_caption` without `clamp::range(..., clamp::FONT)`**: rejected because `theme.rs` documents that every draw site enforces `clamp::FONT` against arbitrary JSON inputs.
+
+### Cost to change later
+
+- Trivial: a two-line edit in `crates/ui/src/egui_app/theme/tables.rs` (plus updating `ribbon_caption_row_h` if `font_caption` exceeds `10.7` px at `18.0` px row height). Open PR #2038 (`assets/themes/theme.json.example`, currently `"font_caption": 12.5`) should align to `10.0` after merging.
+
+## #2066 - Themes: operation tab strip and browser tree spacing/glyph sizes
+
+- **What was decided**: Added 18 geometry tokens on `theme::Tokens` (`op_tab_h`, `op_tab_pad_x`, `op_tab_gap`, `op_tab_bottom_gap`, `op_tab_icon_px`, `op_tab_icon_gap`, `op_tab_radius`, `font_op_tab`, `tree_glyph_px`, `tree_inset_x`, `tree_indent`, `tree_eye_reserve`, `tree_pad_x`, `tree_pad_y`, `tree_suffix_gap`, `tree_header_boost`, `font_label_min`, `highlight_stroke_px`), extracted `theme/clamp.rs` and `theme_files/names.rs`, wired `op_tabs`, `painted`, `tree_badges`, `browser_pane`, `op_page` and `geo_page` to read the clamped tokens, and stacked on `#2027`. Built-in `Tokens::DARK` and `Tokens::LIGHT` keep identical pixel defaults to the prior constants.
+- **Why**: JSON theme files previously could not style operation tabs, browser tree indentation/icons/eye reserve, ribbon min-label shrinking, or geometry row highlight radius and stroke. Extracting `theme/clamp.rs` and `theme_files/names.rs` keeps `theme.rs` and `theme_files.rs` under ~400 lines while keeping `GEOM_NAMES` (39 keys) within `MAX_MAP_ENTRIES = 64`. Leaving `painted::caption`'s `MIN_LABEL_PX` untouched avoids conflicting with `#2086`, and leaving `assets/themes/theme.json.example` alone avoids inventing a file owned by `#2038`.
+- **What was considered and dropped**:
+  - Adding separate per-widget stroke tokens (`op_tab_rule_stroke_px`, `drag_rule_stroke_px`, `geo_highlight_stroke_px`): rejected to conserve `GEOM_NAMES` budget under `MAX_MAP_ENTRIES = 64` in favor of a single `highlight_stroke_px` token.
+  - Also rewiring `painted::caption` and its hover-chip helper in `#2066`: dropped because `#2086` already owns `caption`.
+  - Editing `crates/ui/AGENTS.md` or merging without stacking on `#2027`: rejected because `#2027` owns adjacent token additions in `theme.rs`, `theme/tables.rs`, and `theme_files/overlay.rs`.
+- **What it would cost to change later**: Low; splitting `highlight_stroke_px` or renaming keys in `theme_files/names.rs` only affects theme JSON overlay parsing and has compile-time exhaustiveness via `Tokens` fields.
+
+### PR #2095 review: tree control click targets
+
+Clip the eye and setup-radio input rectangles to their own rows. Preserve the painted glyph dimensions. This prevents adjacent rows from receiving each other's clicks when glyphs exceed the row height. Joint token constraints were considered and dropped because large glyphs remain valid theme settings.
+
+# #2104 - remove dead MIN_LABEL_PX
+
+Decision (unattended, effort:low): delete `MIN_LABEL_PX` from `crates/ui/src/egui_app/painted.rs`
+and point the `fit_label` comment at the theme token `pal.font_label_min`.
+
+Considered: keep the constant as the clamp floor. Dropped: the floor already comes from
+`pal.font_label_min` (clamped by `clamp::FONT`), so a second hard-coded 10.0 would be a
+duplicate source of truth that the theme cannot override. No `#[allow(dead_code)]`.
+
+Pinned by: `cargo clippy -p camcraft-ui --all-targets -- -D warnings` (clean), and the
+existing ribbon caption/theme suites in the quick gate.
+
+## #2118 - Review the guide after PR #1995
+
+**Chosen.** Update the existing guide pages for every user-visible PR
+merged after #1995 (through upstream/main `ce59ef446`). The AI Chat pane
+is a section of the MCP page, not a new page.
+
+**Why.** The pane has no network transport yet (#1945 is open), so a page
+of provider setup and worked CAM examples (#1949) would describe controls
+that do not exist. The section states the shipped controls and the limit.
+A new page would also change the navigation test's page list for little
+text.
+
+**Dropped.** #1949 stays open and blocked: provider setup, key storage and
+worked examples wait for #1942, #1944, #1945 and #1947. Library-only
+changes (DXF reader, AC kinematics solver, MCP schema mapper, shape-mask
+verifier) have no user control and need no guide text. Unmerged PRs are not
+documented.
+
+**Cost to change later.** The AI Chat section must be rewritten when the
+transport ships; its "no live transport endpoint" line is pinned by
+`GuideAfter1995` so the test fails with that rewrite.
+
+## #2121 - a rapid at the clearance plane is judged against the stock; a plane inside raw stock is named when the operation is made
+
+**What was decided**
+
+1. The mill column law (d) lost its clearance gate. Every lateral rapid
+   under the stock top is marched against the column, whatever plane it
+   rides. The stock top alone stands the law down.
+2. The convictions this adds (a lateral rapid at or above the clearance
+   plane) get two re-reads in the operation layer. Each only removes a
+   conviction, and neither touches a rapid under the plane:
+   - `verify::acquit_traverses_by_solids`: the tool stack against the
+     stock and part solids under the strip the rapid sweeps. Needed
+     because the column is capped at the stock's highest point, and in a
+     3+2 plane's frame at the tilted block's highest corner.
+   - `verify::acquit_traverses_by_prior`: the stock grid the program
+     ahead left, under the swept capsule, plus the part's own facets.
+3. The warning stays `RapidInStock`. Its sentence is now "rapid move N
+   travels through stock (below the clearance plane, or at it below the
+   stock top)". A path note "Clearance in stock: rapid move N travels
+   through stock at Z ..." names the cause with the plane and the top.
+4. Command creation does not refuse the plane. A word
+   (`operation::clearance_in_stock_advice`) names it where the reading
+   is plain: an upright mill or vertical hole kind, a stock with one
+   flat top, no unsuppressed operation ahead. The MCP `add_operation`
+   and `edit_operation` tools answer with it as `warning`.
+
+**Why**
+
+- The gate assumed the clearance plane is air. A Fixed or model-based
+  plane under the stock top is ordinary input, and the program posted.
+- Without the prior re-read, a legal program would be refused: Face to
+  Z 5, then a Contour with clearance Z 8 under the raw top Z 10.
+- Without the solids re-read, a legal 3+2 program was refused: the
+  full run showed `stock_source_holes.rs`'s tilted stock chamfer
+  convicted on move 0, a rapid that is 4 mm above the block in world
+  space. The tilted block's far corner stood above the plane.
+- The solids re-read clips each facet to the strip instead of taking
+  the facet's highest vertex (#1095's bound), because a tilted block's
+  top is two large triangles whose highest vertex is that far corner.
+
+**Considered and dropped**
+
+- Refusing the plane at command creation. Built first, then dropped.
+  The door cannot see where the rapids will run: a profile beside the
+  block never crosses it, so it would refuse legal programs. It also
+  refused four existing fixtures at creation (`operations.rs`,
+  `opframe_picks.rs`, `posted_gates`, `turning.rs`), which shows how
+  much standing input sets a plane under a raw block. The law holds
+  the post for the ones that are unsafe; #104 chose a note the same way.
+- A new warning variant carrying Z. Dropped: about forty sites match
+  `RapidInStock` (acquittals, warned moves, the UI fold, MCP); a
+  variant one of them missed would be drawn or acquitted differently.
+- Tightening `acquit_by_stock_top` itself to the clipped bound. Dropped
+  here: it would change which #1091/#1095 convictions stand. The new
+  re-read is confined to the convictions #2121 added.
+- Naming a Retract plane under the stock top. Dropped: it is legal
+  inside the operation's own kerf, and the law already reads every
+  link and dive at it (#96, #140).
+- Turning, rotary, radial and multi-axis kinds. Their rapid laws
+  (meridian, rotary, radial, posed) never had a clearance gate.
+
+**Cost to change later**
+
+- Making the word a refusal is one call in the heights door
+  (`commands/operation/gates.rs`); the fixtures above would need their
+  planes raised first.
+- The UI does not show the word yet (follow-up issue named in the PR).
+- A path cached before this fix keeps its cached warnings until it is
+  regenerated; the op stamp salt was not bumped.
+
+## #2127 - Isolate shape-mask diagnostic directories
+
+**Decided:** Resolve Cargo's test temporary directory at compile time with
+`env!("CARGO_TARGET_TMPDIR")`. Allocate a diagnostic directory for each call
+using the process ID, an atomic counter, and exclusive directory creation.
+Retry an existing candidate. Reuse this allocator for explicit unit-test
+scratch paths and the shape-mask verifier's default output.
+
+**Why:** Cargo supplies this value at compile time. The runtime lookup was
+absent on uma and fell back to a shared OS temporary path. Another user's
+existing directory then prevented the overcut test from writing its PNG.
+Separate allocations also keep concurrent tests from deleting or replacing
+another run's evidence. Exclusive creation handles reused process IDs and
+existing candidates. Other filesystem errors still reach the PNG writer's
+named diagnostic.
+
+**Dropped:** A fixed OS temporary path keeps the ownership bug. A process ID
+alone permits collisions after process-ID reuse and shares output within a
+process. A new temporary-directory dependency adds a dependency for a small
+test-only helper. Deleting a preexisting directory risks another run's output.
+
+**Cost to change later:** Only the shared PNG test helper and its regression
+tests need to change. Toolpaths, mask verdicts, and G-code are unaffected.
+
+## #2143 - Waterjet short caption
+
+**What was decided:** the door's short caption for `Kind::Waterjet` is
+"Waterjet". `short_caption` has one explicit arm per kind and no wildcard.
+
+**Why:** the match is exhaustive, so the missing arm breaks the build of
+`camcraft-ui` on main. The tool settings pane already names the kind
+"Waterjet nozzle", so the word matches the UI.
+
+**Considered and dropped:** a wildcard arm (the issue forbids it). A
+ribbon mode row in `MACHINE_MODES` for Waterjet (no built-in waterjet
+machine ships yet, so no row is due; `caption()` keeps its "Machine"
+fallback until one ships).
+
+**Cost to change later:** one string in `short_caption`, and one assert
+in `every_machine_kind_has_a_short_caption`.
+
+## #2152 - a cache judged under the old rapid law reads Stale (op stamp salt v2 -> v3)
+
+**What was decided**
+
+1. The op stamp's salt moves from `camcraft-op-stamp-v2` to
+   `camcraft-op-stamp-v3` (`crates/app/src/operation/stamp.rs`). Every
+   cached toolpath made before the change reads Stale once. The post
+   refuses a Stale operation by name: "<op>: inputs moved since
+   generation - regenerate before posting". A regenerate judges the
+   path under the #2121 rapid law, which holds the post if the traverse
+   at the clearance plane goes through stock.
+2. The salt comment now states the rule: bump the salt when a verify
+   law that a cache records changes.
+3. `examples/first-router-part.camproj` carries the three v3 stamps.
+   Each of its operations was regenerated under the new law: the same
+   move count and no warnings, so the new stamps are true. The other
+   recorded projects (`examples/first-part.camproj`, the microARC kit,
+   the #371 UI fixture) are not touched: no test posts them. They read Stale and
+   regenerate one time, like a user's project. (Their files are older
+   versions, and a regenerate of `first-part` gives a different move
+   count, so a new stamp on the old cache is not true for each of them.)
+4. The pin is a recorded project, `crates/app/tests/stale_rapid_law/rapid_law_v2_cache.camproj`:
+   the #2121 repro saved at e7050be17 (salt v2) with the new law's
+   verdicts taken out of the cache. Before the salt move it reads Ok
+   and posts with no warning; after it, the post is refused.
+
+**Why**
+
+- The post gate trusts the WARN records of the cache, and it does not
+  re-run the rapid law. A cache from the old law must not read fresh.
+- The salt is the smaller of the two known mechanisms. It is one line,
+  needs no project-version change, and older builds still open the
+  files. The salt has moved before for the same reason (the v1 -> v2
+  height change, the M4.3 rename).
+
+**Considered and dropped**
+
+- A project-version migration (v62 -> v63, like v29 -> v30 in
+  `project/apply.rs`) that drops stored stamps. It has the same effect
+  for the user, but it changes the file version, and older builds then
+  cannot open files that this build saves.
+- A re-run of the rapid law at post time over each cached path. It needs
+  the prior-stock simulation of the program ahead at each post. This is
+  a larger change, and it is not suitable while it holds the v0.22.0 cut.
+
+**Cost to change later**
+
+- Every saved operation regenerates one time after the upgrade. This is
+  the same one-time churn as each earlier salt or version step.
+- A future verify-law change must bump the salt again. A
+  `verify_law_version` term in the digest is an option if that becomes
+  frequent.
