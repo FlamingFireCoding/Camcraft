@@ -4,7 +4,6 @@
 use camcraft_app::commands::{History, LoadMachine};
 use camcraft_app::machine::{self, Kind, Machine, library, parse_mch};
 use camcraft_app::post::machine::{mirror, script_props};
-use camcraft_app::posting::MACHINES;
 use flecs_ecs::prelude::*;
 
 struct Spec {
@@ -78,7 +77,7 @@ const SPECS: [Spec; 5] = [
 ];
 
 fn shipped(name: &str) -> Machine {
-    let (_, text) = MACHINES
+    let (_, text) = camcraft_app::posting::shipped_machines().expect("the shipped machines read")
         .iter()
         .find(|(n, _)| *n == name)
         .unwrap_or_else(|| panic!("{name} must appear in the machine picker"));

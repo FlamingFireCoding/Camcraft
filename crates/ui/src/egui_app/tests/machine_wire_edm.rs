@@ -94,11 +94,16 @@ fn the_machine_editor_states_the_wire_section_refuses_by_name_and_undoes_in_one_
 }
 
 #[test]
-fn a_wire_contour_quick_adds_with_the_first_condition_and_its_page_has_no_tool_row() {
+fn a_wire_contour_quick_adds_with_the_first_condition_and_mounted_wire_tool() {
     let _g = snapshot_guard();
     let mut h = shell_harness();
     h.run();
     mount(&mut h, wire_machine());
+    h.state_mut().state.pending.push_back(CommandKind::AddTool {
+        name: "EDM-W025".into(),
+        tool: camcraft_app::wire_tools::wire_tool(0.25),
+    });
+    h.run_steps(2);
     let kind = camcraft_app::operation::KindInfo::ALL.iter().position(|k| k.label == "Wire Contour").expect("the kind exists");
     crate::actions::add_operation(&mut h.state_mut().state, kind);
     h.run_steps(3);
@@ -108,8 +113,8 @@ fn a_wire_contour_quick_adds_with_the_first_condition_and_its_page_has_no_tool_r
         .expect("the operation exists");
     let camcraft_app::operation::OpParams::WireContour(w) = &op.params else { panic!("a wire contour") };
     assert_eq!(w.condition, "C110", "quick-add names the machine's first condition");
-    assert!(op.tool.is_empty(), "the op mounts no library tool");
-    assert!(h.query_by_label("Tool").is_none(), "no Tool row on a tool-less kind");
+    assert_eq!(op.tool, "EDM-W025", "the op mounts the wire tool");
+    assert!(h.query_by_label("Tool").is_some(), "Wire Contour shows the Tool row");
     // The side is one undo step.
     let side0 = w.side;
     assert!(h.query_by_label("Flood").is_none(), "a wire EDM has no coolant row");

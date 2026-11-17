@@ -64,9 +64,17 @@ fn posted_header(env: &mut Env, items: &[(&std::path::Path, &crate::posting::Pos
 /// ops, lines); a program over several mounts adds `files` (every path,
 /// program order) and `mounts` (each file's setups, machine, post, ops,
 /// lines - and its text when asked), `path` naming the first.
-pub(crate) fn posted_view(env: &mut Env, files: Vec<crate::posting::PostedMount>, with_program: bool) -> Value {
+pub(crate) fn posted_view(
+    env: &mut Env,
+    files: Vec<crate::posting::PostedMount>,
+    with_program: bool,
+    warning: Option<&str>,
+) -> Value {
     let items: Vec<_> = files.iter().map(|f| (f.path.as_path(), &f.posted)).collect();
     let mut out = posted_header(env, &items);
+    if let Some(w) = warning {
+        out["warning"] = json!(w);
+    }
     if files.len() <= 1 {
         if with_program && let Some(f) = files.first() {
             out["program"] = json!(f.posted.program);

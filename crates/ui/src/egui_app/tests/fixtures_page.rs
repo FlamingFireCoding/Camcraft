@@ -11,8 +11,10 @@ const FIXED: &str = "Fixed (does not turn with the part)";
 const EMPTY: &str = "No workholding modeled: the collision checks see stock and part only.";
 const FULL: &str = "Workholding in this setup's collision checks:";
 
+/// Tall enough that the place draft (three angles and the quarter-turn
+/// buttons, #2174) and the plate place form both draw unscrolled.
 fn blank() -> Harness<'static, ShellUi> {
-    Harness::builder().with_size(Vec2::new(1280.0, 900.0)).build_ui_state(frame, ShellUi::blank())
+    Harness::builder().with_size(Vec2::new(1280.0, 1100.0)).build_ui_state(frame, ShellUi::blank())
 }
 
 /// A blank window with one setup, its Fixtures page not yet open.

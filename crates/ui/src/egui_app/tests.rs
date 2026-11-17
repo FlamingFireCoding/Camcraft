@@ -82,9 +82,13 @@ fn empty_egui_meshes_are_filtered_before_gpu_submission() {
 
 mod face_origin;
 mod geo_row_hover;
+mod selection_frame_cost;
+mod frame_cost_caches;
+mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_material;
 mod setup_settings_page;
 mod machine_page;
 mod tool_list_page;
@@ -100,6 +104,8 @@ mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+// #2172: the bodies stand on the floor of the work envelope.
+mod floor;
 mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
@@ -115,6 +121,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod radial_step_field;
+mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
@@ -135,6 +142,8 @@ mod points_vertex_pick;
 // #1171: real clicks state a wire sync pair.
 mod wire_sync_viewport;
 mod one_wcs;
+// #1926: the feature picks that set the WCS are on the WCS page.
+mod wcs_page_picks;
 // #343: the per-setup browser tree.
 mod setup_tree;
 mod mcp_live;
@@ -200,6 +209,8 @@ mod import_outward;
 mod ribbon_accesskit;
 // #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
 mod ai_chat;
+// #2011: EDM tool visibility matches selectable machine kinds.
+mod edm_tool_visibility;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
@@ -2835,11 +2846,6 @@ fn tips_match_the_imgui_table() {
     }
     // Every Create button shares the swap while the tool list is empty.
     for i in 0..panes::TYPES.len() {
-        // #535: a kind that mounts no library tool (the wire EDM's) is not
-        // held by an empty rack.
-        if camcraft_app::operation::KindInfo::ALL.get(i).is_some_and(|k| !k.mounts_tool()) {
-            continue;
-        }
         assert_eq!(
             panes::tip_of(Cmd::Create(i), &empty),
             "No tool yet - add one (Setup > Tools)",

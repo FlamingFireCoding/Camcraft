@@ -9,6 +9,9 @@ use crate::operation::Tilt;
 /// the normalized axis vectors the CL stream stores).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct TiltDto {
+    /// Missing in old projects: keep their original in-plane coordinates.
+    #[serde(default)]
+    pub basis_version: u8,
     pub a_deg: f64,
     pub b_deg: f64,
     pub origin: [f64; 3],
@@ -17,6 +20,7 @@ pub struct TiltDto {
 impl From<Tilt> for TiltDto {
     fn from(t: Tilt) -> Self {
         TiltDto {
+            basis_version: t.basis_version,
             a_deg: t.a_deg,
             b_deg: t.b_deg,
             origin: t.origin,
@@ -27,6 +31,7 @@ impl From<Tilt> for TiltDto {
 impl From<TiltDto> for Tilt {
     fn from(d: TiltDto) -> Self {
         Tilt {
+            basis_version: d.basis_version,
             a_deg: d.a_deg,
             b_deg: d.b_deg,
             origin: d.origin,
