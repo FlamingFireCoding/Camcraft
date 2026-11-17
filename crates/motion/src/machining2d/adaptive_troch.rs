@@ -35,9 +35,8 @@ use super::adaptive::{Spine, medial_spine, widest_point};
 use super::adaptive_troch_clean::{emit_cleanup, plan_cleanup};
 use super::adaptive_troch_lanes::{clearance, narrow_err, plan_all_lanes, rest_share, straightened, trochoid_params};
 use super::face::GenError;
-use super::levels::cut_levels;
 use super::pocket::{PocketParams, PocketStrategy};
-use super::trochoid_slot::{DEFAULT_MAX_ENGAGEMENT, MIN_BAND_PER_D, emit_level, plan_lane};
+use super::trochoid_slot::{DEFAULT_MAX_ENGAGEMENT, MIN_BAND_PER_D, TrochoidReturn, emit_level, plan_lane};
 
 /// The name every refusal and note of the method starts with.
 const WHO: &str = "2D Adaptive (Trochoidal)";
@@ -62,11 +61,78 @@ pub const REST_MAX: f64 = 0.25;
 /// ... when it is more than this share.
 const REST_NOTE: f64 = 0.005;
 
-/// Clear `region` with trochoidal loops across single, closed, or parallel
-/// lanes plus corner/wall clean-up peels (issues #1509, #1587).
+/// Clear `region` with trochoidal loops (see the module law). `p` is the
+/// Trochoidal parameters exposed under 2D Adaptive when `Method = Trochoidal`
+/// (#1588): engagement limit, return mode between loops, return feed, and
+/// loop width.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AdaptiveTrochParams {
+    /// Engagement limit (degrees of the cutter periphery in contact).
+    pub max_engagement: f64,
+    /// Return between loops: `None` is Auto (0.3 mm microlift when clearance
+    /// exceeds top by at least 0.3 mm, else retract).
+    pub ret: Option<TrochoidReturn>,
+    /// Return feed (mm/min); `None` uses the cutting `feed`.
+    pub return_feed: Option<f64>,
+    /// Loop band width (mm); `None` uses all the room along the medial line.
+    pub loop_width: Option<f64>,
+}
+
+impl Default for AdaptiveTrochParams {
+    fn default() -> Self {
+        Self { max_engagement: DEFAULT_MAX_ENGAGEMENT, ret: None, return_feed: None, loop_width: None }
+    }
+}
+
+impl AdaptiveTrochParams {
+    /// Named refusal if any trochoidal control is non-finite or out of range.
+    #[must_use]
+    pub fn refusal(&self) -> Option<String> {
+        let pos = |v: f64| v.is_finite() && v > 0.0;
+        if !pos(self.max_engagement) || self.max_engagement > 180.0 {
+            return Some("max engagement must be finite and in (0, 180] degrees".into());
+        }
+        if let Some(TrochoidReturn::Microlift { height }) = self.ret
+            && !pos(height)
+        {
+            return Some("microlift height must be finite and positive".into());
+        }
+        if self.return_feed.is_some_and(|f| !pos(f)) {
+            return Some("return feed must be finite and positive".into());
+        }
+        if self.loop_width.is_some_and(|w| !pos(w)) {
+            return Some("loop width must be finite and positive".into());
+        }
+        None
+    }
+
+    #[must_use]
+    pub fn is_sane(&self) -> bool {
+        self.refusal().is_none()
+    }
+
+    fn validate(&self) -> Result<(), GenError> {
+        if let Some(msg) = self.refusal() {
+            return Err(GenError::Invalid(format!("{WHO}: {msg}")));
+        }
+        Ok(())
+    }
+}
+
+/// 2D Adaptive's own parameter set with default trochoidal controls: the
+/// optimal load is the most the loops may advance a turn, the stepover
+/// and the entry are not read (the lane bores its own helix at its start).
 pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath, GenError> {
+    adaptive_trochoidal_with(region, p, &AdaptiveTrochParams::default())
+}
+
+/// 2D Adaptive's trochoidal planner with explicit engagement, return,
+/// return-feed, and loop-width controls (#1588).
+pub fn adaptive_trochoidal_with(region: &Region, p: &PocketParams, t: &AdaptiveTrochParams) -> Result<Toolpath, GenError> {
+    // The Adaptive doors (finite numbers, the load in (0, 50] % of D).
     let p = &PocketParams { strategy: PocketStrategy::Adaptive, ..*p };
     p.validate()?;
+    t.validate()?;
     if p.optimal_load < 0.04 {
         return Err(GenError::Invalid(format!(
             "{WHO}: optimal load below 4% of tool diameter is unsupported by cleanup - increase optimal load to at least 4%"
@@ -83,25 +149,20 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
             p.tool_diameter, p.stock_to_leave
         )));
     }
-    let planned = plan_all_lanes(region, &center, p)?;
+    let planned = plan_all_lanes(region, &center, p, t)?;
     let reach = if p.stock_to_leave > 0.0 { region.offset(-p.stock_to_leave)? } else { region.clone() };
-    let (clean, final_cleared) = plan_cleanup(
-        &center,
-        &reach,
-        &planned.used_center,
-        &planned.cleared,
-        p.tool_diameter,
-        p.optimal_load,
-        p.climb,
-    )?;
+    let (clean, final_cleared) =
+        plan_cleanup(&center, &reach, &planned.used_center, &planned.cleared, p.tool_diameter, p.optimal_load, p.climb, t)?;
 
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let hop = p.retract_z.unwrap_or(p.clearance_z);
     let p3 = |q: Point2, z: f64| Point3::new(lattice(q.x), lattice(q.y), lattice(z));
     let first_entry = planned.layouts[0].entry;
     let mut bld = PathBuilder::approached(p3(first_entry, p.clearance_z));
     bld.push(MoveKind::Rapid, p3(first_entry, p.clearance_z), None);
-    let mut above = p.top_z;
+    // #1559: over stock carried above the top of the cut, the first
+    // level's entry starts at its plunge height and feeds down.
+    let mut above = p.links.approach.entry_top(p.top_z);
     for (zi, &z) in zs.iter().enumerate() {
         for (li, lay) in planned.layouts.iter().enumerate() {
             if zi > 0 || li > 0 {
@@ -113,8 +174,7 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
             }
             let from = (above + crate::approach::DEFAULT_PLUNGE_HEIGHT).min(hop).max(above);
             bld.push(MoveKind::Rapid, p3(lay.entry, from), None);
-            emit_level(&mut bld, &lay.lay, &lay.tp, z, from, true, lay.open)
-                .map_err(|e| renamed(e).with_ghost_moves(bld.moves()))?;
+            emit_level(&mut bld, &lay.lay, &lay.tp, z, from, true, lay.open).map_err(|e| renamed(e).with_ghost_moves(bld.moves()))?;
         }
         emit_cleanup(&mut bld, &clean, p, z, above, hop);
         above = z;
@@ -132,7 +192,7 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
         let lay = &planned.layouts[0];
         bld.note(format!(
             "{WHO}: {} loops of radius {:.3} mm a level at a {:.4} mm step, measured {:.1} deg engagement (limit {:.1} deg)",
-            lay.lay.loops, lay.lay.rho, lay.lay.spacing, lay.deg, DEFAULT_MAX_ENGAGEMENT
+            lay.lay.loops, lay.lay.rho, lay.lay.spacing, lay.deg, t.max_engagement
         ));
     } else {
         bld.note(format!(
@@ -140,7 +200,7 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
             planned.layouts.len(),
             planned.layouts[0].lay.rho,
             max_deg,
-            DEFAULT_MAX_ENGAGEMENT
+            t.max_engagement
         ));
     }
     if !clean.is_empty() {
@@ -159,25 +219,44 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
     }
 
     let path = bld.finish();
+    check_path(&path, &center)?;
+    if t.max_engagement != DEFAULT_MAX_ENGAGEMENT {
+        let spec = crate::quality::QualitySpec::new(p.tool_diameter);
+        let mut stock = crate::quality::stock_for(region, p.top_z, p.bottom_z, p.tool_diameter, &spec)
+            .map_err(|e| GenError::Invalid(format!("{WHO}: measuring stock: {e}")))?;
+        let quality =
+            crate::quality::measure(&path, &mut stock, &spec).map_err(|e| GenError::Invalid(format!("{WHO}: measuring stock: {e}")))?;
+        if quality.max_deg > t.max_engagement {
+            return Err(GenError::Invalid(format!(
+                "{WHO}: cleanup and lanes exceed the {:.1} deg engagement limit (measured {:.1} deg)",
+                t.max_engagement, quality.max_deg
+            )));
+        }
+    }
+    Ok(path)
+}
+
+/// Final production checks apply to lanes and cleanup together.
+fn check_path(path: &Toolpath, center: &Region) -> Result<(), GenError> {
     if !path.all_finite() {
         return Err(GenError::Invalid(format!("{WHO}: path left the finite horizon")));
     }
-    if let Some(at) = confined(&path, &center)? {
+    if let Some(at) = confined(path, center)? {
         return Err(GenError::invalid_at(
             format!("{WHO}: a move at ({:.3}, {:.3}) would leave the region - nothing is cut", at.x, at.y),
             at,
         )
-        .with_ghost(&path));
+        .with_ghost(path));
     }
-    if let Some([i, j]) = crate::verify::crossed_pairs(&path, super::ARC_FIT_TOL).first().copied() {
+    if let Some([i, j]) = crate::verify::crossed_pairs(path, super::ARC_FIT_TOL).first().copied() {
         let at = path.moves.get(i).map_or(Point3::new(0.0, 0.0, 0.0), |m| m.to);
         return Err(GenError::invalid_at(
             format!("{WHO}: the loops would cross themselves (moves {i} and {j}, near ({:.3}, {:.3}))", at.x, at.y),
             at,
         )
-        .with_ghost(&path));
+        .with_ghost(path));
     }
-    Ok(path)
+    Ok(())
 }
 
 /// The lane of `center`: its straightened medial line and the loop
@@ -185,7 +264,9 @@ pub fn adaptive_trochoidal(region: &Region, p: &PocketParams) -> Result<Toolpath
 #[cfg_attr(not(test), allow(dead_code))]
 fn lane(region: &Region, center: &Region, p: &PocketParams) -> Result<(Vec<Point2>, f64), GenError> {
     let (d, r) = (p.tool_diameter, 0.5 * p.tool_diameter);
-    let other = |why: &str| GenError::Invalid(format!("{WHO}: {why} - the trochoidal method loops along one channel; use the Spiral method for this region"));
+    let other = |why: &str| {
+        GenError::Invalid(format!("{WHO}: {why} - the trochoidal method loops along one channel; use the Spiral method for this region"))
+    };
     let Some((_, widest)) = widest_point(center) else {
         return Err(narrow_err(0.0, p));
     };
@@ -215,9 +296,9 @@ fn lane(region: &Region, center: &Region, p: &PocketParams) -> Result<(Vec<Point
 /// The lane cut: loops of band half-width `b` along `chain`, planned by
 /// the measured-engagement ladder, then held to `center` move by move.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn cut_lane(center: &Region, chain: &[Point2], b: f64, p: &PocketParams) -> Result<Toolpath, GenError> {
+pub(super) fn cut_lane(center: &Region, chain: &[Point2], b: f64, p: &PocketParams, t: &AdaptiveTrochParams) -> Result<Toolpath, GenError> {
     let r = 0.5 * p.tool_diameter;
-    let tp = trochoid_params(b, p);
+    let tp = trochoid_params(b, p, t);
     let mut path = plan_lane(chain, &tp, true).map_err(renamed)?.path;
     if let Some(at) = confined(&path, center)? {
         return Err(GenError::invalid_at(
@@ -230,7 +311,8 @@ pub(super) fn cut_lane(center: &Region, chain: &[Point2], b: f64, p: &PocketPara
         *n = rename(n);
     }
     let reach = center.offset(r)?;
-    let rest = rest_share(&reach, &Region::sweep(&[chain.to_vec()], r + b)?);
+    let b_used = t.loop_width.map_or(b, |w| (0.5 * w).min(b));
+    let rest = rest_share(&reach, &Region::sweep(&[chain.to_vec()], r + b_used)?);
     if rest > REST_NOTE {
         path.notes.push(format!(
             "{WHO}: about {:.1} mm2 ({:.0} %) of the region is outside the loops' reach (its corners and wider parts) - a following operation must clear it",

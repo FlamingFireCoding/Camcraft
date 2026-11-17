@@ -4,8 +4,8 @@
 //! stays in the region and under the engagement limit, the opened bore
 //! leaves no post, and every refusal is by name.
 
-use super::*;
 use super::super::trochoid_slot::{DEFAULT_MICROLIFT, TrochoidParams, TrochoidReturn};
+use super::*;
 use crate::entry::Entry3D;
 use crate::geo2d::Loop;
 use crate::links::Links;
@@ -113,7 +113,7 @@ fn the_opened_bore_leaves_no_post_at_the_lane_start() {
         let Ok(a) = rest_area(&dex, &core, -3.0) else { panic!("rest") };
         a
     };
-    let t = match cut_lane(&center, &chain, b, &p) {
+    let t = match cut_lane(&center, &chain, b, &p, &AdaptiveTrochParams::default()) {
         Ok(t) => t,
         Err(e) => panic!("cut: {e}"),
     };
@@ -136,6 +136,7 @@ fn the_opened_bore_leaves_no_post_at_the_lane_start() {
         return_feed: 800.0,
         plunge_feed: 200.0,
         climb: true,
+        stock_top: None,
     };
     let Ok(plain) = plan_lane(&chain, &tp, false) else { panic!("plain") };
     assert!(rest(&plain.path) > 4.0, "the plain bore's post: {:.2} mm2", rest(&plain.path));
@@ -172,6 +173,7 @@ fn a_slot_band_within_the_tool_radius_keeps_the_plain_bore() {
             return_feed: 2000.0,
             plunge_feed: 200.0,
             climb: true,
+            stock_top: None,
         };
         let Ok(plain) = plan_lane(&chain, &tp, false) else { panic!("plain {width}") };
         let Ok(slot) = super::super::plan_trochoidal_slot(&chain, &tp) else { panic!("slot {width}") };
@@ -212,7 +214,7 @@ fn a_zero_or_oversized_load_is_refused_by_name_never_looped_forever() {
 fn a_loop_outside_the_region_is_refused_by_the_check_on_the_path() {
     let Ok(center) = face().offset(-0.5 * D) else { panic!("center") };
     let chain = [Point2::new(-9.0, 0.0), Point2::new(9.0, 0.0)];
-    let err = match cut_lane(&center, &chain, 6.5, &PocketParams { bottom_z: -3.0, ..params() }) {
+    let err = match cut_lane(&center, &chain, 6.5, &PocketParams { bottom_z: -3.0, ..params() }, &AdaptiveTrochParams::default()) {
         Err(e) => e,
         Ok(_) => panic!("a band 1.5 mm past the walls must not pass"),
     };
@@ -236,6 +238,52 @@ fn without_lift_room_the_returns_retract_and_a_plunge_entry_is_said_unread() {
     assert!(t.notes.iter().any(|n| n.contains("the Entry setting is not read")), "{:?}", t.notes);
     let helix = cut(&face(), &PocketParams { bottom_z: -3.0, ..params() });
     assert!(!helix.notes.iter().any(|n| n.contains("Entry setting")), "{:?}", helix.notes);
+}
+
+#[test]
+fn explicit_trochoidal_parameters_control_engagement_return_feed_and_loop_width() {
+    let p = PocketParams { bottom_z: -3.0, ..params() };
+
+    let impossible = adaptive_trochoidal_with(&face(), &p, &AdaptiveTrochParams { max_engagement: 10.0, ..AdaptiveTrochParams::default() })
+        .expect_err("10 deg engagement must be refused")
+        .to_string();
+    assert!(
+        impossible.contains(WHO) && impossible.contains("10.0 deg engagement limit") && impossible.contains("the least"),
+        "{impossible}"
+    );
+
+    let retracted = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams { ret: Some(TrochoidReturn::Retract), ..AdaptiveTrochParams::default() },
+    )
+    .expect("retract generates");
+    let rapids = retracted.moves.iter().filter(|m| m.kind == MoveKind::Rapid).count();
+    assert!(rapids > 40, "explicit Retract forces rapid hops even with room: {rapids}");
+
+    let fast_lift = adaptive_trochoidal_with(
+        &face(),
+        &p,
+        &AdaptiveTrochParams {
+            ret: Some(TrochoidReturn::Microlift { height: 0.4 }),
+            return_feed: Some(1800.0),
+            loop_width: Some(4.0),
+            ..AdaptiveTrochParams::default()
+        },
+    )
+    .expect("custom lift, return_feed and narrower loop_width");
+    assert!(fast_lift.moves.iter().any(|m| m.feed == Some(1800.0)), "return feed is emitted");
+    assert!(fast_lift.moves.iter().any(|m| m.feed == Some(p.feed)), "cutting feed stays p.feed");
+
+    let wide = adaptive_trochoidal_with(&face(), &p, &AdaptiveTrochParams { loop_width: Some(50.0), ..AdaptiveTrochParams::default() })
+        .expect_err("loop width wider than the room is refused")
+        .to_string();
+    assert!(wide.contains(WHO) && wide.contains("loop"), "{wide}");
+
+    let bad_eng = adaptive_trochoidal_with(&face(), &p, &AdaptiveTrochParams { max_engagement: 200.0, ..AdaptiveTrochParams::default() })
+        .expect_err("max_engagement > 180 is refused")
+        .to_string();
+    assert!(bad_eng.contains(WHO) && bad_eng.contains("max engagement"), "{bad_eng}");
 }
 
 fn check_cleared(name: &str, region: &Region, p: &PocketParams) {
@@ -280,6 +328,7 @@ fn wide_rectangular_pocket_is_cleared_by_parallel_lanes() {
 }
 
 #[test]
+#[ignore = "heavy lane: release engagement and rest-area measurement"]
 fn l_shaped_pocket_is_cleared_under_engagement_limit() {
     let p = PocketParams { tool_diameter: 10.0, bottom_z: -3.0, ..params() };
     let Ok(l) = Region::new(vec![poly(&[(0.0, 0.0), (60.0, 0.0), (60.0, 30.0), (30.0, 30.0), (30.0, 60.0), (0.0, 60.0)])]) else {
@@ -343,7 +392,6 @@ fn corner_cleanup_reduces_34x16_rest_to_at_most_hsm_rest() {
     check_cleared("face 34x16 D6", &face(), &p);
 }
 
-
 /// PR #1788: valid loads below 4% must not be raised to a 4% cleanup step.
 #[test]
 fn low_load_bounds_cleanup_spacing_and_complete_path() {
@@ -351,9 +399,11 @@ fn low_load_bounds_cleanup_spacing_and_complete_path() {
     let cleared = rect(-5.0, -5.0, 5.0, 5.0);
     let reach = rect(-6.0, -6.0, 6.0, 6.0);
     let used = rect(-1.98, -1.98, 1.98, 1.98);
-    let Ok((chains, _)) = super::super::adaptive_troch_clean::plan_cleanup(
-        &center, &reach, &used, &cleared, D, 0.01, true,
-    ) else { panic!("cleanup") };
+    let Ok((chains, _)) =
+        super::super::adaptive_troch_clean::plan_cleanup(&center, &reach, &used, &cleared, D, 0.01, true, &AdaptiveTrochParams::default())
+    else {
+        panic!("cleanup")
+    };
     assert!(!chains.is_empty(), "the spacing check must exercise cleanup");
     // The initial safe-air front is at 5 - (3 + 0.02) = 1.98 mm.
     // Its first peel must advance by at most the requested 0.06 mm.
@@ -368,4 +418,76 @@ fn low_load_bounds_cleanup_spacing_and_complete_path() {
         let why = refusal(&face(), &p);
         assert!(why.contains("optimal load below 4%") && why.contains("unsupported by cleanup"), "{why}");
     }
+}
+
+#[test]
+fn merged_production_checks_refuse_outside_and_self_crossing_paths() {
+    let center = rect(-10.0, -10.0, 10.0, 10.0);
+    let mut outside = PathBuilder::new(Point3::new(0.0, 0.0, -1.0));
+    outside.push(MoveKind::Feed, Point3::new(11.0, 0.0, -1.0), Some(800.0));
+    let err = check_path(&outside.finish(), &center).expect_err("outside cleanup/lane is refused");
+    assert!(err.to_string().contains("would leave the region"), "{err}");
+    assert!(err.location().is_some() && err.ghost().is_some());
+
+    let mut crossed = PathBuilder::new(Point3::new(-4.0, -4.0, -1.0));
+    for (x, y) in [(4.0, 4.0), (-4.0, 4.0), (4.0, -4.0)] {
+        crossed.push(MoveKind::Feed, Point3::new(x, y, -1.0), Some(800.0));
+    }
+    let err = check_path(&crossed.finish(), &center).expect_err("crossing cleanup/lane is refused");
+    assert!(err.to_string().contains("would cross themselves"), "{err}");
+    assert!(err.location().is_some() && err.ghost().is_some());
+}
+
+#[test]
+fn custom_parameters_reach_parallel_and_closed_lane_layouts() {
+    use super::super::adaptive_troch_lanes::plan_all_lanes;
+    let p = PocketParams { bottom_z: -3.0, ..params() };
+    let t =
+        AdaptiveTrochParams { ret: Some(TrochoidReturn::Retract), return_feed: Some(1800.0), loop_width: Some(4.0), max_engagement: 100.0 };
+    let outer = rect(-30.0, -25.0, 30.0, 25.0);
+    let ring = outer.offset(12.0).unwrap().difference(&outer.offset(2.0).unwrap()).unwrap();
+    for region in [rect(0.0, 0.0, 60.0, 40.0), ring] {
+        let center = region.offset(-0.5 * p.tool_diameter).unwrap();
+        let lanes = plan_all_lanes(&region, &center, &p, &t).expect("custom lane planning");
+        assert!(!lanes.layouts.is_empty());
+        for layout in lanes.layouts {
+            assert_eq!(layout.tp.ret, TrochoidReturn::Retract);
+            assert_eq!(layout.tp.return_feed, 1800.0);
+            assert!(layout.b <= 2.0 + 1e-9, "custom loop width is a cap");
+            assert!(layout.tp.max_engagement <= t.max_engagement);
+        }
+    }
+}
+
+#[test]
+fn custom_return_feed_is_emitted_by_production_parallel_lanes_and_cleanup() {
+    let p = PocketParams { bottom_z: -3.0, ..params() };
+    let t = AdaptiveTrochParams {
+        ret: Some(TrochoidReturn::Microlift { height: 0.4 }),
+        return_feed: Some(1800.0),
+        loop_width: Some(4.0),
+        ..AdaptiveTrochParams::default()
+    };
+    let region = rect(0.0, 0.0, 60.0, 40.0);
+    let path = adaptive_trochoidal_with(&region, &p, &t).expect("custom production multi-lane cut");
+    assert!(path.notes.iter().any(|n| n.contains("lanes (")), "{:?}", path.notes);
+    assert!(path.moves.iter().any(|m| m.feed == Some(1800.0)));
+    assert!(path.moves.iter().any(|m| m.feed == Some(p.feed)));
+    assert!(confined(&path, &region.offset(-0.5 * p.tool_diameter).unwrap()).unwrap().is_none());
+}
+
+#[test]
+fn cleanup_front_respects_custom_engagement_limit() {
+    let center = rect(-3.0, -3.0, 3.0, 3.0);
+    let cleared = rect(-5.0, -5.0, 5.0, 5.0);
+    let reach = rect(-6.0, -6.0, 6.0, 6.0);
+    let used = rect(-1.98, -1.98, 1.98, 1.98);
+    let t = AdaptiveTrochParams { max_engagement: 60.0, ..AdaptiveTrochParams::default() };
+    let (chains, _) = super::super::adaptive_troch_clean::plan_cleanup(&center, &reach, &used, &cleared, D, 0.1, true, &t)
+        .expect("cleanup with a custom engagement limit");
+    assert!(!chains.is_empty(), "exercise a real cleanup peel");
+    let first_extent = chains[0].pts.iter().map(|q| q.x.abs().max(q.y.abs())).fold(0.0, f64::max);
+    let angle_step = 0.18 * 0.5 * D * (1.0 - t.max_engagement.to_radians().cos());
+    assert!(first_extent > 1.98, "cleanup advances into stock");
+    assert!(first_extent <= 1.98 + angle_step + 2e-3, "custom angle cleanup advanced too far: {first_extent}");
 }

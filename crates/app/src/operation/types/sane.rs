@@ -47,11 +47,18 @@ impl OpParams {
     /// commands' generic "not usable".
     #[must_use]
     pub fn named_refusal(&self) -> Option<String> {
+        if let Some(why) = self.tilt().and_then(|t| t.refusal()) {
+            return Some(why);
+        }
         if self.predrilled_elsewhere() {
             return Some(PREDRILLED_POCKET_ONLY.into());
         }
         if let Some(why) = self.arc_turn_refusal() {
             return Some(why.into());
+        }
+        // #1489: the rest group, in the rest generator's own words.
+        if let Some(why) = crate::operation::rest_op::rest_refusal(self) {
+            return Some(why);
         }
         // #1448: only the untilted 2D contour takes a picked start so far;
         // every other kind refuses it here rather than ignore it.
@@ -74,6 +81,7 @@ impl OpParams {
         match self {
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
+            OpParams::Adaptive2D { troch, .. } => troch.refusal(),
             _ => None,
         }
     }
@@ -107,6 +115,8 @@ impl OpParams {
         let links_ok = links_ok && !self.predrilled_elsewhere();
         // #1733: the corner-arc radius and the method that refuses it.
         let links_ok = links_ok && self.arc_turn_refusal().is_none();
+        // #1489: a rest group the generator would refuse.
+        let links_ok = links_ok && crate::operation::rest_op::rest_refusal(self).is_none();
         tilt_ok
             && links_ok
             && match self {
@@ -257,6 +267,7 @@ impl OpParams {
                 plunge_feed,
                 helix_radius,
                 optimal_load,
+                troch,
                 ..
             } => {
                 pos(*stepover)
@@ -270,6 +281,7 @@ impl OpParams {
                     && pos(*plunge_feed)
                     && pos(*helix_radius)
                     && crate::load::load_in_door(*optimal_load)
+                    && troch.is_sane()
             }
             OpParams::Offset2D {
                 stepover,
@@ -856,6 +868,7 @@ impl OpParams {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
                 ..
             } => {
                 // An empty hole list is sane here: a new Drill op exists
@@ -874,6 +887,8 @@ impl OpParams {
                     && *dwell >= 0.0
                     && holes.iter().all(|h| h.is_usable())
                     && cross.iter().all(|h| h.is_usable())
+                    // #1557: a stated break-through is a length.
+                    && break_through.is_none_or(nneg)
             }
             // The facing ladder's door (M5.2 stage A): the wrap
             // ladder's numbers without the pattern's - a positive
@@ -1179,6 +1194,7 @@ impl OpParams {
                 plunge_feed,
                 tolerance,
                 holes,
+                break_through,
                 ..
             } => {
                 clearance_z.is_sane()
@@ -1191,6 +1207,7 @@ impl OpParams {
                     && pos(*plunge_feed)
                     && pos(*tolerance)
                     && holes.iter().all(|h| h.is_usable())
+                    && break_through.is_none_or(nneg)
             }
             OpParams::Thread {
                 clearance_z,
@@ -1203,6 +1220,7 @@ impl OpParams {
                 holes,
                 pitch,
                 passes,
+                break_through,
                 ..
             } => {
                 clearance_z.is_sane()
@@ -1217,6 +1235,7 @@ impl OpParams {
                     && pos(*feed)
                     && pos(*plunge_feed)
                     && holes.iter().all(|h| h.is_usable())
+                    && break_through.is_none_or(nneg)
             }
         }
     }
@@ -1229,13 +1248,21 @@ impl OpParams {
     /// resolved; the motion layer holds the same law as a backstop.
     #[must_use]
     pub fn microlift_refusal(&self, clearance: f64, top: f64) -> Option<String> {
-        let OpParams::TrochoidalSlot { ret: crate::machining2d::TrochoidReturn::Microlift { height }, .. } = self else {
-            return None;
+        let (who, height) = match self {
+            OpParams::TrochoidalSlot { ret: crate::machining2d::TrochoidReturn::Microlift { height }, .. } => {
+                ("the trochoidal slot's", *height)
+            }
+            OpParams::Adaptive2D {
+                method: crate::machining2d::AdaptiveMethod::Trochoidal,
+                troch: crate::machining2d::AdaptiveTrochParams { ret: Some(crate::machining2d::TrochoidReturn::Microlift { height }), .. },
+                ..
+            } => ("the 2D Adaptive (Trochoidal)", *height),
+            _ => return None,
         };
         let room = clearance - top;
-        (*height > room + 1e-9).then(|| {
+        (height > room + 1e-9).then(|| {
             format!(
-                "a {height:.3} mm microlift would feed the trochoidal slot's return above the clearance plane - at most {room:.3} mm (the clearance above the top) fits; use the Retract return to hop higher"
+                "a {height:.3} mm microlift would feed {who} return above the clearance plane - at most {room:.3} mm (the clearance above the top) fits; use the Retract return to hop higher"
             )
         })
     }

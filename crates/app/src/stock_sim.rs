@@ -60,7 +60,7 @@ pub fn stock_grid(
     setup: Option<&str>,
     tool_r: f64,
 ) -> Result<Dexel, String> {
-    use crate::geometry::{IDENTITY_Q, transform_point};
+    use crate::geometry::transform_point;
     use crate::stock::StockShape;
     use crate::model;
 
@@ -69,10 +69,8 @@ pub fn stock_grid(
         .ok_or_else(|| format!("no stock '{stock_name}' - the program sim judges material, not air"))?;
     let shape = model::stock_def_of(world, &stock_e)
         .ok_or("the stock entity lost its shape")?;
-    let loc = model::transform_of(world, &stock_e).unwrap_or_default();
-    if loc.rot != IDENTITY_Q {
-        return Err("the program sim models an axis-aligned stock; this stock carries a rotation".into());
-    }
+    // #2177: a square-turned stock is its unturned twin; oblique refused.
+    let (shape, loc) = crate::stock_follow::sim_frame(&shape, model::transform_of(world, &stock_e).unwrap_or_default())?;
     let stock_facets: Vec<Triangle> = match &shape {
         StockShape::FromModel { .. } => model::facets_of(world, &stock_e)
             .unwrap_or_default()
@@ -124,10 +122,7 @@ pub fn stock_grid(
             // The analytic grids are built origin-centered; the stock
             // entity's place moves the lattice itself, so the moves
             // stay in the world frame the viewport and post read.
-            d.x0 += loc.pos.x;
-            d.y0 += loc.pos.y;
-            d.stock_z += loc.pos.z;
-            d.translate_finite(loc.pos.z); // stored heights ride with it
+            d.translate_origin(loc.pos.x, loc.pos.y, loc.pos.z);
             d
         }
     };
@@ -255,11 +250,10 @@ pub(crate) struct Planned {
     /// The mark budget and target part(s) the op declares (#1595, #1627,
     /// `operation::mark_law`): `Some` only for an Engrave or Trace.
     pub mark: Option<crate::operation::mark_law::SimMark>,
-    /// A sinker electrode's box atom (#541): `[hx, hy, gap]` - the face's
-    /// half sizes and the condition's spark gap. The column verdict cuts
-    /// it (`simulate_box`); the field eye has no box atom and refuses the
-    /// program by name. `None` for every other tool.
-    pub electrode: Option<[f64; 3]>,
+    /// A sinker electrode's atom (#541, #1152). The column verdict cuts
+    /// it; the field eye has no electrode atom and refuses the program
+    /// by name. `None` for every other tool.
+    pub electrode: Option<held::ElectrodeAtom>,
 }
 
 /// The field eye's refusal of a sinker electrode (#541), said once.
@@ -330,7 +324,7 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         // order, kerf crossings, the through-cut) are #672's laws, and
         // the generator certified that no lit move's kerf reaches the
         // part - so the torch carves nothing here, said not silenced.
-        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) {
+        if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) {
             continue;
         }
         let cache = model::toolpath_of(world, e)
@@ -361,39 +355,38 @@ pub(crate) fn plan_program(world: &flecs_ecs::prelude::World) -> Result<Vec<Plan
         // half its band - `LathePlan::feature`): the display cell law
         // (`auto_cell`) reads it, not the IC. Every other tool sweeps
         // its cutting radius - a tap its thread's core (#266, #985).
-        // A sinker electrode (#541) sweeps its rectangular face grown by
-        // the condition's spark gap - the box atom; its radius is the
-        // inscribed half size, which only the cell law reads.
+        // A sinker electrode (#541) sweeps its rectangular face - or its
+        // outline (#1152) - grown by the condition's spark gap; its
+        // radius is the least half extent, which only the cell law reads.
         let electrode = match &op.params {
             crate::operation::OpParams::SinkerBurn(sb) if tool.kind == crate::tools::ToolKind::Electrode => {
-                let (hx, hy) = camcraft_tools::electrode::half_sizes(&tool);
                 let gap = crate::operation::sinker_op::condition_gap(world, op.setup.as_deref(), sb)
                     .map_err(|e| format!("{name}: {e}"))?;
-                Some([hx, hy, gap])
+                Some(held::ElectrodeAtom::of(&tool, gap))
             }
             // #545: the side burn sweeps the same box atom along its
             // lateral move.
             crate::operation::OpParams::SinkerSideBurn(sb) if tool.kind == crate::tools::ToolKind::Electrode => {
-                let (hx, hy) = camcraft_tools::electrode::half_sizes(&tool);
                 let gap = crate::operation::sinker_side_op::side_gap(world, op.setup.as_deref(), sb)
                     .map_err(|e| format!("{name}: {e}"))?;
-                Some([hx, hy, gap])
+                Some(held::ElectrodeAtom::of(&tool, gap))
             }
             _ => None,
         };
-        let radius = match (lathe, electrode) {
+        let radius = match (lathe, &electrode) {
             (Some(plan), _) => plan.feature(),
-            (None, Some([hx, hy, _])) => hx.min(hy),
+            (None, Some(e)) => e.half[0].min(e.half[1]),
             (None, None) => crate::operation::thread_op::sim_radius(&tool, &op.params).map_err(|e| format!("{name}: {e}"))?,
         };
         // #546: a wear-compensated burn is judged as the worn electrode burns it.
-        let moves = crate::operation::sinker_wear_op::judged(world, &op, electrode.map(|e| e[2]), cache.path.moves)
+        let moves = crate::operation::sinker_wear_op::judged(world, &op, electrode.as_ref().map(|e| e.gap), cache.path.moves)
             .map_err(|e| format!("{name}: {e}"))?;
         planned.push(Planned {
             name: name.clone(),
             moves,
-            // #529: only what the op itself declared, never wider.
-            breaks: breaks::bounded(name, &op.params, cache.path.breaks),
+            // #529: only what the op itself declared, never wider. #2308:
+            // and never a stock edge's bevel over a part.
+            breaks: if breaks::breaks_stock_edge(world, &op) { Vec::new() } else { breaks::bounded(name, &op.params, cache.path.breaks) },
             mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,
