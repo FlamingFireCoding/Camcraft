@@ -23,7 +23,6 @@ use camcraft_app::machining3d::Entry3D;
 use camcraft_app::model;
 use camcraft_app::operation::{Height, OpParams, SrcRef, Tilt};
 use camcraft_app::post::{cnc, engine, machine as mirror};
-use camcraft_app::posting::MACHINES;
 use camcraft_app::schema::{Location, PostRef};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -41,7 +40,7 @@ fn ok<T, E: std::fmt::Debug>(r: Result<T, E>, what: &str) -> T {
 }
 
 fn shipped() -> Machine {
-    let text = MACHINES.iter().find(|(n, _)| *n == ARC4).map(|(_, t)| *t).expect("shipped");
+    let text = camcraft_app::posting::builtin_machine_text(ARC4).expect("shipped");
     ok(parse_mch(text), "parses")
 }
 
@@ -367,7 +366,7 @@ fn run_dnm(m: &Machine, abc: [f64; 3]) -> engine::PostOutput {
 }
 
 fn dnm() -> Machine {
-    let text = MACHINES.iter().find(|(n, _)| *n == "Doosan DNM 5700 + rotary table").map(|(_, t)| *t).expect("shipped");
+    let text = camcraft_app::posting::builtin_machine_text("Doosan DNM 5700 + rotary table").expect("shipped");
     ok(parse_mch(text), "parses")
 }
 

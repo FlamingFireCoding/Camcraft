@@ -83,6 +83,8 @@ fn empty_egui_meshes_are_filtered_before_gpu_submission() {
 mod face_origin;
 mod geo_row_hover;
 mod selection_frame_cost;
+mod frame_cost_caches;
+mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
@@ -108,6 +110,10 @@ mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+// #2181: the transport row of the calculation before playback.
+mod transport_precalc;
+mod page_layout;
+mod anchors;
 mod stock_fit;
 mod ribbon_rows;
 mod theme_op_tabs_tree;
@@ -137,7 +143,11 @@ mod setup_picks_disarm;
 mod points_vertex_pick;
 // #1171: real clicks state a wire sync pair.
 mod wire_sync_viewport;
+// #1448: real viewport clicks pick the Contour's start and exit points.
+mod start_exit_viewport;
 mod one_wcs;
+// #1926: the feature picks that set the WCS are on the WCS page.
+mod wcs_page_picks;
 // #343: the per-setup browser tree.
 mod setup_tree;
 mod mcp_live;
@@ -773,9 +783,10 @@ fn click_apply_edits_operation_through_commands() {
     // click law itself.
     harness.get_by_label("Feeds").click();
     harness.run();
-    harness.get_by_label("Climb milling").scroll_to_me();
+    // Keep this caption-click pin explicit now that the checkbox has the same accessible name.
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").scroll_to_me();
     harness.run();
-    harness.get_by_label("Climb milling").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").click();
     harness.run();
     assert!(!staged_climb(&harness), "checkbox did not reach the staged params");
     harness.get_by_label("Apply").scroll_to_me();
@@ -1542,7 +1553,8 @@ fn click_outside_the_viewport_is_not_a_pick() {
     let mut harness = shell_harness();
     harness.run();
     let status0 = harness.state().state.status.clone();
-    click_viewport(&mut harness, egui::pos2(4.0, 4.0));
+    let outside = anchors::chrome_point(&harness, &[]);
+    click_viewport(&mut harness, outside);
     let st = &harness.state().state;
     assert_eq!(st.status, status0, "a stray click ran a pick");
     assert!(
@@ -1864,7 +1876,8 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
     // Scroll the properties pane so the anchor grid (bottom of the page)
     // is in view.
     for _ in 0..4 {
-        wheel(&mut harness, egui::pos2(1100.0, 500.0), -220.0);
+        let pane = anchors::pane_center(&harness, &Tab::Properties);
+        wheel(&mut harness, pane, -220.0);
     }
     harness.get_by_label("SE").click_accesskit();
     harness.run_steps(2);

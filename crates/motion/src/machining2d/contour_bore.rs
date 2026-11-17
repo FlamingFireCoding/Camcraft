@@ -38,6 +38,9 @@ pub(super) struct BoreStep {
     /// Is this the path's first engagement (its descent starts over the
     /// top of the cut)?
     pub first: bool,
+    /// Did an earlier descent of the same arm open this column down to
+    /// `prev_z` (#2004)? Else the core stands at the top of the cut there.
+    pub opened: bool,
 }
 
 /// The bore side (`Side::Inside`, untabbed): the eroded region states
@@ -51,8 +54,27 @@ pub(super) fn bore_entry(b: &mut PathBuilder, eng: &Engage, s: &BoreStep, lead: 
     // The material's top over this level: the plane above, or the top
     // of the cut on the first engagement; descents start that high plus
     // the plunge height (above it: rapid).
-    let mat_top = if s.first || prev_z >= p.clearance_z { p.entry_top().min(prev_z) } else { prev_z };
-    let from = if s.first || prev_z >= p.clearance_z { (mat_top + a.plunge_height).min(prev_z) } else { prev_z };
+    // #2004: a transition whose column no earlier descent opened meets the
+    // core at the top of the cut - the bore side's rings sweep only their
+    // band - so it starts over the top, never at the plane above.
+    // #1559: on the first engagement and in an unopened column, the top is
+    // the carried stock's where the application stated one (`entry_top`;
+    // the top of the cut otherwise, as before).
+    let fresh = !s.first && !s.opened && prev_z < p.clearance_z && tz > prev_z;
+    let mat_top = if s.first || prev_z >= p.clearance_z {
+        p.entry_top().min(prev_z)
+    } else if fresh {
+        p.entry_top().max(prev_z)
+    } else {
+        prev_z
+    };
+    let from = if s.first || prev_z >= p.clearance_z {
+        (mat_top + a.plunge_height).min(prev_z)
+    } else if fresh {
+        (mat_top + a.plunge_height).min(tz)
+    } else {
+        prev_z
+    };
     // The level's first cut, as the pocket ladders read theirs: the
     // lead-in and the ring from the lead-in's start - where an entry that
     // cannot close on the start lands a little along it and links back

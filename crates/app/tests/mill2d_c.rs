@@ -199,14 +199,14 @@ fn bore_rides_the_cutter_center_law() {
         });
         assert!(inside, "a boring move outside every cutter-center disk: {m:?}");
     }
-    // The ladder speaks on Z: `cut_levels`' law restated - the same
-    // rungs the pocket walks from the stock top, so the boring ride
-    // starts AT the hole's entry (its first ring squares the mouth)
-    // and closes on each hole's own floor.
+    // The ladder speaks on Z: `cut_levels`' law - the same rungs the
+    // pocket walks from the stock top, the first one stepdown under the
+    // hole's entry (#2004: a ring AT the mouth cuts air), closing on
+    // each hole's own floor.
     let mut zs: Vec<_> = feeds.iter().map(|m| m.to.z).collect();
     zs.sort_by(|a, b| b.total_cmp(a));
     zs.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    assert_eq!(zs, vec![20.0, 15.0, 10.0, 5.0], "rungs of 5, entry plane to floor");
+    assert_eq!(zs, vec![15.0, 10.0, 5.0], "rungs of 5 under the entry plane, to the floor");
     // Two holes, so the ladder runs twice - and the ride between them
     // is never a feed through air at depth: rapids link the islands.
     let hops = path.moves.iter().filter(|m| m.kind == MoveKind::Rapid).count();

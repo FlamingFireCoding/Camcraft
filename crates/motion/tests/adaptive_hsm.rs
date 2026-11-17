@@ -198,9 +198,9 @@ fn run(reg: &Region, strategy: PocketStrategy, cell: f64) -> (Toolpath, PathQual
     spec.cell = cell;
     // The acceptance law reads breaks past 5 degrees in cut.
     spec.break_deg = 5.0;
-    // The stock stands one stepdown above Top: the ladder's first level
-    // (at Top) is a real cut, not the zero-depth skin.
-    let Ok(mut dex) = stock_for(reg, 5.0, BOTTOM, 1.0, &spec) else { panic!("stock") };
+    // The stock top is Top Z: the ladder's one level (one stepdown under
+    // Top, #2004) is a real cut of the full stepdown.
+    let Ok(mut dex) = stock_for(reg, 0.0, BOTTOM, 1.0, &spec) else { panic!("stock") };
     let q = measure(&path, &mut dex, &spec).unwrap();
     if let Ok(dir) = std::env::var("HSM_DUMP") {
         dump(&dir, reg, &path, &q, strategy);
@@ -329,8 +329,9 @@ fn judge(name: &str, reg: &Region, (cell, tol): (f64, f64), print: bool) -> Vec<
         }
         return bad;
     }
-    if new.descents != 2 {
-        bad.push(format!("{name}: {} descents into stock for 2 levels", new.descents));
+    // #2004: one level (Z -5); the old air level at Top Z 0 is gone.
+    if new.descents != 1 {
+        bad.push(format!("{name}: {} descents into stock for 1 level", new.descents));
     }
     if new.slot_len > 0.0 {
         bad.push(format!("{name}: {:.1} mm of slotting", new.slot_len));

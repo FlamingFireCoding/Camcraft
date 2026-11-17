@@ -42,7 +42,7 @@ mod tests;
 
 use crate::cl::Toolpath;
 use crate::geo2d::Region;
-use crate::machining2d::levels::cut_levels;
+use crate::machining2d::levels::cut_levels_under;
 use crate::machining2d::pocket::{PocketParams, PocketStrategy};
 use crate::machining2d::GenError;
 
@@ -84,7 +84,11 @@ fn guarded(region: &Region, p: &PocketParams, stock: &RestStock, guards: Guards)
     // the same region share it.
     let mut plans: Vec<(Region, LevelPlan)> = Vec::new();
     let mut levels: Vec<(f64, usize)> = Vec::new();
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    // The rest stock stands over the rest Top Z (the earlier operations
+    // left it there), so Top Z is a cut level, not an air level (#2004):
+    // with no material top stated, the ladder keeps the plane at Top Z.
+    let stock_top = p.links.approach.stock_top.or(Some(f64::INFINITY));
+    let zs = cut_levels_under(p.top_z, stock_top, p.bottom_z, p.stepdown)?;
     // The depth guard speaks first, for every depth, before anything is
     // planned (`stock`).
     let materials = zs.iter().map(|&z| stock.material_at(z, guards)).collect::<Result<Vec<Region>, GenError>>()?;

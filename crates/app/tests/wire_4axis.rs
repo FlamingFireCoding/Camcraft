@@ -26,7 +26,7 @@ use camcraft_app::operation::{
     self, FeatureSel, GeoSel, Height, OpParams, OpStatus, SrcRef, WireContourOp, WireFourAxis, WirePairingRule, WireSide, WireTabs,
     WireSyncPair,
 };
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::project;
 use camcraft_app::world::new_world;
 
@@ -43,7 +43,7 @@ const N: usize = 64;
 type P2 = (f64, f64);
 
 fn cps() -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == WIRE).map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text(WIRE).expect("registered")
 }
 
 /// A square of half-side `a` as N points, counter-clockwise from the

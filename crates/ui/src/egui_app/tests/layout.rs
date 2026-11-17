@@ -23,7 +23,7 @@ fn click(h: &mut Harness<'static, ShellUi>, at: egui::Pos2) {
 }
 
 /// The laid-out rect of the leaf holding `tab` (None when closed).
-fn leaf_rect(dock: &DockState<Tab>, tab: &Tab) -> Option<egui::Rect> {
+pub(super) fn leaf_rect(dock: &DockState<Tab>, tab: &Tab) -> Option<egui::Rect> {
     let path = dock.find_tab(tab)?;
     dock[path.node_path()].rect()
 }
@@ -129,7 +129,17 @@ fn the_viewport_row_is_inert_and_the_door_dismisses_outside() {
     assert!(layout::is_open(&h.state().dock, &Tab::Viewport));
     // A press on the status strip, away from the door, dismisses it
     // (the viewport would pick, and a pick is a command).
-    click(&mut h, egui::pos2(640.0, 712.0));
+    let panel_button = h
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Panels")
+        .rect();
+    let away: Vec<egui::Rect> = std::iter::once(panel_button)
+        .chain(
+            h.query_all_by_role(egui::accesskit::Role::MenuItem)
+                .map(|node| node.rect()),
+        )
+        .collect();
+    let outside = super::anchors::chrome_point(&h, &away);
+    click(&mut h, outside);
     assert!(!h.state().state.ribbon_view_open, "an outside press closes the list");
     assert_no_commands(&h);
 }

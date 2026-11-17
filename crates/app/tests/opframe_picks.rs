@@ -378,9 +378,13 @@ fn tilt_times_picks_and_unverified_stay_refused_and_area_passes_in_phase_two() {
     let err = generate(&world, &op_of(&world, "TiltedPick"), "TiltedPick").expect_err("aligned tilt x picks refuses");
     assert!(err.to_string().contains("tilted plane is not supported yet in an aligned setup"), "{err}");
 
-    let offset = (KindInfo::ALL[OpType::Offset2D.ordinal()].seed)(&Carried::of(&face_params(Height::fixed(9.0), 25.0)));
-    h.execute(&world, CreateOperation::new(&world, "OffsetPick", TOOL, sel, offset).expect("create offset pocket"));
-    let err = generate(&world, &op_of(&world, "OffsetPick"), "OffsetPick").expect_err("unverified kind refuses");
+    // #2276: 2D Offset and Circular are verified now; 2D Chamfer still
+    // waits for proof (the op keeps its old name).
+    let circular = (KindInfo::ALL[OpType::Chamfer2D.ordinal()].seed)(&Carried::of(&face_params(Height::fixed(9.0), 25.0)));
+    let cm = catalog().into_iter().find(|(n, _)| *n == "CM-0600-90").map(|(_, t)| t).expect("chamfer mill");
+    h.execute(&world, AddTool::new(&world, "CM-0600-90", cm).expect("add chamfer mill"));
+    h.execute(&world, CreateOperation::new(&world, "CircularPick", "CM-0600-90", sel, circular).expect("create the 2D Chamfer"));
+    let err = generate(&world, &op_of(&world, "CircularPick"), "CircularPick").expect_err("unverified kind refuses");
     assert!(err.to_string().contains("not supported yet in an aligned setup"), "{err}");
 
     let mut area_op = op_of(&world, "TiltedPick");

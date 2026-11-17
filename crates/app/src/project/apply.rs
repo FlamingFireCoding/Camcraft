@@ -520,6 +520,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // material states none.
         // v64 -> v65 (#2133): absent tilt basis preserves the legacy frame.
         // Saving writes v65 so old readers cannot drop an explicit basis.
+        // v65 -> v66 (#1962): absent trunnion fields and `controller_rtcp`
+        // read as before (tool_rh, RTCP inferred from tilt). Saving writes
+        // v66 so old readers cannot drop `controller_rtcp: false`.
+        // v66 -> v67 (#1720): a WCS may record flipped axes; absent is
+        // no flip.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -773,6 +778,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
             }
             EntityKind::Wcs => {
                 entity.entity_view(world).add(Wcs);
+                // #1720: absent is no flip (every pre-v67 file).
+                if let Some(f) = dto.flip {
+                    crate::setup_wcs_flip::set(world, &entity, [f.x, f.y, f.z]);
+                }
             }
             EntityKind::Entry => super::program_entry_dto::apply(world, &entity, dto.entry)?,
             EntityKind::Tool => {
