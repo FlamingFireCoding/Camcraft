@@ -36,6 +36,9 @@
 //! un-tagged after generation leaves the op fresh, so with the sim silent
 //! those parts are judged again live (`operation::kept_rejudge`, #1628):
 //! a cut into one is a blocking problem naming the op and the part.
+//! Where the sim judges, it judges those parts itself (a stock-source
+//! chamfer's bevel is credited over none of them, #2308), and a gouge it
+//! finds carries the same naming line beside its own verdict.
 
 use crate::model;
 use crate::operation::{self, OpStatus};
@@ -91,9 +94,13 @@ fn judge_clause(world: &World) -> SimClause {
                     )
                 },
             );
+            // #2308: a part moved or added since generation names the op
+            // and the part it cuts - said beside the sim's verdict, which
+            // already blocks, so it never refuses a program on its own.
+            let moved = kept_moved(world).map(|why| format!(" - {why}")).unwrap_or_default();
             SimClause {
                 problem: Some(format!(
-                    "gouge: program cuts below the model in {} cell(s), worst {} {}{at}{}",
+                    "gouge: program cuts below the model in {} cell(s), worst {} {}{at}{}{moved}",
                     sim.dev.gouge_cells,
                     crate::units::len(sim.dev.max_gouge, u, 2),
                     u.suffix(),
