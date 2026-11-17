@@ -291,6 +291,25 @@ pub fn post_ref_label(post: &PostRef) -> String {
     }
 }
 
+/// The path of the post script a reference runs: for a shipped built-in or
+/// named registry entry, `posting::builtin_post_path` resolves the shipped
+/// `assets/posts/<name>.cps` (issue #2292 shows it in the post section
+/// beside the name). A user file already names itself through
+/// [`post_ref_label`], so it gets no extra row. Nothing for a registry
+/// entry that is gone, since `script_source` refuses it anyway.
+#[must_use]
+pub fn post_path(post: &PostRef) -> Option<String> {
+    let shipped = |name: &str| -> Option<String> {
+        builtin_post_path(name)
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    match post {
+        PostRef::Builtin => BUILTINS.first().and_then(|(name, _)| shipped(name)),
+        PostRef::Named(name) => BUILTINS.iter().find(|(n, _)| *n == name).and_then(|_| shipped(name)),
+        PostRef::File(_) => None,
+    }
+}
+
 /// The script source this document posts with: (label, text). A
 /// `File` post whose text cannot be read, or a `Named` post missing
 /// from the registry, is a refusal naming what is gone - never a
