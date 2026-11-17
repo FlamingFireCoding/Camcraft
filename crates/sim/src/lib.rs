@@ -20,6 +20,7 @@ pub mod fixture_mesh;
 // #2181: the playback keyframes and the calculation before playback.
 pub mod play_keys;
 pub mod play_precalc;
+pub mod play_precalc_mailbox;
 pub mod sim;
 pub mod solid_rest;
 pub mod stock_sim;
@@ -29,3 +30,6 @@ pub use camcraft_cl::cl;
 pub use camcraft_geometry::{geo2d, geometry};
 pub use camcraft_geometry::geometry::{stock, units};
 pub use camcraft_tools::tools;
+
+/// Parametric fixture solids and profile interchange.
+pub mod fixture_profile;

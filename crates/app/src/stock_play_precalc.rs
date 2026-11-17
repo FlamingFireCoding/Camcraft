@@ -1,15 +1,15 @@
-//! `FieldPlay`'s side of the calculation before playback (#2181): the
-//! accessors and the `PrecalcCut` seam that `camcraft_sim::play_precalc`
-//! drives. The keyframe store, its budget and thinning, the `Precalc`
-//! state and the loop are the sim crate's (`play_keys`,
-//! `play_precalc`); only the methods of this app type stay here, since
-//! `FieldPlay` itself is app's (#2192 review). Provenance: our own seam;
-//! nothing from vendor binaries.
+//! `FieldPlay` as the sim crate's `Playback` (#2181): the accessors and
+//! the cut, rewind and store bindings that `camcraft_sim::play_precalc`
+//! drives. The keyframe store, its budget and thinning, the stride, the
+//! begin/step orchestration and the loop are the sim crate's
+//! (`play_keys`, `play_precalc`); only the bindings of this app type
+//! stay here, since `FieldPlay` itself is app's until #2268 (#2192
+//! review). Provenance: our own seam; nothing from vendor binaries.
 
 use super::FieldPlay;
 use crate::stock_sim::Stock;
-use camcraft_sim::play_keys::{Keyframes, Precalc, MAX_KEYFRAMES};
-use camcraft_sim::play_precalc::PrecalcCut;
+use camcraft_sim::play_keys::Keyframes;
+use camcraft_sim::play_precalc::{self, Playback};
 
 impl FieldPlay {
     /// The checkpoint stride, in moves.
@@ -38,62 +38,49 @@ impl FieldPlay {
         &self.keys
     }
 
-    /// Start the calculation: back to the uncut stock, keyframes every
-    /// `total / keys` moves (at least `min_stride`) within `budget`
-    /// bytes from here on, the dirty ledger off (no picture is taken
-    /// while it runs).
+    /// `camcraft_sim::play_precalc::begin` on this playback.
     pub fn begin_precalc(&mut self, keys: usize, min_stride: usize, budget: usize) -> Result<(), String> {
+        play_precalc::begin(self, keys, min_stride, budget)
+    }
+
+    /// `camcraft_sim::play_precalc::step` on this playback.
+    pub fn precalc_step(&mut self) -> Result<bool, String> {
+        play_precalc::step(self)
+    }
+}
+
+impl Playback for FieldPlay {
+    type Value = Stock;
+
+    fn total(&self) -> usize {
+        self.total
+    }
+
+    fn at(&self) -> usize {
+        self.at
+    }
+
+    fn keys(&self) -> &Keyframes<Stock> {
+        &self.keys
+    }
+
+    fn keys_and_value(&mut self) -> (&mut Keyframes<Stock>, &Stock) {
+        (&mut self.keys, &self.cur)
+    }
+
+    /// The uncut stock at move 0, the partial move gone, the dirty
+    /// ledger off (no picture is taken while the calculation runs).
+    fn rewind(&mut self, uncut: Stock) {
         self.drop_partial();
-        let uncut = self.keys.floor(0).ok_or("playback lost its uncut stock")?.1.clone();
-        let stride = self.total.div_ceil(keys.max(1)).max(min_stride.max(1));
-        self.keys.restart(stride, keys.max(MAX_KEYFRAMES), budget);
         self.cur = uncut;
         self.at = 0;
         self.set_batched(true);
         self.restored = true;
-        Ok(())
     }
 
-    /// Cut one stride and offer its keyframe to the store (its budget
-    /// thins it); `Ok(true)` when the whole program is calculated.
-    pub fn precalc_step(&mut self) -> Result<bool, String> {
-        if self.at >= self.total {
-            return Ok(true);
-        }
-        let to = self.keys.next_boundary(self.at, self.total);
+    fn cut_to(&mut self, to: usize) -> Result<(), String> {
         self.cut(self.at, to)?;
         self.at = to;
-        self.keys.offer(to, &self.cur);
-        Ok(self.at >= self.total)
-    }
-}
-
-/// The worker's calculation drives the playback through this seam.
-pub(crate) struct PrecalcPlay<'a> {
-    pub play: &'a mut FieldPlay,
-    pub keys: usize,
-    pub min_stride: usize,
-    pub budget: usize,
-}
-
-impl PrecalcCut for PrecalcPlay<'_> {
-    fn total(&self) -> usize {
-        self.play.total()
-    }
-
-    fn done(&self) -> usize {
-        self.play.at()
-    }
-
-    fn begin(&mut self) -> Result<(), String> {
-        self.play.begin_precalc(self.keys, self.min_stride, self.budget)
-    }
-
-    fn step(&mut self) -> Result<bool, String> {
-        self.play.precalc_step()
-    }
-
-    fn ready(&self, secs: f64) -> Precalc {
-        Precalc::Ready { keys: self.play.checkpoints(), bytes: self.play.keyframe_bytes(), stride: self.play.stride(), secs }
+        Ok(())
     }
 }

@@ -29,11 +29,15 @@
 //! feed or a plunge, so a wrong previous tool costs a heavier cut, never
 //! a rapid into stock.
 
-use crate::cl::Toolpath;
+use crate::cl::{PathBuilder, Toolpath};
 use crate::geo2d::Region;
+use crate::geometry::Point3;
 
 use super::face::GenError;
 use super::pocket::{PocketParams, PocketStrategy, pocket_over};
+use super::pocket_emit::{PocketWalks, emit_pocket_passes};
+use super::rest_anchor::anchor_first_pass;
+use super::rest_rings::rest_passes;
 
 /// How far the previous tool's cleared area is shrunk before it is
 /// subtracted (mm): two polygon-offset arc tolerances (5 um each, one per
@@ -188,11 +192,11 @@ pub fn rest_plan(
 /// planned as rings over the rest plan's center area: `Waterline` and
 /// `OffsetRings` as chosen, and `Auto` reads as `Waterline` here (the
 /// first ring of each rest area runs along the wall, which is what
-/// clears a corner).
+/// clears a corner). Zigzag closes each rest area's boundary after its
+/// rows to clear wall cusps.
 ///
 /// Refused by name: a previous tool that is not larger than this one;
-/// `Zigzag` (rows leave cusps along the walls of a rest area, so the
-/// corner would not come clean); `Adaptive` (its entry and engagement
+/// `Adaptive` (its entry and engagement
 /// plan assume a full pocket; not built for rest areas yet); nothing
 /// left to cut; rest material this tool cannot reach either.
 pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Result<Toolpath, GenError> {
@@ -220,21 +224,40 @@ pub fn rest_pocket(region: &Region, p: &PocketParams, rest: &RestParams) -> Resu
     )];
     if !plan.previous_fits {
         notes.push("the previous tool fits nowhere in this pocket: the whole pocket is cut".into());
+        return pocket_over(region, &plan.center, p, notes, true, &[]);
     }
-    pocket_over(region, &plan.center, p, notes, true, &[])
+    let (mut passes, cut_center) = rest_passes(&plan, p.tool_diameter, p.tiling_step(), p.climb)?;
+    if p.strategy == PocketStrategy::Zigzag {
+        passes = super::pocket_zigzag::rest_passes(&plan.center, p.tiling_step(), p.climb)?;
+    }
+    anchor_first_pass(&mut passes, &plan, p);
+    let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
+    notes.into_iter().for_each(|n| b.note(n));
+    emit_pocket_passes(
+        b,
+        p,
+        PocketWalks {
+            center: &plan.center,
+            links_center: &cut_center,
+            strategy: p.strategy,
+            passes,
+            room: None,
+            joins: Vec::new(),
+            hold_crossings: true,
+            holes: &[],
+        },
+    )
 }
 
 /// The strategy a rest pass runs for the asked `strategy`: `Auto` reads as
-/// `Waterline`; `Zigzag` and `Adaptive` are refused by name (see
+/// `Waterline`; `Adaptive` is refused by name (see
 /// [`rest_pocket`]). Public so the operation's parameter door (#1489)
 /// refuses with the generator's own words.
 pub fn rest_strategy(strategy: PocketStrategy) -> Result<PocketStrategy, GenError> {
     match strategy {
         PocketStrategy::Auto | PocketStrategy::Waterline => Ok(PocketStrategy::Waterline),
         PocketStrategy::OffsetRings => Ok(PocketStrategy::OffsetRings),
-        PocketStrategy::Zigzag => Err(GenError::Invalid(
-            "rest machining is not available with the Zigzag strategy: its rows leave cusps along the walls of a rest area; choose Waterline or Offset rings".into(),
-        )),
+        PocketStrategy::Zigzag => Ok(PocketStrategy::Zigzag),
         PocketStrategy::Adaptive => Err(GenError::Invalid(
             "rest machining is not available with the Adaptive strategy yet: choose Waterline or Offset rings".into(),
         )),

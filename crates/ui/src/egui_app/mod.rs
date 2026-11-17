@@ -23,6 +23,8 @@
 
 // pub(crate) for its own unit tests and the shell's init path: the M4.2
 // GPU backend pick - parse, honest fallback chain, adapter log line.
+// frame_rate is wasm-safe (camcraft_app::clock) and `state.rs` holds it.
+pub(crate) mod frame_rate;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod frame_watch;
 pub(crate) mod gpu;
@@ -93,6 +95,7 @@ mod wcs_page;
 mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
+mod stock_material_row;
 // #371: the tool editor's Body section and its picking preview.
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
@@ -166,6 +169,8 @@ mod trochoid_page;
 mod kind_editors;
 mod mill2d_more_page;
 mod mill2d_page;
+// #1815: 2D Pocket's "Rest machining" group on the Passes tab.
+mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
 mod op_page;
@@ -184,6 +189,7 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
 // #155: Pause / Home entry rows and their menu.
@@ -199,6 +205,8 @@ mod fixture_plate_rows;
 mod fixture_modvise_rows;
 pub(crate) mod fixture_accessory_dialog;
 mod fixture_accessory_rows;
+mod fixture_profile_dialog;
+mod fixture_profile_rows;
 pub(crate) mod shell;
 // #31: the winit window, loop and per-frame draw - native only; the
 // browser build keeps `shell` (the shared frame) and refuses `run` below.
@@ -252,6 +260,8 @@ mod fixture_modvise_tests;
 #[cfg(test)]
 mod fixture_accessory_tests;
 #[cfg(test)]
+mod fixture_profile_tests;
+#[cfg(test)]
 mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
@@ -298,7 +308,11 @@ mod wcs_page_tests;
 #[cfg(test)]
 mod wcs_circle_tests;
 #[cfg(test)]
+mod wcs_flip_tests;
+#[cfg(test)]
 mod wcs_part_point_tests;
+#[cfg(test)]
+mod wcs_align_guard_tests;
 #[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]
@@ -326,6 +340,8 @@ mod gate_route_tests;
 mod sinker_pass_tests;
 #[cfg(test)]
 mod sinker_machine_tests;
+#[cfg(test)]
+mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, fallback adapter, View3D
