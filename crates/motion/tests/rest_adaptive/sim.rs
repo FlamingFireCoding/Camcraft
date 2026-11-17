@@ -33,7 +33,7 @@ pub const LOAD_SLACK: f64 = 0.05;
 /// optimal x 1.2. Its rim, a cell and a half outside the cutter, stands
 /// in more wall in a concave corner (issue 2113: the corner fixtures read
 /// 14.6% and 16.7% of D there, against 13.1% and 14.7% on D/120 and
-/// 12.7% on D/240 - optimal 14.6%).
+/// 14.2% on D/240 (the same 60 x 40 pocket) - optimal 14.6%).
 pub const LOAD_CEILING_D80: f64 = 0.2;
 
 pub fn poly(pts: &[(f64, f64)]) -> Region {

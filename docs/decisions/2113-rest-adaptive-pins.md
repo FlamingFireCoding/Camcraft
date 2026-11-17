@@ -18,10 +18,10 @@
    the climb 3 mm corners and the conventional 3.5 mm corners with 0.3 mm
    left. Readings (optimal 14.6% of D): 14.6% and 16.7% on D/80, 13.1%
    and 14.7% on D/120.
-3. **A corner assertion on D/240**: a 26 x 22 pocket with 3.5 mm
+3. **A corner assertion on D/240**: a 60 x 40 pocket with 3.5 mm
    corners, cut conventionally with 0.3 mm left (the worst case above),
-   fits the measuring stock's 4096 cells a side (1680 x 1440) and reads
-   12.7% of D, held to the planner's own margin (optimal x 1.05).
+   fits the measuring stock's 4096 cells a side (3720 x 2520) and reads
+   14.2% of D, held to the planner's own margin (optimal x 1.05).
 
 **Why**
 
@@ -39,3 +39,19 @@ test green, and the load was pinned only on the planner's own grid.
 
 A planner change that moves a corner reading on D/80 past 17.6% of D
 fails `on_the_default_measuring_grid_...`; the ceiling is one constant.
+
+**Merge compatibility (PR #2114 refresh)**
+
+Main's travel-budget refusal rejects the former 26 x 22 fine-grid
+fixture: 199 mm out of cut for 64 mm in cut exceeds its 3x limit. Keep
+that refusal and use the same 60 x 40, 3.5 mm corner fixture as the
+default-grid conventional test instead. It leaves 0.3 mm on the walls
+and passes the unchanged corner-only bound (11 mm), load margin (optimal
+x 1.05), and residual-area assertion. Both depths independently read
+14.2027% of D and leave no in-reach residue. The 1 mm stock margin gives
+(60 + 2) / (4 / 240) = 3720 columns and (40 + 2) / (4 / 240) = 2520 rows,
+below 4096; the test pins these dimensions and the actual D/240 cell.
+Loosening the travel budget or the load ceiling was considered and
+dropped because both are safety checks. Nearby smaller fixtures also
+failed the preserved travel or load refusal; a known legal full-size
+fixture makes the independent-grid comparison match the other yardsticks.

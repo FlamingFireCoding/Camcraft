@@ -279,14 +279,17 @@ fn on_the_default_measuring_grid_the_load_stays_under_its_documented_ceiling() {
 /// not the path's.
 #[test]
 fn on_a_fine_grid_the_corners_read_within_the_planning_margin() {
-    let region = filleted(&rect(0.0, 0.0, 26.0, 22.0), 3.5);
+    let region = filleted(&rect(0.0, 0.0, 60.0, 40.0), 3.5);
     let mut sim = Sim::on_grid(&region, TOOL_D / 240.0);
+    let columns = sim.dex.columns().unwrap();
+    assert_eq!((columns.nx(), columns.ny()), (3720, 2520), "D/240 stays below the 4096-cell limit");
+    assert_eq!(columns.cell(), TOOL_D / 240.0, "the independent measuring grid stays at D/240");
     let stock = roughed(&region, &mut sim, BOTTOM);
     let p = PocketParams { climb: false, stock_to_leave: 0.3, ..rest_params() };
     let path = rest_adaptive(&region, &p, &stock).unwrap();
     // Only corners: every feed within a corner's reach of two walls.
     for m in path.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
-        let (dx, dy) = (m.to.x.min(26.0 - m.to.x), m.to.y.min(22.0 - m.to.y));
+        let (dx, dy) = (m.to.x.min(60.0 - m.to.x), m.to.y.min(40.0 - m.to.y));
         assert!(dx < 11.0 && dy < 11.0, "a feed at ({}, {}) is outside the corners", m.to.x, m.to.y);
     }
     let r = read_leaving(&path, &region, &mut sim, 0.3);
