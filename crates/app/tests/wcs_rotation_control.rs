@@ -4,12 +4,9 @@
 //!
 //! Gate map (#2361): covers app::commands, motion::drilling, geometry::geo2d, app::geometry,
 //! app::machine, app::model, app::operation, app::posting, app::schema, geometry::geometry::stock,
-//! app::world, tools::catalog.
+//! app::world, tools::catalog, app::stock_sim.
 //!
 //! Provenance: our own integration suite for rotated work offsets; no vendor material consulted.
-//!
-//! Gate map (#2361): covers app::commands, app::operation (generate),
-//! app::posting, app::stock_sim.
 
 use std::fs;
 use std::path::PathBuf;

@@ -34,6 +34,17 @@ fn count(file: &str, krate: &str) -> usize {
 /// #2361: rotated WCS coverage must run when its app entry points change.
 #[test]
 fn wcs_rotation_control_is_selected_for_its_app_entry_points() {
+    let src = scan::read(&root().join("crates/app/tests/wcs_rotation_control.rs"));
+    assert_eq!(src.matches("Gate map").count(), 1, "the WCS suite must have one combined map");
+    let map = scan::gate_map(&src).expect("WCS control gate map");
+    let modules: Vec<_> = map.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':')).collect();
+    for must in [
+        "app::commands", "motion::drilling", "geometry::geo2d", "app::geometry",
+        "app::machine", "app::model", "app::operation", "app::posting", "app::schema",
+        "geometry::geometry::stock", "app::world", "tools::catalog", "app::stock_sim",
+    ] {
+        assert!(modules.contains(&must), "WCS control map must retain {must}: {map}");
+    }
     for file in [
         "crates/app/src/commands/mod.rs",
         "crates/app/src/operation/mod.rs",
