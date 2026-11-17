@@ -431,7 +431,11 @@ fn viewport_panel(
     state.viewport_rect = ([rx0, ry0], [rx1, ry1]);
     let pal = theme::current();
     super::file_drop::paint_hint(ui, resp.rect, &pal);
-    let hot = resp.hovered();
+    // #2257: the progress overlay while a toolpath generates.
+    // A press on it (Cancel) is the overlay's, never a viewport pick.
+    let overlay = super::gen_overlay::paint(ui, resp.rect, state, &pal);
+    let over_overlay = overlay.is_some_and(|r| ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| r.contains(p)));
+    let hot = resp.hovered() && !over_overlay;
     state.viewport_hot = hot;
     let (rw, rh) = (rx1 - rx0, ry1 - ry0);
     // The M1.5 corner furniture, laid out from the pane rect alone: the

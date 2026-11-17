@@ -83,6 +83,7 @@ fn empty_egui_meshes_are_filtered_before_gpu_submission() {
 mod face_origin;
 mod geo_row_hover;
 mod selection_frame_cost;
+mod generate_progress;
 mod frame_cost_caches;
 mod frame_cost_probe;
 mod pick_mode;

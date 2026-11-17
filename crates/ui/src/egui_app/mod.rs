@@ -189,6 +189,7 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
 // #155: Pause / Home entry rows and their menu.
