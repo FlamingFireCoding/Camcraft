@@ -353,3 +353,35 @@ fn dialog_and_post_page_offer_end_units_only_for_supported_posts() {
         EndUnits::Leave
     );
 }
+
+/// #2292: the Post dialog's scope line shows the full path of a shipped post
+/// script beside its name (`posting::builtin_post_path`), so a user can see
+/// which script will run. A user file already names itself through
+/// `post_ref_label`, so only a registry entry gets the path suffix.
+#[test]
+fn post_dialog_shows_the_shipped_post_path() {
+    use camcraft_app::posting;
+    use camcraft_app::schema::PostRef;
+    let mut state = State::new();
+    assert_eq!(posting::post_of(&state.world), PostRef::Builtin);
+
+    let path = posting::post_path(&PostRef::Builtin)
+        .expect("shipped post resolves on desktop");
+
+    state.pending.push_back(CommandKind::PostProgramDialog);
+    state.drain_actions();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1100.0, 900.0))
+        .build_ui_state(frame, state);
+    h.run();
+    assert!(
+        h.query_by_label_contains(&path).is_some(),
+        "the Post dialog scope names the built-in post's path (status: {})",
+        h.state().status
+    );
+    assert!(
+        h.query_by_label_contains("Fanuc (built-in)").is_some(),
+        "the post name is still shown beside the path"
+    );
+}
+
