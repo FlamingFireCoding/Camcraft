@@ -18,7 +18,6 @@
 //! Provenance: our own page law over the egui_kittest AccessKit tree; no
 //! HSMWorks material involved.
 
-use egui_kittest::kittest::NodeT;
 
 use super::structural::{at, at_where, painted};
 use super::*;
@@ -224,19 +223,18 @@ fn layout_page_setup_tools() {
     assert_page_layout(&h, "Setup tool list", &["Tools in this setup", "Export tool list…", "Export setup sheets…"]);
 }
 
-/// The Debug info window: inside the screen, its Copy button inside it.
+/// The Debug info panel (a dock tab since #2262): inside the screen, its
+/// Copy button inside its tab's leaf.
 #[test]
 fn layout_window_debug_info() {
     let _g = snapshot_guard();
     let mut h = shell_harness();
-    h.state_mut().state.debug_info_open = true;
+    h.state_mut().state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
     h.run_steps(3);
+    assert!(h.state().state.debug_info_open, "Debug info panel: not open");
     let screen = h.ctx.content_rect();
-    let Some(win) = h.query_all_by_role(egui::accesskit::Role::Window).find(|n| n.accesskit_node().label().as_deref() == Some("Debug info")) else {
-        panic!("Debug info window: not open");
-    };
-    let wr = win.rect();
-    assert!(screen.contains_rect(wr), "Debug info window: {wr:?} leaves the screen {screen:?}");
-    let copy = win.get_by_label("Copy").rect();
-    assert!(wr.contains_rect(copy), "Debug info window: Copy {copy:?} leaves the window {wr:?}");
+    let leaf = super::layout::leaf_rect(&h.state().dock, &Tab::DebugInfo).expect("Debug info panel: not docked");
+    assert!(screen.contains_rect(leaf), "Debug info panel: leaf {leaf:?} leaves the screen {screen:?}");
+    let copy = h.get_by_label("Copy").rect();
+    assert!(leaf.contains_rect(copy), "Debug info panel: Copy {copy:?} leaves its leaf {leaf:?}");
 }
