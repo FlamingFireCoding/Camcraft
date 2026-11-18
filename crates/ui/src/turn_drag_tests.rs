@@ -144,11 +144,10 @@ fn a_still_frame_walks_no_facets_and_a_turn_walks_them_again() {
     }
     assert_eq!(computes(&state), once, "an unchanged document walks the facets no more");
     run(&mut state, CommandKind::TurnModelBy { name: "part".into(), axis: 2, angle_rad: FRAC_PI_2 });
-    let walked = computes(&state);
-    assert!(walked > once, "a turn walks them again");
     assert!(rings(&state).is_some());
+    assert_eq!(computes(&state), once + 1, "a turn walks them once again");
     assert_eq!(rings_px(&state).len(), 3);
-    assert_eq!(computes(&state), walked, "and then holds again");
+    assert_eq!(computes(&state), once + 1, "and then holds again");
 }
 
 #[test]
