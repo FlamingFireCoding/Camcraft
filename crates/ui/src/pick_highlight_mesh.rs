@@ -8,6 +8,7 @@ use crate::pick_highlight::{
     resolved_selected,
 };
 use crate::state::State;
+use std::sync::Arc;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct MeshKey {
@@ -27,7 +28,18 @@ pub(crate) struct MeshKey {
 
 pub(crate) struct CachedMesh {
     key: MeshKey,
-    mesh: Option<egui::Mesh>,
+    /// `Shape::Mesh` holds an `Arc<Mesh>`: a cache hit sends a clone of
+    /// the `Arc`, not a deep copy of the vertices.
+    mesh: Option<Arc<egui::Mesh>>,
+}
+
+/// One screen-mesh slot: the last mesh and its key, and the number of
+/// times this slot tessellated. The count pins the cache: a still frame
+/// adds nothing to it (crates/ui/AGENTS.md, "Frame cost").
+#[derive(Default)]
+pub(crate) struct MeshSlot {
+    cached: Option<CachedMesh>,
+    pub(crate) builds: u64,
 }
 
 fn push_screen_polyline_runs(
@@ -158,7 +170,7 @@ fn paint_batched(
     halo_px: f32,
     ink: egui::Color32,
     halo: egui::Color32,
-    get_slot: impl Fn(&mut HighlightInner) -> &mut Option<CachedMesh>,
+    get_slot: impl Fn(&mut HighlightInner) -> &mut MeshSlot,
 ) {
     if !aspect.is_finite()
         || aspect <= 0.0
@@ -191,11 +203,11 @@ fn paint_batched(
     };
     {
         let mut inner = lock(state);
-        if let Some(cached) = get_slot(&mut inner)
+        if let Some(cached) = &get_slot(&mut inner).cached
             && cached.key == key
         {
             if let Some(m) = &cached.mesh {
-                painter.add(egui::Shape::mesh(m.clone()));
+                painter.add(egui::Shape::mesh(Arc::clone(m)));
             }
             return;
         }
@@ -211,12 +223,15 @@ fn paint_batched(
         halo_px,
         ink,
         halo,
-    );
+    )
+    .map(Arc::new);
     if let Some(m) = &mesh {
-        painter.add(egui::Shape::mesh(m.clone()));
+        painter.add(egui::Shape::mesh(Arc::clone(m)));
     }
     let mut inner = lock(state);
-    *get_slot(&mut inner) = Some(CachedMesh { key, mesh });
+    let slot = get_slot(&mut inner);
+    slot.builds = slot.builds.saturating_add(1);
+    slot.cached = Some(CachedMesh { key, mesh });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -299,3 +314,7 @@ pub(crate) fn paint_row_hover(
         |inner| &mut inner.row_hover_mesh,
     );
 }
+
+#[cfg(test)]
+#[path = "pick_highlight_mesh_tests.rs"]
+mod tests;

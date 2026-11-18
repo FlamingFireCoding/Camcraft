@@ -96,12 +96,13 @@ pub(crate) struct HighlightInner {
     pub(crate) next_id: u64,
     pub(crate) selection_builds: u64,
     pub(crate) hover_builds: u64,
+    pub(crate) row_hover_builds: u64,
     selection: Option<(Key, Arc<ResolvedHighlights>)>,
     hover: Option<(Key, Arc<ResolvedHighlights>)>,
     row_hover: Option<(Key, Arc<ResolvedHighlights>)>,
-    pub(crate) selected_mesh: Option<crate::pick_highlight_mesh::CachedMesh>,
-    pub(crate) hover_mesh: Option<crate::pick_highlight_mesh::CachedMesh>,
-    pub(crate) row_hover_mesh: Option<crate::pick_highlight_mesh::CachedMesh>,
+    pub(crate) selected_mesh: crate::pick_highlight_mesh::MeshSlot,
+    pub(crate) hover_mesh: crate::pick_highlight_mesh::MeshSlot,
+    pub(crate) row_hover_mesh: crate::pick_highlight_mesh::MeshSlot,
 }
 
 /// Per-`State` cache of resolved pick outlines and batched screen meshes.
@@ -125,11 +126,18 @@ pub(crate) fn selection_builds(state: &State) -> u64 {
     lock(state).selection_builds
 }
 
-/// Number of times a hover or row-hover outline was rebuilt for this state.
+/// Number of times the viewport hover outline was rebuilt for this state.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn hover_builds(state: &State) -> u64 {
     lock(state).hover_builds
+}
+
+/// Number of times the panel row-hover outline was rebuilt for this state.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn row_hover_builds(state: &State) -> u64 {
+    lock(state).row_hover_builds
 }
 
 fn append_feature(
@@ -274,7 +282,7 @@ pub(crate) fn resolved_hover(state: &State) -> Arc<ResolvedHighlights> {
 
 pub(crate) fn resolved_row_hover(state: &State) -> Arc<ResolvedHighlights> {
     let key = Key::of(state, state.geo_hover_drawn.clone().into_iter().collect());
-    resolve_cached(state, key, |i| &mut i.row_hover, |i| &mut i.hover_builds)
+    resolve_cached(state, key, |i| &mut i.row_hover, |i| &mut i.row_hover_builds)
 }
 
 /// Project cached world polylines (and optional vertex crosses) to viewport UV segments.

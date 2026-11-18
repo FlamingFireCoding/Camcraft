@@ -18,9 +18,11 @@ use crate::stock::StockShape;
 mod chain_memo;
 mod patch_memo;
 mod geometry;
+mod toolpath;
 
 pub use chain_memo::{chain_walks, resolve_chain};
 pub use patch_memo::{patch_builds, patch_rings, patches};
+pub use toolpath::toolpath_nonempty;
 pub use geometry::{feature_digests, features_of, features_of_local, features_of_shared, geometry_signature};
 use crate::tools::Tool;
 
@@ -280,25 +282,6 @@ pub fn has_toolpath(world: &World, entity: &Entity) -> bool {
         .entity_view(world)
         .try_get::<&Toolpath>(|_| ())
         .is_some()
-}
-
-/// True when the operation has a cached toolpath with at least one move
-/// (without cloning the move vector).
-#[must_use]
-pub fn toolpath_nonempty(world: &World, entity: &Entity) -> bool {
-    entity
-        .entity_view(world)
-        .try_get::<&Toolpath>(|t| !t.path.is_empty())
-        .unwrap_or(false)
-}
-
-/// Count of warnings on an operation's cached toolpath without cloning it.
-#[must_use]
-pub fn toolpath_warning_count(world: &World, entity: &Entity) -> usize {
-    entity
-        .entity_view(world)
-        .try_get::<&Toolpath>(|t| t.warnings.len())
-        .unwrap_or(0)
 }
 
 /// Facets with the entity's rigid transform applied - the frame the

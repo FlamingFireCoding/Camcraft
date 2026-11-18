@@ -12,11 +12,17 @@ caches whose key is the input itself (crates/ui/AGENTS.md, "Frame cost",
   same as the key of `pick_line_memo`: the picks by value, and for each
   picked body its display-off flag, its entity, its `Arc<Features>`
   allocation and its view pose.
-- `pick_highlight_mesh`: the batched screen meshes of these outlines.
+- `pick_highlight_mesh`: the batched screen meshes of these outlines,
+  in three slots (selected, viewport hover, row hover). The key is
+  `MeshKey`: the outline id, the camera matrix, the pane mapping, the
+  clip, the pixels per point, the widths and the colours. Each slot
+  (`MeshSlot`) has its own build counter. A hit sends a clone of the
+  `Arc<Mesh>`, not a deep copy.
 - `geometry::feature`: the `[Option<Pos>; 3]` digest (the same hash as the
   `Vec` form) and one `patch_lattice()` call for `patches` and
   `patch_rings`.
-- `model::toolpath_nonempty` and `model::toolpath_warning_count`.
+- `model::toolpath_nonempty`, in `model/toolpath.rs` (model.rs is past
+  400 lines). `toolpath_warning_count` had no caller and is removed.
 
 **Why.** Main now has input-keyed memos for the same work:
 `model::features_of` (Weak memo), `model::resolve_chain`, `model::patches`,
@@ -44,6 +50,32 @@ by a document counter, and the review asked for counter and changed-input
 tests for each. Main's memos cover the scene and the pick lines. A panel
 cache comes back only with a measurement and an input key.
 
+**Hand-resolved hunk of the second refresh (main at `ed4a9940f`).**
+
+- `egui_app/tests.rs` module list: both sides added one module at the
+  same place (`highlight_perf` and main's `pocket_no_adaptive`). Both are
+  kept. #2484 (shared pick names) merged without a conflict: its
+  `geo_label` status lines in `interact.rs` and its chip names in
+  `state.rs` stay as main has them.
+
+**Counters split.** The outline cache counted the viewport hover and the
+row hover in one counter. Each now has its own (`hover_builds`,
+`row_hover_builds`), so each slot has its own pin.
+
 **Cost to change later.** Low. Each kept cache is one module with a counter
-test and changed-input tests (`pick_highlight_tests.rs`,
-`frame_cache_tests.rs`).
+test and changed-input tests:
+
+- `frame_cache_tests.rs`: the world-vertex cache.
+- `pick_highlight_tests.rs`: the outline cache (row hover and viewport
+  hover, each with its own counter).
+- `pick_highlight_mesh_tests.rs`: the screen-mesh cache. For each of the
+  three slots, a still frame tessellates once, and an orbit, a pane
+  resize and an ink change each tessellate again with moved or recoloured
+  painted vertices.
+
+**Not done here (review non-blockers, left open).** The vertex cache keeps
+one entry for each pose of a live body (bounded at 32), the vertex cache
+hit still clones the vertex vector, and the law tests of
+`interact::hover_features` / `row_hover_segments` use
+`pick_highlight::project_segments`, not the production projection in
+`pick_highlight_mesh`.
