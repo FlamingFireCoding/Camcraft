@@ -32,6 +32,7 @@
 use crate::machining2d::GenError;
 
 use super::blade;
+pub use super::thread_dips::ThreadDips;
 
 /// The most spring passes a plan may ask for - a two-digit finishing
 /// count is what the lathe cycles carry (99 finishing passes, one of
@@ -80,6 +81,16 @@ pub struct ThreadInfeed {
     pub finish_allowance: f64,
     /// Extra passes at full depth after the finishing pass.
     pub spring_passes: u32,
+    /// Cut every roughing depth twice before stepping deeper (issue
+    /// #418, "spring at each depth"): the repeat is the very same pass,
+    /// so it can only clean what the first cut left. The finishing and
+    /// spring passes at the root are not repeated. Off by default -
+    /// tooling makers advise against routine spring passes.
+    pub repeat_each_depth: bool,
+    /// In-pass chip-break dips on the roughing passes (issue #419), off
+    /// by default. G32 passes on a post that declares continuous
+    /// threading only.
+    pub dips: ThreadDips,
 }
 
 impl Default for ThreadInfeed {
@@ -95,6 +106,8 @@ impl Default for ThreadInfeed {
             min_depth: 0.05,
             finish_allowance: 0.0,
             spring_passes: 0,
+            repeat_each_depth: false,
+            dips: ThreadDips::default(),
         }
     }
 }
@@ -120,6 +133,9 @@ impl ThreadInfeed {
         let a = self.allowance_refusal(depth);
         if a.is_some() {
             return a;
+        }
+        if let Some(why) = self.dips.refusal(first_depth) {
+            return Some(why);
         }
         if self.spring_passes > MAX_SPRING_PASSES {
             return Some(format!(
@@ -195,14 +211,16 @@ impl ThreadInfeed {
             && self.finish_allowance.is_finite()
             && self.finish_allowance >= 0.0
             && self.spring_passes <= MAX_SPRING_PASSES
+            && self.dips.is_sane()
     }
 
     /// The pass list from the crest `ref_top` down to the `root`, the
     /// first pass `first_depth` deep: roughing to `root +
     /// finish_allowance`, the finishing pass at the root when an
-    /// allowance stands, then the spring passes at the root. The radial
-    /// constant-depth plan with no allowance is exactly the ladder
-    /// [`blade::rungs`] lays.
+    /// allowance stands, then the spring passes at the root. With
+    /// `repeat_each_depth` every pass above the root follows itself
+    /// once more, identical (#418). The radial constant-depth plan with
+    /// no allowance is exactly the ladder [`blade::rungs`] lays.
     pub fn passes(&self, ref_top: f64, root: f64, first_depth: f64) -> Result<Vec<Pass>, GenError> {
         let height = ref_top - root;
         if !(height > 0.0 && first_depth > 0.0 && first_depth.is_finite()) {
@@ -224,7 +242,9 @@ impl ThreadInfeed {
             InfeedMethod::Radial => 0.0,
             _ => self.flank_angle.to_radians().tan(),
         };
-        let mut out = Vec::with_capacity(tips.len());
+        let mut out = Vec::with_capacity(tips.len().saturating_mul(2));
+        // The alternation counts DEPTHS, not cuts: a repeated depth
+        // keeps its own side, so its repeat is the same pass.
         for (j, &tip) in tips.iter().enumerate() {
             let back = (tip - root).max(0.0) * tan;
             let shift = match self.method {
@@ -233,7 +253,11 @@ impl ThreadInfeed {
                 InfeedMethod::Alternating if j % 2 == 0 => -back,
                 InfeedMethod::Alternating => back,
             };
-            out.push(Pass { tip, shift });
+            let pass = Pass { tip, shift };
+            out.push(pass);
+            if self.repeat_each_depth && tip > root + super::revolve::HAIR {
+                out.push(pass);
+            }
         }
         Ok(out)
     }

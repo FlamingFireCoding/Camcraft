@@ -11,6 +11,7 @@
 
 use crate::geo2d::{Point2, Region};
 
+pub mod open_slot;
 mod split;
 pub use split::{BoundaryError, sides_of_chain, snap_turn};
 

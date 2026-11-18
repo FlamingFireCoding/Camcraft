@@ -18,6 +18,17 @@ coolantModes = true; // reads PARAM Coolant (#112/#150): the engine refuses non-
 afterModes = true; // reads PARAM AfterOperation (#110): the engine refuses a stop or home ask for a post without it
 liveTooling = true;  // voices PARAM LiveTool sections (issue #33): the engine refuses them for a post without it
 threadHands = true;  // reads PARAM SpindleDirection (#629): the engine refuses a reverse-spindle thread for a post without it
+// Continuous thread cutting (issue #419): posts chip-break dips (PARAM
+// ChipBreakDips) as G32 X Z F segments inside one unbroken G32 chain;
+// the engine refuses dips for a post without it. Cited from FANUC
+// Series 0i-TD/0i Mate-TD USER'S MANUAL (For Lathe System) B-64304EN-1,
+// Part II: section 3.4 "Continuous Threading" (consecutive threading
+// blocks keep synchronism with the spindle at the joint between
+// blocks); section 3.2 "Constant Lead Threading (G32)" WARNING 6 (a
+// threading block following a threading block starts without waiting
+// for the one-spindle-rotation signal) and its taper rule (G32 cuts
+// tapers; at a taper angle up to 45 degrees the lead F is the Z lead).
+continuousThreading = true;
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; extended offsets not verified for this control (#931)
 // Explain G-code (#1399): what this control's words mean where the mill
@@ -32,6 +43,11 @@ explainWords = {
 };
 explainTool = "station-offset";
 programUnits = "mm inch"; // #902 / #977: writes the document's unit (postOptions.Units), G21 / G20
+
+// #1388: optional explanations; conservative house budgets, not control maxima.
+explains = "paren";
+commentMax = 60;
+explainBlockMax = 80;
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -66,6 +82,10 @@ programUnits = "mm inch"; // #902 / #977: writes the document's unit (postOption
 //    live-tool section is refused on an inch program: its composite
 //    rotary feed law was not confirmed for inch input from the public
 //    manuals, so it is never guessed.
+//  - DECIMAL POINT (#1836): every length, lead, feed per rev and C angle
+//    word carries its decimal point (Z14., F2.), so the control reads
+//    the same value with parameter 3401#0 DPI=0 or DPI=1. The no-point
+//    increment words above take no point on the control.
 //  - G97 constant rpm, from the stream's SpindleSpeed; G96 constant
 //    surface speed ONLY when the stream states a SurfaceSpeed (m/min)
 //    PARAM - the post never invents a surface speed from an rpm. G50
@@ -91,6 +111,18 @@ programUnits = "mm inch"; // #902 / #977: writes the document's unit (postOption
 //    chuck, -Z, by default). Two half-turns at one radius are one lead
 //    of Z travel under G32 with F = lead (mm/rev). Anything else in XY
 //    is refused.
+//  - Chip-break dips (issue #419, continuousThreading above): a thread
+//    half-turn whose end radius differs from its start is a dip segment
+//    of the pass's chain, written G32 X(end dia) Z F(lead) - the taper
+//    form, F still the Z lead. Posted only when it CONTINUES the chain
+//    (the block before it was a G32: a fresh G32 would wait for the
+//    index and restart mid-thread, never posted), stays under 45
+//    degrees (diameter change below its Z travel, or the control
+//    would read F as the X lead and move the helix), and never stands
+//    inside the radius the chain's plunge put the tool at (a dip only
+//    lifts). Anything else is refused by name. The dip layout itself
+//    is the kernel's and the verdict's (no dip in the first or last
+//    lead, none on the finishing or spring passes).
 //  - The thread's HAND (#629) is never dropped. The stream's +Z is the
 //    free end, the chuck below. A half-turn clockwise seen from +Z is
 //    the tool's motion about a part turning M03 (clockwise seen from
@@ -112,6 +144,24 @@ programUnits = "mm inch"; // #902 / #977: writes the document's unit (postOption
 //    explicit passes inside the record are skipped.
 //    A straight external thread only; a record out of range, or thread
 //    passes with no record, is refused by name - never posted as G32.
+//    The words state the passes the kernel laid and the verdict judged
+//    (issue #417), read as the GSK988TA (Fanuc-compatible) G76 section
+//    defines them: pass n reaches depth max(dd*sqrt(n), previous + dmin)
+//    - dmin being the least cutting travel of a pass - up to k - d; the
+//    first finishing pass cuts d to k and the other m - 1 repeat k; with
+//    a non-zero a each pass starts tan(a/2) x its depth along Z from the
+//    start point. So d is the finishing pass's own depth (never 0 on a
+//    laid ladder, or the control would cut the root once more than was
+//    verified), and a record the cycle cannot state - alternating
+//    flank infeed, a one-pass thread, every roughing depth cut twice
+//    (issue #418: the cycle cuts each depth once), chip-break dips
+//    (issue #419: a cycle states no dip) - is refused by name.
+//    The control reads the ROUNDED words, so d is derived from their own
+//    ladder (g76Allowance): the allowance that makes the rounded Q, Q, P
+//    cut the record's rough pass count, nearest the record's allowance
+//    (inch: R0.0158 where 0.4 mm reads 0.0157 - with Q157 P472, R0.0157
+//    would add a 0.0001 in pass). More than one least increment from
+//    the record's allowance is refused by name.
 //  - Face cycles: G83 (Q peck in whole microns, the 0i-T word; P dwell
 //    in ms), G84 tap, G85 bore, cancelled by G80. A cycle off the
 //    spindle axis and a back-bore are refused - a 2-axis lathe has no
@@ -176,6 +226,9 @@ var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (world -> program)
 var clampDone = false;     // G50 once per program
 var inThread = false;      // a G76 cycle stands for the passes being skipped
 var threadSeen = false;    // inside a THREAD record's span (cycle or not)
+var chainOn = false;       // the last block written was a G32 of an open chain (#419)
+var chainTip = 0;          // |radius| the chain's plunge stood at
+var modalR = 0;            // the signed radius the last X word put the tool at
 var spinRev = false;       // PARAM SpindleDirection reverse (#629): this section's spindle runs M04
 var refused = {};          // each refusal counted once per program, by name
 var EPS = 0.0005;          // half a micron: the stream's own lattice
@@ -187,6 +240,7 @@ var lastR = 0, lastZ = 0;  // ... and the station radius / Z it stood at
 var lastPC = 0, lastPR = 0, lastPZ = 0; // ... and the same as POSTED (mm, deg; #1398)
 var liveCRate = 0;         // the machine's stated C rate (deg/min), 0 = unstated
 var liveCTravel = false;   // the machine states a C travel (#906)
+var liveCSense = 1;        // +1 right-hand about +Z, -1 clockwise (-Z axis)
 var C_TOL = 0.005;         // mm a C-turned tip may stand off the station (lattice + milli-degree words)
 var inch = false;          // the document's unit is inch (onOpen, #902/#977: postOptions.Units)
 
@@ -201,20 +255,36 @@ function fixed(v, dp) {  // dp decimals, trailing zeros trimmed
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) { return has(v) ? fixed(len(v), inch ? 4 : 3) : "0"; }  // a length: mm at three, inch at four
-function fr(v) { return has(v) ? fixed(len(v), 4) : "0"; }             // a feed per rev: mm/rev or in/rev at four
-function fl(v) { return has(v) ? fixed(len(v), inch ? 6 : 4) : "0"; }  // a thread lead: mm at four, inch at six
+// #1836: a word that takes a decimal point always carries one (`Z14.`,
+// never `Z14`). Fanuc parameter 3401 bit 0 (DPI, Series 0i parameter
+// manual) decides how the control reads a word with no point: DPI=0 reads
+// it in least increments (Z14 is 0.014 mm under IS-B), DPI=1 in mm or
+// inch. With the point, both settings read the same value.
+function pt(s) { return s.indexOf(".") >= 0 ? s : s + "."; }
+function fn(v) { return has(v) ? fixed(len(v), inch ? 4 : 3) : "0"; }  // a length as comment text: no forced point
+function fu(v) { return pt(fn(v)); }                                    // a length word: mm at three, inch at four
+function fr(v) { return pt(has(v) ? fixed(len(v), 4) : "0"); }         // a feed per rev: mm/rev or in/rev at four
+function fl(v) { return pt(has(v) ? fixed(len(v), inch ? 6 : 4) : "0"); }  // a thread lead: mm at four, inch at six
 // A no-point increment word (G76 P Q, G83 Q): whole microns under G21,
 // whole ten-thousandths of an inch (the inch least increment) under G20.
+// These addresses take no decimal point on the control, so DPI does not
+// change how it reads them.
 function incr(v) { return Math.round(inch ? Number(v) / 25.4 * 10000 : Number(v) * 1000); }
 function um(v) { return String(incr(v)); }
+function incrText(n) { return fixed(n / (inch ? 10000 : 1000), inch ? 4 : 3); }  // whole least increments as message text
+function incrLen(n) { return pt(incrText(n)); }                                   // ... and as a length word
 function ff(v) { return has(v) && v > 0 ? String(Math.round(v)) : "0"; }
 function block(words) {
   var a = [];
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    // Omit an explanation that does not fit; never cut executable words.
+    if (c && line.length + 1 + c.length <= explainBlockMax) line += " " + c;
+    writeln(line);
+  }
 }
 function msg(s) { if (typeof message === "function") message(s); else writeln("; " + s); }
 // Refuse by name, once per reason per program (per-line is noise).
@@ -240,7 +310,7 @@ function feedWord(f) {
   if (!has(f) || f <= 0) return "";                                  // modal feed stands
   if (!(sRpm > 0)) { refuse("feed per revolution needs a spindle speed - none stated"); return ""; }
   var w = fr(f / sRpm);
-  if (w === "0") { refuse("feed per revolution under the program's least increment (F0) - refused, never posted as no feed"); return ""; }
+  if (Number(w) === 0) { refuse("feed per revolution under the program's least increment (F0) - refused, never posted as no feed"); return ""; }
   return "F" + w;
 }
 function posed(p) {
@@ -366,8 +436,8 @@ var BLADE_KINDS = ["TURNING INSERT", "GROOVING BLADE", "THREADING INSERT", "FORM
 function toolNote() {  // just before the tool change it describes
   var desc = [];
   if (toolKind) desc.push(toolKind);
-  if (toolDia > 0 && BLADE_KINDS.indexOf(toolKind) < 0) desc.push("D" + fu(toolDia));
-  if (toolCr > 0) desc.push("R" + fu(toolCr));
+  if (toolDia > 0 && BLADE_KINDS.indexOf(toolKind) < 0) desc.push("D" + fn(toolDia));
+  if (toolCr > 0) desc.push("R" + fn(toolCr));
   if (toolQ > 0) desc.push("ORIENTATION " + toolQ);  // #630: the tip the program's points are for
   note(joinDash(["T" + pad2(tNo) + pad2(tNo) + (toolName ? " " + toolName : ""), desc.join(" ")]));
   toolKind = ""; toolCr = 0; toolQ = 0;
@@ -515,6 +585,7 @@ function afterOp() {
 function endPreamble() {
   if (!sectionOpen) return;
   sectionOpen = false;
+  chainOn = false;
   if (inCycle) block(["G80"]);
   inCycle = false;
   if (coolant) block(["M9"]);
@@ -531,7 +602,7 @@ function endPreamble() {
       block([liveCodes.cAxisOff]);
       block(["G99"]);
     }
-    liveAsk = false; liveOk = false; liveCodes = null; lastC = null;
+    liveAsk = false; liveOk = false; liveCodes = null; lastC = null; liveCSense = 1;
     spindleWait = false;
   } else {
     block(["M05"]);
@@ -561,9 +632,28 @@ function liveStart() {
   var hasC = false;
   liveCRate = 0;
   liveCTravel = false;
+  liveCSense = 1;
   for (var i = 0; i < rs.length; i++) {
     if (String(rs[i].name || "").toUpperCase() !== "C") continue;
     hasC = true;
+    var d = rs[i].direction;
+    if (d !== null && d !== undefined) {
+      if (!d || d.length !== 3 || !has(d[0]) || !has(d[1]) || !has(d[2])) {
+        refuse(coolantWho() + "C-axis live-tool work, but the C rotary states a non-vector direction");
+        return;
+      }
+      // Scale before squaring: finite directions can still overflow.
+      var scale = Math.max(Math.abs(d[0]), Math.abs(d[1]), Math.abs(d[2]));
+      var dx = scale > 0 ? d[0] / scale : 0;
+      var dy = scale > 0 ? d[1] / scale : 0;
+      var dz = scale > 0 ? d[2] / scale : 0;
+      var n2 = dx * dx + dy * dy + dz * dz;
+      if (!(n2 > 0) || dz * dz < 0.998 * n2) {
+        refuse(coolantWho() + "C-axis live-tool work, but the C rotary states direction [" + d[0].toFixed(3) + ", " + d[1].toFixed(3) + ", " + d[2].toFixed(3) + "], not along Z");
+        return;
+      }
+      liveCSense = d[2] < 0 ? -1 : 1;
+    }
     // A G01 is held to the C's stated feed rate; failing that, to its
     // stated rapid. Neither stated: the C rate is unbounded by data.
     var sp = rs[i].speeds || {};
@@ -585,7 +675,7 @@ function trim0(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/[.]$/, "");
   return s === "-0" ? "0" : s;
 }
-function fc(v) { return trim0(Number(v).toFixed(3)); }  // degrees, three decimals
+function fc(v) { return pt(trim0(Number(v).toFixed(3))); }  // degrees, three decimals, with its point (#1836)
 function fm(v) { return trim0(Number(v).toFixed(1)); }  // mm/min, one decimal
 // #1392: a feed held under a machine rate is judged on its POSTED word.
 // fm() rounds to nearest, so a feed within half a step of its cap could
@@ -616,17 +706,18 @@ function liveMove(p, rapid) {
     return;
   }
   var r = Math.max(xr, 0);
+  var outC = liveCSense * Number(p.C);
   // #1398: the words this move posts (X a diameter, Z origin-relative,
   // C at 0.001), read back: the caps judge what the control reads.
-  var pr = posted(fu(2 * r)) / 2, pz = posted(fu(p.Z - orgZ)), pc = Number(fc(p.C));
+  var pr = posted(fu(2 * r)) / 2, pz = posted(fu(p.Z - orgZ)), pc = Number(fc(outC));
   if (lastC === null) {
     if (!rapid) { refuse("a C-axis section that opens with a cut - the first move must position C"); return; }
-    block(["G00", "C" + fc(p.C)]);
+    block(["G00", "C" + fc(outC)]);
     block(["G00", xWord(r), zWord(p.Z)]);
   } else {
     // The control's composite rate counts C degrees as mm; the planned
     // rate is along the part-frame chord. Scale F by their ratio.
-    var dc = Number(p.C) - lastC, dr = r - lastR, dz = p.Z - lastZ;
+    var dc = outC - lastC, dr = r - lastR, dz = p.Z - lastZ;
     var lcmd = Math.sqrt(dr * dr + dz * dz + dc * dc);
     var sx = p.X - p.StartX, sy = p.Y - p.StartY, sz = p.Z - p.StartZ;
     var ltrue = Math.sqrt(sx * sx + sy * sy + sz * sz);
@@ -663,9 +754,9 @@ function liveMove(p, rapid) {
       refuse(fc_ >= capF ? "a C-axis feed whose machine-rate cap leaves under 0.1 mm/min - the F word would be F0; state a faster C rate or maximum feed" : "a C-axis feed under 0.1 mm/min - the F word would be F0");
       return;
     }
-    block(["G01", xWord(r), zWord(p.Z), "C" + fc(p.C), "F" + fw]);
+    block(["G01", xWord(r), zWord(p.Z), "C" + fc(outC), "F" + fw]);
   }
-  lastC = Number(p.C); lastR = r; lastZ = p.Z;
+  lastC = outC; lastR = r; lastZ = p.Z;
   lastPC = pc; lastPR = pr; lastPZ = pz;
 }
 
@@ -673,7 +764,7 @@ function liveMove(p, rapid) {
 // program's unit: mm unchanged, inch named so the number is not read as mm.
 function onPartLoading() {
   var a = properties.Advance;
-  writeComment("PART LOAD" + (a > 0 ? " ADVANCE " + (inch ? fu(a) + " IN" : fu(a)) : ""));
+  writeComment("PART LOAD" + (a > 0 ? " ADVANCE " + (inch ? fn(a) + " IN" : fn(a)) : ""));
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
@@ -715,6 +806,8 @@ function onRapid() {
   if (posed(p) || inThread || chainRapid(p)) return;
   var r = radiusOf(p.X, p.Y, "rapid");
   if (r === null) return;
+  chainOn = false;
+  modalR = r;
   block(["G00", xWord(r), zWord(p.Z)]);
 }
 function onLinear() {
@@ -725,6 +818,8 @@ function onLinear() {
   if (posed(p) || inThread || chainCut(p)) return;
   var r = radiusOf(p.X, p.Y, "feed move");
   if (r === null) return;
+  chainOn = false;
+  modalR = r;
   block(["G01", xWord(r), zWord(p.Z), feedWord(p.FeedRate)]);
 }
 
@@ -738,6 +833,8 @@ function meridianArc(p) {
   var rc = yz ? radiusOf(orgX, c.J, "arc centre") : radiusOf(c.I, orgY, "arc centre");
   if (r0 === null || r1 === null || rc === null) return;
   if (!has(c.K)) { refuse("arc without a K centre word"); return; }
+  chainOn = false;
+  modalR = r1;
   var cw = p.CircularDirection === "CW";
   if (yz) cw = !cw;                       // the +Y meridian seen from +Y is mirrored
   block([
@@ -748,19 +845,24 @@ function meridianArc(p) {
   ]);
 }
 
-// An XY arc is a thread half-turn: centre on the axis, one radius at
-// both ends, antipodal ends - a synchronized half lead of Z. G32 with
-// F = lead; the X word stays modal (the plunge put the tool there).
+// An XY arc is a thread half-turn: centre on the axis, antipodal ends -
+// a synchronized half lead of Z. G32 with F = lead. One radius at both
+// ends: the X word stays modal (the plunge put the tool there). A
+// changed radius is a chip-break dip segment (issue #419, the law in
+// the header): G32 X Z F inside the open chain, or a refusal by name.
 function threadHalfTurn(p) {
   var c = p.IJKIncrement || {};
   if (!has(c.I) || !has(c.J)) { refuse("thread half-turn without an I J centre"); return; }
   var ok = Math.abs(c.I - orgX) <= EPS && Math.abs(c.J - orgY) <= EPS;
-  var rho0 = Math.sqrt(Math.pow(p.StartX - orgX, 2) + Math.pow(p.StartY - orgY, 2));
-  var rho1 = Math.sqrt(Math.pow(p.X - orgX, 2) + Math.pow(p.Y - orgY, 2));
-  ok = ok && Math.abs(rho0 - rho1) <= EPS;
-  ok = ok && Math.abs(p.StartX + p.X - 2 * c.I) <= EPS && Math.abs(p.StartY + p.Y - 2 * c.J) <= EPS;
+  var ax = p.StartX - c.I, ay = p.StartY - c.J, bx = p.X - c.I, by = p.Y - c.J;
+  var rho0 = Math.sqrt(ax * ax + ay * ay);
+  var rho1 = Math.sqrt(bx * bx + by * by);
+  // Antipodal: the ends on one line through the axis, either side.
+  // (2 microns of slack: a dip's two ends round to the lattice apart.)
+  ok = ok && Math.abs(ax * by - ay * bx) <= 0.002 * Math.max(rho0, rho1, 1) && ax * bx + ay * by < 0;
   if (!ok) { refuse("XY arc that is not a thread half-turn about the spindle axis"); return; }
-  var lead = 2 * Math.abs(p.Z - p.StartZ);
+  var dz = Math.abs(p.Z - p.StartZ);
+  var lead = 2 * dz;
   if (!(lead > 0)) { refuse("thread half-turn with no lead"); return; }
   if (g76Wanted() && !threadSeen) {
     refuse("G76 threading cycle chosen but the stream carries no thread cycle record for these passes - regenerate the thread, or choose G32 passes");
@@ -774,7 +876,26 @@ function threadHalfTurn(p) {
     refuse("thread half-turn turns " + (cw ? "clockwise" : "counter-clockwise") + " seen from +Z but the spindle runs " + (spinRev ? "M04" : "M03") + " - it would cut the other hand; regenerate the thread");
     return;
   }
-  block(["G32", zWord(p.Z), "F" + fl(lead)]);
+  if (!chainOn) chainTip = Math.abs(modalR);
+  if (Math.abs(rho0 - rho1) <= EPS) {
+    chainOn = true;
+    block(["G32", zWord(p.Z), "F" + fl(lead)]);
+    return;
+  }
+  if (!chainOn) {
+    refuse("chip-break dip that does not continue a G32 chain - a new G32 waits for the spindle index and restarts mid-thread; never posted");
+    return;
+  }
+  if (!(2 * Math.abs(rho1 - rho0) < dz)) {
+    refuse("chip-break dip steeper than 45 degrees - past 45 the control reads F as the X lead and the helix moves");
+    return;
+  }
+  if (rho1 < chainTip - EPS || rho0 < chainTip - EPS) {
+    refuse("chip-break dip deeper than the pass it rides - a dip only lifts");
+    return;
+  }
+  modalR = modalR < 0 ? -rho1 : rho1;
+  block(["G32", xWord(modalR), zWord(p.Z), "F" + fl(lead)]);
 }
 
 function onCircular() {
@@ -798,6 +919,12 @@ function g76Why(p, r0, r1) {
   for (var i = 0; i < nums.length; i++) if (!has(nums[i])) return "the thread record is missing a number";
   if (!(p.Lead > 0)) return "no lead";
   if (!(p.ThreadHeight > 0)) return "no thread height";
+  if (p.Alternating === true) return "alternating flank infeed is not a G76 cycle (the cycle infeeds along one flank only) - choose G32 passes, or radial or flank infeed";
+  if (p.RepeatEachDepth === true) return "repeat each roughing depth is not a G76 cycle (the cycle cuts each depth once) - choose G32 passes, or turn the repeat off";
+  if (p.ChipBreakDips === true) return "chip-break dips are not a G76 cycle (the cycle states no dip) - choose G32 passes, or turn the dips off";
+  if (has(p.FinishAllowance) && p.FinishAllowance >= p.ThreadHeight - EPS) {
+    return "a one-pass thread is not a G76 cycle (the cycle always roughs before its finishing pass) - choose G32 passes, or a first-pass depth under the thread height";
+  }
   if (!(p.FirstDepth > 0 && p.FirstDepth <= p.ThreadHeight + EPS)) return "first-pass depth outside the thread height";
   if (!(p.MinimumDepth > 0 && p.MinimumDepth <= p.ThreadHeight + EPS)) return "minimum depth outside the thread height";
   if (!(p.FinishAllowance >= 0 && p.FinishAllowance < p.ThreadHeight)) return "finish allowance outside the thread height";
@@ -823,6 +950,47 @@ function g76Why(p, r0, r1) {
   return null;
 }
 
+// R from the ROUNDED words (PR #517 review). The control works on the
+// posted words, each rounded to the least increment on its own, not on
+// the record's numbers: rung n of its rough ladder reaches
+// max(Q2*sqrt(n), rung n-1 + Q1) and roughing stops at the first rung
+// at or past P2 - R (that pass is cut to P2 - R). The record's own
+// ladder (mm) reaches its last rough depth at rung N, so the control
+// cuts the same N rough passes exactly when rung N-1 < P2 - R <= rung N
+// on the rounded words. R is the allowance in that window nearest the
+// record's finish allowance; one more than one least increment away
+// from it is refused by name - the words would state a pass schedule
+// that was not verified. A string is the refusal reason; a number is R
+// in least increments (same lattice as the P/Q words: 0.001 mm, 0.0001 in).
+function g76Allowance(p) {
+  var target = p.ThreadHeight - p.FinishAllowance;
+  var prev = 0, N = 0, n, a;
+  for (n = 1; n <= 1000; n++) {
+    a = Math.max(p.FirstDepth * Math.sqrt(n), prev + p.MinimumDepth);
+    if (a >= target - EPS) { N = n; break; }
+    prev = a;
+  }
+  if (N === 0) return "the rough ladder takes over 1000 passes";
+  var dd = incr(p.FirstDepth), dmin = incr(p.MinimumDepth), k = incr(p.ThreadHeight), f = incr(p.FinishAllowance);
+  var lo = 0, hi = 0;
+  prev = 0;
+  for (n = 1; n <= N; n++) {
+    a = Math.max(dd * Math.sqrt(n), prev + dmin);
+    lo = prev; hi = a; prev = a;
+  }
+  // Last rough depth (P2 - R, whole increments) the control stops at
+  // after exactly N passes: above rung N-1, at or below rung N.
+  var bottom = Math.floor(lo + 1e-6) + 1, top = Math.floor(hi + 1e-6);
+  var t = Math.min(Math.max(k - f, bottom), top);
+  var d = k - t;
+  if (bottom > top || d < 0 || Math.abs(d - f) > 1) {
+    return "the rounded words cannot state the verified passes: Q" + dd + " (first depth), Q" + dmin + " (minimum depth) and P" + k +
+      " (thread height) make the control cut " + N + " rough passes only with R in " + incrText(Math.max(k - top, 0)) + ".." + incrText(Math.max(k - bottom, 0)) +
+      ", and the record's finish allowance is R" + incrText(f) + " -more than one least increment apart, the control would cut a pass that was not verified";
+  }
+  return d;
+}
+
 // A THREAD record: with G76 chosen, one positioning rapid to the cycle's
 // start point and the two G76 blocks; the passes inside the record are
 // then skipped (the control cuts them). With G32 (the default) nothing
@@ -838,10 +1006,14 @@ function onThreadCycle() {
   if (r0 === null || r1 === null) return;
   var why = g76Why(p, r0, r1);
   if (why) { refuse("G76 threading cycle refused - " + why); return; }
+  var d = g76Allowance(p);
+  if (typeof d === "string") { refuse("G76 threading cycle refused - " + d); return; }
   var m = Math.round(p.SpringPasses) + 1;
   var r = Math.round(10 * p.PullOut / p.Lead);
+  chainOn = false;
+  modalR = r1;
   block(["G00", xWord(r0), zWord(p.Z)]);
-  block(["G76", "P" + pad2(m) + pad2(r) + pad2(Math.round(p.InfeedAngle)), "Q" + um(p.MinimumDepth), "R" + fu(p.FinishAllowance)]);
+  block(["G76", "P" + pad2(m) + pad2(r) + pad2(Math.round(p.InfeedAngle)), "Q" + um(p.MinimumDepth), "R" + incrLen(d)]);
   block(["G76", xWord(r1), zWord(p.EndZ), "P" + um(p.ThreadHeight), "Q" + um(p.FirstDepth), "F" + fl(p.Lead)]);
   inThread = true;
 }
@@ -894,6 +1066,7 @@ function onCycle() {
   startPreamble();
   var p = properties;
   if (liveAsk) { refuse("a drilling cycle in a C-axis section - not supported"); return; }
+  chainOn = false;
   var r = radiusOf(p.X, p.Y, "cycle");
   if (r === null) return;
   if (Math.abs(r) > EPS) { refuse("drilling cycle off the spindle axis - a 2-axis lathe drills on centre only"); return; }

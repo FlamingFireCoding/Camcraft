@@ -1,8 +1,8 @@
 +++
-title = "4-axis and 5-axis machining"
+title = "Multi-axis"
 description = "Indexed and simultaneous multi-axis work: what CamCraft does for each kind, how to set it up, and what is checked."
 sort_by = "weight"
-weight = 8
+weight = 5
 +++
 
 Multi-axis machining adds rotary axes to the three linear ones. This section
@@ -41,8 +41,11 @@ state the rotary part with its `axis` direction, its `travel` in degrees, and
 
 ## Related pages
 
+- A complete indexed job on the Tormach 770MX and the microARC 4, from
+  the model to the posted program, is in
+  [Your first 4-axis part](@/guide/getting-started/first-4axis-part.md).
 - The per-operation reference for the multi-axis operations is in
-  [Multi-axis operations](@/guide/operations-multiaxis.md).
+  [Multi-axis operations](@/guide/multi-axis/operations-multiaxis.md).
 - What each machine type means for setups and operations is in
-  [Machine types](@/guide/machines.md).
-- If a post is refused, see [Reading a refusal](@/guide/refusals.md).
+  [Machine types](@/guide/check-and-post/machines.md).
+- If a post is refused, see [Reading a refusal](@/guide/reference/refusals.md).
