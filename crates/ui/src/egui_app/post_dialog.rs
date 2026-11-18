@@ -147,7 +147,7 @@ pub(crate) fn window(ctx: &egui::Context, state: &mut State) {
                     let hover_path = posting::post_path(&dlg.post);
                     let scope = match &dlg.setup_target {
                         Some(s) => format!("Setup: {s} ({post_label})"),
-                        None => format!("{post_label}"),
+                        None => post_label.to_string(),
                     };
                     let response = ui.label(RichText::new(scope).weak().small());
                     if let Some(path) = hover_path {
