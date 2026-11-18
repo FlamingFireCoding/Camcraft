@@ -106,7 +106,7 @@ pub fn contour_auto_side(
 /// are refused by name - this kind asks for curves, not boundaries.
 /// Resolution errors quote the same labels the 2D walk quotes, so a
 /// re-pick instruction reads identically in both.
-pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
+pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
     let mut out: Vec<Vec<Point3>> = Vec::new();
     for g in items {
         let Some(entity) = model::find_by_name(world, &g.entity) else {
@@ -121,7 +121,7 @@ pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Po
                 g.entity
             )));
         };
-        let loc = model::transform_of(world, &entity).unwrap_or_default();
+        let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
         let label = format!("{} of '{}'", g.feature, g.entity);
         match g.feature {
             FeatureSel::Chain(cid) => {
