@@ -95,7 +95,9 @@ fn a_known_fail_step_is_ok_only_when_its_test_fails() {
     let other_assert = "thread 'a::x' (7) panicked at crates/m/src/a.rs:88:5:\nrest 0.3000\n";
     let other_file = "thread 'a::x' (7) panicked at crates/m/src/planner.rs:12:9:\nindex out of bounds: hops 3\n";
     let other_thread = "thread 'a::y' (8) panicked at crates/m/src/a.rs:92:5:\nhops 10 over 8\n";
-    for log in [other_assert, other_file, other_thread, ""] {
+    // The refusal assert in the same file holds "hops " inside its message, not at a line start.
+    let refusal = "thread 'a::x' (7) panicked at crates/m/src/a.rs:86:5:\nSome(\"would reach 9 passes a level by retract hops (over 8)\")\n";
+    for log in [other_assert, other_file, other_thread, refusal, ""] {
         let mut note = named.to_string();
         assert!(!exec::expect_fail_note(101, &mut note, log, &k), "{log}");
         assert!(note.starts_with("KNOWN FAIL, DIFFERENT REASON"), "{note}");
