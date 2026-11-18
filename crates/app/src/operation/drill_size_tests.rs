@@ -30,6 +30,7 @@ fn drill_op(cycle: CycleChoice, holes: Vec<Hole>) -> OpParams {
         holes,
         cross: Vec::new(),
         break_through: None,
+        break_through_from: crate::drilling::BreakThroughFrom::FullDiameter,
     }
 }
 

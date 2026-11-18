@@ -265,6 +265,7 @@ fn drill_state(cells: &[Cell]) -> State {
         holes: Vec::new(),
         cross: Vec::new(),
         break_through: None,
+        break_through_from: camcraft_app::drilling::BreakThroughFrom::FullDiameter,
     };
     let src = SrcRef::Entity("Plate".into());
     state.history.execute(&state.world, CreateOperation::new(&state.world, "DRL", "DR-0600", src, params).expect("create"));
