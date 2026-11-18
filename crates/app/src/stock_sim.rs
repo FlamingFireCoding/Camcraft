@@ -241,6 +241,9 @@ pub(crate) struct Planned {
     /// it; the field eye has no electrode atom and refuses the program
     /// by name. `None` for every other tool.
     pub electrode: Option<held::ElectrodeAtom>,
+    /// #2441: a twist drill's cone carries a cylindrical flute above
+    /// `r * cot`, unlike a truncated chamfer `Taper`.
+    pub drill: bool,
 }
 
 /// The field eye's refusal of a sinker electrode (#541), said once.
@@ -330,20 +333,36 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
         let cache = model::toolpath_of(world, e)
             .ok_or_else(|| format!("{name}: lost its toolpath"))?;
         // The cone's slope, cot of the half-angle from the axis -
-        // the number the dexel atom reads directly, so the sim and
-        // the congruence door in `generate` see the same steel.
-        let cone = if tool.kind == crate::tools::ToolKind::Taper {
-            let tan_half = (tool.tip_angle.to_radians() * 0.5).tan();
-            if tan_half.is_finite() && tan_half > 0.0 {
-                Some(1.0 / tan_half)
-            } else {
-                return Err(format!(
-                    "{name}: chamfer mill {} carries no sane cone (tip angle {})",
-                    op.tool, tool.tip_angle
-                ));
+        // the number the dexel / drill cone reads directly, so the sim and
+        // the congruence door in `generate` see the same steel (#2441).
+        let (cone, drill) = match tool.kind {
+            crate::tools::ToolKind::Taper => {
+                let tan_half = (tool.tip_angle.to_radians() * 0.5).tan();
+                if tan_half.is_finite() && tan_half > 0.0 && tool.tip_angle > 0.0 && tool.tip_angle < 180.0 {
+                    (Some(1.0 / tan_half), false)
+                } else {
+                    return Err(format!(
+                        "{name}: chamfer mill {} carries no sane cone (tip angle {})",
+                        op.tool, tool.tip_angle
+                    ));
+                }
             }
-        } else {
-            None
+            crate::tools::ToolKind::Drill => {
+                if (tool.tip_angle - 180.0).abs() <= 1e-9 {
+                    (None, false)
+                } else {
+                    let tan_half = (tool.tip_angle.to_radians() * 0.5).tan();
+                    if tan_half.is_finite() && tan_half > 0.0 && tool.tip_angle > 0.0 && tool.tip_angle < 180.0 {
+                        (Some(1.0 / tan_half), true)
+                    } else {
+                        return Err(format!(
+                            "{name}: drill {} carries no sane point cone (tip angle {})",
+                            op.tool, tool.tip_angle
+                        ));
+                    }
+                }
+            }
+            _ => (None, false),
         };
         let corner = bull_corner(&tool).map_err(|e| format!("{name}: {e}"))?;
         // The revolved clause (#19, was M5.2 G.2's refusal): a Turn-
@@ -397,6 +416,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
             rotary,
             lathe,
             electrode,
+            drill,
         });
     }
     Ok(planned)
