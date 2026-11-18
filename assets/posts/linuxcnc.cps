@@ -866,7 +866,9 @@ function onCycle() {
   else if (p.CycleType === "PECK") g = "G73";
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = dwell > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";
   else if (p.CycleType === "TAP") {
     if (p.TappingMode === "floating") g = "G84";
@@ -893,6 +895,11 @@ function onCycle() {
     msg("canned cycle " + g + inOp() + " has no positive peck depth Q - LinuxCNC refuses Q of zero or less");
     return;
   }
+  // #2348: LinuxCNC's G83 format has no P word.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   var traversed = xyUnknown;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole
@@ -907,7 +914,9 @@ function onCycle() {
     // Q is an increment (peck depth), not a position: no origin shift.
     var words = [g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), wo("R", p.R, orgZ)];
     if (g === "G73" || g === "G83") words.push(w("Q", p.Q));
-    if (dwell > 0 && (g === "G82" || g === "G84" || g === "G86" || g === "G89")) words.push("P" + secs(dwell));
+    // #2362: LinuxCNC requires a non-negative P on the first G86 block of
+    // a cycle, even when the dwell is 0 (P0).
+    if (g === "G86" || (dwell > 0 && (g === "G82" || g === "G84" || g === "G89"))) words.push("P" + secs(dwell));
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;
