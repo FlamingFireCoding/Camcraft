@@ -169,7 +169,15 @@ pub(crate) fn px_per_mm(state: &State, at: [f64; 3]) -> Option<f64> {
 
 /// The handles to draw, or None when nothing may be dragged.
 pub(crate) fn handles(state: &State) -> Option<Handles> {
-    let (name, entity) = draggable(state)?;
+    let Some((name, entity)) = draggable(state) else {
+        // Rotate shares the centre; keep it only while a shown part can use it.
+        if !state.rotate_handles || one_part(state).is_none() {
+            let mut cache = state.move_center.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            cache.key = None;
+            cache.center = None;
+        }
+        return None;
+    };
     let mut center = shown_center(state, &entity)?;
     if let Some(d) = state.body_drag.as_ref().filter(|d| d.name == name) {
         let o = d.offset();
