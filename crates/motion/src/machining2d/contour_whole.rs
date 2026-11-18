@@ -256,6 +256,16 @@ pub fn contour_whole_bodies_with(
         let split = first_split(&band, &lad, remaining, part, bodies, p)?;
         match split {
             Some(0) if band_idx == 0 && !used_fallback => {
+                // A ring of the top band can still have floor passes above the
+                // first flat level (#2004 floor search): cut them before the
+                // re-slice, or that wall is silently left uncut.
+                let trimmed = trim_ladder(&lad, remaining[0]);
+                if !trimmed.zs.is_empty() {
+                    forward_band_notes(&band, &lad, last_z, true, ring_notes, &mut lead_notes);
+                    emit_band(&mut b, &band, p, &trimmed, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
+                    walked.push(current_region.clone());
+                    ceiling = trimmed.zs.last().copied().unwrap_or(ceiling);
+                }
                 used_fallback = true;
                 let raw = whole_region_at(part, bodies, remaining[0] - p.stock_to_leave, remaining[0])?;
                 current_region = area_at(raw)?;

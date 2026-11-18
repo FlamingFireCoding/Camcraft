@@ -3,6 +3,8 @@
 //! island), a counterbore that narrows below Top Z, and fail-closed refusal
 //! when a deeper slice cannot be read.
 //!
+//! Gate map: covers camcraft_motion::machining2d (contour_whole, contour_depth).
+//!
 //! Provenance: our own extruded manifold test meshes; no vendor material.
 
 use camcraft_motion::cl::MoveKind;
@@ -236,10 +238,42 @@ fn counterbore_changing_before_first_cut_level_keeps_lower_bore() {
     let top_reg = slice::slice(&f, 20.0 - 1e-3).expect("top slice");
     let path = contour_whole_bodies(&top_reg, &f, &[], &params(20.0, 0.0, 12.0)).expect("whole contour");
     assert!(path.all_finite() && path.is_chained());
+    // The upper bore wall (Z 10..20) gets its floor pass at Z 10 before the
+    // band splits at the first flat level; it must not be dropped.
+    assert_counterbore_at(&path, 10.0, 12.0);
     for z in [8.0, 0.0] {
         assert_counterbore_at(&path, z, 7.0);
     }
     assert_eq!(depth_verify(&path, &top_reg, &f, 20.0), Vec::new(), "{:?}", path.notes);
+}
+
+#[test]
+fn large_stepdown_keeps_the_upper_island_floor_pass_before_the_plate() {
+    let f = two_islands_part();
+    let top_reg = slice::slice(&f, 15.0 - 1e-3).expect("top slice");
+    // Flat levels are Z 3 and Z 0: Island A (Z 10..15) is not legal at Z 3, so
+    // its only pass is the floor pass at Z 10, before the plate band.
+    let path = contour_whole_bodies(&top_reg, &f, &[], &params(15.0, 0.0, 12.0)).expect("whole contour");
+    assert!(path.all_finite() && path.is_chained());
+    assert_eq!(depth_verify(&path, &top_reg, &f, 15.0), Vec::new(), "{:?}", path.notes);
+    let len_a: f64 = path
+        .moves
+        .iter()
+        .filter(|m| {
+            m.kind == MoveKind::Feed
+                && (m.from.z - 10.0).abs() < 1e-6
+                && (m.to.z - 10.0).abs() < 1e-6
+                && m.from.x < -5.0
+                && m.to.x < -5.0
+        })
+        .map(|m| (m.to.x - m.from.x).hypot(m.to.y - m.from.y))
+        .sum();
+    // Offset 20x20 square with r=3 round corners is 4*20 + 2*pi*3 ~= 98.8 mm.
+    assert!((94.0..=102.0).contains(&len_a), "expected one lap around Island A at Z 10, got {len_a:.3}");
+    assert!(
+        path.moves.iter().any(|m| m.kind == MoveKind::Feed && m.to.z < 1e-6 && m.to.x < -42.5),
+        "must finish plate down to Z 0"
+    );
 }
 
 #[test]
