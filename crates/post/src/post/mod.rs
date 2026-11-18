@@ -38,6 +38,8 @@ pub mod explain;
 pub mod g93;
 pub mod invert;
 pub mod js;
+mod js_host;
+pub mod preview;
 pub mod machine;
 mod machine_rotary;
 pub mod nose_tip;
@@ -325,6 +327,12 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     // so the spindle starts the right way; forward (M03) is silent.
     if t.threads.iter().any(|c| c.is_sane(&t.moves) && c.reverse_spindle()) {
         out.push(Record::Param { name: "SpindleDirection".into(), value: json!("reverse") });
+    }
+    // Chip-break dips (issue #419) are posted only by a script that
+    // declares `continuousThreading`: the section says so, and the
+    // engine refuses it by name everywhere else.
+    if t.threads.iter().any(|r| r.chip_break_dips) {
+        out.push(Record::Param { name: "ChipBreakDips".into(), value: json!(1.0) });
     }
     // #891: the CSS ask, only a finite positive one (a script never sees
     // a speed it would have to guess about).

@@ -265,6 +265,10 @@ pub fn run_program_with(
                         "{who}cuts a thread that needs the spindle reversed (M04) for its hand, but this post script does not declare threadHands - it would cut the other hand; use a lathe post that states the thread's hand"
                     ));
                 }
+                if name == "ChipBreakDips" && !s.voices_continuous_threading() {
+                    let op = base.get("OperationName").and_then(Value::as_str).unwrap_or("");
+                    warnings.push(super::cnc_thread::dips_unvoiced(op));
+                }
                 // A left-hand-cut mill (#988) through a script that
                 // cannot start M04 would turn the cutter backwards.
                 if name == "MillSpindle" && value.as_str() == Some("reverse") && !s.voices_mill_spindle_reverse() {

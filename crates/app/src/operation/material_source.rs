@@ -24,7 +24,7 @@ pub(super) fn region_for(
     // #1504: a picked Slot that leaves its picks draws nothing - the
     // preview never outlines a slot across a wall; generation names it.
     super::slot_pick::confine_slot(world, setup, src, params)?;
-    let z = section_z_of(world, setup, src, params).unwrap_or(Ok(0.0));
+    let z = section_z_of(world, setup, src, params, frame).unwrap_or(Ok(0.0));
     region_core(material, params, frame, z)
 }
 
@@ -40,6 +40,7 @@ pub(super) fn section_z_of(
     setup: Option<&str>,
     src: Option<&SrcRef>,
     params: &OpParams,
+    frame: Option<&crate::cl::TiltedFrame>,
 ) -> Option<Result<f64, GenError>> {
     let top_z = match params {
         OpParams::Contour { top_z, .. }
@@ -57,7 +58,8 @@ pub(super) fn section_z_of(
         _ => return None,
     };
     Some(
-        resolve_height(world, setup, src, top_z)
+        // #2389: a tilted section stands along the tool axis.
+        fold_height(world, setup, src, frame, top_z)
             .ok_or_else(|| unresolved_err("Top of Part Z", top_z, world, setup, src)),
     )
 }

@@ -115,6 +115,7 @@ mod structural;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
 mod page_layout;
+mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;

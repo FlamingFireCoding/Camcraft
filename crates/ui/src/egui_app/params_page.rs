@@ -104,7 +104,10 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     // ...and against the operation's own source, which a From: Selection
     // height reads (M11.3 A): handed to every height editor of this
     // pass through the frame's temp data, so no row signature moves.
-    ui.data_mut(|d| d.insert_temp(egui::Id::new(HEIGHT_SRC_ID), state.op_ui.src()));
+    ui.data_mut(|d| {
+        d.insert_temp(egui::Id::new(HEIGHT_SRC_ID), state.op_ui.src());
+        d.insert_temp(egui::Id::new(super::heights_page::HEIGHT_TILT_ID), state.op_ui.params.tilt());
+    });
     if let OpParams::Drill {
         cycle: camcraft_app::drilling::CycleChoice::Auto,
         holes,

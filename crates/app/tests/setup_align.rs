@@ -386,10 +386,9 @@ fn the_setup_sheet_names_the_part_alignment() {
     assert!(sheet.contains("  Turn 90° about Z - clamp"), "{sheet}");
 }
 
-/// #1230: an aligned setup on a machine that is not a mill is refused
-/// with that machine's kind named (the same refusal as before, only the
-/// words changed); a lathe or mill-turn keeps its own wording in the
-/// carry tests.
+/// #1230 / #2287: an aligned setup refuses unverified ops naming that
+/// machine's kind (no fallback to lathe or mill-turn), while EDM machines
+/// accept their own EDM operations.
 #[test]
 fn an_aligned_setup_on_an_edm_names_the_edm_kind_it_is_refused_on() {
     let machines = [("sinker EDM", include_str!("edm/sinker-edm.mch")), ("wire EDM", include_str!("edm/wire-edm.mch"))];
@@ -398,8 +397,8 @@ fn an_aligned_setup_on_an_edm_names_the_edm_kind_it_is_refused_on() {
         let m = parse_mch(text).expect("the EDM machine parses");
         h.execute(&world, LoadMachine::new(&world, "edm.mch".into(), Some(m)).expect("mount"));
         align(&world, &mut h, AlignPreset::FlipY);
-        let err = generate(&world, &mut h, "Contour1").expect_err("an aligned EDM setup is refused");
-        assert!(err.contains(&format!("an aligned part is not supported yet on a {name} machine")), "{name}: {err}");
+        let err = generate(&world, &mut h, "Contour1").expect_err("a milling op in an aligned EDM setup is refused");
+        assert!(err.contains(&format!("not supported yet in an aligned setup on a {name} machine")), "{name}: {err}");
         assert!(!err.contains("lathe") && !err.contains("mill-turn"), "{name}: {err}");
     }
 }
