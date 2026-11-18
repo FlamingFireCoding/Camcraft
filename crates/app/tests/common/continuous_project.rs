@@ -69,6 +69,10 @@ fn project_comparison_rejects_stale_setup_and_larger_cache_changes() {
     let tool = entities.iter().position(|e| e.get("tool").is_some()).unwrap();
     for (path, replacement) in [
         ("/version".to_string(), Value::from(67)),
+        (
+            "/version".to_string(),
+            Value::from(original["version"].as_u64().unwrap() - 1),
+        ),
         ("/machine/machine/axes/3/travel".to_string(), serde_json::json!([-360.0, 360.0])),
         (format!("/entities/{tool}/tool/number"), Value::Null),
         (format!("/entities/{op}/operation/cache/moves/0/to/0"), Value::from(-31.749_998)),
