@@ -34,8 +34,8 @@ const TOOLS: &[Tool] = &[
     Tool { name: "add_tool", description: "Add a tool to the document, from the catalog by name or from a full definition (the shape get_job shows). Assigns the lowest unused tool number in 1-99999 and starts with the machine's default holder unless \"holder\" says otherwise; one undo removes the tool and its holder.", schema: s_add_tool, run: edit::add_tool },
     Tool { name: "edit_tool", description: "Edit a document tool: \"patch\" is a partial tool definition (the shape add_tool's definition and get_job show, JSON merge patch - null removes an optional key). It runs the app's undoable ChangeTool, one undo step, so every gate applies (a retype that strands an operation, bad cutting_data rows, catalog values) and refuses by tool name. An unknown key is refused by name. Operations using the tool go stale.", schema: s_edit_tool, run: tool_edit::edit_tool },
     Tool { name: "delete_tool", description: "Delete a document tool through the app's undoable DeleteTool, one undo step (undo restores it with its number, holder body and cutter). Refused by tool name, changing nothing: an unknown name, an entity that is not a tool, or a tool an operation still uses (give that operation another tool with set_tool first).", schema: s_name_only_tool, run: tool_delete::delete_tool },
-    Tool { name: "export_tool_library", description: "Write the document's tools to a tool library file (.camtools), the same format the Tool library page's Export writes. Refuses a document with no tools or a path that cannot be written.", schema: s_library, run: export_tool_library },
-    Tool { name: "import_tool_library", description: "Import a tool library file into the document as one undo step, through the same command as the Tool library page's Import. mode add (default): an identical tool is skipped, a clashing name arrives as \"Name (2)\"; update: a same-named tool takes the file's definition in place (number kept, operations go Stale); replace: update, and tools the file lacks are removed unless an operation uses one (refused by name). holders (default true) takes each tool's holder (a library holder reference or a body) from the file - in update/replace a changed body is a change like any other (gated, operations go Stale); false lands new tools with their holder cylinder only and leaves existing tools' bodies as they are. A malformed or insane file (or a tool body that does not fit its tool, or a holder reference to an entry the library does not hold) is refused naming the tool. The reply counts holders taken and left out.", schema: s_import_library, run: import_tool_library },
+    Tool { name: "export_tool_library", description: "Write the document's tools to a CamCraft library (.camtools), a Tormach PathPilot tool table (.csv), or a Hurco WinMax tool library (.TCM), detected from path or chosen with format. units (mm or inch) applies to controller tables and defaults to document units. Refuses a document with no tools, an unwriteable path, or a tool that cannot fit the target table.", schema: s_library, run: export_tool_library },
+    Tool { name: "import_tool_library", description: "Import a CamCraft library (.camtools/.json), Tormach PathPilot tool table (.csv), or Hurco WinMax tool library (.TCM) as one undo step. format (default auto) overrides detection; units (mm or inch) applies to controller tables and defaults to document units. mode add (default): skips an identical tool, renames a clashing name; update: updates matching names in place; replace: removes absent tools unless used. holders (default true) takes holders from .camtools files. Malformed rows, unsupported Hurco tool types, or tool-number clashes refuse by name.", schema: s_import_library, run: import_tool_library },
     Tool { name: "set_stock", description: "Set the active setup's stock: a box, a cylinder, or a copy of a model.", schema: s_stock, run: edit::set_stock },
     Tool { name: "add_operation", description: "Add an operation of a kind (see list_operation_types) with a tool, on the stock or a model, seeded with the kind's defaults and an optional params patch. Not generated until generate runs.", schema: s_add_op, run: edit::add_operation },
     Tool { name: "edit_operation", description: "Patch an operation's parameters: the given fields replace the current ones (JSON merge patch over the kind's fields; null clears an optional field). One undo step.", schema: s_edit_op, run: edit::edit_operation },
@@ -154,7 +154,16 @@ fn import_model(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> 
 }
 
 fn export_tool_library(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
-    api::v_export_tools(env, vec![json!(req_str(a, "path")?)])
+    let path = std::path::PathBuf::from(req_str(a, "path")?);
+    let format = match opt_str(a, "format")? {
+        None => None,
+        Some(f) => crate::tool_table::ToolTableFormat::parse_opt(f)?,
+    };
+    let unit = match opt_str(a, "units")? {
+        None => None,
+        Some(u) => Some(crate::tool_table::parse_unit(u)?),
+    };
+    api::export_tools(env, &path, format, unit)
 }
 
 fn import_tool_library(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
@@ -168,7 +177,15 @@ fn import_tool_library(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
         Some(Value::Bool(b)) => *b,
         Some(other) => return Err(format!("\"holders\" must be true or false, got {other}")),
     };
-    api::import_tools(env, &path, mode, holders)
+    let format = match opt_str(a, "format")? {
+        None => None,
+        Some(f) => crate::tool_table::ToolTableFormat::parse_opt(f)?,
+    };
+    let unit = match opt_str(a, "units")? {
+        None => None,
+        Some(u) => Some(crate::tool_table::parse_unit(u)?),
+    };
+    api::import_tools(env, &path, mode, holders, format, unit)
 }
 
 fn generate(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
@@ -245,15 +262,24 @@ fn s_opt_path() -> Value {
 }
 
 fn s_library() -> Value {
-    obj(json!({ "path": { "type": "string", "description": "A tool library file (.camtools)." } }), &["path"])
+    obj(
+        json!({
+            "path": { "type": "string", "description": "Output path (.camtools, PathPilot .csv, or Hurco WinMax .TCM)." },
+            "format": { "type": "string", "enum": ["auto", "camtools", "pathpilot", "hurco"], "description": "File format; default auto (from extension)." },
+            "units": { "type": "string", "enum": ["mm", "inch"], "description": "Length units for PathPilot .csv and Hurco .TCM; default document units." }
+        }),
+        &["path"],
+    )
 }
 
 fn s_import_library() -> Value {
     obj(
         json!({
-            "path": { "type": "string", "description": "A tool library file (.camtools)." },
+            "path": { "type": "string", "description": "A tool library or controller tool table file (.camtools, .json, PathPilot .csv, or Hurco .TCM)." },
             "mode": { "type": "string", "enum": ["add", "update", "replace"], "description": "What to do with a tool whose name the document has; default add." },
-            "holders": { "type": "boolean", "description": "Take each tool's holder body from the file (default true); false keeps only the holder cylinder for new tools and leaves existing tools' bodies as they are." }
+            "holders": { "type": "boolean", "description": "Take each tool's holder body from the file (default true); false keeps only the holder cylinder for new tools and leaves existing tools' bodies as they are." },
+            "format": { "type": "string", "enum": ["auto", "camtools", "pathpilot", "hurco"], "description": "File format; default auto (from extension or file header)." },
+            "units": { "type": "string", "enum": ["mm", "inch"], "description": "Length units for PathPilot .csv and Hurco .TCM; default document units." }
         }),
         &["path"],
     )
