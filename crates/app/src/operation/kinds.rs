@@ -747,6 +747,8 @@ fn seed_contour(c: &Carried) -> OpParams {
 
 fn seed_pocket(c: &Carried) -> OpParams {
     OpParams::Pocket {
+        blend_radius: None,
+        rest: None,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -780,6 +782,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 /// (optimal_load) stays visible.
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -795,6 +798,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         method: crate::machining2d::AdaptiveMethod::Spiral,
+        troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
     }
 }
@@ -804,6 +808,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 /// the pane must not show.
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
+        blend_radius: None, blend_turns: false,
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -899,6 +904,8 @@ fn seed_slot(c: &Carried) -> OpParams {
         entry: Entry3D::Plunge,
         helix_radius: 1.0,
         tilt: c.tilt,
+        extend_start: 0.0,
+        extend_end: 0.0,
     }
 }
 
@@ -960,6 +967,8 @@ fn seed_drill(c: &Carried) -> OpParams {
         // refuses to run one, and Detect holes fills it.
         holes: Vec::new(),
         cross: Vec::new(),
+        // #1557: the kind's default break-through.
+        break_through: None,
     }
 }
 
@@ -983,6 +992,7 @@ fn seed_standalone_bore(c: &Carried) -> OpParams {
         climb: c.climb,
         tolerance: 0.01,
         holes: Vec::new(),
+        break_through: None,
     }
 }
 
@@ -1008,6 +1018,7 @@ fn seed_thread_mill(c: &Carried) -> OpParams {
         external: false,
         // #988: the #894 ride - equal passes, M3, right-hand-cut mill.
         passes: crate::machining2d::ThreadPasses::default(),
+        break_through: None,
     }
 }
 
@@ -1746,6 +1757,8 @@ pub enum Family {
     /// The sinker EDM's electrode work (#541): admitted on a sinker
     /// EDM only.
     Sinker,
+    /// Abrasive waterjet work; operations are added by the following slice.
+    Waterjet,
 }
 
 impl Family {
@@ -1764,6 +1777,7 @@ impl Family {
                 | (Family::Plasma, Kind::Plasma)
                 | (Family::WireEdm, Kind::WireEdm)
                 | (Family::Sinker, Kind::SinkerEdm)
+                | (Family::Waterjet, Kind::Waterjet)
         )
     }
 
@@ -1776,6 +1790,7 @@ impl Family {
             Family::Plasma => "plasma cutting",
             Family::WireEdm => "wire EDM",
             Family::Sinker => "sinker EDM",
+            Family::Waterjet => "waterjet",
         }
     }
 
@@ -1788,6 +1803,7 @@ impl Family {
             Family::Plasma => "plasma table",
             Family::WireEdm => "wire EDM",
             Family::Sinker => "sinker EDM",
+            Family::Waterjet => "waterjet",
         }
     }
 }
@@ -2380,9 +2396,9 @@ impl KindInfo {
             mode: Mode::Engrave,
             section: Section::WireEdm,
             seed: super::wire_op::seed_wire_contour,
-            // No library tool (#532): the wire is the machine's
-            // condition (#531), its one source.
-            tool_kinds: tk::NO_TOOL,
+            // #2011: the wire tool states the wire's diameter and material;
+            // the machine's EDM condition keeps the spark gap.
+            tool_kinds: tk::WIRE,
         },
         KindInfo {
             ty: OpType::SinkerBurn,

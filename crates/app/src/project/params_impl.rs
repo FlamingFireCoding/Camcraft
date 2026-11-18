@@ -112,6 +112,8 @@ impl ParamsDto {
                 helix_radius,
                 optimal_load,
                 blend_turns,
+                blend_radius,
+                rest,
                 tilt,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
@@ -144,6 +146,8 @@ impl ParamsDto {
                 max_engagement: None,
                 optimal_load: Some(*optimal_load),
                 blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             // The twins drop the strategy tag - the variant itself
@@ -164,34 +168,52 @@ impl ParamsDto {
                 helix_radius,
                 optimal_load,
                 method,
+                troch,
+                blend_turns,
+                blend_radius,
                 tilt,
-            } => ParamsDto::Adaptive2D {
-                links: links_to_dto(links, &p.default_links()),
-                stepover: *stepover,
-                stock_to_leave: *stock_to_leave,
-                clearance_z: (*clearance_z).into(),
-                top_z: (*top_z).into(),
-                bottom_z: (*bottom_z).into(),
-                stepdown: *stepdown,
-                feed: *feed,
-                plunge_feed: *plunge_feed,
-                climb: *climb,
-                retract_z: (*retract_z).map(Into::into),
-                entry: match entry {
-                    Entry3D::Plunge => EntryDto::Plunge,
-                    Entry3D::Ramp => EntryDto::Ramp,
-                    Entry3D::Helix => EntryDto::Helix,
-                    Entry3D::Arc => EntryDto::Arc,
-                },
-                helix_radius: *helix_radius,
-                max_engagement: None,
-                optimal_load: Some(*optimal_load),
-                method: match method {
-                    crate::machining2d::AdaptiveMethod::Spiral => AdaptiveMethodDto::Spiral,
-                    crate::machining2d::AdaptiveMethod::Trochoidal => AdaptiveMethodDto::Trochoidal,
-                },
-                tilt: (*tilt).map(Into::into),
-            },
+            } => {
+                let (troch_return, lift) = match troch.ret {
+                    None => (AdaptiveTrochReturnDto::Auto, None),
+                    Some(crate::machining2d::TrochoidReturn::Microlift { height }) => {
+                        (AdaptiveTrochReturnDto::Microlift, Some(height))
+                    }
+                    Some(crate::machining2d::TrochoidReturn::Retract) => (AdaptiveTrochReturnDto::Retract, None),
+                };
+                ParamsDto::Adaptive2D {
+                    links: links_to_dto(links, &p.default_links()),
+                    stepover: *stepover,
+                    stock_to_leave: *stock_to_leave,
+                    clearance_z: (*clearance_z).into(),
+                    top_z: (*top_z).into(),
+                    bottom_z: (*bottom_z).into(),
+                    stepdown: *stepdown,
+                    feed: *feed,
+                    plunge_feed: *plunge_feed,
+                    climb: *climb,
+                    retract_z: (*retract_z).map(Into::into),
+                    entry: match entry {
+                        Entry3D::Plunge => EntryDto::Plunge,
+                        Entry3D::Ramp => EntryDto::Ramp,
+                        Entry3D::Helix => EntryDto::Helix,
+                        Entry3D::Arc => EntryDto::Arc,
+                    },
+                    helix_radius: *helix_radius,
+                    max_engagement: Some(troch.max_engagement),
+                    optimal_load: Some(*optimal_load),
+                    method: match method {
+                        crate::machining2d::AdaptiveMethod::Spiral => AdaptiveMethodDto::Spiral,
+                        crate::machining2d::AdaptiveMethod::Trochoidal => AdaptiveMethodDto::Trochoidal,
+                    },
+                    blend_turns: *blend_turns,
+                    blend_radius: *blend_radius,
+                    troch_return,
+                    lift,
+                    return_feed: troch.return_feed,
+                    loop_width: troch.loop_width,
+                    tilt: (*tilt).map(Into::into),
+                }
+            }
             OpParams::Offset2D {
                 links,
                 stepover,
@@ -206,6 +228,8 @@ impl ParamsDto {
                 climb,
                 entry,
                 helix_radius,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
@@ -226,6 +250,8 @@ impl ParamsDto {
                     Entry3D::Arc => EntryDto::Arc,
                 },
                 helix_radius: *helix_radius,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
@@ -1059,6 +1085,8 @@ impl ParamsDto {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => ParamsDto::Slot {
                 links: links_to_dto(links, &p.default_links()),
                 a: [a.x, a.y],
@@ -1082,6 +1110,8 @@ impl ParamsDto {
                 },
                 helix_radius: *helix_radius,
                 tilt: (*tilt).map(Into::into),
+                extend_start: *extend_start,
+                extend_end: *extend_end,
             },
             OpParams::Trace {
                 clearance_z,
@@ -1116,7 +1146,9 @@ impl ParamsDto {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
             } => ParamsDto::Drill {
+                break_through: *break_through,
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -1155,7 +1187,9 @@ impl ParamsDto {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => ParamsDto::Bore {
+                break_through: *break_through,
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -1183,7 +1217,9 @@ impl ParamsDto {
                 hand,
                 external,
                 passes,
+                break_through,
             } => ParamsDto::Thread {
+                break_through: *break_through,
                 external: *external,
                 passes: (*passes).into(),
                 pitch: *pitch,
@@ -1320,6 +1356,8 @@ impl ParamsDto {
                 max_engagement,
                 optimal_load,
                 blend_turns,
+                blend_radius,
+                rest,
                 tilt,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1351,6 +1389,8 @@ impl ParamsDto {
                 helix_radius: *helix_radius,
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Adaptive2D {
@@ -1370,6 +1410,12 @@ impl ParamsDto {
                 max_engagement,
                 optimal_load,
                 method,
+                troch_return,
+                lift,
+                return_feed,
+                loop_width,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1395,6 +1441,24 @@ impl ParamsDto {
                     AdaptiveMethodDto::Spiral => crate::machining2d::AdaptiveMethod::Spiral,
                     AdaptiveMethodDto::Trochoidal => crate::machining2d::AdaptiveMethod::Trochoidal,
                 },
+                troch: crate::machining2d::AdaptiveTrochParams {
+                    max_engagement: if optimal_load.is_some() {
+                        max_engagement.unwrap_or(crate::machining2d::DEFAULT_MAX_ENGAGEMENT)
+                    } else {
+                        crate::machining2d::DEFAULT_MAX_ENGAGEMENT
+                    },
+                    ret: match troch_return {
+                        AdaptiveTrochReturnDto::Auto => None,
+                        AdaptiveTrochReturnDto::Microlift => Some(crate::machining2d::TrochoidReturn::Microlift {
+                            height: lift.unwrap_or(crate::machining2d::DEFAULT_MICROLIFT),
+                        }),
+                        AdaptiveTrochReturnDto::Retract => Some(crate::machining2d::TrochoidReturn::Retract),
+                    },
+                    return_feed: *return_feed,
+                    loop_width: *loop_width,
+                },
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Offset2D {
@@ -1411,6 +1475,8 @@ impl ParamsDto {
                 retract_z,
                 entry,
                 helix_radius,
+                blend_turns,
+                blend_radius,
                 tilt,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1431,6 +1497,8 @@ impl ParamsDto {
                     EntryDto::Arc => Entry3D::Arc,
                 },
                 helix_radius: *helix_radius,
+                blend_turns: *blend_turns,
+                blend_radius: *blend_radius,
                 tilt: (*tilt).map(Into::into),
             },
             // The M2.4 B trio back out of the wire, same shapes.
@@ -2242,6 +2310,8 @@ impl ParamsDto {
                 entry,
                 helix_radius,
                 tilt,
+                extend_start,
+                extend_end,
             } => OpParams::Slot {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 a: Point2::new(a[0], a[1]),
@@ -2265,6 +2335,8 @@ impl ParamsDto {
                 },
                 helix_radius: *helix_radius,
                 tilt: (*tilt).map(Into::into),
+                extend_start: *extend_start,
+                extend_end: *extend_end,
             },
             ParamsDto::Trace {
                 clearance_z,
@@ -2299,7 +2371,9 @@ impl ParamsDto {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
             } => OpParams::Drill {
+                break_through: *break_through,
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
                 top_z: (*top_z).into(),
@@ -2338,7 +2412,9 @@ impl ParamsDto {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => OpParams::Bore {
+                break_through: *break_through,
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),
@@ -2366,7 +2442,9 @@ impl ParamsDto {
                 hand,
                 external,
                 passes,
+                break_through,
             } => OpParams::Thread {
+                break_through: *break_through,
                 external: *external,
                 passes: (*passes).into(),
                 pitch: *pitch,

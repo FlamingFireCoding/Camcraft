@@ -104,6 +104,7 @@ fn op_of(world: &World, name: &str) -> camcraft_app::schema::Operation {
 
 fn t45x(origin: [f64; 3]) -> Tilt {
     Tilt {
+        basis_version: 1,
         a_deg: 45.0,
         b_deg: 0.0,
         origin,
@@ -159,6 +160,7 @@ fn a_zero_tilt_index_reproduces_the_prismatic_path_exactly() {
     let mut tilted = face(Height::fixed(9.0), 25.0);
     if let OpParams::Face { tilt, .. } = &mut tilted {
         *tilt = Some(Tilt {
+            basis_version: 1,
             a_deg: 0.0,
             b_deg: 0.0,
             origin: [0.0; 3],
@@ -391,7 +393,7 @@ fn local_heights_and_boxes_read_fully_transformed_geometry() {
 }
 
 #[test]
-fn picks_in_an_aligned_setup_stay_refused_phase_one() {
+fn picks_in_an_aligned_setup_read_through_opframe_phase_two() {
     let (world, mut h) = block();
     h.execute(
         &world,
@@ -400,38 +402,27 @@ fn picks_in_an_aligned_setup_stay_refused_phase_one() {
     );
     let e = model::find_by_name(&world, "block").expect("block");
     let feats = model::features_of(&world, &e).expect("features");
-    let id = feats.faces.first().expect("a face").id;
+    // Document +Y face at y = 20 turns 90 deg about X around (10,10,5) to become horizontal TOP (z = 15).
+    let id = feats
+        .faces
+        .iter()
+        .find(|fa| fa.normal[1].abs() > 0.9 && (fa.offset - 20.0).abs() < 1e-6)
+        .expect("top-after-turn face")
+        .id;
     let sel = SrcRef::Selection(vec![GeoSel {
         entity: "block".into(),
         feature: FeatureSel::Face(id),
     }]);
-    add_face(
-        &world,
-        &mut h,
-        "FacePick",
-        sel,
-        face(Height::fixed(9.0), 25.0),
-    );
+    add_face(&world, &mut h, "FacePick", sel, face(Height::fixed(9.0), 25.0));
     let op = op_of(&world, "FacePick");
-    let err = generate(&world, &op, "FacePick").expect_err("picks refuse in an aligned setup");
-    let msg = err.to_string();
-    assert!(msg.contains("picked"), "names the picks: {msg}");
-    assert!(
-        msg.contains("aligned setup"),
-        "names the aligned setup: {msg}"
-    );
-    // The door Phase 2 will read them through is already aligned: the
-    // picked entity's facets carry the turn, composed by hand.
+    generate(&world, &op, "FacePick").expect("picks generate in an aligned setup");
     let opframe = OpFrame::of(&op);
-    let aligned = opframe
-        .facets_in_setup(&world, &e)
-        .expect("the aligned door reads");
-    assert_eq!(
-        aligned.len(),
-        model::world_facets(&world, &e).expect("world facets").len()
-    );
+    let aligned = opframe.facets_in_setup(&world, &e).expect("the aligned door reads");
+    let pose = opframe.pose_in_setup(&world, &e).expect("the aligned pose reads");
+    assert_eq!(aligned.len(), model::world_facets(&world, &e).expect("world facets").len());
     let a = setup_align::alignment(&world, Some("Setup1")).expect("stored alignment");
     let loc = setup_align::compose(a, model::transform_of(&world, &e).unwrap_or_default());
+    assert!((pose.pos.x - loc.pos.x).abs() < TIGHT && (pose.pos.y - loc.pos.y).abs() < TIGHT && (pose.pos.z - loc.pos.z).abs() < TIGHT);
     let doc = model::world_facets(&world, &e).expect("world facets");
     let want = transform_point(doc[0].a, loc.pos, loc.rot);
     assert!(

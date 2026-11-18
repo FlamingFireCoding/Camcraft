@@ -50,6 +50,7 @@ done
 for asset in posts machines ui scripts themes; do
     cp -a "assets/$asset" "$stage/assets/$asset"
 done
+cp -a examples "$stage/examples"
 install -m 644 RELEASE_NOTES.md TESTING.md LICENSE NOTICE README.md "$stage/"
 tar -C "$work" -czf "$dist/$name.tar.gz" "$name"
 
@@ -121,6 +122,7 @@ cp -a "%{camcraft_package_root}/usr/." "%{buildroot}/usr/"
 /usr/lib/camcraft
 /usr/share/applications/camcraft.desktop
 /usr/share/pixmaps/camcraft.png
+/usr/share/icons/hicolor/*/apps/camcraft.png
 EOF
 rpmbuild -bb --define "_topdir $rpm_dir" \
     --define "camcraft_package_root $pkg_root" "$rpm_dir/SPECS/camcraft.spec"

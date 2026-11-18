@@ -76,11 +76,42 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     let Value::Object(back) = project::params_to_json(&next) else {
         return Err("the patched parameters could not be read back".into());
     };
-    let back = back.get(&key).and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut back = back.get(&key).and_then(Value::as_object).cloned().unwrap_or_default();
+    // An opt-in flag (`blend_turns`) is written only when ON, so `false`
+    // never comes back: it is kept when `true` would have come back.
+    for (k, v) in patch {
+        if *v == Value::Bool(false) && !back.contains_key(k) && flag_kept(&key, &fields_of(base), k) {
+            back.insert(k.clone(), Value::Bool(false));
+        }
+    }
     if let Some(path) = lost(patch, &back, "") {
         return Err(format!("bad params patch: unknown field {path} - a {key} operation has no field \"{path}\"; see list_operation_types"));
     }
     Ok(next)
+}
+
+/// The kind's field object of `p`, without its tag.
+fn fields_of(p: &OpParams) -> Map<String, Value> {
+    match project::params_to_json(p) {
+        Value::Object(tagged) => tagged.into_iter().next().and_then(|(_, v)| match v {
+            Value::Object(m) => Some(m),
+            _ => None,
+        }),
+        _ => None,
+    }
+    .unwrap_or_default()
+}
+
+/// True when the kind `key` has a boolean field `k`: set to `true`, it
+/// survives the typed round-trip. A misspelled key never does.
+fn flag_kept(key: &str, fields: &Map<String, Value>, k: &str) -> bool {
+    let mut probe = fields.clone();
+    probe.insert(k.to_owned(), Value::Bool(true));
+    let mut tagged = Map::new();
+    tagged.insert(key.to_owned(), Value::Object(probe));
+    project::params_from_json(&Value::Object(tagged))
+        .map(|p| fields_of(&p).get(k) == Some(&Value::Bool(true)))
+        .unwrap_or(false)
 }
 
 /// The first key path of `patch` (dotted, e.g. `clearance_z.ofset`) the
@@ -216,7 +247,9 @@ pub(super) fn add_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Val
     }
     let cmd = CreateOperation::new(&env.world, &name, tool, src, params).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
-    Ok(json!({ "operation": name, "kind": label, "status": "never" }))
+    let mut out = json!({ "operation": name, "kind": label, "status": "never" });
+    clearance_warning(env, &name, &mut out);
+    Ok(out)
 }
 
 pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
@@ -228,7 +261,19 @@ pub(super) fn edit_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Va
     let cmd = EditOperationParams::new(&env.world, &key, next).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     let params = model::operation_of(&env.world, &e).map(|o| project::params_to_json(&o.params));
-    Ok(json!({ "operation": key, "status": "stale", "params": params }))
+    let mut out = json!({ "operation": key, "status": "stale", "params": params });
+    clearance_warning(env, &key, &mut out);
+    Ok(out)
+}
+
+/// #2121: a clearance plane set inside raw stock is said when the
+/// operation is made or edited (`operation::clearance_in_stock_advice`),
+/// as the answer's `warning` - the rapid law holds the post at Generate.
+fn clearance_warning(env: &Env, key: &str, out: &mut Value) {
+    let op = model::find_by_name(&env.world, key).and_then(|e| model::operation_of(&env.world, &e));
+    if let Some(w) = op.and_then(|o| operation::clearance_in_stock_advice(&env.world, o.setup.as_deref(), &o.src, &o.params, Some(key))) {
+        out["warning"] = json!(w);
+    }
 }
 
 /// The app's Detect holes button over MCP (#312): the operation's

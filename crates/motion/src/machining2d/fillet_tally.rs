@@ -18,6 +18,8 @@ pub(super) enum Verdict {
     TowardPart,
     Tiny,
     Blocked,
+    /// The crossing law refused the arc this corner would turn on (#2317).
+    Crossed,
 }
 
 /// What a fillet pass did, counted by reason. Every corner is in
@@ -40,6 +42,8 @@ pub struct FilletTally {
     /// A closed walk's seam: the corner where it starts and ends (the
     /// plunge, the lead join) - rounding it would move the entry.
     pub seam: usize,
+    /// The arc would cross another feed (`blend_cross`, #2317).
+    pub crossed: usize,
     /// Worst corner rest left against the sharp path, mm (the fillet's
     /// bisector offset `e`).
     pub max_rest: f64,
@@ -61,6 +65,7 @@ impl FilletTally {
             Verdict::TowardPart => &mut self.toward_part,
             Verdict::Tiny => &mut self.tiny,
             Verdict::Blocked => &mut self.blocked,
+            Verdict::Crossed => &mut self.crossed,
         };
         *bucket += 1;
         self.corners += 1;
@@ -76,6 +81,7 @@ impl FilletTally {
         self.blocked += o.blocked;
         self.curved += o.curved;
         self.seam += o.seam;
+        self.crossed += o.crossed;
         self.max_rest = self.max_rest.max(o.max_rest);
     }
 
@@ -104,7 +110,25 @@ impl FilletTally {
         say(self.blocked, "live geometry blocks every arc down to the resolution");
         say(self.curved, "a neighbour is an arc and no tangent fillet fits it (its sweep, its leg or its curve leave no room)");
         say(self.seam, "the walk starts and ends there; rounding it would move the entry");
+        say(self.crossed, "an arc there would cross another feed");
         v
+    }
+}
+
+/// The corner-arc radius a pass walk asks of `fillet_corners` (#1733):
+/// the user's `radius` or, with none, the tool radius (every file before
+/// the option). `Err` names the door: the radius must be finite, at
+/// least [`MIN_BLEND_RADIUS`] and at most the tool radius - past it the
+/// arc leaves more corner rest than the passes are spaced to clear.
+pub fn corner_arc_radius(radius: Option<f64>, tool_diameter: f64) -> Result<f64, String> {
+    let tool_r = tool_diameter * 0.5;
+    let Some(rho) = radius else { return Ok(tool_r) };
+    if rho.is_finite() && rho >= MIN_BLEND_RADIUS && rho <= tool_r {
+        Ok(rho)
+    } else {
+        Err(format!(
+            "corner arc radius must be between {MIN_BLEND_RADIUS} mm and the tool radius ({tool_r:.3} mm)"
+        ))
     }
 }
 

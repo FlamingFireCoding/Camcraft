@@ -14,6 +14,15 @@ use egui_kittest::kittest::NodeT;
 
 use super::*;
 
+#[path = "tool_properties.rs"]
+mod tool_properties;
+
+#[path = "structural/thread_repeat.rs"]
+mod thread_repeat;
+
+#[path = "break_through.rs"]
+mod break_through;
+
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {
     fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Pos2)>) {
@@ -31,13 +40,13 @@ pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)
 }
 
 /// Where a painted text sits; fails with the whole list so a miss reads.
-fn at(texts: &[(String, egui::Pos2)], want: &str) -> egui::Pos2 {
+pub(super) fn at(texts: &[(String, egui::Pos2)], want: &str) -> egui::Pos2 {
     at_where(texts, want, |_| true)
 }
 
 /// As `at`, for a text painted more than once (the ribbon's "Setups" cell
 /// and the browser's "Setups" row): the first copy `inside` accepts.
-fn at_where(
+pub(super) fn at_where(
     texts: &[(String, egui::Pos2)],
     want: &str,
     inside: impl Fn(egui::Pos2) -> bool,
@@ -55,75 +64,55 @@ fn disabled(h: &Harness<'static, ShellUi>, label: &str) -> bool {
     h.get_by_label(label).accesskit_node().is_disabled()
 }
 
-/// The seeded shell's skeleton - what `egui_app.png` pinned, theme-free:
-/// ribbon on top with its groups and cells, the three dock leaves in
-/// browser | viewport | properties order, the status strip at the bottom,
-/// the seed's rows and page, and every floating window closed.
+/// The seeded shell's skeleton - what `egui_app.png` pinned, as
+/// behaviour only (#1953): the ribbon cells, the build identity, the dock
+/// tab titles, the seed's browser rows and page, the status line and
+/// every floating window closed. No position: where each part sits is
+/// `assert_shell_layout`'s job (`page_layout::layout_shell`), so a refit
+/// that moves a pane fails a layout test, not this one.
 fn assert_shell_skeleton(h: &Harness<'static, ShellUi>) {
     let texts = painted(h);
-    // Ribbon: the group headers and a cell per group, all above the dock.
-    let groups: [&str; 0] = [];
-    let cells = ["New", "Open", "Save", "Post", "Stock", "Origin", "Undo", "Redo", "Simulate"];
-    let tab_y = at(&texts, "Browser").y;
-    for t in groups.iter().chain(cells.iter()) {
-        assert!(at(&texts, t).y < tab_y, "ribbon text {t:?} must sit above the dock tabs");
+    let shows = |want: &str| texts.iter().any(|(t, _)| t == want);
+    let shows_prefix = |want: &str, has: &str| texts.iter().any(|(t, _)| t.starts_with(want) && t.contains(has));
+    for t in ["New", "Open", "Save", "Post", "Stock", "Origin", "Undo", "Redo", "Simulate"] {
+        assert!(shows(t), "the ribbon paints {t:?}");
     }
-    // The build line rides the ribbon's corner (#352's fixed test identity).
     // The build identity's version, from the same helper the toolbar paints
     // (#556): tests pin it (#449), so the real CARGO_PKG_VERSION never shows
-    // here, and the ribbon paints the full "v… · test" or, when the ribbon is
-    // crowded, the version alone - either form starts with the version.
+    // here; the ribbon paints "v… · test" or the version alone.
     let ver = crate::build_info::toolbar_version();
-    let build = texts
-        .iter()
-        .find(|(t, _)| t.starts_with(&ver))
-        .map(|(_, p)| *p)
-        .unwrap_or_else(|| panic!("no painted build identity starting {ver:?}"));
-    assert!(build.y < tab_y, "the build identity sits on the ribbon");
-    // Dock: three leaves, left to right, titles on one row.
-    let (b, v, p) = (at(&texts, "Browser"), at(&texts, "Viewport"), at(&texts, "Properties"));
-    assert!(b.x < v.x && v.x < p.x, "dock order must be Browser | Viewport | Properties");
-    assert!((b.y - v.y).abs() < 1.0 && (v.y - p.y).abs() < 1.0, "the tab titles share a row");
-    // Browser rows of the seed, under its tab.
-    let in_browser = |q: egui::Pos2| q.y > b.y && q.x < v.x;
+    assert!(shows_prefix(&ver, ""), "no painted build identity starting {ver:?}");
+    for t in ["Browser", "Viewport", "Properties"] {
+        assert!(shows(t), "the dock paints the {t:?} tab title");
+    }
     // #343: each setup owns its WCS, Stock, Machine, Post, Fixtures and
     // Tool list rows; a row paints its name and value as one text.
-    for row in ["Setups", "Setup", "Stock", "Fixtures", "Operations", "Models", "Block", "Tools"] {
-        at_where(&texts, row, in_browser);
+    for row in ["Setups", "SETUP", "Stock", "Fixtures", "MODELS", "Block", "TOOLS"] {
+        assert!(shows(row), "the browser paints the {row:?} row");
     }
+    assert!(shows_prefix("Operations", ""), "the setup's Operations row must show in the browser");
     for (name, value) in [("WCS", "G54"), ("Machine", ""), ("Post", ""), ("Tool list", "")] {
-        assert!(
-            texts.iter().any(|(t, q)| t.starts_with(name) && t.contains(value) && in_browser(*q)),
-            "the setup's {name} row ({value:?}) must show in the browser"
-        );
+        assert!(shows_prefix(name, value), "the setup's {name} row ({value:?}) must show in the browser");
     }
-    assert!(
-        texts.iter().any(|(t, q)| t.starts_with("Contour1") && t.contains("2D Contour") && q.x < v.x),
-        "the seed's operation row must show in the browser"
-    );
-    // Viewport: its toolbar widgets and the view cube's faces.
+    assert!(shows_prefix("Contour1", "2D Contour"), "the seed's operation row must show in the browser");
     for t in ["TOP", "RIGHT", "BACK"] {
-        let q = at(&texts, t);
-        assert!(q.x > v.x && q.x < p.x, "view cube face {t:?} belongs to the viewport");
+        assert!(shows(t), "the view cube paints its {t:?} face");
     }
-    for label in ["Show world origin axes", "Show origin names", "Show all toolpaths", "Shaded", "Wireframe"] {
-        assert!(!disabled(h, label), "viewport control {label:?} must be live");
-    }
+    // View switches live behind the browser's View door now.
+    assert!(h.query_by_label("View").is_some(), "browser View door");
     // Properties: the seed's page, its sections, and the draft law's
     // disabled Apply (nothing staged on a fresh frame).
-    assert!(h.get_by_label("Operation: Contour1").rect().min.x > v.x, "the page is the right leaf");
-    for label in ["Type: 2D Contour", "Geometry", "Heights", "Passes", "Lead in / Lead out", "Feeds"] {
+    for label in ["Operation: Contour1", "Type: 2D Contour", "Geometry", "Heights", "Passes", "Lead in / Lead out", "Feeds"] {
         assert!(h.query_by_label(label).is_some(), "property page must show {label:?}");
     }
     assert!(!disabled(h, "Generate"), "Generate is live on a valid op");
     assert!(disabled(h, "Apply"), "Apply waits for a staged edit");
     assert!(disabled(h, "Align WCS (3-2-1)"), "3-2-1 waits for three picks");
-    // Status strip: the status line and the Debug info door at the bottom.
+    // Status strip: the status line and the Debug info door.
     let status = h.state().state.status.clone();
     assert!(status.starts_with("generated Contour1"), "seed status: {status}");
-    let s = at(&texts, &status);
-    assert!(s.y > p.y && s.y > 600.0, "the status line sits on the bottom strip");
-    assert!(h.get_by_label("Debug info").rect().min.y > 600.0, "Debug info is on the status strip");
+    assert!(shows(&status), "the status line paints {status:?}");
+    assert!(h.query_by_label("Debug info").is_some(), "the Debug info door");
     // Every floating surface is closed by default.
     let titled: Vec<_> = h
         .query_all_by_role(egui::accesskit::Role::Window)
@@ -188,12 +177,13 @@ fn tool_editor_structure() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
+    assert_eq!(harness.query_all_by_label("Diameter").count(), 1, "the explicit window owns the only editable tool surface");
     let win = harness
         .query_all_by_role(egui::accesskit::Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
-        .expect("Edit must open the editor window titled by the tool");
+        .expect("the explicit editor window is titled by the tool");
     let wr = win.rect();
     assert!(
         wr.min.x > 0.0 && wr.max.x < 1280.0 && wr.min.y > 0.0 && wr.max.y <= 720.0,
@@ -307,7 +297,11 @@ fn setup_page_alignment_rows_structure() {
     // (#326/#606) are not drawn while Axes is selected.
     assert!(h.query_by_label_contains("Lay on a plane - pick a face").is_none(), "the face row waits behind the dropdown");
     assert!(h.query_by_label_contains("Lay on a plane - pick three points").is_none(), "the points row waits behind the dropdown");
-    assert!(h.query_by_label_contains("Turn").is_none(), "the manual picker waits behind the dropdown");
+    assert!(
+        h.query_all_by_label_contains("Turn")
+            .all(|n| n.accesskit_node().role() == egui::accesskit::Role::Tab),
+        "the manual picker waits behind the dropdown"
+    );
     // The origin side shows the model box reading: the box point combo
     // and Place origin, with the box readout beside it.
     assert!(point_combo.max.y < h.get_by_label("Place origin").rect().min.y, "the origin controls expand under the dropdown");
@@ -335,10 +329,10 @@ fn setup_page_alignment_rows_structure() {
     assert!(pane.contains_rect(corner), "the box point combo lies inside the pane: {corner:?}");
     assert!(h.state().state.points_pick.is_none(), "nothing is armed by drawing the page");
     assert!(h.state().state.cylinder_pick.is_none() && h.state().state.origin_pick.is_none(), "no #771 draft is armed by drawing the page");
-    // #931: the work-offset combo reads the setup's post's name for the
-    // offset, worded "Work offset n (NAME)" - never a bare G-word.
+    // #1648: the work-offset combo moved to the WCS page (one_wcs.rs pins
+    // it, worded "Work offset n (NAME)", #931); the Setup page has none.
     let wcs = |v: &str| h.query_all_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some(v)).count();
-    assert_eq!(wcs("Work offset 1 (G54)"), 1, "the Settings page's work-offset combo");
+    assert_eq!(wcs("Work offset 1 (G54)"), 0, "the Settings page has no work-offset combo (#1648)");
     assert_eq!(wcs("G54"), 0, "no bare word in the combo");
 }
 
@@ -444,8 +438,8 @@ fn ribbon_labels_whole_and_captions_painted() {
     // once - no two buttons share a label.
     let words = [
         "New", "Model", "Open", "Save", "Save As", "Post", "Setups", "Stock", "Origin", "Tools",
-        "Undo", "Redo", "Run", "Delete", "Frame", "Paths", "Simulate", "Deviate", "Panels\u{2026}",
-        "Theme\u{2026}", "Mill 2D\u{2026}", "Mill 3D\u{2026}", "Drill\u{2026}", "Multi\u{2026}",
+        "Undo", "Redo", "Run", "Delete", "Frame", "Paths", "Simulate", "Deviate", "Panels",
+        "Theme", "2D", "3D", "Drill", "Multi",
     ];
     for w in words {
         let n = ribbon.iter().filter(|(t, _, _)| t == w).count();
@@ -453,7 +447,7 @@ fn ribbon_labels_whole_and_captions_painted() {
     }
     // The captions are back: one under each multi-cell group, in left to
     // right order, below the cell row and above the dock.
-    let caps: Vec<(&str, egui::Pos2)> = ["File", "Setup", "Modify", "Inspect", "View"]
+    let caps: Vec<(&str, egui::Pos2)> = ["FILE", "SETUP", "MODIFY", "INSPECT", "VIEW"]
         .into_iter()
         .map(|c| {
             let hit = ribbon.iter().find(|(t, _, _)| t == c);
@@ -499,6 +493,7 @@ fn origin_names_paint_on_and_quiet_off_letters_and_lines_always() {
     // On: the painted frame shows the offset's name row in the viewport,
     // and the shared projection law agrees.
     h.run_steps(2);
+    super::open_view_menu(&mut h);
     let texts = painted(&h);
     let v = at(&texts, "Viewport").x;
     let p = at(&texts, "Properties").x;
@@ -529,41 +524,36 @@ fn origin_names_paint_on_and_quiet_off_letters_and_lines_always() {
         );
         let segs = interact::gizmo_segments(st, 1.0);
         assert!(!segs.is_empty(), "the triad's strokes draw");
-        let letters = letters(&labels);
-        assert!(!letters.is_empty(), "the axis letters draw");
-        (segs.len(), letters)
+        (segs.len(), letters(&labels))
     };
-    // Off: the checkbox clicks the flag through the real widget and the
-    // name row leaves the painted frame; letters and lines stay.
+
+    // Off: click the switch; letters and lines stay, the name row goes.
     h.get_by_label("Show origin names").click();
     h.run_steps(2);
+    assert!(!h.state().state.show_gizmo_names, "the click flipped the flag");
+    super::open_view_menu(&mut h);
+    assert_eq!(
+        h.get_by_label("Show origin names").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False),
+        "the checkbox reads unchecked after the click"
+    );
     let texts = painted(&h);
-    {
-        let st = &h.state().state;
-        assert!(!st.show_gizmo_names, "the click flipped the flag");
-        assert_eq!(
-            h.get_by_label("Show origin names").accesskit_node().toggled(),
-            Some(egui::accesskit::Toggled::False),
-            "the checkbox reads unchecked after the click"
-        );
-        let labels = interact::overlay_labels(st, 1.0);
-        assert!(
-            labels.iter().all(|(_, _, t)| t != "G54"),
-            "off: no name row anywhere: {labels:?}"
-        );
-        assert!(
-            !texts.iter().any(in_viewport),
-            "off: the painted viewport no longer shows the name row"
-        );
-        // Letters and strokes ignore the switch: the same letters and
-        // the same segments draw either way.
-        assert_eq!(letters(&labels), letters_on, "the letters survive untouched");
-        assert_eq!(
-            interact::gizmo_segments(st, 1.0).len(),
-            segs_on,
-            "the strokes ignore the switch"
-        );
-    }
+    let st = &h.state().state;
+    let labels = interact::overlay_labels(st, 1.0);
+    assert!(
+        labels.iter().all(|(_, _, t)| t != "G54"),
+        "off: no name row anywhere: {labels:?}"
+    );
+    assert!(
+        !texts.iter().any(in_viewport),
+        "off: the painted viewport no longer shows the name row"
+    );
+    assert_eq!(letters(&labels), letters_on, "the letters survive untouched");
+    assert_eq!(
+        interact::gizmo_segments(st, 1.0).len(),
+        segs_on,
+        "the strokes ignore the switch"
+    );
     let _ = std::fs::remove_dir_all(&d);
 }
 

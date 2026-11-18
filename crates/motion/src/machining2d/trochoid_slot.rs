@@ -20,16 +20,17 @@
 //! clearance plane and a bore helix past the turn cap are each refused
 //! by name (#774).
 
-use crate::cl::{MoveKind, PathBuilder, Toolpath, lattice};
+use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use crate::quality::{QualitySpec, measure, stock_for};
 
 use super::face::GenError;
-use super::levels::cut_levels;
+use super::levels::cut_levels_under;
 use super::trochoid_air::lifted_cut;
-use super::trochoid_bore::{bore, start as bore_start};
-use super::trochoid_loops::{Chain, El, Layout, MAX_LOOPS, contained, layout};
+use super::trochoid_bore::start as bore_start;
+pub(super) use super::trochoid_level::emit_level;
+use super::trochoid_loops::{Chain, Layout, MAX_LOOPS, contained, layout, layout_closed};
 
 /// The forward step is tried at these shares of the user's, longest
 /// first, until the measured engagement holds.
@@ -84,6 +85,10 @@ pub struct TrochoidParams {
     pub return_feed: f64,
     pub plunge_feed: f64,
     pub climb: bool,
+    /// The stock top in this frame (#2004): stock over Top Z keeps a
+    /// level at Top Z, so no first bite is deeper than one stepdown.
+    /// `None` reads Top Z as the material top.
+    pub stock_top: Option<f64>,
 }
 
 impl TrochoidParams {
@@ -203,11 +208,30 @@ pub fn plan_trochoidal_slot(chain: &[Point2], p: &TrochoidParams) -> Result<Troc
     plan_lane(chain, p, open)
 }
 
+/// Planned 2D layout for one lane after holding the engagement limit.
+pub(super) struct LaneLayout {
+    pub(super) lay: Layout,
+    pub(super) step: f64,
+    pub(super) deg: f64,
+    pub(super) b: f64,
+    pub(super) room: f64,
+    pub(super) open: bool,
+    pub(super) entry: Point2,
+    pub(super) tp: TrochoidParams,
+}
+
 /// The planner behind [`plan_trochoidal_slot`]; `open` opens the bore
 /// out to a band wider than the tool (`trochoid_bore`, #1509).
 pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Result<TrochoidPlan, GenError> {
+    let planned = plan_lane_layout(chain, p, open, false)?;
+    finish(&planned.lay, p, planned.step, planned.deg, planned.b, planned.room, open)
+}
+
+/// Plan one open or closed trochoidal lane without yet repeating across levels.
+pub(super) fn plan_lane_layout(chain: &[Point2], p: &TrochoidParams, open: bool, closed: bool) -> Result<LaneLayout, GenError> {
     p.validate()?;
-    let Some(ch) = Chain::new(chain) else {
+    let ch = if closed { Chain::new_closed(chain) } else { Chain::new(chain) };
+    let Some(ch) = ch else {
         return Err(GenError::Invalid("trochoidal slot: the centre line needs two distinct, finite points".into()));
     };
     let b = p.band()?;
@@ -231,19 +255,15 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
         Ok(bld.finish())
     };
     let mut best: Option<(f64, Point3, f64)> = None;
-    // The longest step that needed more loops than the cap (every
-    // shorter rung needs more still).
     let mut capped: Option<f64> = None;
     for f in LADDER {
         let step = p.step * f;
-        let Some(lay) = layout(&ch, b, step, p.smoothing, p.climb) else {
+        let lay_opt = if closed { layout_closed(&ch, b, step, p.smoothing, p.climb) } else { layout(&ch, b, step, p.smoothing, p.climb) };
+        let Some(lay) = lay_opt else {
             capped = capped.or(Some(step));
             continue;
         };
         contained(&ch, &lay, room)?;
-        // The first loops first (the steady state comes within a few
-        // loops; a failing step need not be walked to the end), then
-        // the whole level.
         let head = Layout { pieces: lay.pieces.iter().take(TRIAL_LOOPS).cloned().collect(), ..lay.clone() };
         let full = lay.pieces.len() > TRIAL_LOOPS;
         let mut q = gauge(&level(&head)?)?;
@@ -259,7 +279,6 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
         if q.max_deg > p.max_engagement {
             continue;
         }
-        // The lifted returns land on air, read inside the disc.
         let trial = match trial {
             Some(t) => t,
             None => level(&lay)?,
@@ -272,7 +291,8 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
                 at.x, at.y
             )));
         }
-        return finish(&lay, p, step, q.max_deg, b, room, open);
+        let entry = bore_start(&lay, p, open);
+        return Ok(LaneLayout { lay, step, deg: q.max_deg, b, room, open, entry, tp: *p });
     }
     let cap = |s: f64| {
         format!(
@@ -301,7 +321,7 @@ pub(super) fn plan_lane(chain: &[Point2], p: &TrochoidParams, open: bool) -> Res
 /// The kept plan over every level, said in the notes and held to the
 /// verifier's crossing law.
 fn finish(lay: &Layout, p: &TrochoidParams, step: f64, deg: f64, b: f64, room: f64, open: bool) -> Result<TrochoidPlan, GenError> {
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.stock_top, p.bottom_z, p.stepdown)?;
     let entry = bore_start(lay, p, open);
     let hop = p.retract_z.unwrap_or(p.clearance_z);
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
@@ -350,45 +370,4 @@ fn finish(lay: &Layout, p: &TrochoidParams, step: f64, deg: f64, b: f64, room: f
         .with_ghost(&path));
     }
     Ok(TrochoidPlan { path, step, loop_radius: lay.rho, loops: lay.loops, max_engagement: deg })
-}
-
-/// One level at `z`: the bore from `from` (`trochoid_bore`), then each
-/// loop's wall lead and cut, the returns between them. `levels` says
-/// whether a retract return may hop (the planner's single level lifts
-/// in place instead, which reads the same stock).
-fn emit_level(b: &mut PathBuilder, lay: &Layout, p: &TrochoidParams, z: f64, from: f64, levels: bool, open: bool) -> Result<(), GenError> {
-    let p3 = |q: Point2, zz: f64| Point3::new(lattice(q.x), lattice(q.y), lattice(zz));
-    bore(b, lay, p, z, from, open)?;
-    let n = lay.pieces.len();
-    for (i, pc) in lay.pieces.iter().enumerate() {
-        b.push(MoveKind::Feed, p3(pc.start, z), Some(p.feed));
-        for el in &pc.cut {
-            let El::Arc { center, to, ccw } = *el;
-            b.push_arc(MoveKind::Feed, p3(to, z), Some(p.feed), center, ccw);
-        }
-        if i + 1 == n {
-            break;
-        }
-        let e = pc.end();
-        match p.ret {
-            TrochoidReturn::Microlift { height } => {
-                let zl = z + height;
-                b.push(MoveKind::Feed, p3(e, zl), Some(p.return_feed));
-                for el in pc.retrace() {
-                    let El::Arc { center, to, ccw } = el;
-                    b.push_arc(MoveKind::Feed, p3(to, zl), Some(p.return_feed), center, ccw);
-                }
-                b.push(MoveKind::Feed, p3(pc.start, z), Some(p.plunge_feed));
-            }
-            TrochoidReturn::Retract => {
-                let hop = if levels { p.retract_z.unwrap_or(p.clearance_z) } else { z + 0.5 };
-                let near = (z + crate::approach::DEFAULT_PLUNGE_HEIGHT).min(hop);
-                b.push(MoveKind::Rapid, p3(e, hop), None);
-                b.push(MoveKind::Rapid, p3(pc.start, hop), None);
-                b.push(MoveKind::Rapid, p3(pc.start, near), None);
-                b.push(MoveKind::Feed, p3(pc.start, z), Some(p.plunge_feed));
-            }
-        }
-    }
-    Ok(())
 }

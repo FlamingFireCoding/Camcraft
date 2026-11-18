@@ -33,6 +33,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             entry,
             helix_radius,
             tilt,
+            extend_start,
+            extend_end,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "s", Some((entry, helix_radius)), links);
@@ -45,11 +47,18 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     Some(Err(e)) => hint(ui, e),
                     None => {}
                 }
-                prop_row(ui, "A X", |ui| num(ui, u, &mut a.x));
-                prop_row(ui, "A Y", |ui| num(ui, u, &mut a.y));
-                prop_row(ui, "B X", |ui| num(ui, u, &mut b.x));
-                prop_row(ui, "B Y", |ui| num(ui, u, &mut b.y));
+                // #1732: the hand-typed ends, their own section; the
+                // viewport marks follow these draft values.
+                group(ui, "Manual", None, |ui| {
+                    prop_row(ui, "A X", |ui| num(ui, u, &mut a.x));
+                    prop_row(ui, "A Y", |ui| num(ui, u, &mut a.y));
+                    prop_row(ui, "B X", |ui| num(ui, u, &mut b.x));
+                    prop_row(ui, "B Y", |ui| num(ui, u, &mut b.y));
+                });
                 prop_row(ui, "Slot width", |ui| num(ui, u, width));
+                // #1731: run the pass out past each end, along the slot.
+                prop_row(ui, "Extend past A", |ui| num(ui, u, extend_start));
+                prop_row(ui, "Extend past B", |ui| num(ui, u, extend_end));
             }
             if tab == SEC_HEIGHTS {
                 orientation_editor(ui, u, tilt);

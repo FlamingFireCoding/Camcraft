@@ -1,7 +1,7 @@
 //! camcraft-tools - the tool-catalog seam of the M4.1 crate split
 //! (R2, docs/M4.1-CRATE-SPLIT.md). Just the plain types: the R0 audit
-//! proved tools.rs imports nothing (not even geometry), and it still
-//! holds - the entity wrappers live in the app's schema, the picker
+//! proved tools.rs imports nothing; the DXF profile converter uses geometry.
+//! The entity wrappers live in the app's schema, the picker
 //! and sheet rendering in commands/tool and tool_list.
 //!
 //! Provenance: end mill / ball nose / bull nose shapes and the
@@ -16,6 +16,8 @@ mod catalog_asset_tests;
 pub mod cutting;
 // #541: the sinker EDM electrode as a tool record.
 pub mod electrode;
+// #1152: the body electrode's outline law.
+pub mod electrode_outline;
 // #368: a modelled tool body as the stack laws read it.
 pub mod holder_profile;
 // #793: the built-in BT/CAT taper holder library, drawn as spun profiles.
@@ -36,9 +38,15 @@ pub mod lathe_insert_zone;
 pub mod orientation;
 // #894: the thread mills - form constants, sanity and the pitch door.
 pub mod thread_mill;
+pub mod thread_hand;
 pub mod catalog_fields;
 // #890: a tool's cutting data per workpiece material.
 pub mod cutting_rows;
+pub mod waterjet;
+pub mod wire;
 pub mod tools;
 // #891: turning surface speed, feed per rev and the max-rpm clamp.
 pub mod turning_data;
+
+// #743: DXF half-profile parsing and projection into validated holder profiles.
+pub mod tool_profile_dxf;

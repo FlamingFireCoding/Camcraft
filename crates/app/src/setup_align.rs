@@ -22,10 +22,16 @@
 //!   then calls the very function it called before #326, so an untouched
 //!   setup is byte-identical (paths, stamps, posts and saved files).
 //! - **Refuse what is not verified.** Generation in an aligned setup is
-//!   wired for the 2D milling kinds over a whole model or the stock;
-//!   every other kind, a pick, area controls, a tilt and a non-mill
-//!   machine are refused by name ([`generation_problem`]) - never cut in
-//!   the unaligned frame.
+//!   wired for `Face`, `Contour`, `Pocket`, `Adaptive2D`, `Offset2D`,
+//!   `Trace`, `Engrave`, `Circular`, `Slot`, `TrochoidalSlot`, `Drill`,
+//!   `Bore`, `Thread`, `Deburr`, `Pocket3D` and `Finish3D` over a whole model,
+//!   the stock, or picked features, area controls included (#1743 3D,
+//!   #2210 2D, #2276 the region, typed and hole-list kinds; Detect holes and the
+//!   Slot's picks read the op's setup frame): every world read of
+//!   `boundary_ctx` - picks, part material, heights, silhouette - goes
+//!   through the same setup-frame doors as the model, and the stock
+//!   outline is furniture. Other kinds, a tilt and a non-mill machine
+//!   are refused by name ([`generation_problem`]).
 
 use flecs_ecs::core::EntityViewGet; // try_get is not re-exported in prelude (0.2.2)
 use flecs_ecs::prelude::{Entity, World};
@@ -365,6 +371,10 @@ fn verified_kind(params: &crate::operation::OpParams) -> bool {
     matches!(
         params,
         OpParams::Face { .. } | OpParams::Pocket { .. } | OpParams::Contour { .. } | OpParams::Adaptive2D { .. }
+            | OpParams::Offset2D { .. } | OpParams::Trace { .. } | OpParams::Engrave { .. }
+            | OpParams::Chamfer2D { .. } | OpParams::Circular { .. } | OpParams::TrochoidalSlot { .. } | OpParams::Slot { .. }
+            | OpParams::Drill { .. } | OpParams::Bore { .. } | OpParams::Thread { .. } | OpParams::Deburr { .. }
+            | OpParams::Pocket3D { .. } | OpParams::Finish3D { .. }
     )
 }
 
@@ -375,7 +385,6 @@ fn verified_kind(params: &crate::operation::OpParams) -> bool {
 /// in the unaligned frame.
 #[must_use]
 pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Option<String> {
-    use crate::operation::SrcRef;
     let setup = crate::setup::effective(world, op.setup.as_deref())?;
     stored(world, &setup)?;
     let head = format!("setup '{setup}' holds the part turned (part alignment)");
@@ -386,19 +395,18 @@ pub fn generation_problem(world: &World, op: &crate::schema::Operation) -> Optio
     }
     if !verified_kind(&op.params) {
         return Some(format!(
-            "{head} - {} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket and \
-             2D Adaptive are); set the setup's part alignment back to As modelled, or machine it in another setup",
+            "{head} - {} is not supported yet in an aligned setup (Face, 2D Contour, 2D Pocket, \
+             2D Adaptive, 2D Offset, Trace, Engrave, 2D Chamfer, Circular, Slot, Trochoidal Slot, Drill, Bore, Thread, Deburr, 3D Pocket and 3D Finish are); set the setup's part alignment back to As modelled, or machine it in another setup",
             op.params.kind().info().label
         ));
     }
     if op.params.tilt().is_some() {
         return Some(format!("{head} - a tilted plane is not supported yet in an aligned setup"));
     }
-    if matches!(op.src, SrcRef::Selection(_)) {
-        return Some(format!("{head} - picked faces and edges are not supported yet in an aligned setup; pick a whole model or the stock"));
-    }
-    if !op.area.is_default() {
-        return Some(format!("{head} - area controls are not supported yet in an aligned setup"));
-    }
+    // #1743 (3D) / #2210 (2D): the area controls of every verified kind
+    // resolve in the setup frame - `boundary_ctx` reads the picks
+    // (`selection_geometry_in` -> `OpFrame::pose_in_setup`), the part
+    // material and heights (`setup_align::facets_in`) through the very
+    // transform the model reads, and the stock outline as furniture.
     None
 }

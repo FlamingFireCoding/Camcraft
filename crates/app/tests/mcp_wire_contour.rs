@@ -4,7 +4,8 @@
 //! edited, generated, undone and redone; a tool named on the kind, an
 //! unknown condition and an unnamed one come back as tool errors in the
 //! command's own words, and `list_operation_types` says the kind
-//! mounts no tool.
+//! mounts no tool. A taper the machine cannot post is refused by the
+//! edit door (#1800).
 //!
 //! Gate map (#1108): covers app::mcp (edit, job, tools, setup_tools),
 //! app::commands (CreateOperation, EditOperationParams tool and wire
@@ -105,16 +106,17 @@ fn wire_job(tag: &str) -> Client {
     let mut c = Client { server: Server::new(), next: 1 };
     c.ok("load_machine", json!({ "path": mch.display().to_string() }));
     c.ok("import_model", json!({ "path": stl.display().to_string() }));
+    c.ok("add_tool", json!({ "catalog": "EDM-W025", "holder": "none" }));
     c
 }
 
 fn wire_args(condition: &str) -> Value {
-    json!({ "kind": "Wire Contour", "name": "W", "source": "slug",
+    json!({ "kind": "Wire Contour", "name": "W", "tool": "EDM-W025", "source": "slug",
         "params": { "condition": condition, "side": "die", "start": [0.0, 0.0] } })
 }
 
 #[test]
-fn wire_contour_is_added_without_a_tool_edited_generated_undone_and_redone() {
+fn wire_contour_is_added_with_a_wire_tool_edited_generated_undone_and_redone() {
     let mut c = wire_job("flow");
     let added = c.ok("add_operation", wire_args("C110"));
     assert_eq!(added["kind"], json!("Wire Contour"));
@@ -151,12 +153,13 @@ fn wire_contour_is_added_without_a_tool_edited_generated_undone_and_redone() {
 #[test]
 fn wire_contour_refusals_arrive_as_tool_errors_in_the_commands_words() {
     let mut c = wire_job("refuse");
-    let with_tool = c.refused("add_operation", {
+    c.ok("add_tool", json!({ "catalog": "EM-0600-4FL", "holder": "none" }));
+    let wrong_tool = c.refused("add_operation", {
         let mut a = wire_args("C110");
         a["tool"] = json!("EM-0600-4FL");
         a
     });
-    assert!(with_tool.contains("mounts no library tool"), "{with_tool}");
+    assert!(wrong_tool.contains("cuts with a wire"), "{wrong_tool}");
     let unknown = c.refused("add_operation", wire_args("NOPE"));
     assert!(unknown.contains("NOPE"), "{unknown}");
     let nogap = c.refused("add_operation", wire_args("S9"));
@@ -170,13 +173,13 @@ fn wire_contour_refusals_arrive_as_tool_errors_in_the_commands_words() {
 }
 
 #[test]
-fn list_operation_types_says_the_wire_kind_mounts_no_tool() {
+fn list_operation_types_says_the_wire_kind_mounts_a_wire_tool() {
     let mut c = Client { server: Server::new(), next: 1 };
     let types = c.ok("list_operation_types", json!({}));
     let kinds = types["kinds"].as_array().cloned().unwrap_or_default();
     let wire = kinds.iter().find(|k| k["label"] == json!("Wire Contour")).expect("kind listed");
-    assert_eq!(wire["mounts_tool"], json!(false));
-    assert!(wire["note"].as_str().unwrap_or_default().contains("no library tool"));
+    assert_eq!(wire["mounts_tool"], json!(true));
+    assert_eq!(wire["tool_kinds"], json!(["Wire"]));
     let face = kinds.iter().find(|k| k["label"] == json!("Face")).expect("face");
     assert_eq!(face["mounts_tool"], json!(true));
     assert!(face.get("note").is_none());
@@ -192,4 +195,18 @@ fn a_wire_contour_cannot_post_over_mcp_and_writes_no_file() {
     let low = why.to_lowercase();
     assert!(low.contains("wire") || low.contains("edm"), "refusal names the wire cut: {why}");
     assert!(!out.exists(), "a refused post writes no file");
+}
+
+/// #1800: a taper the mounted machine cannot post is refused over MCP by
+/// the same command door the GUI page passes - this machine file states
+/// no edm.max_taper_deg - and the op keeps its vertical cut.
+#[test]
+fn a_taper_edit_the_machine_cannot_post_is_a_tool_error() {
+    let mut c = wire_job("taper");
+    c.ok("add_operation", wire_args("C110"));
+    let why = c.refused("edit_operation", json!({ "name": "W", "params": { "taper_deg": 3.0 } }));
+    assert!(why.contains("3.000 degree taper is asked") && why.contains("states no edm.max_taper_deg"), "{why}");
+    let job = c.ok("get_job", json!({}));
+    let op = job["operations"][0].to_string();
+    assert!(!op.contains("\"taper_deg\":3"), "the refused taper never lands: {op}");
 }

@@ -14,7 +14,8 @@ pub fn stitched_rings(world: &World, items: &[GeoSel]) -> Vec<Option<usize>> {
     // A walk that refuses (a cross-entity fork or plane mismatch,
     // M13.11) owns no ring: every chip reads "stitched nothing", and
     // the refusal itself is the account's to quote.
-    let Ok((_, consumed)) = stitch_open_runs(world, items, None) else {
+    let setup = crate::setup::active(world);
+    let Ok((_, consumed)) = stitch_open_runs(world, setup.as_deref(), items, None) else {
         return vec![None; items.len()];
     };
     let mut out: Vec<Option<usize>> = vec![None; items.len()];
@@ -46,6 +47,12 @@ pub fn selection_notes(
     selection_account(world, setup, items, params).0
 }
 
+/// How every ring the stitcher composes is named, per entity and across
+/// entities. The pick door reads it ([`selection_refusal`], #1726):
+/// a collapse of a ring that only the stitcher closed is an edge pick in
+/// progress, not a wall pick.
+pub(super) const STITCHED_RIM: &str = "the stitched rim of";
+
 /// The stable core of the "collapses to a line seen from above" refusal
 /// (`push_loop`): what [`selection_refusal`] keys on, so the pick and
 /// Apply doors and the page say the sentence generation would.
@@ -71,13 +78,12 @@ pub fn selection_account(
     if let Some(account) = super::probe_account(world, items, params) {
         return account;
     }
-    let mut notes = Vec::new();
-    match selection_geometry_impl(world, setup, items, params, Some(&mut notes)) {
-        Ok(_) => (notes, None),
-        // Other refusals stay `region_of`'s and generation's to make,
-        // with detail; notes stay as far as the walk got.
-        Err(err) => (notes, door_refusal(params, err)),
-    }
+    // One walk per input, not per frame (#2248): the memo keys on the
+    // picks, the parameters and every world read of the walk. Other
+    // refusals stay `region_of`'s and generation's to make, with detail;
+    // notes stay as far as the walk got.
+    let a = super::selection_memo::answer(world, setup, items, params);
+    (a.notes, a.refusal)
 }
 
 /// The early flat-area refusal, decided at the pick/link/create doors.
@@ -103,6 +109,18 @@ pub fn selection_refusal(
     selection_geometry_impl(world, setup, items, params, None)
         .err()
         .and_then(|err| door_refusal(params, err))
+        .filter(|msg| !stitched_collapse(msg))
+}
+
+/// #1726: whether a door refusal is the collapse of a ring that only the
+/// stitcher closed. Edges are picked one at a time, and the stitcher
+/// welds open runs where their ends meet seen from above: one vertical
+/// edge, or an edge and the edge under it, is such a "ring" with no
+/// area. Refusing it at the door made Ctrl+click add nothing, so the
+/// door lets it in. Generate keeps the refusal, and the page's account
+/// ([`selection_account`]) still says it under the picks.
+fn stitched_collapse(msg: &str) -> bool {
+    msg.starts_with(STITCHED_RIM) && msg.contains(LINE_FROM_ABOVE)
 }
 
 fn pocket_family(params: &OpParams) -> bool {
@@ -112,7 +130,7 @@ fn pocket_family(params: &OpParams) -> bool {
     )
 }
 
-fn door_refusal(params: &OpParams, err: GenError) -> Option<String> {
+pub(super) fn door_refusal(params: &OpParams, err: GenError) -> Option<String> {
     // #871: a door refusal that carried a ghost is the same sentence -
     // the pick shows the words alone, so its ghost (and the spot it
     // names) are dropped here, exactly as a plain refusal has none.

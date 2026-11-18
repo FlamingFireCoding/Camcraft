@@ -97,6 +97,7 @@ fn clean_pocket_verifies_silent() {
     let t = pocket(
         &r,
         &PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 3.0,
@@ -132,6 +133,7 @@ fn a_ramp_pocket_verifies_silent() {
     let t = pocket(
         &r,
         &PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 4.0,
@@ -172,6 +174,7 @@ fn a_helix_pocket_verifies_silent() {
     let t = pocket(
         &r,
         &PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 4.0,
@@ -364,6 +367,7 @@ fn holder_hits_a_part_island_when_the_flute_is_short() {
     let t = pocket(
         &r,
         &PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 3.0,
@@ -523,6 +527,7 @@ fn engrave_paths_skip_the_gouge_law() {
             feed: 500.0,
             plunge_feed: 100.0,
             climb: true,
+            stock_top: None,
         },
     )
     .unwrap();
