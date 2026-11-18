@@ -49,6 +49,7 @@ pub(crate) enum Tab {
     Machines,
     AiChat,
     Tools,
+    DebugInfo,
 }
 
 impl Tab {
@@ -60,6 +61,7 @@ impl Tab {
             Tab::Machines => "Machines",
             Tab::AiChat => "AI Chat",
             Tab::Tools => "Tool library",
+            Tab::DebugInfo => "Debug info",
         }
     }
 }
@@ -177,9 +179,6 @@ pub(crate) fn shell_layout(
     // snapshots never move until the Setup pane opens it).
     machine_editor::window(ui.ctx(), state);
     super::post_dialog::window(ui.ctx(), state);
-    // #157: the Debug info window - same window law (closed on a fresh
-    // State, opened from the status strip's bug button).
-    super::debug_info::window(ui.ctx(), state);
     // #339 slice 6: the fixture library dialogs (None on a fresh State).
     super::fixture_library_dialog::window(ui.ctx(), state);
     // #107: the unsaved-changes prompt, last so it sits over everything.
@@ -271,6 +270,7 @@ impl TabViewer for ShellTabs<'_> {
                 machines_pane::draw(ui, self.state, &pal);
             }
             Tab::AiChat => super::ai_chat::draw(ui, self.state),
+            Tab::DebugInfo => super::debug_info::draw(ui, self.state),
         }
     }
 }
@@ -358,6 +358,7 @@ fn viewport_panel(
                 });
             }
         });
+        crate::play_precalc::transport_row(ui, state);
         if stop {
             state.sim = None;
         } else if !sc.is_empty()
@@ -430,7 +431,11 @@ fn viewport_panel(
     state.viewport_rect = ([rx0, ry0], [rx1, ry1]);
     let pal = theme::current();
     super::file_drop::paint_hint(ui, resp.rect, &pal);
-    let hot = resp.hovered();
+    // #2257: the progress overlay while a toolpath generates.
+    // A press on it (Cancel) is the overlay's, never a viewport pick.
+    let overlay = super::gen_overlay::paint(ui, resp.rect, state, &pal);
+    let over_overlay = overlay.is_some_and(|r| ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| r.contains(p)));
+    let hot = resp.hovered() && !over_overlay;
     state.viewport_hot = hot;
     let (rw, rh) = (rx1 - rx0, ry1 - ry0);
     // The M1.5 corner furniture, laid out from the pane rect alone: the
@@ -989,7 +994,7 @@ pub(crate) mod headless {
         // Software adapter first, else the hardware one (#615: macOS's
         // Metal has no software fallback).
         let gpu = crate::headless_gpu::device()?;
-        println!("headless: {} adapter {}", gpu.kind.label(), gpu.name);
+        diag_info!("headless: {} adapter {}", gpu.kind.label(), gpu.name);
         let (device, queue) = (gpu.device, gpu.queue);
 
         let mut view = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1041,7 +1046,7 @@ pub(crate) mod headless {
             // less than 5% of the frame: the seeded stock did not rasterize
             return Err(format!("readback looks empty ({changed}/{total} changed px)"));
         }
-        println!(
+        diag_info!(
             "headless snapshot: {w}x{h}, {}% pixels changed; Contour1 cached {op_ok} moves",
             changed * 100 / total
         );

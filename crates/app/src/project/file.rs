@@ -257,6 +257,10 @@ pub struct PostOptionsDto {
     /// (M0), additive (no version step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub between_setups: Option<String>,
+    /// How a Z-rotated work offset posts (#760): `"control"`; absent is
+    /// the default `"bake"` (additive, no version step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wcs_rotation: Option<String>,
     /// Per-post declared script option overrides keyed by `post_key` (#258),
     /// additive (no version step); absent leaves all script defaults intact.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]

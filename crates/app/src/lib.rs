@@ -96,6 +96,8 @@ pub mod setup_offsets;
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
+// #870: the WCS origin said in words ("top of stock, front-left corner").
+pub mod setup_origin;
 // #316: transforms between setups and the setup-relative link.
 pub mod setup_relative;
 // #1510: a tilted milling WCS is refused at generation.
@@ -149,6 +151,8 @@ pub use camcraft_tools::waterjet as waterjet_tools;
 pub use camcraft_tools::wire as wire_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;
+// #743 part 2: STEP/SpunProfile <-> DXF half-profile conversion.
+pub mod tool_profile_dxf;
 // #93 slice 2: the drawn cutter law, and the tool's stored drawn cutter.
 pub use camcraft_tools::cutter_profile;
 // #93 slice 3: the drawn cutter carried onto new numbers, and its neck.

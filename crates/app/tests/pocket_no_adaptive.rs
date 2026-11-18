@@ -235,9 +235,11 @@ fn v63_pocket_adaptive_opens_as_adaptive2d_with_identical_toolpath() {
     history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate migrated"));
     let migrated_cl = gen_to_cltext(&model::toolpath_of(&world, &e).expect("path").path);
 
-    // Recorded by opening this unchanged v63 fixture with the old Pocket+Adaptive
-    // generator at a529c455352d8c2d228e3dd83d0e5d42a91ea9b0 (the parent of
-    // #1517's retirement commit). This expectation never reads migrated params.
+    // Recorded by opening this unchanged v63 fixture with the unmigrated
+    // Pocket+Adaptive generator on upstream/main e2ed62d0b (after #2004 / PR
+    // #2013 dropped the air-cutting Top Z=20 level when stock_top <= top_z,
+    // leaving only the Z=18 level). This expectation never reads migrated
+    // params.
     assert_eq!(
         migrated_cl,
         include_str!("golden/pocket_adaptive_v63.cl"),

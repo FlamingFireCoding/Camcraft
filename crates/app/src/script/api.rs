@@ -161,9 +161,9 @@ pub(crate) fn v_operations(env: &mut Env, _args: Vec<Value>) -> Result<Value, St
 }
 
 /// `cam.generate(...names)` - bring the job current. No names runs
-/// every operation that is not already Ok (the Never and Stale set -
-/// what RegenerateAll stages, plus the first generation it leaves
-/// alone); named operations regenerate whatever their status, the way
+/// every operation that is not Ok when reached in program order,
+/// including operations made Stale by an earlier generation in this call;
+/// named operations regenerate whatever their status, the way
 /// the app's Generate button does. Each one rides its own
 /// GenerateOperation command: a mid-run refusal names the operation
 /// and leaves the generations before it real and undoable, exactly as
@@ -172,7 +172,6 @@ pub(crate) fn v_generate(env: &mut Env, args: Vec<Value>) -> Result<Value, Strin
     let all = inventory(env);
     let targets: Vec<(String, Entity)> = if args.is_empty() {
         all.iter()
-            .filter(|(_, _, s)| *s != OpStatus::Ok)
             .map(|(n, e, _)| (n.clone(), *e))
             .collect()
     } else {
@@ -188,6 +187,9 @@ pub(crate) fn v_generate(env: &mut Env, args: Vec<Value>) -> Result<Value, Strin
     };
     let mut done = Vec::with_capacity(targets.len());
     for (name, entity) in targets {
+        if args.is_empty() && crate::operation::status_of(&env.world, &entity) == OpStatus::Ok {
+            continue;
+        }
         let cmd = GenerateOperation::new(&env.world, &name).map_err(|e| refusal_text(&name, &e))?;
         env.history.execute(&env.world, cmd);
         done.push(op_view(env, &name, &entity, false));

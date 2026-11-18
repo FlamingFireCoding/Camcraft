@@ -228,6 +228,7 @@ pub fn collect(world: &World) -> ProjectFile {
             (o.threading != crate::schema::ThreadingOutput::default()
                 || o.end_units != crate::schema::EndUnits::default()
                 || o.between_setups != crate::schema::BetweenSetups::default()
+                || o.wcs_rotation != crate::schema::WcsRotationOutput::default()
                 || !script.is_empty())
             .then(|| PostOptionsDto {
                 threading: match o.threading {
@@ -243,6 +244,9 @@ pub fn collect(world: &World) -> ProjectFile {
                 // #1532: the default pause writes no key.
                 between_setups: (o.between_setups != crate::schema::BetweenSetups::default())
                     .then(|| o.between_setups.word().to_owned()),
+                // #760: the default bake writes no key.
+                wcs_rotation: (o.wcs_rotation != crate::schema::WcsRotationOutput::default())
+                    .then(|| o.wcs_rotation.word().to_owned()),
                 script,
             })
         },

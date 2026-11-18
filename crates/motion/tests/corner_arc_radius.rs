@@ -236,6 +236,18 @@ fn the_crossing_law_keeps_the_arc_turns_and_crosses_nowhere() {
             assert!(radius.is_none() || !refused, "{strategy:?} r={radius:?}: a touch read as a crossing: {:?}", blended.notes);
         }
     }
+    // #2013: merging the crossing fix must also keep the real first
+    // cut when stock stands over Top Z. Both laws hold on the same path.
+    let region = fixture(PocketStrategy::Waterline);
+    let mut params = pp(PocketStrategy::Waterline, true, None);
+    params.links.approach.stock_top = Some(1.0);
+    let under_stock = pocket(&region, &params).unwrap();
+    assert!(under_stock.moves.iter().any(|m| {
+        m.kind != MoveKind::Rapid
+            && (m.from.z - params.top_z).abs() < 1e-9
+            && (m.to.z - params.top_z).abs() < 1e-9
+    }), "stock over Top Z needs its first cut");
+    assert!(camcraft_motion::verify::crossed_pairs(&under_stock, 0.0005).is_empty());
     // The refusal is stated: at the tool radius the Waterline rings have
     // corners whose arc would cross another feed.
     let region = fixture(PocketStrategy::Waterline);

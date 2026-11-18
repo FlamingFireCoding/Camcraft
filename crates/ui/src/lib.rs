@@ -22,6 +22,7 @@ pub mod cli_options;
 mod cli_options_tests;
 
 pub mod actions;
+pub mod play_precalc;
 pub mod align_pick_viz;
 pub(crate) mod machine_modes;
 mod axis_note;
@@ -38,6 +39,7 @@ pub mod pick_ink;
 pub mod feature_click;
 pub mod egui_app;
 pub mod feedback;
+pub mod gen_worker;
 pub mod file_dialog;
 pub mod file_pick;
 pub mod frame_cost;
@@ -45,6 +47,8 @@ pub mod frame_memo;
 pub mod incoming_view;
 pub mod headless_gpu;
 pub mod interact;
+mod height_display;
+mod height_memo;
 pub mod locate_pick;
 pub mod machined;
 mod setup_display;
@@ -63,6 +67,7 @@ pub mod axis_pick;
 pub mod cylinder_pick;
 pub mod origin_pick;
 pub mod points_pick;
+pub mod start_exit_pick;
 pub mod wire_sync_pick;
 pub mod wcs_pick;
 pub mod shortcut_keys;
@@ -88,6 +93,8 @@ mod refusal_ghost_tests;
 mod helix_view_tests;
 #[cfg(test)]
 mod field_view_tests;
+#[cfg(test)]
+mod play_precalc_tests;
 #[cfg(test)]
 mod machined_tests;
 #[cfg(test)]

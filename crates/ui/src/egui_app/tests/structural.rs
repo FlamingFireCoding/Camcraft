@@ -17,8 +17,17 @@ use super::*;
 #[path = "tool_properties.rs"]
 mod tool_properties;
 
+#[path = "structural/thread_repeat.rs"]
+mod thread_repeat;
+
+#[path = "structural/folder_refresh.rs"]
+mod folder_refresh;
+
 #[path = "break_through.rs"]
 mod break_through;
+
+#[path = "structural/donate.rs"]
+mod donate;
 
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {

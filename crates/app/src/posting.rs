@@ -34,9 +34,11 @@ pub use files::{
     builtin_machine_text, builtin_post_path, builtin_post_text, default_mch_text, shipped_machines, shipped_posts, AssetFile, BUILTINS,
     DEFAULT_MCH_FILE, MACHINES,
 };
+pub use camcraft_post::data_scan::{scan_folder, FolderScan};
+pub use files::{machine_scan, post_scan, rescan, scan_reads};
 #[path = "posting_default_machine.rs"]
 mod default_mch;
-pub use default_mch::{default_machine, default_machine_checked, parse_default_machine, KeptMachine};
+pub use default_mch::{default_limits, default_machine, default_machine_checked, parse_default_machine, KeptMachine};
 
 /// The registry entries that speak TURNING (M13.5): X as a diameter
 /// on one meridian, G18, G99, the face cycles. Everything else in
@@ -254,6 +256,11 @@ pub fn options_value(o: PostOptions) -> Value {
     };
     if let (Some(end), Some(map)) = (end, v.as_object_mut()) {
         map.insert("EndUnits".to_owned(), Value::from(end));
+    }
+    if o.wcs_rotation == crate::schema::WcsRotationOutput::Control
+        && let Some(map) = v.as_object_mut()
+    {
+        map.insert("WcsRotation".to_owned(), Value::from("control"));
     }
     v
 }
@@ -673,6 +680,12 @@ fn post_script_body_with(
     let voice = post::dialect::work_voice(cps).map_err(|e| format!("post engine: {e}"))?;
     let mut report = verification_report_by(world, &|_| voice);
     report.problems.splice(0..0, unserved);
+    // #760: Control mode checks against the explicit script when invoked directly.
+    for msg in wcs_rotation::explicit_script_problems(world, cps) {
+        if !report.problems.contains(&msg) {
+            report.problems.push(msg);
+        }
+    }
     // One file, one register per word (#196): two setups posting the same
     // word from different placements refuse here - per-op files are exempt.
     report.problems.extend(wcs_slot::shared_word_problems(world));
@@ -762,6 +775,25 @@ fn viewer_map(records: &[cnc::Record], out: &engine::PostOutput) -> Vec<Option<[
 /// what would post* holds by construction, not by two copies of the
 /// law agreeing (stage D makes the agreement load-bearing).
 pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
+    gated_ops(world, false).map(|(ops, _)| ops)
+}
+
+/// Operations by name, in program order.
+pub(crate) type OpList = Vec<(String, Entity)>;
+
+/// [`program_ops`] for the stock playback only (#2280): the same order
+/// and the same gates, but the walk ends before the first operation
+/// with no toolpath, which comes back with every op from it on. The
+/// playback shows the program up to there; it never skips that op and
+/// cuts the next ones on a stock the skipped op did not cut. The post
+/// and the Deviate verdict keep [`program_ops`]: it refuses.
+pub(crate) fn program_ops_until_ungenerated(world: &World) -> Result<(OpList, OpList), String> {
+    gated_ops(world, true)
+}
+
+/// The walk under [`program_ops`]; `stop_at_ungenerated` turns the
+/// "no toolpath yet" refusal into the end of the list.
+fn gated_ops(world: &World, stop_at_ungenerated: bool) -> Result<(OpList, OpList), String> {
     // THE order law by call (M3.2 A): setup rank, then operation position - the same
     // walk re-machining, the sim and the machine-limit check make.
     // A suppressed op (#110) is not in the program: skipped before the
@@ -772,7 +804,7 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     if all.is_empty() {
         return Err("no operations to post".into());
     }
-    let ops: Vec<(String, Entity)> = all
+    let mut ops: Vec<(String, Entity)> = all
         .into_iter()
         .filter(|(_, e)| !model::operation_of(world, e).is_some_and(|op| op.suppressed))
         .collect();
@@ -783,6 +815,12 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     // Validate early: every operation must be generated and fresh
     // before a single record is built (a half-posted program is the
     // silent wrong answer this file exists to prevent).
+    // #2280: the playback ends before the first op with no toolpath -
+    // nothing at or after it is cut, so their gates are not read.
+    let rest = match ops.iter().position(|(_, e)| operation::status_of(world, e) == OpStatus::Never) {
+        Some(i) if stop_at_ungenerated => ops.split_off(i),
+        _ => Vec::new(),
+    };
     for (name, e) in &ops {
         // M10.1 C first: an op whose tool is gone or cannot cut its kind
         // is blocked by name - "regenerate" would be the wrong advice,
@@ -815,7 +853,7 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
             OpStatus::Ok => {}
         }
     }
-    Ok(ops)
+    Ok((ops, rest))
 }
 
 /// The program-level verification, made binding (M2.3 D): the two
@@ -1240,6 +1278,10 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             top_z: stock_top_z, // the TopOfStock PARAM: the stock, not the cut
             wcs,
             origin,
+            wcs_yaw: wcs_yaw(world, setup),
+            wcs_rotation_control: wcs_yaw(world, setup).is_some()
+                && crate::setup_post_options::of(world, op.setup.as_deref()).wcs_rotation
+                    == crate::schema::WcsRotationOutput::Control,
             stock,
             stock_top_z,
             stock_turn_radius,
@@ -1286,6 +1328,18 @@ pub(crate) fn wcs_context(world: &World, setup: Option<&str>) -> (u32, [f64; 3])
         .and_then(|e| model::transform_of(world, &e))
         .map_or([0.0; 3], |t| [t.pos.x, t.pos.y, t.pos.z]);
     (index, origin)
+}
+
+/// #760: signed Z-axis rotation in degrees (`yaw_deg`) for a setup's
+/// WCS when WCS `+Z` stays aligned with machine `+Z` and `|yaw| > 1e-9`
+/// rad; `None` when square, tilted, or non-finite.
+#[must_use]
+pub(crate) fn wcs_yaw(world: &World, setup: Option<&str>) -> Option<f64> {
+    let loc = crate::setup::wcs_entity(world, setup).and_then(|e| model::transform_of(world, &e))?;
+    match offset_frame(&loc) {
+        OffsetFrame::Yaw { yaw_deg, .. } => Some(yaw_deg),
+        _ => None,
+    }
 }
 
 /// Every height a parameter set references (the same walk

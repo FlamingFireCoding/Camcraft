@@ -107,7 +107,7 @@ pub use operation::{
     ChangeOperationKind, ClearToolpath, CreateOperation, DeleteOperation, EditOperationLinks,
     EditOperationParams,
     GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll, RenameOperation,
-    ReorderOperation, SetOperationGeometry,
+    ReorderOperation, SetOperationGeometry, StagedGeneration,
 };
 pub use post::SelectPost;
 pub use post_options::SetPostOptions;

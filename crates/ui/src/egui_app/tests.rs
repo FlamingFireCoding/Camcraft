@@ -83,6 +83,7 @@ fn empty_egui_meshes_are_filtered_before_gpu_submission() {
 mod face_origin;
 mod geo_row_hover;
 mod selection_frame_cost;
+mod generate_progress;
 mod frame_cost_caches;
 mod frame_cost_probe;
 mod pick_mode;
@@ -91,6 +92,7 @@ mod stock_size;
 mod stock_material;
 mod setup_settings_page;
 mod machine_page;
+mod setup_user_machines;
 mod tool_list_page;
 mod stock_fit_sides;
 mod raw_stock_row;
@@ -104,13 +106,17 @@ mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+mod lathe_gizmo;
 // #2172: the bodies stand on the floor of the work envelope.
 mod floor;
 mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+// #2181: the transport row of the calculation before playback.
+mod transport_precalc;
 mod page_layout;
+mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;
@@ -141,6 +147,8 @@ mod setup_picks_disarm;
 mod points_vertex_pick;
 // #1171: real clicks state a wire sync pair.
 mod wire_sync_viewport;
+// #1448: real viewport clicks pick the Contour's start and exit points.
+mod start_exit_viewport;
 mod one_wcs;
 // #1926: the feature picks that set the WCS are on the WCS page.
 mod wcs_page_picks;
@@ -198,6 +206,8 @@ mod edge_click_modifiers;
 mod first_ctrl_click;
 // #1104: the Setups page lists setups only.
 mod setups_declutter;
+// #870: the WCS page's footer and its origin in words.
+mod wcs_footer;
 // #1206: each setup's own Machine and Post pages pick its own mount.
 mod setup_mount_pages;
 // #1515: a pick on one setup never re-mounts another.
@@ -233,8 +243,13 @@ impl ShellUi {
     /// The birth `Shell::new` has since M-d: a plain empty document, no
     /// seed, no startup command - the window's real shape, rendered.
     fn blank() -> Self {
+        let mut state = State::new();
+        // #2358: the Setup page lists the user machines folder too; a
+        // test never reads the tester's real one (`harness_with_user_dir`
+        // names a temp folder).
+        state.machines_pane.user_dir = Some(None);
         Self {
-            state: State::new(),
+            state,
             dock: build_dock(),
             viewport_points: [1280.0, 649.0],
             left_press: None,
@@ -781,9 +796,10 @@ fn click_apply_edits_operation_through_commands() {
     // click law itself.
     harness.get_by_label("Feeds").click();
     harness.run();
-    harness.get_by_label("Climb milling").scroll_to_me();
+    // Keep this caption-click pin explicit now that the checkbox has the same accessible name.
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").scroll_to_me();
     harness.run();
-    harness.get_by_label("Climb milling").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").click();
     harness.run();
     assert!(!staged_climb(&harness), "checkbox did not reach the staged params");
     harness.get_by_label("Apply").scroll_to_me();
@@ -1371,14 +1387,13 @@ fn tab_click_navigates_and_queues_nothing() {
 }
 
 /// Every text the properties pane renders right now (labels and checkbox
-/// captions), from the operation heading's left edge rightward - the pane
-/// column, so the browser and ribbon text stay out.
+/// captions), read from the Properties pane subtree so the browser and ribbon
+/// stay out without depending on pixel coordinates.
 fn pane_texts(h: &Harness<'static, ShellUi>) -> Vec<String> {
     use egui::accesskit::Role;
     use egui_kittest::kittest::NodeT;
-    let left = h.get_by_label_contains("Operation: ").rect().left() - 1.0;
-    h.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
-        .filter(|n| n.rect().left() >= left)
+    let pane = h.get_by_role_and_label(Role::Pane, "Properties");
+    pane.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
         .filter_map(|n| {
             let a = n.accesskit_node();
             if a.role() == Role::Label { a.value() } else { a.label() }
@@ -1856,7 +1871,11 @@ fn anchor_click_queues_setwcs() {
 /// arm pick mode from the checkbox.
 #[test]
 fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
-    let mut harness = shell_harness();
+    // #870: the page's origin line made it taller; at 720 px the grid's
+    // bottom row scrolls under the footer, so the window is 900 px.
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(1280.0, 900.0))
+        .build_ui_state(frame, ShellUi::seeded());
     harness.state_mut().state.ui_target = UiTarget::Wcs;
     harness.run();
     // The draft default highlight is center (anchor_xy 4), so that cell
@@ -5142,6 +5161,8 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
 }
 
 mod review_1710_evidence;
+mod guide_projects;
+mod guide_images;
 
 
 #[test]
