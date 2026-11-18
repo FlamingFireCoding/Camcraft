@@ -188,8 +188,8 @@ class FirstFourAxisPart(unittest.TestCase):
                   if p.get("type") == "rotary"]
         self.assertEqual(len(rotary), 1)
         self.assertEqual((rotary[0]["name"], rotary[0]["axis"]), ("A", [1.0, 0.0, 0.0]))
-        self.assertEqual(rotary[0]["travel"], {"min": -360.0, "max": 360.0})
-        self.assertIn("travel of -360 to 360 degrees", flat(text))
+        self.assertNotIn("travel", rotary[0])
+        self.assertIn("with no travel limit", flat(text))
         self.assertIn(f"`nose_to_axis` {rotary[0]['nose_to_axis']}", flat(text))
 
     def test_stock_and_model_numbers_are_the_projects(self):
