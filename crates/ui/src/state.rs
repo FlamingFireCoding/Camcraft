@@ -63,6 +63,8 @@ mod setup_workholding;
 mod fixture_view;
 #[path = "state_locate.rs"]
 mod locate_ui;
+#[path = "state_move_by.rs"]
+mod move_by;
 #[path = "state_fixture_turn.rs"]
 mod fixture_turn_ui;
 pub(crate) use fixture_turn_ui::euler_deg;
@@ -723,6 +725,14 @@ pub enum CommandKind {
         roll_deg: f64,
         pitch_deg: f64,
         yaw_deg: f64,
+    },
+    /// A viewport handle drag's release (#1198 b): slide part `name` by
+    /// `delta` mm in the SHOWN frame (the active setup's). The drain turns
+    /// it into the one `MoveModel` the Model page runs, rotation kept bit
+    /// for bit - one undo step per drag, no new placement path.
+    MoveModelBy {
+        name: String,
+        delta: [f64; 3],
     },
     /// Mesh repair (M13.11): weld within `weld_tol` (mm) and fill every
     /// boundary loop of at most `max_hole_edges` edges, one undo unit
@@ -1656,6 +1666,13 @@ pub struct State {
     /// Off by default, shown as off. View state like the axes toggle -
     /// not undoable, not saved; flipped from the viewport's nav column.
     pub pick_through: bool,
+    /// The bar's Move mode (#1198 b): the one selected part wears drag
+    /// handles. View state like the pick-through toggle - not undoable,
+    /// not saved; off by default so a plain click-drag still orbits.
+    pub move_handles: bool,
+    /// A handle drag in flight (#1198 b): the ephemeral preview. Only
+    /// its release reaches history, as one `MoveModelBy`.
+    pub body_drag: Option<crate::move_drag::BodyDrag>,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -1720,6 +1737,10 @@ pub struct State {
     /// is gone. Display-only (a Mutex because the scene is collected
     /// from `&State`).
     pub sim_tool_cache: std::sync::Mutex<camcraft_app::sim_tool_body::SimToolCache>,
+    /// The move handles' centre of the dragged body (#1198, #2238): walked
+    /// only when the facets or the shown pose change. Display-only (a Mutex
+    /// because the handles are read from `&State`).
+    pub move_center: std::sync::Mutex<crate::move_drag::CenterCache>,
     /// What `field_view` was walked for: (transport up, Deviate armed,
     /// the document version a playback plan was frozen at). A change
     /// retires the view and the playback - never a stale picture.
@@ -2161,6 +2182,8 @@ impl State {
             cam: Camera::default(),
             show_world_axes: true,
             pick_through: false,
+            move_handles: false,
+            body_drag: None,
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),
@@ -2172,6 +2195,7 @@ impl State {
             field_play: None,
             sim_script_cache: None,
             sim_tool_cache: std::sync::Mutex::default(),
+            move_center: std::sync::Mutex::default(),
             field_mode: None,
             stock_mesh: camcraft_app::stock_export::MeshCache::default(),
             ribbon_more: None,
@@ -3983,6 +4007,7 @@ impl State {
                     Err(err) => self.refuse(ErrorScope::Setup, format!("part not moved: {err}")),
                 }
             }
+            CommandKind::MoveModelBy { name, delta } => self.move_model_by(&name, delta),
             CommandKind::RepairModel { name, weld_tol, max_hole_edges } => {
                 match RepairModel::new(&self.world, &name, weld_tol, max_hole_edges) {
                     Ok(command) => {
