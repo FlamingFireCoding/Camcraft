@@ -175,6 +175,7 @@ mod tool_body_lathe;
 mod tool_profile;
 // #793: the tool editor's holder library picker.
 mod tool_holder;
+mod tool_holder_reference;
 // #889: the Tool library page's "Import tool holders" toggle.
 mod tool_library_import;
 // #93 slice 2: the Profile tab's drawn cutter.
@@ -225,6 +226,8 @@ mod ribbon_accesskit;
 mod ai_chat;
 // #2011: EDM tool visibility matches selectable machine kinds.
 mod edm_tool_visibility;
+// #2201: edge/face selection highlight draw & rebuild count per frame.
+mod highlight_perf;
 // #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
 mod pocket_no_adaptive;
 
