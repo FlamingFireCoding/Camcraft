@@ -38,6 +38,12 @@
    live refusal that it pins (the part added under the chamfer).
 3. *`guide_projects::demo_projects_build_and_load_with_valid_paths`.* No
    change. It passes on 2c789ed6d (after #2499).
+4. *Clippy.* After #2488, clippy on main fails at
+   `crates/app/src/operation/heights.rs:128`
+   (`needless_borrows_for_generic_args`). The batch tier runs clippy, so
+   the post-merge gate stays red without this. `.map(&resolve)` becomes
+   `.map(resolve)`. The closure only borrows, so it is `Copy`, and the
+   next line still calls it. The behaviour does not change.
 
 **Why.** The two failures are fixtures that the merged law changes made
 stale. Neither is a defect in the posted G-code or in the refusal. No
@@ -52,8 +58,8 @@ assert is relaxed and no refusal is made wider.
 - *Compare `ra` and `rb` with a tolerance in `arc_chords`.* A circle would
   then keep the old chord count. But it changes motion code under the
   safety floor in a crate that #2483 does not touch, and the new chords
-  are not wrong: they are only one more. Dropped from this PR; filed as a
-  P7 follow-up.
+  are not wrong: they are only one more. Dropped from this PR; filed as
+  #2520 (P7).
 - *Write the whole golden again from the Windows run.* It brings many
   last-digit changes that are inside the compare tolerance and are not
   part of the cause. Dropped.
@@ -61,9 +67,10 @@ assert is relaxed and no refusal is made wider.
 **Follow-ups.**
 - `arc_chords` decides by an exact float compare (`ra != rb`), so the
   chord count of a circular arc depends on float noise in its two radii.
+  Filed as #2520.
 - The wall-law refusal says "would ride into the part" also when the
   source is the stock and no part is near. The text could name the stock.
-  Wording only (P7).
+  Wording only (P7), filed as #2521.
 
 **Cost to change later.** Low. The golden is generated output. The test
 constant `MID` is local to the one test.
