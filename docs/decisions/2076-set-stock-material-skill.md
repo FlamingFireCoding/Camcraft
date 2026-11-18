@@ -5,9 +5,9 @@
 - **Considered and dropped:** Adding a standalone `edit_tool` row (dropped because open `#1343` owns that row), adding a Rust markdown-matching test to `crates/` or `xtask/` (dropped to keep this PR docs-only like `#1584` and `#1910`), and bumping `.claude/PROCESS_VERSION` on the branch (forbidden by `AGENTS.md` to avoid per-PR merge conflicts).
 - **Cost to change later:** Low — a single markdown edit in `SKILL.md`, and `#1343` can move or cross-reference the `cutting_data` note when adding the dedicated `edit_tool` row.
 
-### Review fix - pending implementation dependency
+### Review fix - implementation dependency checked against main
 
-- **What was decided:** Mark `set_stock_material` and the new `cutting_data` inputs (`"material": "unknown"`, `stepdown`, `stepover`) as pending PR #2077. Tell agents not to use them until that PR is merged, and state the dependency in the PR body. After #2077 merges, check these rows against main.
-- **Why:** Main does not yet expose `set_stock_material` or accept the new inputs. Keeping the planned shapes with an explicit restriction allows this documentation to merge first without directing agents to unsupported calls.
-- **Considered and dropped:** Waiting for #2077 to merge before fixing this review would leave the current skill advertising unsupported inputs. Removing the planned rows would discard the documentation this PR supplies.
-- **Cost to change later:** Low: check the rows against main after #2077 merges, then remove their pending restrictions.
+- **What was decided:** Remove the pending PR #2077 restrictions from the `set_stock_material` and `add_tool` rows. Update the PR body to state that there is no remaining implementation dependency on #2077. Keep this PR as a draft for re-review.
+- **Why:** Upstream main `3e47b898b0148727979ff4a509f33a742f80ff1d` already contains implementation commit `75031d5f9b5e6f9d2f297108ff51e3c0d0c5c3fb`. `crates/app/src/mcp/cutting_tools.rs` registers `set_stock_material`; `crates/app/src/mcp/tools.rs` registers the cutting tools and documents `unknown`, `stepdown`, and `stepover` in the `add_tool` schema. `crates/app/src/project/cutting_rows_dto.rs` parses these cutting-data fields. The earlier claim that main lacked these inputs was incorrect for this main revision, even though PR #2077 remains open.
+- **Considered and dropped:** Keeping the restrictions until #2077 closes would prohibit inputs already implemented on main. Removing the rows would discard the requested documentation. No separate merge-order dependency remains.
+- **Cost to change later:** Low: update these rows if the MCP implementation changes.
