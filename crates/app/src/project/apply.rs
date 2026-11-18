@@ -525,6 +525,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v66 so old readers cannot drop `controller_rtcp: false`.
         // v66 -> v67 (#1720): a WCS may record flipped axes; absent is
         // no flip.
+        // v67 -> v68 (#2463): a model may record its source file; absent
+        // is not linked.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
@@ -735,6 +737,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
                 crate::step_source::set(world, &entity, dto.step_source.as_deref());
+                // #2463: validate_kind refused a malformed source.
+                crate::model_source::set(world, &entity, dto.source.as_ref().map(super::SourceDto::to_source).as_ref());
             }
             EntityKind::Stock => {
                 // validate_kind already refused these; Result, never unwrap.

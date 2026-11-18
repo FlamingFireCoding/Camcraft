@@ -118,7 +118,12 @@ use super::*;
 /// no flip - what every v66 file posted - so a v66 file steps up
 /// unchanged. An old reader must refuse a v67 file rather than drop the
 /// flip and post the setup in the unflipped frame.
-pub const PROJECT_VERSION: u32 = 67;
+/// v68 (#2463): a model may record the file it was imported from and that
+/// file's SHA-256 (`source`): a linked model, imported again when the file
+/// changes. Absent is not linked - what every v67 model was - so a v67
+/// file steps up unchanged. An old reader must refuse a v68 file rather
+/// than save a linked model back unlinked without a word.
+pub const PROJECT_VERSION: u32 = 68;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
