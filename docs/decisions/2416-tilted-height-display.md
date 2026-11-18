@@ -31,3 +31,22 @@ PR #2256; this change corrects their shared `region_z` read instead.
 **Cost to change later:** The UI keeps the display conversion in a shared
 helper. A later resolver API change must update that helper and the
 `region_z` read together. This decision adds no crate dependencies.
+
+**Review fixes:** Include the updated parent rules for both pocket island
+ladders and depth validation. All three consumers use the checked tilt
+frame and the shared folded heights. Keeping the older setup-Z rules
+would leave generation and validation with different height orders.
+
+Cache the display's local bounds and resolved heights by their actual
+inputs: geometry allocation, entity placement and membership, setup
+values, source, height, and draft tilt. Keep a bounded display-only cache.
+Generation, verification, and posting continue to resolve their own inputs.
+A document-version key alone would miss an unapplied draft edit.
+Recomputing projected facets on every frame would violate the frame-cost
+rule. Tests count resolver builds and change each input family.
+
+Capture the tilted viewport and Heights rows through the real headless
+GPU renderer and page code. Keep the PNG files on the fork's images-only
+branch and link them from the PR body. The fixture uses the same asymmetric
+stock and nonzero tilt origin as the regression tests. This keeps review
+images outside the product branch without replacing the structural pins.

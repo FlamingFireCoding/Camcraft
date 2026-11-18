@@ -123,15 +123,12 @@ pub(crate) fn height_echo(
             return format!("(unresolved: {reason})");
         }
     };
-    match operation::fold_height(world, setup, src, frame.as_ref(), *h) {
-        Some(z) => match frame.filter(|f| !f.is_upright()) {
+    match crate::height_memo::height(world, setup, src, tilt, *h) {
+        Ok(z) => match frame.filter(|f| !f.is_upright()) {
             Some(f) => format!("(= {} along tool axis)", units::len(z - f.origin.z, units::of(world), 3)),
             None => format!("(= Z {})", units::len(z, units::of(world), 3)),
         },
-        None => format!(
-            "(unresolved: {})",
-            operation::missing_source(world, setup, src, h.reference).unwrap_or("source missing")
-        ),
+        Err(reason) => format!("(unresolved: {reason})"),
     }
 }
 

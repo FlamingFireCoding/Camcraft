@@ -13,7 +13,7 @@
 //! Lane shape: all tests here run in seconds.
 
 use camcraft_app::cl::{MoveKind, TiltedFrame};
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, SetStock};
+use camcraft_app::commands::{AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, SetStock};
 use camcraft_app::geo2d::Point2;
 use camcraft_app::geometry::Point3;
 use camcraft_app::model;
@@ -183,4 +183,167 @@ fn a_tilted_contour_sections_the_model_along_the_tool_axis() {
     let zs = tp.path.moves.iter().filter(|m| m.kind == MoveKind::Feed).flat_map(|m| [m.from.z, m.to.z]);
     let (lo, hi) = zs.fold((f64::MAX, f64::MIN), |(lo, hi), z| (lo.min(z), hi.max(z)));
     assert!(lo < -15.0 && hi > 15.0, "the contour rings the part's side: Z {lo}..{hi}");
+}
+
+// The setup Z top is 10, but the A -90 tool-axis top is 11. A fixed
+// bottom between them is legal and must pass both command doors.
+fn mixed_reference_slot() -> OpParams {
+    let mut params = slot(tilt(-90.0, 0.0, [0.0; 3]));
+    if let OpParams::Slot { bottom_z, .. } = &mut params {
+        *bottom_z = Height::fixed(10.5);
+    }
+    params
+}
+
+#[test]
+fn tilted_mixed_reference_depth_is_accepted_on_creation() {
+    let (world, mut history) = bench(12.0, 30.0, 5.0, -5.0);
+    history.execute(
+        &world,
+        CreateOperation::new(
+            &world,
+            "Slot",
+            "mill",
+            SrcRef::Stock,
+            mixed_reference_slot(),
+        )
+        .expect("tool-axis top 11 is above fixed bottom 10.5"),
+    );
+    let e = model::find_by_name(&world, "Slot").expect("created");
+    assert_eq!(
+        model::operation_of(&world, &e).expect("operation").params,
+        mixed_reference_slot()
+    );
+}
+
+#[test]
+fn tilted_mixed_reference_depth_is_accepted_on_editing() {
+    let (world, mut history) = bench(12.0, 30.0, 5.0, -5.0);
+    history.execute(
+        &world,
+        CreateOperation::new(
+            &world,
+            "Slot",
+            "mill",
+            SrcRef::Stock,
+            slot(tilt(-90.0, 0.0, [0.0; 3])),
+        )
+        .expect("create same-reference slot"),
+    );
+    history.execute(
+        &world,
+        EditOperationParams::new(&world, "Slot", mixed_reference_slot())
+            .expect("tool-axis top 11 is above fixed bottom 10.5"),
+    );
+    let e = model::find_by_name(&world, "Slot").expect("edited");
+    assert_eq!(
+        model::operation_of(&world, &e).expect("operation").params,
+        mixed_reference_slot()
+    );
+}
+
+fn tilted_reference_pocket_preserves_part(src: SrcRef) {
+    let (world, mut history) = bench(40.0, 50.0, 0.0, 0.0);
+    let part = camcraft_app::geometry::cube(
+        Point3::new(-10.0, -5.0, -15.0),
+        Point3::new(10.0, 5.0, 15.0),
+    );
+    history.execute(
+        &world,
+        camcraft_app::commands::ImportModel::from_mesh("part", part),
+    );
+    let params = OpParams::Pocket {
+        rest: None,
+        blend_radius: None,
+        stepover: 4.0,
+        stock_to_leave: 0.0,
+        clearance_z: from_stock(10.0),
+        retract_z: Some(from_stock(5.0)),
+        top_z: from_stock(0.0),
+        bottom_z: Height {
+            reference: HeightReference::TopOfModel,
+            offset: -2.0,
+        },
+        stepdown: 2.0,
+        feed: 800.0,
+        plunge_feed: 200.0,
+        climb: true,
+        strategy: camcraft_app::machining2d::PocketStrategy::Zigzag,
+        entry: camcraft_app::machining3d::Entry3D::Plunge,
+        helix_radius: 1.0,
+        optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
+        blend_turns: false,
+        tilt: Some(tilt(90.0, 0.0, [0.0; 3])),
+        links: camcraft_app::links::Links::PLANAR,
+    };
+    history.execute(
+        &world,
+        CreateOperation::new(&world, "Pocket", "mill", src, params).expect("create"),
+    );
+    history.execute(
+        &world,
+        GenerateOperation::new(&world, "Pocket").expect("generate"),
+    );
+    let e = model::find_by_name(&world, "Pocket").expect("pocket");
+    let tp = model::toolpath_of(&world, &e).expect("path");
+    assert!(
+        !tp.path.moves.is_empty(),
+        "a real pocket: {:?}",
+        tp.path.notes
+    );
+    let f = TiltedFrame::from_angles(Point3::ZERO, 90.0, 0.0).expect("frame");
+    let floor = tp
+        .path
+        .moves
+        .iter()
+        .filter(|m| m.kind == MoveKind::Feed)
+        .flat_map(|m| [m.from, m.to])
+        .map(|p| f.z_local(p))
+        .fold(f64::MAX, f64::min);
+    assert!(
+        (floor - 3.0).abs() < 1e-6,
+        "cuts to tool-axis model top 5 minus 2: {floor}"
+    );
+    assert!(
+        !tp.warnings
+            .iter()
+            .any(|w| matches!(w, camcraft_app::verify::Warning::Gouge { .. })),
+        "islands must protect the part at the generator's tool-axis levels: {:?}",
+        tp.warnings
+    );
+}
+
+#[test]
+fn tilted_whole_model_reference_pocket_preserves_part_islands() {
+    tilted_reference_pocket_preserves_part(SrcRef::Entity("part".into()));
+}
+
+#[test]
+fn tilted_stock_reference_pocket_preserves_part_islands() {
+    tilted_reference_pocket_preserves_part(SrcRef::Stock);
+}
+
+#[test]
+fn tilted_upward_mixed_reference_depth_is_refused_on_creation_and_editing() {
+    let (world, mut history) = bench(12.0, 30.0, 5.0, -5.0);
+    history.execute(&world,
+        CreateOperation::new(&world, "Slot", "mill", SrcRef::Stock, slot(tilt(-90.0, 0.0, [0.0; 3])))
+            .expect("create same-reference slot"));
+    for reverse in [false, true] {
+        let mut upward = mixed_reference_slot();
+        if let OpParams::Slot { top_z, bottom_z, .. } = &mut upward {
+            if reverse {
+                // Setup Z would incorrectly accept 10.5 > stock top 10;
+                // the tool-axis stock top is 11, above this fixed top.
+                *top_z = Height::fixed(10.5);
+                *bottom_z = from_stock(0.0);
+            } else {
+                *bottom_z = Height::fixed(11.5);
+            }
+        }
+        assert!(CreateOperation::new(&world, "upward", "mill", SrcRef::Stock, upward.clone()).is_err(),
+            "creation refuses bottom above tool-axis top (reverse={reverse})");
+        assert!(EditOperationParams::new(&world, "Slot", upward).is_err(),
+            "editing refuses bottom above tool-axis top (reverse={reverse})");
+    }
 }

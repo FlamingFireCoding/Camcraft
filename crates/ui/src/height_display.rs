@@ -28,6 +28,11 @@ pub(crate) fn point(state: &State, x: f64, y: f64, z: f64) -> Point3 {
 
 /// Stock reach in the plane XY. Untilting keeps the shipped bounds.
 pub(crate) fn bounds(state: &State) -> Option<Aabb> {
+    let setup = crate::interact::shown_setup(state);
+    crate::height_memo::bounds(&state.world, setup.as_deref(), state.op_ui.params.tilt(), || bounds_fresh(state))
+}
+
+fn bounds_fresh(state: &State) -> Option<Aabb> {
     let f = frame(state).ok().flatten();
     if f.is_none_or(|f| f.is_upright()) {
         return model::stock_world_aabb(&state.world)

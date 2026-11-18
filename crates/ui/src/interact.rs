@@ -1305,7 +1305,11 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
     // Where the orange outline actually stands, level by level: the
     // shared `shown_region_levels` gate, so `region_lines` and the
     // plane rectangles answer to one predicate, never two.
-    let levels = shown_region_levels(state);
+    let levels = if frame.is_none_or(|f| f.is_upright()) {
+        shown_region_levels(state)
+    } else {
+        Vec::new()
+    };
     // Tilted region outlines cannot replace a rectangle in the tool plane.
     let stands = |z: f64| frame.is_none_or(|f| f.is_upright()) && levels.contains(&z);
     // Heights resolve against the world before they reach the viewport:
@@ -1318,7 +1322,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
     // A From: Selection height reads the open op's own source (M11.3 A).
     let src_owned = state.op_ui.src();
     let src = Some(&src_owned);
-    let resolve = |h| operation::fold_height(world, setup, src, frame.as_ref(), h);
+    let resolve = |h| crate::height_memo::height(world, setup, src, draft.tilt(), h).ok();
     let mut out = Vec::new();
     let clr = draft.clearance();
     if let Some(z) = resolve(clr) {
