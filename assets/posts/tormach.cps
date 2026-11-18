@@ -623,8 +623,9 @@ function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028
 //   frame: the tip relative to the work offset turned by -A about X, so
 //   WCS Y0 Z0 must lie on the A centerline (the note at the first index).
 // - Refused by name: a tilt the A axis cannot reach (any B or C), an A
-//   past the stated travel, an indexed arc (a tilted path is chords) and
-//   a tilted move on a machine with no A about X.
+//   past the stated travel, an indexed arc (a tilted path is chords),
+//   a tilted move on a machine with no A about X, and a move with no A
+//   word inside an operation indexed away from A0 (#2473).
 // - An A that changes inside an operation (simultaneous 4-axis, #796) is
 //   posted as wrapped A - see "Simultaneous A" below.
 // - No clamp code: none of the three guides names an M-code; the microARC
@@ -684,7 +685,8 @@ function toolAngle(a0, b0, c0) {
 // A later record whose angle differs turns A inside the section: aNext is
 // then set to the unwrapped target ({a, word}) for onRapid / onLinear to
 // post (turnMove); any other motion (`what` names it) is refused by name
-// when it would turn A.
+// when it would turn A, and so is a record with no A word while the
+// section holds an A other than 0 (#2473).
 var aNext = null;
 function indexFor(p, what) {
   aNext = null;
@@ -712,6 +714,12 @@ function indexFor(p, what) {
     var d = a - aSection;
     d = d - 360 * Math.round(d / 360);
     if (Math.abs(d) <= A_EPS) return true;
+    // #2473: a record with no A word does not state a turn. The stream
+    // reads a move without an axis as "keep the pose" (post::dump), so a
+    // turn to A0 here would swing the part under the tool. Refused by name.
+    if (!tilted) {
+      return aRefuse((what || "move") + inOp() + " states no A angle while the operation holds A" + fa(ax.sign * aSection) + " - the post turns A inside an operation only on a move that states its A angle");
+    }
     if (what) {
       return aRefuse(what + inOp() + " turns A - the post writes a turning A on straight G0 / G1 moves only");
     }
@@ -720,7 +728,7 @@ function indexFor(p, what) {
     }
     var to = aSection + d, tw = ax.sign * to;
     if (ax.travel && (tw < ax.travel[0] - A_EPS || tw > ax.travel[1] + A_EPS)) {
-      return aRefuse("A" + fa(tw) + inOp() + " is beyond the A axis travel " + fa(ax.travel[0]) + ".." + fa(ax.travel[1]) + " degrees - A counts on through 360 (PathPilot does not roll A over), so the operation turns too far in one direction");
+      return aRefuse("A" + fa(tw) + inOp() + " is beyond the A axis travel " + fa(ax.travel[0]) + ".." + fa(ax.travel[1]) + " degrees - A counts on through 360 (PathPilot does not roll A over), so the operation turns too far in one direction; use a machine with verified A travel wide enough for the whole operation. For Rotary Offset, cutting levels cover two laps plus seam padding");
     }
     aNext = { a: to, word: tw };
     return true;
@@ -888,6 +896,7 @@ function turnMove(p, rapid) {
     var aw = "A" + fa(ax.sign * b1);
     var dA = Math.abs(Number(fa(ax.sign * b1)) - Number(fa(ax.sign * bPrev)));
     if (rapid) {
+      g94();
       block(["G0", xw, yw, zw, aw]);
     } else if (!(dA > 0)) {                   // the turn rounds away: plain G94
       g94();
@@ -1224,7 +1233,9 @@ function onCycle() {
   else if (p.CycleType === "PECK") g = "G73";
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = dwell > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";   // #1445: feed in, feed out at F, no dwell
   // Tormach documents G84 for PathPilot: F is the pitch times the rpm
   // (the stream's synthesized tap feed), no P - PathPilot sizes the
@@ -1258,10 +1269,18 @@ function onCycle() {
     }
     return;
   }
+  // #2348: PathPilot's and LinuxCNC's G83 formats have no P word.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1614: refused - not written)
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #2360 (as #2350 for Haas): P is sticky in the dwell cycles, so a
+  // changed dwell reopens the cycle and each hole posts its own P.
+  if (g === "G82" || g === "G86" || g === "G89") sig += "|" + secs(dwell);
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -1272,7 +1291,9 @@ function onCycle() {
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
       words.push(w("Q", p.Q));
     }
-    if (dwell > 0 && (g === "G82" || g === "G86" || g === "G89")) words.push("P" + secs(dwell));
+    // #2362: LinuxCNC / PathPilot requires a non-negative P on the first
+    // G86 block of a cycle, even when the dwell is 0 (P0).
+    if (g === "G86" || (dwell > 0 && (g === "G82" || g === "G89"))) words.push("P" + secs(dwell));
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;

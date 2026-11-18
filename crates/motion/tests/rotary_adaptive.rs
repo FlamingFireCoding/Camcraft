@@ -259,7 +259,7 @@ fn a_window_too_narrow_for_the_helix_is_refused_by_name_before_planning() {
 /// spread (`adaptive::conform`); they read 20.3 % D and 3 breaks
 /// before. ~3 min debug: heavy lane.
 #[test]
-#[ignore = "heavy lane: release --ignored (three HSM plans over the r6.2 bar, ~3 min debug)"]
+#[ignore = "heavy lane: release --ignored (two HSM plans over the r6.2 bar, ~3 min debug)"]
 fn the_r62_neck_levels_are_hsm_planned_on_microlift_returns() {
     let (f, st) = (bar(), stock(6.2, -16.0, 16.0));
     let p = params(PocketStrategy::Adaptive);
@@ -286,7 +286,10 @@ fn the_r62_neck_levels_are_hsm_planned_on_microlift_returns() {
     // Each neck level says how it is kept in cut.
     let lifted = dev.notes.iter().filter(|n| n.contains("microlift returns") && n.contains("replace")).count();
     assert!(lifted >= 2, "both neck levels are cut on microlift returns: {:?}", dev.notes);
-    assert!(reads.iter().any(|r| (r.rho - 6.2).abs() < 1e-6 && r.arcs > 0), "the skin level stays HSM-planned");
+    // #2004: the ladder takes no level on the r6.2 stock skin (the bar is
+    // r6 at most, so that level cut air); the two neck levels under it
+    // are the whole program.
+    assert!(!reads.iter().any(|r| (r.rho - 6.2).abs() < 1e-6 && r.moves > 0), "no level on the r6.2 skin (#2004)");
     assert_refusals_named(&reads, 6.2);
     let over = planner_overloads(&dev.notes);
     assert!(over.is_empty(), "the planner's own load reading broke the law: {over:?}");

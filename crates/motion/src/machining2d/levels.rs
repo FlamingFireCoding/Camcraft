@@ -158,6 +158,10 @@ pub(super) struct Motion {
     /// ramp entry zig-zags along the first cut at the ramp angle, and a
     /// zig-zag ramp rides the ring's arcs.
     pub(super) ring_zig: bool,
+    /// #2265: a pass start inside a level that is still solid takes the
+    /// user's entry (helix, ramp, arc), not a silent plunge - the pocket
+    /// family opts in (`with_solid_restart`).
+    pub(super) solid_restart: bool,
 }
 
 impl Motion {
@@ -184,7 +188,14 @@ impl Motion {
             xy_arc: false,
             holes: Vec::new(),
             ring_zig: false,
+            solid_restart: false,
         }
+    }
+
+    /// #2265: enter a solid pass start by the entry arm (the pocket).
+    pub(super) fn with_solid_restart(mut self) -> Self {
+        self.solid_restart = true;
+        self
     }
 
     /// Every pass is a ring of arcs (#1558): ramps ride them.

@@ -123,6 +123,13 @@ pub fn operation_label(world: &World, key: &str, entity: &Entity) -> String {
     operation_meta_of(world, entity).label.unwrap_or_else(|| key.to_owned())
 }
 
+/// `operation_label` for an entity held across frames: `None` once it is
+/// deleted, so a reader never touches a dead entity (#2257).
+#[must_use]
+pub fn live_operation_label(world: &World, key: &str, entity: &Entity) -> Option<String> {
+    world.is_alive(*entity).then(|| operation_label(world, key, entity))
+}
+
 /// All named entities, sorted by name - the serializer's iteration order.
 #[must_use]
 pub fn named_entities(world: &World) -> Vec<(String, Entity)> {

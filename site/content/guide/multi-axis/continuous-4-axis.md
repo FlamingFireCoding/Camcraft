@@ -35,11 +35,11 @@ A table the axis goes along X.
 One post writes inverse-time feed: `tormach.cps`, for an A about X (issue
 #796). A feed move that turns A together with X, Y or Z is written in
 `G93`, and its time is the longer of two: the time for the tool to go
-along its path at the operation's feed, and the time for A to turn at the
-rate that the machine file states. A move that turns A only stays in `G94`
-with F in degrees per minute. `G94` comes back before each move that is
-not a `G93` feed. The machine file must state the A rate
-(`max_normal_speed`), or the post refuses.
+along the posted trajectory at the operation's feed, and the time for A to
+turn at the rate that the machine file states. A move that turns A only
+stays in `G94` with F in degrees per minute. `G94` comes back before each
+move that is not a `G93` feed and at the section end. The machine file must
+state the A rate (`max_normal_speed`), or the post refuses.
 [Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md)
 reads such a program line by line.
 
@@ -103,6 +103,7 @@ PathPilot post refuses it (issue
   Engrave and Trace cut flat planes; no operation unrolls a drawing onto a
   rotary.
 - A stated rotary position: the axis comes from the mesh.
-- Inverse-time feed in a post other than `tormach.cps`.
+- Inverse-time feed in posts other than `tormach.cps`; Tormach supports
+  `G93` for simultaneous A-about-X moves only.
 - An axial limit for Rotary Parallel, or a way to leave an end face
   (issue #2343).

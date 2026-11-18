@@ -29,8 +29,10 @@ camcraft-cli process examples/first-4axis-part.camproj -o first-4axis-part.nc
 ```
 
 Continuous 4-axis work, where A turns during the cut, is a different job
-and is not walked through here. `tormach.cps` posts it (issue #796), but it
-has been run in the PathPilot simulator only. See
+and is not walked through here. `tormach.cps` posts it (issue #796). Four
+hand-written motion tests in the PathPilot simulator confirm the control
+behavior. The posted continuous program still needs a simulator run and a
+hardware check. See
 [Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md),
 [Continuous 4-axis](@/guide/multi-axis/continuous-4-axis.md) and
 [What the post refuses](#what-the-post-refuses) below.
@@ -65,8 +67,9 @@ operations, and each operation carries its own index. See
 
 1. **Mount the machine.** In the browser, click the **Machine** row. In the
    **Library** list, pick `Tormach 770MX + microARC 4`. The machine is
-   mounted at once. The machine file states a rotary named A about X with a
-   travel of -360 to 360 degrees. It also states `nose_to_axis` 10.6 (inches,
+   mounted at once. The machine file states a rotary named A about X with
+   no travel limit (PathPilot treats A as continuous, with no soft limit).
+   It also states `nose_to_axis` 10.6 (inches,
    spindle nose to the A centreline at the top of Z). The
    [index swing check](@/guide/multi-axis/checks.md) uses that number.
 2. **Pick the post.** In the browser, click the **Post** row and pick
@@ -121,7 +124,7 @@ Make two tools:
 
 Choose **Add tool** for each one. The tools post as T1 and T2, in list
 order. If your machine's tool table uses other numbers, set
-**Tool number (0 = list position)** on each tool. See
+**Tool number (0 = next free)** on each tool. See
 [Tools and tool libraries](@/guide/set-up/tools.md).
 
 ## The five operations
@@ -377,9 +380,10 @@ It refuses these cases by name and writes no file:
 | An arc in an indexed operation | `arc on an indexed A` ... `the indexed frame posts lines only` |
 
 Continuous 4-axis output for the microARC 4 is new in issue
-[#796](https://github.com/NeoTech/Camcraft/issues/796) and has been run in
-the PathPilot simulator only. Air-cut a continuous program slowly before
-you cut with it.
+[#796](https://github.com/NeoTech/Camcraft/issues/796). Four hand-written
+motion tests in the PathPilot simulator confirm the control behavior. The
+posted continuous program still needs a simulator run and a hardware check.
+Air-cut a continuous program slowly before you cut with it.
 
 Other limits of indexed work today:
 

@@ -101,9 +101,14 @@ fn ac_trunnion_mch(
 
 #[test]
 fn explicit_non_rtcp_trunnion_does_not_promise_controller_compensation() {
-    let raw_text = ac_trunnion_mch("mm", Some(false), Some("table_rh"), 3, 4);
+    let mut raw: serde_json::Value =
+        serde_json::from_str(&ac_trunnion_mch("mm", Some(false), Some("table_rh"), 3, 4))
+            .expect("valid fixture");
+    raw["controller"]["coordinate_rotation"] = json!(true);
+    let raw_text = raw.to_string();
     let m = parse_mch(&raw_text).expect("non-RTCP trunnion parses");
     let mirrored = machine::mirror(&m);
+    assert_eq!(mirrored["coordinateRotation"], json!(true));
     assert_eq!(mirrored["rtcp"], json!(false));
     let props = machine::script_props(&mirrored);
     assert_eq!(
