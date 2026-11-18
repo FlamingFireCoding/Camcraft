@@ -1,0 +1,46 @@
+{
+  "format": "camcraft-theme/1",
+  "descriptor": {
+    "name": "Example dark"
+  },
+  "base": "dark",
+  "colors": {
+    "ink": "#23262b",
+    "ink_alt": "#2c3037",
+    "well": "#1b1e22",
+    "text": "#d6dae0",
+    "text_dim": "#9aa1ab",
+    "text_faint": "#6e757e",
+    "border": "#3d434c",
+    "accent": "#356da8",
+    "accent_hover": "#4a86c2",
+    "field_bg": "#1e2126",
+    "field_hover": "#2a2e35",
+    "field_active": "#1a2b3a",
+    "selection_bg": "#264a6e",
+    "selection_stroke": "#4a86c2",
+    "viewport": "#171a1f"
+  },
+  "geometry": {
+    "radius_widget": 2,
+    "radius_window": 6,
+    "radius_menu": 6,
+    "item_spacing_x": 8.0,
+    "item_spacing_y": 3.0,
+    "button_padding_x": 4.0,
+    "button_padding_y": 1.0,
+    "control_height": 18.0,
+    "row_height": 20.0,
+    "cell_h": 40.0,
+    "cell_w": 72.0,
+    "glyph_px": 24.0,
+    "font_label": 13.0,
+    "font_caption": 12.5,
+    "font_row": 13.5,
+    "font_row_suffix": 11.5,
+    "menu_width": 200.0,
+    "recent_width": 300.0,
+    "menu_gap": 2.0,
+    "menu_pad_x": 8.0
+  }
+}

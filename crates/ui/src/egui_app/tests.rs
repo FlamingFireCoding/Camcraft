@@ -2619,7 +2619,9 @@ fn the_machine_door_switches_workspaces_and_rides_undo() {
         .find(|c| c.cmd == Cmd::Machine)
         .expect("the machine door stands on the bar")
         .rect;
-    let rows = panes::machine_rows(button, theme::current().row_height, 200.0);
+    let pal = theme::current();
+    let strip = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H));
+    let rows = panes::machine_rows(button, strip, pal.row_height, pal.menu_width, &pal.dropdown());
     assert_eq!(rows.len(), 4, "Milling, Turning, Mill-turning, Plasma cutting");
     // Open the door.
     let at = button.center();
@@ -5196,3 +5198,5 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
         "and the offer stands again over the mounted lathe"
     );
 }
+
+mod dropdown_theme;

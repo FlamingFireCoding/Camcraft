@@ -888,9 +888,12 @@ pub(super) type RibbonGeom = (Vec<Cell>, Vec<(f32, f32, &'static str)>, Vec<f32>
 /// these rects - one source of truth for where each mode lives.
 pub(super) fn machine_rows(
     button: Rect,
+    bounds: Rect,
     row_h: f32,
     width: f32,
+    g: &super::theme::DropGeom,
 ) -> Vec<(camcraft_app::machine::Kind, Rect)> {
+    let left = g.fit_left(button.left(), bounds, width);
     machine_modes::MACHINE_MODES
         .iter()
         .enumerate()
@@ -899,8 +902,8 @@ pub(super) fn machine_rows(
                 *kind,
                 Rect::from_min_size(
                     egui::Pos2::new(
-                        button.left(),
-                        button.bottom() + DROP_GAP + k as f32 * row_h,
+                        left,
+                        button.bottom() + g.gap + k as f32 * row_h,
                     ),
                     Vec2::new(width, row_h),
                 ),
@@ -910,14 +913,12 @@ pub(super) fn machine_rows(
 }
 
 /// The machine dropdown's width: as wide as its longest row (text is
-/// never cut), and never narrower than `DROP_W`. `longest_px` is the
-/// measured width of that row's text.
-pub(super) fn machine_menu_width(longest_px: f32) -> f32 {
-    (longest_px + 2.0 * DROP_TEXT_PAD).max(DROP_W)
+/// never cut), and never narrower than the theme menu width.
+pub(super) fn machine_menu_width(longest_px: f32, pal: &Tokens) -> f32 {
+    pal.dropdown().machine_width(longest_px)
 }
-const DROP_TEXT_PAD: f32 = 8.0;
-pub(super) const DROP_W: f32 = 200.0;
-pub(super) const DROP_GAP: f32 = 2.0;
+#[cfg(test)]
+pub(super) const DROP_GAP: f32 = Tokens::DARK.menu_gap;
 
 /// The ribbon's layout math, pure: a plan (ribbon_plan's groups) and the
 /// strip give back cell rects, group captions (centre x, title), the
@@ -1003,6 +1004,9 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
                 egui::Pos2::new(x, cell_top),
                 Vec2::new(cell_w, pal.cell_h),
             );
+            let g = pal.dropdown();
+            let width = g.fit_width(g.menu_width, strip.width());
+            let left = g.fit_left(button.left(), strip, width);
             let row_h = pal.row_height;
             let rows = hidden
                 .iter()
@@ -1012,10 +1016,10 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
                         *c,
                         Rect::from_min_size(
                             egui::Pos2::new(
-                                button.left(),
-                                button.bottom() + DROP_GAP + k as f32 * row_h,
+                                left,
+                                button.bottom() + g.gap + k as f32 * row_h,
                             ),
-                            Vec2::new(DROP_W, row_h),
+                            Vec2::new(width, row_h),
                         ),
                     )
                 })
@@ -1144,9 +1148,11 @@ pub fn ribbon(
                 // too. The Area adds only the layer - Foreground order,
                 // so a press on a row belongs to the row, never to the
                 // cell it happens to cover.
+                let g = pal.dropdown();
+                let top = drop.rows.first().map_or(drop.button.left_bottom(), |(_, r)| r.min);
+                let width = drop.rows.first().map_or(0.0, |(_, r)| r.width());
                 let panel = Rect::from_min_size(
-                    drop.button.left_bottom() + Vec2::new(0.0, DROP_GAP),
-                    Vec2::new(DROP_W, drop.rows.len() as f32 * pal.row_height),
+                    top, Vec2::new(width, drop.rows.len() as f32 * pal.row_height),
                 );
                 let mut hit: Option<Cmd> = None;
                 let mut gated_row: Option<Cmd> = None;
@@ -1176,7 +1182,7 @@ pub fn ribbon(
                                 other => label_of(other),
                             };
                             p.text(
-                                r.left_center() + Vec2::new(8.0, 0.0),
+                                r.left_center() + Vec2::new(g.pad_x, 0.0),
                                 egui::Align2::LEFT_CENTER,
                                 label,
                                 egui::FontId::proportional(pal.font_row),
@@ -1229,7 +1235,7 @@ pub fn ribbon(
                     let outside = ui.input(|i| {
                         i.pointer.button_pressed(egui::PointerButton::Primary)
                             && i.pointer.interact_pos().is_none_or(|p| {
-                                !drop.button.expand(DROP_GAP).contains(p)
+                                !drop.button.expand(g.gap).contains(p)
                                     && !drop.rows.iter().any(|(_, r)| r.contains(p))
                             })
                     });
@@ -1268,13 +1274,14 @@ pub fn ribbon(
                         })
                         .fold(0.0_f32, f32::max)
                 });
-                let width = machine_menu_width(longest);
-                let rows = machine_rows(button, pal.row_height, width);
+                let g = pal.dropdown();
+                let width = g.fit_width(machine_menu_width(longest, pal), rect.width());
+                let rows = machine_rows(button, rect, pal.row_height, width, &g);
                 let machine = camcraft_app::machine::kind_of(&state.world);
                 let mut pick: Option<camcraft_app::machine::Kind> = None;
                 let mut chose = false;
                 let panel = Rect::from_min_size(
-                    button.left_bottom() + Vec2::new(0.0, DROP_GAP),
+                    rows.first().map_or(button.left_bottom(), |(_, r)| r.min),
                     Vec2::new(width, rows.len() as f32 * pal.row_height),
                 );
                 egui::Area::new(base.with("machine-drop"))
@@ -1303,7 +1310,7 @@ pub fn ribbon(
                                 machine_modes::mode_label(*kind)
                             };
                             p.text(
-                                r.left_center() + Vec2::new(8.0, 0.0),
+                                r.left_center() + Vec2::new(g.pad_x, 0.0),
                                 egui::Align2::LEFT_CENTER,
                                 label,
                                 egui::FontId::proportional(pal.font_row),
@@ -1329,7 +1336,7 @@ pub fn ribbon(
                     let outside = ui.input(|i| {
                         i.pointer.button_pressed(egui::PointerButton::Primary)
                             && i.pointer.interact_pos().is_none_or(|p| {
-                                !button.expand(DROP_GAP).contains(p)
+                                !button.expand(g.gap).contains(p)
                                     && !rows.iter().any(|(_, r)| r.contains(p))
                             })
                     });
@@ -1421,7 +1428,9 @@ pub(super) fn view_rows_of(
     strip: Rect,
     pal: &Tokens,
 ) -> Vec<(layout::ViewRow, Rect)> {
-    layout::view_rows(button, strip, pal.row_height, DROP_W, DROP_GAP)
+    let g = pal.dropdown();
+    let width = g.fit_width(g.menu_width, strip.width());
+    layout::view_rows(button, strip, pal.row_height, width, g.gap)
 }
 
 /// The status strip (bottom panel): the shell's one-line feedback, dimmer,

@@ -20,6 +20,10 @@ use egui::{Color32, CornerRadius, Margin, Stroke, Style, Visuals, vec2};
 
 use super::contrast;
 
+mod dropdown;
+mod tables;
+pub use dropdown::DropGeom;
+
 /// One theme's whole truth: colours, then geometry.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tokens {
@@ -78,6 +82,11 @@ pub struct Tokens {
     pub font_row: f32,
     /// Browser row suffix size.
     pub font_row_suffix: f32,
+    /// Dropdown width, recent-list width, trigger gap and row inset in points (#2065).
+    pub menu_width: f32,
+    pub recent_width: f32,
+    pub menu_gap: f32,
+    pub menu_pad_x: f32,
 }
 
 /// The painted path's clamps: geometry a theme file supplies can make
@@ -99,6 +108,10 @@ pub mod clamp {
     pub const GLYPH: (f32, f32) = (8.0, 64.0);
     /// Caption/row font sizes (px).
     pub const FONT: (f32, f32) = (6.0, 32.0);
+    pub const MENU_W: (f32, f32) = (100.0, 480.0);
+    pub const RECENT_W: (f32, f32) = (120.0, 640.0);
+    pub const MENU_GAP: (f32, f32) = (0.0, 24.0);
+    pub const MENU_PAD_X: (f32, f32) = (0.0, 32.0);
 
     #[must_use]
     pub fn range(v: f32, lo_hi: (f32, f32)) -> f32 {
@@ -115,83 +128,11 @@ pub const fn ribbon_h(t: &Tokens) -> f32 {
 }
 
 impl Tokens {
-    /// The imgui shell's numbers, as tokens - unchanged values, now the
-    /// dark COLUMN of a table that will carry a second one (M6.1 C).
-    pub const DARK: Tokens = Tokens {
-        ink: Color32::from_rgb(0x23, 0x26, 0x2B),
-        ink_alt: Color32::from_rgb(0x2C, 0x30, 0x37),
-        well: Color32::from_rgb(0x1B, 0x1E, 0x22),
-        text: Color32::from_rgb(0xD6, 0xDA, 0xE0),
-        text_dim: Color32::from_rgb(0x9A, 0xA1, 0xAB),
-        text_faint: Color32::from_rgb(0x6E, 0x75, 0x7E),
-        border: Color32::from_rgb(0x3D, 0x43, 0x4C),
-        accent: Color32::from_rgb(0x35, 0x6D, 0xA8),
-        accent_hover: Color32::from_rgb(0x4A, 0x86, 0xC2),
-        field_bg: Color32::from_rgb(0x1E, 0x21, 0x26),
-        field_hover: Color32::from_rgb(0x2A, 0x2E, 0x35),
-        field_active: Color32::from_rgb(0x1A, 0x2B, 0x3A),
-        selection_bg: Color32::from_rgb(0x26, 0x4A, 0x6E),
-        selection_stroke: Color32::from_rgb(0x4A, 0x86, 0xC2),
-        viewport: Color32::from_rgb(0x17, 0x1A, 0x1F),
-        radius_widget: 2,
-        radius_window: 6,
-        radius_menu: 6,
-        item_spacing_x: 8.0,
-        item_spacing_y: 3.0,
-        button_padding_x: 4.0,
-        button_padding_y: 1.0,
-        control_height: 18.0,
-        row_height: 20.0,
-        cell_h: 40.0,
-        cell_w: 72.0,
-        glyph_px: 24.0,
-        font_label: 13.0,
-        font_caption: 12.5,
-        font_row: 13.5,
-        font_row_suffix: 11.5,
-    };
-
-    /// The same shell, inverted: paper grounds, dark ink, the steel
-    /// accent stepped down for contrast against light (a hover still
-    /// lifts, a well still sinks - the RELATIVE laws of the dark column
-    /// are what carry over; the numbers are ours, chosen so body text
-    /// clears 4.5:1 against every ground it sits on - the check itself
-    /// rides `contrast::readable` and the light golden, M6.1 D). Geometry is
-    /// identical in both columns - sizes are the shell's body, not its
-    /// weather; a theme file is what restyles them, per document.
-    pub const LIGHT: Tokens = Tokens {
-        ink: Color32::from_rgb(0xEC, 0xEE, 0xF2),
-        ink_alt: Color32::from_rgb(0xF6, 0xF7, 0xF9),
-        well: Color32::from_rgb(0xDF, 0xE2, 0xE8),
-        text: Color32::from_rgb(0x1F, 0x24, 0x2A),
-        text_dim: Color32::from_rgb(0x53, 0x5B, 0x66),
-        text_faint: Color32::from_rgb(0x84, 0x8C, 0x97),
-        border: Color32::from_rgb(0xC4, 0xCA, 0xD3),
-        accent: Color32::from_rgb(0x2F, 0x66, 0x9E),
-        accent_hover: Color32::from_rgb(0x47, 0x7D, 0xB8),
-        field_bg: Color32::from_rgb(0xFF, 0xFF, 0xFF),
-        field_hover: Color32::from_rgb(0xDD, 0xE1, 0xE7),
-        field_active: Color32::from_rgb(0xE2, 0xEB, 0xF5),
-        selection_bg: Color32::from_rgb(0xC6, 0xDC, 0xF0),
-        selection_stroke: Color32::from_rgb(0x47, 0x7D, 0xB8),
-        viewport: Color32::from_rgb(0xDD, 0xE1, 0xE7),
-        radius_widget: 2,
-        radius_window: 6,
-        radius_menu: 6,
-        item_spacing_x: 8.0,
-        item_spacing_y: 3.0,
-        button_padding_x: 4.0,
-        button_padding_y: 1.0,
-        control_height: 18.0,
-        row_height: 20.0,
-        cell_h: 40.0,
-        cell_w: 72.0,
-        glyph_px: 24.0,
-        font_label: 13.0,
-        font_caption: 12.5,
-        font_row: 13.5,
-        font_row_suffix: 11.5,
-    };
+    /// Validated popup widths and row spacing shared by every dropdown.
+    #[must_use]
+    pub fn dropdown(&self) -> DropGeom {
+        DropGeom::from_tokens(self)
+    }
 
     /// The panel ground behind the ribbon/browser strips (painted.rs).
     #[must_use]
@@ -218,6 +159,7 @@ impl Tokens {
             control_height: _, row_height: _, cell_h: _, cell_w: _,
             glyph_px: _, font_label: _, font_caption: _,
             font_row: _, font_row_suffix: _,
+            menu_width: _, recent_width: _, menu_gap: _, menu_pad_x: _,
         } = *self;
         let mut v = Visuals::dark();
         v.panel_fill = ink;
@@ -320,6 +262,7 @@ const fn geom_legal(t: &Tokens) -> bool {
         item_spacing_x, item_spacing_y, button_padding_x, button_padding_y,
         control_height, row_height, cell_h, cell_w, glyph_px,
         font_label, font_caption, font_row, font_row_suffix,
+        menu_width, recent_width, menu_gap, menu_pad_x,
     } = *t;
     radius_widget <= clamp::RADIUS
         && radius_window <= 24
@@ -346,6 +289,10 @@ const fn geom_legal(t: &Tokens) -> bool {
         && font_row <= clamp::FONT.1
         && font_row_suffix >= clamp::FONT.0
         && font_row_suffix <= clamp::FONT.1
+        && menu_width >= clamp::MENU_W.0 && menu_width <= clamp::MENU_W.1
+        && recent_width >= clamp::RECENT_W.0 && recent_width <= clamp::RECENT_W.1
+        && menu_gap >= clamp::MENU_GAP.0 && menu_gap <= clamp::MENU_GAP.1
+        && menu_pad_x >= clamp::MENU_PAD_X.0 && menu_pad_x <= clamp::MENU_PAD_X.1
 }
 
 const _: () = assert!(geom_legal(&Tokens::DARK));
