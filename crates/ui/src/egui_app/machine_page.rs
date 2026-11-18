@@ -36,6 +36,9 @@ pub(super) const FILE_HELP: &str = "Pick a library machine, or load a .mch file.
 /// What the page says with no machine loaded.
 pub(super) const NO_MACHINE: &str = "No machine loaded - the checker states, it cannot judge.";
 
+/// The AccessKit name of the page's Refresh button (#2380).
+pub(super) const REFRESH_MACHINES: &str = "Refresh machine list";
+
 /// The page body for setup `ctx` (`None` - the implicit context).
 pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
     group(ui, GROUPS[0], None, |ui| ownership(ui, state, ctx, Mount::Machine));
@@ -109,6 +112,15 @@ fn library_row(ui: &mut Ui, state: &mut State, path: &str) {
         // the app shows up without a remount.
         reread = cb.response.clicked();
         super::fields::named(cb.response, "Machine library");
+        ui.end_row();
+        ui.label("");
+        let refresh = ui.button("Refresh").on_hover_text("Read the machine folder again");
+        if super::fields::named(refresh, REFRESH_MACHINES).clicked() {
+            // #2380: read the shipped folder again, then list the catalogue
+            // again (its shipped part is that scan).
+            posting::rescan();
+            reread = true;
+        }
         ui.end_row();
     });
     if reread {

@@ -156,6 +156,8 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State, pal: &Tokens) {
             .on_hover_text("Read the machine files again")
             .clicked()
         {
+            // #2380: read the shipped folders again, then the catalogue.
+            camcraft_app::posting::rescan();
             reread = true;
         }
     });

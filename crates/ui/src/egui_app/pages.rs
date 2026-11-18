@@ -167,6 +167,10 @@ fn setup_error(ui: &mut Ui, state: &State) {
         super::error_text::error_text(ui, super::colorvision::text_inks(ui, &state.world).error, &msg);
     }
 }
+
+/// The AccessKit name of the post picker's Refresh button (#2380).
+pub(super) const REFRESH_POSTS: &str = "Refresh post list";
+
 /// The document's post script (M3.3 A/B): setup furniture, read live
 /// off the world singleton like the machine section above. The label
 /// is exactly what the post resolves - one truth, so a pane can never
@@ -182,23 +186,18 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     // #902: the unit the program is written in - the document's own.
     super::post_options::units_row(ui, state, "Program units");
     post_offer_banner(ui, state);
+    // #2380: the folder as last scanned - a removed file has no entry,
+    // an added `.cps` has one (loaded as a file, like "Load post").
+    let scan = super::post_pick::scan();
     ui.horizontal(|ui| {
         // The registry by name; the combo OFFERS only the dialects
         // that serve the mounted machine's kind (M13.5: a lathe lists
         // its turning post, a mill-turn lists both), while the
         // selected text still names whatever the document chose.
         let kind = camcraft_app::machine::kind_of(&state.world);
-        let names: Vec<&str> = posting::BUILTINS.iter().map(|(n, _)| *n).collect();
-        let sel: Option<usize> = match &current {
-            PostRef::Builtin => Some(0),
-            PostRef::Named(n) => names.iter().position(|m| *m == n.as_str()),
-            PostRef::File(_) => None,
-        };
-        let text = match sel {
-            Some(i) => names[i].to_owned(),
-            None => "custom".to_owned(),
-        };
+        let super::post_pick::PostChoice { names, sel, file_sel, text } = super::post_pick::choose(&current, &scan);
         let mut pick: Option<String> = None;
+        let mut pick_file: Option<std::path::PathBuf> = None;
         egui::ComboBox::from_id_salt("post_registry")
             .selected_text(text)
             .show_ui(ui, |ui| {
@@ -210,9 +209,21 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
                         pick = Some((*n).to_owned());
                     }
                 }
+                for (n, p) in &scan.extra {
+                    if ui.selectable_label(file_sel.is_some_and(|(_, q)| q == p), n).clicked() {
+                        pick_file = Some(p.clone());
+                    }
+                }
             });
+        let refresh = ui.button("Refresh").on_hover_text("Read the post folder again");
+        if super::fields::named(refresh, REFRESH_POSTS).clicked() {
+            posting::rescan();
+        }
         if let Some(name) = pick {
             state.pending.push_back(CommandKind::SelectPostNamed(name));
+        }
+        if let Some(p) = pick_file {
+            state.pending.push_back(CommandKind::SelectPostFile(p));
         }
         if crate::browser_files::button(ui, state.browser_refusal_of(&CommandKind::SelectPostDialog), "Load post (.cps)", "") {
             state.pending.push_back(CommandKind::SelectPostDialog);
@@ -221,6 +232,10 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
             state.pending.push_back(CommandKind::SelectPostBuiltin);
         }
     });
+    if let Some(why) = &scan.problem {
+        let msg = super::post_pick::folder_problem(why);
+        super::error_text::error_text(ui, super::colorvision::text_inks(ui, &state.world).error, &msg);
+    }
     // #110: post the program straight through - every operation keeps
     // its stop or trip home, the post leaves them all out. A command.
     let skip = posting::post_options(&state.world).skip_stops;

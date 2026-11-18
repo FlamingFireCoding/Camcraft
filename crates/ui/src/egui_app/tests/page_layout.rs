@@ -200,7 +200,7 @@ fn layout_page_setup_settings() {
 fn layout_page_setup_machine() {
     let _g = snapshot_guard();
     let h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Machine));
-    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Load machine (.mch)"]);
+    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Refresh machine list", "Load machine (.mch)"]);
 }
 
 #[test]
