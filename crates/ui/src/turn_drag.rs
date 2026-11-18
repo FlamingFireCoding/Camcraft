@@ -136,7 +136,8 @@ fn ring_hit(rings: &[(usize, Vec<[f32; 2]>)], p: [f32; 2]) -> Option<(usize, f64
         .map(|(axis, phi, _)| (axis, phi))
 }
 
-/// The ring under `p`, if any.
+/// The ring under `p`, if any (the tests ask; the paint uses `ring_in`).
+#[cfg(test)]
 pub(crate) fn ring_at(state: &State, p: [f32; 2]) -> Option<usize> {
     ring_in(&rings_px(state), p)
 }
@@ -165,7 +166,8 @@ pub(crate) fn plane_angle(state: &State, p: [f32; 2], center: [f64; 3], axis: us
     let hit = add(o, d, t);
     let r = [hit[0] - center[0], hit[1] - center[1], hit[2] - center[2]];
     let (x, y) = (dot(r, e1), dot(r, e2));
-    if !(x.hypot(y) > min_r) {
+    let r = x.hypot(y);
+    if r.is_nan() || r <= min_r {
         return None;
     }
     let a = y.atan2(x);

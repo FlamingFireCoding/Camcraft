@@ -154,8 +154,9 @@ fn a_still_frame_walks_no_facets_and_a_turn_walks_them_again() {
 #[test]
 fn a_cursor_on_the_pivot_holds_the_turn() {
     let mut state = part();
-    assert!(turn_drag::press(&mut state, ring_px(&state, 2, 0.3)));
-    turn_drag::motion(&mut state, ring_px(&state, 2, 0.8));
+    let (from, to) = (ring_px(&state, 2, 0.3), ring_px(&state, 2, 0.8));
+    assert!(turn_drag::press(&mut state, from));
+    turn_drag::motion(&mut state, to);
     let held = state.body_turn.clone().expect("turning");
     let c = rings(&state).map(|r| r.center).expect("rings");
     let uv = project_uv(&state.cam.mvp(800.0 / 600.0), c).expect("in front of the camera");
