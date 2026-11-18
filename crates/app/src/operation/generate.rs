@@ -268,6 +268,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // A Contour under an open boundary rides the chain itself (its arm
     // below, `contour_open`): no area law runs for it.
     let contour_open = matches!(params, OpParams::Contour { .. }) && area.as_ref().is_some_and(|c| c.open.is_some());
+    // A whole-model Contour retains its area context so deeper Z bands slice
+    // through the same boundary controls (#2436).
+    let whole_contour_area = if matches!((&params, &src), (OpParams::Contour { .. }, SrcRef::Entity(_)))
+        && !contour_open
+        && part_solid
+    {
+        area.clone()
+    } else {
+        None
+    };
     let mut face_band: Option<(Vec<(&'static str, Region)>, f64)> = None;
     if !contour_sel_arm && !contour_open && let Some(ctx) = area.take() {
         let base = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
@@ -592,22 +602,36 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         frame.as_ref(),
                     )?;
                     let mut cp = cp;
-                    // A whole part's section is ONE plane's rings: each
-                    // is walked only where the part's wall it trims
-                    // still exists (a blind bore's ring ends at its
-                    // floor) - never the top plane's ring at every level.
-                    let rings = |cp: &ContourParams| {
+                    let run_whole = |cp: &ContourParams| -> Result<(Toolpath, Region), GenError> {
                         if part_solid {
-                            machining2d::contour_on_bodies(&region, &m_gen.facets, &m_gen.bodies, cp)
+                            let (path, bands) = machining2d::contour_whole_bodies_with(
+                                &region,
+                                &m_gen.facets,
+                                &m_gen.bodies,
+                                cp,
+                                &mut |r| apply_area_full(r, whole_contour_area.as_ref()).map(|a| a.region),
+                            )?;
+                            let inside = cp.side == Side::Inside;
+                            let mut reach = Region::empty();
+                            for r in &bands {
+                                let band = super::top_stock::contour_reach(r, inside, d);
+                                reach = if reach.is_empty() { band } else { reach.union(&band)? };
+                            }
+                            if reach.is_empty() {
+                                reach = super::top_stock::contour_reach(&region, inside, d);
+                            }
+                            Ok((path, reach))
                         } else {
-                            machining2d::contour(&region, cp)
+                            let path = machining2d::contour(&region, cp)?;
+                            let reach = super::top_stock::contour_reach(&region, cp.side == Side::Inside, d);
+                            Ok((path, reach))
                         }
                     };
-                    let mut path = rings(&cp)?;
-                    if let Some(m) = carry_need!(&super::top_stock::contour_reach(&region, cp.side == Side::Inside, d), &path) {
+                    let (mut path, reach) = run_whole(&cp)?;
+                    if let Some(m) = carry_need!(&reach, &path) {
                         cp.links.approach.material_top = Some(m);
                         lk = cp.links;
-                        path = rings(&cp)?;
+                        (path, _) = run_whole(&cp)?;
                     }
                     (region, path)
                 }
