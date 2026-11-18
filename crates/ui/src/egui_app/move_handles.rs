@@ -10,6 +10,8 @@
 use crate::move_drag;
 use crate::state::State;
 
+/// The arms are computed once per frame and serve the paint, the hot
+/// ball and the cursor.
 pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane: egui::Rect, font: &egui::FontId) {
     let arms = move_drag::arms_px(state);
     if arms.is_empty() {
@@ -18,7 +20,8 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
     let ink = super::ground_ink::cube();
     let shade = egui::Color32::from_black_alpha(170);
     let live = state.body_drag.as_ref().map(|d| d.axis);
-    let hot = live.or_else(|| pointer.and_then(|p| move_drag::ball_at(state, p)));
+    let under = pointer.and_then(|p| move_drag::ball_in(&arms, p));
+    let hot = live.or(under);
     let pos = |p: [f32; 2]| egui::pos2(p[0], p[1]);
     for &(axis, c, b) in &arms {
         let col = ink.triad.get(axis).copied().unwrap_or(egui::Color32::WHITE);
@@ -35,7 +38,7 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
         ui.painter().text(at + egui::vec2(1.0, 1.0), egui::Align2::CENTER_BOTTOM, &text, font.clone(), shade);
         ui.painter().text(at, egui::Align2::CENTER_BOTTOM, text, font.clone(), egui::Color32::WHITE);
     }
-    if pointer.is_some_and(|p| move_drag::ball_at(state, p).is_some()) || live.is_some() {
+    if under.is_some() || live.is_some() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
 }

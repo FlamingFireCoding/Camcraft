@@ -13,7 +13,10 @@
 //! geometry text); the constant-on-screen handle is the usual CAD gizmo
 //! convention. No vendor material consulted.
 
-use camcraft_app::geometry::{Point3, transform_point};
+use std::sync::Arc;
+
+use camcraft_app::geometry::{Point3, Triangle, transform_point};
+use camcraft_app::schema::Location;
 use camcraft_app::model;
 use camcraft_app::setup_align;
 use flecs_ecs::prelude::Entity;
@@ -84,10 +87,48 @@ fn draggable(state: &State) -> Option<(String, Entity)> {
     picked.next().is_none().then_some(one)
 }
 
-/// The body's bounding-box centre where the viewport draws it.
+/// The shown bounding-box centre of the dragged body, kept between frames
+/// (#2238 frame-cost law: a still frame walks no facets). The key is the
+/// input itself: the entity, the facet `Arc` (held, so its address cannot
+/// be reused; a geometry change replaces it) and the shown pose bit for bit
+/// (a move, an undo or a setup switch changes it). View cache - never
+/// truth, never saved.
+#[derive(Default)]
+pub struct CenterCache {
+    key: Option<(Entity, Arc<[Triangle]>, [u64; 7])>,
+    center: Option<[f64; 3]>,
+    /// How many times the facets were walked (the counter test reads it).
+    pub computes: u64,
+}
+
+fn pose_bits(loc: &Location) -> [u64; 7] {
+    let [a, b, c, d] = loc.rot.map(f64::to_bits);
+    [loc.pos.x.to_bits(), loc.pos.y.to_bits(), loc.pos.z.to_bits(), a, b, c, d]
+}
+
+/// The body's bounding-box centre where the viewport draws it, from the
+/// cache when its input is unchanged.
 fn shown_center(state: &State, entity: &Entity) -> Option<[f64; 3]> {
     let tris = model::facets_of(&state.world, entity)?;
     let loc = setup_align::view_pose(&state.world, entity)?;
+    let id = *entity;
+    let bits = pose_bits(&loc);
+    let mut cache = state.move_center.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((k_id, k_tris, k_bits)) = &cache.key
+        && *k_id == id
+        && Arc::ptr_eq(k_tris, &tris)
+        && *k_bits == bits
+    {
+        return cache.center;
+    }
+    let center = walk_center(&tris, &loc);
+    cache.computes = cache.computes.saturating_add(1);
+    cache.key = Some((id, tris, bits));
+    cache.center = center;
+    center
+}
+
+fn walk_center(tris: &[Triangle], loc: &Location) -> Option<[f64; 3]> {
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
     for p in tris.iter().flat_map(|t| [t.a, t.b, t.c]) {
@@ -160,30 +201,62 @@ pub(crate) fn arms_px(state: &State) -> Vec<(usize, [f32; 2], [f32; 2])> {
 
 /// The ball under `p`, nearest first.
 pub(crate) fn ball_at(state: &State, p: [f32; 2]) -> Option<usize> {
-    arms_px(state)
-        .into_iter()
-        .map(|(i, _, b)| (i, (b[0] - p[0]).hypot(b[1] - p[1])))
+    ball_in(&arms_px(state), p)
+}
+
+/// The ball under `p` among arms already computed this frame (the paint
+/// code computes them once and asks twice).
+pub(crate) fn ball_in(arms: &[(usize, [f32; 2], [f32; 2])], p: [f32; 2]) -> Option<usize> {
+    arms.iter()
+        .map(|&(i, _, b)| (i, (b[0] - p[0]).hypot(b[1] - p[1])))
         .filter(|(_, d)| *d <= BALL_HIT_PX)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(i, _)| i)
 }
 
-/// The axis parameter of the point on the line `origin + t * axis` closest
-/// to the cursor ray through `p`. None when the ray runs along the axis
-/// (the drag then holds its last value rather than jump).
-fn axis_t(state: &State, p: [f32; 2], origin: [f64; 3], axis: usize) -> Option<f64> {
-    let u = *AXES.get(axis)?;
-    let (o, d) = ray_at(state, p)?;
+/// Below this angle between the cursor ray and the axis the axis is seen
+/// almost end-on: a px of cursor is many mm along it, so the drag holds its
+/// last value rather than jump (sin^2 of 3 degrees).
+pub(crate) const END_ON_SIN2: f64 = 0.002_739_052_315_863_355;
+
+/// The axis parameter of the point on the line `origin + t * u` (`u` a unit
+/// axis) closest to the ray `o + s * d`. None when the ray runs within
+/// 3 degrees of the axis.
+pub(crate) fn ray_axis_t(o: [f64; 3], d: [f64; 3], origin: [f64; 3], u: [f64; 3]) -> Option<f64> {
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let w0 = [origin[0] - o[0], origin[1] - o[1], origin[2] - o[2]];
     let (b, c) = (dot(u, d), dot(d, d));
     let (dd, e) = (dot(u, w0), dot(d, w0));
     let denom = c - b * b;
-    if denom.abs() < 1e-9 * c.max(1e-12) {
+    // NaN fails both comparisons, so it is refused too.
+    let seen_across = c > 1e-24 && denom >= END_ON_SIN2 * c;
+    if !seen_across {
         return None;
     }
     let t = (b * e - c * dd) / denom;
     t.is_finite().then_some(t)
+}
+
+/// One motion step moves the drag by at most `limit` mm (one view width):
+/// a near end-on axis can never throw the part off screen in one event.
+pub(crate) fn clamp_step(prev: f64, next: f64, limit: f64) -> f64 {
+    if !limit.is_finite() || limit <= 0.0 {
+        return prev;
+    }
+    next.clamp(prev - limit, prev + limit)
+}
+
+fn axis_t(state: &State, p: [f32; 2], origin: [f64; 3], axis: usize) -> Option<f64> {
+    let u = *AXES.get(axis)?;
+    let (o, d) = ray_at(state, p)?;
+    ray_axis_t(o, d, origin, u)
+}
+
+/// One view width in mm at `at`: the most one motion event may drag.
+fn step_limit(state: &State, at: [f64; 3]) -> Option<f64> {
+    let ([x0, _], [x1, _]) = state.viewport_rect;
+    let k = px_per_mm(state, at)?;
+    Some(f64::from(x1 - x0) / k)
 }
 
 /// A left press at `p`: a ball under it starts a drag and the press is
@@ -199,10 +272,13 @@ pub(crate) fn press(state: &mut State, p: [f32; 2]) -> bool {
 /// The pointer moved to `p` during a drag: the preview follows.
 pub(crate) fn motion(state: &mut State, p: [f32; 2]) {
     let Some(d) = state.body_drag.clone() else { return };
-    if let Some(t) = axis_t(state, p, d.origin, d.axis)
-        && let Some(live) = state.body_drag.as_mut()
+    let Some(t) = axis_t(state, p, d.origin, d.axis) else { return };
+    let Some(limit) = step_limit(state, d.origin) else { return };
+    let next = clamp_step(d.delta, t - d.start_t, limit);
+    if let Some(live) = state.body_drag.as_mut()
+        && next.is_finite()
     {
-        live.delta = t - d.start_t;
+        live.delta = next;
     }
 }
 
