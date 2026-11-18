@@ -1,4 +1,5 @@
 //! Named layout checks for floating windows, fixture modals, and Machines.
+//! #1991. Provenance: our own layout law over the egui_kittest AccessKit tree; no HSMWorks material involved.
 
 use super::*;
 use egui_kittest::kittest::NodeT;
