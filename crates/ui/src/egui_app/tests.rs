@@ -226,6 +226,8 @@ mod ribbon_accesskit;
 mod ai_chat;
 // #2011: EDM tool visibility matches selectable machine kinds.
 mod edm_tool_visibility;
+// #2201: edge/face selection highlight draw & rebuild count per frame.
+mod highlight_perf;
 // #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
 mod pocket_no_adaptive;
 

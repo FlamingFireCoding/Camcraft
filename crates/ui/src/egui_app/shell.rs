@@ -662,15 +662,20 @@ fn viewport_panel(
         // #1507: the Geometry-list row hover, strong: a dark halo, then the
         // row-hover ink.
         {
-            let segs = crate::frame_cost::time("ui/viewport.row_hover", || interact::row_hover_segments(state, aspect));
             let ink = rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::RowHover));
             let halo = egui::Color32::from_black_alpha(200);
-            for (a, b) in &segs {
-                ui.painter().line_segment([to_px(*a), to_px(*b)], egui::Stroke::new(interact::ROW_HOVER_HALO_PX, halo));
-            }
-            for (a, b) in &segs {
-                ui.painter().line_segment([to_px(*a), to_px(*b)], egui::Stroke::new(interact::ROW_HOVER_PX, ink));
-            }
+            crate::frame_cost::time("ui/viewport.row_hover", || {
+                crate::pick_highlight_mesh::paint_row_hover(
+                    ui.painter(),
+                    state,
+                    aspect,
+                    &to_px,
+                    interact::ROW_HOVER_PX,
+                    interact::ROW_HOVER_HALO_PX,
+                    ink,
+                    halo,
+                );
+            });
         }
         // #979: the pick box's rubber band - solid for a window, dashed
         // for a crossing box.
