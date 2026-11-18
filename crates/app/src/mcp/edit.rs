@@ -285,7 +285,7 @@ pub(super) fn detect_holes(env: &mut Env, a: &Map<String, Value>) -> Result<Valu
     let key = find_op(env, req_str(a, "name")?)?;
     let e = model::find_by_name(&env.world, &key).ok_or_else(|| format!("no operation named '{key}'"))?;
     let op = model::operation_of(&env.world, &e).ok_or_else(|| format!("'{key}' is not an operation"))?;
-    let operation::DetectedHoles { params: next, skipped } =
+    let operation::DetectedHoles { params: next, skipped, undersize } =
         operation::detect_holes(&env.world, &key, &op.params, op.setup.as_deref(), &op.src)?;
     let (holes, radial) = match &next {
         OpParams::Drill { holes, cross, .. } => (holes.len(), cross.len()),
@@ -295,8 +295,9 @@ pub(super) fn detect_holes(env: &mut Env, a: &Map<String, Value>) -> Result<Valu
     let cmd = EditOperationParams::new(&env.world, &key, next).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
     // #1556: each hole the op's kind could not take, named - the GUI's
-    // status line reads the same sentences.
-    Ok(json!({ "operation": key, "holes": holes, "radial_holes": radial, "skipped": skipped, "status": "stale" }))
+    // status line reads the same sentences. #2496: each hole kept but
+    // drilled undersize (wider than the drill), named the same way.
+    Ok(json!({ "operation": key, "holes": holes, "radial_holes": radial, "skipped": skipped, "undersize": undersize, "status": "stale" }))
 }
 
 pub(super) fn delete_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
