@@ -848,6 +848,9 @@ fn gated_ops(world: &World, stop_at_ungenerated: bool) -> Result<(OpList, OpList
         if let Some(why) = operation::tool_gate::tool_problem_of(world, e) {
             return Err(format!("{why} - fix the tool before posting"));
         }
+        if let Some(why) = review_problem_of(world, name, e) {
+            return Err(why);
+        }
         // Issue #62 at the post, before freshness (like the tool gate:
         // "regenerate" alone is the wrong advice when generation would
         // refuse too): the post measures every diameter from where the
@@ -921,6 +924,7 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     // below then refuses to judge it too, so no gouge verdict is read off
     // a mesh that cannot carry one.
     problems.extend(crate::model_fidelity::gate_problems(world));
+    problems.extend(review_problems(world));
 
     let sim = sim_clause(world);
     problems.extend(sim.problem);
@@ -941,7 +945,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     problems.extend(suppressed::suppressed_problems(world));
     // The rotated-offset clause (#315): the post carries translation only.
     problems.extend(wcs_rotation::rotated_wcs_problems(world));
-    // #1720: nor a flipped axis - refused by name until it is carried.
+    // #1649: a flipped axis is carried by the post (X, Y); what is not
+    // carried - a flipped Z, a rotated or unverified case - is refused.
     problems.extend(crate::setup_wcs_flip::post_problems(world));
     // The offset-range clause (#931): each setup's offset index against
     // its own post's maximum - never posted at offset 1.
@@ -1020,6 +1025,28 @@ fn fixture_problems(world: &World) -> Vec<String> {
     };
     let hits = f.hits.into_iter().map(|(name, hit)| format!("{name}: {hit}"));
     f.unjudged.into_iter().chain(hits).collect()
+}
+
+/// Review refusal for one operation whose migration dropped un-carriable parameters (#1517).
+pub(crate) fn review_problem_of(world: &World, key: &str, entity: &Entity) -> Option<String> {
+    let meta = model::operation_meta_of(world, entity);
+    if meta.needs_review.is_empty() {
+        return None;
+    }
+    let label = meta.label.unwrap_or_else(|| key.to_owned());
+    Some(format!(
+        "{label}: needs review before posting ({}) - inspect the operation and mark it reviewed",
+        meta.needs_review.join("; ")
+    ))
+}
+
+/// Every unsuppressed operation still carrying migration `needs_review` notes (#1517).
+fn review_problems(world: &World) -> Vec<String> {
+    crate::setup::operation_order(world)
+        .into_iter()
+        .filter(|(_, e)| !model::operation_of(world, e).is_some_and(|op| op.suppressed))
+        .filter_map(|(name, e)| review_problem_of(world, &name, &e))
+        .collect()
 }
 
 /// The fixture walk's verdict as data (#181), read by both the gate's
@@ -1272,6 +1299,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             wcs,
             origin,
             wcs_yaw: wcs_yaw(world, setup),
+            wcs_flip: crate::setup_wcs_flip::of_setup(world, setup),
             wcs_rotation_control: wcs_yaw(world, setup).is_some()
                 && crate::setup_post_options::of(world, op.setup.as_deref()).wcs_rotation
                     == crate::schema::WcsRotationOutput::Control,

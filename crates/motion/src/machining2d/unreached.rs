@@ -1,9 +1,14 @@
 //! The pieces of a pocket region that no legal tool position reaches
-//! (#1655). A pocket's cutter-center area is the region eroded by the tool
+//! (#1655 bands, #2438 corners). A pocket's cutter-center area is the region eroded by the tool
 //! radius plus the stock to leave (`pocket`); a connected piece of the
 //! region that erodes to nothing gets no pass. The generator refuses only
 //! a region that erodes to nothing as a whole, so a caller that must say
 //! which material stays uncut asks here and puts the answer in a note.
+//! The corner check also finds residual material inside pieces that keep
+//! a cutter-center area: dilating that area by the same reach leaves sharp
+//! corners uncut. When a stock outline is supplied, residuals outside the
+//! stock (extended air) are excluded. Narrow slivers and circular-arc
+//! approximation noise are filtered out; these checks produce notes.
 //!
 //! Provenance: our own, from first principles - the morphological erosion
 //! of a planar region by a disc (the offset law of any computational-

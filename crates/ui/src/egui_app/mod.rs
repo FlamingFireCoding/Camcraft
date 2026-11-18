@@ -235,6 +235,7 @@ pub mod theme_files;
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
 pub(crate) mod move_handles;
+pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
 
@@ -270,6 +271,8 @@ mod fixture_profile_tests;
 mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
+#[cfg(test)]
+mod field_focus_tests;
 #[cfg(test)]
 mod coolant_tests;
 #[cfg(test)]

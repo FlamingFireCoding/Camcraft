@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, History, ImportModel,
-    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -381,7 +381,7 @@ pub enum CommandKind {
         src: SrcRef,
         params: OpParams,
     },
-    PasteOperation { name: String, operation: OperationDef },
+    PasteOperation { name: String, operation: OperationDef, needs_review: Vec<String> },
     /// The properties page's parameter draft.
     EditOperationParams {
         name: String,
@@ -392,7 +392,8 @@ pub enum CommandKind {
     DetectedHoles {
         name: String,
         params: OpParams,
-        skipped: Vec<String>,
+        /// The skipped and the undersize holes' sentences (#1556, #2496).
+        notes: Vec<String>,
     },
     /// The same draft with its Boundary group (M11.5): one undo unit.
     EditOperationBoundary {
@@ -449,6 +450,7 @@ pub enum CommandKind {
     DeleteOperation(String),
     RenameOperation { name: String, label: String },
     ReorderOperation { name: String, target: String, after: bool },
+    MarkOperationReviewed(String),
     /// Throw away the operation's generated path and keep the operation
     /// (undoable: the cache comes back byte for byte).
     ClearToolpath(String),
@@ -733,6 +735,15 @@ pub enum CommandKind {
     MoveModelBy {
         name: String,
         delta: [f64; 3],
+    },
+    /// A viewport ring drag's release (#2047): turn part `name` by
+    /// `angle_rad` about SHOWN axis `axis` (0 X, 1 Y, 2 Z) through its
+    /// bounding-box centre. The drain turns it into the one `MoveModel`
+    /// the Model page's rotation fields run - one undo step per drag.
+    TurnModelBy {
+        name: String,
+        axis: usize,
+        angle_rad: f64,
     },
     /// Mesh repair (M13.11): weld within `weld_tol` (mm) and fill every
     /// boundary loop of at most `max_hole_edges` edges, one undo unit
@@ -1021,14 +1032,6 @@ pub struct GeoChip {
     pub sel: GeoSel,
     pub label: String,
     pub missing: bool,
-}
-
-/// A feature id as the chips show it: the 16 hex digits, shortened to
-/// head and tail with an ellipsis. Long enough to tell two picks of one
-/// model apart at a glance, short enough for a chip row to stay one row.
-fn short_id(id: u64) -> String {
-    let h = format!("{id:016x}");
-    format!("{}…{}", &h[..4], &h[14..])
 }
 
 /// XY vertex set of a ring, quantized and sorted: the identity a patch
@@ -1560,6 +1563,7 @@ impl PanelsOpen {
 /// toolpaths are intentionally absent: Paste creates a fresh operation.
 #[derive(Clone)]
 pub struct OperationClipboard {
+    pub needs_review: Vec<String>,
     pub label: String,
     pub operation: OperationDef,
 }
@@ -1673,6 +1677,12 @@ pub struct State {
     /// A handle drag in flight (#1198 b): the ephemeral preview. Only
     /// its release reaches history, as one `MoveModelBy`.
     pub body_drag: Option<crate::move_drag::BodyDrag>,
+    /// The bar's Rotate mode (#2047): the one selected part wears turn
+    /// rings. View state, off by default; never on with Move mode.
+    pub rotate_handles: bool,
+    /// A ring drag in flight (#2047): the ephemeral preview. Only its
+    /// release reaches history, as one `TurnModelBy`.
+    pub body_turn: Option<crate::turn_drag::TurnDrag>,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -2184,6 +2194,8 @@ impl State {
             pick_through: false,
             move_handles: false,
             body_drag: None,
+            rotate_handles: false,
+            body_turn: None,
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),
@@ -2578,14 +2590,14 @@ impl State {
         // (#312), so a click and an agent store the same holes.
         match operation::detect_holes(&self.world, name, current, op.setup.as_deref(), &op.src) {
             Err(why) => self.refuse(ErrorScope::Operation, why),
-            Ok(operation::DetectedHoles { params, skipped }) => {
+            Ok(operation::DetectedHoles { params, skipped, undersize }) => {
                 if draft {
                     self.op_ui.params = params.clone();
                 }
                 self.pending.push_back(CommandKind::DetectedHoles {
                     name: name.to_string(),
                     params,
-                    skipped,
+                    notes: skipped.into_iter().chain(undersize).collect(),
                 });
             }
         }
@@ -2633,6 +2645,7 @@ impl State {
             .iter()
             .enumerate()
             .map(|(gi, g)| {
+                let pick_name = camcraft_app::pick::geo_label(&self.world, g);
                 let (mut label, missing) = match g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
@@ -2654,8 +2667,7 @@ impl State {
                                     ('y', f.offset)
                                 };
                                 let mut label = format!(
-                                    "Face {} · {axis}={} · {} {}",
-                                    g.entity,
+                                    "{pick_name} · {axis}={} · {} {}",
                                     units::len(v, unit, 2),
                                     units::area(f.area, unit),
                                     unit.area_suffix()
@@ -2665,10 +2677,7 @@ impl State {
                                 }
                                 (label, false)
                             }
-                            None => (
-                                format!("Face {} · {} · missing", g.entity, short_id(id)),
-                                true,
-                            ),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Chain(id) => {
@@ -2705,8 +2714,7 @@ impl State {
                                         }
                                     }
                                     format!(
-                                        "Chain {} · closed · {} {} · {} × {}",
-                                        g.entity,
+                                        "{pick_name} · closed · {} {} · {} × {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         units::len(hi[0] - lo[0], unit, 1),
@@ -2716,8 +2724,7 @@ impl State {
                                     let i = run_seq.entry(g.entity.clone()).or_default();
                                     *i += 1;
                                     format!(
-                                        "Chain {} · open · {} {} · {} of {}",
-                                        g.entity,
+                                        "{pick_name} · open · {} {} · {} of {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         i,
@@ -2726,11 +2733,7 @@ impl State {
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label =
-                                    format!("Chain {} · {} · missing", g.entity, short_id(id));
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Patch(id) => {
@@ -2799,32 +2802,23 @@ impl State {
                                             ),
                                         };
                                         format!(
-                                            "Welded face {} · {shape} · {} {} · {strips} strips",
-                                            g.entity,
+                                            "{pick_name} · {shape} · {} {} · {strips} strips",
                                             units::area(shoelace(rim), unit),
                                             unit.area_suffix()
                                         )
                                     }
-                                    None => format!("Welded face {} · open band", g.entity),
+                                    None => format!("{pick_name} · open band"),
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label = format!(
-                                    "Welded face {} · {} · missing",
-                                    g.entity,
-                                    short_id(id)
-                                );
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Vertex(id) => {
                         match crate::vertex_pick::vertex_world(self, &g.entity, id) {
                             Some(p) => (
                                 format!(
-                                    "Vertex {} · ({}, {}, {}) {}",
-                                    g.entity,
+                                    "{pick_name} · ({}, {}, {}) {}",
                                     units::len(p[0], unit, 2),
                                     units::len(p[1], unit, 2),
                                     units::len(p[2], unit, 2),
@@ -2832,7 +2826,7 @@ impl State {
                                 ),
                                 false,
                             ),
-                            None => (format!("Vertex {} · {} · missing", g.entity, short_id(id)), true),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                 };
@@ -2921,7 +2915,10 @@ impl State {
             return;
         };
         let label = model::operation_label(&self.world, name, &entity);
-        self.operation_clipboard = Some(OperationClipboard { label: label.clone(), operation });
+        self.operation_clipboard = Some(OperationClipboard {
+            label: label.clone(), operation,
+            needs_review: model::operation_meta_of(&self.world, &entity).needs_review,
+        });
         self.status = format!("copied operation {label}");
     }
 
@@ -2947,7 +2944,7 @@ impl State {
             };
             suffix = next;
         };
-        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation });
+        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation, needs_review: clip.needs_review });
     }
 
     /// Names of the tool entities, in document order.
@@ -3454,12 +3451,13 @@ impl State {
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
+                    let number = command.number();
                     let note = command.note();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
                     self.status = match note {
-                        Some(n) => format!("tool {name} added - {n}"),
-                        None => format!("tool {name} added"),
+                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
+                        None => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
@@ -3471,7 +3469,7 @@ impl State {
                         self.doc_version += 1;
                         self.status = match number {
                             Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} posts as its list position"),
+                            None => format!("tool {name} number cleared"),
                         };
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),
@@ -3556,8 +3554,8 @@ impl State {
                     );
                 }
             },
-            CommandKind::PasteOperation { name, operation } => {
-                match PasteOperation::new(&self.world, &name, operation) {
+            CommandKind::PasteOperation { name, operation, needs_review } => {
+                match PasteOperation::new(&self.world, &name, operation, needs_review) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         History::execute_ephemeral(&self.world, SelectEntity::new(&self.world, Some(name.as_str())));
@@ -3584,15 +3582,15 @@ impl State {
                     }
                 }
             }
-            CommandKind::DetectedHoles { name, params, skipped } => {
+            CommandKind::DetectedHoles { name, params, notes } => {
                 match EditOperationParams::new(&self.world, &name, params) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = if skipped.is_empty() {
+                        self.status = if notes.is_empty() {
                             format!("parameters updated for {name}")
                         } else {
-                            format!("holes detected for {name}; {}", skipped.join("; "))
+                            format!("holes detected for {name}; {}", notes.join("; "))
                         };
                     }
                     Err(err) => {
@@ -3726,6 +3724,14 @@ impl State {
                     self.status = format!("operation {name} moved");
                 }
                 Err(err) => self.refuse(ErrorScope::Operation, format!("reorder failed: {err}")),
+            },
+            CommandKind::MarkOperationReviewed(name) => match MarkOperationReviewed::new(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("marked {name} reviewed");
+                }
+                Err(err) => self.refuse(ErrorScope::Operation, format!("mark reviewed failed: {err}")),
             },
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes
@@ -4008,6 +4014,7 @@ impl State {
                 }
             }
             CommandKind::MoveModelBy { name, delta } => self.move_model_by(&name, delta),
+            CommandKind::TurnModelBy { name, axis, angle_rad } => self.turn_model_by(&name, axis, angle_rad),
             CommandKind::RepairModel { name, weld_tol, max_hole_edges } => {
                 match RepairModel::new(&self.world, &name, weld_tol, max_hole_edges) {
                     Ok(command) => {

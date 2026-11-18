@@ -51,6 +51,7 @@ mod height_display;
 mod height_memo;
 pub mod locate_pick;
 pub mod move_drag;
+pub mod turn_drag;
 pub mod machined;
 mod setup_display;
 mod floor;
@@ -112,6 +113,8 @@ mod pockets_tests;
 mod wcs_gizmo_tests;
 #[cfg(test)]
 mod move_drag_tests;
+#[cfg(test)]
+mod turn_drag_tests;
 #[cfg(test)]
 mod axis_note_tests;
 
