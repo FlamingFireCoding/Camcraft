@@ -3331,7 +3331,8 @@ impl State {
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
             CommandKind::LoadMachineDialog => {
-                if let Some(path) = pick_machine_file() {
+                let dir = crate::egui_app::machines_pane::user_dir(self);
+                if let Some(path) = pick_machine_file(dir.as_deref()) {
                     self.load_machine_path(path);
                 }
             }
@@ -4681,12 +4682,16 @@ fn project_dialog() -> crate::file_dialog::FileDialog {
     crate::file_dialog::FileDialog::new().add_filter("CamCraft Project", &["camproj"])
 }
 
-fn pick_machine_file() -> Option<PathBuf> {
+fn pick_machine_file(user_dir: Option<&std::path::Path>) -> Option<PathBuf> {
     // The `.mch` layout is the machine-definition JSON format we reuse
-    // by user instruction (M2.3 C); the filter just names it.
-    crate::file_dialog::FileDialog::new()
-        .add_filter("Machine Definition", &["mch"])
-        .pick_file()
+    // by user instruction (M2.3 C); the filter just names it. #2358: it
+    // opens in the user machines folder when that exists.
+    let dialog = crate::file_dialog::FileDialog::new().add_filter("Machine Definition", &["mch"]);
+    match crate::egui_app::machines_pane::dialog_start(user_dir) {
+        Some(dir) => dialog.set_directory(dir),
+        None => dialog,
+    }
+    .pick_file()
 }
 
 fn pick_post_file() -> Option<PathBuf> {
