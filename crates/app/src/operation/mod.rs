@@ -179,6 +179,9 @@ use boundary_ctx::*;
 // operation's world reads and CL wrap (part_alignment x Tilt).
 mod frame;
 pub use frame::OpFrame;
+// #2389: a tilted op's reference heights read along its tool axis.
+mod tilt_heights;
+pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
 mod job;
 pub use job::*;

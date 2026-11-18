@@ -236,7 +236,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // rides on untouched. The generators themselves never see a frame
     // - rotation invariance is the whole argument that this is sound
     // - and the laws that verify the path below run on the local one
-    // for exactly the same reason.
+    // for exactly the same reason. #2389: under a non-upright tilt the
+    // reference heights arrive already measured along the tool axis
+    // (`fold_height`, as `z_local + oz`), so this one shift lands them
+    // on the local values; a Fixed height keeps the plain `h - oz` law.
     let oz = frame.map_or(0.0, |f| f.origin.z);
     let hl = ResolvedHeights {
         clearance: hs.clearance - oz,
