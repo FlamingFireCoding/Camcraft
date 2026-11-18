@@ -149,12 +149,19 @@ fn span(m: &camcraft_motion::cl::Move) -> f64 {
 fn straight_links_holes_at_the_run_height() {
     // The smoothest author the facets certify erases the hop over
     // the holes entirely: one feed link from rim to rim at the
-    // runs' own tip height, and no traverse left at the retract
-    // plane - only the pass-to-pass climb to clearance rides high.
+    // runs' own tip height. The rim rows off the plate's outside
+    // keep their hop: there the march itself rests the ball about
+    // 0.005 mm into the flank inside exact tangency (its own chord
+    // budget), and the verdict law refuses a link whose ends bite
+    // the flank - certified or not at all. Only the pass-to-pass
+    // climb to clearance rides high off the edge.
     let f = holed_plate();
     let t = parallel(&f, &fp(GapLink::Straight, Some(12.0), 20.0)).expect("straight path");
-    let h = traverse_heights(&t);
-    assert_eq!(h, vec![20.0], "the retract hop is gone, only clearance stays: {h:?}");
+    assert_eq!(
+        hop_over_a_hole(&t, 12.0),
+        0,
+        "a retract hop still crosses a hole"
+    );
     let links = t
         .moves
         .iter()
@@ -166,6 +173,19 @@ fn straight_links_holes_at_the_run_height() {
         })
         .count();
     assert!(links >= 4, "no rim-to-rim links over the holes: {links}");
+}
+
+#[test]
+fn jump_mode_still_hops_over_the_holes() {
+    // The negative control: on the same fixture the plain author
+    // does hop each hole, so the pin above proves the straight
+    // author, not a fixture with no holes to cross.
+    let f = holed_plate();
+    let t = parallel(&f, &fp(GapLink::Jump, Some(12.0), 20.0)).expect("jump path");
+    assert!(
+        hop_over_a_hole(&t, 12.0) >= 2,
+        "the plain author lost its hop over the holes"
+    );
 }
 
 #[test]
@@ -217,6 +237,26 @@ fn crossing_hops(t: &Toolpath, z: f64) -> Vec<(Point3, Point3)> {
         })
         .map(|m| (m.from, m.to))
         .collect()
+}
+
+/// Horizontal rapids at exactly `z` that CROSS a hole centre line
+/// (x = 10 or x = 30) within that hole's own y band (8.3 .. 11.7) -
+/// the holes' authored retract hops. Rim rows off the plate never
+/// enter this band.
+fn hop_over_a_hole(t: &Toolpath, z: f64) -> usize {
+    t.moves
+        .iter()
+        .filter(|m| {
+            m.kind == MoveKind::Rapid
+                && (m.from.z - z).abs() < 1e-9
+                && (m.to.z - z).abs() < 1e-9
+                && (m.from.y - m.to.y).abs() < 1e-9
+                && m.from.y > 8.3
+                && m.from.y < 11.7
+                && ((m.from.x.min(m.to.x) < 10.0 && m.from.x.max(m.to.x) > 10.0)
+                    || (m.from.x.min(m.to.x) < 30.0 && m.from.x.max(m.to.x) > 30.0))
+        })
+        .count()
 }
 
 #[test]
