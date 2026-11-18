@@ -325,7 +325,10 @@ fn preview_3d(ui: &mut Ui, state: &mut State) {
     if resp.double_clicked() {
         state.fit_body_preview();
     }
-    if resp.dragged() && mode == BodyPickMode::Off {
+    // A drag orbits, also while a pick is armed: a face behind the body
+    // turns into view, and the pick waits for a click (egui does not
+    // report a drag as a click). View state only.
+    if resp.dragged() {
         let dv = resp.drag_delta();
         state.tool_body_ui.yaw -= dv.x * 0.01;
         state.tool_body_ui.pitch = (state.tool_body_ui.pitch + dv.y * 0.01).clamp(-1.9, 1.0);

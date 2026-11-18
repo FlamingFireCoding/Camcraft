@@ -6,6 +6,7 @@
 use super::tool_body::{TOOL, editor, prism_stl, shank_top, temp_stl};
 use egui::{Color32, Shape};
 
+use crate::state::BodyPickMode;
 use camcraft_app::tool_body;
 use super::*;
 
@@ -74,6 +75,57 @@ fn the_side_preview_bands_are_the_collision_stack_of_an_explicit_body() {
     assert!(swept.len() > 1, "the body gives bands: {swept:?}");
     assert_eq!(super::super::tool_body_page::envelope(st), Some(swept), "one shape for check and preview");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+/// The background rect of the 3D placement view, when it shows.
+fn view3d_rect(harness: &Harness<'static, ShellUi>) -> Option<egui::Rect> {
+    fn walk(s: &Shape) -> Option<egui::Rect> {
+        match s {
+            Shape::Vec(v) => v.iter().find_map(walk),
+            Shape::Rect(r) if r.fill == Color32::from_rgb(24, 26, 31) && (r.rect.height() - 200.0).abs() < 0.5 => Some(r.rect),
+            _ => None,
+        }
+    }
+    harness.output().shapes.iter().find_map(|c| walk(&c.shape))
+}
+
+#[test]
+fn dragging_the_placement_preview_rotates_without_consuming_the_pick() {
+    for (label, mode) in [("Pick tip", BodyPickMode::Tip), ("Pick axis", BodyPickMode::Axis)] {
+        let mut harness = editor();
+        let path = temp_stl("orbit");
+        prism_stl(&path, 15.0, 0.0, 30.0, 24);
+        harness.state_mut().state.import_tool_body_from(&path);
+        harness.run();
+        harness.get_by_label(label).click();
+        harness.run();
+        harness.run();
+        let rect = view3d_rect(&harness).expect("the armed pick shows the 3D view");
+        let before = {
+            let d = &harness.state().state.tool_body_ui;
+            (d.yaw, d.pitch, d.offset, d.axis)
+        };
+        let from = rect.center();
+        set_pos(&mut harness, from);
+        button_at(&mut harness, egui::PointerButton::Primary, from, true);
+        for step in 1..=4 {
+            set_pos(&mut harness, from + egui::vec2(10.0 * step as f32, 6.0 * step as f32));
+        }
+        button_at(&mut harness, egui::PointerButton::Primary, from + egui::vec2(40.0, 24.0), false);
+        harness.run();
+        let d = &harness.state().state.tool_body_ui;
+        assert!(d.yaw != before.0 && d.pitch != before.1, "{label}: the drag turns the view: {before:?} -> ({}, {})", d.yaw, d.pitch);
+        assert_eq!(d.pick, mode, "{label}: the drag keeps the pick armed");
+        assert_eq!((d.offset, d.axis), (before.2, before.3), "{label}: the drag picks nothing");
+        // A plain click still picks, and that ends the pick.
+        let at = view3d_rect(&harness).expect("still armed").center();
+        set_pos(&mut harness, at);
+        button_at(&mut harness, egui::PointerButton::Primary, at, true);
+        button_at(&mut harness, egui::PointerButton::Primary, at, false);
+        harness.run();
+        assert_eq!(harness.state().state.tool_body_ui.pick, BodyPickMode::Off, "{label}: the click picks");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
 }
 
 #[test]
