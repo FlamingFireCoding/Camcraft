@@ -23,7 +23,7 @@ use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::{parse_mch, Kind};
 use camcraft_app::operation::{self, Height, OpParams, SrcRef, WireContourOp, WireSide, WireSkim};
 use camcraft_app::post::{self, cnc};
-use camcraft_app::posting::{self, BUILTINS, WIRE_POSTS};
+use camcraft_app::posting::{self, WIRE_POSTS};
 use camcraft_app::world::new_world;
 
 /// The synthetic wire EDM of #533: its `edm.codes` are fictional and this
@@ -33,7 +33,7 @@ const SODICK: &str = "Sodick Wire EDM (Mark 21)";
 const GOLDEN: &str = "tests/golden/nc/sodick-wire/wire_slug_punch.nc";
 
 fn cps() -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == SODICK).map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text(SODICK).expect("registered")
 }
 
 /// A sharp 40 x 20 slug from z = 0 to 12, centred on the origin.

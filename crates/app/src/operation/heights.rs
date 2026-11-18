@@ -221,9 +221,21 @@ pub fn resolve_params(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Result<ResolvedHeights, String> {
+    resolve_params_with(world, setup, src, params, &|h| resolve_height(world, setup, src, h))
+}
+
+/// [`resolve_params`] with the per-height resolve handed in: the 3+2
+/// fold (#2389) reads each reference along the tilted tool axis
+/// ([`super::tilt_heights::fold_height`]); the refusals stay word for word.
+pub fn resolve_params_with(
+    world: &flecs_ecs::prelude::World,
+    setup: Option<&str>,
+    src: Option<&SrcRef>,
+    params: &OpParams,
+    resolve: &dyn Fn(Height) -> Option<f64>,
+) -> Result<ResolvedHeights, String> {
     let req = |what: &str, h: Height| -> Result<f64, String> {
-        resolve_height(world, setup, src, h)
-            .ok_or_else(|| unresolved_msg(what, h, world, setup, src))
+        resolve(h).ok_or_else(|| unresolved_msg(what, h, world, setup, src))
     };
     let opt = |what: &str, h: Option<Height>| -> Result<Option<f64>, String> {
         h.map(|v| req(what, v)).transpose()

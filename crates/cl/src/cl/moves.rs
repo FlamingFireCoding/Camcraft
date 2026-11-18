@@ -148,7 +148,7 @@ impl Move {
         match normalize_axis(axis) {
             Some(a) => self.axis = Some(a),
             None => {
-                eprintln!("cl: refusing a move axis of {axis:?}: not a direction");
+                tracing::warn!("cl: refusing a move axis of {axis:?}: not a direction");
                 self.axis = None;
             }
         }
@@ -175,7 +175,7 @@ impl Move {
         if deg.is_finite() {
             self.rotary = Some(deg);
         } else {
-            eprintln!("cl: refusing a C angle of {deg}: not an angle");
+            tracing::warn!("cl: refusing a C angle of {deg}: not an angle");
             self.rotary = None;
         }
         self

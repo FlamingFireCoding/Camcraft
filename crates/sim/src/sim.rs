@@ -539,7 +539,7 @@ pub fn script<'a>(
         if !path_start.is_finite() {
             // Nowhere to stand at the start is not a slow path, it is
             // a corrupt cache; it contributes nothing, and says so.
-            eprintln!("sim: {name} starts nowhere finite and is left out");
+            tracing::warn!("sim: {name} starts nowhere finite and is left out");
             continue;
         }
         if sc.segs.len() >= MAX_SIM_SEGS {
@@ -587,7 +587,7 @@ pub fn script<'a>(
                 // The cache is validated on its way here; a corrupt
                 // move stands still and says so, keeping the
                 // move-index alignment the dwell pass depends on.
-                eprintln!("sim: a non-finite move of {name} stands in as no motion");
+                tracing::warn!("sim: a non-finite move of {name} stands in as no motion");
                 (here, here)
             };
             here = to;

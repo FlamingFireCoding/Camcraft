@@ -214,7 +214,7 @@ fn the_parameter_round_trips_the_file_and_the_mcp_params() {
 
 
 #[test]
-fn v64_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
+fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     use camcraft_app::commands::ChangeTool;
     use camcraft_app::tool_cutting_rows::CuttingRow;
     use serde_json::json;
@@ -229,8 +229,8 @@ fn v64_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     history.execute(&world, CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(0.4))).unwrap());
     let saved = project::save_text(&world).unwrap();
     let current: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    assert_eq!(current["version"], json!(64), "the cutting-data format follows main's v63 break-through format");
-    for version in [62, 63, 64] {
+    assert_eq!(current["version"], json!(project::PROJECT_VERSION), "the trunnion-schema format follows main's v65 tilt-basis format");
+    for version in [62, 63, 64, 65] {
         let mut file = current.clone();
         file["version"] = json!(version);
         for row in file["entities"].as_array_mut().unwrap() {
@@ -250,9 +250,33 @@ fn v64_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
         assert!(matches!(op.params, OpParams::Drill { break_through, .. } if break_through == expected), "v{version}: {:?}", op.params);
         let actual = model::find_by_name(&loaded, "DR-0600").and_then(|e| model::tool_of(&loaded, &e)).unwrap();
         assert_eq!((actual.rpm, actual.feed), (tool.rpm, tool.feed));
-        if version == 64 { assert_eq!(actual.cutting, tool.cutting); }
+        if version >= 64 { assert_eq!(actual.cutting, tool.cutting); }
         else { assert!(actual.cutting.is_empty(), "older tools keep their derived Unknown row"); }
         let rewritten: serde_json::Value = serde_json::from_str(&project::save_text(&loaded).unwrap()).unwrap();
-        assert_eq!(rewritten["version"], json!(64), "old documents migrate forward");
+        assert_eq!(rewritten["version"], json!(project::PROJECT_VERSION), "old documents migrate forward");
+    }
+}
+
+#[test]
+fn yawed_break_through_note_reports_the_hole_in_setup_coordinates() {
+    use camcraft_app::commands::SetWcsOrigin;
+    use camcraft_app::geometry::quat_from_euler;
+    use camcraft_app::schema::Location;
+
+    for (name, tool, params) in [("D", "DR-0600", drill(Some(0.3))), ("B", "EM-0400-2FL", bore(Some(0.3)))] {
+        let (world, mut h) = world();
+        let placement = Location {
+            pos: Point3::new(5.0, 7.0, 0.0),
+            rot: quat_from_euler(0.0, 0.0, 30f64.to_radians()),
+        };
+        h.execute(&world, SetWcsOrigin::new(&world, placement).expect("yaw WCS"));
+        let (path, _) = run(&world, &mut h, name, tool, params);
+        let note = path.notes.iter().find(|n| n.starts_with(BELOW_STOCK_NOTE)).expect("below stock note");
+        let xy = note.split_once('(').unwrap().1.split_once(')').unwrap().0;
+        for coord in xy.split(',') {
+            let value: f64 = coord.split_whitespace().next().unwrap().parse().unwrap();
+            assert!(value.abs() < 1e-6, "the source hole is (0, 0) in Setup S: {note}");
+        }
+        assert!(note.contains("Z-0.300"), "{note}");
     }
 }

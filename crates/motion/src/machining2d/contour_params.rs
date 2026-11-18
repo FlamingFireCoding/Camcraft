@@ -8,7 +8,6 @@ use crate::entry::Entry3D;
 use crate::links::Links;
 
 use super::face::GenError;
-use super::levels::cut_levels;
 
 /// Entry/exit motion appended to each contour subpath. Every lead that
 /// is not [`Lead::None`] keeps the tool from dwelling (and gouging) at a
@@ -219,6 +218,6 @@ impl ContourParams {
     /// Cut levels from `top_z` down to `bottom_z`, always ending exactly
     /// at the bottom (same snap rule as facing rows).
     pub(super) fn levels(&self) -> Result<Vec<f64>, GenError> {
-        cut_levels(self.top_z, self.bottom_z, self.stepdown)
+        super::levels::cut_levels_under(self.top_z, self.links.approach.stock_top, self.bottom_z, self.stepdown)
     }
 }

@@ -9,13 +9,13 @@ use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 use crate::links::Links;
 
-use super::face::{GenError, band};
+use super::face::GenError;
 use super::arcs::ARC_FIT_TOL;
 use super::fillet_tally::corner_arc_radius;
-use super::waterscan::{scan_row, waterline_passes};
-use super::slots::chord_clears;
+use super::waterscan::waterline_passes;
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::adaptive_passes;
+use super::pocket_zigzag::{rest_passes, zigzag_passes};
 use super::predrilled::PreHole;
 pub use super::pocket_strategy::PocketStrategy;
 
@@ -198,7 +198,7 @@ impl PocketParams {
 /// family - the dive it always posted, or the ramp diagonal / helical
 /// bore the 3-D ladder proves and `run_levels` now shares (M5.1 H);
 /// within a level a straight connection between two cut segments is
-/// kept as a Feed exactly when [`chord_clears`] proves it never leaves
+/// kept as a Feed exactly when [`super::slots::chord_clears`] proves it never leaves
 /// the cutter-center area (boundary grazing counts as staying in - it
 /// is the tangency wall passes are built on), and otherwise it becomes
 /// lift-rapid-plunge. Rapids inside the footprint below the safe plane
@@ -214,12 +214,43 @@ pub fn pocket_entered(region: &Region, p: &PocketParams, holes: &[PreHole]) -> R
     if region.is_empty() {
         return Err(GenError::Empty("empty pocket region".into()));
     }
-    let center = region.offset(-(p.tool_diameter * 0.5 + p.stock_to_leave))?;
+    let center = non_sliver_center(region, p.tool_diameter * 0.5 + p.stock_to_leave)?;
     if center.is_empty() {
         // Material exists that no legal tool position can reach.
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     pocket_over(region, &center, p, Vec::new(), false, holes)
+}
+
+/// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
+/// slivers (`<= 0.01 mm^2` area and `<= 0.008 mm` half-width) that hold
+/// no cuttable pass and would spin on empty bores (#2232).
+pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, GenError> {
+    let center = region.offset(-erode)?;
+    if center.is_empty() {
+        return Ok(center);
+    }
+    let outers = center.loops().iter().filter(|l| l.is_ccw()).count();
+    if outers <= 1 && center.area().abs() > 1e-2 {
+        return Ok(center);
+    }
+    let clean = Region::from_slices(center.loops().to_vec())?;
+    let mut kept = Vec::new();
+    let mut dropped = false;
+    for c in super::pocket_hsm::components(&clean)? {
+        if c.area().abs() > 1e-2 || crate::entry::dive_room(&c, 0.008).is_some() {
+            kept.extend(c.loops().iter().cloned());
+        } else {
+            dropped = true;
+        }
+    }
+    // Nothing dropped: keep the eroded area exactly as offset gave it. The
+    // rebuild through `from_slices` re-starts each loop at another vertex,
+    // which moved a multi-piece pocket's pass starts (#2426).
+    if !dropped {
+        return Ok(center);
+    }
+    Ok(Region::from_slices(kept)?)
 }
 
 /// The pocket passes over a given cutter-center area: [`pocket`]'s body
@@ -258,7 +289,7 @@ pub(super) fn pocket_over(
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     notes.into_iter().for_each(|n| b.note(n));
     // The HSM plan may choose where its entry stands (`pocket_hsm`).
-    let (passes, strategy, room, joins) = match strategy {
+    let (mut passes, strategy, room, joins) = match strategy {
         PocketStrategy::Adaptive => {
             let (passes, notes, s, room, joins) = adaptive_passes(center, p, "this pocket", true)?;
             notes.into_iter().for_each(|n| b.note(n));
@@ -266,6 +297,9 @@ pub(super) fn pocket_over(
         }
         s => (plan_passes(center, p.tiling_step(), p.climb, s)?, s, None, Vec::new()),
     };
+    if hold_crossings && strategy == PocketStrategy::Zigzag {
+        passes = rest_passes(center, p.tiling_step(), p.climb)?;
+    }
     emit_pocket_passes(
         b,
         p,
@@ -280,55 +314,6 @@ pub(super) fn pocket_over(
             holes,
         },
     )
-}
-
-/// Serpentine rows across the cutter-center area, each scanline split
-/// where the even-odd parity says material stands (islands fall out of
-/// the interval walk for free). Rows band [lo.y, hi.y] at `stepover` with
-/// the extremes kept: a row on the area's own boundary is the pass whose
-/// edge grazes the wall, and dropping it would leave the wall's last band
-/// standing.
-pub(super) fn zigzag_passes(center: &Region, stepover: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
-    let (lo, hi) = match center.bounds() {
-        Some(b) => b,
-        None => return Err(GenError::Empty("empty pocket region".into())),
-    };
-    let ys = band(lo.y, hi.y, 0.0, stepover)?;
-    let mut passes: Vec<Vec<Point2>> = Vec::new();
-    let mut cur: Vec<Point2> = Vec::new();
-    for (i, &y) in ys.iter().enumerate() {
-        let segs = scan_row(center, y, y == hi.y);
-        let left_to_right = climb == (i % 2 == 0);
-        for k in 0..segs.len() {
-            let (x0, x1) = segs[if left_to_right { k } else { segs.len() - 1 - k }];
-            let (s, e) = if left_to_right {
-                (Point2::new(x0, y), Point2::new(x1, y))
-            } else {
-                (Point2::new(x1, y), Point2::new(x0, y))
-            };
-            let join = match cur.last() {
-                Some(&prev) => chord_clears(center, prev, s),
-                None => false,
-            };
-            if join {
-                // The corner matters: the connection feeds prev -> s (the
-                // tested chord) and only then along the row to e. Pushing
-                // only e would cut prev -> e, a diagonal the join test
-                // never proved.
-                cur.push(s);
-                cur.push(e);
-            } else {
-                if cur.len() >= 2 {
-                    passes.push(std::mem::take(&mut cur));
-                }
-                cur = vec![s, e];
-            }
-        }
-    }
-    if cur.len() >= 2 {
-        passes.push(cur);
-    }
-    Ok(passes)
 }
 
 /// Concentric rings marching inward: ring k is the cutter-center area
@@ -354,5 +339,33 @@ pub(crate) fn plan_passes(
         PocketStrategy::Waterline | PocketStrategy::Adaptive | PocketStrategy::OffsetRings => {
             waterline_passes(center, stepover, climb)
         }
+    }
+}
+
+#[cfg(test)]
+mod non_sliver_tests {
+    use super::non_sliver_center;
+    use crate::geo2d::{Loop, Point2, Region};
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {
+        let pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+        let Ok(l) = Loop::new(pts.iter().map(|&(x, y)| Point2::new(x, y)).collect()) else {
+            panic!("fixture loop")
+        };
+        l
+    }
+
+    /// #2426: a two-piece area with no sliver comes back exactly as the
+    /// offset gave it - same loops, same start vertices - so the pass
+    /// starts of a multi-piece pocket do not move.
+    #[test]
+    fn a_multi_piece_center_without_slivers_is_the_plain_offset() {
+        let Ok(reg) = Region::new(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 61.0, 11.0)]) else {
+            panic!("fixture region")
+        };
+        let Ok(plain) = reg.offset(-5.0) else { panic!("offset") };
+        let Ok(kept) = non_sliver_center(&reg, 5.0) else { panic!("non_sliver_center") };
+        assert_eq!(plain.loops().iter().filter(|l| l.is_ccw()).count(), 2, "fixture must have two pieces");
+        assert_eq!(kept, plain);
     }
 }

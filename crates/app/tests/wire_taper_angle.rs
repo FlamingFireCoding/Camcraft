@@ -21,7 +21,7 @@ use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::model;
 use camcraft_app::operation::{self, FeatureSel, GeoSel, Height, OpParams, SrcRef, WireContourOp, WireFourAxis, WirePairingRule, WireSide};
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::world::new_world;
 
 const UV: &str = include_str!("edm/wire-iso-fixture.mch");
@@ -31,7 +31,7 @@ const TAPER_CL: &str = "tests/golden/wire_taper_punch.cl";
 const H: f64 = 12.0;
 
 fn cps() -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == WIRE).map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text(WIRE).expect("registered")
 }
 
 /// The synthetic fixture turned angle-word: no `uv`, an invented angle

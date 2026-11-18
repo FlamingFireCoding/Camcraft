@@ -111,6 +111,23 @@ pub fn script_of(world: &World, declared: Option<&str>) -> PostScriptOptions {
     script_own(world, declared).unwrap_or_else(|| script_document(world))
 }
 
+/// True when two [`PostRef`] values address the same post script (#2190).
+///
+/// Builtin Fanuc matches `Named("Fanuc")` via [`post_key`]; two `File` refs
+/// also match when both paths canonicalise to the same file on disk.
+#[must_use]
+pub fn same_post(a: &PostRef, b: &PostRef) -> bool {
+    if post_key(a) == post_key(b) {
+        return true;
+    }
+    if let (PostRef::File(pa), PostRef::File(pb)) = (a, b)
+        && let (Ok(ca), Ok(cb)) = (std::fs::canonicalize(pa), std::fs::canonicalize(pb))
+    {
+        return ca == cb;
+    }
+    false
+}
+
 /// Effective overrides for a specific `post` under `declared` setup (#258).
 #[must_use]
 pub fn script_for_post(
@@ -118,9 +135,112 @@ pub fn script_for_post(
     declared: Option<&str>,
     post: &PostRef,
 ) -> BTreeMap<String, OptionValue> {
-    script_of(world, declared)
-        .for_post(&post_key(post))
-        .clone()
+    let all = script_of(world, declared);
+    let exact = all.for_post(&post_key(post));
+    if !exact.is_empty() {
+        return exact.clone();
+    }
+    if let PostRef::File(path) = post
+        && let Ok(canon) = std::fs::canonicalize(path)
+    {
+        for (k, v) in &all.by_post {
+            if let Some(other) = k.strip_prefix("file:")
+                && std::fs::canonicalize(other).is_ok_and(|c| c == canon)
+            {
+                return v.clone();
+            }
+        }
+    }
+    BTreeMap::new()
+}
+
+struct Unapplied<'a> {
+    setup: Option<&'a str>,
+    from_doc: bool,
+    post: PostRef,
+    keys: Vec<String>,
+    combined_into: Option<&'a str>,
+}
+
+/// Warning when posting through `chosen` left stored `script_options` of the
+/// document or a setup's own post unapplied (#2190). Returns `None` when every
+/// configured post's stored options applied.
+#[must_use]
+pub fn unapplied_script_warning(
+    world: &World,
+    mount_setups: &[Vec<String>],
+    chosen: &PostRef,
+) -> Option<String> {
+    let total_setups: usize = mount_setups.iter().map(Vec::len).sum();
+    let mut entries: Vec<Unapplied<'_>> = Vec::new();
+    for group in mount_setups {
+        let mount_setup = group.first().map(String::as_str);
+        let applied = script_for_post(world, mount_setup, chosen);
+        for s in group {
+            let declared = (!s.is_empty()).then_some(s.as_str());
+            let own_post = setup_mount::post_of(world, declared);
+            let own_stored = script_for_post(world, declared, &own_post);
+            if own_stored.is_empty() {
+                continue;
+            }
+            let same = same_post(&own_post, chosen);
+            let (keys, combined_into) = if !same {
+                (own_stored.keys().cloned().collect(), None)
+            } else if mount_setup == Some(s.as_str()) {
+                continue;
+            } else {
+                let diff: Vec<String> = own_stored
+                    .iter()
+                    .filter(|(k, v)| applied.get(*k) != Some(*v))
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                if diff.is_empty() {
+                    continue;
+                }
+                (diff, mount_setup.filter(|n| !n.is_empty()))
+            };
+            let from_doc =
+                setup_mount::own_post(world, declared).is_none() && script_own(world, declared).is_none();
+            entries.push(Unapplied {
+                setup: declared,
+                from_doc,
+                post: own_post,
+                keys,
+                combined_into,
+            });
+        }
+    }
+    if entries.is_empty() {
+        return None;
+    }
+    let chosen_label = posting::post_ref_label(chosen);
+    let format_entry = |e: &Unapplied<'_>, with_setup: bool| -> String {
+        let own_label = posting::post_ref_label(&e.post);
+        let prefix = match e.setup {
+            Some(name) if with_setup => format!("setup '{name}': "),
+            _ => String::new(),
+        };
+        let reason = match e.combined_into {
+            Some(first) => format!("because the program posted one file using setup '{first}'s options"),
+            None => format!("because the program posted with {chosen_label}"),
+        };
+        format!(
+            "{prefix}stored script_options for {own_label} ({}) were not applied {reason}",
+            e.keys.join(", ")
+        )
+    };
+    let all_same_doc = entries.len() == total_setups
+        && entries.iter().all(|e| {
+            e.from_doc
+                && e.combined_into.is_none()
+                && same_post(&e.post, &entries[0].post)
+                && e.keys == entries[0].keys
+        });
+    if all_same_doc || total_setups <= 1 {
+        return Some(format_entry(&entries[0], false));
+    }
+    let lines: Vec<String> = entries.iter().map(|e| format_entry(e, true)).collect();
+    Some(lines.join("; "))
 }
 
 /// Effective overrides in force for the active setup and its post (#258).

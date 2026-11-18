@@ -1,7 +1,8 @@
 //! #1815: the "Rest machining" group on the 2D Pocket page (`Passes`
 //! tab) - default off, header switch shows/hides the 4 parameters,
 //! draft edits commit through `EditOperationParams` on Apply (undo and
-//! redo included), and `#1489` refusals come back on Apply by name.
+//! redo included), and `#1489` refusals come back on Apply by name
+//! (Adaptive, pre-drilled; Zigzag is legal since #2037).
 //! Provenance: our own page law over `camcraft_app::machining2d::RestParams`.
 
 use egui::Vec2;
@@ -270,21 +271,47 @@ fn rest_group_refuses_non_larger_previous_tool_by_name_on_apply() {
     );
 }
 
+fn live_strategy(state: &State) -> Option<PocketStrategy> {
+    match model::find_by_name(&state.world, "P1").and_then(|e| model::operation_of(&state.world, &e))?.params {
+        OpParams::Pocket { strategy, .. } => Some(strategy),
+        _ => None,
+    }
+}
+
 #[test]
 fn rest_group_warns_and_refuses_incompatible_strategy_and_predrilled_on_apply() {
+    // #1490 / #2037: Zigzag rest passes close each rest boundary, so Zigzag + rest is legal.
     let mut h = page(opened_pocket(PocketStrategy::Zigzag, None));
     h.run();
     on_row(&h, "Rest machining", Role::CheckBox).click();
     h.run();
+    assert_eq!(h.state().op_ui.params.named_refusal(), None, "Zigzag + rest is not refused");
+    assert!(h.query_by_label_contains("Apply will be refused").is_none(), "no Apply hint for Zigzag + rest");
+    click_apply(&mut h);
+    let committed = live_rest(h.state()).expect("Zigzag + rest commits on Apply");
+    assert_eq!(live_strategy(h.state()), Some(PocketStrategy::Zigzag));
+    assert!(h.state().error_for(ErrorScope::Operation).is_none(), "no refusal for Zigzag + rest");
 
+    // Adaptive stays refused by name (rest2d::rest_strategy).
+    if let OpParams::Pocket { strategy, .. } = &mut h.state_mut().op_ui.params {
+        *strategy = PocketStrategy::Adaptive;
+    }
+    h.run();
+    let adaptive_refusal = h.state().op_ui.params.named_refusal().expect("Adaptive draft refusal");
+    assert!(adaptive_refusal.contains("Adaptive"), "{adaptive_refusal}");
     assert!(
-        h.query_by_label_contains("Zigzag").is_some(),
-        "consequence warns when Zigzag is active with rest machining"
+        h.query_by_label(&adaptive_refusal).is_some(),
+        "consequence warns when Adaptive is active with rest machining"
+    );
+    assert!(
+        h.query_by_label(&format!("Apply will be refused: {adaptive_refusal}.")).is_some(),
+        "Apply hint also names the Adaptive refusal"
     );
     click_apply(&mut h);
-    assert_eq!(live_rest(h.state()), None, "Zigzag + rest refuses on Apply");
-    let msg = h.state().error_for(ErrorScope::Operation).expect("Zigzag refusal");
-    assert!(msg.contains("Zigzag"), "{msg}");
+    assert_eq!(live_strategy(h.state()), Some(PocketStrategy::Zigzag), "Adaptive + rest refuses on Apply");
+    assert_eq!(live_rest(h.state()), Some(committed), "refused Apply keeps the committed rest");
+    let msg = h.state().error_for(ErrorScope::Operation).expect("Adaptive refusal");
+    assert!(msg.contains("Adaptive"), "{msg}");
 
     if let OpParams::Pocket { strategy, links, .. } = &mut h.state_mut().op_ui.params {
         *strategy = PocketStrategy::Auto;
@@ -292,11 +319,15 @@ fn rest_group_warns_and_refuses_incompatible_strategy_and_predrilled_on_apply() 
     }
     h.run();
     assert!(
-        h.query_by_label_contains("pre-drilled").is_some(),
+        h.query_by_label(REST_PREDRILLED).is_some(),
         "consequence warns when pre-drilled entry is on with rest machining"
     );
+    assert!(
+        h.query_by_label(&format!("Apply will be refused: {REST_PREDRILLED}.")).is_some(),
+        "Apply hint also names the pre-drilled refusal"
+    );
     click_apply(&mut h);
-    assert_eq!(live_rest(h.state()), None, "predrilled + rest refuses on Apply");
+    assert_eq!(live_strategy(h.state()), Some(PocketStrategy::Zigzag), "predrilled + rest refuses on Apply");
     let msg = h.state().error_for(ErrorScope::Operation).expect("predrilled refusal");
     assert_eq!(msg, format!("parameters not updated: invalid parameters: {REST_PREDRILLED}"));
 }
