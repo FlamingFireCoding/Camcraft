@@ -735,6 +735,15 @@ pub enum CommandKind {
         name: String,
         delta: [f64; 3],
     },
+    /// A viewport ring drag's release (#2047): turn part `name` by
+    /// `angle_rad` about SHOWN axis `axis` (0 X, 1 Y, 2 Z) through its
+    /// bounding-box centre. The drain turns it into the one `MoveModel`
+    /// the Model page's rotation fields run - one undo step per drag.
+    TurnModelBy {
+        name: String,
+        axis: usize,
+        angle_rad: f64,
+    },
     /// Mesh repair (M13.11): weld within `weld_tol` (mm) and fill every
     /// boundary loop of at most `max_hole_edges` edges, one undo unit
     /// over the model's facets. Only ever by this verb - never on
@@ -1674,6 +1683,12 @@ pub struct State {
     /// A handle drag in flight (#1198 b): the ephemeral preview. Only
     /// its release reaches history, as one `MoveModelBy`.
     pub body_drag: Option<crate::move_drag::BodyDrag>,
+    /// The bar's Rotate mode (#2047): the one selected part wears turn
+    /// rings. View state, off by default; never on with Move mode.
+    pub rotate_handles: bool,
+    /// A ring drag in flight (#2047): the ephemeral preview. Only its
+    /// release reaches history, as one `TurnModelBy`.
+    pub body_turn: Option<crate::turn_drag::TurnDrag>,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -2185,6 +2200,8 @@ impl State {
             pick_through: false,
             move_handles: false,
             body_drag: None,
+            rotate_handles: false,
+            body_turn: None,
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),
@@ -3455,12 +3472,13 @@ impl State {
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
+                    let number = command.number();
                     let note = command.note();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
                     self.status = match note {
-                        Some(n) => format!("tool {name} added - {n}"),
-                        None => format!("tool {name} added"),
+                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
+                        None => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
@@ -3472,7 +3490,7 @@ impl State {
                         self.doc_version += 1;
                         self.status = match number {
                             Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} posts as its list position"),
+                            None => format!("tool {name} number cleared"),
                         };
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),
@@ -4009,6 +4027,7 @@ impl State {
                 }
             }
             CommandKind::MoveModelBy { name, delta } => self.move_model_by(&name, delta),
+            CommandKind::TurnModelBy { name, axis, angle_rad } => self.turn_model_by(&name, axis, angle_rad),
             CommandKind::RepairModel { name, weld_tol, max_hole_edges } => {
                 match RepairModel::new(&self.world, &name, weld_tol, max_hole_edges) {
                     Ok(command) => {
