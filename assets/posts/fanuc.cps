@@ -21,7 +21,9 @@ probeAxisInversion = true; // probing blocks verified on the mirrored stream (#3
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 6;      // G54..G59; G54.1 P extended offsets are an option not verified here (#931)
 millSpindleReverse = true; // reads PARAM MillSpindle (#988): M4 for a left-hand-cut mill; the engine refuses a reverse mill spindle for a post without it
+wcsRotation = true;        // #760: writes G68 X0. Y0. R / G69 in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -100,6 +102,9 @@ var wearNoted = false;     // the wear-register comment was written this section
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs):
 // the stream speaks world coordinates; the machine measures its program
 // from the work offset. A legacy .cl carries no PARAMs, so these stay 0.
+var wcsYaw = 0;            // #760: Z rotation (deg) for Control mode (G68)
+var wcsRotMode = "";       // #760: "control" | "bake" | ""
+var wcsRotActive = false;  // #760: G68 is currently engaged in this section
 
 // ------------------------------------------------------------ helpers
 function has(v) { return v !== null && v !== undefined && isFinite(v); }
@@ -600,6 +605,13 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsYaw" && has(value)) wcsYaw = Number(value);
+  else if (name === "WcsRotationMode") wcsRotMode = String(value || "");
+}
+
+function wcsRotControl() {
+  var m = wcsRotMode || ((typeof postOptions !== "undefined" && postOptions.WcsRotation) ? String(postOptions.WcsRotation) : "");
+  return m === "control" && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6;
 }
 
 function onSpindleSpeed() {
@@ -671,6 +683,11 @@ function startPreamble() {
   coolant = probeStop ? "" : coolantFor(coolantAsk);
   if (coolant) block([coolant]);
   smoothOn();
+  if (wcsRotControl()) {
+    block(["G17"]);
+    block(["G68", "X0.", "Y0.", "R" + fa(wcsYaw)]);
+    wcsRotActive = true;
+  }
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -712,6 +729,9 @@ function endPreamble() {
   smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
+  wcsYaw = 0;
+  wcsRotMode = "";
   if (compOn || compG) {
     msg("cutter compensation still engaged at section end - no cancel block");
     compG = ""; compD = ""; compOn = false;
@@ -877,30 +897,78 @@ function onLinear() {
   heldAngles(properties, tw);
 }
 function emitArcWithRadius(p, g, tw, fwd) {
+  // Keep the original I/J/K arc when it writes rotary angles. Splitting
+  // would put the complete turn on the first segment and invalidate its feed cap.
+  if (tw && tw.length) return false;
   var c = p.IJKIncrement || {};
   var axes = p.CircularPlane === "XZ" ? [2, 0, 1] : (p.CircularPlane === "YZ" ? [1, 2, 0] : [0, 1, 2]);
   var u = axes[0], v = axes[1], h = axes[2];
   var from = [p.StartX, p.StartY, p.StartZ], to = [p.X, p.Y, p.Z], center = [c.I, c.J, c.K];
+  var org = [orgX, orgY, orgZ];
   if (!has(from[u]) || !has(from[v]) || !has(to[u]) || !has(to[v]) || !has(center[u]) || !has(center[v])) return false;
   var du = from[u] - center[u], dv = from[v] - center[v];
-  var r = Math.sqrt(du * du + dv * dv);
-  if (!(r > 0) || !isFinite(r)) return false;
+  var r0 = Math.sqrt(du * du + dv * dv);
+  var eu = to[u] - center[u], ev = to[v] - center[v];
+  var r1 = Math.sqrt(eu * eu + ev * ev);
+  if (!(r0 > 0) || !isFinite(r0) || !(r1 > 0) || !isFinite(r1)) return false;
+  var r = (r0 + r1) * 0.5;
+  if (Math.abs(r0 - r1) > Math.min(0.02, Math.max(0.002, r * 0.005))) return false;
   var a0 = Math.atan2(dv, du), ccw = p.CircularDirection !== "CW";
-  if (Math.abs(to[u] - from[u]) < 1e-5 && Math.abs(to[v] - from[v]) < 1e-5) {
-    var am = a0 + (ccw ? Math.PI : -Math.PI);
-    var mid = [from[0], from[1], from[2]];
-    mid[u] = center[u] + r * Math.cos(am);
-    mid[v] = center[v] + r * Math.sin(am);
-    if (has(from[h]) && has(to[h])) mid[h] = (from[h] + to[h]) * 0.5;
-    block([planeWord(planeOf(p)), g, wo("X", mid[0], orgX), wo("Y", mid[1], orgY), wo("Z", mid[2], orgZ), w("R", r)].concat(tw, [fwd]));
-    block([g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), w("R", r), fwd]);
-    return true;
+  var full = Math.abs(to[u] - from[u]) < 1e-5 && Math.abs(to[v] - from[v]) < 1e-5;
+  var sweep = 2 * Math.PI;
+  if (!full) {
+    var a1 = Math.atan2(ev, eu);
+    sweep = ccw ? a1 - a0 : a0 - a1;
+    if (sweep <= 0) sweep += 2 * Math.PI;
   }
-  var a1 = Math.atan2(to[v] - center[v], to[u] - center[u]);
-  var sweep = ccw ? a1 - a0 : a0 - a1;
-  if (sweep <= 0) sweep += 2 * Math.PI;
-  var rSigned = sweep > Math.PI + 1e-6 ? -r : r;
-  block([planeWord(planeOf(p)), g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), w("R", rSigned)].concat(tw, [fwd]));
+  // #2191: near-180 deg arcs lose center accuracy and can put chord > 2R
+  // after rounding; near-360 deg arcs collapse or cannot take one R.
+  // Split into quadrant-sized segments and verify every posted segment.
+  var nearPi = Math.PI / 9;
+  var n = 1;
+  if (full || sweep >= 2 * Math.PI - nearPi) n = 4;
+  else if (Math.abs(sweep - Math.PI) <= nearPi) n = 2;
+  function buildSegs(count) {
+    var segs = [], dir = ccw ? 1 : -1, prev = [from[0], from[1], from[2]];
+    var rSigned = sweep / count > Math.PI + 1e-6 ? -r : r;
+    var rp = Number(fu(r));
+    if (!(rp > 0) || !isFinite(rp)) return null;
+    for (var k = 1; k <= count; k++) {
+      var next;
+      if (k === count) {
+        next = [to[0], to[1], to[2]];
+      } else {
+        var ak = a0 + dir * sweep * (k / count);
+        next = [from[0], from[1], from[2]];
+        next[u] = center[u] + r * Math.cos(ak);
+        next[v] = center[v] + r * Math.sin(ak);
+        if (has(from[h]) && has(to[h])) next[h] = from[h] + (to[h] - from[h]) * (k / count);
+        else if (has(to[h])) next[h] = to[h];
+      }
+      var su = Number(fu(prev[u] - org[u])), sv = Number(fu(prev[v] - org[v]));
+      var pu = Number(fu(next[u] - org[u])), pv = Number(fu(next[v] - org[v]));
+      var qdu = pu - su, qdv = pv - sv;
+      var chord = Math.sqrt(qdu * qdu + qdv * qdv);
+      if (!(chord > 0) || chord > 2 * rp - 1e-7) return null;
+      if (count === 1 && chord > 2 * rp * 0.99) return null;
+      segs.push({ pt: next, rSigned: rSigned });
+      prev = next;
+    }
+    return segs;
+  }
+  var segs = buildSegs(n);
+  if (!segs && n === 1) {
+    segs = buildSegs(Math.max(2, Math.ceil(sweep / (Math.PI / 2))));
+  }
+  if (!segs) return false;
+  for (var i = 0; i < segs.length; i++) {
+    var pt = segs[i].pt;
+    var words = i === 0 ? [planeWord(planeOf(p)), g] : [g];
+    words.push(wo("X", pt[0], orgX), wo("Y", pt[1], orgY), wo("Z", pt[2], orgZ), w("R", segs[i].rSigned));
+    if (i === 0 && tw && tw.length) words = words.concat(tw);
+    words.push(fwd);
+    block(words);
+  }
   return true;
 }
 function onCircular() {
@@ -986,7 +1054,9 @@ function onCycle() {
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "TAP") g = "G84";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = ms > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";   // #1445: feed in, feed out at F, no dwell
   else {
     // #1445: a cycle kind this post does not know is refused by name,
@@ -1001,10 +1071,34 @@ function onCycle() {
     msg("canned cycle " + g + " has no feed rate - refused: without F the control drills at whatever feed was last modal");
     return;
   }
+  // #1445: G86 (feed in, spindle stop, rapid out) has no dwell word on
+  // this control (Fanuc's and Haas's published G86 formats are X Y Z R F,
+  // with P only on G82/G88/G89). A P written on G86 is not read, so a
+  // bore dwell is refused by name, never dropped. Sinumerik's ISO mode is
+  // not verified for a G86 P either, so it refuses the same.
+  if (g === "G86" && ms > 0) {
+    msg("canned cycle G86 (bore) has no dwell word on this control - a " + (ms / 1000) + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
+  // #1820: B-64604EN-2/01 section 5.1.6 has no P in standard G83.
+  // The optional small-hole mode (5.1.7) is not selected by this post.
+  if (g === "G83" && p.P > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
+  // #2356: this post does not map G73/G84 dwell across control modes.
+  // Use the raw positive ask so rounding and the open-cycle shortcut cannot drop it.
+  if ((g === "G73" || g === "G84") && p.P > 0) {
+    msg("canned cycle " + g + " dwell is not supported by this post - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #2360 (as #2350 for Haas): P is modal in the dwell cycles, so a
+  // changed dwell reopens the cycle and each hole posts its own P.
+  if (g === "G82" || g === "G89") sig += "|" + ms;
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -1119,6 +1213,14 @@ function onProbeResult() {
 }
 
 // ------------------------------------------------------------ footer
+// #2189: modal Group 06 unit word (G20 / G21) after the final retract,
+// right before M30, when postOptions.EndUnits asks for the other unit.
+function endUnitsWord() {
+  var want = typeof postOptions !== "undefined" && postOptions ? postOptions.EndUnits : undefined;
+  if (want === "inch" && !inch) return "G20";
+  if (want === "mm" && inch) return "G21";
+  return "";
+}
 function onClose() {
   endPreamble();
   // #504: a trip home with nothing written after it (a trailing Go
@@ -1126,6 +1228,8 @@ function onClose() {
   if (linesWritten() !== homedAt) {
     retractHome(true);
   }
+  var u = endUnitsWord();
+  if (u) block([u]);
   block(["M30"]);
   writeln("%");
 }

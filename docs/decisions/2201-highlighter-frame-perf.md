@@ -1,28 +1,49 @@
-## #2201 - Cache highlight geometry resolution, batch pick strokes into a single mesh, and cache per-frame view state
+## #2201 - Pick highlight frame cost: input-keyed caches only
 
-**What was decided:**
+**What was decided.** The refresh of PR #2256 against main keeps only the
+caches whose key is the input itself (crates/ui/AGENTS.md, "Frame cost",
+#2238):
 
-- Add `feature::index` (`resolve_chain_arc`, `patch_rings_arc`, `patches_arc`) with a thread-local weak-referenced lookup index (`Weak<Features>`, cap 32) built lazily per `Arc<Features>`. Avoid heap allocations in `feature::digest_of` and hoist lattice calculation out of `patches` and `patch_rings`.
-- Add `SHARED_FEATURES_CACHE` (`Weak<[Triangle]>`, cap 32) in `app::model::geometry::features_of` so repeated reads on unchanged meshes skip re-hashing triangles.
-- Add non-cloning `model::toolpath_nonempty` and `model::toolpath_warning_count` and use them in `operation::stamp::status_of` and `browser_tree::op_row`.
-- Add `History::revision_token` so view caches catch both `doc_version` bumps and direct `History::execute` calls in tests.
-- Add `ui::pick_highlight` (`HighlightCache` on `State`) to resolve selected, hovered, and row-hovered outlines into world polylines once per selection, visibility, or entity change.
-- Add `ui::pick_highlight_mesh` using `egui::epaint::Tessellator` to draw each highlight layer (halo + ink) as a single `egui::Shape::Mesh` cached per viewport camera state.
-- Add `ui::frame_cache::FrameCache` and `ui::panel_cache::PanelCache` on `State` to cache transformed entity vertices, cutting regions and outlines, toolpath overlay lines, non-transient `world::Scene` + digest, Geometry tab chips, 3-2-1 datum checks, selection account, unresolved notes, operation status banners, and browser operation rows.
+- `frame_cache::FrameCache::world_verts_cached`: each body's world-space
+  vertices, keyed by the facet allocation (`Weak<[Triangle]>`, compared by
+  pointer, plus the length) and the pose bits.
+- `pick_highlight::HighlightCache`: the resolved outlines of the shown
+  picks, the viewport hover and the Geometry-row hover. The key is the
+  same as the key of `pick_line_memo`: the picks by value, and for each
+  picked body its display-off flag, its entity, its `Arc<Features>`
+  allocation and its view pose.
+- `pick_highlight_mesh`: the batched screen meshes of these outlines.
+- `geometry::feature`: the `[Option<Pos>; 3]` digest (the same hash as the
+  `Vec` form) and one `patch_lattice()` call for `patches` and
+  `patch_rings`.
+- `model::toolpath_nonempty` and `model::toolpath_warning_count`.
 
-**Why:**
+**Why.** Main now has input-keyed memos for the same work:
+`model::features_of` (Weak memo), `model::resolve_chain`, `model::patches`,
+`model::patch_rings`, `frame_memo::scene_scope` and `pick_line_memo`. The
+PR's other caches keyed on a document counter (`WorldStamp`,
+`revision_token`). The frame-cost rule forbids a counter as the only key.
 
-- On models with many chains or facets, `features_of` re-hashed every triangle and `resolve_chain` re-walked and split every chain on every frame.
-- `pick_ink::paint` and `shell::viewport_panel` emitted two individual `Shape::LineSegment` shapes per projected segment on every frame instead of one batched mesh.
-- `world::collect`, `view_pass::sync_scene`, `browser_tree::op_row`, `op_page::status`, and `geo_page::body` rebuilt and cloned toolpaths, vertices, warnings, and selection geometry on every frame even when the document did not change.
+**Hand-resolved hunks (same logic on both sides).**
 
-**What was considered and dropped:**
+- `model::features_of` / `features_of_shared`: main's side. The PR's
+  `SHARED_FEATURES_CACHE` is dropped; main's Weak memo does the same work.
+- `resolve_chain` call sites (state, interact, pick_highlight): main's
+  `model::resolve_chain`. The PR's `feature/index.rs` is deleted.
+- `world::collect`: main's `frame_memo::scene_scope`. The PR's
+  `scene_cache_key` and `collect_shared` are dropped. `world_verts` keeps
+  the PR's vertex cache under the new key.
+- `pick_ink::paint`: the PR's batched selection and hover meshes, and
+  main's start and exit marks as plain strokes between them.
+- `shell.rs`: the PR's `paint_row_hover`, inside main's
+  `frame_cost::time("ui/viewport.row_hover")`.
 
-- Caching `&Features` by raw reference address inside `geometry::feature`: dropped because stack-moved `Features` values in unit tests can reuse stack addresses. `Weak<Features>` on `Arc<Features>` keys strictly on live allocations (`strong_count() > 0`).
-- Adding internal `OnceLock` cache fields to `pub struct Features`: dropped because geometry tests construct `Features { ... }` with struct literals.
-- Grouping highlights with `egui::Shape::Vec`: dropped because `epaint` still tessellates each child shape individually and test shape counters observe multiple shapes. `Tessellator::tessellate_path` produces a single `egui::Mesh` with halo behind ink.
-- Keying whole-scene caches only on `state.doc_version`: dropped because direct `History::execute`, `SelectEntity`, and draft UI edits can mutate state without incrementing `doc_version`. Keying on `History::revision_token()`, `selected_entity_names`, UI drafts, and `EntityGuard` pointer/pose checks keeps caches exact.
+**Dropped.** The scene, region and toolpath-line caches, the six panel
+caches (`panel_cache.rs`) and `commands::revision_token`. They were keyed
+by a document counter, and the review asked for counter and changed-input
+tests for each. Main's memos cover the scene and the pick lines. A panel
+cache comes back only with a measurement and an input key.
 
-**What it would cost to change later:**
-
-- Low. The geometry index sits behind additive `*_arc` helpers with existing `resolve_chain` and `patch_rings` signatures intact. `FrameCache`, `PanelCache`, and `HighlightCache` are internal `State` caches that can be cleared or bypassed independently without affecting document persistence or toolpath generation.
+**Cost to change later.** Low. Each kept cache is one module with a counter
+test and changed-input tests (`pick_highlight_tests.rs`,
+`frame_cache_tests.rs`).

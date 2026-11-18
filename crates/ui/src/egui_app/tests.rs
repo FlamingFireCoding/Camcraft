@@ -82,11 +82,17 @@ fn empty_egui_meshes_are_filtered_before_gpu_submission() {
 
 mod face_origin;
 mod geo_row_hover;
+mod selection_frame_cost;
+mod generate_progress;
+mod frame_cost_caches;
+mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_material;
 mod setup_settings_page;
 mod machine_page;
+mod setup_user_machines;
 mod tool_list_page;
 mod stock_fit_sides;
 mod raw_stock_row;
@@ -100,10 +106,18 @@ mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+mod lathe_gizmo;
+// #2172: the bodies stand on the floor of the work envelope.
+mod floor;
 mod lathe_view;
 // #1997: the orbit pivot ignores the work envelope; open frames the part.
 mod camera_target;
 mod structural;
+// #2181: the transport row of the calculation before playback.
+mod transport_precalc;
+mod page_layout;
+mod page_layout_windows;
+mod anchors;
 mod stock_fit;
 mod ribbon_rows;
 mod theme_op_tabs_tree;
@@ -113,6 +127,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod radial_step_field;
+mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
@@ -132,7 +147,11 @@ mod setup_picks_disarm;
 mod points_vertex_pick;
 // #1171: real clicks state a wire sync pair.
 mod wire_sync_viewport;
+// #1448: real viewport clicks pick the Contour's start and exit points.
+mod start_exit_viewport;
 mod one_wcs;
+// #1926: the feature picks that set the WCS are on the WCS page.
+mod wcs_page_picks;
 // #343: the per-setup browser tree.
 mod setup_tree;
 mod mcp_live;
@@ -187,6 +206,8 @@ mod edge_click_modifiers;
 mod first_ctrl_click;
 // #1104: the Setups page lists setups only.
 mod setups_declutter;
+// #870: the WCS page's footer and its origin in words.
+mod wcs_footer;
 // #1206: each setup's own Machine and Post pages pick its own mount.
 mod setup_mount_pages;
 // #1515: a pick on one setup never re-mounts another.
@@ -198,6 +219,8 @@ mod import_outward;
 mod ribbon_accesskit;
 // #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
 mod ai_chat;
+// #2011: EDM tool visibility matches selectable machine kinds.
+mod edm_tool_visibility;
 // #2201: edge/face selection highlight draw & rebuild count per frame.
 mod highlight_perf;
 
@@ -220,8 +243,13 @@ impl ShellUi {
     /// The birth `Shell::new` has since M-d: a plain empty document, no
     /// seed, no startup command - the window's real shape, rendered.
     fn blank() -> Self {
+        let mut state = State::new();
+        // #2358: the Setup page lists the user machines folder too; a
+        // test never reads the tester's real one (`harness_with_user_dir`
+        // names a temp folder).
+        state.machines_pane.user_dir = Some(None);
         Self {
-            state: State::new(),
+            state,
             dock: build_dock(),
             viewport_points: [1280.0, 649.0],
             left_press: None,
@@ -768,9 +796,10 @@ fn click_apply_edits_operation_through_commands() {
     // click law itself.
     harness.get_by_label("Feeds").click();
     harness.run();
-    harness.get_by_label("Climb milling").scroll_to_me();
+    // Keep this caption-click pin explicit now that the checkbox has the same accessible name.
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").scroll_to_me();
     harness.run();
-    harness.get_by_label("Climb milling").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").click();
     harness.run();
     assert!(!staged_climb(&harness), "checkbox did not reach the staged params");
     harness.get_by_label("Apply").scroll_to_me();
@@ -1358,14 +1387,13 @@ fn tab_click_navigates_and_queues_nothing() {
 }
 
 /// Every text the properties pane renders right now (labels and checkbox
-/// captions), from the operation heading's left edge rightward - the pane
-/// column, so the browser and ribbon text stay out.
+/// captions), read from the Properties pane subtree so the browser and ribbon
+/// stay out without depending on pixel coordinates.
 fn pane_texts(h: &Harness<'static, ShellUi>) -> Vec<String> {
     use egui::accesskit::Role;
     use egui_kittest::kittest::NodeT;
-    let left = h.get_by_label_contains("Operation: ").rect().left() - 1.0;
-    h.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
-        .filter(|n| n.rect().left() >= left)
+    let pane = h.get_by_role_and_label(Role::Pane, "Properties");
+    pane.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
         .filter_map(|n| {
             let a = n.accesskit_node();
             if a.role() == Role::Label { a.value() } else { a.label() }
@@ -1537,7 +1565,8 @@ fn click_outside_the_viewport_is_not_a_pick() {
     let mut harness = shell_harness();
     harness.run();
     let status0 = harness.state().state.status.clone();
-    click_viewport(&mut harness, egui::pos2(4.0, 4.0));
+    let outside = anchors::chrome_point(&harness, &[]);
+    click_viewport(&mut harness, outside);
     let st = &harness.state().state;
     assert_eq!(st.status, status0, "a stray click ran a pick");
     assert!(
@@ -1842,7 +1871,11 @@ fn anchor_click_queues_setwcs() {
 /// arm pick mode from the checkbox.
 #[test]
 fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
-    let mut harness = shell_harness();
+    // #870: the page's origin line made it taller; at 720 px the grid's
+    // bottom row scrolls under the footer, so the window is 900 px.
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(1280.0, 900.0))
+        .build_ui_state(frame, ShellUi::seeded());
     harness.state_mut().state.ui_target = UiTarget::Wcs;
     harness.run();
     // The draft default highlight is center (anchor_xy 4), so that cell
@@ -1859,7 +1892,8 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
     // Scroll the properties pane so the anchor grid (bottom of the page)
     // is in view.
     for _ in 0..4 {
-        wheel(&mut harness, egui::pos2(1100.0, 500.0), -220.0);
+        let pane = anchors::pane_center(&harness, &Tab::Properties);
+        wheel(&mut harness, pane, -220.0);
     }
     harness.get_by_label("SE").click_accesskit();
     harness.run_steps(2);
@@ -2834,11 +2868,6 @@ fn tips_match_the_imgui_table() {
     }
     // Every Create button shares the swap while the tool list is empty.
     for i in 0..panes::TYPES.len() {
-        // #535: a kind that mounts no library tool (the wire EDM's) is not
-        // held by an empty rack.
-        if camcraft_app::operation::KindInfo::ALL.get(i).is_some_and(|k| !k.mounts_tool()) {
-            continue;
-        }
         assert_eq!(
             panes::tip_of(Cmd::Create(i), &empty),
             "No tool yet - add one (Setup > Tools)",
@@ -5132,4 +5161,6 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
 }
 
 mod review_1710_evidence;
+mod guide_projects;
+mod guide_images;
 

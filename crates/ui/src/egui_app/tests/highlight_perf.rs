@@ -228,7 +228,7 @@ fn selected_welded_patch_draws_as_batched_highlight_with_single_build() {
         st.settle();
         let cyl = model::find_by_name(&st.world, "Cyl").expect("Cyl");
         let features = model::features_of(&st.world, &cyl).expect("features");
-        feature::patches_arc(&features).into_iter().next().expect("welded patch").id
+        model::patches(&features).first().expect("welded patch").id
     };
     sh.state.ui_target = UiTarget::Operation("Contour1".into());
     sh.state.pending.push_back(CommandKind::SetOperationGeometry {

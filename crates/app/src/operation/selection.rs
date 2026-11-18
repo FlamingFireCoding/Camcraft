@@ -90,17 +90,9 @@ pub fn contour_auto_side(
 ) -> Option<bool> {
     match src {
         SrcRef::Stock | SrcRef::Entity(_) => Some(false),
-        SrcRef::Selection(items) => {
-            let (loops, _runs, auto) =
-                selection_geometry_impl(world, setup, items, params, None).ok()?;
-            match auto {
-                _ if loops.is_empty() => None,
-                machining2d::AutoSide::Inside => Some(true),
-                machining2d::AutoSide::Outside => Some(false),
-                // No verdict to quote: generation refuses it by name.
-                machining2d::AutoSide::Undecided(_) => None,
-            }
-        }
+        // The display's ask, one walk per input (#2249): generation
+        // reads the side from its own walk in `job`, never from here.
+        SrcRef::Selection(items) => super::selection_memo::answer(world, setup, items, params).inside,
     }
 }
 
@@ -114,7 +106,7 @@ pub fn contour_auto_side(
 /// are refused by name - this kind asks for curves, not boundaries.
 /// Resolution errors quote the same labels the 2D walk quotes, so a
 /// re-pick instruction reads identically in both.
-pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
+pub(super) fn drive_chains(world: &World, setup: Option<&str>, items: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
     let mut out: Vec<Vec<Point3>> = Vec::new();
     for g in items {
         let Some(entity) = model::find_by_name(world, &g.entity) else {
@@ -129,11 +121,11 @@ pub(super) fn drive_chains(world: &World, items: &[GeoSel]) -> Result<Vec<Vec<Po
                 g.entity
             )));
         };
-        let loc = model::transform_of(world, &entity).unwrap_or_default();
+        let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
         let label = format!("{} of '{}'", g.feature, g.entity);
         match g.feature {
             FeatureSel::Chain(cid) => {
-                let Some(c) = feature::resolve_chain_arc(&features, cid) else {
+                let Some(c) = crate::model::resolve_chain(&features, cid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -186,7 +178,13 @@ pub(super) fn selection_geometry_impl(
     params: &OpParams,
     notes: Option<&mut Vec<String>>,
 ) -> Result<SelectionGeometry, GenError> {
-    selection_geometry_in(world, setup, items, params, notes, None)
+    let (loops, mut chains, auto) = selection_geometry_in(world, setup, items, params, notes, None)?;
+    if matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_))
+        && !chains.is_empty()
+    {
+        chains = boundary_chains::join_open_runs(chains);
+    }
+    Ok((loops, chains, auto))
 }
 
 /// A world point in the plane the walk projects to: world XY, or the
@@ -348,7 +346,7 @@ pub(super) fn selection_geometry_in(
                 }
             }
             FeatureSel::Chain(cid) => {
-                let Some(c) = feature::resolve_chain_arc(&features, cid) else {
+                let Some(c) = crate::model::resolve_chain(&features, cid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -407,7 +405,7 @@ pub(super) fn selection_geometry_in(
                 push_loop(&label, xy, &mut loops, &mut rims)?;
             }
             FeatureSel::Patch(pid) => {
-                let Some(rings) = feature::patch_rings_arc(&features, pid) else {
+                let Some(rings) = feature::patch_rings(&features, pid) else {
                     return Err(GenError::Invalid(format!(
                         "{label} is no longer in the model: re-pick it"
                     )));
@@ -545,7 +543,7 @@ pub(super) fn selection_region(
     // around the part, not a refusal).
     let past_edge = matches!(area.containment, Some(Containment::On | Containment::Outside));
     let region = match pocket_ladder(world, setup, items, params)? {
-        Some((part, planes)) if !past_edge => pocket_region_on_part(loops, &part, &planes, crate::units::of(world))?,
+        Some((part, planes)) if !past_edge => super::pocket_memo::pocket_region_memo(loops, &part, &planes, crate::units::of(world))?,
         _ => Region::new(loops)?,
     };
     // The area controls run after this, at the seam's call sites (the

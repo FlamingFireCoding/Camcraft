@@ -127,6 +127,7 @@ pub(crate) fn kind_name(k: ToolKind) -> &'static str {
         ToolKind::Electrode => "sinker electrode",
         ToolKind::ThreadMill => "thread mill",
         ToolKind::ThreadMillSingle => "single-form thread mill",
+        ToolKind::Wire => "EDM wire",
     }
 }
 
@@ -299,60 +300,47 @@ fn op_row(
     rows: &mut Vec<painted::Row>,
     leaves: &mut Vec<Leaf>,
 ) {
-    let meta = state.panel_cache.browser_op_cached(state, name, || {
-        let w = &state.world;
-        let op = model::operation_of(w, entity);
-        let (kind_label, kind_type) = op
-            .as_ref()
-            .map(|o| {
-                let k = o.params.kind();
-                (k.to_string(), Some(k))
-            })
-            .unwrap_or_else(|| (String::new(), None));
-        let status = operation::status_of(w, entity);
-        let warns = model::toolpath_warning_count(w, entity);
-        let flow = op.map_or_else(String::new, |o| {
-            let mut s = String::new();
-            if o.suppressed {
-                s.push_str("  SUPPRESSED");
-            }
-            if !o.after.is_default() {
-                s.push_str("  then ");
-                s.push_str(o.after.label());
-            }
-            s
-        });
-        let problem = operation::tool_gate::tool_problem_of(w, entity);
-        let label = model::operation_label(w, name, entity);
-        crate::panel_cache::BrowserOpCached {
-            kind_label,
-            kind_type,
-            status,
-            warns,
-            flow,
-            problem,
-            label,
-        }
-    });
-    let icon = meta.kind_type.map_or(Icon::Generate, op_icon);
-    let tag = match meta.status {
+    let w = &state.world;
+    let (kind, icon) = model::operation_of(w, entity)
+        .map(|op| {
+            let k = op.params.kind();
+            (k.to_string(), op_icon(k))
+        })
+        .unwrap_or_else(|| (String::new(), Icon::Generate));
+    let status = operation::status_of(w, entity);
+    let tag = match status {
         operation::OpStatus::Never => "never",
         operation::OpStatus::Ok => "ok",
         operation::OpStatus::Stale => "STALE",
     };
-    let warn_text = match meta.warns {
+    let warns = model::toolpath_of(w, entity).map_or(0, |tp| tp.warnings.len());
+    let warn_text = match warns {
         0 => String::new(),
         1 => "  1 warning".to_owned(),
         n => format!("  {n} warnings"),
     };
-    let badge = status_badge(meta.status, meta.problem.is_some(), meta.warns);
-    let suffix = match &meta.problem {
-        Some(why) => format!("{}  BLOCKED{warn_text}{}  {why}", meta.kind_label, meta.flow),
-        None => format!("{}  {tag}{warn_text}{}", meta.kind_label, meta.flow),
+    // #110: a suppressed op and a stop / home after it say so on the row.
+    let flow = model::operation_of(w, entity).map_or_else(String::new, |op| {
+        let mut s = String::new();
+        if op.suppressed {
+            s.push_str("  SUPPRESSED");
+        }
+        if !op.after.is_default() {
+            s.push_str("  then ");
+            s.push_str(op.after.label());
+        }
+        s
+    });
+    let problem = operation::tool_gate::tool_problem_of(w, entity);
+    let badge = status_badge(status, problem.is_some(), warns);
+    let suffix = match problem {
+        Some(why) => format!("{kind}  BLOCKED{warn_text}{flow}  {why}"),
+        None => format!("{kind}  {tag}{warn_text}{flow}"),
     };
     let hidden = state.hidden_paths.iter().any(|p| p == name);
     let selected = matches!(t, UiTarget::Operation(n) if n == name);
-    push_row(rows, leaves, meta.label, suffix, painted::Kind::Op, Some(icon), selected, hidden, depth, Leaf::Op(name.to_owned()));
+    let label = model::operation_label(w, name, entity);
+    push_row(rows, leaves, label, suffix, painted::Kind::Op, Some(icon), selected, hidden, depth, Leaf::Op(name.to_owned()));
     if let Some(row) = rows.last_mut() {
         row.badge = Some(badge);
     }

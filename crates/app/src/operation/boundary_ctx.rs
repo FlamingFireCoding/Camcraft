@@ -139,7 +139,9 @@ fn build(world: &World, op: &Operation, tool_r: f64, material: &Material, part_s
             }
         }
         OpParams::Face { .. } | OpParams::Contour { .. } if part_solid => {
-            let hs = resolve_params(world, setup, Some(&op.src), &op.params).map_err(GenError::Invalid)?;
+            // #2389: under a tilt the plane is read along the tool axis.
+            let hs = resolve_params_folded(world, setup, Some(&op.src), &op.params, frame.as_ref())
+                .map_err(GenError::Invalid)?;
             let z = hs
                 .bottom
                 .ok_or_else(|| GenError::Invalid("the cut plane does not resolve".into()))?;

@@ -49,11 +49,21 @@ fn catalog_gate(name: &str, tool: &mut Tool) -> Result<(), CommandError> {
 /// #890: refuse a per-material cutting-data table that cannot be kept
 /// (non-finite or non-positive rpm / feed, a material twice) by the
 /// tool's name, before anything enters the history.
+/// #2015: a row's stepover is no wider than the cutter - a wider one
+/// would leave ridges standing between passes.
 fn cutting_gate(name: &str, tool: &Tool) -> Result<(), CommandError> {
-    match camcraft_tools::cutting_rows::refusal_for_kind(&tool.cutting, tool.kind) {
-        Some(why) => Err(CommandError::Invalid(format!("tool '{name}': {why}"))),
-        None => Ok(()),
+    if let Some(why) = camcraft_tools::cutting_rows::refusal_for_kind(&tool.cutting, tool.kind) {
+        return Err(CommandError::Invalid(format!("tool '{name}': {why}")));
     }
+    if let Some(r) = tool.cutting.iter().find(|r| r.stepover.is_some_and(|s| s > tool.diameter)) {
+        return Err(CommandError::Invalid(format!(
+            "tool '{name}': cutting data for {}: stepover {} is wider than the {} mm cutter",
+            camcraft_tools::cutting_rows::material_label(r.material),
+            r.stepover.unwrap_or_default(),
+            tool.diameter
+        )));
+    }
+    Ok(())
 }
 
 /// Which holder a new tool starts with (#828).
@@ -87,6 +97,8 @@ impl AddTool {
         }
         catalog_gate(name, &mut tool)?;
         cutting_gate(name, &tool)?;
+        // #2015: a stored Unknown row that only repeats the numbers is derived.
+        camcraft_tools::cutting_rows::canonical(&mut tool);
         // #890: a tool entering a document with a stated material runs
         // its row for that material (one undo step with the add).
         if let Some(seeded) = crate::cutting_rows::seeded_for(&tool, crate::cutting::material_of(world)) {
@@ -96,10 +108,9 @@ impl AddTool {
         if let Some(why) = tool.torch_refusal() {
             return Err(CommandError::Invalid(format!("tool '{name}': {why}")));
         }
-        if !tool.is_sane() {
-            return Err(CommandError::Invalid(format!(
-                "tool parameters must be finite and positive: {tool:?}"
-            )));
+        // #1186: the refusal names the tool and the rule it breaks.
+        if let Some(why) = tool.why_not_sane() {
+            return Err(CommandError::Invalid(format!("tool '{name}': {why}")));
         }
         if model::find_by_name(world, name).is_some() {
             return Err(CommandError::NameConflict(name.to_string()));
@@ -202,16 +213,25 @@ impl ChangeTool {
     /// Every `new` law; `judge_cutter: false` skips the drawn cutter's
     /// agreement - only for `ReshapeTool` (#93 slice 3), which lands a
     /// cutter checked against `next` in the same undo step.
-    pub(crate) fn judged(world: &World, name: &str, mut next: Tool, judge_cutter: bool) -> Result<Self, CommandError> {
+    pub(crate) fn judged(world: &World, name: &str, next: Tool, judge_cutter: bool) -> Result<Self, CommandError> {
+        Self::judged_with(world, name, next, judge_cutter, true)
+    }
+
+    /// #2015: a row's seed landing on the running numbers (`SetWorkMaterial`):
+    /// every `new` law, but the numbers are the row's, not an edit, so the
+    /// `Unknown` row does not follow them.
+    pub(crate) fn seeding(world: &World, name: &str, next: Tool) -> Result<Self, CommandError> {
+        Self::judged_with(world, name, next, true, false)
+    }
+
+    fn judged_with(world: &World, name: &str, mut next: Tool, judge_cutter: bool, follow: bool) -> Result<Self, CommandError> {
         catalog_gate(name, &mut next)?;
         cutting_gate(name, &next)?;
         if let Some(why) = next.torch_refusal() {
             return Err(CommandError::Invalid(format!("tool '{name}': {why}")));
         }
-        if !next.is_sane() {
-            return Err(CommandError::Invalid(format!(
-                "tool parameters must be finite and positive: {next:?}"
-            )));
+        if let Some(why) = next.why_not_sane() {
+            return Err(CommandError::Invalid(format!("tool '{name}': {why}")));
         }
         let Some(entity) = model::find_by_name(world, name) else {
             return Err(CommandError::NotFound(name.to_string()));
@@ -228,6 +248,14 @@ impl ChangeTool {
         {
             next = seeded;
         }
+        // #2015: running numbers edited while the Unknown row is in
+        // force carry that row with them.
+        if follow {
+            crate::cutting_rows::follow_running(&prev, &mut next, crate::cutting::material_of(world));
+        }
+        // #2015: the canonical form - a stored Unknown row that only
+        // repeats the running numbers is derived again.
+        camcraft_tools::cutting_rows::canonical(&mut next);
         // The tool law (M10.1 B): a retype that would leave an operation
         // holding a tool its family cannot cut with is refused by name.
         if let Some(msg) =

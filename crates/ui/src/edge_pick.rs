@@ -74,12 +74,22 @@ fn edges_of(state: &State, g: &GeoSel) -> Vec<u32> {
     let FeatureSel::Chain(id) = g.feature else { return Vec::new() };
     model::find_by_name(&state.world, &g.entity)
         .and_then(|e| model::features_of(&state.world, &e))
-        .and_then(|f| feature::resolve_chain_arc(&f, id))
+        .and_then(|f| feature::resolve_chain(&f, id))
         .map_or(Vec::new(), |c| c.edges)
 }
 
+fn setup_of(state: &State) -> Option<String> {
+    model::find_by_name(&state.world, &state.op_ui.name)
+        .and_then(|e| model::operation_of(&state.world, &e))
+        .and_then(|op| op.setup)
+}
+
 fn take_loop(state: &mut State, pick: GeoSel) {
-    let ring = match operation::extend_to_loop(&state.world, std::slice::from_ref(&pick)) {
+    let ring = match operation::extend_to_loop_in(
+        &state.world,
+        setup_of(state).as_deref(),
+        std::slice::from_ref(&pick),
+    ) {
         Ok(ring) => ring,
         Err(why) => {
             // No face loop through it: say so and keep the edge as a

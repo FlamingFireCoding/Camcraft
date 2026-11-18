@@ -57,6 +57,7 @@ interface PostResult {
   path: string;
   ops: number;
   lines: number;
+  warning?: string;
   program?: string;
   /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];
@@ -115,6 +116,7 @@ interface CamApi {
   check(): VerifyReport;  // arity 0
   result(): unknown;  // arity 0
   log(...values: unknown[]): null;  // variadic
+  call(tool: string, args?: Record<string, unknown>): unknown;  // variadic
 }
 
 declare const cam: CamApi;

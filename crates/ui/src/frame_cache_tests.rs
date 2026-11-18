@@ -1,5 +1,6 @@
 //! Pinning tests for `FrameCache::world_verts_cached` source allocation lifetime
-//! and `world::collect` vertex freshness after facet replacement.
+//! and `world::collect` vertex freshness after facet replacement, plus the
+//! counter pin: a still frame transforms no vertex again.
 //! Provenance: our own unit tests for PR #2256 review finding 1.
 
 use std::sync::Arc;
@@ -96,4 +97,24 @@ fn world_collect_rebuilds_vertices_when_model_facets_are_replaced() {
             "step {step}: expected replaced min_x {lo_x}, got {min_x2}"
         );
     }
+}
+
+#[test]
+fn world_collect_still_frames_transform_no_vertex_and_a_pose_change_does() {
+    let st = State::new();
+    let part = model::spawn(&st.world, "Part");
+    model::set_facets(&st.world, &part, cube(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 10.0, 10.0)).facets);
+    let _ = world::collect(&st);
+    let builds = st.frame_cache.world_verts_builds();
+    assert_eq!(builds, 1, "the first frame transforms the body once");
+    for _ in 0..8 {
+        let _ = world::collect(&st);
+    }
+    assert_eq!(st.frame_cache.world_verts_builds(), builds, "a still frame transforms nothing");
+    let loc = camcraft_app::schema::Location { pos: Point3::new(5.0, 0.0, 0.0), ..Default::default() };
+    model::set_transform(&st.world, &part, loc);
+    let s = world::collect(&st);
+    assert_eq!(st.frame_cache.world_verts_builds(), builds + 1, "a moved body transforms again");
+    let min_x = s.parts[0].verts.iter().map(|v| v[0]).fold(f32::INFINITY, f32::min);
+    assert!((min_x - 5.0).abs() < 1e-4, "the moved vertices are drawn, got {min_x}");
 }

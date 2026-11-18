@@ -43,6 +43,19 @@ pub(crate) fn paint(
         ink(overlay(Overlay::Pick)),
         halo,
     );
+    // The start and exit marks stay plain strokes - a handful of
+    // segments, no feature resolution.
+    let stroke = |segs: Vec<([f32; 2], [f32; 2])>, px: f32, rgb: [f32; 3]| {
+        for (a, b) in &segs {
+            painter.line_segment([to_px(*a), to_px(*b)], egui::Stroke::new(px + HALO_EXTRA_PX, halo));
+        }
+        for (a, b) in &segs {
+            painter.line_segment([to_px(*a), to_px(*b)], egui::Stroke::new(px, ink(rgb)));
+        }
+    };
+    let (start_marks, exit_marks) = crate::start_exit_pick::marks(state, aspect);
+    stroke(start_marks, SELECTED_PX, overlay(Overlay::Pick));
+    stroke(exit_marks, SELECTED_PX, overlay(Overlay::Region));
     crate::pick_highlight_mesh::paint_hover(
         painter,
         state,

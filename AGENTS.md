@@ -92,8 +92,10 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   | `P9` | Someday: not picked while other work is free |
 
   - `P1`-`P3` are for defects only. "Wanted" is never a reason for them.
-  - Only `P1` and `P2` hold a release cut. A `P3` is worked before planned
-    work, but a cut does not wait for it.
+  - A priority does not hold a release cut. The maintainer names what a cut
+    includes (**The cut list**, "Commits and Releases"). An open `P1` or
+    `P2` that is not on the list goes under "Known issues". A `P3` is worked
+    before planned work.
   - Set `P4` only where the maintainer asked for the work in his own words.
     The issue quotes those words.
   - A follow-up found during work or review is `P7`, unless it is a defect.
@@ -561,9 +563,9 @@ tests are in `crates/ui/tests/`; they start the real app through
 
   | Tier | When | Target | Runs |
   |---|---|---|---|
-  | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | each debug suite that is not slow, the kernel suites, the ui suites, clippy |
-  | release | only at a cut | - | all debug suites and the `--ignored` heavy lanes in release |
+  | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
@@ -590,6 +592,17 @@ tests are in `crates/ui/tests/`; they start the real app through
   suite what a snapshot guards: AccessKit labels, roles, enabled state,
   window presence, and the text and coarse position of the painted strips.
   A UI change updates those assertions, not the PNGs.
+- **A UI refit PR keeps its tests** (#1953). A refit PR (a new look, chrome
+  or layout) changes one page or one component, and that page's tests.
+  - A behaviour test asserts labels, roles, enabled state and commands. It
+    does not assert a position, a size or a colour.
+  - Each page and window has one named layout test,
+    `crates/ui/src/egui_app/tests/page_layout.rs` (`layout_page_<page>`,
+    `layout_window_<window>`). The refit PR of that page updates it.
+  - The PR is not ready while a UI test that it touches is red, ignored or
+    deleted. The `#[test]` count of `crates/ui` does not go down.
+  - The quick gate of the PR runs the `camcraft-ui` lib tests. No refit
+    failure waits for the cut gate.
 - Add headless tests for toolpath generation (golden CLFile and G-code
   outputs in `tests/golden/`), stock simulation and post processing. Add fuzz
   tests for the geometry importers and the toolpath generators: degenerate
@@ -683,12 +696,28 @@ subagent, and the session does not wait for it.
 **A cut goes PR review -> merge to main -> tag.** The `release-cut` skill
 has the procedure. Its rules:
 
-- A cut does not start while a `P1` or `P2` issue is open. The check is made
-  one time, at the start. A `P1` or `P2` filed later does not restart the
-  cut: it goes under "Known issues" and its fix ships in the next minor. Only
-  the maintainer stops a cut. An agent that finds a late `P1` tells the
-  maintainer in one line and continues.
-- From step 1 to the tag, nothing else merges to `main`.
+- **The cut list.** A cut does not clear all `P1` and `P2` issues. Before a
+  cut starts, the maintainer decides which open issues and PRs the cut
+  includes. That list is the cut list. The agent proposes it one time, in
+  the question dialog: each open `P1` and `P2` and each waiting `feat` PR,
+  with "in" or "out" recommended. The maintainer's answer is the list.
+- **The cut line.** When the list is set, it is closed. Nothing is added to
+  it: not a new `P1`, not a defect that a review of a listed PR finds in
+  other code, not a PR that became `merge-ready` later. Only the maintainer
+  adds an item, in his own words.
+  - An agent does not hold, delay or restart a cut for an item that is not
+    on the list. An agent does not ask to add one. It files the issue, tells
+    the maintainer in one line if it is a `P1`, and continues.
+  - Each open `P1` or `P2` that is not on the list goes under "Known
+    issues" in the release notes. Its fix ships in the next minor.
+  - A listed item that is not ready when the others are merged is the
+    maintainer's decision: wait for it, or remove it from the list. The
+    agent asks one time.
+  - Two things are always in a cut and need no list entry: a fix for a main
+    that does not build or whose gate is red, and a fix for a failure of
+    the cut's own release gate.
+- From the cut line to the tag, only the items on the cut list merge to
+  `main`. From step 1 of the cut to the tag, nothing else merges.
 - The release tier runs on the cut runner (`cut.yml`). The tagged tree is
   exactly the gated tree.
 - Cuts and tags stay with the maintainer.

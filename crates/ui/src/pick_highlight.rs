@@ -1,16 +1,24 @@
 //! Cached world-space highlight polylines for selected picks, viewport hover,
-//! and Geometry-row hover. Resolves `GeoSel` picks once at selection time instead
-//! of re-walking features per frame.
+//! and Geometry-row hover. Resolves `GeoSel` picks once when an input changes
+//! instead of re-walking features per frame (#2201).
+//!
+//! The key is the input itself (crates/ui/AGENTS.md, "Frame cost"): the
+//! picks by value, and for each picked model its display-off flag, its
+//! entity, the allocation of its `Arc<Features>` (a landing replaces it) and
+//! the pose the viewport draws it in - the same reads as
+//! `pick_line_memo`'s key. No document counter is part of it.
 //!
 //! Provenance: our own selection highlight cache built over `geometry::feature`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
+use camcraft_app::geometry::feature::Features;
 use camcraft_app::geometry::{Point3, feature, transform_point};
 use camcraft_app::model;
 use camcraft_app::operation::{FeatureSel, GeoSel};
+use camcraft_app::schema::Location;
+use flecs_ecs::prelude::Entity;
 
-use crate::frame_cache::{EntityGuard, WorldStamp, guards_for_picks};
 use crate::state::State;
 
 /// One resolved feature outline in world space.
@@ -28,33 +36,69 @@ pub(crate) struct ResolvedHighlights {
     pub vertices: Vec<[f64; 3]>,
 }
 
-#[derive(Clone, PartialEq)]
-struct SelectionKey {
-    stamp: WorldStamp,
-    op_ui_name: String,
-    picks: Vec<GeoSel>,
-    hidden_models: Vec<String>,
-    hidden_stocks: Vec<String>,
-    hidden_paths: Vec<String>,
-    shown_setups: Vec<String>,
-    guards: Vec<EntityGuard>,
+/// A feature set, compared by allocation. The held `Weak` keeps the
+/// address from being reused while the entry lives.
+struct Feats(Weak<Features>);
+
+impl PartialEq for Feats {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
 }
 
-#[derive(Clone, PartialEq)]
-struct SingleKey {
-    stamp: WorldStamp,
-    pick: Option<GeoSel>,
+/// One picked model as the build reads it.
+#[derive(PartialEq)]
+struct Body {
+    name: String,
     hidden: bool,
-    guard: Option<EntityGuard>,
+    entity: Option<Entity>,
+    features: Option<Feats>,
+    pose: Option<Location>,
+}
+
+impl Body {
+    fn of(state: &State, name: &str) -> Self {
+        let entity = model::find_by_name(&state.world, name);
+        Self {
+            name: name.to_owned(),
+            hidden: state.hidden_in_view(name),
+            entity,
+            features: entity
+                .and_then(|e| model::features_of(&state.world, &e))
+                .map(|f| Feats(Arc::downgrade(&f))),
+            pose: entity.and_then(|e| camcraft_app::setup_align::view_pose(&state.world, &e)),
+        }
+    }
+}
+
+/// Every read of a build, taken without building.
+#[derive(PartialEq)]
+struct Key {
+    picks: Vec<GeoSel>,
+    bodies: Vec<Body>,
+}
+
+impl Key {
+    fn of(state: &State, picks: Vec<GeoSel>) -> Self {
+        let mut names: Vec<&str> = Vec::new();
+        for g in &picks {
+            if !names.contains(&g.entity.as_str()) {
+                names.push(&g.entity);
+            }
+        }
+        let bodies = names.into_iter().map(|n| Body::of(state, n)).collect();
+        Self { picks, bodies }
+    }
 }
 
 #[derive(Default)]
 pub(crate) struct HighlightInner {
     pub(crate) next_id: u64,
     pub(crate) selection_builds: u64,
-    selection: Option<(SelectionKey, Arc<ResolvedHighlights>)>,
-    hover: Option<(SingleKey, Arc<ResolvedHighlights>)>,
-    row_hover: Option<(SingleKey, Arc<ResolvedHighlights>)>,
+    pub(crate) hover_builds: u64,
+    selection: Option<(Key, Arc<ResolvedHighlights>)>,
+    hover: Option<(Key, Arc<ResolvedHighlights>)>,
+    row_hover: Option<(Key, Arc<ResolvedHighlights>)>,
     pub(crate) selected_mesh: Option<crate::pick_highlight_mesh::CachedMesh>,
     pub(crate) hover_mesh: Option<crate::pick_highlight_mesh::CachedMesh>,
     pub(crate) row_hover_mesh: Option<crate::pick_highlight_mesh::CachedMesh>,
@@ -79,6 +123,13 @@ pub(crate) fn lock(state: &State) -> std::sync::MutexGuard<'_, HighlightInner> {
 #[must_use]
 pub(crate) fn selection_builds(state: &State) -> u64 {
     lock(state).selection_builds
+}
+
+/// Number of times a hover or row-hover outline was rebuilt for this state.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn hover_builds(state: &State) -> u64 {
+    lock(state).hover_builds
 }
 
 fn append_feature(
@@ -123,7 +174,7 @@ fn append_feature(
             }
         }
         FeatureSel::Chain(cid) => {
-            let Some(chain) = feature::resolve_chain_arc(&features, cid) else {
+            let Some(chain) = model::resolve_chain(&features, cid) else {
                 return;
             };
             let local = feature::chain_points(&features, &chain);
@@ -133,10 +184,10 @@ fn append_feature(
             });
         }
         FeatureSel::Patch(pid) => {
-            let Some(rings) = feature::patch_rings_arc(&features, pid) else {
+            let Some(rings) = model::patch_rings(&features, pid) else {
                 return;
             };
-            for r in &rings {
+            for r in rings.iter() {
                 let local: Vec<[f64; 3]> = r
                     .verts
                     .iter()
@@ -173,93 +224,41 @@ fn next_resolved(
     })
 }
 
-/// Cached resolved world outlines and points for the currently shown selection.
-pub(crate) fn resolved_selected(state: &State) -> Arc<ResolvedHighlights> {
-    let stamp = WorldStamp::of(state);
-    let picks = crate::interact::shown_picks(state);
+/// The cached entry of `slot` when its key equals `key`, else a fresh
+/// build stored under `key`. `count` is bumped for a build of real picks.
+fn resolve_cached(
+    state: &State,
+    key: Key,
+    slot: impl Fn(&mut HighlightInner) -> &mut Option<(Key, Arc<ResolvedHighlights>)>,
+    count: impl Fn(&mut HighlightInner) -> &mut u64,
+) -> Arc<ResolvedHighlights> {
     {
-        let inner = lock(state);
-        if let Some((key, cached)) = &inner.selection
-            && key.stamp == stamp
-            && key.op_ui_name == state.op_ui.name
-            && key.picks == picks
-            && key.hidden_models == state.hidden_models
-            && key.hidden_stocks == state.hidden_stocks
-            && key.hidden_paths == state.hidden_paths
-            && key.shown_setups == state.shown_setups
-            && key.guards.iter().all(|g| g.matches(state))
+        let mut inner = lock(state);
+        if let Some((k, cached)) = slot(&mut inner)
+            && *k == key
         {
             return Arc::clone(cached);
         }
     }
-    let guards = guards_for_picks(state, &picks);
     let mut polylines = Vec::new();
     let mut vertices = Vec::new();
-    for item in &picks {
+    for item in &key.picks {
         append_feature(state, item, &mut polylines, &mut vertices);
     }
-    let key = SelectionKey {
-        stamp,
-        op_ui_name: state.op_ui.name.clone(),
-        picks,
-        hidden_models: state.hidden_models.clone(),
-        hidden_stocks: state.hidden_stocks.clone(),
-        hidden_paths: state.hidden_paths.clone(),
-        shown_setups: state.shown_setups.clone(),
-        guards,
-    };
     let mut inner = lock(state);
-    let empty_unchanged = key.picks.is_empty()
-        && inner
-            .selection
-            .as_ref()
-            .is_some_and(|(old_key, _)| old_key.picks.is_empty());
-    let resolved = next_resolved(&mut inner, polylines, vertices);
-    if !(key.picks.is_empty() && (empty_unchanged || inner.selection_builds == 0)) {
-        inner.selection_builds = inner.selection_builds.saturating_add(1);
+    if !key.picks.is_empty() {
+        let n = count(&mut inner);
+        *n = n.saturating_add(1);
     }
-    inner.selection = Some((key, Arc::clone(&resolved)));
+    let resolved = next_resolved(&mut inner, polylines, vertices);
+    *slot(&mut inner) = Some((key, Arc::clone(&resolved)));
     resolved
 }
 
-fn resolve_single_cached(
-    state: &State,
-    pick: Option<GeoSel>,
-    get_slot: impl Fn(&mut HighlightInner) -> &mut Option<(SingleKey, Arc<ResolvedHighlights>)>,
-) -> Arc<ResolvedHighlights> {
-    let stamp = WorldStamp::of(state);
-    let hidden = pick
-        .as_ref()
-        .is_some_and(|p| state.hidden_in_view(&p.entity));
-    {
-        let mut inner = lock(state);
-        if let Some((key, cached)) = get_slot(&mut inner)
-            && key.stamp == stamp
-            && key.pick == pick
-            && key.hidden == hidden
-            && key.guard.as_ref().is_none_or(|g| g.matches(state))
-        {
-            return Arc::clone(cached);
-        }
-    }
-    let guard = pick
-        .as_ref()
-        .map(|p| EntityGuard::capture(state, &p.entity));
-    let mut polylines = Vec::new();
-    let mut vertices = Vec::new();
-    if let Some(item) = &pick {
-        append_feature(state, item, &mut polylines, &mut vertices);
-    }
-    let key = SingleKey {
-        stamp,
-        pick,
-        hidden,
-        guard,
-    };
-    let mut inner = lock(state);
-    let resolved = next_resolved(&mut inner, polylines, vertices);
-    *get_slot(&mut inner) = Some((key, Arc::clone(&resolved)));
-    resolved
+/// Cached resolved world outlines and points for the currently shown selection.
+pub(crate) fn resolved_selected(state: &State) -> Arc<ResolvedHighlights> {
+    let key = Key::of(state, crate::interact::shown_picks(state));
+    resolve_cached(state, key, |i| &mut i.selection, |i| &mut i.selection_builds)
 }
 
 pub(crate) fn resolved_hover(state: &State) -> Arc<ResolvedHighlights> {
@@ -269,11 +268,13 @@ pub(crate) fn resolved_hover(state: &State) -> Arc<ResolvedHighlights> {
             feature,
         })
     });
-    resolve_single_cached(state, pick, |inner| &mut inner.hover)
+    let key = Key::of(state, pick.into_iter().collect());
+    resolve_cached(state, key, |i| &mut i.hover, |i| &mut i.hover_builds)
 }
 
 pub(crate) fn resolved_row_hover(state: &State) -> Arc<ResolvedHighlights> {
-    resolve_single_cached(state, state.geo_hover_drawn.clone(), |inner| &mut inner.row_hover)
+    let key = Key::of(state, state.geo_hover_drawn.clone().into_iter().collect());
+    resolve_cached(state, key, |i| &mut i.row_hover, |i| &mut i.hover_builds)
 }
 
 /// Project cached world polylines (and optional vertex crosses) to viewport UV segments.
@@ -311,3 +312,7 @@ pub(crate) fn project_segments(
     }
     out
 }
+
+#[cfg(test)]
+#[path = "pick_highlight_tests.rs"]
+mod tests;

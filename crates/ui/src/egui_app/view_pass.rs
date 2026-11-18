@@ -24,13 +24,13 @@ pub(crate) fn sync_scene(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     scene: &world::Scene,
-    digest: u64,
     scene_digest: &mut u64,
 ) {
-    if digest != *scene_digest {
+    let d = scene.digest();
+    if d != *scene_digest {
         view.set_document(device, queue, &scene.parts);
         view.set_overlay(device, queue, &scene.overlay);
-        *scene_digest = digest;
+        *scene_digest = d;
     }
 }
 
@@ -87,7 +87,7 @@ pub(crate) fn encode(
         match se.prepare(device, queue, encoder, fv, &state.cam, &mvp, (ew, eh)) {
             Ok(t) => traced = t,
             Err(err) => {
-                state.status += &format!(" | traced stock: {err} - the sheet stands");
+                state.say_once(&format!("the cut stock cannot be drawn, the uncut stock shows: {err}"));
             }
         }
     }
@@ -139,7 +139,7 @@ pub(crate) fn state_redraw_delay(
     redraw_delay(
         egui_delay,
         followup || !state.pending.is_empty() || state.layout_request.is_some(),
-        state.import_in_progress(),
+        state.import_in_progress() || state.gen_jobs.busy(),
         state.sim.is_some_and(|sim| sim.playing),
         state.field_play.as_ref().is_some_and(|play| play.needs_poll()),
     )

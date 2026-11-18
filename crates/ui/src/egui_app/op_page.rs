@@ -11,7 +11,7 @@
 //! Provenance: our own port of the M-c operation page (no vendor
 //! material, strings or layouts consulted).
 
-use egui::{ScrollArea, Ui};
+use egui::{RichText, ScrollArea, Ui};
 
 use camcraft_app::model;
 use camcraft_app::operation::{self, OpStatus};
@@ -19,13 +19,14 @@ use camcraft_app::schema::Operation;
 use camcraft_app::verify::Warning;
 
 use crate::operations::{fold_warnings, unresolved_note};
+use crate::start_exit_pick::{self, StartExitAct, act_id, armed_id};
 use crate::state::{CommandKind, ErrorScope, State};
 use crate::shortcut_keys::chord;
 
 use super::colorvision::text_inks;
 use super::fields::combo_owned;
 use super::layout::{Action, ActionKind, BarInks, action_bar, group, prop_grid, status_banner_located};
-use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_MACHINE, SEC_PASSES};
+use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_LEADS, SEC_MACHINE, SEC_PASSES};
 use super::theme::Tokens;
 
 /// The hover text of a refusal line that names its spot (#261 part 2);
@@ -100,9 +101,9 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         } else if cancel_rename {
             state.rename_draft = None;
         }
-        prop_grid(ui, "op_header", |ui| header_rows(ui, state, &target, live.as_ref(), exists));
+        crate::frame_cost::time("ui/properties.op.header", || prop_grid(ui, "op_header", |ui| header_rows(ui, state, &target, live.as_ref(), exists)));
         if exists {
-            status(ui, state, &target, pal);
+            crate::frame_cost::time("ui/properties.op.status", || status(ui, state, &target, pal));
         }
         ui.separator();
         // The named sections (M1.4's tabs): a kind shows only the sections
@@ -110,9 +111,19 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         // (`State::op_tab`), never a command, never saved.
         let kind = state.op_ui.params.kind();
         let tab = super::op_tabs::tab_bar(ui, kind, &mut state.op_tab, pal);
-        super::geo_page::pick_mode_line(ui, state);
+        if tab != SEC_LEADS {
+            start_exit_pick::disarm(state);
+        }
+        if let Some(role) = state.op_ui.start_exit_pick.filter(|_| start_exit_pick::collecting(state)) {
+            ui.label(
+                RichText::new(format!("Picking {} - click on the part or stock in the viewport", role.label()))
+                    .strong(),
+            );
+        } else {
+            super::geo_page::pick_mode_line(ui, state);
+        }
         if tab == SEC_GEO {
-            super::geo_page::pick_block(ui, state, &target, live_setup.as_deref(), pal);
+            crate::frame_cost::time("ui/properties.op.picks", || super::geo_page::pick_block(ui, state, &target, live_setup.as_deref(), pal));
         }
         // The single-concept tabs ride one titled group; Heights draws
         // one group per height and Lead in / Lead out its own groups.
@@ -122,12 +133,29 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
             SEC_MACHINE => Some("Bar feeder"),
             _ => None,
         };
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(armed_id(), state.op_ui.start_exit_pick);
+            d.insert_temp(act_id(), None::<StartExitAct>);
+        });
+        let fields = crate::frame_cost::span("ui/properties.op.fields");
         match title {
             Some(t) => {
                 group(ui, t, None, |ui| super::params_page::params_fields(ui, state, tab));
             }
             None => super::params_page::params_fields(ui, state, tab),
         }
+        if let Some(act) = ui.ctx().data(|d| d.get_temp::<Option<StartExitAct>>(act_id())).flatten() {
+            match act {
+                StartExitAct::Toggle(role) => start_exit_pick::toggle(state, role),
+                StartExitAct::ClearIf(role) => {
+                    if state.op_ui.start_exit_pick == Some(role) {
+                        start_exit_pick::disarm(state);
+                    }
+                }
+            }
+            ui.ctx().request_repaint();
+        }
+        drop(fields);
         if tab == SEC_FEEDS {
             // M13.2: material, edge, flutes and the suggestion.
             super::feeds_page::cutting_group(ui, state, &target);
@@ -135,16 +163,16 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         if tab == SEC_GEO {
             // The Boundary group (M11.5): how far the area reaches, under
             // the picks that say where it is.
-            super::boundary::boundary_group(ui, state);
+            crate::frame_cost::time("ui/properties.op.boundary", || super::boundary::boundary_group(ui, state));
         }
-        if let Some(note) = state.panel_cache.unresolved_note_cached(state, live_setup.as_deref(), || {
+        if let Some(note) = crate::frame_cost::time("ui/properties.op.unresolved", || {
             unresolved_note(&state.world, live_setup.as_deref(), Some(&state.op_ui.src()), &state.op_ui.params)
         }) {
             ui.colored_label(text_inks(ui, &state.world).warn, note);
         }
     });
     ui.set_max_width((out.inner_rect.width() - 12.0).max(120.0));
-    actions(ui, state, &target, live.as_ref(), exists, pal);
+    crate::frame_cost::time("ui/properties.op.actions", || actions(ui, state, &target, live.as_ref(), exists, pal));
 }
 
 /// Tool, Source and Setup as label | control rows of the header grid.
@@ -285,86 +313,55 @@ fn coolant_row(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Opera
     ui.end_row();
 }
 
-fn tone_to_u8(tone: super::layout::Tone) -> u8 {
-    match tone {
-        super::layout::Tone::Ok => 0,
-        super::layout::Tone::Warn => 1,
-        super::layout::Tone::Error => 2,
-        super::layout::Tone::Quiet => 3,
-    }
-}
-
-fn tone_from_u8(code: u8) -> super::layout::Tone {
-    match code {
-        0 => super::layout::Tone::Ok,
-        1 => super::layout::Tone::Warn,
-        2 => super::layout::Tone::Error,
-        _ => super::layout::Tone::Quiet,
-    }
-}
-
-fn status_banner_data(state: &State, target: &str) -> crate::panel_cache::OpBannerCached {
-    state.panel_cache.op_banner_cached(state, target, || {
-        use super::layout::Tone;
-        let ent = model::find_by_name(&state.world, target);
-        let tp = ent.as_ref().and_then(|e| model::toolpath_of(&state.world, e));
-        let focus: Vec<Option<[f64; 3]>> = tp
-            .as_ref()
-            .map(crate::path_lines::warning_focus)
-            .unwrap_or_default();
-        let (moves, warnings, notes): (usize, Vec<Warning>, Vec<String>) = tp
-            .map(|t| (t.path.len(), t.warnings, t.path.notes))
-            .unwrap_or((0, Vec::new(), Vec::new()));
-        let blocked = ent
-            .as_ref()
-            .and_then(|e| operation::tool_gate::tool_problem_of(&state.world, e));
-        let st = ent.as_ref().map(|e| operation::status_of(&state.world, e));
-        let mut details: Vec<String> = fold_warnings(&warnings);
-        details.extend(super::approach_page::entry_status_lines(&notes));
-        details.extend(state.struck_lines(target));
-        let n = details.len();
-        let tail = match n {
-            0 => String::new(),
-            1 => " · 1 warning".to_owned(),
-            n => format!(" · {n} warnings"),
-        };
-        let (line, tone) = match (blocked, st) {
-            (Some(why), _) => (format!("Blocked · {why} · {moves} moves cached"), Tone::Error),
-            (None, Some(OpStatus::Never) | None) => ("Status: never generated".to_owned(), Tone::Quiet),
-            (None, Some(OpStatus::Ok)) => (
-                format!("OK · {moves} moves{tail}"),
-                if n > 0 { Tone::Warn } else { Tone::Ok },
-            ),
-            (None, Some(OpStatus::Stale)) => {
-                let reason = ent
-                    .as_ref()
-                    .and_then(|e| operation::stale_reason(&state.world, e))
-                    .unwrap_or_else(|| "inputs moved since generation".to_owned());
-                (format!("Stale · {reason} · {moves} moves cached{tail}"), Tone::Warn)
-            }
-        };
-        crate::panel_cache::OpBannerCached {
-            line,
-            tone: tone_to_u8(tone),
-            details,
-            focus,
-        }
-    })
-}
-
 /// The status banner's line and details, from the world (pure; the
 /// tests read it). M10.1 C: the tool law's verdict outranks the stamp.
-#[cfg(test)]
 pub(super) fn status_text(state: &State, target: &str) -> (String, super::layout::Tone, Vec<String>) {
-    let cached = status_banner_data(state, target);
-    (cached.line, tone_from_u8(cached.tone), cached.details)
+    use super::layout::Tone;
+    let ent = model::find_by_name(&state.world, target);
+    let (moves, warnings, notes): (usize, Vec<Warning>, Vec<String>) = ent
+        .as_ref()
+        .and_then(|e| model::toolpath_of(&state.world, e))
+        .map(|tp| (tp.path.len(), tp.warnings, tp.path.notes))
+        .unwrap_or((0, Vec::new(), Vec::new()));
+    let blocked = ent.as_ref().and_then(|e| operation::tool_gate::tool_problem_of(&state.world, e));
+    let st = ent.as_ref().map(|e| operation::status_of(&state.world, e));
+    let mut details: Vec<String> = fold_warnings(&warnings);
+    details.extend(super::approach_page::entry_status_lines(&notes));
+    // #339 slice 4: who the fixture warnings strike, or that no single
+    // fixture reproduces them - said, never guessed.
+    details.extend(state.struck_lines(target));
+    let n = details.len();
+    let tail = match n {
+        0 => String::new(),
+        1 => " · 1 warning".to_owned(),
+        n => format!(" · {n} warnings"),
+    };
+    let (line, tone) = match (blocked, st) {
+        (Some(why), _) => (format!("Blocked · {why} · {moves} moves cached"), Tone::Error),
+        (None, Some(OpStatus::Never) | None) => ("Status: never generated".to_owned(), Tone::Quiet),
+        (None, Some(OpStatus::Ok)) => (format!("OK · {moves} moves{tail}"), if n > 0 { Tone::Warn } else { Tone::Ok }),
+        (None, Some(OpStatus::Stale)) => {
+            // M3.1 C: say which input moved, not just that one did.
+            let reason = ent
+                .as_ref()
+                .and_then(|e| operation::stale_reason(&state.world, e))
+                .unwrap_or_else(|| "inputs moved since generation".to_owned());
+            (format!("Stale · {reason} · {moves} moves cached{tail}"), Tone::Warn)
+        }
+    };
+    (line, tone, details)
 }
 
 fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
     use super::layout::Tone;
-    let cached = status_banner_data(state, target);
-    let tone = tone_from_u8(cached.tone);
-    let links: Vec<bool> = cached.focus.iter().map(Option::is_some).collect();
+    let (line, tone, details) = status_text(state, target);
+    // #261: a warning line that names a move frames it on click (the
+    // fold lines lead `details`, aligned with `warning_focus`).
+    let focus: Vec<Option<[f64; 3]>> = model::find_by_name(&state.world, target)
+        .and_then(|e| model::toolpath_of(&state.world, &e))
+        .map(|tp| crate::path_lines::warning_focus(&tp))
+        .unwrap_or_default();
+    let links: Vec<bool> = focus.iter().map(Option::is_some).collect();
     let inks = text_inks(ui, &state.world);
     let ink = match tone {
         Tone::Ok => pal.accent,
@@ -372,8 +369,8 @@ fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
         Tone::Error => inks.error,
         Tone::Quiet => pal.text_dim,
     };
-    if let Some(p) = status_banner_located(ui, "op_status", &cached.line, ink, &cached.details, &links)
-        .and_then(|i| cached.focus.get(i).copied().flatten())
+    if let Some(p) = status_banner_located(ui, "op_status", &line, ink, &details, &links)
+        .and_then(|i| focus.get(i).copied().flatten())
     {
         // View state, like every camera move: no command (AGENTS.md).
         crate::actions::frame_at(state, p);
@@ -386,8 +383,8 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
     // Apply never reads as a dead button: the hint says why it is dark,
     // or which edited field the door will refuse (crate::feedback).
     let apply_hint = crate::feedback::apply_hint(live.map(|o| &o.params), &state.op_ui.params, unchanged);
-    let has_path = exists
-        && model::find_by_name(&state.world, target).is_some_and(|e| model::has_toolpath(&state.world, &e));
+    let has_path =
+        exists && model::find_by_name(&state.world, target).and_then(|e| model::toolpath_of(&state.world, &e)).is_some();
     let inks = text_inks(ui, &state.world);
     if let Some(msg) = state.error_for(ErrorScope::Operation).map(str::to_owned) {
         // #261 part 2: a refusal that names its spot is a link that
@@ -444,8 +441,14 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
     ];
     let bar_inks = BarInks { accent: pal.accent, on_accent: super::contrast::on_fill(pal.accent), danger: inks.error };
     match action_bar(ui, &bar, &bar_inks) {
-        Some(0) => state.generate_operation(target),
-        Some(1) => state.apply_operation_params(target),
+        Some(0) => {
+            start_exit_pick::disarm(state);
+            state.generate_operation(target);
+        }
+        Some(1) => {
+            start_exit_pick::disarm(state);
+            state.apply_operation_params(target);
+        }
         Some(2) => state.pending.push_back(CommandKind::ClearToolpath(target.to_owned())),
         Some(3) => state.close_operation_editor(target),
         Some(4) => state.pending.push_back(CommandKind::DeleteOperation(target.to_owned())),

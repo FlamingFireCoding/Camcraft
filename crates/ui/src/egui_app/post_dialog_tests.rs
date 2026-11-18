@@ -226,3 +226,130 @@ fn dialog_per_operation_post_uses_entered_prefix_in_filenames() {
     assert_eq!(h.state().post_view.as_ref().expect("viewer").path, dir.join("finish_01_Face1.nc"));
     std::fs::remove_dir_all(dir).expect("remove output folder");
 }
+
+#[test]
+fn dialog_and_post_page_offer_end_units_only_for_supported_posts() {
+    use camcraft_app::schema::{EndUnits, PostOptions};
+
+    let open_dialog = |post: PostRef, end_units: EndUnits| {
+        let mut state = State::new();
+        if post != PostRef::Builtin {
+            state.history.execute(
+                &state.world,
+                camcraft_app::commands::SelectPost::new(&state.world, post).expect("select post"),
+            );
+        }
+        if end_units != EndUnits::Leave {
+            let cur = posting::post_options(&state.world);
+            state.history.execute(
+                &state.world,
+                camcraft_app::commands::SetPostOptions::new(
+                    &state.world,
+                    PostOptions { end_units, ..cur },
+                )
+                .expect("set end_units"),
+            );
+        }
+        state.pending.push_back(CommandKind::PostProgramDialog);
+        state.drain_actions();
+        let mut h = Harness::builder()
+            .with_size(Vec2::new(1100.0, 900.0))
+            .build_ui_state(frame, state);
+        h.run();
+        h
+    };
+
+    for supported in [
+        PostRef::Builtin,
+        PostRef::Named("Tormach PathPilot".into()),
+        PostRef::Named("grblHAL".into()),
+        PostRef::Named("TinyG".into()),
+        PostRef::Named("Mazak".into()),
+        PostRef::Named("Doosan DNM".into()),
+        PostRef::Named("Siemens 840D".into()),
+    ] {
+        let h = open_dialog(supported.clone(), EndUnits::Leave);
+        assert!(
+            h.query_by_role_and_label(Role::ComboBox, "End units").is_some(),
+            "Post dialog must offer End units for {supported:?}"
+        );
+        if supported == PostRef::Named("Siemens 840D".into()) {
+            let h_inch = open_dialog(supported.clone(), EndUnits::Inch);
+            assert!(
+                h_inch
+                    .query_by(|n| {
+                        n.role() == Role::ComboBox && n.value().as_deref() == Some("Inch (G700)")
+                    })
+                    .is_some(),
+                "Siemens 840D dialog must label G700"
+            );
+        }
+
+        let mut page_state = State::new();
+        if supported != PostRef::Builtin {
+            page_state.history.execute(
+                &page_state.world,
+                camcraft_app::commands::SelectPost::new(&page_state.world, supported.clone())
+                    .expect("select post"),
+            );
+        }
+        let mut ph = Harness::builder()
+            .with_size(Vec2::new(500.0, 1100.0))
+            .build_ui_state(
+                |ui, st: &mut State| {
+                    st.drain_actions();
+                    super::setup_pages::page(ui, st, "", crate::state::SetupPage::Post);
+                },
+                page_state,
+            );
+        ph.run();
+        assert!(
+            ph.query_by_label("End in").is_some(),
+            "Setup -> Post page must offer End in for {supported:?}"
+        );
+    }
+
+    for unsupported in [
+        PostRef::Named("Haas".into()),
+        PostRef::Named("Makera Carvera".into()),
+        PostRef::Named("Heidenhain".into()),
+        PostRef::Named("Fanuc Lathe".into()),
+    ] {
+        let h = open_dialog(unsupported.clone(), EndUnits::Leave);
+        assert!(
+            h.query_by_role_and_label(Role::ComboBox, "End units").is_none(),
+            "Post dialog must not offer End units for {unsupported:?}"
+        );
+
+        let mut page_state = State::new();
+        page_state.history.execute(
+            &page_state.world,
+            camcraft_app::commands::SelectPost::new(&page_state.world, unsupported.clone())
+                .expect("select post"),
+        );
+        let mut ph = Harness::builder()
+            .with_size(Vec2::new(500.0, 1100.0))
+            .build_ui_state(
+                |ui, st: &mut State| {
+                    st.drain_actions();
+                    super::setup_pages::page(ui, st, "", crate::state::SetupPage::Post);
+                },
+                page_state,
+            );
+        ph.run();
+        assert!(
+            ph.query_by_label("End in").is_none(),
+            "Setup -> Post page must not offer End in for {unsupported:?}"
+        );
+    }
+
+    // Carried-over end_units on an unsupported post offers a one-click clear, not Inch/mm choices.
+    let mut carried = open_dialog(PostRef::Named("Fanuc Lathe".into()), EndUnits::Inch);
+    assert!(carried.query_by_label("Clear to Leave modal").is_some());
+    carried.get_by_label("Clear to Leave modal").click();
+    carried.run_steps(2);
+    assert_eq!(
+        carried.state().post_dialog.as_ref().expect("dialog").options.end_units,
+        EndUnits::Leave
+    );
+}

@@ -71,7 +71,7 @@ fn choose(world: &World, h: &mut History, b: BetweenSetups) {
 }
 
 fn cps(name: &str) -> &'static str {
-    posting::BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, t)| *t).expect("built-in post")
+    posting::builtin_post_text(name).expect("built-in post")
 }
 
 fn tmp(tag: &str) -> std::path::PathBuf {

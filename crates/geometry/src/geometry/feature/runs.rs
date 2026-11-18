@@ -22,7 +22,7 @@ pub const RUN_LENGTH_RATIO: f64 = 2.0;
 
 const SENTINEL: Pos = (i64::MIN, i64::MIN, i64::MIN);
 
-pub(super) fn lattice_of(features: &Features) -> Vec<Pos> {
+fn lattice_of(features: &Features) -> Vec<Pos> {
     features.verts.iter().map(|p| weld_pos(p).unwrap_or(SENTINEL)).collect()
 }
 
@@ -59,7 +59,7 @@ fn walk(features: &Features, edges: &[u32]) -> Option<Vec<u32>> {
     vs.iter().all(|&v| (v as usize) < n).then_some(vs)
 }
 
-pub(super) fn run_with(features: &Features, lattice: &[Pos], edges: &[u32]) -> Option<Chain> {
+fn run_with(features: &Features, lattice: &[Pos], edges: &[u32]) -> Option<Chain> {
     let vs = walk(features, edges)?;
     let closed = vs.first() == vs.last() && edges.len() >= 3;
     let ring = if closed { &vs[..vs.len() - 1] } else { &vs[..] };
@@ -91,7 +91,7 @@ fn parts(a: f64, b: f64) -> bool {
 }
 
 /// Split one tangent chain into its runs (see the module law).
-pub(super) fn split_into(features: &Features, lattice: &[Pos], c: &Chain, out: &mut Vec<Chain>) {
+fn split_into(features: &Features, lattice: &[Pos], c: &Chain, out: &mut Vec<Chain>) {
     let n = c.edges.len();
     let whole = |out: &mut Vec<Chain>| out.push(c.clone());
     let Some(vs) = walk(features, &c.edges) else {

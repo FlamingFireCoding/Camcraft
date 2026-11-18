@@ -24,6 +24,10 @@ impl Shell {
         let now = std::time::Instant::now;
         let followup_redraw = std::mem::take(&mut self.followup_redraw);
         self.frame_watch.begin(now());
+        // #2262: the frame-rate rule logs on a level change only.
+        if let Some(line) = self.state.frame_rate.frame(now()) {
+            diag_warn!("{line}");
+        }
         // Commands the panels queued last frame land before the scene is
         // collected, so this frame draws what the user's click did.
         self.state.drain_actions();
@@ -37,7 +41,7 @@ impl Shell {
         // #866: a modal file dialog's open time is the user's, not ours.
         self.frame_watch.excuse(crate::file_dialog::take_waited(), now());
         self.frame_watch.mark("commands", now());
-        let (scene, digest) = world::collect_shared(&self.state);
+        let scene = world::collect(&self.state);
 
         let Self {
             window,
@@ -87,7 +91,7 @@ impl Shell {
             return;
         };
 
-        view_pass::sync_scene(view, device, queue, &scene, digest, scene_digest);
+        view_pass::sync_scene(view, device, queue, &scene, scene_digest);
 
         let scale = window.scale_factor().clamp(0.1, 8.0);
         let raw_input = winit_state.take_egui_input(window);
@@ -212,7 +216,7 @@ impl Shell {
         queue.present(st);
         frame_watch.mark("submit+present", now());
         if let Some(line) = frame_watch.end(now()) {
-            eprintln!("{line}");
+            diag_warn!("{line}");
         }
 
         if state.request_quit {
