@@ -654,6 +654,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             rest,
             ..
         } => {
+            if *strategy == PocketStrategy::Adaptive {
+                return Err(GenError::Invalid(super::POCKET_ADAPTIVE_RETIRED.into()));
+            }
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -3401,6 +3404,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 w
             });
+            // #2496: a hole wider than its drill is drilled undersize - named,
+            // never binding (a pilot drill is a valid plan).
+            super::drill_size::undersize_into(&mut warns, &path, &tool, &params);
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.

@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, History, ImportModel,
-    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -381,7 +381,7 @@ pub enum CommandKind {
         src: SrcRef,
         params: OpParams,
     },
-    PasteOperation { name: String, operation: OperationDef },
+    PasteOperation { name: String, operation: OperationDef, needs_review: Vec<String> },
     /// The properties page's parameter draft.
     EditOperationParams {
         name: String,
@@ -392,7 +392,8 @@ pub enum CommandKind {
     DetectedHoles {
         name: String,
         params: OpParams,
-        skipped: Vec<String>,
+        /// The skipped and the undersize holes' sentences (#1556, #2496).
+        notes: Vec<String>,
     },
     /// The same draft with its Boundary group (M11.5): one undo unit.
     EditOperationBoundary {
@@ -449,6 +450,7 @@ pub enum CommandKind {
     DeleteOperation(String),
     RenameOperation { name: String, label: String },
     ReorderOperation { name: String, target: String, after: bool },
+    MarkOperationReviewed(String),
     /// Throw away the operation's generated path and keep the operation
     /// (undoable: the cache comes back byte for byte).
     ClearToolpath(String),
@@ -1032,14 +1034,6 @@ pub struct GeoChip {
     pub missing: bool,
 }
 
-/// A feature id as the chips show it: the 16 hex digits, shortened to
-/// head and tail with an ellipsis. Long enough to tell two picks of one
-/// model apart at a glance, short enough for a chip row to stay one row.
-fn short_id(id: u64) -> String {
-    let h = format!("{id:016x}");
-    format!("{}…{}", &h[..4], &h[14..])
-}
-
 /// XY vertex set of a ring, quantized and sorted: the identity a patch
 /// chip dedupes coincident rims by (top and bottom rims of a vertical
 /// wall share it; a cone's differ, as they must). Display-only helper -
@@ -1569,6 +1563,7 @@ impl PanelsOpen {
 /// toolpaths are intentionally absent: Paste creates a fresh operation.
 #[derive(Clone)]
 pub struct OperationClipboard {
+    pub needs_review: Vec<String>,
     pub label: String,
     pub operation: OperationDef,
 }
@@ -2595,14 +2590,14 @@ impl State {
         // (#312), so a click and an agent store the same holes.
         match operation::detect_holes(&self.world, name, current, op.setup.as_deref(), &op.src) {
             Err(why) => self.refuse(ErrorScope::Operation, why),
-            Ok(operation::DetectedHoles { params, skipped }) => {
+            Ok(operation::DetectedHoles { params, skipped, undersize }) => {
                 if draft {
                     self.op_ui.params = params.clone();
                 }
                 self.pending.push_back(CommandKind::DetectedHoles {
                     name: name.to_string(),
                     params,
-                    skipped,
+                    notes: skipped.into_iter().chain(undersize).collect(),
                 });
             }
         }
@@ -2650,6 +2645,7 @@ impl State {
             .iter()
             .enumerate()
             .map(|(gi, g)| {
+                let pick_name = camcraft_app::pick::geo_label(&self.world, g);
                 let (mut label, missing) = match g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
@@ -2671,8 +2667,7 @@ impl State {
                                     ('y', f.offset)
                                 };
                                 let mut label = format!(
-                                    "Face {} · {axis}={} · {} {}",
-                                    g.entity,
+                                    "{pick_name} · {axis}={} · {} {}",
                                     units::len(v, unit, 2),
                                     units::area(f.area, unit),
                                     unit.area_suffix()
@@ -2682,10 +2677,7 @@ impl State {
                                 }
                                 (label, false)
                             }
-                            None => (
-                                format!("Face {} · {} · missing", g.entity, short_id(id)),
-                                true,
-                            ),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Chain(id) => {
@@ -2722,8 +2714,7 @@ impl State {
                                         }
                                     }
                                     format!(
-                                        "Chain {} · closed · {} {} · {} × {}",
-                                        g.entity,
+                                        "{pick_name} · closed · {} {} · {} × {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         units::len(hi[0] - lo[0], unit, 1),
@@ -2733,8 +2724,7 @@ impl State {
                                     let i = run_seq.entry(g.entity.clone()).or_default();
                                     *i += 1;
                                     format!(
-                                        "Chain {} · open · {} {} · {} of {}",
-                                        g.entity,
+                                        "{pick_name} · open · {} {} · {} of {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         i,
@@ -2743,11 +2733,7 @@ impl State {
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label =
-                                    format!("Chain {} · {} · missing", g.entity, short_id(id));
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Patch(id) => {
@@ -2816,32 +2802,23 @@ impl State {
                                             ),
                                         };
                                         format!(
-                                            "Welded face {} · {shape} · {} {} · {strips} strips",
-                                            g.entity,
+                                            "{pick_name} · {shape} · {} {} · {strips} strips",
                                             units::area(shoelace(rim), unit),
                                             unit.area_suffix()
                                         )
                                     }
-                                    None => format!("Welded face {} · open band", g.entity),
+                                    None => format!("{pick_name} · open band"),
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label = format!(
-                                    "Welded face {} · {} · missing",
-                                    g.entity,
-                                    short_id(id)
-                                );
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Vertex(id) => {
                         match crate::vertex_pick::vertex_world(self, &g.entity, id) {
                             Some(p) => (
                                 format!(
-                                    "Vertex {} · ({}, {}, {}) {}",
-                                    g.entity,
+                                    "{pick_name} · ({}, {}, {}) {}",
                                     units::len(p[0], unit, 2),
                                     units::len(p[1], unit, 2),
                                     units::len(p[2], unit, 2),
@@ -2849,7 +2826,7 @@ impl State {
                                 ),
                                 false,
                             ),
-                            None => (format!("Vertex {} · {} · missing", g.entity, short_id(id)), true),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                 };
@@ -2938,7 +2915,10 @@ impl State {
             return;
         };
         let label = model::operation_label(&self.world, name, &entity);
-        self.operation_clipboard = Some(OperationClipboard { label: label.clone(), operation });
+        self.operation_clipboard = Some(OperationClipboard {
+            label: label.clone(), operation,
+            needs_review: model::operation_meta_of(&self.world, &entity).needs_review,
+        });
         self.status = format!("copied operation {label}");
     }
 
@@ -2964,7 +2944,7 @@ impl State {
             };
             suffix = next;
         };
-        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation });
+        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation, needs_review: clip.needs_review });
     }
 
     /// Names of the tool entities, in document order.
@@ -3574,8 +3554,8 @@ impl State {
                     );
                 }
             },
-            CommandKind::PasteOperation { name, operation } => {
-                match PasteOperation::new(&self.world, &name, operation) {
+            CommandKind::PasteOperation { name, operation, needs_review } => {
+                match PasteOperation::new(&self.world, &name, operation, needs_review) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         History::execute_ephemeral(&self.world, SelectEntity::new(&self.world, Some(name.as_str())));
@@ -3602,15 +3582,15 @@ impl State {
                     }
                 }
             }
-            CommandKind::DetectedHoles { name, params, skipped } => {
+            CommandKind::DetectedHoles { name, params, notes } => {
                 match EditOperationParams::new(&self.world, &name, params) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = if skipped.is_empty() {
+                        self.status = if notes.is_empty() {
                             format!("parameters updated for {name}")
                         } else {
-                            format!("holes detected for {name}; {}", skipped.join("; "))
+                            format!("holes detected for {name}; {}", notes.join("; "))
                         };
                     }
                     Err(err) => {
@@ -3744,6 +3724,14 @@ impl State {
                     self.status = format!("operation {name} moved");
                 }
                 Err(err) => self.refuse(ErrorScope::Operation, format!("reorder failed: {err}")),
+            },
+            CommandKind::MarkOperationReviewed(name) => match MarkOperationReviewed::new(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("marked {name} reviewed");
+                }
+                Err(err) => self.refuse(ErrorScope::Operation, format!("mark reviewed failed: {err}")),
             },
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes

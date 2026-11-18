@@ -59,7 +59,7 @@ UI_STRINGS = {
     "Shank diameter": UI + "tool_settings.rs",
     "Spindle rpm": UI + "tool_settings.rs",
     "Add tool": UI + "tool_settings.rs",
-    "Tool number (0 = list position)": UI + "tool_settings.rs",
+    "Tool number (0 = next free)": UI + "tool_settings.rs",
     "Slot": "crates/app/src/operation/kinds.rs",
     "Milling 2D": "crates/app/src/operation/kinds.rs",
     "Tool": UI + "op_page.rs",
@@ -178,8 +178,9 @@ class FirstFourAxisPart(unittest.TestCase):
         machine = json.loads(MACHINE.read_text())
         name = machine["general"]["model"]
         self.assertIn(f"`{name}`", text)
-        self.assertIn(f'"{name}"', (ROOT / "crates/app/src/posting.rs").read_text())
-        self.assertIn('"Tormach PathPilot"', (ROOT / "crates/app/src/posting.rs").read_text())
+        self.assertIn(f'("{name}", AssetFile("{MACHINE.name}"))',
+                      (ROOT / "crates/app/src/posting_files.rs").read_text())
+        self.assertIn('"Tormach PathPilot"', (ROOT / "crates/app/src/posting_files.rs").read_text())
         self.assertIn("`Tormach PathPilot`", text)
         self.assertEqual(project()["machine"]["machine"]["model"], name)
         self.assertEqual(project()["post"], {"named": "Tormach PathPilot"})
