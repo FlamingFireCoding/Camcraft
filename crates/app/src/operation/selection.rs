@@ -178,7 +178,13 @@ pub(super) fn selection_geometry_impl(
     params: &OpParams,
     notes: Option<&mut Vec<String>>,
 ) -> Result<SelectionGeometry, GenError> {
-    selection_geometry_in(world, setup, items, params, notes, None)
+    let (loops, mut chains, auto) = selection_geometry_in(world, setup, items, params, notes, None)?;
+    if matches!(params, OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_))
+        && !chains.is_empty()
+    {
+        chains = boundary_chains::join_open_runs(chains);
+    }
+    Ok((loops, chains, auto))
 }
 
 /// A world point in the plane the walk projects to: world XY, or the

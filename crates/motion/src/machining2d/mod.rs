@@ -121,7 +121,7 @@ pub use circular::{circular, CircularParams};
 pub use contour::{contour, contour_on_bodies, contour_on_part, contour_on_picked, ContourParams, Lead, Side};
 pub use contour_auto::{auto_side, AutoSide, AUTO_BAND, AUTO_PROBE_DZ};
 pub use contour_chain::contour_along_chain;
-pub use contour_run_side::{contour_open_run, SectionAt};
+pub use contour_run_side::{contour_open_run, offset_run_side, SectionAt};
 pub use contour_run_stock::contour_open_run_sided;
 pub use contour_link::DEFAULT_LEVEL_RAMP_ANGLE;
 pub use crate::links::{Link, Links};
