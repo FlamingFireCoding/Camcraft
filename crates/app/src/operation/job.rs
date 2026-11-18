@@ -44,7 +44,8 @@ pub struct GenJob {
     pub(super) material: Material,
     pub(super) frame: Option<crate::cl::TiltedFrame>,
     /// Resolved heights, UNshifted - the frame's `oz` fold is pure
-    /// arithmetic and belongs to `run_job`.
+    /// arithmetic and belongs to `run_job`. A tilted op's reference
+    /// heights are read along its tool axis (`fold_height`, #2389).
     pub(super) hs: ResolvedHeights,
     pub(super) stock_facets: Option<Vec<Triangle>>,
     pub(super) stock_aabb: Option<(Point3, Point3)>,
@@ -152,6 +153,8 @@ pub struct GenJob {
     /// it can be. The drill-reach refusals run on worker threads with
     /// no World to read, so they spell their depths through this lens.
     pub(super) unit: crate::units::Unit,
+    /// #760: active Z-rotated WCS on an upright milling operation (`None` when square).
+    pub(super) wcs_yaw: Option<super::wcs_yaw::WcsYaw>,
 }
 
 /// The tripwire phrase for a stored precompute whose arm never collected
@@ -184,11 +187,6 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
-    // #1720: a flipped WCS axis is not carried into a path yet - refused
-    // by name, never cut in the unflipped frame.
-    if let Some(why) = crate::setup_wcs_flip::generation_problem(world, op) {
-        return Err(GenError::Invalid(why));
-    }
     // #763: the one machining-frame seam. Built before the first read;
     // the tilt's own refusal keeps its place below (`checked_frame`,
     // after the heights resolve) exactly where the old head raised it -
@@ -213,7 +211,13 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The height seam, refused by name before anything else (as the old
     // head refused it, `resolve_params` being the first fallible read
     // after the material).
-    let hs = opframe.resolve_heights(world, Some(&op.src), &op.params).map_err(GenError::Invalid)?;
+    // #2389: a tilted op reads each reference height along its tool
+    // axis (the fold's coordinate); an untilted or upright op reads the
+    // setup resolve verbatim. A tilt that states no direction reads the
+    // setup resolve here and is refused by `checked_frame` just below.
+    let fold_frame = opframe.checked_frame().ok().flatten();
+    let hs = resolve_params_folded(world, setup, Some(&op.src), &op.params, fold_frame.as_ref())
+        .map_err(GenError::Invalid)?;
 
     // The 3+2 wrap (M5.1 B), read through the seam: the same refusal,
     // the same words, at the same statement - one construction site.
@@ -233,7 +237,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The arm-scoped world reads, precomputed under the same guards
     // that decide which arm runs them; each result surfaces at its
     // arm's own statement in `run_job`.
-    let section_z = section_z_of(world, setup, Some(&op.src), &op.params);
+    let section_z = section_z_of(world, setup, Some(&op.src), &op.params, frame.as_ref());
     let picked_region = match (&op.params, &op.src) {
         // Contour's Selection pair is resolved as raw geometry below
         // (its arm never asks for a region first); every other kind
@@ -397,6 +401,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         (m.model, rot)
     });
 
+    let wcs_yaw = super::wcs_yaw::WcsYaw::from_world(world, setup, machine_kind, &op.params);
     Ok(GenJob {
         op_name: op_name.to_owned(),
         tool,
@@ -448,6 +453,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         sinker_pass,
         sinker_wear,
         unit: crate::units::of(world),
+        wcs_yaw,
     })
 }
 

@@ -11,7 +11,7 @@ use crate::geometry::Point3;
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
 use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
-use super::levels::{Cert, Motion, WalkState, cut_levels, walk_one_level};
+use super::levels::{Cert, Motion, WalkState, cut_levels_under, walk_one_level};
 use super::pocket::{PocketParams, PocketStrategy, plan_passes};
 use super::{GenError, pocket};
 
@@ -45,9 +45,9 @@ pub fn pocket_avoid(
         }
         s => s,
     };
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
-    let mut ws = WalkState::new(p.top_z);
+    let mut ws = WalkState::new(p.links.approach.entry_top(p.top_z));
     let mut prev_center: Option<Region> = None;
     let mut blocked_levels: Vec<f64> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
@@ -92,7 +92,7 @@ pub fn pocket_avoid(
         let (passes, actual, room, joins) = if strategy == PocketStrategy::Adaptive {
             let what = format!("level at Z {z:.2}");
             let (ps, anotes, act, rm, js) =
-                super::pocket_hsm::adaptive_passes(&level_center, p, &what, true)?;
+                super::pocket_hsm::adaptive_passes(&level_center, p, &what, true, None)?;
             notes.extend(anotes);
             (ps, act, rm, js)
         } else {
@@ -138,9 +138,10 @@ pub fn pocket_avoid(
             .with_entry(p.entry, hr)
             .with_arc_radius(p.tool_diameter)
             .with_links(p.links, hr)
-            .with_top(p.top_z)
+            .with_top(p.links.approach.entry_top(p.top_z))
             .with_xy_arc(p.links.approach.arc_xy)
-            .with_microlift(joins);
+            .with_microlift(joins)
+            .with_solid_restart();
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_links = Cert::Region(&level_center);
         walk_one_level(
@@ -173,7 +174,7 @@ pub fn pocket_avoid(
         .with_entry(p.entry, p.helix_radius)
         .with_arc_radius(p.tool_diameter)
         .with_links(p.links, p.helix_radius)
-        .with_top(p.top_z);
+        .with_top(p.links.approach.entry_top(p.top_z));
     ws.finish(&mut b, &end_motion);
     let cur = b.at();
     b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);

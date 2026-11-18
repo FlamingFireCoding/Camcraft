@@ -38,6 +38,8 @@ pub mod explain;
 pub mod g93;
 pub mod invert;
 pub mod js;
+mod js_host;
+pub mod preview;
 pub mod machine;
 mod machine_rotary;
 pub mod nose_tip;
@@ -49,6 +51,8 @@ pub mod rotary_cap;
 pub mod section_mode;
 pub mod work_offset;
 pub mod units;
+pub mod wcs_flip;
+pub mod wcs_rotate;
 
 pub use after_op::AfterOperation;
 pub use coolant::CoolantMode;
@@ -115,6 +119,15 @@ pub struct Dump<'a> {
     /// the engine refuses it by name.
     pub wcs: u32,
     pub origin: [f64; 3],
+    /// #760: Z-axis WCS rotation in degrees (`Some` only when `|rad| > 1e-9`;
+    /// `None` writes nothing so unrotated streams stay byte-identical).
+    pub wcs_yaw: Option<f64>,
+    /// #760: true when this section posts in `Control` mode (`G68` / `ROT`).
+    pub wcs_rotation_control: bool,
+    /// #1649: the WCS axes that run reversed (X, Y, Z). Any flag writes
+    /// `PARAM WcsFlip` with the letters; none writes nothing, so every
+    /// stream of an unflipped setup stays byte-identical.
+    pub wcs_flip: [bool; 3],
     /// Stock bounds in mm: left, right, front, back (XY), plus top Z.
     pub stock: [f64; 4],
     pub stock_top_z: f64,
@@ -215,6 +228,9 @@ impl<'a> Default for Dump<'a> {
             top_z: 0.0,
             wcs: 1,
             origin: [0.0; 3],
+            wcs_yaw: None,
+            wcs_rotation_control: false,
+            wcs_flip: [false; 3],
             stock: [0.0; 4],
             stock_top_z: 0.0,
             stock_turn_radius: None,
@@ -270,6 +286,16 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     out.push(Record::Param { name: "OriginX".into(), value: json!(d.origin[0]) });
     out.push(Record::Param { name: "OriginY".into(), value: json!(d.origin[1]) });
     out.push(Record::Param { name: "OriginZ".into(), value: json!(d.origin[2]) });
+    if let Some(yaw) = d.wcs_yaw.filter(|y| y.is_finite() && y.to_radians().abs() > 1e-9) {
+        out.push(Record::Param { name: "WcsYaw".into(), value: json!(yaw) });
+        out.push(Record::Param {
+            name: "WcsRotationMode".into(),
+            value: json!(if d.wcs_rotation_control { "control" } else { "bake" }),
+        });
+    }
+    if let Some(letters) = wcs_flip::letters(d.wcs_flip) {
+        out.push(Record::Param { name: "WcsFlip".into(), value: json!(letters) });
+    }
     out.push(Record::Param { name: "ClearancePlane".into(), value: json!(d.clearance_z) });
     out.push(Record::Param { name: "RetractPlane".into(), value: json!(d.retract_z) });
     out.push(Record::Param { name: "TopOfStock".into(), value: json!(d.top_z) });
@@ -310,6 +336,12 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     // so the spindle starts the right way; forward (M03) is silent.
     if t.threads.iter().any(|c| c.is_sane(&t.moves) && c.reverse_spindle()) {
         out.push(Record::Param { name: "SpindleDirection".into(), value: json!("reverse") });
+    }
+    // Chip-break dips (issue #419) are posted only by a script that
+    // declares `continuousThreading`: the section says so, and the
+    // engine refuses it by name everywhere else.
+    if t.threads.iter().any(|r| r.chip_break_dips) {
+        out.push(Record::Param { name: "ChipBreakDips".into(), value: json!(1.0) });
     }
     // #891: the CSS ask, only a finite positive one (a script never sees
     // a speed it would have to guess about).

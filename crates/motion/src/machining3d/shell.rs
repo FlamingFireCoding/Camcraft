@@ -102,6 +102,11 @@ pub(super) struct Field {
 }
 
 impl Field {
+    /// Box the model without protected-item roofs.
+    pub(super) fn new(facets: &[Triangle]) -> Result<Self, String> {
+        Self::new_with_avoid(facets, None)
+    }
+
     /// Box the model. A non-finite vertex is a corrupt model, said by
     /// name, exactly as the waterline scan says it.
     pub(super) fn new_with_avoid(facets: &[Triangle], avoid_spec: Option<&AvoidSpec>) -> Result<Self, String> {

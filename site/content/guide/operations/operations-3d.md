@@ -102,6 +102,8 @@ raise Bottom of Part Z or use a longer-reaching tool. This conservative
 depth check does not credit lateral room or material removed earlier,
 so a deep job can refuse even where there appears to be side clearance.
 
+![CamCraft 3D pocket roughing waterline levels clearing stock above a curved dome surface](../../../images/guide/op-3d-pocket-roughing.png)
+
 ## 3D Finish
 
 {{ <icon name="op-finish3d" /> }} ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
@@ -129,6 +131,8 @@ re-enters through the clearance plane.
 
 There is no stepdown: the levels drop by 2 x sqrt(tool radius x
 tolerance), so the cusp under the ball stays within the tolerance.
+
+![CamCraft 3D parallel finishing passes flowing smoothly over a spherical dome with a ball-nose cutter](../../../images/guide/op-3d-finish-parallel.png)
 
 The patterns, in the Pattern list's order:
 

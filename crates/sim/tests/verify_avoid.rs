@@ -2,7 +2,7 @@
 //! flutes, shank, holder, axial faces, and 3D edges.
 //! Provenance: our own geometry checks; no vendor source consulted.
 
-use camcraft_sim::cl::{MoveKind, PathBuilder, Toolpath};
+use camcraft_sim::cl::{ArcMove, ArcPlane, Move, MoveKind, PathBuilder, Toolpath};
 use camcraft_sim::geo2d::Point2;
 use camcraft_sim::geometry::{Point3, Triangle};
 use camcraft_sim::tools::ToolGeom;
@@ -90,4 +90,94 @@ fn detects_zero_clearance_graze_and_link_obstruction() {
         .expect("link crosses pin");
     assert_eq!(idx, 1);
     assert!(h > 25.0, "must clear top z = 25: {h}");
+}
+
+#[test]
+fn detects_protected_edge_contact_between_vertical_arc_samples() {
+    let cutter = Cutter::flat(&ToolGeom {
+        radius: 3.0,
+        nose_radius: 0.0,
+        flute_len: 10.0,
+        shank_radius: 3.0,
+        shank_len: 10.0,
+        holder_radius: 3.0,
+        holder_len: 10.0,
+    });
+    let xz_arc = Move {
+        rotary: None,
+        kind: MoveKind::Feed,
+        from: Point3::new(-10.0, 0.0, 10.0),
+        to: Point3::new(0.0, 0.0, 0.0),
+        feed: Some(500.0),
+        arc: Some(ArcMove::in_plane(Point2::new(0.0, 10.0), false, ArcPlane::Xz)),
+        axis: None,
+    };
+    // Exact review repro: contact occurs at arc fraction 0.984375 (midway between 0.5 mm point samples).
+    let xz_spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "xz edge".into(),
+            tris: vec![],
+            edges: vec![(
+                [-0.24541228522912326, 2.999, 0.5030118130379577],
+                [-0.24541228522912326, 3.009, 0.5030118130379577],
+            )],
+        }],
+        cutter,
+        clearance: 0.0,
+    };
+    let path = Toolpath {
+        moves: vec![xz_arc],
+        cycles: vec![],
+        notes: vec![],
+        comps: vec![],
+        threads: vec![],
+        probes: vec![],
+        breaks: vec![],
+        plasma: None,
+    };
+    let hits = avoid_hits(&path, &xz_spec, AVOID_VERIFY_TOL).expect("verify runs");
+    assert_eq!(hits.len(), 1, "XZ vertical arc must catch contact between samples: {hits:?}");
+    assert!(matches!(hits[0], Warning::AvoidHit { part: FixturePart::Flute, .. }), "{hits:?}");
+
+    // Symmetric YZ arc contact between 0.5 mm samples must also be caught.
+    let yz_arc = Move {
+        rotary: None,
+        kind: MoveKind::Feed,
+        from: Point3::new(0.0, -10.0, 10.0),
+        to: Point3::new(0.0, 0.0, 0.0),
+        feed: Some(500.0),
+        arc: Some(ArcMove::in_plane(Point2::new(0.0, 10.0), true, ArcPlane::Yz)),
+        axis: None,
+    };
+    let yz_spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "yz edge".into(),
+            tris: vec![],
+            edges: vec![(
+                [2.999, -0.24541228522912326, 0.5030118130379577],
+                [3.009, -0.24541228522912326, 0.5030118130379577],
+            )],
+        }],
+        cutter,
+        clearance: 0.0,
+    };
+    let yz_hits = avoid_hits(&Toolpath { moves: vec![yz_arc], ..path.clone() }, &yz_spec, AVOID_VERIFY_TOL)
+        .expect("verify runs");
+    assert_eq!(yz_hits.len(), 1, "YZ vertical arc must catch contact between samples: {yz_hits:?}");
+
+    // An edge clearly outside the cutter radius + AVOID_PAD stays clean.
+    let clear_spec = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "clear edge".into(),
+            tris: vec![],
+            edges: vec![(
+                [-0.24541228522912326, 3.03, 0.5030118130379577],
+                [-0.24541228522912326, 3.04, 0.5030118130379577],
+            )],
+        }],
+        cutter,
+        clearance: 0.0,
+    };
+    let clear = avoid_hits(&path, &clear_spec, AVOID_VERIFY_TOL).expect("verify runs");
+    assert!(clear.is_empty(), "vertical arc clear of protected edge must pass: {clear:?}");
 }

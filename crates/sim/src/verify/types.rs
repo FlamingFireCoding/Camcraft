@@ -329,6 +329,12 @@ pub enum Warning {
     /// The same for a stock-source Deburr (#2313): it breaks the stock's
     /// edge, and the part under that edge is cut. Blocking like `Gouge`.
     StockDeburrGouge { at: usize },
+    /// A hole wider than its drill (#2496): the hole at move `at` is
+    /// modelled `hole_mm` across, and the Drill-kind tool drills it at
+    /// its own `drill_mm`, so the finished hole is undersize. Advisory: a
+    /// pilot drill is a valid plan, so the post is not held, but each such
+    /// hole is named.
+    DrillUndersize { at: usize, hole_mm: f64, drill_mm: f64 },
 }
 
 impl Warning {
@@ -336,7 +342,10 @@ impl Warning {
     /// reading (M13.9), which is a quality note - shown, never binding.
     #[must_use]
     pub fn blocks_post(&self) -> bool {
-        !matches!(self, Warning::Scallop { .. } | Warning::ProbeSearch { .. } | Warning::SinkerFinishOrder { .. })
+        !matches!(self, Warning::Scallop { .. }
+                | Warning::ProbeSearch { .. }
+                | Warning::SinkerFinishOrder { .. }
+                | Warning::DrillUndersize { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -437,6 +446,10 @@ impl core::fmt::Display for Warning {
                     FixturePart::Rapid => "rapid",
                     FixturePart::Flute => "flute",
                 }
+            ),
+            Warning::DrillUndersize { at, hole_mm, drill_mm } => write!(
+                f,
+                "undersize hole at move {at}: the hole is {hole_mm:.3} mm, and the {drill_mm:.3} mm drill makes it {drill_mm:.3} mm - use a {hole_mm:.3} mm drill, or follow with a Bore or a reamer (the post is not held: a pilot drill is a valid plan)"
             ),
         }
     }

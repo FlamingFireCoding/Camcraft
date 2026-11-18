@@ -6,10 +6,11 @@
 //! monotone chain 2D convex hull, and circumscribed Minkowski disk dilation
 //! over `swept::Body` and `swept::pen_3d`; no vendor source consulted.
 
+use super::arc_bulge::Bulge;
 use super::avoid_poly::{add_poly_for_atoms, union_all, xy_seg_poly_dist};
 use super::midpose;
 use super::probe::{Atom, Cutter, Frame};
-use super::solid::{ARC_SAG, pieces};
+use super::solid::ARC_SAG;
 use super::swept::{self, Body};
 use super::types::{FixturePart, Warning};
 use crate::cl::{Toolpath, normalize_axis};
@@ -24,9 +25,6 @@ pub const AVOID_PAD: f64 = 0.02;
 /// `clearance + grow - AVOID_VERIFY_TOL` (Wait: `pen_3d >= -AVOID_VERIFY_TOL`)
 /// convicts the move.
 pub const AVOID_VERIFY_TOL: f64 = 1e-4;
-
-/// Sample step along non-XY vertical arcs, matching `solid.rs`.
-const ARC_STEP_MM: f64 = 0.5;
 
 /// One protected feature item resolved in the active frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -155,18 +153,24 @@ impl AvoidSpec {
                 .and_then(|&(f, t)| midpose::change(f, t))
                 .map(|(a, b)| midpose::intervals(m, a, b, reach, ARC_SAG))
                 .unwrap_or_default();
-            let segs = pieces(m, ARC_STEP_MM);
-            let grow_mid = if m.arc.is_some() { ARC_SAG } else { 0.0 };
+            // Sweep continuous 3D chords for every move (including XZ/YZ arcs) and
+            // grow clearance by the exact arc-to-chord deviation bound so contacts
+            // between samples cannot slip past (#2149).
+            let segs = m.segments3(ARC_SAG);
+            let grow = Bulge::of(m, segs.len()).deviation();
+            if !grow.is_finite() {
+                return Err(format!("move {mi} has non-finite arc geometry"));
+            }
             let mut hit: Option<(usize, FixturePart, f64)> = None;
             for (ii, item) in self.items.iter().enumerate() {
-                for (a, b, grow) in &segs {
+                for (a, b) in &segs {
                     let fr = Frame::new(*a, axis);
-                    check_frame_item(&fr, fr.local(*b), item, &atoms, req + *grow, tol, fl, sl, &mut pts, ii + 1, &mut hit)?;
+                    check_frame_item(&fr, fr.local(*b), item, &atoms, req + grow, tol, fl, sl, &mut pts, ii + 1, &mut hit)?;
                 }
                 for iv in &mid {
                     let ax = normalize_axis(iv.am).filter(|v| *v != [0.0, 0.0, 1.0]);
                     let fr = Frame::new(iv.p0, ax);
-                    check_frame_item(&fr, fr.local(iv.p1), item, &atoms, req + grow_mid, tol, fl, sl, &mut pts, ii + 1, &mut hit)?;
+                    check_frame_item(&fr, fr.local(iv.p1), item, &atoms, req + grow, tol, fl, sl, &mut pts, ii + 1, &mut hit)?;
                 }
             }
             if let Some((item_idx, part, short_mm)) = hit {

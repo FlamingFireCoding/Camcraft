@@ -423,7 +423,7 @@ fn pocket3d_do_not_touch_keeps_clear_raises_links_and_blocks_impossible_cut() {
 }
 
 #[test]
-fn do_not_touch_post_gate_blocks_violations_and_project_v68_persists() {
+fn do_not_touch_post_gate_blocks_violations_and_project_v70_persists() {
     let (dir, mut c, plate_top, tower_top_face, tower_edge, _vert) = setup_plate_and_tower("proj_gate");
     let op_name = c.ok("add_operation", json!({
         "kind": "2D Offset",
@@ -458,7 +458,7 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v68_persists() {
     let raw = std::fs::read_to_string(&proj_path).expect("read saved project");
     let mut parsed: Value = serde_json::from_str(&raw).expect("valid json");
     assert_eq!(parsed["version"], json!(PROJECT_VERSION));
-    const { assert!(PROJECT_VERSION >= 68, "v67 and earlier readers must refuse Do not touch protection"); }
+    const { assert!(PROJECT_VERSION >= 70, "v69 and earlier readers must refuse Do not touch protection"); }
     assert!(raw.contains("do_not_touch"));
 
     let mut c2 = Client::new();

@@ -686,7 +686,9 @@ function onCycle() {
   else if (p.CycleType === "PECK") g = "G73";
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = dwell > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";   // #1445: feed in, feed out at F, no dwell
   else if (p.CycleType === "TAP") {
     if (!tapRefused) {
@@ -708,9 +710,18 @@ function onCycle() {
     msg("canned cycle " + g + " has no feed rate - refused: without F the control drills at whatever feed was last modal");
     return;
   }
+  // #2348: grblHAL's code list and the LinuxCNC reference it follows
+  // give G83 no P word, so a deep-peck dwell is refused, not dropped.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1682: refused - not written)
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #2360 (as #2350 for Haas): P is sticky in the dwell cycles, so a
+  // changed dwell reopens the cycle and each hole posts its own P.
+  if (g === "G82" || g === "G86" || g === "G89") sig += "|" + secs(dwell);
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {
@@ -722,7 +733,9 @@ function onCycle() {
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
       words.push(w("Q", p.Q));
     }
-    if (dwell > 0 && (g === "G82" || g === "G86" || g === "G89")) words.push("P" + secs(dwell));
+    // #2362: LinuxCNC / grblHAL requires a non-negative P on the first
+    // G86 block of a cycle, even when the dwell is 0 (P0).
+    if (g === "G86" || (dwell > 0 && (g === "G82" || g === "G89"))) words.push("P" + secs(dwell));
     words.push(fw(p.FeedRate));
     block(words);
     cycleSig = sig;

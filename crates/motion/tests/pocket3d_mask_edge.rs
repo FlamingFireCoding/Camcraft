@@ -17,7 +17,7 @@ use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::machining2d::PocketStrategy;
-use camcraft_motion::machining3d::{open_sides, pocket3d_offset_prev, pocket3d_prev, Entry3D, Pocket3DParams};
+use camcraft_motion::machining3d::{open_sides, pocket3d_offset_prev, pocket3d_prev, stock_band, Entry3D, Pocket3DParams};
 use camcraft_motion::stock_sim::{Columns, Dexel};
 
 /// The cutter radius.
@@ -58,7 +58,7 @@ fn notched_part() -> Vec<Triangle> {
 /// grown past its open sides (`open_sides`, the #1749 law).
 fn footprint(f: &[Triangle]) -> Region {
     let silhouette = camcraft_motion::geometry::slice::project(f, 64).expect("silhouette");
-    open_sides(&silhouette, R, &Region::empty(), None).expect("open sides")
+    open_sides(&silhouette, R, &Region::empty(), None, stock_band(R, false)).expect("open sides")
 }
 
 /// What the op ahead left: an outside profile cleared every column
@@ -255,7 +255,7 @@ fn filleted_notch_after_outside_profile_clears_open_edge_corner_for_jaws() {
         .expect("stock loop"),
     ])
     .expect("stock region");
-    let region = open_sides(&silhouette, r, &Region::empty(), Some(&stock_rect)).expect("open sides");
+    let region = open_sides(&silhouette, r, &Region::empty(), Some(&stock_rect), stock_band(r, false)).expect("open sides");
 
     // Outside-profile mask: cleared outside silhouette + 0.254 mm down to Z 3.81
     // at auto_cell(3.175, 35.08, 35.08) = 0.396875 mm.
@@ -342,4 +342,152 @@ fn a_redundant_duplicate_with_stock_to_leave_refuses() {
     let pass = pocket3d_prev(&f, &region, &finish, Some(&cols))
         .expect("smaller stock_to_leave pass must still cut the roughing collar");
     assert!(pass.moves.iter().any(|m| m.kind == MoveKind::Feed), "finish cuts remaining collar");
+}
+
+fn floor_fillet_part() -> (Vec<Triangle>, Region) {
+    let mut tris = box_facets([-15.0, -15.0, 4.826], [15.0, 15.0, 19.826]);
+    let mut prof: Vec<(f64, f64)> = vec![(-15.0, 19.826), (-15.0, 34.826), (0.0, 34.826), (0.0, 22.951)];
+    for k in 1..=8 {
+        let a = std::f64::consts::PI + (std::f64::consts::FRAC_PI_2 * k as f64) / 8.0;
+        prof.push((3.125 + 3.125 * a.cos(), 22.951 + 3.125 * a.sin()));
+    }
+    let n = prof.len();
+    for k in 0..n {
+        let (x0, z0) = prof[k];
+        let (x1, z1) = prof[(k + 1) % n];
+        tris.push(Triangle::new(p(-7.5, -15.0, 25.0), p(x1, -15.0, z1), p(x0, -15.0, z0)));
+        tris.push(Triangle::new(p(-7.5, 15.0, 25.0), p(x0, 15.0, z0), p(x1, 15.0, z1)));
+        tris.push(Triangle::new(p(x0, -15.0, z0), p(x1, -15.0, z1), p(x1, 15.0, z1)));
+        tris.push(Triangle::new(p(x0, -15.0, z0), p(x1, 15.0, z1), p(x0, 15.0, z0)));
+    }
+    let sil = camcraft_motion::geometry::slice::project(&tris, 64).expect("floor fillet sil");
+    let reg = open_sides(&sil, 3.175, &Region::empty(), None, stock_band(3.175, false)).expect("floor fillet open sides");
+    (tris, reg)
+}
+
+#[test]
+fn adaptive_small_stepdown_microlift_and_helix_stay_crossing_free() {
+    use camcraft_motion::links::Links;
+    use camcraft_motion::machining2d::{PocketParams, pocket};
+    use camcraft_motion::verify::crossed_pairs;
+    use std::time::Instant;
+
+    let inner = Region::new(vec![
+        Loop::new(vec![
+            Point2::new(-15.0, -8.0),
+            Point2::new(15.0, -8.0),
+            Point2::new(15.0, 8.0),
+            Point2::new(-15.0, 8.0),
+        ])
+        .expect("rect loop"),
+    ])
+    .expect("rect");
+    let reg = inner.offset(8.0).expect("rounded stadium");
+    let p2 = PocketParams {
+        blend_radius: None,
+        tool_diameter: 10.0,
+        stepover: 3.0,
+        stock_to_leave: 0.0,
+        clearance_z: 10.0,
+        top_z: -0.30,
+        bottom_z: -0.60,
+        stepdown: 0.15,
+        feed: 500.0,
+        plunge_feed: 150.0,
+        climb: true,
+        strategy: PocketStrategy::Adaptive,
+        retract_z: None,
+        entry: Entry3D::Helix,
+        helix_radius: 1.5,
+        optimal_load: 0.45,
+        blend_turns: false,
+        links: Links::ROUGH3D,
+    };
+    let t0 = Instant::now();
+    let path_ulp = pocket(&reg, &p2).expect("ulp path");
+    let c_ulp = crossed_pairs(&path_ulp, 0.01);
+    eprintln!("p_ulp ({:.2}s): moves={} notes={:?} crossings={}", t0.elapsed().as_secs_f64(), path_ulp.moves.len(), path_ulp.notes, c_ulp.len());
+    assert!(c_ulp.is_empty(), "adaptive 0.15 ULP crossings: {c_ulp:?}");
+}
+
+#[test]
+fn offset_shell_fillet_helix_and_floor_never_cross() {
+    use camcraft_motion::links::Links;
+    use camcraft_motion::verify::{Mode, ToolGeom, VerifyContext, Warning, verify};
+    use std::time::Instant;
+
+    let (tris, reg) = floor_fillet_part();
+    let mut dex = Dexel::block(-25.0, -25.0, 25.0, 25.0, 35.08, 0.5).expect("dex");
+    for ix in 0..100 {
+        let x = -24.75 + (ix as f64) * 0.5;
+        for iy in 0..100 {
+            let y = -24.75 + (iy as f64) * 0.5;
+            if x.abs() > 16.0 || y.abs() > 16.0 {
+                dex.subtract(
+                    &camcraft_motion::cl::Move {
+                        kind: MoveKind::Feed,
+                        from: Point3::new(x, y, 3.81),
+                        to: Point3::new(x, y, 3.81),
+                        feed: Some(500.0),
+                        arc: None,
+                        axis: None,
+                        rotary: None,
+                    },
+                    0.5,
+                    0.01,
+                );
+            }
+        }
+    }
+    let cols = Columns::of_grid(&dex);
+    let p3 = Pocket3DParams {
+        links: Links::ROUGH3D,
+        tool_diameter: 6.35,
+        stepover: 2.032,
+        stock_to_leave: 0.0,
+        clearance_z: 60.0,
+        top_z: 20.70,
+        bottom_z: 19.826,
+        stepdown: 0.15,
+        feed: 762.0,
+        plunge_feed: 457.2,
+        climb: true,
+        strategy: PocketStrategy::OffsetRings,
+        retract_z: None,
+        entry: Entry3D::Helix,
+        helix_radius: 1.524,
+        optimal_load: 0.12,
+    };
+    let t0 = Instant::now();
+    let path = pocket3d_offset_prev(&tris, &reg, &p3, Some(&cols)).expect("ff shell");
+    let tool = ToolGeom {
+        radius: 3.175,
+        nose_radius: 0.0,
+        flute_len: 14.478,
+        shank_radius: 3.175,
+        shank_len: 20.0,
+        holder_radius: 12.0,
+        holder_len: 30.0,
+    };
+    let cx = VerifyContext {
+        region: &reg,
+        stock: None,
+        model: Some(&tris),
+        tool: &tool,
+        cutter: None,
+        mode: Mode::Area,
+        stock_top_z: 35.08,
+        clearance_z: 60.0,
+        stock_to_leave: 0.0,
+        gouge_tol: 0.01,
+        z_tol: 1e-6,
+        finish_tol: None,
+        fixtures: &[],
+        spindle: None,
+        ..Default::default()
+    };
+    let warns = verify(&path, &cx);
+    let crossings: Vec<_> = warns.iter().filter(|w| matches!(w, Warning::Crossing { .. })).collect();
+    eprintln!("ff_shell ({:.2}s): total_warns={} crossings={}", t0.elapsed().as_secs_f64(), warns.len(), crossings.len());
+    assert!(crossings.is_empty(), "offset shell crossings: {crossings:?}");
 }

@@ -200,4 +200,24 @@ fn pocket3d_avoid_shell_rest_and_adaptive_stay_clear() {
         let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify");
         assert!(hits.is_empty(), "3D {strategy:?} rest={rest} shell={shell} hit Do not touch: {hits:?}");
     }
+
+    // Merged #2004 cut_levels_under: without stock above top_z, top_z (0.0) is skipped;
+    // with stock_top above top_z, top_z is included as a cut plane on both plain and rest paths.
+    for rest in [false, true] {
+        let mut p_no_air = base_3d(PocketStrategy::OffsetRings, Entry3D::Plunge, Links::ROUGH3D);
+        p_no_air.links.approach.stock_top = None;
+        let path_no_air = pocket3d_avoid(&facets, &reg, &p_no_air, rest, false, None, &spec).expect("no-air");
+        assert!(
+            path_no_air.moves.iter().all(|m| m.kind != camcraft_motion::cl::MoveKind::Feed || m.to.z < -1e-6),
+            "rest={rest}: top_z air plane must be skipped when stock_top is None"
+        );
+        let mut p_over = p_no_air;
+        p_over.links.approach.stock_top = Some(2.0);
+        let path_over = pocket3d_avoid(&facets, &reg, &p_over, rest, false, None, &spec).expect("stock-over");
+        assert!(
+            path_over.moves.iter().any(|m| m.kind == camcraft_motion::cl::MoveKind::Feed && m.to.z.abs() < 1e-6),
+            "rest={rest}: top_z must be cut when stock stands above top_z"
+        );
+        assert!(avoid_hits(&path_over, &spec, AVOID_VERIFY_TOL).expect("verify").is_empty());
+    }
 }

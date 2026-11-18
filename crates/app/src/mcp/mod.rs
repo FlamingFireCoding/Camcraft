@@ -35,6 +35,7 @@ mod fixture_profile_tools;
 mod fixture_tools;
 mod fixture_turn_tools;
 mod holders;
+mod holder_dxf_tools;
 mod job;
 mod listen;
 mod live;
@@ -80,6 +81,7 @@ pub use live::{
     LiveGate, LiveOptions,
 };
 pub use selection::{PickMode, SelectionContext};
+pub(crate) use tools::call;
 
 use crate::script::Env;
 

@@ -12,10 +12,10 @@ fn cmd_err(e: CommandError) -> String {
     e.to_string()
 }
 
-pub(super) fn view(dnt: &DoNotTouch) -> Value {
+pub(super) fn view(w: &flecs_ecs::prelude::World, dnt: &DoNotTouch) -> Value {
     json!({
         "clearance": dnt.clearance,
-        "picks": pick::picks_view(&dnt.picks),
+        "picks": pick::picks_view(w, &dnt.picks),
     })
 }
 
@@ -47,7 +47,7 @@ pub(super) fn set_operation_do_not_touch(env: &mut Env, a: &Map<String, Value>) 
         "operation": key,
         "status": "stale",
         "clearance": dnt.clearance,
-        "picks": pick::picks_view(&dnt.picks),
+        "picks": pick::picks_view(&env.world, &dnt.picks),
     }))
 }
 
@@ -63,7 +63,7 @@ pub(super) fn get_operation_do_not_touch(env: &mut Env, a: &Map<String, Value>) 
     Ok(json!({
         "operation": key,
         "clearance": op.area.do_not_touch.clearance,
-        "picks": pick::picks_view(&op.area.do_not_touch.picks),
+        "picks": pick::picks_view(&env.world, &op.area.do_not_touch.picks),
     }))
 }
 

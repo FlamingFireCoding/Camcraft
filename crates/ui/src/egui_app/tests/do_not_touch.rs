@@ -169,3 +169,176 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
     assert!(h.query_by_label_contains("2D Offset and 3D Pocket").is_some());
     assert!(h.query_by_label("Pick protected").is_none());
 }
+
+#[test]
+fn avoid_marks_cache_reuses_still_frames_and_follows_input_changes() {
+    let _g = snapshot_guard();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1400.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    h.run_steps(2);
+    let (_face_top, face_other, edge) = {
+        let st = &mut h.state_mut().state;
+        seed_part_and_offset(st, OpType::Offset2D)
+    };
+    // Also import fig8.step so the cache test exercises a welded Patch pick.
+    let fig8_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/fig8.step");
+    {
+        let st = &mut h.state_mut().state;
+        st.pending.push_back(CommandKind::ImportFile(fig8_path));
+        st.settle();
+    }
+    h.run_steps(2);
+    let patch_pick = {
+        let st = &h.state().state;
+        let feats = camcraft_app::model::find_by_name(&st.world, "fig8")
+            .and_then(|e| camcraft_app::model::features_of(&st.world, &e))
+            .expect("fig8 features");
+        let patch = camcraft_app::geometry::feature::patches(&feats)
+            .into_iter()
+            .next()
+            .expect("fig8 patch");
+        GeoSel { entity: "fig8".into(), feature: FeatureSel::Patch(patch.id) }
+    };
+    {
+        let st = &mut h.state_mut().state;
+        crate::boundary_draft::take_pick(
+            st,
+            crate::state::BoundaryPick::DoNotTouch,
+            face_other,
+            crate::boundary_draft::PickMods::default(),
+        );
+        crate::boundary_draft::take_pick(
+            st,
+            crate::state::BoundaryPick::DoNotTouch,
+            edge,
+            crate::boundary_draft::PickMods::default(),
+        );
+    }
+    h.run_steps(3);
+    let aspect = {
+        let st = &h.state().state;
+        let initial = crate::avoid_viz::avoid_marks(st, 1.4);
+        assert_eq!(initial, crate::avoid_viz::avoid_marks_fresh(st, 1.4));
+        assert!(!initial.faces.is_empty() && !initial.edges.is_empty());
+        1.4
+    };
+
+    // Still frames compute no protection geometry, projections, or patches, and record zero build spans.
+    let g0 = crate::avoid_viz::avoid_geom_builds();
+    let m0 = crate::avoid_viz::avoid_mark_builds();
+    let p0 = camcraft_app::model::patch_builds();
+    let ((), costs) = crate::frame_cost::record(|| {
+        for _ in 0..4 {
+            h.step();
+        }
+    });
+    assert_eq!(crate::avoid_viz::avoid_geom_builds() - g0, 0, "still frames reuse 3D protection geometry");
+    assert_eq!(crate::avoid_viz::avoid_mark_builds() - m0, 0, "still frames reuse projected marks");
+    assert_eq!(camcraft_app::model::patch_builds() - p0, 0, "still frames rebuild no patches");
+    let frame_calls = costs.iter().find(|c| c.name == "ui/viewport.avoid_marks").map_or(0, |c| c.count);
+    let build_calls = costs.iter().find(|c| c.name == "ui/viewport.avoid_marks.build").map_or(0, |c| c.count);
+    assert_eq!(frame_calls, 4, "viewport frames measure ui/viewport.avoid_marks: {costs:?}");
+    assert_eq!(build_calls, 0, "still frames trigger no avoid_marks.build span: {costs:?}");
+
+    // Camera motion re-projects cached 3D geometry without re-resolving features or patches.
+    let g_cam = crate::avoid_viz::avoid_geom_builds();
+    let m_cam = crate::avoid_viz::avoid_mark_builds();
+    let p_cam = camcraft_app::model::patch_builds();
+    h.state_mut().state.cam.orbit(18.0, -7.0);
+    h.run_steps(2);
+    assert_eq!(crate::avoid_viz::avoid_geom_builds() - g_cam, 0, "orbit reuses 3D protection geometry");
+    assert!(crate::avoid_viz::avoid_mark_builds() > m_cam, "orbit re-projects marks for new camera");
+    assert_eq!(camcraft_app::model::patch_builds() - p_cam, 0, "orbit rebuilds no patches");
+    {
+        let st = &h.state().state;
+        assert_eq!(crate::avoid_viz::avoid_marks(st, aspect), crate::avoid_viz::avoid_marks_fresh(st, aspect));
+    }
+
+    // Adding a patch pick invalidates both geometry and projection caches and matches fresh.
+    let g_pick = crate::avoid_viz::avoid_geom_builds();
+    let m_pick = crate::avoid_viz::avoid_mark_builds();
+    {
+        let st = &mut h.state_mut().state;
+        crate::boundary_draft::take_pick(
+            st,
+            crate::state::BoundaryPick::DoNotTouch,
+            patch_pick,
+            crate::boundary_draft::PickMods::default(),
+        );
+        let name = st.op_ui.name.clone();
+        let params = st.op_ui.params.clone();
+        let area = st.op_ui.area.clone();
+        st.pending.push_back(CommandKind::EditOperationBoundary { name, params, area });
+        st.settle();
+    }
+    h.run_steps(2);
+    assert!(crate::avoid_viz::avoid_geom_builds() > g_pick, "new pick rebuilds geometry");
+    assert!(crate::avoid_viz::avoid_mark_builds() > m_pick, "new pick re-projects marks");
+    let before_hide = {
+        let st = &h.state().state;
+        let m = crate::avoid_viz::avoid_marks(st, aspect);
+        assert_eq!(m, crate::avoid_viz::avoid_marks_fresh(st, aspect));
+        m
+    };
+    // Still frames with an active Patch pick also rebuild zero patches, geometry, or marks.
+    let (gp0, mp0, pp0) = (
+        crate::avoid_viz::avoid_geom_builds(),
+        crate::avoid_viz::avoid_mark_builds(),
+        camcraft_app::model::patch_builds(),
+    );
+    h.run_steps(3);
+    assert_eq!(crate::avoid_viz::avoid_geom_builds() - gp0, 0);
+    assert_eq!(crate::avoid_viz::avoid_mark_builds() - mp0, 0);
+    assert_eq!(camcraft_app::model::patch_builds() - pp0, 0);
+
+    // Hiding models updates the overlay; hiding both clears it; showing restores it.
+    let g_hide = crate::avoid_viz::avoid_geom_builds();
+    h.state_mut().state.hidden_models.push("block".into());
+    h.run_steps(2);
+    assert!(crate::avoid_viz::avoid_geom_builds() > g_hide, "hiding model rebuilds geometry");
+    let block_hidden = crate::avoid_viz::avoid_marks(&h.state().state, aspect);
+    assert_ne!(block_hidden, before_hide);
+    assert_eq!(block_hidden, crate::avoid_viz::avoid_marks_fresh(&h.state().state, aspect));
+    h.state_mut().state.hidden_models.push("fig8".into());
+    h.run_steps(2);
+    assert_eq!(crate::avoid_viz::avoid_marks(&h.state().state, aspect), crate::avoid_viz::AvoidMarks::default());
+    h.state_mut().state.hidden_models.retain(|n| n != "block" && n != "fig8");
+    h.run_steps(2);
+    assert_eq!(crate::avoid_viz::avoid_marks(&h.state().state, aspect), before_hide);
+
+    // Moving the model (and undoing) updates the overlay cleanly.
+    let g_move = crate::avoid_viz::avoid_geom_builds();
+    let m_move = crate::avoid_viz::avoid_mark_builds();
+    h.state_mut().state.pending.push_back(CommandKind::MoveModel {
+        name: "block".into(),
+        pos: [8.0, -4.0, 2.0],
+        roll_deg: 0.0,
+        pitch_deg: 0.0,
+        yaw_deg: 25.0,
+    });
+    h.state_mut().state.settle();
+    h.run_steps(2);
+    assert!(crate::avoid_viz::avoid_geom_builds() > g_move, "model move rebuilds geometry");
+    assert!(crate::avoid_viz::avoid_mark_builds() > m_move, "model move re-projects marks");
+    {
+        let st = &h.state().state;
+        let moved = crate::avoid_viz::avoid_marks(st, aspect);
+        assert_ne!(moved, before_hide);
+        assert_eq!(moved, crate::avoid_viz::avoid_marks_fresh(st, aspect));
+    }
+    h.state_mut().state.pending.push_back(CommandKind::Undo);
+    h.state_mut().state.settle();
+    h.run_steps(2);
+    assert_eq!(crate::avoid_viz::avoid_marks(&h.state().state, aspect), before_hide);
+
+    // Undoing the boundary commit clears the overlay; redoing restores it.
+    h.state_mut().state.pending.push_back(CommandKind::Undo);
+    h.state_mut().state.settle();
+    h.run_steps(2);
+    assert_eq!(crate::avoid_viz::avoid_marks(&h.state().state, aspect), crate::avoid_viz::AvoidMarks::default());
+    h.state_mut().state.pending.push_back(CommandKind::Redo);
+    h.state_mut().state.settle();
+    h.run_steps(2);
+    assert_eq!(crate::avoid_viz::avoid_marks(&h.state().state, aspect), before_hide);
+}

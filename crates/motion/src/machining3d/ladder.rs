@@ -92,6 +92,7 @@ pub(super) fn ladder(
     start: Point3,
     shell: bool,
     seam: Option<&hsm::Seam>,
+    stock: Option<&Region>,
     avoid: Option<&AvoidSpec>,
 ) -> Result<Toolpath, GenError> {
     let r = p.tool_diameter * 0.5;
@@ -100,7 +101,13 @@ pub(super) fn ladder(
     // ladder never pays for it and never reads it (every leg then
     // lands at its plane, exactly as always).
     let field = match shell {
-        true => Some(Field::new_with_avoid(facets, avoid).map_err(GenError::Invalid)?),
+        true => Some(
+            match avoid {
+                Some(av) => Field::new_with_avoid(facets, Some(av)),
+                None => Field::new(facets),
+            }
+            .map_err(GenError::Invalid)?,
+        ),
         false => None,
     };
 
@@ -178,7 +185,7 @@ pub(super) fn ladder(
         // The level's plan: the strategy's tiling, or the HSM plan
         // (M11.4, `hsm`) - whose entry bore the level's params carry.
         // #871: a part-way refusal hands back the levels so far.
-        let lp = hsm::plan_level(&mut b, &center, p, z, hop_z, rest.is_some(), shell, seam)
+        let lp = hsm::plan_level(&mut b, &center, p, z, hop_z, rest.is_some(), shell, seam, stock)
             .map_err(|e| e.with_ghost_moves(b.moves()))?;
         let passes = &lp.passes;
         let level_p = lp.params(p);
@@ -208,6 +215,9 @@ pub(super) fn ladder(
             first_pass,
             prev_z,
             prev_cut: prev_state.as_ref().map(|(q, _)| *q),
+            // #1950: a tool that is not centre-cutting keeps its own
+            // entry law (the plunge law cannot read the air as air).
+            air: lp.air_entry && p.links.approach.center_cutting,
         };
         let mut lvl = LevelCtx {
             cen: &center,
@@ -349,6 +359,7 @@ pub(super) fn ladder(
                         first_pass: pass,
                         prev_z: prev_state.as_ref().map_or(hz, |(q, _)| *q),
                         prev_cut: prev_state.as_ref().map(|(q, _)| *q),
+                        air: false,
                     };
                     let (tip, top) = (lvl.tip(next_entry, 0.0), descent::mat_top(&lvl, &again));
                     if !p.links.approach.center_cutting && plunge_law::into_solid(&b, next_entry, tip, top, r) {

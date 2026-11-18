@@ -33,3 +33,11 @@ round trips, future-version refusal, and blocked posting after a moved
 protected item. Reusing main's version was rejected because it would weaken
 that protection. Main's carried-stock replan and previous-stock mask are
 kept together with the protected-item planners.
+
+### Merge refresh against main v69 and review fixes (#2149)
+
+Main advanced to `PROJECT_VERSION` 69 (v68 for Drill `break_through_from`, #2441; v69 for Pocket Adaptive retirement, #1517), added `cut_levels_under` (#2004), `pocket3d_open_prev` (#1950), `Field::new` in `crossing_hop_tests`, and `crates/ui/AGENTS.md` Frame cost rules (#2238). On the merged branch:
+- `PROJECT_VERSION` steps `69 -> 70` for `"do_not_touch"`, keeping v68 and v69 migrations and refusals intact.
+- `pocket3d_avoid`, `pocket3d_open_avoid`, and `pocket_avoid` keep `cut_levels_under` and `air_stock` while preserving `avoid` keep-outs, `Field::new` is restored alongside `Field::new_with_avoid`, and `Warning::AvoidHit` coexists with `Warning::DrillUndersize`.
+- `avoid::hits_named` sweeps continuous 3D chords `Move::segments3(ARC_SAG)` widened by `Bulge::of(...).deviation()` across all arc planes (including XZ/YZ vertical arcs) instead of stationary `solid::pieces` samples.
+- `avoid_viz` memoizes 3D protected geometry and projected screen marks keyed on picks, entity handles, hidden state, `Weak<Features>`, `Weak<[Triangle]>`, setup pose, and MVP bits, and `shell.rs` wraps painting in `frame_cost::time("ui/viewport.avoid_marks", ...)`.

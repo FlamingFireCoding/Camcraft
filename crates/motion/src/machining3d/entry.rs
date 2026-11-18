@@ -12,7 +12,7 @@ use crate::cl::Toolpath;
 use crate::geo2d::Region;
 use crate::geometry::Triangle;
 use crate::machining2d::{
-    cut_levels, GenError,
+    cut_levels_under, GenError,
 };
 use crate::stock_sim::{Columns, StockReport};
 /// The per-level cutter plan and its walk, level after level - the 3-D
@@ -80,6 +80,22 @@ pub fn pocket3d_offset_prev(
     run_plain(facets, footprint, p, true, mask)
 }
 
+/// Issue #1950: the whole-model sibling of [`pocket3d_prev`] whose
+/// footprint reaches into the air past `stock` (the setup's stock
+/// outline, `open_sides` with the Adaptive band): under Adaptive each
+/// level's stock ring is planned from that air, the material clipped to
+/// the stock. Every other strategy, and `stock: None`, is
+/// [`pocket3d_prev`] move for move.
+pub fn pocket3d_open_prev(
+    facets: &[Triangle],
+    footprint: &Region,
+    stock: Option<&Region>,
+    p: &Pocket3DParams,
+    mask: Option<&Columns<'_>>,
+) -> Result<Toolpath, GenError> {
+    run_plain_with(facets, footprint, p, false, mask, stock, None)
+}
+
 fn run_plain(
     facets: &[Triangle],
     footprint: &Region,
@@ -87,7 +103,7 @@ fn run_plain(
     shell: bool,
     mask: Option<&Columns<'_>>,
 ) -> Result<Toolpath, GenError> {
-    run_plain_with(facets, footprint, p, shell, mask, None)
+    run_plain_with(facets, footprint, p, shell, mask, None, None)
 }
 
 fn run_plain_with(
@@ -96,11 +112,12 @@ fn run_plain_with(
     p: &Pocket3DParams,
     shell: bool,
     mask: Option<&Columns<'_>>,
+    stock: Option<&Region>,
     avoid: Option<&AvoidSpec>,
 ) -> Result<Toolpath, GenError> {
     guard_input(facets, footprint, p)?;
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
-    ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, avoid)
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, stock, avoid)
 }
 
 /// 3D Pocket with "Do not touch" protected items (#2055), covering plain,
@@ -116,9 +133,32 @@ pub fn pocket3d_avoid(
 ) -> Result<Toolpath, GenError> {
     let av = (!avoid.is_empty()).then_some(avoid);
     let mut path = match rest {
-        false => run_plain_with(facets, footprint, p, shell, mask, av),
+        false => run_plain_with(facets, footprint, p, shell, mask, None, av),
         true => run_rest_with(facets, footprint, p, shell, mask, av).map(|(t, _)| t),
     }?;
+    if !avoid.is_empty() {
+        let _ = camcraft_sim::verify::elevate_rapid_links(
+            &mut path,
+            avoid,
+            None,
+            camcraft_sim::verify::AVOID_PAD,
+        );
+    }
+    Ok(path)
+}
+
+/// Whole-model Adaptive sibling of [`pocket3d_avoid`] that plans the
+/// stock ring from the air past `stock` (#1950) while obeying `avoid` (#2055).
+pub fn pocket3d_open_avoid(
+    facets: &[Triangle],
+    footprint: &Region,
+    stock: Option<&Region>,
+    p: &Pocket3DParams,
+    mask: Option<&Columns<'_>>,
+    avoid: &AvoidSpec,
+) -> Result<Toolpath, GenError> {
+    let av = (!avoid.is_empty()).then_some(avoid);
+    let mut path = run_plain_with(facets, footprint, p, false, mask, stock, av)?;
     if !avoid.is_empty() {
         let _ = camcraft_sim::verify::elevate_rapid_links(
             &mut path,
@@ -160,19 +200,19 @@ pub fn pocket3d_air_split(
         Some(Seam { lo: lo.x, hi: hi.x, period, reach })
     };
     let (sm_air, sm_cut) = (seam_of(air_footprint), seam_of(footprint));
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let k = air_levels(&zs, air_above);
     if k == 0 || air_footprint.is_empty() {
-        return ladder(facets, footprint, p, &zs, None, None, home(p), false, sm_cut.as_ref(), None);
+        return ladder(facets, footprint, p, &zs, None, None, home(p), false, sm_cut.as_ref(), None, None);
     }
-    let air = ladder(facets, air_footprint, p, &zs[..k], None, None, home(p), false, sm_air.as_ref(), None)?;
+    let air = ladder(facets, air_footprint, p, &zs[..k], None, None, home(p), false, sm_air.as_ref(), None, None)?;
     if k == zs.len() {
         return Ok(air);
     }
     let start = air.moves.last().map_or_else(|| home(p), |m| m.to);
     let mut moves = air.moves;
     let mut notes = air.notes;
-    match ladder(facets, footprint, p, &zs[k..], None, None, start, false, sm_cut.as_ref(), None) {
+    match ladder(facets, footprint, p, &zs[k..], None, None, start, false, sm_cut.as_ref(), None, None) {
         Ok(rest) => {
             moves.extend(rest.moves);
             notes.extend(rest.notes);
@@ -284,8 +324,8 @@ fn run_rest_with(
 ) -> Result<(Toolpath, StockReport), GenError> {
     guard_input(facets, footprint, p)?;
     let r = p.tool_diameter * 0.5;
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
-    let coarse = ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, avoid)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    let coarse = ladder(facets, footprint, p, &zs, None, mask, home(p), shell, None, None, avoid)?;
 
     // What the coarse ladder leaves standing, column by column: the
     // op-frame grid simulated from raw stock, or - when the program
@@ -306,14 +346,14 @@ fn run_rest_with(
     let rest = dex.columns()?;
 
     // The rest ladder: same laws, half the step, rest-shaped targets.
-    let zs_r = cut_levels(p.top_z, p.bottom_z, p.stepdown * 0.5)?;
+    let zs_r = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown * 0.5)?;
     let start = coarse.moves.last().map_or_else(|| home(p), |m| m.to);
     let mut moves = coarse.moves;
     // The coarse leg's notes join the rest leg's below, in program
     // order (M8.1): the status line reads the substitutions as the
     // machine lived them.
     let mut notes = coarse.notes;
-    match ladder(facets, footprint, p, &zs_r, Some(&rest), None, start, shell, None, avoid) {
+    match ladder(facets, footprint, p, &zs_r, Some(&rest), None, start, shell, None, None, avoid) {
         Ok(rp) => {
             moves.extend(rp.moves);
             notes.extend(rp.notes);

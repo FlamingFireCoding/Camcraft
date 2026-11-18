@@ -5,6 +5,7 @@ use camcraft_motion::cl::MoveKind;
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::machining2d::{rest_pocket, PocketParams, PocketStrategy, RestParams};
+use camcraft_motion::plunge_law::{first_solid_plunge, Solid};
 use camcraft_motion::verify::{verify, Mode, ToolGeom, VerifyContext};
 
 const W: f64 = 30.0;
@@ -175,9 +176,13 @@ fn tiny_rest_pocket_keeps_interior_rows_when_previous_tool_fits_nowhere() {
     };
     let mut non_center_cutting = p;
     non_center_cutting.links.approach.center_cutting = false;
-    let refusal = rest_pocket(&region, &non_center_cutting, &previous).expect_err("shared emission must refuse a non-center-cutting plunge into stock");
-    assert!(refusal.to_string().contains(camcraft_motion::approach::CENTER_CUT_REFUSAL), "{refusal}");
-    let path = rest_pocket(&region, &p, &previous).expect("tiny rest pocket must retain its interior passes");
+    let path = rest_pocket(&region, &non_center_cutting, &previous)
+        .expect("tiny rest pocket may ramp in with a non-center-cutting tool");
+    assert_eq!(
+        first_solid_plunge(&path, p.tool_diameter * 0.5, &Solid { top: p.top_z, footprint: Some(&region) }),
+        None,
+        "the non-center-cutting tool must never plunge into solid"
+    );
     let cuts: Vec<_> = path.moves.iter()
         .filter(|m| m.kind == MoveKind::Feed && (m.from.z - p.bottom_z).abs() < 1e-9 && (m.to.z - p.bottom_z).abs() < 1e-9)
         .flat_map(|m| m.chords(0.00001))
