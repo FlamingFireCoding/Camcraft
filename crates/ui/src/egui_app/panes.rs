@@ -27,8 +27,9 @@ use camcraft_app::operation;
 
 use crate::actions;
 use crate::machine_modes;
+use crate::shortcut_keys::chord;
 use crate::build_info;
-use crate::state::{CommandKind, Sim, State, UiTarget};
+use crate::state::{CommandKind, SetupPage, Sim, State, UiTarget};
 
 use super::icons::{Icon, IconSet};
 use super::op_icons::op_icon;
@@ -184,7 +185,7 @@ pub(super) enum Cmd {
 const FILE: (&str, &[Cmd]) =
     ("File", &[Cmd::New, Cmd::Model, Cmd::Project, Cmd::Save, Cmd::SaveAs, Cmd::Post]);
 const SETUP: (&str, &[Cmd]) =
-    ("Setup", &[Cmd::Setups, Cmd::Stock, Cmd::Origin, Cmd::Tools, Cmd::Machine]);
+    ("Setup", &[Cmd::Setups, Cmd::Stock, Cmd::Origin, Cmd::Tools]);
 
 /// The bar's whole op-shortcut budget (the ribbon law): at most this
 /// many Create cells stand inline, and they are the user's pins. The
@@ -216,6 +217,13 @@ pub(super) struct Group {
 /// sequence.
 #[must_use]
 pub(super) fn ribbon_plan(
+    machine: camcraft_app::machine::Kind,
+    pinned: &[usize],
+) -> Vec<Group> {
+    ribbon_geometry(machine, pinned)
+}
+
+fn ribbon_geometry(
     machine: camcraft_app::machine::Kind,
     pinned: &[usize],
 ) -> Vec<Group> {
@@ -313,13 +321,17 @@ fn label_of(c: Cmd) -> &'static str {
     }
 }
 
-/// The section door's short ribbon word: a cell is ~43 px wide at 1280, so
-/// "Milling 2D" would not fit; the full name stays in the tip and the
-/// dropdown. Plain English, deliberate - never a cut-off one (#948).
+/// The section door's short ribbon word: the cell is ~43 px wide at a
+/// 1280-point window (the floor), so "Milling 2D" would not fit; the
+/// group caption under it and the tip carry the full name, and the
+/// dropdown lists every kind behind it. Plain English, deliberate -
+/// never a cut-off one (#948). The section's own name stays on the
+/// group caption ("MILLING 2D"), so the cell can say just the part
+/// that differs.
 fn door_label(s: operation::Section) -> &'static str {
     match s {
-        operation::Section::Mill2D => "Mill 2D",
-        operation::Section::Mill3D => "Mill 3D",
+        operation::Section::Mill2D => "2D",
+        operation::Section::Mill3D => "3D",
         operation::Section::Drilling => "Drill",
         operation::Section::MultiAxis => "Multi",
         other => other.label(),
@@ -333,11 +345,9 @@ pub(super) fn text_of(c: Cmd, state: &State) -> String {
         // here", which is exactly the law the dropdown keeps (M6.2:
         // a labeled door, never a faceless chevron). The machine door
         // wears the same invitation: the ellipsis says "a list opens".
-        Cmd::More(s) => format!("{}…", door_label(s)),
-        Cmd::Machine => {
-            format!("{}…", machine_modes::caption(camcraft_app::machine::kind_of(&state.world)))
-        }
-        Cmd::View | Cmd::Theme => format!("{}…", label_of(c)),
+        Cmd::More(s) => door_label(s).to_owned(),
+        Cmd::Machine => machine_modes::short_caption(camcraft_app::machine::kind_of(&state.world)).to_owned(),
+        Cmd::View | Cmd::Theme => label_of(c).to_owned(),
         // The ribbon caption is registry data (M5.0.2) - imgui's strings,
         // same order as the Create cells below. The list here is built
         // from the table, so an out-of-range index means a table bug:
@@ -362,13 +372,16 @@ pub(super) fn text_of(c: Cmd, state: &State) -> String {
 /// because the wording is borrowed. Every advertised key is live:
 /// `shortcuts` implements them all, and the pin gesture names itself.
 pub(super) fn tip_of(c: Cmd, state: &State) -> String {
+    if let Some(why) = browser_refusal(c, state) {
+        return why.into();
+    }
     match c {
-        Cmd::New => "New document\tCtrl+N".into(),
-        Cmd::Model => "Open a mesh model\tCtrl+O".into(),
-        Cmd::Project => "Open a project\tCtrl+Shift+O".into(),
-        Cmd::Save => "Save the project\tCtrl+S".into(),
-        Cmd::SaveAs => "Save the project under a new name\tCtrl+Shift+S".into(),
-        Cmd::Post => "Post NC program (validation gate), then review it\tCtrl+P".into(),
+        Cmd::New => format!("New document\t{}", chord("N")),
+        Cmd::Model => format!("Open a mesh model\t{}", chord("O")),
+        Cmd::Project => format!("Open a project\t{}", chord("Shift+O")),
+        Cmd::Save => format!("Save the project\t{}", chord("S")),
+        Cmd::SaveAs => format!("Save the project under a new name\t{}", chord("Shift+S")),
+        Cmd::Post => format!("Post NC program (validation gate), then review it\t{}", chord("P")),
         Cmd::Setups => "Setups: create, activate and delete the document's setups".into(),
         Cmd::Stock => "Stock definition".into(),
         Cmd::Origin => "Work offset (WCS)".into(),
@@ -391,7 +404,7 @@ pub(super) fn tip_of(c: Cmd, state: &State) -> String {
             // enforces at the command. The pin hint rides every live
             // tip: the gesture a ribbon cell answers to beyond the
             // click, so the tip table is where it belongs.
-            if state.tool_names().is_empty() {
+            if no_tool_for(i, state) {
                 "No tool yet - add one (Setup > Tools)".into()
             } else {
                 let machine = camcraft_app::machine::kind_of(&state.world);
@@ -402,7 +415,7 @@ pub(super) fn tip_of(c: Cmd, state: &State) -> String {
                     let f = camcraft_app::operation::KindInfo::ALL[i].family();
                     let (fword, mword) = (f.work(), f.machine());
                     // #670: plasma work has no mill-turn to fall back on.
-                    let or_mt = if matches!(f, camcraft_app::operation::Family::Plasma | camcraft_app::operation::Family::WireEdm) { "" } else { " or a mill-turn" };
+                    let or_mt = if matches!(f, camcraft_app::operation::Family::Plasma | camcraft_app::operation::Family::WireEdm | camcraft_app::operation::Family::Sinker) { "" } else { " or a mill-turn" };
                     format!(
                         "The document's machine is a {} - {fword} operations do not drive it; mount a {mword}{or_mt} (Setup > Machine)",
                         machine.word()
@@ -419,8 +432,8 @@ pub(super) fn tip_of(c: Cmd, state: &State) -> String {
             }
         }
         Cmd::More(s) => format!("The rest of the {} kinds", s.label()),
-        Cmd::Undo => "Undo\tCtrl+Z".into(),
-        Cmd::Redo => "Redo\tCtrl+Y".into(),
+        Cmd::Undo => format!("Undo\t{}", chord("Z")),
+        Cmd::Redo => format!("Redo\t{}", chord("Y")),
         Cmd::Run => "Generate the selected operation".into(),
         Cmd::Delete => "Delete the selection\tDel".into(),
         Cmd::Frame => "Frame all\tF".into(),
@@ -438,7 +451,25 @@ pub(super) fn tip_of(c: Cmd, state: &State) -> String {
     }
 }
 
+/// #1431: a File cell the browser build cannot run - darkened, its tip
+/// the reason (`browser_files`), the same words the command refuses with.
+pub(super) fn browser_refusal(c: Cmd, state: &State) -> Option<&'static str> {
+    if !state.browser_build {
+        return None;
+    }
+    let action = match c {
+        Cmd::Model => CommandKind::OpenModelDialog,
+        Cmd::Project => CommandKind::OpenProjectDialog,
+        Cmd::Post => CommandKind::PostProgramDialog,
+        _ => return None,
+    };
+    crate::browser_files::refusal(&action, camcraft_app::posting::post_options(&state.world).per_op)
+}
+
 pub(super) fn enabled(c: Cmd, state: &State) -> bool {
+    if browser_refusal(c, state).is_some() {
+        return false;
+    }
     match c {
         Cmd::Undo => state.history.can_undo(),
         Cmd::Redo => state.history.can_redo(),
@@ -459,7 +490,7 @@ pub(super) fn enabled(c: Cmd, state: &State) -> bool {
             // #216: every ribbon-made op machines the active setup's stock
             // (`SrcRef::Stock`) - without one the door refuses, so the
             // cell darkens and says so instead of failing on the click.
-            kind_admits && !state.tool_names().is_empty() && has_stock(state) && tool_law_note(i, state).is_none()
+            kind_admits && !no_tool_for(i, state) && has_stock(state) && tool_law_note(i, state).is_none()
         }
         // A dropdown button is live whenever it is on the ribbon; the
         // kinds behind it carry their own gates.
@@ -487,7 +518,7 @@ fn gate_note(c: Cmd, state: &State) -> Option<String> {
     if enabled(c, state) {
         return None;
     }
-    if state.tool_names().is_empty() {
+    if no_tool_for(i, state) {
         return Some(String::from(
             "cannot add an operation: no tool in the document - add one (Setup > Tools)",
         ));
@@ -500,7 +531,7 @@ fn gate_note(c: Cmd, state: &State) -> Option<String> {
         Some(k) => {
             let f = k.family();
             let (fword, mword) = (f.work(), f.machine());
-            let or_mt = if matches!(f, camcraft_app::operation::Family::Plasma | camcraft_app::operation::Family::WireEdm) { "" } else { " or a mill-turn" };
+            let or_mt = if matches!(f, camcraft_app::operation::Family::Plasma | camcraft_app::operation::Family::WireEdm | camcraft_app::operation::Family::Sinker) { "" } else { " or a mill-turn" };
             Some(format!(
                 "cannot add a {} operation: {fword} operations do not drive the document's {} - mount a {mword}{or_mt} (Setup > Machine)",
                 k.label,
@@ -548,7 +579,7 @@ pub(super) fn gate_route(c: Cmd, state: &State) -> Option<GateRoute> {
     if enabled(c, state) {
         return None;
     }
-    if state.tool_names().is_empty() {
+    if no_tool_for(i, state) {
         return Some(GateRoute::Tools);
     }
     let machine = camcraft_app::machine::kind_of(&state.world);
@@ -581,8 +612,9 @@ pub(super) fn follow_gate(c: Cmd, state: &mut State) {
             state.ribbon_view_open = false;
             state.ribbon_theme_open = false;
             state.ribbon_recent_open = None;
-            state.ribbon_mode_open = true;
-            state.status = format!("{why} - pick a workspace");
+            let setup = camcraft_app::setup::active(&state.world).unwrap_or_default();
+            actions::target(state, UiTarget::SetupNode(setup, SetupPage::Machine));
+            state.status = format!("{why} - opened the Machine page");
         }
         None => state.status = why,
     }
@@ -592,6 +624,13 @@ pub(super) fn follow_gate(c: Cmd, state: &mut State) {
 /// for creating kind `i` against the active setup's tools, or `None`
 /// when a fitting tool is there. The predicate lives in app (the same
 /// one `CreateOperation` enforces); the ribbon only renders it.
+/// The empty-rack gate of a Create cell - waived for a kind that
+/// mounts no library tool (the wire EDM's wire is the machine's, #535).
+fn no_tool_for(i: usize, state: &State) -> bool {
+    let needs = camcraft_app::operation::KindInfo::ALL.get(i).is_none_or(|k| k.mounts_tool());
+    needs && state.tool_names().is_empty()
+}
+
 fn tool_law_note(i: usize, state: &State) -> Option<String> {
     camcraft_app::operation::KindInfo::ALL
         .get(i)
@@ -628,8 +667,6 @@ pub(super) fn icon_of(c: Cmd, state: &State) -> Option<Icon> {
         Cmd::Save => Some(Icon::Save),
         Cmd::SaveAs => Some(Icon::Save),
         Cmd::Post => Some(Icon::Post),
-        // A setup wears the setup sheet (#661), the tree's Setups glyph;
-        // it never twins Origin's beside it.
         Cmd::Setups => Some(Icon::Setup),
         Cmd::Stock => Some(Icon::Stock),
         Cmd::Origin => Some(Icon::WorkOffset),
@@ -667,6 +704,9 @@ pub(super) fn icon_of(c: Cmd, state: &State) -> Option<Icon> {
             // wire EDM's machine door wears (no new asset; the op page
             // and its own glyph are #535).
             operation::Section::WireEdm => Icon::Contour,
+            // #541: the sinker burns straight down - the drill's glyph
+            // (no new asset).
+            operation::Section::Sinker => Icon::Drill,
         }),
         // The machine door wears its workspace's glyph (#207), from the
         // existing set: the face mill for Milling, the turned bar for
@@ -680,6 +720,7 @@ pub(super) fn icon_of(c: Cmd, state: &State) -> Option<Icon> {
             camcraft_app::machine::Kind::SinkerEdm => Icon::Pocket,
             // #669: a plasma table cuts 2D profiles - the contour glyph.
             camcraft_app::machine::Kind::Plasma => Icon::Contour,
+            camcraft_app::machine::Kind::Waterjet => Icon::ToolWaterjet,
         }),
         Cmd::Undo => Some(Icon::Undo),
         Cmd::Redo => Some(Icon::Redo),
@@ -934,8 +975,8 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
         .unwrap_or(0.0);
     let cell_w = ((strip.width() - overhead - badge_w) / n_cells.max(1) as f32)
         .clamp(FLOOR_W, pal.cell_w);
-    // PAD_V (ribbon.rs): cells start 4 below the strip top.
-    let cell_top = strip.top() + 4.0;
+    // The cells start below the tab row and its gap, both theme tokens.
+    let cell_top = strip.top() + pal.ribbon_tab_h + pal.ribbon_cell_top_gap;
     let mut cells = Vec::new();
     let mut captions = Vec::new();
     let mut dividers = Vec::new();
@@ -1013,6 +1054,80 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
     (cells, captions, dividers, drops)
 }
 
+/// The workspace tab strip above the ribbon cells: one
+/// tab per machine mode in `machine_modes::MACHINE_MODES`, the running
+/// kind's tab joined to the strip below and underlined in the accent,
+/// the rest quiet until hover. A click is the Machine door's own
+/// undoable `LoadBuiltinMachine` - a second door onto one switch,
+/// never a second switch. A document whose machine has no mode row
+/// (an imported wire-EDM machine) leaves every tab inactive; the mode
+/// switch still works, and the status line names the mounted kind.
+fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: Rect) {
+    ui.painter().rect_filled(band, 0.0, pal.ink);
+    ui.painter().line_segment(
+        [
+            egui::Pos2::new(band.left(), band.bottom() - 0.5),
+            egui::Pos2::new(band.right(), band.bottom() - 0.5),
+        ],
+        egui::Stroke::new(1.0, pal.border),
+    );
+    let current = camcraft_app::machine::kind_of(&state.world);
+    let font = egui::FontId::proportional(pal.font_label);
+    let mut x = strip.left() + pal.item_spacing_x;
+    for (kind, caption, machine) in machine_modes::MACHINE_MODES {
+        let active = kind == current;
+        let ink = if active { pal.text } else { pal.text_dim };
+        let galley = ui
+            .painter()
+            .layout_no_wrap(caption.to_uppercase(), font.clone(), ink);
+        let w = galley.size().x + pal.ribbon_tab_pad_x * 2.0;
+        let r = Rect::from_min_max(
+            egui::Pos2::new(x, band.top()),
+            egui::Pos2::new(x + w, band.bottom()),
+        );
+        let resp = ui.interact(r, ui.id().with(("ribbon-tab", caption)), Sense::click());
+        let painter = ui.painter();
+        if active {
+            painter.rect_filled(
+                Rect::from_min_max(r.min, egui::Pos2::new(r.right(), r.bottom() - 1.0)),
+                0.0,
+                pal.strip_fill(),
+            );
+            let pad = (pal.ribbon_tab_pad_x * 0.5).min(w * 0.25);
+            painter.line_segment(
+                [
+                    egui::Pos2::new(r.left() + pad, r.bottom() - 1.0),
+                    egui::Pos2::new(r.right() - pad, r.bottom() - 1.0),
+                ],
+                egui::Stroke::new(pal.ribbon_tab_stroke, pal.accent),
+            );
+        } else if resp.clicked() || resp.is_pointer_button_down_on() {
+            painter.rect_filled(r, pal.radius_widget, pal.accent);
+        } else if resp.hovered() {
+            painter.rect_filled(r, pal.radius_widget, pal.field_hover);
+        }
+        painter.galley(
+            egui::Pos2::new(
+                r.center().x - galley.size().x * 0.5,
+                r.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            ink,
+        );
+        let clicked = resp.clicked();
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, caption));
+        ui.ctx().accesskit_node_builder(resp.id, |b| {
+            b.set_role(egui::accesskit::Role::Tab);
+            b.set_selected(active);
+        });
+        resp.on_hover_text(format!("{caption} workspace - mounts {machine} (undoable)"));
+        if clicked {
+            machine_modes::set_machine_mode(state, kind);
+        }
+        x += w + pal.ribbon_tab_gap;
+    }
+}
+
 /// The ribbon strip: painted cells over a fixed-height top panel. Group
 /// captions and hairline dividers match imgui's layout math, the cells
 /// themselves are painted::cell - all from `ribbon_cells`'s geometry.
@@ -1027,6 +1142,16 @@ pub fn ribbon(
     let rect = Rect::from_min_size(ui.cursor().min, ui.available_size());
     painted::strip_bg(ui.painter(), rect, pal);
     let base = ui.id().with("ribbon");
+    // The workspace tabs sit above the cells: the
+    // active machine mode is one click away, and the switch is the same
+    // undoable `LoadBuiltinMachine` the Machine door queues.
+    let band = Rect::from_min_max(
+        rect.min,
+        egui::Pos2::new(rect.right(), rect.top() + pal.ribbon_tab_h),
+    );
+    ribbon_tabs(ui, state, pal, rect, band);
+    super::donate::draw(ui, state, pal, icons, band);
+    let body = Rect::from_min_max(egui::Pos2::new(rect.left(), band.bottom()), rect.max);
     // The plan is read fresh every frame from the two facts it is a
     // function of - the document's machine and its pins (M6.2). No
     // cached shape: a machine mount or an unpin cannot leave a stale
@@ -1068,7 +1193,10 @@ pub fn ribbon(
         // proves it.
         let gated = resp.clicked() && !fired && matches!(c, Cmd::Create(_));
         let pin = resp.secondary_clicked();
-        resp.on_hover_text(tip_of(c, state));
+        let tip = tip_of(c, state);
+        ui.ctx()
+            .accesskit_node_builder(resp.id, |b| b.set_description(tip.as_str()));
+        resp.on_hover_text(tip);
         if fired {
             run_cmd(c, state);
         }
@@ -1083,11 +1211,12 @@ pub fn ribbon(
     // group's span. A single-door group (Milling 2D, Drilling ...) is one
     // narrow cell that already names its section, so its caption is
     // skipped rather than run under the neighbour's.
+    let caption_top = body.top() + pal.ribbon_cell_top_gap + pal.cell_h + pal.ribbon_caption_gap;
     for (mid, width, title) in captions {
-        painted::caption(ui, mid, width, title, rect, pal, rect.top() + 4.0 + pal.cell_h);
+        painted::caption(ui, mid, width, title, body, pal, caption_top);
     }
     for dx in dividers {
-        painted::divider(ui.painter(), dx, rect, pal);
+        painted::divider(ui.painter(), dx, body, pal);
     }
     // The open door's dropdown: one Area at foreground order (egui's
     // popup layer), anchored under its button, its rows the section's
@@ -1143,12 +1272,38 @@ pub fn ribbon(
                                 Cmd::Create(i) => TYPES.get(i).copied().unwrap_or("op"),
                                 other => label_of(other),
                             };
+                            painted::menu_item(&resp, label, en, None);
+                            // The kind's own glyph at the row's left edge,
+                            // in the row's ink - the door lists operations
+                            // the way the tree shows them. Headless frames
+                            // (no icon set) keep the tighter indent.
+                            let ink = if en { pal.text } else { pal.text_faint };
+                            let mut text_x = 8.0;
+                            if let Cmd::Create(i) = *cmd
+                                && let (Some(set), Some(info)) = (
+                                    super::icons::IconSet::from_ctx(ui.ctx()),
+                                    camcraft_app::operation::KindInfo::ALL.get(i),
+                                )
+                                && let Some(tex) = set.texture(super::op_icons::op_icon(info.ty))
+                            {
+                                text_x = 28.0;
+                                let icon_rect = Rect::from_center_size(
+                                    egui::Pos2::new(r.left() + 4.0 + 8.0, r.center().y),
+                                    Vec2::splat(16.0),
+                                );
+                                p.image(
+                                    tex.id(),
+                                    icon_rect,
+                                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                                    ink,
+                                );
+                            }
                             p.text(
-                                r.left_center() + Vec2::new(8.0, 0.0),
+                                r.left_center() + Vec2::new(text_x, 0.0),
                                 egui::Align2::LEFT_CENTER,
                                 label,
                                 egui::FontId::proportional(pal.font_row),
-                                if en { pal.text } else { pal.text_faint },
+                                ink,
                             );
                             // Read the click flags before
                             // `on_hover_text` moves the response -
@@ -1270,6 +1425,7 @@ pub fn ribbon(
                             } else {
                                 machine_modes::mode_label(*kind)
                             };
+                            painted::menu_item(&resp, &label, !current, Some(current));
                             p.text(
                                 r.left_center() + Vec2::new(8.0, 0.0),
                                 egui::Align2::LEFT_CENTER,
@@ -1332,20 +1488,20 @@ pub fn ribbon(
                 state.ribbon_theme_open = false;
             }
             Some(cell) => {
-                let rows = super::theme_drop::rows_of(state, cell.rect, rect, pal);
+                let rows = super::theme_drop::rows_of(state, cell.rect, body, pal);
                 super::theme_drop::show(ui, state, pal, base.with("theme-drop"), cell.rect, &rows);
             }
         }
     }
     // The recent-files lists under Open and Model (#662): recent_drop.rs.
-    super::recent_drop::draw(ui, state, pal, base.with("recent-drop"), &cells, rect);
+    super::recent_drop::draw(ui, state, pal, base.with("recent-drop"), &cells, body);
     // The source/build label is the rightmost toolbar item. At small window
     // widths it contracts to version plus source, then version alone; the
     // full text remains available on hover.
-    let badge_left = cells.last().map_or(rect.left(), |cell| cell.rect.right()) + 8.0;
+    let badge_left = cells.last().map_or(body.left(), |cell| cell.rect.right()) + 8.0;
     let badge_rect = Rect::from_min_max(
-        egui::Pos2::new(badge_left, rect.top()),
-        egui::Pos2::new(rect.right() - 8.0, rect.bottom()),
+        egui::Pos2::new(badge_left, body.top()),
+        egui::Pos2::new(body.right() - 8.0, body.bottom()),
     );
     let lines = if badge_rect.width() >= 285.0 {
         Some(build_info::toolbar_lines(false))
@@ -1418,6 +1574,10 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                 && operation::status_of(&state.world, e) == operation::OpStatus::Stale
         })
         .count();
+    let ops_n = model::named_entities(&state.world)
+        .into_iter()
+        .filter(|(_, e)| model::is_operation(&state.world, e))
+        .count();
     // #192: a refusal on the status line must not read like any other
     // status - error ink, bold, a "!" marker, on an error-tinted band.
     let alert = super::status_alert::is_alert(state);
@@ -1440,7 +1600,8 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // icon set is up, its name when it is not (headless frames
             // and a failed decode degrade to text, never to nothing).
             if super::debug_info::button(ui, icons).clicked() {
-                state.debug_info_open = !state.debug_info_open;
+                // #2262: a dock tab like the other panels; the shell lands it.
+                state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
             }
             // #183: the live MCP server says it is listening.
             if let Some(note) = crate::mcp_host::badge(state) {
@@ -1451,6 +1612,11 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                 if button.clicked() {
                     state.pending.push_back(CommandKind::RegenerateAll);
                 }
+            }
+            // #2262: placed before the status line, which fills what is
+            // left; behind it the label ran past the line onto the door.
+            if ops_n > 0 {
+                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
             }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())

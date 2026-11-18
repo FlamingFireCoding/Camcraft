@@ -38,8 +38,8 @@ impl Height {
 }
 
 /// Resolve one height to a world Z. `Fixed` reads through; the other
-/// sources ask the world for the current geometry (model bounds exclude
-/// stock and WCS by `solid_world_aabb`'s rule; a slot entity that exists
+/// sources ask the world for the current geometry (model bounds are the
+/// parts': no stock, WCS or fixture, #1529; a slot entity that exists
 /// but was never moved reads at the origin, matching `transform_of`'s
 /// own default-everything semantics).
 /// `setup` is the declared setup of the asking operation (`None` = the
@@ -61,11 +61,12 @@ pub fn resolve_height(
         HeightReference::Fixed => return (h.offset.is_finite()).then_some(h.offset),
         HeightReference::TopOfStock => model::stock_world_aabb_for(world, setup)?.max.z,
         HeightReference::BottomOfStock => model::stock_world_aabb_for(world, setup)?.min.z,
-        // #326: the model bounds in the setup's frame - a flipped part's
-        // top is its former bottom (identical to the document bounds
-        // when the setup holds the part as modelled).
-        HeightReference::TopOfModel => crate::setup_align::solid_aabb_in(world, setup)?.max.z,
-        HeightReference::BottomOfModel => crate::setup_align::solid_aabb_in(world, setup)?.min.z,
+        // #326: the parts' bounds in the setup's frame - a flipped
+        // part's top is its former bottom. #1529: the parts only - a
+        // vise, accessory or tagged fixture (of any setup) is never
+        // the model the heights stand on.
+        HeightReference::TopOfModel => crate::setup_align::part_aabb_in(world, setup)?.max.z,
+        HeightReference::BottomOfModel => crate::setup_align::part_aabb_in(world, setup)?.min.z,
         HeightReference::WorkOffset => {
             // #329, #342: the setup's one WCS, never the height's own.
             let entity = crate::setup::wcs_entity(world, setup)?;
@@ -99,7 +100,9 @@ pub fn missing_source(
                 .then_some("no stock yet - set it up in Setup > Stock")
         }
         HeightReference::TopOfModel | HeightReference::BottomOfModel => {
-            model::solid_world_aabb(world).is_none().then_some("no model loaded")
+            crate::setup_align::part_aabb_in(world, setup)
+                .is_none()
+                .then_some("no model loaded")
         }
         HeightReference::WorkOffset => crate::setup::wcs_entity(world, setup)
             .is_none()
@@ -109,7 +112,8 @@ pub fn missing_source(
 
 /// The Z the operation's region lives at, resolved: the section/stadium
 /// plane for the depth kinds, the skim (or first stage) plane for Face.
-/// None when that height's reference has no source.
+/// Tilted heights use the generation fold coordinate, not setup Z.
+/// None when the reference has no source or the tilt has no direction.
 #[must_use]
 pub fn region_z(
     world: &flecs_ecs::prelude::World,
@@ -117,10 +121,12 @@ pub fn region_z(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Option<f64> {
+    let frame = OpFrame::new(setup.map(str::to_owned), params.tilt()).checked_frame().ok()?;
+    let resolve = |h| fold_height(world, setup, src, frame.as_ref(), h);
     match params {
         OpParams::Face { top_z, cut_z, .. } => top_z
-            .map(|t| resolve_height(world, setup, src, t))
-            .unwrap_or_else(|| resolve_height(world, setup, src, *cut_z)),
+            .map(&resolve)
+            .unwrap_or_else(|| resolve(*cut_z)),
         OpParams::Contour { top_z, .. }
         | OpParams::Pocket { top_z, .. }
         // The roughing twins name the pocket's high station (M2.4 A),
@@ -168,13 +174,15 @@ pub fn region_z(
         | OpParams::Thread { top_z, .. }
         // The deburr window's ceiling names the same high station:
         // the ride's tips stand at or below it (M2.5 E B).
-        | OpParams::Deburr { top_z, .. } => resolve_height(world, setup, src, *top_z),
+        | OpParams::Deburr { top_z, .. } => resolve(*top_z),
         // The probe's station is its expected contact (#108).
         OpParams::Probe { target, .. } => Some(target[2]),
         // The plasma cut rides the plate's top (#670).
-        OpParams::PlasmaProfile(p) => resolve_height(world, setup, src, p.top_z),
+        OpParams::PlasmaProfile(p) => resolve(p.top_z),
         // The wire's profile is read on the workpiece's top (#532).
-        OpParams::WireContour(p) => resolve_height(world, setup, src, p.top_z),
+        OpParams::WireContour(p) => resolve(p.top_z),
+        // The electrode enters at the work top (#541).
+        OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(crate::operation::SinkerSideBurnOp { burn: p, .. }) => resolve(p.top_z),
     }
 }
 
@@ -216,9 +224,21 @@ pub fn resolve_params(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Result<ResolvedHeights, String> {
+    resolve_params_with(world, setup, src, params, &|h| resolve_height(world, setup, src, h))
+}
+
+/// [`resolve_params`] with the per-height resolve handed in: the 3+2
+/// fold (#2389) reads each reference along the tilted tool axis
+/// ([`super::tilt_heights::fold_height`]); the refusals stay word for word.
+pub fn resolve_params_with(
+    world: &flecs_ecs::prelude::World,
+    setup: Option<&str>,
+    src: Option<&SrcRef>,
+    params: &OpParams,
+    resolve: &dyn Fn(Height) -> Option<f64>,
+) -> Result<ResolvedHeights, String> {
     let req = |what: &str, h: Height| -> Result<f64, String> {
-        resolve_height(world, setup, src, h)
-            .ok_or_else(|| unresolved_msg(what, h, world, setup, src))
+        resolve(h).ok_or_else(|| unresolved_msg(what, h, world, setup, src))
     };
     let opt = |what: &str, h: Option<Height>| -> Result<Option<f64>, String> {
         h.map(|v| req(what, v)).transpose()
@@ -399,6 +419,15 @@ pub fn resolve_params(
             let top = req("Top of Workpiece Z", p.top_z)?;
             (top, Some(top), Some(req("Bottom of Workpiece Z", p.bottom_z)?), None, None)
         }
+        // The sinker burn (#541): the approach plane, the work top and
+        // the cavity floor datum - no hop plane.
+        OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(crate::operation::SinkerSideBurnOp { burn: p, .. }) => (
+            req("Clearance Z", p.clearance_z)?,
+            Some(req("Work Top Z", p.top_z)?),
+            Some(req("Cavity Floor Z", p.floor_z)?),
+            None,
+            None,
+        ),
     };
     Ok(ResolvedHeights { clearance, top, bottom, face_top, retract })
 }

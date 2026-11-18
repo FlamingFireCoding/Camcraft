@@ -21,7 +21,10 @@ pub(super) fn region_for(
     params: &OpParams,
     frame: Option<&crate::cl::TiltedFrame>,
 ) -> Result<Region, GenError> {
-    let z = section_z_of(world, setup, src, params).unwrap_or(Ok(0.0));
+    // #1504: a picked Slot that leaves its picks draws nothing - the
+    // preview never outlines a slot across a wall; generation names it.
+    super::slot_pick::confine_slot(world, setup, src, params)?;
+    let z = section_z_of(world, setup, src, params, frame).unwrap_or(Ok(0.0));
     region_core(material, params, frame, z)
 }
 
@@ -37,6 +40,7 @@ pub(super) fn section_z_of(
     setup: Option<&str>,
     src: Option<&SrcRef>,
     params: &OpParams,
+    frame: Option<&crate::cl::TiltedFrame>,
 ) -> Option<Result<f64, GenError>> {
     let top_z = match params {
         OpParams::Contour { top_z, .. }
@@ -54,7 +58,8 @@ pub(super) fn section_z_of(
         _ => return None,
     };
     Some(
-        resolve_height(world, setup, src, top_z)
+        // #2389: a tilted section stands along the tool axis.
+        fold_height(world, setup, src, frame, top_z)
             .ok_or_else(|| unresolved_err("Top of Part Z", top_z, world, setup, src)),
     )
 }
@@ -112,6 +117,8 @@ fn source_region(
         }
         // The probe bounds no area (#108): its generation never asks.
         OpParams::Probe { .. } => Err(GenError::Invalid("a probe has no machining region".into())),
+        // The sinker burn bounds no area (#541): its face is the electrode's.
+        OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => Err(GenError::Invalid("a sinker burn has no machining region".into())),
         // The plasma cut goes THROUGH the plate (#670): what it can cut
         // is the through-silhouette - a blind pocket is no torch's work.
         OpParams::PlasmaProfile(_) => {
@@ -199,15 +206,30 @@ fn source_region(
             section(&material.facets, z - oz)
         }
         // The chamfer ride's machine area is the edge the cone lies
-        // along: the section at the apex plane - a boundary ride the
-        // contour's way (M2.4 B).
-        OpParams::Chamfer2D { .. } => {
-            let z = z?;
-            section(&material.facets, z - oz)
+        // along - a boundary ride the contour's way (M2.4 B). #2435: the
+        // tip touches the WALL at the corner depth, not the top plane's
+        // outline - on a model whose edge is already bevelled that
+        // outline is the bevel's top edge, inside the wall. Each top
+        // edge rides the wall section under it (a vertical wall: the
+        // top loop itself, unchanged); a top edge with no wall within
+        // the width refuses by name.
+        OpParams::Chamfer2D { width, angle_deg, .. } => {
+            let z = z? - oz;
+            let corner_z = z - width * angle_deg.to_radians().tan();
+            let top = section(&material.facets, z)?;
+            let wall = section(&material.facets, corner_z)?;
+            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z)
         }
-        OpParams::Slot { a, b, width, .. } | OpParams::TrochoidalSlot { a, b, width, .. } => {
-            stadium(*a, *b, width * 0.5)
+        // #1731: the Slot's machine area is the stadium of its EXTENDED
+        // ends - the channel the pass is asked to cut. Where the
+        // extension enters a part the job keeps, the part law (the
+        // solid section on a part source, the setup's parts on a stock
+        // source) convicts it; the area never excuses it.
+        OpParams::Slot { a, b, width, extend_start, extend_end, .. } => {
+            let (ea, eb) = crate::machining2d::slot_extended_ends(*a, *b, *extend_start, *extend_end)?;
+            stadium(ea, eb, width * 0.5)
         }
+        OpParams::TrochoidalSlot { a, b, width, .. } => stadium(*a, *b, width * 0.5),
         // The circular ladder's machine area is the AUTHORED disk -
         // the slot's authored-geometry law with a circle for a
         // stadium; the generator refuses a disk that meets no
@@ -328,6 +350,23 @@ pub(super) fn rim_is(l: &Loop, h: Hole) -> bool {
     let tol = (0.02 * h.radius).max(0.1);
     pts.iter()
         .all(|p| ((p.x - h.xy.x).hypot(p.y - h.xy.y) - h.radius).abs() <= tol)
+}
+
+/// The declared circles `(centre, radius)` [`region_for`]'s rim loops
+/// draw for a containment kind (#1057): a Z drill's, a bore's or a
+/// thread mill's holes. The verify reads a loop tracing one at the
+/// untightened gouge tolerance (`VerifyContext::rims`). Empty for every
+/// other kind, and for a radial drill (its region has no rims).
+pub(super) fn rims_of(params: &OpParams) -> Vec<(Point2, f64)> {
+    match params {
+        OpParams::Drill { holes, cross, .. } if cross.is_empty() => holes.iter().map(|h| (h.xy, h.radius)).collect(),
+        // Thread is not declared (#1073 review): its region reads the
+        // major circle (#1071, `thread_rims::major_rims`), not the minor
+        // rim, so a minor declaration would trace no loop - the thread mill
+        // stays on the tightened reading, the conservative side.
+        OpParams::Bore { holes, .. } => holes.iter().map(|h| (h.xy, h.radius)).collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// The stock the verify's column law reads as material (`VerifyContext::

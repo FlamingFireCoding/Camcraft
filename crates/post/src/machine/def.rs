@@ -12,6 +12,7 @@ use super::direction::AxisDirection;
 // #669: the kind moved to its own seam; re-exported so `def::*` (and
 // every `machine::Kind` path) reads as before.
 pub use super::kind::{can_tilt, kind, Kind};
+pub use super::trunnion::RotarySignConvention;
 use serde::{Deserialize, Serialize};
 
 /// One axis as the machine file describes it - prismatic or, since
@@ -83,6 +84,27 @@ pub struct AxisLimits {
     /// = unstated: the work-vs-table swing is named not judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axis_to_table: Option<f64>,
+    /// Nearest enclosing rotary ancestor in `kinematics.default.parts` (#1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Zero-based rotary order in `kinematics.default.parts` (#1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_order: Option<u32>,
+    /// Rotary pivot position in machine coordinates, mm (#1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pivot: Option<[f64; 3]>,
+    /// Child rotary offset from parent rotary reference, mm (#1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[f64; 3]>,
+    /// Kinematic zero offset from machine home, degrees (#1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zero_offset: Option<f64>,
+    /// Whether controller wraps this rotary 0..360 deg (#1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rollover: Option<bool>,
+    /// Explicit rotary sign convention (`tool_rh` vs `table_rh`, #1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_convention: Option<RotarySignConvention>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -107,11 +129,12 @@ pub struct Coolant {
 }
 
 /// The coolant names the shipped posts read (#150), in editor order:
-/// `Flood` serves a Flood op, `Mist` a Mist op, `Through-spindle` or
+/// `Flood` serves a Flood op, `Mist` a Mist op, `Air` an Air op (#869;
+/// `Air blast` reads too), `Through-spindle` or
 /// `Through-tool` a Through-tool op. The posts compare case-blind with
 /// spaces and underscores read as hyphens ("Through spindle" reads); any
 /// other name is a shop's own flood (the first coded one serves).
-pub const COOLANT_KINDS: [&str; 4] = ["Flood", "Mist", "Through-spindle", "Through-tool"];
+pub const COOLANT_KINDS: [&str; 5] = ["Flood", "Mist", "Air", "Through-spindle", "Through-tool"];
 
 /// A machine, as parsed from a `.mch` file. The identity strings are
 /// display data; every limit is optional by the unstated-limits law.
@@ -205,6 +228,11 @@ pub struct Machine {
     /// None: unstated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edm: Option<super::edm::Edm>,
+    /// The EDM control's own words, `edm.codes` (#533, #290 D5): name ->
+    /// the text the control reads. Empty = none stated; a post that
+    /// needs one refuses by its name.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub edm_codes: std::collections::BTreeMap<String, String>,
     /// The holder system the spindle takes (#828): `tooling.spindle_mount`,
     /// one of [`super::SPINDLE_MOUNTS`]. Unstated reads `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -215,6 +243,18 @@ pub struct Machine {
     /// tool with no holder body, as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_holder: Option<String>,
+    /// #760: whether the controller supports work-plane / coordinate
+    /// rotation (`G68 X0 Y0 R` / `ROT RPL`) via `controller.coordinate_rotation`.
+    /// Absent or false (the unstated-limit law) keeps `Control` mode refused
+    /// by name; `Bake` works on every machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinate_rotation: Option<bool>,
+    /// Explicit `controller.rtcp` capability flag (#1962); `None` infers from tilt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_rtcp: Option<bool>,
+    /// Machine-level rotary sign convention (`tool_rh` vs `table_rh`, #1962).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_convention: Option<RotarySignConvention>,
 }
 
 /// The words a control needs around C-axis live-tool work (issue
@@ -267,6 +307,7 @@ impl Machine {
                 .as_deref()
                 .is_none_or(|w| Kind::from_word(w).is_some())
             && self.coolants.iter().all(|c| !c.name.is_empty())
+            && self.waterjet_sane()
             && self.plasma_sane()
             && self.edm_sane()
             && self.axes.iter().all(|a| {
@@ -280,6 +321,8 @@ impl Machine {
                 _ => true,
             }
             && self.edm.as_ref().is_none_or(super::edm::Edm::is_sane)
+            && super::edm_codes::codes_sane(&self.edm_codes)
+            && self.trunnion_sane()
     }
 
     /// The one-line identity for the Setup pane and the stage E sheet.
@@ -298,6 +341,8 @@ impl Machine {
         // would read as an unstated range rather than an absent spindle.
         let head = if kind(Some(self)) == Kind::Plasma {
             "torch, no spindle".to_owned()
+        } else if kind(Some(self)) == Kind::Waterjet {
+            "waterjet nozzle, no spindle".to_owned()
         } else {
             format!(
                 "spindle {}-{} rpm",

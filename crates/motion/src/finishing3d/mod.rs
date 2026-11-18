@@ -88,6 +88,7 @@ mod crease;
 mod deburr;
 mod drape;
 mod edge;
+mod fill;
 mod flat;
 mod geodesic;
 mod ladder;
@@ -98,11 +99,13 @@ mod march;
 mod params;
 mod polar;
 mod raster;
+mod raster_bridge;
 mod rim;
 mod rings;
 mod scan;
 mod shadow;
 mod support;
+mod swarf;
 
 pub use params::{
     scallop_stepdown, scallop_stepover, Finish3DParams, FinishPattern,
@@ -111,6 +114,7 @@ pub use center_cut::guard as center_cut_guard;
 pub use center_cut::guard_as as center_cut_guard_as;
 pub use center_cut::guard_shaped as center_cut_guard_shaped;
 pub use deburr::{deburr, DeburrParams};
+pub use fill::{fill_openings, Filled};
 pub use flat::flat;
 pub use geodesic::geodesic;
 pub use pencil::{corner, pencil};
@@ -119,7 +123,8 @@ pub use flow::flow;
 // closest-point law the raster clearance uses, crate-visible.
 pub(crate) use support::closest_pt_tri;
 pub use polar::{morphed_spiral, radial, spiral};
-pub use raster::{blend, parallel, swarf, swarf_multi};
+pub use raster::{blend, parallel};
+pub use swarf::{swarf, swarf_multi};
 pub use rings::waterline;
 pub use morph::morph;
 pub use shadow::{contour, project};

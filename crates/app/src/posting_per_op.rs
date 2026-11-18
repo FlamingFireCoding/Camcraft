@@ -16,11 +16,12 @@
 //! writes nothing: never a folder with ops 1 and 3 but not 2.
 
 use super::{
-    machine_value_of, op_streams, options_value, post_options, script_of, script_source, viewer_map,
-    Posted,
+    mounts::posted_machine_for, op_streams, post_of_setup, script_of, script_source, viewer_map, Posted,
 };
-use crate::post::{cnc, engine};
+use crate::post::{cnc, engine, options::OptionValue};
+use crate::schema::PostRef;
 use flecs_ecs::prelude::World;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// One written program of a per-operation post.
@@ -32,6 +33,18 @@ pub struct PostedFile {
     pub op: String,
     /// The program as posted, the same evidence a whole-job post gives.
     pub posted: Posted,
+}
+
+/// A post script as a per-op post resolves it: its label (a post
+/// file's path, for a refusal to name; `None` for a caller's own text)
+/// and its text.
+type Script = (Option<String>, String);
+
+/// Which post identity supplies stored options for each operation.
+enum ScriptPost<'a> {
+    Setup,
+    Explicit(&'a PostRef),
+    Anonymous,
 }
 
 /// Longest sanitised operation name in a file name: a file system
@@ -67,19 +80,29 @@ pub fn file_stem(program: &str, index: usize, op_name: &str) -> String {
 /// program, each through its own setup's post for its own setup's
 /// machine (#388). See [`post_per_op_script`].
 pub fn post_per_op(world: &World, dir: &Path, program: &str) -> Result<Vec<PostedFile>, String> {
+    post_per_op_with_script_options(world, dir, program, None)
+}
+
+/// [`post_per_op`] with temporary per-run script option overrides (#258).
+pub fn post_per_op_with_script_options(
+    world: &World,
+    dir: &Path,
+    program: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Vec<PostedFile>, String> {
     // Every mount's script first: a post that cannot be read refuses
     // before anything is judged.
     let mounts = crate::setup_mount::program_mounts(world, true);
     if mounts.is_empty() {
         script_source(world)?;
     }
-    let mut scripts: Vec<(Vec<String>, String, String)> = Vec::with_capacity(mounts.len());
+    let mut scripts: Vec<(Vec<String>, Script)> = Vec::with_capacity(mounts.len());
     for m in mounts {
-        let (name, text) = script_of(&m.post)?;
-        scripts.push((m.setups, name, text));
+        let (label, text) = script_of(&m.post)?;
+        scripts.push((m.setups, (Some(label), text)));
     }
-    post_per_op_with(world, dir, program, |setup| {
-        scripts.iter().find(|(s, _, _)| s.contains(&setup.to_owned())).map(|(_, n, t)| (Some(n.clone()), t.clone()))
+    post_per_op_with(world, dir, program, ScriptPost::Setup, extra, |setup| {
+        scripts.iter().find(|(s, _)| s.contains(&setup.to_owned())).map(|(_, t)| t.clone())
     })
 }
 
@@ -95,18 +118,51 @@ pub fn post_per_op_script(
     program: &str,
     cps: &str,
 ) -> Result<Vec<PostedFile>, String> {
-    post_per_op_with(world, dir, program, |_| Some((None, cps.to_owned())))
+    post_per_op_script_with_options(world, dir, program, cps, None)
+}
+
+/// [`post_per_op_script`] with temporary per-run script option overrides (#258).
+pub fn post_per_op_script_with_options(
+    world: &World,
+    dir: &Path,
+    program: &str,
+    cps: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Vec<PostedFile>, String> {
+    post_per_op_with(world, dir, program, ScriptPost::Anonymous, extra, |_| Some((None, cps.to_owned())))
+}
+
+/// Post every operation through a resolved post, retaining its identity so
+/// each operation's matching document/setup script options apply.
+pub fn post_per_op_for_post_with_options(
+    world: &World,
+    dir: &Path,
+    program: &str,
+    post: &PostRef,
+    cps: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Vec<PostedFile>, String> {
+    post_per_op_with(
+        world,
+        dir,
+        program,
+        ScriptPost::Explicit(post),
+        extra,
+        |_| Some((Some(super::post_ref_label(post)), cps.to_owned())),
+    )
 }
 
 /// The per-op post with each op's script chosen by its effective setup
-/// name (`""` for the implicit setup), as its name for a refusal (when
-/// known) and its text; the machine is always the op's own setup's
-/// (#388).
+/// name (`""` for the implicit setup) with its label (a post file's
+/// path, for a refusal to name); the machine is always the op's own
+/// setup's (#388).
 fn post_per_op_with(
     world: &World,
     dir: &Path,
     program: &str,
-    script: impl Fn(&str) -> Option<(Option<String>, String)>,
+    script_post: ScriptPost<'_>,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+    script: impl Fn(&str) -> Option<Script>,
 ) -> Result<Vec<PostedFile>, String> {
     if !dir.is_dir() {
         return Err(format!("{} is not a folder", dir.display()));
@@ -116,6 +172,8 @@ fn post_per_op_with(
     // (#1190) before anything else is judged: a turning dialect opens
     // only what a lathe may run.
     let mut resolved = Vec::with_capacity(streams.len());
+    // #1232: each setup's ops, for the post-serves-kind door below.
+    let mut by_setup: Vec<(String, Vec<&str>, Option<String>, String)> = Vec::new();
     for (name, _) in &streams {
         let setup = crate::model::find_by_name(world, name)
             .and_then(|e| crate::model::operation_of(world, &e))
@@ -123,7 +181,16 @@ fn post_per_op_with(
         let effective = crate::setup::effective(world, setup.as_deref()).unwrap_or_default();
         let (label, cps) = script(&effective).ok_or_else(|| format!("{name}: no post resolved for its setup"))?;
         crate::lathe_voice::at_post(world, [name.as_str()], &cps, label.as_deref())?;
+        match by_setup.iter_mut().find(|(s, ..)| *s == effective) {
+            Some((_, ops, ..)) => ops.push(name.as_str()),
+            None => by_setup.push((effective, vec![name.as_str()], label, cps.clone())),
+        }
         resolved.push((setup, cps));
+    }
+    let mut unserved = Vec::new();
+    for (setup, ops, label, cps) in &by_setup {
+        let machine = crate::setup_mount::machine_of(world, Some(setup.as_str()).filter(|s| !s.is_empty()));
+        unserved.extend(super::serves::refusal(world, std::slice::from_ref(setup), ops, &machine, cps, label.as_deref())?);
     }
     // #1174: the workholding clause reads each op's own script's dialect
     // (keyed by effective setup name, as `script` is); unreadable reads
@@ -134,19 +201,33 @@ fn post_per_op_with(
             crate::post::dialect::work_voice(&c).unwrap_or(crate::post::dialect::WorkVoice::Undeclared)
         })
     };
-    let report = crate::posting::verification_report_by(world, &voice);
+    let mut report = crate::posting::verification_report_by(world, &voice);
+    report.problems.splice(0..0, unserved);
     if !report.problems.is_empty() {
         return Err(format!("post blocked - {}", report.problems.join("; ")));
     }
-    let options = options_value(post_options(world));
     let mut files = Vec::with_capacity(streams.len());
     for (k, ((name, records), (setup, cps))) in streams.iter().zip(resolved).enumerate() {
         let index = k + 1;
-        let number = u32::try_from(index).map_err(|_| "too many operations to number".to_owned())?;
+        let id = super::document_program_id(world, index)?;
         let ext = engine::extension_of(&cps).map_err(|e| format!("post engine: {e}"))?;
         let ext = sanitise(&ext, "nc");
-        let mch = machine_value_of(world, setup.as_deref());
-        let out = engine::run_numbered_with(&cps, &mch, &cnc::serialize(records), &options, number)
+        // #2319: a missing or malformed default machine file refuses by name.
+        let mch = posted_machine_for(&crate::machine::of_setup(world, setup.as_deref()))
+            .map_err(|why| format!("{name}: {why}"))?;
+        let post_ref = match script_post {
+            ScriptPost::Setup => Some(post_of_setup(world, setup.as_deref())),
+            ScriptPost::Explicit(post) => Some(post.clone()),
+            ScriptPost::Anonymous => None,
+        };
+        let options = super::program_options_for_script(
+            world,
+            &cps,
+            post_ref.as_ref(),
+            setup.as_deref(),
+            extra,
+        )?;
+        let out = engine::run_program_with(&cps, &mch, &cnc::serialize(records), &options, &id)
             .map_err(|e| format!("{name}: post engine: {e}"))?;
         if !out.warnings.is_empty() {
             return Err(format!(

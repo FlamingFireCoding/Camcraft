@@ -14,7 +14,6 @@ use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, Histor
 use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::{self, parse_mch};
 use camcraft_app::operation::{Height, OpParams, SrcRef};
-use camcraft_app::posting::MACHINES;
 use camcraft_app::schema::Location;
 use camcraft_app::tools::catalog;
 use camcraft_app::world::new_world;
@@ -90,6 +89,7 @@ fn thread_on(mch: &str) -> World {
         infeed: 0.4,
         feed: 120.0,
         plunge_feed: 40.0,
+        infeed_plan: Default::default(),
         hand: camcraft_app::cl::ThreadHand::Right,
     };
     h.execute(&world, CreateOperation::new(&world, "TH1", "TD-1732-60", SrcRef::Entity("bar".into()), params).expect("create"));
@@ -105,7 +105,7 @@ fn travel_problems(world: &World) -> Vec<String> {
 }
 
 fn builtin_lathe() -> &'static str {
-    MACHINES.iter().find(|(n, _)| *n == "Lathe").map(|(_, t)| *t).expect("the built-in Lathe ships")
+    camcraft_app::posting::builtin_machine_text("Lathe").expect("the built-in Lathe ships")
 }
 
 #[test]

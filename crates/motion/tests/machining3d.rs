@@ -77,6 +77,9 @@ fn slab_with_boss() -> Vec<Triangle> {
     f
 }
 
+/// The first level of `params`: one stepdown under Top Z 0 (#2004).
+const FIRST_LEVEL: f64 = -5.0;
+
 fn params(entry: Entry3D, helix_radius: f64) -> Pocket3DParams {
     Pocket3DParams {
         links: camcraft_motion::links::Links::ROUGH3D,
@@ -307,7 +310,7 @@ fn the_entry_family_is_obeyed_at_the_first_level_3d() {
     let reach = t
         .moves
         .iter()
-        .find(|m| (m.to.z - 0.0).abs() < 1e-9 && m.kind != MoveKind::Rapid)
+        .find(|m| (m.to.z - FIRST_LEVEL).abs() < 1e-9 && m.kind != MoveKind::Rapid)
         .expect("the first plane is entered by something");
     assert!(reach.arc.is_some(), "entered by the spiral, not a wall dive: {reach:?}");
     assert!(t.notes.is_empty(), "room exists; nothing to substitute: {:?}", t.notes);
@@ -370,7 +373,7 @@ fn a_ramp_over_open_floor_feeds_down_in_one_diagonal() {
     let open = t
         .moves
         .iter()
-        .find(|m| (m.to.z - 0.0).abs() < 1e-9 && m.kind != MoveKind::Rapid)
+        .find(|m| (m.to.z - FIRST_LEVEL).abs() < 1e-9 && m.kind != MoveKind::Rapid)
         .expect("the first plane is entered by something");
     assert!(
         open.kind == MoveKind::Feed && open.from.z != open.to.z,
@@ -433,12 +436,12 @@ fn degenerate_input_refuses_cleanly() {
         pocket3d(&f, &region, &params(Entry3D::Helix, 4.5)),
         Err(GenError::Invalid(_))
     ));
-    // A block exactly filling the footprint: the top level's ε-probe
-    // stands above the block top, so that face is cut tangentially -
-    // one real path, not a refusal; the levels under it are all island
-    // and get skipped.
+    // A block exactly filling the footprint, its top at Top Z: no level
+    // stands at Top Z (#2004), and every level under it is island. The
+    // old ladder cut the block's top face tangentially at Top Z - a pass
+    // that removes nothing. Now the ladder refuses by name.
     let block = box_facets([-5.0, -5.0, -10.0], [5.0, 5.0, 0.0]);
-    assert!(
+    assert!(matches!(
         pocket3d(
             &block,
             &rect(-5.0, -5.0, 5.0, 5.0),
@@ -446,9 +449,9 @@ fn degenerate_input_refuses_cleanly() {
                 top_z: 0.0,
                 ..params(Entry3D::Plunge, 1.0)
             }
-        )
-        .is_ok()
-    );
+        ),
+        Err(GenError::Empty(msg)) if msg.contains("fills")
+    ));
     let filled = box_facets([-20.0, -20.0, -10.0], [20.0, 20.0, 2.0]);
     assert!(matches!(
         pocket3d(&filled, &region, &params(Entry3D::Plunge, 1.0)),
@@ -733,13 +736,13 @@ fn adaptive_refuses_what_the_law_refuses() {
     // Finiteness is strategy-blind, as it has always been.
     assert!(at(PocketStrategy::Zigzag, f64::NAN, 3.0).is_err());
     assert!(at(PocketStrategy::Adaptive, f64::NAN, 3.0).is_err());
-    // The stepover gate is strategy-blind too: under Adaptive the number
-    // never spaces a ring (tiling_step answers for it), but a non-positive
-    // or over-wide stepover is still a nonsense parameter, refused by the
-    // same gate every other pocket meets. The v1 stance - keep the gate
-    // shared, document the inertness, do not fork legality per strategy.
+    // A non-positive stepover is nonsense under every strategy. The
+    // diameter bound is the reach law of the strategies the stepover
+    // spaces; under Adaptive the number never spaces a ring (the page
+    // hides it, #1512), so a stale wide value must not refuse the job.
     assert!(at(PocketStrategy::Adaptive, 45.0, 0.0).is_err());
-    assert!(at(PocketStrategy::Adaptive, 45.0, 9.0).is_err(), "over the D");
+    assert!(at(PocketStrategy::Adaptive, 45.0, 9.0).is_ok(), "stepover unread under Adaptive");
+    assert!(at(PocketStrategy::Zigzag, 45.0, 9.0).is_err(), "over the D under Zigzag");
 }
 
 #[test]
@@ -920,12 +923,19 @@ fn a_prev_mask_only_ever_removes_cuts() {
         }
     }
     let masked = pocket3d_prev(&f, &region, &pp, Some(&Columns::of_grid(&mask))).expect("the right half cuts");
-    assert!(
-        masked.moves.len() < full.moves.len(),
-        "masked {} vs full {}",
-        masked.moves.len(),
-        full.moves.len()
-    );
+    // Less cut, not fewer moves: the zig-zag rows run along X, so a half
+    // footprint has as many rows as the whole one. Before #2004 the count
+    // differed only by the air plane at Top Z (where the masked target
+    // was empty); the cut length is the honest measure.
+    let cut_len = |t: &camcraft_motion::cl::Toolpath| -> f64 {
+        t.moves
+            .iter()
+            .filter(|m| m.kind != MoveKind::Rapid)
+            .map(|m| (m.to.x - m.from.x).hypot(m.to.y - m.from.y))
+            .sum()
+    };
+    let (lm, lf) = (cut_len(&masked), cut_len(&full));
+    assert!(lm < 0.75 * lf, "masked cut {lm} vs full cut {lf}");
     for m in &masked.moves {
         // Every non-rapid move stands on the untouched side; rapids
         // fly over whatever they like, above the standing material.

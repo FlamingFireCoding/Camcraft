@@ -103,7 +103,11 @@ pub struct VerifyContext<'a> {
     pub mode: Mode,
     /// Top of the stock column in Z (the surface the tool starts from).
     pub stock_top_z: f64,
-    /// Safe plane: rapids must live at or above it.
+    /// The op's safe plane. Law (d) no longer stands down at it (issue
+    /// #2121: a plane inside the stock is not safe) - it reads every
+    /// lateral rapid under the stock top; the plane only says which
+    /// convictions the operation layer may re-read against the program
+    /// ahead (`acquit_traverses_by_prior`).
     pub clearance_z: f64,
     /// Finish allowance already baked into the path offsets.
     pub stock_to_leave: f64,
@@ -151,6 +155,17 @@ pub struct VerifyContext<'a> {
     /// which is also the budget moves are read into chords at and must
     /// not shrink with the model.
     pub model_excess: f64,
+    /// The declared circles `(centre, radius)` a containment kind's
+    /// region draws as rim loops (#1057): our own polygons of a hole the
+    /// operation names, not a model's facets, so law (b) reads a loop
+    /// that traces one at the untightened `gouge_tol`
+    /// ([`VerifyContext::loop_tol`]). Empty everywhere else.
+    pub rims: &'a [(crate::geo2d::Point2, f64)],
+    /// The spindle a turning nose path cuts about (#1408): given, the
+    /// envelope law (f) reads the hidden half as the turning work sees
+    /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
+    /// path, and a turning one no axis fits - reads as it always did.
+    pub lathe_axis: Option<crate::stock_sim::LatheAxis>,
 }
 
 /// The inert tool of [`VerifyContext::default`].
@@ -187,6 +202,8 @@ impl Default for VerifyContext<'_> {
             fixtures: &[],
             spindle: None,
             model_excess: 0.0,
+            rims: &[],
+            lathe_axis: None,
         }
     }
 }
@@ -238,7 +255,8 @@ pub enum Warning {
     /// move, at most: moves law (c) already convicted are not
     /// re-tried here, and `part` reads like (c)'s.
     SweepHit { at: usize, part: bool },
-    /// Rapid `move` travels under the clearance plane through stock.
+    /// Rapid `move` travels through stock: under the clearance plane,
+    /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
@@ -287,6 +305,20 @@ pub enum Warning {
     /// its overtravel. Advisory like the scallop: shown and named, never
     /// binding - a stated probe distance is the operator's to choose.
     ProbeSearch { at: usize, mm: f64, limit_mm: f64 },
+    /// A sinker finish out of order (#543): the finish burn at move `at`
+    /// is undersized `finish_mm` per side, not less than the `rough_mm`
+    /// of the rough burn it follows - the finish electrode is no larger
+    /// than the rough, so it takes nothing off the walls the rough left.
+    /// Advisory: the finish's own size law already holds the cavity to
+    /// size, so the post is not held.
+    SinkerFinishOrder { at: usize, finish_mm: f64, rough_mm: f64 },
+    /// A stock-source 2D Chamfer whose solid-law check breaks into a
+    /// part (#1637): choosing the part as source instead of the stock
+    /// avoids cutting into the part edge. Blocking like `Gouge`.
+    StockChamferGouge { at: usize },
+    /// The same for a stock-source Deburr (#2313): it breaks the stock's
+    /// edge, and the part under that edge is cut. Blocking like `Gouge`.
+    StockDeburrGouge { at: usize },
 }
 
 impl Warning {
@@ -294,7 +326,7 @@ impl Warning {
     /// reading (M13.9), which is a quality note - shown, never binding.
     #[must_use]
     pub fn blocks_post(&self) -> bool {
-        !matches!(self, Warning::Scallop { .. } | Warning::ProbeSearch { .. })
+        !matches!(self, Warning::Scallop { .. } | Warning::ProbeSearch { .. } | Warning::SinkerFinishOrder { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -322,6 +354,15 @@ impl core::fmt::Display for Warning {
             Warning::Gouge { at } => {
                 write!(f, "move {at} cuts past the finish surface")
             }
+            Warning::StockChamferGouge { at } => {
+                write!(
+                    f,
+                    "move {at} cuts past the finish surface (stock-source chamfer breaks into a part; chamfer with the part as source)"
+                )
+            }
+            Warning::StockDeburrGouge { at } => {
+                write!(f, "move {at} cuts past the finish surface (stock-source deburr breaks into a part; use the part as source)")
+            }
             Warning::HolderHit { at, part, short_mm } => write!(
                 f,
                 "holder body at move {at} rubs the {} - {short_mm:.3} mm short of clearance",
@@ -338,7 +379,7 @@ impl core::fmt::Display for Warning {
                 if *part { "part or an island" } else { "uncut stock" }
             ),
             Warning::RapidInStock { at } => {
-                write!(f, "rapid move {at} travels below the clearance plane inside stock")
+                write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
@@ -371,6 +412,10 @@ impl core::fmt::Display for Warning {
             Warning::ProbeSearch { at, mm, limit_mm } => write!(
                 f,
                 "probe distance {mm:.3} mm at move {at}: the search may run that far past the expected contact, beyond the {limit_mm:.3} mm a stylus is trusted to overtravel (the post is not held)"
+            ),
+            Warning::SinkerFinishOrder { at, finish_mm, rough_mm } => write!(
+                f,
+                "sinker finish at move {at}: its electrode's undersize {finish_mm:.3} mm per side is not smaller than the rough's {rough_mm:.3} mm - the finish electrode is no larger than the rough and takes nothing off its walls (the post is not held)"
             ),
         }
     }

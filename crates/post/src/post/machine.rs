@@ -38,42 +38,9 @@ pub fn from_json(text: &str) -> Result<Value, serde_json::Error> {
 #[must_use]
 pub fn mirror(m: &crate::machine::Machine) -> Value {
     let mut axes: Vec<Value> = Vec::new();
-    let mut rotaries: Vec<Value> = Vec::new();
+    let rotaries = super::machine_rotary::mirror_rotaries(m);
     for a in &m.axes {
         if a.rotary {
-            // The stage D door: a rotary mirrors as GEOMETRY - its
-            // letter, its stated direction, its travel in degrees.
-            // M5.1 stage G added its speeds - in a `speeds` object of
-            // the rotary's OWN, stating degrees per minute under keys
-            // the sim's rotary law reads as degrees. The unit lie
-            // stage C refused was a deg/min rate absorbed into an
-            // mm/min ceiling field, and that refusal stands: the
-            // rotary joins no `axes` array, and `rapidRate`/
-            // `feedRateMax` stay linear-only sums below. The RTCP
-            // question a post asks ("does this machine tilt?") is
-            // still answered by the direction, not the rate; the
-            // rate exists now because the timeline turns angles, and
-            // a paced simulation has to know how fast.
-            let mut r = serde_json::Map::new();
-            r.insert("letter".to_owned(), json!(a.name));
-            r.insert("type".to_owned(), json!("rotary"));
-            if let Some(d) = a.axis {
-                r.insert("direction".to_owned(), json!([d[0], d[1], d[2]]));
-            }
-            if let Some((lo, hi)) = a.travel {
-                r.insert("travel".to_owned(), json!([lo, hi]));
-            }
-            let mut speeds = serde_json::Map::new();
-            if let Some(f) = a.feed {
-                speeds.insert("normal".to_owned(), json!(f));
-            }
-            if let Some(rap) = a.rapid {
-                speeds.insert("rapid".to_owned(), json!(rap));
-            }
-            if !speeds.is_empty() {
-                r.insert("speeds".to_owned(), Value::Object(speeds));
-            }
-            rotaries.push(Value::Object(r));
             continue;
         }
         let direction = match a.name.as_str() {
@@ -182,11 +149,51 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
     {
         o.insert("kind".to_owned(), json!("plasma"));
     }
+    // #533: a wire or sinker EDM says its kind and its `edm` words (the
+    // control's codes, D5, and whether it threads by itself) for the
+    // EDM posts' machine check; every other mirror is unchanged. #542:
+    // a sinker's `edm` also carries what the sinker post reads - its
+    // orbit words, pickup and condition table (lengths already mm) - so
+    // a wire mirror keeps exactly main's two keys.
+    let k = crate::machine::kind(Some(m));
+    if matches!(k, crate::machine::Kind::WireEdm | crate::machine::Kind::SinkerEdm)
+        && let Some(o) = out.as_object_mut()
+    {
+        o.insert("kind".to_owned(), json!(k.word()));
+        let awt = m.edm.as_ref().and_then(|e| e.awt);
+        let mut edm = json!({ "codes": m.edm_codes, "awt": awt });
+        if k == crate::machine::Kind::SinkerEdm
+            && let (Some(e), Some(eo)) = (m.edm.as_ref(), edm.as_object_mut())
+        {
+            eo.insert("orbits".to_owned(), json!(e.orbits));
+            eo.insert("pickup".to_owned(), json!(e.pickup));
+            eo.insert("conditions".to_owned(), serde_json::to_value(&e.conditions).unwrap_or_else(|_| json!([])));
+        }
+        // #1499: a wire's stated tank and flushing, as their words - only
+        // when stated, so a mirror that states neither is main's.
+        if let (Some(e), Some(eo)) = (m.edm.as_ref(), edm.as_object_mut()) {
+            if let Some(t) = e.tank {
+                eo.insert("tank".to_owned(), json!(t.word()));
+            }
+            if let Some(f) = e.flushing {
+                eo.insert("flushing".to_owned(), json!(f.word()));
+            }
+        }
+        o.insert("edm".to_owned(), edm);
+    }
     let inverted = m.inverted_axes();
     if !inverted.is_empty()
         && let Some(o) = out.as_object_mut()
     {
         o.insert("invertedAxes".to_owned(), json!(inverted));
+    }
+    if m.coordinate_rotation == Some(true)
+        && let Some(o) = out.as_object_mut()
+    {
+        o.insert("coordinateRotation".to_owned(), json!(true));
+    }
+    if let Some(o) = out.as_object_mut() {
+        super::machine_rotary::mirror_controller(m, o);
     }
     out
 }
@@ -244,55 +251,7 @@ pub fn script_props(m: &Value) -> Value {
                 .collect()
         })
         .unwrap_or_default();
-    // The rotary inventory (stage D): the mirror's geometry section,
-    // or - through the raw door - the axes that carry an A/B/C
-    // letter. RTCP is then a geometric question, not a naming one:
-    // the machine can tilt only if some rotary states a direction
-    // that is not the Z column. An unstated direction tilts nothing
-    // a post may promise, and `machine.rtcp` says so.
-    let mut rotaries: Vec<Value> = Vec::new();
-    if let Some(rs) = get(m, &["kinematics", "static", "rotaries"]).and_then(Value::as_array) {
-        for r in rs {
-            // Issue #33: the rotary's own deg/min rates ride under its
-            // own `speeds` key (null when unstated) so a C-axis post can
-            // cap a composite feed by the C rate the file states. They
-            // stay out of every mm/min field (stage C's unit law).
-            rotaries.push(json!({
-                "name": get(r, &["letter"]).and_then(Value::as_str).unwrap_or(""),
-                "direction": get(r, &["direction"]).cloned().unwrap_or(Value::Null),
-                "travel": get(r, &["travel"]).cloned().unwrap_or(Value::Null),
-                "speeds": get(r, &["speeds"]).filter(|s| s.is_object()).cloned().unwrap_or(Value::Null),
-            }));
-        }
-    }
-    if rotaries.is_empty()
-        && let Some(axes) = get(m, &["kinematics", "static", "axes"]).and_then(Value::as_array)
-    {
-        for a in axes {
-            let letter = a.get("letter").and_then(Value::as_str).unwrap_or("");
-            if is_rotary_letter(Some(letter)) {
-                rotaries.push(json!({
-                    "name": letter,
-                    "direction": a.get("axis").cloned().unwrap_or(Value::Null),
-                    "travel": Value::Null,
-                }));
-            }
-        }
-    }
-    let rtcp = rotaries.iter().any(|r| {
-        r.get("direction")
-            .and_then(Value::as_array)
-            .filter(|d| d.len() == 3)
-            .and_then(|d| {
-                let [x, y, z] = [
-                    d[0].as_f64()?,
-                    d[1].as_f64()?,
-                    d[2].as_f64()?,
-                ];
-                Some(z * z < 0.99 * (x * x + y * y + z * z))
-            })
-            .unwrap_or(false)
-    });
+    let (rotaries, rtcp, sign_convention) = super::machine_rotary::props_rotaries_and_rtcp(m);
     // The spindle inventory (M5.3 C): the mirror's stated count, the
     // serde mirror's field, or - through the raw door - the same
     // whole-tree head count `parse_mch` keeps. Unstated stays
@@ -315,6 +274,7 @@ pub fn script_props(m: &Value) -> Value {
         "coolants": coolants,
         "rotaries": rotaries,
         "rtcp": rtcp,
+        "signConvention": sign_convention,
         "spindles": spindles.map_or(Value::Null, |n| json!(n)),
         "units": if units_inch(m) { "inch" } else { "mm" },
         // #170: the speed ranges a hand belt/gear change picks between
@@ -356,6 +316,12 @@ pub fn script_props(m: &Value) -> Value {
         // #375: the inverted linear axes, for the header comment a post
         // that translates them writes ([] for every standard machine). A
         // statement the reader refuses was refused before the script ran.
+        // #533: the EDM section's codes and AWT flag through either
+        // door (the mirror's or a raw file's `edm`), null when unstated.
+        // #542: a sinker's orbits, pickup and conditions ride the same
+        // object; the sinker post reads only their words and ids (no
+        // length), so the raw door needs no unit scaling here.
+        "edm": get(m, &["edm"]).filter(|e| e.is_object()).cloned().unwrap_or(Value::Null),
         "invertedAxes": super::invert::stated(m).map(|(_, l)| l).unwrap_or_default(),
     })
 }

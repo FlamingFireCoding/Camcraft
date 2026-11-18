@@ -130,7 +130,10 @@ fn want(ty: OpType) -> Want {
         | OpType::Probe
         | OpType::PlasmaProfile
         | OpType::WireContour
-        | OpType::TrochoidalSlot => Want::Refused,
+        | OpType::TrochoidalSlot
+        // #541: a sinker burn is an EDM op; a lathe never runs it with the work turning.
+        | OpType::SinkerBurn
+        | OpType::SinkerSideBurn => Want::Refused,
     }
 }
 
@@ -176,7 +179,7 @@ fn every_kind_is_work_spindle_live_tool_or_refused_by_name() {
         // The post's own order: a path stating C is live-tool work.
         assert_eq!(voice(&params, &stating_c(meridian()), ORIGIN), LatheVoice::LiveTool, "{}", info.label);
     }
-    assert_eq!((turns, holes, refused), (12, 1, 29), "the table covers every kind");
+    assert_eq!((turns, holes, refused), (12, 1, 31), "the table covers every kind");
     assert_eq!(turns + holes + refused, KindInfo::ALL.len());
 }
 
@@ -245,7 +248,7 @@ fn the_door_refuses_on_every_turning_dialect_and_passes_every_milling_one() {
         op_entity(&world, &format!("m-{}", info.tag), info.ty, meridian());
         op_entity(&world, &format!("c-{}", info.tag), info.ty, stating_c(meridian()));
     }
-    for (post, cps) in crate::posting::BUILTINS {
+    for (post, cps) in crate::posting::shipped_posts().expect("the shipped posts read") {
         let lathe = crate::posting::LATHE_POSTS.contains(post);
         assert_eq!(crate::post::dialect::speaks_turning(cps).ok(), Some(lathe), "{post}: manifest and registry agree");
         for info in KindInfo::ALL {

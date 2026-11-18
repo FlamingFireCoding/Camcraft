@@ -61,8 +61,9 @@ pub mod library;
 // it shares with the cutting check.
 mod judge;
 mod plasma;
-mod wire_edm;
-use judge::{c_letter_problem, move_extremes, pose_problems, say, slowest_axis};
+mod waterjet;
+pub mod wire_edm;
+use judge::{c_letter_problem, move_extremes, pose_problems, say, slowest_axis, tap_gate};
 mod sheet;
 pub mod validate;
 // #383: the machine editor - property grid, draft, user folder and save.
@@ -72,6 +73,9 @@ pub mod order;
 pub mod store;
 // #647: a lathe's slides judged on the posted meridian radius.
 mod lathe_stroke;
+// #1567: the envelope the viewport draws.
+mod work_envelope;
+pub use work_envelope::work_envelope;
 
 use flecs_ecs::prelude::World;
 
@@ -158,6 +162,9 @@ pub fn check_document(world: &World, machine: &Machine) -> Result<MachineCheck, 
 /// [`check_document`] over a slice of the program (#388): the ops one
 /// machine runs, when setups mount different machines.
 pub fn check_ops(world: &World, machine: &Machine, program: &[(String, flecs_ecs::prelude::Entity)]) -> Result<MachineCheck, String> {
+    if kind(Some(machine)) == Kind::Waterjet {
+        return waterjet::check_waterjet_ops(world, machine, program);
+    }
     if kind(Some(machine)) == Kind::Plasma {
         return plasma::check_plasma_ops(world, machine, program);
     }
@@ -277,6 +284,9 @@ pub fn check_ops(world: &World, machine: &Machine, program: &[(String, flecs_ecs
                 ),
             );
         }
+
+        // #786: a tap cycle on a machine that says it cannot rigid-tap.
+        tap_gate(&mut out, machine, name, &cache.path);
 
         // #647: on a lathe the slides are judged on the POSTED path's
         // meridian radius (`lathe_stroke`), not on the cache's world X.

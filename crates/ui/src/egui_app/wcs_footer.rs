@@ -49,7 +49,7 @@ pub(super) fn footer(ui: &mut Ui, state: &mut State) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
         if ui.button("Set origin").clicked() {
-            super::pages::apply_wcs_drafts(state);
+            super::wcs_page::apply_wcs_drafts(state);
         }
         close = ui.button("Close").clicked();
         if waiting {

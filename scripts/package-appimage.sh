@@ -44,6 +44,7 @@ done
 for asset in posts machines ui scripts themes; do
     cp -a "assets/$asset" "$appdir/usr/bin/assets/$asset"
 done
+cp -a examples "$appdir/usr/bin/examples"
 cat > "$appdir/usr/share/applications/camcraft.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -54,7 +55,7 @@ Icon=camcraft
 Terminal=false
 Categories=Graphics;Engineering;
 EOF
-convert assets/ui/cube.png -resize 256x256 \
+install -m 644 assets/logo/icons/camcraft-256.png \
     "$appdir/usr/share/icons/hicolor/256x256/apps/camcraft.png"
 ln -s usr/share/applications/camcraft.desktop "$appdir/camcraft.desktop"
 ln -s usr/share/icons/hicolor/256x256/apps/camcraft.png "$appdir/camcraft.png"

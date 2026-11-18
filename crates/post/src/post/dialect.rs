@@ -66,6 +66,31 @@ pub fn work_voice(cps: &str) -> Result<WorkVoice, PostError> {
     })
 }
 
+/// The machine kinds a script's manifest states it serves (#1266):
+/// `serves = ["plasma"];` (one word or a list; the words are the
+/// machine file's kind words - mill, lathe, mill-turn, plasma,
+/// wire_edm, sinker_edm). `None` = the manifest states none.
+///
+/// # Errors
+/// A script that does not load, or a `serves` that is empty or holds a
+/// word that names no machine kind (a typo must not read as "stated").
+pub fn declared_serves(cps: &str) -> Result<Option<Vec<crate::machine::Kind>>, PostError> {
+    let mut s = Script::load(cps)?;
+    let Some(words) = s.words_global("serves")? else {
+        return Ok(None);
+    };
+    if words.is_empty() {
+        return Err(PostError::Script("serves is empty: list the machine kinds the script serves".into()));
+    }
+    let mut kinds = Vec::new();
+    for w in &words {
+        let k = crate::machine::Kind::from_word(w)
+            .ok_or_else(|| PostError::Script(format!("serves names {w:?}, which is no machine kind (mill, lathe, mill-turn, plasma, wire_edm, sinker_edm)")))?;
+        kinds.push(k);
+    }
+    Ok(Some(kinds))
+}
+
 /// Whether the script's manifest declares the turning dialect
 /// (`capabilities` with the turning bit set) - [`work_voice`]'s
 /// `WorkSpindle`, the one reading of the mask.
@@ -74,6 +99,14 @@ pub fn work_voice(cps: &str) -> Result<WorkVoice, PostError> {
 /// A script that does not load is a clean refusal, as everywhere.
 pub fn speaks_turning(cps: &str) -> Result<bool, PostError> {
     Ok(work_voice(cps)? == WorkVoice::WorkSpindle)
+}
+
+/// Whether the script's manifest declares `wcsRotation = true` (#760).
+///
+/// # Errors
+/// A script that does not load is a clean refusal, as everywhere.
+pub fn voices_wcs_rotation(cps: &str) -> Result<bool, PostError> {
+    Ok(Script::load(cps)?.voices_wcs_rotation())
 }
 
 /// Whether a path is C-axis live-tool work: some move states the
@@ -90,6 +123,18 @@ mod tests {
     use super::*;
     use crate::cl::{Move, MoveKind};
     use crate::geometry::Point3;
+
+    #[test]
+    fn serves_is_read_from_the_manifest() {
+        use crate::machine::Kind;
+        assert_eq!(declared_serves("x = 1;").ok(), Some(None));
+        assert_eq!(declared_serves("serves = [\"plasma\"];").ok(), Some(Some(vec![Kind::Plasma])));
+        assert_eq!(declared_serves("serves = \"Mill-Turn\";").ok(), Some(Some(vec![Kind::MillTurn])));
+        assert_eq!(declared_serves("serves = [\"mill\", \"plasma\"];").ok(), Some(Some(vec![Kind::Mill, Kind::Plasma])));
+        assert!(declared_serves("serves = [];").is_err());
+        assert!(declared_serves("serves = [\"plazma\"];").is_err());
+        assert!(declared_serves("serves = ;").is_err());
+    }
 
     #[test]
     fn the_turning_bit_is_read_from_the_manifest_mask() {

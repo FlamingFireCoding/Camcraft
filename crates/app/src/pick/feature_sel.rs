@@ -51,7 +51,8 @@ fn edge_selection(g: &FeatureGraph, edge: u32, unit: EdgeUnit) -> Option<Feature
 }
 
 /// The selection a pick stands for on `graph` (the picked entity's).
-/// `None` for a centre (no page stores one yet) or a face the topology
+/// A centre (#692) stores the round run it is derived from; `None` for a
+/// centre whose run no longer reads as a circle, or a face the topology
 /// could not name.
 #[must_use]
 pub fn selection_of(graph: &FeatureGraph, pick: &FeaturePick, unit: EdgeUnit) -> Option<FeatureSel> {
@@ -59,7 +60,7 @@ pub fn selection_of(graph: &FeatureGraph, pick: &FeaturePick, unit: EdgeUnit) ->
         PickTarget::Point(p) => Some(FeatureSel::Vertex(p.id)),
         PickTarget::Face { sel, .. } => *sel,
         PickTarget::Edge { edge } => edge_selection(graph, *edge, unit),
-        PickTarget::Centre { .. } => None,
+        PickTarget::Centre { arc } => super::centre::centre_selection(graph, *arc),
     }
 }
 
@@ -109,7 +110,7 @@ pub fn check_pickable(world: &World, g: &GeoSel) -> Result<(), String> {
                 g.feature, g.entity
             ))
         }
-        FeatureSel::Chain(id) => match feature::resolve_chain(&graph.features, id) {
+        FeatureSel::Chain(id) => match crate::model::resolve_chain(&graph.features, id) {
             Some(c) if !is_feature_chain(&graph, &c) => Err(format!(
                 "{} of '{}' runs along the mesh's own triangles, not a model edge - pick an edge where two \
                  faces meet",

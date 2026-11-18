@@ -106,6 +106,7 @@ fn second_dive(t: &Toolpath) -> bool {
 
 fn pp(entry: Entry3D, strategy: PocketStrategy, links: Links) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 6.0,
         stepover: 2.5,
         stock_to_leave: 0.0,
@@ -243,10 +244,11 @@ fn a_tool_that_is_not_centre_cutting_never_plunges_into_a_bore_or_circular() {
         for (ln, links) in link_sets() {
             let bp = BoreParams {
                 holes: vec![
-                    BoreHole { xy: Point2::new(0.0, 0.0), radius: 10.0, top_z: TOP, floor_z: -6.0, through: false, stepped: false },
+                    BoreHole { xy: Point2::new(0.0, 0.0), radius: 8.0, top_z: TOP, floor_z: -6.0, through: false, stepped: false },
                     BoreHole { xy: Point2::new(40.0, 0.0), radius: 6.0, top_z: TOP, floor_z: -4.0, through: false, stepped: false },
                 ],
                 tool_diameter: 6.0,
+                corner_radius: 0.0,
                 stock_to_leave: 0.0,
                 stepdown: 2.0,
                 through_allowance: 0.5,
@@ -313,7 +315,7 @@ fn the_engagement_limit_slows_the_first_diameter_of_each_level_then_lets_go() {
         let off = pocket(&r, &pp(entry, PocketStrategy::Zigzag, Links::PLANAR)).expect("pocket");
         let flat = |m: &&Move| m.kind == MoveKind::Feed && m.from.z == m.to.z;
         assert!(off.moves.iter().filter(flat).all(|m| m.feed == Some(500.0)), "{entry:?}");
-        for z in [0.0, -2.0, -4.0, -6.0] {
+        for z in [-2.0, -4.0, -6.0] { // #2004: no level at Top Z
             let planar: Vec<&Move> = t.moves.iter().filter(flat).filter(|m| m.from.z == z).collect();
             let slowed: f64 = planar
                 .iter()

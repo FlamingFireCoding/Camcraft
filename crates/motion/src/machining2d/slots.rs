@@ -7,8 +7,7 @@ use crate::geometry::Point3;
 use crate::links::Links;
 
 use super::face::{GenError, band};
-use super::levels::{Cert, Motion, cut_levels, run_levels};
-use super::ring::on_boundary;
+use super::levels::{Cert, Motion, run_levels};
 /// Slotting: a straight channel between two XY points, cleared in rows
 /// parallel to its axis. The channel is the stadium swept by a disc of
 /// radius `width / 2` along `a` -> `b`; shrinking a stadium is narrowing
@@ -158,7 +157,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         pass.push(e);
     }
 
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     let mut motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed);
     // `Plunge` passes no center and the ladder dives at the pass start
@@ -194,7 +193,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         None if p.links == Links::PLANAR => None,
         None => stadium_center(a, b, h),
     };
-    motion = motion.with_arc_radius(p.tool_diameter).with_links(p.links, p.helix_radius).with_top(p.top_z);
+    motion = motion.with_arc_radius(p.tool_diameter).with_links(p.links, p.helix_radius).with_top(p.links.approach.entry_top(p.top_z));
     let link_cert = match (&tess, &link_tess) {
         (Some(t), _) | (None, Some(t)) => Some(Cert::Stadium { a, b, h, tess: t }),
         (None, None) => None,
@@ -281,6 +280,10 @@ pub struct TraceParams {
     /// Canonical (material-on-the-left) travel; conventional reverses
     /// each loop.
     pub climb: bool,
+    /// The stock top in this frame (#2004): stock over Top Z keeps a
+    /// level at Top Z, so no first bite is deeper than one stepdown.
+    /// `None` reads Top Z as the material top.
+    pub stock_top: Option<f64>,
 }
 
 impl TraceParams {
@@ -341,7 +344,7 @@ pub fn trace(region: &Region, p: &TraceParams) -> Result<Toolpath, GenError> {
         passes.push(pass);
     }
 
-    let zs = cut_levels(p.top_z, p.bottom_z, p.stepdown)?;
+    let zs = super::levels::cut_levels_under(p.top_z, p.stock_top, p.bottom_z, p.stepdown)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     // Trace engraves the region's own vertices - the point is to ride
     // the boundary as picked, so no arc fitter runs here.
@@ -373,66 +376,6 @@ pub fn trace(region: &Region, p: &TraceParams) -> Result<Toolpath, GenError> {
     Ok(path)
 }
 
-/// True when the straight chord `a` -> `b` never passes outside the
-/// closed region: both ends in it, no loop edge properly crossing the
-/// open chord, and the chord midpoint inside or on the boundary. Without
-/// a proper crossing the open chord lies in one connected piece of the
-/// plane complement, so the midpoint decides for all of it - and a chord
-/// running along a boundary edge is exactly the tangency a wall pass is,
-/// so grazing reads as clear.
-pub fn chord_clears(region: &Region, a: Point2, b: Point2) -> bool {
-    if (!region.contains(a) && !on_boundary(region, a))
-        || (!region.contains(b) && !on_boundary(region, b))
-    {
-        return false;
-    }
-    if a == b {
-        return true;
-    }
-    let d = Point2::new(b.x - a.x, b.y - a.y);
-    let m = Point2::new(a.x + d.x * 0.5, a.y + d.y * 0.5);
-    let eps = 1e-9;
-    for l in region.loops() {
-        let pts = l.points();
-        let n = pts.len();
-        for i in 0..n {
-            let c = pts[i];
-            let e = pts[(i + 1) % n];
-            let g = Point2::new(e.x - c.x, e.y - c.y);
-            let ca = Point2::new(c.x - a.x, c.y - a.y);
-            let den = d.x * g.y - d.y * g.x;
-            if den == 0.0 {
-                // Parallel to this edge: touching it is decided by the
-                // midpoint test below (a graze along a boundary line is
-                // exactly what wall and hole-ceiling passes are).
-                continue;
-            }
-            let t = (ca.x * g.y - ca.y * g.x) / den;
-            let u = (ca.x * d.y - ca.y * d.x) / den;
-            if !(eps < t && t < 1.0 - eps) {
-                continue;
-            }
-            if u > eps && u < 1.0 - eps {
-                return false; // crosses the open edge: a real crossing
-            }
-            if u >= -eps && u <= 1.0 + eps {
-                // The chord goes through a loop vertex. That cuts the
-                // boundary only if the two edges meeting there are on
-                // opposite sides of the chord line; both on one side is
-                // tangency (a fillet touching the straight it joins).
-                let j = if u < 0.5 { i } else { (i + 1) % n };
-                let p0 = pts[(j + n - 1) % n];
-                let p2 = pts[(j + 1) % n];
-                let h0 = (p0.x - a.x) * d.y - (p0.y - a.y) * d.x;
-                let h2 = (p2.x - a.x) * d.y - (p2.y - a.y) * d.x;
-                if h0 * h2 < 0.0 {
-                    return false;
-                }
-            }
-        }
-    }
-    // No proper crossing: the open chord lives in one connected piece of
-    // the plane minus the loops, and the midpoint decides which. This
-    // also decides every parallel/graze case (on_boundary is tolerant).
-    region.contains(m) || on_boundary(region, m)
-}
+/// The chord law lives in `chord_clear` (#1620); re-exported here, where
+/// its callers have always found it.
+pub use super::chord_clear::chord_clears;

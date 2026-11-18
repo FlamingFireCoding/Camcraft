@@ -44,7 +44,8 @@ pub struct GenJob {
     pub(super) material: Material,
     pub(super) frame: Option<crate::cl::TiltedFrame>,
     /// Resolved heights, UNshifted - the frame's `oz` fold is pure
-    /// arithmetic and belongs to `run_job`.
+    /// arithmetic and belongs to `run_job`. A tilted op's reference
+    /// heights are read along its tool axis (`fold_height`, #2389).
     pub(super) hs: ResolvedHeights,
     pub(super) stock_facets: Option<Vec<Triangle>>,
     pub(super) stock_aabb: Option<(Point3, Point3)>,
@@ -57,6 +58,8 @@ pub struct GenJob {
     pub(super) contour_sel:
         Option<Result<super::selection::SelectionGeometry, GenError>>,
     pub(super) drive_chains: Option<Result<Vec<Vec<Point3>>, GenError>>,
+    /// #1504: a picked Slot's room, read here; the Slot arm confines to it.
+    pub(super) slot_bound: Option<Result<crate::machining2d::SlotBound, GenError>>,
     pub(super) prior: Option<Result<Arc<crate::rest::PriorState>, GenError>>,
     /// The program ahead of this op in its setup, uncut (issue #96
     /// review): verify's vertical-dive convictions are re-read against
@@ -81,6 +84,8 @@ pub struct GenJob {
     pub(super) fixtures: Vec<crate::fixture::FixtureBox>,
     /// `fixtures`' names, index for index (#339 slice 5 refusals).
     pub(super) fixture_names: Vec<String>,
+    /// Tagged fixtures no box could be read for (#1037), by name.
+    pub(super) unread_steel: Vec<String>,
     /// The highest world Z the tip reaches (WCS origin + stated Z top).
     pub(super) z_ceiling: Option<f64>,
     /// `fixtures` split by whether the steel turns with the part
@@ -101,6 +106,17 @@ pub struct GenJob {
     /// aware verify judges the 2D kinds against its solid only then -
     /// cutting into stock is the job, cutting into the part never is.
     pub(super) part_solid: bool,
+    /// #1603: a whole-model pocket-family job read as "clear the stock
+    /// around the part" (#12, `area::whole_model_pocket`). False with no
+    /// stock set up, where the model stays the volume to remove.
+    pub(super) around_part: bool,
+    /// #1603: the setup's parts a pocket-family op on the stock must
+    /// keep (`keep_law::parts_in_stock`); empty for every other job.
+    pub(super) keep_parts: Vec<Triangle>,
+    /// #1621: the setup's other parts a part-source op must keep with
+    /// the plain solid law (`keep_law::neighbour_parts`); empty for a
+    /// stock source and a one-part document.
+    pub(super) neighbour_parts: Vec<Triangle>,
     /// The area controls resolved against the world (M11.5); `None` for
     /// the identity - an untouched operation carries nothing new.
     pub(super) area: Option<Result<AreaCtx, GenError>>,
@@ -119,7 +135,24 @@ pub struct GenJob {
     pub(super) carried_overhang: Option<super::carried_stock::Overhang>,
     /// #532: the machine condition a wire EDM kind cuts with (its wire
     /// and gap); `None` for every kind that mounts a library tool.
-    pub(super) wire: Option<super::wire_op::WireCondition>,
+    pub(super) wire: Option<(super::wire_op::WireCondition, Option<super::wire_op::WireCondition>)>,
+    /// #537: a 4-axis wire cut's two picked profiles.
+    pub(super) wire_ruled: Option<Result<super::wire_ruled::RuledPicks, GenError>>,
+
+    /// #541: a sinker burn's spark gap, read from its setup's machine
+    /// condition (`sinker_op::condition_gap`); `None` for every other kind.
+    pub(super) sinker_gap: Option<Result<f64, String>>,
+    /// #543: a rough or finish burn's condition undersize (and the rough
+    /// a finish follows), `sinker_pass::read_pass`; `None` otherwise.
+    pub(super) sinker_pass: Option<Result<super::sinker_pass::PassRead, String>>,
+    /// #546: that condition's stated axial wear rate, when it states one.
+    pub(super) sinker_wear: Option<f64>,
+    /// #740: the document's display unit, read off the world here where
+    /// it can be. The drill-reach refusals run on worker threads with
+    /// no World to read, so they spell their depths through this lens.
+    pub(super) unit: crate::units::Unit,
+    /// #760: active Z-rotated WCS on an upright milling operation (`None` when square).
+    pub(super) wcs_yaw: Option<super::wcs_yaw::WcsYaw>,
 }
 
 /// The tripwire phrase for a stored precompute whose arm never collected
@@ -136,14 +169,10 @@ pub(super) fn unreached(what: &str) -> GenError {
 /// everything an arm used to refuse at lives on as a stored `Result`
 /// for `run_job` to take at that exact statement.
 pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJob, GenError> {
-    // #532: a wire EDM kind mounts no library tool - the machine's
-    // condition stands in its place, read (and refused by name) here.
+    // #532 / #2011: resolve the mounted library tool (Wire tool for Wire Contour)
+    // and, for Wire Contour, the machine condition pair validated against it.
+    let (tool, body, lathe_body, neck) = super::tool_gate::job_tool(world, op)?;
     let wire = super::wire_op::job_wire(world, op)?;
-    // Tool: the diameter drives the path, the body drives the reach law.
-    let (tool, body, lathe_body, neck) = match &wire {
-        Some(cond) => (super::wire_op::job_tool(cond), None, None, Vec::new()),
-        None => super::tool_gate::job_tool(world, op)?,
-    };
     let setup = op.setup.as_deref();
     // #326: an op this slice has not verified in an aligned setup is
     // refused by name here, at the one door every generation passes -
@@ -151,7 +180,22 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     if let Some(why) = crate::setup_align::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
-    let material = super::material::judged_material(world, setup, &op.src)?;
+    // #1510: a milling WCS whose Z is tilted off the machine's would
+    // cut the part as it lies, not as the WCS shows - refused by name.
+    if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
+        return Err(GenError::Invalid(why));
+    }
+    // #1720: a flipped WCS axis is not carried into a path yet - refused
+    // by name, never cut in the unflipped frame.
+    if let Some(why) = crate::setup_wcs_flip::generation_problem(world, op) {
+        return Err(GenError::Invalid(why));
+    }
+    // #763: the one machining-frame seam. Built before the first read;
+    // the tilt's own refusal keeps its place below (`checked_frame`,
+    // after the heights resolve) exactly where the old head raised it -
+    // the job's error-order law.
+    let opframe = OpFrame::of(op);
+    let material = opframe.material_of(world, &op.src)?;
     let part_solid = part_solid_of(world, setup, &op.src, &material);
     // Setup stock, when it is not the source itself: the swarf column
     // around a smaller model (the head read at `generate` - same call).
@@ -170,23 +214,17 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The height seam, refused by name before anything else (as the old
     // head refused it, `resolve_params` being the first fallible read
     // after the material).
-    let hs = resolve_params(world, setup, Some(&op.src), &op.params).map_err(GenError::Invalid)?;
+    // #2389: a tilted op reads each reference height along its tool
+    // axis (the fold's coordinate); an untilted or upright op reads the
+    // setup resolve verbatim. A tilt that states no direction reads the
+    // setup resolve here and is refused by `checked_frame` just below.
+    let fold_frame = opframe.checked_frame().ok().flatten();
+    let hs = resolve_params_folded(world, setup, Some(&op.src), &op.params, fold_frame.as_ref())
+        .map_err(GenError::Invalid)?;
 
-    // The 3+2 wrap (M5.1 B), same refusals, same order: non-finite
-    // letters first, then the tilted-selection lock.
-    let frame = match op.params.tilt() {
-        None => None,
-        Some(t) => match t.frame() {
-            Some(f) => Some(f),
-            // Only a non-finite letter could get here (the parameter
-            // door refuses it); naming it beats inventing a plane.
-            None => {
-                return Err(GenError::Invalid(
-                    "the 3+2 index commands no direction - its angles are not finite".into(),
-                ));
-            }
-        },
-    };
+    // The 3+2 wrap (M5.1 B), read through the seam: the same refusal,
+    // the same words, at the same statement - one construction site.
+    let frame = opframe.checked_frame()?;
     // The one refusal the wrap owes (M5.1 B): a picked selection is
     // read as world geometry by the selection walk - projecting a pick
     // onto a tilted plane is not implemented, and a shadow of the pick
@@ -202,7 +240,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The arm-scoped world reads, precomputed under the same guards
     // that decide which arm runs them; each result surfaces at its
     // arm's own statement in `run_job`.
-    let section_z = section_z_of(world, setup, Some(&op.src), &op.params);
+    let section_z = section_z_of(world, setup, Some(&op.src), &op.params, frame.as_ref());
     let picked_region = match (&op.params, &op.src) {
         // Contour's Selection pair is resolved as raw geometry below
         // (its arm never asks for a region first); every other kind
@@ -216,14 +254,26 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         }
         // A whole PART under the pocket family clears the stock around
         // it, never the part's own section (issue #12).
+        // #1554: the STOCK as the source clears the stock around the
+        // setup's parts the same way, never the parts' own sections.
+        (params, src @ SrcRef::Stock) => super::area::stock_pocket(world, setup, src, params, frame.as_ref()),
         (params, src) => whole_model_pocket(world, setup, src, params, frame.as_ref()),
     };
+    // #1603: the keep law speaks exactly where that reading does.
+    let around_part = super::keep_law::is_keep_kind(&op.params) && matches!(op.src, SrcRef::Entity(_)) && picked_region.is_some();
+    let wire_ruled = super::wire_ruled::picks_of(world, op);
     let contour_sel = match (&op.params, &op.src) {
         // The plasma cut reads its picks the contour's way (#670):
         // closed rings AND open runs, each cut as picked.
-        (OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_), SrcRef::Selection(items)) => {
+        (OpParams::Contour { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_), SrcRef::Selection(items))
+            if wire_ruled.is_none() =>
+        {
             Some(selection_geometry_impl(world, setup, items, &op.params, None))
         }
+        _ => None,
+    };
+    let slot_bound = match (&op.params, &op.src) {
+        (OpParams::Slot { .. }, SrcRef::Selection(items)) if !items.is_empty() => Some(super::slot_pick::slot_bound_of(world, setup, items)),
         _ => None,
     };
     let drive_chains = match &op.params {
@@ -280,7 +330,10 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // The axial pilots ahead (#103): a bore pass's approach runs down
     // the hole the drill made, which the facing-only prior cannot read.
     let turned = op.params.kind().info().section == super::kinds::Section::Turning;
-    let drills_ahead = if turned { crate::rest::drills_ahead(world, op_name, setup) } else { Vec::new() };
+    // #1449: a pocket entering down pre-drilled holes reads them too.
+    let predrilled = matches!(op.params, OpParams::Pocket { .. }) && op.params.links().is_some_and(|l| l.approach.predrilled);
+    let drills_ahead =
+        if turned || predrilled { crate::rest::drills_ahead(world, op_name, setup) } else { Vec::new() };
     let turned_ahead = if turned { crate::rest::turned_ahead(world, op_name, setup) } else { Vec::new() };
     let area = area_ctx(world, op, tool.diameter * 0.5, &material, part_solid);
     // #388: the op's own setup's machine, active or not.
@@ -293,15 +346,16 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // (The post reads it again, against the origin it is handed then.)
     // The mill-turn's cross drill joins it (issue #67): its standoffs
     // are measured about that same line.
-    let (slot, wcs_origin) = crate::posting::wcs_context(world, setup);
+    let (_, wcs_origin) = crate::posting::wcs_context(world, setup);
     let spindle_note = if super::spindle_law::turns(world, setup, &op.params) {
-        super::spindle_law::check(&material.facets, wcs_origin, slot)?
+        super::spindle_law::check(&material.facets, wcs_origin, &crate::setup::wcs_name(world, setup))?
     } else {
         None
     };
     let is_mill = machine_kind == crate::machine::Kind::Mill;
     let (fixture_names, fixtures) = crate::fixture::named_boxes_for(world, setup).into_iter().unzip();
     let workholding = crate::fixture::workholding_for(world, setup);
+    let unread_steel = crate::fixture::unreadable_for(world, setup);
     let fixture_meshes = crate::fixture::meshes_for(world, setup);
     let rotary_axis = crate::fixture::rotary_axis_of(world, op);
     let mounted = crate::machine::of_setup(world, setup).1;
@@ -314,11 +368,26 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         .and_then(|m| m.axis(2))
         .and_then(crate::machine::AxisLimits::program_travel)
         .map(|(lo, hi)| wcs_origin[2] + lo.max(hi));
+    let sinker_gap = match &op.params {
+        OpParams::SinkerBurn(p) => Some(super::sinker_op::burn_gap(world, setup, p)),
+        // #545: the side burn's gap, once its allowance holds under it.
+        OpParams::SinkerSideBurn(p) => Some(super::sinker_side_op::side_gap(world, setup, p)),
+        _ => None,
+    };
+    let sinker_pass = match &op.params {
+        OpParams::SinkerBurn(p) => super::sinker_pass::read_pass(world, op_name, setup, p),
+        _ => None,
+    };
+    let sinker_wear = match &op.params {
+        OpParams::SinkerBurn(p) => super::sinker_wear_op::condition_wear(world, setup, p),
+        _ => None,
+    };
     let machine_rotaries = mounted.map(|m| {
         let rot: Vec<_> = m.axes.iter().filter(|a| a.rotary).cloned().collect();
         (m.model, rot)
     });
 
+    let wcs_yaw = super::wcs_yaw::WcsYaw::from_world(world, setup, machine_kind, &op.params);
     Ok(GenJob {
         op_name: op_name.to_owned(),
         tool,
@@ -339,6 +408,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         picked_region,
         contour_sel,
         drive_chains,
+        slot_bound,
         prior,
         verify_prior,
         drills_ahead,
@@ -349,16 +419,26 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         spindle,
         fixtures,
         fixture_names,
+        unread_steel,
         z_ceiling,
         workholding,
         fixture_meshes,
         rotary_axis,
         part_solid,
+        around_part,
+        keep_parts: super::keep_law::parts_in_stock(world, setup, &op.params, part_solid),
+        neighbour_parts: super::keep_law::neighbour_parts(world, setup, &op.params, &op.src, part_solid),
         area,
         wcs_origin,
         spindle_note,
         carried_overhang,
         wire,
+        wire_ruled,
+        sinker_gap,
+        sinker_pass,
+        sinker_wear,
+        unit: crate::units::of(world),
+        wcs_yaw,
     })
 }
 

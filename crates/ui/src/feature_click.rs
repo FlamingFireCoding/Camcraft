@@ -57,7 +57,12 @@ impl Ask {
 /// takes faces only, #554; an axis one straight edge or two points, #557),
 /// else the pick mode (Edge falls back to the face between the edges). A
 /// boundary and an axis take one run per edge click; Alt one segment.
+/// Centres of round edges (#692) are opt-in: only the point takers that
+/// read one - the three points and an axis by two points - ask for them.
 pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
+    if state.wcs_ui.pick_circle {
+        return crate::wcs_circle_pick::CIRCLE_ASK; // #739: the WCS circle-centre pick
+    }
     let chain = if mods.alt {
         EdgeUnit::Segment
     } else if state.boundary_pick.is_some()
@@ -66,8 +71,13 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
     {
         // #701: a role pick takes one run per edge click too, like a boundary.
         EdgeUnit::Run
-    } else {
+    } else if mods.shift && !mods.command {
+        // Shift takes the whole loop or tangent chain (`edge_pick`).
         EdgeUnit::Chain
+    } else {
+        // #1505: a plain or Ctrl click is exactly the edge under the
+        // cursor, never the tangent chain it happens to lie on.
+        EdgeUnit::Run
     };
     let mode = match state.geo_pick {
         GeoPick::Edge => PickKinds { faces: true, ..PickKinds::EDGES },
@@ -82,22 +92,34 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
             GeoPick::Vertex => PickKinds::POINTS,
             _ => PickKinds { points: true, ..mode },
         }
+    } else if state.wire_sync.armed {
+        // #1171: wire sync points are vertices.
+        PickKinds::POINTS
     } else if state.points_pick.is_some() {
         // #555: three points (it arms Vertex mode). A face or an edge
         // picked in another mode still reaches `points_pick::take`,
-        // which refuses it by name.
-        mode
-    } else if crate::plane_pick::collecting(state) {
+        // which refuses it by name. #692: a point taker opts in to
+        // round-edge centres.
+        PickKinds { centres: mode.points, ..mode }
+    } else if crate::plane_pick::collecting(state) || crate::cylinder_pick::collecting(state) {
         PickKinds::FACES
+    } else if crate::origin_pick::collecting(state) {
+        // #771: the origin point is a vertex.
+        PickKinds::POINTS
     } else if let Some(by) = state.axis_pick.as_ref().and_then(|d| d.picking.map(|a| d.by(a))) {
         match by {
             AxisBy::Edge => PickKinds::EDGES,
-            AxisBy::Points => PickKinds::POINTS,
+            AxisBy::Points => PickKinds { centres: true, ..PickKinds::POINTS }, // #692
         }
-    } else if crate::wcs_pick::collecting(state) {
-        // #701: the role draft takes faces, edges, corners and walls alike -
-        // the toolbar's pick mode stays the user's own.
+    } else if crate::wcs_pick::collecting(state) || crate::start_exit_pick::collecting(state) {
+        // #701 / #1448: accept faces, edges and vertices while keeping the
+        // toolbar's own pick mode untouched.
         PickKinds { faces: true, edges: true, points: true, centres: false }
+    } else if state.boundary_pick.is_some() {
+        // #1727: an armed boundary row takes faces AND edges whatever the
+        // toolbar's pick mode - in Faces mode it took faces only, so no
+        // edge could ever bound the cut.
+        PickKinds { faces: true, edges: true, points: false, centres: false }
     } else {
         mode
     };
@@ -128,7 +150,16 @@ pub(crate) fn query_at(state: &State, p: [f32; 2], ask: Ask) -> Option<PickQuery
 /// The one pick under a viewport point, and the selection it stands for.
 pub(crate) fn feature_at(state: &State, p: [f32; 2], ask: Ask) -> Option<(FeaturePick, Option<FeatureSel>)> {
     let q = query_at(state, p, ask)?;
-    pick::pick_selection(&state.world, &q, ask.unit, |name| state.hidden_in_view(name))
+    // #2173: models beat stock at any depth, so while a locate holds the
+    // stock the parts inside it are passed over - else no stock face
+    // round a part could ever be picked.
+    let past_parts = state.locate_pick.as_ref().is_some_and(|d| d.body == camcraft_app::fixture_locate::LocateBody::Stock);
+    pick::pick_selection(&state.world, &q, ask.unit, |name| {
+        state.hidden_in_view(name)
+            || (past_parts
+                && camcraft_app::model::find_by_name(&state.world, name)
+                    .is_some_and(|e| camcraft_app::setup_align::is_part(&state.world, &e)))
+    })
 }
 
 fn hover_of(pick: &FeaturePick, sel: Option<FeatureSel>) -> HoverHit {
@@ -160,6 +191,10 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     };
     // Mirror the pick in the hover so highlight and click agree.
     state.hover = Some(hover_of(&found, sel));
+    if crate::start_exit_pick::collecting(state) {
+        crate::start_exit_pick::take(state, &found);
+        return;
+    }
     let Some(feature) = sel else {
         state.status = format!("the pick on '{}' names no feature - try beside it", found.entity);
         return;
@@ -167,6 +202,10 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     let pick = GeoSel { entity: found.entity, feature };
     if state.locate_pick.is_some() {
         crate::locate_pick::take(state, pick); // #561: the locate mates; refuses an edge by name
+        return;
+    }
+    if state.wire_sync.armed {
+        crate::wire_sync_pick::take(state, pick); // #1171: refuses a face or an edge by name
         return;
     }
     if state.points_pick.is_some() {
@@ -183,6 +222,14 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     }
     if crate::plane_pick::collecting(state) {
         crate::plane_pick::take(state, pick); // #330 / #554
+        return;
+    }
+    if crate::cylinder_pick::collecting(state) {
+        crate::cylinder_pick::take(state, pick); // #771
+        return;
+    }
+    if crate::origin_pick::collecting(state) {
+        crate::origin_pick::take(state, pick); // #771
         return;
     }
     if crate::axis_pick::hint_stray(state) {

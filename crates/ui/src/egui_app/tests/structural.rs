@@ -14,6 +14,18 @@ use egui_kittest::kittest::NodeT;
 
 use super::*;
 
+#[path = "tool_properties.rs"]
+mod tool_properties;
+
+#[path = "structural/thread_repeat.rs"]
+mod thread_repeat;
+
+#[path = "break_through.rs"]
+mod break_through;
+
+#[path = "structural/donate.rs"]
+mod donate;
+
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {
     fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Pos2)>) {
@@ -31,13 +43,13 @@ pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)
 }
 
 /// Where a painted text sits; fails with the whole list so a miss reads.
-fn at(texts: &[(String, egui::Pos2)], want: &str) -> egui::Pos2 {
+pub(super) fn at(texts: &[(String, egui::Pos2)], want: &str) -> egui::Pos2 {
     at_where(texts, want, |_| true)
 }
 
 /// As `at`, for a text painted more than once (the ribbon's "Setups" cell
 /// and the browser's "Setups" row): the first copy `inside` accepts.
-fn at_where(
+pub(super) fn at_where(
     texts: &[(String, egui::Pos2)],
     want: &str,
     inside: impl Fn(egui::Pos2) -> bool,
@@ -55,75 +67,55 @@ fn disabled(h: &Harness<'static, ShellUi>, label: &str) -> bool {
     h.get_by_label(label).accesskit_node().is_disabled()
 }
 
-/// The seeded shell's skeleton - what `egui_app.png` pinned, theme-free:
-/// ribbon on top with its groups and cells, the three dock leaves in
-/// browser | viewport | properties order, the status strip at the bottom,
-/// the seed's rows and page, and every floating window closed.
+/// The seeded shell's skeleton - what `egui_app.png` pinned, as
+/// behaviour only (#1953): the ribbon cells, the build identity, the dock
+/// tab titles, the seed's browser rows and page, the status line and
+/// every floating window closed. No position: where each part sits is
+/// `assert_shell_layout`'s job (`page_layout::layout_shell`), so a refit
+/// that moves a pane fails a layout test, not this one.
 fn assert_shell_skeleton(h: &Harness<'static, ShellUi>) {
     let texts = painted(h);
-    // Ribbon: the group headers and a cell per group, all above the dock.
-    let groups: [&str; 0] = [];
-    let cells = ["New", "Open", "Save", "Post", "Stock", "Origin", "Undo", "Redo", "Simulate"];
-    let tab_y = at(&texts, "Browser").y;
-    for t in groups.iter().chain(cells.iter()) {
-        assert!(at(&texts, t).y < tab_y, "ribbon text {t:?} must sit above the dock tabs");
+    let shows = |want: &str| texts.iter().any(|(t, _)| t == want);
+    let shows_prefix = |want: &str, has: &str| texts.iter().any(|(t, _)| t.starts_with(want) && t.contains(has));
+    for t in ["New", "Open", "Save", "Post", "Stock", "Origin", "Undo", "Redo", "Simulate"] {
+        assert!(shows(t), "the ribbon paints {t:?}");
     }
-    // The build line rides the ribbon's corner (#352's fixed test identity).
     // The build identity's version, from the same helper the toolbar paints
     // (#556): tests pin it (#449), so the real CARGO_PKG_VERSION never shows
-    // here, and the ribbon paints the full "v… · test" or, when the ribbon is
-    // crowded, the version alone - either form starts with the version.
+    // here; the ribbon paints "v… · test" or the version alone.
     let ver = crate::build_info::toolbar_version();
-    let build = texts
-        .iter()
-        .find(|(t, _)| t.starts_with(&ver))
-        .map(|(_, p)| *p)
-        .unwrap_or_else(|| panic!("no painted build identity starting {ver:?}"));
-    assert!(build.y < tab_y, "the build identity sits on the ribbon");
-    // Dock: three leaves, left to right, titles on one row.
-    let (b, v, p) = (at(&texts, "Browser"), at(&texts, "Viewport"), at(&texts, "Properties"));
-    assert!(b.x < v.x && v.x < p.x, "dock order must be Browser | Viewport | Properties");
-    assert!((b.y - v.y).abs() < 1.0 && (v.y - p.y).abs() < 1.0, "the tab titles share a row");
-    // Browser rows of the seed, under its tab.
-    let in_browser = |q: egui::Pos2| q.y > b.y && q.x < v.x;
+    assert!(shows_prefix(&ver, ""), "no painted build identity starting {ver:?}");
+    for t in ["Browser", "Viewport", "Properties"] {
+        assert!(shows(t), "the dock paints the {t:?} tab title");
+    }
     // #343: each setup owns its WCS, Stock, Machine, Post, Fixtures and
     // Tool list rows; a row paints its name and value as one text.
-    for row in ["Setups", "Setup", "Stock", "Fixtures", "Operations", "Models", "Block", "Tools"] {
-        at_where(&texts, row, in_browser);
+    for row in ["Setups", "SETUP", "Stock", "Fixtures", "MODELS", "Block", "TOOLS"] {
+        assert!(shows(row), "the browser paints the {row:?} row");
     }
+    assert!(shows_prefix("Operations", ""), "the setup's Operations row must show in the browser");
     for (name, value) in [("WCS", "G54"), ("Machine", ""), ("Post", ""), ("Tool list", "")] {
-        assert!(
-            texts.iter().any(|(t, q)| t.starts_with(name) && t.contains(value) && in_browser(*q)),
-            "the setup's {name} row ({value:?}) must show in the browser"
-        );
+        assert!(shows_prefix(name, value), "the setup's {name} row ({value:?}) must show in the browser");
     }
-    assert!(
-        texts.iter().any(|(t, q)| t.starts_with("Contour1") && t.contains("2D Contour") && q.x < v.x),
-        "the seed's operation row must show in the browser"
-    );
-    // Viewport: its toolbar widgets and the view cube's faces.
+    assert!(shows_prefix("Contour1", "2D Contour"), "the seed's operation row must show in the browser");
     for t in ["TOP", "RIGHT", "BACK"] {
-        let q = at(&texts, t);
-        assert!(q.x > v.x && q.x < p.x, "view cube face {t:?} belongs to the viewport");
+        assert!(shows(t), "the view cube paints its {t:?} face");
     }
-    for label in ["Show world origin axes", "Show origin names", "Show all toolpaths", "Shaded", "Wireframe"] {
-        assert!(!disabled(h, label), "viewport control {label:?} must be live");
-    }
+    // View switches live behind the browser's View door now.
+    assert!(h.query_by_label("View").is_some(), "browser View door");
     // Properties: the seed's page, its sections, and the draft law's
     // disabled Apply (nothing staged on a fresh frame).
-    assert!(h.get_by_label("Operation: Contour1").rect().min.x > v.x, "the page is the right leaf");
-    for label in ["Type: 2D Contour", "Geometry", "Heights", "Passes", "Lead in / Lead out", "Feeds"] {
+    for label in ["Operation: Contour1", "Type: 2D Contour", "Geometry", "Heights", "Passes", "Lead in / Lead out", "Feeds"] {
         assert!(h.query_by_label(label).is_some(), "property page must show {label:?}");
     }
     assert!(!disabled(h, "Generate"), "Generate is live on a valid op");
     assert!(disabled(h, "Apply"), "Apply waits for a staged edit");
     assert!(disabled(h, "Align WCS (3-2-1)"), "3-2-1 waits for three picks");
-    // Status strip: the status line and the Debug info door at the bottom.
+    // Status strip: the status line and the Debug info door.
     let status = h.state().state.status.clone();
     assert!(status.starts_with("generated Contour1"), "seed status: {status}");
-    let s = at(&texts, &status);
-    assert!(s.y > p.y && s.y > 600.0, "the status line sits on the bottom strip");
-    assert!(h.get_by_label("Debug info").rect().min.y > 600.0, "Debug info is on the status strip");
+    assert!(shows(&status), "the status line paints {status:?}");
+    assert!(h.query_by_label("Debug info").is_some(), "the Debug info door");
     // Every floating surface is closed by default.
     let titled: Vec<_> = h
         .query_all_by_role(egui::accesskit::Role::Window)
@@ -188,12 +180,13 @@ fn tool_editor_structure() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
+    assert_eq!(harness.query_all_by_label("Diameter").count(), 1, "the explicit window owns the only editable tool surface");
     let win = harness
         .query_all_by_role(egui::accesskit::Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
-        .expect("Edit must open the editor window titled by the tool");
+        .expect("the explicit editor window is titled by the tool");
     let wr = win.rect();
     assert!(
         wr.min.x > 0.0 && wr.max.x < 1280.0 && wr.min.y > 0.0 && wr.max.y <= 720.0,
@@ -263,10 +256,13 @@ fn tool_cutter_params_structure() {
     assert!(win.get_by_label("shank length").rect().min.x > win.get_by_label("shank Ø").rect().max.x, "shank length beside shank Ø");
 }
 
-/// #557 / #554 / #555: a setup's own page carries the part-alignment rows in
-/// the properties leaf - the plane row (a face), the three-points row (#555) and the axes-in-the-plane
-/// rows (an edge or two points), each saying which pick it takes, with nothing armed and Apply hidden until
-/// an axis is picked, and every option of the plane rows on screen (#330).
+/// #771: a setup's own page carries the orientation section - two
+/// dropdowns ("Plane orientation" and "Orientation point"), each
+/// expanding its method's controls below it. The default method is
+/// Axes (#769's rows); the face (#330), points (#555) and manual
+/// (#326) rows stay behind their dropdown entries, each still drawn
+/// verbatim by its own row function (their content is pinned by the
+/// row-direct suites). The origin side shows the model box reading.
 #[test]
 fn setup_page_alignment_rows_structure() {
     let _g = snapshot_guard();
@@ -280,30 +276,42 @@ fn setup_page_alignment_rows_structure() {
         crate::actions::target(st, UiTarget::SetupNode("Setup1".into(), crate::state::SetupPage::Settings));
     }
     h.run_steps(3);
-    // #554: each row says which pick it takes - a face for the plane.
-    let plane = h.query_by_label_contains("Lay on a plane - pick a face").expect("the plane row shows").rect();
-    assert!(h.query_by_label("Pick a face").is_some_and(|n| !n.accesskit_node().is_disabled()), "the plane row picks a face");
-    assert!(h.query_by_label("Pick face or edges").is_none(), "#554: the plane row offers no edge pick");
-    let axes = h.query_by_label_contains("Axes in the plane - pick an edge or two points").expect("the axes rows show");
-    assert!(plane.min.y < axes.rect().min.y, "the axes rows follow the plane row");
+    // #771: the two dropdowns head the section, the plane one on
+    // Axes by default.
+    let plane_combo = h
+        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Axes"))
+        .rect();
+    let point_combo = h
+        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("From model box"))
+        .rect();
+    assert!(plane_combo.min.y < point_combo.min.y, "the plane dropdown heads the section, the point dropdown follows");
+    // The axes rows (#769) are the default expansion: every option on
+    // screen, nothing armed, Apply hidden until an axis is picked.
+    let axes = h.query_by_label_contains("Part axes - pick an edge or two points").expect("the axes rows show");
+    assert!(plane_combo.max.y < axes.rect().min.y, "the axes rows expand under the dropdown");
     for label in ["+Y by Edge", "+Y by Two points", "Pick +Y edge", "Flip +Y", "+X by Edge", "+X by Two points", "Pick +X edge", "Flip +X"] {
         assert!(h.query_by_label(label).is_some(), "the axes rows must show {label:?}");
         assert!(!disabled(&h, label), "{label:?} is live");
     }
     assert!(h.query_by_label("Apply axes").is_none(), "Apply waits for an axis pick");
     assert!(h.state().state.axis_pick.is_none(), "nothing is armed by drawing the page");
-    // #555: the three-points row sits right under the face row, says it
-    // takes points, and shows no prompts or Apply until it is armed.
-    let points = h.query_by_label_contains("Lay on a plane - pick three points").expect("the points row shows").rect();
-    assert!(plane.min.y < points.min.y && points.min.y < axes.rect().min.y, "face row, points row, then the axes rows");
-    for label in ["Pick three points", "Points down", "Point 1 to plane level", "3-2-1 frame"] {
-        assert!(h.query_by_label(label).is_some(), "the points row must show {label:?}");
-        assert!(!disabled(&h, label), "{label:?} is live");
-    }
-    for label in ["Apply points", "Remove last", "Clear points"] {
-        assert!(h.query_by_label(label).is_none(), "{label:?} waits for the row to be armed");
-    }
-    assert!(h.query_by_label_contains("Point 1:").is_none(), "no prompts until armed");
+    // The other methods stay behind their dropdown entries: the face
+    // row (#330), the points row (#555) and the manual picker's turn
+    // (#326/#606) are not drawn while Axes is selected.
+    assert!(h.query_by_label_contains("Lay on a plane - pick a face").is_none(), "the face row waits behind the dropdown");
+    assert!(h.query_by_label_contains("Lay on a plane - pick three points").is_none(), "the points row waits behind the dropdown");
+    assert!(
+        h.query_all_by_label_contains("Turn")
+            .all(|n| n.accesskit_node().role() == egui::accesskit::Role::Tab),
+        "the manual picker waits behind the dropdown"
+    );
+    // The origin side shows the model box reading: the box point combo
+    // and Place origin, with the box readout beside it.
+    assert!(point_combo.max.y < h.get_by_label("Place origin").rect().min.y, "the origin controls expand under the dropdown");
+    assert!(h.query_by_label_contains("there is no model to read a box from").is_some(), "the box readout says when there is no model yet");
+    let corner = h
+        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("corner"))
+        .rect();
     // #330 (reopened), #606: short lines, so every option lies inside the
     // narrow properties pane - not merely on screen: one long row ran
     // Flip, the level box and the pick buttons past the pane's right edge,
@@ -317,23 +325,47 @@ fn setup_page_alignment_rows_structure() {
         .map(|(_, l)| l.viewport)
         .expect("the properties leaf");
     assert!(pane.width() > 100.0 && pane.width() < 640.0, "the pane is the narrow right leaf: {pane:?}");
-    for label in ["Pick a face", "Face down", "Face to plane level", "Pick three points", "Points down", "Point 1 to plane level", "3-2-1 frame", "+Y by Two points", "Pick +Y edge", "Flip +Y", "+X by Two points", "Pick +X edge", "Flip +X"] {
+    for label in ["+Y by Two points", "Pick +Y edge", "Flip +Y", "+X by Two points", "Pick +X edge", "Flip +X", "Place origin"] {
         let r = h.get_by_label(label).rect();
         assert!(pane.contains_rect(r), "{label:?} lies inside the properties pane {pane:?}: {r:?}");
     }
-    // #606: the Part alignment row's turn - its angles, its pivot (WCS
-    // origin by default, named on the row) and its Apply - too.
-    let pivot = h
-        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("WCS origin"))
-        .rect();
-    assert!(pane.contains_rect(pivot), "the turn's pivot lies inside the pane: {pivot:?}");
-    let turn = h.query_by_label_contains("Turn").expect("the turn row").rect();
-    let applies: Vec<egui::Rect> = h.get_all_by_label("Apply").map(|n| n.rect()).collect();
-    assert!(applies.iter().any(|r| r.min.y > turn.min.y), "the turn's Apply shows under its angles");
-    for r in applies {
-        assert!(pane.contains_rect(r), "Apply lies inside the pane: {r:?}");
-    }
+    assert!(pane.contains_rect(corner), "the box point combo lies inside the pane: {corner:?}");
     assert!(h.state().state.points_pick.is_none(), "nothing is armed by drawing the page");
+    assert!(h.state().state.cylinder_pick.is_none() && h.state().state.origin_pick.is_none(), "no #771 draft is armed by drawing the page");
+    // #1648: the work-offset combo moved to the WCS page (one_wcs.rs pins
+    // it, worded "Work offset n (NAME)", #931); the Setup page has none.
+    let wcs = |v: &str| h.query_all_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some(v)).count();
+    assert_eq!(wcs("Work offset 1 (G54)"), 0, "the Settings page has no work-offset combo (#1648)");
+    assert_eq!(wcs("G54"), 0, "no bare word in the combo");
+}
+
+/// #535: the machine editor of a wire EDM stands the wire section in
+/// its order - keys, codes, conditions - with every absent value saying
+/// "not stated", and the spindle / tooling / coolant groups gone.
+#[test]
+fn wire_machine_editor_structure() {
+    let _g = snapshot_guard();
+    let mut harness = shell_harness();
+    harness.run();
+    let mut m = camcraft_app::machine::parse_mch(include_str!("../../../../app/tests/edm/wire-iso-fixture.mch")).expect("fixture");
+    m.edm = None;
+    m.edm_codes.clear();
+    harness.state_mut().state.machine_editor =
+        Some(crate::egui_app::machine_editor::MachineEditor { path: "wire.mch".to_owned(), machine: m });
+    harness.run_steps(3);
+    let mut last_y = f32::MIN;
+    for label in ["Wire keys", "EDM codes (the control's words)", "Conditions"] {
+        let y = harness.get_by_label(label).rect().center().y;
+        assert!(y > last_y, "{label:?} must follow the section above it");
+        last_y = y;
+    }
+    for label in ["lower guide Z", "upper guide Z", "max taper (deg)", "code condition", "code comp_off", "code thread", "code cut", "code tip_disposal"] {
+        assert!(harness.query_by_label(label).is_some(), "{label:?} row is drawn");
+    }
+    assert!(harness.query_all_by_label("not stated").count() >= 8, "absent values say so");
+    for gone in ["Spindle (rpm)", "Tooling", "Coolants"] {
+        assert!(harness.query_by_label(gone).is_none(), "{gone:?} has no place on a wire EDM");
+    }
 }
 
 /// #1031: a lathe setup's Settings page carries the "Workholding max rpm"
@@ -409,8 +441,8 @@ fn ribbon_labels_whole_and_captions_painted() {
     // once - no two buttons share a label.
     let words = [
         "New", "Model", "Open", "Save", "Save As", "Post", "Setups", "Stock", "Origin", "Tools",
-        "Undo", "Redo", "Run", "Delete", "Frame", "Paths", "Simulate", "Deviate", "Panels\u{2026}",
-        "Theme\u{2026}", "Mill 2D\u{2026}", "Mill 3D\u{2026}", "Drill\u{2026}", "Multi\u{2026}",
+        "Undo", "Redo", "Run", "Delete", "Frame", "Paths", "Simulate", "Deviate", "Panels",
+        "Theme", "2D", "3D", "Drill", "Multi",
     ];
     for w in words {
         let n = ribbon.iter().filter(|(t, _, _)| t == w).count();
@@ -418,7 +450,7 @@ fn ribbon_labels_whole_and_captions_painted() {
     }
     // The captions are back: one under each multi-cell group, in left to
     // right order, below the cell row and above the dock.
-    let caps: Vec<(&str, egui::Pos2)> = ["File", "Setup", "Modify", "Inspect", "View"]
+    let caps: Vec<(&str, egui::Pos2)> = ["FILE", "SETUP", "MODIFY", "INSPECT", "VIEW"]
         .into_iter()
         .map(|c| {
             let hit = ribbon.iter().find(|(t, _, _)| t == c);
@@ -464,6 +496,7 @@ fn origin_names_paint_on_and_quiet_off_letters_and_lines_always() {
     // On: the painted frame shows the offset's name row in the viewport,
     // and the shared projection law agrees.
     h.run_steps(2);
+    super::open_view_menu(&mut h);
     let texts = painted(&h);
     let v = at(&texts, "Viewport").x;
     let p = at(&texts, "Properties").x;
@@ -494,40 +527,52 @@ fn origin_names_paint_on_and_quiet_off_letters_and_lines_always() {
         );
         let segs = interact::gizmo_segments(st, 1.0);
         assert!(!segs.is_empty(), "the triad's strokes draw");
-        let letters = letters(&labels);
-        assert!(!letters.is_empty(), "the axis letters draw");
-        (segs.len(), letters)
+        (segs.len(), letters(&labels))
     };
-    // Off: the checkbox clicks the flag through the real widget and the
-    // name row leaves the painted frame; letters and lines stay.
+
+    // Off: click the switch; letters and lines stay, the name row goes.
     h.get_by_label("Show origin names").click();
     h.run_steps(2);
+    assert!(!h.state().state.show_gizmo_names, "the click flipped the flag");
+    super::open_view_menu(&mut h);
+    assert_eq!(
+        h.get_by_label("Show origin names").accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False),
+        "the checkbox reads unchecked after the click"
+    );
     let texts = painted(&h);
-    {
-        let st = &h.state().state;
-        assert!(!st.show_gizmo_names, "the click flipped the flag");
-        assert_eq!(
-            h.get_by_label("Show origin names").accesskit_node().toggled(),
-            Some(egui::accesskit::Toggled::False),
-            "the checkbox reads unchecked after the click"
-        );
-        let labels = interact::overlay_labels(st, 1.0);
-        assert!(
-            labels.iter().all(|(_, _, t)| t != "G54"),
-            "off: no name row anywhere: {labels:?}"
-        );
-        assert!(
-            !texts.iter().any(in_viewport),
-            "off: the painted viewport no longer shows the name row"
-        );
-        // Letters and strokes ignore the switch: the same letters and
-        // the same segments draw either way.
-        assert_eq!(letters(&labels), letters_on, "the letters survive untouched");
-        assert_eq!(
-            interact::gizmo_segments(st, 1.0).len(),
-            segs_on,
-            "the strokes ignore the switch"
-        );
-    }
+    let st = &h.state().state;
+    let labels = interact::overlay_labels(st, 1.0);
+    assert!(
+        labels.iter().all(|(_, _, t)| t != "G54"),
+        "off: no name row anywhere: {labels:?}"
+    );
+    assert!(
+        !texts.iter().any(in_viewport),
+        "off: the painted viewport no longer shows the name row"
+    );
+    assert_eq!(letters(&labels), letters_on, "the letters survive untouched");
+    assert_eq!(
+        interact::gizmo_segments(st, 1.0).len(),
+        segs_on,
+        "the strokes ignore the switch"
+    );
     let _ = std::fs::remove_dir_all(&d);
+}
+
+/// #1450: a file hovering the window puts the plain "Drop to load model"
+/// hint over the viewport; without one the hint is absent.
+#[test]
+fn the_drop_hint_shows_only_while_a_file_hovers() {
+    let mut h = shell_harness();
+    h.run();
+    assert!(!painted(&h).iter().any(|(t, _)| t == super::super::file_drop::HINT), "no hint at rest");
+    h.input_mut().hovered_files.push(egui::HoveredFile::default());
+    h.run_steps(2);
+    let texts = painted(&h);
+    let p = at(&texts, super::super::file_drop::HINT);
+    assert!(p.x > 0.0 && p.y > 0.0, "the hint sits over the viewport: {p:?}");
+    h.input_mut().hovered_files.clear();
+    h.run_steps(2);
+    assert!(!painted(&h).iter().any(|(t, _)| t == super::super::file_drop::HINT), "the hint goes when the drag leaves");
 }

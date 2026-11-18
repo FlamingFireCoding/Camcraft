@@ -31,8 +31,12 @@
 //!   only the ray test skips them (they have no interior to cross).
 
 mod bvh;
+mod column;
 mod gjk;
+mod prism;
 mod ray;
+
+pub use prism::{BoxSteel, PrismReading};
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};

@@ -74,16 +74,15 @@ pub fn collect(world: &World) -> ProjectFile {
                         stock: d.stock.clone(),
                         wcs: WcsDto::One(d.wcs.clone()),
                         datum_from: d.datum_from.clone(),
-                        work_offset: d
-                            .work_offset
-                            .and_then(|i| crate::schema::WCS_SLOTS.get(i))
-                            .map(|w| (*w).to_string()),
+                        work_offset: d.work_offset.map(crate::project::work_offset_text),
                         part_alignment: d.part_alignment.as_ref().map(AlignmentDto::from_location),
                         machine: d.machine.as_ref().map(SetupMachineDto::from_def),
                         post: d.post.as_ref().map(SetupPostDto::from_ref),
                         relative_to: d.relative_to.clone(),
                         stock_source: d.stock_source.map(|s| s.word().to_string()),
                         post_options: d.post_options.as_ref().map(SetupPostOptionsDto::from_options),
+                        post_properties: d.post_properties.as_ref().map(|p| p.by_post.clone()),
+                        nose_to_axis: d.nose_to_axis.filter(|v| v.is_finite()),
                         workholding_max_rpm: d.workholding_max_rpm,
                     })
             } else {
@@ -102,6 +101,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     plate: super::plate_dto::plate_value(&d.plate),
                     on_plate: super::plate_dto::on_plate_value(&d.plate),
                     mod_jaw: super::modvise_dto::value(d.mod_jaw.as_ref()),
+                    profile: d.profile.as_ref().and_then(super::fixture_keys::profile_value),
                 });
             let operation = model::operation_of(world, &entity).map(|op| OperationDto {
                 label: model::operation_meta_of(world, &entity).label,
@@ -168,17 +168,30 @@ pub fn collect(world: &World) -> ProjectFile {
                 // The counter moves on models and stocks (every facet
                 // landing); everywhere else it reads 0 and omits itself.
                 rev: model::rev_of(world, &entity),
-                coarse_mm: crate::model_fidelity::chord_of(world, &entity),
+                coarse_mm: crate::model_fidelity::chord_of(world, &entity)
+                    .filter(|c| !crate::model_fidelity::is_unknown(*c)),
+                fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
+                    .is_some_and(crate::model_fidelity::is_unknown),
+                mesh_open: crate::mesh_open::hole_of(world, &entity),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
+                step_source: kind.is_none().then(|| crate::step_source::of(world, &entity)).flatten(),
                 kind,
                 raw_stock_only: mark.is_some(),
                 raw_stock_print: mark.as_ref().map(crate::stock_print::to_text),
+                stock_material: model::is_stock(world, &entity)
+                    .then(|| crate::stock_material::of_entity(world, &entity))
+                    .flatten()
+                    .map(super::StockMaterialWord),
                 stock,
                 tool,
                 operation,
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                flip: matches!(kind, Some(EntityKind::Wcs))
+                    .then(|| crate::setup_wcs_flip::of_entity(world, &entity))
+                    .filter(|f| f.iter().any(|v| *v))
+                    .map(|[x, y, z]| super::entity::WcsFlipDto { x, y, z }),
             }
         })
         .collect();
@@ -209,8 +222,12 @@ pub fn collect(world: &World) -> ProjectFile {
         // the #110 / #111 switches ride their own top-level keys below.
         post_options: {
             let o = crate::setup_post_options::document(world);
+            let script = crate::setup_post_options::script_document(world).by_post;
             (o.threading != crate::schema::ThreadingOutput::default()
-                || o.end_units != crate::schema::EndUnits::default())
+                || o.end_units != crate::schema::EndUnits::default()
+                || o.between_setups != crate::schema::BetweenSetups::default()
+                || o.wcs_rotation != crate::schema::WcsRotationOutput::default()
+                || !script.is_empty())
             .then(|| PostOptionsDto {
                 threading: match o.threading {
                     crate::schema::ThreadingOutput::G32Passes => None,
@@ -222,6 +239,13 @@ pub fn collect(world: &World) -> ProjectFile {
                     crate::schema::EndUnits::Inch => Some("inch".into()),
                     crate::schema::EndUnits::Millimeters => Some("mm".into()),
                 },
+                // #1532: the default pause writes no key.
+                between_setups: (o.between_setups != crate::schema::BetweenSetups::default())
+                    .then(|| o.between_setups.word().to_owned()),
+                // #760: the default bake writes no key.
+                wcs_rotation: (o.wcs_rotation != crate::schema::WcsRotationOutput::default())
+                    .then(|| o.wcs_rotation.word().to_owned()),
+                script,
             })
         },
         post: match crate::posting::document_post_of(world) {
@@ -239,23 +263,36 @@ pub fn collect(world: &World) -> ProjectFile {
         skip_stops: crate::setup_post_options::document(world).skip_stops,
         // One combined program writes no key (#111).
         per_op_files: crate::setup_post_options::document(world).per_op,
+        // Nothing stated writes no key (#258).
+        program: {
+            let p = crate::posting::program_info(world);
+            (p != crate::schema::ProgramInfo::default())
+                .then_some(ProgramDto { number: p.number, comment: p.comment })
+        },
         // Off writes no key (#616).
         smoothing: crate::setup_post_options::document(world).smoothing,
+        // Off writes no key (#1386).
+        explain: crate::setup_post_options::document(world).explain,
         entities,
     }
 }
 
-pub fn save(world: &World, path: &Path) -> Result<(), ProjectError> {
-    let file = collect(world);
-    let text = serde_json::to_string_pretty(&file).map_err(|e| {
-        tracing::warn!(file = %crate::logging::file_name(path), "project not saved: {e}");
+/// The project file's text, exactly what [`save`] writes (#1431): the
+/// browser build hands it to a download instead of a path.
+pub fn save_text(world: &World) -> Result<String, ProjectError> {
+    serde_json::to_string_pretty(&collect(world)).map_err(|e| {
+        tracing::warn!("project not saved: {e}");
         corrupt(e.to_string())
-    })?;
+    })
+}
+
+pub fn save(world: &World, path: &Path) -> Result<(), ProjectError> {
+    let text = save_text(world)?;
     if let Err(e) = std::fs::write(path, &text) {
         tracing::warn!(file = %crate::logging::file_name(path), "project not saved: {e}");
         return Err(e.into());
     }
-    tracing::info!(file = %crate::logging::file_name(path), bytes = text.len(), entities = file.entities.len(), "project saved");
+    tracing::info!(file = %crate::logging::file_name(path), bytes = text.len(), "project saved");
     Ok(())
 }
 

@@ -13,6 +13,8 @@ pub mod bore;
 pub mod cl_read;
 pub mod engine_consumers;
 pub mod engine_fixtures;
+pub mod g76;
+pub mod legacy_program;
 pub mod rotary_bar;
 pub mod solid_part;
 
@@ -202,6 +204,7 @@ pub fn gen_to_cltext(t: &Toolpath) -> String {
             camcraft_app::cl::CycleKind::FloatingTap => "FloatingTap",
             camcraft_app::cl::CycleKind::Bore => "Bore",
             camcraft_app::cl::CycleKind::BackBore => "BackBore",
+            camcraft_app::cl::CycleKind::Ream => "Ream",
         };
         s.push_str(&format!(
             "; CYCLE {kind} X{} Y{} RZ{} BZ{} ENTRY{} PECK{} DWELL{} AT{}\n",

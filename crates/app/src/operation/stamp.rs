@@ -34,15 +34,58 @@ pub fn current_stamp(
     // (M4.3: the salt says camcraft - a one-time Stale read for
     // documents saved under the old salt, the same churn the version
     // bumps produce, working as designed.)
-    h.write(b"camcraft-op-stamp-v2");
+    // v3 (#2152): the rapid law began to judge a traverse AT the
+    // clearance plane (#2121). The post gate trusts the verdicts a cache
+    // carries, so a cache judged under the old law must not read fresh:
+    // it reads Stale once and the post refuses it until a regenerate.
+    // Bump this salt again whenever a verify law a cache records changes.
+    h.write(b"camcraft-op-stamp-v3");
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
-    // #532: a kind that mounts no library tool (the wire EDM's)
-    // digests what stands in the tool's place - the machine
-    // condition's wire and gap - so an edit of the machine's table
-    // re-marks the operation Stale.
-    match params {
-        OpParams::WireContour(op) => super::wire_op::stamp_condition(world, setup, op, &mut h),
-        _ => super::stamp_tool::write(world, tool_name, params, &mut h)?,
+    super::stamp_tool::write(world, tool_name, params, &mut h)?;
+    if let OpParams::WireContour(op) = params {
+        super::wire_op::stamp_condition(world, setup, tool_name, op, &mut h);
+    }
+    // #541: the sinker burn places its tip one spark gap above the floor,
+    // read from the setup machine's condition - a re-stated gap (or a
+    // condition gone) is a different burn, marked Stale through here.
+    // (The electrode itself - kind and face width - is `stamp_tool`'s.)
+    // #544: so is a re-stated orbit list or maximum orbit radius.
+    if let OpParams::SinkerBurn(p) = params {
+        h.write(b"sinker-gap");
+        match super::sinker_op::burn_gap(world, setup, p) {
+            Ok(g) => w(&mut h, g),
+            Err(e) => h.write(e.as_bytes()),
+        }
+        // #543: a rough or finish reads its condition's undersize, and a
+        // finish the rough it follows - a re-stated undersize, or a
+        // rough added, removed or re-sized, is a different judgement.
+        if let Some(read) = super::sinker_pass::read_pass(world, op_name, setup, p) {
+            h.write(b"sinker-pass");
+            match read {
+                Ok(r) => {
+                    w(&mut h, r.undersize);
+                    if let Some((name, u)) = r.rough {
+                        h.write(name.as_bytes());
+                        w(&mut h, u);
+                    }
+                }
+                Err(e) => h.write(e.as_bytes()),
+            }
+        }
+        // #546: and the condition's stated wear rate - a re-stated rate
+        // is a different (compensated) burn. Nothing when unstated.
+        if let Some(r) = super::sinker_wear_op::condition_wear(world, setup, p) {
+            h.write(b"sinker-wear");
+            w(&mut h, r);
+        }
+    }
+    // #545: the side burn's gap too, behind its allowance law.
+    if let OpParams::SinkerSideBurn(p) = params {
+        h.write(b"sinker-side-gap");
+        match super::sinker_side_op::side_gap(world, setup, p) {
+            Ok(g) => w(&mut h, g),
+            Err(e) => h.write(e.as_bytes()),
+        }
     }
     params.stamp_with(world, setup, Some(src), &mut h);
     // #326: the setup's part alignment is a moved input for every op of
@@ -74,6 +117,15 @@ pub fn current_stamp(
                 w(&mut h, v);
             }
         }
+    }
+    if super::wcs_yaw::op_applies(crate::machine::kind_of_setup(world, setup), params)
+        && let Some(deg) = crate::posting::wcs_yaw(world, setup)
+    {
+        let (_, o) = crate::posting::wcs_context(world, setup);
+        h.write(b"wcs-yaw");
+        w(&mut h, deg);
+        w(&mut h, o[0]);
+        w(&mut h, o[1]);
     }
     match src {
         SrcRef::Stock => {
@@ -130,7 +182,7 @@ pub fn current_stamp(
                 let entity = model::find_by_name(world, &g.entity)?;
                 if !digested.contains(&g.entity.as_str()) {
                     digested.push(g.entity.as_str());
-                    let loc = model::transform_of(world, &entity).unwrap_or_default();
+                    let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
                     for v in [
                         loc.pos.x,
                         loc.pos.y,
@@ -228,20 +280,17 @@ pub fn stale_reason(
         return None;
     }
     let op = model::operation_of(world, entity)?;
-    // #532: a wire EDM kind names no tool - its condition is the
-    // machine's, and a condition the machine no longer states is why.
-    if let OpParams::WireContour(w) = &op.params {
-        if let Err(why) = super::wire_op::condition_of(world, op.setup.as_deref(), w) {
-            return Some(why);
+    match model::find_by_name(world, &op.tool) {
+        None => return Some(format!("its tool '{}' no longer exists", op.tool)),
+        Some(t) if !model::is_tool(world, &t) => {
+            return Some(format!("'{}' is no longer a tool", op.tool));
         }
-    } else {
-        match model::find_by_name(world, &op.tool) {
-            None => return Some(format!("its tool '{}' no longer exists", op.tool)),
-            Some(t) if !model::is_tool(world, &t) => {
-                return Some(format!("'{}' is no longer a tool", op.tool));
-            }
-            _ => {}
-        }
+        _ => {}
+    }
+    if let OpParams::WireContour(w) = &op.params
+        && let Err(why) = super::wire_op::condition_of(world, op.setup.as_deref(), &op.tool, w)
+    {
+        return Some(why);
     }
     match &op.src {
         SrcRef::Stock => {

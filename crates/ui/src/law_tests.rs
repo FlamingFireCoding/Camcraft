@@ -17,7 +17,7 @@ use crate::interact::{
     CLEARANCE_RGB, CUT_RGB, FEED_RGB, MAX_OVERLAY_VERTICES, PLUNGE_RGB, RAPID_RGB,
     REGION_RGB, RETRACT_RGB, anchor_hit, anchor_points, anchor_reference, capped, chevrons,
     collect_overlay, ftoz, ground_grid_lines, height_plane_lines, height_planes,
-    gizmo_segments, hover_features, is_axis_label, overlay_labels, plane_corner, plane_rect, project_uv, queue_feature_pick,
+    gizmo_segments, hover_features, is_axis_label, row_hover_segments, overlay_labels, plane_corner, plane_rect, project_uv, queue_feature_pick,
     region_lines, selection_feature_lines, shown_regions, toolpath_lines,
 };
 use crate::state::{CommandKind, HoverHit, State};
@@ -237,6 +237,7 @@ mod gizmo_tests {
         state.pending.push_back(CommandKind::CreateSetup { name: None, datum_from: None });
         state.drain_actions();
         set_origin(&mut state, [50.0, 0.0, 0.0], 0.0);
+        state.toggle_setup_display("Setup1"); // #1494: another setup's triad needs its eye on
         let labels = overlay_labels(&state, 1.0);
         for want in ["G54", "Setup2/WCS"] {
             let label = labels
@@ -277,6 +278,7 @@ mod gizmo_tests {
         state.pending.push_back(CommandKind::CreateSetup { name: None, datum_from: None });
         state.drain_actions();
         set_origin(&mut state, [50.0, 0.0, 0.0], 0.0);
+        state.toggle_setup_display("Setup1"); // #1494: another setup's triad needs its eye on
         assert!(overlay_labels(&state, 1.0).iter().any(|(_, _, text)| text == "G54"));
         State::toggle_visibility(&mut state.hidden_offsets, "G54");
         let texts: Vec<String> =
@@ -679,6 +681,8 @@ mod path_tests {
                     stepdown: 2.0,
                     feed: 800.0,
                     plunge_feed: 200.0,
+                    // #1579: the coarse (0.1) fit keeps the wall's air
+                    // side on the climb walk too, so the default holds.
                     climb: true,
                     side: camcraft_app::machining2d::Side::Auto,
                     lead: camcraft_app::machining2d::Lead::None,
@@ -946,7 +950,7 @@ mod preview_tests {
         state.drain_actions();
         let lines = selection_feature_lines(&state);
         assert_eq!(lines.len(), 10, "four-sided top ring plus one rim edge");
-        for v in &lines {
+        for v in lines.iter() {
             assert!(
                 (v[3] - 0.72).abs() < 0.01
                     && (v[4] - 0.44).abs() < 0.01
@@ -1090,8 +1094,8 @@ mod preview_tests {
         let face = GeoSel { entity: "c".into(), feature: FeatureSel::Face(top) };
         let run = GeoSel { entity: "c".into(), feature: FeatureSel::Chain(chain) };
 
-        state.geo_hover = Some(face.clone());
-        let segs = hover_features(&state, 4.0 / 3.0);
+        state.geo_hover_drawn = Some(face.clone());
+        let segs = row_hover_segments(&state, 4.0 / 3.0);
         assert_eq!(segs.len(), 4, "the row's face lights its four sides");
         for (a, b) in &segs {
             for uv in [a, b] {
@@ -1102,25 +1106,23 @@ mod preview_tests {
             }
         }
 
-        // Both pointers on the same feature: once, not twice.
-        state.hover =
-            Some(HoverHit { entity: "c".into(), facet: 0, feature: Some(face.feature) });
-        assert_eq!(hover_features(&state, 4.0 / 3.0).len(), 4, "no double-draw");
-
-        // Two different features: the viewport keeps its, the row adds its.
+        // The row hover is its own strong layer (#1507): the viewport hover
+        // pass never repeats it.
+        assert!(hover_features(&state, 4.0 / 3.0).is_empty(), "the row hover is not in the thin pass");
         state.hover = Some(HoverHit { entity: "c".into(), facet: 0, feature: Some(run.feature) });
-        assert_eq!(hover_features(&state, 4.0 / 3.0).len(), 5, "one edge plus the square");
+        assert_eq!(hover_features(&state, 4.0 / 3.0).len(), 1, "the viewport hover keeps its one edge");
+        assert_eq!(row_hover_segments(&state, 4.0 / 3.0).len(), 4, "and the row its square");
 
         // Stale ids and hidden models draw nothing through the row either -
         // the highlight never promises a pick the click cannot make.
         state.hover = None;
-        state.geo_hover = Some(GeoSel { entity: "c".into(), feature: FeatureSel::Face(7) });
-        assert!(hover_features(&state, 4.0 / 3.0).is_empty(), "a stale face id draws no ghost");
-        state.geo_hover = Some(GeoSel { entity: "nope".into(), feature: face.feature });
-        assert!(hover_features(&state, 4.0 / 3.0).is_empty(), "a gone entity draws nothing");
-        state.geo_hover = Some(face);
+        state.geo_hover_drawn = Some(GeoSel { entity: "c".into(), feature: FeatureSel::Face(7) });
+        assert!(row_hover_segments(&state, 4.0 / 3.0).is_empty(), "a stale face id draws no ghost");
+        state.geo_hover_drawn = Some(GeoSel { entity: "nope".into(), feature: face.feature });
+        assert!(row_hover_segments(&state, 4.0 / 3.0).is_empty(), "a gone entity draws nothing");
+        state.geo_hover_drawn = Some(face);
         state.hidden_models.push("c".into());
-        assert!(hover_features(&state, 4.0 / 3.0).is_empty(), "display-off stays off");
+        assert!(row_hover_segments(&state, 4.0 / 3.0).is_empty(), "display-off stays off");
     }
 }
 
@@ -1442,7 +1444,7 @@ mod height_plane_tests {
     }
 
     fn pocket() -> OpParams {
-        OpParams::Pocket { tilt: None,
+        OpParams::Pocket { rest: None, tilt: None, blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             stepover: 3.0,
             stock_to_leave: 0.0,
@@ -2171,6 +2173,26 @@ mod projection_tests {
     }
 
     #[test]
+    fn the_ortho_projection_keeps_a_point_in_front_of_the_eye_plane() {
+        // The ortho eye sits at a fixed nominal distance behind the
+        // target, so an in-front-of-the-eye-plane near plane swallowed
+        // the model whole. The near plane now reaches far behind it.
+        // A point in front of the eye plane must clip inside.
+        let cam = Camera { projection: ProjectionMode::Orthographic, dist: 300.0, ..Camera::default() };
+        let eye = cam.eye();
+        let back = [cam.target[0] - eye[0], cam.target[1] - eye[1], cam.target[2] - eye[2]];
+        let back_len = (back[0] * back[0] + back[1] * back[1] + back[2] * back[2]).sqrt();
+        let point = [
+            cam.target[0] + 150.0 * back[0] / back_len,
+            cam.target[1] + 150.0 * back[1] / back_len,
+            cam.target[2] + 150.0 * back[2] / back_len,
+        ];
+        let m = cam.mvp(ASPECT);
+        let z = z_ndc(&m, point);
+        assert!((0.0..=1.0).contains(&z), "the point in front of the eye plane must survive: z = {z}");
+    }
+
+    #[test]
     fn the_ortho_depth_spans_zero_to_one_between_the_planes() {
         // The OpenGL ortho convention spans NDC z over [-1, +1], but
         // WebGPU clips on 0 <= z <= w, and ortho keeps clip.w at 1 -
@@ -2196,7 +2218,7 @@ mod projection_tests {
                 ],
             )
         };
-        let near = 0.1f64;
+        let near = -((cam.dist * 20.0).max(1000.0) - crate::viewport::ORTHO_EYE_DIST);
         let far = (cam.dist * 40.0).max(1000.0);
         assert!((at(near) - 0.0).abs() < 1e-3, "the near plane sits at {}", at(near));
         assert!((at(far) - 1.0).abs() < 1e-3, "the far plane sits at {}", at(far));
@@ -2282,10 +2304,15 @@ mod projection_tests {
         let mp = p.mvp(ASPECT);
         for (nx, ny) in [(-0.9, -0.9), (-0.3, 0.2), (0.0, 0.0), (0.6, 0.85)] {
             let (origin, dir) = o.ray_through([nx, ny], ASPECT).expect("ortho ray");
+            let dd = dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2];
+            let t = ((o.target[0] - origin[0]) * dir[0]
+                + (o.target[1] - origin[1]) * dir[1]
+                + (o.target[2] - origin[2]) * dir[2])
+                / dd;
             let hit = [
-                origin[0] + dir[0] * o.dist,
-                origin[1] + dir[1] * o.dist,
-                origin[2] + dir[2] * o.dist,
+                origin[0] + dir[0] * t,
+                origin[1] + dir[1] * t,
+                origin[2] + dir[2] * t,
             ];
             let a = project(&mo, hit);
             let b = project(&mp, hit);

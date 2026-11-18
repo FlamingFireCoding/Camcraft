@@ -158,6 +158,7 @@ fn top(ms: &[Move]) -> f64 {
 
 fn pp(entry: Entry3D, links: Links) -> PocketParams {
     PocketParams {
+        blend_radius: None,
         tool_diameter: 6.0,
         stepover: 3.0,
         stock_to_leave: 0.0,
@@ -202,7 +203,7 @@ fn a_ramp_transition_descends_at_no_more_than_the_angle() {
         assert_eq!(check(&t, &r, None, Mode::Area, 3.0), Vec::new(), "{:?}", t.notes);
         let tan = angle.to_radians().tan();
         let tr = transitions(&t);
-        assert_eq!(tr.len(), 2, "two level changes");
+        assert_eq!(tr.len(), 1, "one level change (#2004: no level at Top Z)");
         for (above, below, ms) in &tr {
             let ramp: Vec<&Move> = ms.iter().filter(|m| m.kind == MoveKind::Feed && m.to.z < m.from.z).collect();
             assert!(!ramp.is_empty(), "{above} -> {below}: a ramp descends");
@@ -294,13 +295,14 @@ fn bore_params(links: Links) -> BoreParams {
     BoreParams {
         holes: vec![BoreHole {
             xy: Point2::new(0.0, 0.0),
-            radius: 10.0,
+            radius: 8.0,
             top_z: 0.0,
             floor_z: -6.0,
             through: false,
             stepped: false,
         }],
         tool_diameter: 6.0,
+        corner_radius: 0.0,
         stock_to_leave: 0.0,
         stepdown: 2.0,
         through_allowance: 0.5,
@@ -325,7 +327,7 @@ fn keep_down_between_levels_never_rises_above_the_level_just_cut() {
         assert!(t.is_chained() && t.all_finite());
         assert_eq!(check(&t, &region, None, Mode::Area, 3.0), Vec::new(), "{arm:?}: {:?}", t.notes);
         let tr = transitions(&t);
-        assert_eq!(tr.len(), 3, "{arm:?}");
+        assert_eq!(tr.len(), 2, "{arm:?} (#2004: no level at Top Z)");
         let said = t.notes.iter().any(|n| n.starts_with("link:"));
         for (above, below, ms) in &tr {
             assert!(
@@ -377,7 +379,7 @@ fn contour_keep_down_descends_on_the_ring_by_every_arm() {
         let t = contour(&r, &wall(Entry3D::Plunge, links)).expect("contour");
         assert_eq!(check(&t, &r, None, Mode::Boundary, 3.0), Vec::new(), "{arm:?}: {:?}", t.notes);
         let tr = transitions(&t);
-        assert_eq!(tr.len(), 3, "{arm:?}");
+        assert_eq!(tr.len(), 2, "{arm:?} (#2004: no level at Top Z)");
         for (above, below, ms) in &tr {
             assert!(top(ms) <= above + 1e-9, "{arm:?}: {above} -> {below} stays down: {ms:?}");
             assert!(!ms.iter().any(|m| m.kind == MoveKind::Rapid), "{arm:?}: no rapid: {ms:?}");
@@ -429,9 +431,13 @@ fn contour_ring_to_ring_keep_down_is_proved_or_named() {
         Loop::new(disk(40.0, 8.0).loops()[0].points().to_vec()).unwrap(),
     ])
     .unwrap();
+    // Conventional (counter-clockwise round each boss): the next ring's
+    // leads stand clear of the straight link, so it stays down.
     for (pass, max) in [(Link::KeepDown, 0.0), (Link::KeepDown, 1.0), (Link::Clearance, 0.0)] {
         let links = Links { pass, max_stay_down: max, ..Links::PLANAR };
-        let t = contour(&r, &wall(Entry3D::Plunge, links)).expect("contour");
+        let mut conv = wall(Entry3D::Plunge, links);
+        conv.climb = false;
+        let t = contour(&r, &conv).expect("contour");
         assert_eq!(check(&t, &r, None, Mode::Boundary, 3.0), Vec::new(), "{pass:?}: {:?}", t.notes);
         let gaps = pass_gaps(&t);
         // A long planar feed at depth is the kept-down link itself.
@@ -444,17 +450,25 @@ fn contour_ring_to_ring_keep_down_is_proved_or_named() {
                 assert!(long_link, "the ring-to-ring link feeds across at depth");
             }
             (Link::KeepDown, true) => {
-                assert_eq!(gaps.len(), 4, "every level's link lifts");
+                assert_eq!(gaps.len(), 3, "every level's link lifts (#2004: no level at Top Z)");
                 assert!(gaps.iter().all(|(_, ms)| top(ms) >= HOP), "too long for the limit: lifts");
                 assert!(t.notes.iter().any(|n| n.contains("maximum stay-down")), "{:?}", t.notes);
             }
             _ => {
-                assert_eq!(gaps.len(), 4);
+                assert_eq!(gaps.len(), 3, "one gap per level (#2004: no level at Top Z)");
                 assert!(gaps.iter().all(|(_, ms)| top(ms) == CLEAR));
                 assert!(!long_link);
             }
         }
     }
+    // Climb (clockwise, #1555): the straight link would cross the next
+    // boss's lead-out arc - a cut path of the same plane - so it is not
+    // proved: every level lifts, named, and the path verifies clean.
+    let links = Links { pass: Link::KeepDown, ..Links::PLANAR };
+    let t = contour(&r, &wall(Entry3D::Plunge, links)).expect("contour");
+    assert_eq!(check(&t, &r, None, Mode::Boundary, 3.0), Vec::new(), "climb: {:?}", t.notes);
+    assert_eq!(pass_gaps(&t).len(), 3, "every level's link lifts (#2004: no level at Top Z)");
+    assert!(t.notes.iter().any(|n| n.contains("staying down would have crossed passes")), "{:?}", t.notes);
 }
 
 fn box_facets(min: [f64; 3], max: [f64; 3]) -> Vec<Triangle> {
@@ -574,7 +588,7 @@ fn the_helix_entry_is_one_continuous_descent() {
             runs.push(std::mem::take(&mut cur));
         }
     }
-    assert_eq!(runs.len(), 3, "one helix per level (0, -2, -4): {:?} {:?}", runs.iter().map(|r| r.len()).collect::<Vec<_>>(), t.notes);
+    assert_eq!(runs.len(), 2, "one helix per level (-2, -4; #2004: none at Top Z): {:?} {:?}", runs.iter().map(|r| r.len()).collect::<Vec<_>>(), t.notes);
     for run in &runs {
         let drop = run[0].from.z - run[0].to.z;
         for w in run.windows(2) {
@@ -589,3 +603,4 @@ fn the_helix_entry_is_one_continuous_descent() {
         }
     }
 }
+

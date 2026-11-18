@@ -21,13 +21,18 @@
 //! Gate map (solid law): covers sim::verify (engine b2, solid_hits, the
 //! crossing law), the posted goldens under tests/golden/nc/,
 //! motion::machining2d (contour, face, pocket, slot, trochoid, trace),
-//! motion::drilling (drill), app::operation (region_of), sim::verify::plasma.
+//! motion::drilling (drill), app::operation (region_of), sim::verify::plasma,
+//! sim::verify::wire and app::posting (posting_wire's wire_clause, #534),
+//! and (#542) the sinker golden through app::stock_sim's program verdict.
 
 mod common;
 mod posted_gates;
+mod thread_support;
 
 use common::gen_to_cltext;
-use posted_gates::{narrowed_slot_verdict, plasma_findings, region_verdicts};
+use posted_gates::thread::thread_verdicts;
+use posted_gates::{narrowed_slot_verdict, plasma_findings, region_verdicts, sinker_gouge_cells, wire_findings, wire_taper_findings, wire_taper_verdict, wire_verdict};
+use posted_gates::{wire_4axis_findings, wire_4axis_verdict};
 use common::solid_part::{cap, circle, mill, plate, plate_cell, rect, region, walls};
 
 use camcraft_app::cl::Toolpath;
@@ -155,7 +160,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         ("face_square_40x40_blended.cl", true, None, None),
         ("face_square_40x40_stepped.cl", false, Some(2.0), Some(1.5)),
     ] {
-        let p = FaceParams { holes: Default::default(), tool_diameter: 10.0, stepover: 8.0, clearance_z: 5.0, cut_z: -2.0, top_z: top, stepdown: step, feed: 500.0, plunge_feed: 100.0, climb: true, blend_turns: blend };
+        let p = FaceParams { holes: Default::default(), tool_diameter: 10.0, stepover: 8.0, clearance_z: 5.0, cut_z: -2.0, top_z: top, stepdown: step, feed: 500.0, plunge_feed: 100.0, climb: true, blend_turns: blend, stock_top: None };
         let t = face(&reg, &p).expect("face");
         check(name, &t, section_law(&t, &reg, &part, &g10, Mode::Boundary, top.unwrap_or(-2.0), 5.0));
     }
@@ -177,6 +182,7 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         ("pocket_waterline_plate_with_island.cl", PocketStrategy::Waterline, false),
     ] {
         let p = PocketParams {
+            blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tool_diameter: 8.0,
             stepover: 3.0,
@@ -219,11 +225,16 @@ fn verdicts() -> Vec<(&'static str, Vec<Warning>)> {
         flutes: None,
         center_cutting: true,
         orientation: None,
+        pitch_min: 0.0,
+        thread_hand: Default::default(),
+        catalog: camcraft_tools::catalog_fields::ToolCatalog::default(),
+        cutting: Vec::new(),
+        outline: Vec::new(),
         turning: None,
     };
     let hole = |x: f64, y: f64, r: f64, floor: f64, through: bool| Hole { xy: Point2::new(x, y), radius: r, entry_z: 0.0, floor_z: floor, through, stepped: false };
     let cycle = |holes: &[Hole], tool: &Tool, clear: f64| {
-        drill(&CycleParams { clearance_z: clear, r_z: 0.0, hop_z: None, bottom_z: None, cycle: CycleChoice::Auto, peck: 0.0, dwell: 0.0, feed: 200.0, plunge_feed: 60.0, tool, holes })
+        drill(&CycleParams { clearance_z: clear, r_z: 0.0, hop_z: None, bottom_z: None, cycle: CycleChoice::Auto, peck: 0.0, dwell: 0.0, feed: 200.0, plunge_feed: 60.0, tool, holes, through_clear: camcraft_app::drilling::THROUGH_CLEAR })
             .expect("drill")
     };
     let dr6 = tool(ToolKind::Drill, 6.0, 118.0, 0.0);
@@ -278,18 +289,18 @@ fn a_lead_on_the_rings_own_circle_is_refused() {
     // tangent, so the leads meet the ring's arcs as well as each other.
     // These were the contour_disc_hole / contour_tangential_lead
     // goldens' programs until #862; no golden is kept for them, since
-    // no user can post them.
+    // no user can post them. #2004: the air level at Top Z is gone, so
+    // two levels (-2, -4) cross, 23 moves apart, and each still refuses.
     let (reg, part) = disc_hole_plate();
     let g = mill(6.0);
     let crossing = |pairs: &[[usize; 2]]| pairs.iter().map(|&moves| Warning::Crossing { moves }).collect::<Vec<_>>();
     for (lead, want) in [
-        (Lead::Arc { radius: 3.0 }, crossing(&[[17, 20], [18, 21], [40, 43], [41, 44], [63, 66], [64, 67]])),
+        (Lead::Arc { radius: 3.0 }, crossing(&[[17, 20], [18, 21], [40, 43], [41, 44]])),
         (
             Lead::Tangential { radius: 3.0 },
             crossing(&[
                 [17, 19], [17, 20], [18, 21], [19, 21],
                 [40, 42], [40, 43], [41, 44], [42, 44],
-                [63, 65], [63, 66], [64, 67], [65, 67],
             ]),
         ),
     ] {
@@ -338,6 +349,34 @@ fn the_slot_trace_and_plasma_goldens_pass_their_gates() {
         assert_eq!(w, Vec::new(), "{name}");
     }
     assert_eq!(plasma_findings(), Vec::new(), "plasma_plate_with_holes.cl: the plasma laws find nothing");
+    // #534: the wire punch through the wire laws - clean, and judged,
+    // not skipped: the piece its closed cut frees is the part.
+    let wire = wire_verdict();
+    assert_eq!(wire.findings, Vec::new(), "wire_contour_punch.cl: the wire laws find nothing");
+    assert!(wire.slugs.iter().any(|s| s.product_area > 0.0), "the punch frees the part: {:?}", wire.slugs);
+    // #536: the tapered punch through the same laws, its poses read as
+    // the wire's lean at every judged height - clean, and it frees the part.
+    let taper = wire_taper_verdict();
+    assert_eq!(taper.findings, Vec::new(), "wire_taper_punch.cl: the wire laws find nothing");
+    assert!(taper.slugs.iter().any(|s| s.product_area > 0.0), "the tapered punch frees the part: {:?}", taper.slugs);
+    // #537: the 4-axis punch, its rulings read as the lean against the
+    // loft's own section at every judged height - clean, and it frees the part.
+    let four = wire_4axis_verdict();
+    assert_eq!(four.findings, Vec::new(), "wire_4axis_punch.cl: the wire laws find nothing");
+    assert!(four.slugs.iter().any(|s| s.product_area > 0.0), "the 4-axis punch frees the part: {:?}", four.slugs);
+}
+
+#[test]
+fn the_thread_golden_passes_its_gate() {
+    // #894: the thread-mill golden through the real operation and the
+    // post's gate - the crest region, the root solid law over its round
+    // (96-flat) hole and the verification gate find nothing; #985: the
+    // external golden on its boss, judged by the external laws, too.
+    let got = thread_verdicts();
+    assert_eq!(got.len(), 2, "every thread golden is judged");
+    for (name, w) in got {
+        assert_eq!(w, Vec::<String>::new(), "{name}");
+    }
 }
 
 #[test]
@@ -362,6 +401,14 @@ fn every_posted_golden_is_a_program_the_gate_passes() {
     let mut judged: Vec<(&str, Vec<String>)> = verdicts().into_iter().chain(region_verdicts()).map(|(n, w)| (n, blocking(w))).collect();
     let plasma = plasma_findings().iter().filter(|f| f.refuses()).map(|f| f.describe()).collect();
     judged.push(("plasma_plate_with_holes.cl", plasma));
+    judged.extend(thread_verdicts());
+    judged.push(("wire_contour_punch.cl", wire_findings().iter().map(|f| f.describe()).collect()));
+    // The sinker burn through the program verdict its post's gate runs
+    // (the electrode's box atom): any gouge cell blocks.
+    let cells = sinker_gouge_cells();
+    judged.push(("sinker_burn_cavity.cl", if cells == 0 { vec![] } else { vec![format!("program verdict: {cells} gouge cell(s)")] }));
+    judged.push(("wire_taper_punch.cl", wire_taper_findings().iter().map(|f| f.describe()).collect()));
+    judged.push(("wire_4axis_punch.cl", wire_4axis_findings().iter().map(|f| f.describe()).collect()));
     let mut dirs = vec![root.join("nc")];
     let mut posted = 0;
     while let Some(dir) = dirs.pop() {

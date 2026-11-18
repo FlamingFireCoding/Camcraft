@@ -41,7 +41,7 @@ fn ctx<'a>(op: &'a str, tool: u32, name: &'a str, rpm: f64) -> Dump<'a> {
         clearance_z: 50.0,
         retract_z: 5.0,
         top_z: 0.0,
-        wcs: "G54",
+        wcs: 1,
         stock: [-50.0, 50.0, -50.0, 50.0],
         ..Dump::default()
     }
@@ -121,6 +121,9 @@ fn tool_change() -> String {
         first: 0,
         last,
         hand,
+        alternating: false,
+        chip_break_dips: false,
+        repeat_each_depth: false,
     });
     assert!(thread.threads[0].is_sane(&thread.moves), "the thread record sits on its passes");
     assert!(thread.threads[0].reverse_spindle(), "a left-hand thread toward -Z needs M04");

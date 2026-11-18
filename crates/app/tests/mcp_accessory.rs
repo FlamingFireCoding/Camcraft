@@ -98,3 +98,55 @@ fn accessories_are_placed_fitted_resized_and_undone_over_mcp() {
     let why = c.refused("set_accessory", json!({ "name": "Strap clamp" }));
     assert!(why.contains("not a built-in accessory"), "undo removed the clamp: {why}");
 }
+
+#[test]
+fn lathe_chucks_are_placed_fitted_to_the_stock_and_undone_over_mcp() {
+    let mut c = Client::new();
+    let why = c.refused("add_accessory", json!({ "kind": "three_jaw_chuck", "fit_to_stock": true }));
+    assert!(why.contains("no stock"), "{why}");
+    let why = c.refused("add_accessory", json!({ "kind": "four_jaw_chuck", "dimensions": { "jaw_width": f64::NAN.to_string() } }));
+    assert!(why.contains("jaw_width"), "{why}");
+    let why = c.refused("add_accessory", json!({ "kind": "collet_chuck", "dimensions": { "collet_bore": 60.0 } }));
+    assert!(why.contains("collet bore") && why.contains("nose diameter"), "{why}");
+
+    c.ok("set_stock", json!({ "cylinder": { "diameter": 30.0, "height": 40.0 } }));
+    let placed = c.ok("add_accessory", json!({ "kind": "three_jaw_chuck", "fit_to_stock": true }));
+    assert_eq!(placed["fixture"], json!("3-jaw chuck"), "{placed}");
+    assert_eq!(placed["accessory"]["grip_diameter"], json!(30.0), "{placed}");
+    let why = c.refused("add_accessory", json!({ "kind": "block", "fit_to_stock": true }));
+    assert!(why.contains("only a lathe chuck"), "{why}");
+    let set = c.ok("set_accessory", json!({ "name": "3-jaw chuck", "dimensions": { "jaw_height": 12.0 } }));
+    assert_eq!(set["accessory"]["jaw_height"], json!(12.0), "{set}");
+    let collet = c.ok("add_accessory", json!({ "kind": "collet_chuck", "position": [200.0, 0.0, 0.0] }));
+    assert_eq!(collet["accessory"]["collet_bore"], json!(20.0), "{collet}");
+    assert!(collet["accessory"].get("grip").is_none(), "a collet has no grip: {collet}");
+    // #1468: the grip direction and stepped jaws.
+    assert_eq!(placed["accessory"]["grip"], json!("outside"), "{placed}");
+    assert_eq!(placed["accessory"]["step_height"], json!(0.0), "{placed}");
+    let why = c.refused("add_accessory", json!({ "kind": "four_jaw_chuck", "grip": "inside", "fit_to_stock": true }));
+    assert!(why.contains("an inside grip opens into the work's bore"), "{why}");
+    let why = c.refused("add_accessory", json!({ "kind": "four_jaw_chuck", "grip": "sideways" }));
+    assert!(why.contains("no grip \"sideways\""), "{why}");
+    let why = c.refused("add_accessory", json!({ "kind": "block", "grip": "inside" }));
+    assert!(why.contains("has no jaws"), "{why}");
+    let why = c.refused("add_accessory", json!({ "kind": "four_jaw_chuck", "dimensions": { "step_height": 10.0 } }));
+    assert!(why.contains("must both be set"), "{why}");
+    let four = c.ok(
+        "add_accessory",
+        json!({ "kind": "four_jaw_chuck", "grip": "inside", "position": [400.0, 0.0, 0.0],
+            "dimensions": { "grip_diameter": 120.0, "jaw_length": 40.0, "step_height": 10.0, "step_depth": 8.0 } }),
+    );
+    assert_eq!(four["accessory"]["grip"], json!("inside"), "{four}");
+    assert_eq!(four["accessory"]["step_depth"], json!(8.0), "{four}");
+    let set = c.ok("set_accessory", json!({ "name": "4-jaw chuck", "grip": "outside", "dimensions": { "grip_diameter": 60.0 } }));
+    assert_eq!(set["accessory"]["grip"], json!("outside"), "{set}");
+    let why = c.refused("set_accessory", json!({ "name": "4-jaw chuck", "grip": 3 }));
+    assert!(why.contains("\"grip\" must be"), "{why}");
+    c.ok("undo", json!({}));
+    c.ok("undo", json!({}));
+    for _ in 0..3 {
+        c.ok("undo", json!({}));
+    }
+    let why = c.refused("set_accessory", json!({ "name": "3-jaw chuck" }));
+    assert!(why.contains("not a built-in accessory"), "undo removed the chuck: {why}");
+}

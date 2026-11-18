@@ -13,7 +13,7 @@ use crate::schema::{Location, Operation, OperationMeta, Toolpath};
 use crate::setup;
 use crate::verify::Warning;
 
-use super::gates::{area_gate, family_gate, heights_gate, tool_door, tool_gate, valid_src, wire_gate};
+use super::gates::{area_gate, family_gate, heights_gate, infeed_plan_gate, sinker_gate, tool_door, tool_gate, valid_src, wire_gate};
 
 /// Create an operation entity. Deliberately does not generate: a new
 /// operation reads "never generated" until `GenerateOperation` runs, the
@@ -85,6 +85,20 @@ impl CreateOperation {
         // law makes that the first/legacy context byte-identically.
         let setup = crate::setup::active(world);
         valid_src(world, setup.as_deref(), &src)?;
+        // #1504: a Slot created on picks takes the slot that fills them.
+        let params = match &src {
+            SrcRef::Selection(items) => crate::operation::slot_from_picks(world, setup.as_deref(), &params, items).unwrap_or(params),
+            _ => params,
+        };
+        infeed_plan_gate(world, &params, tool)?;
+        if let Some(why) = params.named_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
+        // #1445: a dwell that is not a time from 0 to the bound, by name.
+        if let Some(why) = params.dwell_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
+        sinker_gate(world, setup.as_deref(), &params)?;
         if !params.is_sane() {
             return Err(CommandError::Invalid(format!(
                 "operation parameters are not usable for a {} operation",
@@ -100,10 +114,16 @@ impl CreateOperation {
             return Err(CommandError::Invalid(msg));
         }
         family_gate(world, setup.as_deref(), &params)?;
-        wire_gate(world, setup.as_deref(), &params)?;
         tool_gate(world, &params, tool)?;
+        wire_gate(world, setup.as_deref(), tool, &params)?;
         area_gate(world, setup.as_deref(), &src, &params)?;
         let (reordered, order) = append_position(world, setup.as_deref())?;
+        // #869: a new op starts on its machine's default coolant - Air on
+        // a machine whose only coolant is an air blast, Flood elsewhere -
+        // so its first post never asks for a fluid the machine lacks.
+        let coolant = crate::setup_mount::machine_of(world, setup.as_deref())
+            .1
+            .map_or_else(Default::default, |m| crate::operation::CoolantMode::machine_default(&m.coolants));
         Ok(CreateOperation {
             name: name.to_string(),
             meta: OperationMeta { label: None, order: Some(order) },
@@ -115,7 +135,7 @@ impl CreateOperation {
                 stamp: None,
                 setup,
                 area: Default::default(),
-                coolant: Default::default(),
+                coolant,
                 after: Default::default(),
                 suppressed: false,
             },
@@ -165,6 +185,8 @@ impl PasteOperation {
         let context = operation.setup.as_deref();
         tool_door(world, &operation.params, &operation.tool)?;
         valid_src(world, context, &operation.src)?;
+        infeed_plan_gate(world, &operation.params, &operation.tool)?;
+        sinker_gate(world, context, &operation.params)?;
         if !operation.params.is_sane() {
             return Err(CommandError::Invalid("copied operation parameters are not usable".into()));
         }
@@ -173,8 +195,8 @@ impl PasteOperation {
             return Err(CommandError::Invalid(msg));
         }
         family_gate(world, context, &operation.params)?;
-        wire_gate(world, context, &operation.params)?;
         tool_gate(world, &operation.params, &operation.tool)?;
+        wire_gate(world, context, &operation.tool, &operation.params)?;
         area_gate(world, context, &operation.src, &operation.params)?;
         operation.stamp = None;
 

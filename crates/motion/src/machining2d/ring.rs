@@ -147,11 +147,34 @@ impl Ring {
         }
         keeps
     }
+
+    /// The keeps of [`Self::tab_keeps`] for a ring whose start the user
+    /// picked (#1473): the same count, width and equal spacing, but
+    /// measured from the start, so the first window begins at the pick.
+    /// Tab `i` spans `[(i+1)s - width, (i+1)s]`; the last one ends on the
+    /// seam itself, so no window crosses it. Tabs as wide as their
+    /// spacing leave nothing, as in `tab_keeps`.
+    pub(super) fn tab_keeps_from_start(&self, count: usize, width: f64) -> Vec<(f64, f64)> {
+        let l = self.len;
+        if count == 0 || l <= 0.0 {
+            return vec![(0.0, l.max(0.0))];
+        }
+        let spacing = l / count as f64;
+        if width >= spacing {
+            return Vec::new();
+        }
+        (0..count).map(|i| (i as f64 * spacing, (i + 1) as f64 * spacing - width)).collect()
+    }
 }
 
 pub(super) fn dist(a: Point2, b: Point2) -> f64 {
     ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).sqrt()
 }
+
+/// How far (mm) a point may sit off a loop edge and still read as on it:
+/// [`on_boundary`] and the chord law's vertex touch (`chord_clear`, #1620)
+/// share it, so a chord end the one accepts is a touch the other sees.
+pub(super) const BOUNDARY_TOL: f64 = 1e-9;
 
 /// True when `p` sits on some loop edge, within a nanometer - exact-zero
 /// float tests cannot work here: a computed point on an edge (a chord's
@@ -160,7 +183,7 @@ pub(super) fn dist(a: Point2, b: Point2) -> f64 {
 /// is far under the micron quantization of the geometry and far over the
 /// cancellation error.
 pub fn on_boundary(region: &Region, p: Point2) -> bool {
-    pub(super) const TOL: f64 = 1e-9;
+    const TOL: f64 = BOUNDARY_TOL;
     for l in region.loops() {
         let pts = l.points();
         let n = pts.len();
@@ -238,4 +261,20 @@ pub fn ring_is_circular(poly: &[Point2], tol: f64, stepover: f64) -> bool {
         }
     }
     span <= stepover * 0.25
+}
+
+/// A closed ring's points in travel order, starting at its seam: the
+/// stored first point (`seam_last == false`) or the stored last one, then
+/// round the ring as stored (`forward`) or the other way. #1555: climb and
+/// conventional share each ring's seam and differ only in direction -
+/// the seam stays where the pre-#1555 default (climb) put it, the outside
+/// ring's first point and the inside ring's last (a tessellated bore's
+/// axis-aligned point, where its arc entry posts on one G18/G19 arc).
+pub(super) fn walked(pts: &[Point2], forward: bool, seam_last: bool) -> Vec<Point2> {
+    let n = pts.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let s = if seam_last { n - 1 } else { 0 };
+    (0..n).map(|k| if forward { pts[(s + k) % n] } else { pts[(s + n - k) % n] }).collect()
 }

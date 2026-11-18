@@ -45,7 +45,17 @@ fn applied(state: &State) -> Vec<GeoSel> {
 fn toggle(state: &mut State, pick: GeoSel) {
     let name = state.op_ui.name.clone();
     let mut items = applied(state);
-    let Some(i) = items.iter().position(|g| *g == pick) else {
+    // An exact repeat, else a stored pick (a loop or chain taken with
+    // Shift) that already covers this edge: Ctrl on it takes it back out,
+    // never stacks a second, overlapping pick (#1505).
+    let mine = edges_of(state, &pick);
+    let covers = |g: &GeoSel| {
+        g.entity == pick.entity && !mine.is_empty() && {
+            let e = edges_of(state, g);
+            mine.iter().all(|x| e.contains(x))
+        }
+    };
+    let Some(i) = items.iter().position(|g| *g == pick).or_else(|| items.iter().position(covers)) else {
         queue_feature_pick(state, pick, true);
         return;
     };
@@ -68,8 +78,18 @@ fn edges_of(state: &State, g: &GeoSel) -> Vec<u32> {
         .map_or(Vec::new(), |c| c.edges)
 }
 
+fn setup_of(state: &State) -> Option<String> {
+    model::find_by_name(&state.world, &state.op_ui.name)
+        .and_then(|e| model::operation_of(&state.world, &e))
+        .and_then(|op| op.setup)
+}
+
 fn take_loop(state: &mut State, pick: GeoSel) {
-    let ring = match operation::extend_to_loop(&state.world, std::slice::from_ref(&pick)) {
+    let ring = match operation::extend_to_loop_in(
+        &state.world,
+        setup_of(state).as_deref(),
+        std::slice::from_ref(&pick),
+    ) {
         Ok(ring) => ring,
         Err(why) => {
             // No face loop through it: say so and keep the edge as a

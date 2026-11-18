@@ -81,10 +81,12 @@ pub struct GeoSig {
 /// A model whose mesh stands for its curved surfaces more coarsely than
 /// the STEP importer promises (#864): `chord_mm` is the chord error the
 /// import actually kept, always above `step::CHORD_CAP`. Present ONLY on
-/// such a model - one that met the promise, an STL or OBJ mesh, and
-/// every model of a project saved before this existed carry no component
-/// and read as full fidelity. Written by the import and update commands
-/// and the project loader, through `model_fidelity::set`.
+/// such a model - one that met the promise and an STL or OBJ mesh carry
+/// no component and read as full fidelity. A stock copied from such a
+/// model carries it too (#1056: the same facets). A mesh of a project
+/// saved before v59 with no recorded chord carries the sentinel
+/// `model_fidelity::UNKNOWN_MM` (#1056: fidelity unknown, refused). Written by the import, update and
+/// stock commands and the project loader, through `model_fidelity::set`.
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct ReducedFidelity {
     pub chord_mm: f64,
@@ -98,6 +100,21 @@ pub struct ReducedFidelity {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StepBudget {
     pub facets: u64,
+}
+
+/// Raw STEP text preserved for models/fixtures imported from STEP (#744).
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct StepSource(pub String);
+
+/// The hole of a model imported from a STEP closed shell that meshes open
+/// (#1610), said in words: the model rides fidelity unknown
+/// (`ReducedFidelity` at `model_fidelity::UNKNOWN_MM`) and every refusal
+/// of it names this hole. Read only beside that sentinel. Written by the
+/// import, update and delete commands and the project loader, through
+/// `mesh_open::set`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct MeshOpen {
+    pub hole: String,
 }
 
 /// Selection marker (tag). Only `SelectEntity` writes it (AGENTS.md: changes
@@ -129,6 +146,14 @@ pub struct StockSourceOnly {
     pub print: GeomPrint,
 }
 
+/// #2015: the workpiece material a setup's stock states. Rides the stock
+/// entity; absent (every older file) states none, and the document's
+/// material speaks for the setup. It picks the tool cutting-data row the
+/// setup's operations are seeded from. Only `SetStockMaterial`, the
+/// project loader and the stock's delete/undo write it.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StockMaterial(pub crate::tools::WorkMaterial);
+
 /// A model's geometry as the program verdict reads it (#1094,
 /// `stock_print`): its facet count and two independent 64-bit hashes over
 /// every vertex coordinate's bits (local frame) and its placement's bits.
@@ -157,6 +182,15 @@ pub struct GeomPrintMemo {
 /// (`SetupDef::work_offset`). Never has facets.
 #[derive(Component, Debug)]
 pub struct Wcs;
+
+/// #1720: the axes of a WCS that run reversed (X+ becomes X-), in X, Y,
+/// Z order. Rides the `Wcs` entity beside its `Location`: a unit
+/// quaternion cannot hold a mirror. Absent is no flip (every older
+/// file); written only through `SetWcsFlip`, the project loader and the
+/// undo of a delete (`setup_wcs_flip::set`). The post and generation
+/// refuse a set flag by name until a flip is carried into the program.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WcsFlip(pub [bool; 3]);
 
 /// A cutting tool definition, on the entity named by the catalog or the
 /// user. Tools never have facets; operations and the verifier read their
@@ -200,6 +234,10 @@ pub struct ToolBody {
     /// (`HolderProfile::floored`, in `tool_body::judged`). `false` for
     /// every body the user lands, and for every older file's.
     pub machine_default: bool,
+    /// #361 / #1040: individual modular pieces (head, adapter, clamping
+    /// unit) with their tool-frame facets and coordinate systems. For
+    /// single-body imports holds piece 0; empty only for drawn spun profiles.
+    pub pieces: Vec<crate::tool_body_assembly::BodyPiece>,
 }
 
 /// #93 slice 2: a milling tool's own drawn cutter, neck and shank
@@ -236,10 +274,11 @@ impl ToolBody {
 /// (it sits at the origin). `datum_from` records the setup whose stock
 /// and WCS a new setup was cloned from - provenance for the sheet, inert
 /// for every stamp (the clones themselves carry the data).
-/// `work_offset` is only the setup's post LABEL (#196, #342), an index
-/// into [`WCS_SLOTS`]: the `G54`..`G59` word the post writes for this
-/// setup's WCS. It selects no stored origin - changing it moves nothing.
-/// `None` - the default - writes `G54` ([`crate::setup::wcs_slot`]).
+/// `work_offset` is only the setup's post LABEL (#196, #342, #931): the
+/// 0-based pick of the work offset the post writes for this setup's WCS
+/// (offset `pick + 1`; the setup's post names it and bounds it). It
+/// selects no stored origin - changing it moves nothing. `None` - the
+/// default - is offset 1 ([`crate::setup::wcs_slot`]).
 /// Written only by `SetSetupWorkOffset` and the loader's migrations.
 /// `part_alignment` (#326) is how the PART sits in this setup: the rigid
 /// transform from the document frame into the setup frame (which face
@@ -270,6 +309,12 @@ impl ToolBody {
 /// `post_options` (#389) is the setup's own post options; `None`, the
 /// default and every earlier file, follows the document's `PostOptions`.
 /// Written only by `SetSetupPostOptions` and the project loader.
+/// `nose_to_axis` (#821) is the setup's stated spindle-nose-to-rotary-
+/// centerline figure, mm, for a rotary raised by a stack (a subplate on a
+/// fixture plate): it wins over the machine file's, less any stack
+/// (`crate::rotary_stack`). `None`, the default and every earlier file,
+/// states none. Written only by `SetSetupNoseToAxis`, the datum transfer
+/// and the project loader.
 /// `workholding_max_rpm` (#1031) is the rated maximum rpm of the chuck
 /// or collet the setup holds the work in; `None`, the default and every
 /// earlier file, states none. Read through [`crate::setup_workholding`];
@@ -286,6 +331,8 @@ pub struct SetupDef {
     pub relative_to: Option<String>,
     pub stock_source: Option<crate::setup_stock::StockSource>,
     pub post_options: Option<PostOptions>,
+    pub post_properties: Option<PostScriptOptions>,
+    pub nose_to_axis: Option<f64>,
     pub workholding_max_rpm: Option<f64>,
 }
 
@@ -320,6 +367,8 @@ pub struct FixtureDef {
     /// A built-in accessory's parameters (#789: parallels, blocks, a
     /// strap clamp, a soft jaw); `None` - not one.
     pub accessory: Option<crate::accessory::Accessory>,
+    /// Editable 2D profile when built from DXF/profile or derived (#744).
+    pub profile: Option<crate::fixture_profile::FixtureProfile>,
 }
 
 /// The document's active setup, stored as a flecs singleton like `Units`:
@@ -458,6 +507,56 @@ pub enum PostRef {
     File(String),
 }
 
+/// Per-post declared script option overrides (`declaredOptions`), keyed by
+/// canonical post key (`builtin:<Name>` or `file:<Path>`). Empty maps are pruned
+/// so untouched documents store zero extra keys.
+#[derive(Component, Debug, Clone, Default, PartialEq)]
+pub struct PostScriptOptions {
+    pub by_post: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    >,
+}
+
+static EMPTY_SCRIPT_OPTIONS: std::sync::LazyLock<
+    std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+> = std::sync::LazyLock::new(std::collections::BTreeMap::new);
+
+impl PostScriptOptions {
+    /// True when every post entry is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.by_post.values().all(std::collections::BTreeMap::is_empty)
+    }
+
+    /// Borrow the overrides map for `key`, or an empty map when none are set.
+    #[must_use]
+    pub fn for_post(
+        &self,
+        key: &str,
+    ) -> &std::collections::BTreeMap<String, crate::post::options::OptionValue> {
+        self.by_post.get(key).unwrap_or(&EMPTY_SCRIPT_OPTIONS)
+    }
+
+    /// Replace overrides for `key`, removing the entry when empty.
+    pub fn set_for_post(
+        &mut self,
+        key: &str,
+        overrides: std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    ) {
+        if overrides.is_empty() {
+            self.by_post.remove(key);
+        } else {
+            self.by_post.insert(key.to_owned(), overrides);
+        }
+    }
+
+    /// Remove empty per-post maps.
+    pub fn normalize(&mut self) {
+        self.by_post.retain(|_, v| !v.is_empty());
+    }
+}
+
 /// The user's choices for the document's post (issue #34), a flecs
 /// singleton beside `PostRef`: setup furniture, moved only by
 /// `SetPostOptions` (undoable) or a document load. A script reads the
@@ -485,6 +584,112 @@ pub struct PostOptions {
     pub smoothing: bool,
     /// The length unit the control is left in after the program (#596).
     pub end_units: EndUnits,
+    /// Explain G-code (#1386): off (the default) posts no explanations;
+    /// on, a post that declares `explains` appends a short comment to
+    /// each block saying what its words do, and one that does not is
+    /// refused by name.
+    pub explain: bool,
+    /// What the post does where the program moves from one setup to the
+    /// next (#1532): pause for the operator (the default), an optional
+    /// stop, run straight on, or write one file per setup.
+    pub between_setups: BetweenSetups,
+    /// How a Z-rotated work offset is expressed at post (#760):
+    /// `Bake` (the default) posts Setup/table XY coordinates relative to
+    /// the work offset origin, without controller rotation. Do not enter
+    /// a rotation on the control. `Control` transforms coordinates into
+    /// the rotated WCS frame and emits `G68 X0. Y0. R` or `ROT RPL=` when
+    /// both machine and post script declare support.
+    pub wcs_rotation: WcsRotationOutput,
+}
+
+/// How a Z-rotated work offset posts (#760).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WcsRotationOutput {
+    /// Post Setup/table XY relative to the origin, without controller rotation.
+    /// Do not enter a rotation on the control.
+    #[default]
+    Bake,
+    /// Transform into WCS coordinates and emit controller rotation (`G68` / `ROT`).
+    Control,
+}
+
+impl WcsRotationOutput {
+    pub const ALL: [Self; 2] = [Self::Bake, Self::Control];
+
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Bake => "bake",
+            Self::Control => "control",
+        }
+    }
+
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.word() == word)
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Bake => "Bake into XY (table coordinates)",
+            Self::Control => "Control rotation (G68 / ROT)",
+        }
+    }
+}
+
+/// The between-setups choice of [`PostOptions`] (#1532). A setup is a
+/// new clamping (the part flipped, re-clamped, moved to another vise),
+/// so a program that runs from one setup's last cut into the next
+/// setup's first with no pause cuts a part nobody has re-clamped. The
+/// default therefore pauses; running straight on is the user's explicit
+/// choice (several vises on one table, each its own work offset).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BetweenSetups {
+    /// A program stop (M0) after each setup's last operation, with a
+    /// comment naming the next setup.
+    #[default]
+    Pause,
+    /// An optional stop (M1) there instead.
+    OptionalStop,
+    /// No stop: the program runs on into the next setup (the behaviour
+    /// of every post before #1532).
+    Continue,
+    /// One file per setup, each a whole program of its own.
+    FilePerSetup,
+}
+
+impl BetweenSetups {
+    /// Every choice, in the order the post page lists them.
+    pub const ALL: [BetweenSetups; 4] = [Self::Pause, Self::OptionalStop, Self::Continue, Self::FilePerSetup];
+
+    /// The project file's and MCP's word.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Pause => "pause",
+            Self::OptionalStop => "optional-stop",
+            Self::Continue => "continue",
+            Self::FilePerSetup => "file-per-setup",
+        }
+    }
+
+    /// The choice a word names; `None` for a word that names none.
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|b| b.word() == word)
+    }
+
+    /// The post page's words.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pause => "Pause (M0)",
+            Self::OptionalStop => "Optional stop (M1)",
+            Self::Continue => "Run straight on",
+            Self::FilePerSetup => "One file per setup",
+        }
+    }
 }
 
 /// The end-units choice of [`PostOptions`] (#596). LinuxCNC's M2 / M30
@@ -503,6 +708,21 @@ pub enum EndUnits {
     Inch,
     /// End in millimetres: an inch program writes G21 before M30.
     Millimeters,
+}
+
+/// The document's program identity (#258), a flecs singleton beside
+/// `PostOptions`: the program number a numbering dialect writes as its
+/// O-word and the program comment (the program's name on a control
+/// that addresses programs by name). Moved only by `SetProgramInfo`
+/// (undoable, validated at creation) or a document load. `None` is "not
+/// stated": every post then writes exactly what it wrote before #258
+/// (O0001 and the machine's name), so the default changes no program.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProgramInfo {
+    /// The program number, 1..=9999 when stated.
+    pub number: Option<u32>,
+    /// The program comment / name, non-empty when stated.
+    pub comment: Option<String>,
 }
 
 /// The thread-output choice of [`PostOptions`].
@@ -591,7 +811,7 @@ pub struct RibbonPins(pub Vec<usize>);
 /// tree, undo, and save all reach stock through this.
 pub const STOCK_NAME: &str = "Stock";
 
-pub use crate::operation::types::WCS_SLOTS;
+pub(crate) use crate::operation::types::LEGACY_WCS_NAMES;
 
 /// Registers every schema component with a fresh world. Called by
 /// `world::new_world()` so every binary (and every test) gets identical
@@ -604,11 +824,15 @@ pub fn register_schema(world: &World) {
     world.component::<GeoSig>();
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
+    world.component::<StepSource>();
+    world.component::<MeshOpen>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();
+    world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
+    world.component::<WcsFlip>();
     world.component::<ToolDef>();
     world.component::<ToolBody>();
     world.component::<ToolCutter>();
@@ -622,6 +846,8 @@ pub fn register_schema(world: &World) {
     world.component::<PostOptions>();
     world.component::<ThemeRef>();
     world.component::<PostOptions>();
+    world.component::<PostScriptOptions>();
+    world.component::<ProgramInfo>();
     world.component::<ColorVision>();
     world.component::<WorkMaterialDef>();
     world.component::<RibbonPins>();

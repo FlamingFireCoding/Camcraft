@@ -32,17 +32,32 @@ pub mod cnc_thread;
 pub mod cnc_torch;
 mod coolant;
 pub mod dialect;
+pub mod end_units;
 pub mod engine;
+pub mod explain;
+pub mod g93;
 pub mod invert;
 pub mod js;
+mod js_host;
+pub mod preview;
 pub mod machine;
+mod machine_rotary;
 pub mod nose_tip;
+pub mod options;
+mod options_parse;
 pub mod probe_rec;
 mod program;
+pub mod rotary_cap;
+pub mod section_mode;
+pub mod work_offset;
+pub mod units;
+pub mod wcs_rotate;
 
 pub use after_op::AfterOperation;
 pub use coolant::CoolantMode;
 pub use engine::{LineInfo, PostOutput, TraceBlock};
+pub use js::ProgramId;
+pub use section_mode::{read_section_mode, set_section_mode, SectionMode, SectionModeError};
 
 use crate::cl::{MoveKind, Toolpath};
 use cnc::{CycleRec, MoveRec, Record};
@@ -97,11 +112,25 @@ pub struct Dump<'a> {
     pub clearance_z: f64,
     pub retract_z: f64,
     pub top_z: f64,
-    pub wcs: &'a str,
+    /// The setup's work offset as its 1-based index (#931: 1 is the
+    /// first offset, `G54` on most controls). The stream carries the
+    /// number; the post writes its own word for it. 0 is no offset and
+    /// the engine refuses it by name.
+    pub wcs: u32,
     pub origin: [f64; 3],
+    /// #760: Z-axis WCS rotation in degrees (`Some` only when `|rad| > 1e-9`;
+    /// `None` writes nothing so unrotated streams stay byte-identical).
+    pub wcs_yaw: Option<f64>,
+    /// #760: true when this section posts in `Control` mode (`G68` / `ROT`).
+    pub wcs_rotation_control: bool,
     /// Stock bounds in mm: left, right, front, back (XY), plus top Z.
     pub stock: [f64; 4],
     pub stock_top_z: f64,
+    /// #1666: the radius the stock sweeps about the spindle axis (the
+    /// world Z line through `origin`), in mm - a round bar's radius, a
+    /// square bar's half-diagonal. Stated for turning machines only;
+    /// None writes no PARAM, so a mill stream stays as it was.
+    pub stock_turn_radius: Option<f64>,
     /// Verification warnings attached to the path (the gate's
     /// evidence, riding the stream).
     pub warnings: Vec<String>,
@@ -192,10 +221,13 @@ impl<'a> Default for Dump<'a> {
             clearance_z: 0.0,
             retract_z: 0.0,
             top_z: 0.0,
-            wcs: "G54",
+            wcs: 1,
             origin: [0.0; 3],
+            wcs_yaw: None,
+            wcs_rotation_control: false,
             stock: [0.0; 4],
             stock_top_z: 0.0,
+            stock_turn_radius: None,
             warnings: Vec::new(),
             part_load: None,
             part_unload: false,
@@ -208,6 +240,21 @@ impl<'a> Default for Dump<'a> {
             css: None,
         }
     }
+}
+
+/// Ask for a reverse (M04) spindle on one operation's records (#988: a
+/// left-hand-cut thread mill): the `MillSpindle reverse` PARAM goes in
+/// before the section opens, once. A post script that does not declare
+/// `millSpindleReverse` then refuses the section by name instead of
+/// turning the cutter backwards under M03. (The lathe's
+/// `SpindleDirection` states a turned thread's hand and is not this.)
+pub fn ask_reverse_spindle(records: &mut Vec<Record>) {
+    let said = records.iter().any(|r| matches!(r, Record::Param { name, .. } if name == "MillSpindle"));
+    if said {
+        return;
+    }
+    let at = records.iter().position(|r| matches!(r, Record::Section { begin: true })).unwrap_or(records.len());
+    records.insert(at, Record::Param { name: "MillSpindle".into(), value: json!("reverse") });
 }
 
 /// The generator side: a toolpath plus its resolved context, as
@@ -227,10 +274,19 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     out.push(Record::Param { name: "ToolDiameter".into(), value: json!(d.tool_diameter) });
     comment_params(d, &mut out);
     out.push(Record::Param { name: "SpindleSpeed".into(), value: json!(d.rpm) });
-    out.push(Record::Param { name: "WorkOffset".into(), value: json!(d.wcs) });
+    // #931: the stream carries the 1-based offset index; the post maps
+    // it to its word (and the engine refuses one it cannot express).
+    out.push(Record::Param { name: "WorkOffset".into(), value: json!(f64::from(d.wcs)) });
     out.push(Record::Param { name: "OriginX".into(), value: json!(d.origin[0]) });
     out.push(Record::Param { name: "OriginY".into(), value: json!(d.origin[1]) });
     out.push(Record::Param { name: "OriginZ".into(), value: json!(d.origin[2]) });
+    if let Some(yaw) = d.wcs_yaw.filter(|y| y.is_finite() && y.to_radians().abs() > 1e-9) {
+        out.push(Record::Param { name: "WcsYaw".into(), value: json!(yaw) });
+        out.push(Record::Param {
+            name: "WcsRotationMode".into(),
+            value: json!(if d.wcs_rotation_control { "control" } else { "bake" }),
+        });
+    }
     out.push(Record::Param { name: "ClearancePlane".into(), value: json!(d.clearance_z) });
     out.push(Record::Param { name: "RetractPlane".into(), value: json!(d.retract_z) });
     out.push(Record::Param { name: "TopOfStock".into(), value: json!(d.top_z) });
@@ -239,6 +295,9 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     out.push(Record::Param { name: "StockXYFront".into(), value: json!(d.stock[2]) });
     out.push(Record::Param { name: "StockXYBack".into(), value: json!(d.stock[3]) });
     out.push(Record::Param { name: "StockZTop".into(), value: json!(d.stock_top_z) });
+    if let Some(r) = d.stock_turn_radius.filter(|r| r.is_finite() && *r > 0.0) {
+        out.push(Record::Param { name: "StockTurnRadius".into(), value: json!(r) });
+    }
     if let Some(word) = d.coolant.param_word() {
         out.push(Record::Param { name: "Coolant".into(), value: json!(word) });
     }
@@ -268,6 +327,12 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     // so the spindle starts the right way; forward (M03) is silent.
     if t.threads.iter().any(|c| c.is_sane(&t.moves) && c.reverse_spindle()) {
         out.push(Record::Param { name: "SpindleDirection".into(), value: json!("reverse") });
+    }
+    // Chip-break dips (issue #419) are posted only by a script that
+    // declares `continuousThreading`: the section says so, and the
+    // engine refuses it by name everywhere else.
+    if t.threads.iter().any(|r| r.chip_break_dips) {
+        out.push(Record::Param { name: "ChipBreakDips".into(), value: json!(1.0) });
     }
     // #891: the CSS ask, only a finite positive one (a script never sees
     // a speed it would have to guess about).

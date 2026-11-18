@@ -4,7 +4,7 @@ use crate::drilling::{CycleChoice, Hole};
 use crate::finishing3d;
 use crate::geo2d::Point2;
 use crate::links::Links;
-use crate::machining2d::{FaceHoles, Lead, PocketStrategy, Side};
+use crate::machining2d::{FaceHoles, Lead, PocketStrategy, RestParams, Side};
 use crate::machining3d::Entry3D;
 
 use super::height::Height;
@@ -19,23 +19,60 @@ use super::sel::OpType;
 /// parameter field is no index - the ordinary prismatic op.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tilt {
+    /// 0 preserves the pre-#2133 frame; 1 ignores trigonometric dust.
+    pub basis_version: u8,
     pub a_deg: f64,
     pub b_deg: f64,
     pub origin: [f64; 3],
 }
 
 impl Tilt {
-    /// The frame this index commands: None only when the angles state
-    /// no direction at all (a non-finite letter - refused at the
-    /// parameter door long before generation, but the frame's law is
-    /// Option, not panic).
+    /// The frame this index commands under its persisted basis version.
+    /// Non-finite angles or an unsupported version return None; the
+    /// parameter door refuses these before generation.
     #[must_use]
     pub fn frame(&self) -> Option<crate::cl::TiltedFrame> {
-        crate::cl::TiltedFrame::from_angles(
+        crate::cl::TiltedFrame::from_angles_versioned(
             crate::geometry::Point3::new(self.origin[0], self.origin[1], self.origin[2]),
             self.a_deg,
             self.b_deg,
+            self.basis_version,
         )
+    }
+
+    /// By-name refusal behind [`Tilt::is_sane`] (#2133): names the out-of-range
+    /// field, gives the canonical bounds (A in -90..90, B in -180..180), and
+    /// explains that the face opposite the top is A 0 B 180.
+    #[must_use]
+    pub fn refusal(&self) -> Option<String> {
+        if self.basis_version > 1 {
+            return Some("Tilted plane: unsupported frame basis version".into());
+        }
+        if !self.a_deg.is_finite() || !self.b_deg.is_finite() {
+            return Some(
+                "Tilted plane (3+2): Tool axis A and Tool axis B must be finite numbers (A -90..90 deg, B -180..180 deg)"
+                    .into(),
+            );
+        }
+        if !(-90.0..=90.0).contains(&self.a_deg) {
+            return Some(format!(
+                "Tilted plane (3+2): Tool axis A ({} deg) must be in -90..90 deg (Tool axis B -180..180 deg) - for the face opposite the top, use Tool axis A 0 and Tool axis B 180",
+                self.a_deg
+            ));
+        }
+        if !(-180.0..=180.0).contains(&self.b_deg) {
+            return Some(format!(
+                "Tilted plane (3+2): Tool axis B ({} deg) must be in -180..180 deg (Tool axis A -90..90 deg) - for the face opposite the top, use Tool axis A 0 and Tool axis B 180",
+                self.b_deg
+            ));
+        }
+        if !self.origin.iter().all(|v| v.is_finite() && v.abs() < 1e9) {
+            return Some(
+                "Tilted plane (3+2): Plane origin X, Y and Z must be finite numbers within 1e9 mm"
+                    .into(),
+            );
+        }
+        None
     }
 
     /// Door sanity (M5.1 stage B): every number finite, the anchor
@@ -46,11 +83,7 @@ impl Tilt {
     /// file identities (a stamp that changes for no motion).
     #[must_use]
     pub fn is_sane(&self) -> bool {
-        self.a_deg.is_finite()
-            && self.b_deg.is_finite()
-            && (-90.0..=90.0).contains(&self.a_deg)
-            && (-180.0..=180.0).contains(&self.b_deg)
-            && self.origin.iter().all(|v| v.is_finite() && v.abs() < 1e9)
+        self.refusal().is_none()
     }
 }
 
@@ -170,6 +203,14 @@ pub enum OpParams {
         /// inside the cutter-center area where the law proves it;
         /// `false` is the sharp walk every pre-M11.1 file holds.
         blend_turns: bool,
+        /// The corner arc's radius, mm (#1733), read only with
+        /// `blend_turns`; `None` is the tool radius every earlier file
+        /// blends at.
+        blend_radius: Option<f64>,
+        /// Rest machining (#1489): cut only what the larger previous tool
+        /// described here could not reach (`machining2d::rest_pocket`).
+        /// `None` is off - every earlier file, and the plain pocket.
+        rest: Option<RestParams>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -198,8 +239,25 @@ pub enum OpParams {
         helix_radius: f64,
         links: Links,
         /// Optimal load, ae/D (M11.4 B): the ring step the ladder keeps;
-        /// the law `PocketStrategy::Adaptive` reads.
+        /// the law `PocketStrategy::Adaptive` reads. Under the Trochoidal
+        /// method it is the most the loops advance a turn.
         optimal_load: f64,
+        /// How the region is cleared (#1509): the HSM spiral every 2D
+        /// Adaptive cut before the choice existed (the default), or
+        /// trochoidal loops along the region's medial line
+        /// (`machining2d::adaptive_trochoidal`).
+        method: crate::machining2d::AdaptiveMethod,
+        /// Trochoidal controls (#1588): read only when `method` is
+        /// `Trochoidal` (engagement limit, return mode, return feed,
+        /// loop width).
+        troch: crate::machining2d::AdaptiveTrochParams,
+        /// Arc turns at the spiral's corners (#1733), see
+        /// [`OpParams::Pocket`]; `false` is every earlier file. The
+        /// Trochoidal method's loops are arcs already: it refuses the
+        /// option by name rather than ignore it.
+        blend_turns: bool,
+        /// The corner arc's radius, mm; `None` is the tool radius.
+        blend_radius: Option<f64>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -226,6 +284,11 @@ pub enum OpParams {
         /// Helix centerline radius, mm; read only when `entry` is Helix.
         helix_radius: f64,
         links: Links,
+        /// Arc turns at the rings' corners (#1733), see
+        /// [`OpParams::Pocket`]; `false` is every earlier file.
+        blend_turns: bool,
+        /// The corner arc's radius, mm; `None` is the tool radius.
+        blend_radius: Option<f64>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -341,6 +404,13 @@ pub enum OpParams {
         links: Links,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// How far the pass runs past `a`, back along `b -> a`, mm
+        /// (#1731). Zero is the authored end. The extended pass answers
+        /// to the same gouge laws as the rest of the slot: an extension
+        /// into a part the job keeps is a blocking Gouge.
+        extend_start: f64,
+        /// How far the pass runs past `b`, on along `a -> b`, mm (#1731).
+        extend_end: f64,
     },
     /// Trochoidal slotting (#220): the channel of `width` along `a -> b`
     /// cleared by trochoid loops whose engagement the planner measures
@@ -411,6 +481,11 @@ pub enum OpParams {
         /// kind or the other - the mill's Z holes or the turret's
         /// cross holes - and the generator refuses a mix by name.
         cross: Vec<camcraft_motion::drilling::CrossHole>,
+        /// How far past a through hole's floor the tip runs (#1557), mm.
+        /// `None` is the kind's own default - 1.0 mm, the drill's full diameter clean through - which every file
+        /// before the option posted; checked at generation against the
+        /// stock bottom, refused by name below it.
+        break_through: Option<f64>,
     },
     /// Mesh-driven 3D pocketing. The model is the final part: every
     /// level cuts the footprint minus the model's section strictly above
@@ -540,6 +615,14 @@ pub enum OpParams {
         /// the op's tool diameter or the pencil refuses by name;
         /// every other pattern ignores it as if it never arrived.
         pencil_reference: Option<f64>,
+        /// The land model (#1196): lid every CLOSED opening (hole or
+        /// pocket) a flat disk of this diameter, mm, cannot enter, on
+        /// the surface the path is PLANNED on - the finish flies over
+        /// it at its rim instead of diving down its walls. The verdict
+        /// still judges the real model. `None` (every older file) is
+        /// the model itself, byte for byte. See
+        /// [`crate::finishing3d::fill_openings`] for the rule.
+        fill_openings: Option<f64>,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
     /// authored number is `width` - the break's width in the edge's
@@ -987,7 +1070,12 @@ pub enum OpParams {
     /// the blank. The V itself (crest width, flank angle) is TOOL
     /// geometry, the blade's width law again; the feeds are mm/min
     /// with the spindle turning one rev per pitch of the
-    /// synchronized pass. `hand` (#629) is the way the thread winds -
+    /// synchronized pass. `infeed` is also the FIRST pass's depth
+    /// when `infeed_plan` ladders by constant area (issue #416), and
+    /// `infeed_plan` says how the passes enter (radial, flank,
+    /// alternating), how deep each goes, the finish allowance and the
+    /// spring passes - its default is the radial constant-depth ladder.
+    /// `hand` (#629) is the way the thread winds -
     /// right-hand unless the drawing says LH; the passes run toward
     /// the chuck either way and the hand sets the helix's sense.
     Threading {
@@ -1000,6 +1088,7 @@ pub enum OpParams {
         infeed: f64,
         feed: f64,
         plunge_feed: f64,
+        infeed_plan: crate::turning::ThreadInfeed,
         hand: crate::cl::ThreadHand,
     },
     /// Chamfer turning (M5.2 stage E): one ride across the cone
@@ -1112,13 +1201,18 @@ pub enum OpParams {
         tolerance: f64,
         holes: Vec<Hole>,
         links: Links,
+        /// How far past a through hole's floor the tip runs (#1557), mm.
+        /// `None` is the kind's own default - 1.0 mm, as the drill - which every file
+        /// before the option posted; checked at generation against the
+        /// stock bottom, refused by name below it.
+        break_through: Option<f64>,
     },
-    /// Helical thread milling (M2.4 C). Pitch is the TOOL's, read at
-    /// generate the way the tap cycle reads it - a thread mill that
-    /// cannot state a pitch is the M1.6 refusal, named. `infeed` is
-    /// the radial step per turn and must stay inside the standard's
-    /// depth `0.5413 x pitch`; the ride lands on the major circle
-    /// whatever it is.
+    /// Helical thread milling (M2.4 C, reworked by #894): internal
+    /// threads in the listed holes - or, `external`, on the listed
+    /// bosses (#985) - with a thread mill
+    /// ([`super::super::thread_op`]). `infeed` is the radial depth per
+    /// pass and must stay inside the standard's depth `0.5413 x
+    /// pitch`; the last pass lands on the major circle whatever it is.
     Thread {
         clearance_z: Height,
         retract_z: Option<Height>,
@@ -1127,9 +1221,33 @@ pub enum OpParams {
         infeed: f64,
         feed: f64,
         plunge_feed: f64,
-        /// CCW for a right-hand thread.
+        /// Climb milling: under a clockwise (M3) spindle the orbit runs
+        /// counter-clockwise inside a hole; an M4 spindle flips it (#988).
         climb: bool,
         holes: Vec<Hole>,
+        /// The thread's pitch, mm (#894). `None` reads a multi-form
+        /// mill's own pitch; a single-form mill needs it stated, inside
+        /// its range.
+        pitch: Option<f64>,
+        /// Right-hand unless the drawing says LH (#894).
+        hand: crate::cl::ThreadHand,
+        /// External threads (#985): the listed features are BOSSES -
+        /// `radius` is each one's major radius, `floor_z` its shoulder -
+        /// and the mill orbits beside them, cutting `0.6134 x pitch`
+        /// deep ([`super::super::thread_boss`]). `false` is every
+        /// thread made before the flag existed: internal, in holes.
+        external: bool,
+        /// Pass control (#988): the radial schedule (equal or constant
+        /// chip area), a finishing pass, spring passes, a fit allowance
+        /// and the spindle direction with the cutter's hand
+        /// ([`crate::machining2d::ThreadPasses`]). The default is the
+        /// #894 ride every older file meant.
+        passes: crate::machining2d::ThreadPasses,
+        /// How far past a through hole's floor the tip runs (#1557), mm.
+        /// `None` is the kind's own default - one pitch, so the thread is whole at the exit - which every file
+        /// before the option posted; checked at generation against the
+        /// stock bottom, refused by name below it.
+        break_through: Option<f64>,
     },
     /// Probing (#108): a spindle touch probe finds a face, an edge, an
     /// outside corner or a bore / boss centre, then sets a work offset
@@ -1168,6 +1286,14 @@ pub enum OpParams {
     /// punch / die side, from a stated start hole (see
     /// [`crate::wire_edm`]). The wire EDM's first kind (#290 D1).
     WireContour(super::wire_edm::WireContourOp),
+    /// Sinker EDM burn to depth (#541): one electrode fed down Z to a
+    /// depth from a stated datum (see [`crate::sinker`]). The sinker
+    /// EDM's first kind.
+    SinkerBurn(super::sinker::SinkerBurnOp),
+    /// Sinker EDM side burn (#545): the burn's plunge, then one lateral
+    /// move along an axis that burns the faced wall out by a stated
+    /// amount (see [`crate::sinker_side`]).
+    SinkerSideBurn(super::sinker::SinkerSideBurnOp),
 }
 
 impl OpParams {
@@ -1215,6 +1341,8 @@ impl OpParams {
             OpParams::Probe { .. } => OpType::Probe,
             OpParams::PlasmaProfile(_) => OpType::PlasmaProfile,
             OpParams::WireContour(_) => OpType::WireContour,
+            OpParams::SinkerBurn(_) => OpType::SinkerBurn,
+            OpParams::SinkerSideBurn(_) => OpType::SinkerSideBurn,
             OpParams::TrochoidalSlot { .. } => OpType::TrochoidalSlot,
         }
     }
@@ -1245,6 +1373,8 @@ impl OpParams {
             // The wire stands vertical (#532): a taper is a pose per
             // move (#290 D2, #536), never a 3+2 index.
             OpParams::WireContour(_) => None,
+            // The electrode burns straight down Z (#541, #545).
+            OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
             // The 5-axis kinds (M5.1 C) are the third answer, not the
             // second: the PART stands still and the TOOL AXIS moves -
             // a 3+2 index inside them would command the machine to
@@ -1318,6 +1448,7 @@ impl OpParams {
             // A wire has no rapids plane (#532): it never lifts out of
             // the work; its travel plane is the workpiece's top.
             OpParams::WireContour(p) => p.top_z,
+            OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => p.clearance_z,
             OpParams::Face { clearance_z, .. }
             | OpParams::Contour { clearance_z, .. }
             | OpParams::Pocket { clearance_z, .. }
@@ -1375,6 +1506,8 @@ impl OpParams {
             OpParams::PlasmaProfile(p) => p.top_z,
             // The wire's profile is drawn on the workpiece's top (#532).
             OpParams::WireContour(p) => p.top_z,
+            // The electrode enters at the work top (#541).
+            OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => p.top_z,
             OpParams::Face { top_z, cut_z, .. } => top_z.unwrap_or(*cut_z),
             OpParams::Contour { top_z, .. }
             | OpParams::Pocket { top_z, .. }
@@ -1453,6 +1586,11 @@ impl OpParams {
             OpParams::WireContour(p) => {
                 f(p.top_z);
                 f(p.bottom_z);
+            }
+            OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => {
+                f(p.clearance_z);
+                f(p.top_z);
+                f(p.floor_z);
             }
             OpParams::Face { clearance_z, cut_z, top_z, .. } => {
                 f(*clearance_z);

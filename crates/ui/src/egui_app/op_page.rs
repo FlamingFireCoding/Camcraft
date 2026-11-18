@@ -11,7 +11,7 @@
 //! Provenance: our own port of the M-c operation page (no vendor
 //! material, strings or layouts consulted).
 
-use egui::{ScrollArea, Ui};
+use egui::{RichText, ScrollArea, Ui};
 
 use camcraft_app::model;
 use camcraft_app::operation::{self, OpStatus};
@@ -19,12 +19,14 @@ use camcraft_app::schema::Operation;
 use camcraft_app::verify::Warning;
 
 use crate::operations::{fold_warnings, unresolved_note};
+use crate::start_exit_pick::{self, StartExitAct, act_id, armed_id};
 use crate::state::{CommandKind, ErrorScope, State};
+use crate::shortcut_keys::chord;
 
 use super::colorvision::text_inks;
 use super::fields::combo_owned;
 use super::layout::{Action, ActionKind, BarInks, action_bar, group, prop_grid, status_banner_located};
-use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_MACHINE, SEC_PASSES};
+use super::op_tabs::{SEC_FEEDS, SEC_GEO, SEC_LEADS, SEC_MACHINE, SEC_PASSES};
 use super::theme::Tokens;
 
 /// The hover text of a refusal line that names its spot (#261 part 2);
@@ -38,10 +40,17 @@ const BAR_RESERVE: f32 = 120.0;
 /// nothing is selected (M9.1): the kind comes from the button you
 /// pressed, so this page points at the doors that press it.
 pub(super) fn no_operation_page(ui: &mut Ui) {
-    ui.heading("Operations");
-    ui.separator();
-    ui.label("No operation to show.");
-    ui.label("Click one in the browser, or pick a kind from the ribbon's family doors - the new operation opens its own page straight away.");
+    ui.add_space(8.0);
+    ui.heading("No operation selected");
+    ui.add_space(4.0);
+    ui.label("Select an operation in the browser to edit its parameters, or create a new one.");
+    ui.add_space(10.0);
+    ui.strong("Get started");
+    ui.label("1. Set up stock, WCS, and tools in the Setup section.");
+    ui.label("2. Create an operation from the ribbon (2D, 3D, Drill, or Multi-axis).");
+    ui.label("3. Pick geometry, adjust parameters, then Generate and Simulate.");
+    ui.add_space(8.0);
+    ui.small("Tip: keep the Browser and Properties panes open while you work.");
 }
 
 pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &Tokens) {
@@ -92,9 +101,9 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         } else if cancel_rename {
             state.rename_draft = None;
         }
-        prop_grid(ui, "op_header", |ui| header_rows(ui, state, &target, live.as_ref(), exists));
+        crate::frame_cost::time("ui/properties.op.header", || prop_grid(ui, "op_header", |ui| header_rows(ui, state, &target, live.as_ref(), exists)));
         if exists {
-            status(ui, state, &target, pal);
+            crate::frame_cost::time("ui/properties.op.status", || status(ui, state, &target, pal));
         }
         ui.separator();
         // The named sections (M1.4's tabs): a kind shows only the sections
@@ -102,8 +111,19 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         // (`State::op_tab`), never a command, never saved.
         let kind = state.op_ui.params.kind();
         let tab = super::op_tabs::tab_bar(ui, kind, &mut state.op_tab, pal);
+        if tab != SEC_LEADS {
+            start_exit_pick::disarm(state);
+        }
+        if let Some(role) = state.op_ui.start_exit_pick.filter(|_| start_exit_pick::collecting(state)) {
+            ui.label(
+                RichText::new(format!("Picking {} - click on the part or stock in the viewport", role.label()))
+                    .strong(),
+            );
+        } else {
+            super::geo_page::pick_mode_line(ui, state);
+        }
         if tab == SEC_GEO {
-            super::geo_page::pick_block(ui, state, &target, live_setup.as_deref());
+            crate::frame_cost::time("ui/properties.op.picks", || super::geo_page::pick_block(ui, state, &target, live_setup.as_deref(), pal));
         }
         // The single-concept tabs ride one titled group; Heights draws
         // one group per height and Lead in / Lead out its own groups.
@@ -113,12 +133,29 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
             SEC_MACHINE => Some("Bar feeder"),
             _ => None,
         };
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(armed_id(), state.op_ui.start_exit_pick);
+            d.insert_temp(act_id(), None::<StartExitAct>);
+        });
+        let fields = crate::frame_cost::span("ui/properties.op.fields");
         match title {
             Some(t) => {
                 group(ui, t, None, |ui| super::params_page::params_fields(ui, state, tab));
             }
             None => super::params_page::params_fields(ui, state, tab),
         }
+        if let Some(act) = ui.ctx().data(|d| d.get_temp::<Option<StartExitAct>>(act_id())).flatten() {
+            match act {
+                StartExitAct::Toggle(role) => start_exit_pick::toggle(state, role),
+                StartExitAct::ClearIf(role) => {
+                    if state.op_ui.start_exit_pick == Some(role) {
+                        start_exit_pick::disarm(state);
+                    }
+                }
+            }
+            ui.ctx().request_repaint();
+        }
+        drop(fields);
         if tab == SEC_FEEDS {
             // M13.2: material, edge, flutes and the suggestion.
             super::feeds_page::cutting_group(ui, state, &target);
@@ -126,32 +163,40 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         if tab == SEC_GEO {
             // The Boundary group (M11.5): how far the area reaches, under
             // the picks that say where it is.
-            super::boundary::boundary_group(ui, state);
+            crate::frame_cost::time("ui/properties.op.boundary", || super::boundary::boundary_group(ui, state));
         }
-        if let Some(note) =
+        if let Some(note) = crate::frame_cost::time("ui/properties.op.unresolved", || {
             unresolved_note(&state.world, live_setup.as_deref(), Some(&state.op_ui.src()), &state.op_ui.params)
-        {
+        }) {
             ui.colored_label(text_inks(ui, &state.world).warn, note);
         }
     });
     ui.set_max_width((out.inner_rect.width() - 12.0).max(120.0));
-    actions(ui, state, &target, live.as_ref(), exists, pal);
+    crate::frame_cost::time("ui/properties.op.actions", || actions(ui, state, &target, live.as_ref(), exists, pal));
 }
 
 /// Tool, Source and Setup as label | control rows of the header grid.
 fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation>, exists: bool) {
+    // #535: a kind that mounts no library tool (the wire EDM's) has no
+    // Tool row - and must not adopt the rack's first tool into its draft.
+    let toolless = !state.op_ui.params.kind().info().mounts_tool();
     let mut tools = state.tool_names();
-    if !state.op_ui.tool.is_empty() && !tools.contains(&state.op_ui.tool) {
+    if toolless {
+        tools.clear();
+    } else if !state.op_ui.tool.is_empty() && !tools.contains(&state.op_ui.tool) {
         tools.push(state.op_ui.tool.clone());
     } else if state.op_ui.tool.is_empty()
         && let Some(first) = tools.first()
     {
         state.op_ui.tool = first.clone();
     }
-    ui.label("Tool");
-    if tools.is_empty() {
+    if toolless {
+        // no row: the wire is the machine's
+    } else if tools.is_empty() {
+        ui.label("Tool");
         ui.label("none").on_hover_text("no tools in the document - the Tools page has a catalog");
     } else {
+        ui.label("Tool");
         let mut t_idx = tools.iter().position(|t| *t == state.op_ui.tool).unwrap_or(0);
         let before = t_idx;
         ui.horizontal(|ui| { super::tool_icons::named_glyph(ui, &state.world, &state.op_ui.tool); super::tool_icons::tool_combo(ui, &state.world, "op_tool", &mut t_idx, &tools); });
@@ -168,8 +213,14 @@ fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Opera
             }
         }
     }
-    ui.end_row();
-    coolant_row(ui, state, target, live);
+    if !toolless {
+        ui.end_row();
+    }
+    // #535: a wire EDM flushes with dielectric, which no coolant code
+    // of the machine states - no coolant row (the post ignores it).
+    if state.op_ui.params.kind().info().family() != camcraft_app::operation::Family::WireEdm {
+        coolant_row(ui, state, target, live);
+    }
 
     // Source: the stock or one of the user's parts - never a work
     // offset (G54...), a setup or a fixture (user review 2026-11-06).
@@ -354,20 +405,23 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
         // Enabled, but the door will refuse: a safety line, not help.
         ui.colored_label(inks.warn, why);
     }
+    let commit_hint = format!("Commit the edited parameters ({} undoes)", chord("Z"));
+    let clear_hint = format!("Remove the generated path and keep the operation ({} restores it)", chord("Z"));
+    let delete_hint = format!("Delete the operation and its toolpath ({} restores both)", chord("Z"));
     let bar = [
         Action { label: "Generate", kind: ActionKind::Primary, enabled: true, hint: Some("Compute the toolpath (applies pending edits first)"), why_not: None },
         Action {
             label: "Apply",
             kind: ActionKind::Secondary,
             enabled: !unchanged,
-            hint: apply_hint.as_deref().or(Some("Commit the edited parameters (Ctrl+Z undoes)")),
+            hint: apply_hint.as_deref().or(Some(commit_hint.as_str())),
             why_not: apply_hint.as_deref(),
         },
         Action {
             label: "Clear toolpath",
             kind: ActionKind::Secondary,
             enabled: has_path,
-            hint: Some("Remove the generated path and keep the operation (Ctrl+Z restores it)"),
+            hint: Some(clear_hint.as_str()),
             why_not: Some("Nothing generated yet - there is no toolpath to clear"),
         },
         Action {
@@ -381,14 +435,20 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
             label: "Delete operation",
             kind: ActionKind::Destructive,
             enabled: exists,
-            hint: Some("Delete the operation and its toolpath (Ctrl+Z restores both)"),
+            hint: Some(delete_hint.as_str()),
             why_not: Some("The operation is gone"),
         },
     ];
     let bar_inks = BarInks { accent: pal.accent, on_accent: super::contrast::on_fill(pal.accent), danger: inks.error };
     match action_bar(ui, &bar, &bar_inks) {
-        Some(0) => state.generate_operation(target),
-        Some(1) => state.apply_operation_params(target),
+        Some(0) => {
+            start_exit_pick::disarm(state);
+            state.generate_operation(target);
+        }
+        Some(1) => {
+            start_exit_pick::disarm(state);
+            state.apply_operation_params(target);
+        }
         Some(2) => state.pending.push_back(CommandKind::ClearToolpath(target.to_owned())),
         Some(3) => state.close_operation_editor(target),
         Some(4) => state.pending.push_back(CommandKind::DeleteOperation(target.to_owned())),

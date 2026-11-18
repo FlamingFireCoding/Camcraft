@@ -154,7 +154,7 @@ pub(crate) fn ensure_field_view(state: &mut State) {
         return;
     }
     if let Err(err) = follow_playhead(state, judged) {
-        state.status += &format!(" | traced playback refused: {err} - the sheet stands");
+        state.say_once(&format!("simulation shows the uncut stock: {err}"));
         state.field_play = None;
         state.field_view = Some(Err(err));
     }
@@ -172,7 +172,7 @@ fn walk_whole_program(state: &mut State) {
             crate::machined::prime(state);
         }
         Err(err) => {
-            state.status += &format!(" | traced stock refused: {err} - the sheet stands");
+            state.say_once(&format!("simulation shows the uncut stock: {err}"));
             state.field_view = Some(Err(err));
         }
     }
@@ -187,19 +187,23 @@ fn follow_playhead(state: &mut State, judged: bool) -> Result<(), String> {
     use camcraft_app::stock_view::DEFAULT_TEXELS;
     if state.field_play.is_none() {
         let seed = PlaySeed::gather(&state.world, judged, DEFAULT_TEXELS)?;
-        state.field_play = Some(PlayWorker::spawn(seed)?);
+        // #2181: the removal is calculated once before playback, then
+        // replayed from keyframes (the transport row shows the progress).
+        state.field_play = Some(PlayWorker::spawn_precalc(seed, camcraft_app::stock_play::PRECALC_BUDGET)?);
     }
     let sc = crate::egui_app::shell::cached_script(state);
     let t = state.sim.as_ref().map_or(0.0, |s| s.t);
     let play = state.field_play.as_ref().ok_or("playback was not built")?;
-    let k = match progress(&sc, t) {
-        None => 0,
+    // The move under the playhead shows cut as far as the tool is
+    // drawn on it (#1516), not only once it completes.
+    let (k, f) = match progress(&sc, t) {
+        None => (0, 0.0),
         Some(p) => play
             .index()
-            .index_at(&p)
+            .position_at(&p, sc.travelled(t))
             .ok_or_else(|| format!("{} is on the timeline but not in the posting plan", p.op))?,
     };
-    play.request(k);
+    play.request_at(k, f);
     if let Some(frame) = play.take() {
         state.field_view = Some(Ok(frame?.view));
     }
@@ -321,6 +325,17 @@ pub(crate) fn toggle_projection(state: &mut State) {
 /// frame. Surfaces that also change what the world highlights (tree nodes,
 /// viewport picks) push a `Select` alongside; a bare retarget never does.
 pub(crate) fn target(state: &mut State, t: UiTarget) {
+    use crate::state::{LayoutRequest, Panel};
+    if let UiTarget::Tool(name) = &t {
+        if name.is_empty() {
+            state.layout_request = Some(LayoutRequest::ToolLibrary);
+            return;
+        }
+        if state.tool_editor.is_some() {
+            state.close_tool_editor_window();
+        }
+        state.layout_request = Some(LayoutRequest::Show(Panel::Properties));
+    }
     state.ui_target = t;
 }
 
@@ -381,11 +396,30 @@ pub(crate) fn add_operation(state: &mut State, kind: usize) {
         n += 1;
     };
     let mut params = quick_params(kind);
+    // #535 / #2011: a quick-add wire contour picks the first condition compatible
+    // with its mounted wire tool (falling back to the first stated condition so the
+    // command refuses with a helpful message if none match).
+    let active_setup = camcraft_app::setup::active(&state.world);
+    if let camcraft_app::operation::OpParams::WireContour(w) = &mut params {
+        let conds = camcraft_app::operation::wire_op::conditions_of(&state.world, active_setup.as_deref());
+        w.condition = conds
+            .iter()
+            .find(|id| {
+                let mut probe = w.clone();
+                probe.condition.clone_from(id);
+                camcraft_app::operation::wire_op::condition_of(&state.world, active_setup.as_deref(), &tool, &probe).is_ok()
+            })
+            .cloned()
+            .or_else(|| conds.into_iter().next())
+            .unwrap_or_default();
+    }
     // M11.3: the seed helix radius follows the op's tool (0.4 x radius).
     if let Some(t) = camcraft_app::model::find_by_name(&state.world, &tool)
         .and_then(|e| camcraft_app::model::tool_of(&state.world, &e))
     {
         camcraft_app::operation::seed_helix_for_tool(&mut params, t.diameter);
+        // #890: and its feed, from the tool's row for the document material.
+        camcraft_app::cutting_rows::seed_feed_for_tool(&state.world, &mut params, &t);
     }
     state.pending.push_back(CommandKind::CreateOperation {
         name: name.clone(),

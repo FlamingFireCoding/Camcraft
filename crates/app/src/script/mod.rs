@@ -27,8 +27,11 @@
 //! context and every function registered inside it is dropped first.
 
 pub(crate) mod api;
+mod call;
 pub use api::refusal_text;
 mod report;
+#[cfg(test)]
+mod step_source_tests;
 
 use crate::commands::History;
 use crate::world;
@@ -73,6 +76,8 @@ pub(crate) struct Env {
     /// pull (`cam.result()`, and the non-string read of a parked
     /// object). One value pushed into the sandbox on demand.
     pub last_value: Value,
+    /// Optional UI selection snapshot passed into live MCP calls (#1942).
+    pub selection: Option<crate::mcp::SelectionContext>,
 }
 
 /// The `cam` methods, as data: name, arity, TypeScript line, and the
@@ -82,7 +87,7 @@ pub(crate) struct Env {
 pub(crate) const VERBS: &[Verb] = &[
     Verb::new("load", 1, api::v_load, "load(path: string): DocumentInfo"),
     Verb::new("save", -1, api::v_save, "save(path?: string): { path: string }"),
-    Verb::new("import", -1, api::v_import, "import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number }"),
+    Verb::new("import", -1, api::v_import, "import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] }"),
     Verb::new("exportTools", 1, api::v_export_tools, "exportTools(path: string): { path: string; tools: number }"),
     Verb::new("importTools", -1, api::v_import_tools, "importTools(path: string, mode?: \"add\" | \"update\" | \"replace\", holders?: boolean): { path: string; mode: string; added: string[]; renamed: { from: string; to: string }[]; skipped: string[]; updated: string[]; replaced: string[]; removed: string[]; holders: number; holders_left_out: number; summary: string }"),
     Verb::new("operations", 0, api::v_operations, "operations(): OperationInfo[]"),
@@ -93,6 +98,7 @@ pub(crate) const VERBS: &[Verb] = &[
     Verb::new("check", 0, api::v_check, "check(): VerifyReport"),
     Verb::new("result", 0, api::v_result, "result(): unknown"),
     Verb::new("log", -1, api::v_log, "log(...values: unknown[]): null"),
+    Verb::new("call", -1, call::v_call, "call(tool: string, args?: Record<string, unknown>): unknown"),
 ];
 
 pub(crate) type VerbFn = fn(&mut Env, Vec<Value>) -> Result<Value, String>;
@@ -118,6 +124,7 @@ impl Env {
             doc_path: None,
             posted: None,
             last_value: Value::Null,
+            selection: None,
         }
     }
 }
@@ -342,21 +349,27 @@ interface PostOptions {
   /** The .nc (or .cnc) file to write. Required. */
   to: string;
   /** A built-in post name - "Fanuc", "Haas", "Siemens 840D",
-   *  "Heidenhain", "Mazak", "Tormach PathPilot" - or the path of a .cps file.
+   *  "Heidenhain", "Mazak", "Tormach PathPilot", "grblHAL", "TinyG" - or the
+   *  path of a .cps file.
    *  Omitted means the document's own post. */
   cps?: string;
   /** Also return the program text in the result. */
   program?: boolean;
+  /** Per-post declared option overrides for this run. */
+  options?: Record<string, boolean | number | string>;
 }
 
 interface PostResult {
   path: string;
   ops: number;
   lines: number;
+  warning?: string;
   program?: string;
-  /** Setups on different machines or posts: every file written, one per mount. */
+  /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];
   mounts?: PostedMountInfo[];
+  /** One file per operation (`per_op` enabled): per-operation summaries when multiple files are written. */
+  operations?: PostedOpInfo[];
 }
 
 interface PostedMountInfo {
@@ -365,6 +378,13 @@ interface PostedMountInfo {
   machine: string;
   post: string;
   ops: number;
+  lines: number;
+  program?: string;
+}
+
+interface PostedOpInfo {
+  path: string;
+  operation: string;
   lines: number;
   program?: string;
 }
@@ -411,12 +431,6 @@ pub(crate) fn inventory(env: &Env) -> Vec<(String, flecs_ecs::prelude::Entity, c
             (name, e, status)
         })
         .collect()
-}
-
-/// The embedded post-processor source a `cps: "<name>"` option picks:
-/// the registry posting::script_source reads, mirrored by name.
-pub(crate) fn builtin_cps(name: &str) -> Option<&'static str> {
-    crate::posting::BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, text)| *text)
 }
 
 /// Keys an options object must not carry, named by the verb that

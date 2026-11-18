@@ -11,6 +11,8 @@
 //! (options_value), app::commands (SetPostOptions), app::project
 //! (post_options end_units), app::schema (EndUnits).
 
+mod common;
+
 use camcraft_app::commands::{History, SetPostOptions};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::post::{engine, machine};
@@ -39,15 +41,26 @@ fn machine_for(mch: &str) -> serde_json::Value {
 /// Post one golden stream through tormach.cps with the given end units.
 fn post(mch: &str, golden: &str, end: Option<EndUnits>) -> String {
     let cps = read("assets/posts/tormach.cps");
-    let stream = read(&format!("crates/app/tests/golden/{golden}.cl"));
+    // #1357: a real program (tool, spindle, cycle feed) - the bare
+    // stream is refused by name now.
+    let stream = common::legacy_program::as_program(golden, &read(&format!("crates/app/tests/golden/{golden}.cl")));
     let m = machine_for(mch);
+    // #902: the program's unit is the document's - the inch machine's
+    // runs here stand for an inch document, as before #902 they posted.
+    let unit = |mut o: serde_json::Value| {
+        if mch == INCH_MCH {
+            o["Units"] = serde_json::json!("inch");
+        }
+        o
+    };
     let out = match end {
+        None if mch == INCH_MCH => engine::run_with(&cps, &m, &stream, &unit(serde_json::json!({}))),
         None => engine::run(&cps, &m, &stream),
         Some(e) => engine::run_with(
             &cps,
             &m,
             &stream,
-            &posting::options_value(PostOptions { end_units: e, ..PostOptions::default() }),
+            &unit(posting::options_value(PostOptions { end_units: e, ..PostOptions::default() })),
         ),
     }
     .unwrap_or_else(|e| panic!("{golden}: {e}"));
@@ -85,9 +98,9 @@ fn a_mm_program_for_an_inch_control_ends_g20_right_before_m30() {
         let plain = post(METRIC_MCH, g, None);
         let nc = post(METRIC_MCH, g, Some(EndUnits::Inch));
         assert!(plain.contains("G21 G17 G90"), "{g}: a mm program\n{plain}");
-        assert_eq!(tail(&nc, 4), ["G53 G0 Z0", "G30", "G20", "M30"], "{g}\n{nc}");
+        assert_eq!(tail(&nc, 4), ["M5", "G53 G0 Z0", "G20", "M30"], "{g}\n{nc}");
         // Exactly one line added, nothing else touched.
-        let added = plain.replacen("G30\nM30", "G30\nG20\nM30", 1);
+        let added = plain.replacen("G53 G0 Z0\nM30", "G53 G0 Z0\nG20\nM30", 1);
         assert_eq!(nc, added, "{g}: only the G20 line is new");
     }
 }
@@ -96,7 +109,7 @@ fn a_mm_program_for_an_inch_control_ends_g20_right_before_m30() {
 fn an_inch_program_for_a_mm_control_ends_g21_right_before_m30() {
     for g in GOLDENS {
         let nc = post(INCH_MCH, g, Some(EndUnits::Millimeters));
-        assert_eq!(tail(&nc, 4), ["G53 G0 Z0", "G30", "G21", "M30"], "{g}\n{nc}");
+        assert_eq!(tail(&nc, 4), ["M5", "G53 G0 Z0", "G21", "M30"], "{g}\n{nc}");
     }
 }
 
@@ -152,4 +165,30 @@ fn the_end_units_choice_round_trips_and_old_files_leave_it() {
     let text = std::fs::read_to_string(&path).expect("written");
     let _ = std::fs::remove_file(&path);
     assert!(!text.contains("end_units") && !text.contains("post_options"), "{text}");
+}
+
+#[test]
+fn every_builtin_handles_or_refuses_end_units_by_name() {
+    use camcraft_app::post::PostError;
+    use camcraft_app::schema::PostRef;
+    let ask = posting::options_value(PostOptions { end_units: EndUnits::Inch, ..PostOptions::default() });
+    for (name, cps) in camcraft_app::posting::shipped_posts().expect("the shipped posts read") {
+        let declares = cps.lines().any(|l| l.trim_start().starts_with("endUnits ="));
+        let words = posting::end_units_words(&PostRef::Named((*name).to_owned())).expect("reads manifest");
+        match engine::run_with(cps, &serde_json::Value::Null, "", &ask) {
+            Err(PostError::Refused(why)) if !declares => {
+                assert!(words.is_none(), "{name}");
+                assert!(why.contains("endUnits"), "{name}: {why}");
+            }
+            Err(PostError::Refused(why)) => panic!("{name} declares endUnits but refused empty stream: {why}"),
+            _ if declares => {
+                if cps.contains("endUnits = \"note\"") {
+                    assert!(words.is_none(), "{name} note post must not advertise words");
+                } else {
+                    assert!(words.is_some(), "{name} switching post must advertise words");
+                }
+            }
+            other => panic!("{name} states no endUnits yet was not refused: {:?}", other.map(|o| o.program)),
+        }
+    }
 }

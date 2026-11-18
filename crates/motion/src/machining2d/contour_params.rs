@@ -8,7 +8,6 @@ use crate::entry::Entry3D;
 use crate::links::Links;
 
 use super::face::GenError;
-use super::levels::cut_levels;
 
 /// Entry/exit motion appended to each contour subpath. Every lead that
 /// is not [`Lead::None`] keeps the tool from dwelling (and gouging) at a
@@ -83,11 +82,11 @@ pub struct ContourParams {
     pub stepdown: f64,
     pub feed: f64,
     pub plunge_feed: f64,
-    /// Climb travels each offset loop with the region's canonical
-    /// orientation (material on the left); conventional reverses it.
-    /// Under [`Side::Inside`] the canonical orientation is the loop's
-    /// reverse, which the generator XORs in - this field still means the
-    /// process, not a winding.
+    /// Climb milling under the M3 spindle every 2D op posts (#1555): the
+    /// material stays on the RIGHT of travel - an outside ring runs
+    /// clockwise, an inside ring counter-clockwise, and control
+    /// compensation is G41; conventional reverses all three. The field
+    /// means the process, not a winding: the generator applies the side.
     pub climb: bool,
     /// Which side of the boundary to cut; see [`Side`]. Only the offset
     /// sign and the traversal follow from it - hops, leads and tabs are
@@ -210,9 +209,15 @@ impl ContourParams {
         self.links.approach.lead_out.unwrap_or(self.lead)
     }
 
+    /// The material's top over the first level (#1559): the top of the
+    /// cut, or the stock the application says is carried above it.
+    pub(super) fn entry_top(&self) -> f64 {
+        self.links.approach.entry_top(self.top_z)
+    }
+
     /// Cut levels from `top_z` down to `bottom_z`, always ending exactly
     /// at the bottom (same snap rule as facing rows).
     pub(super) fn levels(&self) -> Result<Vec<f64>, GenError> {
-        cut_levels(self.top_z, self.bottom_z, self.stepdown)
+        super::levels::cut_levels_under(self.top_z, self.links.approach.stock_top, self.bottom_z, self.stepdown)
     }
 }

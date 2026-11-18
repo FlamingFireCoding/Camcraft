@@ -152,7 +152,8 @@ fn clear_toolpath_keeps_the_op_and_undo_restores_the_path_exactly() {
     let before = cache(&state, "Face1").expect("generated");
     state.pending.push_back(CommandKind::ClearToolpath("Face1".into()));
     state.drain_actions();
-    assert!(state.status.contains("Ctrl+Z restores"), "{:?}", state.status);
+    let hint = format!("{} restores", camcraft_ui::shortcut_keys::chord("Z"));
+    assert!(state.status.contains(&hint), "{:?}", state.status);
     assert_eq!(cache(&state, "Face1"), None, "the path is gone");
     assert_eq!(status(&state, "Face1"), OpStatus::Never, "reads never generated");
     assert!(model::find_by_name(&state.world, "Face1").is_some(), "the operation is kept");
@@ -191,4 +192,25 @@ fn apply_hint_says_why_apply_is_dark_and_which_field_is_bad() {
     }
     let why = camcraft_ui::feedback::apply_hint(Some(&live), &bad, false).expect("refusal ahead");
     assert!(why.contains("plunge feed"), "names the field: {why}");
+}
+
+#[test]
+fn apply_hint_names_tilt_limits_and_a0_b180_remedy() {
+    let live = face_params();
+    let mut bad = face_params();
+    if let OpParams::Face { tilt, .. } = &mut bad {
+        *tilt = Some(camcraft_app::operation::Tilt {
+            basis_version: 1,
+            a_deg: 180.0,
+            b_deg: 0.0,
+            origin: [0.0; 3],
+        });
+    }
+    let why = camcraft_ui::feedback::apply_hint(Some(&live), &bad, false).expect("tilt refusal ahead");
+    assert!(why.contains("Tool axis A"), "must name Tool axis A: {why}");
+    assert!(why.contains("-90..90"), "must give A limits: {why}");
+    assert!(
+        why.contains("A 0") && why.contains("B 180"),
+        "must name A 0 B 180 remedy: {why}"
+    );
 }

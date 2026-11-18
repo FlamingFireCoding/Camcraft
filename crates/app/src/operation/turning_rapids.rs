@@ -170,6 +170,15 @@ impl SignedMeridian {
         off.dot(off).sqrt() <= tol.max(1e-9) * (1.0 + r.abs())
     }
 
+    /// `q` in the frame the tool's plane is fixed in (#1037): station,
+    /// along the path's radial, and across the plane (`dir x radial`).
+    pub(super) fn suv(&self, q: Point3) -> (f64, f64, f64) {
+        let d = q - self.origin;
+        let s = d.dot(self.dir);
+        let w = Point3::new(d.x - self.dir.x * s, d.y - self.dir.y * s, d.z - self.dir.z * s);
+        (s, w.dot(self.radial), w.dot(self.dir.cross(self.radial)))
+    }
+
     /// The spindle direction and the path's signed radial (unit,
     /// world): the turning tool frame's +z and +x as a tip's (station,
     /// signed radius) is read here (#1038: the drawn lathe body).
@@ -352,13 +361,13 @@ struct Kerf {
 
 /// A cutting move's meridian segment, credited as its nose's kerf. A
 /// straight move is its chord. An arc credits only when it is a turn
-/// about the spindle (an XY arc centred on the axis, both ends at one
-/// radius - a thread's helix): a constant radius across its stations
+/// about the spindle (an XY arc centred on the axis - a thread's
+/// helix or synchronized radius ramp): linear radius across its stations
 /// (review S1's reading). Any other arc's chord is not its sweep, and
 /// credits nothing.
 ///
 /// *The helix approximation* (PR #135 review): a helix is a groove that
-/// winds, not a tube; read as constant radius over its stations it
+/// winds, not a tube; read as a radius profile over its stations it
 /// credits the crests between the turns as cut. On the thread's own path
 /// the flank credit along that chord makes the V a continuous trough
 /// over the threaded length. That is safe only for today's thread
@@ -369,8 +378,7 @@ pub(super) fn kerf_of(m: &crate::cl::Move, sm: &SignedMeridian, tol: f64) -> Opt
     let (p, q) = (sm.sr(m.from), sm.sr(m.to));
     let Some(arc) = m.arc.as_ref() else { return Some((p, q)) };
     let on_axis = (arc.center.x - sm.origin.x).hypot(arc.center.y - sm.origin.y) <= tol.max(1e-9) * (1.0 + p.1.abs());
-    let round = (p.1.abs() - q.1.abs()).abs() <= tol.max(1e-9) * (1.0 + p.1.abs());
-    (arc.plane.is_xy() && on_axis && round).then(|| ((p.0, p.1.abs()), (q.0, q.1.abs())))
+    (arc.plane.is_xy() && on_axis).then(|| ((p.0, p.1.abs()), (q.0, q.1.abs())))
 }
 
 /// Offsets across `[-h, h]`, at most 0.25 mm apart, ends included (none

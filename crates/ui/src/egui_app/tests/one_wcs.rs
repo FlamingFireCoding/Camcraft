@@ -84,15 +84,58 @@ fn the_wcs_page_shows_the_work_offset_dropdown_and_no_setups_page_pointer() {
         crate::actions::target(st, UiTarget::Wcs);
     }
     h.run_steps(3);
+    for _ in 0..6 {
+        if super::structural::painted(&h)
+            .iter()
+            .any(|(t, _)| t == "Work offset: the G54-G59 slot this setup posts. It does not move the origin.")
+        {
+            break;
+        }
+        let pane = super::anchors::pane_center(&h, &Tab::Properties);
+        wheel(&mut h, pane, -220.0);
+    }
     let texts = super::structural::painted(&h);
     assert!(
-        texts.iter().any(|(t, _)| t == "Work offset: the G54-G59 slot this setup posts. It does not move the origin."),
+        texts.iter().any(|(t, _)| t == "Work offset: the offset this setup posts, as its post names it. It does not move the origin."),
         "the WCS page names the work offset in plain words: {texts:?}"
     );
     assert!(
         !texts.iter().any(|(t, _)| t.contains("Setups page")),
         "no WCS-page label points at the Setups page: {texts:?}"
     );
-    // The dropdown itself: an unset setup reads G54 in the combo.
-    h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("G54"));
+    // The dropdown itself: an unset setup reads offset 1 in the combo,
+    // named by its post (#931).
+    h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Work offset 1 (G54)"));
+    // #1648: it sits in its own titled group on the WCS page, under the origin fields.
+    let top = |t: &str| h.get_by_label(t).rect().top();
+    assert!(
+        top("Origin and orientation") < top(crate::egui_app::wcs_page::OFFSET_GROUP),
+        "the work offset group follows the origin group"
+    );
+}
+
+/// #1648: the Setup page carries no work offset control; the WCS page does.
+#[test]
+fn the_work_offset_control_is_on_the_wcs_page_and_not_the_setup_page() {
+    let _g = snapshot_guard();
+    let combos = |h: &Harness<'_, ShellUi>| {
+        h.query_all_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Work offset 1 (G54)")).count()
+    };
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1280.0, 720.0))
+        .build_ui_state(frame, ShellUi::blank());
+    {
+        let st = &mut h.state_mut().state;
+        st.pending.push_back(CommandKind::CreateSetup { name: None, datum_from: None });
+        st.drain_actions();
+        crate::actions::target(st, UiTarget::SetupNode("Setup1".into(), crate::state::SetupPage::Settings));
+    }
+    h.run_steps(3);
+    assert_eq!(combos(&h), 0, "the Setup page has no work offset combo");
+    crate::actions::target(&mut h.state_mut().state, UiTarget::Wcs);
+    h.run_steps(3);
+    assert_eq!(combos(&h), 1, "the WCS page has the work offset combo");
+    // The row label carries no Setup-page indent inside its own group.
+    assert_eq!(h.query_all_by_label("Work offset").count(), 1, "one plain row label");
+    assert!(h.query_all_by_label("    Work offset").next().is_none(), "no indented row label");
 }

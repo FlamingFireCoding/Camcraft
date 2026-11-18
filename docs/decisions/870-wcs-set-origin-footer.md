@@ -13,5 +13,6 @@
   - A non-finite origin or box says "not known".
 - **Viewport marker:** the WCS axis triad already marks the origin in the viewport. Nothing was added there.
 - **Docs:** `docs/user-guide/work-origin.md`, a short page on where the origin is shown and how to change it.
-- **Kept out of #759's way:** #759 (open, draft) splits the WCS page body into `wcs_page.rs` and has its own *Set Origin* in the quarter-turn rows. This PR touches the body in one place (the button removed) and puts its new code in its own files. Whichever lands second drops the body button and keeps the footer.
+- **Refresh on main's `wcs_page.rs` (2026-11-18, maintainer option (a)):** main split the page into `wcs_page.rs` (#739) with *Level* and *Set Origin* as one equal-width row. The refresh removed *Set Origin* from that row; *Level* now spans the row alone. The footer's *Set origin* is the one apply button. `wcs_page_tests` and `page_layout::layout_page_wcs` follow.
+  - Dropped: keeping the body button beside the footer one (two buttons, one action).
 - **Left as is:** the words read the world-frame box. On a rotated or aligned setup (#326), "left" and "front" are the world's, as the anchor grid's compass names are.

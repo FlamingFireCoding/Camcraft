@@ -13,16 +13,35 @@ fn root() -> PathBuf {
 fn plan_for(root: &Path, files: &[&str]) -> crate::plan::Plan {
     let changed: Vec<String> = files.iter().map(|s| s.to_string()).collect();
     let hunks = |_: &str| -> Vec<String> { Vec::new() };
-    let diff = Diff { changed: &changed, untracked: &[], hunks: &hunks };
+    let diff = Diff { changed: &changed, untracked: &[], hunks: &hunks, before: &|_| None };
     match quick::plan(root, &diff, false) {
         Ok(Quick::Plan(p)) => p,
         other => panic!("{files:?} did not plan: {other:?}"),
     }
 }
 
+/// The `--test` binaries of the `<krate> suites: <target>` steps of a plan (one step for each target, #1941).
+fn bins_of(p: &crate::plan::Plan, krate: Option<&str>) -> Vec<String> {
+    p.steps
+        .iter()
+        .filter(|s| match krate {
+            Some(k) => s.name.starts_with(&format!("{k} suites: ")),
+            None => s.name.contains(" suites: "),
+        })
+        .flat_map(|s| {
+            s.args.iter().enumerate().filter(|(_, x)| *x == "--test").filter_map(|(i, _)| s.args.get(i + 1).cloned())
+        })
+        .collect()
+}
+
+/// The suites the plan runs, in every crate: the post-script suites live in app and, since #926, in post too.
 fn app_suites(p: &crate::plan::Plan) -> Vec<String> {
-    let Some(s) = p.steps.iter().find(|s| s.name == "app suites") else { return Vec::new() };
-    s.args.iter().enumerate().filter(|(_, x)| *x == "--test").filter_map(|(i, _)| s.args.get(i + 1).cloned()).collect()
+    bins_of(p, None)
+}
+
+/// The suites one crate's steps run (#921: tests moved between crates).
+fn suites(p: &crate::plan::Plan, krate: &str) -> Vec<String> {
+    bins_of(p, Some(krate))
 }
 
 #[test]
@@ -37,18 +56,21 @@ fn cps_only_change_selects_the_suites_posting_through_it() {
 
 #[test]
 fn a_cps_change_skips_suites_that_never_name_it() {
-    let got = app_suites(&plan_for(&root(), &["assets/posts/fanuc.cps"]));
+    // The heidenhain suites moved to camcraft-post (#921): they are post suites now.
+    let got = suites(&plan_for(&root(), &["assets/posts/fanuc.cps"]), "post");
     assert!(!got.iter().any(|b| b == "heidenhain_block_form"), "{got:?}");
-    let got = app_suites(&plan_for(&root(), &["assets/posts/heidenhain.cps"]));
+    let got = suites(&plan_for(&root(), &["assets/posts/heidenhain.cps"]), "post");
     assert!(got.iter().any(|b| b == "heidenhain_cycles"), "{got:?}");
 }
 
 #[test]
 fn mch_only_change_selects_the_suites_using_that_machine() {
     let got = app_suites(&plan_for(&root(), &["assets/machines/3axis-vmc.mch"]));
-    for must in ["arc_planes", "comment_escape", "conformance"] {
+    for must in ["arc_planes", "conformance"] {
         assert!(got.iter().any(|b| b == must), "{must} missing from {got:?}");
     }
+    let post = suites(&plan_for(&root(), &["assets/machines/3axis-vmc.mch"]), "post");
+    assert!(post.iter().any(|b| b == "comment_escape"), "comment_escape missing from {post:?}");
 }
 
 #[test]

@@ -18,7 +18,6 @@ use camcraft_app::geometry::{IDENTITY_Q, Point3, cube};
 use camcraft_app::machine::{Machine, check_document, parse_mch};
 use camcraft_app::operation::{Height, OpParams, SrcRef};
 use camcraft_app::post::{engine, machine};
-use camcraft_app::posting::MACHINES;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -28,11 +27,8 @@ use std::path::Path;
 const IN: f64 = 25.4;
 
 fn shipped(name: &str) -> Machine {
-    let text = MACHINES
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, t)| *t)
-        .unwrap_or_else(|| panic!("{name} is not a shipped machine"));
+    let text = camcraft_app::posting::builtin_machine_text(name)
+        .unwrap_or_else(|why| panic!("{name} is not a shipped machine: {why}"));
     parse_mch(text).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
@@ -138,9 +134,9 @@ fn the_routers_post_through_pathpilot() {
     }
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/posts/tormach.cps");
     let cps = std::fs::read_to_string(&p).expect("tormach.cps");
-    let stream = "PARAM SpindleSpeed 12000\nTOOL 1 T1\nSECTION\nRapid X 0 Y 0 Z 5000\nFeed X 1000 Y 0 Z -1000 F 500000\nENDSECTION\n";
+    let stream = "PARAM SpindleSpeed 12000\nPARAM ClearancePlane 10\nTOOL 1 T1\nSECTION\nRapid X 0 Y 0 Z 5000\nFeed X 1000 Y 0 Z -1000 F 500000\nENDSECTION\n";
     for name in SPECS.iter().map(|s| s.name) {
-        let out = engine::run(&cps, &machine::mirror(&shipped(name)), stream).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let out = { let m = machine::mirror(&shipped(name)); engine::run_with(&cps, &m, stream, &doc_units(&m)) }.unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(out.warnings.is_empty(), "{name}: {:?}", out.warnings);
         assert!(out.program.contains("S12000"), "{name}:\n{}", out.program);
         assert!(out.program.contains("G20"), "{name}: inch\n{}", out.program);
@@ -215,4 +211,16 @@ fn the_xstech_spindle_window_is_the_narrowest_stated() {
     let (world, _h) = face_job(12000.0);
     let c = check_document(&world, &m).expect("checks");
     assert!(c.is_ok(), "{:?}", c.problems);
+}
+
+/// #902: the program's unit is the document's, never the machine file's.
+/// These runs on an inch machine file stand for the inch document they
+/// posted before #902 (the file's own unit, through either door).
+fn doc_units(m: &serde_json::Value) -> serde_json::Value {
+    let word = m
+        .get("units")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| m.pointer("/kinematics/default/units/length").and_then(serde_json::Value::as_str));
+    let inch = matches!(word, Some("inch" | "inches"));
+    serde_json::json!({ "Units": if inch { "inch" } else { "mm" } })
 }

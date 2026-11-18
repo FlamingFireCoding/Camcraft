@@ -10,7 +10,7 @@ use crate::model;
 use crate::operation::{self, OpParams, SrcRef};
 use crate::schema::Operation;
 
-use super::gates::{area_gate, family_gate, heights_gate, tool_door, tool_gate, valid_src, wire_gate};
+use super::gates::{area_gate, family_gate, heights_gate, infeed_plan_gate, sinker_gate, tool_door, tool_gate, valid_src, wire_gate};
 
 /// Replace an operation's parameters. The cache is left alone and the
 /// stamp is dropped, so the operation reads Stale immediately: the old
@@ -108,6 +108,15 @@ impl EditOperationParams {
                 prev.params.kind()
             )));
         }
+        infeed_plan_gate(world, &params, &prev.tool)?;
+        if let Some(why) = params.named_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
+        // #1445: a dwell that is not a time from 0 to the bound, by name.
+        if let Some(why) = params.dwell_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
+        sinker_gate(world, prev.setup.as_deref(), &params)?;
         if !params.is_sane() {
             return Err(CommandError::Invalid(format!(
                 "operation parameters are not usable for a {} operation",
@@ -115,12 +124,16 @@ impl EditOperationParams {
             )));
         }
         heights_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
+        // #894: a thread's pitch, infeed and holes against the mounted thread mill.
+        super::gates::thread_gate(world, &params, &prev.tool)?;
+        // #1489: the rest group's previous tool against the mounted one.
+        super::gates::rest_gate(world, &params, &prev.tool)?;
         if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
-        // #532: an edited wire cut still names a condition the machine
-        // states, with its wire and gap.
-        wire_gate(world, prev.setup.as_deref(), &params)?;
+        // #532 / #2011: an edited wire cut still agrees with its wire tool
+        // and states a condition with spark gap < wire radius.
+        wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         let area = area.unwrap_or_else(|| prev.area.clone());
         if !area.is_sane_for(&params) {
             return Err(CommandError::Invalid(match operation::area_unsupported(params.kind()) {
@@ -195,8 +208,9 @@ impl ChangeOperationKind {
             )));
         }
         family_gate(world, prev.setup.as_deref(), &params)?;
+        infeed_plan_gate(world, &params, &prev.tool)?;
+        sinker_gate(world, prev.setup.as_deref(), &params)?;
         tool_door(world, &params, &prev.tool)?;
-        wire_gate(world, prev.setup.as_deref(), &params)?;
         if !params.is_sane() {
             return Err(CommandError::Invalid(format!(
                 "operation parameters are not usable for a {} operation",
@@ -210,6 +224,7 @@ impl ChangeOperationKind {
         // The retype is a creation of the new kind against the op's
         // current tool: the same tool-law door (M10.1 B).
         tool_gate(world, &params, &prev.tool)?;
+        wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         area_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         // The area controls ride the retype when the new kind has an
         // area (M11.5); a kind without one keeps the identity, never
@@ -269,8 +284,16 @@ impl EditOperationLinks {
             // source-only edit never trips over a legacy mismatch.
             if tool != prev.tool {
                 tool_gate(world, &next.params, tool)?;
+                // #890: the new tool's row for the document material
+                // seeds the op's milling feed (same undo step).
+                if let Some(t) = model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e))
+                    && let Some(p) = crate::cutting_rows::reseeded_params(&next.params, &t, crate::stock_material::in_force(world, prev.setup.as_deref()))
+                {
+                    next.params = p;
+                }
             }
             next.tool = tool.to_string();
+            wire_gate(world, prev.setup.as_deref(), tool, &next.params)?;
         }
         if let Some(src) = src {
             valid_src(world, prev.setup.as_deref(), &src)?;

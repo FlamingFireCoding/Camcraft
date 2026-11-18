@@ -14,12 +14,12 @@
 //! Pocket3D arm), app::commands, sim::verify.
 
 use camcraft_app::cl::{MoveKind, Toolpath};
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, ImportModel, SetStock};
+use camcraft_app::commands::{AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel, SetStock};
 use camcraft_app::geometry::Point3;
 use camcraft_app::links::Links;
 use camcraft_app::machining2d::PocketStrategy;
 use camcraft_app::machining3d::Entry3D;
-use camcraft_app::operation::{self, Height, HeightReference, OpParams, SrcRef};
+use camcraft_app::operation::{self, AreaControls, Containment, Height, HeightReference, OpParams, SrcRef};
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -54,6 +54,18 @@ fn pocket_op(strategy: PocketStrategy) -> OpParams {
 
 /// The user's part in a 70 x 70 block from Z -7, the 10 mm tool, one op
 /// generated through the commands: its path and its warnings.
+///
+/// The op's area is the part's own silhouette, the whole tool inside it
+/// (Tool containment: Inside). Since #1774 (PR #1780) a whole-model 3D
+/// Pocket with no area control also clears the block around the part,
+/// out to the stock's outline. That is right for the user's job, but it
+/// is not the bore: around the 60 mm disc the 70 x 70 block is one wide
+/// ring with the part as its island, and the planner budgets of #850
+/// were never set for it. The control keeps the pocket on the footprint
+/// this test pins (the source-built silhouette exactly, as before #1749:
+/// `boundary::resolve` gives it back unchanged, and a controlled region
+/// skips the open-side growth), so the triple below still reads the
+/// bore's plan.
 fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     let world = new_world();
     let mut h = History::default();
@@ -65,7 +77,9 @@ fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 70.0, dz: 27.0 }, loc).expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
-    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), params).expect("create"));
+    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), params.clone()).expect("create"));
+    let inside = AreaControls { containment: Some(Containment::Inside), ..Default::default() };
+    h.execute(&world, EditOperationParams::with_area(&world, "Op1", params, inside).expect("area"));
     h.execute(&world, GenerateOperation::new(&world, "Op1").expect("generate"));
     let e = model::find_by_name(&world, "Op1").expect("op");
     let tp = model::toolpath_of(&world, &e).expect("cached path");
@@ -107,10 +121,17 @@ fn the_users_bore_roughs_adaptive_level_by_level_and_verifies_clean() {
     // it. The orbit now closes exactly on its start and every level keeps
     // its HSM plan.
     assert!(fell.is_empty(), "{fell:?}");
-    // The path as the fix plans it - every level HSM (Z 20 back on its 58
-    // microlift returns, so far more moves than its rings), its fitted
-    // arcs back. Before: main f490458a 6500 / 6464 / 222 (Z 20 and Z 10
-    // rings); 575f02d8^1 (before #839) 5530 / 5497 / 600 (Z 20 rings).
+    // The path as the fix plans it - every level HSM, its fitted arcs
+    // back. Since #2004 (PR #2013) the ladder starts one stepdown under
+    // Top Z: the stock top is Top Z (Z 20), so the level at Z 20 cut only
+    // air - feeds on the stock face and its microlift returns over it, the
+    // most moves of the path. The levels are now Z 15, 10, 5, 0. Proved on
+    // Windows, release: from the first Z 15 feed on, the moves at
+    // f887908f9 (the parent of the #2013 merge) and at 7c46c4d4c are
+    // identical (4710 moves, same Debug hash); the Z 20 level held 11303
+    // moves, 10672 planar feeds, 878 arcs, all at Z 20 or over it. Older:
+    // main f490458a 6500 / 6464 / 222 (Z 20 and Z 10 rings); 575f02d8^1
+    // (before #839) 5530 / 5497 / 600 (Z 20 rings).
     // The planner's output differs slightly between platforms (floating
     // point differs in the last bits; making it bit-stable is #1010), so
     // the triple is exact PER MEASURED PLATFORM - a real change still
@@ -122,20 +143,57 @@ fn the_users_bore_roughs_adaptive_level_by_level_and_verifies_clean() {
     assert!(bore_path_matches(got), "the bore's path as the fix plans it: {got:?} {:?}", path.notes);
 }
 
+/// Issue #1950: the user's part as a whole model (no area control): the
+/// footprint reaches past the 70 x 70 stock, each level's stock ring is
+/// planned from the air, and every level keeps the HSM plan and verifies
+/// clean against the part solid.
+#[test]
+#[ignore = "heavy lane: issue #1950 blocked (maintainer decides), expected red: stock-ring plans exceed optimal load and fall back to Offset rings; HSM Adaptive over every whole-model level of the user's STEP, ring and bore, verified (~90 s debug, release tier); the level's debug twin is motion pocket_hsm::ring_tests::the_stock_ring_level_reaches_the_air_planner_with_the_stock"]
+fn the_users_whole_model_bore_roughs_adaptive_on_each_level() {
+    let world = new_world();
+    let mut h = History::default();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/Milling-test.step");
+    let imp = ImportModel::new(&path).expect("the user's STEP imports");
+    let name = imp.name.clone();
+    h.execute(&world, imp);
+    let loc = Location { pos: Point3::new(0.0, 0.0, -7.0), ..Default::default() };
+    h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 70.0, dy: 70.0, dz: 27.0 }, loc).expect("stock"));
+    let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
+    h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
+    h.execute(&world, CreateOperation::new(&world, "Op1", TOOL, SrcRef::Entity(name), pocket_op(PocketStrategy::Adaptive)).expect("create"));
+    h.execute(&world, GenerateOperation::new(&world, "Op1").expect("generate"));
+    let e = model::find_by_name(&world, "Op1").expect("op");
+    let tp = model::toolpath_of(&world, &e).expect("cached path");
+    let warns: Vec<String> = tp.warnings.iter().map(|w| format!("{w:?}")).collect();
+    assert!(warns.is_empty(), "every level verifies clean: {warns:?}
+notes {:?}", tp.path.notes);
+    let fell: Vec<&String> = tp.path.notes.iter().filter(|n| n.contains("Offset rings cut")).collect();
+    assert!(fell.is_empty(), "every level keeps the HSM plan: {fell:?}");
+    assert!(tp.path.notes.iter().any(|n| n.contains("cut from the air")), "{:?}", tp.path.notes);
+    assert!(!tp.path.notes.iter().any(|n| n.contains("planning budget")), "{:?}", tp.path.notes);
+}
+
 /// The bore's (moves, planar feeds, arcs) on this platform (issue #980).
 fn bore_path_matches(got: (usize, usize, usize)) -> bool {
     if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        // Measured on issue/980-bore-hsm-plan, three release runs, identical.
-        got == (16197, 15458, 1581)
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        // Measured by the contributor's reviewer at 608126a5 on Apple
-        // silicon (https://github.com/NeoTech/Camcraft/pull/1032).
-        got == (16160, 15432, 1571)
+        // Issue #2004 (PR #2013): measured at 7c46c4d4c (release/v0.23.0),
+        // release, two runs identical; the Z 20 air level is gone, every
+        // other level is unchanged. Before: (16017, 15360, 1427), issue
+        // #1402, main 5eeb0370e.
+        got == (4716, 4688, 549)
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        // Issue #2004 (PR #2013): measured by the cut runner, release, run
+        // 44127297984 at a8bb30f0c; every level verifies clean, none falls
+        // back, and no planning budget is reached. Before: (16029, 15372,
+        // 1427), issue #882.
+        got == (4726, 4698, 549)
     } else {
-        // Not measured here yet: measure this platform and add its exact
-        // triple above. Until then a band covering both measured ones.
+        // Not measured here yet (macOS aarch64 included: its pin of issue
+        // #882, (16026, 15382, 1413), went stale with PR #2013, and issue
+        // #2371 owes its new triple). Measure this platform and add its
+        // exact triple above. Until then a band covering both measured ones.
         let (moves, planar, arcs) = got;
-        (16100..=16260).contains(&moves) && (15380..=15520).contains(&planar) && (1560..=1600).contains(&arcs)
+        (4706..=4736).contains(&moves) && (4678..=4708).contains(&planar) && (539..=559).contains(&arcs)
     }
 }
 

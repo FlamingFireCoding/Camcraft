@@ -5,7 +5,8 @@
 //! at the section's end.
 //!
 //! Gate map (#616): covers app::smoothing (of, rough_tol), post::dump
-//! (the Smoothing PARAMs), the mill posts' smoothOn/smoothOff (Carvera: #757).
+//! (the Smoothing PARAMs), the mill posts' smoothOn/smoothOff (Carvera: #757;
+//! grblHAL's #710 note included).
 //! Provenance: our own fixtures; each dialect's words from its public
 //! programming documentation (see the posts).
 
@@ -13,11 +14,10 @@ use camcraft_app::cl::{Move, MoveKind, Toolpath};
 use camcraft_app::geometry::Point3;
 use camcraft_app::operation::{self, Height, OpParams, OpType};
 use camcraft_app::post::{self, cnc, Dump, Smoothing};
-use camcraft_app::posting::BUILTINS;
 use camcraft_app::smoothing::{self, FINISH_SHARE, ROUGH_MAX_MM};
 
 fn script(name: &str) -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, s)| *s).unwrap_or_else(|| panic!("{name} is built in"))
+    camcraft_app::posting::builtin_post_text(name).unwrap_or_else(|why| panic!("{name} is built in: {why}"))
 }
 
 /// A one-feed section, with or without a smoothing ask.
@@ -55,7 +55,9 @@ const ROUGH: Option<Smoothing> = Some(Smoothing { tol_mm: 0.1, finish: false });
 
 #[test]
 fn off_is_byte_identical_and_writes_no_smoothing_word() {
-    for (name, _) in BUILTINS.iter().filter(|(n, _)| *n != "Fanuc Lathe") {
+    // #542: a sinker post serves sinker EDMs only (no smoothing words).
+    let sinker = camcraft_app::posting::SINKER_POSTS;
+    for (name, _) in camcraft_app::posting::shipped_posts().expect("the shipped posts read").iter().filter(|(n, _)| *n != "Fanuc Lathe" && !sinker.contains(n)) {
         let off = program(name, None);
         for w in ["G5.1", "G187", "CYCLE832", "G62 ", "SMOOTHING"] {
             assert!(!off.contains(w), "{name} wrote {w} with smoothing off:\n{off}");
@@ -100,9 +102,10 @@ fn each_dialect_writes_its_words_and_undoes_them_at_the_section_end() {
 
 #[test]
 fn fanuc_and_mazak_name_the_ask_once_and_write_no_unbounded_word() {
-    // Fanuc's G5.1 states no tolerance (review of #635) and Mazak has no
-    // stated form: the ask is named, never written loose.
-    for name in ["Fanuc", "Mazak"] {
+    // Fanuc's G5.1 states no tolerance (review of #635), Mazak has no
+    // stated form and grblHAL lists G61 only (#710): the ask is named,
+    // never written loose.
+    for name in ["Fanuc", "Mazak", "grblHAL"] {
         let prog = program(name, FINISH);
         assert_eq!(lines_with(&prog, "SMOOTHING NOT WRITTEN").len(), 1, "{name}:\n{prog}");
         assert!(!prog.contains("G5.1 Q"), "{name}: no unbounded G5.1:\n{prog}");

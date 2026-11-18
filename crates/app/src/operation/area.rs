@@ -18,6 +18,7 @@
 //! runs on it - nothing here looks at the region's shape.
 
 use super::*;
+use crate::units::{self, Unit};
 
 /// The seam itself (M11.4 A / M11.5): every region an operation cuts -
 /// selection-built or source-built, Face included, and the Contour
@@ -70,7 +71,8 @@ pub(super) fn pocket_ladder(
     else {
         return Ok(None);
     };
-    Ok(Some((material.facets, ladder_planes(t, b, stepdown))))
+    let mt = stock_top(world, setup, &material.facets, material.top, None);
+    Ok(Some((material.facets, ladder_planes(t, mt, b, stepdown))))
 }
 
 /// Below this (mm^2) the part material inside the enclosed area is
@@ -87,6 +89,7 @@ pub(super) fn pocket_region_on_part(
     loops: Vec<Loop>,
     part: &[Triangle],
     planes: &[f64],
+    unit: Unit,
 ) -> Result<Region, GenError> {
     let mut enclosed = Region::empty();
     for l in &loops {
@@ -97,7 +100,8 @@ pub(super) fn pocket_region_on_part(
     }
     let full = |z: f64| {
         format!(
-            "the part fills the whole selection at Z {z:.3} - Bottom Z sits below the selected pocket's floor; raise Bottom Z to the floor"
+            "the part fills the whole selection at Z {} - Bottom Z sits below the selected pocket's floor; raise Bottom Z to the floor",
+            units::len(z, unit, 3)
         )
     };
     match minus_standing(&enclosed, part, planes, full)? {
@@ -165,24 +169,85 @@ pub(super) fn whole_model_pocket(
     if stock.is_empty() {
         return None;
     }
-    let t = resolve_height(world, setup, Some(src), top)?;
-    let b = resolve_height(world, setup, Some(src), bottom)?;
-    let part = match material_of(world, setup, src) {
-        Ok(m) => m.facets,
+    let t = fold_height(world, setup, Some(src), frame, top)?;
+    let b = fold_height(world, setup, Some(src), frame, bottom)?;
+    let (part, part_top) = match material_of(world, setup, src) {
+        Ok(m) => (m.facets, m.top),
         Err(e) => return Some(Err(e)),
     };
     let oz = frame.map_or(0.0, |f| f.origin.z);
+    let mt = stock_top(world, setup, &part, part_top, frame);
     let (part, stock) = match frame {
         Some(f) => (f.local_facets(&part), f.local_facets(&stock)),
         None => (part, stock),
     };
-    Some(around_part(&part, &stock, &ladder_planes(t - oz, b - oz, stepdown)))
+    Some(around_part(&part, &stock, &ladder_planes(t - oz, mt, b - oz, stepdown), crate::units::of(world)))
+}
+
+/// The pocket family on the STOCK as its source (#1554): the stock is the
+/// material to remove, but the setup's parts standing in it are not. So
+/// the area to clear is the stock's outline minus every part section
+/// standing at the ladder planes - the same island law as a whole-part
+/// source (#12). `None` where the reading does not apply (not a
+/// pocket-family kind, not a Stock source, no stock facets, no part in
+/// the setup: there the whole stock stays the volume to remove) or where
+/// a height is unresolvable (the generator's refusal of record).
+pub(super) fn stock_pocket(
+    world: &World,
+    setup: Option<&str>,
+    src: &SrcRef,
+    params: &OpParams,
+    frame: Option<&crate::cl::TiltedFrame>,
+) -> Option<Result<Region, GenError>> {
+    let (top, bottom, stepdown) = match params {
+        OpParams::Pocket { top_z, bottom_z, stepdown, .. }
+        | OpParams::Adaptive2D { top_z, bottom_z, stepdown, .. }
+        | OpParams::Offset2D { top_z, bottom_z, stepdown, .. } => (*top_z, *bottom_z, *stepdown),
+        _ => return None,
+    };
+    if !matches!(src, SrcRef::Stock) {
+        return None;
+    }
+    let parts = crate::setup_align::parts_facets_in(world, setup);
+    if parts.is_empty() {
+        return None;
+    }
+    let stock_name = crate::setup::stock_entity_name(world, setup);
+    let stock = model::find_by_name(world, &stock_name).and_then(|e| model::world_facets(world, &e))?;
+    if stock.is_empty() {
+        return None;
+    }
+    let t = fold_height(world, setup, Some(src), frame, top)?;
+    let b = fold_height(world, setup, Some(src), frame, bottom)?;
+    let oz = frame.map_or(0.0, |f| f.origin.z);
+    let mt = stock_top(world, setup, &parts, f64::NEG_INFINITY, frame);
+    let (parts, stock) = match frame {
+        Some(f) => (f.local_facets(&parts), f.local_facets(&stock)),
+        None => (parts, stock),
+    };
+    let unit = crate::units::of(world);
+    let full = |z: f64| {
+        format!(
+            "a pocket on the stock clears the stock around the setup's parts, and the parts fill the whole \
+             stock outline at Z {} - pick the area to clear, or use the model as the source",
+            units::len(z, unit, 3)
+        )
+    };
+    let planes = ladder_planes(t - oz, mt, b - oz, stepdown);
+    let enclosed = match slice::project(&stock, FOOTPRINT_SAMPLES).map_err(from_slice) {
+        Ok(r) if !r.is_empty() => r,
+        Ok(_) => return None,
+        Err(e) => return Some(Err(e)),
+    };
+    // No part stands in the ladder: the region the source builds itself
+    // stays the answer, byte for byte (every path that cut no part).
+    minus_standing(&enclosed, &parts, &planes, full).transpose()
 }
 
 /// [`whole_model_pocket`]'s pure law: the stock's silhouette minus the
 /// part standing at `planes`. A part that covers the whole stock at a
 /// plane leaves nothing to clear around it - refused by name.
-pub(super) fn around_part(part: &[Triangle], stock: &[Triangle], planes: &[f64]) -> Result<Region, GenError> {
+pub(super) fn around_part(part: &[Triangle], stock: &[Triangle], planes: &[f64], unit: Unit) -> Result<Region, GenError> {
     let enclosed = slice::project(stock, FOOTPRINT_SAMPLES).map_err(from_slice)?;
     if enclosed.is_empty() {
         return Err(GenError::Empty("the stock casts no outline to clear around the part".into()));
@@ -190,7 +255,8 @@ pub(super) fn around_part(part: &[Triangle], stock: &[Triangle], planes: &[f64])
     let full = |z: f64| {
         format!(
             "a whole-model pocket clears the stock around the part, and the part fills the whole stock \
-             outline at Z {z:.3} - pick the pocket's faces instead"
+             outline at Z {} - pick the pocket's faces instead",
+            units::len(z, unit, 3)
         )
     };
     Ok(minus_standing(&enclosed, part, planes, full)?.unwrap_or(enclosed))
@@ -221,25 +287,19 @@ fn standing_inside(enclosed: &Region, part: &[Triangle], z: f64) -> Result<Regio
 const SHADOW_AREA_MIN: f64 = 1e-6;
 
 /// The planes a pocket ladder cuts at, top down, the last one `bottom`
-/// exactly - the `machining2d` level law, restated here because the
-/// region is built before the generator runs (and the motion crate keeps
-/// its helper private). Degenerate spans and steps collapse to the one
-/// bottom plane; the generator refuses them by name later.
-pub(super) fn ladder_planes(top: f64, bottom: f64, stepdown: f64) -> Vec<f64> {
-    let span = top - bottom;
-    let walkable = span.is_finite() && span > 0.0 && stepdown > 0.0;
-    if !walkable {
-        return vec![bottom];
-    }
-    let tol = span * 1e-9;
-    let mut zs = Vec::new();
-    let mut z = top;
-    while z > bottom + tol && zs.len() < 100_000 {
-        zs.push(z);
-        z -= stepdown;
-    }
-    zs.push(bottom);
-    zs
+/// exactly: the `machining2d` level law itself (`cut_levels`, #2004 - one
+/// law, so the region is built at the planes the generator cuts; Top Z is
+/// the material top and never a plane). Degenerate spans and steps
+/// collapse to the one bottom plane; the generator refuses them by name
+/// later.
+pub(super) fn ladder_planes(top: f64, stock_top: Option<f64>, bottom: f64, stepdown: f64) -> Vec<f64> {
+    crate::machining2d::cut_levels_under(top, stock_top, bottom, stepdown).unwrap_or_else(|_| vec![bottom])
+}
+
+/// The same stock cap generation reads, in the cutting frame.
+pub(super) fn stock_top(world: &World, setup: Option<&str>, part: &[Triangle], part_top: f64, frame: Option<&crate::cl::TiltedFrame>) -> Option<f64> {
+    let stock = model::stock_world_aabb_for(world, setup).map(|b| (b.min, b.max));
+    stock_top_in_frame(part, part_top, stock, frame)
 }
 
 #[cfg(test)]
@@ -303,25 +363,34 @@ mod law {
             Point2::new(-10.0, 10.0),
         ])
         .expect("ring");
-        let planes = ladder_planes(20.0, 0.0, 4.6);
+        let planes = ladder_planes(20.0, None, 0.0, 4.6);
         assert!(planes.iter().all(|&z| !(17.0..19.0).contains(&z)), "{planes:?}");
-        let r = pocket_region_on_part(vec![ring.clone()], &part, &planes).expect("region");
+        let r = pocket_region_on_part(vec![ring.clone()], &part, &planes, Unit::Millimeters).expect("region");
         assert!(!r.contains(Point2::new(8.0, 0.0)), "under the lip is part material");
         assert!(r.contains(Point2::new(0.0, 0.0)) && r.contains(Point2::new(5.5, 0.0)), "the open pocket stays");
         assert!((r.area() - 16.0 * 20.0).abs() < 1e-3, "the square less the lip: {}", r.area());
         // No lip, no shadow inside: today's region, byte for byte.
         part.truncate(part.len() - 12);
-        let plain = pocket_region_on_part(vec![ring.clone()], &part, &planes).expect("region");
+        let plain = pocket_region_on_part(vec![ring.clone()], &part, &planes, Unit::Millimeters).expect("region");
         assert_eq!(plain.loops(), Region::new(vec![ring]).expect("region").loops());
     }
 
     #[test]
     fn ladder_planes_match_the_level_law_and_never_hang() {
-        assert_eq!(ladder_planes(20.0, 0.0, 5.0), vec![20.0, 15.0, 10.0, 5.0, 0.0]);
-        assert_eq!(ladder_planes(20.0, 2.0, 5.0), vec![20.0, 15.0, 10.0, 5.0, 2.0]);
-        assert_eq!(ladder_planes(1.0, 1.0, 5.0), vec![1.0]);
-        assert_eq!(ladder_planes(10.0, 0.0, 0.0), vec![0.0]);
-        assert_eq!(ladder_planes(f64::NAN, 0.0, 1.0), vec![0.0]);
-        assert!(ladder_planes(1e9, 0.0, 1e-9).len() <= 100_001);
+        // #2004: Top Z is the material top - never a plane of its own.
+        assert_eq!(ladder_planes(20.0, None, 0.0, 5.0), vec![15.0, 10.0, 5.0, 0.0]);
+        assert_eq!(ladder_planes(20.0, None, 2.0, 5.0), vec![15.0, 10.0, 5.0, 2.0]);
+        assert_eq!(ladder_planes(13.0, None, 0.0, 50.0), vec![0.0]);
+        for (t, b, s) in [(20.0, 0.0, 5.0), (20.0, 2.0, 5.0), (13.0, 0.0, 50.0), (20.0, 0.0, 4.6), (1.0, 1.0, 5.0)] {
+            let law = crate::machining2d::cut_levels(t, b, s).expect("walkable");
+            assert_eq!(ladder_planes(t, None, b, s), law, "one law: {t} {b} {s}");
+        }
+        assert_eq!(ladder_planes(1.0, None, 1.0, 5.0), vec![1.0]);
+        assert_eq!(ladder_planes(10.0, None, 0.0, 0.0), vec![0.0]);
+        assert_eq!(ladder_planes(f64::NAN, None, 0.0, 1.0), vec![0.0]);
+        assert!(ladder_planes(1e9, None, 0.0, 1e-9).len() <= 100_001);
+        // Stock over Top Z keeps the level at Top Z (the old ladder).
+        assert_eq!(ladder_planes(10.0, Some(13.0), 0.0, 5.0), vec![10.0, 5.0, 0.0]);
+        assert_eq!(ladder_planes(10.0, Some(10.0), 0.0, 5.0), vec![5.0, 0.0]);
     }
 }

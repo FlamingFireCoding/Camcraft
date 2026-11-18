@@ -53,7 +53,7 @@ pub fn side_names() -> &'static [&'static str] {
 /// for a tap, a boring cycle for a bore, depth-vs-diameter otherwise),
 /// so the note next to the combo reads from the op's tool, not a guess.
 pub fn cycle_names() -> &'static [&'static str] {
-    &["Auto", "Spot", "Drill", "Peck", "Tap (rigid)", "Bore", "Back bore", "Tap (floating holder)"]
+    &["Auto", "Spot", "Drill", "Peck", "Tap (rigid)", "Bore", "Back bore", "Tap (floating holder)", "Ream (feed in, feed out)"]
 }
 
 /// Combo index for a cycle choice - the inverse of what picking names.
@@ -68,6 +68,24 @@ pub(crate) fn cycle_index(c: &camcraft_app::drilling::CycleChoice) -> usize {
         C::FloatingTap => 7,
         C::Bore => 5,
         C::BackBore => 6,
+        C::Ream => 8,
+    }
+}
+
+/// The cycle a combo index picks - the inverse of [`cycle_index`]. An
+/// index outside the list reads as Auto, never as a neighbouring cycle.
+pub(crate) fn cycle_from_index(i: usize) -> camcraft_app::drilling::CycleChoice {
+    use camcraft_app::drilling::CycleChoice as C;
+    match i {
+        1 => C::Spot,
+        2 => C::Drill,
+        3 => C::Peck,
+        4 => C::Tap,
+        5 => C::Bore,
+        6 => C::BackBore,
+        7 => C::FloatingTap,
+        8 => C::Ream,
+        _ => C::Auto,
     }
 }
 
@@ -92,14 +110,25 @@ pub(crate) fn height_echo(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     h: &Height,
 ) -> String {
-    match operation::resolve_height(world, setup, src, *h) {
-        Some(z) => format!("(= Z {})", units::len(z, units::of(world), 3)),
-        None => format!(
-            "(unresolved: {})",
-            operation::missing_source(world, setup, src, h.reference).unwrap_or("source missing")
-        ),
+    let frame = match operation::OpFrame::new(setup.map(str::to_owned), tilt).checked_frame() {
+        Ok(frame) => frame,
+        Err(reason) => {
+            let reason = match reason {
+                camcraft_app::machining2d::GenError::Invalid(message) => message,
+                other => other.to_string(),
+            };
+            return format!("(unresolved: {reason})");
+        }
+    };
+    match crate::height_memo::height(world, setup, src, tilt, *h) {
+        Ok(z) => match frame.filter(|f| !f.is_upright()) {
+            Some(f) => format!("(= {} along tool axis)", units::len(z - f.origin.z, units::of(world), 3)),
+            None => format!("(= Z {})", units::len(z, units::of(world), 3)),
+        },
+        Err(reason) => format!("(unresolved: {reason})"),
     }
 }
 
@@ -109,13 +138,16 @@ fn resolve_all<const N: usize>(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     hs: [&Height; N],
 ) -> Result<[f64; N], &'static str> {
+    let frame = operation::OpFrame::new(setup.map(str::to_owned), tilt)
+        .checked_frame()
+        .map_err(|_| "the 3+2 index commands no direction - its angles are not finite")?;
+    let origin_z = frame.filter(|f| !f.is_upright()).map_or(0.0, |f| f.origin.z);
     let mut out = [0.0; N];
     for (slot, h) in out.iter_mut().zip(hs) {
-        *slot = operation::resolve_height(world, setup, src, *h).ok_or_else(|| {
-            operation::missing_source(world, setup, src, h.reference).unwrap_or("source missing")
-        })?;
+        *slot = crate::height_memo::height(world, setup, src, tilt, *h)? - origin_z;
     }
     Ok(out)
 }
@@ -128,10 +160,11 @@ pub(crate) fn retract_note(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     retract: &Height,
     clearance: &Height,
 ) -> Option<String> {
-    match resolve_all(world, setup, src, [retract, clearance]) {
+    match resolve_all(world, setup, src, tilt, [retract, clearance]) {
         Ok([rz, cz]) => (rz > cz).then(|| {
             format!(
                 "above clearance - the hop travels at {} (min of the two)",
@@ -148,10 +181,11 @@ pub(crate) fn corner_note(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     top: &Height,
     drop: f64,
 ) -> String {
-    match resolve_all(world, setup, src, [top]) {
+    match resolve_all(world, setup, src, tilt, [top]) {
         Ok([tz]) if (tz - drop).is_finite() => format!(
             "the corner stands at {} - derived: width x tan(angle) below the top plane",
             units::len(tz - drop, units::of(world), 3)
@@ -227,6 +261,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
         match w {
             Warning::Crossing { .. } => (0, false),
             Warning::Gouge { .. } => (1, false),
+            Warning::StockChamferGouge { .. } | Warning::StockDeburrGouge { .. } => (1, true),
             Warning::ShankHit { part, .. } => (2, *part),
             Warning::RapidInStock { .. } => (3, false),
             Warning::NonFinite { .. } => (4, false),
@@ -246,6 +281,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             Warning::Scallop { .. } => (211, false),
             // A probe's deep search limit (#570): advisory, its own line.
             Warning::ProbeSearch { .. } => (214, false),
+            // A sinker finish out of order (#543): advisory, its own line.
+            Warning::SinkerFinishOrder { .. } => (215, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -254,6 +291,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
         match w {
             Warning::Crossing { moves } => moves[1],
             Warning::Gouge { at }
+            | Warning::StockChamferGouge { at }
+            | Warning::StockDeburrGouge { at }
             | Warning::ShankHit { at, .. }
             | Warning::HolderHit { at, .. }
             | Warning::SweepHit { at, .. }
@@ -263,7 +302,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::Envelope { at, .. }
             | Warning::RestUnjudged { at, .. }
             | Warning::Scallop { at, .. }
-            | Warning::ProbeSearch { at, .. } => *at,
+            | Warning::ProbeSearch { at, .. }
+            | Warning::SinkerFinishOrder { at, .. } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();
@@ -303,8 +343,8 @@ mod height_row_tests {
     #[test]
     fn a_resolved_height_echoes_the_plane_it_lands_on() {
         let world = new_world();
-        assert_eq!(height_echo(&world, None, None, &Height::fixed(-7.0)), "(= Z -7.000)");
-        assert_eq!(height_echo(&world, None, None, &Height::fixed(25.0)), "(= Z 25.000)");
+        assert_eq!(height_echo(&world, None, None, None, &Height::fixed(-7.0)), "(= Z -7.000)");
+        assert_eq!(height_echo(&world, None, None, None, &Height::fixed(25.0)), "(= Z 25.000)");
     }
 
     #[test]
@@ -327,21 +367,21 @@ mod height_row_tests {
     fn a_missing_source_names_itself_and_where_to_fix_it() {
         let world = new_world();
         assert_eq!(
-            height_echo(&world, None, None, &Height::of(HeightReference::TopOfStock, 25.0)),
+            height_echo(&world, None, None, None, &Height::of(HeightReference::TopOfStock, 25.0)),
             "(unresolved: no stock yet - set it up in Setup > Stock)"
         );
         assert_eq!(
-            height_echo(&world, None, None, &Height::of(HeightReference::BottomOfModel, 0.0)),
+            height_echo(&world, None, None, None, &Height::of(HeightReference::BottomOfModel, 0.0)),
             "(unresolved: no model loaded)"
         );
         assert_eq!(
-            height_echo(&world, None, None, &Height::of(HeightReference::WorkOffset, 0.0)),
+            height_echo(&world, None, None, None, &Height::of(HeightReference::WorkOffset, 0.0)),
             "(unresolved: the setup's WCS has no origin yet - place it in Setup)"
         );
         // From: Selection with an empty pick list names the fix (M11.3 A).
         let empty = SrcRef::Selection(Vec::new());
         assert_eq!(
-            height_echo(&world, None, Some(&empty), &Height::of(HeightReference::TopOfSelection, 0.0)),
+            height_echo(&world, None, Some(&empty), None, &Height::of(HeightReference::TopOfSelection, 0.0)),
             format!("(unresolved: {})", operation::SELECTION_EMPTY)
         );
     }
@@ -579,7 +619,7 @@ mod warning_fold_tests {
         );
         assert_eq!(
             folded[2],
-            "warning: rapid move 3 travels below the clearance plane inside stock"
+            "warning: rapid move 3 travels through stock (below the clearance plane, or at it below the stock top)"
         );
     }
 }

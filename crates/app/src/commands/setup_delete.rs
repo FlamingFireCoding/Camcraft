@@ -7,7 +7,7 @@ use flecs_ecs::prelude::World;
 use super::setup::StockSnap;
 use crate::commands::{Command, CommandError};
 use crate::model;
-use crate::schema::{Location, STOCK_NAME, SetupDef, StockDef, WCS_SLOTS, Wcs};
+use crate::schema::{Location, STOCK_NAME, SetupDef, StockDef, LEGACY_WCS_NAMES, Wcs};
 use crate::setup;
 
 /// Delete a setup, its private furniture, and its claim on the program.
@@ -19,7 +19,8 @@ pub struct DeleteSetup {
     /// names. Shared legacy names (`Stock`, `G54`..) and anything
     /// another setup points at are NOT deleted.
     stock: Option<StockSnap>,
-    wcs: Option<(String, Location)>,
+    /// The owned WCS: its name, placement and (#1720) flipped axes.
+    wcs: Option<(String, Location, [bool; 3])>,
     prev_active: Option<String>,
 }
 
@@ -51,7 +52,7 @@ impl DeleteSetup {
         }
         let owned = |n: &str| {
             n != STOCK_NAME
-                && !WCS_SLOTS.contains(&n)
+                && !LEGACY_WCS_NAMES.contains(&n)
                 && !setup::is_furniture_of_other(world, n, name)
         };
         let stock = if owned(&def.stock) {
@@ -61,6 +62,8 @@ impl DeleteSetup {
                     shape,
                     location: model::transform_of(world, &e).unwrap_or_default(),
                     facets: model::facets_of(world, &e).unwrap_or_default(),
+                    coarse_mm: crate::model_fidelity::chord_of(world, &e),
+                    material: crate::stock_material::of_entity(world, &e),
                 })
             })
         } else {
@@ -69,8 +72,10 @@ impl DeleteSetup {
         let wcs = if owned(&def.wcs) {
             model::find_by_name(world, &def.wcs)
                 .filter(|e| model::is_wcs(world, e))
-                .and_then(|e| model::transform_of(world, &e))
-                .map(|loc| (def.wcs.clone(), loc))
+                .and_then(|e| {
+                    let flip = crate::setup_wcs_flip::of_entity(world, &e);
+                    model::transform_of(world, &e).map(|loc| (def.wcs.clone(), loc, flip))
+                })
         } else {
             None
         };
@@ -91,7 +96,7 @@ impl Command for DeleteSetup {
         {
             model::remove(world, &e);
         }
-        if let Some((wname, _)) = &self.wcs
+        if let Some((wname, _, _)) = &self.wcs
             && let Some(e) = model::find_by_name(world, wname)
         {
             model::remove(world, &e);
@@ -111,14 +116,17 @@ impl Command for DeleteSetup {
             let e = model::spawn(world, &s.name);
             model::set_transform(world, &e, s.location);
             model::set_facets(world, &e, s.facets.clone());
+            crate::model_fidelity::set(world, &e, s.coarse_mm);
             e.entity_view(world).set(StockDef {
                 shape: s.shape.clone(),
             });
+            crate::stock_material::land_entity(world, &e, s.material);
         }
-        if let Some((wname, loc)) = &self.wcs {
+        if let Some((wname, loc, flip)) = &self.wcs {
             let e = model::spawn(world, wname);
             e.entity_view(world).add(Wcs);
             model::set_transform(world, &e, *loc);
+            crate::setup_wcs_flip::set(world, &e, *flip);
         }
         setup::set_active(world, self.prev_active.clone());
     }

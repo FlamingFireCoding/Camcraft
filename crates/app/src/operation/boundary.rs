@@ -70,6 +70,8 @@ pub(super) enum Family {
 #[derive(Clone, Debug)]
 pub(super) enum OpenGeom {
     Chain(Vec<Point2>),
+    /// Separate chains that stay apart; the area lies between them (#1727).
+    Chains(Vec<Vec<Point2>>),
     Ring(Region),
 }
 
@@ -89,6 +91,12 @@ pub struct AreaCtx {
     pub(super) islands: bool,
     pub(super) extra: Vec<(BoundaryMode, Region)>,
     pub(super) open: Option<(OpenGeom, ChainSide)>,
+    /// #1735: the open-edge band of the selection, grown by the
+    /// extension along its walls (`open_band`); the area never leaves it.
+    pub(super) lane: Option<Region>,
+    /// #740: the document's display unit, so the area law's refusals (on
+    /// worker threads, world-free) spell their depths through this lens.
+    pub(super) unit: crate::units::Unit,
 }
 
 impl AreaCtx {
@@ -98,6 +106,12 @@ impl AreaCtx {
         if self.family == Family::Contour {
             self.native = if inside { Native::ToolInside } else { Native::ToolOutside };
         }
+    }
+
+    /// Whether this runs `Containment::Outside` clearing (no open boundary), and whether stock exists.
+    pub(crate) fn outside_clearing_stock(&self) -> Option<bool> {
+        let out = self.family == Family::Clearing && self.controls.containment == Some(Containment::Outside);
+        (out && self.open.is_none()).then_some(self.stock.is_some())
     }
 }
 
@@ -150,29 +164,35 @@ pub(super) fn containment_delta(native: Native, want: Containment, r: f64) -> f6
     t - n
 }
 
-/// Containment past the edge (user hand test 2026-11-06): a positive `d`
-/// lets a clearing tool pass the selection's OUTER edge only. A hole of
-/// the selection is material the tool stays out of whatever the
-/// containment - growing every contour shrank holes and, past their
-/// size, deleted them. The holes stay as they were (the generator's own
-/// offset keeps the tool >= r from them). Then the island law, and what
-/// the tool reaches FROM that edge: a void of the part the band past the
-/// outline never touches (the recess in the part's top over a picked
-/// underside) is not "past the boundary" and stays uncut. An enclosed
-/// pocket, whose walls take the whole band, is its own answer: nothing
-/// touches the band, so the area stands as the island law left it.
+/// Containment past the edge (user hand test 2026-11-06; #2232): let a
+/// clearing tool pass the outer edge only (keeping selection holes out
+/// and dropping unreached voids). With setup stock (`stock_reach`),
+/// `Outside` clears out to `stock + 2r` unless walls enclose `pre`.
 fn reach_past_edge(
     pre: &Region,
     d: f64,
+    stock_reach: Option<&Region>,
     islands: &dyn Fn(Region) -> Result<Region, GenError>,
 ) -> Result<Region, GenError> {
     let shells: Vec<Loop> = pre.loops().iter().filter(|l| l.is_ccw()).cloned().collect();
     let filled = Region::union_all(shells)?;
     let holes = filled.difference(pre)?;
-    let grown = grow(&filled, d, CornerStyle::Round)?.difference(&holes)?;
-    let band = grown.difference(pre)?;
-    let area = islands(grown)?;
-    let reached = connected_to(&area, &band)?;
+    let local_grown = grow(&filled, d, CornerStyle::Round)?.difference(&holes)?;
+    let band = local_grown.difference(pre)?;
+    let pick = |cand: Region| -> Result<(Region, Region), GenError> {
+        let area = islands(cand)?;
+        Ok((connected_to(&area, &band)?, area))
+    };
+    if let Some(sr) = stock_reach {
+        let pre_free = islands(pre.clone())?;
+        let rim = islands(grow(&filled, 1e-2, CornerStyle::Round)?.difference(&filled)?)?;
+        if pre_free.area().abs() > AREA_EPS && rim.area().abs() <= AREA_EPS {
+            return Ok(pre_free);
+        }
+        let (reached, _) = pick(local_grown.union(sr)?.difference(&holes)?)?;
+        if reached.area().abs() > AREA_EPS { return Ok(reached); }
+    }
+    let (reached, area) = pick(local_grown)?;
     Ok(if reached.area().abs() > AREA_EPS { reached } else { area })
 }
 
@@ -217,20 +237,28 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
                 Family::Face => stock.clone(),
                 _ => stock.offset_sharp(2.0 * r)?,
             };
-            let (left, right, dir) = match geom {
+            let (left, right, dir, laid) = match geom {
                 OpenGeom::Chain(pts) => {
                     let (l, rt, d) = sides_of_chain(pts, &reach)?;
-                    (l, rt, Some(d))
+                    (l, rt, Some(d), None)
                 }
-                OpenGeom::Ring(ring) => (reach.intersect(ring)?, reach.difference(ring)?, None),
+                OpenGeom::Chains(cs) => {
+                    let (between, beyond, t) = super::boundary_chains::sides_of_chains(cs, &reach, &base).map_err(super::boundary_chain_error)?;
+                    (between, beyond, None, Some(t))
+                }
+                OpenGeom::Ring(ring) => (reach.intersect(ring)?, reach.difference(ring)?, None, None),
             };
-            let left_inside = pick_side_left(&base, &left, &right)?;
+            // Separate chains name their Inside themselves (between them).
+            let left_inside = laid.is_some() || pick_side_left(&base, &left, &right)?;
             let keep_left = (*side == ChainSide::Inside) == left_inside;
             let (keep, drop) = if keep_left { (left, right) } else { (right, left) };
             if let Some(theta) = dir {
                 // Rows parallel to the chain, the machined side below it:
                 // the band starts at the far edge and works in.
                 turn = snap_turn(if keep_left { std::f64::consts::PI - theta } else { -theta });
+            }
+            if let Some(t) = laid {
+                turn = t;
             }
             far_side = Some(drop);
             check(keep, "open boundary (the chosen side holds no stock)")?
@@ -260,6 +288,9 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
     }
     if let Some(f) = &far_side {
         area = check(area.difference(f)?, "open boundary")?;
+    }
+    if let Some(l) = &ctx.lane {
+        area = check(area.intersect(l)?, "open-edge band")?;
     }
     // 4. Includes, then the part's own material back out.
     for (mode, b) in &ctx.extra {
@@ -302,7 +333,11 @@ pub(super) fn resolve(base: Region, ctx: &AreaCtx) -> Result<AreaApplied, GenErr
         // The rides shape the ring they ride, holes included; the
         // clearing kinds keep a hole's protection (`contain`).
         if grow_d.is_some() {
-            area = check(reach_past_edge(&pre_islands, d, &islands)?, "tool containment (the part fills the area)")?;
+            let sr = (ctx.outside_clearing_stock() == Some(true))
+                .then(|| ctx.stock.as_ref().map(|s| s.offset(2.0 * r)))
+                .flatten()
+                .transpose()?;
+            area = check(reach_past_edge(&pre_islands, d, sr.as_ref(), &islands)?, "tool containment (the part fills the area)")?;
         } else {
             area = check(grow(&area, d, CornerStyle::Round)?, "tool containment")?;
             if !rides(ctx.family) {

@@ -2,9 +2,9 @@
 //! an A rotary about X, and the PathPilot post indexes it between
 //! operations (G53 G0 Z up, then G0 A alone), writes each indexed section
 //! in the turned frame, and refuses by name what it cannot state: a tilt
-//! the A axis cannot reach, an A past travel, an A that changes inside an
-//! operation (simultaneous 4-axis, unconfirmed on PathPilot), an indexed
-//! arc, and a tilt on a machine with no A about X.
+//! the A axis cannot reach, an A past travel, an indexed arc, and a tilt
+//! on a machine with no A about X. An A that changes inside an operation
+//! posts as wrapped A (#796, `tormach_wrapped_a`).
 //! Provenance: our own tests over our own machine file and post; the
 //! machine facts from Tormach's TD10749 (microARC 4 owner's guide) and the
 //! frame law from the LinuxCNC reference (rotary positions in degrees).
@@ -18,7 +18,6 @@
 use camcraft_app::cl::MoveKind;
 use camcraft_app::machine::{Kind, Machine, kind, parse_mch};
 use camcraft_app::post::{cnc, engine, machine};
-use camcraft_app::posting::MACHINES;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -34,11 +33,8 @@ fn read(rel: &str) -> String {
 }
 
 fn shipped(name: &str) -> Machine {
-    let text = MACHINES
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, t)| *t)
-        .unwrap_or_else(|| panic!("{name} is not a shipped machine"));
+    let text = camcraft_app::posting::builtin_machine_text(name)
+        .unwrap_or_else(|why| panic!("{name} is not a shipped machine: {why}"));
     parse_mch(text).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
@@ -48,7 +44,7 @@ fn mirrored(name: &str) -> Value {
 
 fn run(mch: &Value, stream: &str) -> engine::PostOutput {
     let cps = read("assets/posts/tormach.cps");
-    engine::run(&cps, mch, stream).unwrap_or_else(|e| panic!("the engine runs: {e}"))
+    engine::run_with(&cps, mch, stream, &doc_units(mch)).unwrap_or_else(|e| panic!("the engine runs: {e}"))
 }
 
 fn mv(kind: MoveKind, p: [f64; 3], feed: Option<f64>, abc: Option<[f64; 3]>) -> cnc::Record {
@@ -100,6 +96,8 @@ fn face_local() -> Vec<(MoveKind, [f64; 3], Option<f64>)> {
 fn head() -> Vec<cnc::Record> {
     vec![
         cnc::Record::Param { name: "SpindleSpeed".into(), value: json!(6000) },
+        // #1614: a section states its clearance, as `post::dump` does.
+        cnc::Record::Param { name: "ClearancePlane".into(), value: json!(40.0) },
         cnc::Record::Param { name: "WorkOffset".into(), value: json!("G54") },
         cnc::Record::Param { name: "OriginX".into(), value: json!(ORIGIN[0]) },
         cnc::Record::Param { name: "OriginY".into(), value: json!(ORIGIN[1]) },
@@ -112,6 +110,10 @@ fn head() -> Vec<cnc::Record> {
 /// way every prismatic dump reads).
 fn face_section(recs: &mut Vec<cnc::Record>, name: &str, a: f64) {
     recs.push(cnc::Record::Param { name: "OperationName".into(), value: json!(name) });
+    // #1357: every section states its speed, as `post::dump` does - each
+    // section ends M5, and a cut with the spindle stopped is refused.
+    recs.push(cnc::Record::Param { name: "SpindleSpeed".into(), value: json!(6000) });
+    recs.push(cnc::Record::Param { name: "ClearancePlane".into(), value: json!(40.0) });
     recs.push(cnc::Record::Section { begin: true });
     for (k, l, f) in face_local() {
         let abc = (a != 0.0).then_some([a, 0.0, 0.0]);
@@ -158,8 +160,10 @@ fn the_microarc_machine_states_an_a_about_x() {
     assert!(a.rotary, "A is a rotary");
     assert_eq!(a.axis, Some([1.0, 0.0, 0.0]), "A turns about X");
     assert_eq!(a.travel, Some((-360.0, 360.0)), "degrees, never unit-scaled");
-    // TD10749 states no rate for the microARC 4: unstated, never a zero.
-    assert_eq!((a.feed, a.rapid), (None, None));
+    // TD10749 states no rate for the microARC 4; #796 states the feed the
+    // PathPilot Hub ran as asked (360 deg/min, never unit-scaled), and no
+    // rapid - unstated, never a zero.
+    assert_eq!((a.feed, a.rapid), (Some(360.0), None));
     // X Y Z are the 770MX's own figures, unchanged by the add-on.
     let base = shipped("Tormach 770MX");
     let lin: Vec<_> = m.axes.iter().filter(|a| !a.rotary).cloned().collect();
@@ -306,8 +310,11 @@ fn an_a_past_travel_is_refused() {
     assert!(ok.warnings.is_empty(), "A90 is inside: {:?}", ok.warnings);
 }
 
+/// #796: an A that changes inside an operation is no longer refused - it
+/// posts as wrapped A (G93 on the turning feeds, A cumulative);
+/// `tormach_wrapped_a` pins the words.
 #[test]
-fn an_a_that_changes_inside_an_operation_is_refused() {
+fn an_a_that_changes_inside_an_operation_posts_wrapped_a() {
     let mut recs = head();
     recs.push(cnc::Record::Param { name: "OperationName".into(), value: json!("WRAP") });
     recs.push(cnc::Record::Section { begin: true });
@@ -316,7 +323,9 @@ fn an_a_that_changes_inside_an_operation_is_refused() {
         recs.push(mv(k, world(a, l), f, Some([a, 0.0, 0.0])));
     }
     recs.push(cnc::Record::Section { begin: false });
-    refused(&mirrored(ARC4), &cnc::serialize(&recs), "simultaneous 4-axis motion in operation WRAP");
+    let out = run(&mirrored(ARC4), &cnc::serialize(&recs));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.lines().any(|l| l.starts_with("G93 G1 ")), "{}", out.program);
 }
 
 #[test]
@@ -440,4 +449,16 @@ fn a_same_tool_continuation_on_the_same_face_restates_a() {
         let a = s.iter().position(|l| *l == "G0 A90");
         assert!(a.is_some_and(|a| a > 0 && s[a - 1] == "G53 G0 Z0"), "section {i}: G53 G0 Z0 / G0 A90\n{nc}");
     }
+}
+
+/// #902: the program's unit is the document's, never the machine file's.
+/// These runs on an inch machine file stand for the inch document they
+/// posted before #902 (the file's own unit, through either door).
+fn doc_units(m: &serde_json::Value) -> serde_json::Value {
+    let word = m
+        .get("units")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| m.pointer("/kinematics/default/units/length").and_then(serde_json::Value::as_str));
+    let inch = matches!(word, Some("inch" | "inches"));
+    serde_json::json!({ "Units": if inch { "inch" } else { "mm" } })
 }

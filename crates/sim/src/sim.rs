@@ -363,7 +363,7 @@ impl Script {
 /// family nothing moves in, every family before stage G) arrives at
 /// the start and holds; a zero-length move (`secs == 0`) is at its
 /// end by definition.
-fn leg_frac(leg: f64, f: f64, secs: f64) -> f64 {
+pub(crate) fn leg_frac(leg: f64, f: f64, secs: f64) -> f64 {
     if secs <= 0.0 {
         return 1.0;
     }
@@ -403,27 +403,35 @@ fn seg_axis(s: &Seg, g: f64) -> [f64; 3] {
 /// law is `arc_chords`' exact survivor - measured off `from`, so no
 /// rounding accumulates).
 fn at_seg(s: &Seg, f: f64) -> Point3 {
+    point_along(s.from, s.to, s.arc, f)
+}
+
+/// The point at fraction `f` along the move `from..to` (straight, or
+/// the arc `arc`): the tool's drawn position, shared by the timeline
+/// and the playback's partial cut (#1516), so the material removed
+/// mid-move ends exactly where the tool is drawn.
+pub(crate) fn point_along(from: Point3, to: Point3, arc: Option<ArcMove>, f: f64) -> Point3 {
     let straight = |f: f64| {
         Point3::new(
-            s.from.x + (s.to.x - s.from.x) * f,
-            s.from.y + (s.to.y - s.from.y) * f,
-            s.from.z + (s.to.z - s.from.z) * f,
+            from.x + (to.x - from.x) * f,
+            from.y + (to.y - from.y) * f,
+            from.z + (to.z - from.z) * f,
         )
     };
-    let Some(arc) = s.arc else {
+    let Some(arc) = arc else {
         return straight(f);
     };
     if !arc.plane.is_xy() {
         // XZ / YZ (M11.2 A): the same angle law in the arc's own
         // plane (`cl::plane`), the normal coordinate lerping.
-        return arc.point_at(s.from, s.to, f).unwrap_or_else(|| straight(f));
+        return arc.point_at(from, to, f).unwrap_or_else(|| straight(f));
     }
     let o = arc.center;
-    let ra = ((s.from.x - o.x).powi(2) + (s.from.y - o.y).powi(2)).sqrt();
-    let rb = ((s.to.x - o.x).powi(2) + (s.to.y - o.y).powi(2)).sqrt();
+    let ra = ((from.x - o.x).powi(2) + (from.y - o.y).powi(2)).sqrt();
+    let rb = ((to.x - o.x).powi(2) + (to.y - o.y).powi(2)).sqrt();
     let r = ra.max(rb);
-    let a0 = (s.from.y - o.y).atan2(s.from.x - o.x);
-    let a1 = (s.to.y - o.y).atan2(s.to.x - o.x);
+    let a0 = (from.y - o.y).atan2(from.x - o.x);
+    let a1 = (to.y - o.y).atan2(to.x - o.x);
     let mut d = if arc.ccw { a1 - a0 } else { a0 - a1 };
     d = d.rem_euclid(2.0 * PI);
     if !r.is_finite() || !d.is_finite() || r <= f64::EPSILON || d <= 0.0 {
@@ -432,11 +440,12 @@ fn at_seg(s: &Seg, f: f64) -> Point3 {
         return straight(f);
     }
     let th = a0 + if arc.ccw { d * f } else { -d * f };
-    // Arcs are planar by construction (push_arc's law); Z lerps.
+    // A synchronized thread dip ramps its radius with angle and Z.
+    let r = ra + (rb - ra) * f;
     Point3::new(
         o.x + r * th.cos(),
         o.y + r * th.sin(),
-        s.from.z + (s.to.z - s.from.z) * f,
+        from.z + (to.z - from.z) * f,
     )
 }
 
@@ -530,7 +539,7 @@ pub fn script<'a>(
         if !path_start.is_finite() {
             // Nowhere to stand at the start is not a slow path, it is
             // a corrupt cache; it contributes nothing, and says so.
-            eprintln!("sim: {name} starts nowhere finite and is left out");
+            tracing::warn!("sim: {name} starts nowhere finite and is left out");
             continue;
         }
         if sc.segs.len() >= MAX_SIM_SEGS {
@@ -578,7 +587,7 @@ pub fn script<'a>(
                 // The cache is validated on its way here; a corrupt
                 // move stands still and says so, keeping the
                 // move-index alignment the dwell pass depends on.
-                eprintln!("sim: a non-finite move of {name} stands in as no motion");
+                tracing::warn!("sim: a non-finite move of {name} stands in as no motion");
                 (here, here)
             };
             here = to;
@@ -858,6 +867,24 @@ mod tests {
             let r = sc.at(0.6 * k as f64 / 10.0);
             let rr = (r.pos.x * r.pos.x + r.pos.y * r.pos.y).sqrt();
             assert!((rr - 10.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn thread_dip_playback_interpolates_radius_at_interior_points() {
+        for ccw in [false, true] {
+            let from = p(5.6, 0.0, 20.0);
+            let to = p(-5.9, 0.0, 19.0);
+            let arc = Some(ArcMove::xy(Point2::new(0.0, 0.0), ccw));
+            for f in [0.25, 0.5, 0.75] {
+                let q = point_along(from, to, arc, f);
+                let radius = 5.6 + 0.3 * f;
+                let angle = if ccw { PI * f } else { -PI * f };
+                assert!(near(q, p(radius * angle.cos(), radius * angle.sin(), 20.0 - f), 1e-10),
+                    "playback must agree with the posted linear radius ramp at {f}: {q:?}");
+            }
+            assert!(near(point_along(from, to, arc, 0.5),
+                p(0.0, if ccw { 5.75 } else { -5.75 }, 19.5), 1e-10));
         }
     }
 

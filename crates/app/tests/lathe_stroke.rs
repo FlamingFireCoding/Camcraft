@@ -94,6 +94,12 @@ fn job_load(clearance: f64, load: impl FnOnce(&World) -> LoadMachine) -> World {
     h.execute(&world, stock.expect("bar stock"));
     let cmd = load(&world);
     h.execute(&world, cmd);
+    // #1232: a turning job posts only through a turning dialect, on a
+    // lathe as on a mill-turn.
+    if matches!(camcraft_app::machine::kind_of(&world), camcraft_app::machine::Kind::Lathe | camcraft_app::machine::Kind::MillTurn) {
+        let post = camcraft_app::schema::PostRef::Named("Fanuc Lathe".into());
+        h.execute(&world, camcraft_app::commands::SelectPost::new(&world, post).expect("lathe post"));
+    }
     let tool = catalog().into_iter().find(|(n, _)| *n == TOOL).map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, TOOL, tool).expect("tool"));
     h.execute(&world, ImportModel::from_mesh("bar", revolve(&BAR)));
@@ -265,7 +271,7 @@ fn a_facing_pass_to_centre_fits_the_built_in_lathe_x_band() {
 
 /// The built-in Lathe with its X band rewritten to `lo..hi`, mounted.
 fn lathe_with_x(lo: f64, hi: f64, clearance: f64) -> World {
-    let text = posting::MACHINES.iter().find(|(n, _)| *n == "Lathe").map(|(_, t)| *t).expect("built-in Lathe");
+    let text = posting::builtin_machine_text("Lathe").expect("built-in Lathe");
     let edited = text.replacen("\"min\": -2.5, \"max\": 320.0", &format!("\"min\": {lo:?}, \"max\": {hi:?}"), 1);
     assert_ne!(edited, text, "fixture: the X band was rewritten");
     let m = machine::parse_mch(&edited).expect("the edited lathe parses");

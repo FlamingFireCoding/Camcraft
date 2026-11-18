@@ -292,14 +292,43 @@ fn eye_cost(kind: Kind) {
     );
 }
 
+// #1715: the three kinds' parity and the three eye costs were one test
+// (768 s in release, v0.20.0 cut). Each is independent work on its own
+// world, so each is its own test now and libtest runs them in parallel.
+
 #[test]
-#[ignore = "heavy lane (M13.1 rotary parity): the three kinds' programs at the verdict class (Contour 92,727 and Offset 89,685 sub-chords, the law marched per column) and the eye's chord-class cost, release ~14 min (808 s measured 2026-11-06) - run at milestone close with --release -- --ignored"]
-fn every_rotary_kind_reads_the_radial_law_and_its_cost_is_measured() {
+#[ignore = "heavy lane (M13.1 rotary parity): Parallel's program at the verdict class, the law marched per column - run at milestone close with --release -- --ignored"]
+fn the_parallel_kind_reads_the_radial_law() {
     parity(Kind::Parallel);
+}
+
+#[test]
+#[ignore = "heavy lane (M13.1 rotary parity): Contour's program at the verdict class (92,727 sub-chords), the law marched per column - run at milestone close with --release -- --ignored"]
+fn the_contour_kind_reads_the_radial_law() {
     parity(Kind::Contour);
+}
+
+#[test]
+#[ignore = "heavy lane (M13.1 rotary parity): Offset's program at the verdict class (89,685 sub-chords), the law marched per column - run at milestone close with --release -- --ignored"]
+fn the_offset_kind_reads_the_radial_law() {
     parity(Kind::Offset);
+}
+
+#[test]
+#[ignore = "heavy lane (M13.1 rotary parity): Parallel's eye chord-class cost, measured - run at milestone close with --release -- --ignored"]
+fn the_parallel_kinds_eye_cost_is_measured() {
     eye_cost(Kind::Parallel);
+}
+
+#[test]
+#[ignore = "heavy lane (M13.1 rotary parity): Contour's eye chord-class cost, measured - run at milestone close with --release -- --ignored"]
+fn the_contour_kinds_eye_cost_is_measured() {
     eye_cost(Kind::Contour);
+}
+
+#[test]
+#[ignore = "heavy lane (M13.1 rotary parity): Offset's eye chord-class cost, measured - run at milestone close with --release -- --ignored"]
+fn the_offset_kinds_eye_cost_is_measured() {
     eye_cost(Kind::Offset);
 }
 
@@ -334,7 +363,7 @@ fn the_column_verdict_refuses_every_rotary_kind_by_name() {
 fn the_eye_refuses_the_laid_bars_rotated_stock_by_name() {
     let world = world_for(Kind::Parallel);
     let err = field_view(&world).expect_err("the rotated stock entity is refused");
-    assert!(err.contains("carries a rotation"), "{err}");
+    assert!(err.contains("lies on its side"), "{err}");
 }
 
 /// A playback slice turns from where the head stood (M13.1): cutting

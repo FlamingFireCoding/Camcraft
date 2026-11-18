@@ -116,7 +116,14 @@ pub(super) fn engagement_group(ui: &mut Ui, a: &mut Approach) {
     if g.toggled {
         a.max_engagement = if on { 0.5 } else { 0.0 };
     }
+    // #1512: said whether the group is open or not - this limit slows the
+    // way in, it never moves a pass.
+    hint(ui, ENGAGEMENT_SCOPE);
 }
+
+/// What the entry Engagement limit does and does not change (#1512).
+pub(super) const ENGAGEMENT_SCOPE: &str =
+    "entry feeds only: the path keeps its shape - the side load of the passes is Stepover or Optimal load on Passes";
 
 fn lead_idx(l: Option<Lead>) -> usize {
     match l {
@@ -171,6 +178,8 @@ pub(super) fn contour_leads_editor(ui: &mut Ui, u: Unit, a: &mut Approach) {
             |ui| num_unit(ui, &mut a.axis_tol, "°"),
         );
     });
+    // #1448: the user's start and exit points, typed in model X/Y.
+    super::start_exit_rows::start_exit_groups(ui, u, a);
     // M13.11: where the cutter radius comes off - the computer walks
     // the centre (the simulation and every file before the option), the
     // control offsets the part contour by its register.
