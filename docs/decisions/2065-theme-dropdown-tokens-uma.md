@@ -36,3 +36,18 @@ behavior for that newer icon path.
 to change the menu policy. Additional metrics must join the parser vocabulary,
 both built-in columns, the exhaustive token wiring, and the example theme.
 No project schema or NC output format changes are needed.
+
+**Merge-time refresh (2026-11-18, maintainer order to finish the PR).**
+Main gained a 16-point operation icon in the section dropdown rows. Main
+put the label at 28 points with the icon and at 8 points without it. This
+branch put the label at the theme row padding. The two changes edited the
+same line. The resolution keeps both behaviours: the icon inset, the icon
+size and the label clearance now come from the shared menu metrics
+(`DropGeom::clip_inset_x`, `icon_px`, `icon_text_x`). A row without an
+icon keeps the theme row padding. At the default tokens the result is the
+same 4 / 16 / 28 layout that main draws. A larger `menu_pad_x` moves the
+icon and the label so that they never overlap. Main's newer theme fields,
+its split `clamp`, `names` and `tables` modules, and its tab-strip test
+are kept; the four menu tokens join each of them. Dropped: a fixed 28-point
+label with a themed padding, because a custom padding then overlaps the
+icon or leaves a wrong gap.

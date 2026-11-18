@@ -233,8 +233,10 @@ fn all_dropdown_drawers_follow_theme_tokens() {
         panel.top(),
         sec_drop.button.bottom(),
     );
+    // The shell harness loads the icon set, so the operation row wears
+    // its kind icon: the label clears it by the padding (8 + 16 + 16).
     let (txt_pos, _) = text_entry(&drawn, first_sec_label, panel);
-    assert!((txt_pos.x - (panel.left() + 16.0)).abs() < 0.5, "section text x: {txt_pos:?} vs panel {panel:?}");
+    assert!((txt_pos.x - (panel.left() + 40.0)).abs() < 0.5, "section text x: {txt_pos:?} vs panel {panel:?}");
     h.state_mut().state.ribbon_more = None;
 
     // 2. panes machine dropdown math (uses menu_width, gap, and preserves machine_menu_width expansion)
