@@ -31,11 +31,29 @@ fn with_rec(records: &[cnc::Record], f: impl Fn(&mut cnc_thread::ThreadRec)) -> 
         .collect()
 }
 
+/// A length word in whole grid steps (0.0001 in or 0.001 mm).
+fn to_steps(v: f64, inch: bool) -> i64 {
+    let step = if inch { 0.0001 } else { 0.001 };
+    (v / step).round() as i64
+}
+
 /// A G76 word as a whole count of the control's grid steps.
 fn steps(text: &str, c: char, inch: bool) -> i64 {
-    let step = if inch { 0.0001 } else { 0.001 };
     let v = g76_words(text).iter().find(|(l, _)| *l == c).map_or(f64::NAN, |(_, v)| *v);
-    (v / step).round() as i64
+    to_steps(v, inch)
+}
+
+/// The drive-line X word immediately before the G76 block, in grid steps.
+fn drive_line_x_steps(text: &str, inch: bool) -> i64 {
+    let lines: Vec<&str> = text.lines().collect();
+    let at = lines.iter().position(|l| l.starts_with("G76 ")).expect("G76");
+    let x = lines[..at]
+        .iter()
+        .rev()
+        .find_map(|l| l.split(' ').find_map(|w| w.strip_prefix('X')))
+        .and_then(|v| v.parse::<f64>().ok())
+        .expect("the drive-line rapid");
+    to_steps(x, inch)
 }
 
 /// LinuxCNC's R1 ladder: J, 2J, ... clamped at K - ceil(K/J) passes.
@@ -43,6 +61,20 @@ fn r1_passes(text: &str, inch: bool) -> i64 {
     let (j, k) = (steps(text, 'J', inch), steps(text, 'K', inch));
     assert!(j >= 1 && k >= j, "J {j} K {k}: {text}");
     (k + j - 1) / j
+}
+
+/// Each R1 pass's `(bottom_x, depth)` on the control's grid (`X + I - min(m*J, K)`).
+fn r1_pass_schedule(text: &str, inch: bool) -> Vec<(i64, i64)> {
+    let r = g76_words(text).iter().find(|(l, _)| *l == 'R').map_or(f64::NAN, |(_, v)| *v);
+    assert!((r - 1.0).abs() < 1e-9, "constant-depth R1 expected: {text}");
+    let peak = drive_line_x_steps(text, inch) + steps(text, 'I', inch);
+    let (j, k, n) = (steps(text, 'J', inch), steps(text, 'K', inch), r1_passes(text, inch));
+    (1..=n)
+        .map(|pass| {
+            let depth = (pass * j).min(k);
+            (peak - depth, depth)
+        })
+        .collect()
 }
 
 #[test]
@@ -99,4 +131,21 @@ fn g76_refuses_by_name_when_no_grid_j_cuts_the_records_passes() {
     let (text, refused) = post(&world, &fine, g76());
     assert!(refused.iter().any(|w| w.contains("G76") && w.contains(why)), "inch: {refused:?}");
     assert!(!text.contains("G76 P"), "inch: a refused cycle was written: {text}");
+}
+
+#[test]
+fn inch_g76_pass_bottoms_match_pathpilot_hub_8l_readings() {
+    // PathPilot Hub 8L SIM (PathPilot v2.14.4, 2026-11-18 12:42 PDT)
+    // DRO readings at each pass bottom of thread_g76_inch.nc:
+    // pass 1: X (DIA) 0.4409, Z 0.5512 -> 0.3150 (depth 0.0315)
+    // pass 2: X (DIA) 0.4094, Z 0.5512 -> 0.3150 (depth 0.0630)
+    // pass 3: X (DIA) 0.3780, Z 0.5512 -> 0.3150 (depth 0.0944)
+    let want = [(4409, 315), (4094, 630), (3780, 944)];
+    let (world, _history) = thread_world(true);
+    let posted = program_with(&world, g76());
+    let golden = include_str!("golden/nc/tormach-lathe/thread_g76_inch.nc").replace("\r\n", "\n");
+    assert_eq!(r1_pass_schedule(&posted, true), want, "posted R1 schedule must match Hub 8L DRO pass bottoms: {posted}");
+    assert_eq!(r1_pass_schedule(&golden, true), want, "golden R1 schedule must match Hub 8L DRO pass bottoms: {golden}");
+    assert_eq!(posted.replace("\r\n", "\n"), golden);
+    assert!(golden.contains("G0 X0.4764\nG0 Z0.5512\nG76 P0.07874 Z0.315 I-0.004 J0.0315 K0.0944 R1 Q0 H0\nG0 X0.4764 Z0.9449\n"));
 }

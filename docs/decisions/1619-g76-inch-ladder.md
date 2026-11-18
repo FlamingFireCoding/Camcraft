@@ -30,3 +30,15 @@ either unit; mm words are unchanged (2 x first depth already sits on the
 
 **Cost to change later.** One function in the post script and the inch
 G76 golden's J word.
+
+**Simulator verification.** `crates/app/tests/golden/nc/tormach-lathe/thread_g76_inch.nc`
+(`G0 X0.4764`, `G0 Z0.5512`, `G76 P0.07874 Z0.315 I-0.004 J0.0315 K0.0944 R1 Q0 H0`)
+was run by mkinney on PathPilot Hub 8L SIM (PathPilot v2.14.4, 2026-11-18
+12:42 PDT; G54 Z offset shifted `-4.5040` -> `-4.6040` for the simulator's
+Z travel). Observed X (DIA) and Z DRO readings from a 10 fps screen
+recording:
+- Pass 1 bottom: X (DIA) `0.4409` (depth `0.0315`, Z `0.5512 -> 0.3150`)
+- Pass 2 bottom: X (DIA) `0.4094` (depth `0.0630`, Z `0.5512 -> 0.3150`)
+- Pass 3 bottom: X (DIA) `0.3780` (depth `0.0944`, Z `0.5512 -> 0.3150`)
+- Three cutting passes, no spring pass (`H0`), returned to `X 0.4764 Z 0.9449`,
+  ran to `M30` (last line 19, cycle time `00:00:06`) with no alarm.
