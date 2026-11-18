@@ -180,12 +180,36 @@ class FirstContinuousFourAxisProgram(unittest.TestCase):
         table = {r[0]: r[1] for r in rows(["In the machine file", "Value", "What uses it"])}
         raw = MACHINE.read_text()
         self.assertRegex(raw, r'"name": "A", "type": "rotary"')
-        self.assertRegex(raw, r'"travel": \{ "min": -360\.0, "max": 360\.0 \}, "nose_to_axis": 10\.6')
+        axes = machine["kinematics"]["default"]["parts"][0]["parts"]
+        rotary = next(p for p in axes if p["name"] == "A")
+        self.assertNotIn("travel", rotary)
+        self.assertEqual(rotary["axis"], [1.0, 0.0, 0.0])
+        self.assertEqual(rotary["nose_to_axis"], 10.6)
+        saved_a = next(a for a in project["machine"]["machine"]["axes"] if a["name"] == "A")
+        self.assertIsNone(saved_a["travel"], "the example uses the shipped unbounded A axis")
         self.assertRegex(raw, r'"A": \{ "coordinate": 3, "max_normal_speed": 360\.0 \}')
         self.assertEqual(table["A rotary about X"], "`axis` 1, 0, 0")
-        self.assertEqual(table["A travel"], "-360 to 360 degrees")
+        self.assertEqual(table["A travel"], "Not stated")
         self.assertEqual(table["`nose_to_axis`"], "10.6 (inches)")
         self.assertEqual(table["A `max_normal_speed`"], "360 (degrees per minute)")
+
+    def test_continuous_a_claims_match_the_shipped_machine(self):
+        text = flat(page())
+        reference = flat((GUIDE / "multi-axis/continuous-4-axis.md").read_text())
+        decision = flat((ROOT / "docs/decisions/1904-continuous-4axis-walkthrough.md").read_text())
+        self.assertIn("travel is unstated in both the shipped file and this example project", text)
+        self.assertIn("former -360..360 travel refusal no longer applies", text)
+        self.assertIn("former -360..360 travel refusal no longer applies", reference)
+        self.assertIn("shipped file now states no A travel limit", decision)
+        self.assertIn("chart scale is not a machine limit", text)
+        index = flat((GUIDE / "multi-axis/_index.md").read_text())
+        self.assertIn("A about X, no stated A travel limit, `nose_to_axis` 10.6", index)
+        for source in (text, reference):
+            self.assertNotIn("past the A travel and the post refuses", source)
+            self.assertNotIn("with its A travel of -360 to 360", source)
+        picture = (PICTURES / "first-continuous-4axis-a-count.svg").read_text()
+        self.assertIn("Chart scale only; the shipped file states no A travel limit", picture)
+        self.assertNotIn("A travel in the machine file: -360 to 360", picture)
 
     def test_stock_and_model_numbers_are_the_projects(self):
         text = flat(page())

@@ -71,13 +71,14 @@ your machine before you trust a program:
 | In the machine file | Value | What uses it |
 |---|---|---|
 | A rotary about X | `axis` 1, 0, 0 | The operation's fitted axis must be on this line. The posted letter is A. |
-| A travel | -360 to 360 degrees | The machine check and the post. A count past it is refused. |
+| A travel | Not stated | The shipped file permits continuous A counts. It supplies no A position limit for the machine check or the post. |
 | `nose_to_axis` | 10.6 (inches) | The [index swing check](@/guide/multi-axis/checks.md). It is the catalogue distance from the spindle nose to the A centreline at the top of Z. |
 | A `max_normal_speed` | 360 (degrees per minute) | The post holds each turn of A to this rate. A machine file with no A rate is refused. |
 
 The A rate of 360 degrees per minute is the rate that the PathPilot
 simulator ran in the test moves. It is not a figure from Tormach. The A
-travel is not checked against PathPilot's own limits. If your machine has
+travel is unstated in both the shipped file and this example project. This
+does not verify PathPilot's settings or the machine's cables and fixtures. If your machine has
 other values, edit a copy of the machine file: see
 [Machine types](@/guide/check-and-post/machines.md).
 
@@ -167,14 +168,16 @@ These points explain the numbers:
 - **The tolerance and the stepover are coarse.** They keep the program
   short (3213 lines) for a first run. They do not give a good surface.
 
-The other continuous operations do not fit this job today:
+These points distinguish the other continuous operations:
 
 - **Rotary Contour** cuts rings about a bar that stands on its axis. It
   refuses a bar that lies along X and points to Rotary Parallel.
 - **Rotary Offset** roughs in rings round the bar. Each level that cuts
-  takes two turns of A. PathPilot does not roll A over, so the count goes
-  past the A travel and the post refuses the program (issue
-  [#2344](https://github.com/NeoTech/Camcraft/issues/2344)).
+  takes two turns of A. The shipped machine file now permits continuous
+  A counts, so the former -360..360 travel refusal no longer applies
+  (issue [#2344](https://github.com/NeoTech/Camcraft/issues/2344)). This
+  guide uses Rotary Parallel for its finishing pass. No Rotary Offset
+  machine run is established here.
 - No operation wraps a drawing (text or a slot pattern) round a cylinder.
   See [Continuous 4-axis](@/guide/multi-axis/continuous-4-axis.md).
 
@@ -211,8 +214,9 @@ through the bar.
 
 When you post, CamCraft also runs these checks:
 
-- **The machine check.** Each A angle must be in the travel that the
-  machine file states.
+- **The machine check.** If a machine file states A travel, each A angle
+  must be in that travel. The shipped file and this example state no A
+  travel, so this check supplies no A position limit.
 - **The radial check.** The cutter is checked against the model for
   gouges when the operation is generated.
 
@@ -329,11 +333,12 @@ degrees. It does not roll over at 360 and it does not take the short way.
 So each A word is the angle nearest to the last one, and the count goes on
 past 180 and past 360.
 
-![The A word of each line of the program: it stays between -85.708 and 264.23 degrees, inside the travel of -360 to 360, and the lines in G93 are marked below.](../../../guide-pictures/first-continuous-4axis-a-count.svg)
+![The A word of each line of the program: it stays between -85.708 and 264.23 degrees; the chart scale is not a machine limit, and the lines in G93 are marked below.](../../../guide-pictures/first-continuous-4axis-a-count.svg)
 
 In this program A stays between -85.708 and 264.23 degrees. A program
-that turns one way for more than the A travel is refused. The post does
-not write an unwind inside an operation.
+that turns past a limit in a custom machine file is refused. The shipped
+file has no such A limit. The post does not write an unwind inside an
+operation.
 
 ### The end of the operation
 
@@ -360,7 +365,7 @@ first A between -180 and 180.
 | Case | The refusal contains |
 |---|---|
 | A changes inside one operation, but the machine file states no A rate | `simultaneous 4-axis motion` ... `states no A feed rate` |
-| A turns one way past the A travel | `A counts on through 360 (PathPilot does not roll A over)` |
+| A turns past the A travel stated in a custom machine file | `A counts on through 360 (PathPilot does not roll A over)` |
 | An arc, a canned cycle or a probe move that would turn A | `the post writes a turning A on straight G0 / G1 moves only` |
 | A move that turns A from a start point the post does not know | `its path and time cannot be judged` |
 | A move that turns A and cannot be split fine enough to stay on its path | `still bows` |

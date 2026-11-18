@@ -137,10 +137,10 @@ def a_count_picture():
     py = lambda a: n(bottom - (bottom - top) * (a + 360.0) / 720.0)
     body = ['<text x="20" y="24">The A word, line by line (degrees)</text>']
     for a in (-360, -180, 0, 180, 360):
-        cls = "limit" if abs(a) == 360 else "grid"
+        cls = "grid"
         body.append(f'<path class="{cls}" d="M{n(left)} {py(a)} H{n(right)}"/>')
         body.append(f'<text class="small" x="{n(left - 8)}" y="{n(float(py(a)) + 4)}" text-anchor="end">{a}</text>')
-    body.append(f'<text class="small" x="{n(right)}" y="{n(float(py(360)) - 6)}" text-anchor="end">A travel in the machine file: -360 to 360</text>')
+    body.append(f'<text class="small" x="{n(right)}" y="{n(float(py(360)) - 6)}" text-anchor="end">Chart scale only; the shipped file states no A travel limit</text>')
     points = " ".join(f"{px(line)},{py(a)}" for line, a, _ in data)
     body.append(f'<polyline class="cut" points="{points}"/>')
     hi = max(data, key=lambda d: d[1])
@@ -153,8 +153,8 @@ def a_count_picture():
     for line in (1, 1000, 2000, 3000):
         body.append(f'<text class="small" x="{px(line)}" y="292" text-anchor="middle">line {line}</text>')
     return svg(720, 300, "The A word of each line of the program",
-               f"A stays between {lo[1]:g} and {hi[1]:g} degrees, inside the travel of -360 to "
-               "360, and passes 180 without a jump back. The marks under the chart are the lines "
+               f"A stays between {lo[1]:g} and {hi[1]:g} degrees and passes 180 without a jump back. "
+               "The chart scale is not a machine limit. The marks under the chart are the lines "
                "that run in G93.", body)
 
 

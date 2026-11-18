@@ -78,10 +78,12 @@ check. A tool with a long flute is not. Make the stock as long as the real
 bar, so that the checks see the material that is there, and prove a
 program with an air cut.
 
-Rotary Offset takes two turns of the rotary for each level that cuts. On
-the microARC 4 file, with its A travel of -360 to 360 degrees, the
-PathPilot post refuses it (issue
-[#2344](https://github.com/NeoTech/Camcraft/issues/2344)).
+Rotary Offset takes two turns of the rotary for each level that cuts. The
+shipped microARC 4 file states no A travel limit and permits continuous A
+counts. The former -360..360 travel refusal no longer applies (issue
+[#2344](https://github.com/NeoTech/Camcraft/issues/2344)). A custom machine
+file can state A travel; the post refuses a count past that limit. This
+does not verify the control settings, cables or fixtures of a real machine.
 
 ## Recipe: finishing a shaft on an A table
 

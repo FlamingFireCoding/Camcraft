@@ -21,11 +21,14 @@ Fusion or HSMWorks material was consulted.
   page a part that can be cut and drop the limit; the tests name the facts
   that must change (`the_pass_cuts_the_chuck_side_end_face_to_the_centreline`).
 - **Decided: the demo operation is Rotary Parallel, not Rotary Offset.**
-  **Why:** each Rotary Offset level that cuts develops two laps of the bar,
-  and PathPilot does not roll A over, so the post refuses it on the
-  microARC 4 file's -360..360 travel ("A counts on through 360"). Tried
-  with a round stock, a stepped model and all four strategies. Filed as
-  #2344. Wrapping a drawing round a cylinder is not implemented at all.
+  **Why:** Rotary Parallel provides the finishing pass described here.
+  Each Rotary Offset level that cuts develops two laps of the bar. The
+  original machine file refused that count at -360..360 (#2344). The
+  shipped file now states no A travel limit, and that refusal no longer
+  applies. The refreshed example uses the shipped machine without an
+  added limit. **Dropped:** retaining a bounded example machine and
+  presenting its limit as a shipped restriction. No Rotary Offset machine
+  run is claimed. Wrapping a drawing round a cylinder is not implemented.
 - **Decided: the example tool has a 5/8 in flute.** **Why:** with a 1/2 in
   flute the shank check blocks the post at the chuck-side end face
   ("shank/holder at move N collides with the uncut stock"). That guard is
@@ -36,8 +39,13 @@ Fusion or HSMWorks material was consulted.
   not what a fresh build posts.** **Why:** a saved toolpath keeps fewer
   digits than a fresh one, so the two programs differ in a last digit of
   some A and F words. A reader opens the project file, so the page quotes
-  that file's program. The project file itself is held byte for byte to
-  the document that the test builds.
+  that file's program. The project file is held structurally to the
+  document that the test builds. Only cached move coordinates and tool
+  axes permit one step in their six-decimal serialization lattice across
+  platforms. The version, tool number, machine, parameters, cache structure
+  and other values stay exact. Larger coordinate changes are rejected.
+  **Dropped:** byte-for-byte comparison of independently generated cache
+  coordinates, which can differ at platform rounding boundaries.
 - **Decided: the pictures are SVG files drawn by a script from the
   committed project, model and program** (`site/tools/
   first_continuous_4axis_pictures.py`), and a site test holds the files to

@@ -23,6 +23,9 @@
 //! post::post (tormach.cps), app::operation (Rotary Parallel), app::project,
 //! app::machine (check_document).
 
+#[path = "common/continuous_project.rs"]
+mod continuous_project;
+
 #[path = "common/wrapped_nc.rs"]
 mod wrapped_nc;
 
@@ -155,7 +158,9 @@ fn the_continuous_4axis_part_posts_its_wrapped_program() {
         std::fs::write(&golden, post(&world, "golden").program).expect("write the example program");
     }
     let committed = std::fs::read_to_string(repo(PROJECT)).expect("the example project");
-    assert!(text == committed, "{PROJECT} is stale; regenerate with WRITE_GOLDEN=1");
+    continuous_project::compare(&text, &committed).unwrap_or_else(|e| {
+        panic!("{PROJECT} is stale; regenerate with WRITE_GOLDEN=1: {e}")
+    });
     let nc = std::fs::read_to_string(&golden).expect("the example program");
     let lines: Vec<&str> = nc.lines().collect();
     assert!(nc.starts_with("(Tormach 770MX + microARC 4)\nG20 "), "an inch PathPilot program: {nc}");
@@ -213,7 +218,7 @@ fn the_continuous_4axis_part_posts_its_wrapped_program() {
     }
     assert!(turning > 0, "the pass turns A on its feeds");
     assert!(a_only > 0, "the program has A-only feeds in deg/min");
-    // The count stays inside the machine file's A travel.
+    // This example stays within one turn; the shipped machine states no A travel.
     assert!(lo >= -360.0 && hi <= 360.0, "A {lo}..{hi} is within -360..360");
     assert!(hi - lo > 180.0, "A turns more than a half turn inside the operation: {lo}..{hi}");
     // The passes are at the journal radius, 0.340" from the centreline.
