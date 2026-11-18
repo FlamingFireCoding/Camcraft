@@ -18,9 +18,11 @@ use crate::stock::StockShape;
 mod chain_memo;
 mod patch_memo;
 mod geometry;
+mod toolpath;
 
 pub use chain_memo::{chain_walks, resolve_chain};
 pub use patch_memo::{patch_builds, patch_rings, patches};
+pub use toolpath::toolpath_nonempty;
 pub use geometry::{feature_digests, features_of, features_of_local, features_of_shared, geometry_signature};
 use crate::tools::Tool;
 
@@ -165,6 +167,7 @@ pub fn is_model(world: &World, entity: &Entity) -> bool {
         && !is_operation(world, entity)
         && !is_setup(world, entity)
         && !crate::program_entry::is_entry(world, entity) // #155
+        && !crate::sketch::is_sketch(world, entity) // #1862: a DXF profile is not a model
 }
 
 /// The model's geometry revision counter (M3.1): `0` for an entity that

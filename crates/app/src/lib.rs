@@ -91,6 +91,10 @@ pub mod ribbon;
 pub mod rotary_stack;
 pub mod schema;
 pub mod script;
+// #1862: DXF profiles placed on a setup's stock, and the virtual model reference.
+pub use camcraft_geometry::sketch_data;
+pub mod sketch;
+pub mod sketch_model;
 pub mod setup;
 pub mod setup_offsets;
 // #326: the part's alignment per setup.

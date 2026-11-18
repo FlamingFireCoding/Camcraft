@@ -531,7 +531,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // Adaptive (Spiral); un-carriable params record `needs_review`.
         // v69 -> v70 (#2016): absent `holder` settles to the drawn body
         // or the holder cylinder as stated (no behaviour change).
-        // v70 -> v71 (#2463): a model may record its source file; absent
+        // v70 -> v71 (#1862): a DXF profile row arrives; a v70 file has
+        // none, so it steps up unchanged. Stated trunnion fields, tilt bases
+        // and break-through values remain unchanged in their DTOs.
+        // v71 -> v72 (#2463): a model may record its source file; absent
         // is not linked.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
@@ -631,6 +634,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         }
     }
     super::setup_links::check(&file)?;
+    // #1862: every DXF profile is read and chained before any world write.
+    let mut sketches = super::sketch_dto::read_all(&file.entities)?;
     let keys: std::collections::HashSet<&str> = file.entities.iter()
         .filter(|e| e.kind == Some(EntityKind::Operation))
         .map(|e| e.name.as_str()).collect();
@@ -805,6 +810,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 }
             }
             EntityKind::Entry => super::program_entry_dto::apply(world, &entity, dto.entry)?,
+            EntityKind::Sketch => match sketches.remove(&dto.name) {
+                Some(sketch) => {
+                    entity.entity_view(world).set(sketch);
+                }
+                None => return Err(corrupt(format!("'{}' is a DXF profile without its drawing", dto.name))),
+            },
             EntityKind::Tool => {
                 // validate_kind already refused a missing or insane one.
                 let tdto = dto

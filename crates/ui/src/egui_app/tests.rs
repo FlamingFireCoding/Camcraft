@@ -171,6 +171,7 @@ mod program_entry;
 mod tool_body;
 mod tool_body_assembly;
 mod tool_body_lathe;
+mod tool_one_preview;
 // #93: the tool editor's spun-profile (Profile) section.
 mod tool_profile;
 // #793: the tool editor's holder library picker.
@@ -226,6 +227,8 @@ mod ribbon_accesskit;
 mod ai_chat;
 // #2011: EDM tool visibility matches selectable machine kinds.
 mod edm_tool_visibility;
+// #2201: edge/face selection highlight draw & rebuild count per frame.
+mod highlight_perf;
 // #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
 mod pocket_no_adaptive;
 

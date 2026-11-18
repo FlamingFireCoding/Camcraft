@@ -119,7 +119,10 @@ Complete first parts on one machine each:
 [Your first router part](@/guide/getting-started/first-router-part.md) (a
 sheet-goods router job) and
 [Your first 4-axis part](@/guide/getting-started/first-4axis-part.md)
-(indexed 3+1 work on a Tormach 770MX with a microARC 4).
+(indexed 3+1 work on a Tormach 770MX with a microARC 4). On the same
+machine,
+[Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md)
+posts and air-cuts a program that turns A during the feed moves.
 
 ## Undo
 

@@ -13,6 +13,7 @@ use egui::{Color32, ComboBox, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 
 use camcraft_app::geometry::Triangle;
 use camcraft_app::tool_body_view::{self, AXIS_CHOICES};
+use camcraft_app::tool_body;
 use camcraft_app::units::{self, Unit};
 
 use super::fields::{field, num};
@@ -35,6 +36,7 @@ const PITCH0: f32 = 0.45;
 /// machine-default body includes the conservative parameter-cylinder floor.
 pub(super) fn envelope(state: &mut State) -> Option<Vec<(f64, f64, f64)>> {
     state.sync_tool_body_ui();
+    let tool = state.tool_ui.to_tool();
     let d = &state.tool_body_ui;
     if let Some(b) = state.editor_tool_body()
         && b.machine_default
@@ -44,11 +46,10 @@ pub(super) fn envelope(state: &mut State) -> Option<Vec<(f64, f64, f64)>> {
         && d.lathe.is_none()
     {
         // Use the stored profile, as judging does; a mesh rebuild loses its exact bands.
-        let profile = b.profile()?.floored(&state.tool_ui.to_tool().geom());
-        return Some(profile.bands().iter().map(|q| (q.above, q.len, q.r)).collect());
+        return tool_body::checked_bands(&tool, &b);
     }
     match state.tool_body_preview()? {
-        Ok(b) => Some(b.profile()?.bands().iter().map(|q| (q.above, q.len, q.r)).collect()),
+        Ok(b) => tool_body::checked_bands(&tool, b),
         Err(_) => None,
     }
 }
@@ -133,7 +134,7 @@ pub(super) fn body_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
             state.fit_body_preview();
         }
     });
-    preview_3d(ui, state);
+    placement_view(ui, state);
     let note = match state.tool_body_preview() {
         Some(Ok(b)) => match b.profile() {
             Some(p) => format!(
@@ -248,7 +249,16 @@ impl View {
     }
 }
 
-pub(super) fn preview_3d(ui: &mut Ui, state: &mut State) {
+/// #2017: the tool page's one preview is the side view beside the fields.
+/// The 3D view is a placement aid only: it shows while a Pick button is
+/// armed (a click on the mesh is the only way to pick), and not otherwise.
+pub(super) fn placement_view(ui: &mut Ui, state: &mut State) {
+    if state.tool_body_ui.pick != BodyPickMode::Off {
+        preview_3d(ui, state);
+    }
+}
+
+fn preview_3d(ui: &mut Ui, state: &mut State) {
     let (resp, painter) = ui.allocate_painter(SIDE, Sense::click_and_drag());
     let rect = resp.rect;
     painter.rect_filled(rect, 4.0, Color32::from_rgb(24, 26, 31));
@@ -315,7 +325,10 @@ pub(super) fn preview_3d(ui: &mut Ui, state: &mut State) {
     if resp.double_clicked() {
         state.fit_body_preview();
     }
-    if resp.dragged() && mode == BodyPickMode::Off {
+    // A drag orbits, also while a pick is armed: a face behind the body
+    // turns into view, and the pick waits for a click (egui does not
+    // report a drag as a click). View state only.
+    if resp.dragged() {
         let dv = resp.drag_delta();
         state.tool_body_ui.yaw -= dv.x * 0.01;
         state.tool_body_ui.pitch = (state.tool_body_ui.pitch + dv.y * 0.01).clamp(-1.9, 1.0);

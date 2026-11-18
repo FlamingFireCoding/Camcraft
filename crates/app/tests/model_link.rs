@@ -1,7 +1,7 @@
 //! #2463: a model imported from a file records the file and its SHA-256
 //! (a linked model). The link rides ImportModel, UpdateModel and
 //! delete-and-undo; SetModelSource links and unlinks as one undo step;
-//! the project file (v71) keeps it, a v70 file opens unlinked, and a
+//! the project file (v72) keeps it, a v71 file opens unlinked, and a
 //! malformed source row is refused as corrupt. The MCP tool sets the link
 //! and get_job shows it.
 //! Provenance: our own fixtures over our own commands.
@@ -9,7 +9,7 @@
 //! Gate map (#2463): covers app::model_source, app::commands::import_model,
 //! app::commands::update_model, app::commands::delete_entity,
 //! app::commands::model_link (SetModelSource), app::project (source_dto,
-//! v71), app::mcp::model_link_tools, app::mcp::job (get_job).
+//! v72), app::mcp::model_link_tools, app::mcp::job (get_job).
 //! Lane shape (M4.4): all tests here run in seconds.
 
 use std::path::{Path, PathBuf};
@@ -142,13 +142,13 @@ fn saved(world: &World, dir: &Dir) -> String {
 }
 
 #[test]
-fn the_project_file_keeps_the_link_and_a_v70_file_opens_unlinked() {
+fn the_project_file_keeps_the_link_and_a_v71_file_opens_unlinked() {
     let dir = Dir::new("project");
     let (world, _h) = imported(&dir);
     let text = saved(&world, &dir);
     let doc: Value = serde_json::from_str(&text).expect("json");
     assert_eq!(doc["version"], json!(project::PROJECT_VERSION));
-    assert_eq!(project::PROJECT_VERSION, 71);
+    assert_eq!(project::PROJECT_VERSION, 72);
     let row = doc["entities"].as_array().and_then(|e| e.iter().find(|e| e["name"] == "part")).expect("part row");
     let want = source_of(&world, "part").expect("linked");
     assert_eq!(row["source"], json!({ "path": want.path, "sha256": want.sha256 }));
@@ -157,7 +157,7 @@ fn the_project_file_keeps_the_link_and_a_v70_file_opens_unlinked() {
     assert_eq!(source_of(&fresh, "part"), Some(want), "round trip");
 
     let mut old = doc.clone();
-    old["version"] = json!(70);
+    old["version"] = json!(71);
     if let Some(rows) = old["entities"].as_array_mut() {
         for row in rows {
             if let Some(o) = row.as_object_mut() {
@@ -166,14 +166,14 @@ fn the_project_file_keeps_the_link_and_a_v70_file_opens_unlinked() {
         }
     }
     let fresh = new_world();
-    project::open(&fresh, &serde_json::to_string(&old).expect("json")).expect("a v70 file opens");
-    assert_eq!(source_of(&fresh, "part"), None, "a v70 model is not linked");
+    project::open(&fresh, &serde_json::to_string(&old).expect("json")).expect("a v71 file opens");
+    assert_eq!(source_of(&fresh, "part"), None, "a v71 model is not linked");
     assert!(model::find_by_name(&fresh, "part").is_some());
 
     let mut newer = doc;
     newer["version"] = json!(project::PROJECT_VERSION + 1);
     let err = project::open(&new_world(), &serde_json::to_string(&newer).expect("json")).expect_err("too new");
-    assert!(err.to_string().contains("unsupported project version 72"), "{err}");
+    assert!(err.to_string().contains("unsupported project version 73"), "{err}");
 
     let plain = new_world();
     let mut h = History::default();

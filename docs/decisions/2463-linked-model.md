@@ -10,12 +10,12 @@
   `ImportFixture`'s update. Generated meshes (vise, plate, accessory,
   profile fixture edits) update without a source, so they unlink: their
   facets are no longer the file's.
-- **Project v71** (`project/source_dto.rs`): an optional `source` on a
-  model row. Absent is not linked, so a v70 file steps up unchanged. A
+- **Project v72** (`project/source_dto.rs`): an optional `source` on a
+  model row. Absent is not linked, so a v71 file steps up unchanged. A
   source on a row that is not a model, an empty path, a digest that is not
   64 lowercase hex digits, or an unknown key in it is a corrupt file. An
-  older CamCraft refuses a v71 file by name (`unsupported project version
-  71`), as for every version step: it would otherwise save a linked model
+  older CamCraft refuses a v72 file by name (`unsupported project version
+  72`), as for every version step: it would otherwise save a linked model
   back unlinked without a word.
 - **The check** (`crates/ui/src/model_link_watch.rs`) runs in the app
   window about once a second (`INTERVAL`), and the frame timer comes back
@@ -57,5 +57,5 @@ the `.sc` file again; with this, CamCraft updates the part after each save.
 - Import on open: a project opened while a linked file changed is updated
   by the first check, the same way, and says so on the status line.
 
-**Cost to change later.** Moderate: the project key is a format step (v71).
+**Cost to change later.** Moderate: the project key is a format step (v72).
 The check's rules live in one module and its tests pin them.
