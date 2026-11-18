@@ -15,7 +15,7 @@
 
 use camcraft_app::machine::parse_mch;
 use camcraft_app::post::{engine, machine};
-use camcraft_app::posting::{BUILTINS, MACHINES};
+use camcraft_app::posting::{BUILTINS, MACHINES, builtin_machine_text, builtin_post_text};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -53,11 +53,8 @@ fn cps() -> String {
 
 /// The shipped generic machine, mounted the way the app hands it on.
 fn generic() -> Value {
-    let text = MACHINES
-        .iter()
-        .find(|(n, _)| *n == "LinuxCNC 3-axis")
-        .map(|(_, t)| *t)
-        .expect("the library ships the LinuxCNC machine");
+    assert!(MACHINES.iter().any(|(n, _)| *n == "LinuxCNC 3-axis"), "the library ships the LinuxCNC machine");
+    let text = builtin_machine_text("LinuxCNC 3-axis").unwrap_or_else(|e| panic!("reads: {e}"));
     machine::mirror(&parse_mch(text).unwrap_or_else(|e| panic!("parses: {e}")))
 }
 
@@ -104,7 +101,8 @@ fn assert_linuxcnc_words(nc: &str) {
 
 #[test]
 fn the_registry_and_the_library_ship_it() {
-    assert!(BUILTINS.iter().any(|(n, s)| *n == "LinuxCNC" && *s == cps()), "the post is built in");
+    assert!(BUILTINS.iter().any(|(n, _)| *n == "LinuxCNC"), "the post is built in");
+    assert_eq!(builtin_post_text("LinuxCNC").ok(), Some(cps().as_str()), "the built-in reads the shipped file");
     let m = generic();
     assert!(m.get("safeRetractZ").is_none_or(Value::is_null), "the generic file assumes no Z0: {m}");
     // It states no spindle encoder either: rigid_tap_needs_a_stated_encoder.
