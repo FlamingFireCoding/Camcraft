@@ -202,7 +202,8 @@ pub fn apply(records: Vec<Record>, s: &Script) -> Result<Vec<Record>, PostError>
         }
         if st.probe {
             return Err(PostError::Refused(format!(
-                "{what}; probing does not post in a flipped WCS - the probe's work-offset write is not verified                  for a mirrored work offset - probe in a setup without a flip, or clear the flip on the WCS page"
+                "{what}; probing does not post in a flipped WCS - the probe's work-offset write is not verified \
+                 for a mirrored work offset - probe in a setup without a flip, or clear the flip on the WCS page"
             )));
         }
         let rules = Rules { probing: false, helix: true, cause: "a flipped WCS axis" };

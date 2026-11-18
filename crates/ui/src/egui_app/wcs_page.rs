@@ -181,7 +181,8 @@ fn flip_row(ui: &mut Ui, state: &mut State, size: Vec2) {
         Some("A flipped Z does not post yet: clear Flip Z before you post.")
     } else if flip.iter().any(|f| *f) {
         Some(
-            "The posted program is mirrored: the machine control must run the flipped axis reversed.              Toolpaths do not change. Probing does not post in a flipped setup.",
+            "The posted program is mirrored: the machine control must run the flipped axis reversed. \
+             Toolpaths do not change. Probing does not post in a flipped setup.",
         )
     } else {
         None
