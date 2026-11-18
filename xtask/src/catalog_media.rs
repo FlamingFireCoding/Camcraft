@@ -38,8 +38,9 @@ pub fn run_screenshots(
     let scratch = std::env::temp_dir().join(format!("xtask-catalog-shots-{}", std::process::id()));
     let out_dir = match &media.screenshots_out {
         Some(dir) => {
-            ensure_outside_tree(root, dir, "--screenshots-out")?;
-            dir.clone()
+            let dir = resolve_approx(dir)?;
+            ensure_outside_tree(root, &dir, "--screenshots-out")?;
+            dir
         }
         None => {
             let _ = fs::remove_dir_all(&scratch);
