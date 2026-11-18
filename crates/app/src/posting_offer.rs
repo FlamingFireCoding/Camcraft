@@ -46,7 +46,7 @@ pub fn post_offer_for(world: &World, declared: Option<&str>) -> Option<PostOffer
     let named = crate::machine::of_setup(world, declared).1.and_then(|m| m.post);
     if let Some(named) = named.filter(|n| BUILTINS.iter().any(|(b, _)| b == n) && post_serves(n, kind)) {
         let why = OfferWhy::Machine;
-        return (named != name).then(|| PostOffer { post: PostRef::Named(named), why });
+        return (named != name).then_some(PostOffer { post: PostRef::Named(named), why });
     }
     if post_serves(name, kind) {
         return None;
