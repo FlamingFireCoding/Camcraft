@@ -10,6 +10,14 @@ so it rides undo. The reader refuses anything but a non-empty string; the
 validator also refuses an unknown name and a post that does not serve the
 machine's kind, at `controller.post`.
 
+The MCP tools say the same (a QA run on the issue): `post_offer_for` asks
+for any setup, and `post_offer` is the active setup's. `load_machine`
+replies with `post_offer` for the setup it mounted to, and `get_job`
+gives each setup's `post_offer`: the post, why, and the
+`set_setup_post` call that takes it. `null` means no offer. The mount
+still changes nothing. The `post` tool's description lists every name in
+`BUILTINS`, not a hand-written list that had lost "Tormach PathPilot".
+
 **Why:** `default_post_for` takes only the machine's kind, so for every
 mill it offered Fanuc, and a setup on the grblHAL machine was never pointed
 at the grblHAL post. The pairings existed only as comments in `MACHINES`.
@@ -39,6 +47,7 @@ post, and the EDM suites share a byte copy of the file.
   reader drops the field. That loses only the offer, never a posted line.
 
 **Cost to change later:** Local to `post::machine::post_name`,
-`app::machine::validate`, `app::posting::post_offer` and the Setup page's
-banner. Moving the registry into `camcraft-post` (#924) moves the
+`app::machine::validate`, `app::posting::offer` (`posting_offer.rs`),
+`app::mcp::post_offer_view` and the Setup page's banner. The MCP field
+names are a reply shape agents read: renaming one is a visible change. Moving the registry into `camcraft-post` (#924) moves the
 validator's registry check with it.
