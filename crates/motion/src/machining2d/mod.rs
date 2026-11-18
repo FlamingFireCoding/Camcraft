@@ -55,6 +55,7 @@ mod contour_run_side;
 mod contour_run_stock;
 mod contour_start;
 mod contour_step;
+mod contour_whole;
 mod descent;
 mod descent_dive;
 mod descent_xy;
@@ -117,6 +118,7 @@ pub use bore_core::{bore_core_gap, bore_floor_reach, bore_leaves_core, cutting_r
 pub use chamfer::{chamfer, ChamferParams};
 pub use circular::{circular, CircularParams};
 pub use contour::{contour, contour_on_bodies, contour_on_part, contour_on_picked, ContourParams, Lead, Side};
+pub use contour_whole::{contour_whole_bodies, contour_whole_bodies_with};
 pub use contour_auto::{auto_side, AutoSide, AUTO_BAND, AUTO_PROBE_DZ};
 pub use contour_chain::contour_along_chain;
 pub use contour_run_side::{contour_open_run, SectionAt};
