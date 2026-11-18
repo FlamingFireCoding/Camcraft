@@ -58,7 +58,7 @@ fn electrode_from_faces(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
         return Err("\"setup\" goes with \"condition\" (the setup whose machine states it)".into());
     }
     let spec = ElectrodeSpec { undersize, orbit: opt_mm(a, "orbit")?, stub: req_mm(a, "stub")?, pickup: req_mm(a, "pickup")? };
-    let cmd = ElectrodeFromFaces::new(&env.world, name, &picks, &spec).map_err(|e| e.to_string())?;
+    let cmd = ElectrodeFromFaces::new_in(&env.world, setup_name, name, &picks, &spec).map_err(|e| e.to_string())?;
     let e = cmd.electrode().clone();
     env.history.execute(&env.world, cmd);
     Ok(json!({
