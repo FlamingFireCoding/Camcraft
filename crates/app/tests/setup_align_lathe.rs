@@ -190,7 +190,7 @@ fn lathe_facing_rough_finish_chamfer_and_axial_drill_match_baked() {
 }
 
 #[test]
-fn lathe_groove_part_thread_taper_multipass_form_and_bore_match_baked() {
+fn lathe_groove_part_thread_taper_multipass_and_form_match_baked() {
     // 1. GrooveRough + GrooveFinish + Part
     let grooved = revolve(&[(0.0, -16.0), (6.0, -16.0), (6.0, -6.8), (4.0, -6.8), (4.0, -3.6), (6.0, -3.6), (6.0, 28.0), (0.0, 28.0)]);
     run_case(
@@ -267,7 +267,7 @@ fn lathe_groove_part_thread_taper_multipass_form_and_bore_match_baked() {
         })],
         true,
     );
-    // 4. FormTurning & BoringTurning
+    // 4. FormTurning
     let sag = |d: f64| 6.0 - (36.0_f64 - d * d).sqrt();
     let formed = revolve(&[
         (0.0, -50.0), (10.0, -50.0), (10.0, 8.0), (8.0 + sag(2.0), 8.0), (8.0 + sag(1.0), 9.0),
@@ -284,30 +284,39 @@ fn lathe_groove_part_thread_taper_multipass_form_and_bore_match_baked() {
         })],
         true,
     );
+}
+
+#[test]
+fn lathe_boring_posts_like_baked() {
     let bored = revolve(&[(0.0, -50.0), (10.0, -50.0), (10.0, 50.0), (6.0, 50.0), (6.0, -20.0), (0.0, -20.0)]);
     let mut pilot = catalog_tool("DR-0400");
     pilot.flute_len = 70.0;
-    pilot.diameter = 11.2;
-    pilot.shank_d = 11.2;
+    // The larger nose leaves the head inside the pilot during the upward cut.
+    // The window reaches the stock top, so no uncut band remains above it.
+    // This is the clean roughing fixture from turning_bore_feeds.
+    pilot.diameter = 10.9;
+    pilot.shank_d = 10.9;
+    let mut bar = catalog_tool("BR-1000");
+    bar.nose_radius = 0.8;
     run_case(
         unturn(&bored),
         TurnPivot::PartCentre,
         StockShape::Cylinder { diameter: 20.0, height: 100.0 },
         Location { pos: Point3::new(0.0, 0.0, -50.0), ..Default::default() },
-        &[("DR-1100-L", Some(pilot)), ("BR-1000", None)],
+        &[("DR-1090", Some(pilot)), ("BR-1008", Some(bar))],
         vec![
-            ("AX0", "DR-1100-L", OpParams::Drill {
+            ("AX0", "DR-1090", OpParams::Drill {
                 break_through: None, clearance_z: Height::fixed(60.0), retract_z: None,
                 top_z: Height::fixed(50.0), bottom_z: None, cycle: CycleChoice::Auto,
                 peck: 0.0, dwell: 0.0, feed: 120.0, plunge_feed: 80.0,
-                holes: vec![Hole { xy: Point2::new(0.0, 0.0), radius: 5.65, entry_z: 50.0, floor_z: -16.0, through: false, stepped: false }],
+                holes: vec![Hole { xy: Point2::new(0.0, 0.0), radius: 5.45, entry_z: 50.0, floor_z: -20.0, through: false, stepped: false }],
                 cross: vec![],
             }),
-            ("BR1", "BR-1000", OpParams::BoringTurning {
-                tolerance: 0.05, clearance_z: Height::fixed(60.0), top_z: Height::fixed(40.0), bottom_z: Height::fixed(-10.0), feed: 120.0, plunge_feed: 40.0,
+            ("BR1", "BR-1008", OpParams::BoringTurning {
+                tolerance: 0.05, clearance_z: Height::fixed(60.0), top_z: Height::fixed(50.0), bottom_z: Height::fixed(-10.0), feed: 120.0, plunge_feed: 40.0,
             }),
         ],
-        false,
+        true,
     );
 }
 
