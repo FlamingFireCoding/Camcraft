@@ -13,7 +13,7 @@
 //! `WRITE_GOLDEN=1 cargo test -p camcraft-app --test lathe_post_thread_dips`
 //!
 //! Gate map (M4.4): covers app::posting (stream_records, post_setup),
-//! app::post (engine continuousThreading gate, the ChipBreakDips PARAM,
+//! camcraft_post::post (engine continuousThreading gate, the ChipBreakDips PARAM,
 //! THREAD DIP word, the lathe dialect's dip segments and G76 refusal),
 //! app::commands (the threading gate on Create), app::project (the
 //! infeed plan's dips key, the record's chip_break_dips key).
