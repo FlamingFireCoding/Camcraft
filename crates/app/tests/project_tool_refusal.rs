@@ -22,7 +22,11 @@ fn saved() -> Value {
     let mut h = History::default();
     let tool = catalog().into_iter().find(|(_, t)| t.kind == ToolKind::EndMill).map(|(_, t)| t).expect("an end mill");
     h.execute(&world, AddTool::new(&world, "T1", tool).expect("add"));
-    let path = std::env::temp_dir().join(format!("camcraft-1186-{}.camcraft", std::process::id()));
+    // One file for each call: the tests run in parallel, and a shared
+    // path lets one test remove the file while another reads it.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("camcraft-1186-{}-{n}.camcraft", std::process::id()));
     project::save(&world, &path).expect("save");
     let text = std::fs::read_to_string(&path).expect("read");
     let _ = std::fs::remove_file(&path);
