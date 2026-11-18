@@ -34,7 +34,7 @@ source-form distributions.
     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
     USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## Original artwork (every assets/ui/svg/*.svg and the PNG rasterised from each: the op-*, tool-*, tree-*, badge-* and act-* glyphs)
+## Original artwork (every assets/ui/svg/*.svg and the PNG rasterised from each: the op-*, tool-*, tree-*, badge-* and act-* glyphs, except `act-report.svg`: that one is the Tabler `banner` glyph, in the Tabler section below)
 
 These glyphs are our own drawings. Each has an SVG master in
 assets/ui/svg/, rasterised to its 32 px PNG by `cargo xtask icons`, drawn
@@ -43,7 +43,7 @@ and joins): the operation glyphs (`op-*`, #661 slice 1) from what each
 operation does - a cutter and its path; the tool kinds (`tool-*`, #661
 slice 2) from each cutter's silhouette; the browser's setup rows
 (`tree-*`), the operation status badges (`badge-*`) and the CamCraft
-actions (`act-*`). They replace the earlier original PNGs (post, sim,
+actions (`act-*`, except `act-report`: the Tabler `banner` glyph below). They replace the earlier original PNGs (post, sim,
 fixture, debug-info and the operation originals) and the Tabler glyphs
 that stood in for the stock, model, work offset, generate, frame-all and
 eye rows (box-model, cube, transform, player-play, maximize, eye,
@@ -58,6 +58,11 @@ which pixels are ours, so both headings name the same files.)
 
 Outline glyphs from Tabler Icons (https://tabler-icons.io), version 3.49.0,
 MIT (below): recolored to white at load; shapes otherwise unmodified.
+
+`assets/ui/svg/act-report.svg` and its PNG are Tabler's too: the `banner`
+glyph, used for the Report door (#1696). Its SVG master sits in
+assets/ui/svg/ beside our own drawings, but the glyph is Tabler's and its
+shape is unmodified.
 
 MIT License
 
