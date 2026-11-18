@@ -46,7 +46,7 @@ fn params(z: f64) -> Pocket3DParams {
 /// The level's notes and whether the HSM plan planned it.
 fn plan(z: f64, seam: Option<&Seam>) -> (Vec<String>, bool, usize) {
     let mut b = PathBuilder::new(Point3::new(0.0, 0.0, z + 5.0));
-    let lp = match plan_level(&mut b, &channel(), &params(z), z, z + 1.0, false, false, seam) {
+    let lp = match plan_level(&mut b, &channel(), &params(z), z, z + 1.0, false, false, seam, None) {
         Ok(lp) => lp,
         Err(e) => panic!("the level is cut: {e}"),
     };

@@ -21,7 +21,10 @@ use camcraft_app::load::DEFAULT_OPTIMAL_LOAD;
 use camcraft_app::machine::{AxisLimits, Machine};
 use camcraft_app::machining2d::PocketStrategy;
 use camcraft_app::machining3d::Entry3D;
-use camcraft_app::operation::{self, FeatureSel, GeoSel, Height, HeightReference, OpParams, SrcRef};
+use camcraft_app::operation::{
+    self, AfterOperation, AreaControls, CoolantMode, FeatureSel, GeoSel, Height, HeightReference,
+    OpParams, OpType, SrcRef, seed_params,
+};
 use camcraft_app::schema::{Location, Operation};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::{Tool, catalog};
@@ -396,4 +399,71 @@ fn turned_multiaxis_contour_routes_drive_chains_through_setup_frame() {
     let centered_box = cube(Point3::new(-5.0, -5.0, -2.5), Point3::new(5.0, 5.0, 2.5)).facets.to_vec();
     run(TURN, unturn_xz(centered_box.clone()));
     run(OBLIQUE, tilt_by_inverse(centered_box, OBLIQUE));
+}
+
+#[test]
+fn all_ten_multiaxis_and_rotary_kinds_stay_refused_on_aligned_mill_turn() {
+    let stock = box_stock(30.0, 30.0, 10.0, -5.0);
+    let (w, mut h) = document(unturn_xz(cap_facets(true)), TURN, Case::Turned, &stock, false);
+    let mill_turn = Machine {
+        model: "TestBench MillTurn".into(),
+        kind: Some("mill-turn".into()),
+        ..bench_machine()
+    };
+    h.execute(&w, ok(LoadMachine::new(&w, "bench-mt.mch".into(), Some(mill_turn)), "mount mill-turn"));
+
+    let multiaxis_kinds = [
+        OpType::Contour5D,
+        OpType::Parallel5D,
+        OpType::Swarf,
+        OpType::AdvancedSwarf,
+        OpType::RotaryContour,
+        OpType::RotaryParallel,
+        OpType::RotaryOffset,
+        OpType::MultiAxisRough,
+        OpType::Flow5D,
+        OpType::MultiAxisContour,
+    ];
+    for (idx, ty) in multiaxis_kinds.into_iter().enumerate() {
+        let params = seed_params(ty.ordinal());
+        let op = Operation {
+            tool: BALL.into(),
+            src: SrcRef::Entity("part".into()),
+            params: params.clone(),
+            stamp: None,
+            setup: Some("Setup1".into()),
+            area: AreaControls::default(),
+            coolant: CoolantMode::default(),
+            after: AfterOperation::default(),
+            suppressed: false,
+        };
+        let err = setup_align::generation_problem(&w, &op)
+            .unwrap_or_else(|| panic!("{ty:?} must stay refused on aligned mill-turn"));
+        assert!(err.contains("not supported yet in an aligned setup on a mill-turn machine"), "{ty:?}: {err}");
+        assert!(!err.contains("5-Axis Contour,"), "{ty:?}: mill-turn refusal should use machine branch: {err}");
+
+        let name = format!("MT{idx}");
+        h.execute(&w, ok(CreateOperation::new(&w, &name, BALL, SrcRef::Entity("part".into()), params), "create"));
+        let gen_err = GenerateOperation::new(&w, &name)
+            .err()
+            .unwrap_or_else(|| panic!("{ty:?} GenerateOperation must stay refused on aligned mill-turn"))
+            .to_string();
+        assert!(gen_err.contains("not supported yet in an aligned setup on a mill-turn machine"), "{ty:?}: {gen_err}");
+    }
+
+    // Mill still names all 27 verified kinds in its Mill-only refusal branch.
+    let (wm, _) = document(unturn_xz(cap_facets(true)), TURN, Case::Turned, &stock, true);
+    let probe = Operation {
+        tool: "PRB-0400".into(),
+        src: SrcRef::Entity("part".into()),
+        params: seed_params(OpType::Probe.ordinal()),
+        stamp: None,
+        setup: Some("Setup1".into()),
+        area: AreaControls::default(),
+        coolant: CoolantMode::default(),
+        after: AfterOperation::default(),
+        suppressed: false,
+    };
+    let mill_err = setup_align::generation_problem(&wm, &probe).expect("Probe refused on aligned mill");
+    assert!(mill_err.contains("5-Axis Contour") && mill_err.contains("Multi-Axis Contour"), "{mill_err}");
 }

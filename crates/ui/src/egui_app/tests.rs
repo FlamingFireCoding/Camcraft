@@ -115,6 +115,7 @@ mod structural;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
 mod page_layout;
+mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;
@@ -5146,4 +5147,6 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
 }
 
 mod review_1710_evidence;
+mod guide_projects;
+mod guide_images;
 

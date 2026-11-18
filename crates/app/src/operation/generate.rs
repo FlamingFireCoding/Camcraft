@@ -236,7 +236,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // rides on untouched. The generators themselves never see a frame
     // - rotation invariance is the whole argument that this is sound
     // - and the laws that verify the path below run on the local one
-    // for exactly the same reason.
+    // for exactly the same reason. #2389: under a non-upright tilt the
+    // reference heights arrive already measured along the tool axis
+    // (`fold_height`, as `z_local + oz`), so this one shift lands them
+    // on the local values; a Fixed height keeps the plain `h - oz` law.
     let oz = frame.map_or(0.0, |f| f.origin.z);
     let hl = ResolvedHeights {
         clearance: hs.clearance - oz,
@@ -837,7 +840,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // stock's outline, so stock far past the silhouette is
             // cleared too (the 2D pocket's #12 reading); a tilted
             // plane refuses by name (no 3D Pocket carries one today).
-            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
+            // #1950: the Adaptive plain ladder reaches 2r past the stock,
+            // so its stock ring is planned from the air. The shell and
+            // rest variants keep the old band.
+            let air = matches!(strategy, PocketStrategy::Adaptive) && !*shell && !*rest_rough;
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5, air)?;
+            let air_stock = if air && source_built && matches!(src, SrcRef::Entity(_)) { stock_region.as_ref() } else { None };
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -856,6 +864,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
             };
+            // #1950: steel in the air band refuses the op by name.
+            if let Some(st) = air_stock {
+                let named: Vec<_> = fixture_names.iter().map(String::as_str).zip(fixtures.iter()).collect();
+                super::open_side::air_band_refusal(&region, st, &named, pp.bottom_z)?;
+            }
             // Re-machining (M3.1 D): what the program ahead of this
             // pocket left standing bounds the coarse run, so it cuts
             // the shelves its predecessors already cleared only if the
@@ -879,7 +892,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // The level ladder, and its rest-closing sibling:
                 // planes all the way down (M2.1b).
                 (false, false) => {
-                    machining3d::pocket3d_prev(&material.facets, &region, &pp, mask)
+                    machining3d::pocket3d_open_prev(&material.facets, &region, air_stock, &pp, mask)
                 }
                 (false, true) => {
                     machining3d::pocket3d_with_rest_prev(&material.facets, &region, &pp, mask)
@@ -1607,7 +1620,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
+            // #1950: Multi-Axis Rough keeps the old band (an open choice).
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5, false)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -2898,6 +2912,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         Ok(ok) => ok,
         Err(e) => return Err(match yaw_ctx { Some((yw, _)) => yw.exit_err(e), None => e }),
     };
+    // #2382: the approach starts over the setup's WCS origin, never the
+    // frame's zero the generators seed at. Before the yaw exit (a turn
+    // about that same origin) and before every law below, so the routed
+    // links and the verdicts judge the rapid the viewport draws.
+    // A 3+2 path is local to its plane: the origin is read there too.
+    let mut path = path;
+    let o = Point3::new(wcs_origin[0], wcs_origin[1], wcs_origin[2]);
+    let o = frame.as_ref().map_or(o, |f| f.to_local(o));
+    path.seat_approach(Point3::new(0.0, 0.0, hl.clearance), [o.x, o.y]);
     let (region, path) = if let Some((yw, saved)) = yaw_ctx {
         material.facets = saved.material_facets;
         stock_facets = saved.stock_facets;
