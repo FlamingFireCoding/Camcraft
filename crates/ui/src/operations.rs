@@ -138,13 +138,16 @@ fn resolve_all<const N: usize>(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     hs: [&Height; N],
 ) -> Result<[f64; N], &'static str> {
+    let frame = operation::OpFrame::new(setup.map(str::to_owned), tilt)
+        .checked_frame()
+        .map_err(|_| "the 3+2 index commands no direction - its angles are not finite")?;
+    let origin_z = frame.filter(|f| !f.is_upright()).map_or(0.0, |f| f.origin.z);
     let mut out = [0.0; N];
     for (slot, h) in out.iter_mut().zip(hs) {
-        *slot = operation::resolve_height(world, setup, src, *h).ok_or_else(|| {
-            operation::missing_source(world, setup, src, h.reference).unwrap_or("source missing")
-        })?;
+        *slot = crate::height_memo::height(world, setup, src, tilt, *h)? - origin_z;
     }
     Ok(out)
 }
@@ -157,10 +160,11 @@ pub(crate) fn retract_note(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     retract: &Height,
     clearance: &Height,
 ) -> Option<String> {
-    match resolve_all(world, setup, src, [retract, clearance]) {
+    match resolve_all(world, setup, src, tilt, [retract, clearance]) {
         Ok([rz, cz]) => (rz > cz).then(|| {
             format!(
                 "above clearance - the hop travels at {} (min of the two)",
@@ -177,10 +181,11 @@ pub(crate) fn corner_note(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     top: &Height,
     drop: f64,
 ) -> String {
-    match resolve_all(world, setup, src, [top]) {
+    match resolve_all(world, setup, src, tilt, [top]) {
         Ok([tz]) if (tz - drop).is_finite() => format!(
             "the corner stands at {} - derived: width x tan(angle) below the top plane",
             units::len(tz - drop, units::of(world), 3)

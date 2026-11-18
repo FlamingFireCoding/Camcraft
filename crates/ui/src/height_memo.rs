@@ -86,7 +86,7 @@ thread_local! {
 fn with_entry<R>(key: Key, f: impl FnOnce(&mut Entry) -> R) -> R {
     MEMO.with(|memo| {
         let mut memo = memo.borrow_mut();
-        let entry = memo
+        let mut entry = memo
             .iter()
             .position(|e| e.key == key)
             .map(|i| memo.remove(i))
@@ -98,8 +98,9 @@ fn with_entry<R>(key: Key, f: impl FnOnce(&mut Entry) -> R) -> R {
         if memo.len() >= 8 {
             memo.remove(0);
         }
+        let result = f(&mut entry);
         memo.push(entry);
-        f(memo.last_mut().expect("inserted entry"))
+        result
     })
 }
 fn build<R>(f: impl FnOnce() -> R) -> R {

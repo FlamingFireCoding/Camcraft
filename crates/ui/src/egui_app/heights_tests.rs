@@ -191,6 +191,7 @@ fn an_unresolved_relation_says_why_never_a_number() {
         &state.world,
         None,
         None,
+        None,
         &Height::of(R::TopOfSelection, 6.0),
         &Height::fixed(11.0),
     );
@@ -199,7 +200,7 @@ fn an_unresolved_relation_says_why_never_a_number() {
         Some("retract vs clearance unresolved: no operation selection in this context")
     );
     let corner =
-        crate::operations::corner_note(&state.world, None, None, &Height::of(R::TopOfSelection, 0.0), 1.0);
+        crate::operations::corner_note(&state.world, None, None, None, &Height::of(R::TopOfSelection, 0.0), 1.0);
     assert_eq!(corner, "the corner is unresolved: no operation selection in this context");
 }
 
@@ -332,3 +333,6 @@ fn tilted_height_labels_show_local_axis_distance() {
         assert!(labels.iter().any(|text| text.contains(expected)), "viewport label {expected}: {labels:?}");
     }
 }
+
+#[path = "heights_note_tests.rs"]
+mod notes;

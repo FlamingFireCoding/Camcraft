@@ -31,6 +31,11 @@ fn op_src(ui: &Ui) -> Option<SrcRef> {
     ui.data(|d| d.get_temp(egui::Id::new(HEIGHT_SRC_ID)))
 }
 
+fn op_tilt(ui: &Ui) -> Option<camcraft_app::operation::Tilt> {
+    ui.data(|d| d.get_temp::<Option<camcraft_app::operation::Tilt>>(egui::Id::new(HEIGHT_TILT_ID)))
+        .flatten()
+}
+
 /// One height as a titled group. `tag` scopes the widgets' egui ids: the
 /// combos salt through `make_persistent_id`, which ignores position, so
 /// five height editors in one panel would otherwise share one id per
@@ -60,14 +65,14 @@ pub(super) fn retract_note(
     clearance: &Height,
 ) {
     let src = op_src(ui);
-    if let Some(note) = crate::operations::retract_note(world, setup, src.as_ref(), retract, clearance) {
+    if let Some(note) = crate::operations::retract_note(world, setup, src.as_ref(), op_tilt(ui), retract, clearance) {
         consequence(ui, &note);
     }
 }
 
 pub(super) fn corner_note(ui: &mut Ui, world: &flecs_ecs::prelude::World, setup: Option<&str>, top: &Height, drop: f64) {
     let src = op_src(ui);
-    consequence(ui, &crate::operations::corner_note(world, setup, src.as_ref(), top, drop));
+    consequence(ui, &crate::operations::corner_note(world, setup, src.as_ref(), op_tilt(ui), top, drop));
 }
 
 /// The Heights tab's group for the cut's levels - the retract plane's
@@ -153,9 +158,7 @@ fn height_rows(ui: &mut Ui, world: &flecs_ecs::prelude::World, setup: Option<&st
     // Both strings are operations.rs's law (the retired imgui height row
     // said the same words); the page only lays them out - the resolved Z
     // as the row's dimmed suffix (right-to-left: the echo goes first).
-    let tilt = ui
-        .data(|d| d.get_temp::<Option<camcraft_app::operation::Tilt>>(egui::Id::new(HEIGHT_TILT_ID)))
-        .flatten();
+    let tilt = op_tilt(ui);
     let echo = height_echo(world, setup, src.as_ref(), tilt, h);
     prop_row(ui, offset_label(h.reference), |ui| {
         ui.add(Label::new(RichText::new(echo).weak()).selectable(false));

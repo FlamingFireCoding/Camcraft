@@ -344,3 +344,12 @@ fn display_callers_fill_the_cache_then_reuse_their_geometry_reads() {
         "unchanged local extents must hit the cache"
     );
 }
+
+
+#[test]
+fn display_cache_has_no_production_panic_path() {
+    let production = include_str!("height_memo.rs").split("#[cfg(test)]").next().unwrap();
+    for forbidden in [".expect(", ".unwrap(", "panic!("] {
+        assert!(!production.contains(forbidden), "display cache must not use {forbidden}");
+    }
+}
