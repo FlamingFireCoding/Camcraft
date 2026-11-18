@@ -766,14 +766,16 @@ fn tabs_hold_the_part_until_the_floor() {
         .filter(|m| m.kind == MoveKind::Rapid && m.from.z == 3.0 && m.to.z == 3.0)
         .count();
     assert_eq!(low_rapids, 3);
-    // The tabbed level cuts four tab widths less than a full ring.
-    // Tab windows are placed along the ring's polyline parameter, so a
+    // The tabbed level cuts four tab windows less than a full ring. A
+    // window is the tab width plus the tool diameter (#2480): the disc
+    // bites D/2 past each window end, so the bridge left is the 6 mm
+    // tab width. Tab windows are placed along the ring's polyline parameter, so a
     // window boundary that falls inside a fitted corner arc removes an
     // arc length off 6.0 by the chord-to-arc drift of one tessellation
-    // step - sub-micron, and the four boundaries share the bias.
+    // step - a few microns over the eight window ends.
     let full = level_len(&t, -3.0);
     let tabbed = level_len(&t, -6.0);
-    assert!((full - tabbed - 24.0).abs() < 1e-3, "{full} - {tabbed}");
+    assert!((full - tabbed - 4.0 * (6.0 + 10.0)).abs() < 5e-3, "{full} - {tabbed}");
     assert!(t.is_chained() && t.all_finite());
 }
 
@@ -1948,16 +1950,18 @@ fn slot_full_width_admits_no_arm_and_says_so() {
 
 #[test]
 fn contour_tabs_stand_down_the_entry_arms() {
-    // A bore held by four 2-high tabs: below -4 the tab is material
+    // A bore held by two 2-high tabs: below -4 the tab is material
     // INSIDE the certified region - no arm may descend through it.
+    // (#2480: two 4 mm tabs - a window is the tab plus the 10 mm tool,
+    // and four 6 mm tabs would fill the 40 mm centre ring.)
     let mk = |entry: Entry3D| {
         let mut p = cp();
         p.side = Side::Inside;
         p.top_z = 0.0;
         p.bottom_z = -6.0;
         p.stepdown = 3.0;
-        p.tab_count = 4;
-        p.tab_width = 6.0;
+        p.tab_count = 2;
+        p.tab_width = 4.0;
         p.tab_height = 2.0;
         p.entry = entry;
         p.helix_radius = 1.5;
@@ -1994,14 +1998,15 @@ fn contour_hop_rides_the_tall_tab_top() {
     // cross ABOVE the tab, or it drags its shank through the tab it was
     // left to hold the part. (tab_height past top_z is a pathological
     // but legal file; the law is the max, not a clamp.)
+    // #2480: two 4 mm tabs fit the 40 mm centre ring with the 10 mm tool.
     let mk = |tab_height: f64| {
         let mut p = cp();
         p.side = Side::Inside;
         p.top_z = 0.0;
         p.bottom_z = -6.0;
         p.stepdown = 3.0;
-        p.tab_count = 4;
-        p.tab_width = 6.0;
+        p.tab_count = 2;
+        p.tab_width = 4.0;
         p.tab_height = tab_height;
         contour(&rect(0.0, 0.0, 20.0, 20.0), &p).expect("valid")
     };

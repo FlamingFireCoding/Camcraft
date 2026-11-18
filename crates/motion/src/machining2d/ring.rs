@@ -167,6 +167,25 @@ impl Ring {
     }
 }
 
+/// #2480: the length of one tab window on the tool-centre ring. The
+/// cutter disc bites `D/2` past each end of a window, so a window of the
+/// tab width alone leaves a bridge of `tab_width - D` on the channel's
+/// centre line, and none when the width is `D` or less. The window is
+/// therefore the tab width plus the tool diameter: the tab width is the
+/// narrowest width of the bridge that stays (general CAM practice).
+pub(super) fn tab_window(tab_width: f64, tool_diameter: f64) -> f64 {
+    let d = if tool_diameter.is_finite() { tool_diameter.max(0.0) } else { 0.0 };
+    tab_width + d
+}
+
+/// #2480: the note for a tabbed level whose tab windows fill the whole
+/// ring, so the level cuts nothing (never a silent empty level).
+pub(super) fn tabs_fill_note(keeps: &[(f64, f64)], ring_len: f64, count: u32, width: f64) -> Option<String> {
+    (keeps.is_empty() && ring_len > 0.0).then(|| {
+        format!("tabs: {count} tabs of {width:.3} mm, each with the tool diameter, fill the whole loop - the tabbed levels cut nothing on it")
+    })
+}
+
 pub(super) fn dist(a: Point2, b: Point2) -> f64 {
     ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).sqrt()
 }

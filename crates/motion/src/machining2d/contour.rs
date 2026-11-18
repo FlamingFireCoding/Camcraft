@@ -16,7 +16,7 @@ use super::contour_comp::{self, SpanCtx};
 use super::contour_link::{plan_links, push_stay, ring_link};
 use super::contour_step::{Said, Step, engage_level};
 use super::levels::{Cert, Motion};
-use super::ring::Ring;
+use super::ring::{Ring, tab_window, tabs_fill_note};
 use super::face::GenError;
 use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, fillet_floor};
@@ -257,12 +257,15 @@ fn contour_impl(region: &Region, p: &ContourParams, part: Option<PartRef<'_>>) -
         let keeps = if tabbed && picked.is_some() {
             // #1473: the tab windows measured from the picked start, so
             // every level enters at the pick.
-            ring.tab_keeps_from_start(p.tab_count as usize, p.tab_width)
+            ring.tab_keeps_from_start(p.tab_count as usize, tab_window(p.tab_width, p.tool_diameter))
         } else if tabbed {
-            ring.tab_keeps(p.tab_count as usize, p.tab_width)
+            ring.tab_keeps(p.tab_count as usize, tab_window(p.tab_width, p.tool_diameter))
         } else {
             vec![(0.0, ring.len)]
         };
+        if let Some(n) = tabs_fill_note(&keeps, ring.len, p.tab_count, p.tab_width).filter(|_| tabbed) {
+            say(&mut lead_notes, n);
+        }
         for (k, &(a, e)) in keeps.iter().enumerate() {
             let poly = ring.arc_between(a, e);
             if poly.len() < 2 {
