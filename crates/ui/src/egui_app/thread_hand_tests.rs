@@ -87,6 +87,21 @@ fn the_hand_row_names_both_hands_and_its_pick_applies_and_undoes() {
     assert_eq!(hand(harness.state()), ThreadHand::Left, "Ctrl+Y reapplies it");
 }
 
+fn dip_values(state: &State, draft: bool) -> camcraft_app::turning::ThreadDips {
+    let params = if draft {
+        state.op_ui.params.clone()
+    } else {
+        model::find_by_name(&state.world, "Op")
+            .and_then(|e| model::operation_of(&state.world, &e))
+            .expect("threading operation")
+            .params
+    };
+    match params {
+        OpParams::Threading { infeed_plan, .. } => infeed_plan.dips,
+        other => panic!("a threading op expected, got {other:?}"),
+    }
+}
+
 /// Edit the actual numeric widget beside its painted label, without
 /// reaching into the page draft. The form seam does not name these spins.
 fn edit_number(harness: &mut egui_kittest::Harness<'static, State>, label: &str, text: &str) {
@@ -115,6 +130,104 @@ fn dips(state: &State) -> camcraft_app::turning::ThreadDips {
         Some(OpParams::Threading { infeed_plan, .. }) => infeed_plan.dips,
         other => panic!("a threading op expected, got {other:?}"),
     }
+}
+
+fn dip_number<'a>(
+    h: &'a egui_kittest::Harness<'static, State>,
+    label: &str,
+) -> egui_kittest::Node<'a> {
+    let row = h.get_by_label(label).rect();
+    h.query_all_by(|n| n.role() == egui::accesskit::Role::SpinButton)
+        .find(|n| (n.rect().center().y - row.center().y).abs() < 12.0)
+        .expect("a numeric control beside the dip label")
+}
+
+fn type_dip(h: &mut egui_kittest::Harness<'static, State>, label: &str, value: &str) {
+    dip_number(h, label).click();
+    h.run();
+    dip_number(h, label).type_text(value);
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+}
+
+#[test]
+fn chip_break_controls_disclose_the_dip_dimensions_only_when_enabled() {
+    let mut h = page(opened());
+    h.run();
+    assert!(h.query_by_label("Chip-break every").is_some());
+    assert!(h.query_by_label("Dip height").is_none());
+    assert!(h.query_by_label("Dip length").is_none());
+    type_dip(&mut h, "Chip-break every", "4");
+    assert_eq!(dip_values(h.state(), true).interval, 4.0);
+    for label in ["Dip height", "Dip length"] {
+        assert!(
+            h.query_by_label(label).is_some(),
+            "enabled dips disclose {label}"
+        );
+        let _number = dip_number(&h, label);
+    }
+    type_dip(&mut h, "Chip-break every", "0");
+    assert!(h.query_by_label("Dip height").is_none());
+    assert!(h.query_by_label("Dip length").is_none());
+    assert_eq!(
+        dip_values(h.state(), false),
+        camcraft_app::turning::ThreadDips::default(),
+        "editing waits for Apply"
+    );
+}
+
+#[test]
+fn inch_dip_controls_convert_then_apply_undo_and_redo_all_three_values() {
+    let mut state = opened();
+    state
+        .pending
+        .push_back(CommandKind::SetUnits(camcraft_app::units::Unit::Inches));
+    state.drain_actions();
+    let mut h = page(state);
+    h.run();
+    type_dip(&mut h, "Chip-break every", "0.2");
+    type_dip(&mut h, "Dip height", "0.01");
+    type_dip(&mut h, "Dip length", "0.05");
+    let expected = camcraft_app::turning::ThreadDips {
+        interval: 5.08,
+        height: 0.254,
+        length: 1.27,
+    };
+    assert_eq!(
+        dip_values(h.state(), true),
+        expected,
+        "all three inch inputs store millimeters"
+    );
+    let original = camcraft_app::turning::ThreadDips::default();
+    assert_eq!(
+        dip_values(h.state(), false),
+        original,
+        "the world waits for Apply"
+    );
+    h.get_by_label("Apply").click();
+    h.run();
+    h.state_mut().drain_actions();
+    assert_eq!(
+        dip_values(h.state(), false),
+        expected,
+        "Apply commits all three dip values: {}",
+        h.state().status
+    );
+    h.state_mut().pending.push_back(CommandKind::Undo);
+    h.state_mut().drain_actions();
+    assert_eq!(
+        dip_values(h.state(), false),
+        original,
+        "one undo restores all three values"
+    );
+    h.state_mut().pending.push_back(CommandKind::Redo);
+    h.state_mut().drain_actions();
+    assert_eq!(
+        dip_values(h.state(), false),
+        expected,
+        "redo restores all three values"
+    );
 }
 
 #[test]
