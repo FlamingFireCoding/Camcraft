@@ -78,6 +78,12 @@ fn draggable(state: &State) -> Option<(String, Entity)> {
     if !state.move_handles {
         return None;
     }
+    one_part(state)
+}
+
+/// The one selected, shown part - the body a Move or a Rotate handle grabs
+/// (#1198 b, #2047). None for no selection, several, a fixture or the stock.
+pub(crate) fn one_part(state: &State) -> Option<(String, Entity)> {
     let mut picked = model::model_entities(&state.world).into_iter().filter(|(name, e)| {
         setup_align::is_part(&state.world, e)
             && model::is_selected(&state.world, e)
@@ -87,7 +93,7 @@ fn draggable(state: &State) -> Option<(String, Entity)> {
     picked.next().is_none().then_some(one)
 }
 
-/// The shown bounding-box centre of the dragged body, kept between frames
+/// The shown bounding-box centre of the handled body (Move or Rotate), kept between frames
 /// (#2238 frame-cost law: a still frame walks no facets). The key is the
 /// input itself: the entity, the facet `Arc` (held, so its address cannot
 /// be reused; a geometry change replaces it) and the shown pose bit for bit
@@ -108,7 +114,7 @@ fn pose_bits(loc: &Location) -> [u64; 7] {
 
 /// The body's bounding-box centre where the viewport draws it, from the
 /// cache when its input is unchanged.
-fn shown_center(state: &State, entity: &Entity) -> Option<[f64; 3]> {
+pub(crate) fn shown_center(state: &State, entity: &Entity) -> Option<[f64; 3]> {
     let tris = model::facets_of(&state.world, entity)?;
     let loc = setup_align::view_pose(&state.world, entity)?;
     let id = *entity;
@@ -142,7 +148,7 @@ fn walk_center(tris: &[Triangle], loc: &Location) -> Option<[f64; 3]> {
     c.iter().all(|v| v.is_finite()).then_some(c)
 }
 
-fn aspect(state: &State) -> Option<f64> {
+pub(crate) fn aspect(state: &State) -> Option<f64> {
     let ([x0, y0], [x1, y1]) = state.viewport_rect;
     let (w, h) = (f64::from(x1 - x0), f64::from(y1 - y0));
     (w > 1.0 && h > 1.0).then(|| w / h)
@@ -150,7 +156,7 @@ fn aspect(state: &State) -> Option<f64> {
 
 /// Logical px of the viewport per mm at `at`, measured along the camera's
 /// right vector (so no arm can blow up when it points at the eye).
-fn px_per_mm(state: &State, at: [f64; 3]) -> Option<f64> {
+pub(crate) fn px_per_mm(state: &State, at: [f64; 3]) -> Option<f64> {
     let aspect = aspect(state)?;
     let mvp = state.cam.mvp(aspect);
     let (r, _, _) = state.cam.view_basis();
@@ -175,7 +181,7 @@ pub(crate) fn handles(state: &State) -> Option<Handles> {
     Some(Handles { name, center, len })
 }
 
-fn to_px(state: &State, uv: [f32; 2]) -> [f32; 2] {
+pub(crate) fn to_px(state: &State, uv: [f32; 2]) -> [f32; 2] {
     let ([x0, y0], [x1, y1]) = state.viewport_rect;
     [x0 + uv[0] * (x1 - x0), y0 + uv[1] * (y1 - y0)]
 }
