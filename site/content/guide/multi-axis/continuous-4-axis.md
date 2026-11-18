@@ -32,9 +32,8 @@ A table the axis goes along X.
 
 ## Feed on a rotary move
 
-One post writes inverse-time feed: `tormach.cps`, for an A about X (issue
-#796). A feed move that turns A together with X, Y or Z is written in
-`G93`, and its time is the longer of two: the time for the tool to go
+`tormach.cps` uses inverse-time feed (`G93`) for simultaneous A-about-X
+moves (issue #796). Its time is the longer of two: the time for the tool to go
 along the posted trajectory at the operation's feed, and the time for A to
 turn at the rate that the machine file states. A move that turns A only
 stays in `G94` with F in degrees per minute. `G94` comes back before each
@@ -43,13 +42,11 @@ state the A rate (`max_normal_speed`), or the post refuses.
 [Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md)
 reads such a program line by line.
 
-Each other post writes the feed as a plain F word. A move that turns the
-rotary does not get a degrees-per-minute or inverse-time conversion from
-those posts. Where the machine file states a rotary's rate, the machine
+The other shipped posts write a plain F word without inverse-time or
+degrees-per-minute conversion for a turning move. Where the machine file states a rotary's rate, the machine
 check judges the move against it, and `fanuc-lathe.cps` refuses a C-axis
-rapid when the machine states no C rate. On a control that wants
-inverse-time feed for simultaneous moves, the program from those posts is
-not ready for it as it stands.
+rapid when the machine states no C rate. For those posts, a control that requires inverse-time feed for simultaneous
+moves cannot use the posted program as it stands.
 
 ## Posts for continuous rotary moves
 
