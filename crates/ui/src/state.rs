@@ -3471,12 +3471,13 @@ impl State {
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
+                    let number = command.number();
                     let note = command.note();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
                     self.status = match note {
-                        Some(n) => format!("tool {name} added - {n}"),
-                        None => format!("tool {name} added"),
+                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
+                        None => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
@@ -3488,7 +3489,7 @@ impl State {
                         self.doc_version += 1;
                         self.status = match number {
                             Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} posts as its list position"),
+                            None => format!("tool {name} number cleared"),
                         };
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),

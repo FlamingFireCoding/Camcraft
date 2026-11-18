@@ -198,11 +198,10 @@ pub struct WcsFlip(pub [bool; 3]);
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct ToolDef {
     pub tool: Tool,
-    /// The controller's number for this tool (#221): what the post writes
-    /// as `T..` / `H..`, matching the machine's tool table. `None` = not
-    /// stated, and the tool posts as its 1-based position in the document's
-    /// tool list (the numbering every earlier document had). Changed only
-    /// through `SetToolNumber`; `ChangeTool` leaves it as it is.
+    /// The controller's number for this tool (#221, #2442): what the post writes
+    /// as `T..` / `H..`, matching the machine's tool table. Assigned on add /
+    /// import to the lowest unused number in `1-99999` and frozen at legacy
+    /// list position on pre-#2442 load; changed only through `SetToolNumber`.
     pub number: Option<u32>,
 }
 
