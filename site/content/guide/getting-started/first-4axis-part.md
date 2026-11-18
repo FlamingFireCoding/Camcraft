@@ -66,8 +66,9 @@ operations, and each operation carries its own index. See
 
 1. **Mount the machine.** In the browser, click the **Machine** row. In the
    **Library** list, pick `Tormach 770MX + microARC 4`. The machine is
-   mounted at once. The machine file states a rotary named A about X with a
-   travel of -360 to 360 degrees. It also states `nose_to_axis` 10.6 (inches,
+   mounted at once. The machine file states a rotary named A about X with
+   no travel limit (PathPilot treats A as continuous, with no soft limit).
+   It also states `nose_to_axis` 10.6 (inches,
    spindle nose to the A centreline at the top of Z). The
    [index swing check](@/guide/multi-axis/checks.md) uses that number.
 2. **Pick the post.** In the browser, click the **Post** row and pick

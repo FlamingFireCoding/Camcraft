@@ -24,3 +24,20 @@ part (#1565).
 longer tab windows (each tab grows by `D` on the centre ring) the next
 time its contour operation generates. Golden files with tabs change with
 it.
+
+### Merge of main after #2460 (takeover refresh)
+
+**What was decided.** Main (#2460) moved the level loop of
+`contour_impl` into `emit_band`, which the whole-model contour bands
+share. Git merged `contour.rs` without a conflict, but the PR's line
+`say(&mut lead_notes, n)` did not compile there, because `lead_notes` is
+now a `&mut Vec<String>` parameter. The line is now `say(lead_notes, n)`.
+The tab window rule and the fill note thus apply to the single-band path
+and to the whole-model bands. In `examples/first-router-part.camproj`,
+the format version and the drill note come from main. The contour cache
+comes from this PR. A regeneration with `WRITE_GOLDEN` gives the same
+contour cache.
+
+**Considered and dropped.** A full regeneration of the example: it also
+changes stamps, a stock field and tool numbers that main has not
+regenerated. These lines are not part of this PR.
