@@ -396,7 +396,7 @@ fn verified_for_machine(kind: crate::machine::Kind, params: &crate::operation::O
         Kind::Lathe => verified_turn(params) || matches!(params, OpParams::Drill { .. }),
         Kind::Plasma => matches!(params, OpParams::PlasmaProfile(_)),
         Kind::WireEdm => matches!(params, OpParams::WireContour(_)),
-        Kind::SinkerEdm => matches!(params, OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_)),
+        Kind::SinkerEdm => matches!(params, OpParams::SinkerBurn(_)),
         Kind::Waterjet => false,
     }
 }

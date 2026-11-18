@@ -266,7 +266,7 @@ fn sinker_block() -> Mesh {
 }
 
 #[test]
-fn sinker_electrode_burn_and_side_burn_match_baked() {
+fn sinker_electrode_burn_matches_baked_and_side_burn_stays_refused() {
     let raw = unturn(&sinker_block());
     let sinker_doc = |mesh: Mesh, do_align: bool, add_side: bool| -> (World, Result<Option<Mesh>, String>) {
         let w = new_world();
@@ -318,15 +318,19 @@ fn sinker_electrode_burn_and_side_burn_match_baked() {
     assert_eq!(simulate_document(&tw).expect("sim").dev.gouge_cells, 0);
     assert_eq!(posting::post_setup_unwritten(&tw).expect("t").program, posting::post_setup_unwritten(&bw).expect("b").program);
 
-    let (ts, ts_res) = sinker_doc(raw.clone(), true, true);
-    ts_res.expect("aligned side burn generates");
+    let (_, ts_res) = sinker_doc(raw.clone(), true, true);
+    let err = ts_res.expect_err("aligned side burn needs posted NC proof");
+    assert!(err.contains("Sinker Side Burn is not supported yet in an aligned setup"), "{err}");
     let (bs, bs_res) = sinker_doc(baked, false, true);
     bs_res.expect("baked side burn generates");
-    assert_moves_eq(&path_of(&ts, "SS1"), &path_of(&bs, "SS1"));
-    assert_eq!(simulate_document(&ts).expect("sim side").dev.gouge_cells, 0);
+    assert_eq!(simulate_document(&bs).expect("sim side").dev.gouge_cells, 0);
+    let err = posting::post_setup_unwritten(&bs).expect_err("ISO post cannot prove side burn NC");
+    assert!(err.to_string().contains("a Sinker Side Burn moves the electrode sideways"), "{err}");
 
-    let (_, ures) = sinker_doc(raw.clone(), false, false);
-    assert!(ures.is_err(), "unaligned cavity faces point sideways, not +Z");
+    for add_side in [false, true] {
+        let (_, ures) = sinker_doc(raw.clone(), false, add_side);
+        assert!(ures.is_err(), "unaligned cavity faces point sideways, not +Z");
+    }
 
     // Explicit `setup` forwarding (`ElectrodeFromFaces::new_in`) derives in the named setup even when Setup1 is unaligned.
     let w = new_world();
