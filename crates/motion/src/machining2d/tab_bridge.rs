@@ -96,6 +96,11 @@ pub(super) fn fit_tabs(ring: &Ring, p: &ContourParams, picked: bool, legal: &Leg
     if !(need > 0.0 && need.is_finite()) {
         return held(p, "the tab width is not a length".into());
     }
+    // The windows alone fill the loop: name it before one entry per tab is
+    // reserved, so a huge count from the app or MCP stays cheap.
+    if n as f64 * need >= l {
+        return fill(p);
+    }
     let s = l / n as f64;
     // (anchor, extent before it, extent after it, share of growth before)
     let mut tabs: Vec<(f64, f64, f64, f64)> = (0..n)
@@ -164,7 +169,8 @@ fn short_gaps(ring: &Ring, keeps: &[(f64, f64)], p: &ContourParams, legal: &Lega
         // bridge.
         let reach = if m == 1 { need.min(a.len / 3.0) } else { need };
         let gap = poly_dist(&a.tail(reach), &b.head(reach));
-        if gap < need - SLACK {
+        // A NaN distance is not wide enough: it grows, or ends in no_fit.
+        if gap.is_nan() || gap < need - SLACK {
             out.push((ka.1, kb.0, need - gap));
         }
     }

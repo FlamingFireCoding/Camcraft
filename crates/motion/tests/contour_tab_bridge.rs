@@ -129,13 +129,10 @@ fn bridges(t: &Toolpath, d: f64) -> (Vec<f64>, usize) {
 /// Arc fit (0.01) and chords (0.001) aside, no bridge is under `w`.
 const TOL: f64 = 0.02;
 
-/// `bridge >= w`, or the tabbed levels cut nothing with a note.
+/// Every fixture here fits its tabs: one cut run between each two tabs, and
+/// every bridge `>= w`. A level with no cut (the "fill" path) fails.
 fn holds(t: &Toolpath, d: f64, w: f64, count: usize, what: &str) {
     let (b, n) = bridges(t, d);
-    if n == 0 {
-        assert!(t.notes.iter().any(|s| s.starts_with("tabs:")), "{what}: nothing cut at the tab level and no note: {:?}", t.notes);
-        return;
-    }
     assert_eq!(n, count, "{what}: one cut run between each two tabs: {b:?} {:?}", t.notes);
     for x in &b {
         assert!(*x >= w - TOL, "{what}: a bridge of {x:.3} mm is under the tab width {w}: {b:?}");
@@ -214,4 +211,16 @@ fn inside_and_conventional_straight_walls_keep_the_tab_width() {
             holds(&t, 6.0, 5.0, 4, &format!("{side:?} climb={climb} {lead:?}"));
         }
     }
+}
+
+#[test]
+fn a_huge_tab_count_fills_the_loop_without_a_huge_allocation() {
+    // Review N1: the count comes unchecked from the app or MCP. The
+    // windows alone fill the loop, so the fit names it before it reserves
+    // one entry per tab (u32::MAX entries would be about 137 GB).
+    let p = params(6.0, Side::Outside, u32::MAX, 3.0, Lead::None);
+    let t = contour(&rect(0.0, 0.0, 40.0, 40.0), &p).unwrap();
+    let (_, n) = bridges(&t, 6.0);
+    assert_eq!(n, 0, "nothing is cut at the tabbed level");
+    assert!(t.notes.iter().any(|s| s.starts_with("tabs:") && s.contains("fill the whole loop")), "{:?}", t.notes);
 }

@@ -89,3 +89,28 @@ each tab: the Arc r3 lead reach now widens each window. The stamp, the
 other operations and the tools stay as they were. A full `WRITE_GOLDEN`
 run also adds tool `number` fields and a new contour stamp, which main has
 not regenerated. These lines are not part of this PR.
+`examples/first-router-part.nc` is recorded again with `camcraft-cli
+process` from this project. Only the `2D Contour1` tab-gap lines change
+(lines 116-148). The G73 line of the drill stays as main recorded it
+(#2560).
+
+### Second review (head 613ba4abf)
+
+**What was decided.**
+- A NaN bridge distance does not count as wide enough. The window grows,
+  or the fit ends with the `no_fit` note.
+- If `tab_count * (W + D)` is at least the loop length, the fit gives the
+  "fill the whole loop" note before it reserves one entry for each tab.
+  The app and MCP do not limit the count, and a count near `u32::MAX`
+  would reserve about 137 GB.
+- The fixtures of `contour_tab_bridge.rs` that fit their tabs now assert
+  one cut run between each two tabs. A fixture cannot pass through the
+  "fill" path.
+
+**Known limit (N2).** The fit compares only two neighbouring cuts: the
+last `W + D` of one walk with its lead-out, against the lead-in and the
+first `W + D` of the next walk. A third cut can come closer to a tab
+beyond that reach: a U-turn of the same ring, or a different ring at the
+same level. Then the material at the tab can be narrower than `W`. Main
+has the same limit, so this PR does not cause it. It needs a follow-up
+issue.
