@@ -4,9 +4,11 @@
 //! release, with the dragged angle shown above the bar. The turn makes the
 //! generated operation stale, so the post refuses until a regenerate; the
 //! stock follows the part. Escape mid-drag and a drag that ends at its
-//! start angle add no history step; empty space still orbits.
+//! start angle add no history step; a focus loss or a pointer that leaves
+//! the window drops the turn; empty space still orbits.
 //! Provenance: our own viewport tests over our own drag law; no vendor
 //! material consulted.
+//! Gate map: covers ui::turn_drag, ui::egui_app::turn_handles, ui::egui_app::shell.
 
 use std::f64::consts::FRAC_PI_4;
 
@@ -160,6 +162,38 @@ fn escape_mid_turn_cancels_with_no_history_step() {
     h.run_steps(2);
     assert!(!h.state().state.history.is_dirty(), "Escape queues nothing");
     assert_eq!(block(h.state()), before, "the part never turned");
+}
+
+#[test]
+fn focus_loss_mid_turn_cancels_and_a_later_release_sends_no_turn() {
+    let mut h = turning_block();
+    let before = block(h.state());
+    let from = z_ring(&h, FRAC_PI_4);
+    set_pos(&mut h, from);
+    button_at(&mut h, egui::PointerButton::Primary, from, true);
+    let to = z_ring(&h, FRAC_PI_4 + 0.5);
+    set_pos(&mut h, to);
+    assert!(h.state().state.body_turn.is_some());
+    h.input_mut().events.push(Event::WindowFocused(false));
+    h.run();
+    assert!(h.state().state.body_turn.is_none(), "focus loss drops the turn");
+    h.input_mut().events.push(Event::WindowFocused(true));
+    button_at(&mut h, egui::PointerButton::Primary, to, false);
+    h.run_steps(2);
+    assert!(!h.state().state.history.is_dirty(), "the later release queues nothing");
+    assert_eq!(block(h.state()), before, "the part never turned");
+    // The pointer that leaves the window mid-turn drops it too.
+    set_pos(&mut h, from);
+    button_at(&mut h, egui::PointerButton::Primary, from, true);
+    set_pos(&mut h, to);
+    assert!(h.state().state.body_turn.is_some());
+    h.input_mut().events.push(Event::PointerGone);
+    h.run();
+    assert!(h.state().state.body_turn.is_none(), "pointer gone drops the turn");
+    button_at(&mut h, egui::PointerButton::Primary, to, false);
+    h.run_steps(2);
+    assert!(!h.state().state.history.is_dirty());
+    assert_eq!(block(h.state()), before);
 }
 
 #[test]

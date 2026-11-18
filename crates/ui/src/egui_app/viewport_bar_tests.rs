@@ -1,6 +1,7 @@
 //! The bottom bar's laws (#1198): the camera buttons, the ribbon size and
 //! the Move / Rotate modes that never share the part (#2047).
 //! Provenance: our own tests over our own bar.
+//! Gate map: covers ui::egui_app::viewport_bar.
 
 use super::*;
 

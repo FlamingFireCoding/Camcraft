@@ -21,7 +21,7 @@ use camcraft_app::setup_align;
 use flecs_ecs::prelude::Entity;
 
 use crate::interact::{project_uv, ray_at};
-use crate::move_drag::{aspect, one_part, px_per_mm, shown_center, to_px};
+use crate::move_drag::{self, aspect, one_part, px_per_mm, shown_center, to_px};
 use crate::state::{CommandKind, State};
 
 /// The ring radius on screen, logical px, whatever the zoom.
@@ -120,17 +120,17 @@ fn seg_dist(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
 }
 
 /// The ring under `p` and the in-plane angle of the nearest ring point,
-/// nearest ring first.
-fn ring_hit(state: &State, p: [f32; 2]) -> Option<(usize, f64)> {
-    rings_px(state)
-        .into_iter()
+/// nearest ring first, among rings already computed this frame.
+fn ring_hit(rings: &[(usize, Vec<[f32; 2]>)], p: [f32; 2]) -> Option<(usize, f64)> {
+    rings
+        .iter()
         .filter_map(|(axis, pts)| {
             let (k, d) = pts
                 .windows(2)
                 .enumerate()
                 .map(|(k, w)| (k, seg_dist(p, w[0], w[1])))
                 .min_by(|a, b| a.1.total_cmp(&b.1))?;
-            (d <= RING_HIT_PX).then(|| (axis, std::f64::consts::TAU * (k as f64 + 0.5) / RING_SEGS as f64, d))
+            (d <= RING_HIT_PX).then(|| (*axis, std::f64::consts::TAU * (k as f64 + 0.5) / RING_SEGS as f64, d))
         })
         .min_by(|a, b| a.2.total_cmp(&b.2))
         .map(|(axis, phi, _)| (axis, phi))
@@ -138,34 +138,56 @@ fn ring_hit(state: &State, p: [f32; 2]) -> Option<(usize, f64)> {
 
 /// The ring under `p`, if any.
 pub(crate) fn ring_at(state: &State, p: [f32; 2]) -> Option<usize> {
-    ring_hit(state, p).map(|(axis, _)| axis)
+    ring_in(&rings_px(state), p)
 }
 
-/// The in-plane angle of the cursor ray's hit on the ring plane. None when
-/// the ray grazes the plane (the drag then holds its last value).
-fn plane_angle(state: &State, p: [f32; 2], center: [f64; 3], axis: usize) -> Option<f64> {
+/// The ring under `p` among rings already computed this frame (the paint
+/// code computes them once and asks twice).
+pub(crate) fn ring_in(rings: &[(usize, Vec<[f32; 2]>)], p: [f32; 2]) -> Option<usize> {
+    ring_hit(rings, p).map(|(axis, _)| axis)
+}
+
+/// The in-plane angle of the cursor ray's hit on the ring plane. None (the
+/// drag then holds its last value) when the ray runs within 3 degrees of
+/// the plane, or when the hit lies within `min_r` mm of the pivot, where a
+/// px of cursor swings the angle far.
+pub(crate) fn plane_angle(state: &State, p: [f32; 2], center: [f64; 3], axis: usize, min_r: f64) -> Option<f64> {
     let u = *AXES.get(axis)?;
     let (e1, e2) = plane(axis)?;
     let (o, d) = ray_at(state, p)?;
-    let dn = dot(d, u);
-    if dn.abs() < 0.02 * dot(d, d).sqrt() {
+    let (dn, dd) = (dot(d, u), dot(d, d));
+    // NaN fails the comparison, so it is refused too.
+    let seen_across = dd > 1e-24 && dn * dn >= move_drag::END_ON_SIN2 * dd;
+    if !seen_across {
         return None;
     }
     let t = dot([center[0] - o[0], center[1] - o[1], center[2] - o[2]], u) / dn;
     let hit = add(o, d, t);
     let r = [hit[0] - center[0], hit[1] - center[1], hit[2] - center[2]];
-    let a = dot(r, e2).atan2(dot(r, e1));
+    let (x, y) = (dot(r, e1), dot(r, e2));
+    if !(x.hypot(y) > min_r) {
+        return None;
+    }
+    let a = y.atan2(x);
     a.is_finite().then_some(a)
+}
+
+/// The radius (mm) about the pivot inside which the angle is held:
+/// `RING_HIT_PX` on screen.
+pub(crate) fn hold_radius(state: &State, center: [f64; 3]) -> Option<f64> {
+    let r = f64::from(RING_HIT_PX) / px_per_mm(state, center)?;
+    r.is_finite().then_some(r)
 }
 
 /// A left press at `p`: a ring under it starts a turn and the press is
 /// taken (true) - the ring wins over orbit and pick. Elsewhere: false.
 pub(crate) fn press(state: &mut State, p: [f32; 2]) -> bool {
-    let Some((axis, ring_phi)) = ring_hit(state, p) else { return false };
+    let Some((axis, ring_phi)) = ring_hit(&rings_px(state), p) else { return false };
     let Some(r) = rings(state) else { return false };
     // The plane hit when the ring faces the eye; the ring point under the
     // cursor when it stands edge-on (always defined).
-    let last = plane_angle(state, p, r.center, axis).unwrap_or(ring_phi);
+    let min_r = hold_radius(state, r.center).unwrap_or(f64::INFINITY);
+    let last = plane_angle(state, p, r.center, axis, min_r).unwrap_or(ring_phi);
     state.body_turn = Some(TurnDrag { name: r.name, axis, center: r.center, last, angle: 0.0 });
     true
 }
@@ -174,12 +196,14 @@ pub(crate) fn press(state: &mut State, p: [f32; 2]) -> bool {
 /// so a drag round past half a turn keeps counting.
 pub(crate) fn motion(state: &mut State, p: [f32; 2]) {
     let Some(d) = state.body_turn.clone() else { return };
-    if let Some(a) = plane_angle(state, p, d.center, d.axis)
+    let Some(min_r) = hold_radius(state, d.center) else { return };
+    if let Some(a) = plane_angle(state, p, d.center, d.axis, min_r)
         && let Some(live) = state.body_turn.as_mut()
     {
         let step = (a - d.last + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI;
-        if step.is_finite() {
-            live.angle += step;
+        let next = d.angle + step;
+        if step.is_finite() && next.is_finite() {
+            live.angle = next;
             live.last = a;
         }
     }

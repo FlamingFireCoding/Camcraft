@@ -10,6 +10,8 @@
 use crate::state::State;
 use crate::turn_drag;
 
+/// The rings are computed once per frame and serve the paint, the hot
+/// ring and the cursor.
 pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane: egui::Rect, font: &egui::FontId) {
     let rings = turn_drag::rings_px(state);
     if rings.is_empty() {
@@ -18,7 +20,8 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
     let ink = super::ground_ink::cube();
     let shade = egui::Color32::from_black_alpha(170);
     let live = state.body_turn.as_ref().map(|d| d.axis);
-    let hot = live.or_else(|| pointer.and_then(|p| turn_drag::ring_at(state, p)));
+    let under = pointer.and_then(|p| turn_drag::ring_in(&rings, p));
+    let hot = live.or(under);
     for (axis, pts) in &rings {
         let col = ink.triad.get(*axis).copied().unwrap_or(egui::Color32::WHITE);
         let dim = live.is_some_and(|a| a != *axis);
@@ -34,7 +37,7 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
         ui.painter().text(at + egui::vec2(1.0, 1.0), egui::Align2::CENTER_BOTTOM, &text, font.clone(), shade);
         ui.painter().text(at, egui::Align2::CENTER_BOTTOM, text, font.clone(), egui::Color32::WHITE);
     }
-    if pointer.is_some_and(|p| turn_drag::ring_at(state, p).is_some()) || live.is_some() {
+    if under.is_some() || live.is_some() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
 }

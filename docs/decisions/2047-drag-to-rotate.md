@@ -17,7 +17,13 @@
   the existing `MoveModel`. So a dragged turn and a typed turn are the
   same undo step, the same staleness and the same following stock.
 - A turn below 1e-9 rad queues nothing (no rotation noise, #2177).
-  Escape cancels with no step. A bad axis, a non-finite angle or a
+  Escape cancels with no step. A focus loss or a pointer that leaves the
+  window cancels too, so a later release sends nothing (as for Move, #1330).
+- After #1330 merged, the rings use its cached centre (`CenterCache`): a
+  still frame walks no facets, and the paint computes the rings once per
+  frame. A ray within 3 degrees of the ring plane (the Move end-on limit)
+  or a hit within 6 px of the pivot holds the last angle, so no jump and
+  no NaN reach the preview. A bad axis, a non-finite angle or a
   missing part is refused by name on the status line.
 
 **Why.** Rings are the usual CAD convention for a turn about an axis and

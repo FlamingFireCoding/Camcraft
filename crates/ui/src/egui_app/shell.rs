@@ -528,13 +528,14 @@ fn viewport_panel(
     }
     // The window lost focus (Alt+Tab) or the pointer left it mid-drag: the
     // release may never arrive, or arrive later from elsewhere - drop the
-    // drag so that no later release sends a move.
-    if state.body_drag.is_some()
+    // drag so that no later release sends a move or a turn.
+    if (state.body_drag.is_some() || state.body_turn.is_some())
         && ui.input(|i| {
             !i.focused || i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false) | egui::Event::PointerGone))
         })
     {
         crate::move_drag::cancel(state);
+        crate::turn_drag::cancel(state);
     }
     // Releases. A short press released inside the pane is a pick; a same-
     // frame press+release (fast click) is handled here, not at the press.

@@ -4,6 +4,7 @@
 //! it about the axis the user SEES, a press and release in place queues
 //! nothing, and a bad axis or angle is refused by name with no step.
 //! Provenance: our own tests; rigid-body transform algebra.
+//! Gate map: covers ui::turn_drag, ui::state_move_by.
 
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, TAU};
 
@@ -126,6 +127,41 @@ fn a_turned_setup_turns_the_part_about_the_axis_it_shows() {
     let want = quat_mul(quat_from_axis_angle(0, FRAC_PI_2), view0.rot);
     let same = |s: f64| view1.rot.iter().zip(want).all(|(a, b)| (a - s * b).abs() < 1e-9);
     assert!(same(1.0) || same(-1.0), "a quarter turn about the SHOWN X: {view0:?} -> {view1:?}");
+}
+
+fn computes(state: &State) -> u64 {
+    state.move_center.lock().map(|c| c.computes).unwrap_or(u64::MAX)
+}
+
+#[test]
+fn a_still_frame_walks_no_facets_and_a_turn_walks_them_again() {
+    let mut state = part();
+    assert!(rings(&state).is_some());
+    let once = computes(&state);
+    for _ in 0..10 {
+        assert_eq!(rings_px(&state).len(), 3);
+        let _ = turn_drag::ring_at(&state, [3.0, 3.0]);
+    }
+    assert_eq!(computes(&state), once, "an unchanged document walks the facets no more");
+    run(&mut state, CommandKind::TurnModelBy { name: "part".into(), axis: 2, angle_rad: FRAC_PI_2 });
+    let walked = computes(&state);
+    assert!(walked > once, "a turn walks them again");
+    assert!(rings(&state).is_some());
+    assert_eq!(rings_px(&state).len(), 3);
+    assert_eq!(computes(&state), walked, "and then holds again");
+}
+
+#[test]
+fn a_cursor_on_the_pivot_holds_the_turn() {
+    let mut state = part();
+    assert!(turn_drag::press(&mut state, ring_px(&state, 2, 0.3)));
+    turn_drag::motion(&mut state, ring_px(&state, 2, 0.8));
+    let held = state.body_turn.clone().expect("turning");
+    let c = rings(&state).map(|r| r.center).expect("rings");
+    let uv = project_uv(&state.cam.mvp(800.0 / 600.0), c).expect("in front of the camera");
+    turn_drag::motion(&mut state, [uv[0] * 800.0, uv[1] * 600.0]);
+    assert_eq!(state.body_turn.as_ref(), Some(&held), "no angle at the pivot: the turn holds");
+    assert!(held.angle.is_finite() && (held.angle - 0.5).abs() < 1e-3, "{}", held.angle);
 }
 
 #[test]
