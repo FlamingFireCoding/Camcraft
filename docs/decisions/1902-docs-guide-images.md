@@ -33,3 +33,15 @@
   existing unsafe state without changing geometry, safety checks or images.
 - **Cost to change later:** Low. Replace the examples and their notes together
   only after regenerated operations have been independently verified.
+
+### PR #2078 review correction: retain example parameters on main refresh
+
+- **What was decided:** Set the indexed example's `Tilt::basis_version` to 0.
+  Preserve the source pocket's `rest` value in each rendered parameter variant.
+- **Why:** Basis version 0 retains the persisted indexed path and its documented
+  unsafe status. Carrying `rest` forward keeps each pocket variant limited to
+  the settings that its image demonstrates.
+- **Considered and dropped:** Basis version 1 would change the indexed example.
+  Forcing `rest` to `None` would change the pocket beyond the displayed settings.
+- **Cost to change later:** Low. Update the example, its pin and the adjacent
+  safety explanation together if the intended parameters change.
