@@ -42,6 +42,7 @@ mod trochoid_level;
 mod trochoid_loops;
 mod trochoid_slot;
 mod contour;
+mod contour_region;
 mod contour_auto;
 mod contour_bore;
 mod contour_chain;
