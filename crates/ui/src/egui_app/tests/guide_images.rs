@@ -306,18 +306,8 @@ fn render_all_guide_images() {
     {
         let mut h = new_harness(&first_part);
         let base = read_op_params(&h, "2D Pocket1");
-        let OpParams::Pocket {
-            stock_to_leave, clearance_z, retract_z, top_z, bottom_z, stepdown,
-            feed, plunge_feed, climb, optimal_load, blend_turns,
-            blend_radius, tilt, ..
-        } = base
-        else {
-            panic!("2D Pocket1 should be OpParams::Pocket");
-        };
-        let pocket_cfg = |strategy, stepover, entry, helix_radius, links| OpParams::Pocket {
-            stepover, stock_to_leave, clearance_z, retract_z, top_z, bottom_z,
-            stepdown, feed, plunge_feed, climb, strategy, entry, helix_radius,
-            links, optimal_load, blend_turns, blend_radius, tilt,
+        let pocket_cfg = |strategy, stepover, entry, helix_radius, links| {
+            pocket_variant(&base, strategy, stepover, entry, helix_radius, links)
         };
 
         focus_op(&mut h, "2D Pocket1", SEC_PASSES, false);
@@ -383,5 +373,35 @@ fn render_all_guide_images() {
         focus_op(&mut h, "Indexed Face1", SEC_GEO, false);
         focus_model_camera(&mut h.state_mut().state, "IndexedBlock", [0.32, -0.82, 0.46], 0.86);
         save_shot(&img_dir, "op-indexed-3plus2.png", &paint_and_capture(&mut h));
+    }
+}
+
+// Change only the settings illustrated by the before/after pair.
+fn pocket_variant(base: &OpParams, strategy: PocketStrategy, stepover: f64,
+    entry: Entry3D, helix_radius: f64, links: Links) -> OpParams {
+    let OpParams::Pocket { stock_to_leave, clearance_z, retract_z, top_z, bottom_z,
+        stepdown, feed, plunge_feed, climb, optimal_load, blend_turns,
+        blend_radius, tilt, rest, .. } = *base else { panic!("expected guide pocket"); };
+    OpParams::Pocket { stock_to_leave, clearance_z, retract_z, top_z, bottom_z,
+        stepdown, feed, plunge_feed, climb, optimal_load, blend_turns,
+        blend_radius, tilt, rest, strategy, stepover, entry, helix_radius, links }
+}
+
+#[test]
+fn guide_pocket_variants_preserve_rest_parameters() {
+    use camcraft_app::machining2d::RestParams;
+    let world = flecs_ecs::prelude::World::new();
+    camcraft_app::project::load_noted(&world, &workspace_root().join("examples/first-part.camproj")).unwrap();
+    let entity = model::find_by_name(&world, "2D Pocket1").unwrap();
+    let mut base = model::operation_of(&world, &entity).unwrap().params;
+    for expected in [None, Some(RestParams { previous_tool_diameter: 12.0,
+        previous_corner_radius: 1.0, previous_stock_to_leave: 0.2, allowance: 0.1 })] {
+        let OpParams::Pocket { rest, .. } = &mut base else { panic!("guide pocket"); };
+        *rest = expected;
+        for strategy in [PocketStrategy::Zigzag, PocketStrategy::Waterline] {
+            let variant = pocket_variant(&base, strategy, 3.0, Entry3D::Helix, 1.8, Links::PLANAR);
+            let OpParams::Pocket { rest, .. } = variant else { panic!("variant pocket"); };
+            assert_eq!(rest, expected);
+        }
     }
 }

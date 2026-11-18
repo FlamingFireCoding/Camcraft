@@ -240,7 +240,8 @@ pub(super) fn build_multiaxis_world() -> World {
     set_wcs(&world, &mut h, [100.0, 0.0, 20.0], "wcs2");
     create_and_gen(&world, &mut h, "Indexed Face1", "EM-0600-4FL", SrcRef::Stock, OpParams::Face {
         holes: Default::default(), blend_turns: false,
-        tilt: Some(Tilt { a_deg: 0.0, b_deg: 20.0, origin: [100.0, 0.0, 20.0] }),
+        // Preserve the persisted legacy basis of this documented unsafe example.
+        tilt: Some(Tilt { basis_version: 0, a_deg: 0.0, b_deg: 20.0, origin: [100.0, 0.0, 20.0] }),
         stepover: 3.5, clearance_z: Height::fixed(30.0), cut_z: Height::fixed(18.0),
         top_z: Some(Height::fixed(21.0)), stepdown: Some(1.5),
         feed: 900.0, plunge_feed: 200.0, climb: true,
@@ -273,5 +274,23 @@ fn demo_projects_build_and_load_with_valid_paths() {
         let world = World::new();
         let notes = project::load_noted(&world, &path).unwrap_or_else(|e| panic!("load {file}: {e}"));
         assert!(notes.is_empty(), "{file} had reload notes: {notes:?}");
+    }
+}
+
+#[test]
+fn indexed_guide_preserves_legacy_basis_and_path() {
+    let world = build_multiaxis_world();
+    let entity = model::find_by_name(&world, "Indexed Face1").unwrap();
+    let op = model::operation_of(&world, &entity).unwrap();
+    let OpParams::Face { tilt: Some(tilt), .. } = op.params else { panic!("indexed face"); };
+    assert_eq!(tilt.basis_version, 0);
+    let saved = World::new();
+    project::load_noted(&saved, &workspace_root().join("examples/guide-multiaxis.camproj")).unwrap();
+    let saved_entity = model::find_by_name(&saved, "Indexed Face1").unwrap();
+    let actual = model::toolpath_of(&world, &entity).unwrap();
+    let expected = model::toolpath_of(&saved, &saved_entity).unwrap();
+    assert_eq!(actual.path.moves, expected.path.moves, "legacy example path must remain unchanged");
+    for warning in &expected.warnings {
+        assert!(actual.warnings.contains(warning), "documented warning lost: {warning:?}");
     }
 }
