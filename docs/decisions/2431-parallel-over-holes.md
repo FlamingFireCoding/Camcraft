@@ -37,11 +37,11 @@ step of up to about `4 * eps_chord` and refuses a real shelf edge.
   report calls "weird behaviour", and it changes every support query.
 - The `fill.rs` and `edge.rs` changes of the earlier prototype (tilted lids,
   component-local lids, `step_edge_drop`): not on main and not needed for
-  the line-break symptom. They are filed as a follow-up issue.
+  the line-break symptom. They are filed as the follow-up issue #2467.
 - A stack on PR #1713 (`gap_link`): that PR does not compile alone.
 
 **Cost to change.** `raster_bridge.rs` is one function pair. A wider limit
-or a parameter is a change of the `span_ok` line and the pin
+or a parameter is a change of the `span_ok` line in `bridge_ok` and the pin
 `a_hole_the_ball_fits_into_keeps_a_clean_hop`.
 
 **Structure.** `raster.rs` was over 400 lines. The swarf family moved to
