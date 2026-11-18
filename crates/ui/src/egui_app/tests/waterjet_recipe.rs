@@ -40,7 +40,7 @@ fn waterjet_recipe_controls_render_without_spindle_rpm() {
     }
     h.run_steps(3);
     let win = h.get_by_label("Tool: Recipe nozzle");
-    assert!(win.query_by_label("Cutting data by material and thickness").is_some());
+    assert!(win.query_by_label("Cutting data").is_some());
     let fields = [
         ("Plate thickness", "5.1 mm"),
         ("Kerf width", "0.91 mm"),
@@ -56,9 +56,9 @@ fn waterjet_recipe_controls_render_without_spindle_rpm() {
         let caption = win.query_all_by_label(label)
             .find(|n| n.rect().top() > last_y).expect(label);
         last_y = caption.rect().top();
+        // #2014: the caption is left of its value on the same row.
         assert!(spins.iter().any(|n| n.value().as_deref() == Some(value)
-            && n.rect().top() > caption.rect().top()
-            && n.rect().top() < caption.rect().bottom() + 15.0),
+            && (n.rect().center().y - caption.rect().center().y).abs() < 4.0),
             "{label} has its editable recipe value {value}");
     }
     assert!(win.get_by_label("Pierce method").rect().top() > last_y);

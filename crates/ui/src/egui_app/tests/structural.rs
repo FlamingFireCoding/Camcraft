@@ -185,12 +185,23 @@ fn tool_editor_structure() {
     harness.run();
     crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
-    assert_eq!(harness.query_all_by_label("Diameter").count(), 1, "the explicit window owns the only editable tool surface");
     let win = harness
         .query_all_by_role(egui::accesskit::Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
         .expect("the explicit editor window is titled by the tool");
     let wr = win.rect();
+    // The window owns the only editable tool surface: each label of the
+    // grid names its own control (#1119), and no copy stands outside it.
+    assert!(
+        harness.query_all_by_label("Diameter").all(|n| wr.contains(n.rect().center())),
+        "the explicit window owns the only editable tool surface"
+    );
+    assert!(
+        harness
+            .query_all_by_role(egui::accesskit::Role::SpinButton)
+            .any(|n| n.value().as_deref() == Some("6.0 mm")),
+        "the window holds the editable diameter"
+    );
     assert!(
         wr.min.x > 0.0 && wr.max.x < 1280.0 && wr.min.y > 0.0 && wr.max.y <= 720.0,
         "the editor floats inside the shell: {wr:?}"
@@ -210,7 +221,11 @@ fn tool_editor_structure() {
     let spins: Vec<_> = win.get_all_by_role(egui::accesskit::Role::SpinButton).collect();
     let mut last_y = f32::MIN;
     for (label, value) in fields {
-        let y = win.get_by_label(label).rect().center().y;
+        let node = win
+            .query_all_by_label(label)
+            .next()
+            .unwrap_or_else(|| panic!("the editor shows {label:?}"));
+        let y = node.rect().center().y;
         assert!(y > last_y, "{label:?} must follow the field above it");
         last_y = y;
         assert!(
@@ -219,11 +234,12 @@ fn tool_editor_structure() {
         );
     }
     // Fields on the left half; the right half is the painted profile.
+    let shank = win.query_all_by_label("Shank diameter").next().expect("the shank row");
     assert!(
-        win.get_by_label("Shank diameter").rect().max.x < wr.center().x,
+        shank.rect().max.x < wr.center().x,
         "fields sit left of the profile"
     );
-    assert!(win.query_by_label("Centre cutting (may plunge into solid)").is_some());
+    assert!(win.query_all_by_label("Centre cutting (may plunge into solid)").next().is_some());
     assert!(win.query_by_label("Apply").is_some() && win.query_by_label("Close").is_some());
     assert!(
         win.get_by_label("Apply").rect().min.y >= last_y,
@@ -248,7 +264,7 @@ fn tool_cutter_params_structure() {
         .query_all_by_role(egui::accesskit::Role::Window)
         .find(|n| n.accesskit_node().label().as_deref() == Some("Tool: EM-0600-4FL"))
         .expect("the editor window");
-    let fields_right = win.get_by_label("Shank diameter").rect().max.x;
+    let fields_right = win.query_all_by_label("Shank diameter").next().expect("the shank row").rect().max.x;
     let mut last_y = f32::MIN;
     for label in ["cutter Ø", "flutes", "shank Ø", "Neck", "Apply cutter"] {
         let r = win.get_by_label(label).rect();

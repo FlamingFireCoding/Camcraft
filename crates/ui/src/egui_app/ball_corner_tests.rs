@@ -47,13 +47,16 @@ fn editor(mut state: State, name: &str) -> Harness<'static, State> {
     h
 }
 
-/// How many number fields sit between the "Corner radius" label and the
-/// next field's label: the editor stacks each value under its label.
+/// How many number fields sit on the "Corner radius" row itself: the
+/// grid puts a row's value to the right of its label, on that row.
 fn corner_fields(h: &Harness<'static, State>) -> usize {
-    let top = h.get_by_label("Corner radius").rect().bottom();
-    let bottom = h.get_by_label("Flute length").rect().top();
+    let row = h
+        .query_all_by_label("Corner radius")
+        .next()
+        .expect("the Corner radius row")
+        .rect();
     h.query_all_by(|n| n.role() == Role::SpinButton)
-        .filter(|n| (top..bottom).contains(&n.rect().center().y))
+        .filter(|n| (row.top()..=row.bottom()).contains(&n.rect().center().y))
         .count()
 }
 

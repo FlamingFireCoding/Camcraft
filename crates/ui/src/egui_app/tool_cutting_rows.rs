@@ -17,7 +17,8 @@ use camcraft_app::units::Unit;
 
 use crate::state::ToolUi;
 
-use super::fields::{combo, field, num_feed, num_feed_named, num_named, num_plain, num_plain_named};
+use super::fields::{combo, num_feed_named, num_named, num_plain_named, num_row};
+use super::layout::prop_row;
 
 /// Append a row for the first material the table does not name yet,
 /// starting from the draft's running numbers; `false` when every
@@ -50,32 +51,34 @@ fn step_field(ui: &mut Ui, u: Unit, v: &mut Option<f64>, name: &str) {
 }
 
 /// The rows: a table of material, spindle rpm, feed, stepdown and
-/// stepover (#2015) - or a waterjet's recipes - under one collapsed
-/// header (open when the tool states a material row) so the editor
-/// keeps its height. The `Unknown` row is the tool's default: its
-/// material is fixed and it cannot be removed.
+/// stepover (#2015) - or a waterjet's recipes. They stand in the settings
+/// grid's Cutting data group (#2014). The `Unknown` row is the tool's
+/// default: its material is fixed and it cannot be removed.
 pub(super) fn cutting_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit, torch: bool) {
     let waterjet = t.tool_kind() == ToolKind::Waterjet;
-    let open = t.cutting.iter().any(|r| r.material.is_some());
-    egui::CollapsingHeader::new(if waterjet { "Cutting data by material and thickness" } else { "Cutting data by material" })
-        .id_salt("tool_cutting_header")
-        .default_open(open)
-        .show(ui, |ui| {
-            let remove = if waterjet { waterjet_rows(ui, t, u) } else { table(ui, t, u, torch) };
-            if let Some(i) = remove
-                && i < t.cutting.len()
-            {
-                t.cutting.remove(i);
-            }
-            let full = !waterjet && WorkMaterial::ALL.iter().all(|m| t.cutting.iter().any(|r| r.material == Some(*m)));
-            if ui
-                .add_enabled(!full, egui::Button::new("Add material row"))
-                .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
-                .clicked()
-            {
-                add_row(t);
-            }
-        });
+    // A six-column table is wider than the settings column: it scrolls
+    // across, so it never widens the page or an auto-sized window.
+    let remove = if waterjet {
+        waterjet_rows(ui, t, u)
+    } else {
+        egui::ScrollArea::horizontal()
+            .id_salt("tool_cutting_table_scroll")
+            .show(ui, |ui| table(ui, t, u, torch))
+            .inner
+    };
+    if let Some(i) = remove
+        && i < t.cutting.len()
+    {
+        t.cutting.remove(i);
+    }
+    let full = !waterjet && WorkMaterial::ALL.iter().all(|m| t.cutting.iter().any(|r| r.material == Some(*m)));
+    if ui
+        .add_enabled(!full, egui::Button::new("Add material row"))
+        .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
+        .clicked()
+    {
+        add_row(t);
+    }
 }
 
 /// The speed-and-feed table; the index of a row to remove, if clicked.
@@ -151,7 +154,7 @@ fn waterjet_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit) -> Option<usize> {
     for (i, row) in t.cutting.iter_mut().enumerate() {
         ui.push_id(("tool_cutting_row", i), |ui| {
             let mut idx = row.material.and_then(|m| WorkMaterial::ALL.iter().position(|x| *x == m)).unwrap_or(0);
-            ui.horizontal(|ui| {
+            prop_row(ui, "Material", |ui| {
                 combo(ui, "material", &mut idx, &labels);
                 if ui.small_button("Remove").on_hover_text("drop this material's row").clicked() {
                     remove = Some(i);
@@ -160,21 +163,18 @@ fn waterjet_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit) -> Option<usize> {
             if let Some(m) = WorkMaterial::ALL.get(idx) {
                 row.material = Some(*m);
             }
-            field(ui, &format!("Feed ({})", u.feed_suffix()));
-            num_feed(ui, u, &mut row.feed);
+            prop_row(ui, &format!("Feed ({})", u.feed_suffix()), |ui| num_row(ui, u, &mut row.feed));
             if let Some(w) = &mut row.waterjet {
-                field(ui, "Plate thickness");
-                super::fields::num(ui, u, &mut w.thickness);
-                field(ui, "Kerf width");
-                super::fields::num(ui, u, &mut w.kerf);
-                for (label, value) in [("Pierce time (s)", &mut w.pierce_time), ("Abrasive delay (s)", &mut w.abrasive_delay), ("Re-pierce time (s)", &mut w.re_pierce_time)] {
-                    field(ui, label);
-                    num_plain(ui, value);
-                }
+                prop_row(ui, "Plate thickness", |ui| num_row(ui, u, &mut w.thickness));
+                prop_row(ui, "Kerf width", |ui| num_row(ui, u, &mut w.kerf));
+                prop_row(ui, "Pierce time (s)", |ui| super::fields::num_plain_row(ui, &mut w.pierce_time));
+                prop_row(ui, "Abrasive delay (s)", |ui| super::fields::num_plain_row(ui, &mut w.abrasive_delay));
+                prop_row(ui, "Re-pierce time (s)", |ui| super::fields::num_plain_row(ui, &mut w.re_pierce_time));
                 let methods = [PierceMethod::Stationary, PierceMethod::Dynamic, PierceMethod::Wiggle];
                 let mut method = methods.iter().position(|m| *m == w.pierce_method).unwrap_or(0);
-                field(ui, "Pierce method");
-                combo(ui, "pierce_method", &mut method, &["Stationary", "Dynamic", "Wiggle"]);
+                prop_row(ui, "Pierce method", |ui| {
+                    combo(ui, "pierce_method", &mut method, &["Stationary", "Dynamic", "Wiggle"])
+                });
                 if let Some(m) = methods.get(method) { w.pierce_method = *m; }
             }
         });

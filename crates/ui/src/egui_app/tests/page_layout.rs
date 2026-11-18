@@ -50,7 +50,10 @@ fn assert_page_layout(h: &H, page: &str, anchors: &[&str]) {
         let node = if *a == "Delete" {
             h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").query_by_label(a)
         } else {
-            h.query_by_label(a)
+            // A property row names its control by the row's label (#1119),
+            // so one row can match both the label and the control; either
+            // copy reports the row's place.
+            h.query_all_by_label(a).next()
         };
         let Some(node) = node else {
             panic!("{page} page: no widget labelled {a:?}");
@@ -173,12 +176,12 @@ fn layout_page_tool_library() {
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    // The selected tool edits its fields directly in Properties; catalog
-    // actions belong to the separate Tool library tab.
+    // #2014: the selected tool's settings are a label-left property grid
+    // in collapsible groups; the rows below the Geometry header follow it.
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Delete", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", "Delete", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
     );
 }
 
