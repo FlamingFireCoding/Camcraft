@@ -307,7 +307,11 @@ pub(crate) fn walk(
             continue;
         }
         let sim_ops = [SimOp { moves: &p.moves, radius: p.radius, ball: p.ball, cone: p.cone, corner: p.corner }];
-        held.simulate(&sim_ops)?;
+        if p.drill {
+            held.simulate_drill(&sim_ops)?;
+        } else {
+            held.simulate(&sim_ops)?;
+        }
     }
     if let Some(u) = until {
         return Err(format!("the program never enters setup '{u}'"));

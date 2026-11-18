@@ -2121,6 +2121,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             holes,
             cross,
             break_through,
+            break_through_from,
             ..
         } => {
             // #1557: the stated break-through drives the mill's Z holes;
@@ -2225,16 +2226,30 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // hole off the spindle axis, one past the bar's far
                 // end, and a drill wider than the modeled bore,
                 // before the mill's cycle kernel makes the chain.
+                let tip_from = if lathe_axial {
+                    drilling::BreakThroughFrom::Tip
+                } else {
+                    *break_through_from
+                };
                 if lathe_axial {
-                    drilling::axial_doors(&material.facets, holes, d, hl.bottom)?;
+                    drilling::axial_doors(&material.facets, holes, d, hl.bottom, drilling::THROUGH_CLEAR)?;
                 }
                 let run = break_through.unwrap_or(drilling::THROUGH_CLEAR);
+                let tip_run = if hl.bottom.is_none() && holes.iter().any(|h| h.through) {
+                    drilling::through_tip_run(&tool, *cycle, run, tip_from)?
+                } else {
+                    0.0
+                };
                 // Spot stops at the entry dimple, regardless of a through floor.
                 if hl.bottom.is_none() && !lathe_axial && *cycle != drilling::CycleChoice::Spot {
-                    broke = super::break_through::deepest(holes.iter().filter(|h| h.through).map(|h| (h.xy, h.floor_z - run)), run);
+                    broke = super::break_through::deepest(
+                        holes.iter().filter(|h| h.through).map(|h| (h.xy, h.floor_z - tip_run)),
+                        tip_run,
+                    );
                 }
                 drilling::drill(&drilling::CycleParams {
                     through_clear: run,
+                    break_through_from: tip_from,
                     clearance_z: hl.clearance,
                     r_z: req_z(hl.top, "Top of Part Z")?,
                     hop_z: hl.retract,
@@ -3256,7 +3271,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // name at the cycle's first move.
             if lathe_axial {
                 let tol = super::fidelity_law::tightened(GOUGE_TOL, material.excess);
-                warns.extend(drilling::axial_warnings(&material.facets, &path, d, tol));
+                warns.extend(drilling::axial_warnings(
+                    &material.facets,
+                    &path,
+                    d,
+                    tol,
+                    drilling::THROUGH_CLEAR,
+                ));
             }
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
