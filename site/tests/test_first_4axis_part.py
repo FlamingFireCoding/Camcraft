@@ -59,7 +59,7 @@ UI_STRINGS = {
     "Shank diameter": UI + "tool_settings.rs",
     "Spindle rpm": UI + "tool_settings.rs",
     "Add tool": UI + "tool_settings.rs",
-    "Tool number (0 = list position)": UI + "tool_settings.rs",
+    "Tool number (0 = next free)": UI + "tool_settings.rs",
     "Slot": "crates/app/src/operation/kinds.rs",
     "Milling 2D": "crates/app/src/operation/kinds.rs",
     "Tool": UI + "op_page.rs",
