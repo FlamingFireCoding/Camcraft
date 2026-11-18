@@ -167,6 +167,10 @@ fn setup_error(ui: &mut Ui, state: &State) {
         super::error_text::error_text(ui, super::colorvision::text_inks(ui, &state.world).error, &msg);
     }
 }
+
+/// The AccessKit name of the post picker's Refresh button (#2380).
+pub(super) const REFRESH_POSTS: &str = "Refresh post list";
+
 /// The document's post script (M3.3 A/B): setup furniture, read live
 /// off the world singleton like the machine section above. The label
 /// is exactly what the post resolves - one truth, so a pane can never
@@ -175,9 +179,6 @@ fn setup_error(ui: &mut Ui, state: &State) {
 /// document when the registry grows or reorders); loading a `.cps` of
 /// your own and returning to the default are commands too - undo puts
 /// the previous post back.
-/// The AccessKit name of the post picker's Refresh button (#2380).
-pub(super) const REFRESH_POSTS: &str = "Refresh post list";
-
 pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     let current = posting::post_of(&state.world);
     ui.label("Post");
@@ -185,30 +186,16 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     // #902: the unit the program is written in - the document's own.
     super::post_options::units_row(ui, state, "Program units");
     post_offer_banner(ui, state);
+    // #2380: the folder as last scanned - a removed file has no entry,
+    // an added `.cps` has one (loaded as a file, like "Load post").
+    let scan = super::post_pick::scan();
     ui.horizontal(|ui| {
         // The registry by name; the combo OFFERS only the dialects
         // that serve the mounted machine's kind (M13.5: a lathe lists
         // its turning post, a mill-turn lists both), while the
         // selected text still names whatever the document chose.
         let kind = camcraft_app::machine::kind_of(&state.world);
-        // #2380: the folder as last scanned - a removed file has no entry,
-        // an added `.cps` has one (loaded as a file, like "Load post").
-        let scan = posting::post_scan();
-        let names: Vec<&str> = posting::BUILTINS.iter().map(|(n, _)| *n).filter(|n| scan.present.contains(n)).collect();
-        let sel: Option<usize> = match &current {
-            PostRef::Builtin => Some(0),
-            PostRef::Named(n) => names.iter().position(|m| *m == n.as_str()),
-            PostRef::File(_) => None,
-        };
-        let file_sel = match &current {
-            PostRef::File(f) => scan.extra.iter().find(|(_, p)| p.display().to_string() == *f),
-            _ => None,
-        };
-        let text = match (sel, file_sel) {
-            (Some(i), _) => names[i].to_owned(),
-            (None, Some((n, _))) => n.clone(),
-            (None, None) => "custom".to_owned(),
-        };
+        let super::post_pick::PostChoice { names, sel, file_sel, text } = super::post_pick::choose(&current, &scan);
         let mut pick: Option<String> = None;
         let mut pick_file: Option<std::path::PathBuf> = None;
         egui::ComboBox::from_id_salt("post_registry")
@@ -245,6 +232,10 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
             state.pending.push_back(CommandKind::SelectPostBuiltin);
         }
     });
+    if let Some(why) = &scan.problem {
+        let msg = super::post_pick::folder_problem(why);
+        super::error_text::error_text(ui, super::colorvision::text_inks(ui, &state.world).error, &msg);
+    }
     // #110: post the program straight through - every operation keeps
     // its stop or trip home, the post leaves them all out. A command.
     let skip = posting::post_options(&state.world).skip_stops;

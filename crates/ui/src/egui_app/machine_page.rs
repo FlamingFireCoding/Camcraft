@@ -34,10 +34,10 @@ pub(super) const FILE_HELP: &str = "Pick a library machine, or load a .mch file.
 /// What the page says with no machine loaded.
 pub(super) const NO_MACHINE: &str = "No machine loaded - the checker states, it cannot judge.";
 
-/// The page body for setup `ctx` (`None` - the implicit context).
 /// The AccessKit name of the page's Refresh button (#2380).
 pub(super) const REFRESH_MACHINES: &str = "Refresh machine list";
 
+/// The page body for setup `ctx` (`None` - the implicit context).
 pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
     group(ui, GROUPS[0], None, |ui| ownership(ui, state, ctx, Mount::Machine));
     let (path, m) = machine::of(&state.world);

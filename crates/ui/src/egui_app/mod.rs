@@ -54,6 +54,7 @@ pub mod window_chrome;
 pub(crate) mod post_dialog;
 mod post_dialog_tabs;
 mod post_options;
+mod post_pick;
 mod post_script_options;
 mod program_info;
 pub mod cvd;
