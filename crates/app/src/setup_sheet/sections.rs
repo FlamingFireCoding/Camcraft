@@ -104,9 +104,16 @@ pub(super) fn render_wcs(world: &World, ctx: Option<&str>, out: &mut String) {
                 mm(pos.y),
                 mm(pos.z)
             ));
-            // #327: the rotation the translation line cannot show.
+            // #327 / #760: the rotation the translation line cannot show.
             match crate::posting::offset_frame(&loc) {
                 crate::posting::OffsetFrame::Square => {}
+                crate::posting::OffsetFrame::Yaw { deg, .. } => {
+                    let mode = match crate::setup_post_options::of(world, ctx).wcs_rotation {
+                        crate::schema::WcsRotationOutput::Bake => "baked into XY",
+                        crate::schema::WcsRotationOutput::Control => "control rotation G68 / ROT",
+                    };
+                    out.push_str(&format!("       rotated {deg:.3} deg about Z ({mode})\n"));
+                }
                 crate::posting::OffsetFrame::Rotated { deg, axis } => out.push_str(&format!(
                     "       rotated {deg:.3} deg about {axis} - the post refuses a rotated offset\n"
                 )),
@@ -117,6 +124,10 @@ pub(super) fn render_wcs(world: &World, ctx: Option<&str>, out: &mut String) {
         }
         None => out.push_str(&format!("  {label}  (not placed - at the origin)\n")),
     }
+    // #870: where that origin sits, in words - what the operator touches
+    // off. An unplaced WCS is read at the world origin.
+    let words = crate::setup_origin::origin_words(world, ctx, &|v| format!("{} mm", mm(v)));
+    out.push_str(&format!("  origin: {words} (X0 Y0 Z0)\n"));
     // #196, #329, #931: the one offset the setup's program runs in: the
     // setup's label (offset 1 when unset), named by the setup's post -
     // never another offset's name.

@@ -27,7 +27,11 @@ type H = Harness<'static, ShellUi>;
 
 /// The seeded shell with one setup (`Setup1`) and `t` targeted.
 fn page(t: UiTarget) -> H {
-    let mut h = shell_harness();
+    page_in(shell_harness(), t)
+}
+
+/// `page` in a harness of the caller's size.
+fn page_in(mut h: H, t: UiTarget) -> H {
     h.state_mut().state.pending.push_back(CommandKind::CreateSetup { name: None, datum_from: None });
     h.run_steps(2);
     crate::actions::target(&mut h.state_mut().state, t);
@@ -43,7 +47,12 @@ fn assert_page_layout(h: &H, page: &str, anchors: &[&str]) {
     };
     let mut last: Option<(&str, f32)> = None;
     for a in anchors {
-        let Some(node) = h.query_by_label(a) else {
+        let node = if *a == "Delete" {
+            h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").query_by_label(a)
+        } else {
+            h.query_by_label(a)
+        };
+        let Some(node) = node else {
             panic!("{page} page: no widget labelled {a:?}");
         };
         let r = node.rect();
@@ -135,8 +144,15 @@ fn layout_page_stock() {
 #[test]
 fn layout_page_wcs() {
     let _g = snapshot_guard();
-    let h = page(UiTarget::Wcs);
-    assert_page_layout(&h, "WCS", &["Turn X+", "Turn X-", "Level", "Bottom", "Pick markers in viewport", "NW", "SW"]);
+    // #870: the origin line under the heading makes the page one row
+    // taller; at 720 px the compass's bottom row scrolls under the footer,
+    // so this page is laid out in a 900 px window.
+    let tall = Harness::builder()
+        .with_size(Vec2::new(1280.0, 900.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    let h = page_in(tall, UiTarget::Wcs);
+    // #870: the one "Set origin" sits in the footer, under the page body.
+    assert_page_layout(&h, "WCS", &["Turn X+", "Turn X-", "Level", "Bottom", "Pick markers in viewport", "NW", "SW", "Set origin"]);
 }
 
 #[test]
@@ -157,12 +173,12 @@ fn layout_page_tool_library() {
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    // Selected tools render their settings directly in Properties; catalog
-    // controls live in the Tool library tab (#2002).
+    // The selected tool edits its fields directly in Properties; catalog
+    // actions belong to the separate Tool library tab.
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", "Delete", "Type", "Diameter", "Corner radius", "Flute length"],
     );
 }
 
@@ -195,7 +211,7 @@ fn layout_page_setup_settings() {
 fn layout_page_setup_machine() {
     let _g = snapshot_guard();
     let h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Machine));
-    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Load machine (.mch)"]);
+    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Refresh machine list", "Load machine (.mch)"]);
 }
 
 #[test]
@@ -237,4 +253,83 @@ fn layout_window_debug_info() {
     assert!(screen.contains_rect(leaf), "Debug info panel: leaf {leaf:?} leaves the screen {screen:?}");
     let copy = h.get_by_label("Copy").rect();
     assert!(leaf.contains_rect(copy), "Debug info panel: Copy {copy:?} leaves its leaf {leaf:?}");
+}
+
+/// The Setup fixtures page with one selected model: its Mark button sits
+/// below the add buttons, shares their left edge and matches their width.
+#[test]
+fn layout_page_setup_fixtures_mark() {
+    let _g = snapshot_guard();
+    let mut h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Fixtures));
+    {
+        let st = &mut h.state_mut().state;
+        st.pending.push_back(CommandKind::Select(Some("Block".into())));
+        st.drain_actions();
+    }
+    h.run_steps(2);
+    let mark = h.get_by_label("Mark Block as fixture").rect();
+    let plate = h.get_by_label("Add fixture plate…").rect();
+    let import = h.get_by_label("Import fixture…").rect();
+    assert!(mark.top() > plate.bottom(), "Mark under the adds: {mark:?} vs {plate:?}");
+    assert_eq!(mark.left(), import.left(), "Mark starts at the left edge: {mark:?} vs {import:?}");
+    assert!((mark.width() - import.width()).abs() < 3.0, "Mark is as wide as the adds: {mark:?} vs {import:?}");
+}
+
+/// The G-code viewer window: inside the screen, a line wider than the
+/// viewer stays on one row at the listing's left edge, and toggling trace
+/// keeps the window the same size.
+#[test]
+fn layout_window_gcode_wrap_and_trace() {
+    let _g = snapshot_guard();
+    let lines = [
+        "%",
+        "G00 G90 G54 X12.5 Y-40. S8000 M3",
+        "M30",
+        "(A COMMENT FAR WIDER THAN THE VIEWER WINDOW - TOOL 1 IS A 6 MM FLAT END MILL, 3 FLUTES, 20 MM FLUTE LENGTH, 50 MM STICKOUT)",
+        "%",
+    ];
+    let mut h = shell_harness();
+    h.state_mut().state.post_view = Some(PostView {
+        path: std::path::PathBuf::from("p.nc"),
+        program: lines.join("\n"),
+        line_pos: vec![None; lines.len()],
+        open: true,
+        line: 0,
+        blocks: Vec::new(),
+        trace: false,
+        not_judged: None,
+    });
+    h.run();
+    let screen = h.ctx.content_rect();
+    let gcode_rect = |h: &H| {
+        h.ctx
+            .memory(|m| m.area_rect(egui::Id::new("gcode-viewer")))
+            .expect("G-code window: not open")
+    };
+    let before = gcode_rect(&h);
+    assert!(screen.contains_rect(before), "G-code window: {before:?} leaves the screen {screen:?}");
+    let wide = h.get_by_label(lines[3]).rect();
+    let short = h.get_by_label(lines[2]).rect();
+    assert!(
+        (wide.height() - short.height()).abs() < 0.5,
+        "G-code window: wide line {wide:?} wrapped vs {short:?}"
+    );
+    assert!(
+        (wide.left() - short.left()).abs() < 0.5,
+        "G-code window: wide line {wide:?} left differs from {short:?}"
+    );
+    h.get_by_label("trace").click();
+    h.run_steps(5);
+    let after = gcode_rect(&h);
+    assert!(
+        (after.width() - before.width()).abs() < 1.0 && (after.height() - before.height()).abs() < 1.0,
+        "G-code window went {before:?} -> {after:?} when trace was ticked"
+    );
+    h.get_by_label("trace").click();
+    h.run_steps(5);
+    let back = gcode_rect(&h);
+    assert!(
+        (back.width() - before.width()).abs() < 1.0 && (back.height() - before.height()).abs() < 1.0,
+        "G-code window went {before:?} -> {back:?} when trace was cleared"
+    );
 }

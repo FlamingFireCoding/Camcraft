@@ -593,6 +593,49 @@ pub struct PostOptions {
     /// next (#1532): pause for the operator (the default), an optional
     /// stop, run straight on, or write one file per setup.
     pub between_setups: BetweenSetups,
+    /// How a Z-rotated work offset is expressed at post (#760):
+    /// `Bake` (the default) posts Setup/table XY coordinates relative to
+    /// the work offset origin, without controller rotation. Do not enter
+    /// a rotation on the control. `Control` transforms coordinates into
+    /// the rotated WCS frame and emits `G68 X0. Y0. R` or `ROT RPL=` when
+    /// both machine and post script declare support.
+    pub wcs_rotation: WcsRotationOutput,
+}
+
+/// How a Z-rotated work offset posts (#760).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WcsRotationOutput {
+    /// Post Setup/table XY relative to the origin, without controller rotation.
+    /// Do not enter a rotation on the control.
+    #[default]
+    Bake,
+    /// Transform into WCS coordinates and emit controller rotation (`G68` / `ROT`).
+    Control,
+}
+
+impl WcsRotationOutput {
+    pub const ALL: [Self; 2] = [Self::Bake, Self::Control];
+
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Bake => "bake",
+            Self::Control => "control",
+        }
+    }
+
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|v| v.word() == word)
+    }
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Bake => "Bake into XY (table coordinates)",
+            Self::Control => "Control rotation (G68 / ROT)",
+        }
+    }
 }
 
 /// The between-setups choice of [`PostOptions`] (#1532). A setup is a

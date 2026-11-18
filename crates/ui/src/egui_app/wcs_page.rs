@@ -142,16 +142,14 @@ fn quarter_turns(ui: &mut Ui, state: &mut State, is_mill: bool) {
         }
     }
     flip_row(ui, state, size3);
-    let size2 = Vec2::new(cell_w(ui, avail, 2), BUTTON_H);
-    match even_row(ui, &["Level", "Set Origin"], size2) {
-        Some(0) => {
-            state.wcs_ui.roll_deg = 0.0;
-            state.wcs_ui.pitch_deg = 0.0;
-            state.wcs_ui.yaw_deg = 0.0;
-            apply_wcs_drafts(state);
-        }
-        Some(_) => apply_wcs_drafts(state),
-        None => {}
+    // #870: typed values apply from the footer's one "Set origin"
+    // button (wcs_footer), so Level has the row to itself.
+    let size1 = Vec2::new(cell_w(ui, avail, 1), BUTTON_H);
+    if even_row(ui, &["Level"], size1).is_some() {
+        state.wcs_ui.roll_deg = 0.0;
+        state.wcs_ui.pitch_deg = 0.0;
+        state.wcs_ui.yaw_deg = 0.0;
+        apply_wcs_drafts(state);
     }
 }
 
