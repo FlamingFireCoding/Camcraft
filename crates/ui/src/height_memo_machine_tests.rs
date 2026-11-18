@@ -63,6 +63,7 @@ fn advice(state: &State) -> Option<String> {
             top_z: Height::fixed(0.0),
             bottom_z: None,
             break_through: None,
+            break_through_from: camcraft_app::drilling::BreakThroughFrom::Tip,
             cycle: CycleChoice::Drill,
             peck: 2.0,
             dwell: 0.0,
@@ -115,6 +116,12 @@ fn machine_transitions(first: Kind, second: Kind) {
         builds + 2,
         "returning machine kind invalidates advice"
     );
+}
+
+#[test]
+fn drill_advice_without_document_machine_uses_mill_default() {
+    let state = inherited_setup();
+    assert_advice(&state, Kind::Mill);
 }
 
 #[test]
