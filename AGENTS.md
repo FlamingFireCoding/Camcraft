@@ -29,6 +29,7 @@ disagree, this file is correct.
 | Cut a release | `release-cut` |
 | Work in a fork of NeoTech/Camcraft | `fork-sync` |
 | Install or change a self-hosted runner or a workflow | `runners` |
+| Start the agent team from a clean session | `start-orchestrator` |
 | Drive CamCraft through MCP | `camcraft-mcp` |
 
 A rule name in **bold** is a stable name. Skills, agents and code comments
