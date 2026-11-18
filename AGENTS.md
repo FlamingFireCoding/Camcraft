@@ -71,7 +71,7 @@ file in `.claude/agents/`.
 | Role | Agent file | Model | Does |
 |---|---|---|---|
 | Main session | - | - | Keeps the user: reports, questions, maintainer decisions (question dialog). Starts the coordinator. Orchestrates nothing |
-| Coordinator | `coordinator.md` | Fable; Opus if Fable is not available | Merges, picks issues, dispatches, resolves stuck processes, decides by reasoning. One long-running agent |
+| Coordinator | `coordinator.md` | Opus | Merges, picks issues, dispatches, resolves stuck processes, decides by reasoning. One long-running agent |
 | Worker | `issue-worker-max.md`, `-high.md`, `-medium.md` | Opus | Each code change. Comes and goes with its issue |
 | Small-fix worker | `issue-worker-low.md` | Sonnet | A quick, small fix that is easy to understand (`effort:low`) |
 | Context scout | `context-scout.md` | Haiku | Reads, searches, locates, queries the knowledge graph, writes context packs. Four run at all times |
