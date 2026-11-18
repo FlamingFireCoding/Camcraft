@@ -143,6 +143,9 @@ mod sinker_dto;
 pub use sinker_dto::*;
 mod trochoid_dto;
 pub use trochoid_dto::*;
+// #1862: a DXF profile's row.
+mod sketch_dto;
+pub use sketch_dto::{PrimitiveDto, SketchDto};
 mod rest_dto;
 pub use rest_dto::*;
 mod approach;
