@@ -163,7 +163,8 @@ pub fn simulate_document(
     let (mut dev, display) = walked.held.verdict(&model_facets, tol)?;
     // #303: the op owns its break - a chamfer's or deburr's declared
     // bevel is part of the finished part, judged by its own depth.
-    credit_breaks(&mut dev, &display, &model_facets, &program_breaks(world, &planned, walked.spanned, &walked.frame));
+    let breaks = breaks::program_breaks(world, &planned, walked.spanned, &walked.frame, &model_facets, tol);
+    credit_breaks(&mut dev, &display, &model_facets, &breaks);
     // #1595: and its mark - an Engrave's or Trace's own sweep, within
     // the budget the operation's own law holds it to.
     credit_marks(&mut dev, &display, &model_facets, &marks::program_marks(world, &planned, walked.spanned, &walked.frame));
@@ -174,23 +175,6 @@ pub fn simulate_document(
     let classes = color_classes(&dev);
     let surface = display.surface(&classes);
     Ok(ProgramSim { dev, surface })
-}
-
-/// The edge breaks the program declares, in the frame the verdict is
-/// read in: every op's when one frame holds the whole program, only
-/// the final frame's ops' when the program spans setups that hold the
-/// part differently (an earlier frame's bevel is not this frame's).
-fn program_breaks(
-    world: &flecs_ecs::prelude::World,
-    planned: &[Planned],
-    spanned: bool,
-    frame: &Option<String>,
-) -> Vec<crate::cl::EdgeBreak> {
-    planned
-        .iter()
-        .filter(|p| !spanned || crate::setup::effective(world, p.setup.as_deref()) == *frame)
-        .flat_map(|p| p.breaks.iter().cloned())
-        .collect()
 }
 
 /// The kinds the column verdict cannot judge, refused by name before
@@ -247,6 +231,9 @@ pub(crate) struct Planned {
     /// The edge breaks the op was asked to cut (#303); empty for every
     /// kind but the chamfer and the deburr.
     pub breaks: Vec<crate::cl::EdgeBreak>,
+    /// #2435: the breaks are a 2D Chamfer's, whose tip the law puts on
+    /// a wall - credited only where it stands on one (`on_walls`).
+    pub walled: bool,
     /// The mark budget and target part(s) the op declares (#1595, #1627,
     /// `operation::mark_law`): `Some` only for an Engrave or Trace.
     pub mark: Option<crate::operation::mark_law::SimMark>,
@@ -400,6 +387,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
             // #529: only what the op itself declared, never wider. #2308:
             // and never a stock edge's bevel over a part.
             breaks: if breaks::breaks_stock_edge(world, &op) { Vec::new() } else { breaks::bounded(name, &op.params, cache.path.breaks) },
+            walled: matches!(op.params, crate::operation::OpParams::Chamfer2D { .. }),
             mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,

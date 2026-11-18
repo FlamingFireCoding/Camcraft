@@ -55,6 +55,7 @@ pub mod window_chrome;
 pub(crate) mod post_dialog;
 mod post_dialog_tabs;
 mod post_options;
+mod post_pick;
 mod post_script_options;
 mod program_info;
 pub mod cvd;
@@ -122,6 +123,8 @@ mod tool_holder_picker;
 mod tool_cutter_page;
 mod tool_cutter_params;
 mod setup_wcs_pick;
+// #870: the WCS page's footer (Set origin beside Close) and origin line.
+mod wcs_footer;
 // #343: a setup's own node pages (settings, machine, post, fixtures, tools).
 mod setup_pages;
 mod setup_settings_page;

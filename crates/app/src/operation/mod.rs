@@ -224,6 +224,7 @@ pub mod mark_law;
 pub mod keep_law;
 // #1749: the 3D Pocket's footprint past its open edges.
 mod open_side;
+pub use open_side::AIR_BAND_FIXTURE;
 // #1628: the post's live re-judge of the parts `keep_law` keeps.
 pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
