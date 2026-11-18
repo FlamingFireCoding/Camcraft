@@ -58,15 +58,15 @@ He reviews them later. The work must not interrupt him.
   issue list is empty, start a subagent that reminds the session to claim
   the next issue. A stall is a bug.
 - **Side work rides subagents.** Subagents do all testing, documentation and
-  knowledge-graph updates. The main session plans, writes code and decides.
+  knowledge-graph updates. The coordinator plans and decides, and workers
+  write the code ("Agent roles").
   A subagent's completion notice starts the next step. Never give one
   subagent both a code change and its verification.
 
-### Agent roles (trial, #2464)
+### Agent roles
 
-This is a trial. Where it differs from "Side work rides subagents" and
-"Who works it", this section is correct while the trial runs. The model of
-each role is set only in its file in `.claude/agents/`.
+Each role has one job (#2464). The model of each role is set only in its
+file in `.claude/agents/`.
 
 | Role | Agent file | Model | Does |
 |---|---|---|---|
@@ -234,8 +234,7 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   - **Safety floor.** Work that can change posted G-code, a collision or
     gouge check, stock simulation or geometry is `effort:high` or more. Each
     `P1` is `effort:high` or more.
-  - **Who works it.** The main session (in the roles trial: the
-    coordinator, "Agent roles") picks the issue and dispatches it to
+  - **Who works it.** The coordinator ("Agent roles") picks the issue and dispatches it to
     `.claude/agents/issue-worker-<effort>.md`. The worker runs the
     `work-issue` skill and never merges. The model for each effort is set
     only in those agent files. If the model is not available (a 404), run the

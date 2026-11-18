@@ -34,7 +34,7 @@ order of the steps. Load the `gh-issues` skill for the `gh` mechanics.
   in the main checkout. Check free disk first (10-20 GB per target).
 - Build cache: Prefer `cargo xtask gate ...` (it turns the compile cache on); for a direct cargo call set `RUSTC_WRAPPER=sccache` only when `sccache` is on PATH (cargo fails if the wrapper is missing), and never export `CARGO_TARGET_DIR`.
 
-## 1a. Context comes from a scout (roles trial, #2464)
+## 1a. Context comes from a scout
 AGENTS.md "Agent roles": a worker changes code, a `context-scout` finds and
 reads. This keeps the worker's context for the change.
 - The brief names a context pack (`.claude/tmp/context/N.md`) and a scout

@@ -1,6 +1,6 @@
 ---
 name: context-scout
-description: Long-running read-only context agent for NeoTech/Camcraft (roles trial, #2464). Finds, reads and locates - knowledge graph queries, file search, file reads, git history - and returns a context pack with exact paths, line ranges and short excerpts, so that the coordinator and the workers do no file exploration themselves. Never edits code, never builds, never writes to GitHub.
+description: Long-running read-only context agent for NeoTech/Camcraft. Finds, reads and locates - knowledge graph queries, file search, file reads, git history - and returns a context pack with exact paths, line ranges and short excerpts, so that the coordinator and the workers do no file exploration themselves. Never edits code, never builds, never writes to GitHub.
 model: haiku
 ---
 
