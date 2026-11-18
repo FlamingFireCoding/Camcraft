@@ -11,11 +11,11 @@ These choices were taken unattended.
   (cheaper, but it is not what he said).
 - **`effort:max` goes from Fable to Opus.** Dropped: Fable for
   `effort:max` workers.
-- **The coordinator runs on Opus.** The trial started it on Fable. On
-  2026-11-18 the maintainer said: "so change the orchestrator to a Opus
-  model." The reason is the token cost: each agent event wakes the
-  coordinator with its full context. Dropped: Fable for the coordinator.
-  No role uses Fable now.
+- **The coordinator runs on Fable.** On 2026-11-18 the maintainer moved it
+  to Opus for the token cost ("so change the orchestrator to a Opus
+  model."), then back to Fable at once ("switch up the orchestrator to
+  Fable again so we get better control over our other agents."). Fable is
+  for the coordinator only. Dropped: Opus for the coordinator.
 - **A worker still reads the lines that it edits.** "None of these
   processes are actually doing the file handling" cannot be exact: an edit
   needs the exact text of its target. The rule is: a scout does each
