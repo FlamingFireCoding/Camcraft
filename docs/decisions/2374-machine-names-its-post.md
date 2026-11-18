@@ -18,6 +18,13 @@ gives each setup's `post_offer`: the post, why, and the
 still changes nothing. The `post` tool's description lists every name in
 `BUILTINS`, not a hand-written list that had lost "Tormach PathPilot".
 
+The Machines pane's file editor gives a user's own machine its post: a
+Post row in General is a dropdown (`Field.choices`) of the built-in posts
+that serve the file's kind, the validator's rule, plus "(none)", which
+takes the key out. A stated name off the list stays in view with its
+refusal. Only built-in posts are offered: a `.cps` file has no stable
+name for a machine file to state.
+
 **Why:** `default_post_for` takes only the machine's kind, so for every
 mill it offered Fanuc, and a setup on the grblHAL machine was never pointed
 at the grblHAL post. The pairings existed only as comments in `MACHINES`.

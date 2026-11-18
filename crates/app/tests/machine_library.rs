@@ -222,6 +222,30 @@ fn the_named_post_must_be_a_built_in_post_that_serves_the_machine() {
     assert!(!keys(&lathe).contains(&"controller.post".to_owned()), "{:?}", validate_text(&lathe));
 }
 
+/// #2374: the file editor's Post field is a dropdown of the built-in posts
+/// that serve the machine's kind. A stated name off that list stays in
+/// view, so the editor shows it with its refusal.
+#[test]
+fn the_editor_offers_the_built_in_posts_that_serve_the_machine() {
+    let post_field = |text: String| {
+        let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+        let all = camcraft_app::machine::fields::groups(&v).into_iter().flat_map(|g| g.fields);
+        all.into_iter().find(|f| f.pointer == "/controller/post").expect("a Post field")
+    };
+    let has = |f: &camcraft_app::machine::fields::Field, n: &str| f.choices.iter().any(|c| c == n);
+    let f = post_field(mill(|_| {}));
+    assert_eq!((f.label.as_str(), f.value.as_str()), ("Post", ""), "unstated");
+    let mill_posts = posting::BUILTINS.iter().map(|(n, _)| *n).filter(|n| posting::post_serves(n, Kind::Mill));
+    assert_eq!(f.choices, mill_posts.map(str::to_owned).collect::<Vec<_>>());
+    assert!(has(&f, "grblHAL") && !has(&f, "Fanuc Lathe"), "{:?}", f.choices);
+    let lathe = post_field(mill(|v| *at(v, "/general/kind") = "lathe".into()));
+    assert!(has(&lathe, "Tormach PathPilot Lathe") && !has(&lathe, "grblHAL"), "{:?}", lathe.choices);
+    let odd = post_field(mill(|v| at(v, "/controller")["post"] = "Fanuc Lathe".into()));
+    assert_eq!(odd.value, "Fanuc Lathe");
+    assert!(has(&odd, "Fanuc Lathe"), "a stated name stays in view: {:?}", odd.choices);
+    assert!(odd.refusal_keys.contains(&"controller.post".to_owned()), "its refusal sits on the field");
+}
+
 /// #2374: a mounted machine that names its post is offered that post;
 /// the mount never changes the post by itself, taking the offer rides
 /// undo, a `.cps` file post is never offered over, and a machine that
