@@ -8,6 +8,8 @@
 - Any unsliceable Z band (`check_unread` on `Ladder::unread`) or unmachinable continuation band refuses with `GenError::Model` / `GenError::Invalid` (carrying the partial toolpath as a ghost when moves were emitted), naming the stopped Z level and `Bottom Z`, instead of emitting a partial toolpath silently.
 - Updated `crates/app/tests/real_tip_contour.rs` via `boss_top` so those boss-fillet tests select the boss top face (`SrcRef::Selection`) instead of the whole `part` entity.
 
+- Review correction: inspect the sorted, deduplicated hole-stop levels before the outer stop, including index zero. An earlier blind-hole floor must not hide a later counterbore change; checking only the first stop was dropped because it silently omitted valid lower bore passes. This remains localized to the split search.
+
 **Why**
 
 - Whole-model `2D Contour` previously sectioned the part once at `Top Z`, then let `ladder` drop any loop whose downward path hit a chamfered skirt, shoulder, or closed slot floor, finishing as `OpStatus::Ok` with missing deeper passes and missing tabs.

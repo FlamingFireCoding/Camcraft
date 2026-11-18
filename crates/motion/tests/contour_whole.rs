@@ -213,6 +213,58 @@ fn counterbore_narrowing_below_top_z_walks_both_upper_and_lower_bores() {
     assert!((bore_at(0.0).expect("lower bore bottom") - 7.0).abs() < 0.05);
 }
 
+fn assert_counterbore_at(path: &camcraft_motion::cl::Toolpath, z: f64, extent: f64) {
+    let mut length = 0.0;
+    for m in &path.moves {
+        if m.kind != MoveKind::Feed
+            || (m.from.z - z).abs() > 1e-6
+            || (m.to.z - z).abs() > 1e-6
+            || m.from.x.abs().max(m.from.y.abs()) >= 20.0
+            || m.to.x.abs().max(m.to.y.abs()) >= 20.0
+        {
+            continue;
+        }
+        assert!((m.to.x.abs().max(m.to.y.abs()) - extent).abs() < 0.05, "bore envelope at Z {z}: {m:?}");
+        length += (m.to.x - m.from.x).hypot(m.to.y - m.from.y);
+    }
+    assert!((length - 8.0 * extent).abs() < 0.1, "Z {z}: expected one complete bore lap, got {length}");
+}
+
+#[test]
+fn counterbore_changing_before_first_cut_level_keeps_lower_bore() {
+    let f = counterbore_part();
+    let top_reg = slice::slice(&f, 20.0 - 1e-3).expect("top slice");
+    let path = contour_whole_bodies(&top_reg, &f, &[], &params(20.0, 0.0, 12.0)).expect("whole contour");
+    assert!(path.all_finite() && path.is_chained());
+    for z in [8.0, 0.0] {
+        assert_counterbore_at(&path, z, 7.0);
+    }
+    assert_eq!(depth_verify(&path, &top_reg, &f, 20.0), Vec::new(), "{:?}", path.notes);
+}
+
+#[test]
+fn earlier_blind_hole_stop_does_not_hide_later_counterbore_change() {
+    let mut f = counterbore_part();
+    let first_end = f.len();
+    // A separate block with a blind bore that ends at Z 14, before the
+    // counterbore shoulder at Z 10. Its first missing cut level is Z 12.
+    let outer = rect(60.0, -30.0, 120.0, 30.0);
+    let hole = rect(80.0, -10.0, 100.0, 10.0);
+    cap_poly(&mut f, &outer, None, 0.0, false);
+    walls(&mut f, &outer, 0.0, 20.0, true);
+    cap_poly(&mut f, &outer, Some(&hole), 20.0, true);
+    walls(&mut f, &hole, 14.0, 20.0, false);
+    cap_poly(&mut f, &hole, None, 14.0, true);
+    let bodies = [0..first_end, first_end..f.len()];
+    let top_reg = slice::slice(&f, 20.0 - 1e-3).expect("top slice");
+    let path = contour_whole_bodies(&top_reg, &f, &bodies, &params(20.0, 0.0, 4.0)).expect("whole contour");
+    assert!(path.all_finite() && path.is_chained());
+    for (z, extent) in [(16.0, 12.0), (12.0, 12.0), (8.0, 7.0), (4.0, 7.0), (0.0, 7.0)] {
+        assert_counterbore_at(&path, z, extent);
+    }
+    assert_eq!(depth_verify(&path, &top_reg, &f, 20.0), Vec::new(), "{:?}", path.notes);
+}
+
 #[test]
 fn broken_lower_plane_refuses_rather_than_stopping_silently() {
     let mut f = two_islands_part();

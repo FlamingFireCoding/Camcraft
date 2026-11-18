@@ -107,16 +107,17 @@ fn first_split(
         .filter_map(|(li, _)| remaining.iter().position(|z| !lad.walks(li, *z)))
         .min();
     let limit = outer_stop.unwrap_or(remaining.len());
-    let hole_first_stop = band
+    let mut hole_stops: Vec<usize> = band
         .loops
         .iter()
         .enumerate()
         .filter(|(_, l)| has_outer && !l.is_ccw())
         .filter_map(|(li, _)| remaining[..limit].iter().position(|z| !lad.walks(li, *z)))
-        .min();
-    let hole_stop = if let Some(k) = hole_first_stop
-        && k > 0
-    {
+        .collect();
+    hole_stops.sort_unstable();
+    hole_stops.dedup();
+    let mut hole_stop = None;
+    for k in hole_stops {
         let z_k = remaining[k];
         let active_holes = band
             .loops
@@ -127,10 +128,11 @@ fn first_split(
         let next = whole_region_at(part, bodies, z_k - p.stock_to_leave, z_k)?;
         let d = p.tool_diameter * 0.5 + p.stock_to_leave;
         let next_holes = next.offset(d)?.loops().iter().filter(|l| !l.is_ccw()).count();
-        (next_holes > active_holes).then_some(k)
-    } else {
-        None
-    };
+        if next_holes > active_holes {
+            hole_stop = Some(k);
+            break;
+        }
+    }
     Ok(match (outer_stop, hole_stop) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (a, b) => a.or(b),
