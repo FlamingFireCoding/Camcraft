@@ -187,8 +187,8 @@ pub struct Wcs;
 /// Z order. Rides the `Wcs` entity beside its `Location`: a unit
 /// quaternion cannot hold a mirror. Absent is no flip (every older
 /// file); written only through `SetWcsFlip`, the project loader and the
-/// undo of a delete (`setup_wcs_flip::set`). The post and generation
-/// refuse a set flag by name until a flip is carried into the program.
+/// undo of a delete (`setup_wcs_flip::set`). The post mirrors a flipped
+/// X or Y into the program (#1649) and refuses a flipped Z by name.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WcsFlip(pub [bool; 3]);
 
