@@ -114,6 +114,7 @@ fn drill() -> OpParams {
         holes: vec![hole],
         cross: Vec::new(),
         break_through: None,
+        break_through_from: Default::default(),
     }
 }
 

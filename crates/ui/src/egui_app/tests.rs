@@ -141,6 +141,10 @@ mod plane_face_pick;
 mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
+// #1198 b: move handles drag a body - one undo step per drag.
+mod body_drag;
+// #2047: turn rings turn a body - one undo step per drag.
+mod body_turn;
 // #664: a left Setups page disarms its picks.
 mod setup_picks_disarm;
 // #555: real clicks pick the three points of the plane.
@@ -5160,6 +5164,8 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
     );
 }
 
+mod dropdown_icon_rows;
+mod dropdown_theme;
 mod review_1710_evidence;
 mod guide_projects;
 mod guide_images;
