@@ -767,15 +767,16 @@ fn tabs_hold_the_part_until_the_floor() {
         .count();
     assert_eq!(low_rapids, 3);
     // The tabbed level cuts four tab windows less than a full ring. A
-    // window is the tab width plus the tool diameter (#2480): the disc
-    // bites D/2 past each window end, so the bridge left is the 6 mm
-    // tab width. Tab windows are placed along the ring's polyline parameter, so a
-    // window boundary that falls inside a fitted corner arc removes an
-    // arc length off 6.0 by the chord-to-arc drift of one tessellation
-    // step - a few microns over the eight window ends.
+    // window starts at the tab width plus the tool diameter (#2480): the
+    // disc bites D/2 past each window end. On this ring the window ends
+    // fall on the corner arcs, where the chord between the two end discs
+    // is shorter than the arc, so each window grows until that chord is
+    // W + D (contour_tab_bridge.rs pins the true neck): a little more
+    // than 4 x 16 mm is left uncut, never less.
     let full = level_len(&t, -3.0);
     let tabbed = level_len(&t, -6.0);
-    assert!((full - tabbed - 4.0 * (6.0 + 10.0)).abs() < 5e-3, "{full} - {tabbed}");
+    let need = 4.0 * (6.0 + 10.0);
+    assert!((need - 5e-3..=need + 2.0).contains(&(full - tabbed)), "{full} - {tabbed}");
     assert!(t.is_chained() && t.all_finite());
 }
 
@@ -1974,10 +1975,13 @@ fn contour_tabs_stand_down_the_entry_arms() {
         t.notes
     );
     // No orbit reaches a tabbed plane; the levels above -4 keep their
-    // certified helix entries.
+    // certified helix entries. (Review of #2480: the tabs sit on the
+    // square ring's corners and grow until the neck holds, so the floor
+    // level keeps only a short walk round the two other corners, which
+    // the arc fit posts as flat arcs - a helix is an arc that descends.)
     assert!(t.moves.iter().any(|m| m.arc.is_some()), "the clean levels lost their arm");
     assert!(
-        t.moves.iter().all(|m| m.arc.is_none() || m.to.z > -4.0),
+        t.moves.iter().all(|m| m.arc.is_none() || m.from.z == m.to.z || m.to.z > -4.0),
         "a helix descended into a standing tab"
     );
     // At the tabbed plane the dives are the pre-certification lead-in

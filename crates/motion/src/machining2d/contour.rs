@@ -9,16 +9,17 @@ use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::{Point3, Triangle};
 use crate::links::{Link, LinkTally};
 
-use super::arcs::{fit_arcs_sided, push_segs};
+use super::arcs::push_segs;
 use super::contour_depth::{Ladder, ladder, picked_law};
 use super::contour_entry::{Engage, crosses, flatten, say, seam_leads, wall_arc, wall_arc_top};
 use super::contour_comp::{self, SpanCtx};
 use super::contour_link::{plan_links, push_stay, ring_link};
 use super::contour_step::{Said, Step, engage_level};
 use super::levels::{Cert, Motion};
-use super::ring::{Ring, tab_window, tabs_fill_note};
+use super::ring::Ring;
+use super::tab_bridge::{cached, fit_tabs, keep_cut};
 use super::face::GenError;
-use super::fillet::{Legal, fillet_corners};
+use super::fillet::Legal;
 use super::fillet_tally::{FilletTally, fillet_floor};
 use super::contour_start;
 use super::lead_ext::{extend_leads, push_lead_down, retrace};
@@ -207,7 +208,6 @@ pub(super) fn emit_band(
     lead_notes: &mut Vec<String>,
     tally: &mut FilletTally,
 ) -> Result<(), GenError> {
-    let r = p.tool_diameter * 0.5;
     let inside = p.side == Side::Inside;
     // The shared motion envelope: dive_link and substituted_dive read
     // their lifts and feeds through it, so the contour's arms speak
@@ -234,6 +234,8 @@ pub(super) fn emit_band(
     // and the next ring's, cut paths too (#1555: climb's leads cross it).
     let mut last_leads: Vec<Vec<Point2>> = Vec::new();
     let is_tabbed = |z: f64| p.tab_count > 0 && z < p.bottom_z + p.tab_height;
+    // #2480: each ring's tab windows, fitted once (tab_bridge).
+    let mut fits = std::collections::HashMap::new();
     // The cut order, and where the stay-down link joins it (contour_link).
     let (sched, stay) = plan_links(p, lad, &band.plan, lead_notes);
     for (si, &(z, li)) in sched.iter().enumerate() {
@@ -286,35 +288,22 @@ pub(super) fn emit_band(
         } else {
             ap.overlap.min(ring.len)
         };
-        let keeps = if tabbed && picked.is_some() {
-            // #1473: the tab windows measured from the picked start, so
-            // every level enters at the pick.
-            ring.tab_keeps_from_start(p.tab_count as usize, tab_window(p.tab_width, p.tool_diameter))
-        } else if tabbed {
-            ring.tab_keeps(p.tab_count as usize, tab_window(p.tab_width, p.tool_diameter))
+        let keeps = if tabbed {
+            // #2480 / #1473: windows grown until the bridge is the tab
+            // width at corners and past the leads; from a picked start
+            // the windows end on the spacing marks.
+            cached(&mut fits, li, || fit_tabs(&ring, p, picked.is_some(), &legal), lead_notes)
         } else {
             vec![(0.0, ring.len)]
         };
-        if let Some(n) = tabs_fill_note(&keeps, ring.len, p.tab_count, p.tab_width).filter(|_| tabbed) {
-            say(lead_notes, n);
-        }
-        for (k, &(a, e)) in keeps.iter().enumerate() {
-            let poly = ring.arc_between(a, e);
-            if poly.len() < 2 {
-                continue;
-            }
-            let mut walk = fit_arcs_sided(&poly, p.tolerance, legal.air_left);
-            if p.blend_turns {
-                let (w, t) = fillet_corners(&walk, poly[0], r, p.tolerance, &legal);
-                walk = w;
-                tally.add(t);
-            }
+        for (k, &ke) in keeps.iter().enumerate() {
             // Both leads keep the cutter center in the legal room
             // (lead_fit.rs), meet the wall on its own tangent, and stay
             // off each other at the seam (contour_entry::seam_leads); the
             // extensions ride the same room (lead_ext).
-            let (entry, lead, lead_off) = seam_leads(&walk, &poly, p, &legal, lead_notes);
-            let (entry, lead, lead_off) = extend_leads(entry, lead, lead_off, &walk, &poly, p, &legal, lead_notes);
+            let Some((poly, walk, entry, lead, lead_off)) = keep_cut(&ring, ke, p, &legal, lead_notes, tally) else {
+                continue;
+            };
             if picked.is_some() && k == 0 {
                 // The first window begins at the pick (tabbed levels too);
                 // a later one begins after a tab, the tab law's start.

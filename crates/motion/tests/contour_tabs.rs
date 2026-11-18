@@ -150,10 +150,13 @@ fn bridge_widths(t: &Toolpath, step: f64) -> Vec<f64> {
     widths
 }
 
-/// A bridge is never narrower than the tab width (the sampling step
-/// aside). It can be a little wider where a window end falls on a
-/// corner arc: there the disc's bite measured along the arc is longer
-/// than its chord.
+/// The uncut run of the centre ring is never shorter than the tab width
+/// (the sampling step aside). This is the centre-line length only: where
+/// a tab is on or near a corner, the true neck (the chord between the two
+/// discs, less `D`) is narrower than this run, so the window grows there
+/// and the run comes out longer. `contour_tab_bridge.rs` measures the true
+/// neck; the upper bound here only says that a tab on this square's
+/// straight sides does not grow.
 fn at_least(bridge: f64, tab: f64) -> bool {
     bridge >= tab - 0.03 && bridge <= tab + 0.5
 }
@@ -185,13 +188,16 @@ fn a_tab_narrower_than_the_tool_is_not_cut_through() {
 
 #[test]
 fn a_wide_tab_keeps_its_full_width() {
-    // 10 mm tabs: before #2480 the bridge was 10 - 6 = 4 mm.
+    // 10 mm tabs: before #2480 the bridge was 10 - 6 = 4 mm. Three tabs on
+    // this ring put one across a corner arc: there the chord between the
+    // two end discs is shorter than the arc, so that window grows (true
+    // neck pinned in contour_tab_bridge.rs) and its centre-line run is
+    // longer. The two tabs on straight runs keep the tab width exactly.
     let t = contour(&square(), &params(3, 10.0)).unwrap();
     let w = bridge_widths(&t, 0.01);
     assert_eq!(w.len(), 3, "{w:?}");
-    for b in &w {
-        assert!(at_least(*b, 10.0), "{w:?}");
-    }
+    assert!(w.iter().all(|b| *b >= 10.0 - 0.03), "{w:?}");
+    assert!(w.iter().filter(|b| at_least(**b, 10.0)).count() >= 2, "{w:?}");
 }
 
 #[test]
