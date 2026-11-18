@@ -33,7 +33,7 @@ const NO_DWELL: [&str; 5] = ["fanuc", "haas", "mazak", "doosan-dnm", "sinumerik"
 /// Posts that write G86 with a dwell P in seconds.
 const SECONDS: [&str; 2] = ["tormach", "grblhal"];
 /// Posts that refuse a bore: they cannot stop the spindle before the rapid retract.
-const EXPANDED: [&str; 3] = ["heidenhain", "tinyg", "carvera"];
+const EXPANDED: [&str; 4] = ["heidenhain", "tinyg", "grbl", "carvera"];
 /// Posts that write no drilling at all.
 const REFUSING: [&str; 3] = ["sinker-iso", "wire-iso", "tormach-plasma"];
 /// The posts #1445 names, each with a golden.

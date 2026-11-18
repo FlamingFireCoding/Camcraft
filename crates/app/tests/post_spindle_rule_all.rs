@@ -37,6 +37,7 @@ const POSTS: &[(&str, bool)] = &[
     ("doosan-dnm", true),
     ("grblhal", true),
     ("tinyg", false),
+    ("grbl", false),
     ("carvera", false),
 ];
 
