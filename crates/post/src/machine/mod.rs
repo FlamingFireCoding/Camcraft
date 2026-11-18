@@ -16,6 +16,7 @@ mod kind;
 mod no_spindle;
 mod parse;
 mod plasma;
+mod post_name;
 mod waterjet;
 pub use waterjet::waterjet_refusals;
 mod rows;
@@ -35,5 +36,6 @@ pub use edm_conditions::{
 pub use edm_taper::{AngleSide, TaperAngle, TaperCorner};
 pub use parse::{parse_mch, parse_mch_with};
 pub use plasma::plasma_refusals;
+pub use post_name::{parse_post_name, post_name_refusal};
 pub use tooling::{mount_check, tooling_refusals, HolderInfo, HolderLookup, SPINDLE_MOUNTS};
 pub use trunnion::{trunnion_refusals, RotarySignConvention};

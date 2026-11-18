@@ -274,6 +274,14 @@ unstated capability into existence.
   posts like `fanuc.cps` and `doosan-dnm.cps` refuse `G43.4` while
   CAM-side IK posts receive the full rotary chain). Absent infers
   controller RTCP geometrically from rotary tilt vectors.
+- `controller.post` (#2374, optional string): the name of the built-in
+  post (`posting::BUILTINS`) that writes this machine's programs. The
+  Setup page offers it when the machine is mounted and the setup posts
+  with another registry post; it never changes a setup's post by itself
+  and never offers over a `.cps` file post. The validator refuses, at
+  this key, a name that is not a built-in post or a post that does not
+  serve the machine's kind; the reader refuses anything but a non-empty
+  string. A shipped file states it only where its pairing is known.
 - `tooling.number_of_tools`: DISTINCT tool positions the program may
   call (a double-tier of the same 40 stations is 40, not 80); a
   program asking for a tool number above it is a checker refusal.

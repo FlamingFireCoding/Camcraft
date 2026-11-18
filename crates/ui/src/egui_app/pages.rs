@@ -268,22 +268,21 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
 /// chooses. The law (`posting::post_offer`) lives in app; this only
 /// draws it.
 fn post_offer_banner(ui: &mut Ui, state: &mut State) {
-    let Some((serves, offer)) = posting::post_offer(&state.world) else {
+    let Some(offer) = posting::post_offer(&state.world) else {
         return;
     };
-    let Some(name) = posting::post_name(&offer).map(str::to_owned) else {
+    let Some(name) = posting::post_name(&offer.post).map(str::to_owned) else {
         return;
+    };
+    // #2374: the machine's own post, or the post for the mount's kind.
+    let line = match offer.why {
+        posting::OfferWhy::Machine => format!("the machine names {name} as its post; switch to it?"),
+        posting::OfferWhy::Kind(serves) => format!("the current post serves a {serves}; switch to {name}?"),
     };
     let ink = super::colorvision::text_inks(ui, &state.world).warn;
-    super::layout::status_banner(
-        ui,
-        "post_offer",
-        &format!("the current post serves a {serves}; switch to {name}?"),
-        ink,
-        &[],
-    );
+    super::layout::status_banner(ui, "post_offer", &line, ink, &[]);
     if ui.button("Switch post").clicked() {
-        state.pending.push_back(match offer {
+        state.pending.push_back(match offer.post {
             PostRef::Builtin => CommandKind::SelectPostBuiltin,
             PostRef::Named(n) => CommandKind::SelectPostNamed(n),
             // A file post is never the registry's default (post_offer

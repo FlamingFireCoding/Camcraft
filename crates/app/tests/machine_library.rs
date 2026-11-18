@@ -204,6 +204,52 @@ fn other_stated_values_refuse_by_name() {
     one_refusal(&t, "Y", "stated twice");
 }
 
+/// #2374: `controller.post` names a built-in post that serves the
+/// machine's kind, or the file is refused at that key.
+#[test]
+fn the_named_post_must_be_a_built_in_post_that_serves_the_machine() {
+    let named = |post: serde_json::Value| mill(|v| at(v, "/controller")["post"] = post);
+    assert_eq!(validate_text(&named("grblHAL".into())), vec![], "a mill post on a mill");
+    one_refusal(&named("Fanuc 0i".into()), "controller.post", "not a built-in post");
+    one_refusal(&named("Fanuc Lathe".into()), "controller.post", "does not serve a mill");
+    one_refusal(&named(7.into()), "controller.post", "must be the name of a post");
+    one_refusal(&named("".into()), "controller.post", "must be the name of a post");
+    // A lathe names a lathe post.
+    let lathe = mill(|v| {
+        *at(v, "/general/kind") = "lathe".into();
+        at(v, "/controller")["post"] = "Tormach PathPilot Lathe".into();
+    });
+    assert!(!keys(&lathe).contains(&"controller.post".to_owned()), "{:?}", validate_text(&lathe));
+}
+
+/// #2374: a mounted machine that names its post is offered that post;
+/// the mount never changes the post by itself, taking the offer rides
+/// undo, a `.cps` file post is never offered over, and a machine that
+/// names none offers as before.
+#[test]
+fn a_machine_that_names_its_post_is_offered_it_and_the_choice_rides_undo() {
+    use camcraft_app::commands::{History, LoadMachine, SelectPost};
+    use camcraft_app::posting::OfferWhy;
+    use camcraft_app::schema::PostRef;
+    let world = camcraft_app::world::new_world();
+    let mut h = History::default();
+    h.execute(&world, LoadMachine::builtin(&world, "grblHAL 3-axis").expect("mount"));
+    assert_eq!(posting::post_of(&world), PostRef::Builtin, "the mount leaves Fanuc in place");
+    let offer = posting::post_offer(&world).expect("the machine's own post is offered");
+    assert_eq!((&offer.post, offer.why), (&PostRef::Named("grblHAL".into()), OfferWhy::Machine));
+    h.execute(&world, SelectPost::new(&world, offer.post).expect("take the offer"));
+    assert!(posting::post_offer(&world).is_none(), "the machine's post is the setup's: no offer");
+    h.undo(&world);
+    assert_eq!(posting::post_of(&world), PostRef::Builtin, "undo brings Fanuc back");
+    let own = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/posts/grblhal.cps");
+    let own = PostRef::File(own.to_string_lossy().into_owned());
+    h.execute(&world, SelectPost::new(&world, own).expect("a file post"));
+    assert!(posting::post_offer(&world).is_none(), "a file post is never offered over");
+    h.undo(&world);
+    h.execute(&world, LoadMachine::builtin(&world, "VMC 3-axis").expect("mount"));
+    assert!(posting::post_offer(&world).is_none(), "a machine naming no post: a mill post serves, no offer");
+}
+
 #[test]
 fn malformed_files_refuse_by_name_and_never_panic() {
     for (text, key) in [

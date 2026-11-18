@@ -212,6 +212,8 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
         }
     };
 
+    m.post = super::post_name::parse_post_name(&v).map_err(|e| format!("machine file: controller.post: {e}"))?;
+
     let kine = v.pointer("/kinematics/default/parts");
     let f = mm_factor(v.pointer("/kinematics/default/units")).unwrap_or(1.0);
     // #131: keep the stated unit for the posts (the numbers stay mm).

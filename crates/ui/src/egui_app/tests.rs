@@ -154,6 +154,8 @@ mod setup_tree;
 mod mcp_live;
 // #389: per-setup post options and the tool-list export.
 mod setup_post_options;
+// #2374: the machine's own post offered on the Post page.
+mod machine_named_post;
 // #821: the raised-rotary rows of a setup's Machine page.
 mod setup_rotary;
 // #1494: the setup eye (display only).

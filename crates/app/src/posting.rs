@@ -129,17 +129,39 @@ pub fn post_name(post: &PostRef) -> Option<&str> {
     }
 }
 
-/// A post the Setup pane may offer instead of the document's (M13.5
-/// B): when the mounted machine's kind is not served by the current
-/// registry post, this is the word for what the current one serves
-/// ("mill" / "lathe") and the registry's default for the mount. The
+/// Why the Setup pane offers a post (#2374).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OfferWhy {
+    /// The mounted machine's file names this post (`controller.post`).
+    Machine,
+    /// The current post does not serve the mount's kind; the word is
+    /// what it serves instead ("mill" / "lathe").
+    Kind(&'static str),
+}
+
+/// A post the Setup pane may offer instead of the active setup's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PostOffer {
+    pub post: PostRef,
+    pub why: OfferWhy,
+}
+
+/// The post the Setup pane may offer (M13.5 B, #2374): the post the
+/// mounted machine names, when it is a registry post that serves the
+/// mount and not the current one; else, when the current registry post
+/// does not serve the mount's kind, the registry's default for it. The
 /// pane offers; the user chooses - a mount never re-points the post
 /// by itself, and a `File` post is never second-guessed.
 #[must_use]
-pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
+pub fn post_offer(world: &World) -> Option<PostOffer> {
     let kind = crate::machine::kind_of(world);
     let current = post_of(world);
     let name = post_name(&current)?;
+    let named = crate::machine::of(world).1.and_then(|m| m.post);
+    if let Some(named) = named.filter(|n| BUILTINS.iter().any(|(b, _)| b == n) && post_serves(n, kind)) {
+        let why = OfferWhy::Machine;
+        return (named != name).then(|| PostOffer { post: PostRef::Named(named), why });
+    }
     if post_serves(name, kind) {
         return None;
     }
@@ -157,7 +179,8 @@ pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
     // #669: an offer that would not serve the mount either (a plasma
     // table before any plasma post ships) is no offer.
     let offer = default_post_for(kind);
-    post_name(&offer).is_some_and(|n| post_serves(n, kind)).then_some((serves, offer))
+    let serves_mount = post_name(&offer).is_some_and(|n| post_serves(n, kind));
+    serves_mount.then_some(PostOffer { post: offer, why: OfferWhy::Kind(serves) })
 }
 
 
