@@ -36,3 +36,14 @@ the post's `ClearancePlane` parameter (`posting.rs`, setup Z), and the
 UI's `region_z` reads - #2416.
 
 **Cost to change later:** one function; #763's seam can absorb it.
+
+
+**PR #2418 review fixes:** use that same checked tilt-frame resolver for
+command depth validation and the whole-model/stock pocket island ladders.
+Mixed Top-of-stock and Fixed heights must be judged in the same frame as
+generation, and each island section must be at the generator's local level.
+Keeping setup-Z validation or island planes was dropped: it rejects legal
+mixed-reference cuts and allows tilted pockets to cross part islands.
+Creation, editing, upward-depth refusal and both pocket source routes are
+pinned in `crates/app/tests/tilt_heights.rs`. The display and mark-budget
+notes remain outside these two requested blockers.
