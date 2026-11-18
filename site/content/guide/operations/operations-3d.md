@@ -39,7 +39,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## 3D Pocket
 
-![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
+{{ <icon name="op-pocket3d" /> }} ![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
 
 **For:** roughing a 3D part level by level, from Top Z down to Bottom Z.
 At each level the tool clears around the material that stands above it,
@@ -98,9 +98,11 @@ raise Bottom of Part Z or use a longer-reaching tool. This conservative
 depth check does not credit lateral room or material removed earlier,
 so a deep job can refuse even where there appears to be side clearance.
 
+![CamCraft 3D pocket roughing waterline levels clearing stock above a curved dome surface](../../../images/guide/op-3d-pocket-roughing.png)
+
 ## 3D Finish
 
-![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
+{{ <icon name="op-finish3d" /> }} ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
 
 **For:** finishing 3D surfaces with a ball-nose, to a stated tolerance.
 One kind carries every finishing pattern; choose the pattern by the
@@ -125,6 +127,8 @@ re-enters through the clearance plane.
 
 There is no stepdown: the levels drop by 2 x sqrt(tool radius x
 tolerance), so the cusp under the ball stays within the tolerance.
+
+![CamCraft 3D parallel finishing passes flowing smoothly over a spherical dome with a ball-nose cutter](../../../images/guide/op-3d-finish-parallel.png)
 
 The patterns, in the Pattern list's order:
 
@@ -165,7 +169,7 @@ exceed the op's ball".
 
 ## Deburr
 
-![View of a toolpath following exposed edges of a 3D model.](../../../operation-paths.svg#Deburr)
+{{ <icon name="op-deburr" /> }} ![View of a toolpath following exposed edges of a 3D model.](../../../operation-paths.svg#Deburr)
 
 **For:** breaking every exposed edge of the model with a chamfer mill:
 an open model's rim, or a convex crease where two faces meet. The cone

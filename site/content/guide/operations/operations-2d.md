@@ -39,7 +39,7 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## Face
 
-![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
+{{ <icon name="op-face" /> }} ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
 
 **For:** skimming the top of the stock flat, usually the first operation.
 Choose it over a pocket when the area to clear is the whole stock top, not
@@ -61,7 +61,7 @@ first cut level".
 
 ## 2D Contour
 
-![Top view of one offset profile followed around a wall.](../../../operation-paths.svg#Contour)
+{{ <icon name="op-contour" /> }} ![Top view of one offset profile followed around a wall.](../../../operation-paths.svg#Contour)
 
 **For:** one wall, inside or outside, followed at a set of levels: profiles,
 bosses and bores. Choose it over a pocket when only the wall needs cutting.
@@ -80,6 +80,24 @@ added as an open boundary.
 | Lead in / Lead out | Tab count / width / height | 0 / 5 / 1 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
+**Side Auto on a picked ring** reads the part at the ring's own level. It
+looks just under the top and just over the bottom of the picks' height
+span and asks which side holds material. A blind-bore rim is therefore cut
+from inside, even though the bore floor fills the part's outline from
+above. If the two levels disagree, or material is on both sides, Auto
+refuses by name: "Side Auto cannot tell which side of the picked ring holds
+the material at Z ...: ... - set Side to Inside or Outside". Set Side
+yourself then. If no level shows material either side (a sheet part), the
+part's outline decides.
+
+A picked ring whose chosen side stands in the part at every level is
+refused too, instead of cutting only the top plane in air. For example,
+Outside on a hole wall: the message names the ring, the part top and the
+fix: "the picked ring at (x, y) meets its wall at no level below the part
+top Z ...: the cutter Outside this ring stands in the part material - if
+the ring bounds a hole, set Side to Inside; else check the tool
+containment". A whole-model Contour is unchanged.
+
 An open run picked on a part cuts on its air side, offset by the tool
 radius plus stock to leave. For a run picked on the stock instead,
 **Side** chooses the offset: Inside goes toward the stock and Outside
@@ -95,6 +113,16 @@ angle. An unset entry angle means 3 degrees, independently of the link
 angle. If there is too little room for that ramp, the path reports its
 substitution and uses the plunge feed. Read the generated entry notes.
 
+<div class="guide-pair">
+
+![2D contour toolpath without lead-in plunging directly onto the workpiece corner](../../../images/guide/op-2d-lead-before.png)
+*Before: Lead set to None plunges directly onto the contour.*
+
+![2D contour toolpath with six millimeter arc lead-in curving tangentially into the wall](../../../images/guide/op-2d-lead-after.png)
+*After: Arc lead-in enters tangentially from clear stock.*
+
+</div>
+
 **Common refusals:** "the bore is narrower than the tool - switch Side to
 Outside or pick a smaller tool"; "cannot cut the gap at (x, y): it is
 narrower than the tool's ... diameter"; "a Contour's open boundary must be
@@ -102,7 +130,7 @@ an open chain".
 
 ## 2D Pocket
 
-![Top view of passes clearing the inside of a pocket.](../../../operation-paths.svg#Pocket)
+{{ <icon name="op-pocket" /> }} ![Top view of passes clearing the inside of a pocket.](../../../operation-paths.svg#Pocket)
 
 **For:** clearing the inside of a closed area down to a floor, with islands
 left standing. **Detect pockets / slots** on the Model page finds pockets
@@ -119,6 +147,28 @@ for an include or exclude boundary.
 | Passes | Optimal load (% of D) | about 14.6 (used by Adaptive and Offset rings) |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Helix, radius 1 (Plunge, Ramp, Arc) |
+
+![2D pocket operation selected with Passes parameter panel and multi-level pocket toolpath in the viewport](../../../images/guide/op-2d-pocket-params.png)
+
+<div class="guide-pair">
+
+![2D zigzag pocket toolpath with wide four point five millimeter stepover leaving coarse pass spacing](../../../images/guide/op-2d-stepover-before.png)
+*Before: wider stepover (4.5 mm) spaces passes further apart.*
+
+![2D zigzag pocket toolpath with fine one point eight millimeter stepover filling dense floor passes](../../../images/guide/op-2d-stepover-after.png)
+*After: smaller stepover (1.8 mm) packs passes closely across the floor.*
+
+</div>
+
+<div class="guide-pair">
+
+![2D pocket waterline toolpath using direct vertical plunge entry straight into the pocket floor](../../../images/guide/op-2d-entry-before.png)
+*Before: Plunge entry dives straight along Z.*
+
+![2D pocket waterline toolpath using helical spiral entry ramping gradually into each pocket depth](../../../images/guide/op-2d-entry-after.png)
+*After: Helix entry spirals down along the programmed radius.*
+
+</div>
 
 **Common refusals:** "pocket is narrower than the tool"; "stepover leaves
 bands the tool cannot reach"; a pick that "projects to a line from above
@@ -147,7 +197,7 @@ already supply the arc motion.
 
 ## 2D Adaptive
 
-![Top view of looping pocket passes with small radial engagement.](../../../operation-paths.svg#Adaptive2D)
+{{ <icon name="op-adaptive2d" /> }} ![Top view of looping pocket passes with small radial engagement.](../../../operation-paths.svg#Adaptive2D)
 
 **For:** roughing a pocket with a constant side load on the tool, so it can
 run deeper and faster than a fixed stepover allows. Choose it over Pocket
@@ -185,7 +235,7 @@ apply to Spiral.
 
 ## 2D Offset
 
-![Top view of concentric offset passes inside a pocket.](../../../operation-paths.svg#Offset2D)
+{{ <icon name="op-offset2d" /> }} ![Top view of concentric offset passes inside a pocket.](../../../operation-paths.svg#Offset2D)
 
 **For:** roughing a pocket in concentric rings from the boundary inward at a
 fixed stepover. Choose it over Adaptive when an even offset pattern is
@@ -196,7 +246,7 @@ wanted rather than a constant load.
 
 ## Slot
 
-![Top view of straight passes between the slot endpoints.](../../../operation-paths.svg#Slot)
+{{ <icon name="op-slot" /> }} ![Top view of straight passes between the slot endpoints.](../../../operation-paths.svg#Slot)
 
 **For:** a straight slot of a given width between two points. The slot is
 typed in or seeded from suitable picked slot geometry;
@@ -211,6 +261,13 @@ typed in or seeded from suitable picked slot geometry;
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
 
+The A and B fields sit in their own **Manual** section on the Geometry tab;
+Slot width and the extension rows stay outside it. While the Geometry tab
+is open on the operation, with nothing picked and Properties visible,
+the viewport marks A and B with crosses and draws the line between them.
+The marks follow each edit before you choose Apply. They are display only;
+the committed edit is the undoable parameter change.
+
 **Common refusals:** "slot is narrower than the tool"; "slot width must be
 positive".
 
@@ -221,7 +278,7 @@ material blocks posting.
 
 ## Trochoidal slot
 
-![Top view of overlapping loops progressing along a slot.](../../../operation-paths.svg#TrochoidalSlot)
+{{ <icon name="op-trochoidal-slot" /> }} ![Top view of overlapping loops progressing along a slot.](../../../operation-paths.svg#TrochoidalSlot)
 
 **For:** a slot wider than the tool, cleared with small looping passes that
 keep the tool's engagement low. Choose it over Slot in hard material or
@@ -248,7 +305,7 @@ use the Retract return to hop higher".
 
 ## Trace
 
-![Top view of a centreline path following a picked chain.](../../../operation-paths.svg#Trace)
+{{ <icon name="op-trace" /> }} ![Top view of a centreline path following a picked chain.](../../../operation-paths.svg#Trace)
 
 **For:** running the tool's centre exactly along picked edges at a depth:
 grooves, scribed lines, cutting along a chain. No tool offset is applied,
@@ -260,7 +317,7 @@ region" when nothing usable is picked.
 
 ## Engrave
 
-![Top view of an engraving path following the marking centreline.](../../../operation-paths.svg#Engrave)
+{{ <icon name="op-engrave" /> }} ![Top view of an engraving path following the marking centreline.](../../../operation-paths.svg#Engrave)
 
 **For:** the same centreline ride as Trace, named for engraving text and
 markings with a V-bit. Choose Engrave when the job is marking, Trace when
@@ -270,7 +327,7 @@ it is a functional groove; the path is the same.
 
 ## 2D Chamfer
 
-![Section view of the chamfer tool cone lying along the chamfer face.](../../../operation-paths.svg#Chamfer2D)
+{{ <icon name="op-chamfer2d" /> }} ![Section view of the chamfer tool cone lying along the chamfer face.](../../../operation-paths.svg#Chamfer2D)
 
 **For:** breaking a top edge with a chamfer mill in one pass: the tool's
 cone lies on the chamfer face. Choose it over Deburr for a chamfer of a
@@ -296,7 +353,7 @@ this face stands at".
 
 ## Circular
 
-![Top view of concentric passes clearing a circular pocket.](../../../operation-paths.svg#Circular)
+{{ <icon name="op-circular" /> }} ![Top view of concentric passes clearing a circular pocket.](../../../operation-paths.svg#Circular)
 
 **For:** a round pocket of a given centre and radius, cut in rings, with a
 flat floor or a domed one (**Vault - dome floor**). Choose it over Pocket
@@ -316,7 +373,7 @@ within the cutter radius - the last ring could leave an uncut core".
 
 ## Thread
 
-![View of the helical tool travel around an internal thread.](../../../operation-paths.svg#Thread)
+{{ <icon name="op-thread" /> }} ![View of the helical tool travel around an internal thread.](../../../operation-paths.svg#Thread)
 
 **For:** milling an internal thread with a helical thread mill. Choose it
 over a tap cycle for large threads, hard materials, or a machine without a
@@ -337,7 +394,7 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 
 ## Drill
 
-![Side view of an axial drilling stroke and retract.](../../../operation-paths.svg#Drill)
+{{ <icon name="op-drill" /> }} ![Side view of an axial drilling stroke and retract.](../../../operation-paths.svg#Drill)
 
 **For:** drilling, spot drilling, tapping and cycle boring with canned
 cycles. **Detect holes** fills the hole list from the model; a new Drill
@@ -359,13 +416,20 @@ stand-off, entry, reach and holder clearance to account for that error.
 It also tightens the part and radial rapid checks. If the error uses the
 full tolerance, import the model again at a higher step budget.
 
+The **Bore** cycle (an expanded bore: feed in, then rapid out) needs a
+spindle stop before the retract. Heidenhain, TinyG and Carvera cannot do
+that, so they refuse it, with or without a dwell: "bore (G86) requires a
+spindle stop before rapid retract - expanded boring is not supported by
+this post; refused, not posted". Ordinary drilling stays available on
+those posts. Choose another post, or another cycle.
+
 **Common refusals:** "no holes to drill"; "the tip meets steel ... past the
 mouth, short of the ... mm asked - ... match the depth and size to the
 model"; "tap leaves no thread core".
 
 ## Bore
 
-![View of circular interpolation inside a hole.](../../../operation-paths.svg#Bore)
+{{ <icon name="op-bore" /> }} ![View of circular interpolation inside a hole.](../../../operation-paths.svg#Bore)
 
 **For:** clearing and finishing a hole with an end mill smaller than the
 hole. Wide holes use concentric rings at each level; radial sweeps open
