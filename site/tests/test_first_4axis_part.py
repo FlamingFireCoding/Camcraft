@@ -178,8 +178,9 @@ class FirstFourAxisPart(unittest.TestCase):
         machine = json.loads(MACHINE.read_text())
         name = machine["general"]["model"]
         self.assertIn(f"`{name}`", text)
-        self.assertIn(f'"{name}"', (ROOT / "crates/app/src/posting.rs").read_text())
-        self.assertIn('"Tormach PathPilot"', (ROOT / "crates/app/src/posting.rs").read_text())
+        self.assertIn(f'("{name}", AssetFile("{MACHINE.name}"))',
+                      (ROOT / "crates/app/src/posting_files.rs").read_text())
+        self.assertIn('"Tormach PathPilot"', (ROOT / "crates/app/src/posting_files.rs").read_text())
         self.assertIn("`Tormach PathPilot`", text)
         self.assertEqual(project()["machine"]["machine"]["model"], name)
         self.assertEqual(project()["post"], {"named": "Tormach PathPilot"})
