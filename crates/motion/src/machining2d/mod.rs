@@ -92,6 +92,7 @@ mod rest_anchor;
 mod rest_rings;
 mod chord_clear;
 mod ring;
+mod tab_bridge;
 mod slots;
 mod slot_ends;
 mod slot_room;
