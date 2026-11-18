@@ -245,8 +245,8 @@ impl Run {
             .map(|st| st.code().unwrap_or(-1))
             .map_err(|e| format!("cargo {}: {e}", args.join(" ")))?;
         let secs = t0.elapsed().as_secs();
-        let note = read_log(&std::fs::read_to_string(&log).unwrap_or_default(), code)?;
-        let ok = code == 0;
+        let mut note = read_log(&std::fs::read_to_string(&log).unwrap_or_default(), code)?;
+        let ok = if s.expect_fail { expect_fail_note(code, &mut note) } else { code == 0 };
         println!("     {} in {secs}s {note}", if ok { "ok" } else { "FAIL" });
         Ok(Done { name: s.name.clone(), ok, secs, note })
     }
@@ -270,6 +270,20 @@ impl Run {
         }
         i32::from(bad > 0)
     }
+}
+
+/// A known-fail step (`known_fail`) is ok only when its test ran and failed. A pass (or no test run, a
+/// renamed test) is a FAIL that names the stale skip; a compile error stays a FAIL.
+pub fn expect_fail_note(code: i32, note: &mut String) -> bool {
+    if code == 0 {
+        *note = "KNOWN FAIL NOW PASSES (or no such test): remove its entry from xtask/src/known_fail.rs".into();
+        return false;
+    }
+    if note == "compile error" {
+        return false;
+    }
+    *note = format!("known fail, red as expected ({note})");
+    true
 }
 
 /// The VOID line when the checkout under `root` no longer reads as `guard` (or cannot be read); `None` while

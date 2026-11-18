@@ -152,6 +152,11 @@ No `P1` or `P2` issue was open at the cut line (2026-11-18 17:33 UTC), and
 none was filed during the cut. One open defect has a workaround:
 - #2561 (P3): 2D Contour tabs - the bridge check compares only neighbouring
   cuts. Check the bridges in the simulation when tabs stand close together.
+- #1950 (P3, blocked): 3D Pocket Adaptive on a whole model. The stock ring
+  around the part exceeds the planner limits. The planner then refuses
+  Adaptive on that level with a note, and Offset rings cut the level. The
+  output is safe. The release gate skips the three tests that pin this issue
+  and checks that they still fail (`xtask/src/known_fail.rs`).
 
 ## Process changes
 `PROCESS_VERSION` went from 89 to 100 (pinned issue #681):

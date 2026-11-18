@@ -55392,7 +55392,7 @@ output was consulted.
   moves the same boundary failure to another platform; broad numeric
   tolerances, which could hide motion or mode changes.
 
-# #870: the WCS page's Set origin in its footer, and the origin said in words
+## #870 - the WCS page's Set origin in its footer, and the origin said in words
 
 - **Chosen:** *Set origin* moves out of the page body (where it sat beside *Level*, among the quarter turns) into the property pane's fixed footer, on one row with *Close*. The row is drawn by `egui_app::wcs_footer`; every other page keeps its plain *Close*.
   - Why: the user's report. The button that applies typed values was hard to find among the per-field controls. The footer stays put while the body scrolls.
@@ -55411,7 +55411,7 @@ output was consulted.
   - Dropped: keeping the body button beside the footer one (two buttons, one action).
 - **Left as is:** the words read the world-frame box. On a rotated or aligned setup (#326), "left" and "front" are the world's, as the anchor grid's compass names are.
 
-# #1186: a refused tool is named, with the rule it breaks
+## #1186 - a refused tool is named, with the rule it breaks
 
 - **Chosen:** a new `Tool::why_not_sane() -> Option<String>` (`crates/tools/src/tool_sanity.rs`) returns the first rule a tool breaks, in plain words, such as "turning surface speed 0 m/min is outside 0..2000 m/min (it must be over 0)" or "corner radius 100 mm is more than half the 6 mm diameter". `Tool::is_sane` is now `why_not_sane().is_none()`, and `TurningData` gets the same pair.
   - Why: one source of truth. The words and the verdict cannot drift apart, because `is_sane` reads only the function that writes the words.
@@ -55967,7 +55967,7 @@ Dropped: keeping the obsolete floating Debug info assertion, dropping either
 side's tests, or adding all window tests to the larger page module. No
 product logic required conflict resolution.
 
-# 2019 - lathe world gizmo
+## #2019 - lathe world gizmo
 
 Issue #2019, stacked on #2023 (the lathe view frame).
 
@@ -57504,7 +57504,7 @@ timing assertion is unnecessary when the test runs in optimized release mode.
 **Cost to change later:** Remove the ignore attribute once the fixture or
 planner is proven fast enough for the debug lane.
 
-# 2464 - agent roles trial: coordinator, workers, context scouts
+## #2464 - agent roles trial: coordinator, workers, context scouts
 
 The maintainer asked for the trial on 2026-11-18 (his words are on #2464).
 These choices were taken unattended.
@@ -58038,3 +58038,43 @@ shared temp directory belongs to the first account that makes it.
 
 **Cost to change.** Record the three programs again; one function in
 `guide_projects.rs`.
+
+## #1950 - the release gate skips three known-fail heavy tests by name (cut v0.24.0)
+
+**Decided.** The release tier skips three `#[ignore]`d heavy tests that pin the
+open, blocked issue #1950. The list is `xtask/src/known_fail.rs`:
+
+- motion lib `machining2d::pocket_hsm::ring_tests::the_stock_ring_level_reaches_the_air_planner_with_the_stock`
+- motion lib `machining2d::pocket_hsm::ring_tests::the_stock_ring_level_plans_adaptive_with_no_budget_note`
+- app `pocket3d_hsm::the_users_whole_model_bore_roughs_adaptive_on_each_level`
+
+The heavy lane of each target runs with `--exact --skip <test>`. The release
+plan prints `SKIPPED (known fail, #1950): <test>` for each. Each test also gets
+its own step that runs it alone. That step is ok only when the test fails. If
+the test passes (or is renamed), the step is a FAIL that names the stale entry.
+Before the steps run, `gh issue view` reads the state of each pinned issue. A
+closed issue fails the gate. If `gh` cannot read the issue (no token on the
+runner), the gate prints a note, and the known-fail steps stay the guard.
+
+**Why.** The cut gate of v0.24.0 (run 44362577581) was red on only these three
+tests. They were added red on purpose in the #1950 work (16ffe937f, dc2e76926,
+2026-11-15) and marked "expected red" in 716c9f08b and 83580bb2a. No merge of
+this cycle made them fail, and v0.23.0 did not have them. The output is safe:
+the planner refuses Adaptive with a note and cuts each level with Offset rings.
+There is no lost pass, no missing level and no gouge. The fix of the planner is
+open research that waits for a maintainer decision, so it cannot be in the cut.
+The release tier runs every `--ignored` test, and before this change it had no
+way to keep a pinned red test out.
+
+**Dropped.**
+- Re-record the expectation (assert the Offset-rings fallback): this hides the
+  target of #1950. Refused by the coordinator's order.
+- Delete the tests or remove their `#[ignore]`: this loses the pin.
+- A `cfg` or feature gate on the tests: silent in the gate log, and nothing
+  fails when the tests start to pass.
+- Hold the cut until #1950 is solved: the issue is blocked on a maintainer
+  decision, and its output is safe.
+
+**Cost to change.** When #1950 is solved, the three known-fail steps go red.
+Delete the three entries in `KNOWN_FAIL`. The mechanism stays for the next
+blocked pin. Each new entry needs an open issue and a decision entry.
