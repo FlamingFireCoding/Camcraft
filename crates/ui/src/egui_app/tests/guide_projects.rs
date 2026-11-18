@@ -289,7 +289,24 @@ fn indexed_guide_preserves_legacy_basis_and_path() {
     let saved_entity = model::find_by_name(&saved, "Indexed Face1").unwrap();
     let actual = model::toolpath_of(&world, &entity).unwrap();
     let expected = model::toolpath_of(&saved, &saved_entity).unwrap();
-    assert_eq!(actual.path.moves, expected.path.moves, "legacy example path must remain unchanged");
+    assert_eq!(actual.path.moves.len(), expected.path.moves.len());
+    for (actual, expected) in actual.path.moves.iter().zip(&expected.path.moves) {
+        assert_eq!(actual.kind, expected.kind);
+        assert_eq!(actual.feed, expected.feed);
+        assert_eq!(actual.arc, expected.arc);
+        assert_eq!(actual.rotary, expected.rotary);
+        for (actual, expected) in [actual.from.x, actual.from.y, actual.from.z,
+            actual.to.x, actual.to.y, actual.to.z].into_iter().zip([
+            expected.from.x, expected.from.y, expected.from.z,
+            expected.to.x, expected.to.y, expected.to.z]) {
+            assert!((actual - expected).abs() <= 0.000_001, "saved coordinates round to six decimals");
+        }
+        let actual_axis = actual.axis.unwrap();
+        let expected_axis = expected.axis.unwrap();
+        for (actual, expected) in actual_axis.into_iter().zip(expected_axis) {
+            assert!((actual - expected).abs() <= 0.000_001);
+        }
+    }
     for warning in &expected.warnings {
         assert!(actual.warnings.contains(warning), "documented warning lost: {warning:?}");
     }
