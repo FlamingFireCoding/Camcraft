@@ -7,7 +7,7 @@
 //!
 //! Gate map (#2435): covers app::operation (material_source, the
 //! Chamfer2D region), motion::machining2d (chamfer_ride), app::stock_sim
-//! (breaks::program_breaks), sim::stock_sim (edge_break::on_walls),
+//! (breaks::program_breaks), sim::stock_sim (wall_anchor::on_walls),
 //! app::posting (verification_gate).
 
 use camcraft_app::cl::MoveKind;
@@ -73,9 +73,13 @@ fn chamfer(width: f64) -> OpParams {
 /// The finished part (the stock IS the bevelled brick) and one no-pick
 /// 2D Chamfer of `width` on it.
 fn job(width: f64) -> World {
+    job_on_mesh(width, bevelled_brick(1.0))
+}
+
+fn job_on_mesh(width: f64, mesh: Mesh) -> World {
     let world = new_world();
     let mut h = History::default();
-    h.execute(&world, ImportModel::from_mesh("brick", bevelled_brick(1.0)));
+    h.execute(&world, ImportModel::from_mesh("brick", mesh));
     let stock = SetStock::new(&world, StockShape::FromModel { source: "brick".into() }, Default::default());
     h.execute(&world, stock.expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == CONE).map(|(_, t)| t).expect("catalog cone");
@@ -157,4 +161,58 @@ fn a_cone_tip_inside_the_part_is_a_gouge_not_edge_break_credit() {
     e.entity_view(&world).set(camcraft_app::schema::Toolpath::new(t.path, t.warnings));
     let line = gouge_line(&world).expect("a cone tip inside the part posted");
     assert!(line.contains("worst 0.") || line.contains("worst 1."), "charged at the V's depth: {line}");
+}
+
+fn quad(facets: &mut Vec<Triangle>, a: Point3, b: Point3, c: Point3, d: Point3) {
+    facets.extend([Triangle::new(a, b, c), Triangle::new(a, c, d)]);
+}
+
+/// A sharp L prism with its re-entrant corner at (0, 0).
+fn l_shaped_boss() -> Mesh {
+    let ring = [(-20.0, -20.0), (20.0, -20.0), (20.0, 0.0), (0.0, 0.0), (0.0, 20.0), (-20.0, 20.0)];
+    let p = |i: usize, z| Point3::new(ring[i].0, ring[i].1, z);
+    let mut facets = Vec::new();
+    for i in 1..ring.len() - 1 {
+        facets.push(Triangle::new(p(0, 10.0), p(i, 10.0), p(i + 1, 10.0)));
+        facets.push(Triangle::new(p(0, 0.0), p(i + 1, 0.0), p(i, 0.0)));
+    }
+    for i in 0..ring.len() {
+        let j = (i + 1) % ring.len();
+        quad(&mut facets, p(i, 0.0), p(j, 0.0), p(j, 10.0), p(i, 10.0));
+    }
+    Mesh::from_facets(facets)
+}
+
+/// A 40 x 40 x 10 block with a 20 x 20 pocket down to z 5.
+fn rectangular_pocket() -> Mesh {
+    let ring = |h: f64, z| [Point3::new(-h, -h, z), Point3::new(h, -h, z), Point3::new(h, h, z), Point3::new(-h, h, z)];
+    let (bottom, outer, inner, floor) = (ring(20.0, 0.0), ring(20.0, 10.0), ring(10.0, 10.0), ring(10.0, 5.0));
+    let mut facets = Vec::new();
+    quad(&mut facets, bottom[3], bottom[2], bottom[1], bottom[0]);
+    quad(&mut facets, floor[0], floor[1], floor[2], floor[3]);
+    for i in 0..4 {
+        let j = (i + 1) % 4;
+        quad(&mut facets, bottom[i], bottom[j], outer[j], outer[i]);
+        quad(&mut facets, outer[i], outer[j], inner[j], inner[i]);
+        quad(&mut facets, inner[i], inner[j], floor[j], floor[i]);
+    }
+    Mesh::from_facets(facets)
+}
+
+#[test]
+fn a_no_pick_chamfer_on_an_l_shaped_boss_stays_clean() {
+    let world = job_on_mesh(1.0, l_shaped_boss());
+    let tips = tips(&world);
+    assert!(!tips.is_empty(), "the chamfer rides the L-shaped boss");
+    assert!(tips.iter().any(|p| p.x.abs() < 1e-6 && p.y.abs() < 1e-6), "the ride includes the inside corner");
+    assert_eq!(posting::verification_gate(&world), Vec::<String>::new(), "the legal inside corner keeps its credit");
+}
+
+#[test]
+fn a_no_pick_chamfer_on_a_rectangular_pocket_stays_clean() {
+    let world = job_on_mesh(1.0, rectangular_pocket());
+    let tips = tips(&world);
+    assert!(!tips.is_empty(), "the chamfer rides the pocket");
+    assert!(tips.iter().any(|p| on_rect(*p, 10.0, 10.0)), "the ride includes the pocket rim");
+    assert_eq!(posting::verification_gate(&world), Vec::<String>::new(), "the legal pocket keeps its credit");
 }

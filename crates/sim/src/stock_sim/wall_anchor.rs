@@ -28,7 +28,7 @@ const MAX_SAMPLES: f64 = 200_000.0;
 /// The records of `breaks` whose tip stands on a wall of `facets`; the
 /// rest are dropped, and their columns are then judged against the
 /// model as it is - stricter, never looser. At every sample along the
-/// edge (each vertex, then every `SAMPLE_STEP` along a segment) the
+/// edge (inside each segment, at most `SAMPLE_STEP` apart) the
 /// model's top `WALL_PROBE` off the edge, on at least one side, must
 /// stand no higher than the tip (`edge z - depth`) plus `tol`. Framed
 /// records ([`EdgeBreak::volume`]) and single points are kept as they
@@ -57,8 +57,10 @@ fn walled(facets: &[Triangle], tol: f64, b: &EdgeBreak) -> bool {
         }
         let (nx, ny) = (-dy / len * WALL_PROBE, dx / len * WALL_PROBE);
         let n = (len / step).ceil().clamp(1.0, MAX_SAMPLES) as usize;
-        (0..=n).all(|i| {
-            let t = i as f64 / n as f64;
+        (0..n).all(|i| {
+            // A vertex's segment normal can land on the adjacent wall at
+            // an inside corner. Sample the interior of each span instead.
+            let t = (i as f64 + 0.5) / n as f64;
             let (x, y) = (a.x + t * dx, a.y + t * dy);
             let tip = a.z + t * (c.z - a.z) - b.depth;
             tops.at(x + nx, y + ny).min(tops.at(x - nx, y - ny)) <= tip + tol

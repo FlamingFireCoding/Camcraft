@@ -18,10 +18,13 @@
    no top loop matches (a lower ledge, the plate under an island) is not
    ridden: it is not an edge at the top plane.
 2. *Verify.* The program sim credits a 2D Chamfer's edge-break records
-   only where the cone's tip stands on a wall: at every sample along the
-   declared edge, a column 1.5 lattice cells off the edge, on one side or
-   the other, must stand no higher than the tip (within the verdict
-   tolerance). A record that fails is dropped (logged), and its columns are
+   only where the cone's tip stands on a wall. The facet-top probe in
+   `sim::stock_sim::wall_anchor` samples inside each declared segment.
+   The highest facet 0.05 mm (`WALL_PROBE`) off the edge, on at least one
+   side, must stand no higher than the tip (within the verdict tolerance).
+   Samples are at subdivision midpoints, not vertices: a segment normal
+   at an inside corner can put the air probe on the adjacent top edge.
+   A record that fails is dropped (logged), and its columns are
    judged against the model as it is, so the V the old ride cut into the
    bevel face is a blocking gouge. Deburr records are not held to this:
    a deburr legitimately breaks obtuse 3D edges (a drafted wall) whose
@@ -48,11 +51,15 @@ simulation"; it was not.
   name instead.
 - *Hold every edge-break record (deburr too) to the wall.* It would
   convict a deburr on a drafted wall, a real obtuse-edge break.
+- *Probe the corner bisector at each vertex.* Interior samples avoid the
+  adjacent top edge without a separate rule for corner directions.
 - *Fix only the generator.* A hand pick of the bevel's top edge chain
   still posts the same V; the verify law is what catches every route to it.
 
-**Cost to change later.** The match slack (0.05 mm) and the wall probe
-(1.5 cells) are two constants, in `machining2d::chamfer_ride` and
-`sim::stock_sim::edge_break`. A narrow gap beside a chamfered edge,
-narrower than 1.5 verdict cells, would drop the credit and refuse (the
-strict side); widening the probe trades that for sensitivity.
+**Cost to change later.** The match slack (0.05 mm) and the facet-top
+wall probe (`WALL_PROBE = 0.05` mm) are separate constants, in
+`machining2d::chamfer_ride` and `sim::stock_sim::wall_anchor`. The wall
+probe does not depend on the simulation lattice spacing. A gap narrower
+than the probe can put both probes over material, drop the credit, and
+refuse the program. A smaller probe can detect a narrower gap but is
+more sensitive to floating-point error near a facet edge.
