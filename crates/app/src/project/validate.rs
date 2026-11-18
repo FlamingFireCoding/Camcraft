@@ -15,6 +15,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         )));
     }
     super::program_entry_dto::validate(dto, kind)?; // #155
+    // #1720: a flip rides a WCS row and nothing else.
+    if dto.flip.is_some() && !matches!(kind, EntityKind::Wcs) {
+        return Err(corrupt(format!("'{}' records a flipped axis but is not a WCS", dto.name)));
+    }
     // #1054: a recorded STEP facet budget rides a model row only, inside
     // the bounds an import would accept.
     if let Some(b) = dto.facet_budget {
@@ -161,8 +165,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             let Some(tool) = &dto.tool else {
                 return Err(corrupt("tool entity without a definition"));
             };
-            if !tool.to_tool().is_sane() {
-                return Err(corrupt(format!("tool parameters are not usable: {tool:?}")));
+            // #1186: name the tool and the rule it breaks, never the
+            // whole definition.
+            if let Some(why) = tool.to_tool().why_not_sane() {
+                return Err(corrupt(format!("tool '{}': {why}", dto.name)));
             }
             // #221: a stated number is a real tool-table number.
             if let Some(n) = tool.number
@@ -176,8 +182,11 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             }
             // #368: a body is a body this build's envelope law accepts,
             // on a tool it fits - or the file refuses by name.
-            if let Some(b) = &tool.body {
-                let body = b.to_body(&dto.name).map_err(corrupt)?;
+            // #2016: a library reference names an entry the library
+            // holds, or the file refuses by name.
+            if let Some(body) =
+                super::tool_body_wire::stated_body(tool.holder.as_ref(), tool.body.as_ref(), &dto.name).map_err(corrupt)?
+            {
                 crate::tool_body::fits(&tool.to_tool(), &body)
                     .map_err(|e| corrupt(format!("tool '{}': {e}", dto.name)))?;
             }
@@ -211,6 +220,9 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             }
             if op.label.as_deref().is_some_and(|s| s.trim().is_empty() || s.len() > 120 || s.chars().any(char::is_control)) {
                 return Err(corrupt(format!("'{}' has an invalid operation label", dto.name)));
+            }
+            if op.needs_review.iter().any(|s| s.trim().is_empty() || s.len() > 240 || s.chars().any(char::is_control)) {
+                return Err(corrupt(format!("'{}' has an invalid needs_review note", dto.name)));
             }
             if op.setup.as_deref().is_some_and(str::is_empty) {
                 return Err(corrupt(format!("'{}' names an empty setup", dto.name)));

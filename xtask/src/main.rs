@@ -11,10 +11,16 @@ mod braces;
 mod budget;
 #[cfg(test)]
 mod budget_tests;
+mod catalog;
+mod catalog_media;
+mod catalog_pdf;
+#[cfg(test)]
+mod catalog_tests;
 mod checkout;
 #[cfg(test)]
 mod checkout_tests;
 mod decisions;
+mod docs_images;
 #[cfg(test)]
 mod directory_tests;
 mod exec;
@@ -25,6 +31,9 @@ mod gate_maps_tests;
 mod heavy_tests;
 mod icon_font;
 mod icons;
+mod known_fail;
+#[cfg(test)]
+mod known_fail_tests;
 #[cfg(test)]
 mod icons_tests;
 #[cfg(test)]
@@ -40,10 +49,12 @@ mod merge_plan_git;
 mod merge_plan_out;
 #[cfg(test)]
 mod merge_plan_tests;
+mod merge_review;
 mod package;
 mod path_mods;
 mod plan;
 mod process_bump;
+mod queue;
 #[cfg(test)]
 mod process_bump_tests;
 mod quick;
@@ -92,7 +103,11 @@ usage:
   cargo xtask package [--version X.Y.Z] [--out dist] [--bin-dir target/release] [--dry-run]
                                                    stage the Windows portable tree and write camcraft-<ver>-win-x64.zip
                                                    (no bump/commit/build; version defaults to post.exe --version;
-                                                   reports version/stage/zip to $GITHUB_OUTPUT when set)";
+                                                   reports version/stage/zip to $GITHUB_OUTPUT when set)
+  cargo xtask docs-images [--check]                render all User Guide PNGs off-screen or verify site/static/images/guide/ (#1902)
+  cargo xtask catalog [--case <family/case>] [--check] [--screenshots] [--pdf]
+                                                   rebuild/verify example catalog cases, render screenshots onto an
+                                                   images-only branch, or build per-case PDFs (#2393)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -205,6 +220,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
         Some("icons") => icons::run(&root(), &args[1..]),
         Some("logo") => logo::run(&root(), &args[1..]),
+        Some("docs-images") => docs_images::run(&root(), &args[1..]),
+        Some("catalog") => catalog::run(&root(), &args[1..]),
         Some("merge-plan") => merge_plan_git::run(&root(), &args[1..]),
         Some("process-bump") => process_bump::run(&root(), &args[1..]),
         Some("package") => {
@@ -299,6 +316,15 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
         _ => tier_plan(root, g),
     };
     let plan = select::apply(plan, &g.only, failed.as_deref())?;
+    if g.tier == "release" {
+        match known_fail::check_issues(root, g.dry) {
+            Ok(notes) => notes.iter().for_each(|n| println!("{n}")),
+            Err(e) => {
+                println!("{e}");
+                return Ok(1);
+            }
+        }
+    }
     run.plan(&plan)?;
     Ok(run.summary())
 }

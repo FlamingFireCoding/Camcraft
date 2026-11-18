@@ -22,6 +22,7 @@ pub mod cli_options;
 mod cli_options_tests;
 
 pub mod actions;
+pub mod play_precalc;
 pub mod align_pick_viz;
 pub(crate) mod machine_modes;
 mod axis_note;
@@ -34,10 +35,14 @@ pub mod slot_manual_viz;
 pub mod plate_viz;
 pub mod boundary_summary;
 pub mod edge_pick;
+pub(crate) mod frame_cache;
+pub(crate) mod pick_highlight;
+pub(crate) mod pick_highlight_mesh;
 pub mod pick_ink;
 pub mod feature_click;
 pub mod egui_app;
 pub mod feedback;
+pub mod gen_worker;
 pub mod file_dialog;
 pub mod file_pick;
 pub mod frame_cost;
@@ -45,7 +50,11 @@ pub mod frame_memo;
 pub mod incoming_view;
 pub mod headless_gpu;
 pub mod interact;
+mod height_display;
+mod height_memo;
 pub mod locate_pick;
+pub mod move_drag;
+pub mod turn_drag;
 pub mod machined;
 mod setup_display;
 mod floor;
@@ -63,6 +72,7 @@ pub mod axis_pick;
 pub mod cylinder_pick;
 pub mod origin_pick;
 pub mod points_pick;
+pub mod start_exit_pick;
 pub mod wire_sync_pick;
 pub mod wcs_pick;
 pub mod shortcut_keys;
@@ -89,6 +99,8 @@ mod helix_view_tests;
 #[cfg(test)]
 mod field_view_tests;
 #[cfg(test)]
+mod play_precalc_tests;
+#[cfg(test)]
 mod machined_tests;
 #[cfg(test)]
 mod play_bench_tests;
@@ -102,6 +114,10 @@ mod setup_chip_tests;
 mod pockets_tests;
 #[cfg(test)]
 mod wcs_gizmo_tests;
+#[cfg(test)]
+mod move_drag_tests;
+#[cfg(test)]
+mod turn_drag_tests;
 #[cfg(test)]
 mod axis_note_tests;
 

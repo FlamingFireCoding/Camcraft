@@ -34,6 +34,7 @@ mod fixture_profile_tools;
 mod fixture_tools;
 mod fixture_turn_tools;
 mod holders;
+mod holder_dxf_tools;
 mod job;
 mod listen;
 mod live;
@@ -65,6 +66,8 @@ mod units_tools;
 mod stock_fit_tools;
 mod tool_number_tools;
 mod wcs_tools;
+// #1720: a setup's WCS flipped axes.
+mod wcs_flip_tools;
 mod rotary_tools;
 mod workholding_tools;
 
@@ -77,6 +80,7 @@ pub use live::{
     LiveGate, LiveOptions,
 };
 pub use selection::{PickMode, SelectionContext};
+pub(crate) use tools::call;
 
 use crate::script::Env;
 

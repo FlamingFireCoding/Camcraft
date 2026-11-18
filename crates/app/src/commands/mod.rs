@@ -66,6 +66,7 @@ pub mod theme;
 // M13.4 / #877: the viewer's colour-vision remap, the theme's twin.
 pub mod color_vision;
 pub mod set_wcs;
+pub mod set_wcs_flip;
 // #739: the WCS origin on a picked circle's centre.
 pub mod wcs_circle;
 pub mod tool;
@@ -105,7 +106,8 @@ pub use move_model::MoveModel;
 pub use operation::{
     ChangeOperationKind, ClearToolpath, CreateOperation, DeleteOperation, EditOperationLinks,
     EditOperationParams,
-    GenerateOperation, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, SetOperationGeometry,
+    GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll, RenameOperation,
+    ReorderOperation, SetOperationGeometry, StagedGeneration,
 };
 pub use post::SelectPost;
 pub use post_options::SetPostOptions;
@@ -134,6 +136,7 @@ pub use theme::{check_theme, theme_of, theme_set};
 pub use color_vision::{color_vision_of, color_vision_set};
 pub use set_wcs::{BoxPoint, OriginAt, SetWcsOrigin, place_setup_origin};
 pub use wcs_circle::SetWcsAtCircleCentre;
+pub use set_wcs_flip::SetWcsFlip;
 pub use tool::{AddTool, ChangeTool, DeleteTool, HolderPick};
 pub use tool_body::{LatheBodySpec, SetToolBody, ToolBodySpec};
 pub use tool_cutter::{ReshapeTool, SetToolCutter};

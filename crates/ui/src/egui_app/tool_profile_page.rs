@@ -81,6 +81,11 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     state.sync_tool_profile_ui();
     let landed = state.editor_tool_body();
     ui.label(match &landed {
+        // #2016: a library holder is the entry, not a copy of it.
+        Some(b) if b.library.is_some() => format!(
+            "landed: library holder {} - an edited point makes it a drawn profile",
+            b.library.as_ref().map_or("", |r| r.entry.as_str())
+        ),
         Some(b) if b.spun.is_some() => "landed: a drawn profile".to_owned(),
         Some(b) => format!("landed: imported body {} - Apply profile replaces it", b.source),
         None => "landed: the holder cylinder from the numbers".to_owned(),
@@ -136,6 +141,44 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
         .clicked()
     {
         state.queue_apply_tool_profile();
+    }
+    ui.small("Revolved body: non-revolved features are enveloped conservatively (never cut away); only the half-profile is editable.");
+    let has_export = !state.tool_profile_ui.points.is_empty() || landed.is_some();
+    let (imp_dxf, exp_dxf, imp_step) = ui
+        .horizontal(|ui| {
+            let imp_dxf = crate::browser_files::button(
+                ui,
+                state.in_browser(crate::browser_files::NEEDS_PICKER),
+                "Import DXF…",
+                "read an ASCII DXF with a CENTRELINE layer and one open half-profile into Custom. The centreline must be parallel to Y. DXF +Y is tool +Z; z = 0 is the lower end of the centreline, independent of draw direction",
+            );
+            let exp_dxf = if has_export {
+                crate::browser_files::button(
+                    ui,
+                    state.in_browser(crate::browser_files::NO_EXPORT),
+                    "Export DXF…",
+                    "write the half-profile or holder body as ASCII DXF (mm, layers CENTRELINE and PROFILE)",
+                )
+            } else {
+                ui.add_enabled(false, egui::Button::new("Export DXF…")).clicked()
+            };
+            let imp_step = crate::browser_files::button(
+                ui,
+                state.in_browser(crate::browser_files::NEEDS_PICKER),
+                "Import STEP…",
+                "convert an ISO 13399 aligned STEP holder into a conservative editable half-profile",
+            );
+            (imp_dxf, exp_dxf, imp_step)
+        })
+        .inner;
+    if imp_dxf {
+        state.import_profile_dxf_dialog();
+    }
+    if exp_dxf {
+        state.export_profile_dxf_dialog();
+    }
+    if imp_step {
+        state.import_step_profile_dialog();
     }
     super::tool_holder_picker::holder_picker(ui, state, u);
 }

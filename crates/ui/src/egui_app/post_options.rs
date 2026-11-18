@@ -172,6 +172,32 @@ pub(super) fn between_setups_picker(ui: &mut Ui, state: &mut State) {
     }
 }
 
+/// #760: post Setup/table XY without controller rotation (Bake, the default),
+/// or transform into WCS coordinates and emit controller rotation (`G68`/`ROT`).
+pub(super) fn wcs_rotation_picker(ui: &mut Ui, state: &mut State) {
+    let now = posting::post_options(&state.world);
+    let mut pick: Option<camcraft_app::schema::WcsRotationOutput> = None;
+    ui.horizontal(|ui| {
+        ui.label("WCS rotation");
+        egui::ComboBox::from_id_salt("post_wcs_rotation")
+            .selected_text(now.wcs_rotation.label())
+            .show_ui(ui, |ui| {
+                for r in camcraft_app::schema::WcsRotationOutput::ALL {
+                    if ui.selectable_label(now.wcs_rotation == r, r.label()).clicked() && now.wcs_rotation != r {
+                        pick = Some(r);
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "Bake posts table XY coordinates relative to the work offset origin. Do not enter a rotation on the control. Control posts rotated WCS coordinates with G68/G69 or ROT RPL=/ROT; do not enter an additional rotation on the control.",
+            );
+    });
+    if let Some(r) = pick {
+        state.pending.push_back(CommandKind::SetPostOptions(PostOptions { wcs_rotation: r, ..now }));
+    }
+}
+
 /// The document's unit (#902), straight off the world singleton: one
 /// setting for every number shown and for the program every post
 /// writes (G21 / G20, Heidenhain G71 / G70, 840D G710 / G700). A click
