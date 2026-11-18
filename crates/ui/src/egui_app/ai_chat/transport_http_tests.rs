@@ -156,7 +156,7 @@ fn assert_silent_server_stops(cancel_first: bool) {
     if cancel_first {
         state.ai_chat.cancel();
         while state.ai_chat.is_running() && start.elapsed() < Duration::from_secs(1) {
-            state.ai_chat.poll(0);
+            state.ai_chat.poll(&mut state.history);
             std::thread::sleep(Duration::from_millis(5));
         }
         assert!(
