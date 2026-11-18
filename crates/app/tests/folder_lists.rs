@@ -1,9 +1,9 @@
-//! Pins of #2380: the machine list and the post list follow their folders -
-//! at the start, and again after a refresh. An added file has an entry, a
-//! removed file has none and gives no error, a malformed file is listed
-//! and hides no other file, and a name that has no file is still refused
-//! by name.
-//! Gate map (#2307): covers app::posting, app::posting_scan, app::machine::library.
+//! Pins of #2380: the machine list follows its folder - at the start, and
+//! again after a refresh. An added file has an entry, a removed file has
+//! none and gives no error, a malformed file is listed with its refusals,
+//! and a name that has no file is still refused by name. The scan itself
+//! is pinned in `crates/post/tests/folder_scan.rs`.
+//! Gate map (#2380): covers camcraft_app::posting, camcraft_app::machine::library.
 
 use camcraft_app::machine::library::{self, MachineSource};
 use camcraft_app::posting::{self, scan_folder};
@@ -64,38 +64,6 @@ fn the_machine_list_follows_its_folder() {
     assert!(!refreshed.extra.iter().any(|(n, _)| n == "3axis-vmc"), "the default machine file is not a list entry");
     assert!(library::shipped_entries(&refreshed).iter().all(|e| e.refusals.iter().all(|r| !r.rule.contains("cannot be read") && !r.rule.contains("os error"))), "no file-not-found entry");
     let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// Posts: the same steps for `.cps` files.
-#[test]
-fn the_post_list_follows_its_folder() {
-    let dir = scratch("cps");
-    for f in ["fanuc.cps", "haas.cps", "mazak.cps"] {
-        copy("posts", f, &dir, f);
-    }
-    std::fs::write(dir.join("notes.txt"), "not a post").expect("write");
-    let at_start = scan_folder(&dir, "cps", posting::BUILTINS, &[posting::DEFAULT_MCH_FILE]);
-    assert_eq!(at_start.present, ["Fanuc", "Haas", "Mazak"]);
-    assert!(at_start.extra.is_empty(), "{:?}", at_start.extra);
-
-    copy("posts", "fanuc.cps", &dir, "my-shop.cps");
-    std::fs::write(dir.join("broken.cps"), "function (").expect("write");
-    std::fs::remove_file(dir.join("haas.cps")).expect("remove");
-    let refreshed = scan_folder(&dir, "cps", posting::BUILTINS, &[posting::DEFAULT_MCH_FILE]);
-    assert_eq!(refreshed.present, ["Fanuc", "Mazak"]);
-    let extra: Vec<&str> = refreshed.extra.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(extra, ["broken", "my-shop"], "the malformed script is listed and hides nothing");
-    assert!(refreshed.extra.iter().all(|(_, p)| p.starts_with(&dir)));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// A folder that does not read lists nothing and says why; it never panics.
-#[test]
-fn a_missing_folder_lists_nothing_and_says_why() {
-    let gone = std::env::temp_dir().join(format!("camcraft-2380-gone-{}", std::process::id()));
-    let scan = scan_folder(&gone, "cps", posting::BUILTINS, &[posting::DEFAULT_MCH_FILE]);
-    assert!(scan.present.is_empty() && scan.extra.is_empty());
-    assert!(scan.problem.is_some_and(|p| p.contains("camcraft-2380-gone")));
 }
 
 /// The process lists read the real folders, a refresh reads them again, and

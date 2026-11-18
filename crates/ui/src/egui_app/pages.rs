@@ -175,6 +175,9 @@ fn setup_error(ui: &mut Ui, state: &State) {
 /// document when the registry grows or reorders); loading a `.cps` of
 /// your own and returning to the default are commands too - undo puts
 /// the previous post back.
+/// The AccessKit name of the post picker's Refresh button (#2380).
+pub(super) const REFRESH_POSTS: &str = "Refresh post list";
+
 pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     let current = posting::post_of(&state.world);
     ui.label("Post");
@@ -225,7 +228,8 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
                     }
                 }
             });
-        if ui.button("Refresh").on_hover_text("Read the post folder again").clicked() {
+        let refresh = ui.button("Refresh").on_hover_text("Read the post folder again");
+        if super::fields::named(refresh, REFRESH_POSTS).clicked() {
             posting::rescan();
         }
         if let Some(name) = pick {

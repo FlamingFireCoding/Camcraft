@@ -35,6 +35,9 @@ pub(super) const FILE_HELP: &str = "Pick a library machine, or load a .mch file.
 pub(super) const NO_MACHINE: &str = "No machine loaded - the checker states, it cannot judge.";
 
 /// The page body for setup `ctx` (`None` - the implicit context).
+/// The AccessKit name of the page's Refresh button (#2380).
+pub(super) const REFRESH_MACHINES: &str = "Refresh machine list";
+
 pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
     group(ui, GROUPS[0], None, |ui| ownership(ui, state, ctx, Mount::Machine));
     let (path, m) = machine::of(&state.world);
@@ -92,7 +95,8 @@ fn library_row(ui: &mut Ui, state: &mut State, path: &str, names: &[&str], extra
         super::fields::named(cb.response, "Machine library");
         ui.end_row();
         ui.label("");
-        if ui.button("Refresh").on_hover_text("Read the machine folder again").clicked() {
+        let refresh = ui.button("Refresh").on_hover_text("Read the machine folder again");
+        if super::fields::named(refresh, REFRESH_MACHINES).clicked() {
             posting::rescan();
         }
         ui.end_row();

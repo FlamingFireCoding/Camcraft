@@ -20,6 +20,9 @@ mod tool_properties;
 #[path = "structural/thread_repeat.rs"]
 mod thread_repeat;
 
+#[path = "structural/folder_refresh.rs"]
+mod folder_refresh;
+
 #[path = "break_through.rs"]
 mod break_through;
 
