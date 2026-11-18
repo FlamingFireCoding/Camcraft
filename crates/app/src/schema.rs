@@ -78,6 +78,17 @@ pub struct GeoSig {
     pub sig: u64,
 }
 
+/// Derived user-friendly feature name lookup table (#2403), paired with the
+/// revision and facet allocation it describes. Valid only while `&Facets`
+/// remains mounted at the same revision and allocation; derived only, never
+/// serialized, dies with its entity.
+#[derive(Component, Debug, Clone)]
+pub struct FeatureNamesMemo {
+    pub rev: u64,
+    pub tris: std::sync::Weak<[Triangle]>,
+    pub table: std::sync::Arc<crate::geometry::feature::FeatureNames>,
+}
+
 /// A model whose mesh stands for its curved surfaces more coarsely than
 /// the STEP importer promises (#864): `chord_mm` is the chord error the
 /// import actually kept, always above `step::CHORD_CAP`. Present ONLY on
@@ -233,6 +244,12 @@ pub struct ToolBody {
     /// (`HolderProfile::floored`, in `tool_body::judged`). `false` for
     /// every body the user lands, and for every older file's.
     pub machine_default: bool,
+    /// #2016: the library entry this holder IS, with the two lengths
+    /// that place it. The outline, facets and bands above are then
+    /// that entry's, drawn by `tool_body::build_library` and by nothing
+    /// else, and the file stores this reference in their place. `None`
+    /// for a custom holder: a drawn profile, a mesh, a lathe body.
+    pub library: Option<camcraft_tools::holder_library::HolderRef>,
     /// #361 / #1040: individual modular pieces (head, adapter, clamping
     /// unit) with their tool-frame facets and coordinate systems. For
     /// single-body imports holds piece 0; empty only for drawn spun profiles.
@@ -823,6 +840,7 @@ pub fn register_schema(world: &World) {
     world.component::<Facets>();
     world.component::<Revision>();
     world.component::<GeoSig>();
+    world.component::<FeatureNamesMemo>();
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
     world.component::<StepSource>();

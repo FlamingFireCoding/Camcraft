@@ -392,7 +392,8 @@ pub enum CommandKind {
     DetectedHoles {
         name: String,
         params: OpParams,
-        skipped: Vec<String>,
+        /// The skipped and the undersize holes' sentences (#1556, #2496).
+        notes: Vec<String>,
     },
     /// The same draft with its Boundary group (M11.5): one undo unit.
     EditOperationBoundary {
@@ -1031,14 +1032,6 @@ pub struct GeoChip {
     pub sel: GeoSel,
     pub label: String,
     pub missing: bool,
-}
-
-/// A feature id as the chips show it: the 16 hex digits, shortened to
-/// head and tail with an ellipsis. Long enough to tell two picks of one
-/// model apart at a glance, short enough for a chip row to stay one row.
-fn short_id(id: u64) -> String {
-    let h = format!("{id:016x}");
-    format!("{}…{}", &h[..4], &h[14..])
 }
 
 /// XY vertex set of a ring, quantized and sorted: the identity a patch
@@ -2597,14 +2590,14 @@ impl State {
         // (#312), so a click and an agent store the same holes.
         match operation::detect_holes(&self.world, name, current, op.setup.as_deref(), &op.src) {
             Err(why) => self.refuse(ErrorScope::Operation, why),
-            Ok(operation::DetectedHoles { params, skipped }) => {
+            Ok(operation::DetectedHoles { params, skipped, undersize }) => {
                 if draft {
                     self.op_ui.params = params.clone();
                 }
                 self.pending.push_back(CommandKind::DetectedHoles {
                     name: name.to_string(),
                     params,
-                    skipped,
+                    notes: skipped.into_iter().chain(undersize).collect(),
                 });
             }
         }
@@ -2652,6 +2645,7 @@ impl State {
             .iter()
             .enumerate()
             .map(|(gi, g)| {
+                let pick_name = camcraft_app::pick::geo_label(&self.world, g);
                 let (mut label, missing) = match g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
@@ -2673,8 +2667,7 @@ impl State {
                                     ('y', f.offset)
                                 };
                                 let mut label = format!(
-                                    "Face {} · {axis}={} · {} {}",
-                                    g.entity,
+                                    "{pick_name} · {axis}={} · {} {}",
                                     units::len(v, unit, 2),
                                     units::area(f.area, unit),
                                     unit.area_suffix()
@@ -2684,10 +2677,7 @@ impl State {
                                 }
                                 (label, false)
                             }
-                            None => (
-                                format!("Face {} · {} · missing", g.entity, short_id(id)),
-                                true,
-                            ),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Chain(id) => {
@@ -2724,8 +2714,7 @@ impl State {
                                         }
                                     }
                                     format!(
-                                        "Chain {} · closed · {} {} · {} × {}",
-                                        g.entity,
+                                        "{pick_name} · closed · {} {} · {} × {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         units::len(hi[0] - lo[0], unit, 1),
@@ -2735,8 +2724,7 @@ impl State {
                                     let i = run_seq.entry(g.entity.clone()).or_default();
                                     *i += 1;
                                     format!(
-                                        "Chain {} · open · {} {} · {} of {}",
-                                        g.entity,
+                                        "{pick_name} · open · {} {} · {} of {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         i,
@@ -2745,11 +2733,7 @@ impl State {
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label =
-                                    format!("Chain {} · {} · missing", g.entity, short_id(id));
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Patch(id) => {
@@ -2818,32 +2802,23 @@ impl State {
                                             ),
                                         };
                                         format!(
-                                            "Welded face {} · {shape} · {} {} · {strips} strips",
-                                            g.entity,
+                                            "{pick_name} · {shape} · {} {} · {strips} strips",
                                             units::area(shoelace(rim), unit),
                                             unit.area_suffix()
                                         )
                                     }
-                                    None => format!("Welded face {} · open band", g.entity),
+                                    None => format!("{pick_name} · open band"),
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label = format!(
-                                    "Welded face {} · {} · missing",
-                                    g.entity,
-                                    short_id(id)
-                                );
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Vertex(id) => {
                         match crate::vertex_pick::vertex_world(self, &g.entity, id) {
                             Some(p) => (
                                 format!(
-                                    "Vertex {} · ({}, {}, {}) {}",
-                                    g.entity,
+                                    "{pick_name} · ({}, {}, {}) {}",
                                     units::len(p[0], unit, 2),
                                     units::len(p[1], unit, 2),
                                     units::len(p[2], unit, 2),
@@ -2851,7 +2826,7 @@ impl State {
                                 ),
                                 false,
                             ),
-                            None => (format!("Vertex {} · {} · missing", g.entity, short_id(id)), true),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                 };
@@ -3607,15 +3582,15 @@ impl State {
                     }
                 }
             }
-            CommandKind::DetectedHoles { name, params, skipped } => {
+            CommandKind::DetectedHoles { name, params, notes } => {
                 match EditOperationParams::new(&self.world, &name, params) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = if skipped.is_empty() {
+                        self.status = if notes.is_empty() {
                             format!("parameters updated for {name}")
                         } else {
-                            format!("holes detected for {name}; {}", skipped.join("; "))
+                            format!("holes detected for {name}; {}", notes.join("; "))
                         };
                     }
                     Err(err) => {
@@ -4728,10 +4703,10 @@ fn mesh_dialog() -> crate::file_dialog::FileDialog {
 }
 
 /// The model files Model > Open and a viewport drop read, lower case. A
-/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// Solidcraft `.sc`/`.solidcraft` imports its cached final body; the browser
 /// build does not read it, so its picker does not offer it.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc", "solidcraft"];
 #[cfg(target_arch = "wasm32")]
 pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 

@@ -176,3 +176,68 @@ fn one_motion_step_drags_at_most_one_view_width() {
     let d = state.body_drag.as_ref().map(|d| d.delta).expect("dragging");
     assert!((d - width_mm).abs() < 1e-6 * width_mm, "clamped to one view width {width_mm}: {d}");
 }
+
+/// Check ownership after the handles disappear, independent of undo retention.
+fn unused_center_released(change: impl FnOnce(&mut State)) {
+    let mut state = part();
+    let entity = model::find_by_name(&state.world, "part").expect("part");
+    let facets = model::facets_of(&state.world, &entity).expect("facets");
+    let before = std::sync::Arc::strong_count(&facets);
+    assert!(handles(&state).is_some());
+    assert_eq!(std::sync::Arc::strong_count(&facets), before + 1);
+    change(&mut state);
+    let retained = std::sync::Arc::strong_count(&facets);
+    assert!(handles(&state).is_none());
+    assert_eq!(
+        std::sync::Arc::strong_count(&facets),
+        retained - 1,
+        "unused center cache must release its facet Arc"
+    );
+}
+
+#[test]
+fn center_cache_releases_facets_when_move_is_off() {
+    unused_center_released(|state| state.move_handles = false);
+}
+
+#[test]
+fn center_cache_releases_facets_without_a_selection() {
+    unused_center_released(|state| run(state, CommandKind::Select(None)));
+}
+
+#[test]
+fn center_cache_releases_facets_when_the_part_is_hidden() {
+    unused_center_released(|state| state.hidden_models.push("part".into()));
+}
+
+#[test]
+fn center_cache_releases_facets_when_the_part_is_deleted() {
+    unused_center_released(|state| {
+        run(state, CommandKind::DeleteSelected);
+        state.history.clear();
+        assert!(model::find_by_name(&state.world, "part").is_none());
+    });
+}
+
+#[test]
+fn center_cache_keeps_rotate_facets_between_move_handle_passes() {
+    let mut state = part();
+    state.move_handles = false;
+    state.rotate_handles = true;
+    assert!(crate::turn_drag::rings(&state).is_some());
+    let once = computes(&state);
+    for _ in 0..3 {
+        assert!(handles(&state).is_none());
+        assert!(crate::turn_drag::rings(&state).is_some());
+    }
+    assert_eq!(computes(&state), once, "Rotate still uses the shared center");
+}
+
+#[test]
+fn center_cache_releases_facets_when_rotate_has_no_part() {
+    unused_center_released(|state| {
+        state.move_handles = false;
+        state.rotate_handles = true;
+        state.hidden_models.push("part".into());
+    });
+}

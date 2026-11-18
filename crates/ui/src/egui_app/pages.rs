@@ -79,7 +79,13 @@ pub(crate) use super::fields::{field, num, num_plain};
 /// The Setups page's pick rows mark themselves drawn; the shell's
 /// per-frame sweep (#664, #667) disarms the rest after the dock.
 pub fn properties(ui: &mut Ui, state: &mut State, pal: &Tokens) {
-    let resp = ui.scope(|ui| properties_body(ui, state, pal)).response;
+    let resp = ui
+        .scope(|ui| {
+            super::layout::field_ring::begin(ui);
+            properties_body(ui, state, pal);
+            super::layout::field_ring::finish(ui);
+        })
+        .response;
     resp.ctx.accesskit_node_builder(resp.id, |b| {
         b.set_role(egui::accesskit::Role::Pane);
         b.set_label("Properties");
