@@ -1,4 +1,4 @@
-//! Project save/load: `.camproj`, JSON, version 68 (see `PROJECT_VERSION`).
+//! Project save/load: `.camproj`, JSON, version 70 (see `PROJECT_VERSION`).
 //!
 //! Serialization goes through plain DTO structs (deliberately not flecs
 //! reflection): the file format is our public persistence contract and must
@@ -159,6 +159,7 @@ mod json;
 pub use json::*;
 mod apply;
 mod fidelity_migrate;
+mod pocket_adaptive_migrate;
 use apply::*;
 // #813: the load note for a machine embedded before #804.
 mod swing_note;

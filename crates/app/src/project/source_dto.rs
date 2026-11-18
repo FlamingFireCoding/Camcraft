@@ -1,7 +1,7 @@
-//! The file mirror of a linked model's source (#2463, project v68): the
+//! The file mirror of a linked model's source (#2463, project v70): the
 //! path a model was imported from and the SHA-256 of the bytes read.
-//! Absent is "not linked", what every v67 model was. An old reader must
-//! refuse a v68 file: a linked model it saved again would come back
+//! Absent is "not linked", what every v69 model was. An old reader must
+//! refuse a v70 file: a linked model it saved again would come back
 //! unlinked without a word.
 //! Provenance: our own DTO, the pattern of the other entity keys.
 

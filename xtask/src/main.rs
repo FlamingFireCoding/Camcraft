@@ -46,10 +46,12 @@ mod merge_plan_git;
 mod merge_plan_out;
 #[cfg(test)]
 mod merge_plan_tests;
+mod merge_review;
 mod package;
 mod path_mods;
 mod plan;
 mod process_bump;
+mod queue;
 #[cfg(test)]
 mod process_bump_tests;
 mod quick;
