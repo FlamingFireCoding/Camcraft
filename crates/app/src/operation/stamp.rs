@@ -118,6 +118,15 @@ pub fn current_stamp(
             }
         }
     }
+    if super::wcs_yaw::op_applies(crate::machine::kind_of_setup(world, setup), params)
+        && let Some(deg) = crate::posting::wcs_yaw(world, setup)
+    {
+        let (_, o) = crate::posting::wcs_context(world, setup);
+        h.write(b"wcs-yaw");
+        w(&mut h, deg);
+        w(&mut h, o[0]);
+        w(&mut h, o[1]);
+    }
     match src {
         SrcRef::Stock => {
             h.write_u8(b'S');
@@ -240,11 +249,8 @@ pub fn status_of(world: &World, entity: &flecs_ecs::prelude::Entity) -> OpStatus
     let Some(op) = model::operation_of(world, entity) else {
         return OpStatus::Never;
     };
-    let Some(cache) = model::toolpath_of(world, entity) else {
-        return OpStatus::Never;
-    };
-    if cache.path.is_empty() {
-        return OpStatus::Never; // a cache with no moves is no cache
+    if !model::toolpath_nonempty(world, entity) {
+        return OpStatus::Never; // no cache or a cache with no moves is no cache
     }
     let name = model::name_of(world, entity).unwrap_or_default();
     match (op.stamp, op_stamp(world, &op, &name)) {

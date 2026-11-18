@@ -30,7 +30,7 @@ use camcraft_app::operation::{
     self, FeatureSel, GeoSel, Height, OpParams, OpStatus, SrcRef, WireContourOp, WireFourAxis, WirePairingRule, WireSide,
     WireSyncPair, WireWidening, VERIFY_TOLERANCE_MAX,
 };
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::project;
 use camcraft_app::world::new_world;
 
@@ -173,7 +173,7 @@ fn state(world: &World, h: &mut History, four: WireFourAxis) {
 }
 
 fn post(world: &World, tag: &str) -> Result<String, String> {
-    let cps = BUILTINS.iter().find(|(n, _)| *n == WIRE).map(|(_, s)| *s).expect("registered");
+    let cps = camcraft_app::posting::builtin_post_text(WIRE).expect("registered");
     let out = std::env::temp_dir().join(format!("camcraft-wire-tol-{tag}-{}.nc", std::process::id()));
     let posted = posting::post_script(world, &out, cps);
     let wrote = out.exists();

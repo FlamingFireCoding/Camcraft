@@ -36,7 +36,7 @@ use camcraft_app::machine::{parse_mch, Kind};
 use camcraft_app::operation::{self, Height, OpParams, SrcRef, WireContourOp, WireSide, WireSkim};
 use camcraft_app::post::{self, cnc};
 use camcraft_app::model;
-use camcraft_app::posting::{self, BUILTINS, WIRE_POSTS};
+use camcraft_app::posting::{self, WIRE_POSTS};
 use camcraft_app::project;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
@@ -49,7 +49,7 @@ const SKIMS_GOLDEN: &str = "tests/golden/nc/wire-iso/wire_contour_punch_skims.nc
 const OPEN_GOLDEN: &str = "tests/golden/nc/wire-iso/wire_contour_open_cutoff.nc";
 
 fn cps(name: &str) -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == name).map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text(name).expect("registered")
 }
 
 /// A sharp 40 x 20 slug from z = 0 to 12, centred on the origin.
@@ -275,7 +275,7 @@ fn a_mill_machine_and_a_cutting_post_are_refused_by_name() {
     let mill = std::fs::read_to_string("../../assets/machines/3axis-vmc.mch").expect("the vmc");
     let w = warnings(cps(WIRE), &mill, &stream);
     assert!(w.iter().any(|m| m.contains("is not declared kind wire_edm")), "{w:?}");
-    for (n, s) in BUILTINS.iter().filter(|(n, _)| !WIRE_POSTS.contains(n)) {
+    for (n, s) in camcraft_app::posting::shipped_posts().expect("the shipped posts read").iter().filter(|(n, _)| !WIRE_POSTS.contains(n)) {
         let w = warnings(s, FIXTURE, &stream);
         assert!(w.iter().any(|m| m.contains("Punch1") && m.contains("does not declare wireEdm")), "{n}: {w:?}");
     }
@@ -289,7 +289,7 @@ fn a_mill_machine_and_a_cutting_post_are_refused_by_name() {
 fn the_registry_offers_the_wire_post_for_wire_edms_only() {
     // #617 added the Sodick dialect; the generic post stays first (the default).
     assert_eq!(WIRE_POSTS.first(), Some(&WIRE));
-    for (n, _) in BUILTINS {
+    for (n, _) in camcraft_app::posting::shipped_posts().expect("the shipped posts read") {
         assert_eq!(posting::post_serves(n, Kind::WireEdm), WIRE_POSTS.contains(n), "{n}");
     }
     for k in [Kind::Mill, Kind::Lathe, Kind::MillTurn, Kind::Plasma, Kind::SinkerEdm] {
@@ -551,7 +551,7 @@ fn a_sinker_setup_is_still_refused_at_post_by_name() {
     h.execute(&world, op);
     h.execute(&world, GenerateOperation::new(&world, "Burn0").expect("generates"));
     let out = std::env::temp_dir().join(format!("camcraft-wire-iso-sinker-{}.nc", std::process::id()));
-    for (n, script) in BUILTINS.iter().filter(|(n, _)| !posting::SINKER_POSTS.contains(n)) {
+    for (n, script) in camcraft_app::posting::shipped_posts().expect("the shipped posts read").iter().filter(|(n, _)| !posting::SINKER_POSTS.contains(n)) {
         let _ = std::fs::remove_file(&out);
         let err = posting::post_script(&world, &out, script).expect_err("a sinker burn never posts");
         let wrote = out.exists();

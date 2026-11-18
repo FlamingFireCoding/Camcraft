@@ -523,11 +523,23 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v65 -> v66 (#1962): absent trunnion fields and `controller_rtcp`
         // read as before (tool_rh, RTCP inferred from tilt). Saving writes
         // v66 so old readers cannot drop `controller_rtcp: false`.
-        // v66 -> v67 (#1862): a DXF profile row arrives; a v66 file has
+        // v66 -> v67 (#1720): a WCS may record flipped axes; absent is
+        // no flip.
+        // v67 -> v68 (#2441): pre-v68 Drill ops without `break_through_from`
+        // keep legacy `tip` so their saved depth and cached toolpath do not drift.
+        // v68 -> v69 (#1517): pre-v69 Pocket Adaptive ops migrate to 2D
+        // Adaptive (Spiral); un-carriable params record `needs_review`.
+        // v69 -> v70 (#2016): absent `holder` settles to the drawn body
+        // or the holder cylinder as stated (no behaviour change).
+        // v70 -> v71 (#1862): a DXF profile row arrives; a v70 file has
         // none, so it steps up unchanged. Stated trunnion fields, tilt bases
         // and break-through values remain unchanged in their DTOs.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
+        if from < 68 {
+            super::params_impl::settle_drill_break_through(&mut file.entities);
+        }
+        notes.extend(super::pocket_adaptive_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
         // an older file opens on the unit it posted in (`units_migrate`).
         if from < 60 {
@@ -568,6 +580,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
             Some(w) => crate::schema::BetweenSetups::from_word(w)
                 .ok_or_else(|| corrupt(format!("unknown between-setups choice {w:?}")))?,
         },
+        // #760: an absent key is the default bake into XY.
+        wcs_rotation: match file.post_options.as_ref().and_then(|o| o.wcs_rotation.as_deref()) {
+            None => crate::schema::WcsRotationOutput::default(),
+            Some(w) => crate::schema::WcsRotationOutput::from_word(w)
+                .ok_or_else(|| corrupt(format!("unknown wcs-rotation choice {w:?}")))?,
+        },
     };
     let mut doc_script = crate::schema::PostScriptOptions {
         by_post: file
@@ -600,6 +618,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
     for dto in &file.entities {
         validate_kind(dto, dto.kind.unwrap_or(EntityKind::Model))?;
     }
+    freeze_legacy_tool_numbers(&mut file.entities);
     for dto in &mut file.entities {
         if let Some(op) = &mut dto.operation
             && op.tool.is_empty()
@@ -781,6 +800,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
             }
             EntityKind::Wcs => {
                 entity.entity_view(world).add(Wcs);
+                // #1720: absent is no flip (every pre-v67 file).
+                if let Some(f) = dto.flip {
+                    crate::setup_wcs_flip::set(world, &entity, [f.x, f.y, f.z]);
+                }
             }
             EntityKind::Entry => super::program_entry_dto::apply(world, &entity, dto.entry)?,
             EntityKind::Sketch => match sketches.remove(&dto.name) {
@@ -799,8 +822,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     number: tdto.number,
                 });
                 // #368: validate_kind already refused a body that is no body.
-                if let Some(b) = &tdto.body {
-                    let body = b.to_body(&dto.name).map_err(corrupt)?;
+                if let Some(body) =
+                    super::tool_body_wire::stated_body(tdto.holder.as_ref(), tdto.body.as_ref(), &dto.name).map_err(corrupt)?
+                {
                     crate::tool_body::set_body(world, &entity, Some(&body));
                 }
                 // #93: validate_kind already refused a cutter that disagrees.
@@ -842,10 +866,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     after: odto.after,
                     suppressed: odto.suppressed,
                 });
-                if odto.label.is_some() || odto.order.is_some() {
+                if odto.label.is_some() || odto.order.is_some() || !odto.needs_review.is_empty() {
                     entity.entity_view(world).set(OperationMeta {
                         label: odto.label,
                         order: odto.order,
+                        needs_review: odto.needs_review,
                     });
                 }
                 if let Some(cache) = &odto.cache {
@@ -951,4 +976,24 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         notes.push(format!("fixture '{name}': plate location dropped on load: no such plate"));
     }
     Ok(notes)
+}
+
+/// Freeze unnumbered tools in a pre-#2442 file to their legacy 1-based
+/// name-sorted position so later tool additions or deletions never shift them.
+fn freeze_legacy_tool_numbers(entities: &mut [EntityDto]) {
+    let mut tool_indices: Vec<usize> = entities
+        .iter()
+        .enumerate()
+        .filter(|(_, dto)| dto.kind.unwrap_or(EntityKind::Model) == EntityKind::Tool)
+        .map(|(i, _)| i)
+        .collect();
+    tool_indices.sort_by(|&a, &b| entities[a].name.cmp(&entities[b].name));
+    for (pos_idx, &entity_idx) in tool_indices.iter().enumerate() {
+        let legacy_pos = u32::try_from(pos_idx.saturating_add(1)).unwrap_or(u32::MAX);
+        if let Some(tdto) = &mut entities[entity_idx].tool
+            && tdto.number.is_none()
+        {
+            tdto.number = Some(legacy_pos);
+        }
+    }
 }

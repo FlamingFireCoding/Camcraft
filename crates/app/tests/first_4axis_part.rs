@@ -214,7 +214,10 @@ fn each_flat_posts_the_same_cut_after_its_index() {
         s.lines().skip_while(|l| !l.starts_with("G0 A")).skip(1).filter(|l| l.starts_with("G1 ")).map(str::to_owned).collect()
     };
     let first = cut(sections[0]);
-    assert_eq!(first.len(), 4, "a plunge and a pass at the skin, then at the flat: {first:?}");
+    // The stock top is the bar's skin, so Top Z is no level (#2004): one
+    // plunge and one pass, both at the flat.
+    assert_eq!(first.len(), 2, "a plunge and a pass at the flat: {first:?}");
+    assert!(first.iter().all(|l| l.contains(" Z0.36 ")), "no pass at the skin: {first:?}");
     for (i, s) in sections.iter().enumerate().take(4) {
         assert!(s.starts_with(OPS[i].0), "section {i} is {}", OPS[i].0);
         assert_eq!(cut(s), first, "{} cuts as {} does", OPS[i].0, OPS[0].0);

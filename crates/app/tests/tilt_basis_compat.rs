@@ -4,6 +4,7 @@
 //!
 //! Gate map (M4.4): covers app::project, app::operation, app::posting, cl::frame.
 
+use camcraft_app::cl::{lattice, MoveKind};
 use camcraft_app::commands::{GenerateOperation, History};
 use camcraft_app::geometry::Point3;
 use camcraft_app::operation::{self, OpStatus};
@@ -69,6 +70,55 @@ fn old_project_keeps_basis_status_regeneration_and_posted_cut() {
         .collect();
     regenerate(&world);
     assert_eq!(operation::status_of(&world, &entity), OpStatus::Ok);
+    let regenerated: Vec<_> = cached
+        .iter()
+        .map(|(name, old_path)| {
+            let entity = model::find_by_name(&world, name).expect("regenerated operation");
+            let mut path = model::toolpath_of(&world, &entity)
+                .expect("regenerated path")
+                .path;
+            // Indexed transforms introduce roundoff. Compare on the same
+            // coordinate and axis lattice as the saved project cache.
+            for m in &mut path.moves {
+                for point in [&mut m.from, &mut m.to] {
+                    *point = Point3::new(lattice(point.x), lattice(point.y), lattice(point.z));
+                }
+                m.axis = m.axis.map(|axis| axis.map(lattice));
+            }
+            if name == "Flat A-90" {
+                let old_cuts: Vec<_> = old_path
+                    .moves
+                    .iter()
+                    .filter(|m| m.kind == MoveKind::Feed)
+                    .collect();
+                let cuts: Vec<_> = path
+                    .moves
+                    .iter()
+                    .filter(|m| m.kind == MoveKind::Feed)
+                    .collect();
+                assert_eq!(
+                    old_cuts.len(),
+                    2,
+                    "legacy cache includes the Top Z air pass"
+                );
+                assert_eq!(
+                    cuts.len(),
+                    1,
+                    "regeneration removes only the Top Z air pass"
+                );
+                assert!(
+                    (old_cuts[0].to.y - 9.525).abs() < 1e-6,
+                    "old first cut is at Top Z"
+                );
+                assert!(
+                    (cuts[0].to.y - 9.144).abs() < 1e-6,
+                    "new first cut is one stepdown below Top Z"
+                );
+                assert_eq!(cuts[0], old_cuts[1], "the lower cut stays unchanged");
+            }
+            (name.clone(), path)
+        })
+        .collect();
     assert_eq!(
         post(&world, "after"),
         PROGRAM,
@@ -90,12 +140,12 @@ fn old_project_keeps_basis_status_regeneration_and_posted_cut() {
         operation::status_of(&reopened, &reopened_entity),
         OpStatus::Ok
     );
-    // Compare after save/load: the file quantizes CL coordinates to its lattice.
-    for (name, old_path) in cached {
+    // Saving and reopening must preserve the regenerated, lattice-snapped path.
+    for (name, regenerated_path) in regenerated {
         let entity = model::find_by_name(&reopened, &name).expect("reopened operation");
         assert_eq!(
             model::toolpath_of(&reopened, &entity).unwrap().path,
-            old_path,
+            regenerated_path,
             "{name}"
         );
     }
@@ -240,7 +290,7 @@ fn v65_tilt_steps_up(basis: Option<u8>) {
     let point = tilt.frame().unwrap().to_world(Point3::new(7.0, 11.0, 13.0));
     let text = project::save_text(&loaded).unwrap();
     let saved: Value = serde_json::from_str(&text).unwrap();
-    file["version"] = 67.into();
+    file["version"] = project::PROJECT_VERSION.into();
     file["entities"][row]["operation"]["params"]["contour"]["tilt"]["basis_version"] = expected_basis.into();
     assert_eq!(saved, file, "only the version and an unstated legacy basis may change");
     let reloaded = opened(&text);

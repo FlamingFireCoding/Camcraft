@@ -24,4 +24,5 @@ pub mod dxf_profile;
 pub mod profile_derive;
 pub mod profile_mesh;
 pub mod sketch_chains;
+pub mod solidcraft;
 pub mod sketch_data;

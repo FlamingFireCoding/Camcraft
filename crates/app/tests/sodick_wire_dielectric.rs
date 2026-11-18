@@ -20,7 +20,7 @@ use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, Histor
 use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::{parse_mch, Flushing, Machine, Tank};
 use camcraft_app::operation::{self, Height, OpParams, SrcRef, WireContourOp, WireSide};
-use camcraft_app::posting::{self, BUILTINS};
+use camcraft_app::posting;
 use camcraft_app::world::new_world;
 
 const FIXTURE: &str = include_str!("edm/wire-iso-fixture.mch");
@@ -29,7 +29,7 @@ const GOLDEN: &str = "tests/golden/nc/sodick-wire/wire_slug_punch_flushed.nc";
 const PLAIN_GOLDEN: &str = "tests/golden/nc/sodick-wire/wire_slug_punch.nc";
 
 fn cps() -> &'static str {
-    BUILTINS.iter().find(|(n, _)| *n == SODICK).map(|(_, s)| *s).expect("registered")
+    camcraft_app::posting::builtin_post_text(SODICK).expect("registered")
 }
 
 /// A sharp 40 x 20 slug from z = 0 to 12, centred on the origin (the

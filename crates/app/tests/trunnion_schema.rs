@@ -204,11 +204,11 @@ fn a_v66_trunnion_steps_up_without_losing_its_stated_rtcp_and_kinematics() {
     assert_eq!(machine::of(&loaded).1.as_ref(), Some(&expected));
     let saved = project::save_text(&loaded).expect("save migrated trunnion");
     let actual: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    file["version"] = json!(67);
+    file["version"] = json!(project::PROJECT_VERSION);
     assert_eq!(actual, file, "only the format version changes; all stated trunnion fields survive");
 
     let reloaded = new_world();
-    project::open(&reloaded, &saved).expect("v67 trunnion reloads");
+    project::open(&reloaded, &saved).expect("current-format trunnion reloads");
     let (_, back) = machine::of(&reloaded);
     let back = back.expect("reloaded machine");
     assert_eq!(back, expected, "RTCP, chain, pivots, offsets, zeros, rollover and convention survive");

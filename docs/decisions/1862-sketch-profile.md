@@ -112,11 +112,13 @@ The operation has no toolpath, and the post gate refuses it.
 - Each profile is read and chained before any world write. A profile off its
   face, with an unknown unit code or with primitives that do not chain refuses
   the file by name.
-- **`PROJECT_VERSION` 66 -> 67.** Main uses v66 for the trunnion schema
-  from #1962. Profiles use the next version, v67. A v66 file steps
-  up unchanged; the trunnion data, stated RTCP mode, tilt basis, earlier
-  cutting-data rows and breakthrough values remain intact. An older reader
-  refuses a v67 file before it can discard a profile. Dropped: sharing a version with main, which
+- **`PROJECT_VERSION` 70 -> 71.** Main uses v67 to v70 for the WCS flip
+  (#1720), the drill break-through mode (#2441), the 2D Adaptive move
+  (#1517) and the holder reference (#2016). Profiles use the next version,
+  v71. A v70 file steps up unchanged; the trunnion data, stated RTCP mode,
+  tilt basis, earlier cutting-data rows and breakthrough values remain
+  intact. An older reader refuses a v71 file before it can discard a
+  profile. Dropped: sharing a version with main, which
   lets an older reader discard data it cannot represent.
 
 ### What it costs to change later
@@ -220,3 +222,12 @@ The operation has no toolpath, and the post gate refuses it.
   tilt pins and the earlier breakthrough and cutting-data pins. Update the
   profile persistence assertions to v67. These checks preserve the stated
   machine contract while the profile format advances.
+
+### PR #2134 takeover refresh (2026-11-18)
+
+- Merge main at v70 and give profiles v71, the next free number. Keep
+  main's whole migration ladder (v67 WCS flip, v68 drill break-through,
+  v69 2D Adaptive, v70 holder reference). Dropped: keeping v67, which
+  main already uses for the WCS flip.
+- Profile persistence and step-up pins compare against `PROJECT_VERSION`
+  in place of a fixed number, so the next format step does not edit them.

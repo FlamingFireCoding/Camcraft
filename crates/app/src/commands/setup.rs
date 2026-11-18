@@ -75,7 +75,9 @@ pub struct CreateSetup {
     /// Furniture the datum transfer clones in (owned names only - the
     /// materialization case clones nothing; it points at what exists).
     stock: Option<StockSnap>,
-    wcs: Option<(String, Location)>,
+    /// The cloned WCS: name, placement and (#1720) flipped axes - the
+    /// datum transfer keeps the frame as it is, a flip included.
+    wcs: Option<(String, Location, [bool; 3])>,
     /// The active setup before this command, restored by its inverse.
     prev_active: Option<String>,
 }
@@ -187,10 +189,10 @@ impl CreateSetup {
                     material: crate::stock_material::of_entity(world, &entity),
                 });
             }
-            if let Some(loc) = setup::wcs_entity(world, Some(from))
-                .and_then(|entity| model::transform_of(world, &entity))
-            {
-                wcs = Some((def.wcs.clone(), loc));
+            if let Some((loc, flip)) = setup::wcs_entity(world, Some(from)).and_then(|entity| {
+                model::transform_of(world, &entity).map(|l| (l, crate::setup_wcs_flip::of_entity(world, &entity)))
+            }) {
+                wcs = Some((def.wcs.clone(), loc, flip));
             }
         }
         Ok(CreateSetup {
@@ -227,13 +229,14 @@ impl Command for CreateSetup {
             });
             crate::stock_material::land_entity(world, &e, s.material);
         }
-        if let Some((wname, loc)) = &self.wcs {
+        if let Some((wname, loc, flip)) = &self.wcs {
             let e = match model::find_by_name(world, wname) {
                 Some(e) => e,
                 None => model::spawn(world, wname),
             };
             e.entity_view(world).add(Wcs);
             model::set_transform(world, &e, *loc);
+            crate::setup_wcs_flip::set(world, &e, *flip);
         }
         // The new setup is the one you work in (module header: creation
         // activates; undo restores what was active).
@@ -247,7 +250,7 @@ impl Command for CreateSetup {
         {
             model::remove(world, &e);
         }
-        if let Some((wname, _)) = &self.wcs
+        if let Some((wname, _, _)) = &self.wcs
             && let Some(e) = model::find_by_name(world, wname)
         {
             model::remove(world, &e);

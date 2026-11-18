@@ -2243,9 +2243,10 @@ fn an_open_run_contours_on_its_air_side() {
     };
     let ends = [off(a), off(b)];
     let near = |x: f64, y: f64, e: (f64, f64)| (x - e.0).hypot(y - e.1) < 1e-6;
-    // contour_params: 5.0 -> 0.0 at 2.5 - three levels, one plunge each,
-    // Lead::None so the plunge lands exactly on the offset start.
-    let levels = [5.0, 2.5, 0.0];
+    // contour_params: 5.0 -> 0.0 at 2.5 - two levels, one plunge each,
+    // Lead::None so the plunge lands exactly on the offset start. #2004:
+    // Top Z 5 is the part top (no stock), so the air level at Z 5 is gone.
+    let levels = [2.5, 0.0];
     let plunges: Vec<_> = path
         .moves
         .iter()
@@ -2660,8 +2661,9 @@ fn a_mixed_pick_list_cuts_boundary_then_run_and_says_what_overlap_means() {
             .iter()
             .filter(|m| m.kind == MoveKind::Plunge)
             .count(),
-        6,
-        "three levels of boundary, three of run"
+        // #2004: Top Z 5 is the part top (no stock): no air level there.
+        4,
+        "two levels of boundary, two of run"
     );
     // The run's edge lies on the face's own wall. Before #1777 the cutter
     // rode the edge on its centre and half-cut the finished boundary; now
@@ -3562,12 +3564,17 @@ fn contour_outside_forces_outside_on_bore() {
     // The explicit Outside stands as asked - and on a bore it puts the
     // Ø6 cutter on the ring at r 15, IN the plate around the Ø24 bore:
     // the old path cut that groove silently. The part-solid depth law
-    // refuses it by name instead (the silent-gouge fix).
+    // refuses it by name instead (the silent-gouge fix). #2004: with no
+    // air level at Top Z the ring walks no level, and the picked-ring
+    // law (#1927) now speaks first: the same refusal, with the side
+    // named as the cause and Inside advised - the right advice on a bore.
     let err = GenerateOperation::new(&world, "BoreO")
         .err()
         .expect("an Outside ring around a bore stands in the plate - refused");
-    assert!(err.to_string().contains("cuts into the part"), "{err}");
-    assert!(err.to_string().contains("not walked at any level"), "{err}");
+    let err = err.to_string();
+    assert!(err.contains("meets its wall at no level below the part top"), "{err}");
+    assert!(err.contains("the cutter Outside this ring stands in the part material"), "{err}");
+    assert!(err.contains("set Side to Inside"), "{err}");
 }
 
 #[test]
@@ -3817,6 +3824,7 @@ fn drilled_block() -> camcraft_app::geometry::Mesh {
 fn drill_params(holes: Vec<Hole>, top_z: f64, clearance_z: f64) -> OpParams {
     OpParams::Drill {
         break_through: None,
+        break_through_from: Default::default(),
         clearance_z: Height::fixed(clearance_z),
         retract_z: None,
         top_z: Height::fixed(top_z),
@@ -3839,7 +3847,15 @@ fn drill_op_recognizes_from_the_model_then_machines_clean() {
     let world = new_world();
     let mut history = History::default();
     history.execute(&world, ImportModel::from_mesh("pblock", drilled_block()));
-    add_tool(&world, &mut history, "DR-0400");
+    let dr4 = camcraft_app::tools::catalog()
+        .into_iter()
+        .find(|(n, _)| *n == "DR-0400")
+        .map(|(_, mut t)| {
+            t.flute_len = 16.0;
+            t
+        })
+        .expect("DR-0400 in catalog");
+    history.execute(&world, AddTool::new(&world, "DR-0400-16", dr4).expect("tool"));
     let e = model::find_by_name(&world, "pblock").expect("part");
     let facets = model::facets_of(&world, &e).expect("mesh");
     let holes = drilling::recognize(&facets);
@@ -3850,7 +3866,7 @@ fn drill_op_recognizes_from_the_model_then_machines_clean() {
         CreateOperation::new(
             &world,
             "Drill1",
-            "DR-0400",
+            "DR-0400-16",
             SrcRef::Entity("pblock".into()),
             drill_params(holes.clone(), 10.0, 25.0),
         )
@@ -3865,13 +3881,18 @@ fn drill_op_recognizes_from_the_model_then_machines_clean() {
     assert_eq!(cache.warnings, Vec::new(), "{:?}", cache.warnings);
     assert_eq!(cache.path.cycles.len(), 1);
     let c = &cache.path.cycles[0];
-    // Auto's depth law: 11 mm of cut (10 + the through exit) in a 4 mm
-    // drill - past d, within 4d - so the peck shape, with the exit
-    // allowance recorded on the cycle the post will read.
+    // Auto's depth law: 12.202 mm of cut (10 + 1 through exit + 1.202 point) in
+    // a 4 mm drill - past d, within 4d - so the peck shape, with the full-diameter
+    // exit + drill point recorded on the cycle the post will read.
     assert_eq!(c.kind, CycleKind::Peck);
     assert_eq!((c.xy.x, c.xy.y), (0.0, 0.0));
     assert_eq!(c.entry_z, 10.0);
-    assert_eq!(c.bottom_z, -1.0);
+    let expected_bottom = -(1.0 + 2.0 / 59.0_f64.to_radians().tan());
+    assert!(
+        (c.bottom_z - expected_bottom).abs() < 1e-6,
+        "bottom_z expected {expected_bottom}, got {}",
+        c.bottom_z
+    );
     assert!(!c.xy.x.is_nan() && c.first_move < cache.path.moves.len());
 }
 
@@ -3906,7 +3927,7 @@ fn a_hole_deeper_than_the_drill_reaches_is_refused_by_name() {
         .expect("create"),
     );
     let err = GenerateOperation::new(&world, "Deep1").err().map(|e| e.to_string()).unwrap_or_default();
-    for s in ["131.000 mm deep from the stock surface", "DR-0400", "12.000 mm"] {
+    for s in ["132.202 mm deep from the stock surface", "DR-0400", "12.000 mm"] {
         assert!(err.contains(s), "the refusal names '{s}': {err:?}");
     }
     assert!(cache(&world, "Deep1").is_none(), "a refused hole caches no path");

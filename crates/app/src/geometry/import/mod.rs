@@ -1,4 +1,4 @@
-//! Mesh file importers (STL, OBJ, STEP). Public API: `load_model` / `parse_*`.
+//! Mesh file importers (STL, OBJ, STEP, Solidcraft `.sc`/`.solidcraft`). Public API: `load_model` / `parse_*`.
 //!
 //! The facet/vertex caps below are enforced before anything large is
 //! allocated. STL (M5.3 E) streams from the file - the size law runs off
@@ -63,6 +63,10 @@ pub enum ImportError {
     Obj(String),
     #[error("corrupt STEP: {0}")]
     Step(String),
+    /// A Solidcraft design that the kernel reader or the machining mesh
+    /// refused (#1456), with its own reason.
+    #[error("Solidcraft design refused: {0}")]
+    Solidcraft(String),
     #[error("imported mesh contains non-finite coordinates")]
     NonFinite,
     #[error("mesh may have nested or overlapping shells; inward winding may describe a cavity, so automatic orientation is ambiguous; re-export as separate non-overlapping solids")]
@@ -76,6 +80,8 @@ pub enum Format {
     Stl,
     Obj,
     Step,
+    /// A Solidcraft design (#1456): its cached final body, meshed.
+    Solidcraft,
 }
 
 /// Load a model from disk, dispatching on extension. STL (M5.3 E)
@@ -169,6 +175,15 @@ pub fn parse_model_graded_within(data: &[u8], format: Format, budget: usize) -> 
 /// the bytes twin of [`load_model_open_within`] (#1610).
 pub fn parse_model_open_within(data: &[u8], format: Format, budget: usize) -> Result<Graded, ImportError> {
     let (mesh, coarse_mm, notes, open) = match format {
+        // #1456: the machining mesh is watertight and outward, at the chord cap.
+        Format::Solidcraft => {
+            let (mesh, notes) = camcraft_geometry::solidcraft::parse(data, budget, step::CHORD_CAP)
+                .map_err(|error| match error {
+                    camcraft_geometry::solidcraft::SolidcraftError::TooLarge => ImportError::TooLarge,
+                    camcraft_geometry::solidcraft::SolidcraftError::Refused(reason) => ImportError::Solidcraft(reason),
+                })?;
+            (mesh, None, notes, None)
+        }
         Format::Stl | Format::Obj => {
             let mut mesh = gate(match format {
                 Format::Stl => stl::parse(data)?,
@@ -210,6 +225,7 @@ pub fn format_from_path(path: &Path) -> Result<Format, ImportError> {
         "stl" => Ok(Format::Stl),
         "obj" => Ok(Format::Obj),
         "step" | "stp" => Ok(Format::Step),
+        "sc" | "solidcraft" => Ok(Format::Solidcraft),
         _ => Err(ImportError::Unsupported(
             path.file_name()
                 .map(PathBuf::from)
