@@ -671,7 +671,7 @@ pub struct EntityDto {
     pub entry: Option<super::program_entry_dto::ProgramEntryDto>,
     /// #1720 (v67): a WCS row's flipped axes; present only on a WCS
     /// with at least one axis flipped. Absent is no flip - every older
-    /// file - and the post refuses a flipped WCS by name.
+    /// file. The post mirrors a flipped X or Y (#1649).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flip: Option<WcsFlipDto>,
 }

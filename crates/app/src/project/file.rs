@@ -402,9 +402,9 @@ pub struct ToolDto {
     /// earlier tool was taken to be - no version step.
     #[serde(default = "centre_cutting", skip_serializing_if = "is_centre_cutting")]
     pub center_cutting: bool,
-    /// #221 addition, additive (no version step): the controller's tool
-    /// number. Absent from every older file and written only when set;
-    /// absent means "post by list position", what every older tool did.
+    /// #221 / #2442 addition: the controller's tool number (`T..` / `H..`).
+    /// Legacy files without it are frozen to their 1-based name-sorted list
+    /// position on load so adding or deleting tools later never shifts them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub number: Option<u32>,
     /// #368 (v58): the tool's modelled body. Absent is none - the

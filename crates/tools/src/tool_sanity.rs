@@ -155,7 +155,22 @@ impl Tool {
             ToolKind::Wire => crate::wire::refusal(self),
             ToolKind::Electrode => self.electrode_rule(),
             ToolKind::ThreadMill | ToolKind::ThreadMillSingle => self.thread_mill_rule(),
-            _ => None,
+            // No kind rule, or each guarded rule above held. Each kind is
+            // named, with no catch-all: a new `ToolKind` does not compile
+            // until this match names it (#2505).
+            ToolKind::EndMill
+            | ToolKind::BallNose
+            | ToolKind::BullNose
+            | ToolKind::Bore
+            | ToolKind::Drill
+            | ToolKind::Tap
+            | ToolKind::Turning
+            | ToolKind::Groove
+            | ToolKind::Thread
+            | ToolKind::Form
+            | ToolKind::Taper
+            | ToolKind::Probe
+            | ToolKind::Torch => None,
         }
     }
 

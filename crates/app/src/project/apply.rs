@@ -608,6 +608,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
     for dto in &file.entities {
         validate_kind(dto, dto.kind.unwrap_or(EntityKind::Model))?;
     }
+    freeze_legacy_tool_numbers(&mut file.entities);
     for dto in &mut file.entities {
         if let Some(op) = &mut dto.operation
             && op.tool.is_empty()
@@ -956,4 +957,24 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         notes.push(format!("fixture '{name}': plate location dropped on load: no such plate"));
     }
     Ok(notes)
+}
+
+/// Freeze unnumbered tools in a pre-#2442 file to their legacy 1-based
+/// name-sorted position so later tool additions or deletions never shift them.
+fn freeze_legacy_tool_numbers(entities: &mut [EntityDto]) {
+    let mut tool_indices: Vec<usize> = entities
+        .iter()
+        .enumerate()
+        .filter(|(_, dto)| dto.kind.unwrap_or(EntityKind::Model) == EntityKind::Tool)
+        .map(|(i, _)| i)
+        .collect();
+    tool_indices.sort_by(|&a, &b| entities[a].name.cmp(&entities[b].name));
+    for (pos_idx, &entity_idx) in tool_indices.iter().enumerate() {
+        let legacy_pos = u32::try_from(pos_idx.saturating_add(1)).unwrap_or(u32::MAX);
+        if let Some(tdto) = &mut entities[entity_idx].tool
+            && tdto.number.is_none()
+        {
+            tdto.number = Some(legacy_pos);
+        }
+    }
 }

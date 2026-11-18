@@ -926,7 +926,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     problems.extend(suppressed::suppressed_problems(world));
     // The rotated-offset clause (#315): the post carries translation only.
     problems.extend(wcs_rotation::rotated_wcs_problems(world));
-    // #1720: nor a flipped axis - refused by name until it is carried.
+    // #1649: a flipped axis is carried by the post (X, Y); what is not
+    // carried - a flipped Z, a rotated or unverified case - is refused.
     problems.extend(crate::setup_wcs_flip::post_problems(world));
     // The offset-range clause (#931): each setup's offset index against
     // its own post's maximum - never posted at offset 1.
@@ -1279,6 +1280,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             wcs,
             origin,
             wcs_yaw: wcs_yaw(world, setup),
+            wcs_flip: crate::setup_wcs_flip::of_setup(world, setup),
             wcs_rotation_control: wcs_yaw(world, setup).is_some()
                 && crate::setup_post_options::of(world, op.setup.as_deref()).wcs_rotation
                     == crate::schema::WcsRotationOutput::Control,
