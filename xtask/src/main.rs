@@ -8,19 +8,33 @@
 mod asset_tests;
 mod assets;
 mod braces;
+mod budget;
+#[cfg(test)]
+mod budget_tests;
+mod catalog;
+mod catalog_media;
+mod catalog_pdf;
+#[cfg(test)]
+mod catalog_tests;
 mod checkout;
 #[cfg(test)]
 mod checkout_tests;
 mod decisions;
+mod docs_images;
 #[cfg(test)]
 mod directory_tests;
 mod exec;
+mod lanes;
 #[cfg(test)]
 mod gate_maps_tests;
+#[cfg(test)]
+mod heavy_tests;
 mod icon_font;
 mod icons;
 #[cfg(test)]
 mod icons_tests;
+#[cfg(test)]
+mod lanes_tests;
 mod logo;
 #[cfg(test)]
 mod logo_tests;
@@ -36,6 +50,7 @@ mod package;
 mod path_mods;
 mod plan;
 mod process_bump;
+mod queue;
 #[cfg(test)]
 mod process_bump_tests;
 mod quick;
@@ -45,7 +60,12 @@ mod release_pack;
 #[cfg(test)]
 mod release_tests;
 mod scan;
+mod select;
+#[cfg(test)]
+mod select_tests;
 mod single;
+#[cfg(test)]
+mod step_tests;
 mod suites;
 #[cfg(test)]
 mod tests;
@@ -58,10 +78,12 @@ use std::process::ExitCode;
 const USAGE: &str = "\
 usage:
   cargo xtask gate quick [--base main] [--heavy]   tests the diff touches (test fns where it can)
-  cargo xtask gate batch                           every debug suite minus SLOW_BINARIES, ui, clippy
-  cargo xtask gate release [--no-snapshots]        everything, plus the --ignored heavy lanes and the ui snapshot lane
+  cargo xtask gate batch                           one build, then one step for each debug test binary minus SLOW_BINARIES, ui, clippy (#1941)
+  cargo xtask gate release [--no-snapshots]        everything, plus the --ignored heavy lanes (one step per binary) and the ui snapshot lane
                                                    (--no-snapshots: not the Windows-made pixel goldens - cut.yml on Linux, #1413)
   cargo xtask gate test <filter> [--crate c] [--binary b] [--exact]   exactly the matching test(s)
+      any gate (not test): --only <step> [--only <step>...]   run only the steps whose name starts with <step> (kernel, clippy, ui)
+      any gate (not test): --failed <gate-logs/run>           run only the steps that failed in that earlier run (#1702)
       any gate: --dry-run (or --plan) prints the plan without running it. Logs: gate-logs/<tier>-<timestamp>/.
   cargo xtask icons [--check | --sheet <out.png> [--px N] [--zoom N]]
                                                    rasterise assets/ui/svg/*.svg to the 32 px PNGs (#661), check
@@ -77,7 +99,11 @@ usage:
   cargo xtask package [--version X.Y.Z] [--out dist] [--bin-dir target/release] [--dry-run]
                                                    stage the Windows portable tree and write camcraft-<ver>-win-x64.zip
                                                    (no bump/commit/build; version defaults to post.exe --version;
-                                                   reports version/stage/zip to $GITHUB_OUTPUT when set)";
+                                                   reports version/stage/zip to $GITHUB_OUTPUT when set)
+  cargo xtask docs-images [--check]                render all User Guide PNGs off-screen or verify site/static/images/guide/ (#1902)
+  cargo xtask catalog [--case <family/case>] [--check] [--screenshots] [--pdf]
+                                                   rebuild/verify example catalog cases, render screenshots onto an
+                                                   images-only branch, or build per-case PDFs (#2393)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -112,6 +138,10 @@ pub struct GateArgs {
     pub dry: bool,
     /// `gate release --no-snapshots` (#1413): the release plan without the two ui pixel-snapshot lanes.
     pub no_snapshots: bool,
+    /// `--only <step>` (repeatable, #1702): keep only the steps whose name starts with a given word.
+    pub only: Vec<String>,
+    /// `--failed <gate-logs/run>` (#1702): keep only the steps that failed in that earlier run.
+    pub failed: Option<String>,
 }
 
 pub fn parse_gate(args: &[String]) -> Result<GateArgs, String> {
@@ -134,6 +164,8 @@ pub fn parse_gate(args: &[String]) -> Result<GateArgs, String> {
             "--heavy" => g.heavy = true,
             "--dry-run" | "--plan" => g.dry = true,
             "--no-snapshots" => g.no_snapshots = true,
+            "--only" => g.only.push(value(a, &mut it)?),
+            "--failed" => g.failed = Some(value(a, &mut it)?),
             s if s.starts_with('-') => return Err(format!("unknown gate option '{s}'\n{USAGE}")),
             s if g.tier.is_empty() => g.tier = s.to_string(),
             s if g.tier == "test" && g.filter.is_none() => g.filter = Some(s.to_string()),
@@ -145,6 +177,9 @@ pub fn parse_gate(args: &[String]) -> Result<GateArgs, String> {
     }
     if g.no_snapshots && g.tier != "release" {
         return Err(format!("--no-snapshots applies to the release tier only, not '{}'", g.tier));
+    }
+    if g.tier == "test" && (!g.only.is_empty() || g.failed.is_some()) {
+        return Err("--only and --failed select steps of quick, batch or release, not of 'gate test'".into());
     }
     match g.tier.as_str() {
         "quick" | "batch" | "release" => Ok(g),
@@ -181,6 +216,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
         Some("icons") => icons::run(&root(), &args[1..]),
         Some("logo") => logo::run(&root(), &args[1..]),
+        Some("docs-images") => docs_images::run(&root(), &args[1..]),
+        Some("catalog") => catalog::run(&root(), &args[1..]),
         Some("merge-plan") => merge_plan_git::run(&root(), &args[1..]),
         Some("process-bump") => process_bump::run(&root(), &args[1..]),
         Some("package") => {
@@ -200,6 +237,10 @@ fn run(args: &[String]) -> Result<i32, String> {
 }
 
 fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
+    let failed = match &g.failed {
+        Some(dir) => Some(select::failed_in_dir(Path::new(dir))?),
+        None => None,
+    };
     let mut run = exec::Run::new(root, &g.tier, g.dry)?;
     if let Some(name) = &g.filter {
         let f = single::Filter {
@@ -270,6 +311,7 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
         }
         _ => tier_plan(root, g),
     };
+    let plan = select::apply(plan, &g.only, failed.as_deref())?;
     run.plan(&plan)?;
     Ok(run.summary())
 }

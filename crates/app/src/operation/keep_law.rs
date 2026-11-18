@@ -66,6 +66,44 @@ pub fn is_keep_kind(params: &OpParams) -> bool {
     matches!(params, OpParams::Pocket { .. } | OpParams::Adaptive2D { .. } | OpParams::Offset2D { .. })
 }
 
+/// #1655: a pocket-family op that clears the stock AROUND the part (a
+/// whole-model source, #12, or the stock source with parts, #1554) says
+/// by name each band of that area narrower than the tool: the generator
+/// gives such a band no pass, and refuses only when nothing is left to
+/// cut. `cleared_around` is that reading; every other job is unchanged.
+/// The note never blocks the cut: a region the band check cannot read
+/// keeps its path and says that the check did not run.
+pub(super) fn narrow_noted(
+    mut path: crate::cl::Toolpath,
+    params: &OpParams,
+    region: &crate::geo2d::Region,
+    tool_diameter: f64,
+    cleared_around: bool,
+    unit: crate::units::Unit,
+) -> crate::cl::Toolpath {
+    let leave = match params {
+        OpParams::Pocket { stock_to_leave, .. }
+        | OpParams::Adaptive2D { stock_to_leave, .. }
+        | OpParams::Offset2D { stock_to_leave, .. } => *stock_to_leave,
+        _ => return path,
+    };
+    if !cleared_around {
+        return path;
+    }
+    let label = params.kind().info().label;
+    match crate::machining2d::unreached_note(region, tool_diameter, leave, unit) {
+        Ok(Some(n)) => path.notes.push(format!("{label}: {n}")),
+        Ok(None) => {}
+        Err(e) => {
+            tracing::warn!(kind = label, "the band check around the part did not run: {e}");
+            path.notes.push(format!(
+                "{label}: the check for bands of the stock narrower than the tool did not run ({e}) - look at the stock around the part"
+            ));
+        }
+    }
+    path
+}
+
 /// Whether `params` answers for the parts standing in its stock when
 /// its source is the stock (#1603, #1607, #1631): every 2D kind that
 /// carries a part law on a part source - the pocket family (`Keep`),
@@ -73,7 +111,10 @@ pub fn is_keep_kind(params: &OpParams) -> bool {
 /// (`Section`), Engrave and Trace (`Mark`), the hole kinds (`Contain`,
 /// [`is_hole_kind`]) - and the 2D Chamfer (#1631: on a part source its
 /// break is the part's own edge; off the stock, the solid law) - and
-/// the cross drill (#1635, [`is_cross_drill`]: `cross_part`).
+/// the cross drill (#1635, [`is_cross_drill`]: `cross_part`) - and the
+/// Deburr (#2313: off the stock it breaks the stock's edges, the solid
+/// law; on a stock that IS a part, `stock_sim::breaks::stock_part_of`,
+/// that part's edges are its own and only the other parts are kept).
 #[must_use]
 pub fn is_stock_kept_kind(params: &OpParams) -> bool {
     is_keep_kind(params)
@@ -88,6 +129,7 @@ pub fn is_stock_kept_kind(params: &OpParams) -> bool {
                 | OpParams::Contour { .. }
                 | OpParams::Face { .. }
                 | OpParams::Chamfer2D { .. }
+                | OpParams::Deburr { .. }
         )
 }
 
@@ -134,7 +176,25 @@ pub(super) fn parts_in_stock(
     if part_solid || !is_stock_kept_kind(params) {
         return Vec::new();
     }
+    if spared_stock_part(world, setup, params).is_some() {
+        // #2313: every part but the one the stock is.
+        return kept_models(world, setup, params, &SrcRef::Stock, false)
+            .into_iter()
+            .filter_map(|(_, e)| crate::setup_align::facets_in(world, &e, setup))
+            .flatten()
+            .collect();
+    }
     crate::setup_align::parts_facets_in(world, setup)
+}
+
+/// #2313: the part a stock-source Deburr breaks the edges OF - the part
+/// its from-model stock is (`stock_sim::breaks::stock_part_of`) - which
+/// its stock part law spares, as a part source spares its own part.
+/// `None` for any other kind and any other stock.
+fn spared_stock_part(world: &flecs_ecs::prelude::World, setup: Option<&str>, params: &OpParams) -> Option<String> {
+    matches!(params, OpParams::Deburr { .. })
+        .then(|| crate::stock_sim::breaks::stock_part_of(world, setup))
+        .flatten()
 }
 
 /// The parts a part-source operation must keep beside its own (#1621):
@@ -156,11 +216,20 @@ pub(super) fn neighbour_parts(
     if !part_solid {
         return Vec::new();
     }
-    kept_models(world, params, src, true)
+    kept_models(world, setup, params, src, true)
         .into_iter()
         .filter_map(|(_, e)| crate::setup_align::facets_in(world, &e, setup))
         .flatten()
         .collect()
+}
+
+/// Whether a part-source operation keeps neighbouring parts. Generation
+/// and the live posting check share this rule, including kinds whose
+/// own source is judged outside `depth_law_of`.
+pub(super) fn is_part_kept_kind(params: &OpParams, src: &SrcRef) -> bool {
+    super::generate::depth_law_of(params, src, true) != super::generate::DepthLaw::None
+        || is_cross_drill(params)
+        || matches!(params, OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. })
 }
 
 /// The models whose meshes an operation's part laws read beyond its own
@@ -169,22 +238,26 @@ pub(super) fn neighbour_parts(
 /// kind that carries no such law.
 fn kept_models(
     world: &flecs_ecs::prelude::World,
+    setup: Option<&str>,
     params: &OpParams,
     src: &SrcRef,
     part_solid: bool,
 ) -> Vec<(String, flecs_ecs::prelude::Entity)> {
+    let spared;
     let own: Vec<&str> = match src {
         _ if !part_solid => {
             if !is_stock_kept_kind(params) {
                 return Vec::new();
             }
-            Vec::new()
+            spared = spared_stock_part(world, setup, params);
+            spared.as_deref().into_iter().collect()
         }
         // #1641: a cross drill carries its radial part law
-        // (`cross_part`) though its `DepthLaw` reads `None`.
-        _ if super::generate::depth_law_of(params, src, true) == super::generate::DepthLaw::None && !is_cross_drill(params) => {
-            return Vec::new()
-        }
+        // (`cross_part`) though its `DepthLaw` reads `None`. #1749: so
+        // does a 3D Pocket (and its stamped twin), whose cutter now passes its model's
+        // silhouette edge - its footprint keeps out of these parts, and
+        // the solid law below holds them as the second net.
+        _ if !is_part_kept_kind(params, src) => return Vec::new(),
         SrcRef::Stock => return Vec::new(),
         SrcRef::Entity(n) => vec![n.as_str()],
         SrcRef::Selection(items) => items.iter().map(|g| g.entity.as_str()).collect(),
@@ -209,8 +282,32 @@ pub(super) fn kept_parts_named(
     src: &SrcRef,
     part_solid: bool,
 ) -> Vec<(String, Vec<Triangle>)> {
-    kept_models(world, params, src, part_solid)
+    kept_models(world, setup, params, src, part_solid)
         .into_iter()
         .filter_map(|(name, e)| crate::setup_align::facets_in(world, &e, setup).map(|f| (name, f)))
         .collect()
+}
+
+/// #1637: a stock-source 2D Chamfer whose solid-law check hits a part
+/// breaks an edge belonging to the part rather than stock-only material.
+/// Rewrite `Warning::Gouge` into `Warning::StockChamferGouge` so every
+/// channel names the cause and the part-source workaround. #2313: a
+/// stock-source Deburr the same, as `Warning::StockDeburrGouge`.
+pub(super) fn note_stock_chamfer_gouges(
+    params: &OpParams,
+    part_solid: bool,
+    warns: &mut [crate::verify::Warning],
+) {
+    use crate::verify::Warning;
+    let named: fn(usize) -> Warning = match params {
+        _ if part_solid => return,
+        OpParams::Chamfer2D { .. } => |at| Warning::StockChamferGouge { at },
+        OpParams::Deburr { .. } => |at| Warning::StockDeburrGouge { at },
+        _ => return,
+    };
+    for w in warns {
+        if let Warning::Gouge { at } = *w {
+            *w = named(at);
+        }
+    }
 }

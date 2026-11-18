@@ -4,7 +4,8 @@
 //! these four stayed at `DepthLaw::None`, so a drill, bar, thread mill or
 //! chamfer cone cut off the stock and into the part had 0 findings - with
 //! the stock aligned the program sim held the post, with it turned (the
-//! sim refuses to judge) the post went out.
+//! sim refuses to judge) the post went out. #2177: the device is a turn
+//! off the machine axes; the sim judges a quarter-turned box.
 //!
 //! Now the hole kinds take their own containment law against the setup's
 //! parts: a hole may enter a part only through the hole the part models
@@ -159,4 +160,121 @@ fn over_mcp_a_stock_source_hole_or_chamfer_answers_for_the_part_the_same() {
     let clear = mcp_verify("chamfer-clear", 35.0, "2D Chamfer", CHAMFER, chamfer);
     assert_eq!(op_gouges(&clear), 0, "{clear}");
     assert_eq!(clear["ok"], json!(true), "{clear}");
+}
+
+#[test]
+fn a_part_added_under_a_stock_source_drill_is_judged_at_the_post_by_the_hole_law() {
+    // #1691: on a turned stock the program sim does not judge, so the post
+    // judges the kept parts again (#1628) - by generation's own law. A
+    // Drill off the stock at (25, 0), where only the stock stands, posts.
+    // A second part then added there: with its own modelled hole at the
+    // drill's size the hole law excuses its faceted wall and the program
+    // posts; solid there, the drill cuts it and the post refuses by name.
+    for (label, hole) in [("holed", true), ("solid", false)] {
+        let (world, mut h) = job(Model::hole(3.0, 8.0), HALF, true);
+        let warns = hole_op(&world, &mut h, Kind::Drill, Cut::at(25.0, 0.0, 3.0, 10.0));
+        assert!(warns.iter().all(|w| !w.blocks_post()), "{label}: a clean generation: {warns:?}");
+        assert!(pocket_support::oblique_refused(&world), "{label}: the device holds: the program sim does not judge this stock");
+        assert_posts(&world, &format!("added-{label}-before"));
+        let mut f = Vec::new();
+        let ring = common::solid_part::circle((25.0, 0.0), 3.0, 32);
+        let rim = hole.then_some((ring.as_slice(), 8.0));
+        common::solid_part::plate(&common::solid_part::rect(20.0, -5.0, 30.0, 5.0), rim, 0.0, TOP, &mut f);
+        h.execute(&world, ImportModel::from_mesh("other", Mesh::from_facets(f)));
+        if hole {
+            assert_posts(&world, "added-holed");
+        } else {
+            assert_not_posted(&world, "added-solid", "S1 now cuts part 'other'");
+        }
+    }
+}
+
+#[test]
+fn stock_source_chamfer_refusal_names_cause_and_part_as_source_workaround() {
+    // #1637: a stock-source 2D Chamfer flush with the part breaks into
+    // the part; its refusal on generate, post, and MCP verify must name
+    // the cause and tell the user to chamfer with the part as source.
+    for rotated in [false, true] {
+        let (world, mut h) = job(Model::hole(3.0, 8.0), 15.0, rotated);
+        let warns = generated(&world, &mut h, CHAMFER, chamfer(1.0));
+        let hints: Vec<String> = warns.iter().filter(|w| w.blocks_post()).map(ToString::to_string).collect();
+        assert!(
+            hints.iter().any(|m| m.contains("stock-source chamfer breaks into a part") && m.contains("chamfer with the part as source")),
+            "generate rotated {rotated}: expected cause + workaround in warnings: {hints:?}"
+        );
+        if rotated {
+            assert!(pocket_support::oblique_refused(&world), "the device holds: the program sim does not judge this stock");
+            assert_not_posted(&world, "chamfer-hint-rotated", "chamfer with the part as source");
+        }
+
+        // A part added under a previously clear rotated-stock chamfer is
+        // also caught at the post by the same hint.
+        if rotated {
+            let (re_world, mut rh) = job(Model::hole(3.0, 8.0), HALF, true);
+            let clear_warns = generated(&re_world, &mut rh, CHAMFER, chamfer(1.0));
+            assert!(clear_warns.iter().all(|w| !w.blocks_post()), "{clear_warns:?}");
+            let mut f = Vec::new();
+            common::solid_part::plate(&common::solid_part::rect(30.0, -5.0, 35.0, 5.0), None, 0.0, TOP, &mut f);
+            rh.execute(&re_world, ImportModel::from_mesh("other", Mesh::from_facets(f)));
+            assert_not_posted(&re_world, "chamfer-rejudge-hint", "chamfer with the part as source");
+        }
+
+        // Choosing the part as source produces a clean path that posts.
+        let (part_world, mut ph) = job(Model::hole(3.0, 8.0), 15.0, rotated);
+        ph.execute(
+            &part_world,
+            CreateOperation::new(&part_world, "S1", CHAMFER, SrcRef::Entity("part".into()), chamfer(1.0)).expect("create part-source chamfer"),
+        );
+        ph.execute(&part_world, GenerateOperation::new(&part_world, "S1").expect("generate part-source chamfer"));
+        let e = model::find_by_name(&part_world, "S1").expect("op");
+        let tp = model::toolpath_of(&part_world, &e).expect("cached path");
+        assert!(tp.warnings.iter().all(|w| !w.blocks_post()), "part-source rotated {rotated}: {:?}", tp.warnings);
+        assert_posts(&part_world, &format!("chamfer-part-source-{rotated}"));
+    }
+
+    let chamfer_json = json!({ "width": 1.0, "angle_deg": 45.0, "top_z": 20.0 });
+    let flush = mcp_verify("chamfer-hint-mcp", 15.0, "2D Chamfer", CHAMFER, chamfer_json);
+    assert_eq!(flush["ok"], json!(false), "{flush}");
+    let findings = flush["findings"].as_array().expect("findings array");
+    assert!(
+        findings.iter().any(|f| {
+            f["op"] == json!("S1")
+                && f["kind"] == json!("gouge")
+                && f["blocks_post"] == json!(true)
+                && f["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("stock-source chamfer breaks into a part") && m.contains("chamfer with the part as source"))
+        }),
+        "MCP verify findings missing cause + workaround: {flush}"
+    );
+}
+
+#[test]
+fn framed_stock_chamfer_live_refusal_keeps_hint_without_local_move_number() {
+    use camcraft_app::operation::Tilt;
+    let (world, mut h) = job_without_part(HALF);
+    let mut params = chamfer(1.0);
+    if let OpParams::Chamfer2D { tilt, .. } = &mut params {
+        *tilt = Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 10.0, origin: [0.0; 3] });
+    }
+    let warns = generated(&world, &mut h, CHAMFER, params);
+    assert!(warns.iter().all(|w| !w.blocks_post()), "previously clear chamfer: {warns:?}");
+    let e = model::find_by_name(&world, "S1").expect("op");
+    let op = model::operation_of(&world, &e).expect("operation");
+    let path = model::toolpath_of(&world, &e).expect("cached path").path;
+    assert!(op.params.tilt().is_some(), "exercise the operation frame");
+    assert!(camcraft_app::operation::kept_rejudge::moved_part_problem(&world, "S1", &op, &path).is_none());
+    let mut f = Vec::new();
+    // Model the added part in the cutting plane: its top meets the
+    // chamfer, while its body stays below the cutter's shank.
+    common::solid_part::plate(&common::solid_part::rect(-50.0, -50.0, 50.0, 50.0), None, 0.0, TOP, &mut f);
+    let frame = op.params.tilt().expect("tilt").frame().expect("frame");
+    let f = f.iter().map(|t| camcraft_app::geometry::Triangle::new(frame.to_world(t.a), frame.to_world(t.b), frame.to_world(t.c))).collect();
+    h.execute(&world, ImportModel::from_mesh("other", Mesh::from_facets(f)));
+    let refusal = camcraft_app::operation::kept_rejudge::moved_part_problem(&world, "S1", &op, &path).expect("live refusal");
+    assert!(refusal.contains("S1 now cuts part 'other'"), "{refusal}");
+    assert!(refusal.contains("stock-source chamfer breaks into a part"), "{refusal}");
+    assert!(refusal.contains("chamfer with the part as source"), "{refusal}");
+    assert!(!refusal.contains("move "), "local move numbers are not posted move numbers: {refusal}");
+    assert_not_posted(&world, "framed-chamfer-live", "stock-source chamfer breaks into a part");
 }

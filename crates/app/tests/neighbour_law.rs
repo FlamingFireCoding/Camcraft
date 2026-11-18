@@ -5,7 +5,9 @@
 //! kinds, `Keep` for a whole-model pocket) read only its source's mesh:
 //! a cut on part B whose flank entered part A beside it had no finding
 //! on the operation - with the stock aligned the program sim held the
-//! post, with it turned (the sim refuses to judge) nothing judged A.
+//! post, with it turned off the machine axes (the sim refuses to judge)
+//! nothing judged A. (#2177: a quarter turn is square to the axes, and
+//! the sim judges it.)
 //! Now the setup's other parts take the plain solid law (no mark budget:
 //! a mark is on the part it marks): the cut into A is a blocking
 //! `Warning::Gouge` on the operation on both stocks; a legal mark on B
@@ -17,8 +19,9 @@
 //!
 //! Gate map: covers app::operation::keep_law (neighbour_parts),
 //! app::operation::job (neighbour_parts), app::operation::generate (the
-//! neighbour law), app::posting, app::posting_sim, app::mcp
-//! (add_operation, verify).
+//! neighbour law), app::operation::mark_law (budget_of, target_facets,
+//! sim_mark_of), app::stock_sim (marks), sim::stock_sim::mark,
+//! app::posting, app::posting_sim, app::mcp (add_operation, verify).
 
 mod area_support;
 mod pocket_support;
@@ -61,21 +64,27 @@ fn part_a(gap: f64) -> Mesh {
 }
 
 /// Both parts in an 80 x 80 x 8 box stock centred on the origin:
-/// axis-aligned, or turned a quarter about Z (the same footprint, but a
-/// rotation the program sim refuses to model).
+/// axis-aligned, or turned [`OBLIQUE`] about Z (the same footprint
+/// within 1e-4 mm, but a turn the program sim refuses to model).
 fn job(gap: f64, rotated: bool) -> (World, History) {
+    job_turned(gap, stock_turn(rotated))
+}
+
+/// [`job`] with the stock turned by `rot` about its place.
+fn job_turned(gap: f64, rot: [f64; 4]) -> (World, History) {
     let world = new_world();
     let mut h = History::default();
     let tool = catalog().into_iter().find(|(n, _)| *n == CUTTER).map(|(_, t)| t).expect("tool");
     h.execute(&world, AddTool::new(&world, CUTTER, tool).expect("tool"));
     h.execute(&world, ImportModel::from_mesh("part", part_b()));
     h.execute(&world, ImportModel::from_mesh("other", part_a(gap)));
-    let rot = if rotated { quat_from_yaw(std::f64::consts::FRAC_PI_2) } else { Location::default().rot };
     let at = Location { pos: Point3::new(0.0, 0.0, 0.0), rot };
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 80.0, dy: 80.0, dz: TOP }, at).expect("stock"));
     let (lo, hi) = stock_box(&world);
-    let on = |v: f64, want: f64| (v - want).abs() < 1e-9;
-    assert!(on(lo.x, -40.0) && on(hi.x, 40.0) && on(lo.y, -40.0) && on(hi.y, 40.0) && on(hi.z, TOP), "stock at {lo:?}..{hi:?}");
+    // The oblique turn moves the corners by 40 * sqrt(2) * 1e-6 mm.
+    let on = |v: f64, want: f64| (v - want).abs() < 1e-4;
+    let level = |v: f64, want: f64| (v - want).abs() < 1e-9;
+    assert!(on(lo.x, -40.0) && on(hi.x, 40.0) && on(lo.y, -40.0) && on(hi.y, 40.0) && level(hi.z, TOP), "stock at {lo:?}..{hi:?}");
     (world, h)
 }
 
@@ -133,6 +142,7 @@ fn assert_post_refused(world: &World, tag: &str, by_op: bool) {
     assert!(err.contains("post blocked"), "{tag}: {err}");
     if by_op {
         assert!(err.contains("N1: move") && err.contains("cuts past the finish surface"), "{tag}: {err}");
+        assert!(oblique_refused(world), "{tag}: the program sim judged the oblique stock");
     }
     assert!(!out.exists(), "{tag}: blocked output is never written");
 }
@@ -150,7 +160,7 @@ fn a_cut_on_b_into_its_neighbour_gouges_on_the_op_and_never_posts() {
     // The issue's probe: a 0.3 mm mark round B's outline, its flank
     // 2.3 mm into A along their shared side - and a Contour (a `Section`
     // kind) round B to Z 1, wholly in A there. Before #1621: no finding
-    // for A on the op; turned, nothing judged A.
+    // for A on the op; turned off the axes, nothing judged A.
     let cases = [
         ("trace", mark(true, TOP, 7.7)),
         ("engrave", mark(false, TOP, 7.7)),
@@ -163,6 +173,76 @@ fn a_cut_on_b_into_its_neighbour_gouges_on_the_op_and_never_posts() {
             assert!(gouges_in_a(&warns, &path, TIGHT) > 0, "{label} rotated {rotated}: A is kept on the op: {warns:?}");
             assert_post_refused(&world, &format!("into-a-{label}-{rotated}"), rotated);
         }
+    }
+}
+
+#[test]
+fn the_program_sim_refuses_a_mark_on_b_whose_flank_enters_a_neighbour() {
+    // #1627: on the aligned stock, the program sim itself must convict
+    // the #1621 probe (a 0.3 mm part-source mark on B whose flank enters
+    // A by 2.3 mm x 0.3 mm) instead of crediting B's mark budget on A.
+    for trace in [false, true] {
+        for picked in [false, true] {
+            let (world, mut h) = job(TIGHT, false);
+            let src = if picked { sel("part", top_face(&world, "part", TOP)) } else { whole_b() };
+            generated(&world, &mut h, src, mark(trace, TOP, 7.7));
+            let dev = camcraft_app::stock_sim::simulate_document(&world)
+                .expect("the aligned stock is judged")
+                .dev;
+            assert!(
+                dev.gouge_cells > 0,
+                "trace {trace} picked {picked}: the program sim credited B's mark on A"
+            );
+            assert!(
+                (dev.max_gouge - 0.3).abs() < 1e-6,
+                "trace {trace} picked {picked}: expected 0.3 mm gouge on A, got {}",
+                dev.max_gouge
+            );
+            let at = dev.max_gouge_at.expect("located");
+            assert!(
+                at.x < -TIGHT + 0.125,
+                "trace {trace} picked {picked}: worst gouge must lie on A (x < -{TIGHT}), got {at:?}"
+            );
+        }
+    }
+    // Clear of A, the same mark on B is clean in the program sim too.
+    for trace in [false, true] {
+        let (world, mut h) = job(CLEAR, false);
+        generated(&world, &mut h, whole_b(), mark(trace, TOP, 7.7));
+        let dev = camcraft_app::stock_sim::simulate_document(&world)
+            .expect("the aligned stock is judged")
+            .dev;
+        assert_eq!(dev.gouge_cells, 0, "trace {trace}: worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
+    }
+    // A stock-source mark still credits every part in the setup (#1607).
+    let (world, mut h) = job(TIGHT, false);
+    generated(&world, &mut h, SrcRef::Stock, mark(false, TOP, 7.7));
+    let dev = camcraft_app::stock_sim::simulate_document(&world)
+        .expect("the aligned stock is judged")
+        .dev;
+    assert_eq!(dev.gouge_cells, 0, "stock source worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
+}
+
+#[test]
+fn a_quarter_turned_stock_is_judged_by_the_program_sim() {
+    // #2177: the stock turned a quarter about Z is the same box square
+    // to the axes. The program sim judges it as it judges the aligned
+    // one: B's mark whose flank enters A is convicted on A, and the
+    // post is refused; clear of A the same mark posts.
+    let quarter = quat_from_yaw(std::f64::consts::FRAC_PI_2);
+    for trace in [false, true] {
+        let (world, mut h) = job_turned(TIGHT, quarter);
+        generated(&world, &mut h, whole_b(), mark(trace, TOP, 7.7));
+        let dev = camcraft_app::stock_sim::simulate_document(&world).expect("a quarter-turned box is judged").dev;
+        assert!((dev.max_gouge - 0.3).abs() < 1e-6, "trace {trace}: expected 0.3 mm gouge on A, got {}", dev.max_gouge);
+        let at = dev.max_gouge_at.expect("located");
+        assert!(at.x < -TIGHT + 0.125, "trace {trace}: worst gouge must lie on A (x < -{TIGHT}), got {at:?}");
+        assert_post_refused(&world, &format!("quarter-into-a-{trace}"), false);
+        let (world, mut h) = job_turned(CLEAR, quarter);
+        generated(&world, &mut h, whole_b(), mark(trace, TOP, 7.7));
+        let dev = camcraft_app::stock_sim::simulate_document(&world).expect("a quarter-turned box is judged").dev;
+        assert_eq!(dev.gouge_cells, 0, "trace {trace}: worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
+        assert_posts(&world, &format!("quarter-clear-{trace}"));
     }
 }
 

@@ -61,6 +61,8 @@ icon_table! {
     OpenModel => "folder-open", "icon-open-model";
     OpenProject => "file-import", "icon-open-project";
     Save => "device-floppy", "icon-save";
+    /// The project's donation link: Tabler's heart outline (MIT).
+    Donate => "heart", "icon-donate";
     // The CamCraft actions and tree rows (#661 slice 2): original SVG
     // masters too - `act-*` for the actions, `tree-*` for the browser's
     // setup rows.
@@ -172,11 +174,21 @@ icon_table! {
     ToolChamferMill => "tool-chamfer-mill", "icon-tool-chamfer-mill";
     ToolProbe => "tool-probe", "icon-tool-probe";
     ToolTorch => "tool-torch", "icon-tool-torch";
+    ToolWaterjet => "tool-waterjet", "icon-tool-waterjet";
     ToolElectrode => "tool-electrode", "icon-tool-electrode";
+    ToolWire => "tool-wire", "icon-tool-wire";
     // #894: the thread mills - a neck over a toothed head (multi-form)
     // or over one form tooth (single-form).
     ToolThreadMill => "tool-thread-mill", "icon-tool-thread-mill";
     ToolThreadMillSingle => "tool-thread-mill-single", "icon-tool-thread-mill-single";
+    // The operation page's section tabs (M1.4's named sections), one
+    // per tab the page shows; drawn from what each section is.
+    SecGeometry => "sec-geometry", "icon-sec-geometry";
+    SecHeights => "sec-heights", "icon-sec-heights";
+    SecPasses => "sec-passes", "icon-sec-passes";
+    SecLeads => "sec-leads", "icon-sec-leads";
+    SecFeeds => "sec-feeds", "icon-sec-feeds";
+    SecMachine => "sec-machine", "icon-sec-machine";
 }
 
 /// Upload edge: 2x the token's `glyph_px` (20 display px at the dark

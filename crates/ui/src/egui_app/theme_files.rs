@@ -31,6 +31,8 @@ use serde_json::Value;
 use super::contrast;
 use super::theme::Tokens;
 
+mod names;
+pub use names::{COLOR_NAMES, GEOM_NAMES};
 mod overlay;
 use overlay::apply_overlay;
 
@@ -46,66 +48,6 @@ pub const MAX_KEY_LEN: usize = 48;
 pub const MAX_NAME_LEN: usize = 64;
 pub const MAX_CREATOR_LEN: usize = 64;
 pub const MAX_DESCRIPTION_LEN: usize = 200;
-
-/// The token names the format speaks, spelled exactly once; the
-/// parser's membership check and the overlay's field wiring both read
-/// these constants, so the file's vocabulary and the code's fields
-/// cannot drift (the all-names-equal-DARK test closes the other way).
-mod names {
-    pub const INK: &str = "ink";
-    pub const INK_ALT: &str = "ink_alt";
-    pub const WELL: &str = "well";
-    pub const TEXT: &str = "text";
-    pub const TEXT_DIM: &str = "text_dim";
-    pub const TEXT_FAINT: &str = "text_faint";
-    pub const BORDER: &str = "border";
-    pub const ACCENT: &str = "accent";
-    pub const ACCENT_HOVER: &str = "accent_hover";
-    pub const FIELD_BG: &str = "field_bg";
-    pub const FIELD_HOVER: &str = "field_hover";
-    pub const FIELD_ACTIVE: &str = "field_active";
-    pub const SELECTION_BG: &str = "selection_bg";
-    pub const SELECTION_STROKE: &str = "selection_stroke";
-    pub const VIEWPORT: &str = "viewport";
-    pub const RADIUS_WIDGET: &str = "radius_widget";
-    pub const RADIUS_WINDOW: &str = "radius_window";
-    pub const RADIUS_MENU: &str = "radius_menu";
-    pub const ITEM_SPACING_X: &str = "item_spacing_x";
-    pub const ITEM_SPACING_Y: &str = "item_spacing_y";
-    pub const BUTTON_PADDING_X: &str = "button_padding_x";
-    pub const BUTTON_PADDING_Y: &str = "button_padding_y";
-    pub const CONTROL_HEIGHT: &str = "control_height";
-    pub const ROW_HEIGHT: &str = "row_height";
-    pub const CELL_H: &str = "cell_h";
-    pub const CELL_W: &str = "cell_w";
-    pub const GLYPH_PX: &str = "glyph_px";
-    pub const FONT_LABEL: &str = "font_label";
-    pub const FONT_CAPTION: &str = "font_caption";
-    pub const FONT_ROW: &str = "font_row";
-    pub const FONT_ROW_SUFFIX: &str = "font_row_suffix";
-    pub const MENU_WIDTH: &str = "menu_width";
-    pub const RECENT_WIDTH: &str = "recent_width";
-    pub const MENU_GAP: &str = "menu_gap";
-    pub const MENU_PAD_X: &str = "menu_pad_x";
-}
-
-/// The colour vocabulary, in table order (refusals quote it).
-pub const COLOR_NAMES: &[&str] = &[
-    names::INK, names::INK_ALT, names::WELL, names::TEXT, names::TEXT_DIM,
-    names::TEXT_FAINT, names::BORDER, names::ACCENT, names::ACCENT_HOVER,
-    names::FIELD_BG, names::FIELD_HOVER, names::FIELD_ACTIVE,
-    names::SELECTION_BG, names::SELECTION_STROKE, names::VIEWPORT,
-];
-/// The geometry vocabulary (every override is clamped through the
-/// same windows the built-in const guard checks).
-pub const GEOM_NAMES: &[&str] = &[
-    names::RADIUS_WIDGET, names::RADIUS_WINDOW, names::RADIUS_MENU,
-    names::ITEM_SPACING_X, names::ITEM_SPACING_Y, names::BUTTON_PADDING_X,
-    names::BUTTON_PADDING_Y, names::CONTROL_HEIGHT, names::ROW_HEIGHT,
-    names::CELL_H, names::CELL_W, names::GLYPH_PX, names::FONT_LABEL,
-    names::FONT_CAPTION, names::FONT_ROW, names::FONT_ROW_SUFFIX,
-    names::MENU_WIDTH, names::RECENT_WIDTH, names::MENU_GAP, names::MENU_PAD_X,
-];
 
 /// One theme, read and applied: what it is called, the token table it
 /// describes, and the honest notes gathered on the way (reported

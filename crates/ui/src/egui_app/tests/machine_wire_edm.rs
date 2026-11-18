@@ -94,11 +94,16 @@ fn the_machine_editor_states_the_wire_section_refuses_by_name_and_undoes_in_one_
 }
 
 #[test]
-fn a_wire_contour_quick_adds_with_the_first_condition_and_its_page_has_no_tool_row() {
+fn a_wire_contour_quick_adds_with_the_first_condition_and_mounted_wire_tool() {
     let _g = snapshot_guard();
     let mut h = shell_harness();
     h.run();
     mount(&mut h, wire_machine());
+    h.state_mut().state.pending.push_back(CommandKind::AddTool {
+        name: "EDM-W025".into(),
+        tool: camcraft_app::wire_tools::wire_tool(0.25),
+    });
+    h.run_steps(2);
     let kind = camcraft_app::operation::KindInfo::ALL.iter().position(|k| k.label == "Wire Contour").expect("the kind exists");
     crate::actions::add_operation(&mut h.state_mut().state, kind);
     h.run_steps(3);
@@ -108,8 +113,8 @@ fn a_wire_contour_quick_adds_with_the_first_condition_and_its_page_has_no_tool_r
         .expect("the operation exists");
     let camcraft_app::operation::OpParams::WireContour(w) = &op.params else { panic!("a wire contour") };
     assert_eq!(w.condition, "C110", "quick-add names the machine's first condition");
-    assert!(op.tool.is_empty(), "the op mounts no library tool");
-    assert!(h.query_by_label("Tool").is_none(), "no Tool row on a tool-less kind");
+    assert_eq!(op.tool, "EDM-W025", "the op mounts the wire tool");
+    assert!(h.query_by_label("Tool").is_some(), "Wire Contour shows the Tool row");
     // The side is one undo step.
     let side0 = w.side;
     assert!(h.query_by_label("Flood").is_none(), "a wire EDM has no coolant row");
@@ -131,4 +136,93 @@ fn a_wire_contour_quick_adds_with_the_first_condition_and_its_page_has_no_tool_r
     h.state_mut().state.pending.push_back(CommandKind::Undo);
     h.run();
     assert_eq!(side(&h), Some(side0), "one undo restores it");
+}
+
+fn editor_harness(machine: camcraft_app::machine::Machine, path: &str) -> Harness<'static, crate::state::State> {
+    let mut state = crate::state::State::new();
+    state.pending.push_back(CommandKind::EditMachineApply { path: path.to_owned(), machine: Box::new(machine.clone()) });
+    state.drain_actions();
+    state.machine_editor = Some(MachineEditor { path: path.to_owned(), machine });
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(900.0, 1600.0))
+        .build_ui_state(|ui, st: &mut crate::state::State| super::super::machine_editor::window(ui.ctx(), st), state);
+    h.run_steps(3);
+    h
+}
+
+/// #1119: every input in the Wire EDM machine editor carries an accessible name.
+#[test]
+fn the_wire_machine_editor_names_every_input() {
+    let mut m = wire_machine();
+    if let Some(edm) = m.edm.as_mut() {
+        edm.lower_guide_z.get_or_insert(0.0);
+        edm.upper_guide_z.get_or_insert(50.0);
+        edm.max_taper_deg.get_or_insert(10.0);
+        if edm.wire_diameters.is_empty() {
+            edm.wire_diameters.push(0.25);
+        }
+        if let Some(c) = edm.conditions.first_mut() {
+            c.gap.get_or_insert(0.02);
+            c.wire_diameter.get_or_insert(0.25);
+        }
+    }
+    let h = editor_harness(m, "wire-test.mch");
+    let (bad, seen) = super::super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 10, "only {seen} inputs found in wire machine editor");
+    assert!(bad.is_empty(), "unnamed inputs in wire machine editor: {bad:?}");
+}
+
+/// #1119: every input in the mill/lathe machine editor carries an accessible name.
+#[test]
+fn the_mill_machine_editor_names_every_input() {
+    let mut state = crate::state::State::new();
+    state.pending.push_back(CommandKind::LoadBuiltinMachine("Tormach 770MX".into()));
+    state.drain_actions();
+    let mut m = camcraft_app::machine::of(&state.world).1.expect("770MX mounted");
+    m.spindle_min.get_or_insert(100.0);
+    m.spindle_max.get_or_insert(10_000.0);
+    m.spindle_power.get_or_insert(1.5);
+    m.spindle_d.get_or_insert(60.0);
+    m.spindle_len.get_or_insert(90.0);
+    m.max_tool_length.get_or_insert(150.0);
+    m.max_tool_diameter.get_or_insert(50.0);
+    m.tool_count.get_or_insert(10);
+    if let Some(a) = m.axes.first_mut() {
+        a.rapid.get_or_insert(5000.0);
+        a.feed.get_or_insert(2000.0);
+        a.travel.get_or_insert((-100.0, 100.0));
+        a.resolution.get_or_insert(0.001);
+    }
+    m.coolants.push(camcraft_app::machine::Coolant {
+        name: "ShopAir".to_owned(),
+        m_code: "M7".to_owned(),
+    });
+    let h = editor_harness(m, "mill-test.mch");
+    let (bad, seen) = super::super::fixture_plate_tests::unnamed_inputs(&h);
+    assert!(seen >= 20, "only {seen} inputs found in mill machine editor");
+    assert!(bad.is_empty(), "unnamed inputs in mill machine editor: {bad:?}");
+}
+
+/// #1499: the wire section states the tank and the flushing, each "not
+/// stated" until chosen; a choice lands in the editor's draft (Apply
+/// mounts it as one undoable `EditMachineApply`, as every key above).
+#[test]
+fn the_wire_machine_editor_states_tank_and_flushing() {
+    let mut m = wire_machine();
+    if let Some(e) = m.edm.as_mut() {
+        e.tank = Some(camcraft_app::machine::Tank::Submerged);
+    }
+    let mut h = editor_harness(m, "wire-test.mch");
+    let combo = |h: &Harness<'static, crate::state::State>, label: &str| {
+        h.get_by(|n| n.role() == Role::ComboBox && n.label().as_deref() == Some(label)).value()
+    };
+    assert_eq!(combo(&h, "Tank").as_deref(), Some("submerged"));
+    assert_eq!(combo(&h, "Flushing").as_deref(), Some("not stated"));
+    h.get_by(|n| n.role() == Role::ComboBox && n.label().as_deref() == Some("Flushing")).click();
+    h.run_steps(3);
+    h.get_by_label("high").click();
+    h.run_steps(3);
+    let draft = h.state().machine_editor.as_ref().and_then(|ed| ed.machine.edm.clone()).expect("the draft states edm");
+    assert_eq!(draft.flushing, Some(camcraft_app::machine::Flushing::High));
+    assert_eq!(draft.tank, Some(camcraft_app::machine::Tank::Submerged), "the other choice is untouched");
 }

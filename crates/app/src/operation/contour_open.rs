@@ -80,6 +80,12 @@ pub(super) fn open_run(base: &Region, ctx: &AreaCtx, stock_to_leave: f64) -> Res
     if ctx.family != Family::Contour {
         return Err(unreached("contour open boundary family"));
     }
+    if let OpenGeom::Chains(cs) = geom {
+        return Err(GenError::Invalid(format!(
+            "a Contour rides one open chain - its open boundary spells {} separate chains; pick the edges between them or use a clearing kind to cut between them",
+            cs.len()
+        )));
+    }
     let OpenGeom::Chain(raw) = geom else {
         return Err(GenError::Invalid(
             "a Contour's open boundary must be an open chain - a closed ring is ridden by picking it as the selection".into(),
@@ -177,7 +183,7 @@ fn cross(o: Point2, a: Point2, b: Point2) -> f64 {
 }
 
 /// Closest distance between segments ab and cd (zero when they cross).
-fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
+pub(super) fn seg_seg(a: Point2, b: Point2, c: Point2, d: Point2) -> f64 {
     let (d1, d2) = (cross(a, b, c), cross(a, b, d));
     let (d3, d4) = (cross(c, d, a), cross(c, d, b));
     if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
@@ -240,65 +246,17 @@ fn extended_ends(p: &[Point2], e0: f64, e1: f64) -> Vec<Point2> {
     v
 }
 
-/// The chosen side of the chain's offset at `d`: the boundary of the
-/// disc swept along it, minus its round end caps, travelled with the
-/// chain on its left (the contour's canonical climb travel).
+/// The chosen side of the chain's offset at `d`: delegates to
+/// `machining2d::offset_run_side` and formats the boundary refusal.
 fn offset_run(ext: &[Point2], d: f64, left: bool, unit: Unit) -> Result<Vec<Point2>, GenError> {
-    let folds = || {
+    crate::machining2d::offset_run_side(ext, d, left)?.ok_or_else(|| {
         GenError::Invalid(format!(
             "the open boundary's offset of {} {} folds onto itself (the chain comes back within twice \
              the offset of itself) - pick a gentler chain or a smaller tool / offset",
             crate::units::len(d, unit, 3),
             unit.suffix()
         ))
-    };
-    let tube = Region::sweep(&[ext.to_vec()], d)?;
-    let [ring] = tube.loops() else {
-        return Err(folds());
-    };
-    if !ring.is_ccw() {
-        return Err(folds());
-    }
-    let n = ext.len();
-    let keep: Vec<bool> = ring
-        .points()
-        .iter()
-        .map(|&q| {
-            let mut best = (f64::INFINITY, 0usize, 0.0);
-            for i in 0..n - 1 {
-                let (t, dd) = foot(q, ext[i], ext[i + 1]);
-                if dd < best.0 {
-                    best = (dd, i, t);
-                }
-            }
-            let (_, i, t) = best;
-            let len = dist(ext[i], ext[i + 1]).max(SAME);
-            let cap = (i == 0 && t * len < -TOL) || (i == n - 2 && (t - 1.0) * len > TOL);
-            !cap && (cross(ext[i], ext[i + 1], q) > 0.0) == left
-        })
-        .collect();
-    let m = keep.len();
-    let starts: Vec<usize> = (0..m).filter(|&k| keep[k] && !keep[(k + m - 1) % m]).collect();
-    let [s0] = starts[..] else {
-        return Err(folds());
-    };
-    let mut run: Vec<Point2> = (0..m).map(|k| (s0 + k) % m).take_while(|&k| keep[k]).map(|k| ring.points()[k]).collect();
-    // The exact ends: the perpendicular offset points at the chain's
-    // (extended) ends, in CCW order - the right side runs with the chain,
-    // the left against it.
-    let normal_at = |a: Point2, b: Point2, at: Point2| {
-        let l = dist(a, b);
-        let (nx, ny) = (-(b.y - a.y) / l, (b.x - a.x) / l);
-        let s = if left { d } else { -d };
-        Point2::new(at.x + nx * s, at.y + ny * s)
-    };
-    let p0 = normal_at(ext[0], ext[1], ext[0]);
-    let p1 = normal_at(ext[n - 2], ext[n - 1], ext[n - 1]);
-    let (first, last) = if left { (p1, p0) } else { (p0, p1) };
-    run.retain(|q| dist(*q, first) > TOL && dist(*q, last) > TOL);
-    run.insert(0, first);
-    run.push(last);
-    Ok(run)
+    })
 }
 
 #[cfg(test)]

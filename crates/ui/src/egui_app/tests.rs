@@ -59,6 +59,8 @@ use super::shell::{Tab, build_dock, headless, shell_layout};
 use super::viewcube;
 use super::{theme, world};
 
+
+
 #[test]
 fn empty_egui_meshes_are_filtered_before_gpu_submission() {
     let empty = egui::ClippedPrimitive {
@@ -80,11 +82,17 @@ fn empty_egui_meshes_are_filtered_before_gpu_submission() {
 
 mod face_origin;
 mod geo_row_hover;
+mod selection_frame_cost;
+mod generate_progress;
+mod frame_cost_caches;
+mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_material;
 mod setup_settings_page;
 mod machine_page;
+mod setup_user_machines;
 mod tool_list_page;
 mod stock_fit_sides;
 mod raw_stock_row;
@@ -97,9 +105,29 @@ mod post_refusal;
 mod program_units;
 mod gcode_viewer;
 mod first_setup;
+mod work_envelope;
+mod lathe_gizmo;
+// #2172: the bodies stand on the floor of the work envelope.
+mod floor;
+mod lathe_view;
+// #1997: the orbit pivot ignores the work envelope; open frames the part.
+mod camera_target;
 mod structural;
+// #2181: the transport row of the calculation before playback.
+mod transport_precalc;
+mod page_layout;
+mod page_layout_windows;
+mod anchors;
+mod stock_fit;
+mod ribbon_rows;
+mod theme_op_tabs_tree;
+mod theme_tree_hits;
+mod waterjet_recipe;
+mod catalog_filters;
 mod cycle_combo;
+mod holes_break_through;
 mod radial_step_field;
+mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
@@ -117,7 +145,13 @@ mod pick_through;
 mod setup_picks_disarm;
 // #555: real clicks pick the three points of the plane.
 mod points_vertex_pick;
+// #1171: real clicks state a wire sync pair.
+mod wire_sync_viewport;
+// #1448: real viewport clicks pick the Contour's start and exit points.
+mod start_exit_viewport;
 mod one_wcs;
+// #1926: the feature picks that set the WCS are on the WCS page.
+mod wcs_page_picks;
 // #343: the per-setup browser tree.
 mod setup_tree;
 mod mcp_live;
@@ -131,6 +165,7 @@ mod setup_eye;
 mod program_entry;
 // #371: the tool editor's Body section.
 mod tool_body;
+mod tool_body_assembly;
 mod tool_body_lathe;
 // #93: the tool editor's spun-profile (Profile) section.
 mod tool_profile;
@@ -157,6 +192,8 @@ mod fixture_rows;
 mod fixtures_page;
 // #864: a reduced-fidelity model says so on its page.
 mod model_fidelity;
+// #1610 review: incomplete model advice and import status are visible.
+mod model_incomplete;
 // #1054: the STEP facet budget on the model page.
 mod step_budget;
 // #1573 review: what a STEP import changed is said on the status line.
@@ -166,8 +203,11 @@ mod two_point_marks;
 // #979: the viewport box select.
 mod box_select;
 mod edge_click_modifiers;
+mod first_ctrl_click;
 // #1104: the Setups page lists setups only.
 mod setups_declutter;
+// #870: the WCS page's footer and its origin in words.
+mod wcs_footer;
 // #1206: each setup's own Machine and Post pages pick its own mount.
 mod setup_mount_pages;
 // #1515: a pick on one setup never re-mounts another.
@@ -175,6 +215,12 @@ mod setup_machine_bleed;
 mod setup_post_options_bleed;
 // #1617: a closed STEP solid wound inward is turned outward, and said.
 mod import_outward;
+// #1988: painted ribbon cells, tabs, and dropdown rows expose AccessKit nodes.
+mod ribbon_accesskit;
+// #1946: native AI chat dock panel, worker, Inbox::channel MCP dispatch, and offline UI tests.
+mod ai_chat;
+// #2011: EDM tool visibility matches selectable machine kinds.
+mod edm_tool_visibility;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
@@ -195,8 +241,13 @@ impl ShellUi {
     /// The birth `Shell::new` has since M-d: a plain empty document, no
     /// seed, no startup command - the window's real shape, rendered.
     fn blank() -> Self {
+        let mut state = State::new();
+        // #2358: the Setup page lists the user machines folder too; a
+        // test never reads the tester's real one (`harness_with_user_dir`
+        // names a temp folder).
+        state.machines_pane.user_dir = Some(None);
         Self {
-            state: State::new(),
+            state,
             dock: build_dock(),
             viewport_points: [1280.0, 649.0],
             left_press: None,
@@ -387,12 +438,37 @@ fn history_key_queues_command() {
     );
 }
 
+/// Wheel over `pos` and let the panes settle. The property pages scroll
+/// (the ribbon's workspace tab strip made them taller than a 720-point
+/// window), so a test reaching a control below the fold scrolls to it the
+/// way a user does.
+fn wheel(h: &mut Harness<'static, ShellUi>, pos: egui::Pos2, dy: f32) {
+    h.input_mut().events.push(Event::PointerMoved(pos));
+    h.run();
+    h.input_mut().events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: Vec2::new(0.0, dy),
+        phase: egui::TouchPhase::Move,
+        modifiers: Modifiers::NONE,
+    });
+    h.run_steps(2);
+}
+
+/// The browser header's View door: since the compact header the
+/// global switches live inside its popup, so a test that wants one opens
+/// the door first - a real click, not a state poke.
+fn open_view_menu(harness: &mut Harness<'static, ShellUi>) {
+    harness.get_by_label("View").click();
+    harness.run_steps(3);
+}
+
 /// Port of the spike's `click_toggles_view_state` (M-b's browser pane):
 /// the global view toggles are immediate UI state (AGENTS.md: not
 /// undoable), reached here through a real pointer event, not a poke.
 #[test]
 fn click_toggles_view_state() {
     let mut harness = shell_harness();
+    open_view_menu(&mut harness);
     assert!(!harness.state().state.show_all_paths);
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
@@ -400,6 +476,7 @@ fn click_toggles_view_state() {
     // The display mode follows the same law through the same door: a real
     // pointer event, view state (never a command, never the undo stack).
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::ShadedEdges);
+    open_view_menu(&mut harness);
     harness.get_by_label("Wireframe").click();
     harness.run();
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::Wireframe);
@@ -417,9 +494,11 @@ fn projection_radios_flip_the_viewport_mode() {
         crate::viewport::ProjectionMode::Perspective,
         "the house default stays perspective"
     );
+    open_view_menu(&mut harness);
     harness.get_by_label("Ortho").click();
     harness.run();
     assert_eq!(harness.state().state.cam.projection, crate::viewport::ProjectionMode::Orthographic);
+    open_view_menu(&mut harness);
     harness.get_by_label("Perspective").click();
     harness.run();
     assert_eq!(harness.state().state.cam.projection, crate::viewport::ProjectionMode::Perspective);
@@ -436,12 +515,14 @@ fn browser_show_and_hide_all_toolpaths_update_operation_eyes() {
         .collect();
     assert!(!operation_names.is_empty());
 
+    open_view_menu(&mut harness);
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
     let state = &harness.state().state;
     assert!(state.show_all_paths);
     assert!(state.hidden_paths.is_empty());
 
+    open_view_menu(&mut harness);
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
     let state = &harness.state().state;
@@ -560,34 +641,22 @@ fn file_ops_round_trip_through_commands() {
 /// previous program on disk is not touched (the gate writes nothing).
 #[test]
 fn post_cell_queues_and_the_file_arm_runs_the_gate() {
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[]),
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(1280.0, 720.0))
+        .build_ui_state(frame_undrained, ShellUi::seeded());
+    harness.run();
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Post")
+        .click();
+    harness.run_steps(2);
+    assert!(
+        harness.state().state.pending.iter().any(|c| matches!(
+            c,
+            CommandKind::PostProgramDialog
+        )),
+        "the Post menu row must fire through the actions law (pending: {:?})",
+        harness.state().state.pending
     );
-    let post = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Post)
-        .expect("the File group carries a Post cell");
-    {
-        let mut harness = Harness::builder()
-            .with_size(Vec2::new(1280.0, 720.0))
-            .build_ui_state(frame_undrained, ShellUi::seeded());
-        harness.run();
-        let at = post.rect.center();
-        set_pos(&mut harness, at);
-        button_at(&mut harness, egui::PointerButton::Primary, at, true);
-        button_at(&mut harness, egui::PointerButton::Primary, at, false);
-        harness.run_steps(2);
-        assert!(
-            harness.state().state.pending.iter().any(|c| matches!(
-                c,
-                CommandKind::PostProgramDialog
-            )),
-            "the Post cell must fire through the actions law (pending: {:?})",
-            harness.state().state.pending
-        );
-    }
 
     let mut harness = shell_harness();
     let path = std::env::temp_dir().join(format!("camcraft-egui-post-{}.nc", std::process::id()));
@@ -725,9 +794,10 @@ fn click_apply_edits_operation_through_commands() {
     // click law itself.
     harness.get_by_label("Feeds").click();
     harness.run();
-    harness.get_by_label("Climb milling").scroll_to_me();
+    // Keep this caption-click pin explicit now that the checkbox has the same accessible name.
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").scroll_to_me();
     harness.run();
-    harness.get_by_label("Climb milling").click();
+    harness.get_by_role_and_label(egui::accesskit::Role::Label, "Climb milling").click();
     harness.run();
     assert!(!staged_climb(&harness), "checkbox did not reach the staged params");
     harness.get_by_label("Apply").scroll_to_me();
@@ -952,7 +1022,7 @@ fn every_field_lives_on_exactly_one_section() {
                     ],
                 ),
                 ("Passes", vec!["Stock to leave"]),
-                ("Lead in / Lead out", vec!["Lead in/out", "Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Lead out", "Before lead-in", "After lead-out", "Vertical lead-in height", "Overlap past the start", "Compensation", "Tab count", "Tab width", "Tab height"]),
+                ("Lead in / Lead out", vec!["Lead in/out", "Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Lead out", "Before lead-in", "After lead-out", "Vertical lead-in height", "Overlap past the start", "Start point", "Exit point", "Compensation", "Tab count", "Tab width", "Tab height"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
         ),
@@ -961,7 +1031,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Levels", "Top Z", "Bottom Z", "Stepdown"]),
-                ("Passes", vec!["Stepover", "Stock to leave", "Strategy"]),
+                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Rest machining"]),
                 ("Lead in / Lead out", vec!["Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Minimum radius", "Helix pitch"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
@@ -1315,14 +1385,13 @@ fn tab_click_navigates_and_queues_nothing() {
 }
 
 /// Every text the properties pane renders right now (labels and checkbox
-/// captions), from the operation heading's left edge rightward - the pane
-/// column, so the browser and ribbon text stay out.
+/// captions), read from the Properties pane subtree so the browser and ribbon
+/// stay out without depending on pixel coordinates.
 fn pane_texts(h: &Harness<'static, ShellUi>) -> Vec<String> {
     use egui::accesskit::Role;
     use egui_kittest::kittest::NodeT;
-    let left = h.get_by_label_contains("Operation: ").rect().left() - 1.0;
-    h.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
-        .filter(|n| n.rect().left() >= left)
+    let pane = h.get_by_role_and_label(Role::Pane, "Properties");
+    pane.query_all_by(|n| matches!(n.role(), Role::Label | Role::CheckBox))
         .filter_map(|n| {
             let a = n.accesskit_node();
             if a.role() == Role::Label { a.value() } else { a.label() }
@@ -1494,7 +1563,8 @@ fn click_outside_the_viewport_is_not_a_pick() {
     let mut harness = shell_harness();
     harness.run();
     let status0 = harness.state().state.status.clone();
-    click_viewport(&mut harness, egui::pos2(4.0, 4.0));
+    let outside = anchors::chrome_point(&harness, &[]);
+    click_viewport(&mut harness, outside);
     let st = &harness.state().state;
     assert_eq!(st.status, status0, "a stray click ran a pick");
     assert!(
@@ -1576,6 +1646,64 @@ fn mmb_orbits_and_rmb_pans() {
     assert_eq!(st.drag, None);
     assert_eq!(st.status, status0, "camera gestures must not report picks");
     assert!(st.pending.is_empty(), "camera gestures are not commands");
+}
+
+/// A latched nav tool owns the drag whatever the button: LMB pans in
+/// pan, zooms in zoom, and the release's pick law sees no press to
+/// resolve - a click with a tool latched is no click at all.
+#[test]
+fn nav_tools_own_the_drag_and_swallow_clicks() {
+    let mut harness = shell_harness();
+    let c = vp_center(harness.state());
+    // Zoom tool: a left drag dollies the camera, never a pick.
+    harness.state_mut().state.nav_tool = Some(DragMode::Zoom);
+    set_pos(&mut harness, c);
+    let d0 = harness.state().state.cam.dist;
+    button_at(&mut harness, egui::PointerButton::Primary, c, true);
+    let moved = c + egui::vec2(0.0, 60.0);
+    set_pos(&mut harness, moved);
+    {
+        let st = harness.state();
+        assert_eq!(st.state.drag, Some(DragMode::Zoom), "the zoom tool owns the drag");
+        assert_ne!(st.state.cam.dist, d0, "the zoom tool drags the distance");
+    }
+    button_at(&mut harness, egui::PointerButton::Primary, moved, false);
+    assert_eq!(harness.state().state.drag, None, "release ends any tool's drag");
+    // Pan tool: a left drag moves the target, never a pick.
+    harness.state_mut().state.nav_tool = Some(DragMode::Pan);
+    set_pos(&mut harness, c);
+    let t0 = harness.state().state.cam.target;
+    button_at(&mut harness, egui::PointerButton::Primary, c, true);
+    let moved = c + egui::vec2(40.0, 0.0);
+    set_pos(&mut harness, moved);
+    {
+        let st = harness.state();
+        assert_eq!(st.state.drag, Some(DragMode::Pan), "the pan tool owns the drag");
+        assert_ne!(st.state.cam.target, t0, "the pan tool drags the target");
+    }
+    button_at(&mut harness, egui::PointerButton::Primary, moved, false);
+    assert_eq!(harness.state().state.drag, None);
+    // A click with a tool latched does nothing at all.
+    harness.state_mut().state.nav_tool = Some(DragMode::Orbit);
+    set_pos(&mut harness, c);
+    button_at(&mut harness, egui::PointerButton::Primary, c, true);
+    button_at(&mut harness, egui::PointerButton::Primary, c, false);
+    assert!(
+        harness.state().state.pending.is_empty(),
+        "a click with a tool latched queues nothing: {:?}",
+        harness.state().state.pending,
+    );
+    // Unlatch: the stock gesture law is back (RMB pans, MMB orbits).
+    harness.state_mut().state.nav_tool = None;
+    set_pos(&mut harness, c);
+    let target0 = harness.state().state.cam.target;
+    button_at(&mut harness, egui::PointerButton::Secondary, c, true);
+    let m2 = c + egui::vec2(30.0, 0.0);
+    set_pos(&mut harness, m2);
+    assert_eq!(harness.state().state.drag, Some(DragMode::Pan), "unlatched: RMB pans again");
+    assert_ne!(harness.state().state.cam.target, target0);
+    button_at(&mut harness, egui::PointerButton::Secondary, m2, false);
+    assert_eq!(harness.state().state.drag, None);
 }
 
 /// Wheel = dolly, one notch of the Line unit to one step of
@@ -1741,7 +1869,11 @@ fn anchor_click_queues_setwcs() {
 /// arm pick mode from the checkbox.
 #[test]
 fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
-    let mut harness = shell_harness();
+    // #870: the page's origin line made it taller; at 720 px the grid's
+    // bottom row scrolls under the footer, so the window is 900 px.
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(1280.0, 900.0))
+        .build_ui_state(frame, ShellUi::seeded());
     harness.state_mut().state.ui_target = UiTarget::Wcs;
     harness.run();
     // The draft default highlight is center (anchor_xy 4), so that cell
@@ -1755,8 +1887,14 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
     }
     assert!(!harness.state().state.wcs_ui.pick_anchor, "pick mode starts off");
 
-    harness.get_by_label("SE").click();
-    harness.run();
+    // Scroll the properties pane so the anchor grid (bottom of the page)
+    // is in view.
+    for _ in 0..4 {
+        let pane = anchors::pane_center(&harness, &Tab::Properties);
+        wheel(&mut harness, pane, -220.0);
+    }
+    harness.get_by_label("SE").click_accesskit();
+    harness.run_steps(2);
     let want = interact::anchor_points(&harness.state().state)[8].0;
     let e = model::find_by_name(&harness.state().state.world, "G54")
         .expect("the seed places G54");
@@ -1853,9 +1991,9 @@ fn egui_shell_snapshot_light() {
 }
 
 /// M1.4: the graphical tool editor, end to end through the real drain. The
-/// dock page is the LIBRARY (no field widgets, so every label queried here
-/// resolves in exactly one surface); `Edit` opens the window on the world's
-/// numbers; a drag stages into `tool_ui` WITHOUT touching the world (the
+/// selected tool starts in Properties; opening the explicit editor hides
+/// those fields so every label queried here resolves in one surface.
+/// A drag stages into `tool_ui` WITHOUT touching the world (the
 /// draft law); `Apply` lands it through `ChangeTool`; and the dock's
 /// `Delete` proves the ghost law - the named tool is gone, so the window
 /// is gone the next frame.
@@ -1872,11 +2010,8 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
             .and_then(|e| model::tool_of(&h.state().state.world, &e))
             .map(|t| t.diameter)
     };
-    assert!(
-        harness.query_by_label("Diameter").is_none(),
-        "the dock library must not own the editor's labels"
-    );
-    harness.get_by_label("Edit").click();
+    assert!(harness.query_by_label("Diameter").is_some(), "Properties owns the selected tool's settings");
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run();
     harness.run();
     assert_eq!(harness.state().state.tool_editor.as_deref(), Some("EM-0600-4FL"));
@@ -1886,8 +2021,8 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
         (harness.state().state.tool_ui.diameter - d0).abs() < 1e-12,
         "the window must open on the world's diameter"
     );
-    // The window's first SpinButton is Diameter (the library renders no
-    // DragValues, so "first" is deterministic): 30 px at speed 0.1.
+    // The window's first SpinButton is Diameter (Properties hides its
+    // fields while the explicit editor is open): 30 px at speed 0.1.
     let c = harness
         .get_all_by_role(egui::accesskit::Role::SpinButton)
         .next()
@@ -1916,7 +2051,18 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
         harness.state().state.status
     );
     // Ghost law: deleting the tool from the library closes the window.
-    harness.get_by_label("Delete").click();
+    let pane_top = harness
+        .state()
+        .dock
+        .iter_leaves()
+        .find(|(_, l)| l.tabs.contains(&Tab::Properties))
+        .map(|(_, l)| l.viewport.top())
+        .expect("the properties leaf");
+    harness
+        .get_all_by_role_and_label(egui::accesskit::Role::Button, "Delete")
+        .find(|n| n.rect().center().y >= pane_top)
+        .expect("Tools page Delete button")
+        .click();
     harness.run();
     assert!(
         harness.state().state.tool_editor.is_none(),
@@ -1940,7 +2086,7 @@ fn tool_editor_snapshot() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
     harness.snapshot_options(
         "egui_tool_editor",
@@ -2095,26 +2241,21 @@ fn save_as_ribbon_cell_queues_its_own_dialog() {
     let mut harness = Harness::builder()
         .with_size(Vec2::new(1280.0, 720.0))
         .build_ui_state(frame_undrained, ShellUi::seeded());
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[]),
-    );
-    let save_as = cells.iter().find(|cell| cell.cmd == Cmd::SaveAs).expect("Save As ribbon cell");
-    let at = save_as.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.run();
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Save As")
+        .click();
+    harness.run_steps(2);
     let pending = &harness.state().state.pending;
     assert_eq!(pending.len(), 1, "Save As queued {pending:?}");
     assert!(matches!(pending.front(), Some(CommandKind::SaveProjectAsDialog)));
 }
 
-/// The painted ribbon cell is a click on the actions law: `ribbon_cells`
-/// (the single layout source) locates the Pocket cell, a real pointer
-/// press/release there must run `actions::add_operation`, and the shell's
-/// next-frame drain must land the operation in the world. Proves the ribbon
-/// fires the shared layer, not a forked poke - the seam M-a left open.
+/// The painted ribbon cell is a click on the actions law: an AccessKit
+/// query locates the Pocket cell by Role::Button and label, a pointer
+/// click there runs `actions::add_operation`, and the shell's next-frame
+/// drain lands the operation in the world. Proves the ribbon fires the
+/// shared layer, not a forked poke - the seam M-a left open.
 #[test]
 fn ribbon_click_creates_through_the_actions_law() {
     let mut harness = shell_harness();
@@ -2124,19 +2265,9 @@ fn ribbon_click_creates_through_the_actions_law() {
     // the app's own seam and click the cell the live ribbon draws.
     camcraft_app::ribbon::pinned_set(&harness.state().state.world, &[2]);
     harness.run();
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[2]),
-    );
-    let pocket = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Create(2))
-        .expect("the pinned Pocket stands on the bar");
-    let at = pocket.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Pocket")
+        .click();
     harness.run_steps(2);
     let st = &harness.state().state;
     assert!(
@@ -2189,17 +2320,11 @@ fn quick_add_names_past_taken_names_with_the_kind_label() {
 // ------------------------------------------------------------ M6.2: sections
 
 fn mill_plan_at(w: f32) -> (Vec<panes::Cell>, Vec<panes::Drop>) {
-    mill_plan_pinned_at(w, &[])
-}
-
-/// The same layout, over a pinned list - the plan is a pure function
-/// of (machine, pins), so this is what the live ribbon draws.
-fn mill_plan_pinned_at(w: f32, pinned: &[usize]) -> (Vec<panes::Cell>, Vec<panes::Drop>) {
     let strip = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(w, super::shell::RIBBON_H));
     let (cells, _, _, drops) = panes::ribbon_cells(
         strip,
         &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, pinned),
+        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[]),
     );
     (cells, drops)
 }
@@ -2298,31 +2423,31 @@ fn every_section_lives_behind_its_door_at_every_width() {
 /// own way out.
 #[test]
 fn the_dropdown_reaches_a_folded_kind() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::NodeT;
     let mut harness = shell_harness();
     harness.run();
-    let (_, drops) = mill_plan_at(1280.0);
-    let drop = drops
-        .iter()
-        .find(|d| !d.rows.is_empty())
-        .expect("a folded door at house width");
     let ops_before = op_count(&harness.state().state);
-    let at = drop.button.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.get_by_role_and_label(Role::Button, "2D").click();
     harness.run_steps(2);
     assert_eq!(
         harness.state().state.ribbon_more,
-        Some(drop.section),
+        Some(camcraft_app::operation::Section::Mill2D),
         "pressing the door must open it"
     );
-    let row_at = drop.rows[0].1.center();
-    let Cmd::Create(want) = drop.rows[0].0 else {
-        panic!("a door's first row must create a kind");
-    };
-    set_pos(&mut harness, row_at);
-    button_at(&mut harness, egui::PointerButton::Primary, row_at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, row_at, false);
+    let first_row = harness
+        .query_all_by_role(Role::MenuItem)
+        .next()
+        .expect("the 2D door lists its kinds");
+    let clicked_label = first_row
+        .accesskit_node()
+        .label()
+        .expect("dropdown row carries an AccessKit label");
+    let want = camcraft_app::operation::KindInfo::ALL
+        .iter()
+        .position(|k| k.label == clicked_label)
+        .expect("dropdown row label matches a kind");
+    first_row.click();
     harness.run_steps(2);
     assert_eq!(
         op_count(&harness.state().state),
@@ -2366,29 +2491,23 @@ fn the_dropdown_reaches_a_folded_kind() {
 /// document this describes.
 #[test]
 fn a_gated_dropdown_row_click_answers_and_closes() {
+    use egui::accesskit::Role;
     let mut harness = Harness::builder()
         .with_size(Vec2::new(1280.0, 720.0))
         .build_ui_state(frame, ShellUi::blank());
     harness.run();
-    let (_, drops) = mill_plan_at(1280.0);
-    let drop = drops
-        .iter()
-        .find(|d| !d.rows.is_empty())
-        .expect("a folded door at house width");
-    let at = drop.button.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.get_by_role_and_label(Role::Button, "2D").click();
     harness.run_steps(2);
     assert_eq!(
         harness.state().state.ribbon_more,
-        Some(drop.section),
+        Some(camcraft_app::operation::Section::Mill2D),
         "the door opens over a blank document too"
     );
-    let row_at = drop.rows[0].1.center();
-    set_pos(&mut harness, row_at);
-    button_at(&mut harness, egui::PointerButton::Primary, row_at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, row_at, false);
+    harness
+        .query_all_by_role(Role::MenuItem)
+        .next()
+        .expect("the 2D door lists its kinds")
+        .click();
     harness.run_steps(2);
     let st = &harness.state().state;
     assert!(
@@ -2407,30 +2526,14 @@ fn a_gated_dropdown_row_click_answers_and_closes() {
 /// takes the cut back, and redo re-applies them in order.
 #[test]
 fn right_click_pins_and_undo_takes_the_pin_back() {
-    use camcraft_app::operation::Section;
+    use egui::accesskit::Role;
     let mut harness = shell_harness();
     harness.run();
-    let (_cells, drops) = mill_plan_at(1280.0);
-    let door = drops
-        .iter()
-        .find(|d| d.section == Section::Mill2D)
-        .expect("the 2-D section stands behind its door");
-    let pocket_row = door
-        .rows
-        .iter()
-        .find(|(c, _)| *c == Cmd::Create(2))
-        .map(|(_, r)| *r)
-        .expect("Pocket stands behind the 2-D door");
-    let at = door.button.center();
     // Cut first, through the door, so there is history to replay
     // under the pin (the ribbon law's route to an unpinned kind).
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.get_by_role_and_label(Role::Button, "2D").click();
     harness.run_steps(2);
-    let at = pocket_row.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.get_by_role_and_label(Role::MenuItem, "2D Pocket").click();
     harness.run_steps(2);
     assert!(
         model::find_by_name(&harness.state().state.world, "2D Pocket1").is_some(),
@@ -2440,14 +2543,10 @@ fn right_click_pins_and_undo_takes_the_pin_back() {
     // Open the door again and right-click the row: pinned. The pin
     // gesture answers at the row as it does at a cell - the folded
     // half of the ribbon carries the whole law.
-    let at = door.button.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness.get_by_role_and_label(Role::Button, "2D").click();
     harness.run_steps(2);
-    let at = pocket_row.center();
-    button_at(&mut harness, egui::PointerButton::Secondary, at, true);
-    button_at(&mut harness, egui::PointerButton::Secondary, at, false);
-    harness.run_steps(1);
+    harness.get_by_role_and_label(Role::MenuItem, "2D Pocket").click_secondary();
+    harness.run_steps(2);
     assert_eq!(
         camcraft_app::ribbon::pinned_of(&harness.state().state.world),
         vec![2],
@@ -2492,16 +2591,10 @@ fn right_click_pins_and_undo_takes_the_pin_back() {
     // Right-click again - now at the inline cell the pin created (one
     // home: the bar, not the door too): unpinned, the door takes the
     // kind back.
-    let (pinned_cells, _) = mill_plan_pinned_at(1280.0, &[2]);
-    let at = pinned_cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Create(2))
-        .expect("the pinned Pocket stands on the bar")
-        .rect
-        .center();
-    button_at(&mut harness, egui::PointerButton::Secondary, at, true);
-    button_at(&mut harness, egui::PointerButton::Secondary, at, false);
-    harness.run_steps(1);
+    harness
+        .get_by_role_and_label(Role::Button, "Pocket")
+        .click_secondary();
+    harness.run_steps(2);
     assert!(camcraft_app::ribbon::pinned_of(&harness.state().state.world).is_empty());
 }
 
@@ -2566,16 +2659,14 @@ fn the_pinned_group_leads_and_respects_the_machine() {
 #[test]
 fn changing_the_machine_heals_a_stale_door() {
     use camcraft_app::machine::Kind;
+    use camcraft_app::operation::Section;
     let mut harness = shell_harness();
     harness.run();
-    let (_, drops) = mill_plan_at(1280.0);
-    let section = drops
-        .iter()
-        .find(|d| !d.rows.is_empty())
-        .expect("a section door on the mill ribbon")
-        .section;
-    harness.state_mut().state.ribbon_more = Some(section);
-    harness.run();
+    let section = Section::Mill2D;
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "2D")
+        .click();
+    harness.run_steps(2);
     assert_eq!(
         harness.state().state.ribbon_more,
         Some(section),
@@ -2599,82 +2690,54 @@ fn changing_the_machine_heals_a_stale_door() {
     );
 }
 
-/// The machine door, end to end (the ribbon law): the door stands on
-/// the Setup group, wears the running workspace as its caption, and
-/// opens the list of all three. The current mode is inert - pressing
-/// it closes the list and mounts nothing - and pressing another
-/// switches the document through the command queue, so undo switches
-/// back exactly. The operations follow the mount: a mill kind goes
-/// dark on the lathe and lives again after the undo (the family gate
-/// `a_lathe_machine_darkens_the_mill_cells` proves for the file
-/// picker, proven here for the door the user asked for).
+/// The workspace tabs, end to end (the ribbon law): the tab strip
+/// sits above the cells, carries the four modes in the table's
+/// order, and a click mounts the kind's built-in machine through the
+/// command queue - the same switch the Setup pane's picker rides, so
+/// undo switches back exactly. The operations follow the mount: a
+/// mill kind goes dark on the lathe and lives again after the undo
+/// (the family gate `a_lathe_machine_darkens_the_mill_cells` proves
+/// for the file picker, proven here for the strip the bar wears).
 #[test]
-fn the_machine_door_switches_workspaces_and_rides_undo() {
+fn the_workspace_tabs_switch_workspaces_and_ride_undo() {
     use camcraft_app::machine::Kind;
+    use egui::accesskit::Role;
     let mut harness = shell_harness();
     harness.run();
-    let (cells, _) = mill_plan_at(1280.0);
-    let button = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Machine)
-        .expect("the machine door stands on the bar")
-        .rect;
-    let pal = theme::current();
-    let strip = egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H));
-    let rows = panes::machine_rows(button, strip, pal.row_height, pal.menu_width, &pal.dropdown());
-    assert_eq!(rows.len(), 4, "Milling, Turning, Mill-turning, Plasma cutting");
-    // Open the door.
-    let at = button.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
-    harness.run_steps(2);
-    assert!(
-        harness.state().state.ribbon_mode_open,
-        "pressing the door must open the list"
-    );
-    // The first row is the mode already running: a choice, but a
-    // silent one - the list closes and no machine mounts.
-    let before = harness.state().state.history.can_undo();
-    let at = rows[0].1.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
-    harness.run_steps(2);
-    assert!(
-        !harness.state().state.ribbon_mode_open && harness.state().state.history.can_undo() == before,
-        "the current row closes without mounting (status: {})",
-        harness.state().state.status
-    );
-    assert_eq!(
-        camcraft_app::machine::kind_of(&harness.state().state.world),
-        Kind::Mill,
-        "the mill keeps running"
-    );
-    // Reopen and switch to Turning: the queue carries the mount, the
-    // world follows, and the status names the workspace.
-    let at = button.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
-    harness.run_steps(2);
-    let at = rows[1].1.center();
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    let mut xs = Vec::with_capacity(4);
+    for want in ["Milling", "Turning", "Mill-turning", "Plasma cutting"] {
+        xs.push(harness.get_by_role_and_label(Role::Tab, want).rect().center().x);
+    }
+    assert!(xs.windows(2).all(|w| w[0] < w[1]), "the tabs run left to right: {xs:?}");
+    harness.get_by_role_and_label(Role::Tab, "Turning").click();
     harness.run_steps(2);
     assert_eq!(
         camcraft_app::machine::kind_of(&harness.state().state.world),
         Kind::Lathe,
-        "the Turning row must mount the library lathe (status: {})",
+        "the Turning tab must mount the library lathe (status: {})",
         harness.state().state.status
     );
     assert!(
-        // The mode gesture's own line ("machine mode: Turning") rides
-        // the queue; the mount's landing message then speaks with the
-        // machine's own voice - which is the truth the status line owes.
+        // The mount's landing message rides the queue with its own
+        // voice, which is the truth the status line owes.
         harness.state().state.status.contains("Lathe"),
         "the switch must say what mounted: {}",
         harness.state().state.status
     );
-    assert!(!harness.state().state.ribbon_mode_open, "a choice closes the list");
+    // The current tab is inert: a click mounts nothing and queues nothing.
+    let before = harness.state().state.history.can_undo();
+    harness.get_by_role_and_label(Role::Tab, "Turning").click();
+    harness.run_steps(2);
+    assert_eq!(
+        camcraft_app::machine::kind_of(&harness.state().state.world),
+        Kind::Lathe,
+        "the current tab stays the running workspace",
+    );
+    assert_eq!(
+        harness.state().state.history.can_undo(),
+        before,
+        "the current tab queues nothing (undo depth unchanged)",
+    );
     // The operations follow the workspace (the user's ask): the mill
     // kinds go dark behind the doors...
     assert!(
@@ -2731,7 +2794,7 @@ fn tips_match_the_imgui_table() {
         (Cmd::Tools, "Tool library"),
         (
             Cmd::Machine,
-            "Switch the workspace: Milling, Turning, Mill-turning or Plasma cutting (mounts the kind's built-in machine, undoable)",
+            "Switch the workspace: Milling, Turning, Mill-turning, Plasma cutting, Wire EDM or Sinker EDM (mounts the kind's built-in machine, undoable)",
         ),
         (Cmd::Undo, undo.as_str()),
         (Cmd::Redo, redo.as_str()),
@@ -2803,11 +2866,6 @@ fn tips_match_the_imgui_table() {
     }
     // Every Create button shares the swap while the tool list is empty.
     for i in 0..panes::TYPES.len() {
-        // #535: a kind that mounts no library tool (the wire EDM's) is not
-        // held by an empty rack.
-        if camcraft_app::operation::KindInfo::ALL.get(i).is_some_and(|k| !k.mounts_tool()) {
-            continue;
-        }
         assert_eq!(
             panes::tip_of(Cmd::Create(i), &empty),
             "No tool yet - add one (Setup > Tools)",
@@ -2881,7 +2939,7 @@ fn inch_mode_drag_keeps_px_parity_and_types_onto_the_lattice() {
 
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
-    harness.get_by_label("Edit").click();
+    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run();
     harness.run();
     let world_d = |h: &Harness<'static, ShellUi>| {
@@ -3176,22 +3234,20 @@ fn ribbon_drill_cell_creates_a_drill_operation() {
     // unpinned kinds live behind their section door, reached through
     // `the_dropdown_reaches_a_folded_kind`) - pin the Drill's kind and
     // the default-parameter proof rides the live cell.
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::NodeT;
     camcraft_app::ribbon::pinned_set(&harness.state().state.world, &[kind]);
     rack(&mut harness.state_mut().state, &["DR-0400"]);
     harness.run();
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[kind]),
-    );
-    let drill = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Create(kind))
-        .expect("the pinned Drill stands on the bar");
-    let at = drill.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_all_by_role_and_label(Role::Button, "Drill")
+        .find(|n| {
+            n.accesskit_node()
+                .description()
+                .is_some_and(|d| d.starts_with("Add a "))
+        })
+        .expect("the pinned Drill stands on the bar")
+        .click();
     harness.run_steps(2);
     let st = &harness.state().state;
     let op = model::find_by_name(&st.world, "Drill1")
@@ -3228,26 +3284,20 @@ fn a_create_cell_darkens_with_the_tool_laws_reason() {
         assert!(!panes::enabled(Cmd::Create(kind), st), "no fitting tool: the cell is dark");
         assert_eq!(panes::tip_of(Cmd::Create(kind), st), reason, "the tip names the missing kind");
     }
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[kind]),
-    );
-    let drill = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Create(kind))
-        .expect("darkened, not hidden: the Drill cell still stands on the bar");
-    let at = drill.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::NodeT;
+    harness
+        .get_all_by_role_and_label(Role::Button, "Drill")
+        .find(|n| n.accesskit_node().is_disabled())
+        .expect("darkened, not hidden: the Drill cell still stands on the bar")
+        .click();
     harness.run_steps(2);
     {
         let st = &harness.state().state;
         assert!(model::find_by_name(&st.world, "Drill1").is_none(), "a dark cell creates nothing");
         assert!(st.status.contains(&reason), "the click answers with the reason: {}", st.status);
         // #191: and takes the user to the fix - the tool library.
-        assert_eq!(st.ui_target, UiTarget::Tool(String::new()), "the click opens the tool library");
+        assert!(super::layout::is_open(&harness.state().dock, &Tab::Tools), "the click opens the tool library dock");
         assert!(st.status.ends_with("opened the tool library"), "{}", st.status);
     }
     rack(&mut harness.state_mut().state, &["DR-0400"]);
@@ -3484,19 +3534,9 @@ fn ribbon_pocket3d_cell_creates_a_3d_pocket_operation() {
     // default-parameter proof rides the live cell.
     camcraft_app::ribbon::pinned_set(&harness.state().state.world, &[kind]);
     harness.run();
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[kind]),
-    );
-    let pocket3d = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Create(kind))
-        .expect("the pinned 3D Pocket stands on the bar");
-    let at = pocket3d.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "3D Pocket")
+        .click();
     harness.run_steps(2);
     let st = &harness.state().state;
     let op = model::find_by_name(&st.world, "3D Pocket1")
@@ -3532,19 +3572,9 @@ fn ribbon_finish3d_cell_creates_a_3d_finish_operation() {
     camcraft_app::ribbon::pinned_set(&harness.state().state.world, &[kind]);
     rack(&mut harness.state_mut().state, &["BN-0600"]);
     harness.run();
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[kind]),
-    );
-    let finish3d = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Create(kind))
-        .expect("the pinned 3D Finish stands on the bar");
-    let at = finish3d.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "3D Finish")
+        .click();
     harness.run_steps(2);
     let st = &harness.state().state;
     let op = model::find_by_name(&st.world, "3D Finish1")
@@ -4130,19 +4160,9 @@ fn simulate_cell_arms_transport_and_stop_disarms() {
         !panes::enabled(Cmd::Simulate, &State::new()),
         "nothing to simulate on an empty document"
     );
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[]),
-    );
-    let cell = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Simulate)
-        .expect("the Inspect group carries a Simulate cell");
-    let at = cell.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Simulate")
+        .click();
     harness.run_steps(2);
     {
         let st = &harness.state().state;
@@ -4292,19 +4312,9 @@ fn deviate_cell_stores_the_verdict_as_view_state() {
         !panes::enabled(Cmd::Deviate, &State::new()),
         "nothing to judge on an empty document"
     );
-    let (cells, _, _, _) = panes::ribbon_cells(
-        egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1280.0, super::shell::RIBBON_H)),
-        &theme::current(),
-        &panes::ribbon_plan(camcraft_app::machine::Kind::Mill, &[]),
-    );
-    let cell = cells
-        .iter()
-        .find(|c| c.cmd == Cmd::Deviate)
-        .expect("the Inspect group carries a Deviate cell");
-    let at = cell.rect.center();
-    set_pos(&mut harness, at);
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Deviate")
+        .click();
     harness.run_steps(2);
     {
         let st = &harness.state().state;
@@ -4315,8 +4325,9 @@ fn deviate_cell_stores_the_verdict_as_view_state() {
         // The command law: judging the program writes no world state.
         assert!(st.pending.is_empty());
     }
-    button_at(&mut harness, egui::PointerButton::Primary, at, true);
-    button_at(&mut harness, egui::PointerButton::Primary, at, false);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Deviate")
+        .click();
     harness.run_steps(2);
     let st = &harness.state().state;
     assert!(st.program_sim.is_none(), "the second click disarms");
@@ -4572,22 +4583,16 @@ fn stock_eye_hides_the_viewport_stock_without_removing_it_from_the_document() {
     let mut harness = shell_harness();
     harness.run_steps(2);
     let stock_name = camcraft_app::setup::stock_entity_name(&harness.state().state.world, None);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Stock(_))).expect("stock row");
-    let eye = egui::pos2(216.0, 221.0 + (row as f32 + 0.5) * theme::current().row_height);
     assert!(world::collect(&harness.state().state).parts.iter().any(|part| part.stock));
 
-    set_pos(&mut harness, eye);
-    button_at(&mut harness, egui::PointerButton::Primary, eye, true);
-    button_at(&mut harness, egui::PointerButton::Primary, eye, false);
+    harness.get_by_label("Hide Stock").click();
     harness.run();
     let state = &harness.state().state;
     assert!(state.active_stock_hidden());
     assert!(model::find_by_name(&state.world, &stock_name).is_some());
     assert!(!world::collect(state).parts.iter().any(|part| part.stock));
 
-    button_at(&mut harness, egui::PointerButton::Primary, eye, true);
-    button_at(&mut harness, egui::PointerButton::Primary, eye, false);
+    harness.get_by_label("Show Stock").click();
     harness.run();
     assert!(!harness.state().state.active_stock_hidden());
     assert!(world::collect(&harness.state().state).parts.iter().any(|part| part.stock));
@@ -4652,6 +4657,7 @@ fn selecting_a_post_script_is_a_command_with_the_pane_labels() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+
 /// M10.1 C, the ui half of the honest after-state: delete the seed's one
 /// tool out from under Contour1 and the op stays in the tree, its row's
 /// status column reads BLOCKED with the app's sentence, and the open
@@ -4694,7 +4700,7 @@ fn setup_navigation_is_always_reachable_and_operations_keep_a_flat_browser() {
     let setup_group = plan.iter().find(|group| group.title == "Setup").expect("setup group");
     assert_eq!(
         setup_group.cells.as_slice(),
-        &[Cmd::Setups, Cmd::Stock, Cmd::Origin, Cmd::Tools, Cmd::Machine],
+        &[Cmd::Setups, Cmd::Stock, Cmd::Origin, Cmd::Tools],
         "the Setup toolbar opens on the Setups door (#322)"
     );
 
@@ -4761,19 +4767,11 @@ fn dragging_an_operation_row_reorders_within_global_setup() {
     let mut harness = Harness::builder().with_size(Vec2::new(1280.0, 720.0))
         .build_ui_state(frame, shell);
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let first = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Op(name) if name == "Contour1"))
-        .expect("first row");
-    let second = leaves.iter().position(|leaf| matches!(leaf, panes::Leaf::Op(name) if name == "Contour2"))
-        .expect("second row");
-    assert_eq!(second, first + 1);
-    // The browser tree begins at y=200 below its view controls (the
-    // projection radios joined them for #434) in the
-    // 1280x720 shell. The row indices come from the current flat browser,
-    // so the drag follows the rows after setup nesting was removed.
-    let row_h = theme::current().row_height;
-    let from = egui::pos2(120.0, 221.0 + (second as f32 + 0.5) * row_h);
-    let to = egui::pos2(120.0, 221.0 + (first as f32 + 0.25) * row_h);
+    let r2 = harness.get_by_label("Browser: Contour2").rect();
+    let r1 = harness.get_by_label("Browser: Contour1").rect();
+    assert!(r2.top() > r1.top());
+    let from = r2.center();
+    let to = egui::pos2(r1.center().x, r1.top() + r1.height() * 0.25);
     set_pos(&mut harness, from);
     button_at(&mut harness, egui::PointerButton::Primary, from, true);
     set_pos(&mut harness, to);
@@ -4910,22 +4908,12 @@ fn operations_heading_menu_pastes_the_copied_operation() {
     let mut harness = shell_harness();
     harness.state_mut().state.copy_operation("Contour1");
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf,
-        panes::Leaf::SetupOps(_)))
-        .expect("Operations heading");
-    let row_height = theme::current().row_height;
-    let heading = egui::pos2(90.0, 221.0 + (row as f32 + 0.5) * row_height);
-    set_pos(&mut harness, heading);
-    button_at(&mut harness, egui::PointerButton::Secondary, heading, true);
-    button_at(&mut harness, egui::PointerButton::Secondary, heading, false);
+    harness.get_by_label("Browser: Operations").click_secondary();
+    harness.run();
     assert_eq!(harness.state().state.tree_menu, Some(TreeMenuTarget::Operations));
+    assert!(harness.query_by_label("Operation").is_some());
 
-    let paste = egui::pos2(90.0,
-        221.0 + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 1.5 * row_height);
-    set_pos(&mut harness, paste);
-    button_at(&mut harness, egui::PointerButton::Primary, paste, true);
-    button_at(&mut harness, egui::PointerButton::Primary, paste, false);
+    harness.get_by_label("Paste operation").click();
     harness.run_steps(2);
     assert!(model::find_by_name(&harness.state().state.world, "Contour1 Copy").is_some());
 }
@@ -4934,33 +4922,20 @@ fn operations_heading_menu_pastes_the_copied_operation() {
 fn operation_type_menu_requires_confirmation() {
     let mut harness = shell_harness();
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf,
-        panes::Leaf::Op(name) if name == "Contour1"))
-        .expect("operation row");
-    let row_height = theme::current().row_height;
-    let operation = egui::pos2(90.0, 221.0 + (row as f32 + 0.5) * row_height);
-    set_pos(&mut harness, operation);
-    button_at(&mut harness, egui::PointerButton::Secondary, operation, true);
-    button_at(&mut harness, egui::PointerButton::Secondary, operation, false);
+    harness.get_by_label("Browser: Contour1").click_secondary();
+    harness.run();
     assert_eq!(harness.state().state.tree_menu,
         Some(TreeMenuTarget::Operation("Contour1".into())));
 
-    // Operation, Rename, Copy, Paste, Clear, Delete, Suppress, After
-    // (#110), add pause / home / optional stop (#155), section header, Face.
-    let face = egui::pos2(90.0,
-        221.0 + (row as f32 + 1.0) * row_height + panes::DROP_GAP + 12.5 * row_height);
-    set_pos(&mut harness, face);
-    button_at(&mut harness, egui::PointerButton::Primary, face, true);
-    button_at(&mut harness, egui::PointerButton::Primary, face, false);
+    harness.get_by_label("Face").click();
+    harness.run();
     assert_eq!(harness.state().state.retype_confirm,
         Some(("Contour1".into(), camcraft_app::operation::OpType::Face as usize)));
     let entity = model::find_by_name(&harness.state().state.world, "Contour1").unwrap();
     assert_eq!(model::operation_of(&harness.state().state.world, &entity).unwrap().params.kind(),
         camcraft_app::operation::OpType::Contour);
 
-    button_at(&mut harness, egui::PointerButton::Primary, face, true);
-    button_at(&mut harness, egui::PointerButton::Primary, face, false);
+    harness.get_by_label("Confirm change to Face").click();
     harness.run_steps(2);
     let entity = model::find_by_name(&harness.state().state.world, "Contour1").unwrap();
     assert_eq!(model::operation_of(&harness.state().state.world, &entity).unwrap().params.kind(),
@@ -4973,38 +4948,22 @@ fn operation_type_menu_requires_confirmation() {
 fn operation_menu_suppresses_and_sets_the_after_action() {
     let mut harness = shell_harness();
     harness.run_steps(2);
-    let (_, leaves) = panes::browser_rows(&harness.state().state);
-    let row = leaves.iter().position(|leaf| matches!(leaf,
-        panes::Leaf::Op(name) if name == "Contour1"))
-        .expect("operation row");
-    let row_height = theme::current().row_height;
-    let operation = egui::pos2(90.0, 221.0 + (row as f32 + 0.5) * row_height);
-    let open_menu = |harness: &mut Harness<'static, ShellUi>| {
-        set_pos(harness, operation);
-        button_at(harness, egui::PointerButton::Secondary, operation, true);
-        button_at(harness, egui::PointerButton::Secondary, operation, false);
-    };
-    let click_row = |harness: &mut Harness<'static, ShellUi>, k: f32| {
-        let at = egui::pos2(90.0, 221.0 + (row as f32 + 1.0) * row_height + panes::DROP_GAP + k * row_height);
-        set_pos(harness, at);
-        button_at(harness, egui::PointerButton::Primary, at, true);
-        button_at(harness, egui::PointerButton::Primary, at, false);
+    let open_and_pick = |harness: &mut Harness<'static, ShellUi>, item: &str| {
+        harness.get_by_label("Browser: Contour1").click_secondary();
+        harness.run();
+        harness.get_by_label(item).click();
         harness.run_steps(2);
     };
     let op = |harness: &Harness<'static, ShellUi>| {
         let world = &harness.state().state.world;
         model::find_by_name(world, "Contour1").and_then(|e| model::operation_of(world, &e)).expect("op")
     };
-    // Operation, Rename, Copy, Paste, Clear, Delete, then Suppress.
-    open_menu(&mut harness);
-    click_row(&mut harness, 6.5);
+    open_and_pick(&mut harness, "Suppress operation");
     assert!(op(&harness).suppressed, "the Suppress row suppresses");
     // ... then the After row, which steps Continue -> Optional -> Program stop.
-    open_menu(&mut harness);
-    click_row(&mut harness, 7.5);
+    open_and_pick(&mut harness, "After: continue (click to change)");
     assert_eq!(op(&harness).after, camcraft_app::operation::AfterOperation::OptionalStop);
-    open_menu(&mut harness);
-    click_row(&mut harness, 7.5);
+    open_and_pick(&mut harness, "After: optional stop (M1)");
     assert_eq!(op(&harness).after, camcraft_app::operation::AfterOperation::ProgramStop);
 }
 
@@ -5200,3 +5159,7 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
 }
 
 mod dropdown_theme;
+mod review_1710_evidence;
+mod guide_projects;
+mod guide_images;
+

@@ -13,6 +13,9 @@ pub struct DropGeom {
     pub gap: f32,
     pub pad_x: f32,
     pub clip_inset_x: f32,
+    /// Side of a row's leading icon; the icon sits at `clip_inset_x`.
+    pub icon_px: f32,
+    /// Label x of a row that wears a leading icon: inset + icon + padding.
     pub icon_text_x: f32,
     pub box_px: f32,
     pub box_center_x: f32,
@@ -32,6 +35,7 @@ impl DropGeom {
             gap: clamp::range(t.menu_gap, clamp::MENU_GAP),
             pad_x,
             clip_inset_x,
+            icon_px,
             icon_text_x,
             box_px: (row_h * 0.5).clamp(6.0, 16.0),
             box_center_x: icon_text_x * 0.5,
