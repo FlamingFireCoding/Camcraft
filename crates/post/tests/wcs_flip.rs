@@ -3,7 +3,7 @@
 //! offset runs that axis reversed, drives the tool along the CAM path -
 //! lines, G2/G3 in all three planes, a helix, the drilled hole and the
 //! physical side of cutter compensation. And every case the mirror is not
-//! verified for refuses by name.
+//! verified for refuses by name, probing included.
 //!
 //! Provenance: RS-274 / NIST RS274NGC word semantics through the reader in
 //! `inverted_support`; fixture values are our own.
@@ -11,6 +11,7 @@
 //! Gate map (M4.4): covers camcraft_post::post::wcs_flip, post::invert, post::engine, assets/posts fanuc.cps + haas.cps.
 
 mod inverted_support;
+mod recorded;
 
 use camcraft_post::cl::{ArcPlane, MoveKind};
 use camcraft_post::post::cnc::{self, Record};
@@ -227,6 +228,50 @@ fn what_the_mirror_cannot_carry_refuses_with_the_flip_as_the_cause() {
     turning.insert(3, param("StockTurnRadius", json!(20.0)));
     let e = refused("fanuc", &turning);
     assert!(e.contains("a turning section is not supported for a flipped WCS axis yet"), "{e}");
+}
+
+/// The recorded face probe (sets G55), stating `flip` after its offset.
+fn probe_section(flip: Option<&str>) -> Vec<Record> {
+    let mut out = Vec::new();
+    for r in recorded::input_records("inverted_probe_face_zneg.cnc") {
+        let offset = matches!(&r, Record::Param { name, .. } if name == "WorkOffset");
+        out.push(r);
+        if let (true, Some(f)) = (offset, flip) {
+            out.push(param("WcsFlip", json!(f)));
+        }
+    }
+    out
+}
+
+/// #1649, the maintainer's decision of 2026-11-18: probing in a flipped
+/// WCS is refused by name, the flipped axes named - on a script that
+/// declares `probeAxisInversion` too.
+#[test]
+fn probing_in_a_flipped_wcs_refuses_by_name() {
+    for stem in ["fanuc", "haas"] {
+        for (letters, named) in [("X", "its X axis flipped"), ("Y", "its Y axis flipped"), ("XY", "its X and Y axes flipped")] {
+            let e = refused(stem, &probe_section(Some(letters)));
+            assert!(e.contains(&format!("operation Probe1: the WCS has {named}; probing does not post")), "{stem} {letters}: {e}");
+            assert!(e.contains("work-offset write is not verified"), "{stem} {letters}: {e}");
+        }
+    }
+}
+
+/// The same probe with no flip posts as it did before #1649: the pass
+/// leaves the stream untouched and the G10 L2 write stays.
+#[test]
+fn probing_without_a_flip_posts_unchanged() {
+    let records = probe_section(None);
+    for stem in ["fanuc", "haas"] {
+        let s = camcraft_post::post::js::Script::load(&cps(stem)).unwrap_or_else(|e| panic!("{e}"));
+        let out = wcs_flip::apply(records.clone(), &s).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(cnc::serialize(&out), cnc::serialize(&records), "{stem}");
+        let program = post(stem, &[], &records);
+        assert!(program.contains("G10 L2 P2"), "{stem}: the probe sets G55:
+{program}");
+        assert!(!program.contains("FLIPPED"), "{stem}:
+{program}");
+    }
 }
 
 #[test]

@@ -19,8 +19,10 @@
 //! and the canned cycles' retract assume the controller's +Z leaves the
 //! work), a script that does not declare `axisInversion = true`, a
 //! section that is also rotated (`WcsYaw`), turning, EDM and plasma
-//! sections, and everything the mirror itself refuses (threading cycles,
-//! A/B/C moves, live tooling, probing without `probeAxisInversion`). A
+//! sections, probing (the maintainer's decision of 2026-11-18: the probe's
+//! work-offset write is proven for a machine axis that runs reversed,
+//! #392, not for a mirrored work offset), and everything the mirror
+//! itself refuses (threading cycles, A/B/C moves, live tooling). A
 //! stream that leans on a modal origin or chain start across a change of
 //! flip is refused too: the script would subtract the wrong origin.
 
@@ -80,6 +82,8 @@ struct Stated {
     op: String,
     /// A section kind the mirror is not verified for, by its name.
     foreign: Option<&'static str>,
+    /// The section probes (a touch, a guard, a back-off or a result).
+    probe: bool,
 }
 
 fn read(chunk: &[Record]) -> Result<Stated, PostError> {
@@ -105,9 +109,12 @@ fn read(chunk: &[Record]) -> Result<Stated, PostError> {
                 _ => {}
             },
             Record::Plasma(_) | Record::Torch(_) => st.foreign = Some("a plasma section"),
-            Record::Move(_) | Record::Cycle(_) | Record::Touch(_) | Record::Guard(_) | Record::Retreat(_) => {
+            Record::Move(_) | Record::Cycle(_) => st.motion = true,
+            Record::Touch(_) | Record::Guard(_) | Record::Retreat(_) => {
                 st.motion = true;
+                st.probe = true;
             }
+            Record::Found(_) => st.probe = true,
             _ => {}
         }
     }
@@ -193,7 +200,12 @@ pub fn apply(records: Vec<Record>, s: &Script) -> Result<Vec<Record>, PostError>
                 "{what}; {kind} is not supported for a flipped WCS axis yet - clear the flip on the WCS page"
             )));
         }
-        let rules = Rules { probing: s.translates_inverted_probing(), helix: true, cause: "a flipped WCS axis" };
+        if st.probe {
+            return Err(PostError::Refused(format!(
+                "{what}; probing does not post in a flipped WCS - the probe's work-offset write is not verified                  for a mirrored work offset - probe in a setup without a flip, or clear the flip on the WCS page"
+            )));
+        }
+        let rules = Rules { probing: false, helix: true, cause: "a flipped WCS axis" };
         let mirrored = translate_rules(chunk, Flip { x: flip[0], y: flip[1], z: false }, rules)
             .map_err(|why| PostError::Refused(format!("{what}: {}", why.join("; "))))?;
         out.extend(mirrored);

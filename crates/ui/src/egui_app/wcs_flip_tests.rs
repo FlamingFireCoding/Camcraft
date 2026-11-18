@@ -2,6 +2,7 @@
 //! toggles under the quarter turns, each a live button whose lit state is
 //! the stored flag; a click lands one undoable `SetWcsFlip`, the viewport
 //! triad draws the flipped axis reversed, and undo clears it again.
+//! The status line names a flip that the post refuses (#1649).
 //! Structural assertions only (no snapshot PNG changes).
 //! Provenance: our own page law; no vendor material consulted.
 
@@ -80,4 +81,16 @@ fn two_clicks_on_one_axis_clear_it_and_the_others_stack() {
     state.drain_actions();
     assert_eq!(flip(&state), [false; 3]);
     assert!(state.status.contains("no axis flipped"), "{}", state.status);
+}
+
+/// #1649 review: the status line says "mirrored" only when the post carries
+/// the flip; a flip that the post refuses names the refusal instead.
+#[test]
+fn the_status_line_names_a_flip_that_the_post_refuses() {
+    let mut state = State::new();
+    state.pending.push_back(CommandKind::SetWcsFlip { flip: [false, false, true] });
+    state.drain_actions();
+    assert!(state.status.contains("the post refuses it"), "{}", state.status);
+    assert!(state.status.contains("a flipped Z is not carried"), "{}", state.status);
+    assert!(!state.status.contains("mirrored"), "{}", state.status);
 }

@@ -10,7 +10,7 @@
 //! module reads and writes the flags and names, at the verification
 //! gate, each case the post does not carry: a flipped Z, a flipped WCS
 //! that is also rotated, a post script not verified for a mirrored
-//! program, and operation types outside 3-axis milling.
+//! program, operation types outside 3-axis milling, and probing.
 //!
 //! Provenance: our own design notes (RS-274 / ISO 6983 work offsets are
 //! translation only; a mirrored frame is not a rotation); no vendor
@@ -106,9 +106,18 @@ pub fn setup_problem(world: &World, declared: Option<&str>) -> Option<String> {
 }
 
 /// Why one operation cannot post in a flipped WCS that is otherwise
-/// carried: the mirror is verified for 3-axis milling only.
+/// carried: the mirror is verified for 3-axis milling only, and probing
+/// is refused (#1649, the maintainer's decision of 2026-11-18): the
+/// probe's work-offset write (`G10 L2`) is proven for a machine axis that
+/// runs reversed (#392), not for a control that mirrors one work offset.
 fn op_problem(op: &Operation, cache: Option<crate::schema::Toolpath>) -> Option<&'static str> {
     use crate::operation::{OpParams, Section};
+    if matches!(op.params, OpParams::Probe { .. }) {
+        return Some(
+            "probing does not post in a flipped WCS: the probe's work-offset write is not verified for a \
+             mirrored work offset - probe in a setup without a flip, or clear the flip on the WCS page",
+        );
+    }
     if matches!(
         op.params,
         OpParams::WireContour(_)
@@ -138,6 +147,18 @@ fn op_problem(op: &Operation, cache: Option<crate::schema::Toolpath>) -> Option<
 /// operation runs in a flipped setup, or each flip is carried.
 #[must_use]
 pub fn post_problems(world: &World) -> Vec<String> {
+    problems(world, None)
+}
+
+/// [`post_problems`] for the operations of one setup only (the name as
+/// `setup::effective` reads it) - what the MCP flip tool reports back.
+#[must_use]
+pub fn setup_post_problems(world: &World, declared: Option<&str>) -> Vec<String> {
+    let want = crate::setup::effective(world, declared);
+    problems(world, Some(want.as_deref()))
+}
+
+fn problems(world: &World, only: Option<Option<&str>>) -> Vec<String> {
     let mut hits: Vec<(String, Vec<String>)> = Vec::new();
     for (name, e) in crate::setup::operation_order(world) {
         let Some(op) = model::operation_of(world, &e) else {
@@ -147,6 +168,9 @@ pub fn post_problems(world: &World) -> Vec<String> {
             continue; // not in the program (#110)
         }
         let declared = op.setup.as_deref();
+        if only.is_some_and(|want| crate::setup::effective(world, declared).as_deref() != want) {
+            continue;
+        }
         let flip = of_setup(world, declared);
         if !flip.iter().any(|f| *f) {
             continue;

@@ -2,7 +2,9 @@
 //! cut does not change; the post mirrors the program on a flipped X or Y
 //! (signs, G2/G3, the compensation side), and what it does not carry (a
 //! flipped Z, a flipped and rotated WCS, a post not verified for a mirror)
-//! is refused by name. Clearing the flip posts the same program as before.
+//! is refused by name. Probing in a flipped setup is refused by name (the
+//! maintainer's decision of 2026-11-18). Clearing the flip posts the same
+//! program as before.
 //! The travel check and the setup sheet follow the flip.
 //! Provenance: our own fixtures over our own WCS model.
 //!
@@ -20,7 +22,7 @@ use camcraft_app::commands::{CreateOperation, CreateSetup, GenerateOperation, Se
 use camcraft_app::operation::SrcRef;
 use camcraft_app::stock::StockShape;
 use camcraft_app::{model, posting, setup_wcs_flip};
-use wcs_flip_support::{TOOL, face, faced_block, flip};
+use wcs_flip_support::{TOOL, add_probe, face, faced_block, flip};
 
 /// The G, X, Y, Z, I, J words of each program line that has one, in order.
 fn words(program: &str) -> Vec<Vec<(char, f64)>> {
@@ -246,4 +248,45 @@ fn the_work_envelope_mirrors_about_the_origin_on_a_flipped_axis() {
     assert_eq!(boxed(&world), ([-200.0, -50.0, -30.0], [100.0, 80.0, 0.0]), "X+ runs to the world's -X");
     flip(&world, &mut h, None, [true, true, false]);
     assert_eq!(boxed(&world), ([-200.0, -80.0, -30.0], [100.0, 50.0, 0.0]));
+}
+
+/// #1649, the maintainer's decision of 2026-11-18: a probe in a flipped
+/// setup is refused before the post, by name, with the flipped axis; the
+/// facing beside it is not named. The MCP flip tool reports it too.
+#[test]
+fn probing_in_a_flipped_setup_refuses_the_post_by_name() {
+    let (world, mut h) = faced_block();
+    add_probe(&world, &mut h);
+    assert!(posting::verification_gate(&world).is_empty(), "the fixture posts");
+    for (f, named) in [([true, false, false], "has its X axis flipped"), ([true, true, false], "has its X and Y axes flipped")] {
+        flip(&world, &mut h, None, f);
+        let gate = posting::verification_gate(&world);
+        let hit = gate.iter().find(|p| p.contains("probing")).unwrap_or_else(|| panic!("{f:?}: named refusal, got {gate:?}"));
+        assert!(hit.contains(&format!("the WCS (G54) {named}; probing does not post in a flipped WCS")), "{hit}");
+        assert!(hit.contains("(operations: Probe1)") && !hit.contains("Face1"), "{hit}");
+        assert!(posting::post_setup_unwritten(&world).is_err(), "{f:?}: a probe in a flipped setup must not post");
+    }
+    let mut path = std::env::temp_dir();
+    path.push(format!("camcraft-wcsflip-probe-{}.nc", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    assert!(posting::post_setup(&world, &path).is_err(), "a probe in a flipped setup must not post");
+    assert!(!path.exists(), "a refusal leaves no file");
+    let refused = setup_wcs_flip::setup_post_problems(&world, None);
+    assert!(refused.iter().any(|p| p.contains("probing does not post")), "{refused:?}");
+}
+
+/// The same probe with no flip posts as before #1649: it sets G54, and a
+/// flip set and cleared again leaves the program as it was.
+#[test]
+fn probing_in_an_unflipped_setup_posts_unchanged() {
+    let (world, mut h) = faced_block();
+    add_probe(&world, &mut h);
+    let before = program(&world);
+    assert!(before.contains("G10 L2 P1"), "the probe sets G54:
+{before}");
+    assert!(!before.contains("FLIPPED"), "{before}");
+    flip(&world, &mut h, None, [true, false, false]);
+    flip(&world, &mut h, None, [false; 3]);
+    assert!(posting::verification_gate(&world).is_empty());
+    assert_eq!(program(&world), before);
 }

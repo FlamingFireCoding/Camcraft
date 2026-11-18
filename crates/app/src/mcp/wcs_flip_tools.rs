@@ -62,7 +62,12 @@ fn set_wcs_flip(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> 
         "setup": target,
         "label": setup::wcs_label(w, target.as_deref()),
         "flip": flip_view(flip),
-        "refused": setup_wcs_flip::setup_problem(w, target.as_deref()),
+        // #1649: the setup's own refusal, else each operation the post
+        // refuses in it (probing, rotary, turning ...); null when it posts.
+        "refused": setup_wcs_flip::setup_problem(w, target.as_deref()).or_else(|| {
+            let ops = setup_wcs_flip::setup_post_problems(w, target.as_deref());
+            (!ops.is_empty()).then(|| ops.join("; "))
+        }),
     }))
 }
 

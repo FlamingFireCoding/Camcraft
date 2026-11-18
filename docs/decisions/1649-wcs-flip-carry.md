@@ -21,7 +21,7 @@ Each case, and what the program does:
 | A post script without `axisInversion = true` | Refused by name. Only Fanuc and Haas are verified on a mirrored stream |
 | Flip with a rotated WCS (`WcsYaw`, Bake or Control) | Refused by name. The sign of a G68 angle under a mirror is not verified |
 | Turning, threading cycles, live tool, A/B/C moves, tilted planes, EDM, wire, plasma | Refused by name. A mirror changes the thread hand and the rotary direction |
-| Probing | Carried only when the script declares `probeAxisInversion` |
+| Probing (any probe operation in a flipped setup) | Refused by name, at the verification gate and in the post pass. See "Probing in a flipped setup" below |
 | A section that uses the origin or the start point of the section before it, when the flip changes between the two | Refused by name. The script would subtract the wrong origin |
 | A `WcsFlip` value that the pass cannot read | Refused. It never posts as "not flipped" |
 
@@ -56,3 +56,35 @@ change when a refused case becomes a carried case: remove the refusal in
 `post::wcs_flip` and in `setup_wcs_flip`, and add the equivalence test.
 A script joins by declaring `axisInversion = true` after its goldens
 pass on a mirrored stream (#2475). A flipped and rotated WCS is #2476.
+
+## Probing in a flipped setup (review of PR #2492, 2026-11-18)
+
+**What was decided.** The meaning stays as built: a flipped axis means
+that the machine control runs that axis reversed, and the post writes the
+mirrored program for it. A probe operation in a flipped setup is refused
+by name. `setup_wcs_flip` names it at the verification gate ("probing
+does not post in a flipped WCS ... (operations: Probe1)"), and
+`post::wcs_flip` refuses a flipped section that holds probe records, so
+each stream builder is covered. The MCP `set_wcs_flip` reply names the
+refused operations of the setup in its `refused` field.
+
+**Why.** The maintainer's decision (2026-11-18): keep the meaning, and
+refuse probing in a flipped setup with a message that names the flip. A
+probe writes a work offset (`G10 L2`) from a measured position. That write
+is verified for a machine axis that runs reversed (#392,
+`probeAxisInversion`), not for a control that mirrors one work offset. A
+wrong offset moves every later cut, so a refusal is safer than an
+unverified program.
+
+**Considered and dropped.**
+
+- Mirrored probing through `probeAxisInversion`. The flag proves the
+  inverted machine axis only; the offset that a mirrored work offset
+  needs was not verified on any control.
+- A refusal only for a probe that writes an offset. An inspection probe
+  reports a position in the mirrored frame too, and no consumer of that
+  report is verified for it.
+
+**Cost to change later.** Low: remove the probe arm in
+`setup_wcs_flip::op_problem` and the `probe` check in `post::wcs_flip`,
+and add an equivalence test for the offset write.

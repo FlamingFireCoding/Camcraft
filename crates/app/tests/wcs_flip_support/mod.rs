@@ -41,6 +41,33 @@ pub fn faced_block() -> (World, History) {
     (world, h)
 }
 
+/// A face touch on the block's top centre that sets G54 (#108), added
+/// after Face1 and generated.
+pub fn add_probe(world: &World, h: &mut History) {
+    use camcraft_app::probing::{ProbeDir, ProbeMode};
+    h.execute(world, AddTool::new(world, "PROBE-4", camcraft_app::tools::probe_tool(4.0, 30.0)).expect("probe tool"));
+    let b = camcraft_app::model::stock_world_aabb(world).expect("stock box");
+    let params = OpParams::Probe {
+        clearance_z: Height::fixed(35.0),
+        mode: ProbeMode::Face,
+        dir: ProbeDir::ZNeg,
+        dir_y: ProbeDir::YPos,
+        target: [(b.min.x + b.max.x) * 0.5, (b.min.y + b.max.y) * 0.5, b.max.z],
+        radius: 0.0,
+        approach: 5.0,
+        overtravel: 1.0,
+        backoff: 1.0,
+        fast_feed: 300.0,
+        slow_feed: 30.0,
+        depth: 3.0,
+        inset: 5.0,
+        set_wcs: Some(0),
+        tolerance: 0.5,
+    };
+    h.execute(world, CreateOperation::new(world, "Probe1", "PROBE-4", SrcRef::Stock, params).expect("Probe1"));
+    h.execute(world, GenerateOperation::new(world, "Probe1").expect("generate the probe"));
+}
+
 pub fn flip(world: &World, h: &mut History, setup: Option<&str>, f: [bool; 3]) {
     h.execute(world, SetWcsFlip::for_setup(world, setup, f).expect("flip"));
 }

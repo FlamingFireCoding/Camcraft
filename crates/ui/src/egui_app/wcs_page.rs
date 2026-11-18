@@ -176,11 +176,13 @@ fn flip_row(ui: &mut Ui, state: &mut State, size: Vec2) {
         }
         state.pending.push_back(CommandKind::SetWcsFlip { flip: next });
     }
-    // #1649: the post mirrors X and Y; a flipped Z is still refused.
+    // #1649: the post mirrors X and Y; a flipped Z and probing are refused.
     let note = if flip.get(2).copied().unwrap_or(false) {
         Some("A flipped Z does not post yet: clear Flip Z before you post.")
     } else if flip.iter().any(|f| *f) {
-        Some("The posted program is mirrored on the flipped axis. Toolpaths do not change.")
+        Some(
+            "The posted program is mirrored: the machine control must run the flipped axis reversed.              Toolpaths do not change. Probing does not post in a flipped setup.",
+        )
     } else {
         None
     };
