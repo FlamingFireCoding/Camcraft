@@ -1,6 +1,6 @@
 ---
 name: start-orchestrator
-description: Start the CamCraft agent team from a clean session - the coordinator (Fable), its four context scouts, the issue workers, and the link to the review session (SlaveSession). Carries the standing orders that the maintainer gave while the team ran (merge in batches without waiting for the review session, take over conflicting and idle PRs, delta review by a read-only Opus agent, ask only when two sides are exclusive). Use at the start of a session when the maintainer says "start the orchestrator", "start the team", or "work the issues", and after a restart of the main session.
+description: Start the CamCraft agent team from a clean session - first the 60-minute heartbeat loop of the main session, then the coordinator (Fable), its four context scouts, the issue workers, and the link to the review session (SlaveSession). Carries the standing orders that the maintainer gave while the team ran (merge in batches without waiting for the review session, take over conflicting and idle PRs, delta review by a read-only Opus agent, ask only when two sides are exclusive). Use at the start of a session when the maintainer says "start the orchestrator", "start the team", or "work the issues", and after a restart of the main session.
 ---
 
 # start-orchestrator - start the agent team
@@ -24,7 +24,29 @@ coordinator, relays, and asks the maintainer through the question dialog.
    --limit 3`). Say if main is red and which issue tracks it.
 5. Check the free disk space. One `target/` is 10-20 GB.
 
-## 2. Start the coordinator
+## 2. Set the main loop (heartbeat), then start the team
+
+The team runs on events: a finished worker or a review line wakes the
+coordinator. One gap stays: the coordinator can wait for a worker that died
+without a notice, or for a run that never ends. The heartbeat covers it.
+
+1. Load the deferred tools: `ToolSearch select:CronList,CronCreate,CronDelete`.
+2. `CronList`. If a heartbeat of this skill exists (its prompt starts with
+   `HEARTBEAT start-orchestrator`), keep it. Never create a second one. Delete
+   an old `/goal` orchestrator cron: the heartbeat replaces it.
+3. `CronCreate`, every 60 minutes, session-only, with this prompt:
+
+   `HEARTBEAT start-orchestrator. Read GitHub (gh pr list, gh issue list for
+   P1/P2) and ListAgents. If one of our PRs is merge-ready or needs-rework,
+   or a P1/P2 issue is open and unclaimed, and the coordinator made no merge
+   or dispatch for 60 minutes, SendMessage one nudge to the coordinator that
+   names what waits. If the coordinator is not running, start it (section 3).
+   If nothing is stalled, answer in one line and do nothing else. No tables.`
+
+4. The loop lives only as long as the main session. Run this section again at
+   each start.
+
+## 3. Start the coordinator
 
 Start one agent of type `coordinator` (model Fable; if the model gives a 404,
 start it with `model: opus` and say so). Its brief has:
@@ -33,7 +55,7 @@ start it with `model: opus` and say so). Its brief has:
   GitHub";
 - the build cap: at most 3 local builds at `-j 6`, the review session's
   builds included;
-- the standing orders of section 4;
+- the standing orders of section 5;
 - the rule that a maintainer decision goes to the main session as one line
   that starts with `ASK:`, and that the coordinator continues with other work.
 
@@ -41,7 +63,7 @@ The coordinator starts its own four `context-scout` agents (`scout-1` to
 `scout-4`, Haiku) and its own workers. It cannot message the review session.
 The main session relays between them.
 
-## 3. The review session (SlaveSession)
+## 4. The review session (SlaveSession)
 
 SlaveSession is a separate local session. The maintainer starts it. This
 skill cannot start it. It posts reviews, sets review labels and watches the
@@ -55,7 +77,7 @@ post-merge runs. It sends lines: `REVIEWED`, `RUN`, `TRIAGED`, `BLOCKED`.
   and merges on them. Do not start a Claude PR-reviewer as a fallback unless
   the maintainer asks.
 
-## 4. Standing orders (maintainer, 2026-11-18)
+## 5. Standing orders (maintainer, 2026-11-18)
 
 - **Do not wait for the review session.** The coordinator resolves
   conflicts, delta-reviews and merges in batches. SlaveSession is optional
@@ -89,7 +111,7 @@ post-merge runs. It sends lines: `REVIEWED`, `RUN`, `TRIAGED`, `BLOCKED`.
   `testdata/models/` (`fig8.camproj`, `testpart.sc`) are never committed,
   uploaded, pasted or quoted (#1749).
 
-## 5. After a merge batch
+## 6. After a merge batch
 
 1. Remove `in-review` and `claimed` from each closed issue.
 2. If a process file changed: one `cargo xtask process-bump` in a worktree
@@ -98,9 +120,9 @@ post-merge runs. It sends lines: `REVIEWED`, `RUN`, `TRIAGED`, `BLOCKED`.
 3. Tell the coordinator to write `.claude/tmp/coordinator-handover.md` when
    the maintainer ends the session.
 
-## 6. What this skill does not do
+## 7. What this skill does not do
 
 - It does not start SlaveSession.
-- It does not start a schedule or a `/goal` loop. The maintainer sets them.
+- It sets one loop only: the 60-minute heartbeat. No other schedule.
 - It does not merge PR #2465 (the trial PR with `held-for-merge`). The
   maintainer decides that.
