@@ -46,6 +46,7 @@ mod report;
 mod status_alert;
 
 mod stock_info;
+mod donate;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
@@ -57,6 +58,7 @@ pub mod window_chrome;
 pub(crate) mod post_dialog;
 mod post_dialog_tabs;
 mod post_options;
+mod post_pick;
 mod post_script_options;
 mod program_info;
 pub mod cvd;
@@ -124,6 +126,8 @@ mod tool_holder_picker;
 mod tool_cutter_page;
 mod tool_cutter_params;
 mod setup_wcs_pick;
+// #870: the WCS page's footer (Set origin beside Close) and origin line.
+mod wcs_footer;
 // #343: a setup's own node pages (settings, machine, post, fixtures, tools).
 mod setup_pages;
 mod setup_settings_page;
@@ -233,6 +237,8 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod move_handles;
+pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
 
