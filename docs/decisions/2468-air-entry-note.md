@@ -18,3 +18,17 @@ meaning. Keep the correction at the existing note emission site.
 **Cost to change later:** If the ladder permits other tools to use air
 entry, update this note condition and the two tool-case regression pins
 together. No stored data or public API migration is needed.
+
+### PR #2477 review fix
+
+**Decided:** Merge `upstream/main` and use `PathBuilder::approached` for
+the air-entry test fixture's clearance-plane seed, following #2420's
+approach law. Extend the fixture test to assert the initial rapid. Keep
+the source law test unchanged.
+
+**Why:** The fixture must obey the same approach law as a generated path.
+The review failure came from its plain builder, so no production path
+change is needed.
+
+**Considered and dropped:** Weakening the law or excluding this fixture
+would hide the regression instead of correcting it.

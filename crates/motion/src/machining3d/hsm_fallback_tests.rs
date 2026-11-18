@@ -4,7 +4,7 @@
 //! no vendor material consulted.
 
 use super::{Seam, plan_level, rings_tag};
-use crate::cl::PathBuilder;
+use crate::cl::{MoveKind, PathBuilder};
 use crate::entry::Entry3D;
 use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Point3;
@@ -94,11 +94,17 @@ fn air_entry_note_matches_center_cutting_tool() {
     for center_cutting in [true, false] {
         let mut p = params(-2.0);
         p.links.approach.center_cutting = center_cutting;
-        let mut b = PathBuilder::new(Point3::new(0.0, 0.0, p.clearance_z));
+        let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
         let lp = plan_level(&mut b, &center, &p, -2.0, 1.0, false, false, None, Some(&stock))
             .expect("air-side HSM plan");
         assert!(lp.hsm && lp.air_entry, "fixture must plan an air entry");
-        let notes = b.finish().notes;
+        b.push(MoveKind::Plunge, Point3::new(0.0, 0.0, -2.0), Some(p.plunge_feed));
+        let path = b.finish();
+        assert_eq!(path.moves[0].kind, MoveKind::Rapid, "air-entry fixture must obey the approach law");
+        assert_eq!(path.moves[0].from, Point3::new(0.0, 0.0, p.clearance_z));
+        assert_eq!(path.moves[0].to, Point3::new(0.0, 0.0, p.clearance_z));
+        assert!(path.is_chained());
+        let notes = path.notes;
         assert_eq!(notes.iter().any(|n| n == super::AIR_ENTRY), center_cutting,
             "air-entry note must match the entry law for center_cutting={center_cutting}: {notes:?}");
     }
