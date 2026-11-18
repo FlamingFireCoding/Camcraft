@@ -306,7 +306,7 @@ fn an_overhang_no_feed_move_reaches_is_noted_and_posts() {
 fn posed(world: &World, h: &mut History, name: &str) {
     let mut p = face(5.0);
     if let OpParams::Face { tilt, .. } = &mut p {
-        *tilt = Some(Tilt { a_deg: 0.0, b_deg: 0.0, origin: [0.0; 3] });
+        *tilt = Some(Tilt { basis_version: 1, a_deg: 0.0, b_deg: 0.0, origin: [0.0; 3] });
     }
     h.execute(world, CreateOperation::new(world, name, TOOL, SrcRef::Stock, p).expect("create posed"));
 }

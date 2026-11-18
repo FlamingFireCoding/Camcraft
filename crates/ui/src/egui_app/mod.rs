@@ -23,6 +23,8 @@
 
 // pub(crate) for its own unit tests and the shell's init path: the M4.2
 // GPU backend pick - parse, honest fallback chain, adapter log line.
+// frame_rate is wasm-safe (camcraft_app::clock) and `state.rs` holds it.
+pub(crate) mod frame_rate;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod frame_watch;
 pub(crate) mod gpu;
@@ -41,6 +43,7 @@ mod debug_info;
 mod status_alert;
 
 mod stock_info;
+mod donate;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
@@ -52,6 +55,7 @@ pub mod window_chrome;
 pub(crate) mod post_dialog;
 mod post_dialog_tabs;
 mod post_options;
+mod post_pick;
 mod post_script_options;
 mod program_info;
 pub mod cvd;
@@ -93,6 +97,7 @@ mod wcs_page;
 mod step_budget_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
+mod stock_material_row;
 // #371: the tool editor's Body section and its picking preview.
 mod tool_body_assembly_page;
 mod tool_body_lathe_page;
@@ -186,6 +191,7 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
 // #155: Pause / Home entry rows and their menu.
@@ -201,6 +207,8 @@ mod fixture_plate_rows;
 mod fixture_modvise_rows;
 pub(crate) mod fixture_accessory_dialog;
 mod fixture_accessory_rows;
+mod fixture_profile_dialog;
+mod fixture_profile_rows;
 pub(crate) mod shell;
 // #31: the winit window, loop and per-frame draw - native only; the
 // browser build keeps `shell` (the shared frame) and refuses `run` below.
@@ -254,6 +262,8 @@ mod fixture_modvise_tests;
 #[cfg(test)]
 mod fixture_accessory_tests;
 #[cfg(test)]
+mod fixture_profile_tests;
+#[cfg(test)]
 mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
@@ -300,7 +310,11 @@ mod wcs_page_tests;
 #[cfg(test)]
 mod wcs_circle_tests;
 #[cfg(test)]
+mod wcs_flip_tests;
+#[cfg(test)]
 mod wcs_part_point_tests;
+#[cfg(test)]
+mod wcs_align_guard_tests;
 #[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]

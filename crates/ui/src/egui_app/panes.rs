@@ -1150,6 +1150,7 @@ pub fn ribbon(
         egui::Pos2::new(rect.right(), rect.top() + pal.ribbon_tab_h),
     );
     ribbon_tabs(ui, state, pal, rect, band);
+    super::donate::draw(ui, state, pal, icons, band);
     let body = Rect::from_min_max(egui::Pos2::new(rect.left(), band.bottom()), rect.max);
     // The plan is read fresh every frame from the two facts it is a
     // function of - the document's machine and its pins (M6.2). No
@@ -1599,7 +1600,8 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // icon set is up, its name when it is not (headless frames
             // and a failed decode degrade to text, never to nothing).
             if super::debug_info::button(ui, icons).clicked() {
-                state.debug_info_open = !state.debug_info_open;
+                // #2262: a dock tab like the other panels; the shell lands it.
+                state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
             }
             // #183: the live MCP server says it is listening.
             if let Some(note) = crate::mcp_host::badge(state) {
@@ -1611,6 +1613,11 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                     state.pending.push_back(CommandKind::RegenerateAll);
                 }
             }
+            // #2262: placed before the status line, which fills what is
+            // left; behind it the label ran past the line onto the door.
+            if ops_n > 0 {
+                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
+            }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())
                     .on_hover_text(text.as_str())
@@ -1620,9 +1627,6 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                             ui.close();
                         }
                     });
-                if ops_n > 0 {
-                    ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
-                }
             });
         });
     });

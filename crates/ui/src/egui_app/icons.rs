@@ -61,6 +61,8 @@ icon_table! {
     OpenModel => "folder-open", "icon-open-model";
     OpenProject => "file-import", "icon-open-project";
     Save => "device-floppy", "icon-save";
+    /// The project's donation link: Tabler's heart outline (MIT).
+    Donate => "heart", "icon-donate";
     // The CamCraft actions and tree rows (#661 slice 2): original SVG
     // masters too - `act-*` for the actions, `tree-*` for the browser's
     // setup rows.
@@ -174,6 +176,7 @@ icon_table! {
     ToolTorch => "tool-torch", "icon-tool-torch";
     ToolWaterjet => "tool-waterjet", "icon-tool-waterjet";
     ToolElectrode => "tool-electrode", "icon-tool-electrode";
+    ToolWire => "tool-wire", "icon-tool-wire";
     // #894: the thread mills - a neck over a toothed head (multi-form)
     // or over one form tooth (single-form).
     ToolThreadMill => "tool-thread-mill", "icon-tool-thread-mill";

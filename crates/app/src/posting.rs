@@ -28,41 +28,17 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// The post scripts that ship with the app (name, text), embedded so
-/// an install never depends on a loose path. `PostRef::Builtin` means
-/// the first entry (the default document's post, the meaning of a
-/// project with no post key); a named built-in addresses an entry by
-/// name, which survives registry growth the way an index never could.
-/// Entry 0 is Fanuc and stays Fanuc - the goldens and every pre-stage-B
-/// file say so.
-pub const BUILTINS: &[(&str, &str)] = &[
-    ("Fanuc", include_str!("../../../assets/posts/fanuc.cps")),
-    ("Haas", include_str!("../../../assets/posts/haas.cps")),
-    ("Siemens 840D", include_str!("../../../assets/posts/sinumerik.cps")),
-    ("Heidenhain", include_str!("../../../assets/posts/heidenhain.cps")),
-    ("Mazak", include_str!("../../../assets/posts/mazak.cps")),
-    ("Tormach PathPilot", include_str!("../../../assets/posts/tormach.cps")),
-    // #710: grbl-family controllers (hobby and small-shop routers and mills).
-    ("grblHAL", include_str!("../../../assets/posts/grblhal.cps")),
-    // Synthetos TinyG: the other grbl-family controller, no canned cycles, M0 after each tool change.
-    ("TinyG", include_str!("../../../assets/posts/tinyg.cps")),
-    ("Doosan DNM", include_str!("../../../assets/posts/doosan-dnm.cps")),
-    ("Makera Carvera", include_str!("../../../assets/posts/carvera.cps")),
-    ("Fanuc Lathe", include_str!("../../../assets/posts/fanuc-lathe.cps")),
-    ("Tormach PathPilot Lathe", include_str!("../../../assets/posts/tormach-lathe.cps")),
-    // #671: the plasma dialect, from UM10720 §6-7 and the PathPilot
-    // post guidelines; it serves plasma tables only (`PLASMA_POSTS`).
-    ("Tormach PathPilot Plasma", include_str!("../../../assets/posts/tormach-plasma.cps")),
-    // #533: the generic RS-274 wire EDM post; every EDM code is the
-    // machine's `edm.codes` (#290 D5). It serves wire EDMs only.
-    ("Generic ISO Wire EDM", include_str!("../../../assets/posts/wire-iso.cps")),
-    // #617: the Sodick 2-axis wire post, its words from Sodick's 1998
-    // operation manual (Mark 21 / EX21); not verified on a control.
-    ("Sodick Wire EDM (Mark 21)", include_str!("../../../assets/posts/sodick-wire.cps")),
-    // #542: the generic ISO-style sinker post; every EDM code is the
-    // machine's `edm.codes` (#290 D5). It serves sinker EDMs only.
-    ("Sinker EDM (ISO)", include_str!("../../../assets/posts/sinker-iso.cps")),
-];
+#[path = "posting_files.rs"]
+mod files;
+pub use files::{
+    builtin_machine_text, builtin_post_path, builtin_post_text, default_mch_text, shipped_machines, shipped_posts, AssetFile, BUILTINS,
+    DEFAULT_MCH_FILE, MACHINES,
+};
+pub use camcraft_post::data_scan::{scan_folder, FolderScan};
+pub use files::{machine_scan, post_scan, rescan, scan_reads};
+#[path = "posting_default_machine.rs"]
+mod default_mch;
+pub use default_mch::{default_limits, default_machine, default_machine_checked, parse_default_machine, KeptMachine};
 
 /// The registry entries that speak TURNING (M13.5): X as a diameter
 /// on one meridian, G18, G99, the face cycles. Everything else in
@@ -186,86 +162,6 @@ pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
     post_name(&offer).is_some_and(|n| post_serves(n, kind)).then_some((serves, offer))
 }
 
-/// The default machine as text: a plain 3-axis VMC with flood coolant.
-pub const DEFAULT_MCH: &str = include_str!("../../../assets/machines/3axis-vmc.mch");
-
-/// The built-in machine LIBRARY (M3.3 stage C), checker grammar - the
-/// files the Setup pane's machine group lists by name, the way
-/// `BUILTINS` lists posts. Same law as the post registry: addressed
-/// by name (a Setup that names "Mill-turn" still names it after the
-/// library grows), and entry 0 stays the plain VMC, because the
-/// first-shipped default is what old sessions remember. Unlike posts,
-/// a machine choice is not stored as a reference - the document
-/// mounts the parsed machine itself - so the name here is a picker
-/// label and an install-time default, never a file's identity.
-pub const MACHINES: &[(&str, &str)] = &[
-    ("VMC 3-axis", include_str!("../../../assets/machines/vmc.mch")),
-    ("Tilt-head 5-axis", include_str!("../../../assets/machines/tilthead.mch")),
-    ("Mill-turn", include_str!("../../../assets/machines/millturn.mch")),
-    ("Lathe", include_str!("../../../assets/machines/lathe.mch")),
-    // #131: an inch machine; pairs with the "Tormach PathPilot" post.
-    ("Tormach 770MX", include_str!("../../../assets/machines/tormach-770mx.mch")),
-    // #170: the other Tormach mills, each from its own operator's manual.
-    ("Tormach 770MX (ML)", include_str!("../../../assets/machines/tormach-770mx-ml.mch")),
-    // #785: the 770MX with Tormach's microARC 4 (TD10749) as an A about X.
-    ("Tormach 770MX + microARC 4", include_str!("../../../assets/machines/tormach-770mx-microarc4.mch")),
-    ("Tormach 770M", include_str!("../../../assets/machines/tormach-770m.mch")),
-    ("Tormach 1100MX", include_str!("../../../assets/machines/tormach-1100mx.mch")),
-    ("Tormach 1500MX", include_str!("../../../assets/machines/tormach-1500mx.mch")),
-    ("Tormach PCNC 440", include_str!("../../../assets/machines/tormach-pcnc440.mch")),
-    ("Tormach 1100M", include_str!("../../../assets/machines/tormach-1100m.mch")),
-    // #170: the Mach3-era R8 mills, each from its own operator's manual.
-    ("Tormach PCNC 770", include_str!("../../../assets/machines/tormach-pcnc770.mch")),
-    ("Tormach PCNC 770 (Series 3)", include_str!("../../../assets/machines/tormach-pcnc770-s3.mch")),
-    ("Tormach PCNC 1100 (Series I)", include_str!("../../../assets/machines/tormach-pcnc1100-s1.mch")),
-    ("Tormach PCNC 1100 (Series II)", include_str!("../../../assets/machines/tormach-pcnc1100-s2.mch")),
-    ("Tormach PCNC 1100 (Series 3)", include_str!("../../../assets/machines/tormach-pcnc1100-s3.mch")),
-    // #618: the M+ upgrade kits - the M's figures with the MX's axis speeds.
-    ("Tormach 770M+", include_str!("../../../assets/machines/tormach-770m-plus.mch")),
-    ("Tormach 1100M+", include_str!("../../../assets/machines/tormach-1100m-plus.mch")),
-    // #710: a generic grbl-family router / mill; pairs with the "grblHAL" post.
-    ("grblHAL 3-axis", include_str!("../../../assets/machines/grblhal-3axis.mch")),
-    // A generic TinyG router / mill; pairs with the "TinyG" post.
-    ("TinyG 3-axis", include_str!("../../../assets/machines/tinyg-3axis.mch")),
-    // #620: the PathPilot routers, each from its own manual / spec sheet
-    // (the plain xsTECH from its spec sheet and knowledge base: no manual).
-    ("Tormach 24R", include_str!("../../../assets/machines/tormach-24r.mch")),
-    ("Tormach xsTECH Pro", include_str!("../../../assets/machines/tormach-xstech-pro.mch")),
-    ("Tormach xsTECH", include_str!("../../../assets/machines/tormach-xstech.mch")),
-    // #669: the plasma table, from UM10720 §2 and the 03/24 spec sheet.
-    ("Tormach 1300PL", include_str!("../../../assets/machines/tormach-1300pl.mch")),
-    // #611: Tormach's lathes, from their operator manuals (UM10753, UM10225).
-    ("Tormach 8L", include_str!("../../../assets/machines/tormach-8l.mch")),
-    ("Tormach 15L Slant-PRO", include_str!("../../../assets/machines/tormach-15l-slant-pro.mch")),
-    // #619: the 15LX (UM10860 §3.1).
-    ("Tormach 15LX Slant-PRO", include_str!("../../../assets/machines/tormach-15lx-slant-pro.mch")),
-    // #707: Makera's desktop mills, from Makera's product spec tables.
-    ("Makera Carvera", include_str!("../../../assets/machines/makera-carvera.mch")),
-    ("Makera Carvera Air", include_str!("../../../assets/machines/makera-carvera-air.mch")),
-    // #868: the Z1 (manual quick-change, air blast); posted through the Carvera post.
-    ("Makera Z1", include_str!("../../../assets/machines/makera-z1.mch")),
-    // #728: Sienci's AltMill routers (SLB-EXT, grblHAL); pair with the "grblHAL" post.
-    ("Sienci AltMill 2x4", include_str!("../../../assets/machines/sienci-altmill-2x4.mch")),
-    ("Sienci AltMill 4x4", include_str!("../../../assets/machines/sienci-altmill-4x4.mch")),
-    ("Sienci AltMill 4x8", include_str!("../../../assets/machines/sienci-altmill-4x8.mch")),
-    // #614: Doosan DNM 5700 VMC (Fanuc 0i-MF). #1433: the plain 3-axis
-    // machine, and the catalog's optional A table as its own entry (no
-    // published nose_to_axis, so that one refuses until a setup states it).
-    ("Doosan DNM 5700", include_str!("../../../assets/machines/doosan-dnm-3axis.mch")),
-    ("Doosan DNM 5700 + rotary table", include_str!("../../../assets/machines/doosan-dnm.mch")),
-    // #1976: public Haas specifications; configurations and sources in docs/decisions/1976-haas-machines.md.
-    ("Haas VF-2", include_str!("../../../assets/machines/haas-vf2.mch")),
-    ("Haas VF-2SS", include_str!("../../../assets/machines/haas-vf2ss.mch")),
-    ("Haas Mini Mill", include_str!("../../../assets/machines/haas-mini-mill.mch")),
-    ("Haas DT-1", include_str!("../../../assets/machines/haas-dt1.mch")),
-    ("Haas DM-1", include_str!("../../../assets/machines/haas-dm1.mch")),
-    // #1135: the empty sinker template (no `edm.codes`); pairs with the
-    // "Sinker EDM (ISO)" post, which refuses by name until the user fills the codes.
-    ("Sinker EDM 3-axis (template)", include_str!("../../../assets/machines/sinker-edm.mch")),
-    // #1501: a Sodick wire EDM, X Y U V travels and taper from Sodick's published
-    // ALC series specifications (docs/decisions/1501-sodick-alc400g.md).
-    ("Sodick ALC400G", include_str!("../../../assets/machines/sodick-alc400g.mch")),
-];
 
 /// The mount path a built-in library entry records (stage C): the
 /// pane's combo and the `LoadMachine::builtin` command say the same
@@ -273,12 +169,6 @@ pub const MACHINES: &[(&str, &str)] = &[
 #[must_use]
 pub fn builtin_path(name: &str) -> String {
     format!("built-in: {name}")
-}
-
-/// The default machine: a plain 3-axis VMC with flood coolant.
-pub fn default_machine() -> Value {
-    static M: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    M.get_or_init(|| serde_json::from_str(DEFAULT_MCH).unwrap_or(Value::Null)).clone()
 }
 
 /// The machine this document posts to (M3.3 A): the mounted `.mch`
@@ -313,8 +203,8 @@ pub fn document_post_of(world: &World) -> PostRef {
 /// one answer the post and the machine's spindle-range check both read.
 #[must_use]
 pub fn posted_rpm(tool: &crate::tools::Tool) -> f64 {
-    // A torch states rpm 0 by law (#670): no spindle word, like a probe.
-    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch) { 0.0 } else { tool.rpm }
+    // A torch or wire states rpm 0 by law (#670, #2011): no spindle word, like a probe.
+    if matches!(tool.kind, crate::tools::ToolKind::Probe | crate::tools::ToolKind::Torch | crate::tools::ToolKind::Wire) { 0.0 } else { tool.rpm }
 }
 
 /// Write the singleton. For the `SelectPost` command and the project
@@ -367,6 +257,11 @@ pub fn options_value(o: PostOptions) -> Value {
     if let (Some(end), Some(map)) = (end, v.as_object_mut()) {
         map.insert("EndUnits".to_owned(), Value::from(end));
     }
+    if o.wcs_rotation == crate::schema::WcsRotationOutput::Control
+        && let Some(map) = v.as_object_mut()
+    {
+        map.insert("WcsRotation".to_owned(), Value::from("control"));
+    }
     v
 }
 
@@ -411,15 +306,11 @@ pub fn script_source(world: &World) -> Result<(String, String), String> {
 /// [`script_source`] for any post reference (#388: a mount's own).
 pub fn script_of(post: &PostRef) -> Result<(String, String), String> {
     match post.clone() {
-        PostRef::Builtin => BUILTINS
-            .first()
-            .map(|(name, cps)| (format!("{name} (built-in)"), (*cps).to_owned()))
-            .ok_or_else(|| "the built-in post registry is empty".to_owned()),
-        PostRef::Named(name) => BUILTINS
-            .iter()
-            .find(|(n, _)| *n == name)
-            .map(|(n, cps)| (format!("{n} (built-in)"), (*cps).to_owned()))
-            .ok_or_else(|| format!("built-in post {name} is not in the registry")),
+        PostRef::Builtin => {
+            let (name, _) = BUILTINS.first().ok_or_else(|| "the built-in post registry is empty".to_owned())?;
+            Ok((format!("{name} (built-in)"), builtin_post_text(name)?.to_owned()))
+        }
+        PostRef::Named(name) => Ok((format!("{name} (built-in)"), builtin_post_text(&name)?.to_owned())),
         PostRef::File(path) => {
             let text = std::fs::read_to_string(&path)
                 .map_err(|e| format!("post script {path}: {e}"))?;
@@ -484,7 +375,7 @@ pub use program::{
 pub(crate) use program::normalised as normalised_program_info;
 #[path = "posting_units.rs"]
 mod program_unit;
-pub use program_unit::{program_options, unit_word};
+pub use program_unit::{end_units_words, program_options, unit_word};
 
 /// Declared per-post options read from a [`PostRef`]'s `.cps` source (#258).
 pub fn declared_options_for_post(post: &PostRef) -> Result<Vec<DeclaredOption>, String> {
@@ -546,23 +437,29 @@ pub(crate) fn json_map_to_overrides(val: &Value) -> Result<BTreeMap<String, Opti
     Ok(out)
 }
 
-/// Resolve a built-in post name or `.cps` file path to its script text (#258).
-pub fn resolve_cps_text(cps: &str) -> Result<String, String> {
-    if let Some((_, text)) = BUILTINS.iter().find(|(n, _)| *n == cps) {
-        return Ok((*text).to_owned());
+/// Resolve a built-in post name or `.cps` file path to its [`PostRef`] and script text (#258, #2190).
+pub fn resolve_cps(cps: &str) -> Result<(PostRef, String), String> {
+    if BUILTINS.iter().any(|(n, _)| *n == cps) {
+        return Ok((PostRef::Named(cps.to_owned()), builtin_post_text(cps)?.to_owned()));
     }
     if Path::new(cps)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("cps"))
     {
-        return std::fs::read_to_string(cps)
-            .map_err(|e| format!("cannot read post script {cps}: {e}"));
+        let text = std::fs::read_to_string(cps)
+            .map_err(|e| format!("cannot read post script {cps}: {e}"))?;
+        return Ok((PostRef::File(cps.to_owned()), text));
     }
     let names: Vec<&str> = BUILTINS.iter().map(|(n, _)| *n).collect();
     Err(format!(
         "unknown built-in post '{cps}' - names: {}; or give a .cps file path",
         names.join(", ")
     ))
+}
+
+/// Resolve a built-in post name or `.cps` file path to its script text (#258).
+pub fn resolve_cps_text(cps: &str) -> Result<String, String> {
+    resolve_cps(cps).map(|(_, text)| text)
 }
 
 fn scalar_from_cli(raw: &str) -> Value {
@@ -628,13 +525,16 @@ pub mod nose;
 pub mod index_swing;
 #[path = "posting_swing_standing.rs"]
 pub mod swing_standing;
+#[path = "posting_section_mode.rs"]
+mod section_mode;
 pub(crate) use wcs_rotation::{offset_frame, OffsetFrame};
 pub use mounts::{
-    machine_checks, machine_value_for, machine_value_of, post_mounts, post_mounts_script,
-    post_mounts_script_with_options, post_mounts_with_script_options, post_of_setup, PostedMount,
+    machine_checks, machine_value_for, machine_value_of, post_mounts,
+    post_mounts_for_post_with_options, post_mounts_script, post_mounts_script_with_options,
+    post_mounts_with_script_options, post_of_setup, PostedMount,
 };
 pub use per_op::{
-    file_stem, post_per_op, post_per_op_script, post_per_op_script_with_options,
+    file_stem, post_per_op, post_per_op_for_post_with_options, post_per_op_script, post_per_op_script_with_options,
     post_per_op_with_script_options, PostedFile,
 };
 pub use sim_clause_impl::{sim_clause, SimClause, NOT_JUDGED};
@@ -687,6 +587,18 @@ pub fn post_script_with_script_options(
     extra: Option<&BTreeMap<String, OptionValue>>,
 ) -> Result<Posted, String> {
     post_script_as(world, out_path, cps, None, None, extra)
+}
+
+/// [`post_script`] for a resolved [`PostRef`] with temporary per-run script option overrides (#258, #2190).
+pub fn post_script_for_post_with_options(
+    world: &World,
+    out_path: &Path,
+    post: &PostRef,
+    cps: &str,
+    extra: Option<&BTreeMap<String, OptionValue>>,
+) -> Result<Posted, String> {
+    let label = post_ref_label(post);
+    post_script_as(world, out_path, cps, Some(&label), Some(post), extra)
 }
 
 /// [`post_script`] with the script's label (a post file's path), for
@@ -768,6 +680,12 @@ fn post_script_body_with(
     let voice = post::dialect::work_voice(cps).map_err(|e| format!("post engine: {e}"))?;
     let mut report = verification_report_by(world, &|_| voice);
     report.problems.splice(0..0, unserved);
+    // #760: Control mode checks against the explicit script when invoked directly.
+    for msg in wcs_rotation::explicit_script_problems(world, cps) {
+        if !report.problems.contains(&msg) {
+            report.problems.push(msg);
+        }
+    }
     // One file, one register per word (#196): two setups posting the same
     // word from different placements refuse here - per-op files are exempt.
     report.problems.extend(wcs_slot::shared_word_problems(world));
@@ -782,7 +700,9 @@ fn post_script_body_with(
         .cloned()
         .or_else(|| crate::setup::active(world));
     let opts = program_options_for_script(world, cps, post, mount_setup.as_deref(), extra)?;
-    let out = engine::run_program_with(cps, &machine_value_for(&machine), &stream, &opts, &id)
+    // #2319: no mounted machine and a bad default file refuses by name.
+    let mch = mounts::posted_machine_for(&machine)?;
+    let out = engine::run_program_with(cps, &mch, &stream, &opts, &id)
         .map_err(|e| format!("post engine: {e}"))?;
     if !out.warnings.is_empty() {
         return Err(format!(
@@ -855,6 +775,25 @@ fn viewer_map(records: &[cnc::Record], out: &engine::PostOutput) -> Vec<Option<[
 /// what would post* holds by construction, not by two copies of the
 /// law agreeing (stage D makes the agreement load-bearing).
 pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
+    gated_ops(world, false).map(|(ops, _)| ops)
+}
+
+/// Operations by name, in program order.
+pub(crate) type OpList = Vec<(String, Entity)>;
+
+/// [`program_ops`] for the stock playback only (#2280): the same order
+/// and the same gates, but the walk ends before the first operation
+/// with no toolpath, which comes back with every op from it on. The
+/// playback shows the program up to there; it never skips that op and
+/// cuts the next ones on a stock the skipped op did not cut. The post
+/// and the Deviate verdict keep [`program_ops`]: it refuses.
+pub(crate) fn program_ops_until_ungenerated(world: &World) -> Result<(OpList, OpList), String> {
+    gated_ops(world, true)
+}
+
+/// The walk under [`program_ops`]; `stop_at_ungenerated` turns the
+/// "no toolpath yet" refusal into the end of the list.
+fn gated_ops(world: &World, stop_at_ungenerated: bool) -> Result<(OpList, OpList), String> {
     // THE order law by call (M3.2 A): setup rank, then operation position - the same
     // walk re-machining, the sim and the machine-limit check make.
     // A suppressed op (#110) is not in the program: skipped before the
@@ -865,7 +804,7 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     if all.is_empty() {
         return Err("no operations to post".into());
     }
-    let ops: Vec<(String, Entity)> = all
+    let mut ops: Vec<(String, Entity)> = all
         .into_iter()
         .filter(|(_, e)| !model::operation_of(world, e).is_some_and(|op| op.suppressed))
         .collect();
@@ -876,6 +815,12 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
     // Validate early: every operation must be generated and fresh
     // before a single record is built (a half-posted program is the
     // silent wrong answer this file exists to prevent).
+    // #2280: the playback ends before the first op with no toolpath -
+    // nothing at or after it is cut, so their gates are not read.
+    let rest = match ops.iter().position(|(_, e)| operation::status_of(world, e) == OpStatus::Never) {
+        Some(i) if stop_at_ungenerated => ops.split_off(i),
+        _ => Vec::new(),
+    };
     for (name, e) in &ops {
         // M10.1 C first: an op whose tool is gone or cannot cut its kind
         // is blocked by name - "regenerate" would be the wrong advice,
@@ -905,7 +850,7 @@ pub fn program_ops(world: &World) -> Result<Vec<(String, Entity)>, String> {
             OpStatus::Ok => {}
         }
     }
-    Ok(ops)
+    Ok((ops, rest))
 }
 
 /// The program-level verification, made binding (M2.3 D): the two
@@ -977,6 +922,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     problems.extend(suppressed::suppressed_problems(world));
     // The rotated-offset clause (#315): the post carries translation only.
     problems.extend(wcs_rotation::rotated_wcs_problems(world));
+    // #1720: nor a flipped axis - refused by name until it is carried.
+    problems.extend(crate::setup_wcs_flip::post_problems(world));
     // The offset-range clause (#931): each setup's offset index against
     // its own post's maximum - never posted at offset 1.
     problems.extend(crate::setup_offsets::range_problems(world));
@@ -1210,6 +1157,15 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             Some(a) => ([a.min.x, a.max.x, a.min.y, a.max.y], a.max.z),
             None => ([0.0; 4], 0.0),
         };
+        // #1666: a turning machine's stream states the radius the stock
+        // sweeps about the spindle axis, so a square bar's corners are
+        // known to the post; a mill's stream stays as it was.
+        let stock_turn_radius = matches!(
+            crate::machine::kind_of_setup(world, setup),
+            crate::machine::Kind::Lathe | crate::machine::Kind::MillTurn
+        )
+        .then(|| crate::stock_turn::turn_radius_for(world, setup, [origin[0], origin[1]]))
+        .flatten();
         // The feeder signals ride the section (M5.2 G.2): only a
         // Part operation can carry them, and a load with an advance
         // of 0 is still a load - the ACT, not the number. The
@@ -1296,8 +1252,13 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             top_z: stock_top_z, // the TopOfStock PARAM: the stock, not the cut
             wcs,
             origin,
+            wcs_yaw: wcs_yaw(world, setup),
+            wcs_rotation_control: wcs_yaw(world, setup).is_some()
+                && crate::setup_post_options::of(world, op.setup.as_deref()).wcs_rotation
+                    == crate::schema::WcsRotationOutput::Control,
             stock,
             stock_top_z,
+            stock_turn_radius,
             // The scallop reading (M13.9) is a quality note: shown on
             // the op, never a WARN record - a WARN record holds the
             // post, and a scallop is neither a gouge nor a collision.
@@ -1318,6 +1279,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             post::ask_reverse_spindle(&mut records);
         }
         setup_change::ask(&changes, name, &mut records);
+        section_mode::insert(&op.params, &posted, &mut records);
         streams.push((name.clone(), records));
     }
     Ok(streams)
@@ -1340,6 +1302,18 @@ pub(crate) fn wcs_context(world: &World, setup: Option<&str>) -> (u32, [f64; 3])
         .and_then(|e| model::transform_of(world, &e))
         .map_or([0.0; 3], |t| [t.pos.x, t.pos.y, t.pos.z]);
     (index, origin)
+}
+
+/// #760: signed Z-axis rotation in degrees (`yaw_deg`) for a setup's
+/// WCS when WCS `+Z` stays aligned with machine `+Z` and `|yaw| > 1e-9`
+/// rad; `None` when square, tilted, or non-finite.
+#[must_use]
+pub(crate) fn wcs_yaw(world: &World, setup: Option<&str>) -> Option<f64> {
+    let loc = crate::setup::wcs_entity(world, setup).and_then(|e| model::transform_of(world, &e))?;
+    match offset_frame(&loc) {
+        OffsetFrame::Yaw { yaw_deg, .. } => Some(yaw_deg),
+        _ => None,
+    }
 }
 
 /// Every height a parameter set references (the same walk

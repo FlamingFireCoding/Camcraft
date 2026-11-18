@@ -22,6 +22,7 @@ workOffsetMax = 6;      // G54..G59, per the public control documentation cited 
 coolantModes = true; // reads PARAM Coolant (#112/#150)
 afterModes = true;   // reads PARAM AfterOperation (#110)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
+endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -685,7 +686,9 @@ function onCycle() {
   else if (p.CycleType === "PECK") g = "G73";
   else if (p.CycleType === "DEEP") g = "G83";
   else if (p.CycleType === "BORE") g = "G86";
-  else if (p.CycleType === "BACKBORE") g = "G89";
+  // #2360: a back-bore with no dwell is G85 (feed in, feed out): a G89
+  // with no P word would leave the dwell to the control's modal P.
+  else if (p.CycleType === "BACKBORE") g = dwell > 0 ? "G89" : "G85";
   else if (p.CycleType === "REAM") g = "G85";   // #1445: feed in, feed out at F, no dwell
   else if (p.CycleType === "TAP") {
     if (!tapRefused) {
@@ -707,9 +710,18 @@ function onCycle() {
     msg("canned cycle " + g + " has no feed rate - refused: without F the control drills at whatever feed was last modal");
     return;
   }
+  // #2348: grblHAL's code list and the LinuxCNC reference it follows
+  // give G83 no P word, so a deep-peck dwell is refused, not dropped.
+  if (g === "G83" && dwell > 0) {
+    msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y)) return;  // a cycle as the first move: its first hole (#1682: refused - not written)
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
+  // #2360 (as #2350 for Haas): P is sticky in the dwell cycles, so a
+  // changed dwell reopens the cycle and each hole posts its own P.
+  if (g === "G82" || g === "G86" || g === "G89") sig += "|" + secs(dwell);
   if (inCycle && sig === cycleSig) {
     block([wo("X", p.X, orgX), wo("Y", p.Y, orgY)]);
   } else {

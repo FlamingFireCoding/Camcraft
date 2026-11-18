@@ -53,7 +53,7 @@ fn old_is_sane(t: &Tool) -> bool {
         && t.shank_len >= 0.0
         && t.holder_d >= 0.0
         && t.holder_len >= 0.0
-        && (if matches!(t.kind, ToolKind::Torch | ToolKind::Electrode | ToolKind::Waterjet) {
+        && (if matches!(t.kind, ToolKind::Torch | ToolKind::Electrode | ToolKind::Waterjet | ToolKind::Wire) {
             t.rpm == 0.0
         } else {
             t.rpm > 0.0
@@ -90,13 +90,14 @@ fn old_is_sane(t: &Tool) -> bool {
             }
             ToolKind::Torch => t.corner_r == 0.0,
             ToolKind::Waterjet => crate::waterjet::refusal(t).is_none(),
+            ToolKind::Wire => crate::wire::refusal(t).is_none(),
             ToolKind::Electrode => crate::electrode::is_sane(t),
             ToolKind::ThreadMill | ToolKind::ThreadMillSingle => crate::thread_mill::is_sane(t),
             _ => true,
         }
 }
 
-const KINDS: [ToolKind; 17] = [
+const KINDS: [ToolKind; 18] = [
     ToolKind::EndMill,
     ToolKind::BallNose,
     ToolKind::BullNose,
@@ -111,6 +112,7 @@ const KINDS: [ToolKind; 17] = [
     ToolKind::Probe,
     ToolKind::Torch,
     ToolKind::Waterjet,
+    ToolKind::Wire,
     ToolKind::Electrode,
     ToolKind::ThreadMill,
     ToolKind::ThreadMillSingle,
@@ -201,4 +203,31 @@ fn the_newer_kinds_are_named() {
         t.why_not_sane().as_deref(),
         Some("a single-form thread mill's finest pitch 2 mm must be over 0 and at most its 1.5 mm coarsest pitch")
     );
+}
+
+#[test]
+fn a_bad_wire_is_named() {
+    let base = crate::wire::wire_tool(0.25);
+    let t = Tool { rpm: 1000.0, ..base.clone() };
+    assert_eq!(t.why_not_sane().as_deref(), Some("a wire turns no spindle: its spindle speed must be 0, not 1000 rpm"));
+    assert!(!t.is_sane());
+    let t = Tool { diameter: 2.0, shank_d: 2.0, ..base.clone() };
+    assert_eq!(t.why_not_sane().as_deref(), Some("wire diameter 2 mm is outside [0.02, 1] mm"));
+    assert!(!t.is_sane());
+    let t = Tool { corner_r: 0.05, ..base };
+    assert_eq!(
+        t.why_not_sane().as_deref(),
+        Some("an EDM wire has no corner radius (it states 0.05) - its diameter is the wire diameter")
+    );
+    agree(&t, "wire corner");
+}
+
+#[test]
+fn a_valid_wire_is_accepted() {
+    for d in [crate::wire::MIN_WIRE_MM, 0.25, crate::wire::MAX_WIRE_MM] {
+        let t = crate::wire::wire_tool(d);
+        assert_eq!(t.why_not_sane(), None, "wire {d} mm");
+        assert!(t.is_sane());
+        agree(&t, "valid wire");
+    }
 }

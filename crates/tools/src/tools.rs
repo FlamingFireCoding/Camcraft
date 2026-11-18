@@ -113,6 +113,10 @@ pub enum ToolKind {
     /// helical turn per thread. `diameter` and `tip_angle` read as on
     /// the multi-form; `flute_len` is the tooth's own axial height.
     ThreadMillSingle,
+    /// Wire EDM wire (#2011): diameter is the wire diameter in mm
+    /// (`[0.02, 1.0]`), `material_group` the wire material (e.g. `"brass"`).
+    /// Turns no spindle (`rpm` must be 0) and has no corner radius.
+    Wire,
 }
 
 impl core::fmt::Display for ToolKind {
@@ -135,6 +139,7 @@ impl core::fmt::Display for ToolKind {
             ToolKind::Electrode => "sinker electrode",
             ToolKind::ThreadMill => "thread mill",
             ToolKind::ThreadMillSingle => "single-form thread mill",
+            ToolKind::Wire => "wire",
         };
         f.write_str(s)
     }
@@ -283,6 +288,9 @@ impl Tool {
         if self.kind == ToolKind::Waterjet {
             return crate::waterjet::refusal(self);
         }
+        if self.kind == ToolKind::Wire {
+            return crate::wire::refusal(self);
+        }
         if self.kind == ToolKind::Electrode {
             return crate::electrode::refusal(self);
         }
@@ -390,7 +398,7 @@ impl Tool {
             // not off this cylinder.
             ToolKind::EndMill | ToolKind::Tap | ToolKind::Bore | ToolKind::Turning
             | ToolKind::Groove | ToolKind::Thread | ToolKind::Form | ToolKind::Torch
-            | ToolKind::Electrode | ToolKind::Waterjet
+            | ToolKind::Electrode | ToolKind::Waterjet | ToolKind::Wire
             // A thread mill draws as the cylinder its tooth crests
             // sweep (#894) - the envelope the reach laws read.
             | ToolKind::ThreadMill | ToolKind::ThreadMillSingle => add_pt(&mut p, 0.0, r),

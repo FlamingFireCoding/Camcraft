@@ -4,10 +4,18 @@
   - Why: one source of truth. The words and the verdict cannot drift apart, because `is_sane` reads only the function that writes the words.
   - Dropped: a second, parallel `why` function beside the old boolean. Two copies of one law drift.
   - Moving the body also takes about 100 lines out of `tools.rs` (714 -> 614).
-- **Verdict unchanged, proved:** `tool_sanity_tests::the_named_law_gives_the_old_verdict_everywhere` keeps the old `is_sane` and `TurningData::is_sane` bodies verbatim as an oracle. It sweeps every catalog tool, retyped as each of the 17 kinds, with each of the 14 numeric fields set to 13 edge values (0, negative, the 60/180-degree bounds, over 500, NaN, infinity), plus flute counts, orientation codes and turning data. The new law agrees with the old on every case.
+- **Verdict unchanged, proved:** `tool_sanity_tests::the_named_law_gives_the_old_verdict_everywhere` keeps the old `is_sane` and `TurningData::is_sane` bodies verbatim as an oracle. It sweeps every catalog tool, retyped as each of the 18 kinds (17 before the merge of 2026-11-18), with each of the 14 numeric fields set to 13 edge values (0, negative, the 60/180-degree bounds, over 500, NaN, infinity), plus flute counts, orientation codes and turning data. The new law agrees with the old on every case.
 - **Merge of main (2026-11-16):** main added the waterjet, electrode and thread-mill kinds, `pitch_min`, and the catalog and cutting-row refusals to `is_sane` after this branch started. Each new rule now has its words in `why_not_sane`, and the oracle holds main's `is_sane` body.
   - Chosen: the electrode and thread-mill rules are written out in `tool_sanity.rs` with their own words.
   - Dropped: a call to `electrode::refusal`. It does not refuse a Y size over 500 mm, which `electrode::is_sane` refuses, so the verdict would change.
+- **Merge of main (2026-11-18, maintainer's order):** main (#2011) added `ToolKind::Wire` with two rules in the old inline `is_sane` body. Git could not merge that body with this branch's move of the law.
+  - Chosen: keep this branch's structure (`is_sane` = `why_not_sane().is_none()`) and port both Wire rules into `tool_sanity.rs`:
+    - Wire joins the no-spindle kinds (`Torch | Electrode | Waterjet | Wire`): a wire with rpm other than 0 is refused as "a wire turns no spindle: its spindle speed must be 0, not N rpm".
+    - The kind arm `ToolKind::Wire => crate::wire::refusal(self)`: the wire's own words for its diameter range, its corner radius and its cutting rows, the same pattern as the waterjet arm.
+  - The oracle in `tool_sanity_tests.rs` holds main's two Wire lines, and `KINDS` grows from 17 to 18. New pins: `a_bad_wire_is_named`, `a_valid_wire_is_accepted`.
+  - Why: the PR's single source of truth stays, and main's wire law is kept, rule for rule, so the verdict is main's.
+  - Dropped: a plain take of either side. This branch's side loses the wire law (a wire with a spindle speed would pass); main's side loses the named refusals of #1186.
+  - No other rule that main added to `crates/tools/src/` since the merge base (`a529c4553`) touches `is_sane`. Main's cutting-row changes (`cutting_rows::refusal_for_kind`, which refuses rows on a wire) are reached through the existing call.
 - **Chosen:** the four places that refused a bad tool now say `tool '<name>': <rule>`:
   - the project loader (`project/validate.rs`, the issue's case, which printed the whole `ToolDto`);
   - `AddTool` / `ChangeTool` (which printed the whole `Tool`);

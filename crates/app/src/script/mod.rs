@@ -27,8 +27,11 @@
 //! context and every function registered inside it is dropped first.
 
 pub(crate) mod api;
+mod call;
 pub use api::refusal_text;
 mod report;
+#[cfg(test)]
+mod step_source_tests;
 
 use crate::commands::History;
 use crate::world;
@@ -73,6 +76,8 @@ pub(crate) struct Env {
     /// pull (`cam.result()`, and the non-string read of a parked
     /// object). One value pushed into the sandbox on demand.
     pub last_value: Value,
+    /// Optional UI selection snapshot passed into live MCP calls (#1942).
+    pub selection: Option<crate::mcp::SelectionContext>,
 }
 
 /// The `cam` methods, as data: name, arity, TypeScript line, and the
@@ -93,6 +98,7 @@ pub(crate) const VERBS: &[Verb] = &[
     Verb::new("check", 0, api::v_check, "check(): VerifyReport"),
     Verb::new("result", 0, api::v_result, "result(): unknown"),
     Verb::new("log", -1, api::v_log, "log(...values: unknown[]): null"),
+    Verb::new("call", -1, call::v_call, "call(tool: string, args?: Record<string, unknown>): unknown"),
 ];
 
 pub(crate) type VerbFn = fn(&mut Env, Vec<Value>) -> Result<Value, String>;
@@ -118,6 +124,7 @@ impl Env {
             doc_path: None,
             posted: None,
             last_value: Value::Null,
+            selection: None,
         }
     }
 }
@@ -356,6 +363,7 @@ interface PostResult {
   path: string;
   ops: number;
   lines: number;
+  warning?: string;
   program?: string;
   /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];

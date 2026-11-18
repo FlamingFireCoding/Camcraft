@@ -61,10 +61,10 @@ impl Tool {
         if self.flute_len <= 0.0 {
             return Some(format!("flute length {} mm must be over 0", self.flute_len));
         }
-        // A torch, a sinker electrode (#541) and a waterjet nozzle turn
-        // no spindle: their rpm is 0 by law, and every spinning kind
-        // states a positive one.
-        if matches!(self.kind, ToolKind::Torch | ToolKind::Electrode | ToolKind::Waterjet) {
+        // A torch, a sinker electrode (#541), a waterjet nozzle and an
+        // EDM wire (#2011) turn no spindle: their rpm is 0 by law, and
+        // every spinning kind states a positive one.
+        if matches!(self.kind, ToolKind::Torch | ToolKind::Electrode | ToolKind::Waterjet | ToolKind::Wire) {
             if self.rpm != 0.0 {
                 return Some(format!("a {} turns no spindle: its spindle speed must be 0, not {} rpm", self.kind, self.rpm));
             }
@@ -150,6 +150,9 @@ impl Tool {
                 Some(format!("a plasma torch carries no corner radius, not {} mm", self.corner_r))
             }
             ToolKind::Waterjet => crate::waterjet::refusal(self),
+            // An EDM wire (#2011): a diameter in the wire range, no
+            // corner radius, no cutting data rows.
+            ToolKind::Wire => crate::wire::refusal(self),
             ToolKind::Electrode => self.electrode_rule(),
             ToolKind::ThreadMill | ToolKind::ThreadMillSingle => self.thread_mill_rule(),
             _ => None,

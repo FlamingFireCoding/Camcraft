@@ -28,8 +28,11 @@ Open the project in the app with **Open**, or post it from the
 camcraft-cli process examples/first-4axis-part.camproj -o first-4axis-part.nc
 ```
 
-Continuous 4-axis work, where A turns during the cut, is a different job.
-`tormach.cps` refuses it today. See
+Continuous 4-axis work, where A turns during the cut, is a different job
+and is not walked through here. `tormach.cps` posts it (issue #796). Four
+hand-written motion tests in the PathPilot simulator confirm the control
+behavior. The posted continuous program still needs a simulator run and a
+hardware check. See
 [Continuous 4-axis](@/guide/multi-axis/continuous-4-axis.md) and
 [What the post refuses](#what-the-post-refuses) below.
 
@@ -157,7 +160,7 @@ The cut of each operation (inches):
 | Flat A-90 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
 | Flat A0 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
 | Flat A90 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
-| Flat A180 | 0, -0.75 | 0, -0.25 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
+| Flat A180 | -0.75, 0 | -0.25, 0 | 0.25 | 0.5 | 0 | -0.015 | 0.015 | 15 | 4 |
 | Cross slot A0 | -0.5, -0.16 | -0.5, 0.16 | 0.125 | 0.5 | 0 | -0.03 | 0.01 | 8 | 2 |
 
 Keep the other settings at their defaults. A new operation has **Coolant**
@@ -169,18 +172,13 @@ Three facts explain these numbers:
   its heights along the tool axis from the plane origin. The plane origin
   is on the A centreline and the stock box is centred on it, so the top of
   the stock is 0.375 in from the centreline on all four faces.
-- **The slot ends are typed in the tilted plane.** For A-90 and A90 the
-  plane's X is the machine's X, along the bar. The three flats thus have
-  the same ends.
+- **The slot ends are typed in the tilted plane.** For A-90, A90 and
+  A 0 B 180 the plane's X is the machine's X, along the bar. All four
+  flats thus have the same ends (`-0.75, 0` and `-0.25, 0`).
 - **The face opposite the top is A 0, B 180.** The page accepts
-  **Tool axis A** from -90 to 90 only. Type A 0 and B 180 for that face.
-  The machine check and the post read this pose as A180. In this plane the
-  axes change places: the plane's X is the machine's Y, and the plane's Y
-  is the machine's X. Thus the ends of Flat A180 are (0, -0.75) and
-  (0, -0.25). Issue
-  [#2133](https://github.com/NeoTech/Camcraft/issues/2133) tracks the two
-  problems: a typed A of 180 is refused with no reason, and the axes of
-  this plane are exchanged.
+  **Tool axis A** from -90 to 90 only; an angle outside `-90..90` is
+  refused by name and points to A 0, B 180. Type A 0 and B 180 for that
+  face. The machine check and the post read this pose as A180.
 
 A tilted operation takes typed geometry or a whole model. It refuses a
 picked face or edge: "a tilted plane cannot yet index a picked selection -
@@ -244,11 +242,6 @@ G0 A-90
 G0 X-0.75 Y0
 G0 X-0.75 Y0 Z0.875
 G0 X-0.75 Y0 Z0.4537
-G1 X-0.75 Y0 Z0.375 F4
-G1 X-0.25 Y0 Z0.375 F15
-G0 X-0.25 Y0 Z0.875
-G0 X-0.75 Y0 Z0.875
-G0 X-0.75 Y0 Z0.4537
 G1 X-0.75 Y0 Z0.36 F4
 G1 X-0.25 Y0 Z0.36 F15
 G0 X-0.25 Y0 Z0.875
@@ -264,8 +257,8 @@ Read it in this order:
   must be, and that the program writes no clamp code. The microARC 4 has
   no clamp.
 - **The cut.** After the index, Z is the distance from the centreline.
-  The first pass is at the bar's skin (Z0.375) and the second pass cuts the
-  flat (Z0.36).
+  The one pass cuts the flat (Z0.36). The bar's skin (Z0.375) is the top
+  of the stock, so no pass runs there: it would cut only air.
 
 The other three flats post the same X, Y and Z lines after their own
 index. The fourth flat is the A 0, B 180 pose, and it posts as A180:
@@ -371,19 +364,24 @@ that your table turns. Do these steps in order:
 
 ## What the post refuses
 
-`tormach.cps` indexes A between operations and does nothing more with it.
+`tormach.cps` indexes A between operations. Since issue #796 it also posts an
+operation that turns A while it cuts (continuous 4-axis, for example Rotary
+Parallel): A keeps counting past 360, and the moves that turn A run in `G93`.
 It refuses these cases by name and writes no file:
 
 | Case | The refusal contains |
 |---|---|
-| A changes inside one operation (continuous 4-axis, for example Rotary Parallel) | `simultaneous 4-axis motion` ... `(A changes inside the operation) - not confirmed on PathPilot; this post indexes A between operations only` |
+| A changes inside one operation, but the machine file states no A rate | `simultaneous 4-axis motion` ... `states no A feed rate` |
+| A keeps turning one way past the A travel (A counts on, PathPilot does not roll it over) | `A counts on through 360` |
 | A tilt that an A about X cannot make (a B or C lean) | `the A axis about X cannot reach it` |
 | An A angle outside the machine file's travel | `is beyond the A axis travel` |
 | An arc in an indexed operation | `arc on an indexed A` ... `the indexed frame posts lines only` |
 
-Continuous 4-axis output for the microARC 4 is open work in issue
-[#796](https://github.com/NeoTech/Camcraft/issues/796). PathPilot's
-rollover and feed for a move that turns A are not confirmed yet.
+Continuous 4-axis output for the microARC 4 is new in issue
+[#796](https://github.com/NeoTech/Camcraft/issues/796). Four hand-written
+motion tests in the PathPilot simulator confirm the control behavior. The
+posted continuous program still needs a simulator run and a hardware check.
+Air-cut a continuous program slowly before you cut with it.
 
 Other limits of indexed work today:
 
