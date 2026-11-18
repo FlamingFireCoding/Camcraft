@@ -253,6 +253,10 @@ fn v65_preserves_cutting_steps_and_loads_v63_break_through_and_v62_defaults() {
     history.execute(&world, CreateOperation::new(&world, "D", "DR-0600", SrcRef::Entity("plate".into()), drill(Some(0.4))).unwrap());
     let saved = project::save_text(&world).unwrap();
     let current: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert!(
+        current["version"].as_u64().expect("saved format version") >= 68,
+        "break_through_from needs v68 so v67 readers refuse its changed drill-depth semantics"
+    );
     assert_eq!(current["version"], json!(project::PROJECT_VERSION), "current build saves latest format");
     for version in [62, 63, 64, 65, 67] {
         let mut file = current.clone();
