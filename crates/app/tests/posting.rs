@@ -187,7 +187,7 @@ fn two_ops_post_to_one_program_cycles_stay_in_their_section() {
     // pairing exists to catch.
     let parts: Vec<&str> = text.split("G90 G54 G40 G49 G80").collect();
     assert_eq!(parts.len(), 3, "one preamble per section: {text}");
-    assert!(parts[1].contains("T02 M6"), "EM-0600-4FL is library rank 2");
+    assert!(parts[1].contains("T01 M6"), "EM-0600-4FL was added first (T1)");
     assert!(
         parts[1].contains("G01") || parts[1].contains("G02"),
         "the contour chain posted"
@@ -197,7 +197,7 @@ fn two_ops_post_to_one_program_cycles_stay_in_their_section() {
         "no cycle belongs in the contour's section: {}",
         parts[1]
     );
-    assert!(parts[2].contains("T01 M6"), "DR-0400 is library rank 1");
+    assert!(parts[2].contains("T02 M6"), "DR-0400 was added second (T2)");
     assert!(
         parts[2].contains("G99"),
         "the cycle returns to R (#994)"
