@@ -50,6 +50,7 @@ mod package;
 mod path_mods;
 mod plan;
 mod process_bump;
+mod queue;
 #[cfg(test)]
 mod process_bump_tests;
 mod quick;
