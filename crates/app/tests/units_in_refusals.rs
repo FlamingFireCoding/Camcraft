@@ -503,7 +503,7 @@ fn pocket(top: f64, bottom: f64) -> OpParams {
         feed: 1200.0,
         plunge_feed: 300.0,
         climb: true,
-        strategy: camcraft_app::machining2d::PocketStrategy::Adaptive,
+        strategy: camcraft_app::machining2d::PocketStrategy::OffsetRings,
         entry: camcraft_app::machining3d::Entry3D::Plunge,
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,

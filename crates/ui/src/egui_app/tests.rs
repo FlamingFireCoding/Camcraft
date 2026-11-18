@@ -227,6 +227,8 @@ mod ai_chat;
 mod edm_tool_visibility;
 // #2201: edge/face selection highlight draw & rebuild count per frame.
 mod highlight_perf;
+// #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
+mod pocket_no_adaptive;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
@@ -5170,3 +5172,19 @@ mod review_1710_evidence;
 mod guide_projects;
 mod guide_images;
 
+
+#[test]
+fn clipboard_keeps_review_notes_after_source_is_deleted() {
+    let mut shell = ShellUi::seeded();
+    let source = model::find_by_name(&shell.state.world, "Contour1").expect("source");
+    let mut meta = model::operation_meta_of(&shell.state.world, &source);
+    meta.needs_review = vec!["Legacy rest settings were dropped".into()];
+    source.entity_view(&shell.state.world).set(meta.clone());
+    shell.state.copy_operation("Contour1");
+    shell.state.history.execute(&shell.state.world,
+        camcraft_app::commands::DeleteOperation::new(&shell.state.world, "Contour1").expect("delete source"));
+    shell.state.paste_operation();
+    shell.state.drain_actions();
+    let copy = model::find_by_name(&shell.state.world, "Contour1 Copy").expect("copy");
+    assert_eq!(model::operation_meta_of(&shell.state.world, &copy).needs_review, meta.needs_review);
+}

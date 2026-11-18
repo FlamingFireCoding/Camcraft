@@ -218,6 +218,9 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             if op.label.as_deref().is_some_and(|s| s.trim().is_empty() || s.len() > 120 || s.chars().any(char::is_control)) {
                 return Err(corrupt(format!("'{}' has an invalid operation label", dto.name)));
             }
+            if op.needs_review.iter().any(|s| s.trim().is_empty() || s.len() > 240 || s.chars().any(char::is_control)) {
+                return Err(corrupt(format!("'{}' has an invalid needs_review note", dto.name)));
+            }
             if op.setup.as_deref().is_some_and(str::is_empty) {
                 return Err(corrupt(format!("'{}' names an empty setup", dto.name)));
             }
