@@ -42,6 +42,12 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // through the guarded Quit instead of ending the process.
     let _ = super::os_quit::install();
     let mut shell = Shell::new(pick, want);
+    // #1946: wake the Wait event loop whenever the AI chat worker queues
+    // an event or dispatches an in-process MCP request.
+    let ai_proxy = event_loop.create_proxy();
+    shell.state.set_ai_wake(std::sync::Arc::new(move || {
+        let _ = ai_proxy.send_event(());
+    }));
     // #183: the opt-in live MCP server. Its waker posts an empty user
     // event, which wakes the idle loop for a frame that answers the call.
     if let Some(port) = mcp_port {
@@ -141,6 +147,8 @@ impl Shell {
         // queue the shared command kinds, rfd picks the path, State::run
         // does the work - the machinery was never egui's to rebuild.
         let mut state = State::new();
+        // #2257: generate on a worker so the viewport shows its progress.
+        state.gen_jobs.background = true;
         // #662: the user's recent projects and models, read once.
         state.load_recent();
         // #645: the user's view preferences (the #727 name toggle), read once.
@@ -318,6 +326,8 @@ impl Shell {
         // `state` (and its world) drops after all GPU objects.
         // #183: the MCP listener stops (and its thread is joined) first,
         // so no wake-up reaches a closing loop.
+        self.state.ai_chat.shutdown();
+        self.state.ai_mcp_inbox = None;
         self.state.mcp = None;
         self.renderer = None;
         self.view = None;
