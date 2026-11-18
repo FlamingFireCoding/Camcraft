@@ -49,9 +49,12 @@ The Sodick post supports vertical 2-axis cuts only. It refuses taper,
 4-axis profiles, unsupported angle-word moves and control-side G41/G42
 H-register offsets by operation name. CamCraft verifies its generated
 wire-centre path, not an offset chosen separately at the control.
-Same-path skim offsets are unsupported. Tank, flushing and wire-drive words
-are not programmed; set them at the control. Sodick output remains unverified on
-a real control.
+Same-path skim offsets are unsupported. When the wire machine states its
+**Tank** (submerged or non-submerged) and **Flushing** (high or low) in the
+machine editor, the Sodick post writes T94 / T89 and T84 / T85 after each
+threading, before the condition word; left unstated, they are not programmed
+and are set at the control. Tank fill, drain, flushing pump and wire-drive words
+are never written. Sodick output remains unverified on a real control.
 
 ## Wire Contour
 
@@ -131,6 +134,25 @@ endpoint still while the other walks a span. Crossed pair order, identical
 rulings and an ambiguous whole turn at one endpoint are refused. Separate
 open runs are not stitched into a profile; select a face or one closed
 edge chain.
+
+Where the two profiles turn against each other, a straight wire cannot
+lie in the surface between them: it stands off by up to the twist
+tolerance. **Stand off** says where. **Only where the surface twists**
+(the default) cuts every straight stretch to size and stands the wire
+off at the twist alone. **The same all round** stands every stretch off
+as far as the worst one needs. A twist that needs more than the
+tolerance is refused where it stands.
+
+**Verify tolerance.** The check before posting reads the model's facets.
+A lofted model's facets stand past its true surface by up to the chord
+tolerance the model was faceted at, so a correct 4-axis cut can read as
+a gouge of a few microns. State that tolerance as the cut's **Verify
+tolerance**: the check then lets the kerf into the facets by that much
+and no more, and the report says the deepest reading it let pass. 0 (the
+default) checks the facets as they are. A gouge is always refused with
+the deepest reading at any height, so you can see whether the model's
+tolerance explains it. The value must be below the kerf offset and at
+most 0.25 mm.
 
 **Inside corners.** No inside corner can be cut tighter than the kerf
 offset. A corner, slot or neck the wire cannot reach is refused by name,

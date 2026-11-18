@@ -8,13 +8,16 @@ aliases = ["guide/install/"]
 Releases are published on the
 [GitHub releases page](https://github.com/NeoTech/Camcraft/releases). Each
 release carries builds for Windows x64, Linux x86_64, macOS (universal, Apple
-Silicon and Intel), FreeBSD amd64 and Arch Linux.
+Silicon and Intel) and Arch Linux.
 
 ## Windows
 
 - **Portable zip:** unzip it anywhere and run `camcraft-ui.exe`.
 - **Installer** (`camcraft-<version>-win-x64-setup.exe`): installs for the
   current user, without an administrator prompt.
+
+If the app closes at startup, the display freezes, or you need to report a
+problem, see [Windows troubleshooting](@/guide/reference/windows-troubleshooting.md).
 
 ## Linux
 
@@ -41,10 +44,6 @@ command-line tool (`camcraft-cli`) and the post processor (`post`) sit in
 the same `MacOS` folder. The release files are `camcraft-<version>-macos-universal.dmg`
 (the disk image) and `camcraft-<version>-macos-universal.zip` (the portable
 archive, which holds `CamCraft.app`).
-
-## FreeBSD
-
-Extract the `freebsd-amd64.tar.gz` archive and run `camcraft-ui` from it.
 
 ## What is in the archives
 

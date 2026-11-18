@@ -33,6 +33,9 @@ pub struct Step {
     pub name: String,
     pub args: Vec<String>,
     pub in_ui: bool,
+    /// A known-fail check (`known_fail`): the step is ok only when libtest reports this test as FAILED by
+    /// its pinned assert.
+    pub expect_fail: Option<&'static crate::known_fail::KnownFail>,
 }
 
 impl Step {
@@ -41,6 +44,7 @@ impl Step {
             name: name.into(),
             args: args.iter().map(|a| (*a).to_string()).collect(),
             in_ui: dir == "ui",
+            expect_fail: None,
         }
     }
     pub fn with(mut self, more: &[String]) -> Step {
@@ -93,48 +97,54 @@ fn strs(v: &[String]) -> Vec<&str> {
     v.iter().map(String::as_str).collect()
 }
 
-/// Every suite of `dirs`; with `skip_slow` a crate runs `--lib` plus each non-slow binary by name.
+/// One test target of a crate: the step label and its cargo selector.
+fn suite_targets(root: &Path, d: &str, skip_slow: bool) -> Vec<(String, Vec<String>)> {
+    let mut t: Vec<(String, Vec<String>)> = vec![("lib".into(), vec!["--lib".into()])];
+    if !skip_slow {
+        t.push(("bins".into(), vec!["--bins".into()]));
+    }
+    for b in scan::binaries(root, d) {
+        if !(skip_slow && is_slow(d, &b)) {
+            t.push((b.clone(), vec!["--test".into(), b]));
+        }
+    }
+    if !skip_slow {
+        t.push(("doc".into(), vec!["--doc".into()]));
+    }
+    t
+}
+
+/// The debug suites of `dirs` as one step for each test target (#1941), as the heavy lanes do (#1714):
+/// `--lib`, with `skip_slow` false also `--bins`, every integration binary by name and `--doc`. With
+/// `skip_slow` a binary of `SLOW_BINARIES` gets no step (batch; the release tier runs it). Together the
+/// steps of a crate run exactly the targets of `cargo test -p <crate>` (batch: minus bins, doc and the
+/// slow binaries, as before). A red step names one target; `--only "app suites: <binary>"` runs it alone.
 pub fn run_suites(root: &Path, dirs: &[&str], skip_slow: bool) -> Vec<Step> {
     let mut out = Vec::new();
     for &d in dirs {
         let p = pkg(d);
-        if d == "ui" {
-            out.push(Step::new(
-                "ui suites (cwd crates/ui)",
-                &["test", "-j", J, "-p", &p, "--no-fail-fast", "--", T],
-                "ui",
-            ));
-            continue;
+        for (label, sel) in suite_targets(root, d, skip_slow) {
+            let mut args = vec!["test", "-j", J, "-p", &p, "--no-fail-fast"];
+            args.extend(strs(&sel));
+            args.extend(["--", T]);
+            out.push(Step::new(format!("{d} suites: {label}"), &args, d));
         }
-        if !skip_slow {
-            out.push(Step::new(
-                format!("{d} suites"),
-                &["test", "-j", J, "-p", &p, "--no-fail-fast", "--", T],
-                "",
-            ));
-            continue;
-        }
-        let mut sel = vec!["--lib".to_string()];
-        let mut skipped = Vec::new();
-        for b in scan::binaries(root, d) {
-            if is_slow(d, &b) {
-                skipped.push(b);
-            } else {
-                sel.push("--test".into());
-                sel.push(b);
-            }
-        }
-        let name = if skipped.is_empty() {
-            format!("{d} suites")
-        } else {
-            format!("{d} suites (slow, release tier: {})", skipped.join(", "))
-        };
-        let mut args = vec!["test", "-j", J, "-p", &p, "--no-fail-fast"];
-        args.extend(strs(&sel));
-        args.extend(["--", T]);
-        out.push(Step::new(name, &args, ""));
     }
     out
+}
+
+/// The name of the one build step of batch and release; the executor stops when it fails.
+pub const DEBUG_BUILD: &str = "debug build (--no-run)";
+
+/// One debug `--no-run` build step for `dirs` (`-p` each), run before their per-target steps (#1941).
+pub fn debug_build(dirs: &[&str]) -> Step {
+    let mut args: Vec<String> = vec!["test".into(), "-j".into(), J.into()];
+    for d in dirs {
+        args.push("-p".into());
+        args.push(pkg(d));
+    }
+    args.push("--no-run".into());
+    Step::new(DEBUG_BUILD, &[], "").with(&args)
 }
 
 pub fn clippy() -> Step {
@@ -155,6 +165,9 @@ pub fn batch(root: &Path) -> Plan {
         "batch: debug suites (kernel included) minus SLOW_BINARIES ({}), ui, clippy",
         SLOW_BINARIES.join(", ")
     ));
+    plan.notes.push("one build (--no-run), then one step for each test target (#1941)".into());
+    let built: Vec<&str> = BATCH_CRATES.iter().copied().chain(["ui"]).collect();
+    plan.steps.push(debug_build(&built));
     plan.steps.extend(run_suites(root, BATCH_CRATES, true));
     plan.steps.extend(run_suites(root, &["ui"], false));
     plan.steps.push(clippy());
@@ -211,8 +224,20 @@ pub fn heavy_steps(root: &Path) -> Vec<Step> {
         for (label, sel) in targets {
             let mut args = vec!["test", "--release", "-j", J, "-p", &p, "--no-fail-fast"];
             args.extend(strs(&sel));
-            args.extend(["--", T, "--ignored"]);
+            args.extend(["--", T]);
+            let skip = crate::known_fail::skip_args(d, &label);
+            args.extend(strs(&skip));
+            args.push("--ignored");
             out.push(Step::new(format!("{d} heavy: {label}"), &args, ""));
+            // Each skipped test runs alone and must fail: a pass means the skip is stale (#1950 decision).
+            for k in crate::known_fail::of(d, &label) {
+                let mut args = vec!["test", "--release", "-j", J, "-p", &p, "--no-fail-fast"];
+                args.extend(strs(&sel));
+                args.extend(["--", T, "--exact", k.test, "--ignored"]);
+                let mut step = Step::new(crate::known_fail::step_name(k), &args, "");
+                step.expect_fail = Some(k);
+                out.push(step);
+            }
         }
     }
     out
@@ -228,7 +253,7 @@ pub fn release(root: &Path) -> Plan {
 pub fn release_with(root: &Path, snapshots: bool) -> Plan {
     let mut plan = Plan::default();
     plan.notes.push(
-        "release: prebuild both profiles, then up to four debug/release lanes; app, kernel, ui and clippy run alone"
+        "release: prebuild both profiles, then heavy targets before debug suites; each phase runs a longest-first shared queue, then ui, clippy and lanes::ISOLATED targets alone"
             .into(),
     );
     if !snapshots {
@@ -236,6 +261,7 @@ pub fn release_with(root: &Path, snapshots: bool) -> Plan {
             "--no-snapshots: the ui pixel-snapshot lanes are skipped (Windows-made goldens); run them locally at the cut".into(),
         );
     }
+    plan.notes.extend(crate::known_fail::KNOWN_FAIL.iter().map(crate::known_fail::note));
     let non_ui: Vec<&str> = ALL_CRATES.iter().copied().filter(|d| *d != "ui").collect();
     let mut build = vec!["test", "-j", J];
     let packages: Vec<String> = ALL_CRATES.iter().map(|d| pkg(d)).collect();
@@ -243,15 +269,15 @@ pub fn release_with(root: &Path, snapshots: bool) -> Plan {
         build.extend(["-p", p]);
     }
     build.push("--no-run");
-    plan.steps.push(Step::new("debug build (--no-run)", &build, ""));
+    plan.steps.push(Step::new(DEBUG_BUILD, &build, ""));
     let mut heavy = heavy_steps(root).into_iter();
     if let Some(build) = heavy.next() {
         plan.steps.push(build);
     }
+    plan.steps.extend(heavy);
     plan.steps.extend(run_suites(root, &non_ui, false));
     plan.steps.extend(run_suites(root, &["ui"], false));
     plan.steps.push(clippy());
-    plan.steps.extend(heavy);
     if !snapshots {
         return plan;
     }

@@ -18,13 +18,19 @@ use camcraft_tools::spun::SpunPoint;
 use serde_json::{json, Map, Value};
 
 /// A tool's holder as `get_job` and `set_tool_holder` state it: `null`
-/// for the plain holder cylinder, else the drawn profile's points.
+/// for the plain holder cylinder, else the drawn profile's points and
+/// (#2016) the library reference the tool stores, if it is one.
 pub(super) fn holder_view(world: &flecs_ecs::prelude::World, tool: &str) -> Value {
     let body = model::find_by_name(world, tool).and_then(|e| tool_body::body_of(world, &e));
     match body {
         None => Value::Null,
         Some(b) => json!({
             "source": b.source,
+            // #2016: the library entry the holder is, when it is one;
+            // null for a custom (drawn) holder.
+            "library": b.library.as_ref().map(|r| json!({
+                "entry": r.entry, "gauge_len": fnum(r.gauge_len), "projection": fnum(r.projection),
+            })),
             "lathe": matches!(b.frame, tool_body::BodyFrame::Lathe { .. }),
             "points": b.spun.as_ref().map(|s| s.points().iter()
                 .map(|p| json!({ "z": fnum(p.z), "r": fnum(p.r), "arc": fnum(p.arc) })).collect::<Vec<_>>()),
@@ -119,7 +125,7 @@ pub(super) fn s_set_tool_holder() -> Value {
         "type": "object",
         "properties": {
             "tool": { "type": "string", "description": "A document tool name (see get_job)." },
-            "library": { "type": "string", "description": "A list_holder_library entry name, e.g. \"BT30 ER20\"." },
+            "library": { "type": "string", "description": "A list_holder_library entry name, e.g. \"BT30 ER20\", or a taper's Weldon pick (\"BT40 Weldon\"): the bore is the one that takes the tool's shank." },
             "gauge_len": { "type": "number", "minimum": 0, "description": "With library: gauge line to nose face, mm (default: the entry's)." },
             "projection": { "type": "number", "minimum": 0, "description": "With library: nose face above the tool tip, mm (default: the tool's flute plus shank length)." },
             "points": { "type": "array", "description": "A drawn spun holder profile, tip-up: [{z, r, arc}] (mm; arc 0 = line, else the signed arc radius to the next point).",

@@ -17,12 +17,20 @@
 //! loader and `SetToolBody` judge one - re-derived from its outline or
 //! facets and fitted to its tool - so a body the holder laws would
 //! misread refuses the whole file by name.
+//!
+//! #2016: a library holder rides its definition as `holder` (the
+//! reference a `.camproj` tool stores: entry name, gauge length,
+//! projection) in place of `body`, and the file then says version 4
+//! (`HOLDER_REF_VERSION`): a reader that predates the key would drop it
+//! and judge the tool's smaller holder cylinder, so it must refuse the
+//! file. An entry this build's library does not hold refuses the whole
+//! file by name.
 
 use flecs_ecs::prelude::World;
 use serde_json::{Value, json};
 
 use crate::model;
-use crate::project::{self, ToolBodyDto};
+use crate::project::{self, HolderRefDto, ToolBodyDto};
 use crate::schema::ToolBody;
 use crate::tool_body;
 use crate::tools::Tool;
@@ -33,6 +41,13 @@ pub const FORMAT: &str = "camcraft-tools";
 pub const VERSION: u64 = 1;
 /// Older readers must refuse libraries containing left-hand taps.
 pub const LEFT_HAND_VERSION: u64 = 2;
+/// #2015: older readers must refuse a library whose cutting data holds
+/// an `unknown` row or a stepdown / stepover (they would drop or refuse
+/// it); a library with neither keeps the older number.
+pub const CUTTING_STEPS_VERSION: u64 = 3;
+/// #2016: older readers (including v0.22.0 at version 2 and version-3
+/// builds) must refuse libraries whose tools name a library holder (`holder`).
+pub const HOLDER_REF_VERSION: u64 = 4;
 /// The extension the file dialogs offer.
 pub const EXTENSION: &str = "camtools";
 
@@ -80,14 +95,24 @@ pub fn export_tool_library(world: &World) -> Result<String, String> {
         if t.kind == crate::tools::ToolKind::Tap
             && t.thread_hand == camcraft_tools::thread_hand::ThreadHand::Left
         {
-            version = LEFT_HAND_VERSION;
+            version = version.max(LEFT_HAND_VERSION);
+        }
+        if needs_steps_version(&t) {
+            version = version.max(CUTTING_STEPS_VERSION);
         }
         let mut def = project::tool_to_json(&t);
         if let Some(b) = tool_body::body_of(world, &e) {
-            let body = serde_json::to_value(ToolBodyDto::from_body(&b))
-                .map_err(|err| format!("tool '{n}': body not written: {err}"))?;
+            // #2016: a library holder is written as its reference.
+            let (key, value) = match project::body_to_dto(&b) {
+                (Some(h), _) => {
+                    version = version.max(HOLDER_REF_VERSION);
+                    ("holder", serde_json::to_value(h))
+                }
+                (None, body) => ("body", serde_json::to_value(body)),
+            };
+            let value = value.map_err(|err| format!("tool '{n}': {key} not written: {err}"))?;
             if let Value::Object(o) = &mut def {
-                o.insert("body".into(), body);
+                o.insert(key.into(), value);
             }
         }
         tools.push(json!({ "name": n, "definition": def }));
@@ -116,8 +141,8 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
                 None => return Err(format!("not a tool library: no \"format\": \"{FORMAT}\"")),
             }
             match o.get("version").and_then(Value::as_u64) {
-                Some(VERSION | LEFT_HAND_VERSION) => {}
-                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION} or {LEFT_HAND_VERSION})")),
+                Some(VERSION | LEFT_HAND_VERSION | CUTTING_STEPS_VERSION | HOLDER_REF_VERSION) => {}
+                Some(v) => return Err(format!("tool library version {v} is not supported (this build reads {VERSION} to {HOLDER_REF_VERSION})")),
                 None => return Err("not a tool library: no \"version\"".into()),
             }
             if let Some(u) = o.get("units").and_then(Value::as_str)
@@ -148,10 +173,9 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
         if let Some(why) = tool.torch_refusal() {
             return Err(format!("tool '{name}' is refused: {why}"));
         }
-        if !tool.is_sane() {
-            return Err(format!(
-                "tool '{name}' is refused: its sizes must be finite and positive, corner radius within the diameter"
-            ));
+        // #1186: the rule the tool breaks, by name.
+        if let Some(why) = tool.why_not_sane() {
+            return Err(format!("tool '{name}' is refused: {why}"));
         }
         let body = read_body(def, &tool, name)?;
         out.push(LibraryTool { name: name.to_owned(), tool, body });
@@ -162,17 +186,35 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
     Ok(out)
 }
 
+/// #2015: does `t` write cutting data a version-1/2 reader cannot keep:
+/// an `Unknown` row that is not just its own rpm / feed, or a row's
+/// stepdown / stepover?
+fn needs_steps_version(t: &Tool) -> bool {
+    t.cutting.iter().any(|r| {
+        (r.is_unknown() && !camcraft_tools::cutting_rows::is_derived_unknown(r, t.rpm, t.feed))
+            || r.stepdown.is_some()
+            || r.stepover.is_some()
+    })
+}
+
 /// #889: a definition's `body`, judged as the project loader judges it
 /// (`project::validate`): re-derived by this build's envelope law and
 /// fitted to its tool, or the file refuses naming the tool.
 fn read_body(def: &Value, tool: &Tool, name: &str) -> Result<Option<ToolBody>, String> {
-    let Some(raw) = def.get("body").filter(|v| !v.is_null()) else {
+    let key = |k: &str| def.get(k).filter(|v| !v.is_null());
+    let dto: Option<ToolBodyDto> = key("body")
+        .map(|raw| serde_json::from_value(raw.clone()).map_err(|e| format!("tool '{name}': body is malformed: {e}")))
+        .transpose()?;
+    // #2016: a library holder by reference, drawn from this build's
+    // library; an unknown entry refuses the file by name.
+    let holder: Option<HolderRefDto> = key("holder")
+        .map(|raw| serde_json::from_value(raw.clone()).map_err(|e| format!("tool '{name}': holder is malformed: {e}")))
+        .transpose()?;
+    let what = if holder.is_some() { "holder" } else { "body" };
+    let Some(body) = project::stated_body(holder.as_ref(), dto.as_ref(), name).map_err(|e| format!("{e} ({what} refused)"))? else {
         return Ok(None);
     };
-    let dto: ToolBodyDto =
-        serde_json::from_value(raw.clone()).map_err(|e| format!("tool '{name}': body is malformed: {e}"))?;
-    let body = dto.to_body(name).map_err(|e| format!("{e} (body refused)"))?;
-    tool_body::fits(tool, &body).map_err(|e| format!("tool '{name}': body refused: {e}"))?;
+    tool_body::fits(tool, &body).map_err(|e| format!("tool '{name}': {what} refused: {e}"))?;
     Ok(Some(body))
 }
 

@@ -95,7 +95,48 @@ use super::*;
 /// must refuse a v61 file rather than post the program as O0001, where
 /// it could overwrite another program in the control's memory.
 /// v62 (#1453): old readers must not discard a tap's thread hand.
-pub const PROJECT_VERSION: u32 = 62;
+/// v63 (#1557): a Drill, Bore or Thread may state its through-hole
+/// break-through (`break_through`). Absent is the kind's default - what
+/// every v62 file posted - so a v62 file steps up unchanged. An old
+/// reader must refuse a v63 file rather than drop a stated break-through
+/// and run the tip its default 1.0 mm past the floor, into what the
+/// user kept it out of.
+/// v64 (#2015): a tool's cutting data holds an `unknown` row and rows
+/// may state a stepdown and a stepover; a setup's stock may state its
+/// workpiece material. An old reader must refuse the file rather than
+/// drop the rows or the stock material the feeds were picked by. A v63
+/// file steps up unchanged: each tool's own rpm / feed is its `Unknown`
+/// row (derived at read).
+/// v65 (#2133): old readers must not discard the tilted frame basis version.
+/// Version 64 and older tilts retain basis 0; new tilts state basis 1.
+/// v66 (#1962): MachineDto stores AC trunnion chain order, pivot/offset
+/// vectors, zero_offset, rollover, sign_convention, and `controller_rtcp`.
+/// Absent reads as before (v65 steps up unchanged); an old reader must
+/// refuse a v66 file rather than discard `controller_rtcp: false` and
+/// emit G43.4 RTCP from tilt vectors.
+/// v67 (#1720): a WCS row may record flipped axes (`flip`). Absent is
+/// no flip - what every v66 file posted - so a v66 file steps up
+/// unchanged. An old reader must refuse a v67 file rather than drop the
+/// flip and post the setup in the unflipped frame.
+/// v68 (#2441): Drill operations carry `break_through_from`
+/// (`"full_diameter"` vs `"tip"`). Pre-v68 files with the key absent
+/// migrate to `"tip"` so saved projects keep their posted depth, while
+/// new drills default to `"full_diameter"` (adding the drill point
+/// cone). An old reader must refuse a v68 file rather than ignore
+/// `"break_through_from"` and drill shallow or pierce a fixture.
+/// v69 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
+/// to `adaptive2d`), and migrated operations may carry `needs_review`
+/// reasons naming turned-off un-carriable fields. Pre-v69 `Pocket` +
+/// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
+/// refuse v69 files rather than silently drop `needs_review` and post.
+/// v70 (#2016): a tool may name its library holder (`holder` on the
+/// tool) in place of a drawn `body`. Absent is what every older file
+/// states: a `body` (a drawn copy of a library holder included) or the
+/// holder cylinder, read and judged as before, so a v69 file steps up
+/// unchanged. An old reader (including v0.22.0 at v62 and v69 builds)
+/// must refuse a v70 file rather than drop the reference and judge the
+/// smaller cylinder in its place.
+pub const PROJECT_VERSION: u32 = 70;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -229,6 +270,17 @@ pub struct PostOptionsDto {
     /// (M0), additive (no version step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub between_setups: Option<String>,
+    /// How a Z-rotated work offset posts (#760): `"control"`; absent is
+    /// the default `"bake"` (additive, no version step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wcs_rotation: Option<String>,
+    /// Per-post declared script option overrides keyed by `post_key` (#258),
+    /// additive (no version step); absent leaves all script defaults intact.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub script: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, crate::post::options::OptionValue>,
+    >,
 }
 
 /// The file mirror of the `PostRef` singleton (M3.3): exactly the two
@@ -363,15 +415,22 @@ pub struct ToolDto {
     /// earlier tool was taken to be - no version step.
     #[serde(default = "centre_cutting", skip_serializing_if = "is_centre_cutting")]
     pub center_cutting: bool,
-    /// #221 addition, additive (no version step): the controller's tool
-    /// number. Absent from every older file and written only when set;
-    /// absent means "post by list position", what every older tool did.
+    /// #221 / #2442 addition: the controller's tool number (`T..` / `H..`).
+    /// Legacy files without it are frozen to their 1-based name-sorted list
+    /// position on load so adding or deleting tools later never shifts them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub number: Option<u32>,
     /// #368 (v58): the tool's modelled body. Absent is none - the
     /// holder cylinder, what every older tool judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<super::tool_body_wire::ToolBodyDto>,
+    /// #2016 (v70): the library holder the tool sits in, by reference
+    /// (`tool_body_wire::HolderRefDto`). Written in place of `body`,
+    /// never beside it; the body is drawn from the named entry on
+    /// load. An entry this build's library does not hold refuses the
+    /// file by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<super::tool_body_wire::HolderRefDto>,
     /// #93 slice 2, additive (no version step): the tool's drawn
     /// cutter outline, `[z, r, arc]` per point tip-up. Absent is the
     /// outline its numbers draw - every older file. A reader that
@@ -494,6 +553,8 @@ pub enum ToolKindDto {
     /// `pitch`.
     ThreadMill,
     ThreadMillSingle,
+    /// Wire EDM wire (#2011): additive in the same way.
+    Wire,
 }
 
 impl ToolDto {
@@ -517,6 +578,7 @@ impl ToolDto {
                 ToolKind::Electrode => ToolKindDto::Electrode,
                 ToolKind::ThreadMill => ToolKindDto::ThreadMill,
                 ToolKind::ThreadMillSingle => ToolKindDto::ThreadMillSingle,
+                ToolKind::Wire => ToolKindDto::Wire,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -542,6 +604,7 @@ impl ToolDto {
             center_cutting: t.center_cutting,
             number: None,
             body: None,
+            holder: None,
             cutter: None,
             orientation: t.orientation,
             part_number: t.catalog.part_number.clone(),
@@ -549,13 +612,22 @@ impl ToolDto {
             coating: t.catalog.coating.clone(),
             helix_deg: t.catalog.helix_deg,
             notes: t.catalog.notes.clone(),
-            cutting_data: t.cutting.iter().map(super::CuttingRowDto::from_row).collect(),
+            cutting_data: super::cutting_rows_dto::rows_to_write(&t.cutting, t.rpm, t.feed),
             turning: t.turning,
             outline: t.outline.clone(),
         }
     }
 
+    /// #2015: read in the canonical form - a tool's own rpm / feed are
+    /// its `Unknown` row (every older file, and every row the writer left
+    /// out as derived). The running numbers are read as written.
     pub(super) fn to_tool(&self) -> Tool {
+        let mut tool = self.tool_as_written();
+        camcraft_tools::cutting_rows::canonical(&mut tool);
+        tool
+    }
+
+    fn tool_as_written(&self) -> Tool {
         Tool {
             kind: match self.kind {
                 ToolKindDto::EndMill => ToolKind::EndMill,
@@ -575,6 +647,7 @@ impl ToolDto {
                 ToolKindDto::Electrode => ToolKind::Electrode,
                 ToolKindDto::ThreadMill => ToolKind::ThreadMill,
                 ToolKindDto::ThreadMillSingle => ToolKind::ThreadMillSingle,
+                ToolKindDto::Wire => ToolKind::Wire,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,

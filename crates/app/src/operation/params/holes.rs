@@ -31,7 +31,20 @@ impl OpParams {
                 plunge_feed,
                 holes,
                 cross,
+                break_through,
+                break_through_from,
             } => {
+                // #1557: the break-through, written only when stated,
+                // so every older op keeps the digest it was cached under.
+                if let Some(b) = break_through {
+                    h.write_u8(0xB7);
+                    w(h, *b);
+                }
+                // #2441: legacy `Tip` keeps the pre-v68 digest unchanged;
+                // `FullDiameter` writes `0xB8` so switching invalidates cache.
+                if *break_through_from == crate::drilling::BreakThroughFrom::FullDiameter {
+                    h.write_u8(0xB8);
+                }
                 wh(h, *clearance_z);
                 wh(h, *top_z);
                 wh_opt(h, *bottom_z);
@@ -85,7 +98,14 @@ impl OpParams {
                 climb,
                 tolerance,
                 holes,
+                break_through,
             } => {
+                // #1557: the break-through, written only when stated,
+                // so every older op keeps the digest it was cached under.
+                if let Some(b) = break_through {
+                    h.write_u8(0xB7);
+                    w(h, *b);
+                }
                 wh(h, *clearance_z);
                 wh(h, *top_z);
                 wh_opt(h, *bottom_z);
@@ -146,7 +166,14 @@ impl OpParams {
                 hand,
                 external,
                 passes,
+                break_through,
             } => {
+                // #1557: the break-through, written only when stated,
+                // so every older op keeps the digest it was cached under.
+                if let Some(b) = break_through {
+                    h.write_u8(0xB7);
+                    w(h, *b);
+                }
                 // #985: an external thread is a different ride on the
                 // same list. Written only when set, so every internal
                 // thread keeps the digest it was cached under.

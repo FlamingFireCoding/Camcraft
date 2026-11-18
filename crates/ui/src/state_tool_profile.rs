@@ -95,6 +95,15 @@ impl State {
                 d.gauge = self.tool_profile_ui.gauge;
                 d.projection = self.tool_profile_ui.projection;
             }
+            // #2016: with no pick of the user's, the picker shows the
+            // library holder the tool already sits in.
+            if d.library.is_none()
+                && let Some(r) = landed.as_ref().and_then(|b| b.library.as_ref())
+            {
+                d.library = Some(r.entry.clone());
+                d.gauge = r.gauge_len;
+                d.projection = r.projection;
+            }
             if let Some(spun) = landed.and_then(|b| b.spun) {
                 d.custom = true;
                 d.points = spun.points().to_vec();
@@ -181,17 +190,29 @@ impl State {
     /// #793: pick library holder `entry` for Apply holder; the gauge
     /// length starts at the entry's own and (#792) the projection at
     /// the stored tool's stickout (flute plus shank length), the
-    /// command's own default. An unknown name clears the pick.
+    /// command's own default. An unknown name clears the pick. #2018: a
+    /// taper's Weldon row ("BT40 Weldon") stays the pick as it is named,
+    /// its bore the one for the tool's shank (resolved on Apply), and
+    /// takes the taper's Weldon gauge length.
     pub(crate) fn pick_library_holder(&mut self, entry: &str) {
         let stickout = self.editor_stored_tool().map(|t| t.flute_len + t.shank_len);
+        let key = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase();
+        let group = holder_library::picker_rows().into_iter().find_map(|r| match &r {
+            holder_library::PickerRow::Weldon { taper, bores } if key(&r.name()) == key(entry) => {
+                let e = bores.first().and_then(|b| holder_library::weldon_for(taper.name, *b).ok())?;
+                Some((r.name(), e))
+            }
+            _ => None,
+        });
+        let pick = group.or_else(|| holder_library::find(entry).ok().map(|e| (e.name(), e)));
         let d = &mut self.tool_profile_ui;
-        match holder_library::find(entry) {
-            Ok(e) => {
-                d.library = Some(e.name());
+        match pick {
+            Some((name, e)) => {
+                d.library = Some(name);
                 d.gauge = e.gauge_len;
                 d.projection = stickout.unwrap_or(d.projection);
             }
-            Err(_) => d.library = None,
+            None => d.library = None,
         }
     }
 
@@ -200,6 +221,18 @@ impl State {
     pub(crate) fn editor_stored_tool(&self) -> Option<Tool> {
         let e = model::find_by_name(&self.world, &self.tool_ui.name)?;
         model::tool_of(&self.world, &e)
+    }
+
+    /// #2016: the library holder the editor's stored tool sits in by
+    /// reference, and the holder cylinder the laws read for it (the
+    /// one enclosing the entry's outline: diameter, length). `None`
+    /// for a custom holder or none, and for a machine's assumed
+    /// default, which is still floored by the tool's own numbers.
+    pub(crate) fn editor_library_holder(&self) -> Option<(String, f64, f64)> {
+        let body = self.editor_tool_body()?;
+        let reference = body.library.as_ref().filter(|_| !body.machine_default)?;
+        let judged = body.profile()?.enclose(&self.editor_stored_tool()?)?;
+        Some((reference.entry.clone(), judged.holder_d, judged.holder_len))
     }
 
     /// "Apply holder": queue the one `SetToolBody::library` for the
@@ -213,7 +246,9 @@ impl State {
     }
 
     /// The command handler: a refusal lands on the Tool pane by name;
-    /// a landed holder re-mirrors as a Custom (editable) profile.
+    /// a landed holder re-mirrors as a Custom (editable) profile. The
+    /// tool keeps the reference to the entry (#2016) until a point of
+    /// that profile is edited and applied.
     pub(crate) fn run_set_tool_holder(&mut self, name: &str, entry: &str, gauge: Option<f64>, projection: Option<f64>) {
         match SetToolBody::library(&self.world, name, entry, gauge, projection) {
             Ok(command) => {
@@ -245,5 +280,156 @@ impl State {
             self.status = String::from("ready");
         }
         self.feedback_ctx = None;
+    }
+}
+
+impl State {
+    fn clear_tool_scope_refusal(&mut self) {
+        if self.feedback.as_ref().is_some_and(|(s, _)| *s == ErrorScope::Tool) {
+            if let Some((_, msg)) = self.feedback.take()
+                && self.status == msg
+            {
+                self.status = String::from("ready");
+            }
+            self.feedback_ctx = None;
+        }
+    }
+
+    fn export_profile_dxf_string(&self) -> Result<String, String> {
+        if !self.tool_profile_ui.points.is_empty() {
+            let spun = SpunProfile::new(self.tool_profile_ui.points.clone())
+                .map_err(|e| format!("holder profile invalid: {e}"))?;
+            return camcraft_app::tool_profile_dxf::spun_to_dxf(&spun);
+        }
+        if let Some(body) = self.editor_tool_body() {
+            return camcraft_app::tool_profile_dxf::tool_body_to_dxf(&body);
+        }
+        Err("no holder body or spun profile to export".into())
+    }
+
+    fn apply_imported_spun(&mut self, spun: SpunProfile, label: &str) {
+        self.sync_tool_profile_ui();
+        self.tool_profile_ui.points = spun.points().to_vec();
+        self.tool_profile_ui.custom = true;
+        self.tool_profile_ui.refused = None;
+        self.clear_tool_scope_refusal();
+        self.status = format!("tool {}: loaded half-profile from {label}; edit or Apply profile", self.tool_ui.name);
+    }
+
+    /// "Import DXF…": pick an ASCII DXF file and load its half-profile.
+    pub(crate) fn import_profile_dxf_dialog(&mut self) {
+        if self.refuse_in_browser(crate::browser_files::NEEDS_PICKER) {
+            return;
+        }
+        if let Some(path) = crate::file_dialog::FileDialog::new()
+            .add_filter("DXF", &["dxf", "DXF"])
+            .pick_file()
+        {
+            self.import_profile_dxf_from(&path);
+        }
+    }
+
+    /// Load a DXF half-profile from `path` into the Custom profile editor.
+    pub(crate) fn import_profile_dxf_from(&mut self, path: &std::path::Path) {
+        let label = path.file_name().and_then(|s| s.to_str()).unwrap_or("DXF");
+        match std::fs::read(path)
+            .map_err(|e| format!("DXF unreadable: {e}"))
+            .and_then(|bytes| camcraft_app::tool_profile_dxf::dxf_to_spun(&bytes))
+        {
+            Ok(spun) => self.apply_imported_spun(spun, label),
+            Err(err) => self.refuse(ErrorScope::Tool, format!("DXF half-profile not imported: {err}")),
+        }
+    }
+
+    /// "Export DXF…": pick a path and write the current profile as ASCII DXF.
+    pub(crate) fn export_profile_dxf_dialog(&mut self) {
+        if self.refuse_in_browser(crate::browser_files::NO_EXPORT) {
+            return;
+        }
+        let default_name = format!(
+            "{}_holder.dxf",
+            if self.tool_ui.name.trim().is_empty() { "tool" } else { self.tool_ui.name.trim() }
+        );
+        if let Some(path) = crate::file_dialog::FileDialog::new()
+            .add_filter("DXF", &["dxf"])
+            .set_file_name(&default_name)
+            .save_file()
+            && let Err(err) = self.export_profile_dxf_to(&path)
+        {
+            self.refuse(ErrorScope::Tool, format!("DXF not exported: {err}"));
+        }
+    }
+
+    /// Write the active half-profile or tool body to `path` as ASCII DXF (mm).
+    pub(crate) fn export_profile_dxf_to(&self, path: &std::path::Path) -> Result<(), String> {
+        let dxf = self.export_profile_dxf_string()?;
+        std::fs::write(path, dxf).map_err(|e| format!("failed to write DXF: {e}"))
+    }
+
+    /// "Import STEP…": pick a STEP file with ISO 13399 CSYS and convert to profile.
+    pub(crate) fn import_step_profile_dialog(&mut self) {
+        if self.refuse_in_browser(crate::browser_files::NEEDS_PICKER) {
+            return;
+        }
+        if let Some(path) = crate::file_dialog::FileDialog::new()
+            .add_filter("STEP", &["step", "stp", "STEP", "STP"])
+            .pick_file()
+        {
+            self.import_step_profile_from(&path);
+        }
+    }
+
+    /// Convert an ISO 13399 aligned STEP body from `path` into the Custom profile editor.
+    pub(crate) fn import_step_profile_from(&mut self, path: &std::path::Path) {
+        let label = path.file_name().and_then(|s| s.to_str()).unwrap_or("STEP");
+        match camcraft_app::tool_profile_dxf::step_to_spun_profile(path) {
+            Ok(spun) => self.apply_imported_spun(spun, label),
+            Err(err) => self.refuse(ErrorScope::Tool, format!("STEP profile not imported: {err}")),
+        }
+    }
+
+    /// Body tab "Convert to profile": require an explicit/ISO 13399 axis, envelope
+    /// conservatively into an editable half-profile, and land it via `SetToolBody`.
+    pub(crate) fn convert_body_draft_to_profile(&mut self) {
+        let d = &self.tool_body_ui;
+        if d.facets.is_empty() {
+            self.refuse(ErrorScope::Tool, "cannot convert body: no body draft loaded".into());
+            return;
+        }
+        if d.lathe.is_some() {
+            self.refuse(
+                ErrorScope::Tool,
+                "cannot convert body: lathe tool bodies have no revolved spindle half-profile".into(),
+            );
+            return;
+        }
+        if let Some(reason) = d.align_note.as_deref().and_then(|s| s.strip_prefix("numeric placement (")) {
+            let why = reason.strip_suffix(')').unwrap_or(reason);
+            self.refuse(
+                ErrorScope::Tool,
+                format!("cannot convert body to half-profile without a clear tool axis ({why}) - align by ISO 13399 CSYS or set axis and tip first"),
+            );
+            return;
+        }
+        let name = self.tool_ui.name.clone();
+        let res = SetToolBody::from_placed_profile(
+            &self.world,
+            &name,
+            &d.source,
+            &d.facets,
+            d.axis,
+            d.offset,
+        );
+        match res {
+            Ok(command) => {
+                self.history.execute(&self.world, command);
+                self.doc_version += 1;
+                self.clear_tool_scope_refusal();
+                self.sync_tool_profile_ui();
+                self.tool_profile_ui.column = ToolColumn::Profile;
+                self.status = format!("tool {name}: converted body to half-profile");
+            }
+            Err(err) => self.refuse(ErrorScope::Tool, format!("holder profile not converted: {err}")),
+        }
     }
 }
