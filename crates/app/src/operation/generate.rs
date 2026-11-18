@@ -654,6 +654,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             rest,
             ..
         } => {
+            if *strategy == PocketStrategy::Adaptive {
+                return Err(GenError::Invalid(super::POCKET_ADAPTIVE_RETIRED.into()));
+            }
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,

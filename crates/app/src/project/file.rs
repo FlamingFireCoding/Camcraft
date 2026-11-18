@@ -124,7 +124,12 @@ use super::*;
 /// new drills default to `"full_diameter"` (adding the drill point
 /// cone). An old reader must refuse a v68 file rather than ignore
 /// `"break_through_from"` and drill shallow or pierce a fixture.
-pub const PROJECT_VERSION: u32 = 68;
+/// v69 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
+/// to `adaptive2d`), and migrated operations may carry `needs_review`
+/// reasons naming turned-off un-carriable fields. Pre-v69 `Pocket` +
+/// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
+/// refuse v69 files rather than silently drop `needs_review` and post.
+pub const PROJECT_VERSION: u32 = 69;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
