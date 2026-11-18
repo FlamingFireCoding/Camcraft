@@ -739,6 +739,18 @@ function onCycle() {
     msg("canned cycle G73 (peck) dwell is not verified in Sinumerik ISO dialect mode - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
     return;
   }
+  // #2357: Siemens ISO dialects Function Manual (07/2021), section 6.3,
+  // table 6-2 lists P on G84, but not G85. This post does not yet support
+  // tapping dwell; refuse it explicitly rather than silently omit it.
+  // Test the requested seconds before rounding to whole milliseconds.
+  if ((g === "G84" || g === "G85") && has(p.P) && p.P > 0) {
+    var reason = g === "G84" ? "G84 (tap) dwell is not supported by this post" : "G85 (ream) has no dwell word in Sinumerik ISO dialect mode";
+    msg("canned cycle " + reason + " - a " + p.P + " s dwell is refused, not dropped; set the dwell to 0");
+    // Keep the refused hole's expanded cuts from falling through to G1.
+    cycX = p.X; cycY = p.Y; cycR = p.R;
+    inCycle = true;
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
@@ -752,7 +764,7 @@ function onCycle() {
   // the control runs in ISO dialect mode. Siemens' "ISO dialects" Function
   // Manual (SINUMERIK ONE / 840D sl / 828D, 07/2021), section 6.3, lists
   // no P in its G73 and G83 formats; an unverified G73 dwell is refused
-  // above (#2354). G84 takes no P here.
+  // above (#2354). G84 and G85 dwells are refused above (#2357).
   if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
   words.push(fw(p.FeedRate));
   block(words);
