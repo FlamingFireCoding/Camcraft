@@ -47,6 +47,7 @@ pub mod frame_memo;
 pub mod incoming_view;
 pub mod headless_gpu;
 pub mod interact;
+mod height_display;
 pub mod locate_pick;
 pub mod machined;
 mod setup_display;

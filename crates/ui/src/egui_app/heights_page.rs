@@ -21,8 +21,10 @@ use crate::operations::{height_echo, offset_label};
 use super::fields::{combo, num};
 use super::layout::{check_row, consequence, group, hint, prop_row};
 
-/// The frame-temp key `params_fields` stores the edited op's source under,
-/// for the height editors' From: Selection echo (M11.3 A).
+/// Draft tilt for every height row in the current panel pass.
+pub(super) const HEIGHT_TILT_ID: &str = "camcraft.height_tilt";
+
+/// The edited source for From: Selection echoes (M11.3 A).
 pub(super) const HEIGHT_SRC_ID: &str = "camcraft.height_src";
 
 fn op_src(ui: &Ui) -> Option<SrcRef> {
@@ -151,7 +153,10 @@ fn height_rows(ui: &mut Ui, world: &flecs_ecs::prelude::World, setup: Option<&st
     // Both strings are operations.rs's law (the retired imgui height row
     // said the same words); the page only lays them out - the resolved Z
     // as the row's dimmed suffix (right-to-left: the echo goes first).
-    let echo = height_echo(world, setup, src.as_ref(), h);
+    let tilt = ui
+        .data(|d| d.get_temp::<Option<camcraft_app::operation::Tilt>>(egui::Id::new(HEIGHT_TILT_ID)))
+        .flatten();
+    let echo = height_echo(world, setup, src.as_ref(), tilt, h);
     prop_row(ui, offset_label(h.reference), |ui| {
         ui.add(Label::new(RichText::new(echo).weak()).selectable(false));
         num(ui, u, &mut h.offset);

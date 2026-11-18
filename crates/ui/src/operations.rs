@@ -110,10 +110,24 @@ pub(crate) fn height_echo(
     world: &World,
     setup: Option<&str>,
     src: Option<&SrcRef>,
+    tilt: Option<operation::Tilt>,
     h: &Height,
 ) -> String {
-    match operation::resolve_height(world, setup, src, *h) {
-        Some(z) => format!("(= Z {})", units::len(z, units::of(world), 3)),
+    let frame = match operation::OpFrame::new(setup.map(str::to_owned), tilt).checked_frame() {
+        Ok(frame) => frame,
+        Err(reason) => {
+            let reason = match reason {
+                camcraft_app::machining2d::GenError::Invalid(message) => message,
+                other => other.to_string(),
+            };
+            return format!("(unresolved: {reason})");
+        }
+    };
+    match operation::fold_height(world, setup, src, frame.as_ref(), *h) {
+        Some(z) => match frame.filter(|f| !f.is_upright()) {
+            Some(f) => format!("(= {} along tool axis)", units::len(z - f.origin.z, units::of(world), 3)),
+            None => format!("(= Z {})", units::len(z, units::of(world), 3)),
+        },
         None => format!(
             "(unresolved: {})",
             operation::missing_source(world, setup, src, h.reference).unwrap_or("source missing")
@@ -327,8 +341,8 @@ mod height_row_tests {
     #[test]
     fn a_resolved_height_echoes_the_plane_it_lands_on() {
         let world = new_world();
-        assert_eq!(height_echo(&world, None, None, &Height::fixed(-7.0)), "(= Z -7.000)");
-        assert_eq!(height_echo(&world, None, None, &Height::fixed(25.0)), "(= Z 25.000)");
+        assert_eq!(height_echo(&world, None, None, None, &Height::fixed(-7.0)), "(= Z -7.000)");
+        assert_eq!(height_echo(&world, None, None, None, &Height::fixed(25.0)), "(= Z 25.000)");
     }
 
     #[test]
@@ -351,21 +365,21 @@ mod height_row_tests {
     fn a_missing_source_names_itself_and_where_to_fix_it() {
         let world = new_world();
         assert_eq!(
-            height_echo(&world, None, None, &Height::of(HeightReference::TopOfStock, 25.0)),
+            height_echo(&world, None, None, None, &Height::of(HeightReference::TopOfStock, 25.0)),
             "(unresolved: no stock yet - set it up in Setup > Stock)"
         );
         assert_eq!(
-            height_echo(&world, None, None, &Height::of(HeightReference::BottomOfModel, 0.0)),
+            height_echo(&world, None, None, None, &Height::of(HeightReference::BottomOfModel, 0.0)),
             "(unresolved: no model loaded)"
         );
         assert_eq!(
-            height_echo(&world, None, None, &Height::of(HeightReference::WorkOffset, 0.0)),
+            height_echo(&world, None, None, None, &Height::of(HeightReference::WorkOffset, 0.0)),
             "(unresolved: the setup's WCS has no origin yet - place it in Setup)"
         );
         // From: Selection with an empty pick list names the fix (M11.3 A).
         let empty = SrcRef::Selection(Vec::new());
         assert_eq!(
-            height_echo(&world, None, Some(&empty), &Height::of(HeightReference::TopOfSelection, 0.0)),
+            height_echo(&world, None, Some(&empty), None, &Height::of(HeightReference::TopOfSelection, 0.0)),
             format!("(unresolved: {})", operation::SELECTION_EMPTY)
         );
     }
