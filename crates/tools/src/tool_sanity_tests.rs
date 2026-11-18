@@ -118,6 +118,43 @@ const KINDS: [ToolKind; 18] = [
     ToolKind::ThreadMillSingle,
 ];
 
+/// Each kind's place, with no catch-all: a new `ToolKind` does not compile
+/// until it gets a slot here, and then `KINDS` must hold it, or the test
+/// below fails (#2505).
+fn kind_slot(kind: ToolKind) -> usize {
+    match kind {
+        ToolKind::EndMill => 0,
+        ToolKind::BallNose => 1,
+        ToolKind::BullNose => 2,
+        ToolKind::Drill => 3,
+        ToolKind::Tap => 4,
+        ToolKind::Bore => 5,
+        ToolKind::Turning => 6,
+        ToolKind::Groove => 7,
+        ToolKind::Thread => 8,
+        ToolKind::Form => 9,
+        ToolKind::Taper => 10,
+        ToolKind::Probe => 11,
+        ToolKind::Torch => 12,
+        ToolKind::Waterjet => 13,
+        ToolKind::Wire => 14,
+        ToolKind::Electrode => 15,
+        ToolKind::ThreadMill => 16,
+        ToolKind::ThreadMillSingle => 17,
+    }
+}
+
+#[test]
+fn the_sweep_list_holds_each_kind_once() {
+    let mut seen = [0usize; KINDS.len()];
+    for kind in KINDS {
+        let slot = kind_slot(kind);
+        assert!(slot < seen.len(), "{kind:?} has slot {slot}: add it to KINDS");
+        seen[slot] += 1;
+    }
+    assert!(seen.iter().all(|&n| n == 1), "each kind once in KINDS: {seen:?}");
+}
+
 fn agree(t: &Tool, what: &str) {
     let why = t.why_not_sane();
     assert_eq!(why.is_none(), old_is_sane(t), "{what}: {why:?} on {t:?}");
