@@ -326,7 +326,7 @@ fn judge(
     let facets = crate::setup_align::parts_facets_in(world, frame.as_deref());
     // #864: the same tightened tolerance the final verdict is read at.
     let tol = crate::model_fidelity::program_tol(world)?;
-    let breaks = super::program_breaks(world, cut, true, frame);
+    let breaks = super::breaks::program_breaks(world, cut, true, frame, &facets, tol);
     let marks = super::marks::program_marks(world, cut, true, frame);
     held.verdict_snapshot(&facets, tol, |dev, tops| {
         super::credit_breaks(dev, tops, &facets, &breaks);

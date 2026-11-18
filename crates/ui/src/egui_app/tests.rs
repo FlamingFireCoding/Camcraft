@@ -92,6 +92,7 @@ mod stock_size;
 mod stock_material;
 mod setup_settings_page;
 mod machine_page;
+mod setup_user_machines;
 mod tool_list_page;
 mod stock_fit_sides;
 mod raw_stock_row;
@@ -115,6 +116,7 @@ mod structural;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
 mod page_layout;
+mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;
@@ -237,8 +239,13 @@ impl ShellUi {
     /// The birth `Shell::new` has since M-d: a plain empty document, no
     /// seed, no startup command - the window's real shape, rendered.
     fn blank() -> Self {
+        let mut state = State::new();
+        // #2358: the Setup page lists the user machines folder too; a
+        // test never reads the tester's real one (`harness_with_user_dir`
+        // names a temp folder).
+        state.machines_pane.user_dir = Some(None);
         Self {
-            state: State::new(),
+            state,
             dock: build_dock(),
             viewport_points: [1280.0, 649.0],
             left_press: None,
@@ -5146,4 +5153,6 @@ fn a_lathe_over_a_mill_post_offers_the_lathe_post_and_rides_undo() {
 }
 
 mod review_1710_evidence;
+mod guide_projects;
+mod guide_images;
 

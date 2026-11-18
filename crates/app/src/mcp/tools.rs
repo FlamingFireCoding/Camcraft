@@ -49,7 +49,7 @@ const TOOLS: &[Tool] = &[
     Tool { name: "set_operation_area", description: "Replace an operation's area controls (containment, offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step.", schema: area::s_set_area, run: area::set_operation_area },
     Tool { name: "undo", description: "Undo the last document change.", schema: s_empty, run: edit::undo },
     Tool { name: "redo", description: "Redo the last undone change.", schema: s_empty, run: edit::redo },
-    Tool { name: "generate", description: "Generate toolpaths: one named operation (always regenerated) or, with no name, every operation that is not current.", schema: s_opt_name, run: generate },
+    Tool { name: "generate", description: "Generate toolpaths: one named operation (always regenerated) or, with no name, every operation that is not current when reached in program order, including operations made stale by earlier generations in this call. A refusal stops the call and names the operation.", schema: s_opt_name, run: generate },
     Tool { name: "verify", description: "Verify the job without posting: per-operation status and findings (op, move index, kind, message, whether it blocks the post) plus the program-level post gate. \"ok\" is true only when the post would write: every operation fresh, the gate passed, and no operation's own warning blocking the post (those operations are listed under \"held_by\").", schema: s_opt_name, run: job::verify },
     Tool { name: "post", description: "Post the program to an NC file through a post processor (a built-in name or a .cps path; default the document's own). Returns the written files, or refuses with the reasons. between_setups chooses what the program does at a setup change (pause by default).", schema: s_post, run: post },
     Tool { name: "render_stock", description: "Render the program's simulated stock as a PNG (an image content block), painted by deviation class (clean, rest, gouge, unjudged), optionally with the toolpath over it; plus rest and gouge volume and the bounds of the stock and the rest. Generate first.", schema: render::schema, run: render::render_stock },
@@ -87,6 +87,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::machine_tools::TOOLS)
         .chain(super::tool_number_tools::TOOLS)
         .chain(super::post_options_tools::TOOLS)
+        .chain(super::holder_dxf_tools::TOOLS)
 }
 
 /// The `tools/list` rows.
@@ -97,7 +98,7 @@ pub(super) fn list() -> Vec<Value> {
 }
 
 /// Run one tool by name. An unknown name is a refusal like any other.
-pub(super) fn call(env: &mut Env, name: &str, args: &Value) -> Result<Value, String> {
+pub(crate) fn call(env: &mut Env, name: &str, args: &Value) -> Result<Value, String> {
     let Some(tool) = all().find(|t| t.name == name) else {
         let names: Vec<&str> = all().map(|t| t.name).collect();
         return Err(format!("unknown tool '{name}' - tools: {}", names.join(", ")));

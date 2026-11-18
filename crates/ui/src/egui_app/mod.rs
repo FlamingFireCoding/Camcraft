@@ -43,6 +43,7 @@ mod debug_info;
 mod status_alert;
 
 mod stock_info;
+mod donate;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
