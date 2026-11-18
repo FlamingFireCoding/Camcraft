@@ -186,10 +186,18 @@ pub(super) fn list_operation_types(_env: &mut Env, _a: &Map<String, Value>) -> R
         .enumerate()
         .map(|(i, k)| {
             let (key, defaults) = kind_defaults(i);
-            let fields: Vec<Value> = defaults
+            let mut fields: Vec<Value> = defaults
                 .as_object()
                 .map(|m| m.iter().map(|(n, v)| json!({ "name": n, "type": json_type(v), "default": v })).collect())
                 .unwrap_or_default();
+            // `break_through` is skipped when `None` in ParamsDto serialization,
+            // so inject it into `list_operation_types` for every through-hole kind (#2441).
+            if matches!(key.as_str(), "drill" | "bore" | "thread")
+                && !fields.iter().any(|f| f["name"] == "break_through")
+            {
+                fields.push(json!({ "name": "break_through", "type": "number", "default": Value::Null }));
+                fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            }
             let mut kind = json!({
                 "label": k.label,
                 "key": key,

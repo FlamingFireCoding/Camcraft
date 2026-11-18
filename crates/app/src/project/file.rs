@@ -118,12 +118,18 @@ use super::*;
 /// no flip - what every v66 file posted - so a v66 file steps up
 /// unchanged. An old reader must refuse a v67 file rather than drop the
 /// flip and post the setup in the unflipped frame.
-/// v68 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
+/// v68 (#2441): Drill operations carry `break_through_from`
+/// (`"full_diameter"` vs `"tip"`). Pre-v68 files with the key absent
+/// migrate to `"tip"` so saved projects keep their posted depth, while
+/// new drills default to `"full_diameter"` (adding the drill point
+/// cone). An old reader must refuse a v68 file rather than ignore
+/// `"break_through_from"` and drill shallow or pierce a fixture.
+/// v69 (#1517): 2D Pocket no longer carries `strategy: adaptive` (moved
 /// to `adaptive2d`), and migrated operations may carry `needs_review`
-/// reasons naming turned-off un-carriable fields. Pre-v68 `Pocket` +
+/// reasons naming turned-off un-carriable fields. Pre-v69 `Pocket` +
 /// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
-/// refuse v68 files rather than silently drop `needs_review` and post.
-pub const PROJECT_VERSION: u32 = 68;
+/// refuse v69 files rather than silently drop `needs_review` and post.
+pub const PROJECT_VERSION: u32 = 69;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

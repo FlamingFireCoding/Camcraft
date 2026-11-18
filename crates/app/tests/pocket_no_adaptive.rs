@@ -193,10 +193,11 @@ fn v63_pocket_adaptive_opens_as_adaptive2d_with_identical_toolpath() {
         notes.iter().any(|n| n.contains("P1") && n.contains("2D Adaptive")),
         "migration notes: {notes:?}"
     );
-    // Main already persisted tilt bases, RTCP and WCS flips through v67.
+    // Main already persisted tilt bases, RTCP, WCS flips, and drill
+    // break-through semantics through v68.
     // Every pre-retirement version must still migrate the retired strategy.
-    const { assert!(project::PROJECT_VERSION >= 68) };
-    for version in 64..=67 {
+    const { assert!(project::PROJECT_VERSION >= 69) };
+    for version in 64..=68 {
         let legacy = v63.replace("\"version\": 63", &format!("\"version\": {version}"));
         let legacy_world = new_world();
         let legacy_notes = project::open_noted(&legacy_world, &legacy)

@@ -1,4 +1,4 @@
-//! Migration for pre-v68 operations saved as 2D Pocket with the retired
+//! Migration for pre-v69 operations saved as 2D Pocket with the retired
 //! `Adaptive` strategy (#1517): opens each as `2D Adaptive` (`Spiral`),
 //! carrying every matching field unchanged. Any un-carriable setting
 //! (`rest`, `links.approach.predrilled`) is turned off, noted on load,
@@ -12,10 +12,10 @@ use super::{
     ParamsDto, StrategyDto,
 };
 
-/// Convert every pre-v68 `Pocket { strategy: Adaptive }` operation into
+/// Convert every pre-v69 `Pocket { strategy: Adaptive }` operation into
 /// `Adaptive2D (Spiral)`, returning human-readable load notes.
 pub(super) fn settle(entities: &mut [EntityDto], from: u32) -> Vec<String> {
-    if from >= 68 {
+    if from >= 69 {
         return Vec::new();
     }
     let mut notes = Vec::new();

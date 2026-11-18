@@ -525,10 +525,15 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v66 so old readers cannot drop `controller_rtcp: false`.
         // v66 -> v67 (#1720): a WCS may record flipped axes; absent is
         // no flip.
-        // v67 -> v68 (#1517): pre-v68 Pocket Adaptive ops migrate to 2D
+        // v67 -> v68 (#2441): pre-v68 Drill ops without `break_through_from`
+        // keep legacy `tip` so their saved depth and cached toolpath do not drift.
+        // v68 -> v69 (#1517): pre-v69 Pocket Adaptive ops migrate to 2D
         // Adaptive (Spiral); un-carriable params record `needs_review`.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
+        if from < 68 {
+            super::params_impl::settle_drill_break_through(&mut file.entities);
+        }
         notes.extend(super::pocket_adaptive_migrate::settle(&mut file.entities, from));
         // v59 -> v60 (#902): the document's unit is its programs' unit;
         // an older file opens on the unit it posted in (`units_migrate`).
