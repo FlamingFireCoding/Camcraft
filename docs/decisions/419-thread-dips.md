@@ -26,9 +26,12 @@
   dip is an XY half-turn about the spindle axis whose end radius differs
   from its start radius. Its axial travel is still exactly half a lead,
   so the CL needs no new move kind. The arc struct already allows
-  unequal end radii: chords take the larger radius, which is the
-  shallower side and so conservative, and the timeline length is
-  unchanged. Dropped: a new `MoveKind` or a per-move "synchronized"
+  unequal end radii. Chord sampling and playback interpolate radius
+  linearly with the swept angle, matching the posted synchronized taper.
+  Chord sampling also bounds the ramp's second derivative so the radial
+  change does not exceed the requested chord tolerance. Dropped: using
+  the larger endpoint radius throughout the arc, because that displays
+  a different path from the posted taper; a new `MoveKind` or a per-move "synchronized"
   field. Either would touch every CL consumer (text, dump, project,
   sim, verify) and carry the same two endpoints anyway.
 - **What marks a dip: the thread record plus a section PARAM.**
@@ -107,9 +110,19 @@
   pass. With the new laws switched off, the first-lead conviction test
   fails, so the convictions come from these laws and not from the wave
   judge (checked by hand while writing the PR).
-- **Simulation is unchanged.** The lathe stock simulation refuses threads
-  by name, as it did before. Dipped threads are covered by the same
-  refusal, so nothing new is shown wrongly.
+- **Motion readers share the radius ramp.** Playback interpolates the
+  radius with sweep, as the CL chord sampler does. The turning holder
+  reader accepts spindle-centered XY ramps as a linear meridian profile,
+  keeping the existing helix kerf-credit limitation above the holder
+  check. Dropped: tessellating such ramps as ordinary off-plane arcs,
+  which falsely refuses a dipped thread with a holder body. Lathe stock
+  simulation still refuses threads by name. Changing this later would
+  require a different synchronized geometry contract across the readers.
+- **Dip controls have structural coverage.** The Passes tab tests cover
+  off/on visibility, displayed length units, Apply, undo and redo for the
+  dip values. Dropped: new pixel goldens, which belong to the release
+  lane and do not pin the command or unit-conversion behavior. Later
+  control changes must update these structural assertions.
 - **Defaults are byte-identical.** With dips off:
   - each half-turn's radius is the pass's tip, copied bit for bit;
   - there is no stamp byte (`0xD6` plus three numbers only when dips are

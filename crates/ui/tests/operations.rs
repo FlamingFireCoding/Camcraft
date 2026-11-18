@@ -99,7 +99,7 @@ fn tool_add_update_delete_undo_and_refusals() {
         tool: catalog_tool("EM-0400-2FL"),
     });
     state.drain_actions();
-    assert_eq!(state.status, "tool EM-0400-2FL added");
+    assert_eq!(state.status, "tool EM-0400-2FL added (T1)");
     assert!(state.tool_names().iter().any(|t| t == "EM-0400-2FL"), "combo lists it");
 
     // Same name twice: refused, history untouched.

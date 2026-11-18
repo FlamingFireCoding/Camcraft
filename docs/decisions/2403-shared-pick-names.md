@@ -18,3 +18,7 @@
 - Keeping `short_id` hex digests for deleted/missing picks: dropped because missing chips still exposed raw internal ids to users; falling back to the plain kind noun plus `"missing"` keeps the chip informative without hex noise.
 
 **Cost to change later:** Low. `FeatureNamesMemo` is derived and never serialized; changing label prefixes or classification heuristics requires editing only `patch_shape.rs` / `names.rs` and bumping tests asserting exact names.
+
+### Merge of main
+
+- `crates/app/src/operation/selection.rs`, `drive_chains`: main changed the pose line to `crate::setup_align::pose_in(world, &entity, setup)` (the setup pose of the part). This PR changed the next line, the label, to `crate::pick::geo_label(world, g)`. The two lines are independent. The merge keeps main's pose line and this PR's label line. No refusal and no safety check is lost. Dropped: the PR's old pose line `model::transform_of(...)`, which main replaced.
