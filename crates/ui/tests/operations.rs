@@ -1087,12 +1087,10 @@ fn geometry_notes_report_through_the_panel_seam() {
 fn strategy_combo_offers_auto() {
     assert_eq!(
         camcraft_ui::operations::strategy_names(),
-        &["Zigzag", "Waterline", "Adaptive", "Auto", "Offset rings"],
-        "the combo offers Adaptive, Auto and (M11.4 C) the pre-HSM Offset rings beside the explicit choices"
+        &["Zigzag", "Waterline", "Auto", "Offset rings"],
+        "2D Pocket offers Zigzag, Waterline, Auto and Offset rings (Adaptive moved to 2D Adaptive, #1517)"
     );
-    // M11.4 (the Pocket3D port): the 3-D combo offers the same choice -
-    // Adaptive is the HSM plan per level, Offset rings the rings at the
-    // load step every earlier 3-D Adaptive posted.
+    // M11.4 (the Pocket3D port): the 3-D combo keeps Adaptive until #1591.
     assert_eq!(camcraft_ui::operations::strategy3d_names(), &["Zigzag", "Waterline", "Adaptive", "Auto", "Offset rings"]);
 }
 

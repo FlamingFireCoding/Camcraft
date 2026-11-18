@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, History, ImportModel,
-    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -381,7 +381,7 @@ pub enum CommandKind {
         src: SrcRef,
         params: OpParams,
     },
-    PasteOperation { name: String, operation: OperationDef },
+    PasteOperation { name: String, operation: OperationDef, needs_review: Vec<String> },
     /// The properties page's parameter draft.
     EditOperationParams {
         name: String,
@@ -449,6 +449,7 @@ pub enum CommandKind {
     DeleteOperation(String),
     RenameOperation { name: String, label: String },
     ReorderOperation { name: String, target: String, after: bool },
+    MarkOperationReviewed(String),
     /// Throw away the operation's generated path and keep the operation
     /// (undoable: the cache comes back byte for byte).
     ClearToolpath(String),
@@ -1569,6 +1570,7 @@ impl PanelsOpen {
 /// toolpaths are intentionally absent: Paste creates a fresh operation.
 #[derive(Clone)]
 pub struct OperationClipboard {
+    pub needs_review: Vec<String>,
     pub label: String,
     pub operation: OperationDef,
 }
@@ -2938,7 +2940,10 @@ impl State {
             return;
         };
         let label = model::operation_label(&self.world, name, &entity);
-        self.operation_clipboard = Some(OperationClipboard { label: label.clone(), operation });
+        self.operation_clipboard = Some(OperationClipboard {
+            label: label.clone(), operation,
+            needs_review: model::operation_meta_of(&self.world, &entity).needs_review,
+        });
         self.status = format!("copied operation {label}");
     }
 
@@ -2964,7 +2969,7 @@ impl State {
             };
             suffix = next;
         };
-        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation });
+        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation, needs_review: clip.needs_review });
     }
 
     /// Names of the tool entities, in document order.
@@ -3574,8 +3579,8 @@ impl State {
                     );
                 }
             },
-            CommandKind::PasteOperation { name, operation } => {
-                match PasteOperation::new(&self.world, &name, operation) {
+            CommandKind::PasteOperation { name, operation, needs_review } => {
+                match PasteOperation::new(&self.world, &name, operation, needs_review) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         History::execute_ephemeral(&self.world, SelectEntity::new(&self.world, Some(name.as_str())));
@@ -3744,6 +3749,14 @@ impl State {
                     self.status = format!("operation {name} moved");
                 }
                 Err(err) => self.refuse(ErrorScope::Operation, format!("reorder failed: {err}")),
+            },
+            CommandKind::MarkOperationReviewed(name) => match MarkOperationReviewed::new(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("marked {name} reviewed");
+                }
+                Err(err) => self.refuse(ErrorScope::Operation, format!("mark reviewed failed: {err}")),
             },
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes
