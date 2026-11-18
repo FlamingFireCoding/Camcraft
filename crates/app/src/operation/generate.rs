@@ -2952,10 +2952,27 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let path = super::turning_holder::noted(path, &params, &tool, lathe_body.is_some());
     // #1037: ...and a bodied one names the fixtures its law cannot read.
     let path = super::turning_holder_steel::noted(path, &params, lathe_body.is_some(), &unread_steel);
-    // #1655: a band of the stock around the part that is narrower than
-    // the tool gets no pass - the op names it.
+    // #1655, #2438: a band or corner of the stock around the part that the
+    // tool cannot reach gets no pass - the op names it.
     let cleared_around = around_part || (matches!(src, SrcRef::Stock) && !keep_parts.is_empty());
-    let path = super::keep_law::narrow_noted(path, &params, &region, d, cleared_around, unit);
+    let around_stock;
+    let narrow_stock = if !cleared_around {
+        None
+    } else if frame.is_none() && stock_region.is_some() {
+        stock_region.as_ref()
+    } else {
+        let src_facets = stock_facets
+            .as_deref()
+            .or_else(|| matches!(src, SrcRef::Stock).then_some(&material.facets[..]));
+        around_stock = src_facets.and_then(|f| {
+            let local = frame.as_ref().map(|fr| fr.local_facets(f));
+            slice::project(local.as_deref().unwrap_or(f), FOOTPRINT_SAMPLES)
+                .ok()
+                .filter(|r| !r.is_empty())
+        });
+        around_stock.as_ref()
+    };
+    let path = super::keep_law::narrow_noted(path, &params, &region, narrow_stock, d, cleared_around, unit);
 
     // M3.2 stage B: what the program clamps to. The op's setup context
     // decides - user fixtures bound to it (tagged models, implicit-

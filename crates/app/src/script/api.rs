@@ -415,11 +415,16 @@ fn op_view(env: &Env, name: &str, entity: &Entity, warnings: bool) -> Value {
         "setup": op.as_ref().and_then(|o| o.setup.clone()),
         "status": st_str(status),
     });
+    let tp = model::toolpath_of(&env.world, entity);
     if warnings {
-        let warns: Vec<String> = model::toolpath_of(&env.world, entity)
+        let warns: Vec<String> = tp
+            .as_ref()
             .map(|t| t.warnings.iter().map(|w| w.to_string()).collect())
             .unwrap_or_default();
         row["warnings"] = json!(warns);
+    }
+    if let Some(notes) = tp.filter(|t| !t.path.notes.is_empty()).map(|t| t.path.notes) {
+        row["notes"] = json!(notes);
     }
     row
 }
