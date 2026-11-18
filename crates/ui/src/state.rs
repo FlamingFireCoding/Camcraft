@@ -114,6 +114,8 @@ mod wcs_ui;
 mod view_prefs_ui;
 #[path = "state_prefs.rs"]
 mod prefs_ui;
+#[path = "state_setups.rs"]
+mod setups_ui;
 #[path = "state_step_budget.rs"]
 mod step_budget_ui;
 pub use step_budget_ui::StepBudgetUi;
@@ -1536,6 +1538,19 @@ pub enum LayoutRequest {
     Reset,
 }
 
+/// A saved-setup ask from the Panel setups window (#2339). The dock lives
+/// beside `State` in the shell, so the window cannot read or swap it: the
+/// window files one ask and the shell answers on the same frame.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PanelSetupAsk {
+    /// Save this frame's arrangement under the typed name.
+    Save(String),
+    /// Put a saved arrangement back.
+    Load(String),
+    /// Forget a saved arrangement.
+    Delete(String),
+}
+
 /// Which closable panels the dock holds this frame - mirrored from the
 /// dock by the shell before the ribbon draws, so the View door's
 /// checkmarks read the truth without the ribbon touching the dock.
@@ -1797,6 +1812,18 @@ pub struct State {
     pub panels_open: PanelsOpen,
     /// The View door's pending dock ask (see [`LayoutRequest`]).
     pub layout_request: Option<LayoutRequest>,
+    /// #2339: the saved panel arrangements. Application settings like the
+    /// theme - the screen's, never the project file's.
+    pub panel_setups: camcraft_app::prefs::PanelSetups,
+    /// Where the saved arrangements are written back; `None` (every
+    /// headless State) keeps them in memory only.
+    pub panel_setups_store: Option<PathBuf>,
+    /// The Panel setups window's open flag - a frame fact like the doors.
+    pub panel_setups_open: bool,
+    /// The window's name field, as typed.
+    pub setup_name_draft: String,
+    /// The window's pending dock ask (see [`PanelSetupAsk`]).
+    pub panel_setup_ask: Option<PanelSetupAsk>,
     /// The browser row whose retype menu stands open (M9.1): the op's
     /// name, anchored to its row and recomputed per frame like the
     /// ribbon's dropdowns - a frame fact, not a document fact; the
@@ -2228,6 +2255,11 @@ impl State {
             import_tool_holders: true,
             panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
+            panel_setups: camcraft_app::prefs::PanelSetups::default(),
+            panel_setups_store: None,
+            panel_setups_open: false,
+            setup_name_draft: String::new(),
+            panel_setup_ask: None,
             tree_menu: None,
             retype_confirm: None,
             rename_draft: None,

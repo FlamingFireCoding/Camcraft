@@ -22,6 +22,7 @@ use crate::state::State;
 use crate::viewport::View3D;
 
 use super::frame_watch::FrameWatch;
+use super::layout;
 use super::shell::*;
 use super::{gpu, gpu_init, icons, theme, world};
 
@@ -155,7 +156,10 @@ impl Shell {
         state.load_view();
         // #877: the user's theme and colour-vision mode, read once.
         state.load_prefs();
-        let dock_state = build_dock();
+        // #2339: the saved panel setups, read once; the dock starts as the
+        // last one saved or loaded when the user keeps auto-load on.
+        state.load_panel_setups();
+        let dock_state = layout::setups::start_dock(&mut state);
         Self {
             window: None,
             window_title: state.window_title(),
