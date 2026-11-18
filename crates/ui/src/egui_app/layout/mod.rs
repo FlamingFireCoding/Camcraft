@@ -13,6 +13,8 @@
 
 mod controls;
 mod form;
+// #2516: Tab, Shift+Tab and Enter over the pane's value fields.
+pub mod field_ring;
 pub(crate) use controls::*;
 pub(crate) use form::*;
 #[cfg(test)]

@@ -188,7 +188,7 @@ pub fn group_open<R>(
     });
     let body = header.body(|ui| {
         if on {
-            Some(egui::Frame::NONE.inner_margin(egui::Margin { left: 2, right: 0, top: 0, bottom: 2 }).show(ui, add).inner)
+            Some(egui::Frame::NONE.inner_margin(egui::Margin { left: 2, right: 0, top: 0, bottom: 2 }).show(ui, |ui| super::field_ring::in_group(ui, id, add)).inner)
         } else {
             None
         }
