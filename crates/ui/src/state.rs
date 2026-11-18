@@ -1752,6 +1752,10 @@ pub struct State {
     /// is gone. Display-only (a Mutex because the scene is collected
     /// from `&State`).
     pub sim_tool_cache: std::sync::Mutex<camcraft_app::sim_tool_body::SimToolCache>,
+    /// The move handles' centre of the dragged body (#1198, #2238): walked
+    /// only when the facets or the shown pose change. Display-only (a Mutex
+    /// because the handles are read from `&State`).
+    pub move_center: std::sync::Mutex<crate::move_drag::CenterCache>,
     /// What `field_view` was walked for: (transport up, Deviate armed,
     /// the document version a playback plan was frozen at). A change
     /// retires the view and the playback - never a stale picture.
@@ -2208,6 +2212,7 @@ impl State {
             field_play: None,
             sim_script_cache: None,
             sim_tool_cache: std::sync::Mutex::default(),
+            move_center: std::sync::Mutex::default(),
             field_mode: None,
             stock_mesh: camcraft_app::stock_export::MeshCache::default(),
             ribbon_more: None,
@@ -3367,7 +3372,8 @@ impl State {
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
             CommandKind::LoadMachineDialog => {
-                if let Some(path) = pick_machine_file() {
+                let dir = crate::egui_app::machines_pane::user_dir(self);
+                if let Some(path) = pick_machine_file(dir.as_deref()) {
                     self.load_machine_path(path);
                 }
             }
@@ -4719,12 +4725,16 @@ fn project_dialog() -> crate::file_dialog::FileDialog {
     crate::file_dialog::FileDialog::new().add_filter("CamCraft Project", &["camproj"])
 }
 
-fn pick_machine_file() -> Option<PathBuf> {
+fn pick_machine_file(user_dir: Option<&std::path::Path>) -> Option<PathBuf> {
     // The `.mch` layout is the machine-definition JSON format we reuse
-    // by user instruction (M2.3 C); the filter just names it.
-    crate::file_dialog::FileDialog::new()
-        .add_filter("Machine Definition", &["mch"])
-        .pick_file()
+    // by user instruction (M2.3 C); the filter just names it. #2358: it
+    // opens in the user machines folder when that exists.
+    let dialog = crate::file_dialog::FileDialog::new().add_filter("Machine Definition", &["mch"]);
+    match crate::egui_app::machines_pane::dialog_start(user_dir) {
+        Some(dir) => dialog.set_directory(dir),
+        None => dialog,
+    }
+    .pick_file()
 }
 
 fn pick_post_file() -> Option<PathBuf> {

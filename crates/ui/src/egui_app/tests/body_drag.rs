@@ -156,3 +156,24 @@ fn empty_space_still_orbits_in_move_mode() {
     h.run_steps(2);
     assert!(!h.state().state.history.is_dirty());
 }
+
+#[test]
+fn focus_loss_mid_drag_cancels_and_a_later_release_sends_no_move() {
+    let mut h = moving_block();
+    let before = block_pos(h.state());
+    let (c, b) = x_ball(&h);
+    set_pos(&mut h, b);
+    button_at(&mut h, egui::PointerButton::Primary, b, true);
+    let to = b + (b - c) * 0.5;
+    set_pos(&mut h, to);
+    assert!(h.state().state.body_drag.is_some());
+    h.input_mut().events.push(Event::WindowFocused(false));
+    h.run();
+    assert!(h.state().state.body_drag.is_none(), "focus loss drops the drag");
+    h.input_mut().events.push(Event::WindowFocused(true));
+    button_at(&mut h, egui::PointerButton::Primary, to, false);
+    h.run_steps(2);
+    let st = &h.state().state;
+    assert!(!st.history.is_dirty(), "the later release queues nothing");
+    assert!((block_pos(h.state()).x - before.x).abs() < 1e-12, "the part never moved");
+}

@@ -109,3 +109,70 @@ fn a_non_finite_distance_is_refused_by_name() {
     assert!(!state.history.is_dirty());
     assert!(state.status.contains("ghost"), "{}", state.status);
 }
+
+fn computes(state: &State) -> u64 {
+    state.move_center.lock().map(|c| c.computes).unwrap_or(u64::MAX)
+}
+
+#[test]
+fn a_still_frame_walks_no_facets_and_a_move_walks_them_again() {
+    let mut state = part();
+    assert!(handles(&state).is_some());
+    let once = computes(&state);
+    for _ in 0..10 {
+        assert!(handles(&state).is_some());
+        assert_eq!(arms_px(&state).len(), 3);
+        let _ = move_drag::ball_at(&state, [3.0, 3.0]);
+    }
+    assert_eq!(computes(&state), once, "an unchanged document walks the facets no more");
+    let before = handles(&state).map(|h| h.center).expect("handles");
+    run(&mut state, CommandKind::MoveModelBy { name: "part".into(), delta: [5.0, 0.0, 0.0] });
+    let after = handles(&state).map(|h| h.center).expect("handles");
+    assert_eq!(computes(&state), once + 1, "a document change walks them once again");
+    assert!((after[0] - before[0] - 5.0).abs() < 1e-9, "the new centre, not a stale one: {before:?} -> {after:?}");
+    assert!(handles(&state).is_some());
+    assert_eq!(computes(&state), once + 1);
+}
+
+/// A ray from (0, 0, -100) at `deg` degrees to the X axis, in the XZ plane.
+fn ray_at_deg(deg: f64) -> Option<f64> {
+    let r = deg.to_radians();
+    move_drag::ray_axis_t([0.0, 0.0, -100.0], [r.cos(), 0.0, r.sin()], [0.0; 3], [1.0, 0.0, 0.0])
+}
+
+#[test]
+fn an_axis_seen_almost_end_on_holds_the_drag() {
+    assert_eq!(ray_at_deg(0.0), None, "along the axis");
+    assert_eq!(ray_at_deg(1.0), None, "1 degree: end-on, held");
+    assert_eq!(ray_at_deg(2.9), None);
+    let t = ray_at_deg(10.0).expect("10 degrees: seen across");
+    // The ray meets the X axis where z = 0: t = 100 / tan(10 deg).
+    assert!((t - 100.0 / 10f64.to_radians().tan()).abs() < 1e-9, "{t}");
+    assert!(ray_at_deg(90.0).is_some_and(|t| t.abs() < 1e-9));
+    assert_eq!(move_drag::ray_axis_t([0.0; 3], [f64::NAN, 0.0, 1.0], [0.0; 3], [1.0, 0.0, 0.0]), None, "NaN refused");
+    assert_eq!(move_drag::ray_axis_t([0.0; 3], [0.0; 3], [0.0; 3], [1.0, 0.0, 0.0]), None, "no direction refused");
+}
+
+#[test]
+fn one_motion_step_drags_at_most_one_view_width() {
+    assert_eq!(move_drag::clamp_step(2.0, 5.0, 10.0), 5.0, "inside the limit: exact");
+    assert_eq!(move_drag::clamp_step(2.0, 1e6, 10.0), 12.0);
+    assert_eq!(move_drag::clamp_step(2.0, -1e6, 10.0), -8.0);
+    assert_eq!(move_drag::clamp_step(2.0, 5.0, f64::NAN), 2.0, "no limit: held");
+    assert_eq!(move_drag::clamp_step(2.0, 5.0, 0.0), 2.0);
+    // Live: an axis point ten view widths past the press (what a near
+    // end-on axis gives for a px of cursor) moves the part by one view
+    // width in that event, no more. The press anchor is shifted to stand in
+    // for that far point, since a framed view cannot show it.
+    let mut state = part();
+    let h = handles(&state).expect("handles");
+    let width_mm = 800.0 * h.len / move_drag::ARM_PX;
+    let ball = arms_px(&state).iter().find(|a| a.0 == 1).map(|a| a.2).expect("a Y ball");
+    assert!(move_drag::press(&mut state, ball));
+    if let Some(d) = state.body_drag.as_mut() {
+        d.start_t -= 10.0 * width_mm;
+    }
+    move_drag::motion(&mut state, ball);
+    let d = state.body_drag.as_ref().map(|d| d.delta).expect("dragging");
+    assert!((d - width_mm).abs() < 1e-6 * width_mm, "clamped to one view width {width_mm}: {d}");
+}
