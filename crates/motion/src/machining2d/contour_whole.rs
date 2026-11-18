@@ -13,7 +13,6 @@ use std::ops::Range;
 
 use crate::cl::{PathBuilder, Toolpath};
 use crate::geo2d::{Point2, Region};
-use crate::geometry::slice::{SliceError, material_overhead_of};
 use crate::geometry::{Point3, Triangle};
 
 use super::contour::{PreparedBand, emit_band, finish_contour, prepare_band};
@@ -23,35 +22,11 @@ use super::contour_entry::say;
 use super::contour_params::{ContourParams, Side};
 use super::contour_start;
 use super::contour_step::Said;
+use super::contour_whole_slice::{next_region, whole_region_at};
 use super::face::GenError;
 use super::fillet_tally::FilletTally;
 
 const SAME_LEVEL: f64 = 1e-6;
-const SLICE_NUDGE: f64 = 1e-3;
-
-fn from_slice(e: SliceError) -> GenError {
-    match e {
-        SliceError::Geo(g) => GenError::Geo(g),
-        e @ (SliceError::Open { .. } | SliceError::NonManifold { .. }) => GenError::Model(e.to_string()),
-        other => GenError::Invalid(other.to_string()),
-    }
-}
-
-/// All part material at or above `probe_z` (section strictly above plus shadow
-/// of overhanging down-facing walls), nudged inside `cut_z` when `probe_z` sits
-/// at the top of the model.
-fn whole_region_at(
-    part: &[Triangle],
-    bodies: &[Range<usize>],
-    probe_z: f64,
-    cut_z: f64,
-) -> Result<Region, GenError> {
-    let r = material_overhead_of(part, bodies, probe_z).map_err(from_slice)?;
-    if !r.is_empty() {
-        return Ok(r);
-    }
-    material_overhead_of(part, bodies, cut_z - SLICE_NUDGE).map_err(from_slice)
-}
 
 fn check_unread(
     lad: &Ladder,
@@ -170,6 +145,15 @@ fn forward_band_notes(
     }
 }
 
+fn stopped(msg: String, b: PathBuilder) -> GenError {
+    let partial = b.finish();
+    if partial.moves.is_empty() {
+        GenError::Invalid(msg)
+    } else {
+        GenError::Invalid(msg).with_ghost(&partial)
+    }
+}
+
 fn match_pick(
     res: Result<Option<(usize, Point2)>, GenError>,
     matched: &mut bool,
@@ -239,10 +223,10 @@ pub fn contour_whole_bodies_with(
     let mut deferred_pick = None;
     let mut deferred_exit = None;
 
-    for band_idx in 0..=flat.len() {
-        if remaining.is_empty() {
-            break;
-        }
+    let mut mid = false;
+    let max_bands = flat.len().saturating_mul(2).saturating_add(part.len().saturating_mul(3)).saturating_add(2);
+    let mut band_idx = 0usize;
+    while !remaining.is_empty() && band_idx <= max_bands {
         let last_z = remaining[remaining.len() - 1];
         let band = prepare_band(&current_region, p)?;
         let refs: Vec<&crate::geo2d::Loop> = band.loops.iter().collect();
@@ -253,21 +237,33 @@ pub fn contour_whole_bodies_with(
         let lad = ladder(&band.plan, part, bodies, remaining, ceiling, r, p.stock_to_leave, &mut ring_notes);
         check_unread(&lad, remaining, p, &b)?;
 
-        let split = first_split(&band, &lad, remaining, part, bodies, p)?;
+        // An intermediate band (the outline changed between the last cut level
+        // and the next flat level) cuts only its floor passes above that level.
+        let split = if mid { Some(0) } else { first_split(&band, &lad, remaining, part, bodies, p)? };
         match split {
-            Some(0) if band_idx == 0 && !used_fallback => {
-                // A ring of the top band can still have floor passes above the
-                // first flat level (#2004 floor search): cut them before the
-                // re-slice, or that wall is silently left uncut.
+            Some(0) if mid || (band_idx == 0 && !used_fallback) => {
+                // A ring can still have floor passes above the next flat level
+                // (#2004 floor search): cut them before the re-slice, or that
+                // wall is silently left uncut.
                 let trimmed = trim_ladder(&lad, remaining[0]);
-                if !trimmed.zs.is_empty() {
+                let emitted = trimmed.zs.last().is_some_and(|&z| z < ceiling - SAME_LEVEL);
+                if emitted {
                     forward_band_notes(&band, &lad, last_z, true, ring_notes, &mut lead_notes);
                     emit_band(&mut b, &band, p, &trimmed, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
                     walked.push(current_region.clone());
                     ceiling = trimmed.zs.last().copied().unwrap_or(ceiling);
+                } else if mid {
+                    say(
+                        &mut lead_notes,
+                        format!(
+                            "whole-model contour: the outline changes between Z {:.3} and Z {:.3} but has                              no floor level there - that wall is not cut; reduce the stepdown",
+                            remaining[0], ceiling
+                        ),
+                    );
                 }
                 used_fallback = true;
-                let raw = whole_region_at(part, bodies, remaining[0] - p.stock_to_leave, remaining[0])?;
+                let (raw, next_mid) = next_region(part, bodies, p, ceiling, remaining[0], emitted)?;
+                mid = next_mid;
                 current_region = area_at(raw)?;
             }
             Some(0) => {
@@ -277,12 +273,7 @@ pub fn contour_whole_bodies_with(
                     p.bottom_z,
                     ring_notes.join("; ")
                 );
-                let partial = b.finish();
-                return Err(if partial.moves.is_empty() {
-                    GenError::Invalid(msg)
-                } else {
-                    GenError::Invalid(msg).with_ghost(&partial)
-                });
+                return Err(stopped(msg, b));
             }
             Some(j) => {
                 let z_next = remaining[j];
@@ -298,21 +289,16 @@ pub fn contour_whole_bodies_with(
                 ceiling = trimmed.zs.last().copied().unwrap_or(remaining[j - 1]);
                 remaining = &remaining[j..];
                 used_fallback = true;
-                let raw = whole_region_at(part, bodies, remaining[0] - p.stock_to_leave, remaining[0])?;
+                let (raw, next_mid) = next_region(part, bodies, p, ceiling, remaining[0], true)?;
+                mid = next_mid;
                 current_region = match area_at(raw) {
                     Ok(r) => r,
                     Err(e) => {
                         let msg = format!(
-                            "whole-model contour stopped at Z {ceiling:.3} (Bottom Z {:.3}): \
-                             no machinable region at Z {:.3} ({e})",
+                            "whole-model contour stopped at Z {ceiling:.3} (Bottom Z {:.3}):                              no machinable region at Z {:.3} ({e})",
                             p.bottom_z, remaining[0]
                         );
-                        let partial = b.finish();
-                        return Err(if partial.moves.is_empty() {
-                            GenError::Invalid(msg)
-                        } else {
-                            GenError::Invalid(msg).with_ghost(&partial)
-                        });
+                        return Err(stopped(msg, b));
                     }
                 };
             }
@@ -320,9 +306,18 @@ pub fn contour_whole_bodies_with(
                 forward_band_notes(&band, &lad, last_z, false, ring_notes, &mut lead_notes);
                 emit_band(&mut b, &band, p, &lad, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
                 walked.push(current_region);
+                remaining = &[];
                 break;
             }
         }
+        band_idx += 1;
+    }
+    if let Some(z) = remaining.first() {
+        let msg = format!(
+            "whole-model contour stopped at Z {ceiling:.3} (Bottom Z {:.3}): too many outline changes above Z {z:.3}",
+            p.bottom_z
+        );
+        return Err(stopped(msg, b));
     }
 
     if !pick_matched

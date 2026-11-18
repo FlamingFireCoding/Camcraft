@@ -1,6 +1,7 @@
 //! Direct kernel pins for whole-model multi-band 2D Contour (#2436):
 //! two islands above a common base plate (no double cutting on the deeper
-//! island), a counterbore that narrows below Top Z, and fail-closed refusal
+//! island), a counterbore that narrows below Top Z, a middle step with no
+//! flat level in its Z range, and fail-closed refusal
 //! when a deeper slice cannot be read.
 //!
 //! Gate map: covers camcraft_motion::machining2d (contour_whole, contour_depth).
@@ -176,10 +177,10 @@ fn two_islands_above_a_plate_continue_without_double_cutting_the_deeper_island()
             })
             .map(|m| (m.to.x - m.from.x).hypot(m.to.y - m.from.y))
             .sum();
-        // Offset 20x20 square with r=3 round corners is 4*20 + 4*3*sqrt(2) ~= 97 mm (never 2x).
+        // Offset 20x20 square with r=3 round corners is 4*20 + 2*pi*3 ~= 98.8 mm (never 2x).
         assert!(
             (94.0..=102.0).contains(&len_b),
-            "z {z}: expected one lap around B (~97 mm), got {len_b:.3}"
+            "z {z}: expected one lap around B (~98.8 mm), got {len_b:.3}"
         );
     }
     // Lower levels must trace the [-40..0] x [-20..20] plate (x around -43).
@@ -274,6 +275,50 @@ fn large_stepdown_keeps_the_upper_island_floor_pass_before_the_plate() {
         path.moves.iter().any(|m| m.kind == MoveKind::Feed && m.to.z < 1e-6 && m.to.x < -42.5),
         "must finish plate down to Z 0"
     );
+}
+
+/// Base `[-40..40]^2` z `[0..10]`, middle step `[-25..25]^2` z `[10..20]`,
+/// boss `[-10..10]^2` z `[20..30]`.
+fn three_level_part() -> Vec<Triangle> {
+    let mut f = Vec::new();
+    let base = rect(-40.0, -40.0, 40.0, 40.0);
+    let mid = rect(-25.0, -25.0, 25.0, 25.0);
+    let boss = rect(-10.0, -10.0, 10.0, 10.0);
+    cap_poly(&mut f, &base, None, 0.0, false);
+    walls(&mut f, &base, 0.0, 10.0, true);
+    cap_poly(&mut f, &base, Some(&mid), 10.0, true);
+    walls(&mut f, &mid, 10.0, 20.0, true);
+    cap_poly(&mut f, &mid, Some(&boss), 20.0, true);
+    walls(&mut f, &boss, 20.0, 30.0, true);
+    cap_poly(&mut f, &boss, None, 30.0, true);
+    f
+}
+
+#[test]
+fn middle_step_without_a_flat_level_gets_its_floor_pass() {
+    let f = three_level_part();
+    let top_reg = slice::slice(&f, 30.0 - 1e-3).expect("top slice");
+    // Flat levels are Z 5 and Z 0. The middle step (Z 10..20) holds no flat
+    // level: it must still get one full lap at its floor, Z 10.
+    let path = contour_whole_bodies(&top_reg, &f, &[], &params(30.0, 0.0, 25.0)).expect("whole contour");
+    assert!(path.all_finite() && path.is_chained());
+    let ext = |x: f64, y: f64| x.abs().max(y.abs());
+    let mut len_mid = 0.0;
+    for m in &path.moves {
+        let at_10 = (m.from.z - 10.0).abs() < 1e-6 && (m.to.z - 10.0).abs() < 1e-6;
+        if m.kind != MoveKind::Feed || !at_10 || ext(m.from.x, m.from.y) < 20.0 || ext(m.to.x, m.to.y) > 35.0 {
+            continue;
+        }
+        assert!((ext(m.to.x, m.to.y) - 28.0).abs() < 0.05, "middle step envelope at Z 10: {m:?}");
+        len_mid += (m.to.x - m.from.x).hypot(m.to.y - m.from.y);
+    }
+    // Offset 50x50 square with r=3 round corners is 4*50 + 2*pi*3 ~= 218.8 mm.
+    assert!((len_mid - 218.85).abs() < 2.0, "expected one lap around the middle step at Z 10, got {len_mid:.3}");
+    assert!(
+        path.moves.iter().any(|m| m.kind == MoveKind::Feed && m.to.z < 1e-6 && m.to.x < -42.5),
+        "must finish the base down to Z 0"
+    );
+    assert_eq!(depth_verify(&path, &top_reg, &f, 30.0), Vec::new(), "{:?}", path.notes);
 }
 
 #[test]

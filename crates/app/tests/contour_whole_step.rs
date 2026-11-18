@@ -4,6 +4,9 @@
 //! using each level's part outline with tabs written, or refuse by name
 //! with the stopped level rather than dropping lower levels silently.
 //!
+//! Gate map (#2436): covers app::operation (generate, 2D Contour whole model),
+//! app::commands (GenerateOperation), app::posting.
+//!
 //! Provenance: our own grid-matched watertight mesh of a stepped and
 //! slotted flange; no vendor material consulted.
 

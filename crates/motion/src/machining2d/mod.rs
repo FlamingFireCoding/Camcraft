@@ -56,6 +56,7 @@ mod contour_run_stock;
 mod contour_start;
 mod contour_step;
 mod contour_whole;
+mod contour_whole_slice;
 mod descent;
 mod descent_dive;
 mod descent_xy;
