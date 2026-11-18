@@ -78,6 +78,7 @@ type HeightRead = (Option<SrcRef>, Height, Result<f64, &'static str>);
 #[derive(PartialEq)]
 struct AdviceKey {
     geometry: Key,
+    machine_kind: camcraft_app::machine::Kind,
     program: Vec<(String, Operation)>,
     unit: Unit,
     src: SrcRef,
@@ -97,7 +98,7 @@ thread_local! {
     static ADVICE_BUILDS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// The draft's display advice follows geometry, units and program order,
+/// The draft's display advice follows geometry, machine kind, units and program order,
 /// including suppression changes. It never supplies a generation verdict.
 pub(crate) fn clearance_advice(
     world: &World,
@@ -108,6 +109,7 @@ pub(crate) fn clearance_advice(
 ) -> Option<String> {
     let key = AdviceKey {
         geometry: Key::of(world, setup, params.tilt()),
+        machine_kind: camcraft_app::machine::kind_of_setup(world, setup),
         program: camcraft_app::program_entry::sequence(world)
             .into_iter()
             .filter_map(|(name, entity)| model::operation_of(world, &entity).map(|op| (name, op)))
@@ -211,3 +213,7 @@ pub(crate) fn builds() -> u64 {
 #[cfg(test)]
 #[path = "height_memo_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "height_memo_machine_tests.rs"]
+mod machine_tests;

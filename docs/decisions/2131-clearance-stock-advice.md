@@ -25,3 +25,17 @@ unapplied draft changes and could retain stale advice.
 structural tests. A change to the advice inputs must update the cache key
 and its invalidation tests. This decision adds no crate dependencies and
 changes no generation or post rules.
+
+**Review fix decided:** Include the effective machine kind from
+`machine::kind_of_setup` in the advice cache key.
+
+**Why:** A setup without its own machine follows the document machine.
+`LoadMachine` must invalidate cached drill advice when that machine changes
+between mill and lathe. The effective kind also respects a setup's own machine.
+
+**Considered and dropped:** The document machine's identity would cause
+unnecessary rebuilds for changes that keep the same kind. It would also
+describe the wrong input when the setup has its own machine.
+
+**Cost to change later:** Update this key and its transition tests if advice
+starts to read machine properties other than kind.
