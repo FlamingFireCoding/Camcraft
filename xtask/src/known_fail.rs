@@ -3,8 +3,8 @@
 //! Provenance: our own build law (AGENTS.md "Three gate tiers"; the #1950 known-fail decision, RECOMMENDED.md);
 //! libtest's public `--exact` / `--skip` / `--ignored` flags and the `gh issue view` CLI.
 
-use std::path::Path;
 use std::io::Read;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,12 @@ pub struct KnownFail {
     pub test: &'static str,
     /// The open issue the test pins; the gate refuses the skip once the issue reads closed.
     pub issue: u32,
+    /// The test's source file (from the workspace root, `/`): its `panicked at` line must name it.
+    pub file: &'static str,
+    /// The assert text in the test body whose failure is the issue's (pinned by `known_fail_tests`).
+    pub assert: &'static str,
+    /// A stable piece of that assert's panic message: the step is ok only when the panic block holds it.
+    pub reason: &'static str,
 }
 
 /// Only these tests. Each entry needs a `docs/decisions/` entry and an open issue; delete the entry when the
@@ -29,18 +35,28 @@ pub const KNOWN_FAIL: &[KnownFail] = &[
         target: "lib",
         test: "machining2d::pocket_hsm::ring_tests::the_stock_ring_level_reaches_the_air_planner_with_the_stock",
         issue: 1950,
+        file: "crates/motion/src/machining2d/pocket_hsm_ring.rs",
+        assert: "assert!(travel.hops <= HOP_BUDGET, \"hops {} over {HOP_BUDGET}\"",
+        reason: "hops ",
     },
     KnownFail {
         dir: "motion",
         target: "lib",
         test: "machining2d::pocket_hsm::ring_tests::the_stock_ring_level_plans_adaptive_with_no_budget_note",
         issue: 1950,
+        file: "crates/motion/src/machining2d/pocket_hsm_ring.rs",
+        assert: "assert_eq!(s, PocketStrategy::Adaptive, ",
+        // The assert_eq's own `right:` line; the note text before it carries moving numbers.
+        reason: " right: Adaptive",
     },
     KnownFail {
         dir: "app",
         target: "pocket3d_hsm",
         test: "the_users_whole_model_bore_roughs_adaptive_on_each_level",
         issue: 1950,
+        file: "crates/app/tests/pocket3d_hsm.rs",
+        assert: "assert!(fell.is_empty(), \"every level keeps the HSM plan",
+        reason: "every level keeps the HSM plan",
     },
 ];
 

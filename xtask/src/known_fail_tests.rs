@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use crate::known_fail::{self, KNOWN_FAIL};
+use crate::known_fail::{self, KNOWN_FAIL, KnownFail};
 use crate::{exec, plan, scan};
 
 fn root() -> std::path::PathBuf {
@@ -19,7 +19,7 @@ fn each_known_fail_is_skipped_in_its_lane_and_checked_alone() {
         assert!(lane.args.contains(&"--exact".to_string()) && lane.expect_fail.is_none());
         let check: Vec<_> = steps.iter().filter(|s| s.name == known_fail::step_name(k)).collect();
         assert_eq!(check.len(), 1, "{}", k.test);
-        assert_eq!(check[0].expect_fail.as_deref(), Some(k.test));
+        assert_eq!(check[0].expect_fail, Some(k));
         assert!(check[0].args.ends_with(&["--".into(), plan::T.into(), "--exact".into(), k.test.into(), "--ignored".into()]));
         assert!(!check[0].args.iter().any(|a| a == "--skip"));
     }
@@ -51,28 +51,59 @@ fn each_known_fail_is_an_ignored_test_that_names_its_issue() {
 }
 
 #[test]
+fn each_known_fail_reason_is_its_pinned_assert_in_the_test_body() {
+    for k in KNOWN_FAIL {
+        let name = k.test.rsplit("::").next().unwrap_or(k.test);
+        let text = scan::read(&root().join(k.file));
+        let (_, body) = text.split_once(&format!("fn {name}()")).unwrap_or_else(|| panic!("{} not in {}", k.test, k.file));
+        let body = body.split("\n}").next().unwrap_or_default();
+        assert!(body.contains(k.assert), "{}: assert {:?} not in its body", k.test, k.assert);
+        assert!(!k.reason.trim().is_empty(), "{}: empty reason", k.test);
+        // The reason comes from that assert: its own text, or the `right:` line of an assert_eq.
+        let from_assert = k.assert.contains(k.reason.trim()) || (k.assert.starts_with("assert_eq!") && k.reason.trim().starts_with("right: "));
+        assert!(from_assert, "{}: reason {:?} does not come from {:?}", k.test, k.reason, k.assert);
+    }
+}
+
+#[test]
 fn a_known_fail_step_is_ok_only_when_its_test_fails() {
-    let t = "a::x";
+    let k = KnownFail { dir: "motion", target: "lib", test: "a::x", issue: 1, file: "crates/m/src/a.rs", assert: "", reason: "hops " };
+    // The red run's panic block (Windows slashes), as the release log holds it.
+    let right = "thread 'a::x' (7) panicked at crates\\m\\src\\a.rs:92:5:\nhops 10 over 8\n\nfailures:\n";
     let mut red = "failed: unittests src/lib.rs [tests: a::w, a::x]".to_string();
-    assert!(exec::expect_fail_note(101, &mut red, t));
+    assert!(exec::expect_fail_note(101, &mut red, right, &k), "{red}");
     assert!(red.starts_with("known fail, red as expected"));
     let mut green = String::new();
-    assert!(!exec::expect_fail_note(0, &mut green, t));
+    assert!(!exec::expect_fail_note(0, &mut green, "", &k));
     assert!(green.contains("NOW PASSES"));
     let mut broken = "compile error".to_string();
-    assert!(!exec::expect_fail_note(101, &mut broken, t));
+    assert!(!exec::expect_fail_note(101, &mut broken, right, &k));
     // A crash of the test binary (no `test ... FAILED` line) is not the expected failure.
     for code in [101, -1] {
         let mut crash = format!("exit {code}");
-        assert!(!exec::expect_fail_note(code, &mut crash, t), "{crash}");
+        assert!(!exec::expect_fail_note(code, &mut crash, right, &k), "{crash}");
     }
     let mut no_list = "failed: unittests src/lib.rs".to_string();
-    assert!(!exec::expect_fail_note(101, &mut no_list, t));
+    assert!(!exec::expect_fail_note(101, &mut no_list, right, &k));
     // Another test failed, or a name that only contains the expected one.
     let mut other = "failed: unittests src/lib.rs [tests: a::y]".to_string();
-    assert!(!exec::expect_fail_note(101, &mut other, t));
+    assert!(!exec::expect_fail_note(101, &mut other, right, &k));
     let mut longer = "failed: unittests src/lib.rs [tests: a::x2]".to_string();
-    assert!(!exec::expect_fail_note(101, &mut longer, t));
+    assert!(!exec::expect_fail_note(101, &mut longer, right, &k));
+    // The right test, failed for another reason: another assert, or a panic in other code.
+    let named = "failed: unittests src/lib.rs [tests: a::x]";
+    let other_assert = "thread 'a::x' (7) panicked at crates/m/src/a.rs:88:5:\nrest 0.3000\n";
+    let other_file = "thread 'a::x' (7) panicked at crates/m/src/planner.rs:12:9:\nindex out of bounds: hops 3\n";
+    let other_thread = "thread 'a::y' (8) panicked at crates/m/src/a.rs:92:5:\nhops 10 over 8\n";
+    for log in [other_assert, other_file, other_thread, ""] {
+        let mut note = named.to_string();
+        assert!(!exec::expect_fail_note(101, &mut note, log, &k), "{log}");
+        assert!(note.starts_with("KNOWN FAIL, DIFFERENT REASON"), "{note}");
+    }
+    // The reason must sit in this test's own block, not in a later thread's block.
+    let later = "thread 'a::x' (7) panicked at crates/m/src/a.rs:88:5:\nrest 0.3\nthread 'a::y' (8) panicked at crates/m/src/a.rs:92:5:\nhops 10 over 8\n";
+    let mut note = named.to_string();
+    assert!(!exec::expect_fail_note(101, &mut note, later, &k));
 }
 
 #[test]
