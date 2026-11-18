@@ -5,12 +5,15 @@
 **What was decided.** A Report door on the status strip opens a small
 window. It takes a short title, and its two buttons ("Report a bug",
 "Request a feature") open the browser on a prefilled new-issue URL:
-`https://github.com/NeoTech/Camcraft/issues/new?template=blank-issue.md`
-with `title`, `body` and `labels` in the query. The body embeds the
-Debug info report (#157) - same fields, one source. A "Copy screenshot"
-button puts a PNG of the current document on the clipboard; the user
-pastes it into the issue box and GitHub uploads it. The repository also
-gained `blank-issue.md` and a `config.yml` that enables blank issues.
+`https://github.com/NeoTech/Camcraft/issues/new?title=...&body=...&labels=...`
+(no `template` parameter: the prefill query applies to the blank issue,
+and the repository enables blank issues in
+`.github/ISSUE_TEMPLATE/config.yml`). The body embeds the Debug info
+report (#157) - same fields, one source. A "Copy screenshot" button puts
+a PNG of the whole application window on the clipboard (see the
+full-window follow-up below); the user pastes it into the issue box and
+GitHub uploads it. The repository also gained `blank-issue.md` and a
+`config.yml` that enables blank issues.
 
 **Why.** The maintainer asked (issue #1696) for one button that prepares
 a bug or feature report with a screenshot and the relevant data
@@ -37,11 +40,10 @@ handler, so no new dependency is needed.
   Debug info window's state, so "Everything Is a Command" does not
   apply.
 
-**Cost to change later.** The URL, the template name and the label names
-are three constants in `report.rs`; a fork pointing at its own repo
-changes one constant. If GitHub later lets a URL prefill an issue form,
-the blank template can go and `template=` changes - no Rust change
-beyond that constant.
+**Cost to change later.** The URL and the label names are constants in
+`report.rs`; a fork pointing at its own repo changes one constant. If
+GitHub later lets a URL prefill an issue form, the app code needs no
+change: the same query works on that form.
 
 ## #1696 follow-up - the screenshot's ground grid (GUI test finding,
 superseded by the full-window design below)
