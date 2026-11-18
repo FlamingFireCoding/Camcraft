@@ -3473,12 +3473,10 @@ impl State {
             CommandKind::SetToolNumber { name, number } => {
                 match SetToolNumber::new(&self.world, &name, number) {
                     Ok(command) => {
+                        let n = command.number();
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = match number {
-                            Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} number cleared"),
-                        };
+                        self.status = format!("tool {name} is now T{n}");
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),
                 }

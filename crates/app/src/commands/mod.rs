@@ -79,6 +79,8 @@ pub mod tool_body;
 pub mod tool_cutter;
 // #300: a tool library file imported as one undo unit.
 pub mod tool_import;
+// #2517: the import's mode and report, split from tool_import.
+mod tool_import_report;
 // #221: a tool's controller number.
 pub mod tool_number;
 pub mod update_model;
