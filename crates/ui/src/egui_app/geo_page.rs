@@ -77,11 +77,13 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, 
         ui.label(RichText::new(edge_hint()).weak());
     }
     if state.op_ui.src_kind == 2 {
-        chips(ui, state, target, pal);
+        crate::frame_cost::time("ui/properties.op.picks.chips", || chips(ui, state, target, pal));
         // #187: the 3-2-1 alignment reads the picks as datums - a flat
         // face for Z, a straight edge for X, a vertex or bore for the
         // origin. The app builds the frame (or names what to re-pick).
-        let aligned = camcraft_app::pick::align_321(&state.world, &state.op_ui.geo);
+        let aligned = crate::frame_cost::time("ui/properties.op.picks.align_321", || {
+            crate::vertex_pick::wcs_321_checked(state)
+        });
         let tip = match &aligned {
             Ok(_) => "place the WCS slot chosen in the WCS pane: Z out of the picked flat face, X along the picked \
                       edge, origin at the picked vertex or bore (else the edge's end), on the face"
@@ -96,8 +98,9 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, 
             crate::vertex_pick::queue_wcs_321(state);
         }
     }
-    let (notes, refusal) =
-        operation::selection_account(&state.world, live_setup, &state.op_ui.geo.clone(), &state.op_ui.params.clone());
+    let (notes, refusal) = crate::frame_cost::time("ui/properties.op.picks.selection_account", || {
+        operation::selection_account(&state.world, live_setup, &state.op_ui.geo.clone(), &state.op_ui.params.clone())
+    });
     for note in notes {
         ui.label(RichText::new(note).weak());
     }
@@ -142,6 +145,9 @@ fn chips(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
         };
         let row = ui
             .horizontal(|ui| {
+                // #1688: the remove button comes first, so it stays in reach
+                // however long the label is or however narrow the panel.
+                let x = ui.small_button("×").on_hover_text("remove this pick");
                 // M13.4 stage 2 hook: a picked corner can place the WCS
                 // slot chosen in the WCS pane, through SetWcsOrigin.
                 if let Some((entity, id)) = &vertex
@@ -167,12 +173,14 @@ fn chips(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
                         crate::vertex_pick::queue_origin_at_face(state, entity, *feat, true);
                     }
                 }
-                let resp = if missing {
-                    ui.colored_label(text_inks(ui, &state.world).missing, &label)
+                // The label takes the width left and is shortened to fit
+                // (#1688); hovering a shortened label shows it whole.
+                let text = if missing {
+                    RichText::new(&label).color(text_inks(ui, &state.world).missing)
                 } else {
-                    ui.label(&label)
+                    RichText::new(&label)
                 };
-                let x = ui.small_button("×").on_hover_text("remove this pick");
+                let resp = ui.add(egui::Label::new(text).truncate());
                 // #1507: the label, the remove button and the row's other
                 // buttons all light the pick: "which one am I removing?".
                 if resp.hovered() || x.hovered() {

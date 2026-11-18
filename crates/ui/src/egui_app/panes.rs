@@ -897,9 +897,12 @@ pub(super) type RibbonGeom = (Vec<Cell>, Vec<(f32, f32, &'static str)>, Vec<f32>
 /// these rects - one source of truth for where each mode lives.
 pub(super) fn machine_rows(
     button: Rect,
+    bounds: Rect,
     row_h: f32,
     width: f32,
+    g: &super::theme::DropGeom,
 ) -> Vec<(camcraft_app::machine::Kind, Rect)> {
+    let left = g.fit_left(button.left(), bounds, width);
     machine_modes::MACHINE_MODES
         .iter()
         .enumerate()
@@ -908,8 +911,8 @@ pub(super) fn machine_rows(
                 *kind,
                 Rect::from_min_size(
                     egui::Pos2::new(
-                        button.left(),
-                        button.bottom() + DROP_GAP + k as f32 * row_h,
+                        left,
+                        button.bottom() + g.gap + k as f32 * row_h,
                     ),
                     Vec2::new(width, row_h),
                 ),
@@ -919,14 +922,10 @@ pub(super) fn machine_rows(
 }
 
 /// The machine dropdown's width: as wide as its longest row (text is
-/// never cut), and never narrower than `DROP_W`. `longest_px` is the
-/// measured width of that row's text.
-pub(super) fn machine_menu_width(longest_px: f32) -> f32 {
-    (longest_px + 2.0 * DROP_TEXT_PAD).max(DROP_W)
+/// never cut), and never narrower than the theme menu width.
+pub(super) fn machine_menu_width(longest_px: f32, pal: &Tokens) -> f32 {
+    pal.dropdown().machine_width(longest_px)
 }
-const DROP_TEXT_PAD: f32 = 8.0;
-pub(super) const DROP_W: f32 = 200.0;
-pub(super) const DROP_GAP: f32 = 2.0;
 
 /// The ribbon's layout math, pure: a plan (ribbon_plan's groups) and the
 /// strip give back cell rects, group captions (centre x, title), the
@@ -1012,6 +1011,9 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
                 egui::Pos2::new(x, cell_top),
                 Vec2::new(cell_w, pal.cell_h),
             );
+            let g = pal.dropdown();
+            let width = g.fit_width(g.menu_width, strip.width());
+            let left = g.fit_left(button.left(), strip, width);
             let row_h = pal.row_height;
             let rows = hidden
                 .iter()
@@ -1021,10 +1023,10 @@ pub(super) fn ribbon_cells(strip: Rect, pal: &Tokens, plan: &[Group]) -> RibbonG
                         *c,
                         Rect::from_min_size(
                             egui::Pos2::new(
-                                button.left(),
-                                button.bottom() + DROP_GAP + k as f32 * row_h,
+                                left,
+                                button.bottom() + g.gap + k as f32 * row_h,
                             ),
-                            Vec2::new(DROP_W, row_h),
+                            Vec2::new(width, row_h),
                         ),
                     )
                 })
@@ -1073,14 +1075,14 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
     );
     let current = camcraft_app::machine::kind_of(&state.world);
     let font = egui::FontId::proportional(pal.font_label);
-    let mut x = strip.left() + 8.0;
+    let mut x = strip.left() + pal.item_spacing_x;
     for (kind, caption, machine) in machine_modes::MACHINE_MODES {
         let active = kind == current;
         let ink = if active { pal.text } else { pal.text_dim };
         let galley = ui
             .painter()
             .layout_no_wrap(caption.to_uppercase(), font.clone(), ink);
-        let w = galley.size().x + 24.0;
+        let w = galley.size().x + pal.ribbon_tab_pad_x * 2.0;
         let r = Rect::from_min_max(
             egui::Pos2::new(x, band.top()),
             egui::Pos2::new(x + w, band.bottom()),
@@ -1093,12 +1095,13 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
                 0.0,
                 pal.strip_fill(),
             );
+            let pad = (pal.ribbon_tab_pad_x * 0.5).min(w * 0.25);
             painter.line_segment(
                 [
-                    egui::Pos2::new(r.left() + 6.0, r.bottom() - 1.0),
-                    egui::Pos2::new(r.right() - 6.0, r.bottom() - 1.0),
+                    egui::Pos2::new(r.left() + pad, r.bottom() - 1.0),
+                    egui::Pos2::new(r.right() - pad, r.bottom() - 1.0),
                 ],
-                egui::Stroke::new(2.0, pal.accent),
+                egui::Stroke::new(pal.ribbon_tab_stroke, pal.accent),
             );
         } else if resp.clicked() || resp.is_pointer_button_down_on() {
             painter.rect_filled(r, pal.radius_widget, pal.accent);
@@ -1114,11 +1117,16 @@ fn ribbon_tabs(ui: &mut Ui, state: &mut State, pal: &Tokens, strip: Rect, band: 
             ink,
         );
         let clicked = resp.clicked();
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, caption));
+        ui.ctx().accesskit_node_builder(resp.id, |b| {
+            b.set_role(egui::accesskit::Role::Tab);
+            b.set_selected(active);
+        });
         resp.on_hover_text(format!("{caption} workspace - mounts {machine} (undoable)"));
         if clicked {
             machine_modes::set_machine_mode(state, kind);
         }
-        x += w + 2.0;
+        x += w + pal.ribbon_tab_gap;
     }
 }
 
@@ -1144,6 +1152,7 @@ pub fn ribbon(
         egui::Pos2::new(rect.right(), rect.top() + pal.ribbon_tab_h),
     );
     ribbon_tabs(ui, state, pal, rect, band);
+    super::donate::draw(ui, state, pal, icons, band);
     let body = Rect::from_min_max(egui::Pos2::new(rect.left(), band.bottom()), rect.max);
     // The plan is read fresh every frame from the two facts it is a
     // function of - the document's machine and its pins (M6.2). No
@@ -1186,7 +1195,10 @@ pub fn ribbon(
         // proves it.
         let gated = resp.clicked() && !fired && matches!(c, Cmd::Create(_));
         let pin = resp.secondary_clicked();
-        resp.on_hover_text(tip_of(c, state));
+        let tip = tip_of(c, state);
+        ui.ctx()
+            .accesskit_node_builder(resp.id, |b| b.set_description(tip.as_str()));
+        resp.on_hover_text(tip);
         if fired {
             run_cmd(c, state);
         }
@@ -1231,9 +1243,11 @@ pub fn ribbon(
                 // too. The Area adds only the layer - Foreground order,
                 // so a press on a row belongs to the row, never to the
                 // cell it happens to cover.
+                let g = pal.dropdown();
+                let top = drop.rows.first().map_or(drop.button.left_bottom(), |(_, r)| r.min);
+                let width = drop.rows.first().map_or(0.0, |(_, r)| r.width());
                 let panel = Rect::from_min_size(
-                    drop.button.left_bottom() + Vec2::new(0.0, DROP_GAP),
-                    Vec2::new(DROP_W, drop.rows.len() as f32 * pal.row_height),
+                    top, Vec2::new(width, drop.rows.len() as f32 * pal.row_height),
                 );
                 let mut hit: Option<Cmd> = None;
                 let mut gated_row: Option<Cmd> = None;
@@ -1262,12 +1276,15 @@ pub fn ribbon(
                                 Cmd::Create(i) => TYPES.get(i).copied().unwrap_or("op"),
                                 other => label_of(other),
                             };
+                            painted::menu_item(&resp, label, en, None);
                             // The kind's own glyph at the row's left edge,
                             // in the row's ink - the door lists operations
                             // the way the tree shows them. Headless frames
-                            // (no icon set) keep the tighter indent.
+                            // (no icon set) keep the theme's row padding;
+                            // the icon's inset, size and label clearance
+                            // come from the same menu metrics (#2065).
                             let ink = if en { pal.text } else { pal.text_faint };
-                            let mut text_x = 8.0;
+                            let mut text_x = g.pad_x;
                             if let Cmd::Create(i) = *cmd
                                 && let (Some(set), Some(info)) = (
                                     super::icons::IconSet::from_ctx(ui.ctx()),
@@ -1275,10 +1292,10 @@ pub fn ribbon(
                                 )
                                 && let Some(tex) = set.texture(super::op_icons::op_icon(info.ty))
                             {
-                                text_x = 28.0;
+                                text_x = g.icon_text_x;
                                 let icon_rect = Rect::from_center_size(
-                                    egui::Pos2::new(r.left() + 4.0 + 8.0, r.center().y),
-                                    Vec2::splat(16.0),
+                                    egui::Pos2::new(r.left() + g.clip_inset_x + g.icon_px * 0.5, r.center().y),
+                                    Vec2::splat(g.icon_px),
                                 );
                                 p.image(
                                     tex.id(),
@@ -1341,7 +1358,7 @@ pub fn ribbon(
                     let outside = ui.input(|i| {
                         i.pointer.button_pressed(egui::PointerButton::Primary)
                             && i.pointer.interact_pos().is_none_or(|p| {
-                                !drop.button.expand(DROP_GAP).contains(p)
+                                !drop.button.expand(g.gap).contains(p)
                                     && !drop.rows.iter().any(|(_, r)| r.contains(p))
                             })
                     });
@@ -1380,13 +1397,14 @@ pub fn ribbon(
                         })
                         .fold(0.0_f32, f32::max)
                 });
-                let width = machine_menu_width(longest);
-                let rows = machine_rows(button, pal.row_height, width);
+                let g = pal.dropdown();
+                let width = g.fit_width(machine_menu_width(longest, pal), rect.width());
+                let rows = machine_rows(button, rect, pal.row_height, width, &g);
                 let machine = camcraft_app::machine::kind_of(&state.world);
                 let mut pick: Option<camcraft_app::machine::Kind> = None;
                 let mut chose = false;
                 let panel = Rect::from_min_size(
-                    button.left_bottom() + Vec2::new(0.0, DROP_GAP),
+                    rows.first().map_or(button.left_bottom(), |(_, r)| r.min),
                     Vec2::new(width, rows.len() as f32 * pal.row_height),
                 );
                 egui::Area::new(base.with("machine-drop"))
@@ -1414,8 +1432,9 @@ pub fn ribbon(
                             } else {
                                 machine_modes::mode_label(*kind)
                             };
+                            painted::menu_item(&resp, &label, !current, Some(current));
                             p.text(
-                                r.left_center() + Vec2::new(8.0, 0.0),
+                                r.left_center() + Vec2::new(g.pad_x, 0.0),
                                 egui::Align2::LEFT_CENTER,
                                 label,
                                 egui::FontId::proportional(pal.font_row),
@@ -1441,7 +1460,7 @@ pub fn ribbon(
                     let outside = ui.input(|i| {
                         i.pointer.button_pressed(egui::PointerButton::Primary)
                             && i.pointer.interact_pos().is_none_or(|p| {
-                                !button.expand(DROP_GAP).contains(p)
+                                !button.expand(g.gap).contains(p)
                                     && !rows.iter().any(|(_, r)| r.contains(p))
                             })
                     });
@@ -1533,7 +1552,9 @@ pub(super) fn view_rows_of(
     strip: Rect,
     pal: &Tokens,
 ) -> Vec<(layout::ViewRow, Rect)> {
-    layout::view_rows(button, strip, pal.row_height, DROP_W, DROP_GAP)
+    let g = pal.dropdown();
+    let width = g.fit_width(g.menu_width, strip.width());
+    layout::view_rows(button, strip, pal.row_height, width, g.gap)
 }
 
 /// The status strip (bottom panel): the shell's one-line feedback, dimmer,
@@ -1588,7 +1609,8 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // icon set is up, its name when it is not (headless frames
             // and a failed decode degrade to text, never to nothing).
             if super::debug_info::button(ui, icons).clicked() {
-                state.debug_info_open = !state.debug_info_open;
+                // #2262: a dock tab like the other panels; the shell lands it.
+                state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
             }
             // #183: the live MCP server says it is listening.
             if let Some(note) = crate::mcp_host::badge(state) {
@@ -1600,6 +1622,11 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                     state.pending.push_back(CommandKind::RegenerateAll);
                 }
             }
+            // #2262: placed before the status line, which fills what is
+            // left; behind it the label ran past the line onto the door.
+            if ops_n > 0 {
+                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
+            }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())
                     .on_hover_text(text.as_str())
@@ -1609,9 +1636,6 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                             ui.close();
                         }
                     });
-                if ops_n > 0 {
-                    ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
-                }
             });
         });
     });

@@ -48,6 +48,11 @@ impl Tokens {
         ribbon_caption_gap: 8.0,
         ribbon_caption_row_h: 18.0,
         ribbon_bottom_gap: 4.0,
+        window_margin: 6.0,
+        status_h: 22.0,
+        ribbon_tab_pad_x: 12.0,
+        ribbon_tab_gap: 2.0,
+        ribbon_tab_stroke: 2.0,
         font_label_min: 10.0,
         op_tab_h: 22.0,
         op_tab_pad_x: 6.0,
@@ -66,6 +71,10 @@ impl Tokens {
         tree_suffix_gap: 6.0,
         tree_header_boost: 0.5,
         highlight_stroke_px: 2.0,
+        menu_width: 200.0,
+        recent_width: 300.0,
+        menu_gap: 2.0,
+        menu_pad_x: 8.0,
     };
 
     /// The same shell, inverted: paper grounds, dark ink, the steel
@@ -114,6 +123,11 @@ impl Tokens {
         ribbon_caption_gap: 8.0,
         ribbon_caption_row_h: 18.0,
         ribbon_bottom_gap: 4.0,
+        window_margin: 6.0,
+        status_h: 22.0,
+        ribbon_tab_pad_x: 12.0,
+        ribbon_tab_gap: 2.0,
+        ribbon_tab_stroke: 2.0,
         font_label_min: 10.0,
         op_tab_h: 22.0,
         op_tab_pad_x: 6.0,
@@ -132,5 +146,9 @@ impl Tokens {
         tree_suffix_gap: 6.0,
         tree_header_boost: 0.5,
         highlight_stroke_px: 2.0,
+        menu_width: 200.0,
+        recent_width: 300.0,
+        menu_gap: 2.0,
+        menu_pad_x: 8.0,
     };
 }

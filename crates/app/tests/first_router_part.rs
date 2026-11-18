@@ -169,6 +169,8 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
     let top_clr = Height::of(HeightReference::TopOfStock, 15.0);
     let top_ret = Height::of(HeightReference::TopOfStock, 5.0);
     let drill_base = OpParams::Drill {
+        break_through: None,
+        break_through_from: Default::default(),
         clearance_z: top_clr, retract_z: Some(top_ret), top_z: Height::of(HeightReference::TopOfStock, 0.0), bottom_z: None,
         cycle: CycleChoice::Auto, peck: 4.0, dwell: 0.0, feed: 150.0, plunge_feed: 150.0, holes: Vec::new(), cross: Vec::new(),
     };
@@ -180,6 +182,7 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
     let pocket = recognize::pockets_of(&world, "router-part").expect("pockets").into_iter().next().expect("pocket");
     let pocket_src = SrcRef::Selection(vec![GeoSel { entity: "router-part".into(), feature: FeatureSel::Face(pocket.floor) }]);
     let pocket_params = OpParams::Pocket {
+        rest: None,
         stepover: 3.0, stock_to_leave: 0.0, clearance_z: top_clr, retract_z: Some(top_ret),
         top_z: Height::of(HeightReference::TopOfModel, 0.0), bottom_z: Height::of(HeightReference::TopOfModel, -4.0),
         stepdown: 2.0, feed: 1800.0, plunge_feed: 400.0, climb: true, strategy: PocketStrategy::Waterline,
@@ -208,6 +211,11 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
 #[test]
 fn first_router_part_project_loads_verifies_and_posts_to_grblhal() {
     let demo_path = repo("examples/first-router-part.camproj");
+    if std::env::var_os("WRITE_GOLDEN").is_some() {
+        // The demo is the command build below, saved (#1917's decision):
+        // a generator change regenerates it, as for every golden.
+        project::save(&build_demo_world(), &demo_path).expect("write the demo project");
+    }
     assert!(demo_path.exists(), "expected committed router demo project at {}", demo_path.display());
 
     let world = new_world();
@@ -261,8 +269,8 @@ fn first_router_part_project_loads_verifies_and_posts_to_grblhal() {
         assert!(!posted.program.contains(forbidden), "forbidden grblHAL word {forbidden} in:\n{}", posted.program);
     }
     assert!(
-        posted.program.lines().any(|line| line.starts_with("G73 ") && line.split_whitespace().any(|word| word == "Z-13")),
-        "demo drill breaks through the 12 mm stock by 1 mm at G54 Z-13"
+        posted.program.lines().any(|line| line.starts_with("G73 ") && line.split_whitespace().any(|word| word == "Z-14.803")),
+        "demo drill breaks through the 12 mm stock by 1 mm past full diameter plus the 118 deg drill point at G54 Z-14.803"
     );
 
     let rebuilt = build_demo_world();
@@ -355,19 +363,19 @@ fn first_router_part_guide_states_drill_breakthrough_and_clearance() {
     let guide = std::fs::read_to_string(repo("site/content/guide/getting-started/first-router-part.md")).expect("router guide");
     let origin = guide.split("4. **Set a corner work offset").nth(1).expect("G54 setup instructions")
         .split("## Tool selection").next().expect("setup step");
-    for required in ["-12 mm", "-13 mm", "1 mm", "12 mm"] {
+    for required in ["-12 mm", "-14.803 mm", "1 mm", "12 mm"] {
         assert!(origin.contains(required), "G54 depth summary must include drill breakthrough: missing {required}");
     }
     let drill = guide.split("1. **`Drill1`").nth(1).expect("drilling instructions")
         .split("2. **`2D Pocket1`").next().expect("drilling step");
-    for required in ["-13 mm", "1 mm", "12 mm"] {
+    for required in ["-14.803 mm", "1 mm", "12 mm"] {
         assert!(drill.contains(required), "drilling instructions must state breakthrough depth: missing {required}");
     }
     let checks = guide.split("## Simulate, check clearances and post to `.nc`").nth(1).expect("clearance checklist")
         .split("Click **Post**").next().expect("clearance instructions");
     let clearance = checks.split("\n\n").flat_map(|paragraph| paragraph.split("\n- "))
         .find(|bullet| bullet.contains("spoilboard")).expect("spoilboard clearance check");
-    for required in ["drill", "-13 mm", "-12 mm", "1 mm"] {
+    for required in ["drill", "-14.803 mm", "-12 mm", "1 mm"] {
         assert!(clearance.contains(required), "spoilboard clearance must include drill breakthrough and contour depth: missing {required}");
     }
     assert!(clearance.contains("fastener") || clearance.contains("screw"), "check fastener clearance to the drill breakthrough depth");

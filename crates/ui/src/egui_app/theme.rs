@@ -21,7 +21,9 @@ use egui::{Color32, CornerRadius, Margin, Stroke, Style, Visuals, vec2};
 use super::contrast;
 
 pub mod clamp;
+mod dropdown;
 mod tables;
+pub use dropdown::DropGeom;
 
 /// One theme's whole truth: colours, then geometry.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,6 +92,13 @@ pub struct Tokens {
     pub ribbon_caption_gap: f32,
     pub ribbon_caption_row_h: f32,
     pub ribbon_bottom_gap: f32,
+    /// Shell metrics (#2064): window inner margin, status strip height, and
+    /// ribbon tab horizontal padding, gap and active underline thickness.
+    pub window_margin: f32,
+    pub status_h: f32,
+    pub ribbon_tab_pad_x: f32,
+    pub ribbon_tab_gap: f32,
+    pub ribbon_tab_stroke: f32,
     /// Minimum point size when shrinking an overflowing ribbon cell label.
     pub font_label_min: f32,
     /// Operation tab strip (#2066): row height, inner horizontal pad, inter-tab gap, bottom gap.
@@ -114,6 +123,11 @@ pub struct Tokens {
     pub tree_header_boost: f32,
     /// Active rule / row highlight / drop-target stroke thickness (px).
     pub highlight_stroke_px: f32,
+    /// Dropdown width, recent-list width, trigger gap and row inset in points (#2065).
+    pub menu_width: f32,
+    pub recent_width: f32,
+    pub menu_gap: f32,
+    pub menu_pad_x: f32,
 }
 
 /// The ribbon strip's height: the tab row, its gap, the cell box, the
@@ -129,7 +143,20 @@ pub const fn ribbon_h(t: &Tokens) -> f32 {
         + t.ribbon_bottom_gap
 }
 
+/// Bottom status strip height (px), tracking typography and controls (#2064).
+#[must_use]
+pub const fn status_h(t: &Tokens) -> f32 {
+    let a = if t.control_height + 4.0 > t.status_h { t.control_height + 4.0 } else { t.status_h };
+    if t.font_row * 1.3 + 4.0 > a { t.font_row * 1.3 + 4.0 } else { a }
+}
+
 impl Tokens {
+    /// Validated popup widths and row spacing shared by every dropdown.
+    #[must_use]
+    pub fn dropdown(&self) -> DropGeom {
+        DropGeom::from_tokens(self)
+    }
+
     /// The panel ground behind the ribbon/browser strips (painted.rs).
     #[must_use]
     pub const fn strip_fill(&self) -> Color32 {
@@ -157,11 +184,14 @@ impl Tokens {
             font_row: _, font_row_suffix: _, ribbon_tab_h: _,
             ribbon_cell_top_gap: _, ribbon_caption_gap: _,
             ribbon_caption_row_h: _, ribbon_bottom_gap: _,
+            window_margin: _, status_h: _, ribbon_tab_pad_x: _,
+            ribbon_tab_gap: _, ribbon_tab_stroke: _,
             font_label_min: _, op_tab_h: _, op_tab_pad_x: _, op_tab_gap: _,
             op_tab_bottom_gap: _, op_tab_icon_px: _, op_tab_icon_gap: _,
             op_tab_radius: _, font_op_tab: _, tree_glyph_px: _, tree_inset_x: _,
             tree_indent: _, tree_eye_reserve: _, tree_pad_x: _, tree_pad_y: _,
             tree_suffix_gap: _, tree_header_boost: _, highlight_stroke_px: _,
+            menu_width: _, recent_width: _, menu_gap: _, menu_pad_x: _,
         } = *self;
         let mut v = Visuals::dark();
         v.panel_fill = ink;
@@ -245,7 +275,8 @@ impl Tokens {
             vec2(clamp::range(self.button_padding_x, clamp::SPACING), clamp::range(self.button_padding_y, clamp::SPACING));
         s.spacing.interact_size =
             vec2(s.spacing.interact_size.x, clamp::range(self.control_height, clamp::CONTROL_H));
-        s.spacing.window_margin = Margin::same(self.item_spacing_y.max(6.0) as i8);
+        s.spacing.window_margin =
+            Margin::same(clamp::range(self.window_margin, clamp::WINDOW_MARGIN).round() as i8);
         s
     }
 }
@@ -266,16 +297,18 @@ const fn geom_legal(t: &Tokens) -> bool {
         control_height, row_height, cell_h, cell_w, glyph_px,
         font_label, font_caption, font_row, font_row_suffix,
         ribbon_tab_h, ribbon_cell_top_gap, ribbon_caption_gap,
-        ribbon_caption_row_h, ribbon_bottom_gap,
+        ribbon_caption_row_h, ribbon_bottom_gap, window_margin, status_h,
+        ribbon_tab_pad_x, ribbon_tab_gap, ribbon_tab_stroke,
         font_label_min, op_tab_h, op_tab_pad_x, op_tab_gap, op_tab_bottom_gap,
         op_tab_icon_px, op_tab_icon_gap, op_tab_radius, font_op_tab,
         tree_glyph_px, tree_inset_x, tree_indent, tree_eye_reserve,
         tree_pad_x, tree_pad_y, tree_suffix_gap, tree_header_boost,
         highlight_stroke_px,
+        menu_width, recent_width, menu_gap, menu_pad_x,
     } = *t;
     radius_widget <= clamp::RADIUS
-        && radius_window <= 24
-        && radius_menu <= 24
+        && radius_window <= clamp::RADIUS_WINDOW
+        && radius_menu <= clamp::RADIUS_WINDOW
         && item_spacing_x >= 0.0
         && item_spacing_y >= 0.0
         && button_padding_x >= 0.0
@@ -308,6 +341,16 @@ const fn geom_legal(t: &Tokens) -> bool {
         && ribbon_caption_gap <= clamp::RIBBON_GAP.1
         && ribbon_bottom_gap >= clamp::RIBBON_GAP.0
         && ribbon_bottom_gap <= clamp::RIBBON_GAP.1
+        && window_margin >= clamp::WINDOW_MARGIN.0
+        && window_margin <= clamp::WINDOW_MARGIN.1
+        && status_h >= clamp::STATUS_H.0
+        && status_h <= clamp::STATUS_H.1
+        && ribbon_tab_pad_x >= clamp::RIBBON_TAB_PAD_X.0
+        && ribbon_tab_pad_x <= clamp::RIBBON_TAB_PAD_X.1
+        && ribbon_tab_gap >= clamp::RIBBON_GAP.0
+        && ribbon_tab_gap <= clamp::RIBBON_GAP.1
+        && ribbon_tab_stroke >= clamp::RIBBON_STROKE.0
+        && ribbon_tab_stroke <= clamp::RIBBON_STROKE.1
         && font_label_min >= clamp::FONT.0
         && font_label_min <= clamp::FONT.1
         && font_label_min <= font_label
@@ -344,6 +387,10 @@ const fn geom_legal(t: &Tokens) -> bool {
         && tree_header_boost <= clamp::HEADER_BOOST.1
         && highlight_stroke_px >= clamp::STROKE.0
         && highlight_stroke_px <= clamp::STROKE.1
+        && menu_width >= clamp::MENU_W.0 && menu_width <= clamp::MENU_W.1
+        && recent_width >= clamp::RECENT_W.0 && recent_width <= clamp::RECENT_W.1
+        && menu_gap >= clamp::MENU_GAP.0 && menu_gap <= clamp::MENU_GAP.1
+        && menu_pad_x >= clamp::MENU_PAD_X.0 && menu_pad_x <= clamp::MENU_PAD_X.1
 }
 
 const _: () = assert!(geom_legal(&Tokens::DARK));
