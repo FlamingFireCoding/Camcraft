@@ -4703,10 +4703,10 @@ fn mesh_dialog() -> crate::file_dialog::FileDialog {
 }
 
 /// The model files Model > Open and a viewport drop read, lower case. A
-/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// Solidcraft `.sc`/`.solidcraft` imports its cached final body; the browser
 /// build does not read it, so its picker does not offer it.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc", "solidcraft"];
 #[cfg(target_arch = "wasm32")]
 pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 
