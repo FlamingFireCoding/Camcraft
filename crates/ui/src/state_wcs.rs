@@ -89,8 +89,10 @@ impl State {
                 let axes = camcraft_app::setup_wcs_flip::axes_text(flip);
                 self.status = if axes.is_empty() {
                     format!("{label}: no axis flipped")
+                } else if flip.get(2).copied().unwrap_or(false) {
+                    format!("{label}: {axes} flipped - a flipped Z does not post yet")
                 } else {
-                    format!("{label}: {axes} flipped - posting and generating are refused until the flip is cleared")
+                    format!("{label}: {axes} flipped - the posted program is mirrored")
                 };
             }
             Err(err) => self.refuse(ErrorScope::Setup, format!("WCS flip not set: {err}")),
