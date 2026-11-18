@@ -628,7 +628,7 @@ pub struct EntityDto {
     /// Raw STEP text preserved on entities imported from STEP (#744).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_source: Option<String>,
-    /// #2463 (v70): the file a linked model was imported from and its
+    /// #2463 (v71): the file a linked model was imported from and its
     /// SHA-256. Absent: not linked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<super::SourceDto>,

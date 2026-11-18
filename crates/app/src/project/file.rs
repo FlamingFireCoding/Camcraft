@@ -129,12 +129,19 @@ use super::*;
 /// reasons naming turned-off un-carriable fields. Pre-v69 `Pocket` +
 /// `Adaptive` files open as `Adaptive2D` (Spiral); older builds must
 /// refuse v69 files rather than silently drop `needs_review` and post.
-/// v70 (#2463): a model may record the file it was imported from and that
+/// v70 (#2016): a tool may name its library holder (`holder` on the
+/// tool) in place of a drawn `body`. Absent is what every older file
+/// states: a `body` (a drawn copy of a library holder included) or the
+/// holder cylinder, read and judged as before, so a v69 file steps up
+/// unchanged. An old reader (including v0.22.0 at v62 and v69 builds)
+/// must refuse a v70 file rather than drop the reference and judge the
+/// smaller cylinder in its place.
+/// v71 (#2463): a model may record the file it was imported from and that
 /// file's SHA-256 (`source`): a linked model, imported again when the file
-/// changes. Absent is not linked - what every v69 model was - so a v69
-/// file steps up unchanged. An old reader must refuse a v70 file rather
+/// changes. Absent is not linked - what every v70 model was - so a v70
+/// file steps up unchanged. An old reader must refuse a v71 file rather
 /// than save a linked model back unlinked without a word.
-pub const PROJECT_VERSION: u32 = 70;
+pub const PROJECT_VERSION: u32 = 71;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -422,6 +429,13 @@ pub struct ToolDto {
     /// holder cylinder, what every older tool judged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<super::tool_body_wire::ToolBodyDto>,
+    /// #2016 (v70): the library holder the tool sits in, by reference
+    /// (`tool_body_wire::HolderRefDto`). Written in place of `body`,
+    /// never beside it; the body is drawn from the named entry on
+    /// load. An entry this build's library does not hold refuses the
+    /// file by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<super::tool_body_wire::HolderRefDto>,
     /// #93 slice 2, additive (no version step): the tool's drawn
     /// cutter outline, `[z, r, arc]` per point tip-up. Absent is the
     /// outline its numbers draw - every older file. A reader that
@@ -595,6 +609,7 @@ impl ToolDto {
             center_cutting: t.center_cutting,
             number: None,
             body: None,
+            holder: None,
             cutter: None,
             orientation: t.orientation,
             part_number: t.catalog.part_number.clone(),

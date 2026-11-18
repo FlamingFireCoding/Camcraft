@@ -88,3 +88,25 @@ fn move_and_rotate_modes_never_share_the_part() {
     let at = |k: Nav| NAVS.iter().position(|n| *n == k);
     assert_eq!(at(Nav::Rotate), at(Nav::Move).map(|i| i + 1));
 }
+
+#[test]
+fn move_glyph_shows_a_part_body_while_pan_shows_only_arrows() {
+    let has_body = |nav| {
+        let ctx = egui::Context::default();
+        let state = State::new();
+        let rect = egui::Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(NAV_PX, NAV_PX));
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            draw(ui, rect.expand(6.0), &[(nav, rect)], &state, None);
+        });
+        let body = out.shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Rect(r)
+                if r.stroke.width > 1.0
+                    && r.rect.width() < NAV_PX * 0.65
+                    && r.rect.height() < NAV_PX * 0.65)
+        });
+        out.textures_delta.clear();
+        body
+    };
+    assert!(has_body(Nav::Move), "Move shows the part that its handles move");
+    assert!(!has_body(Nav::Pan), "Pan remains a camera navigation glyph");
+}
