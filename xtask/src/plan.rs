@@ -33,8 +33,9 @@ pub struct Step {
     pub name: String,
     pub args: Vec<String>,
     pub in_ui: bool,
-    /// A known-fail check (`known_fail`): the step is ok only when its test fails.
-    pub expect_fail: bool,
+    /// A known-fail check (`known_fail`): the test that must fail; the step is ok only when libtest
+    /// reports exactly this test as FAILED.
+    pub expect_fail: Option<String>,
 }
 
 impl Step {
@@ -43,7 +44,7 @@ impl Step {
             name: name.into(),
             args: args.iter().map(|a| (*a).to_string()).collect(),
             in_ui: dir == "ui",
-            expect_fail: false,
+            expect_fail: None,
         }
     }
     pub fn with(mut self, more: &[String]) -> Step {
@@ -234,7 +235,7 @@ pub fn heavy_steps(root: &Path) -> Vec<Step> {
                 args.extend(strs(&sel));
                 args.extend(["--", T, "--exact", k.test, "--ignored"]);
                 let mut step = Step::new(crate::known_fail::step_name(k), &args, "");
-                step.expect_fail = true;
+                step.expect_fail = Some(k.test.to_string());
                 out.push(step);
             }
         }

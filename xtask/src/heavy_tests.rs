@@ -83,6 +83,12 @@ fn heavy_steps_skip_only_binaries_without_ignored_tests() {
             // `-- --test-threads=6 [--exact --skip <known fail>...] --ignored` (known_fail, #1950 decision).
             let tail = s.args.iter().position(|a| a == "--").map(|i| &s.args[i + 1..]).unwrap_or_default();
             assert!(tail.first().map(String::as_str) == Some(plan::T) && tail.last().map(String::as_str) == Some("--ignored"), "{}: {:?}", s.name, s.args);
+            if s.expect_fail.is_none() {
+                // Only a lane with a known-fail entry carries its `--exact --skip` args; every other lane has none.
+                let label = s.name.split_once("heavy: ").map(|x| x.1).unwrap_or_default();
+                let skip = crate::known_fail::skip_args(d, label);
+                assert_eq!(&tail[1..tail.len() - 1], skip.as_slice(), "{}: {:?}", s.name, s.args);
+            }
             assert!(s.args.contains(&"--release".to_string()) && s.args.contains(&"--no-fail-fast".to_string()));
             let i = s.args.iter().position(|a| a == "--no-fail-fast").unwrap_or(0) + 1;
             let target: Vec<&str> = s.args[i..].iter().take_while(|a| *a != "--").map(String::as_str).collect();

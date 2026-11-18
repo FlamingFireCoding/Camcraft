@@ -16,15 +16,15 @@ fn each_known_fail_is_skipped_in_its_lane_and_checked_alone() {
     for k in KNOWN_FAIL {
         let lane = steps.iter().find(|s| s.name == format!("{} heavy: {}", k.dir, k.target)).expect("lane");
         assert!(lane.args.windows(2).any(|w| w == ["--skip", k.test]), "{}: {:?}", k.test, lane.args);
-        assert!(lane.args.contains(&"--exact".to_string()) && !lane.expect_fail);
+        assert!(lane.args.contains(&"--exact".to_string()) && lane.expect_fail.is_none());
         let check: Vec<_> = steps.iter().filter(|s| s.name == known_fail::step_name(k)).collect();
         assert_eq!(check.len(), 1, "{}", k.test);
-        assert!(check[0].expect_fail);
+        assert_eq!(check[0].expect_fail.as_deref(), Some(k.test));
         assert!(check[0].args.ends_with(&["--".into(), plan::T.into(), "--exact".into(), k.test.into(), "--ignored".into()]));
         assert!(!check[0].args.iter().any(|a| a == "--skip"));
     }
     // Only the known-fail checks expect a failure, and only the lanes that hold one skip anything.
-    assert_eq!(steps.iter().filter(|s| s.expect_fail).count(), KNOWN_FAIL.len());
+    assert_eq!(steps.iter().filter(|s| s.expect_fail.is_some()).count(), KNOWN_FAIL.len());
     let skipping = steps.iter().filter(|s| s.args.iter().any(|a| a == "--skip")).count();
     let lanes: std::collections::BTreeSet<_> = KNOWN_FAIL.iter().map(|k| (k.dir, k.target)).collect();
     assert_eq!(skipping, lanes.len());
@@ -52,14 +52,27 @@ fn each_known_fail_is_an_ignored_test_that_names_its_issue() {
 
 #[test]
 fn a_known_fail_step_is_ok_only_when_its_test_fails() {
-    let mut red = "failed: unittests src/lib.rs [tests: x]".to_string();
-    assert!(exec::expect_fail_note(101, &mut red));
+    let t = "a::x";
+    let mut red = "failed: unittests src/lib.rs [tests: a::w, a::x]".to_string();
+    assert!(exec::expect_fail_note(101, &mut red, t));
     assert!(red.starts_with("known fail, red as expected"));
     let mut green = String::new();
-    assert!(!exec::expect_fail_note(0, &mut green));
+    assert!(!exec::expect_fail_note(0, &mut green, t));
     assert!(green.contains("NOW PASSES"));
     let mut broken = "compile error".to_string();
-    assert!(!exec::expect_fail_note(101, &mut broken));
+    assert!(!exec::expect_fail_note(101, &mut broken, t));
+    // A crash of the test binary (no `test ... FAILED` line) is not the expected failure.
+    for code in [101, -1] {
+        let mut crash = format!("exit {code}");
+        assert!(!exec::expect_fail_note(code, &mut crash, t), "{crash}");
+    }
+    let mut no_list = "failed: unittests src/lib.rs".to_string();
+    assert!(!exec::expect_fail_note(101, &mut no_list, t));
+    // Another test failed, or a name that only contains the expected one.
+    let mut other = "failed: unittests src/lib.rs [tests: a::y]".to_string();
+    assert!(!exec::expect_fail_note(101, &mut other, t));
+    let mut longer = "failed: unittests src/lib.rs [tests: a::x2]".to_string();
+    assert!(!exec::expect_fail_note(101, &mut longer, t));
 }
 
 #[test]

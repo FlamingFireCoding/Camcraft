@@ -4,7 +4,9 @@
 //! libtest's public `--exact` / `--skip` / `--ignored` flags and the `gh issue view` CLI.
 
 use std::path::Path;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 /// One `#[ignore]`d test that is red on purpose: it pins the target of an open issue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,8 +76,14 @@ pub fn step_name(k: &KnownFail) -> String {
     format!("{} heavy: known fail #{} {}", k.dir, k.issue, short)
 }
 
+/// The repository whose issues pin the entries (a fork reads upstream's issue, not its own number).
+pub const REPO: &str = "NeoTech/Camcraft";
+/// The longest wait for one `gh issue view`.
+const GH_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Reads each pinned issue's state with `gh`. A closed issue is an error (the skip is stale); an issue that
-/// `gh` cannot read gives a note and no verdict, so the known-fail steps stay the guard.
+/// `gh` cannot read (no token, as in the cut job, or no answer in 30 s) gives a note and no verdict, so the
+/// known-fail steps stay the guard.
 pub fn check_issues(root: &Path, dry: bool) -> Result<Vec<String>, String> {
     let mut issues: Vec<u32> = KNOWN_FAIL.iter().map(|k| k.issue).collect();
     issues.sort_unstable();
@@ -86,13 +94,8 @@ pub fn check_issues(root: &Path, dry: bool) -> Result<Vec<String>, String> {
             notes.push(format!("known fail: #{n} state not read (dry run)"));
             continue;
         }
-        let out = Command::new("gh")
-            .args(["issue", "view", &n.to_string(), "--json", "state", "-q", ".state"])
-            .current_dir(root)
-            .output();
-        match out {
-            Ok(o) if o.status.success() => {
-                let state = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        match gh_state(root, n) {
+            Some(state) => {
                 if state.eq_ignore_ascii_case("closed") {
                     return Err(format!(
                         "known fail: #{n} is closed, but xtask/src/known_fail.rs still skips its tests - remove the entries"
@@ -100,10 +103,38 @@ pub fn check_issues(root: &Path, dry: bool) -> Result<Vec<String>, String> {
                 }
                 notes.push(format!("known fail: #{n} is {state}"));
             }
-            _ => notes.push(format!(
+            None => notes.push(format!(
                 "known fail: could not read #{n} with gh - issue state not checked; the known-fail steps still must fail"
             )),
         }
     }
     Ok(notes)
+}
+
+/// `gh issue view <n> -R REPO` with a timeout; `None` when it fails, times out or cannot start.
+fn gh_state(root: &Path, n: u32) -> Option<String> {
+    let mut child = Command::new("gh")
+        .args(["issue", "view", &n.to_string(), "-R", REPO, "--json", "state", "-q", ".state"])
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let t0 = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) if st.success() => break,
+            Ok(Some(_)) | Err(_) => return None,
+            Ok(None) if t0.elapsed() > GH_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let mut out = String::new();
+    child.stdout.take()?.read_to_string(&mut out).ok()?;
+    Some(out.trim().to_string())
 }

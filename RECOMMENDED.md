@@ -58050,11 +58050,13 @@ open, blocked issue #1950. The list is `xtask/src/known_fail.rs`:
 
 The heavy lane of each target runs with `--exact --skip <test>`. The release
 plan prints `SKIPPED (known fail, #1950): <test>` for each. Each test also gets
-its own step that runs it alone. That step is ok only when the test fails. If
-the test passes (or is renamed), the step is a FAIL that names the stale entry.
-Before the steps run, `gh issue view` reads the state of each pinned issue. A
-closed issue fails the gate. If `gh` cannot read the issue (no token on the
-runner), the gate prints a note, and the known-fail steps stay the guard.
+its own step that runs it alone. That step is ok only when libtest reports
+that exact test as FAILED. A pass, a renamed test, a compile error or a crash
+of the test binary (no `test ... FAILED` line) is a FAIL. Before the steps
+run, `gh issue view -R NeoTech/Camcraft` reads the state of each pinned issue,
+with a 30 s limit. A closed issue fails the gate. The cut job has no
+`GH_TOKEN`, so on the cut runner `gh` cannot read the issue: the gate prints a
+"could not read" note, and the known-fail steps are the guard.
 
 **Why.** The cut gate of v0.24.0 (run 44362577581) was red on only these three
 tests. They were added red on purpose in the #1950 work (16ffe937f, dc2e76926,
