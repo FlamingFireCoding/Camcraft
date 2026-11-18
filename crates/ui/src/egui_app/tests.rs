@@ -171,6 +171,7 @@ mod program_entry;
 mod tool_body;
 mod tool_body_assembly;
 mod tool_body_lathe;
+mod tool_one_preview;
 // #93: the tool editor's spun-profile (Profile) section.
 mod tool_profile;
 // #793: the tool editor's holder library picker.

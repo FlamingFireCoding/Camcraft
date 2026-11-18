@@ -6,10 +6,10 @@
 
 use super::*;
 
-const TOOL: &str = "EM-0600-4FL";
+pub(super) const TOOL: &str = "EM-0600-4FL";
 
 /// A closed `n`-gon prism about model Z over `[z0, z1]` as a binary STL.
-fn prism_stl(path: &std::path::Path, r: f32, z0: f32, z1: f32, n: usize) {
+pub(super) fn prism_stl(path: &std::path::Path, r: f32, z0: f32, z1: f32, n: usize) {
     let q = |k: usize, z: f32| {
         let a = std::f32::consts::TAU * k as f32 / n as f32;
         [r * a.cos(), r * a.sin(), z]
@@ -36,14 +36,14 @@ fn prism_stl(path: &std::path::Path, r: f32, z0: f32, z1: f32, n: usize) {
     std::fs::write(path, bytes).unwrap();
 }
 
-fn temp_stl(tag: &str) -> std::path::PathBuf {
+pub(super) fn temp_stl(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("cc-371-ui-{}-{tag}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir.join("holder.stl")
 }
 
 /// The seeded harness with the editor open on the catalog end mill.
-fn editor() -> Harness<'static, ShellUi> {
+pub(super) fn editor() -> Harness<'static, ShellUi> {
     let mut harness = shell_harness();
     harness.run();
     crate::actions::open_tool_editor(&mut harness.state_mut().state, TOOL);
@@ -52,7 +52,7 @@ fn editor() -> Harness<'static, ShellUi> {
     harness
 }
 
-fn shank_top(state: &State) -> f64 {
+pub(super) fn shank_top(state: &State) -> f64 {
     let t = model::find_by_name(&state.world, TOOL).and_then(|e| model::tool_of(&state.world, &e)).unwrap();
     t.flute_len + t.shank_len
 }
@@ -295,6 +295,9 @@ fn the_preview_zoom_clamps_and_fit_resets_it() {
     let path = temp_stl("zoom");
     prism_stl(&path, 15.0, 0.0, 30.0, 24);
     harness.state_mut().state.import_tool_body_from(&path);
+    harness.run();
+    // #2017: the 3D view shows while a pick is armed.
+    harness.get_by_label("Pick tip").click();
     harness.run();
     // A wheel notch over the preview (just under the pick row) zooms in.
     let row = harness.get_by_label("Pick tip").rect();
