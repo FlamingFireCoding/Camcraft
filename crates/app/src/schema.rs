@@ -187,8 +187,8 @@ pub struct Wcs;
 /// Z order. Rides the `Wcs` entity beside its `Location`: a unit
 /// quaternion cannot hold a mirror. Absent is no flip (every older
 /// file); written only through `SetWcsFlip`, the project loader and the
-/// undo of a delete (`setup_wcs_flip::set`). The post and generation
-/// refuse a set flag by name until a flip is carried into the program.
+/// undo of a delete (`setup_wcs_flip::set`). The post mirrors a flipped
+/// X or Y into the program (#1649) and refuses a flipped Z by name.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WcsFlip(pub [bool; 3]);
 
@@ -198,11 +198,10 @@ pub struct WcsFlip(pub [bool; 3]);
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct ToolDef {
     pub tool: Tool,
-    /// The controller's number for this tool (#221): what the post writes
-    /// as `T..` / `H..`, matching the machine's tool table. `None` = not
-    /// stated, and the tool posts as its 1-based position in the document's
-    /// tool list (the numbering every earlier document had). Changed only
-    /// through `SetToolNumber`; `ChangeTool` leaves it as it is.
+    /// The controller's number for this tool (#221, #2442): what the post writes
+    /// as `T..` / `H..`, matching the machine's tool table. Assigned on add /
+    /// import to the lowest unused number in `1-99999` and frozen at legacy
+    /// list position on pre-#2442 load; changed only through `SetToolNumber`.
     pub number: Option<u32>,
 }
 
@@ -411,12 +410,14 @@ pub struct Operation {
     pub suppressed: bool,
 }
 
-/// User-facing operation label and explicit position within its setup.
+/// User-facing operation label, explicit position within its setup, and
+/// un-carriable migration notes requiring review (#1517).
 /// The entity's `Name` remains a stable key for commands and undo history.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct OperationMeta {
     pub label: Option<String>,
     pub order: Option<u32>,
+    pub needs_review: Vec<String>,
 }
 
 /// A standalone Pause or Home entry in the operation list (#155): an

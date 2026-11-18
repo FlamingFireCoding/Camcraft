@@ -236,7 +236,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // rides on untouched. The generators themselves never see a frame
     // - rotation invariance is the whole argument that this is sound
     // - and the laws that verify the path below run on the local one
-    // for exactly the same reason.
+    // for exactly the same reason. #2389: under a non-upright tilt the
+    // reference heights arrive already measured along the tool axis
+    // (`fold_height`, as `z_local + oz`), so this one shift lands them
+    // on the local values; a Fixed height keeps the plain `h - oz` law.
     let oz = frame.map_or(0.0, |f| f.origin.z);
     let hl = ResolvedHeights {
         clearance: hs.clearance - oz,
@@ -651,6 +654,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             rest,
             ..
         } => {
+            if *strategy == PocketStrategy::Adaptive {
+                return Err(GenError::Invalid(super::POCKET_ADAPTIVE_RETIRED.into()));
+            }
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -861,7 +867,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // stock's outline, so stock far past the silhouette is
             // cleared too (the 2D pocket's #12 reading); a tilted
             // plane refuses by name (no 3D Pocket carries one today).
-            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
+            // #1950: the Adaptive plain ladder reaches 2r past the stock,
+            // so its stock ring is planned from the air. The shell and
+            // rest variants keep the old band.
+            let air = matches!(strategy, PocketStrategy::Adaptive) && !*shell && !*rest_rough;
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5, air)?;
+            let air_stock = if air && source_built && matches!(src, SrcRef::Entity(_)) { stock_region.as_ref() } else { None };
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -880,6 +891,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 helix_radius: *helix_radius,
                 optimal_load: *optimal_load,
             };
+            // #1950: steel in the air band refuses the op by name.
+            if let Some(st) = air_stock {
+                let named: Vec<_> = fixture_names.iter().map(String::as_str).zip(fixtures.iter()).collect();
+                super::open_side::air_band_refusal(&region, st, &named, pp.bottom_z)?;
+            }
             // Re-machining (M3.1 D): what the program ahead of this
             // pocket left standing bounds the coarse run, so it cuts
             // the shelves its predecessors already cleared only if the
@@ -903,7 +919,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // The level ladder, and its rest-closing sibling:
                 // planes all the way down (M2.1b).
                 (false, false) => {
-                    machining3d::pocket3d_prev(&material.facets, &region, &pp, mask)
+                    machining3d::pocket3d_open_prev(&material.facets, &region, air_stock, &pp, mask)
                 }
                 (false, true) => {
                     machining3d::pocket3d_with_rest_prev(&material.facets, &region, &pp, mask)
@@ -1631,7 +1647,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5)?;
+            // #1950: Multi-Axis Rough keeps the old band (an open choice).
+            let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5, false)?;
             let pp = Pocket3DParams {
                 links: lk,
                 tool_diameter: d,
@@ -2145,6 +2162,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             holes,
             cross,
             break_through,
+            break_through_from,
             ..
         } => {
             // #1557: the stated break-through drives the mill's Z holes;
@@ -2249,16 +2267,30 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // hole off the spindle axis, one past the bar's far
                 // end, and a drill wider than the modeled bore,
                 // before the mill's cycle kernel makes the chain.
+                let tip_from = if lathe_axial {
+                    drilling::BreakThroughFrom::Tip
+                } else {
+                    *break_through_from
+                };
                 if lathe_axial {
-                    drilling::axial_doors(&material.facets, holes, d, hl.bottom)?;
+                    drilling::axial_doors(&material.facets, holes, d, hl.bottom, drilling::THROUGH_CLEAR)?;
                 }
                 let run = break_through.unwrap_or(drilling::THROUGH_CLEAR);
+                let tip_run = if hl.bottom.is_none() && holes.iter().any(|h| h.through) {
+                    drilling::through_tip_run(&tool, *cycle, run, tip_from)?
+                } else {
+                    0.0
+                };
                 // Spot stops at the entry dimple, regardless of a through floor.
                 if hl.bottom.is_none() && !lathe_axial && *cycle != drilling::CycleChoice::Spot {
-                    broke = super::break_through::deepest(holes.iter().filter(|h| h.through).map(|h| (h.xy, h.floor_z - run)), run);
+                    broke = super::break_through::deepest(
+                        holes.iter().filter(|h| h.through).map(|h| (h.xy, h.floor_z - tip_run)),
+                        tip_run,
+                    );
                 }
                 drilling::drill(&drilling::CycleParams {
                     through_clear: run,
+                    break_through_from: tip_from,
                     clearance_z: hl.clearance,
                     r_z: req_z(hl.top, "Top of Part Z")?,
                     hop_z: hl.retract,
@@ -2922,6 +2954,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         Ok(ok) => ok,
         Err(e) => return Err(match yaw_ctx { Some((yw, _)) => yw.exit_err(e), None => e }),
     };
+    // #2382: the approach starts over the setup's WCS origin, never the
+    // frame's zero the generators seed at. Before the yaw exit (a turn
+    // about that same origin) and before every law below, so the routed
+    // links and the verdicts judge the rapid the viewport draws.
+    // A 3+2 path is local to its plane: the origin is read there too.
+    let mut path = path;
+    let o = Point3::new(wcs_origin[0], wcs_origin[1], wcs_origin[2]);
+    let o = frame.as_ref().map_or(o, |f| f.to_local(o));
+    path.seat_approach(Point3::new(0.0, 0.0, hl.clearance), [o.x, o.y]);
     let (region, path) = if let Some((yw, saved)) = yaw_ctx {
         material.facets = saved.material_facets;
         stock_facets = saved.stock_facets;
@@ -2953,10 +2994,27 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let path = super::turning_holder::noted(path, &params, &tool, lathe_body.is_some());
     // #1037: ...and a bodied one names the fixtures its law cannot read.
     let path = super::turning_holder_steel::noted(path, &params, lathe_body.is_some(), &unread_steel);
-    // #1655: a band of the stock around the part that is narrower than
-    // the tool gets no pass - the op names it.
+    // #1655, #2438: a band or corner of the stock around the part that the
+    // tool cannot reach gets no pass - the op names it.
     let cleared_around = around_part || (matches!(src, SrcRef::Stock) && !keep_parts.is_empty());
-    let path = super::keep_law::narrow_noted(path, &params, &region, d, cleared_around, unit);
+    let around_stock;
+    let narrow_stock = if !cleared_around {
+        None
+    } else if frame.is_none() && stock_region.is_some() {
+        stock_region.as_ref()
+    } else {
+        let src_facets = stock_facets
+            .as_deref()
+            .or_else(|| matches!(src, SrcRef::Stock).then_some(&material.facets[..]));
+        around_stock = src_facets.and_then(|f| {
+            let local = frame.as_ref().map(|fr| fr.local_facets(f));
+            slice::project(local.as_deref().unwrap_or(f), FOOTPRINT_SAMPLES)
+                .ok()
+                .filter(|r| !r.is_empty())
+        });
+        around_stock.as_ref()
+    };
+    let path = super::keep_law::narrow_noted(path, &params, &region, narrow_stock, d, cleared_around, unit);
 
     // M3.2 stage B: what the program clamps to. The op's setup context
     // decides - user fixtures bound to it (tagged models, implicit-
@@ -3280,7 +3338,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // name at the cycle's first move.
             if lathe_axial {
                 let tol = super::fidelity_law::tightened(GOUGE_TOL, material.excess);
-                warns.extend(drilling::axial_warnings(&material.facets, &path, d, tol));
+                warns.extend(drilling::axial_warnings(
+                    &material.facets,
+                    &path,
+                    d,
+                    tol,
+                    drilling::THROUGH_CLEAR,
+                ));
             }
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
