@@ -746,6 +746,8 @@ name = "camcraft-cl"
 version = "0.23.0"
 dependencies = [
  "camcraft-geometry",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -756,6 +758,7 @@ dependencies = [
  "clipper2-rust",
  "thiserror 2.0.21",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -790,6 +793,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -815,6 +820,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -824,6 +831,8 @@ dependencies = [
  "camcraft-geometry",
  "serde",
  "serde_json",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -844,6 +853,8 @@ dependencies = [
  "pollster 0.4.0",
  "rfd",
  "serde_json",
+ "tracing",
+ "tracing-subscriber",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "winit",

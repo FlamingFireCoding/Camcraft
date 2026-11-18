@@ -994,7 +994,7 @@ pub(crate) mod headless {
         // Software adapter first, else the hardware one (#615: macOS's
         // Metal has no software fallback).
         let gpu = crate::headless_gpu::device()?;
-        println!("headless: {} adapter {}", gpu.kind.label(), gpu.name);
+        diag_info!("headless: {} adapter {}", gpu.kind.label(), gpu.name);
         let (device, queue) = (gpu.device, gpu.queue);
 
         let mut view = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1046,7 +1046,7 @@ pub(crate) mod headless {
             // less than 5% of the frame: the seeded stock did not rasterize
             return Err(format!("readback looks empty ({changed}/{total} changed px)"));
         }
-        println!(
+        diag_info!(
             "headless snapshot: {w}x{h}, {}% pixels changed; Contour1 cached {op_ok} moves",
             changed * 100 / total
         );
