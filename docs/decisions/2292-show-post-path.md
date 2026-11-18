@@ -2,7 +2,7 @@
 
 **Decided.** The desktop Post dialog's scope line (the weak small label at
 the top right of the "Post" window) now shows the full path of a shipped
-post script beside its name: `Fanuc (built-in) (C:\...\assets\posts\fanuc.cps)`.
+post script as a tool tip when hovered: '(C:\...\assets\posts\fanuc.cps)`.
 It reuses the existing `posting::builtin_post_path` (which resolves
 `assets/posts/<name>.cps` at run time from `camcraft_post::data_dir`, and
 returns `None` on the browser build) through a new `posting::post_path`
