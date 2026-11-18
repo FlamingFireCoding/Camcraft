@@ -84,7 +84,14 @@ post-merge runs. It sends lines: `REVIEWED`, `RUN`, `TRIAGED`, `BLOCKED`.
   for refreshes and for the delta of a refresh.
 - **Delta review.** A merge of main with a hand-resolved conflict (`DELTA`)
   or new commits get a read-only Opus review of the remerge-diff or of the
-  new commits. A safety-floor PR gets that review on the same head.
+  new commits.
+- **Second review only for P1 floor work** (maintainer, 2026-11-18: "only
+  keep it for P1 Floor work"). A PR under the safety floor that fixes or
+  touches a `P1` issue (unsafe or wrong output) gets a read-only Opus review
+  of the diff on the same head, beside the collaborator's review. Any other
+  PR, floor or not, merges on a collaborator's review alone, pinned to its
+  head. An Opus review that is already running and has found a blocker still
+  counts.
 - **Take over.** A conflicting PR or a `needs-rework` PR of a contributor is
   ours to fix when it is idle for more than 24 hours, or when the maintainer
   says "take them over". Drafts are included only on that word. Push to the
