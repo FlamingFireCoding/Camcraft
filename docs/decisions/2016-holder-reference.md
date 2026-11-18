@@ -40,14 +40,14 @@ reference: the copy may have been edited, and matching an outline back
 to an entry is a guess. The user picks the entry again to get a
 reference.
 
-**Version step.** The issue says to use the step of project v62 and
-`.camtools` 2. Both are on main and in no release (v0.21.0 writes v61
-and `.camtools` 1), so this change rides them: a project with a
-reference is v62, and a `.camtools` file says version 2 when a tool
-names a library holder (1 otherwise, as before). A released reader
-refuses both instead of dropping the key and judging the tool's smaller
-holder cylinder. A build of main between #1453 and this change reads
-v62 and would drop the key; that is a development build only.
+**Version step.** Project files write v70 (`PROJECT_VERSION = 70`),
+after v68 (#2441) and v69 (#1517) on `main`, and `.camtools` files write
+version 4 (`HOLDER_REF_VERSION = 4`, after `CUTTING_STEPS_VERSION = 3`)
+when a tool names a library holder (keeping earlier minimum versions
+when no tool names one). `v0.22.0` reads project v62 and `.camtools` 2,
+and pre-#2016 builds read up to project v69 and `.camtools` 3; both
+refuse v70 and version 4 instead of dropping `holder` and judging the
+tool's smaller holder cylinder.
 
 **Refusals.** A reference to a name the library does not hold refuses
 the file by tool name, and so does a grouped pick ("BT40 Weldon", which
@@ -95,34 +95,8 @@ entries (the reference names built-in entries only; a user library is
 separate work).
 
 **Breaking.** A project or tool library saved with a library holder is
-not readable by v0.21.0 and older. `ToolBody` has a new public field.
+not readable by v0.22.0 and older (project v70, `.camtools` version 4).
+`ToolBody` has a new public field.
 
 **Cost to change.** Small. The reference type, `build_library`, the
 `holder` key (`project/tool_body_wire.rs`) and its readers.
-
-**Merge refresh (`upstream/main` post-v0.22.0).** `v0.22.0` shipped
-project v62 and `.camtools` v2 (`LEFT_HAND_VERSION`), and `upstream/main`
-advanced projects to v65 (#1557 v63, #2015 v64, #2133 v65) and
-`.camtools` to v3 (`CUTTING_STEPS_VERSION`, #2015). Keeping v62/v65 or
-`.camtools` v2 would let `v0.22.0` or v65/v3 readers accept the file and
-drop `holder`, judging only the smaller holder cylinder. Retained all
-upstream v63-v65 and `.camtools` v3 migrations and barriers, moved the
-project barrier to `PROJECT_VERSION = 66` and the `.camtools` barrier to
-`HOLDER_REF_VERSION = 4`. Future format changes must advance beyond
-project v66 and `.camtools` v4.
-
-**Current-main refresh (PR #2092).** Main now writes project v66 for
-#1962's explicit RTCP contract. Advance this PR's holder-reference barrier
-to project v67 while retaining the `.camtools` v4 barrier. Reusing v66
-was dropped because a v66 reader would accept the document and discard
-`holder`, weakening collision judgement. Preserve all main trunnion and
-RTCP refusal checks. The holder-reference pin requires v67 or later and
-continues to reject future versions; the break-through migration pin
-covers older versions through the current format.
-
-**WCS-flip refresh (PR #2092).** Main now writes project v67 for #1720's
-WCS flip fields. Advance the holder-reference barrier to v68. Keep main's
-flip format, migration, and refusal checks. Reusing v67 was rejected
-because its readers can discard `holder` and weaken collision checks.
-The holder-reference pin requires v68 or later. The migration pin covers
-all older formats through the current version.

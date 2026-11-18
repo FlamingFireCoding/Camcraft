@@ -19,8 +19,8 @@ use crate::shortcut_keys::chord;
 use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
-    EditOperationLinks, EditOperationParams, GenerateOperation, History, ImportModel,
-    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    EditOperationLinks, EditOperationParams, History, ImportModel,
+    MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -63,6 +63,8 @@ mod setup_workholding;
 mod fixture_view;
 #[path = "state_locate.rs"]
 mod locate_ui;
+#[path = "state_move_by.rs"]
+mod move_by;
 #[path = "state_fixture_turn.rs"]
 mod fixture_turn_ui;
 pub(crate) use fixture_turn_ui::euler_deg;
@@ -379,7 +381,7 @@ pub enum CommandKind {
         src: SrcRef,
         params: OpParams,
     },
-    PasteOperation { name: String, operation: OperationDef },
+    PasteOperation { name: String, operation: OperationDef, needs_review: Vec<String> },
     /// The properties page's parameter draft.
     EditOperationParams {
         name: String,
@@ -390,7 +392,8 @@ pub enum CommandKind {
     DetectedHoles {
         name: String,
         params: OpParams,
-        skipped: Vec<String>,
+        /// The skipped and the undersize holes' sentences (#1556, #2496).
+        notes: Vec<String>,
     },
     /// The same draft with its Boundary group (M11.5): one undo unit.
     EditOperationBoundary {
@@ -447,6 +450,7 @@ pub enum CommandKind {
     DeleteOperation(String),
     RenameOperation { name: String, label: String },
     ReorderOperation { name: String, target: String, after: bool },
+    MarkOperationReviewed(String),
     /// Throw away the operation's generated path and keep the operation
     /// (undoable: the cache comes back byte for byte).
     ClearToolpath(String),
@@ -724,6 +728,23 @@ pub enum CommandKind {
         pitch_deg: f64,
         yaw_deg: f64,
     },
+    /// A viewport handle drag's release (#1198 b): slide part `name` by
+    /// `delta` mm in the SHOWN frame (the active setup's). The drain turns
+    /// it into the one `MoveModel` the Model page runs, rotation kept bit
+    /// for bit - one undo step per drag, no new placement path.
+    MoveModelBy {
+        name: String,
+        delta: [f64; 3],
+    },
+    /// A viewport ring drag's release (#2047): turn part `name` by
+    /// `angle_rad` about SHOWN axis `axis` (0 X, 1 Y, 2 Z) through its
+    /// bounding-box centre. The drain turns it into the one `MoveModel`
+    /// the Model page's rotation fields run - one undo step per drag.
+    TurnModelBy {
+        name: String,
+        axis: usize,
+        angle_rad: f64,
+    },
     /// Mesh repair (M13.11): weld within `weld_tol` (mm) and fill every
     /// boundary loop of at most `max_hole_edges` edges, one undo unit
     /// over the model's facets. Only ever by this verb - never on
@@ -930,6 +951,8 @@ pub struct OpUi {
     /// The Boundary group's draft (M11.5): rides the same Apply as the
     /// parameters, one undo unit.
     pub area: AreaControls,
+    /// #1448 / #1473 item 2: armed Contour start/exit viewport pick role.
+    pub start_exit_pick: Option<crate::start_exit_pick::StartExitRole>,
 }
 
 impl Default for OpUi {
@@ -941,6 +964,7 @@ impl Default for OpUi {
             src_name: String::new(),
             geo: Vec::new(),
             area: AreaControls::default(),
+            start_exit_pick: None,
             // A facing pass over a small billet, in references: 25 above
             // the stock top, skimming the stock top itself. `retype`
             // carries this clearance into every kind, so the draft
@@ -984,6 +1008,7 @@ impl OpUi {
             geo,
             params: op.params.clone(),
             area: op.area.clone(),
+            start_exit_pick: None,
         }
     }
 
@@ -1007,14 +1032,6 @@ pub struct GeoChip {
     pub sel: GeoSel,
     pub label: String,
     pub missing: bool,
-}
-
-/// A feature id as the chips show it: the 16 hex digits, shortened to
-/// head and tail with an ellipsis. Long enough to tell two picks of one
-/// model apart at a glance, short enough for a chip row to stay one row.
-fn short_id(id: u64) -> String {
-    let h = format!("{id:016x}");
-    format!("{}…{}", &h[..4], &h[14..])
 }
 
 /// XY vertex set of a ring, quantized and sorted: the identity a patch
@@ -1513,6 +1530,8 @@ pub enum LayoutRequest {
     Show(Panel),
     /// Open and focus the independent tool library.
     ToolLibrary,
+    /// Open the Debug info panel (#2262) as a dock tab, or close it.
+    ToggleDebugInfo,
     /// Rebuild the default three-pane dock.
     Reset,
 }
@@ -1544,6 +1563,7 @@ impl PanelsOpen {
 /// toolpaths are intentionally absent: Paste creates a fresh operation.
 #[derive(Clone)]
 pub struct OperationClipboard {
+    pub needs_review: Vec<String>,
     pub label: String,
     pub operation: OperationDef,
 }
@@ -1650,6 +1670,19 @@ pub struct State {
     /// Off by default, shown as off. View state like the axes toggle -
     /// not undoable, not saved; flipped from the viewport's nav column.
     pub pick_through: bool,
+    /// The bar's Move mode (#1198 b): the one selected part wears drag
+    /// handles. View state like the pick-through toggle - not undoable,
+    /// not saved; off by default so a plain click-drag still orbits.
+    pub move_handles: bool,
+    /// A handle drag in flight (#1198 b): the ephemeral preview. Only
+    /// its release reaches history, as one `MoveModelBy`.
+    pub body_drag: Option<crate::move_drag::BodyDrag>,
+    /// The bar's Rotate mode (#2047): the one selected part wears turn
+    /// rings. View state, off by default; never on with Move mode.
+    pub rotate_handles: bool,
+    /// A ring drag in flight (#2047): the ephemeral preview. Only its
+    /// release reaches history, as one `TurnModelBy`.
+    pub body_turn: Option<crate::turn_drag::TurnDrag>,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -1681,9 +1714,12 @@ pub struct State {
     /// document is switched. The status line says it too, but the next
     /// click or command writes over that line; this keeps the reason.
     pub post_refusal: Option<crate::egui_app::post_refusal::PostRefusal>,
-    /// #157: the Debug info window is open. View state - never a
-    /// command, never saved.
+    /// #157, #2262: the Debug info panel is in the dock (docked or
+    /// floating). Mirrored from the dock each frame by `layout::settle`;
+    /// view state - never a command.
     pub debug_info_open: bool,
+    /// #2262: the frame-rate reading and its log rule, fed once a frame.
+    pub frame_rate: crate::egui_app::frame_rate::FrameRate,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
     /// set once by the windowed shell; `None` headless.
     pub gpu_line: Option<String>,
@@ -1711,6 +1747,10 @@ pub struct State {
     /// is gone. Display-only (a Mutex because the scene is collected
     /// from `&State`).
     pub sim_tool_cache: std::sync::Mutex<camcraft_app::sim_tool_body::SimToolCache>,
+    /// The move handles' centre of the dragged body (#1198, #2238): walked
+    /// only when the facets or the shown pose change. Display-only (a Mutex
+    /// because the handles are read from `&State`).
+    pub move_center: std::sync::Mutex<crate::move_drag::CenterCache>,
     /// What `field_view` was walked for: (transport up, Deviate armed,
     /// the document version a playback plan was frozen at). A change
     /// retires the view and the playback - never a stale picture.
@@ -1800,6 +1840,9 @@ pub struct State {
     import_started: Option<Instant>,
     /// Imports queued while one is already running (drained FIFO on finish).
     import_queue: VecDeque<PathBuf>,
+    /// #2257: toolpath generation on a worker, for the viewport's
+    /// progress overlay (`crate::gen_worker`).
+    pub gen_jobs: crate::gen_worker::GenJobs,
     /// Setup pane drafts (ephemeral; see [`StockUi`]).
     pub stock_ui: StockUi,
     pub wcs_ui: WcsUi,
@@ -2103,6 +2146,7 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            frame_rate: crate::egui_app::frame_rate::FrameRate::default(),
             gpu_line: None,
             spindle_as_vc: false,
             tool_catalog_kind: None,
@@ -2148,6 +2192,10 @@ impl State {
             cam: Camera::default(),
             show_world_axes: true,
             pick_through: false,
+            move_handles: false,
+            body_drag: None,
+            rotate_handles: false,
+            body_turn: None,
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),
@@ -2159,6 +2207,7 @@ impl State {
             field_play: None,
             sim_script_cache: None,
             sim_tool_cache: std::sync::Mutex::default(),
+            move_center: std::sync::Mutex::default(),
             field_mode: None,
             stock_mesh: camcraft_app::stock_export::MeshCache::default(),
             ribbon_more: None,
@@ -2190,6 +2239,7 @@ impl State {
             import_file: None,
             import_started: None,
             import_queue: VecDeque::new(),
+            gen_jobs: crate::gen_worker::GenJobs::default(),
             stock_ui: StockUi::default(),
             wcs_ui: WcsUi {
                 // Neutral highlight: center-middle, before any pick.
@@ -2296,7 +2346,7 @@ impl State {
         self.status = msg;
     }
 
-    fn refuse(&mut self, scope: ErrorScope, msg: String) {
+    pub(crate) fn refuse(&mut self, scope: ErrorScope, msg: String) {
         self.status.clone_from(&msg);
         // The page's draft as the next frame will show it: a document
         // bump earlier in this drain re-mirrors now, not after the
@@ -2540,14 +2590,14 @@ impl State {
         // (#312), so a click and an agent store the same holes.
         match operation::detect_holes(&self.world, name, current, op.setup.as_deref(), &op.src) {
             Err(why) => self.refuse(ErrorScope::Operation, why),
-            Ok(operation::DetectedHoles { params, skipped }) => {
+            Ok(operation::DetectedHoles { params, skipped, undersize }) => {
                 if draft {
                     self.op_ui.params = params.clone();
                 }
                 self.pending.push_back(CommandKind::DetectedHoles {
                     name: name.to_string(),
                     params,
-                    skipped,
+                    notes: skipped.into_iter().chain(undersize).collect(),
                 });
             }
         }
@@ -2595,6 +2645,7 @@ impl State {
             .iter()
             .enumerate()
             .map(|(gi, g)| {
+                let pick_name = camcraft_app::pick::geo_label(&self.world, g);
                 let (mut label, missing) = match g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
@@ -2616,8 +2667,7 @@ impl State {
                                     ('y', f.offset)
                                 };
                                 let mut label = format!(
-                                    "Face {} · {axis}={} · {} {}",
-                                    g.entity,
+                                    "{pick_name} · {axis}={} · {} {}",
                                     units::len(v, unit, 2),
                                     units::area(f.area, unit),
                                     unit.area_suffix()
@@ -2627,10 +2677,7 @@ impl State {
                                 }
                                 (label, false)
                             }
-                            None => (
-                                format!("Face {} · {} · missing", g.entity, short_id(id)),
-                                true,
-                            ),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Chain(id) => {
@@ -2667,8 +2714,7 @@ impl State {
                                         }
                                     }
                                     format!(
-                                        "Chain {} · closed · {} {} · {} × {}",
-                                        g.entity,
+                                        "{pick_name} · closed · {} {} · {} × {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         units::len(hi[0] - lo[0], unit, 1),
@@ -2678,8 +2724,7 @@ impl State {
                                     let i = run_seq.entry(g.entity.clone()).or_default();
                                     *i += 1;
                                     format!(
-                                        "Chain {} · open · {} {} · {} of {}",
-                                        g.entity,
+                                        "{pick_name} · open · {} {} · {} of {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         i,
@@ -2688,11 +2733,7 @@ impl State {
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label =
-                                    format!("Chain {} · {} · missing", g.entity, short_id(id));
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Patch(id) => {
@@ -2761,32 +2802,23 @@ impl State {
                                             ),
                                         };
                                         format!(
-                                            "Welded face {} · {shape} · {} {} · {strips} strips",
-                                            g.entity,
+                                            "{pick_name} · {shape} · {} {} · {strips} strips",
                                             units::area(shoelace(rim), unit),
                                             unit.area_suffix()
                                         )
                                     }
-                                    None => format!("Welded face {} · open band", g.entity),
+                                    None => format!("{pick_name} · open band"),
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label = format!(
-                                    "Welded face {} · {} · missing",
-                                    g.entity,
-                                    short_id(id)
-                                );
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Vertex(id) => {
                         match crate::vertex_pick::vertex_world(self, &g.entity, id) {
                             Some(p) => (
                                 format!(
-                                    "Vertex {} · ({}, {}, {}) {}",
-                                    g.entity,
+                                    "{pick_name} · ({}, {}, {}) {}",
                                     units::len(p[0], unit, 2),
                                     units::len(p[1], unit, 2),
                                     units::len(p[2], unit, 2),
@@ -2794,7 +2826,7 @@ impl State {
                                 ),
                                 false,
                             ),
-                            None => (format!("Vertex {} · {} · missing", g.entity, short_id(id)), true),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                 };
@@ -2856,6 +2888,7 @@ impl State {
         self.op_synced = (String::new(), self.doc_version);
         self.boundary_pick = None;
         self.boundary_view.shown = false;
+        self.op_ui.start_exit_pick = None;
         self.rename_draft = None;
     }
 
@@ -2882,7 +2915,10 @@ impl State {
             return;
         };
         let label = model::operation_label(&self.world, name, &entity);
-        self.operation_clipboard = Some(OperationClipboard { label: label.clone(), operation });
+        self.operation_clipboard = Some(OperationClipboard {
+            label: label.clone(), operation,
+            needs_review: model::operation_meta_of(&self.world, &entity).needs_review,
+        });
         self.status = format!("copied operation {label}");
     }
 
@@ -2908,7 +2944,7 @@ impl State {
             };
             suffix = next;
         };
-        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation });
+        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation, needs_review: clip.needs_review });
     }
 
     /// Names of the tool entities, in document order.
@@ -3076,6 +3112,8 @@ impl State {
         drop(s);
         let s = span("commands/import+files");
         self.poll_import();
+        // #2257: a background generation that finished since the last frame.
+        self.poll_generation();
         // #31: a file the browser's picker has read since the last frame.
         self.take_picked_files();
         drop(s);
@@ -3104,7 +3142,7 @@ impl State {
         let deadline = Instant::now() + Duration::from_secs(120);
         loop {
             self.drain_actions();
-            if self.pending.is_empty() && self.import_rx.is_none() && self.import_queue.is_empty() {
+            if self.pending.is_empty() && self.import_rx.is_none() && self.import_queue.is_empty() && !self.gen_jobs.busy() {
                 return;
             }
             if Instant::now() >= deadline {
@@ -3314,7 +3352,8 @@ impl State {
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
             CommandKind::LoadMachineDialog => {
-                if let Some(path) = pick_machine_file() {
+                let dir = crate::egui_app::machines_pane::user_dir(self);
+                if let Some(path) = pick_machine_file(dir.as_deref()) {
                     self.load_machine_path(path);
                 }
             }
@@ -3412,12 +3451,13 @@ impl State {
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
+                    let number = command.number();
                     let note = command.note();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
                     self.status = match note {
-                        Some(n) => format!("tool {name} added - {n}"),
-                        None => format!("tool {name} added"),
+                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
+                        None => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
@@ -3429,7 +3469,7 @@ impl State {
                         self.doc_version += 1;
                         self.status = match number {
                             Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} posts as its list position"),
+                            None => format!("tool {name} number cleared"),
                         };
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),
@@ -3514,8 +3554,8 @@ impl State {
                     );
                 }
             },
-            CommandKind::PasteOperation { name, operation } => {
-                match PasteOperation::new(&self.world, &name, operation) {
+            CommandKind::PasteOperation { name, operation, needs_review } => {
+                match PasteOperation::new(&self.world, &name, operation, needs_review) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         History::execute_ephemeral(&self.world, SelectEntity::new(&self.world, Some(name.as_str())));
@@ -3542,15 +3582,15 @@ impl State {
                     }
                 }
             }
-            CommandKind::DetectedHoles { name, params, skipped } => {
+            CommandKind::DetectedHoles { name, params, notes } => {
                 match EditOperationParams::new(&self.world, &name, params) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = if skipped.is_empty() {
+                        self.status = if notes.is_empty() {
                             format!("parameters updated for {name}")
                         } else {
-                            format!("holes detected for {name}; {}", skipped.join("; "))
+                            format!("holes detected for {name}; {}", notes.join("; "))
                         };
                     }
                     Err(err) => {
@@ -3685,31 +3725,20 @@ impl State {
                 }
                 Err(err) => self.refuse(ErrorScope::Operation, format!("reorder failed: {err}")),
             },
+            CommandKind::MarkOperationReviewed(name) => match MarkOperationReviewed::new(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("marked {name} reviewed");
+                }
+                Err(err) => self.refuse(ErrorScope::Operation, format!("mark reviewed failed: {err}")),
+            },
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes
                 // nothing); the status line reports what was produced.
-                match GenerateOperation::new(&self.world, &name) {
-                    Ok(command) => {
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        let cache = model::find_by_name(&self.world, &name)
-                            .and_then(|e| model::toolpath_of(&self.world, &e));
-                        // The feed in the summary reads in the document's
-                        // unit (M1.1); the path itself is mm law, always.
-                        let unit = self.units();
-                        self.status = match cache {
-                            Some(tp) => tp.path.status_summary(&name, tp.warnings.len(), unit),
-                            None => format!("generated {name}"),
-                        };
-                    }
-                    Err(err) => {
-                        self.refuse(ErrorScope::Operation, format!("generate failed: {err}"));
-                        // #261 part 2: where the generator refused, if it said.
-                        self.feedback_at = err.location().map(|p| [p.x, p.y, p.z]);
-                        // Part 3: the moves it had built, drawn as a ghost.
-                        self.feedback_ghost = err.ghost().cloned();
-                    }
-                }
+                // #2257: in the interactive app it runs on a worker and
+                // lands in `poll_generation` (`crate::gen_worker`).
+                self.generate_now_or_queue(name);
             }
             CommandKind::ClearToolpath(name) => match ClearToolpath::new(&self.world, &name) {
                 Ok(command) => {
@@ -3984,6 +4013,8 @@ impl State {
                     Err(err) => self.refuse(ErrorScope::Setup, format!("part not moved: {err}")),
                 }
             }
+            CommandKind::MoveModelBy { name, delta } => self.move_model_by(&name, delta),
+            CommandKind::TurnModelBy { name, axis, angle_rad } => self.turn_model_by(&name, axis, angle_rad),
             CommandKind::RepairModel { name, weld_tol, max_hole_edges } => {
                 match RepairModel::new(&self.world, &name, weld_tol, max_hole_edges) {
                     Ok(command) => {
@@ -4324,6 +4355,8 @@ impl State {
     /// Drop any live/queued imports because the document is being replaced.
     /// A worker still running finishes in the background and discards itself.
     fn abandon_imports(&mut self) {
+        // #2257: a generation of the old document never lands in the new.
+        self.gen_jobs.abandon();
         if self.import_rx.take().is_some() {
             diag_warn!("import: document changed; pending import discarded");
         }
@@ -4666,19 +4699,31 @@ fn pick_mesh_file() -> Option<PathBuf> {
 /// async picker (#31) ask with the same one.
 fn mesh_dialog() -> crate::file_dialog::FileDialog {
     // STEP arrives tessellated through truck (mesh, not B-rep).
-    crate::file_dialog::FileDialog::new().add_filter("Mesh", &["stl", "obj", "step", "stp"])
+    crate::file_dialog::FileDialog::new().add_filter("Mesh", MODEL_EXTENSIONS)
 }
+
+/// The model files Model > Open and a viewport drop read, lower case. A
+/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// build does not read it, so its picker does not offer it.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+#[cfg(target_arch = "wasm32")]
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 
 fn project_dialog() -> crate::file_dialog::FileDialog {
     crate::file_dialog::FileDialog::new().add_filter("CamCraft Project", &["camproj"])
 }
 
-fn pick_machine_file() -> Option<PathBuf> {
+fn pick_machine_file(user_dir: Option<&std::path::Path>) -> Option<PathBuf> {
     // The `.mch` layout is the machine-definition JSON format we reuse
-    // by user instruction (M2.3 C); the filter just names it.
-    crate::file_dialog::FileDialog::new()
-        .add_filter("Machine Definition", &["mch"])
-        .pick_file()
+    // by user instruction (M2.3 C); the filter just names it. #2358: it
+    // opens in the user machines folder when that exists.
+    let dialog = crate::file_dialog::FileDialog::new().add_filter("Machine Definition", &["mch"]);
+    match crate::egui_app::machines_pane::dialog_start(user_dir) {
+        Some(dir) => dialog.set_directory(dir),
+        None => dialog,
+    }
+    .pick_file()
 }
 
 fn pick_post_file() -> Option<PathBuf> {

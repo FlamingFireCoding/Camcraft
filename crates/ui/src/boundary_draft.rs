@@ -314,7 +314,7 @@ fn picks_mut(state: &mut State, at: EntryRef) -> Option<&mut Vec<GeoSel>> {
 /// Close an entry's edge picks around their face loop.
 pub fn extend(state: &mut State, at: EntryRef) -> Result<(), String> {
     let picks = picks_mut(state, at).map(|p| p.clone()).ok_or("that boundary has no picks")?;
-    let closed = operation::extend_to_loop(&state.world, &picks)?;
+    let closed = operation::extend_to_loop_in(&state.world, setup_of(state).as_deref(), &picks)?;
     if let Some(p) = picks_mut(state, at) {
         *p = closed;
     }
@@ -369,9 +369,10 @@ pub fn take_pick(state: &mut State, target: BoundaryPick, pick: GeoSel, mods: Pi
     } else {
         (vec![pick.clone()], "picked")
     };
+    let pick_name = camcraft_app::pick::geo_label(&state.world, &pick);
     if next.is_empty() {
         remove(state, at);
-        state.status = format!("{} of '{}' removed - the boundary had no picks left, so it is gone", pick.feature, pick.entity);
+        state.status = format!("{pick_name} removed - the boundary had no picks left, so it is gone");
         return;
     }
     if let Some(p) = picks_mut(state, at) {
@@ -387,7 +388,7 @@ pub fn take_pick(state: &mut State, target: BoundaryPick, pick: GeoSel, mods: Pi
         Some(issue) => format!(" - {issue}"),
         None => " - Apply commits it".to_owned(),
     };
-    state.status = format!("{} of '{}' {verb}: {n} is {what}{tail}", pick.feature, pick.entity);
+    state.status = format!("{pick_name} {verb}: {n} is {what}{tail}");
 }
 
 /// Rebuild the machined-area preview when the draft or the document

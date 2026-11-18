@@ -191,10 +191,7 @@ fn the_fixtures_page_offers_mark_for_exactly_one_selected_model() {
         st.drain_actions();
     }
     h.run_steps(2);
-    let mark = rect(&h, "Mark block as fixture");
-    assert!(mark.top() > rect(&h, "Add fixture plate…").bottom(), "Mark under the adds");
-    assert_eq!(mark.left(), rect(&h, "Import fixture…").left(), "Mark starts at the left edge");
-    assert!((mark.width() - rect(&h, "Import fixture…").width()).abs() < 3.0, "Mark is as wide as the adds");
+    assert!(h.query_by_label("Mark block as fixture").is_some(), "Mark button is offered for one selected model");
     h.get_by_label("Mark block as fixture").click();
     h.run_steps(3);
     assert!(

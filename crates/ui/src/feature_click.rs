@@ -111,9 +111,9 @@ pub(crate) fn ask(state: &State, mods: Mods) -> Ask {
             AxisBy::Edge => PickKinds::EDGES,
             AxisBy::Points => PickKinds { centres: true, ..PickKinds::POINTS }, // #692
         }
-    } else if crate::wcs_pick::collecting(state) {
-        // #701: the role draft takes faces, edges, corners and walls alike -
-        // the toolbar's pick mode stays the user's own.
+    } else if crate::wcs_pick::collecting(state) || crate::start_exit_pick::collecting(state) {
+        // #701 / #1448: accept faces, edges and vertices while keeping the
+        // toolbar's own pick mode untouched.
         PickKinds { faces: true, edges: true, points: true, centres: false }
     } else if state.boundary_pick.is_some() {
         // #1727: an armed boundary row takes faces AND edges whatever the
@@ -191,6 +191,10 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     };
     // Mirror the pick in the hover so highlight and click agree.
     state.hover = Some(hover_of(&found, sel));
+    if crate::start_exit_pick::collecting(state) {
+        crate::start_exit_pick::take(state, &found);
+        return;
+    }
     let Some(feature) = sel else {
         state.status = format!("the pick on '{}' names no feature - try beside it", found.entity);
         return;
@@ -235,8 +239,8 @@ pub(crate) fn click(state: &mut State, p: [f32; 2], mods: Mods) {
     match (found.target, state.boundary_pick.is_some()) {
         (PickTarget::Point(_), true) => {
             // A point bounds nothing: refused by name, never drafted.
-            state.status =
-                format!("{} of '{}' is a point - a boundary takes faces or edges", pick.feature, pick.entity);
+            let what = camcraft_app::pick::geo_label(&state.world, &pick);
+            state.status = format!("{what} is a point - a boundary takes faces or edges");
         }
         (PickTarget::Edge { .. }, false) => crate::edge_pick::queue_edge_pick(state, pick, mods),
         (_, true) => queue_boundary_pick(state, pick, mods),

@@ -13,6 +13,8 @@
 
 mod controls;
 mod form;
+// #2516: Tab, Shift+Tab and Enter over the pane's value fields.
+pub mod field_ring;
 pub(crate) use controls::*;
 pub(crate) use form::*;
 #[cfg(test)]
@@ -113,7 +115,7 @@ fn reopen(dock: &mut DockState<Tab>, tab: Tab) {
     // #287: the Machines pane opens as a tab beside the properties pane
     // when that is open (same side, same width - one more context pane),
     // else alone at the right like the properties pane would.
-    if matches!(tab, Tab::Machines | Tab::Tools | Tab::AiChat)
+    if matches!(tab, Tab::Machines | Tab::Tools | Tab::AiChat | Tab::DebugInfo)
         && let Some(props) = dock.find_tab(&Tab::Properties)
         && let Ok(leaf) = dock.leaf_mut(props.node_path())
     {
@@ -148,6 +150,12 @@ pub(crate) fn apply(dock: &mut DockState<Tab>, req: LayoutRequest) {
     match req {
         LayoutRequest::Show(p) => show(dock, tab_of(p)),
         LayoutRequest::ToolLibrary => show(dock, Tab::Tools),
+        LayoutRequest::ToggleDebugInfo => match dock.find_tab(&Tab::DebugInfo) {
+            Some(path) => {
+                dock.remove_tab(path);
+            }
+            None => show(dock, Tab::DebugInfo),
+        },
         LayoutRequest::Toggle(p) if is_open(dock, &tab_of(p)) => close(dock, p),
         LayoutRequest::Toggle(p) => show(dock, tab_of(p)),
         LayoutRequest::Reset => *dock = build_dock(),
@@ -163,6 +171,8 @@ pub(crate) fn settle(state: &mut State, dock: &mut DockState<Tab>) {
         apply(dock, req);
     }
     state.panels_open = panels_open(dock);
+    // #2262: the tab's own X closes the panel too, so the flag follows the dock.
+    state.debug_info_open = is_open(dock, &Tab::DebugInfo);
 }
 
 // ------------------------------------------------------------ View door
@@ -237,7 +247,8 @@ pub(super) fn view_drop(
         state.ribbon_view_open = false;
         return;
     };
-    let w = rows.first().map_or(0.0, |(_, r)| r.width());
+    let g = pal.dropdown();
+    let w = rows.first().map_or(g.menu_width, |(_, r)| r.width());
     let panel = Rect::from_min_size(top, Vec2::new(w, rows.len() as f32 * pal.row_height));
     let open = state.panels_open;
     let mut chose: Option<ViewRow> = None;
@@ -268,8 +279,8 @@ pub(super) fn view_drop(
                 super::painted::menu_item(&resp, row_label(*row), live, checked);
                 if let Some(on) = checked {
                     let b = Rect::from_center_size(
-                        r.left_center() + Vec2::new(14.0, 0.0),
-                        Vec2::splat(10.0),
+                        r.left_center() + Vec2::new(g.box_center_x, 0.0),
+                        Vec2::splat(g.box_px),
                     );
                     p.rect_stroke(
                         b,
@@ -282,7 +293,7 @@ pub(super) fn view_drop(
                     }
                 }
                 p.text(
-                    r.left_center() + Vec2::new(28.0, 0.0),
+                    r.left_center() + Vec2::new(g.icon_text_x, 0.0),
                     egui::Align2::LEFT_CENTER,
                     row_label(*row),
                     egui::FontId::proportional(pal.font_row),
@@ -313,7 +324,7 @@ pub(super) fn view_drop(
             let outside = ui.input(|i| {
                 i.pointer.button_pressed(egui::PointerButton::Primary)
                     && i.pointer.interact_pos().is_none_or(|p| {
-                        !button.expand(2.0).contains(p) && !rows.iter().any(|(_, r)| r.contains(p))
+                        !button.expand(g.gap).contains(p) && !rows.iter().any(|(_, r)| r.contains(p))
                     })
             });
             if outside {

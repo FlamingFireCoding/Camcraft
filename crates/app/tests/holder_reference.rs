@@ -94,7 +94,7 @@ fn a_library_holder_is_the_reference_in_the_document_and_the_file() {
 
     let text = project::save_text(&world).expect("save");
     let file: Value = serde_json::from_str(&text).expect("json");
-    const { assert!(project::PROJECT_VERSION >= 68, "v67 and earlier readers must refuse the holder reference"); }
+    const { assert!(project::PROJECT_VERSION >= 70, "v69 and earlier readers must refuse the holder reference"); }
     assert_eq!(file["version"], json!(project::PROJECT_VERSION));
     let mut future = file.clone();
     future["version"] = json!(project::PROJECT_VERSION + 1);
@@ -248,31 +248,35 @@ fn an_older_project_loads_as_custom_holders_with_the_same_collision_result() {
     let reloaded = new_world();
     project::open(&reloaded, &text).expect("load");
 
-    // The same document as v0.21.0 (project v61) wrote it.
-    let mut file: Value = serde_json::from_str(&text).expect("json");
-    as_older_build(&mut file);
-    file["version"] = json!(61);
-    let old_text = serde_json::to_string_pretty(&file).expect("json");
-    assert!(!old_text.contains("\"holder\":") && old_text.contains("\"spun\":"), "a drawn copy, no reference");
-    let older = new_world();
-    project::open(&older, &old_text).expect("an older file loads");
+    // The same document as v0.21.0 (project v61) and pre-#2016 main (v69) wrote it.
+    for old_version in [61_u32, 69] {
+        let mut file: Value = serde_json::from_str(&text).expect("json");
+        as_older_build(&mut file);
+        file["version"] = json!(old_version);
+        let old_text = serde_json::to_string_pretty(&file).expect("json");
+        assert!(!old_text.contains("\"holder\":") && old_text.contains("\"spun\":"), "a drawn copy, no reference");
+        let older = new_world();
+        project::open(&older, &old_text).expect("an older file loads");
 
-    let copy = body(&older, TOOL).expect("the drawn copy");
-    assert_eq!(copy.library, None, "an older file's holder is a custom (drawn) holder");
-    assert_eq!(copy.spun, body(&world, TOOL).and_then(|b| b.spun), "with the same outline");
-    assert_eq!(body(&older, BARE), None, "a holder cylinder stays the tool's own numbers");
-    for tool in [TOOL, BARE] {
-        assert_eq!(reads(&older, tool), reads(&world, tool), "{tool}: judged, stack, stamp and facets unchanged");
+        let copy = body(&older, TOOL).expect("the drawn copy");
+        assert_eq!(copy.library, None, "v{old_version}: an older file's holder is a custom (drawn) holder");
+        assert_eq!(copy.spun, body(&world, TOOL).and_then(|b| b.spun), "v{old_version}: with the same outline");
+        assert_eq!(body(&older, BARE), None, "v{old_version}: a holder cylinder stays the tool's own numbers");
+        for tool in [TOOL, BARE] {
+            assert_eq!(reads(&older, tool), reads(&world, tool), "v{old_version} {tool}: judged, stack, stamp and facets unchanged");
+        }
+        assert_eq!(statuses(&older), statuses(&reloaded), "v{old_version}: no operation goes stale over the file's form");
+        let mut h = History::default();
+        regenerate(&older, &mut h);
+        for op in ["Face1", "Face2"] {
+            assert_eq!(warnings(&older, op), warnings(&world, op), "v{old_version} {op}: every warning, hit for hit");
+        }
+        // It stays a copy: saving never turns it into a reference, and migrates forward to current version.
+        let resaved = project::save_text(&older).expect("save");
+        assert!(!resaved.contains("\"holder\":") && resaved.contains("\"spun\":"));
+        let resaved_json: Value = serde_json::from_str(&resaved).expect("json");
+        assert_eq!(resaved_json["version"], json!(project::PROJECT_VERSION));
     }
-    assert_eq!(statuses(&older), statuses(&reloaded), "no operation goes stale over the file's form");
-    let mut h = History::default();
-    regenerate(&older, &mut h);
-    for op in ["Face1", "Face2"] {
-        assert_eq!(warnings(&older, op), warnings(&world, op), "{op}: every warning, hit for hit");
-    }
-    // It stays a copy: saving never turns it into a reference.
-    let resaved = project::save_text(&older).expect("save");
-    assert!(!resaved.contains("\"holder\":") && resaved.contains("\"spun\":"));
 }
 
 #[test]

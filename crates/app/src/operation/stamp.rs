@@ -118,6 +118,15 @@ pub fn current_stamp(
             }
         }
     }
+    if super::wcs_yaw::op_applies(crate::machine::kind_of_setup(world, setup), params)
+        && let Some(deg) = crate::posting::wcs_yaw(world, setup)
+    {
+        let (_, o) = crate::posting::wcs_context(world, setup);
+        h.write(b"wcs-yaw");
+        w(&mut h, deg);
+        w(&mut h, o[0]);
+        w(&mut h, o[1]);
+    }
     match src {
         SrcRef::Stock => {
             h.write_u8(b'S');

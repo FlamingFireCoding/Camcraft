@@ -1,5 +1,6 @@
 //! Pins of #2282: the shipped post scripts and machine files are read
 //! from `assets/` on disk at run time, not compiled into the executable.
+//! Gate map (#2307): covers app::posting, app::posting_files.
 
 use camcraft_app::posting;
 

@@ -23,6 +23,8 @@
 
 // pub(crate) for its own unit tests and the shell's init path: the M4.2
 // GPU backend pick - parse, honest fallback chain, adapter log line.
+// frame_rate is wasm-safe (camcraft_app::clock) and `state.rs` holds it.
+pub(crate) mod frame_rate;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod frame_watch;
 pub(crate) mod gpu;
@@ -41,6 +43,7 @@ mod debug_info;
 mod status_alert;
 
 mod stock_info;
+mod donate;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
@@ -52,6 +55,7 @@ pub mod window_chrome;
 pub(crate) mod post_dialog;
 mod post_dialog_tabs;
 mod post_options;
+mod post_pick;
 mod post_script_options;
 mod program_info;
 pub mod cvd;
@@ -119,6 +123,8 @@ mod tool_holder_picker;
 mod tool_cutter_page;
 mod tool_cutter_params;
 mod setup_wcs_pick;
+// #870: the WCS page's footer (Set origin beside Close) and origin line.
+mod wcs_footer;
 // #343: a setup's own node pages (settings, machine, post, fixtures, tools).
 mod setup_pages;
 mod setup_settings_page;
@@ -187,6 +193,7 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
 // #155: Pause / Home entry rows and their menu.
@@ -227,6 +234,8 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod move_handles;
+pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
 
@@ -262,6 +271,8 @@ mod fixture_profile_tests;
 mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
+#[cfg(test)]
+mod field_focus_tests;
 #[cfg(test)]
 mod coolant_tests;
 #[cfg(test)]
@@ -308,6 +319,8 @@ mod wcs_circle_tests;
 mod wcs_flip_tests;
 #[cfg(test)]
 mod wcs_part_point_tests;
+#[cfg(test)]
+mod wcs_align_guard_tests;
 #[cfg(test)]
 mod setup_align_tests;
 #[cfg(test)]

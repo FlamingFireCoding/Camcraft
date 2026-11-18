@@ -2,7 +2,7 @@
 //! must verify with zero feed-crossing warnings and post cleanly without being blocked.
 //!
 //! Gate map (#2240): covers app::operation (generate, area), app::posting,
-//! app::stock_sim, app::verify, motion::machining2d (pocket_emit, pocket_hsm).
+//! app::stock_sim, sim::verify, motion::machining2d (pocket_emit, pocket_hsm).
 //! Provenance: regression for #2240; clean-room, no vendor material.
 
 use std::path::Path;
