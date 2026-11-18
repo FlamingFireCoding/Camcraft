@@ -28,6 +28,8 @@ Each setup appears in the browser with its own pages:
 
 Below the pages, {{ <icon name="tree-op-group" /> }} **Operations** lists the setup's operations.
 
+![CamCraft setup overview showing browser tree, part, stock outline, work offset, and generated 2D toolpaths](../../../images/guide/setup-overview.png)
+
 ## Work offset
 
 Each setup owns one {{ <icon name="tree-wcs" /> }} work coordinate system. G54 to G59 is only the label

@@ -76,7 +76,7 @@ fn tool(dia_in: f64, flute_in: f64, rpm: f64, feed_ipm: f64) -> Tool {
 /// The index of one face: the tool axis letters and the plane origin on
 /// the A centreline at the bar's free end.
 fn index(a_deg: f64, b_deg: f64) -> Option<Tilt> {
-    Some(Tilt { a_deg, b_deg, origin: [0.0; 3] })
+    Some(Tilt { basis_version: 1, a_deg, b_deg, origin: [0.0; 3] })
 }
 
 /// A slot typed as the guide types it, lengths in inches: the two ends in
@@ -139,9 +139,9 @@ fn build() -> World {
         (OPS[0].0, "EM 1/4", flat(along.0, along.1, index(-90.0, 0.0))),
         (OPS[1].0, "EM 1/4", flat(along.0, along.1, None)),
         (OPS[2].0, "EM 1/4", flat(along.0, along.1, index(90.0, 0.0))),
-        // The face underneath is tool axis A0 B180. In that plane X lies
-        // along machine Y and Y along machine X, so the ends trade places.
-        (OPS[3].0, "EM 1/4", flat((0.0, -0.75), (0.0, -0.25), index(0.0, 180.0))),
+        // The face underneath is tool axis A0 B180. Plane X stays along machine
+        // X (the A rotary axis), so all four flats use the same ends (#2133).
+        (OPS[3].0, "EM 1/4", flat(along.0, along.1, index(0.0, 180.0))),
         (OPS[4].0, "EM 1/8", slot((-0.5, -0.16), (-0.5, 0.16), 0.125, 0.030, 0.010, 8.0, 2.0, None)),
     ];
     for (name, t, p) in ops {
@@ -214,14 +214,17 @@ fn each_flat_posts_the_same_cut_after_its_index() {
         s.lines().skip_while(|l| !l.starts_with("G0 A")).skip(1).filter(|l| l.starts_with("G1 ")).map(str::to_owned).collect()
     };
     let first = cut(sections[0]);
-    assert_eq!(first.len(), 4, "a plunge and a pass at the skin, then at the flat: {first:?}");
+    // The stock top is the bar's skin, so Top Z is no level (#2004): one
+    // plunge and one pass, both at the flat.
+    assert_eq!(first.len(), 2, "a plunge and a pass at the flat: {first:?}");
+    assert!(first.iter().all(|l| l.contains(" Z0.36 ")), "no pass at the skin: {first:?}");
     for (i, s) in sections.iter().enumerate().take(4) {
         assert!(s.starts_with(OPS[i].0), "section {i} is {}", OPS[i].0);
         assert_eq!(cut(s), first, "{} cuts as {} does", OPS[i].0, OPS[0].0);
     }
     let under = index(0.0, 180.0).and_then(|t| t.frame()).expect("the A0 B180 frame");
     let p = under.to_local(Point3::new(-0.75 * IN, 0.0, -R));
-    assert!((p.x - 0.0).abs() < 1e-9 && (p.y + 0.75 * IN).abs() < 1e-9 && (p.z - R).abs() < 1e-9, "{p:?}");
+    assert!((p.x + 0.75 * IN).abs() < 1e-9 && p.y.abs() < 1e-9 && (p.z - R).abs() < 1e-9, "{p:?}");
 }
 
 /// The committed project is the built document: it loads on the shipped
@@ -229,6 +232,11 @@ fn each_flat_posts_the_same_cut_after_its_index() {
 /// posts the committed program.
 #[test]
 fn the_committed_project_posts_the_committed_program() {
+    let file: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repo(PROJECT)).expect("the example project"),
+    ).expect("example JSON");
+    assert!(file["version"].as_u64().unwrap() >= 65,
+        "version-64 readers must refuse the explicit tilt basis");
     let world = camcraft_app::world::new_world();
     let notes = ok(project::load_noted(&world, &repo(PROJECT)), "load the example project");
     assert!(notes.is_empty(), "the example loads without migration notes: {notes:?}");

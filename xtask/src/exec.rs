@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::checkout::{self, Reading};
-use crate::plan::{Plan, Step};
+use crate::plan::{self, Plan, Step};
 use crate::scan::re;
 
 pub struct Run {
@@ -73,7 +73,7 @@ pub fn find_sccache() -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-fn gate_cache_env() -> Vec<(&'static str, String)> {
+pub(crate) fn gate_cache_env() -> Vec<(&'static str, String)> {
     cache_env(
         find_sccache().as_deref(),
         std::env::var_os("RUSTC_WRAPPER").is_some(),
@@ -195,6 +195,11 @@ impl Run {
                     break;
                 }
                 self.step(s)?;
+                // A failed whole-gate build fails every later step with the same error: stop (as release does).
+                let failed = self.done.last().is_some_and(|d| !d.ok);
+                if failed && s.name == plan::DEBUG_BUILD {
+                    break;
+                }
             }
         }
         if self.void.is_none() {
@@ -207,6 +212,9 @@ impl Run {
     fn check(&mut self, at: &str) -> bool {
         if self.void.is_some() {
             return true;
+        }
+        if self.dry {
+            return false; // a dry run runs nothing, so the checkout cannot void it (one git call per step)
         }
         let msg = match checkout::read(&self.root) {
             Ok(now) => checkout::void_message(&self.guard, &now, at),

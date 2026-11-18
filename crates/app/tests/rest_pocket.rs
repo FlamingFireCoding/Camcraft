@@ -271,11 +271,10 @@ fn read_against_the_simulated_roughing_pass() {
     }
     assert!(rapids_in.is_empty(), "rapids into uncut stock: {rapids_in:?}");
     assert!(plunges_in.is_empty(), "plunges into uncut stock: {plunges_in:?}");
-    // One ring per corner per level, each cutting the corner. The ring's
-    // inner leg crosses floor the 12 mm tool cleared (measured: 6.7 of
-    // 14.8 to 15.3 mm per ring); a ring that is mostly air fails.
+    // One ring per corner per level, each cutting the corner without
+    // feeding its inner leg over cleared floor (#1816).
     assert_eq!(runs.len(), 8, "{runs:?}");
-    assert!(runs.iter().all(|r| r.0 && r.2 < 0.5 * r.1), "a pass over cleared floor: {runs:?}");
+    assert!(runs.iter().all(|r| r.0 && r.2 < 0.5), "a pass feeds over cleared floor: {runs:?}");
 }
 
 #[test]
@@ -344,8 +343,7 @@ fn values_and_strategies_the_rest_pass_cannot_run_are_refused_by_name() {
     }
     assert!(rest_op(Some(prev())).is_sane() && rest_op(Some(prev())).named_refusal().is_none());
     let with = |strategy: PocketStrategy| pocket(1.5, Entry3D::Plunge, strategy, Some(prev()));
-    let msg = refusal(EditOperationParams::new(&world, "P2", with(PocketStrategy::Zigzag)));
-    assert!(msg.contains("not available with the Zigzag strategy"), "{msg}");
+    assert!(EditOperationParams::new(&world, "P2", with(PocketStrategy::Zigzag)).is_ok(), "Zigzag rest machining is supported");
     let msg = refusal(EditOperationParams::new(&world, "P2", with(PocketStrategy::Adaptive)));
     assert!(msg.contains("not available with the Adaptive strategy"), "{msg}");
     // Pre-drilled entry beside it: one of the two is turned off.

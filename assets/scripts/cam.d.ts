@@ -57,10 +57,13 @@ interface PostResult {
   path: string;
   ops: number;
   lines: number;
+  warning?: string;
   program?: string;
-  /** Setups on different machines or posts: every file written, one per mount. */
+  /** Setups on different machines or posts, or per-op output: every file written. */
   files?: string[];
   mounts?: PostedMountInfo[];
+  /** One file per operation (`per_op` enabled): per-operation summaries when multiple files are written. */
+  operations?: PostedOpInfo[];
 }
 
 interface PostedMountInfo {
@@ -69,6 +72,13 @@ interface PostedMountInfo {
   machine: string;
   post: string;
   ops: number;
+  lines: number;
+  program?: string;
+}
+
+interface PostedOpInfo {
+  path: string;
+  operation: string;
   lines: number;
   program?: string;
 }
@@ -106,6 +116,7 @@ interface CamApi {
   check(): VerifyReport;  // arity 0
   result(): unknown;  // arity 0
   log(...values: unknown[]): null;  // variadic
+  call(tool: string, args?: Record<string, unknown>): unknown;  // variadic
 }
 
 declare const cam: CamApi;
