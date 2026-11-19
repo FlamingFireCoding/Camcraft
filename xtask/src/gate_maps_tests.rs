@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::plan::Step;
+use crate::plan::{Plan, Step};
 use crate::quick::{self, Diff, Quick};
 use crate::scan;
 
@@ -14,21 +14,127 @@ fn root() -> PathBuf {
 
 /// The `--test` binaries of the `<crate> suites` step that quick plans for one changed file.
 fn selected(file: &str, krate: &str) -> Vec<String> {
+    selected_at(&root(), file, krate)
+}
+
+fn selected_at(root: &Path, file: &str, krate: &str) -> Vec<String> {
+    let p = planned_at(root, file);
+    let got = selected_in(&p, krate);
+    eprintln!("selection {file} -> {krate}: {} suite(s)", got.len());
+    got
+}
+
+fn planned_at(root: &Path, file: &str) -> Plan {
     let changed = vec![file.to_string()];
     let hunks = |_: &str| -> Vec<String> { Vec::new() };
     let diff = Diff { changed: &changed, untracked: &[], hunks: &hunks, before: &|_| None };
-    let Ok(Quick::Plan(p)) = quick::plan(&root(), &diff, false) else { panic!("{file} did not plan") };
+    let Ok(Quick::Plan(p)) = quick::plan(root, &diff, false) else { panic!("{file} did not plan") };
+    p
+}
+
+fn selected_in(p: &Plan, krate: &str) -> Vec<String> {
     let steps: Vec<&Step> = p.steps.iter().filter(|s| s.name.starts_with(&format!("{krate} suites: "))).collect();
     let got: Vec<String> = steps
         .iter()
         .flat_map(|s| s.args.iter().enumerate().filter(|(_, x)| *x == "--test").filter_map(|(i, _)| s.args.get(i + 1).cloned()))
         .collect();
-    eprintln!("selection {file} -> {krate}: {} suite(s)", got.len());
     got
 }
 
 fn count(file: &str, krate: &str) -> usize {
     selected(file, krate).len()
+}
+
+struct InputFixture(PathBuf);
+
+impl InputFixture {
+    fn new(name: &str) -> Self {
+        Self(std::env::temp_dir().join(format!("xtask-{name}-{}", std::process::id())))
+    }
+
+    fn write(&self, path: &str, text: &str) {
+        let path = self.0.join(path);
+        std::fs::create_dir_all(path.parent().expect("fixture parent")).expect("fixture directory");
+        std::fs::write(path, text).expect("fixture source");
+    }
+}
+
+impl Drop for InputFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// #2740: importer changes also run the independent STEP and feature-edge checks.
+#[test]
+fn importer_changes_select_step_and_feature_edge_suites() {
+    let assert_suites = |root: &Path, file: &str| {
+        let plan = planned_at(root, file);
+        let kernel = selected_in(&plan, "kernel");
+        for must in ["step_agreement", "machining_mesh"] {
+            assert!(kernel.iter().any(|b| b == must), "{file}: {must} missing from {kernel:?}");
+        }
+        let app = selected_in(&plan, "app");
+        assert!(app.iter().any(|b| b == "feature_edge_g1_join"), "{file}: feature_edge_g1_join missing from {app:?}");
+    };
+    assert_suites(&root(), "crates/app/src/geometry/import/step.rs");
+    let temp = InputFixture::new("import-paths");
+    temp.write("crates/app/tests/feature_edge_g1_join.rs", "");
+    temp.write("crates/kernel/tests/step_agreement.rs", "");
+    temp.write("crates/kernel/tests/machining_mesh.rs", "");
+    for file in [
+        "crates/app/src/geometry/import/mod.rs",
+        "crates/app/src/geometry/import/step.rs",
+        "crates/app/src/geometry/import/stl.rs",
+        "crates/kernel/src/solidcraft/mod.rs",
+        "crates/kernel/src/solidcraft/zip.rs",
+        "crates/kernel/src/solidcore_step.rs",
+        "crates/kernel/src/solidcore_import.rs",
+    ] {
+        assert_suites(&temp.0, file);
+    }
+}
+
+/// #2740: the regression fixture selects the real model-directory readers.
+#[test]
+fn changed_testdata_selects_its_directory_readers() {
+    let file = "testdata/models/bar_cross_holes.step";
+    let plan = planned_at(&root(), file);
+    let kernel = selected_in(&plan, "kernel");
+    for must in ["step_agreement", "machining_mesh"] {
+        assert!(kernel.iter().any(|b| b == must), "{file}: {must} missing from {kernel:?}");
+    }
+    let app = selected_in(&plan, "app");
+    assert!(app.iter().any(|b| b == "feature_edge_g1_join"), "{file}: feature_edge_g1_join missing from {app:?}");
+}
+
+/// #2740: resolve paths in directory-suite helpers without reading fixture files.
+#[test]
+fn fixture_paths_select_cross_crate_directory_helpers() {
+    let temp = InputFixture::new("input-paths");
+    let write = |path: &str, text: &str| temp.write(path, text);
+    write("crates/kernel/tests/reader/main.rs", "mod helper;\n");
+    write("crates/kernel/tests/reader/helper.rs", concat!(
+        "const MODELS: &str = \"../../../../testdata/models/nested\";\n",
+        "const LEGACY: &str = include_str!(\"../../../app/tests/fixtures/legacy.camproj\");\n",
+        "const SNAPSHOT: &str = \"../../../ui/tests/snapshots/layout\";\n",
+    ));
+    write("crates/kernel/tests/golden_reader.rs", "const GOLDEN: &str = \"../app/tests/golden/nested\";\n");
+    write("crates/kernel/tests/formatted_reader.rs", "const GOLDEN: &str = \"crates/app/tests/golden/nc/{sub}/arc_planes.nc\";\n");
+    write("crates/kernel/tests/unrelated.rs", "const MODELS: &str = \"../../testdata/other\";\n");
+    for (file, must) in [
+        ("testdata/models/nested/new.step", "reader"),
+        ("testdata/models/nested/deleted.step", "reader"),
+        ("crates/app/tests/fixtures/legacy.camproj", "reader"),
+        ("crates/ui/tests/snapshots/layout/new.png", "reader"),
+        ("crates/app/tests/golden/nested/new.nc", "golden_reader"),
+        ("crates/app/tests/golden/nc/fanuc/arc_planes.nc", "formatted_reader"),
+    ] {
+        let got = selected_at(&temp.0, file, "kernel");
+        assert!(got.iter().any(|b| b == must), "{file}: {must} missing from {got:?}");
+        assert!(!got.iter().any(|b| b == "unrelated"), "{file}: unrelated fixture reader selected: {got:?}");
+    }
+    assert!(selected_at(&temp.0, "testdata/models_extra/new.step", "kernel").is_empty());
 }
 
 /// #2411: the DXF profile MCP suite must run when its app entry points change.
