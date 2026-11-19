@@ -29,6 +29,14 @@ use super::wcs_page::{cell_w, even_row};
 
 /// A button row's height (the WCS page's).
 const BUTTON_H: f32 = 24.0;
+/// #2105: the page's own vertical rhythm. The shell's item spacing leaves
+/// the action row below the visible bottom of a 720 px window: the page
+/// draws three titled groups, two radios, two help lines and eight
+/// overview rows in a 274 px pane, so its rows sit one px closer.
+const ROW_GAP: f32 = 2.0;
+/// #2105: the row gap of the machine overview readout (its own, not the
+/// form grid's: eight rows in a short pane).
+const OVERVIEW_GAP: f32 = 2.0;
 /// The group titles (the structural twin reads them).
 pub(super) const GROUPS: [&str; 3] = ["Which machine", "Machine file", "Change machine"];
 /// The one line under "Machine file" saying what the group does.
@@ -41,6 +49,13 @@ pub(super) const REFRESH_MACHINES: &str = "Refresh machine list";
 
 /// The page body for setup `ctx` (`None` - the implicit context).
 pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
+    // #2105: the page draws its rows at its own rhythm (see ROW_GAP). The
+    // shell default leaves the "Change machine" row under the visible
+    // bottom of a 720 px window: `pages.rs` takes 40 px of the leaf for
+    // the separator and the Close footer, so the page body must fit above
+    // it. The rhythm is local to this page: the `ui` here is the page's
+    // own, rebuilt with the scroll area in each frame.
+    ui.spacing_mut().item_spacing.y = ROW_GAP;
     group(ui, GROUPS[0], None, |ui| ownership(ui, state, ctx, Mount::Machine));
     let (path, m) = machine::of(&state.world);
     let names: Vec<&str> = posting::MACHINES.iter().map(|(n, _)| *n).collect();
@@ -57,7 +72,7 @@ pub(super) fn machine_page(ui: &mut Ui, state: &mut State, ctx: Option<&str>) {
                         None => path.clone(),
                     }
                 };
-                super::machine_grid::machine_grid(ui, "machine_overview", m, state.units(), &[("Source", source)]);
+                super::machine_grid::machine_grid(ui, "machine_overview", m, state.units(), &[("Source", source)], OVERVIEW_GAP);
             }
             None => {
                 ui.label(NO_MACHINE);
