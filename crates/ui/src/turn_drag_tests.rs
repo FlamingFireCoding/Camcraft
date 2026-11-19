@@ -74,6 +74,26 @@ fn the_dragged_angle_is_the_ring_angle_under_the_cursor() {
 }
 
 #[test]
+fn an_edge_on_ring_refuses_the_drag_and_names_the_view_change() {
+    let mut state = part();
+    state.cam = state.cam.toward([0.0, 0.0, 1.0]);
+    state.cam.projection = crate::viewport::ProjectionMode::Orthographic;
+    state.history.mark_clean();
+    let at = ring_px(&state, 0, FRAC_PI_4);
+    assert_eq!(turn_drag::ring_at(&state, at), Some(0), "X ring is under the cursor");
+    assert!(turn_drag::press(&mut state, at), "the disabled ring consumes the press instead of orbiting");
+    assert!(state.body_turn.is_none(), "the edge-on ring starts no inert drag");
+    assert!(state.status.contains("Orbit the view to turn about X"), "{}", state.status);
+    turn_drag::motion(&mut state, [at[0] + 20.0, at[1]]);
+    turn_drag::release(&mut state);
+    assert!(state.pending.is_empty());
+    assert!(!state.history.is_dirty());
+    let from = ring_px(&state, 2, FRAC_PI_4);
+    assert!(turn_drag::press(&mut state, from), "the Z ring still turns in top view");
+    assert_eq!(state.body_turn.as_ref().map(|d| d.axis), Some(2));
+}
+
+#[test]
 fn a_drag_past_half_a_turn_keeps_counting() {
     let mut state = part();
     let from = ring_px(&state, 2, 0.1);

@@ -29,7 +29,7 @@ const BOTTOM_MARGIN: f32 = 10.0;
 /// gate can ask the pane for room (pinned by `bar_fits_its_buttons`).
 pub(crate) const BAR_W: f32 = 12.0 * NAV_PX + 11.0 * NAV_GAP + 2.0 * PAD;
 const BAR_H: f32 = NAV_PX + 2.0 * PAD;
-const CTRL_H: f32 = 24.0;
+const CTRL_H: f32 = 52.0;
 const ROW_GAP: f32 = 4.0;
 const BAR_RADIUS: f32 = 8.0;
 
@@ -102,7 +102,7 @@ pub(crate) fn rotate_label(on: bool) -> &'static str {
 /// The plain-English state line of the Move button (#1198 b).
 #[must_use]
 pub(crate) fn move_label(on: bool) -> &'static str {
-    if on { "Move: drag a ball on the selected part" } else { "Move: off" }
+    if on { "Move: drag a ball to move or a ring to rotate the selected part" } else { "Move: off" }
 }
 
 /// The status line the projection button flips the viewer between.
@@ -197,13 +197,18 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
         Nav::Move => {
             state.move_handles = !state.move_handles;
             // Leaving Move mode drops a drag in flight - nothing queued.
-            // The two modes never share the part: Move on puts Rotate off.
+            // One gizmo shows both kinds of handle (#2624).
             crate::move_drag::cancel(state);
             crate::turn_drag::cancel(state);
-            state.rotate_handles &= !state.move_handles;
+            state.rotate_handles = state.move_handles;
             state.status = move_label(state.move_handles).to_string();
         }
         Nav::Rotate => {
+            if state.move_handles {
+                // The legacy shortcut chooses a value, never hides a ring.
+                state.handle_bar.turn_value = true;
+                return;
+            }
             state.rotate_handles = !state.rotate_handles;
             crate::move_drag::cancel(state);
             crate::turn_drag::cancel(state);

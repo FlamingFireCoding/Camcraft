@@ -30,6 +30,12 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
         ui.painter().line_segment([pos(c), pos(b)], egui::Stroke::new(4.0, shade));
         ui.painter().line_segment([pos(c), pos(b)], egui::Stroke::new(2.0, col));
         let r = if hot == Some(axis) { move_drag::BALL_PX * 1.35 } else { move_drag::BALL_PX };
+        let label = format!("Move along {}", ["X", "Y", "Z"][axis]);
+        let response = ui.interact(egui::Rect::from_center_size(pos(b), egui::Vec2::splat(r * 2.0)), ui.id().with(("move_handle", axis)), egui::Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label));
+        if under == Some(axis) {
+            response.on_hover_text(format!("{label}: drag the ball. Hold Shift to snap."));
+        }
         ui.painter().circle(pos(b), r, col, egui::Stroke::new(1.5, shade));
     }
     if let Some(text) = move_drag::readout(state) {
