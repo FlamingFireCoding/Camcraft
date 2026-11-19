@@ -309,11 +309,10 @@ fn viewport_panel(
         let sc = crate::frame_cost::time("ui/viewport.sim_script", || cached_script(state));
         let total = sc.total.max(0.0);
         let unit = camcraft_app::units::of(&state.world);
-        if let Some(sim) = state.sim.as_mut() {
-            // Clamp a stalled frame's dt: a hiccup never teleports the
-            // tool through material.
-            sim.advance(f64::from(ui.input(|i| i.stable_dt).clamp(0.0, 0.1)), total);
-        }
+        // Clamp a stalled frame's dt: a hiccup never teleports the tool
+        // through material. Held while the stock removal is calculated.
+        crate::play_precalc::advance_playhead(state, f64::from(ui.input(|i| i.stable_dt).clamp(0.0, 0.1)), total);
+        let held = crate::play_precalc::holds_playhead(state);
         let mut stop = false;
         ui.horizontal(|ui| {
             let Some(sim) = state.sim.as_mut() else {
@@ -339,7 +338,7 @@ fn viewport_panel(
                 stop = true;
             }
             if total > 0.0 {
-                ui.add(egui::Slider::new(&mut sim.t, 0.0..=total).show_value(false));
+                ui.add_enabled(!held, egui::Slider::new(&mut sim.t, 0.0..=total).show_value(false));
                 egui::ComboBox::from_id_salt("sim_speed")
                     .selected_text(format!("{:.0}x", sim.speed))
                     .show_ui(ui, |ui| {

@@ -21,6 +21,7 @@ pub mod fixture_profile;
 // #339 slice 6: the user fixture library file.
 pub mod fixture_library;
 pub mod step_source;
+pub mod model_source;
 pub mod fixture_carried;
 // #561: locate the part in a fixture (or the fixture on the part) by mates.
 pub mod fixture_clash;
@@ -156,6 +157,8 @@ pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;
 pub use camcraft_tools::cutting_rows as tool_cutting_rows;
 pub use camcraft_tools::waterjet as waterjet_tools;
+// #1521: a torch's cut-data recipe per material and plate thickness.
+pub use camcraft_tools::plasma_cut as plasma_cut_tools;
 pub use camcraft_tools::wire as wire_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;

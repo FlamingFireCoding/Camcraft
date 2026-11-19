@@ -1130,6 +1130,9 @@ fn seed_finish3d(c: &Carried) -> OpParams {
         // The model is the finished surface until a machinist asks
         // for the land (#1196).
         fill_openings: None,
+        // Fresh finishes hop to clearance like every older file;
+        // straight links are the machinist's opt-in (the linking menu).
+        gap_link: crate::finishing3d::GapLink::Jump,
     }
 }
 
@@ -1147,6 +1150,8 @@ fn seed_deburr(c: &Carried) -> OpParams {
         bottom_z: c.bottom,
         feed: c.feed,
         plunge_feed: c.plunge,
+        // #1889: skip with a note, as each earlier Deburr did.
+        unreachable: crate::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 

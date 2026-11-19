@@ -21,6 +21,9 @@ pub mod cli_options;
 #[cfg(test)]
 mod cli_options_tests;
 pub mod launch_file;
+pub mod model_link_watch;
+#[cfg(test)]
+mod model_link_tests;
 #[cfg(test)]
 mod launch_file_tests;
 

@@ -498,6 +498,8 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                // #1889: the policy is an enum; each value is legal.
+                unreachable: _,
             } => {
                 pos(*width)
                     && clearance_z.is_sane()
