@@ -67,7 +67,7 @@ pub(super) fn cutting_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit, torch: bool) {
             {
                 t.cutting.remove(i);
             }
-            let full = !waterjet && WorkMaterial::ALL.iter().all(|m| t.cutting.iter().any(|r| r.material == Some(*m)));
+            let full = !waterjet && WorkMaterial::ALL.iter().all(|m| t.cutting.iter().any(|r| r.material == Some(*m) && !r.is_recipe()));
             if ui
                 .add_enabled(!full, egui::Button::new("Add material row"))
                 .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
@@ -272,5 +272,41 @@ mod tests {
         assert_eq!(d.cutting[0], recipe);
         assert_eq!(count(&d), 1, "only the plain material row is drawn");
         assert!(d.to_tool().is_sane(), "{:?}", d.to_tool().why_not_sane());
+    }
+
+    /// #2681: thickness recipes do not occupy the plain material-row slots.
+    #[test]
+    fn torch_material_row_button_counts_plain_rows_only() {
+        use camcraft_app::plasma_cut_tools::PlasmaCutData;
+        use camcraft_app::tool_cutting_rows::CuttingRow;
+        use egui_kittest::kittest::{NodeT, Queryable};
+
+        for plain_rows in [false, true] {
+            let mut torch = camcraft_app::tools::torch_tool(1.5);
+            torch.cutting = WorkMaterial::ALL.into_iter().map(|material| CuttingRow {
+                plasma: Some(PlasmaCutData {
+                    thickness: 6.0, kerf: 1.5, cut_height: Some(1.5), pierce_height: Some(3.8), pierce_delay: Some(0.5),
+                    transfer_height: None, puddle_jump: None, amperage: None, arc_voltage: None,
+                    max_pierce_thickness: Some(12.0), edge_start: false,
+                }),
+                ..CuttingRow::plain(Some(material), 0.0, 2400.0)
+            }).collect();
+            if plain_rows {
+                torch.cutting.extend(WorkMaterial::ALL.into_iter().map(|material| {
+                    CuttingRow::plain(Some(material), 0.0, 2400.0)
+                }));
+            }
+            assert!(torch.is_sane(), "{:?}", torch.why_not_sane());
+            let mut d = ToolUi::from_tool("Torch", &torch, true);
+            let mut h = egui_kittest::Harness::new_ui(move |ui| {
+                super::cutting_rows(ui, &mut d, camcraft_app::units::Unit::Millimeters, true);
+            });
+            h.run();
+            assert_eq!(
+                h.get_by_label("Add material row").accesskit_node().is_disabled(),
+                plain_rows,
+                "only plain rows for every material disable Add material row"
+            );
+        }
     }
 }
