@@ -3,7 +3,7 @@
 //! a machine with an inverted X or Y, is posted by each mill script and
 //! then read by a controller whose axis runs reversed. The trace is on
 //! the CAM path: lines, G2/G3 in the three planes (native, split, as
-//! chords or with R words), a helix, the drilled hole (a canned cycle, a
+//! chords or with R words), a helix where supported, the drilled hole (a canned cycle, a
 //! Heidenhain G200 call or plain moves) and the physical compensation
 //! side. The standard program on that controller is not on the path, so
 //! the reader is not a tautology.
@@ -134,7 +134,7 @@ fn assert_mirrored(p: &Post, want: &Trace, program: &str, plain: &str, flip: [bo
 #[test]
 fn a_flipped_wcs_cuts_the_cam_path_in_each_mill_dialect() {
     for p in POSTS {
-        let cam = section(None, "Probe", true, p.comp);
+        let cam = section(None, "Probe", !p.dialect.heidenhain, p.comp);
         let want = cam_trace(&cam);
         assert_eq!(want.cuts.len(), 2, "the fixture is the milled run and the hole");
         assert_eq!(want.engages.len(), usize::from(p.comp), "{}: the fixture engages compensation", p.stem);
@@ -142,7 +142,7 @@ fn a_flipped_wcs_cuts_the_cam_path_in_each_mill_dialect() {
         assert_same_trace(&want, &controller_trace(&plain, [false; 3], p.dialect), p.tol, &format!("{} no flip", p.stem));
         for (letters, flip) in CASES {
             let what = format!("{} WCS flip {letters}", p.stem);
-            let program = post(p, &[], &section(Some(letters), "Probe", true, p.comp));
+            let program = post(p, &[], &section(Some(letters), "Probe", !p.dialect.heidenhain, p.comp));
             assert_mirrored(p, &want, &program, &plain, *flip, &what);
         }
     }
@@ -170,7 +170,7 @@ fn an_inverted_machine_axis_cuts_the_cam_path_in_each_mill_dialect() {
 fn radius_word_arcs_follow_the_mirror() {
     let options = json!({ "useRadiusArcs": true });
     for p in POSTS.iter().filter(|p| cps(p.stem).contains("useRadiusArcs")) {
-        let cam = section(None, "Probe", true, p.comp);
+        let cam = section(None, "Probe", !p.dialect.heidenhain, p.comp);
         let want = cam_trace(&cam);
         let plain = post_with(p, &[], &cam, &options);
         assert!(plain.lines().any(|l| l.contains(" R") && (l.contains("G2") || l.contains("G02") || l.contains("G3") || l.contains("G03"))), "{}: the option writes R arcs:\n{plain}", p.stem);
@@ -179,7 +179,7 @@ fn radius_word_arcs_follow_the_mirror() {
         assert_same_trace(&want, &controller_trace(&plain, [false; 3], p.dialect), tol, &format!("{} R arcs", p.stem));
         for (letters, flip) in CASES {
             let what = format!("{} R arcs, WCS flip {letters}", p.stem);
-            let program = post_with(p, &[], &section(Some(letters), "Probe", true, p.comp), &options);
+            let program = post_with(p, &[], &section(Some(letters), "Probe", !p.dialect.heidenhain, p.comp), &options);
             assert_same_trace(&want, &controller_trace(&program, *flip, p.dialect), tol, &what);
         }
     }
@@ -188,11 +188,11 @@ fn radius_word_arcs_follow_the_mirror() {
 #[test]
 fn each_dialect_names_the_flipped_axes_and_the_inverted_axes() {
     for p in POSTS {
-        let plain = post(p, &[], &section(None, "Probe", true, p.comp));
+        let plain = post(p, &[], &section(None, "Probe", !p.dialect.heidenhain, p.comp));
         assert!(!plain.contains("FLIPPED") && !plain.contains("INVERTED"), "{}:\n{plain}", p.stem);
-        let x = post(p, &[], &section(Some("X"), "Probe", true, p.comp));
+        let x = post(p, &[], &section(Some("X"), "Probe", !p.dialect.heidenhain, p.comp));
         assert_eq!(x.matches(&(p.note)("WCS X FLIPPED - PROGRAM MIRRORED")).count(), 1, "{}:\n{x}", p.stem);
-        let xy = post(p, &[], &section(Some("XY"), "Probe", true, p.comp));
+        let xy = post(p, &[], &section(Some("XY"), "Probe", !p.dialect.heidenhain, p.comp));
         assert_eq!(xy.matches(&(p.note)("WCS X AND Y FLIPPED - PROGRAM MIRRORED")).count(), 1, "{}:\n{xy}", p.stem);
         let inv = post(p, &["X", "Y"], &section(None, "Probe", false, p.comp));
         for note in ["MACHINE X+ MOVES LEFT - INVERTED AXIS", "MACHINE Y+ MOVES TOWARD THE FRONT - INVERTED AXIS"] {
@@ -206,13 +206,13 @@ fn each_dialect_names_the_flipped_axes_and_the_inverted_axes() {
 #[test]
 fn a_plain_section_after_a_flipped_one_writes_no_flip_note() {
     for p in POSTS {
-        let mut records = section(Some("X"), "Mirrored", true, p.comp);
+        let mut records = section(Some("X"), "Mirrored", !p.dialect.heidenhain, p.comp);
         // A change of flip needs the section's own start point (the dump
         // always states one).
         records.extend([param("StartX", json!(30.0)), param("StartY", json!(30.0)), param("StartZ", json!(15.0))]);
         // Move indices run over the whole stream: the second cycle's too.
         let moves = records.iter().filter(|r| matches!(r, Record::Move(_))).count();
-        records.extend(section(None, "Plain", true, p.comp).into_iter().map(|r| match r {
+        records.extend(section(None, "Plain", !p.dialect.heidenhain, p.comp).into_iter().map(|r| match r {
             Record::Cycle(mut c) => {
                 c.first_move += moves;
                 Record::Cycle(c)
@@ -240,12 +240,41 @@ fn probing_on_an_inverted_axis_stays_refused_in_the_new_dialects() {
     }
 }
 
+/// TNC 640 ISO manual 892909-25, pp. 271-272 requires a polar helix.
+/// Refuse the unsupported native form, including each WCS mirror.
+#[test]
+fn heidenhain_refuses_cartesian_helices_by_operation_name() {
+    for flip in [None, Some("X"), Some("Y"), Some("XY")] {
+        let records = section(flip, "Helix", true, false);
+        let out = engine::run(&cps("heidenhain"), &machine(&[]), &cnc::serialize(&records)).expect("the script runs");
+        assert!(out.warnings.iter().any(|w| w.contains("operation Helix:") && w.contains("Heidenhain helix requires polar interpolation")), "{flip:?}: {:?}", out.warnings);
+        assert!(!out.program.contains("Z+2.75") && !out.program.contains("Z+0.5"), "{flip:?}: the refused helix is not written:\n{}", out.program);
+    }
+}
+
+/// A Cartesian G02/G03 cannot prove a TNC helix, with I/J or R words.
+#[test]
+fn heidenhain_reader_rejects_cartesian_helices() {
+    let dialect = Dialect { heidenhain: true };
+    for direction in ["G02", "G03"] {
+        for centre in ["I0 J1\n", ""] {
+            let radius = if centre.is_empty() { " R1" } else { "" };
+            let program = format!("G00 X0 Y0 Z0\n{centre}{direction} X1 Y1 Z0{radius}\n");
+            let planar = controller_trace(&program, [false; 3], dialect);
+            assert_eq!(planar.cuts.len(), 1, "the planar arc remains supported");
+            let helix = program.replace("X1 Y1 Z0", "X1 Y1 Z-1");
+            assert!(std::panic::catch_unwind(|| controller_trace(&helix, [false; 3], dialect)).is_err(), "the reader accepted a Cartesian Heidenhain helix: {helix}");
+            assert_eq!(controller_trace(&helix, [false; 3], RS274).cuts.len(), 1, "the dialect rule must leave RS-274 helices supported");
+        }
+    }
+}
+
 /// Conformance goldens: the whole X-flipped program of each new dialect.
 #[test]
 fn flipped_x_goldens_for_the_new_dialects() {
     let write = std::env::var_os("WRITE_GOLDEN").is_some();
     for p in new_posts() {
-        let program = post(p, &[], &section(Some("X"), "Probe", true, p.comp));
+        let program = post(p, &[], &section(Some("X"), "Probe", !p.dialect.heidenhain, p.comp));
         let path = recorded::here().join("../golden/wcs_flip").join(format!("{}_x.nc", p.stem));
         if write {
             std::fs::create_dir_all(path.parent().expect("dir")).expect("golden dir");

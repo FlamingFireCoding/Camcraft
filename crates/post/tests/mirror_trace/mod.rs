@@ -330,6 +330,9 @@ pub fn controller_trace(program: &str, flip: [bool; 3], d: Dialect) -> Trace {
         }
         let pts: Vec<[f64; 3]> = match motion {
             20 | 30 => {
+                if d.heidenhain {
+                    assert_eq!(from[2], to[2], "a Heidenhain helix requires polar interpolation: {raw}");
+                }
                 let c = if let Some(r) = get('R') {
                     radius_centre(from, to, r, plane, motion == 30)
                 } else if d.heidenhain {

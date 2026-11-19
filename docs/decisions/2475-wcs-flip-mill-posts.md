@@ -21,7 +21,7 @@ by the reversed controller must stray, for each script and each case.
 |---|---|---|---|
 | Mazak, Doosan DNM, Mach4 | I/J/K increments, G17/G18/G19; R words with `useRadiusArcs` (not Mach4) | G41/G42 | G81 |
 | Siemens 840D | I/J/K increments, G17/G18/G19 | `G41 NORM` / `G42 NORM` | G81 |
-| Heidenhain | an `I J` block as the absolute centre, then G02/G03; XZ and YZ arcs as 1 um chords | refused by the script | G200 with an M99 call |
+| Heidenhain | an `I J` block as the absolute centre, then planar G02/G03; XZ and YZ arcs as 1 um chords; native XY helices refused | refused by the script | G200 with an M99 call |
 | Tormach, LinuxCNC, grblHAL | I/J/K increments (G91.1); R words with `useRadiusArcs` | refused by the script | G81 |
 | Carvera | I/J/K increments | refused by the script | plain moves |
 | TinyG | XY arcs in half turns, XZ and YZ arcs as 5 um chords | refused by the script | plain moves |
@@ -46,6 +46,9 @@ section note `WCS X FLIPPED - PROGRAM MIRRORED` (#1649) and the header note
 Doosan DNM and Mach4 had the header note already.
 
 **Kept refused:**
+- Heidenhain native XY helices, with or without a WCS flip. The trace and
+  golden use the planar fixture for this dialect. A separate test pins the
+  named refusal. The reader rejects a Cartesian G02/G03 that changes Z.
 - Probing in a flipped WCS (the maintainer's decision of 2026-11-18, engine
   level).
 - Probing on an inverted machine axis through the ten scripts. They do not
@@ -69,9 +72,18 @@ refusal tests use those.
   Haas are". The worker session could not write to `.claude/skills`. The MCP
   tool description in `wcs_flip_tools.rs` has the new text.
 
-**Not a mirror matter, seen during the work:** the Heidenhain script posts a
-helical arc as `G02 X Y Z` after an `I J` block, with or without a flip. This
-PR does not change that form and does not judge it.
+**Review correction:** the HEIDENHAIN TNC 640 ISO Programming User's Manual,
+ID 892909-25, pages 271-272, specifies a helix in polar coordinates. The
+Cartesian `G02 X Y Z` form is not a verified helix form for this control.
+The post now refuses a native XY helix by name before it writes the arc.
+This applies to plain sections and to flipped sections. Planar XY arcs and
+the existing XZ/YZ chord paths keep their trace proof.
+
+**Chosen:** refuse the unsupported helix. **Why:** the mirror flag must not
+permit a path that the control manual does not document. **Dropped:** add
+native polar helix output in this review fix. That needs its own output
+implementation and control-reader proof. The present fix limits the post
+to its verified forms.
 
 **Cost to change later:** to withdraw one script, delete its
 `axisInversion = true` line and its row in `POSTS`. The engine then refuses

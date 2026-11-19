@@ -588,6 +588,13 @@ function onCircular() {
     verticalArc(p);
     return;
   }
+  // TNC 640 ISO manual 892909-25, pp. 271-272: a helix uses polar
+  // interpolation. This post has no polar helix output; Cartesian
+  // G02/G03 must stay in the working plane, including under a mirror.
+  if (!has(p.StartZ) || !has(p.Z) || p.Z !== p.StartZ) {
+    msg(coolantWho() + "Heidenhain helix requires polar interpolation - Cartesian G02/G03 with changing Z is not supported");
+    return;
+  }
   // #49: in this dialect I/J are the circle centre's Cartesian
   // coordinates - ABSOLUTE unless the word carries G91 (TNC 640 ISO
   // Programming User's Manual, ID 892909-25, 9/2016, pp. 260-261:
