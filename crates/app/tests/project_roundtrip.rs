@@ -5146,6 +5146,7 @@ fn the_deburr_params_grammar_round_trips() {
             bottom_z,
             feed,
             plunge_feed,
+            ..
         } = &o.params
         else {
             panic!("deburr params expected, got {:?}", o.params);

@@ -33,7 +33,8 @@
 //! - **No steep edges.** An edge climbing faster than the cone's
 //!   flank (a vertical corner, always) is skipped with a note: the
 //!   apex under its low end would cut its high end deeper than the
-//!   drop (#303).
+//!   drop (#303). `UnreachableEdges::Refuse` (#1889) refuses the whole
+//!   ride by name instead.
 //! - **The window.** A tip below `bottom_z` or above `top_z` is
 //!   clipped by the segment's own line - deburr breaks the edges the
 //!   operation reaches, and a rim running off the programmed floor
@@ -51,6 +52,19 @@ use crate::geometry::{Point3, Triangle};
 use crate::machining2d::GenError;
 
 use super::crease::{add3, chain, cmp_pt, scale3, sub3, third, vkey, vkey_scale, Seg};
+
+/// What the ride does with an edge that is out of the cone's reach
+/// (#1889): an edge inside the programmed window that climbs steeper
+/// than the cone's flank. An edge the window leaves out is no
+/// candidate - the window is the machinist's choice, not a reach limit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UnreachableEdges {
+    /// Leave the edge, break the others, and name the count in a note.
+    #[default]
+    SkipWithNote,
+    /// Refuse the whole ride by name when one edge is out of reach.
+    Refuse,
+}
 
 /// One deburr ride's numbers. `width` is the horizontal break at the
 /// edge's own plane; the tip depth follows from it and the tool's
@@ -71,6 +85,8 @@ pub struct DeburrParams {
     pub bottom_z: f64,
     pub feed: f64,
     pub plunge_feed: f64,
+    /// What an edge out of the cone's reach does to the ride (#1889).
+    pub unreachable: UnreachableEdges,
 }
 
 impl DeburrParams {
@@ -236,6 +252,13 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
         }
     }
 
+    // #1889: under `Refuse` one edge out of reach stops the whole ride,
+    // before any path exists - and before `Empty`, which would hide it.
+    if steeps > 0 && p.unreachable == UnreachableEdges::Refuse {
+        return Err(GenError::Invalid(format!(
+            "deburr: {steeps} edges climb steeper than the cone's flank - a vertical cone cannot break them, and Unreachable edges is set to Refuse; set it to Skip with note to break the other edges"
+        )));
+    }
     let mut runs = chain(&segs);
     if runs.is_empty() {
         return Err(GenError::Empty(

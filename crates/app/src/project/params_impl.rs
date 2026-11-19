@@ -449,6 +449,7 @@ impl ParamsDto {
                 bottom_z,
                 feed,
                 plunge_feed,
+                unreachable,
             } => ParamsDto::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -456,6 +457,7 @@ impl ParamsDto {
                 bottom_z: (*bottom_z).into(),
                 feed: *feed,
                 plunge_feed: *plunge_feed,
+                unreachable: (*unreachable).into(),
             },
             // The 5-axis twins (M5.1 stage C): one shape, mirrored.
             // The contour arm has no stepover to name, so the pattern
@@ -1695,6 +1697,7 @@ impl ParamsDto {
                 bottom_z,
                 feed,
                 plunge_feed,
+                unreachable,
             } => OpParams::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -1702,6 +1705,7 @@ impl ParamsDto {
                 bottom_z: (*bottom_z).into(),
                 feed: *feed,
                 plunge_feed: *plunge_feed,
+                unreachable: (*unreachable).into(),
             },
             // The 5-axis twins (M5.1 stage C): the same shape read
             // back - the contour has no stepover key to lose, and the

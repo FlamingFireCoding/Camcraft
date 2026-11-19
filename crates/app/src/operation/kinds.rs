@@ -1138,6 +1138,8 @@ fn seed_deburr(c: &Carried) -> OpParams {
         bottom_z: c.bottom,
         feed: c.feed,
         plunge_feed: c.plunge,
+        // #1889: skip with a note, as each earlier Deburr did.
+        unreachable: crate::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 

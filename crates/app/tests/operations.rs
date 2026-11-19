@@ -7515,6 +7515,7 @@ fn deburr_params(width: f64, top_z: f64, bottom_z: f64) -> OpParams {
         bottom_z: Height::fixed(bottom_z),
         feed: 500.0,
         plunge_feed: 100.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 
@@ -7716,6 +7717,7 @@ fn the_deburr_seed_carries_the_heights_and_a_hand_break_width() {
         bottom_z,
         feed,
         plunge_feed,
+        unreachable,
     } = (row.seed)(&carried)
     else {
         panic!("the deburr row must seed deburr params");
@@ -7726,6 +7728,7 @@ fn the_deburr_seed_carries_the_heights_and_a_hand_break_width() {
     assert_eq!(bottom_z, carried.bottom);
     assert_eq!(feed, 500.0);
     assert_eq!(plunge_feed, 100.0);
+    assert_eq!(unreachable, camcraft_app::finishing3d::UnreachableEdges::SkipWithNote, "#1889: the seed skips with a note");
 }
 
 /// The ride's model: a 40 x 20 x 10 brick standing on the stock floor,

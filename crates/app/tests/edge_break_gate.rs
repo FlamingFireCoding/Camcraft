@@ -117,6 +117,7 @@ fn a_default_deburr_on_a_finished_brick_posts() {
         bottom_z: Height::fixed(6.0),
         feed: 500.0,
         plunge_feed: 100.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     });
     assert_posts(&world, "deburr-w2");
 }

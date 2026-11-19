@@ -190,12 +190,18 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                unreachable,
             } => {
                 wh(h, *clearance_z);
                 wh(h, *top_z);
                 wh(h, *bottom_z);
                 for v in [*width, *feed, *plunge_feed] {
                     w(h, v);
+                }
+                // #1889: only `Refuse` writes a byte, so the stamp of
+                // each earlier Deburr (skip with a note) does not move.
+                if *unreachable == crate::finishing3d::UnreachableEdges::Refuse {
+                    h.write_u8(0x52);
                 }
             }
             _ => {}

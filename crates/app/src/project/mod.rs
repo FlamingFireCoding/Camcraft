@@ -119,6 +119,8 @@ mod modvise_dto;
 pub use vise_dto::ViseDto;
 mod thread_dto;
 mod break_dto;
+mod unreachable_dto;
+use unreachable_dto::UnreachableDto;
 pub use break_dto::EdgeBreakDto;
 // #416: the threading infeed plan's file mirror.
 mod thread_infeed_dto;
