@@ -122,10 +122,10 @@ pub fn twin_work(moves: &[Move], tool: &SdfTool, meta: &LatticeMeta) -> Result<T
         if m.arc.is_some() {
             return Err(invalid("an arc move has no twin; only linear moves cut here".into()));
         }
-        if let Some(a) = m.axis {
-            if !(a[0] == 0.0 && a[1] == 0.0 && a[2].is_finite() && a[2] > 0.0) {
-                return Err(invalid(format!("the tool axis {a:?} is not upright; only +Z cuts here")));
-            }
+        if let Some(a) = m.axis
+            && !(a[0] == 0.0 && a[1] == 0.0 && a[2].is_finite() && a[2] > 0.0)
+        {
+            return Err(invalid(format!("the tool axis {a:?} is not upright; only +Z cuts here")));
         }
         if m.from == m.to {
             return Err(invalid("a zero-length move has no swept solid".into()));
