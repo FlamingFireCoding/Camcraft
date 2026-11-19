@@ -35,6 +35,9 @@ pub(super) struct PreparedBand {
     pub prog: Option<Region>,
     pub loops: Vec<Loop>,
     pub plan: Vec<Vec<Point2>>,
+    /// The lead room's region when it is not `center`: `center` with the
+    /// rings that another band cuts on a shared level fenced off (#2677).
+    pub room: Option<Region>,
 }
 
 pub(super) fn prepare_band(region: &Region, p: &ContourParams) -> Result<PreparedBand, GenError> {
@@ -75,7 +78,7 @@ pub(super) fn prepare_band(region: &Region, p: &ContourParams) -> Result<Prepare
             v
         })
         .collect();
-    Ok(PreparedBand { center, prog, loops, plan })
+    Ok(PreparedBand { center, prog, loops, plan, room: None })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -103,7 +106,7 @@ pub(super) fn emit_band(
     // Climb travel keeps the part on the RIGHT on both sides (#1555, see
     // the per-loop flip below), so the air - the only side a fillet may
     // stand on - is left for climb, right for conventional.
-    let legal = Legal { region: &band.center, inside, air_left: Some(p.climb) };
+    let legal = Legal { region: band.room.as_ref().unwrap_or(&band.center), inside, air_left: Some(p.climb) };
     let eng = Engage { p, center: &band.center, cert: &cert, plan: &band.plan, m: &m, legal: &legal };
     let prog = &band.prog;
     let hop = p.retract_z.min(p.clearance_z);
@@ -116,8 +119,12 @@ pub(super) fn emit_band(
     // and the next ring's, cut paths too (#1555: climb's leads cross it).
     let mut last_leads: Vec<Vec<Point2>> = Vec::new();
     let is_tabbed = |z: f64| p.tab_count > 0 && z < p.bottom_z + p.tab_height;
-    // #2480: each ring's tab windows, fitted once (tab_bridge).
-    let mut fits = std::collections::HashMap::new();
+    // #2480 / #2561: each ring's tab windows, fitted once (tab_bridge) and
+    // held against every other cut of the tabbed levels (tab_clear).
+    // Only a level that a ring is cut at holds its tabs against it.
+    let tab_levels: Vec<Vec<u64>> =
+        (0..band.loops.len()).map(|li| lad.ring(li).iter().filter(|&&z| is_tabbed(z)).map(|z| z.to_bits()).collect()).collect();
+    let mut fits = super::tab_clear::fit_loops(&band.loops, &tab_levels, pick, p, &legal);
     // The cut order, and where the stay-down link joins it (contour_link).
     let (sched, stay) = plan_links(p, lad, &band.plan, lead_notes);
     for (si, &(z, li)) in sched.iter().enumerate() {

@@ -423,7 +423,7 @@ fn pocket3d_do_not_touch_keeps_clear_raises_links_and_blocks_impossible_cut() {
 }
 
 #[test]
-fn do_not_touch_post_gate_blocks_violations_and_project_v72_persists() {
+fn do_not_touch_post_gate_blocks_violations_and_project_v73_persists() {
     let (dir, mut c, plate_top, tower_top_face, tower_edge, _vert) = setup_plate_and_tower("proj_gate");
     let op_name = c.ok("add_operation", json!({
         "kind": "2D Offset",
@@ -458,18 +458,18 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v72_persists() {
     let raw = std::fs::read_to_string(&proj_path).expect("read saved project");
     let mut parsed: Value = serde_json::from_str(&raw).expect("valid json");
     assert_eq!(parsed["version"], json!(PROJECT_VERSION));
-    // Main's v71 reader ignores unknown area fields. Its version barrier must
+    // Main's v72 reader ignores unknown area fields. Its version barrier must
     // reject the saved file before it can discard the protected selections.
-    const V71_READER_MAX_VERSION: u32 = 71;
-    assert_eq!(parsed["version"], json!(72));
+    const V72_READER_MAX_VERSION: u32 = 72;
+    assert_eq!(parsed["version"], json!(73));
     assert!(
-        parsed["version"].as_u64().expect("saved version") > u64::from(V71_READER_MAX_VERSION),
-        "v71 readers must refuse the protected project before reading its area controls"
+        parsed["version"].as_u64().expect("saved version") > u64::from(V72_READER_MAX_VERSION),
+        "v72 readers must refuse the protected project before reading its area controls"
     );
     const {
         assert!(
-            PROJECT_VERSION > V71_READER_MAX_VERSION,
-            "v71 and earlier readers must refuse Do not touch protection"
+            PROJECT_VERSION > V72_READER_MAX_VERSION,
+            "v72 and earlier readers must refuse Do not touch protection"
         );
     }
     assert!(raw.contains("do_not_touch"));

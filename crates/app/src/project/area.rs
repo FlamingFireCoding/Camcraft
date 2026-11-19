@@ -105,7 +105,7 @@ pub struct AreaDto {
     pub do_not_touch: DoNotTouchDto,
 }
 
-fn sel_dto(items: &[GeoSel]) -> Vec<GeoSelDto> {
+pub(super) fn sel_dto(items: &[GeoSel]) -> Vec<GeoSelDto> {
     items
         .iter()
         .map(|g| GeoSelDto {
