@@ -99,7 +99,7 @@ pub fn setup_problem(world: &World, declared: Option<&str>) -> Option<String> {
     {
         return Some(format!(
             "{what}, and its post ({name}) is not verified for a mirrored program - choose a post that is \
-             (Fanuc, Haas), or clear the flip on the WCS page"
+             (each built-in mill post is), or clear the flip on the WCS page"
         ));
     }
     None

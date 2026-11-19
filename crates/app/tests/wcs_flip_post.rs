@@ -126,11 +126,13 @@ fn a_flipped_and_rotated_wcs_and_an_unverified_post_refuse_by_name() {
     use camcraft_app::schema::{Location, PostRef};
     let (world, mut h) = faced_block();
     flip(&world, &mut h, None, [true, false, false]);
-    h.execute(&world, SelectPost::new(&world, PostRef::Named("Mazak".into())).expect("Mazak"));
+    // #2475: each built-in mill post is verified; a lathe post is not.
+    h.execute(&world, SelectPost::new(&world, PostRef::Named("Fanuc Lathe".into())).expect("Fanuc Lathe"));
     let gate = posting::verification_gate(&world);
     assert!(
-        gate.iter().any(|p| p
-            .contains("has its X axis flipped, and its post (Mazak (built-in)) is not verified for a mirrored program")),
+        gate.iter().any(|p| p.contains(
+            "has its X axis flipped, and its post (Fanuc Lathe (built-in)) is not verified for a mirrored program"
+        )),
         "{gate:?}"
     );
     assert!(posting::post_setup_unwritten(&world).is_err(), "an unverified post must not post a flipped WCS");

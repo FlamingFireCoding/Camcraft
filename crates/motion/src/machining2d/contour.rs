@@ -119,8 +119,12 @@ pub(super) fn emit_band(
     // and the next ring's, cut paths too (#1555: climb's leads cross it).
     let mut last_leads: Vec<Vec<Point2>> = Vec::new();
     let is_tabbed = |z: f64| p.tab_count > 0 && z < p.bottom_z + p.tab_height;
-    // #2480: each ring's tab windows, fitted once (tab_bridge).
-    let mut fits = std::collections::HashMap::new();
+    // #2480 / #2561: each ring's tab windows, fitted once (tab_bridge) and
+    // held against every other cut of the tabbed levels (tab_clear).
+    // Only a level that a ring is cut at holds its tabs against it.
+    let tab_levels: Vec<Vec<u64>> =
+        (0..band.loops.len()).map(|li| lad.ring(li).iter().filter(|&&z| is_tabbed(z)).map(|z| z.to_bits()).collect()).collect();
+    let mut fits = super::tab_clear::fit_loops(&band.loops, &tab_levels, pick, p, &legal);
     // The cut order, and where the stay-down link joins it (contour_link).
     let (sched, stay) = plan_links(p, lad, &band.plan, lead_notes);
     for (si, &(z, li)) in sched.iter().enumerate() {
