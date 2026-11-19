@@ -290,12 +290,13 @@ fn still_frames_on_fig8_name_their_costs() {
 /// The 2D Adaptive operation of state (c), open with its Boundary group
 /// and its filled area preview.
 pub(super) fn adaptive_preview(h: &mut Harness<'static, ShellUi>) {
-    adaptive_preview_with(h, Some(Containment::Outside));
+    let patch = biggest_patch(&h.state().state);
+    adaptive_preview_with(h, patch, Some(Containment::Outside));
 }
 
-/// [`adaptive_preview`] under the given Containment (`None`: the default).
-fn adaptive_preview_with(h: &mut Harness<'static, ShellUi>, containment: Option<Containment>) {
-    let patch = biggest_patch(&h.state().state);
+/// [`adaptive_preview`] on `patch` under the given Containment (`None`:
+/// the default).
+fn adaptive_preview_with(h: &mut Harness<'static, ShellUi>, patch: GeoSel, containment: Option<Containment>) {
     create(h, ADAPTIVE, OpType::Adaptive2D, vec![patch]);
     run(h, |st| {
         let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
@@ -328,11 +329,14 @@ fn fill(h: &Harness<'static, ShellUi>) -> crate::boundary_viz::Fill {
 
 /// #2766: the default Containment fills too. The region of the patch is
 /// the enclosed area minus the part that stands in it; that difference
-/// left loops of about 1e-8 mm2, and the triangulator refused them.
+/// left loops of about 1e-8 mm2, and the triangulator refused them. The
+/// patch is the welded face with the most strips (the concave outer wall).
 #[test]
 fn area_preview_of_the_default_containment_is_filled() {
     let mut h = fig8();
-    adaptive_preview_with(&mut h, None);
+    let f = features(&h.state().state);
+    let wall = feature::patches(&f).into_iter().max_by_key(|p| p.faces.len()).expect("fig8 has a welded face");
+    adaptive_preview_with(&mut h, GeoSel { entity: "fig8".into(), feature: FeatureSel::Patch(wall.id) }, None);
     let st = &h.state().state;
     let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
     assert_eq!(op.area.containment, None, "the default Containment");
