@@ -102,13 +102,16 @@ impl EdgeFilter {
                     hi: h.floor_z.max(h.entry_z),
                 });
             }
+            // A directed hole's wall point at travel `d` stands at
+            // `origin - dir * d` (`CrossHole`): along `dir` the wall
+            // spans the negated travel scalars.
             for c in recognize_cross(facets).into_iter().filter(|c| wanted(c.radius)) {
                 bores.push(Bore {
                     origin: c.origin,
                     dir: c.dir,
                     radius: c.radius,
-                    lo: c.floor_d.min(c.entry_d),
-                    hi: c.floor_d.max(c.entry_d),
+                    lo: (-c.floor_d).min(-c.entry_d),
+                    hi: (-c.floor_d).max(-c.entry_d),
                 });
             }
         }

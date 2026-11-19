@@ -202,6 +202,32 @@ fn a_hole_rim_inside_the_diameter_range_is_skipped() {
 }
 
 #[test]
+fn a_cross_hole_rim_inside_the_diameter_range_is_skipped() {
+    // The same 6 mm bore laid along X (x -8..0, axis through y 0,
+    // z 0): `recognize_cross`'s finding. Its two rings stand in YZ
+    // planes; the stretches a vertical cone can ride are their top
+    // and bottom arcs.
+    let mut f: Vec<Triangle> = bore(0.0, 0.0, 3.0, -8.0, 0.0, 32)
+        .iter()
+        .map(|t| {
+            let m = |q: Point3| p3(q.z, q.x, q.y);
+            Triangle::new(m(t.a), m(t.b), m(t.c))
+        })
+        .collect();
+    f.extend(patch(20.0));
+    let on_bore = |t: &Toolpath| {
+        t.breaks.iter().flat_map(|b| b.edge.iter()).filter(|q| (q.y.hypot(q.z) - 3.0).abs() < 1e-6).count()
+    };
+    let all = deburr(&f, &params(2.0, -6.0)).expect("rims ride");
+    assert!(on_bore(&all) > 0, "no filter: the cross bore's rims ride");
+
+    let p = DeburrParams { exclude_holes: true, hole_min_diameter: 5.0, hole_max_diameter: 7.0, ..params(2.0, -6.0) };
+    let t = deburr(&f, &p).expect("the patch still rides");
+    assert_eq!(on_bore(&t), 0, "both rims of the 6 mm cross hole are inside 5..7: {:?}", t.breaks);
+    assert_eq!(t.breaks.len(), 1, "the patch's rim alone");
+}
+
+#[test]
 fn the_filter_doors_refuse_by_name() {
     let f = patch(0.0);
     let e = err(deburr(&f, &DeburrParams { min_edge_angle_deg: f64::NAN, ..params(0.0, -4.0) }));
