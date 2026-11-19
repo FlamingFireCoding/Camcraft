@@ -124,7 +124,8 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
                     // The mesh's parameters must give the mesh's points, or
                     // they are not the plane it was triangulated in.
                     let Ok(id) = u32::try_from(verts.len()) else { return KEPT };
-                    if !(dist(at(v.uv[0], v.uv[1]), v.p) <= tol * 1e-3) {
+                    let apart = dist(at(v.uv[0], v.uv[1]), v.p);
+                    if apart.is_nan() || apart > tol * 1e-3 {
                         return KEPT;
                     }
                     verts.push(v);
