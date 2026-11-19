@@ -33,7 +33,7 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
         ui.painter().circle(pos(b), r, col, egui::Stroke::new(1.5, shade));
     }
     if let Some(text) = move_drag::readout(state) {
-        let bar = super::viewport_bar::bar_rect(pane);
+        let bar = super::viewport_bar::panel_rect(pane, true);
         let at = egui::pos2(bar.center().x, bar.min.y - 6.0);
         ui.painter().text(at + egui::vec2(1.0, 1.0), egui::Align2::CENTER_BOTTOM, &text, font.clone(), shade);
         ui.painter().text(at, egui::Align2::CENTER_BOTTOM, text, font.clone(), egui::Color32::WHITE);

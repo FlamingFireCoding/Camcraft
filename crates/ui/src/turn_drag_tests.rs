@@ -178,3 +178,28 @@ fn a_bad_axis_or_angle_is_refused_by_name() {
     assert!(!state.history.is_dirty());
     assert!(state.status.contains("ghost"), "{}", state.status);
 }
+
+#[test]
+fn shift_snap_rounds_angle_and_keeps_unwrapped_raw_angle() {
+    assert!((turn_drag::snap_angle_rad(50f64.to_radians(), 90.0).to_degrees() - 90.0).abs() < 1e-9);
+    assert!((turn_drag::snap_angle_rad(50f64.to_radians(), 15.0).to_degrees() - 45.0).abs() < 1e-9);
+    assert!((turn_drag::snap_angle_rad(0.5, 0.0) - 0.5).abs() < 1e-12);
+    let mut state = part();
+    state.handle_bar.rotate_snap_deg = 15.0;
+    let from = ring_px(&state, 2, 0.2);
+    assert!(turn_drag::press(&mut state, from));
+    // Two snapped steps must accumulate raw_angle cleanly without drifting by snap error.
+    let step1 = ring_px(&state, 2, 0.2 + 22f64.to_radians());
+    let step2 = ring_px(&state, 2, 0.2 + 40f64.to_radians());
+    turn_drag::motion_snapped(&mut state, step1, true);
+    assert!((state.body_turn.as_ref().map(|d| d.angle.to_degrees()).unwrap_or(0.0) - 15.0).abs() < 1e-6);
+    turn_drag::motion_snapped(&mut state, step2, true);
+    assert!((state.body_turn.as_ref().map(|d| d.angle.to_degrees()).unwrap_or(0.0) - 45.0).abs() < 1e-6);
+    assert_eq!(state.handle_bar.rotate_draft, "+45.0");
+    turn_drag::resnap(&mut state, false);
+    let raw_deg = state.body_turn.as_ref().map(|d| d.angle.to_degrees()).unwrap_or(0.0);
+    assert!((raw_deg - 40.0).abs() < 0.05, "releasing Shift shows exact 40 deg, got {raw_deg}");
+    turn_drag::resnap(&mut state, true);
+    turn_drag::release(&mut state);
+    assert!(matches!(state.pending.front(), Some(CommandKind::TurnModelBy { axis: 2, angle_rad, .. }) if (angle_rad.to_degrees() - 45.0).abs() < 1e-6));
+}

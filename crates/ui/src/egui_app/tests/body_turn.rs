@@ -227,3 +227,105 @@ fn empty_space_still_orbits_in_rotate_mode() {
     h.run_steps(2);
     assert!(!h.state().state.history.is_dirty());
 }
+
+#[test]
+fn shift_drag_snaps_to_the_bar_angle_step() {
+    let mut h = turning_block();
+    assert!(h.query_by_label("Rotate snap step").is_some(), "the bar shows the rotate snap step");
+    assert!(h.query_by_label("Rotate angle").is_some(), "the bar shows the angle field");
+    let before = block(h.state());
+    let from = z_ring(&h, FRAC_PI_4);
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::SHIFT));
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.run();
+    h.input_mut().events.push(Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::SHIFT,
+    });
+    h.run();
+    let to = z_ring(&h, FRAC_PI_4 + 0.9);
+    h.input_mut().events.push(Event::PointerMoved(to));
+    h.run();
+    let turned = h.state().state.body_turn.as_ref().map(|d| d.angle).expect("still turning");
+    assert!(
+        (turned.to_degrees() - 90.0).abs() < 1e-9,
+        "Shift snaps ~51.6 deg to the default 90 deg step, got {}",
+        turned.to_degrees()
+    );
+    h.input_mut().events.push(Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::SHIFT,
+    });
+    h.run();
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(2);
+    assert_ne!(block(h.state()).rot, before.rot);
+    assert!(h.state().state.status.contains("+90.0\u{b0}"), "{}", h.state().state.status);
+    assert_eq!(h.state().state.handle_bar.rotate_draft, "+90.0", "the angle stays in the bar");
+    assert!(h.state().state.history.is_dirty());
+    h.state_mut().state.pending.push_back(CommandKind::Undo);
+    h.run_steps(2);
+    assert!(!h.state().state.history.is_dirty());
+    assert_eq!(block(h.state()), before);
+}
+
+#[test]
+fn changing_snap_step_in_the_bar_changes_shift_drag_snap() {
+    let mut h = turning_block();
+    h.get_by_label("Rotate snap step").click();
+    h.run();
+    h.get_by_label("Rotate snap step").type_text("15");
+    h.run();
+    h.input_mut().events.push(Event::Key {
+        key: Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.run();
+    assert!((h.state().state.handle_bar.rotate_snap_deg - 15.0).abs() < 1e-6);
+    let from = z_ring(&h, FRAC_PI_4);
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::SHIFT));
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.run();
+    h.input_mut().events.push(Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::SHIFT,
+    });
+    h.run();
+    let to = z_ring(&h, FRAC_PI_4 + 0.9);
+    h.input_mut().events.push(Event::PointerMoved(to));
+    h.run();
+    let turned = h.state().state.body_turn.as_ref().map(|d| d.angle.to_degrees()).expect("turning");
+    assert!((turned - 45.0).abs() < 1e-6, "15 deg step snaps ~51.6 deg to 45.0, got {turned}");
+}
+
+#[test]
+fn typing_an_angle_in_the_bar_turns_the_part_about_the_chosen_axis_as_one_undo_step() {
+    let mut h = turning_block();
+    let before = block(h.state());
+    h.get_by_label("Axis Z").click();
+    h.run();
+    h.get_by_label("Rotate angle").click();
+    h.run();
+    h.get_by_label("Rotate angle").type_text("45");
+    h.run();
+    h.get_by_label("Set").click();
+    h.run_steps(2);
+    assert_ne!(block(h.state()).rot, before.rot, "the Block turned");
+    let refusal = camcraft_app::posting::program_ops(&h.state().state.world).err().unwrap_or_default();
+    assert!(refusal.contains("regenerate"), "stale after typed turn: {refusal:?}");
+    assert!(h.state().state.history.is_dirty());
+    h.state_mut().state.pending.push_back(CommandKind::Undo);
+    h.run_steps(2);
+    assert!(!h.state().state.history.is_dirty(), "one typed turn, one undo step");
+    assert_eq!(block(h.state()), before);
+    assert!(camcraft_app::posting::program_ops(&h.state().state.world).is_ok());
+}
