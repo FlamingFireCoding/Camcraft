@@ -22,6 +22,7 @@ use super::contour_entry::say;
 use super::contour_params::{ContourParams, Side};
 use super::contour_start;
 use super::contour_step::Said;
+use super::contour_whole_reach::{band_sweep, reach_up};
 use super::contour_whole_slice::{next_region, whole_region_at};
 use super::face::GenError;
 use super::fillet_tally::FilletTally;
@@ -214,6 +215,7 @@ pub fn contour_whole_bodies_with(
     let mut tally = FilletTally::default();
     let mut lead_notes = Vec::new();
     let mut walked = Vec::new();
+    let mut cover = Region::empty();
     let mut remaining: &[f64] = &flat;
     let mut current_region = top_region.clone();
     let mut ceiling = p.top_z;
@@ -236,6 +238,8 @@ pub fn contour_whole_bodies_with(
         let mut ring_notes = Vec::new();
         let lad = ladder(&band.plan, part, bodies, remaining, ceiling, r, p.stock_to_leave, &mut ring_notes);
         check_unread(&lad, remaining, p, &b)?;
+        // #2597: a ring that reaches outside every sweep cut so far starts at Top Z.
+        let lad = reach_up(&band, lad, &cover, &flat, part, bodies, p)?;
 
         // An intermediate band (the outline changed between the last cut level
         // and the next flat level) cuts only its floor passes above that level.
@@ -251,6 +255,7 @@ pub fn contour_whole_bodies_with(
                     forward_band_notes(&band, &lad, last_z, true, ring_notes, &mut lead_notes);
                     emit_band(&mut b, &band, p, &trimmed, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
                     walked.push(current_region.clone());
+                    cover = cover.union(&band_sweep(&band.center, r)?)?;
                     ceiling = trimmed.zs.last().copied().unwrap_or(ceiling);
                 } else if mid {
                     say(
@@ -286,6 +291,7 @@ pub fn contour_whole_bodies_with(
                 forward_band_notes(&band, &lad, last_z, true, ring_notes, &mut lead_notes);
                 emit_band(&mut b, &band, p, &trimmed, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
                 walked.push(current_region.clone());
+                cover = cover.union(&band_sweep(&band.center, r)?)?;
                 ceiling = trimmed.zs.last().copied().unwrap_or(remaining[j - 1]);
                 remaining = &remaining[j..];
                 used_fallback = true;
