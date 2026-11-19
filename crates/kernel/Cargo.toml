@@ -30,6 +30,9 @@ serde_json = { workspace = true }
 solidcore = { git = "https://github.com/NeoTech/solidcore", rev = "2016386442dfee3b2a0c3a1bfdd4017c5254dac8" }
 solidcore-step = { git = "https://github.com/NeoTech/solidcore", rev = "2016386442dfee3b2a0c3a1bfdd4017c5254dac8" }
 solidcore-convert = { git = "https://github.com/NeoTech/solidcore", rev = "2016386442dfee3b2a0c3a1bfdd4017c5254dac8" }
+# The `Trims` seam the STEP reader takes a pcurve kernel through (#917,
+# `solidcore_trims`). Same commit; already in Cargo.lock through solidcore-step.
+solidcore-ops = { git = "https://github.com/NeoTech/solidcore", rev = "2016386442dfee3b2a0c3a1bfdd4017c5254dac8" }
 # The record type the STEP reader hands out, and solidcore's mesher over it
 # (#940: the machining mesh, `machining_mesh`). Same commit as the kernel.
 # solidcore-tess turns rayon off on wasm32 in its own manifest.

@@ -42,13 +42,15 @@ struct Row {
 
 /// The pinned verdicts (readings in docs/decisions/916-solidcore-step-bench.md).
 ///
-/// DISAGREEMENT, both Milling-test files: the port's "tight" bounding box
-/// of the imported solid is Y -30..30; the part is a 60 mm disc with a
-/// flat at Y = 19.719 (the file's own vertices, truck's mesh and
-/// solidcore's own mesh all stop there). Volume and area agree, so the
-/// solid is right and its box is not: the box takes the whole cylinder,
-/// not the trimmed face. Nothing may size stock from that box until it is
-/// fixed (#939).
+/// Both Milling-test files agree since the pin of #2781: the port's
+/// "tight" bounding box took the whole cylinder of the trimmed face before
+/// (Y -30..30 against the flat at Y = 19.719, #939), and now stops at the
+/// flat as the file's own vertices and both meshes do.
+///
+/// #917: the pcurves with no closed form (a free-form edge on a spline face)
+/// are made by the kernel (`solidcore_trims`), each checked by its lift, so
+/// bar_cross_holes, fig8 and fillet_corner read and are judged against
+/// truck's volumes.
 ///
 /// The three tool_csys files hold a coordinate system and no solid: both
 /// importers refuse them by name.
@@ -56,13 +58,13 @@ const ROWS: &[Row] = &[
     Row {
         file: "Milling-test-inch.step",
         mm_per_unit: 25.4,
-        import: "disagree: bounding box",
+        import: "agree",
         mesh: "watertight, within tolerance",
     },
     Row {
         file: "Milling-test.step",
         mm_per_unit: 1.0,
-        import: "disagree: bounding box",
+        import: "agree",
         mesh: "watertight, within tolerance",
     },
     Row {
@@ -71,13 +73,13 @@ const ROWS: &[Row] = &[
         import: "both refuse (solidcore: read_step: invalid input: STEP syntax error)",
         mesh: "no exact solid to judge against",
     },
-    // solidcore refuses the cross-hole solid at its exact pcurves;
-    // truck reads the fixture. Keep the refusal visible in the bench.
+    // Refused at its pcurves before #917 (a B-spline on a spline surface,
+    // 3 of 7 faces); the kernel makes them now.
     Row {
         file: "bar_cross_holes.step",
         mm_per_unit: 1.0,
-        import: "solidcore refuses: #655 at read: pcurves failed on",
-        mesh: "no exact solid to judge against",
+        import: "agree",
+        mesh: "watertight, within tolerance",
     },
     Row {
         file: "box.step",
@@ -108,21 +110,21 @@ const ROWS: &[Row] = &[
         mesh: "watertight, within tolerance",
     },
     // #2209 (PR #2215): two curved faces that meet at one smooth crease.
-    // As fillet_corner: solidcore has no exact pcurve for a face of it;
-    // truck reads the file (#2244 pinned the reading).
+    // Refused at its pcurves before #917 (a NURBS on a spline surface);
+    // the kernel makes them now.
     Row {
         file: "fig8.step",
         mm_per_unit: 1.0,
-        import: "solidcore refuses: #14 at read: pcurves failed on",
-        mesh: "no exact solid to judge against",
+        import: "agree",
+        mesh: "watertight, within tolerance",
     },
-    // solidcore has no exact pcurve of a NURBS on a spline surface (the
-    // corner blend); truck meshes the corner.
+    // The corner blend: refused at its pcurves before #917 (a NURBS on a
+    // spline surface); the kernel makes them now.
     Row {
         file: "fillet_corner.step",
         mm_per_unit: 1.0,
-        import: "solidcore refuses: #1289 at read: pcurves failed on",
-        mesh: "no exact solid to judge against",
+        import: "agree",
+        mesh: "watertight, within tolerance",
     },
     Row {
         file: "lathe_holder_offset.step",
@@ -180,18 +182,20 @@ const ROWS: &[Row] = &[
     },
     // #2780: a block with one strongly twisted B-spline flank (our own
     // fixture), and the same block with one vertex 0.5 mm off its curves.
-    // FIRST-BUILD: verdicts to be pinned from the first run.
+    // DISAGREEMENT: truck reads the flank block as an open shell of volume
+    // 0; solidcore reads the closed solid at its exact 8000 mm^3. The block
+    // with the vertex off is refused by solidcore by name.
     Row {
         file: "twisted_flank.step",
         mm_per_unit: 1.0,
-        import: "agree",
+        import: "disagree: volume, area",
         mesh: "watertight, within tolerance",
     },
     Row {
         file: "twisted_flank_off.step",
         mm_per_unit: 1.0,
-        import: "agree",
-        mesh: "watertight, within tolerance",
+        import: "solidcore refuses: #117 at read: pcurves failed on",
+        mesh: "no exact solid to judge against",
     },
 ];
 
