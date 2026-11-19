@@ -130,11 +130,11 @@ pub(super) fn chain_side_of(s: ChainSideDto) -> ChainSide {
     }
 }
 
-fn sel_dto(items: &[GeoSel]) -> Vec<GeoSelDto> {
+pub(super) fn sel_dto(items: &[GeoSel]) -> Vec<GeoSelDto> {
     items.iter().map(geo_sel_dto).collect()
 }
 
-fn sel_of(items: &[GeoSelDto]) -> Vec<GeoSel> {
+pub(super) fn sel_of(items: &[GeoSelDto]) -> Vec<GeoSel> {
     items.iter().map(geo_sel_of).collect()
 }
 
