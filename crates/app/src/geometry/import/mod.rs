@@ -5,7 +5,10 @@
 //! `metadata` before the facet buffer exists; OBJ and STEP stay buffered,
 //! their parsers wanting the whole text in hand.
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cadmpeg;
 mod mesh_outward;
+pub mod native;
 pub mod obj;
 pub mod step;
 pub mod step_budget;

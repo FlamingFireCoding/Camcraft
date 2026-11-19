@@ -6,7 +6,7 @@ use std::path::Path;
 use flecs_ecs::prelude::World;
 
 use crate::commands::{Command, CommandError};
-use crate::geometry::import::{self, step_budget};
+use crate::geometry::import::{self, native, step_budget};
 use crate::geometry::Mesh;
 use crate::model;
 
@@ -49,7 +49,11 @@ impl ImportModel {
     /// it), is refused by name here, before any parsing.
     pub fn within(path: &Path, facet_budget: Option<u64>) -> Result<Self, CommandError> {
         let budget = checked_budget(path, facet_budget)?;
-        let graded = import::load_model_open_within(path, budget)?;
+        let graded = match native::route(path) {
+            // #1873: a qualified native file is converted to STEP first.
+            native::Route::Converted => converted(path, budget)?,
+            _ => import::load_model_open_within(path, budget)?,
+        };
         let mut cmd = Self::graded(path, graded, facet_budget);
         // #2463: the file is read once more for its digest, after the parse.
         // A file that changes in between records the newer digest; the next
@@ -64,9 +68,14 @@ impl ImportModel {
     /// same laws run - IGES and an unknown extension refused by name, the
     /// file-size cap, the STEP budget's bounds, the finite-mesh gate - so
     /// a picked file lands exactly as the same file opened from disk.
+    /// A qualified native format (#1873) is refused by name: the external
+    /// converter reads a file on disk, and bytes in hand have none.
     pub fn from_bytes(file_name: &str, data: &[u8], facet_budget: Option<u64>) -> Result<Self, CommandError> {
         let path = Path::new(file_name);
         let budget = checked_budget(path, facet_budget)?;
+        if native::route(path) == native::Route::Converted {
+            return Err(CommandError::Needs(no_converter(path)));
+        }
         let format = import::format_from_path(path)?;
         if u64::try_from(data.len()).unwrap_or(u64::MAX) > import::MAX_FILE_BYTES {
             return Err(import::ImportError::TooLarge.into());
@@ -120,23 +129,46 @@ impl ImportModel {
     }
 }
 
+/// A qualified native file (#1873): the external cadmpeg program converts
+/// it to STEP, and the STEP importer reads the result.
+#[cfg(not(target_arch = "wasm32"))]
+fn converted(path: &Path, budget: usize) -> Result<import::Graded, CommandError> {
+    import::cadmpeg::load_open_within(path, budget, &import::cadmpeg::Settings::from_prefs())
+}
+
+/// A browser cannot start a program: refuse by name.
+#[cfg(target_arch = "wasm32")]
+fn converted(path: &Path, _budget: usize) -> Result<import::Graded, CommandError> {
+    Err(CommandError::Needs(no_converter(path)))
+}
+
+/// The refusal of a qualified native file where no converter can run.
+fn no_converter(path: &Path) -> String {
+    format!(
+        "importing .{} needs the desktop app with cadmpeg and a file on disk; export the part to STEP first",
+        native::extension(path)
+    )
+}
+
 /// The facet budget an import runs under, checked before any parsing.
-/// IGES needs a translation kernel we do not have; refuse it by extension,
-/// not by a failed read, so the user gets the honest diagnostic. STEP
-/// imports via the truck tessellator (mesh only). A budget outside
-/// `step_budget`'s bounds, or one given for a file that is not STEP (its
-/// mesh is the file; nothing would honour it), is refused by name.
+/// A native CAD format needs a translation kernel we do not have. One
+/// that the shared table (`import::native`) does not qualify - IGES and
+/// `.prt` among them - is refused by its extension, not by a failed read,
+/// so the user gets the honest diagnostic. STEP imports via the truck
+/// tessellator (mesh only). A budget outside `step_budget`'s bounds, or
+/// one given for a file that does not become STEP (its mesh is the file;
+/// nothing would honour it), is refused by name.
 fn checked_budget(path: &Path, facet_budget: Option<u64>) -> Result<usize, CommandError> {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) if matches!(ext.to_ascii_lowercase().as_str(), "iges" | "igs") => {
-            return Err(CommandError::UnsupportedType(ext.to_ascii_uppercase()));
-        }
-        _ => {}
+    let route = native::route(path);
+    if route == native::Route::Unqualified {
+        return Err(CommandError::UnsupportedType(native::extension(path).to_ascii_uppercase()));
     }
     match facet_budget {
         None => Ok(import::MAX_FACETS),
         Some(b) => {
-            if !matches!(import::format_from_path(path), Ok(import::Format::Step)) {
+            let step = route == native::Route::Converted
+                || matches!(import::format_from_path(path), Ok(import::Format::Step));
+            if !step {
                 return Err(CommandError::Invalid(format!(
                     "a {} applies to STEP files only, not {}",
                     step_budget::NAME,
