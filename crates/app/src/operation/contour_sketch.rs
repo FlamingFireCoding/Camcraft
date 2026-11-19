@@ -15,7 +15,6 @@ use crate::geometry::sketch_chains::ChainId;
 use crate::machining2d::{self, ContourParams, GenError, Side};
 
 use super::contour_sketch_pick::collect_chains;
-pub(super) use super::contour_sketch_pick::sketch_z_range;
 use super::wcs_yaw::Rot2;
 use super::{AreaCtx, OpParams, SrcRef, apply_area_controls, stitch};
 
@@ -169,11 +168,6 @@ fn uniform_inside(plan: &SketchContourPlan) -> Option<bool> {
     let first = closed.next()?.eff_side?;
     let all_same = closed.all(|i| i.eff_side == Some(first));
     all_same.then_some(first == Side::Inside)
-}
-
-pub(super) fn auto_side(world: &World, src: &SrcRef, params: &OpParams) -> Option<bool> {
-    let plan = resolve_plan(world, src, params).ok()?;
-    uniform_inside(&plan)
 }
 
 /// True when all closed chains form an unmodified natural nesting (every Hole's parent is

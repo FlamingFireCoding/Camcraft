@@ -122,37 +122,29 @@ fn body(ui: &mut Ui, state: &mut State, target: &str, live_setup: Option<&str>, 
     }
     let sketches = camcraft_app::sketch::placed_in(&state.world, live_setup);
     if !sketches.is_empty() {
-        sketch_layer_picks(ui, state, target, &sketches);
+        crate::frame_cost::time("ui/properties.op.picks.sketch_layers", || {
+            sketch_layer_picks(ui, state, target, &sketches);
+        });
     }
 }
 
 fn sketch_layer_picks(ui: &mut Ui, state: &mut State, target: &str, sketches: &[String]) {
+    let groups = crate::sketch_memo::sketch_layers(&state.world, sketches);
+    if groups.is_empty() {
+        return;
+    }
     ui.add_space(4.0);
-    for name in sketches {
-        let Some((_, sk)) = camcraft_app::sketch::find(&state.world, name) else {
-            continue;
-        };
-        let layers: Vec<String> = sk
-            .data
-            .layers()
-            .iter()
-            .filter(|l| !sk.data.chains().by_layer(l).is_empty())
-            .cloned()
-            .collect();
-        if layers.is_empty() {
-            continue;
-        }
+    for group in groups.iter() {
         ui.horizontal_wrapped(|ui| {
-            ui.label(format!("Sketch '{name}' layers:"));
-            for layer in layers {
+            ui.label(format!("Sketch '{}' layers:", group.entity));
+            for entry in &group.layers {
                 let sel = GeoSel {
-                    entity: name.clone(),
-                    feature: FeatureSel::SketchLayer(layer.clone()),
+                    entity: group.entity.clone(),
+                    feature: FeatureSel::SketchLayer(entry.layer.clone()),
                 };
                 let picked = state.op_ui.src_kind == 2 && state.op_ui.geo.contains(&sel);
-                let count = sk.data.chains().by_layer(&layer).len();
                 let resp = ui
-                    .selectable_label(picked, format!("{layer} ({count})"))
+                    .selectable_label(picked, &entry.label)
                     .on_hover_text("Toggle all cuttable chains on this DXF sketch layer");
                 if resp.hovered() {
                     state.geo_hover = Some(sel.clone());

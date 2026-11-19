@@ -232,13 +232,19 @@ fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Opera
         coolant_row(ui, state, target, live);
     }
 
-    // Source: the stock or one of the user's parts - never a work
-    // offset (G54...), a setup or a fixture (user review 2026-11-06).
-    let models: Vec<String> = model::model_entities(&state.world)
+    // Source: the stock, one of the user's parts, or a placed DXF sketch
+    // in this operation's setup - never a work offset, setup or fixture.
+    let mut models: Vec<String> = model::model_entities(&state.world)
         .into_iter()
         .filter(|(_, e)| !model::is_fixture(&state.world, e))
         .map(|(n, _)| n)
         .collect();
+    let setup = live.and_then(|o| o.setup.as_deref());
+    for s in camcraft_app::sketch::placed_in(&state.world, setup) {
+        if !models.contains(&s) {
+            models.push(s);
+        }
+    }
     ui.label("Source");
     let mut src_items: Vec<String> = vec!["Stock".to_owned()];
     src_items.extend(models.iter().cloned());

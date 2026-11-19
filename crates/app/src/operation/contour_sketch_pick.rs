@@ -44,8 +44,9 @@ fn transform_chain_pts(pose: Location, pts: &[Point2]) -> Result<Vec<Point2>, Ge
     Ok(out)
 }
 
-/// (min_z, max_z) across every selected DXF sketch entity or chain in world space.
-pub(crate) fn sketch_z_range(
+/// `(min_z, max_z)` across every selected DXF sketch entity in world space (uncached, for pins).
+#[must_use]
+pub fn sketch_z_range_fresh(
     world: &World,
     src: &SrcRef,
 ) -> Option<Result<(f64, f64), &'static str>> {
@@ -165,10 +166,10 @@ fn visit_src_chains(
     Ok(())
 }
 
-/// UI metadata list for every cuttable DXF sketch chain named by `src`.
+/// UI metadata list for every cuttable DXF sketch chain named by `src` (uncached, for pins).
 /// Returns an empty list if `src` names no placed DXF profiles or cannot be resolved cleanly.
 #[must_use]
-pub fn sketch_chain_infos(world: &World, src: &SrcRef) -> Vec<SketchChainInfo> {
+pub fn sketch_chain_infos_fresh(world: &World, src: &SrcRef) -> Vec<SketchChainInfo> {
     if crate::sketch_model::source_profiles(world, src).is_empty() {
         return Vec::new();
     }

@@ -268,7 +268,9 @@ pub(super) fn sketch_chain_overrides_ui(
     src: &SrcRef,
     overrides: &mut Vec<ChainOverride>,
 ) {
-    let infos = operation::sketch_chain_infos(world, src);
+    let infos = crate::frame_cost::time("ui/properties.op.fields.sketch_chain_overrides", || {
+        operation::sketch_chain_infos(world, src)
+    });
     if infos.is_empty() {
         return;
     }

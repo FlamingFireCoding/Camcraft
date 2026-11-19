@@ -207,9 +207,7 @@ pub(crate) fn unresolved_note(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Option<String> {
-    operation::resolve_params(world, setup, src, params)
-        .err()
-        .map(|why| format!("{why}; set the source up or switch the reference"))
+    crate::height_memo::unresolved_note(world, setup, src, params)
 }
 
 /// Swap the draft's parameter variant, carrying over every shared number

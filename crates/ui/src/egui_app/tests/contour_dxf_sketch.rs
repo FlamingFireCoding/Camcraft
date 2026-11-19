@@ -107,3 +107,197 @@ fn geo_page_layer_picker_and_mill2d_per_chain_overrides_work_and_generate() {
     let tp = model::toolpath_of(&harness.state().state.world, &op_e).expect("generated toolpath");
     assert!(!tp.path.moves.is_empty());
 }
+
+#[test]
+fn whole_sketch_entity_source_stays_selected_and_shows_per_chain_overrides_before_layer_click() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(2400.0, 1200.0))
+        .build_ui_state(frame, sketch_shell());
+    harness.run_steps(2);
+
+    // Before any layer click, SrcRef::Entity("plate") must stay in Source and draft.
+    assert_eq!(
+        harness.state().state.op_ui.src(),
+        SrcRef::Entity("plate".into()),
+        "whole-sketch SrcRef::Entity must not reset to Stock"
+    );
+    assert_eq!(
+        harness
+            .query_all_by(|n| {
+                n.role() == egui::accesskit::Role::ComboBox
+                    && n.value().as_deref() == Some("plate")
+            })
+            .count(),
+        1,
+        "Source combo should display the placed DXF sketch name 'plate'"
+    );
+    assert!(
+        harness
+            .query_by_label("Whole of 'plate' - the first pick replaces this.")
+            .is_some(),
+        "Geometry tab should show whole-sketch label before any layer click"
+    );
+    assert!(
+        harness.query_by_label("Per-chain overrides").is_some(),
+        "Per-chain overrides should render for whole-sketch SrcRef::Entity"
+    );
+    assert_eq!(
+        harness.get_all_by_label("Reverse").count(),
+        3,
+        "plate.dxf has 3 chains (cut, holes, open)"
+    );
+
+    // Toggle the first chain's Reverse override directly under whole-sketch mode and generate.
+    harness
+        .get_all_by_label("Reverse")
+        .next()
+        .expect("first chain reverse checkbox")
+        .click();
+    harness.run_steps(2);
+    let has_reverse = match &harness.state().state.op_ui.params {
+        OpParams::Contour { chain_overrides, .. } => {
+            chain_overrides.len() == 1 && chain_overrides[0].reverse
+        }
+        _ => false,
+    };
+    assert!(has_reverse, "clicking Reverse on whole sketch sets override");
+
+    let target = harness.state().state.op_ui.name.clone();
+    let edited = harness.state().state.op_ui.params.clone();
+    let st = &mut harness.state_mut().state;
+    st.pending.push_back(CommandKind::EditOperationParams {
+        name: target.clone(),
+        params: edited,
+    });
+    st.pending.push_back(CommandKind::GenerateOperation(target.clone()));
+    st.drain_actions();
+
+    let op_e = model::find_by_name(&harness.state().state.world, &target).expect("op entity");
+    assert_eq!(operation::status_of(&harness.state().state.world, &op_e), OpStatus::Ok);
+}
+
+#[test]
+fn sketch_frame_caches_skip_still_frames_and_track_changed_inputs() {
+    let mut sh = sketch_shell();
+    {
+        let st = &mut sh.state;
+        let mut p = contour_params();
+        if let OpParams::Contour { top_z, bottom_z, .. } = &mut p {
+            *top_z = Height::of(HeightReference::TopOfSelection, 0.0);
+            *bottom_z = Height::of(HeightReference::BottomOfSelection, -2.0);
+        }
+        st.pending.push_back(CommandKind::EditOperationParams {
+            name: "Contour1".into(),
+            params: p,
+        });
+        st.drain_actions();
+        st.sync_ops_ui();
+    }
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(2400.0, 1200.0))
+        .build_ui_state(frame, sh);
+    harness.run_steps(2);
+
+    // Still frames perform zero sketch recomputes and emit the frame-cost spans.
+    let w0 = operation::selection_walks();
+    let i0 = operation::sketch_chain_info_builds();
+    let l0 = crate::sketch_memo::sketch_layer_builds();
+    let z0 = operation::sketch_z_builds();
+    let u0 = crate::height_memo::unresolved_builds();
+    let ((), costs) = crate::frame_cost::record(|| {
+        for _ in 0..4 {
+            harness.step();
+        }
+    });
+    assert_eq!(operation::selection_walks() - w0, 0, "still frame walks no sketch contour_auto_side");
+    assert_eq!(operation::sketch_chain_info_builds() - i0, 0, "still frame scans no sketch_chain_infos");
+    assert_eq!(crate::sketch_memo::sketch_layer_builds() - l0, 0, "still frame scans no sketch layers");
+    assert_eq!(operation::sketch_z_builds() - z0, 0, "still frame samples no sketch Z range");
+    assert_eq!(crate::height_memo::unresolved_builds() - u0, 0, "still frame resolves no unresolved_note");
+    for span in [
+        "ui/properties.op.fields.contour_auto_side",
+        "ui/properties.op.fields.sketch_chain_overrides",
+        "ui/properties.op.picks.sketch_layers",
+        "ui/properties.op.unresolved",
+    ] {
+        assert!(
+            costs.iter().any(|c| c.name == span && c.count == 4),
+            "expected span {span} x4 in {costs:?}"
+        );
+    }
+
+    // Fresh vs cached equality on whole sketch, after layer click, and after stock/sketch changes.
+    let assert_fresh = |h: &Harness<'static, ShellUi>| {
+        let st = &h.state().state;
+        let op = model::find_by_name(&st.world, "Contour1")
+            .and_then(|e| model::operation_of(&st.world, &e))
+            .expect("op");
+        let setup = op.setup.as_deref();
+        assert_eq!(
+            operation::contour_auto_side(&st.world, setup, &op.src, &st.op_ui.params),
+            operation::contour_auto_side_fresh(&st.world, setup, &op.src, &st.op_ui.params),
+        );
+        assert_eq!(
+            operation::sketch_chain_infos(&st.world, &st.op_ui.src()),
+            operation::sketch_chain_infos_fresh(&st.world, &st.op_ui.src()),
+        );
+        let placed = camcraft_app::sketch::placed_in(&st.world, setup);
+        assert_eq!(
+            crate::sketch_memo::sketch_layers(&st.world, &placed).to_vec(),
+            crate::sketch_memo::sketch_layers_fresh(&st.world, &placed),
+        );
+        assert_eq!(
+            crate::operations::unresolved_note(&st.world, setup, Some(&st.op_ui.src()), &st.op_ui.params),
+            operation::resolve_params(&st.world, setup, Some(&st.op_ui.src()), &st.op_ui.params)
+                .err()
+                .map(|why| format!("{why}; set the source up or switch the reference")),
+        );
+    };
+    assert_fresh(&harness);
+
+    // Clicking a layer changes src -> recomputes chain infos and contour_auto_side once.
+    let i1 = operation::sketch_chain_info_builds();
+    let w1 = operation::selection_walks();
+    harness.get_by_label("holes (1)").click();
+    harness.run_steps(2);
+    assert!(operation::sketch_chain_info_builds() > i1);
+    assert!(operation::selection_walks() > w1);
+    assert_fresh(&harness);
+
+    // Changing stock Z height recomputes sketch_z_range and unresolved_note once, and undo restores.
+    let z1 = operation::sketch_z_builds();
+    let u1 = crate::height_memo::unresolved_builds();
+    {
+        let st = &mut harness.state_mut().state;
+        st.pending.push_back(CommandKind::SetStock {
+            shape: StockShape::Box { dx: 300.0, dy: 240.0, dz: 25.0 },
+            pos: [0.0, 0.0, 0.0],
+            yaw_deg: 0.0,
+        });
+        st.drain_actions();
+    }
+    harness.run_steps(2);
+    assert!(operation::sketch_z_builds() > z1);
+    assert!(crate::height_memo::unresolved_builds() > u1);
+    assert_fresh(&harness);
+
+    // Importing a second DXF sketch recomputes sketch_layer_picks once.
+    let l1 = crate::sketch_memo::sketch_layer_builds();
+    {
+        let st = &mut harness.state_mut().state;
+        let cmd = ImportDxf::from_bytes(&st.world, None, "second.dxf", plate_dxf().as_bytes(), &DxfOptions::default())
+            .expect("second dxf");
+        st.history.execute(&st.world, cmd);
+    }
+    harness.run_steps(2);
+    assert!(crate::sketch_memo::sketch_layer_builds() > l1);
+    assert_fresh(&harness);
+
+    {
+        let st = &mut harness.state_mut().state;
+        st.pending.push_back(CommandKind::Undo);
+        st.drain_actions();
+    }
+    harness.run_steps(2);
+    assert_fresh(&harness);
+}

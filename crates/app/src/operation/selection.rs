@@ -91,15 +91,14 @@ pub fn contour_auto_side(
     src: &SrcRef,
     params: &OpParams,
 ) -> Option<bool> {
-    if super::contour_sketch::is_sketch_contour(world, src, params) {
-        return super::contour_sketch::auto_side(world, src, params);
+    if !super::contour_sketch::is_sketch_contour(world, src, params)
+        && matches!(src, SrcRef::Stock | SrcRef::Entity(_))
+    {
+        return Some(false);
     }
-    match src {
-        SrcRef::Stock | SrcRef::Entity(_) => Some(false),
-        // The display's ask, one walk per input (#2249): generation
-        // reads the side from its own walk in `job`, never from here.
-        SrcRef::Selection(items) => super::selection_memo::answer(world, setup, items, params).inside,
-    }
+    // The display's ask, one walk per input (#2249): generation
+    // reads the side from its own walk in `job`, never from here.
+    super::selection_memo::answer(world, setup, src, params).inside
 }
 
 /// The drive chains, in WORLD 3D (M5.1 J): the same entity/name/

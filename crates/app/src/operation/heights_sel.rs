@@ -44,7 +44,7 @@ pub fn selection_z_range(
     setup: Option<&str>,
     src: &SrcRef,
 ) -> Result<(f64, f64), &'static str> {
-    if let Some(sketch_span) = super::contour_sketch::sketch_z_range(world, src) {
+    if let Some(sketch_span) = super::sketch_memo::sketch_z_range(world, src) {
         return sketch_span;
     }
     let span = match src {

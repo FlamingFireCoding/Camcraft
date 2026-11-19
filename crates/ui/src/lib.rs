@@ -63,6 +63,7 @@ pub mod move_drag;
 pub mod turn_drag;
 pub mod machined;
 mod setup_display;
+mod sketch_memo;
 mod floor;
 mod work_envelope;
 pub mod view_frame;
