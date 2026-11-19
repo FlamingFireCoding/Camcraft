@@ -51,6 +51,7 @@ use crate::geometry::{Point3, Triangle};
 use crate::machining2d::GenError;
 
 use super::crease::{add3, chain, cmp_pt, scale3, sub3, third, vkey, vkey_scale, Seg};
+use super::deburr_filter::{DeburrEdges, EdgeFilter};
 
 /// One deburr ride's numbers. `width` is the horizontal break at the
 /// edge's own plane; the tip depth follows from it and the tool's
@@ -71,6 +72,15 @@ pub struct DeburrParams {
     pub bottom_z: f64,
     pub feed: f64,
     pub plunge_feed: f64,
+    /// A convex crease that bends less than this (the angle between
+    /// its two face normals, degrees) is a facet seam, not an edge:
+    /// skipped (#1888). 0 keeps every crease.
+    pub min_edge_angle_deg: f64,
+    /// Skip the rims of recognized round holes whose diameter lies in
+    /// `hole_min_diameter..=hole_max_diameter` (#1888).
+    pub exclude_holes: bool,
+    pub hole_min_diameter: f64,
+    pub hole_max_diameter: f64,
 }
 
 impl DeburrParams {
@@ -131,6 +141,13 @@ type EdgeBook = HashMap<(usize, usize), Vec<(usize, usize, usize)>>;
 /// rim or crease run, deterministic in the chain law's own order
 /// (runs sorted by their first point's `cmp_pt`).
 pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenError> {
+    deburr_edges(facets, p, &DeburrEdges::default())
+}
+
+/// [`deburr`] with picked chains (#1888): `edges.include` narrows the
+/// ride to the exposed edges on those chains, `edges.exclude` leaves
+/// its chains out. The filter laws are `deburr_filter`'s.
+pub fn deburr_edges(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'_>) -> Result<Toolpath, GenError> {
     p.validate(facets)?;
     let drop = p.drop();
     if !drop.is_finite() || drop <= 0.0 {
@@ -145,6 +162,7 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
     // a rim and both faces of one crease meet in one entry (pencil's
     // index, the same walk).
     let s = vkey_scale(facets);
+    let mut filter = EdgeFilter::new(facets, p, edges, s)?;
     let mut verts: Vec<Point3> = Vec::new();
     let mut ids: HashMap<(i64, i64, i64), usize> = HashMap::new();
     let mut vix: Vec<[usize; 3]> = Vec::with_capacity(facets.len());
@@ -185,7 +203,9 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
         if list.len() == 1 {
             // A rim: an open mesh's own edge. Nothing tilts here, so
             // nothing but the window can refuse it.
-            if let Some((q0, q1)) = clip(e0, e1, p, drop) {
+            if filter.keeps(e0, e1, None)
+                && let Some((q0, q1)) = clip(e0, e1, p, drop)
+            {
                 if steep(q0, q1, slope) {
                     steeps += 1;
                 } else {
@@ -215,7 +235,8 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
             scale3(na, 1.0 / na.dot(na).sqrt()),
             scale3(nb, 1.0 / nb.dot(nb).sqrt()),
         );
-        if na.dot(nb).clamp(-1.0, 1.0) > 1.0 - 1e-12 {
+        let bend = na.dot(nb).clamp(-1.0, 1.0);
+        if bend > 1.0 - 1e-12 {
             continue; // flat meeting: tangent faces show no edge to break
         }
         // The mirrored gate: pencil keeps corners whose opposite
@@ -227,7 +248,9 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
         if sub3(qa, e0).dot(na) > 0.0 && sub3(qb, e0).dot(nb) > 0.0 {
             continue; // concave: the pencil pair's corner, not a burr
         }
-        if let Some((q0, q1)) = clip(e0, e1, p, drop) {
+        if filter.keeps(e0, e1, Some(bend))
+            && let Some((q0, q1)) = clip(e0, e1, p, drop)
+        {
             if steep(q0, q1, slope) {
                 steeps += 1;
             } else {
@@ -238,6 +261,9 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
 
     let mut runs = chain(&segs);
     if runs.is_empty() {
+        if let Some(why) = filter.empty() {
+            return Err(why);
+        }
         return Err(GenError::Empty(
             "deburr found no exposed edge inside the programmed window - an exposed edge is an open mesh's rim or a convex crease".into(),
         ));
@@ -252,6 +278,9 @@ pub fn deburr(facets: &[Triangle], p: &DeburrParams) -> Result<Toolpath, GenErro
         b.note(format!(
             "deburr: {manifold} edges touch more than two facets and were skipped"
         ));
+    }
+    for note in filter.notes() {
+        b.note(note);
     }
     if steeps > 0 {
         b.note(format!(

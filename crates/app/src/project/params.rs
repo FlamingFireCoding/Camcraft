@@ -587,6 +587,19 @@ pub enum ParamsDto {
         bottom_z: HeightDto,
         feed: f64,
         plunge_feed: f64,
+        /// #1888, additive: each key is absent at its rest value, so a
+        /// file from before the keys reads as the ride it stored (no
+        /// exclusion, every crease, every hole) and saves unchanged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        exclude_edges: Vec<GeoSelDto>,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        min_edge_angle_deg: f64,
+        #[serde(default, skip_serializing_if = "is_false")]
+        exclude_holes: bool,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_min_diameter: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_max_diameter: f64,
     },
     /// Declared at v24 with the simultaneous-axis kinds (M5.1 stage
     /// C). The renames state the tags for the familiar reason - the

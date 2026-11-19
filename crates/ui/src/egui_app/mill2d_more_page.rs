@@ -214,10 +214,27 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             bottom_z,
             feed,
             plunge_feed,
+            exclude_edges,
+            min_edge_angle_deg,
+            exclude_holes,
+            hole_min_diameter,
+            hole_max_diameter,
         } => {
             if tab == SEC_GEO {
                 prop_row(ui, "Break width", |ui| num(ui, u, width));
                 hint(ui, "measured in the edge's own plane; the tip stands width / tan(half-angle) below it - the cone is the tool's, so its angle authors the depth, never a field here");
+                // #1888: which exposed edges the ride keeps.
+                super::deburr_page::filters(
+                    ui,
+                    world,
+                    u,
+                    cx.picks,
+                    exclude_edges,
+                    min_edge_angle_deg,
+                    exclude_holes,
+                    hole_min_diameter,
+                    hole_max_diameter,
+                );
             }
             if tab == SEC_HEIGHTS {
                 height_editor(

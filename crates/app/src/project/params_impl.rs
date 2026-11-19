@@ -449,6 +449,11 @@ impl ParamsDto {
                 bottom_z,
                 feed,
                 plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
             } => ParamsDto::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -456,6 +461,11 @@ impl ParamsDto {
                 bottom_z: (*bottom_z).into(),
                 feed: *feed,
                 plunge_feed: *plunge_feed,
+                exclude_edges: super::area::sel_dto(exclude_edges),
+                min_edge_angle_deg: *min_edge_angle_deg,
+                exclude_holes: *exclude_holes,
+                hole_min_diameter: *hole_min_diameter,
+                hole_max_diameter: *hole_max_diameter,
             },
             // The 5-axis twins (M5.1 stage C): one shape, mirrored.
             // The contour arm has no stepover to name, so the pattern
@@ -1695,6 +1705,11 @@ impl ParamsDto {
                 bottom_z,
                 feed,
                 plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
             } => OpParams::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -1702,6 +1717,11 @@ impl ParamsDto {
                 bottom_z: (*bottom_z).into(),
                 feed: *feed,
                 plunge_feed: *plunge_feed,
+                exclude_edges: super::area::sel_of(exclude_edges),
+                min_edge_angle_deg: *min_edge_angle_deg,
+                exclude_holes: *exclude_holes,
+                hole_min_diameter: *hole_min_diameter,
+                hole_max_diameter: *hole_max_diameter,
             },
             // The 5-axis twins (M5.1 stage C): the same shape read
             // back - the contour has no stepover key to lose, and the

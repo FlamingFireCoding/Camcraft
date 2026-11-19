@@ -190,12 +190,33 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
             } => {
                 wh(h, *clearance_z);
                 wh(h, *top_z);
                 wh(h, *bottom_z);
                 for v in [*width, *feed, *plunge_feed] {
                     w(h, v);
+                }
+                // #1888: the edge filters, each digested only off its
+                // rest value - an op from before them keeps its stamp.
+                if *min_edge_angle_deg != 0.0 {
+                    h.write_u8(0x4D);
+                    w(h, *min_edge_angle_deg);
+                }
+                if *exclude_holes {
+                    h.write_u8(0x4E);
+                    w(h, *hole_min_diameter);
+                    w(h, *hole_max_diameter);
+                }
+                for g in exclude_edges {
+                    h.write_u8(0x4F);
+                    h.write(g.entity.as_bytes());
+                    h.write_u64(g.feature.id());
                 }
             }
             _ => {}
