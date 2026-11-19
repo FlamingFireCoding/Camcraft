@@ -23,7 +23,7 @@ use crate::geometry::{Point3, Triangle};
 use crate::stock_sim::dist_seg_tri;
 
 use super::params::TOUCH_EPS;
-use super::support::Sup;
+use super::grid::SupSet;
 
 /// The `Straight` gap link in one question: may the tool link the
 /// runs with ONE straight move from where it stands (`from`, tip) to
@@ -38,7 +38,7 @@ use super::support::Sup;
 /// rims the link grazes sit on the budget's edge and only a real
 /// intrusion refuses. A facet wholly outside the swept band in z
 /// can never be reached and is dropped with its vertices unread.
-pub(super) fn straight_ok(from: Point3, to: Point3, r: f64, sups: &[Sup]) -> bool {
+pub(super) fn straight_ok(from: Point3, to: Point3, r: f64, sups: &SupSet) -> bool {
     if !(from.x.is_finite()
         && from.y.is_finite()
         && from.z.is_finite()
