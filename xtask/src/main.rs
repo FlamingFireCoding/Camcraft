@@ -4,6 +4,9 @@
 //! Provenance: our own build and process law (AGENTS.md "Three gate tiers", "Test the change",
 //! release step 2), replacing the scripts/gate.*, collect-decisions.* and release.ps1 twins (#748, #749).
 
+mod artifacts;
+#[cfg(test)]
+mod artifacts_tests;
 #[cfg(test)]
 mod asset_tests;
 mod assets;
@@ -20,6 +23,9 @@ mod checkout;
 #[cfg(test)]
 mod checkout_tests;
 mod decisions;
+mod direct;
+#[cfg(test)]
+mod direct_tests;
 mod docs_images;
 #[cfg(test)]
 mod directory_tests;
@@ -35,6 +41,7 @@ mod heavy_plan_tests;
 mod heavy_tests;
 mod icon_font;
 mod icons;
+mod json;
 mod known_fail;
 mod known_fail_scan;
 #[cfg(test)]
