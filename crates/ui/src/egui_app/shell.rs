@@ -41,7 +41,7 @@ pub(crate) const VIEW3D_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8
 #[cfg(test)]
 pub(crate) const RIBBON_H: f32 = theme::ribbon_h(&theme::Tokens::DARK);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Tab {
     Viewport,
     Browser,
@@ -67,9 +67,9 @@ impl Tab {
 }
 
 /// The default dock lives with the layout law (layout.rs); re-exported
-/// here because the shell and its frame tests build it by this name.
-// #31: only the native window and the tests build it today.
-#[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
+/// here because the web shell and its frame tests build it by this name.
+// #31: the native window starts from `layout::setups::start_dock` (#2339).
+#[allow(unused_imports)]
 pub(crate) use super::layout::build_dock;
 
 
@@ -181,6 +181,8 @@ pub(crate) fn shell_layout(
     super::post_dialog::window(ui.ctx(), state);
     // #339 slice 6: the fixture library dialogs (None on a fresh State).
     super::fixture_library_dialog::window(ui.ctx(), state);
+    // #2339: the Panel setups window - same window law, closed by default.
+    super::panel_setups::window(ui.ctx(), state);
     // #107: the unsaved-changes prompt, last so it sits over everything.
     unsaved_prompt::window(ui.ctx(), state);
     drop(windows);
