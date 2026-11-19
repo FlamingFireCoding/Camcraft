@@ -265,7 +265,7 @@ mod tests {
     fn the_door_is_the_nearest_legal_cell() {
         let ras = channel(0.2);
         let rad = 2.95;
-        let free = |i: usize| i % 3 != 0;
+        let free = |i: usize| !i.is_multiple_of(3);
         // A stricter law than the capsule's: legs of 2 mm or more, eastward.
         let leg_ok = |a: Point2, b: Point2| ras.capsule_clear(a, b, rad) && (b.x - a.x).hypot(b.y - a.y) >= 2.0 && b.x > a.x;
         // The last point's disc reaches the channel wall: no door either way.
