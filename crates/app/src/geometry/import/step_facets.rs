@@ -18,7 +18,8 @@ use crate::geometry::{Point3, Triangle};
 /// are dropped. `Over` as soon as more than `budget` facets are made.
 /// `fit` may replace a face's facets (`step_fit`, #2600: given the face's
 /// index, its mesh and the budget left); the third value is the largest
-/// chord height it left over its limit, 0 when none.
+/// distance it bounds a kept face's facets to stand off its surface
+/// (#2718), 0 when no face was measured.
 pub(super) fn facets_of(
     polys: &[Option<PolygonMesh>],
     budget: usize,
