@@ -76,3 +76,16 @@ XML recursion cannot safely accept untrusted controller tables.
 PathPilot export can accept more descriptions when its reader can preserve
 more cutter geometry. Both changes need new geometry round-trip tests. Raising
 the XML depth limit requires a bounded parser stack or a checked stack budget.
+
+**Decided after the second review:** Start imported threading tools with zero
+pitch. Require a positive recorded `ThreadPitch` for Hurco taps and thread
+mills. Refuse PathPilot threading tools by name because CSV has no pitch
+field. Refuse Hurco left-hand tap exports by name because the supported
+export fields cannot preserve the hand.
+
+**Why:** A guessed pitch can produce an incorrect tapping feed. An export
+must not change a left-hand tap into a right-hand tap.
+
+**Considered and dropped:** Guessing pitch from free-form descriptions or
+using a default pitch does not establish the cutter's required pitch.
+Writing an unverified Hurco hand field cannot establish a safe round trip.

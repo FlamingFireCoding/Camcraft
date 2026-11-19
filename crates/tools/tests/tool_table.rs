@@ -264,3 +264,65 @@ Tool number,Description,Z offset,Diameter,Z offset wear,Diameter wear,Max RPM\n\
     tool.flute_len += 1.0;
     assert!(export(&tool).unwrap_err().contains("cannot preserve the cutter geometry"));
 }
+
+#[test]
+fn pathpilot_refuses_threading_tools_without_known_pitch() {
+    for name in ["tap M6x0.5", "tap M6", "thread mill M6x0.5", "single thread mill M6"] {
+        let csv = format!(
+            "Mill Tool Table,x - v1,This must be the first row - do not edit\n\
+Tool number,Description,Z offset,Diameter,Z offset wear,Diameter wear,Max RPM\n\
+17,{name},0,6,0,0,0\n"
+        );
+        let err = parse_controller_table(ToolTableFormat::PathPilot, &csv, Unit::Millimeters)
+            .expect_err("a description must not supply an invented thread pitch");
+        assert!(err.contains(name) && err.contains("pitch"), "{err}");
+    }
+}
+
+#[test]
+fn hurco_requires_explicit_thread_pitch_and_preserves_fine_pitch() {
+    for (code, kind) in [(12, ToolKind::Tap), (22, ToolKind::ThreadMill), (26, ToolKind::ThreadMillSingle)] {
+        let xml = |pitch: &str| format!(
+            "<Hurco_Document><Tools><Tool><Name>Fine Thread {code}</Name><Number>17</Number>\
+<Diameter>6</Diameter><ToolType>{code}</ToolType>{pitch}</Tool></Tools></Hurco_Document>"
+        );
+        for pitch in ["", "<ThreadPitch>0</ThreadPitch>", "<ThreadPitch>-0.5</ThreadPitch>"] {
+            let err = parse_controller_table(ToolTableFormat::Hurco, &xml(pitch), Unit::Millimeters)
+                .expect_err("threading tools need a recorded positive pitch");
+            assert!(err.contains(&format!("Fine Thread {code}")) && err.contains("T17") && err.contains("pitch"), "{err}");
+        }
+        for (unit, value) in [(Unit::Millimeters, "0.5"), (Unit::Inches, "0.01968503937007874")] {
+            let entries = parse_controller_table(
+                ToolTableFormat::Hurco, &xml(&format!("<ThreadPitch>{value}</ThreadPitch>")), unit,
+            ).expect("explicit fine pitch");
+            assert_eq!(entries[0].tool.kind, kind);
+            assert!((entries[0].tool.pitch - 0.5).abs() < 1e-12);
+            if kind == ToolKind::ThreadMillSingle {
+                assert!((entries[0].tool.pitch_min - 0.5).abs() < 1e-12);
+            }
+        }
+    }
+}
+
+#[test]
+fn hurco_refuses_left_hand_tap_export_and_roundtrips_right_hand() {
+    let xml = "<Hurco_Document><Tools><Tool><Name>Fine Tap</Name><Number>17</Number>\
+<Diameter>6</Diameter><ThreadPitch>0.5</ThreadPitch><ToolType>12</ToolType></Tool></Tools></Hurco_Document>";
+    let mut tap = parse_controller_table(ToolTableFormat::Hurco, xml, Unit::Millimeters)
+        .expect("fine-pitch tap").remove(0).tool;
+    let export = |tool: &Tool| export_controller_table(
+        ToolTableFormat::Hurco,
+        &[ToolTableExportRow { number: 17, name: "Fine Tap", tool, gauge_len: None }],
+        Unit::Millimeters,
+    );
+    let exported = export(&tap).expect("right-hand tap export");
+    let entries = parse_controller_table(ToolTableFormat::Hurco, &exported, Unit::Millimeters)
+        .expect("right-hand tap round trip");
+    assert_eq!(entries[0].tool.kind, ToolKind::Tap);
+    assert_eq!(entries[0].tool.pitch, 0.5);
+    assert_eq!(entries[0].tool.thread_hand, camcraft_tools::tools::ThreadHand::Right);
+    tap.thread_hand = camcraft_tools::tools::ThreadHand::Left;
+    assert!(tap.why_not_sane().is_none(), "fixture must be a valid left-hand tap");
+    let err = export(&tap).expect_err("Hurco export must not silently change tap hand");
+    assert!(err.contains("Fine Tap") && err.contains("left-hand"), "{err}");
+}

@@ -117,8 +117,8 @@ pub(crate) fn from_mm(value: f64, unit: Unit) -> f64 {
     }
 }
 
-/// Build a baseline `Tool` in mm with valid defaults for fields the
-/// controller tool table does not record.
+/// Build a baseline `Tool` in mm. Required threading pitch stays unknown
+/// until the controller tool table supplies it.
 #[must_use]
 pub(crate) fn base_tool(kind: ToolKind, diameter_mm: f64) -> Tool {
     let flute_len = (diameter_mm * 3.0).max(10.0);
@@ -133,15 +133,6 @@ pub(crate) fn base_tool(kind: ToolKind, diameter_mm: f64) -> Tool {
         ToolKind::ThreadMill | ToolKind::ThreadMillSingle => 60.0,
         _ => 0.0,
     };
-    let pitch = match kind {
-        ToolKind::Tap => 1.0,
-        ToolKind::ThreadMill | ToolKind::ThreadMillSingle => {
-            let max_safe = (diameter_mm * 0.5) / (crate::thread_mill::EXTERNAL_DEPTH_PER_PITCH * 1.5);
-            1.0_f64.min(max_safe).max(0.2)
-        }
-        _ => 0.0,
-    };
-    let pitch_min = if kind == ToolKind::ThreadMillSingle { pitch } else { 0.0 };
     let rpm = if kind == ToolKind::Probe { 1.0 } else { 3000.0 };
     let feed = if kind == ToolKind::Probe { 300.0 } else { 500.0 };
     let center_cutting = kind != ToolKind::Probe;
@@ -150,8 +141,8 @@ pub(crate) fn base_tool(kind: ToolKind, diameter_mm: f64) -> Tool {
         diameter: diameter_mm,
         corner_r,
         tip_angle,
-        pitch,
-        pitch_min,
+        pitch: 0.0,
+        pitch_min: 0.0,
         thread_hand: ThreadHand::Right,
         nose_radius: 0.0,
         width: 0.0,

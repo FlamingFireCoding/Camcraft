@@ -292,6 +292,9 @@ fn camcraft_to_hurco_type(tool: &Tool) -> Result<i32, String> {
         ToolKind::BullNose => Ok(0),
         ToolKind::Taper => Ok(2),
         ToolKind::Drill => Ok(11),
+        ToolKind::Tap if !tool.thread_hand.is_right() => {
+            Err("left-hand tap cannot be exported to a Hurco .TCM tool library".into())
+        }
         ToolKind::Tap => Ok(12),
         ToolKind::Bore => Ok(13),
         ToolKind::EndMill => Ok(if tool.center_cutting { 14 } else { 15 }),
