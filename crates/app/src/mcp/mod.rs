@@ -28,6 +28,7 @@ mod coolant_tools;
 // #93 slice 2: a milling tool's drawn cutter outline.
 mod cutter_tools;
 mod cutting_tools;
+mod do_not_touch;
 mod edit;
 mod features;
 mod fixture_profile_tools;

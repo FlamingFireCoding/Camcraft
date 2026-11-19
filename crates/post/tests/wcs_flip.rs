@@ -216,11 +216,11 @@ fn a_script_that_is_not_verified_for_a_mirror_refuses_by_name() {
 }
 
 #[test]
-fn a_flipped_and_rotated_section_refuses_by_name() {
+fn a_flipped_and_rotated_section_with_a_non_xy_arc_refuses_by_name() {
     let mut records = section(Some("Y"), "Probe");
     records.insert(3, param("WcsYaw", json!(30.0)));
     let e = refused("fanuc", &records);
-    assert!(e.contains("its Y axis flipped and is also rotated 30.000 deg about Z"), "{e}");
+    assert!(e.contains("an XZ/YZ (G18/G19) arc inside a rotated work offset cannot rotate in XY"), "{e}");
 }
 
 #[test]

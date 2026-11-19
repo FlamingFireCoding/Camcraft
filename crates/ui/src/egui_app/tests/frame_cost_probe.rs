@@ -97,10 +97,48 @@ pub(super) fn top_chains(st: &State) -> Vec<GeoSel> {
         .collect()
 }
 
-/// The welded face with the most strips (fig8.camproj's own pick).
+/// A convex welded vertical wall with two horizontal rims of the same XY bounds.
+/// Strip counts change when STEP refinement changes. A wall's projection
+/// gives this fixture a closed area without the folds of a rounded fillet.
 fn biggest_patch(st: &State) -> GeoSel {
     let f = features(st);
-    let p = feature::patches(&f).into_iter().max_by_key(|p| p.faces.len()).expect("fig8 has a welded face");
+    let rim_bounds = |ring: &feature::PatchRing| {
+        if !ring.closed || ring.verts.len() < 3 { return None; }
+        let mut lo = [f64::INFINITY; 3];
+        let mut hi = [f64::NEG_INFINITY; 3];
+        for &v in &ring.verts {
+            let p = f.verts.get(v as usize)?;
+            for axis in 0..3 {
+                lo[axis] = lo[axis].min(p[axis]);
+                hi[axis] = hi[axis].max(p[axis]);
+            }
+        }
+        (hi[2] - lo[2] < 1e-6 && hi[0] > lo[0] && hi[1] > lo[1]).then_some((lo, hi))
+    };
+    let p = feature::patches(&f).into_iter().filter_map(|p| {
+        let rings = feature::patch_rings(&f, p.id)?;
+        if rings.len() != 2 { return None; }
+        let (lo0, hi0) = rim_bounds(&rings[0])?;
+        let (lo1, hi1) = rim_bounds(&rings[1])?;
+        if (lo0[2] - lo1[2]).abs() < 1e-6
+            || (0..2).any(|axis| (lo0[axis] - lo1[axis]).abs() > 1e-6 || (hi0[axis] - hi1[axis]).abs() > 1e-6)
+        { return None; }
+        // A bore rim is convex. Keep the fill-cache fixture independent
+        // of STEP refinement on the concave outer fig8 wall.
+        let points: Vec<_> = rings[0].verts.iter().map(|&i| f.verts[i as usize]).collect();
+        let mut turn = 0.0_f64;
+        for i in 0..points.len() {
+            let (a, b, c) = (points[i], points[(i + 1) % points.len()], points[(i + 2) % points.len()]);
+            let cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+            if cross.abs() > 1e-8 {
+                if turn != 0.0 && cross.signum() != turn { return None; }
+                turn = cross.signum();
+            }
+        }
+        if turn == 0.0 { return None; }
+        Some((p, (hi0[0] - lo0[0]) * (hi0[1] - lo0[1])))
+    }).max_by(|a, b| a.1.total_cmp(&b.1)).map(|(p, _)| p)
+        .expect("fig8 has a convex welded vertical wall with matching horizontal rims");
     GeoSel { entity: "fig8".into(), feature: FeatureSel::Patch(p.id) }
 }
 
