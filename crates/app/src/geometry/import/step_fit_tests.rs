@@ -39,7 +39,8 @@ fn lattice(at: &At, (u0, du, nu): (f64, f64, usize), (v0, dv, nv): (f64, f64, us
             }
         }
     }
-    let faces: Vec<[(usize, Option<usize>, Option<usize>); 3]> = tris.iter().map(|t| t.map(|k| (k, Some(k), None))).collect();
+    type Corner = (usize, Option<usize>, Option<usize>);
+    let faces: Vec<[Corner; 3]> = tris.iter().map(|t| t.map(|k| (k, Some(k), None))).collect();
     let faces = Faces::from_iter(faces.iter().map(|f| &f[..]));
     PolygonMesh::new(StandardAttributes { positions, uv_coords, normals: Vec::new() }, faces)
 }
