@@ -92,6 +92,8 @@ mod file_pick_tests;
 #[cfg(test)]
 mod law_tests;
 #[cfg(test)]
+mod ortho_pick_tests;
+#[cfg(test)]
 mod refusal_focus_tests;
 #[cfg(test)]
 mod detect_holes_note_tests;
