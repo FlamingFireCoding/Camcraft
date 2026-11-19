@@ -136,7 +136,11 @@ use super::*;
 /// unchanged. An old reader (including v0.22.0 at v62 and v69 builds)
 /// must refuse a v70 file rather than drop the reference and judge the
 /// smaller cylinder in its place.
-pub const PROJECT_VERSION: u32 = 70;
+/// v71 (#1862): a DXF profile is an entity row of kind `sketch`, placed
+/// on the stock of a setup. A v70 file has none and steps up unchanged.
+/// An old reader must refuse a v71 file rather than open a setup without
+/// the profiles its operations cut.
+pub const PROJECT_VERSION: u32 = 71;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -317,6 +321,8 @@ pub enum EntityKind {
     Setup,
     /// A Pause / Home entry of the operation list (#155).
     Entry,
+    /// A DXF profile placed on a setup's stock (#1862).
+    Sketch,
 }
 
 /// The file mirror of `StockShape`, kept separate so the domain enum can
