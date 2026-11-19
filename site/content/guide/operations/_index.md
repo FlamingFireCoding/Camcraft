@@ -131,8 +131,8 @@ can be clicked to frame it.
 
 - {{ <icon name="act-show-paths" /> }} **Paths** ({{ <icon name="act-hide-paths" /> }} when hidden) shows every cached toolpath at once.
 - {{ <icon name="act-simulate" /> }} **Simulate** plays the program against the stock with a transport bar;
-  drag the playback slider to jump. **Next operation** (Page Down) and
-  **Previous operation** (Page Up) pause the playback at the start of an
+  drag the playback slider to jump. **Next op** (Page Down) and
+  **Previous op** (Page Up) pause the playback at the start of an
   operation, with the stock that the earlier operations leave. The readout
   names the operation.
 - {{ <icon name="tree-stock" /> }} **Deviate** compares the machined stock with the model and colours where

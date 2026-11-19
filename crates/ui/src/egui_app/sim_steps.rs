@@ -1,5 +1,5 @@
-//! The transport bar's operation steps (#2608): "Previous operation" and
-//! "Next operation" buttons, and Page Up / Page Down for them. A step
+//! The transport bar's operation steps (#2608): "Previous op" and
+//! "Next op" buttons, and Page Up / Page Down for them. A step
 //! moves the playhead to an operation's start (`Script::next_op_start`,
 //! `Script::prev_op_start`) and pauses there, so the user can check that
 //! operation. The playhead is immediate-mode view state (AGENTS.md), so a
@@ -14,8 +14,8 @@ use camcraft_app::sim::Script;
 use crate::state::Sim;
 
 /// The button labels (and AccessKit names).
-pub(crate) const PREV_OP: &str = "Previous operation";
-pub(crate) const NEXT_OP: &str = "Next operation";
+pub(crate) const PREV_OP: &str = "Previous op";
+pub(crate) const NEXT_OP: &str = "Next op";
 
 /// The keys of the two steps, as the tips name them.
 pub(crate) const PREV_KEY: &str = "Page Up";
