@@ -134,6 +134,37 @@ fn a_torus_face_reports_no_less_than_its_facets_stand_off() {
     pins("torus inner", Curved::Torus, &at, &gap, (0.0, a / 15.0, 12), (std::f64::consts::PI - 0.3, a * 0.866 / small, 12));
 }
 
+/// A flip introduces a new chord. Its height must remain in the reported
+/// bound, even though the split measured the previous diagonal.
+#[test]
+fn a_flipped_edge_reports_its_height_and_keeps_the_chord_limit() {
+    let at = |u: f64, v: f64| [10.0 * u.cos(), 10.0 * u.sin(), v];
+    let verts: Vec<Vert> = [[-0.2, 0.0], [0.2, 0.0], [0.02, 0.01], [-0.02, -0.01]]
+        .into_iter()
+        .map(|uv| Vert {
+            p: at(uv[0], uv[1]),
+            uv,
+        })
+        .collect();
+    let before = [[0, 1, 2], [1, 0, 3]];
+    let mut tris = before;
+    let chord = [0, 1, 2].map(|k| 0.5 * (verts[2].p[k] + verts[3].p[k]));
+    let height = dist(at(0.0, 0.0), chord);
+    assert!(height > 0.001);
+    let reported = relax(&verts, &mut tris, &at, 1.0);
+    assert_ne!(tris, before, "the fixture must flip its old diagonal");
+    assert!(
+        reported >= height,
+        "the new edge's height is missing: {reported} < {height}"
+    );
+    let mut refused = before;
+    assert_eq!(relax(&verts, &mut refused, &at, height * 0.5), 0.0);
+    assert_eq!(
+        refused, before,
+        "an edge above the chord limit must not replace the diagonal"
+    );
+}
+
 /// The log lines `run` writes, with its result.
 fn logged(run: impl FnOnce() -> Fit) -> (Fit, String) {
     use std::sync::{Arc, Mutex};
