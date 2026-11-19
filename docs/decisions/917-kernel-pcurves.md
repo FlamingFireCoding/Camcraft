@@ -24,15 +24,17 @@
   hold for the trims too.
 - Nothing is taken unchecked. Each of these is refused by name ("kernel
   pcurves: ..."), and the reader then refuses the solid:
-  - an edge that lies more than 1 mm off its surface (`MAX_EDGE_GAP_MM`, the
-    reader's own `MAX_TOLERANCE`). A smaller gap raises the edge and vertex
-    tolerances to `SURFACE_GAP_MARGIN` times the gap, as the reader does;
+  - an edge that lies more than 0.01 mm off its surface
+    (`MAX_EDGE_GAP_MM`), whatever tolerance the file gives the edge. A
+    smaller gap raises the edge and vertex tolerances to
+    `SURFACE_GAP_MARGIN` times the gap, as the reader does;
   - an edge interval that the kernel moved past the edge's reach (the
     larger of its vertex and edge tolerances);
   - a made pcurve whose lift onto the surface misses its 3D edge by more
     than the held edge tolerance (33 samples, ends included).
   The reader checks the whole record again after this
-  (`record_check::agreement`).
+  (`record_check::agreement`). The interval and lift checks are in
+  `crates/kernel/src/solidcore_trims/checks.rs` (the 400-line rule).
 - New dependency edge: `camcraft-kernel -> solidcore-ops`, at the same
   pinned commit as the other solidcore crates. It is a crate of the solidcore
   workspace and is already in `Cargo.lock` through `solidcore-step`. No new
@@ -40,7 +42,78 @@
 - The bench (`crates/kernel/tests/step_agreement.rs`) pins the new
   verdicts. `crates/kernel/tests/step_twisted_flank.rs` pins #2780 at the
   kernel: `twisted_flank.step` reads closed at 8000 mm3; the variant with a
-  vertex off its curves reads near that volume or is refused by name.
+  vertex off its curves is refused by name (observed: the surface would
+  move 0.89 mm, over the reach of 0.51 mm), and so is
+  `bspline_discontinuous.step` (the gap cap below).
+- The bench helper `step_util::solidcore_mesh` reads with `KernelTrims` too,
+  so the sc-tess mesh is judged on the same record as the import.
+
+### The edge-gap cap (0.01 mm)
+
+**Chosen.** `MAX_EDGE_GAP_MM` = 0.01 mm. An edge whose measured gap to its
+face's surface is over the cap is refused: "kernel pcurves: edge N lies G mm
+off the face's surface, over the cap of 0.01 mm". The reader adds the solid
+and the face (`#16 at read: pcurves failed on 1 of 6 faces; first: face
+#53: ...`).
+
+**Why.** With the reach of 1 mm, `bspline_discontinuous.step` (#1697) read
+as a closed solid of 1.125 mm3: its edges stand 0.25 mm off a 1 mm part, and
+the record raised their tolerances to 0.375 mm to cover that. On main it was
+refused by name, so the 1 mm reach loosened a verdict. The maintainer's
+Solidcraft keeps the same 1 mm limit (`MAX_TOLERANCE` = 1.0), so it would
+take the file too. The cap is set from the largest gap that `KernelTrims`
+measured on the fixtures that read:
+
+| Fixture | Largest gap (mm) |
+|---|---|
+| fig8.step | 3.5e-12 |
+| fillet_corner.step | 8.2e-13 |
+| bar_cross_holes.step | 1.2e-6 |
+| twisted_flank.step | no bare edge measured |
+| bspline_discontinuous.step | 0.25 (refused) |
+
+0.01 mm is about 8000 times the largest good gap and 25 times under the
+0.25 mm step. It is not more than the sim's verdict tolerance (twice the
+0.005 mm chord, #689), so an edge that is kept cannot move a verdict.
+
+**Dropped.**
+- The reader's 1 mm reach alone: it keeps the 0.25 mm step as a solid.
+- A cap on the raised tolerance (`SURFACE_GAP_MARGIN` times the gap): the
+  same test with a margin in it; the gap is the measured fact.
+- A second guard on the reader's notes ("tolerance raised to ..."): the
+  0.375 mm note came from `cover_gaps` itself, so the cap removes its cause.
+  Not added, to keep one rule in one place.
+
+### Bench verdicts against truck (fillet_corner, bar_cross_holes)
+
+**Chosen.** The rows of `fillet_corner.step` and `bar_cross_holes.step` are
+"disagree: volume, area" | "watertight, within tolerance". `fig8.step` is
+"agree" | "watertight, within tolerance".
+
+| Fixture | Main | Now |
+|---|---|---|
+| fig8 | solidcore refuses: #14 ... / no exact solid | agree / watertight |
+| fillet_corner | solidcore refuses: #1289 ... / no exact solid | disagree: volume, area / watertight |
+| bar_cross_holes | solidcore refuses: #655 ... / no exact solid | disagree: volume, area / watertight |
+| bspline_discontinuous | both refuse (#16) / no exact solid | the same |
+
+**Why.** Truck reads both files as open meshes (121 and 1090 open edges), so
+its volume is short (20651.68 against 26816.49 mm3; 45816.21 against
+78225.68 mm3). That is a defect of the truck path, which the app switch
+(#917, PR B) removes. To pin the exact volumes apart from truck,
+`crates/kernel/tests/step_closed_form.rs` checks each against:
+- a closed form from the fixture's own dimensions, relative 1e-5:
+  - fillet_corner: a 30 mm cube less three R 3.125 edge rounds and a
+    spherical corner, 27000 - 3 (1 - pi/4) r^2 (30 - r) - r^3 (1 - pi/6) =
+    26816.4939 mm3 (read 26816.49);
+  - bar_cross_holes: a R 25 x 40 bar less two blind radial R 2.5 holes with
+    flat bottoms at the file's z = 16.9707 and -16.9679, the hole volume
+    integrated over the hole's disc = 78225.6805 mm3 (read 78225.68);
+- solidcore's own closed sc-tess mesh, within the bench tolerance (1e-3);
+- the bounding box.
+
+**Dropped.** "agree" with a looser tolerance: it would hide truck's open
+mesh. Dropping the rows: the bench must name each fixture.
 
 **Why.** At the pinned commit the reader refuses a face whose free-form
 edges have no pcurve ("pcurves failed on ..."). Real files have such faces:

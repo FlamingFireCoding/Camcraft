@@ -2,8 +2,8 @@
 //! flank, read by the solidcore STEP reader with the kernel's own fitted
 //! pcurves (#917, `camcraft_kernel::solidcore_trims`). The exact model
 //! comes out closed at its true volume; the variant with a vertex lifted
-//! off its curves reads near that volume or is refused by name. Never a
-//! solid with a wall missing.
+//! off its curves is refused by name, and so is a file whose edges stand
+//! 0.25 mm off their faces. Never a solid with a wall missing.
 //! Fixtures (our own, testdata/models/): `twisted_flank.step` (volume 8000
 //! mm3, top at z = 60) and `twisted_flank_off.step` (one vertex 0.5 mm off
 //! its curves and its surface).
@@ -61,14 +61,37 @@ fn a_twisted_bspline_flank_reads_closed_at_its_volume() {
 }
 
 #[test]
-fn a_twisted_flank_with_a_vertex_off_its_curves_reads_or_is_refused_by_name() {
+fn a_twisted_flank_with_a_vertex_off_its_curves_is_refused_by_name() {
+    // Observed (#917): the flank's pcurve would have to move the surface by
+    // up to 0.89 mm to reach the vertex, over the reach the file gives it.
     match import("twisted_flank_off.step") {
-        Ok(solids) => {
-            assert_eq!(solids.len(), 1, "one solid: {solids:?}");
-            for (v, _, _) in solids {
-                assert!((v - 8000.0).abs() < 80.0, "volume {v} mm3, want about 8000");
-            }
+        Ok(solids) => panic!("twisted_flank_off.step must be refused, read {solids:?}"),
+        Err(e) => {
+            assert!(named(&e), "a refusal names its fault: {e}");
+            let s = e.to_string();
+            assert!(
+                s.contains("#117 at read: pcurves failed on"),
+                "refusal: {s}"
+            );
+            assert!(s.contains("off the surface's range"), "refusal: {s}");
         }
-        Err(e) => assert!(named(&e), "a refusal names its fault: {e}"),
+    }
+}
+
+#[test]
+fn an_edge_a_quarter_millimetre_off_its_face_is_refused_by_name() {
+    // bspline_discontinuous.step (#1697): edges 0.25 mm off their faces'
+    // surfaces, over `solidcore_trims::MAX_EDGE_GAP_MM`. The reader's own
+    // 1 mm reach would keep it as a closed solid of the wrong shape.
+    match import("bspline_discontinuous.step") {
+        Ok(solids) => panic!("bspline_discontinuous.step must be refused, read {solids:?}"),
+        Err(e) => {
+            let s = e.to_string();
+            assert!(s.contains("#16 at read: pcurves failed on"), "refusal: {s}");
+            assert!(
+                s.contains("off the face's surface, over the cap of 0.01 mm"),
+                "refusal: {s}"
+            );
+        }
     }
 }
