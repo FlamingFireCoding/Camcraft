@@ -211,18 +211,24 @@ mod stub {
     #[test]
     fn a_hung_program_is_stopped_at_the_time_limit_and_its_folder_removed() {
         let bench = Bench::new("hang");
+        bench.put("version.delay", "");
         bench.put("check.hang", "");
         let mut settings = bench.settings();
-        settings.timeout = Duration::from_millis(400);
+        settings.timeout = Duration::from_secs(3);
         let started = Instant::now();
         let text = refusal(&bench, &settings);
         assert!(started.elapsed() < Duration::from_secs(15), "stopped at the limit, not after the sleep");
         assert!(text.contains("did not finish") && text.contains("check"), "{text}");
         // The child itself is gone, not only abandoned.
         let pid = std::fs::read_to_string(bench.root.join("bin/check.pid")).expect("the stand-in wrote its pid");
-        #[cfg(target_os = "linux")]
-        assert!(!Path::new("/proc").join(pid.trim()).exists(), "process {pid} still runs");
-        assert!(!pid.trim().is_empty());
+        let pid: u32 = pid.trim().parse().expect("a numeric process id");
+        assert!(pid > 0, "a positive process id");
+        let status = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .expect("check whether the child still runs")
+            .status;
+        assert!(!status.success(), "process {pid} still runs");
     }
 
     #[test]

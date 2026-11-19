@@ -3,6 +3,7 @@
 # (#1873). It is not cadmpeg and holds none of its code. A test makes a folder,
 # links this file there as `cadmpeg`, and writes small files beside the link:
 #   version      the text `--version` prints
+#   version.delay `--version` waits one second before it prints
 #   check.json   what `check --json` prints on standard output
 #   check.err    what `check` prints on standard error
 #   check.exit   the exit status of `check` (0 when absent)
@@ -20,6 +21,7 @@ here=$(dirname "$0")
 status() { if [ -f "$here/$1" ]; then cat "$here/$1"; else echo 0; fi; }
 case "$1" in
 --version)
+    if [ -f "$here/version.delay" ]; then sleep 1; fi
     cat "$here/version"
     ;;
 check)
