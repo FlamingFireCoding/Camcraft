@@ -419,6 +419,7 @@ impl ParamsDto {
                 steep_stepover,
                 pencil_reference,
                 fill_openings,
+                gap_link,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
                 stepover: *stepover,
@@ -437,6 +438,7 @@ impl ParamsDto {
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
+                gap_link: (*gap_link).into(),
             },
             // The deburr ride (M2.5 E B): the six keys are the kind's
             // whole content - no pattern, no retract, nothing derived
@@ -454,6 +456,7 @@ impl ParamsDto {
                 exclude_holes,
                 hole_min_diameter,
                 hole_max_diameter,
+                unreachable,
             } => ParamsDto::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -466,6 +469,7 @@ impl ParamsDto {
                 exclude_holes: *exclude_holes,
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
+                unreachable: (*unreachable).into(),
             },
             // The 5-axis twins (M5.1 stage C): one shape, mirrored.
             // The contour arm has no stepover to name, so the pattern
@@ -1676,6 +1680,7 @@ impl ParamsDto {
                 steep_stepover,
                 pencil_reference,
                 fill_openings,
+                gap_link,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
                 stepover: *stepover,
@@ -1694,6 +1699,7 @@ impl ParamsDto {
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
+                gap_link: (*gap_link).into(),
             },
             // Read back whole, the blade kinds' way - sane or
             // nothing, `validate_kind`'s door first (M2.5 E B):
@@ -1710,6 +1716,7 @@ impl ParamsDto {
                 exclude_holes,
                 hole_min_diameter,
                 hole_max_diameter,
+                unreachable,
             } => OpParams::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -1722,6 +1729,7 @@ impl ParamsDto {
                 exclude_holes: *exclude_holes,
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
+                unreachable: (*unreachable).into(),
             },
             // The 5-axis twins (M5.1 stage C): the same shape read
             // back - the contour has no stepover key to lose, and the

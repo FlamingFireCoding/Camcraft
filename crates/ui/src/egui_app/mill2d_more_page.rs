@@ -8,6 +8,7 @@
 //! kind's own module names its sources); no vendor material or text.
 
 use super::fields::*;
+use camcraft_app::finishing3d::UnreachableEdges;
 
 pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut Cx<'_>) {
     let (u, tab, op_ctx) = (cx.u, cx.tab, cx.op_ctx);
@@ -219,6 +220,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             exclude_holes,
             hole_min_diameter,
             hole_max_diameter,
+            unreachable,
         } => {
             if tab == SEC_GEO {
                 prop_row(ui, "Break width", |ui| num(ui, u, width));
@@ -235,6 +237,11 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     hole_min_diameter,
                     hole_max_diameter,
                 );
+                // #1889: what an edge out of the cone's reach does.
+                let mut i = usize::from(*unreachable == UnreachableEdges::Refuse);
+                prop_row(ui, "Unreachable edges", |ui| combo(ui, "deburr.unreachable", &mut i, &["Skip with note", "Refuse"]));
+                *unreachable = if i == 1 { UnreachableEdges::Refuse } else { UnreachableEdges::SkipWithNote };
+                hint(ui, "an edge steeper than the cone's flank is out of reach: Skip with note leaves it and breaks the others, Refuse stops the operation");
             }
             if tab == SEC_HEIGHTS {
                 height_editor(

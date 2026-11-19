@@ -66,6 +66,7 @@ fn params() -> OpParams {
         exclude_holes: false,
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 
@@ -164,7 +165,7 @@ fn an_excluded_edge_stays_sharp() {
     let (world, mut h) = job();
     let skip = top_edge(&world, -20.0);
     let p = match params() {
-        OpParams::Deburr { exclude_edges: _, width, clearance_z, top_z, bottom_z, feed, plunge_feed, min_edge_angle_deg, exclude_holes, hole_min_diameter, hole_max_diameter } => OpParams::Deburr {
+        OpParams::Deburr { exclude_edges: _, width, clearance_z, top_z, bottom_z, feed, plunge_feed, min_edge_angle_deg, exclude_holes, hole_min_diameter, hole_max_diameter, unreachable } => OpParams::Deburr {
             exclude_edges: vec![skip],
             width,
             clearance_z,
@@ -176,6 +177,7 @@ fn an_excluded_edge_stays_sharp() {
             exclude_holes,
             hole_min_diameter,
             hole_max_diameter,
+            unreachable,
         },
         other => other,
     };
@@ -258,9 +260,10 @@ fn the_filters_round_trip_the_project_file() {
     let (world, mut h) = job();
     let skip = top_edge(&world, -20.0);
     let mut p = params();
-    if let OpParams::Deburr { exclude_edges, min_edge_angle_deg, exclude_holes, hole_min_diameter, hole_max_diameter, .. } = &mut p {
+    if let OpParams::Deburr { exclude_edges, min_edge_angle_deg, exclude_holes, hole_min_diameter, hole_max_diameter, unreachable, .. } = &mut p {
         exclude_edges.push(skip);
         (*min_edge_angle_deg, *exclude_holes, *hole_min_diameter, *hole_max_diameter) = (35.0, true, 2.0, 9.0);
+        *unreachable = camcraft_app::finishing3d::UnreachableEdges::Refuse;
     }
     h.execute(&world, CreateOperation::new(&world, "DB", CONE, SrcRef::Entity("plate".into()), p.clone()).expect("create"));
     let text = project::save_text(&world).expect("save");

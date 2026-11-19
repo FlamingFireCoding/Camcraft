@@ -4065,6 +4065,7 @@ const DOME_RIM_Z: f64 = 20.0 * std::f64::consts::FRAC_1_SQRT_2;
 
 fn finish_params(top_z: f64, bottom_z: f64, tolerance: f64) -> OpParams {
     OpParams::Finish3D {
+        gap_link: camcraft_app::finishing3d::GapLink::Jump,
         pattern: camcraft_app::finishing3d::FinishPattern::Waterline,
         stepover: None,
         tolerance,
@@ -7521,6 +7522,7 @@ fn deburr_params(width: f64, top_z: f64, bottom_z: f64) -> OpParams {
         exclude_holes: false,
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 
@@ -7725,6 +7727,7 @@ fn the_deburr_seed_carries_the_heights_and_a_hand_break_width() {
         exclude_edges,
         min_edge_angle_deg,
         exclude_holes,
+        unreachable,
         ..
     } = (row.seed)(&carried)
     else {
@@ -7741,6 +7744,7 @@ fn the_deburr_seed_carries_the_heights_and_a_hand_break_width() {
     assert_eq!(bottom_z, carried.bottom);
     assert_eq!(feed, 500.0);
     assert_eq!(plunge_feed, 100.0);
+    assert_eq!(unreachable, camcraft_app::finishing3d::UnreachableEdges::SkipWithNote, "#1889: the seed skips with a note");
 }
 
 /// The ride's model: a 40 x 20 x 10 brick standing on the stock floor,

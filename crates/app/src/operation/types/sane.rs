@@ -500,6 +500,8 @@ impl OpParams {
                 exclude_holes: _,
                 hole_min_diameter,
                 hole_max_diameter,
+                // #1889: the policy is an enum; each value is legal.
+                unreachable: _,
             } => {
                 pos(*width)
                     && clearance_z.is_sane()

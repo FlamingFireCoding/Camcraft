@@ -102,6 +102,7 @@ fn deburr() -> OpParams {
         exclude_holes: false,
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 
