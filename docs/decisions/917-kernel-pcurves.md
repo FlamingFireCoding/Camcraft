@@ -137,3 +137,37 @@ below.
 **Cost to change later.** Low. The seam is one trait. If the reader later
 makes the pcurves itself, `read_step` calls `read_solids` again and
 `solidcore_trims.rs` is deleted; the bench pins show any change of verdict.
+
+### Port verdicts that the pin move changed (solidcore 55d0e76 -> 2016386)
+
+The narrow batch gate found three kernel pins that the pin move changed.
+KernelTrims is not the cause: none of these tests reads STEP.
+
+- **Rim chamfer (`blend`).** The default path now gives the cone (upstream
+  WR-421, solidcore#420). Chosen: the "not yet" test becomes
+  `rim_chamfer_default_path_matches_the_cone`, as the test asked. It heals
+  the result (`heal` hands out only a closed solid) and measures it against
+  the cone's closed form, in volume and box. Dropped: a deleted test, and
+  an unchanged "not yet" test with a loose bound.
+- **Box at a NaN origin (`corrupt_input`).** The port now refuses it
+  (`Err`); 55d0e76 built a non-solid box. Chosen: pin `Err`, with a comment
+  that names the rev. The refusal is the stricter verdict. The other 14
+  rows do not change.
+- **Zone tolerance edits (`import_corpus`).** The writer now prints the
+  zone tolerance as `1e-5`, not `0.0000100000000000`. The corpus edit was a
+  literal `replacen`, so the zero, negative and NaN rows read the intact
+  box. Only the NaN row failed, because the other two rows pin "Ok". The
+  reader does not accept a NaN tolerance: `read_smb` refuses a non-finite
+  one by name (it did before this change), but the edit did not reach it.
+  Chosen:
+  - the edit finds the header line by its label (`zone_tolerance`);
+  - the corpus test asserts that each edit changed the file;
+  - the new test `non_finite_zone_tolerance_is_refused_by_name` asserts the
+    refusal text of `read_smb` and `import_smb` for NaN, inf and -inf.
+
+  All pinned rows stay as they were, with the "replaced by 1e-4" notes of
+  the zero and negative rows. Dropped: a second refusal in the importer.
+  `read_smb` already refuses before the port parses, and `import_smb` calls
+  it first. Also dropped: a refusal of a zero or negative tolerance. The
+  importer replaces those values and reports the change in a pinned note;
+  that is the earlier decision for the INTACT rows.
