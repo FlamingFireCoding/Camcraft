@@ -247,6 +247,11 @@ impl Guarded {
         let mut kinds = Vec::with_capacity(shell.faces.len());
         let mut continuous = Vec::with_capacity(shell.faces.len());
         let pass = Arc::<Pass>::default();
+        // #2754: an edge is divided as fine as its faces ask.
+        let bounds: Vec<(Option<super::step_fit::Curved>, Vec<usize>)> = shell.faces.iter()
+            .map(|f| (super::step_fit::Curved::of(&f.surface), f.boundaries.iter().flatten().map(|e| e.index).collect()))
+            .collect();
+        let fine = super::step_fit::edge_divisors(shell.edges.len(), &bounds);
         let faces = shell
             .faces
             .into_iter()
@@ -258,8 +263,8 @@ impl Guarded {
                 CompressedFace { boundaries: f.boundaries, orientation: f.orientation, surface }
             })
             .collect();
-        let edges = shell.edges.into_iter().map(|e| truck_topology::compress::CompressedEdge {
-            vertices: e.vertices, curve: super::step_division::CurveGuard::in_pass(e.curve, cap, Arc::clone(&pass)),
+        let edges = shell.edges.into_iter().zip(fine).map(|(e, fine)| truck_topology::compress::CompressedEdge {
+            vertices: e.vertices, curve: super::step_division::CurveGuard::in_pass(e.curve, cap, Arc::clone(&pass)).finer(fine),
         }).collect();
         Self { shell: CompressedShell { vertices: shell.vertices, edges, faces }, meters, kinds, continuous, pass }
     }

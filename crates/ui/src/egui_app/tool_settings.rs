@@ -59,10 +59,12 @@ fn contents(ui: &mut Ui, state: &mut State) {
     // The property grid takes the pane: the label on the left half, the
     // input on the right half (#2014).
     super::tool_settings_grid::grid(ui, state);
-    // #371: the placed body's envelope rides the profile. #2017: the one
-    // side preview, under the fields.
-    let body = if exists { super::tool_body_page::envelope(state) } else { None };
-    super::tool_preview::draw(ui, &preview_tool, u, body.as_deref(), false);
+    // #371: the placed body's envelope rides the profile. #2007: the one
+    // side preview, under the fields; it draws the profile tab's draft
+    // through `preview_inputs`. #2397: the Body / Profile tabs and the
+    // shape editor live in their own window ("Edit tool shape").
+    let (body, steel) = super::tool_profile_page::preview_inputs(state, exists);
+    super::tool_preview::draw(ui, &preview_tool, u, body.as_deref(), steel.as_deref(), false);
     ui.separator();
     let name_now = state.tool_ui.name.clone();
     let block = if name_now.trim().is_empty() {
