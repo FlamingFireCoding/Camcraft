@@ -151,6 +151,9 @@ fn layout_page_wcs() {
         .with_size(Vec2::new(1280.0, 900.0))
         .build_ui_state(frame, ShellUi::seeded());
     let h = page_in(tall, UiTarget::Wcs);
+    for label in ["Pick origin", "Pick X axis", "Pick Y axis", "Pick Z axis", "Clear"] {
+        assert!(h.query_by_label(label).is_some(), "WCS feature table has {label}");
+    }
     // #870: the one "Set origin" sits in the footer, under the page body.
     assert_page_layout(&h, "WCS", &["Turn X+", "Turn X-", "Level", "Bottom", "Pick markers in viewport", "NW", "SW", "Set origin"]);
 }
