@@ -326,3 +326,40 @@ fn hurco_refuses_left_hand_tap_export_and_roundtrips_right_hand() {
     let err = export(&tap).expect_err("Hurco export must not silently change tap hand");
     assert!(err.contains("Fine Tap") && err.contains("left-hand"), "{err}");
 }
+
+#[test]
+fn hurco_refuses_non_center_cutting_exports_and_preserves_supported_roundtrips() {
+    for (code, kind, geometry) in [
+        (0, ToolKind::BullNose, "<TipRadius>1</TipRadius>"),
+        (2, ToolKind::Taper, "<Angle>90</Angle>"),
+        (16, ToolKind::BallNose, ""),
+        (14, ToolKind::EndMill, ""),
+    ] {
+        let name = format!("Six mm {kind}");
+        let xml = format!(
+            "<Hurco_Document><Tools><Tool><Name>{name}</Name><Number>17</Number>\
+<Diameter>6</Diameter><ToolType>{code}</ToolType>{geometry}</Tool></Tools></Hurco_Document>"
+        );
+        let mut tool = parse_controller_table(ToolTableFormat::Hurco, &xml, Unit::Millimeters)
+            .expect("sane cutter fixture").remove(0).tool;
+        for center_cutting in [true, false] {
+            tool.center_cutting = center_cutting;
+            assert!(tool.why_not_sane().is_none(), "fixture must be sane: {name}");
+            let result = export_controller_table(
+                ToolTableFormat::Hurco,
+                &[ToolTableExportRow { number: 17, name: &name, tool: &tool, gauge_len: None }],
+                Unit::Millimeters,
+            );
+            if !center_cutting && kind != ToolKind::EndMill {
+                let err = result.expect_err("export must preserve the plunge restriction");
+                assert!(err.contains(&name) && err.contains("non-center-cutting"), "{err}");
+            } else {
+                let exported = result.expect("supported cutter export");
+                let back = parse_controller_table(ToolTableFormat::Hurco, &exported, Unit::Millimeters)
+                    .expect("supported cutter round trip");
+                assert_eq!(back[0].tool.kind, kind);
+                assert_eq!(back[0].tool.center_cutting, center_cutting, "{name}");
+            }
+        }
+    }
+}

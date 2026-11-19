@@ -89,3 +89,14 @@ must not change a left-hand tap into a right-hand tap.
 **Considered and dropped:** Guessing pitch from free-form descriptions or
 using a default pitch does not establish the cutter's required pitch.
 Writing an unverified Hurco hand field cannot establish a safe round trip.
+
+**Decided after the third review:** Refuse Hurco export by tool name for
+non-center-cutting bull-nose, chamfer, and ball-nose tools. Keep type 15 for
+non-center-cutting flat end mills.
+
+**Why:** The supported Hurco types cannot preserve this restriction for the
+three cutter kinds. Changing the flag could permit an unsafe plunge.
+
+**Considered and dropped:** Writing an unverified controller field does not
+establish a safe round trip. Support for another field requires verification
+and round-trip tests before these exports can be accepted.

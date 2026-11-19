@@ -289,6 +289,8 @@ fn hurco_unsupported_label(code: i32) -> &'static str {
 
 fn camcraft_to_hurco_type(tool: &Tool) -> Result<i32, String> {
     match tool.kind {
+        ToolKind::BullNose | ToolKind::Taper | ToolKind::BallNose if !tool.center_cutting =>
+            Err("non-center-cutting tool cannot be exported to a Hurco .TCM tool library".into()),
         ToolKind::BullNose => Ok(0),
         ToolKind::Taper => Ok(2),
         ToolKind::Drill => Ok(11),
