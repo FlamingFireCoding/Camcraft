@@ -543,7 +543,7 @@ fn project_v72_keeps_linked_sources_and_protection_and_refuses_a_bad_source() {
     assert_eq!(source["path"], json!(dir.join("tower.stl").display().to_string()));
     assert_eq!(source["sha256"].as_str().map(str::len), Some(64));
     let op = rows.iter().find(|row| row["name"] == op_name).expect("operation");
-    let area = op["area"].clone();
+    let area = op["operation"]["area"].clone();
     assert!(area.to_string().contains("do_not_touch"), "{area}");
 
     let world = new_world();
@@ -554,7 +554,7 @@ fn project_v72_keeps_linked_sources_and_protection_and_refuses_a_bad_source() {
     let restored: Value = serde_json::from_str(&before).expect("round trip json");
     let rows = restored["entities"].as_array().expect("entities");
     assert_eq!(rows.iter().find(|row| row["name"] == "tower").expect("tower")["source"], source);
-    assert_eq!(rows.iter().find(|row| row["name"] == op_name).expect("operation")["area"], area);
+    assert_eq!(rows.iter().find(|row| row["name"] == op_name).expect("operation")["operation"]["area"], area);
 
     let rows = doc["entities"].as_array_mut().expect("entities");
     rows.iter_mut().find(|row| row["name"] == "tower").expect("tower")["source"]["sha256"] = json!("ABC");
