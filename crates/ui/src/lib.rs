@@ -20,6 +20,12 @@ pub mod diag;
 pub mod cli_options;
 #[cfg(test)]
 mod cli_options_tests;
+pub mod launch_file;
+pub mod model_link_watch;
+#[cfg(test)]
+mod model_link_tests;
+#[cfg(test)]
+mod launch_file_tests;
 
 pub mod actions;
 pub mod play_precalc;
@@ -63,6 +69,7 @@ pub mod view_frame;
 pub mod mcp_host;
 pub mod operations;
 pub mod path_lines;
+pub(crate) mod path_overlay;
 pub mod pick_line_memo;
 pub(crate) mod refusal_ghost;
 pub mod post_file;
@@ -88,6 +95,8 @@ pub mod wcs_circle_pick;
 mod file_pick_tests;
 #[cfg(test)]
 mod law_tests;
+#[cfg(test)]
+mod ortho_pick_tests;
 #[cfg(test)]
 mod refusal_focus_tests;
 #[cfg(test)]

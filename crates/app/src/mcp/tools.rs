@@ -25,7 +25,7 @@ const TOOLS: &[Tool] = &[
     Tool { name: "open_project", description: "Open a .camproj project file, replacing the current document and clearing undo history.", schema: s_path, run: open_project },
     Tool { name: "save_project", description: "Save the document as a .camproj file. Without a path, saves over the file last opened or saved.", schema: s_opt_path, run: save_project },
     Tool { name: "import_model", description: "Import a mesh model (STL, STEP or OBJ) through the app's importers. A name already used by a model updates that model. A STEP model too large to import at full detail answers with reduced_fidelity: how closely its surfaces are approximated, in mm - gouge checks against it are stricter, and its operations are refused at the post when it is too coarse to check; import it again with a larger facet_budget to clear that. A STEP closed shell that meshes open imports incomplete: reduced_fidelity then says incomplete and names the hole, and every operation on the model is refused at the post. notes lists what the importer changed, e.g. a STEP face wound against its neighbours that was flipped, by name, or a closed STEP solid wound inward that was turned outward.", schema: s_import, run: import_model },
-    Tool { name: "get_job", description: "The whole document as JSON: setups, stock, work offsets, models (one imported at reduced fidelity carries reduced_fidelity), tools, and operations with their parameters and status.", schema: s_empty, run: job::get_job },
+    Tool { name: "get_job", description: "The whole document as JSON: setups (each with model_reference: a solid part, or the virtual reference of its placed DXF profiles), stock, work offsets, models (one imported at reduced fidelity carries reduced_fidelity), DXF profiles, tools, and operations with their parameters and status (one on a DXF profile says what it checks against).", schema: s_empty, run: job::get_job },
     Tool { name: "get_selection", description: "Read currently selected entities, active setup, active operation, viewport pick mode (model, face, edge, vertex), and active geometry picks.", schema: s_empty, run: super::selection::get_selection },
     Tool { name: "list_operation_types", description: "Every operation kind with its parameter fields, JSON types and default values, and the tool kinds it accepts.", schema: s_empty, run: job::list_operation_types },
     Tool { name: "list_tool_catalog", description: "The built-in tool catalog: names and definitions add_tool can copy into the document.", schema: s_empty, run: job::list_tool_catalog },
@@ -37,7 +37,7 @@ const TOOLS: &[Tool] = &[
     Tool { name: "export_tool_library", description: "Write the document's tools to a CamCraft library (.camtools), a Tormach PathPilot tool table (.csv), or a Hurco WinMax tool library (.TCM), detected from path or chosen with format. units (mm or inch) applies to controller tables and defaults to document units. Refuses a document with no tools, an unwriteable path, or a tool that cannot fit the target table.", schema: s_library, run: export_tool_library },
     Tool { name: "import_tool_library", description: "Import a CamCraft library (.camtools/.json), Tormach PathPilot tool table (.csv), or Hurco WinMax tool library (.TCM) as one undo step. format (default auto) overrides detection; units (mm or inch) applies to controller tables and defaults to document units. mode add (default): skips an identical tool, renames a clashing name; update: updates matching names in place; replace: removes absent tools unless used. holders (default true) takes holders from .camtools files. Malformed rows, unsupported Hurco tool types, or tool-number clashes refuse by name.", schema: s_import_library, run: import_tool_library },
     Tool { name: "set_stock", description: "Set the active setup's stock: a box, a cylinder, or a copy of a model.", schema: s_stock, run: edit::set_stock },
-    Tool { name: "add_operation", description: "Add an operation of a kind (see list_operation_types) with a tool, on the stock or a model, seeded with the kind's defaults and an optional params patch. Not generated until generate runs.", schema: s_add_op, run: edit::add_operation },
+    Tool { name: "add_operation", description: "Add an operation of a kind (see list_operation_types) with a tool, on the stock, a model or a placed DXF profile (2D milling, plasma and wire EDM kinds only; a kind that needs a solid model refuses a profile by name), seeded with the kind's defaults and an optional params patch. Not generated until generate runs.", schema: s_add_op, run: edit::add_operation },
     Tool { name: "edit_operation", description: "Patch an operation's parameters: the given fields replace the current ones (JSON merge patch over the kind's fields; null clears an optional field). One undo step.", schema: s_edit_op, run: edit::edit_operation },
     Tool { name: "detect_holes", description: "Fill a Drill, Bore or Thread operation's hole list from its source model's holes (the app's Detect holes button); a Thread operation whose params say external: true gets the model's upright round bosses instead. A Bore operation leaves out holes wider than its tool's ring clears without a core (3 x tool diameter + 2 x stock to leave) and names each in `skipped`. A Drill operation keeps a hole wider than its Drill-kind drill (a pilot is valid) and names each in `undersize`; its toolpath then carries a `drill_undersize` warning per such hole that does not hold the post. One undo step.", schema: s_name, run: edit::detect_holes },
     Tool { name: "detect_pockets", description: "A model's recognised pockets and slots (closed or open pockets, straight slots with open, round or square ends): boundary, floor and top Z, depth, tightest inside corner, slot width and open sides. With create, adds the operation that machines one of them (a Pocket over its floor, or a Slot along its centreline). One undo step.", schema: pockets::s_detect_pockets, run: pockets::detect_pockets },
@@ -56,7 +56,7 @@ const TOOLS: &[Tool] = &[
 ];
 
 /// Every row: this table, then the setup furniture's (#181), then the
-/// part placement (#716), ..., then operation names and order (#45).
+/// part placement (#716), ..., then operation names and order (#45), then the DXF profiles (#1862).
 fn all() -> impl Iterator<Item = &'static Tool> {
     TOOLS
         .iter()
@@ -70,6 +70,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::wcs_tools::TOOLS)
         .chain(super::wcs_flip_tools::TOOLS)
         .chain(super::model_tools::TOOLS)
+        .chain(super::model_link_tools::TOOLS)
         .chain(super::vise_tools::TOOLS)
         .chain(super::accessory_tools::TOOLS)
         .chain(super::cutter_tools::TOOLS)
@@ -87,6 +88,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::machine_tools::TOOLS)
         .chain(super::tool_number_tools::TOOLS)
         .chain(super::post_options_tools::TOOLS)
+        .chain(super::sketch_tools::TOOLS)
         .chain(super::holder_dxf_tools::TOOLS)
 }
 
@@ -351,7 +353,7 @@ fn s_add_op() -> Value {
             "kind": { "type": "string", "description": "Operation kind: label or key from list_operation_types." },
             "tool": { "type": "string", "description": "A document tool name (add_tool first). Required, except for a kind that mounts no tool (list_operation_types says \"mounts_tool\": false): omit it there; naming one is refused." },
             "name": { "type": "string", "description": "Operation name; defaults to the kind's label plus a number." },
-            "source": { "type": "string", "description": "\"stock\" (default) or a model name." },
+            "source": { "type": "string", "description": "\"stock\" (default), a model name, or a placed DXF profile's name." },
             "params": { "type": "object", "description": "Fields to change from the kind's defaults." }
         }),
         &["kind"],

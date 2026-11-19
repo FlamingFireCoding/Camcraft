@@ -167,6 +167,7 @@ pub fn is_model(world: &World, entity: &Entity) -> bool {
         && !is_operation(world, entity)
         && !is_setup(world, entity)
         && !crate::program_entry::is_entry(world, entity) // #155
+        && !crate::sketch::is_sketch(world, entity) // #1862: a DXF profile is not a model
 }
 
 /// The model's geometry revision counter (M3.1): `0` for an entity that
@@ -272,6 +273,13 @@ pub fn name_of(world: &World, entity: &Entity) -> Option<String> {
 #[must_use]
 pub fn toolpath_of(world: &World, entity: &Entity) -> Option<Toolpath> {
     entity.entity_view(world).try_get::<&Toolpath>(|t| t.clone())
+}
+
+/// Read the cached path in place - [`toolpath_of`] without the clone,
+/// for per-frame readers (#2201: an 8000-move path cloned per frame per
+/// reader cost the UI whole milliseconds). `None` when not generated.
+pub fn with_toolpath<R>(world: &World, entity: &Entity, f: impl FnOnce(&Toolpath) -> R) -> Option<R> {
+    entity.entity_view(world).try_get::<&Toolpath>(f)
 }
 
 /// Is there a cached path here at all - [`toolpath_of`]'s cheap cousin

@@ -117,6 +117,16 @@ pub struct StepBudget {
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct StepSource(pub String);
 
+/// The file a model was imported from and the SHA-256 of the bytes that
+/// were read (#2463): a linked model. While the project is open, a new
+/// hash of that file imports it again under the same name, as one undo
+/// step; operations only go Stale. Absent: not linked.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct ModelSource {
+    pub path: String,
+    pub sha256: String,
+}
+
 /// The hole of a model imported from a STEP closed shell that meshes open
 /// (#1610), said in words: the model rides fidelity unknown
 /// (`ReducedFidelity` at `model_fidelity::UNKNOWN_MM`) and every refusal
@@ -184,6 +194,23 @@ pub struct GeomPrintMemo {
     pub ptr: usize,
     pub len: usize,
     pub hash: [u64; 2],
+}
+
+/// A DXF profile placed on the stock of a setup (#1862, `crate::sketch`):
+/// 2D reference geometry for cutting, not a model. It never has `Facets`,
+/// so no 3D solid tool reads it as a mesh, and `model::is_model` is false
+/// for it. `setup` follows the declared-vs-effective law of
+/// `Operation::setup`. The entity's `Location` is not a world placement:
+/// it is relative to the top face of the setup's stock, at the stock
+/// origin (`sketch::face_frame`), with Z 0 and a turn about the face
+/// normal only. `data` holds the primitives in mm, the layer names, the
+/// source units, the join tolerance, the chains and the import summary;
+/// it is shared (`Arc`) and freed when the last holder goes. Written only
+/// by `ImportDxf`, `MoveSketch`, `DeleteEntity` and the project loader.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct Sketch {
+    pub setup: Option<String>,
+    pub data: std::sync::Arc<crate::sketch_data::SketchData>,
 }
 
 /// Unit tag marking an entity as a work coordinate system origin: a
@@ -844,6 +871,7 @@ pub fn register_schema(world: &World) {
     world.component::<ReducedFidelity>();
     world.component::<StepBudget>();
     world.component::<StepSource>();
+    world.component::<ModelSource>();
     world.component::<MeshOpen>();
     world.component::<Selected>();
     world.component::<StockDef>();
@@ -851,6 +879,7 @@ pub fn register_schema(world: &World) {
     world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
+    world.component::<Sketch>();
     world.component::<WcsFlip>();
     world.component::<ToolDef>();
     world.component::<ToolBody>();

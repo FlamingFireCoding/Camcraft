@@ -628,6 +628,10 @@ pub struct EntityDto {
     /// Raw STEP text preserved on entities imported from STEP (#744).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_source: Option<String>,
+    /// #2463 (v72): the file a linked model was imported from and its
+    /// SHA-256. Absent: not linked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<super::SourceDto>,
     /// Absent means Model; only non-model entities carry the tag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<EntityKind>,
@@ -669,6 +673,10 @@ pub struct EntityDto {
     /// `kind == Some(Entry)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<super::program_entry_dto::ProgramEntryDto>,
+    /// A DXF profile's drawing (#1862); present exactly when
+    /// `kind == Some(Sketch)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sketch: Option<super::sketch_dto::SketchDto>,
     /// #1720 (v67): a WCS row's flipped axes; present only on a WCS
     /// with at least one axis flipped. Absent is no flip - every older
     /// file. The post mirrors a flipped X or Y (#1649).

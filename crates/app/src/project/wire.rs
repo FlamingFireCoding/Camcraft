@@ -53,6 +53,8 @@ pub fn collect(world: &World) -> ProjectFile {
                 Some(EntityKind::Setup)
             } else if crate::program_entry::is_entry(world, &entity) {
                 Some(EntityKind::Entry)
+            } else if crate::sketch::is_sketch(world, &entity) {
+                Some(EntityKind::Sketch)
             } else {
                 None
             };
@@ -147,6 +149,7 @@ pub fn collect(world: &World) -> ProjectFile {
                 | Some(EntityKind::Tool)
                 | Some(EntityKind::Operation)
                 | Some(EntityKind::Setup)
+                | Some(EntityKind::Sketch)
                 | Some(EntityKind::Entry) => None,
                 Some(EntityKind::Stock)
                     if matches!(
@@ -180,6 +183,11 @@ pub fn collect(world: &World) -> ProjectFile {
                 mesh_open: crate::mesh_open::hole_of(world, &entity),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
                 step_source: kind.is_none().then(|| crate::step_source::of(world, &entity)).flatten(),
+                source: kind
+                    .is_none()
+                    .then(|| crate::model_source::of(world, &entity))
+                    .flatten()
+                    .map(|s| super::SourceDto::of(&s)),
                 kind,
                 raw_stock_only: mark.is_some(),
                 raw_stock_print: mark.as_ref().map(crate::stock_print::to_text),
@@ -193,6 +201,7 @@ pub fn collect(world: &World) -> ProjectFile {
                 setup,
                 fixture,
                 entry: super::program_entry_dto::collect(world, &entity),
+                sketch: super::sketch_dto::collect(world, &entity),
                 flip: matches!(kind, Some(EntityKind::Wcs))
                     .then(|| crate::setup_wcs_flip::of_entity(world, &entity))
                     .filter(|f| f.iter().any(|v| *v))

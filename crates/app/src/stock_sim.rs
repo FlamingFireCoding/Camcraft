@@ -234,6 +234,10 @@ pub(crate) struct Planned {
     /// #2435: the breaks are a 2D Chamfer's, whose tip the law puts on
     /// a wall - credited only where it stands on one (`on_walls`).
     pub walled: bool,
+    /// #2596: a 2D Chamfer with no picks (its source the whole model):
+    /// on a model that carries a modelled bevel, none of its breaks are
+    /// credited (`stock_sim_breaks::program_breaks`).
+    pub auto_edges: bool,
     /// The mark budget and target part(s) the op declares (#1595, #1627,
     /// `operation::mark_law`): `Some` only for an Engrave or Trace.
     pub mark: Option<crate::operation::mark_law::SimMark>,
@@ -407,6 +411,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
             // and never a stock edge's bevel over a part.
             breaks: if breaks::breaks_stock_edge(world, &op) { Vec::new() } else { breaks::bounded(name, &op.params, cache.path.breaks) },
             walled: matches!(op.params, crate::operation::OpParams::Chamfer2D { .. }),
+            auto_edges: breaks::auto_edges(&op),
             mark: crate::operation::mark_law::sim_mark_of(world, &op, tool.diameter * 0.5),
             radius,
             ball: tool.kind == crate::tools::ToolKind::BallNose,

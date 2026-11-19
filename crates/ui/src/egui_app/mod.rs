@@ -200,7 +200,7 @@ mod browser_tree;
 mod tree_entry;
 mod browser_pane;
 mod tree_menu;
-mod fixture_menu;
+pub(crate) mod fixture_menu;
 // #339 slice 6: the fixture library's Save / Insert dialogs.
 pub(crate) mod fixture_library_dialog;
 pub(crate) mod fixture_vise_dialog;
@@ -389,7 +389,8 @@ pub fn run(args: &[String]) -> i32 {
         }
         run_headless()
     } else {
-        run_windowed(pick, want, mcp_port)
+        // #2462: the file named on the command line opens in the window.
+        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args))
     }
 }
 
@@ -416,15 +417,15 @@ fn run_headless() -> i32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>) -> i32 {
-    shell_window::run_windowed(pick, want, mcp_port)
+fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
+    shell_window::run_windowed(pick, want, mcp_port, files)
 }
 
 /// #31: the browser build has no winit window to open - its shell is the
 /// web runner still owed on that issue - so the windowed entry refuses by
 /// name instead of pretending.
 #[cfg(target_arch = "wasm32")]
-fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>) -> i32 {
+fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String]) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }

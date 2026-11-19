@@ -327,6 +327,10 @@ impl SetOperationSetup {
                 target.map_or_else(|| "the first setup".to_string(), str::to_string)
             )));
         }
+        // #1862: a DXF profile belongs to one setup - an operation on it
+        // does not move to a different one, and a 3D kind does not move
+        // into a setup whose model is virtual.
+        super::operation::sketch_gate(world, target, &prev.src, &prev.params)?;
         let next = Operation {
             setup: target.map(str::to_string),
             ..prev.clone()
