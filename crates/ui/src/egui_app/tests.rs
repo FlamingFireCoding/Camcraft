@@ -3009,6 +3009,11 @@ fn inch_mode_drag_keeps_px_parity_and_types_onto_the_lattice() {
         12.7,
         "a typed half inch must store exactly 12.7 mm"
     );
+    // The tool settings page scrolls: on the default-height shell the
+    // Apply button sits below the fold, so the click needs the settled
+    // scrolled rect (the idiom the op-page draft test carries).
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
     harness.get_by_label("Apply").click();
     harness.run();
     assert_eq!(
