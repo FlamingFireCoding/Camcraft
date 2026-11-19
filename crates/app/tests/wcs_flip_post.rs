@@ -105,6 +105,7 @@ fn a_flipped_z_refuses_the_post_by_name() {
     assert!(
         gate.iter().any(|p| p.contains("the WCS (G54) has its Z axis flipped")
             && p.contains("a flipped Z is not carried into the program yet")
+            && p.contains("a preset length needs G44, a length touched off on that control needs G43")
             && p.contains("(operations: Face1)")),
         "named refusal, got: {gate:?}"
     );

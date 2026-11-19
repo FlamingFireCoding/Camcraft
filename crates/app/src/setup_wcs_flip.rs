@@ -79,10 +79,9 @@ pub fn setup_problem(world: &World, declared: Option<&str>) -> Option<String> {
     let axis = if n == 1 { "axis" } else { "axes" };
     let what = format!("{} has its {} {axis} flipped", owner_of(world, declared), axes_text(flip));
     if flip[2] {
-        return Some(format!(
-            "{what}; a flipped Z is not carried into the program yet (tool-length compensation and the \
-             drilling cycles' retract need the controller's +Z to leave the work) - clear Flip Z on the WCS page"
-        ));
+        // #2474: the exact reason, in the post engine's own words.
+        let why = crate::post::wcs_flip::Z_REASON;
+        return Some(format!("{what}; a flipped Z is not carried into the program yet: {why} - clear Flip Z on the WCS page"));
     }
     let rotated = crate::setup::wcs_entity(world, declared)
         .and_then(|e| model::transform_of(world, &e))
