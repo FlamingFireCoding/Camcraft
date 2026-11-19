@@ -121,6 +121,25 @@ fn layout_shell() {
 }
 
 #[test]
+fn layout_page_viewport() {
+    let mut h = shell_harness();
+    h.run();
+    let nav = hud(h.state()).nav_rect(viewcube::Nav::Move).center();
+    click_viewport(&mut h, nav);
+    let pane = super::layout::leaf_rect(&h.state().dock, &Tab::Viewport).expect("viewport leaf");
+    let move_choice = h.get_by_label("Move value").rect();
+    let turn_choice = h.get_by_label("Rotate value").rect();
+    let field = h.get_by_label("Move distance").rect();
+    assert!(pane.contains(move_choice.min) && pane.contains(turn_choice.max), "value selectors fit inside the viewport");
+    assert!(move_choice.bottom() <= field.top(), "the editor sits below the value selectors");
+    assert!(field.bottom() <= hud(h.state()).nav_rect(viewcube::Nav::Move).top(), "the editor clears the icon bar");
+    h.get_by_label("Rotate value").click();
+    h.run();
+    let angle = h.get_by_label("Rotate angle").rect();
+    assert!(pane.contains(angle.min) && pane.contains(angle.max), "the angle editor fits inside the viewport");
+}
+
+#[test]
 fn layout_shell_light() {
     let _g = snapshot_guard();
     let mut h = shell_harness();

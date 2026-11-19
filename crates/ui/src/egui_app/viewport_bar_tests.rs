@@ -1,5 +1,5 @@
 //! The bottom bar's laws (#1198): the camera buttons, the ribbon size and
-//! the Move / Rotate modes that never share the part (#2047).
+//! the combined Move and Rotate handles (#2624).
 //! Provenance: our own tests over our own bar.
 //! Gate map: covers ui::egui_app::viewport_bar.
 
@@ -71,13 +71,18 @@ fn bar_fits_its_buttons() {
 }
 
 #[test]
-fn move_and_rotate_modes_never_share_the_part() {
+fn move_gizmo_shows_arrows_and_rings_together() {
     let mut state = State::new();
     act(&mut state, Nav::Rotate);
     assert!(state.rotate_handles && !state.move_handles);
     assert_eq!(state.status, rotate_label(true));
     act(&mut state, Nav::Move);
-    assert!(state.move_handles && !state.rotate_handles, "Move on puts Rotate off");
+    assert!(state.move_handles && state.rotate_handles, "Move shows arrows and rings together");
+    act(&mut state, Nav::Rotate);
+    assert!(state.move_handles && state.rotate_handles, "Rotate keeps both handle sets while Move is on");
+    assert!(state.handle_bar.turn_value, "Rotate selects the angle editor while Move is on");
+    act(&mut state, Nav::Move);
+    assert!(!state.move_handles && !state.rotate_handles, "Move off clears both handle sets");
     act(&mut state, Nav::Rotate);
     assert!(state.rotate_handles && !state.move_handles, "Rotate on puts Move off");
     act(&mut state, Nav::Rotate);
