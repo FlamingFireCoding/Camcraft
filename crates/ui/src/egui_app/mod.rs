@@ -40,6 +40,9 @@ mod pick_button;
 mod gcode_highlight;
 mod gcode_view;
 mod debug_info;
+// #1696: the Report door - the window that fills GitHub's new-issue form
+// in, and the screenshot it puts on the clipboard.
+mod report;
 mod status_alert;
 
 mod stock_info;
@@ -308,6 +311,8 @@ mod plasma_ribbon_tests;
 mod machine_mode_tests;
 #[cfg(test)]
 mod debug_info_tests;
+#[cfg(test)]
+mod report_tests;
 #[cfg(test)]
 mod fresh_op_tests;
 #[cfg(test)]

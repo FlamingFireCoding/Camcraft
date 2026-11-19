@@ -178,6 +178,9 @@ pub(crate) fn shell_layout(
     // (in-app egui::Window over the dock, None on a fresh State, so
     // snapshots never move until the Setup pane opens it).
     machine_editor::window(ui.ctx(), state);
+    // #1696: the Report an issue window - same window law (closed on a
+    // fresh State, opened from the status strip's Report door).
+    super::report::window(ui.ctx(), state);
     super::post_dialog::window(ui.ctx(), state);
     // #339 slice 6: the fixture library dialogs (None on a fresh State).
     super::fixture_library_dialog::window(ui.ctx(), state);

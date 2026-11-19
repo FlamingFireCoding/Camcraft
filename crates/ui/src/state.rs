@@ -1736,6 +1736,12 @@ pub struct State {
     /// floating). Mirrored from the dock each frame by `layout::settle`;
     /// view state - never a command.
     pub debug_info_open: bool,
+    /// #1696: the Report an issue window is open. View state - never a
+    /// command, never saved.
+    pub report_open: bool,
+    /// #1696: the title typed into the Report window, kept between visits
+    /// so a mis-click does not lose it. View state, never saved.
+    pub report_title: String,
     /// #2262: the frame-rate reading and its log rule, fed once a frame.
     pub frame_rate: crate::egui_app::frame_rate::FrameRate,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
@@ -2184,6 +2190,8 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            report_open: false,
+            report_title: String::new(),
             frame_rate: crate::egui_app::frame_rate::FrameRate::default(),
             gpu_line: None,
             spindle_as_vc: false,
