@@ -30,7 +30,7 @@ impl DisplayMode {
     pub const fn tooltip(self) -> &'static str {
         match self {
             DisplayMode::ShadedEdges => "Solid faces with the edges drawn on them.",
-            DisplayMode::Shaded => "Solid faces only. The edges of the model are not drawn.",
+            DisplayMode::Shaded => "Solid faces only. The edges are not drawn.",
             DisplayMode::Wireframe => "Edges only. The edges behind the model are not drawn.",
             DisplayMode::ShadedHiddenEdges => {
                 "Solid faces with the edges drawn on them. The edges behind the model show in a lighter tone."

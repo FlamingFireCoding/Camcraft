@@ -101,7 +101,7 @@ impl Plan {
 /// stock to draw in the stock slot; only the shaded modes use it.
 ///
 /// - Shaded, with edges: faces, edges, stock, stock edges, regions.
-/// - Shaded: the same without the model edges.
+/// - Shaded: the same without the edges of the model and of the stock.
 /// - Wireframe: depth-only faces, edges, stock edges, regions. No stock
 ///   faces: the stock is a volume and its full wire reads truer.
 /// - Shaded, with hidden edges: as "with edges", and the model edges draw a
@@ -116,7 +116,9 @@ pub fn plan(display: DisplayMode, c: &Counts, traced: bool) -> Plan {
     let models = 0..c.model_index_count;
     let model_edges = 0..c.model_edge_count;
     p.push(if wireframe { Pipe::FacesDepthOnly } else { Pipe::Faces }, models);
-    if display != DisplayMode::Shaded {
+    // "Shaded" draws no wire: not on the model and not on the stock.
+    let wire = display != DisplayMode::Shaded;
+    if wire {
         p.push(Pipe::Edges, model_edges.clone());
     }
     if display == DisplayMode::ShadedHiddenEdges {
@@ -131,7 +133,9 @@ pub fn plan(display: DisplayMode, c: &Counts, traced: bool) -> Plan {
         if !wireframe {
             p.push(Pipe::Stock, c.model_index_count..c.stock_index_end);
         }
-        p.push(Pipe::Edges, c.model_edge_count..c.edge_count);
+        if wire {
+            p.push(Pipe::Edges, c.model_edge_count..c.edge_count);
+        }
     }
     p.push(Pipe::Region, c.stock_index_end..c.index_count);
     p

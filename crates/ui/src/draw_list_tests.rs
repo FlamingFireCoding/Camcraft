@@ -31,12 +31,11 @@ fn shaded_with_edges_draws_faces_then_edges() {
 }
 
 #[test]
-fn shaded_draws_faces_and_no_model_edges() {
+fn shaded_draws_faces_and_no_edges() {
+    // The mode applies to the model and to the stock in the same way.
     let p = plan(DisplayMode::Shaded, &scene(), false);
-    assert_eq!(p.pipes(), [Pipe::Faces, Pipe::Stock, Pipe::Edges, Pipe::Region]);
-    let edges: Vec<Step> = p.steps().filter(|s| s.pipe == Pipe::Edges).cloned().collect();
-    assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].range, 24..48, "only the stock keeps its wire");
+    assert_eq!(p.pipes(), [Pipe::Faces, Pipe::Stock, Pipe::Region]);
+    assert!(!p.pipes().contains(&Pipe::Edges), "no wire on the model or on the stock");
     assert!(!p.pipes().contains(&Pipe::HiddenEdges));
 }
 

@@ -1407,7 +1407,7 @@ pub enum DisplayMode {
     /// Flat-shaded faces with the CAD wire over them - the default look.
     #[default]
     ShadedEdges,
-    /// Flat-shaded faces only (#2818): the model wire is not drawn.
+    /// Flat-shaded faces only (#2818): no wire on the model or the stock.
     Shaded,
     /// Wireframe only: faces go to the depth buffer and nowhere else, so
     /// the model reads as a hidden-line drawing; the stock - never a

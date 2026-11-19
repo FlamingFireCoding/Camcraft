@@ -15,8 +15,9 @@
 - The draw order is one pure function, `draw_list::plan`. `View3D::render_with`
   follows the list. The lists of "Shaded, with edges" and "Wireframe" are the
   same as before.
-- "Shaded" drops the model wire only. The stock keeps its wire, because the
-  stock faces are a thin film and the wire is what shows the stock volume.
+- "Shaded" drops the wire of the model and of the stock. #2636 says that a
+  mode applies to the model, the stock and the fixtures in the same way. The
+  stock still shows as its translucent faces.
 - "Shaded, with hidden edges" draws the cached model edge list a second time
   with the depth test reversed and 35% alpha. No new buffer and no rebuild
   on a frame.
