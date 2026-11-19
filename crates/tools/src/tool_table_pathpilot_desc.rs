@@ -18,6 +18,9 @@ pub(crate) fn tool_from_description(
     line_no: usize,
 ) -> Result<Tool, String> {
     let lower = desc.to_ascii_lowercase();
+    if lower.contains("slitting saw") {
+        return Err(format!("PathPilot row {line_no} tool '{desc}': unsupported slitting saw geometry"));
+    }
     let (mut kind, center_cutting) = infer_kind(&lower);
     let mut tool = base_tool(kind, diameter_mm);
     tool.center_cutting = center_cutting;
@@ -93,8 +96,7 @@ fn infer_kind(lower: &str) -> (ToolKind, bool) {
         (ToolKind::Bore, true)
     } else if lower.contains("drill") {
         (ToolKind::Drill, true)
-    } else if lower.contains("slitting saw")
-        || lower.contains("face mill")
+    } else if lower.contains("face mill")
         || lower.contains("facemill")
         || lower.contains("shell mill")
     {

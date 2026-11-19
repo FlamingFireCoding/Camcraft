@@ -18,7 +18,6 @@ Mill Tool Table,2026-11-18 19:09:05 - v1,This must be the first row - do not edi
 Tool number,Description,Z offset,Diameter,Z offset wear,Diameter wear,Max RPM\r\n\
 1,endmill [1/8] 2FL R:0.000 loc:0.375 carbide dia:0.125 [37368],1.0000000,0.1250000,0.0000000,0.0000000,0.0\r\n\
 2,,0.0000000,0.0000000,0.0000000,0.0000000,0.0\r\n\
-8,Slitting Saw [1/8] 30FL R:0.000 uncoated carbide dia:3.000 [34993],5.0000000,3.0000000,0.0000000,0.0000000,0.0\r\n\
 10,drill dia:0.500,2.0000000,0.5000000,0.0000000,0.0000000,0.0\r\n\
 99,,3.0000000,0.0000000,0.0000000,0.0000000,-2.0\r\n";
 
@@ -44,7 +43,7 @@ fn detects_formats_by_extension_and_content() {
 fn pathpilot_parses_sample_and_ignores_placeholder_z_offset_and_negative_probe_marker() {
     let entries = parse_controller_table(ToolTableFormat::PathPilot, PATHPILOT_SAMPLE, Unit::Inches)
         .expect("sample parses");
-    assert_eq!(entries.len(), 3);
+    assert_eq!(entries.len(), 2);
 
     assert_eq!(entries[0].number, 1);
     assert_eq!(entries[0].name, "endmill [1/8] 2FL R:0.000 loc:0.375 carbide dia:0.125 [37368]");
@@ -57,14 +56,9 @@ fn pathpilot_parses_sample_and_ignores_placeholder_z_offset_and_negative_probe_m
     // Z offset 1.0 in must not become stick-out (flute_len stays 0.375 in).
     assert!((entries[0].tool.flute_len - 25.4).abs() > 1.0);
 
-    assert_eq!(entries[1].number, 8);
-    assert_eq!(entries[1].tool.flutes, Some(30));
-    assert!(!entries[1].tool.center_cutting);
-    assert_eq!(entries[1].tool.catalog.part_number.as_deref(), Some("34993"));
-
-    assert_eq!(entries[2].number, 10);
-    assert_eq!(entries[2].tool.kind, ToolKind::Drill);
-    assert!((entries[2].tool.diameter - 12.7).abs() < 1e-9);
+    assert_eq!(entries[1].number, 10);
+    assert_eq!(entries[1].tool.kind, ToolKind::Drill);
+    assert!((entries[1].tool.diameter - 12.7).abs() < 1e-9);
 
     // A configured probe with a non-empty description and -2.0 Max RPM parses cleanly.
     let probe_csv = "\
@@ -200,4 +194,73 @@ fn hurco_export_roundtrips_and_escapes_xml_without_control_state() {
     assert_eq!(back[0].name, "1/2\" EM & More");
     assert_eq!(back[0].tool.holder_len, 110.25);
     assert_eq!(back[0].tool.catalog.vendor.as_deref(), Some("A & B <Carbide>"));
+}
+
+#[test]
+fn pathpilot_refuses_recorded_slitting_saw_by_name() {
+    let csv = "Mill Tool Table,x - v1,This must be the first row - do not edit\n\
+Tool number,Description,Z offset,Diameter,Z offset wear,Diameter wear,Max RPM\n\
+8,Slitting Saw [1/8] 30FL R:0.000 uncoated carbide dia:3.000 [34993],5.0000000,3.0000000,0.0000000,0.0000000,0.0\n";
+    let err = parse_controller_table(ToolTableFormat::PathPilot, csv, Unit::Inches).unwrap_err();
+    assert!(err.contains("Slitting Saw [1/8]") && err.contains("unsupported slitting saw"), "{err}");
+}
+
+#[test]
+fn hurco_malformed_multibyte_entity_returns_error() {
+    let entity = format!("&{}", "é".repeat(20));
+    for xml in [
+        format!("<Hurco_Document><Tools>{entity}</Tools></Hurco_Document>"),
+        format!("<Hurco_Document name=\"{entity}\"><Tools/></Hurco_Document>"),
+    ] {
+        let err = parse_controller_table(ToolTableFormat::Hurco, &xml, Unit::Millimeters).unwrap_err();
+        assert!(err.contains("unterminated XML entity"), "{err}");
+        assert!(err.contains('é'), "{err}");
+    }
+}
+
+#[test]
+fn hurco_xml_nesting_limit_returns_error_before_recursion_exhaustion() {
+    // The boundary is exercised without a process-aborting stack-overflow mutation.
+    for depth in [32, 20_000] {
+        let xml = format!("<Hurco_Document>{}{}</Hurco_Document>", "<x>".repeat(depth), "</x>".repeat(depth));
+        let err = parse_controller_table(ToolTableFormat::Hurco, &xml, Unit::Millimeters).unwrap_err();
+        assert!(err.contains("XML nesting exceeds the limit of 32"), "{depth}: {err}");
+    }
+    let at_limit = format!("<Hurco_Document>{}{}</Hurco_Document>", "<x>".repeat(31), "</x>".repeat(31));
+    let err = parse_controller_table(ToolTableFormat::Hurco, &at_limit, Unit::Millimeters).unwrap_err();
+    assert!(err.contains("missing <Tools>"), "allowed depth must reach the table schema: {err}");
+}
+
+#[test]
+fn pathpilot_neutral_name_roundtrips_or_refuses_changed_cutter_geometry() {
+    let source = "Mill Tool Table,x - v1,This must be the first row - do not edit\n\
+Tool number,Description,Z offset,Diameter,Z offset wear,Diameter wear,Max RPM\n\
+1,Finisher,0,6,0,0,0\n";
+    let mut tool = parse_controller_table(ToolTableFormat::PathPilot, source, Unit::Millimeters)
+        .expect("neutral-name end mill").remove(0).tool;
+    let export = |tool: &Tool| export_controller_table(
+        ToolTableFormat::PathPilot,
+        &[ToolTableExportRow { number: 1, name: "Finisher", tool, gauge_len: None }],
+        Unit::Millimeters,
+    );
+    let text = export(&tool).expect("matching end mill geometry");
+    let back = parse_controller_table(ToolTableFormat::PathPilot, &text, Unit::Millimeters).unwrap();
+    assert_eq!(back[0].name, "Finisher");
+    assert_eq!(back[0].tool.kind, tool.kind);
+    assert_eq!(back[0].tool.diameter, tool.diameter);
+    assert_eq!(back[0].tool.flute_len, tool.flute_len);
+    for (kind, corner_r, tip_angle) in [
+        (ToolKind::BallNose, 3.0, 0.0),
+        (ToolKind::BullNose, 1.0, 0.0),
+        (ToolKind::Taper, 0.0, 60.0),
+    ] {
+        tool.kind = kind;
+        tool.corner_r = corner_r;
+        tool.tip_angle = tip_angle;
+        let err = export(&tool).expect_err("export must preserve the cutter geometry");
+        assert!(err.contains("Finisher") && err.contains("cannot preserve the cutter geometry"), "{err}");
+    }
+    tool = back[0].tool.clone();
+    tool.flute_len += 1.0;
+    assert!(export(&tool).unwrap_err().contains("cannot preserve the cutter geometry"));
 }

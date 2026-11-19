@@ -195,6 +195,17 @@ pub(crate) fn export(rows: &[ToolTableExportRow<'_>], unit: Unit) -> Result<Stri
             ));
         }
         let dia = from_mm(row.tool.diameter, unit);
+        // Refuse a lossy description: the reader uses it to reconstruct cutter geometry.
+        let written_dia: f64 = format!("{dia:.7}")
+            .parse()
+            .map_err(|_| format!("tool '{}': invalid PathPilot diameter", row.name))?;
+        let back = tool_from_description(row.name, to_mm(written_dia, unit), 0.0, unit, 0)?;
+        if !same_geometry(row.tool, &back) {
+            return Err(format!(
+                "tool '{}': PathPilot description cannot preserve the cutter geometry; use .camtools",
+                row.name
+            ));
+        }
         let desc = csv_escape(row.name);
         out.push_str(&format!(
             "{},{},0.0000000,{:.7},0.0000000,0.0000000,0.0\r\n",
@@ -202,6 +213,30 @@ pub(crate) fn export(rows: &[ToolTableExportRow<'_>], unit: Unit) -> Result<Stri
         ));
     }
     Ok(out)
+}
+
+fn same_geometry(a: &crate::tools::Tool, b: &crate::tools::Tool) -> bool {
+    let lengths = [
+        (a.diameter, b.diameter),
+        (a.corner_r, b.corner_r),
+        (a.tip_angle, b.tip_angle),
+        (a.pitch, b.pitch),
+        (a.pitch_min, b.pitch_min),
+        (a.nose_radius, b.nose_radius),
+        (a.width, b.width),
+        (a.flute_len, b.flute_len),
+        (a.shank_d, b.shank_d),
+        (a.shank_len, b.shank_len),
+        (a.holder_d, b.holder_d),
+        (a.holder_len, b.holder_len),
+    ];
+    a.kind == b.kind
+        && a.center_cutting == b.center_cutting
+        && a.thread_hand == b.thread_hand
+        && a.orientation == b.orientation
+        && a.outline == b.outline
+        && a.turning == b.turning
+        && lengths.iter().all(|(a, b)| a.is_finite() && b.is_finite() && (a - b).abs() <= 1e-6)
 }
 
 fn is_mill_table_kind(kind: ToolKind) -> bool {

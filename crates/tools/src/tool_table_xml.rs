@@ -2,6 +2,9 @@
 //! files (#2566); implemented directly from the W3C XML 1.0 grammar with
 //! no external dependencies.
 
+// Controller tables have shallow trees. Bound recursion and recursive tree drops.
+const MAX_XML_DEPTH: usize = 32;
+
 /// One XML element with its tag name, text content, and children.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct XmlNode {
@@ -38,7 +41,8 @@ fn decode_entities(raw: &str) -> Result<String, String> {
         out.push_str(&rest[..amp]);
         let after = &rest[amp + 1..];
         let Some(semi) = after.find(';') else {
-            return Err(format!("unterminated XML entity near '{}'", &rest[amp..rest.len().min(amp + 20)]));
+            let near: String = rest[amp..].chars().take(20).collect();
+            return Err(format!("unterminated XML entity near '{near}'"));
         };
         let entity = &after[..semi];
         match entity {
@@ -92,14 +96,17 @@ pub(crate) fn parse_xml(input: &str) -> Result<XmlNode, String> {
     if !pos.starts_with('<') {
         return Err("not an XML file (missing root '<' element)".into());
     }
-    let (node, rest) = parse_element(pos)?;
+    let (node, rest) = parse_element(pos, 1)?;
     if !rest.trim().is_empty() && !rest.trim_start().starts_with("<!--") {
         return Err("unexpected trailing content after root XML element".into());
     }
     Ok(node)
 }
 
-fn parse_element(input: &str) -> Result<(XmlNode, &str), String> {
+fn parse_element(input: &str, depth: usize) -> Result<(XmlNode, &str), String> {
+    if depth > MAX_XML_DEPTH {
+        return Err(format!("XML nesting exceeds the limit of {MAX_XML_DEPTH} elements"));
+    }
     let after_lt = input.strip_prefix('<').ok_or("expected '<'")?;
     let (tag, mut rest) = take_name(after_lt)?;
     loop {
@@ -169,7 +176,7 @@ fn parse_element(input: &str) -> Result<(XmlNode, &str), String> {
             rest = &after_cdata[end + 3..];
             continue;
         }
-        let (child, after_child) = parse_element(rest)?;
+        let (child, after_child) = parse_element(rest, depth + 1)?;
         children.push(child);
         rest = after_child;
     }

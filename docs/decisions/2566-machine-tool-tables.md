@@ -50,3 +50,29 @@ live Hurco WinMax 9.01 control and live PathPilot Hub UI import still need
 machine verification. All format-specific field mappings sit inside
 `crates/tools/src/tool_table*.rs`, so adding fields or relaxing version headers
 from real machine captures is isolated to that module.
+
+**Decided after review:** Refuse a named slitting saw in PathPilot input until
+our tool model can represent its cutting shape. Before PathPilot export,
+read the proposed description and rounded diameter through the same reader.
+Refuse the export by tool name if the resulting cutter geometry differs.
+Keep the description and tool name unchanged. Direct the user to `.camtools`
+when PathPilot cannot preserve the geometry. Compare geometry lengths within
+`1e-6` mm to allow the seven-decimal CSV diameter rounding.
+
+Use character boundaries for malformed XML entity diagnostics. Limit XML
+nesting to 32 elements from the root through the leaf before recursive descent.
+Return a diagnostic when the input exceeds this limit.
+
+**Why:** A controller table must not substitute a different cutter or cutting
+shape. A malformed table must return an error without a Unicode panic or
+stack overflow.
+
+**Considered and dropped:** Rewriting descriptions with new geometry tokens
+would change tool names and require a new metadata convention. Preserving
+names and refusing a lossy export keeps the existing table contract. Unbounded
+XML recursion cannot safely accept untrusted controller tables.
+
+**Limits and later cost:** A future tool model can add slitting saw support.
+PathPilot export can accept more descriptions when its reader can preserve
+more cutter geometry. Both changes need new geometry round-trip tests. Raising
+the XML depth limit requires a bounded parser stack or a checked stack budget.

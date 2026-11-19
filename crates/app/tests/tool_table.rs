@@ -69,7 +69,6 @@ Mill Tool Table,2026-11-18 10:00:00 - v1,This must be the first row - do not edi
 Tool number,Description,Z offset,Diameter,Z offset wear,Diameter wear,Max RPM\r\n\
 1,endmill [1/8] 2FL R:0.000 loc:0.375 carbide dia:0.125 [37368],1.0000000,0.1250000,0.0000000,0.0000000,0.0\r\n\
 2,,0.0000000,0.0000000,0.0000000,0.0000000,0.0\r\n\
-8,Slitting Saw [1/8] 30FL R:0.000 uncoated carbide dia:3.000 [34993],5.0000000,3.0000000,0.0000000,0.0000000,0.0\r\n\
 10,drill dia:0.500,2.0000000,0.5000000,0.0000000,0.0000000,0.0\r\n\
 99,,3.0000000,0.0000000,0.0000000,0.0000000,-2.0\r\n";
 
@@ -130,11 +129,11 @@ fn pathpilot_csv_imports_with_numbers_diameters_undo_and_roundtrips() {
         "import_tool_library",
         json!({ "path": csv.display().to_string(), "units": "inch" }),
     );
-    assert_eq!(imp["added"].as_array().map(Vec::len), Some(3), "{imp}");
+    assert_eq!(imp["added"].as_array().map(Vec::len), Some(2), "{imp}");
 
     let job = c.ok("get_job", json!({}));
     let tools = job["tools"].as_array().expect("tools");
-    assert_eq!(tools.len(), 3, "empty slots and unconfigured probe marker skipped: {job}");
+    assert_eq!(tools.len(), 2, "empty slots and unconfigured probe marker skipped: {job}");
 
     let t1 = tools.iter().find(|t| t["number"] == json!(1)).expect("T1");
     assert_eq!(t1["name"], json!("endmill [1/8] 2FL R:0.000 loc:0.375 carbide dia:0.125 [37368]"));
@@ -146,11 +145,6 @@ fn pathpilot_csv_imports_with_numbers_diameters_undo_and_roundtrips() {
     assert_eq!(t1["definition"]["tool_material"], json!("carbide"));
     assert_eq!(t1["definition"]["part_number"], json!("37368"));
 
-    let t8 = tools.iter().find(|t| t["number"] == json!(8)).expect("T8");
-    assert!((t8["definition"]["diameter"].as_f64().unwrap() - 3.0 * 25.4).abs() < 1e-6);
-    assert_eq!(t8["definition"]["flutes"], json!(30));
-    assert_eq!(t8["definition"]["center_cutting"], json!(false));
-
     let t10 = tools.iter().find(|t| t["number"] == json!(10)).expect("T10");
     assert_eq!(t10["definition"]["kind"], json!("drill"));
     assert!((t10["definition"]["diameter"].as_f64().unwrap() - 0.5 * 25.4).abs() < 1e-6);
@@ -160,7 +154,7 @@ fn pathpilot_csv_imports_with_numbers_diameters_undo_and_roundtrips() {
         "export_tool_library",
         json!({ "path": out_csv.display().to_string(), "units": "inch" }),
     );
-    assert_eq!(exp["tools"], json!(3));
+    assert_eq!(exp["tools"], json!(2));
     let written = std::fs::read_to_string(&out_csv).expect("read exported csv");
     let lines: Vec<&str> = written.lines().collect();
     assert!(lines[0].starts_with("Mill Tool Table,") && lines[0].ends_with(",This must be the first row - do not edit"), "{}", lines[0]);
@@ -169,7 +163,7 @@ fn pathpilot_csv_imports_with_numbers_diameters_undo_and_roundtrips() {
     c.ok("undo", json!({}));
     assert!(c.ok("get_job", json!({}))["tools"].as_array().unwrap().is_empty(), "one undo clears import");
     c.ok("redo", json!({}));
-    assert_eq!(c.ok("get_job", json!({}))["tools"].as_array().unwrap().len(), 3);
+    assert_eq!(c.ok("get_job", json!({}))["tools"].as_array().unwrap().len(), 2);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -310,7 +304,7 @@ fn script_verbs_roundtrip_pathpilot_csv_and_hurco_tcm() {
     ));
     assert!(out.ok, "{:?}", out.errors);
     assert_eq!(out.result["format"], json!("pathpilot"));
-    assert_eq!(out.result["added"].as_array().map(Vec::len), Some(3));
+    assert_eq!(out.result["added"].as_array().map(Vec::len), Some(2));
     let written = std::fs::read_to_string(&tcm).expect("tcm written");
     assert!(written.contains("<Hurco_Document Version=\"1.1\">"));
     let _ = std::fs::remove_dir_all(&dir);
