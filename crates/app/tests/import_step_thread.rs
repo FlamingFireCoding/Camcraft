@@ -1,8 +1,7 @@
 //! #1602: a thread flank exported as one rational B-spline strip - degree
 //! 1 across, degree 2 along in 36-degree circular arcs, climbing one pitch
-//! a turn - imported at full fidelity in a bounded facet count, with no
-//! triangle cutting across the turns. #917: the reader is solidcore, which
-//! reads closed solids only; the lone strip is a sheet and is refused.
+//! a turn - imports at full fidelity in a bounded facet count, with no
+//! triangle cutting across the turns.
 //!
 //! Before #1602 the strip's four-turn fixture below meshed into 523 K facets
 //! (8 s in release; the 14-turn faces of the user's parts held 2 M facets
@@ -18,12 +17,14 @@
 //! points on the face). No user file.
 //!
 //! Gate map (M4.4): covers app::geometry::import::step,
-//! camcraft_geometry::step.
+//! app::geometry::import::step_guard, app::geometry::import::step_division,
+//! app::geometry::import::step_stretch, app::geometry::import::step_nearest.
 
 use std::f64::consts::TAU;
 use std::fmt::Write as _;
 
 use camcraft_app::geometry::import::step;
+use camcraft_app::geometry::Point3;
 
 const ARC_DEG: f64 = 36.0;
 const PITCH: f64 = 1.95;
@@ -78,6 +79,10 @@ fn on_rail(pts: &[[f64; 3]], ws: &[f64], v: f64) -> [f64; 3] {
 const CAP: f64 = 0.1;
 /// Points on each trimming curve.
 const CAP_POINTS: usize = 64;
+
+fn trimmed(u: f64, v: f64) -> bool {
+    v >= CAP * u && v <= 1.0 - CAP + CAP * u
+}
 
 /// The flank as a STEP file in millimetres.
 fn flank_step(turns: usize) -> String {
@@ -198,14 +203,76 @@ fn flank_step(turns: usize) -> String {
     )
 }
 
-/// #917: solidcore reads closed solids only, and a lone flank in an open
-/// shell is a sheet: it is refused by name, bounded, never meshed open.
-/// truck meshed it (#1602); that pin measured truck's mesher and went with
-/// it. Its measurement of a thread flank inside a closed solid is owed to
-/// a follow-up issue (named in the #917 PR).
+/// The area of the ideal flank (a helicoid between the two rails) inside
+/// the trim, summed over a fine grid: the rational arcs follow it to well
+/// under a micron.
+fn ideal_area(turns: usize) -> f64 {
+    let (nu, nt) = (64, 20_000 * turns);
+    let s = |u: f64, t: f64| {
+        let r = OUTER.0 + (INNER.0 - OUTER.0) * u;
+        let z = OUTER.1 + (INNER.1 - OUTER.1) * u + PITCH * t / TAU;
+        Point3::new(r * t.cos(), r * t.sin(), z)
+    };
+    let span = TAU * turns as f64;
+    let mut area = 0.0;
+    for i in 0..nu {
+        for j in 0..nt {
+            let (u0, u1) = (i as f64 / nu as f64, (i + 1) as f64 / nu as f64);
+            let (t0, t1) = (span * j as f64 / nt as f64, span * (j + 1) as f64 / nt as f64);
+            if !trimmed((u0 + u1) / 2.0, (j as f64 + 0.5) / nt as f64) {
+                continue;
+            }
+            let (a, b, c) = (s(u0, t0), s(u1, t0), s(u0, t1));
+            area += len((b - a).cross(c - a));
+        }
+    }
+    area
+}
+
+/// How far `p` stands off the ideal flank along the axis: its u from its
+/// radius, then its height against the flank's at that u and angle,
+/// reduced to the nearest turn. The flank is ~30 degrees off the axis, so
+/// this over-reads the true distance by under 15 %.
+fn axial_gap(p: Point3) -> f64 {
+    let r = p.x.hypot(p.y);
+    let u = ((r - OUTER.0) / (INNER.0 - OUTER.0)).clamp(0.0, 1.0);
+    let ideal = OUTER.1 + (INNER.1 - OUTER.1) * u + PITCH * p.y.atan2(p.x) / TAU;
+    let d = (p.z - ideal).rem_euclid(PITCH);
+    d.min(PITCH - d)
+}
+
+fn len(p: Point3) -> f64 {
+    p.dot(p).sqrt()
+}
+
+fn edge(a: Point3, b: Point3) -> f64 {
+    len(b - a)
+}
+
 #[test]
-fn a_four_turn_thread_flank_sheet_is_refused_by_name() {
-    let text = flank_step(4);
-    let err = step::parse_with_chord(text.as_bytes()).expect_err("a sheet is not a solid").to_string();
-    assert!(err.contains("not a closed solid") || err.contains("holds no solid"), "{err}");
+fn a_four_turn_thread_flank_meshes_at_full_fidelity_in_a_bounded_count() {
+    let turns = 4;
+    let text = flank_step(turns);
+    let (mesh, chord) = step::parse_with_chord(text.as_bytes()).expect("the flank imports");
+    let facets = &mesh.facets;
+    // ~80 steps a turn at 5 um on a 6.35 mm radius, two triangles each;
+    // the isotropic division made 523 K.
+    assert!(facets.len() < 5_000, "{} facets for a four-turn strip", facets.len());
+    assert!(step::coarse(chord).is_none(), "meshed at the promised chord, not reduced: {chord} mm");
+    // No triangle crosses the turns: the longest edge a sound mesh has is
+    // the strip's own diagonal (1.47 mm across, ~0.5 mm a step).
+    let longest = facets.iter().map(|t| edge(t.a, t.b).max(edge(t.b, t.c)).max(edge(t.c, t.a))).fold(0.0, f64::max);
+    assert!(longest < 2.0, "a triangle {longest} mm long cuts across the turns");
+    let area: f64 = facets.iter().map(|t| len((t.b - t.a).cross(t.c - t.a)) / 2.0).sum();
+    let ideal = ideal_area(turns);
+    assert!((area - ideal).abs() < 0.01 * ideal, "mesh area {area} mm2 against the flank's {ideal} mm2");
+    // Every facet lies on the flank: its centre within the chord promise
+    // (and the micron the rational arcs differ from the ideal helicoid).
+    let worst = facets
+        .iter()
+        .map(|t| axial_gap(Point3::new((t.a.x + t.b.x + t.c.x) / 3.0, (t.a.y + t.b.y + t.c.y) / 3.0, (t.a.z + t.b.z + t.c.z) / 3.0)))
+        .fold(0.0, f64::max);
+    assert!(worst < 0.01, "a facet stands {worst} mm off the flank");
+    // No wall-clock assert (PR #1638 review item 7, the issue-1605 class):
+    // the facet bound above already pins the runaway.
 }

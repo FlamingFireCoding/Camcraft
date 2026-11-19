@@ -1,26 +1,26 @@
 //! #1573: a STEP shell the file declares closed must mesh closed, or the
-//! import is refused by name. Never a model with a wall missing.
+//! import is refused by name; a face the kernel returns no mesh for is
+//! refused by name on its own. Never a model with a wall missing.
 //!
 //! Fixture: `testdata/models/fillet_corner.step` with its corner blend's
-//! weights bent (`1E300, 1E-300`). truck returned no polygon for that blend
-//! (#1573). #917: the reader is solidcore now; its verdict on the bent
-//! blend is its own, and the law these pins hold is the same: a refusal
-//! that says why, or a mesh with no open edge.
+//! weights bent (`1E300, 1E-300`), which truck cannot place a boundary on:
+//! it returns no polygon for the blend and the rest of the shell imported
+//! open, with no refusal, before this law.
 //!
 //! `box.step` with one face's `same_sense` flipped is a face wound against
-//! its neighbours: closed geometry, imported outward, never called open
+//! its neighbours: closed geometry, fixed at import, never called open
 //! (#1573 review: two healthy CAD exports were refused that way).
 //!
 //! Gate map (M4.4): covers app::geometry::import::step,
-//! camcraft_geometry::step, app::commands::import_model (notes),
-//! app::script::api (v_import notes).
+//! app::geometry::import::step_closed, app::geometry::import::step_seams,
+//! app::geometry::import::step_orient, app::geometry::import::step_facets,
+//! app::commands::import_model (notes), app::script::api (v_import notes).
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use camcraft_app::geometry::import::{self, Format, ImportError};
+use camcraft_app::geometry::import::{self, step, Format, ImportError};
 use camcraft_app::mcp::Server;
 use serde_json::{json, Value};
 
@@ -39,7 +39,7 @@ fn within<R: Send + 'static>(limit: Duration, f: impl FnOnce() -> R + Send + 'st
     }
 }
 
-/// The fixture with its corner blend's weights bent.
+/// The fixture with its corner blend bent so truck drops the blend face.
 fn bent() -> String {
     let text = std::fs::read_to_string(model("fillet_corner.step")).expect("fixture");
     let weights = "RATIONAL_B_SPLINE_SURFACE(((1.0,1.0,2.0),";
@@ -49,57 +49,44 @@ fn bent() -> String {
 }
 
 fn import(text: String) -> Result<camcraft_app::geometry::Mesh, ImportError> {
-    within(Duration::from_secs(90), move || import::parse_model(text.as_bytes(), Format::Step))
-}
-
-/// The edges of `m` that only one facet uses (vertices matched to 1e-6
-/// mm): zero for a mesh with no wall missing.
-fn open_edges(m: &camcraft_app::geometry::Mesh) -> usize {
-    let key = |p: camcraft_app::geometry::Point3| ((p.x * 1e6).round() as i64, (p.y * 1e6).round() as i64, (p.z * 1e6).round() as i64);
-    let mut uses: HashMap<_, i32> = HashMap::new();
-    for t in m.facets.iter() {
-        let (a, b, c) = (key(t.a), key(t.b), key(t.c));
-        for (u, v) in [(a, b), (b, c), (c, a)] {
-            if u != v {
-                *uses.entry(if u < v { (u, v) } else { (v, u) }).or_default() += 1;
-            }
-        }
-    }
-    uses.values().filter(|&&n| n == 1).count()
-}
-
-/// A refusal that says why, or a mesh with no open edge.
-fn closed_or_refused(r: Result<camcraft_app::geometry::Mesh, ImportError>) {
-    match r {
-        Err(e) => assert!(!e.to_string().trim().is_empty(), "a refusal says why"),
-        Ok(m) => assert_eq!(open_edges(&m), 0, "a closed shell is never handed out open"),
-    }
+    within(Duration::from_secs(90), move || {
+        import::parse_model(text.as_bytes(), Format::Step)
+    })
 }
 
 #[test]
-fn a_closed_shell_with_a_bent_blend_is_closed_or_refused() {
-    closed_or_refused(import(bent()));
+fn a_closed_shell_that_meshes_open_is_refused_by_name() {
+    let err = import(bent()).expect_err("a closed shell with a face missing must not import");
+    let msg = err.to_string();
+    assert!(msg.contains("closed shell #1288 (10 faces) meshes open"), "{msg}");
+    assert!(msg.contains("boundary edges lie more than"), "{msg}");
+    assert!(msg.contains("mm from any other face, most on face #"), "{msg}");
+    assert!(msg.contains(" mm; the first from ("), "{msg}");
+    assert!(msg.contains("got no mesh from the kernel"), "the dropped face is named: {msg}");
 }
 
 #[test]
-fn a_bent_blend_in_an_open_shell_is_closed_or_refused() {
-    // Declared open, and no solid naming it: solidcore reads solids only,
-    // so a sheet body is refused; it never imports with a wall missing.
+fn a_face_the_kernel_cannot_mesh_is_refused_in_an_open_shell_too() {
+    // Declared open, and no solid naming it: the closed-shell law does not
+    // apply, but a face left out is still a wall the file has and the mesh
+    // does not.
     let text = bent()
         .replace("#1288=CLOSED_SHELL(", "#1288=OPEN_SHELL(")
         .replace("#1289=MANIFOLD_SOLID_BREP('',#1288);", "#1289=SHELL_BASED_SURFACE_MODEL('',(#1288));");
-    closed_or_refused(import(text));
+    let err = import(text).expect_err("a dropped face must not import silently");
+    let msg = err.to_string();
+    assert!(msg.contains("in shell #1288 could not be tessellated"), "{msg}");
+    assert!(msg.contains("returned no mesh for it"), "{msg}");
 }
 
 #[test]
 fn the_outer_shell_of_a_solid_is_closed_whatever_its_keyword() {
     // A MANIFOLD_SOLID_BREP's outer shell is closed by the schema, even
-    // when the file spells it OPEN_SHELL.
-    let text = std::fs::read_to_string(model("fillet_corner.step"))
-        .expect("fixture")
-        .replace("#1288=CLOSED_SHELL(", "#1288=OPEN_SHELL(");
+    // when the file spells it OPEN_SHELL: the gap is still refused as one.
+    let text = bent().replace("#1288=CLOSED_SHELL(", "#1288=OPEN_SHELL(");
     assert!(text.contains("#1289=MANIFOLD_SOLID_BREP('',#1288);"), "fixture layout changed");
-    closed_or_refused(import(text));
+    let msg = import(text).expect_err("a solid with a face missing must not import").to_string();
+    assert!(msg.contains("closed shell #1288 (10 faces) meshes open"), "{msg}");
 }
 
 /// Signed volume of a mesh (divergence theorem), as tetrahedra to a point
@@ -124,10 +111,10 @@ fn reversed_box() -> String {
 fn a_face_wound_against_its_neighbours_imports_flipped_not_refused() {
     let good = import(std::fs::read_to_string(model("box.step")).expect("fixture")).expect("box.step imports");
     let mesh = import(reversed_box()).expect("a reversed face is closed geometry: imported, not refused");
-    assert_eq!(open_edges(&mesh), 0, "imported closed");
+    assert_eq!(mesh.facets.len(), good.facets.len());
     let (v, w) = (volume(&mesh), volume(&good));
     assert!(w > 0.0, "box.step is wound outward: {w}");
-    assert!((v - w).abs() <= w * 1e-6, "the reversed face is meshed outward: {v} vs {w}");
+    assert!((v - w).abs() <= w * 1e-9, "the reversed face is flipped back outward: {v} vs {w}");
 }
 
 #[test]
@@ -161,27 +148,24 @@ fn mcp_import(path: &Path) -> Value {
 }
 
 #[test]
-fn the_import_notes_reach_the_mcp_answer() {
-    // #1576 review: what the reader notes is said where the user and an
-    // agent read the import, not only in the log. #917: truck's outward
-    // flip note is gone (solidcore meshes each face outward itself); the
-    // pin holds the path: the MCP answer carries the import's notes, and a
-    // model with nothing to say says nothing.
+fn a_flipped_face_is_named_in_the_import_result_and_the_mcp_answer() {
+    // #1576 review: a flip is said by name where the user and an agent
+    // read the import, not only in the log.
     let bad = reversed_box();
     let graded = within(Duration::from_secs(90), move || import::parse_model_graded(bad.as_bytes(), Format::Step))
         .expect("a reversed face imports");
+    assert_eq!(graded.notes.len(), 1, "{:?}", graded.notes);
+    assert!(graded.notes[0].contains("1 face(s) wound against their neighbours were flipped: face #32 ("), "{:?}", graded.notes);
     let dir = std::env::temp_dir().join(format!("camcraft-closed-shell-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let (bad_path, good_path) = (dir.join("reversed.step"), dir.join("good.step"));
     std::fs::write(&bad_path, reversed_box()).expect("write");
     std::fs::copy(model("box.step"), &good_path).expect("copy");
     let said = mcp_import(&bad_path);
-    let notes: Vec<String> = said["notes"].as_array().map(|a| a.iter().filter_map(|n| n.as_str().map(str::to_owned)).collect()).unwrap_or_default();
-    assert_eq!(notes, graded.notes, "{said}");
-    let good = import::load_model_graded(&good_path).expect("box.step imports");
+    let notes = said["notes"].as_array().cloned().unwrap_or_default();
+    assert_eq!(notes.len(), 1, "{said}");
+    assert!(notes[0].as_str().unwrap_or_default().contains("flipped: face #32 ("), "{said}");
     let quiet = mcp_import(&good_path);
-    if good.notes.is_empty() {
-        assert!(quiet.get("notes").is_none(), "nothing noted, nothing said: {quiet}");
-    }
+    assert!(quiet.get("notes").is_none(), "nothing changed, nothing said: {quiet}");
     let _ = std::fs::remove_dir_all(&dir);
 }

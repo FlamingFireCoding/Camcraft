@@ -1,11 +1,11 @@
 //! #1617: a closed, gap-free STEP solid whose faces are all wound inward
 //! (consistently, so no face disagrees with a neighbour) imports with a
-//! positive signed volume; what the import notes reaches `Graded::notes`
-//! and the MCP `import_model` result. A lone curved face (an open shell)
-//! is a sheet: refused since #917.
+//! positive signed volume, and the import says it turned it - in
+//! `Graded::notes` and in the MCP `import_model` result. A lone curved face
+//! (an open shell) has no inside and is never turned.
 //!
-//! Gate map (#1617): covers app::geometry::import (parse_model_graded),
-//! camcraft_geometry::step, app::commands::import_model (notes), app::script::api
+//! Gate map (#1617): covers app::geometry::import (parse_model_graded,
+//! step_outward), app::commands::import_model (notes), app::script::api
 //! (v_import notes) through app::mcp (import_model).
 //!
 //! Provenance: our own box and dome fixtures with their senses reversed
@@ -44,12 +44,10 @@ fn volume(t: &[Triangle]) -> f64 {
     t.iter().map(|t| t.a.dot(t.b.cross(t.c)) / 6.0).sum()
 }
 
-/// #917: solidcore builds each solid outward (positive volume) itself, so
-/// an inward box imports outward; truck's "turned outward" note is gone
-/// with truck.
 #[test]
-fn an_inward_closed_box_imports_outward() {
+fn an_inward_closed_box_is_turned_outward_and_said() {
     let plain = parse_model_graded(read("box.step").as_bytes(), Format::Step).expect("plain box");
+    assert!(plain.notes.is_empty(), "nothing changed, nothing said: {:?}", plain.notes);
     let v_plain = volume(&plain.mesh.facets);
     assert!(v_plain > 0.0, "the fixture is outward: {v_plain}");
 
@@ -57,23 +55,37 @@ fn an_inward_closed_box_imports_outward() {
     assert_ne!(inward, read("box.step"), "the senses were reversed");
     let got = parse_model_graded(inward.as_bytes(), Format::Step).expect("inward box imports");
     let v = volume(&got.mesh.facets);
-    assert!((v - v_plain).abs() <= 1e-6 * v_plain.abs(), "imported outward: {v} vs {v_plain}");
+    assert!((v - v_plain).abs() <= 1e-6 * v_plain.abs(), "turned outward: {v} vs {v_plain}");
+    assert_eq!(got.notes.len(), 1, "{:?}", got.notes);
+    let note = got.notes.first().map(String::as_str).unwrap_or_default();
+    assert!(note.starts_with("1 closed solid(s) wound inward (negative volume) were turned outward"), "{note}");
+    assert!(note.contains(&format!("{} facet(s) reversed", got.mesh.facets.len())), "{note}");
 }
 
-/// The dome's B-spline face alone, in an open shell, wound either way: a
-/// sheet, not a solid. #917: solidcore refuses it by name either way
-/// (truck imported it as written).
+/// The dome's B-spline face alone, in an open shell, wound either way: an
+/// open, curved face has no inside, so its winding is left as the file says.
 #[test]
-fn a_lone_curved_face_is_refused_as_a_sheet() {
+fn a_lone_curved_face_is_left_alone() {
     let text = read("bspline_dome.step");
     let shell = "#17 = CLOSED_SHELL('', (#18, #25, #32, #39, #46, #53));";
     assert_eq!(text.matches(shell).count(), 1, "fixture layout changed");
+    // A solid brep naming the shell makes main's closed-shell check judge it
+    // (#1576), so the lone face is held by a surface model instead.
     let brep = "#16 = MANIFOLD_SOLID_BREP('', #17);";
     assert_eq!(text.matches(brep).count(), 1, "fixture layout changed");
     let lone = text.replace(shell, "#17 = OPEN_SHELL('', (#53));").replace(brep, "#16 = SHELL_BASED_SURFACE_MODEL('', (#17));");
     for (label, data) in [("as written", lone.clone()), ("reversed", reversed(&lone))] {
-        let err = parse_model_graded(data.as_bytes(), Format::Step).expect_err("a sheet is not a solid").to_string();
-        assert!(err.contains("not a closed solid"), "{label}: {err}");
+        let got = parse_model_graded(data.as_bytes(), Format::Step).expect("a lone face imports");
+        assert!(!got.mesh.facets.is_empty(), "{label}: the face meshed");
+        assert!(got.notes.is_empty(), "{label}: an open face is never turned: {:?}", got.notes);
+    }
+    let a = parse_model_graded(lone.as_bytes(), Format::Step).expect("as written");
+    let b = parse_model_graded(reversed(&lone).as_bytes(), Format::Step).expect("reversed");
+    // Left alone means each keeps the file's own winding: the two are mirror
+    // images in winding, not both forced one way.
+    let (na, nb) = (a.mesh.facets.first().map(Triangle::normal), b.mesh.facets.first().map(Triangle::normal));
+    if let (Some(na), Some(nb)) = (na, nb) {
+        assert!(na.dot(nb) < 0.0, "the reversed face keeps its reversed winding: {na:?} {nb:?}");
     }
 }
 
@@ -84,27 +96,20 @@ fn call(server: &mut Server, name: &str, args: Value) -> Value {
     reply["result"]["structuredContent"].clone()
 }
 
-/// The MCP answer carries what the import noted, line for line, and a
-/// model with nothing noted says nothing.
 #[test]
-fn the_mcp_import_result_carries_the_notes() {
+fn the_mcp_import_result_carries_the_note() {
     let dir = std::env::temp_dir().join(format!("camcraft-import-outward-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let (bad, good) = (dir.join("inward.step"), dir.join("plain.step"));
-    let inward = reversed(&read("box.step"));
-    std::fs::write(&bad, &inward).expect("write");
+    std::fs::write(&bad, reversed(&read("box.step"))).expect("write");
     std::fs::copy(fixture("box.step"), &good).expect("copy");
 
     let mut server = Server::new();
-    for (path, text) in [(&bad, inward), (&good, read("box.step"))] {
-        let graded = parse_model_graded(text.as_bytes(), Format::Step).expect("imports");
-        let got = call(&mut server, "import_model", json!({ "path": path.display().to_string() }));
-        let notes: Vec<String> =
-            got["notes"].as_array().map(|a| a.iter().filter_map(|n| n.as_str().map(str::to_owned)).collect()).unwrap_or_default();
-        assert_eq!(notes, graded.notes, "{got}");
-        if graded.notes.is_empty() {
-            assert!(got.get("notes").is_none(), "nothing noted, nothing said: {got}");
-        }
-    }
+    let got = call(&mut server, "import_model", json!({ "path": bad.display().to_string() }));
+    let notes = got["notes"].as_array().cloned().unwrap_or_default();
+    assert_eq!(notes.len(), 1, "{got}");
+    assert!(notes[0].as_str().unwrap_or_default().contains("turned outward"), "{got}");
+    let plain = call(&mut server, "import_model", json!({ "path": good.display().to_string() }));
+    assert!(plain.get("notes").is_none(), "nothing changed, nothing said: {plain}");
     let _ = std::fs::remove_dir_all(&dir);
 }
