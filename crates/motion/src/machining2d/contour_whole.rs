@@ -208,7 +208,7 @@ pub fn contour_whole_bodies_with(
     if top_region.is_empty() {
         return Err(GenError::Empty("empty footprint".into()));
     }
-    let flat = p.levels()?;
+    let flat = p.ring_levels()?;
     let r = p.tool_diameter * 0.5;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     let mut said = Said::default();
