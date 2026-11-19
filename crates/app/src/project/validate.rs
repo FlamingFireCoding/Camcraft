@@ -15,6 +15,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         )));
     }
     super::program_entry_dto::validate(dto, kind)?; // #155
+    super::sketch_dto::validate(dto, kind)?; // #1862
     // #1720: a flip rides a WCS row and nothing else.
     if dto.flip.is_some() && !matches!(kind, EntityKind::Wcs) {
         return Err(corrupt(format!("'{}' records a flipped axis but is not a WCS", dto.name)));
@@ -45,7 +46,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
     }
     match kind {
-        EntityKind::Entry => {}
+        EntityKind::Entry | EntityKind::Sketch => {}
         EntityKind::Model => {
             if dto.stock.is_some()
                 || dto.tool.is_some()
@@ -182,8 +183,11 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             }
             // #368: a body is a body this build's envelope law accepts,
             // on a tool it fits - or the file refuses by name.
-            if let Some(b) = &tool.body {
-                let body = b.to_body(&dto.name).map_err(corrupt)?;
+            // #2016: a library reference names an entry the library
+            // holds, or the file refuses by name.
+            if let Some(body) =
+                super::tool_body_wire::stated_body(tool.holder.as_ref(), tool.body.as_ref(), &dto.name).map_err(corrupt)?
+            {
                 crate::tool_body::fits(&tool.to_tool(), &body)
                     .map_err(|e| corrupt(format!("tool '{}': {e}", dto.name)))?;
             }

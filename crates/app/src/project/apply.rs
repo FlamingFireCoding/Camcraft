@@ -529,6 +529,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // keep legacy `tip` so their saved depth and cached toolpath do not drift.
         // v68 -> v69 (#1517): pre-v69 Pocket Adaptive ops migrate to 2D
         // Adaptive (Spiral); un-carriable params record `needs_review`.
+        // v69 -> v70 (#2016): absent `holder` settles to the drawn body
+        // or the holder cylinder as stated (no behaviour change).
+        // v70 -> v71 (#1862): a DXF profile row arrives; a v70 file has
+        // none, so it steps up unchanged. Stated trunnion fields, tilt bases
+        // and break-through values remain unchanged in their DTOs.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
@@ -627,6 +632,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         }
     }
     super::setup_links::check(&file)?;
+    // #1862: every DXF profile is read and chained before any world write.
+    let mut sketches = super::sketch_dto::read_all(&file.entities)?;
     let keys: std::collections::HashSet<&str> = file.entities.iter()
         .filter(|e| e.kind == Some(EntityKind::Operation))
         .map(|e| e.name.as_str()).collect();
@@ -799,6 +806,12 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 }
             }
             EntityKind::Entry => super::program_entry_dto::apply(world, &entity, dto.entry)?,
+            EntityKind::Sketch => match sketches.remove(&dto.name) {
+                Some(sketch) => {
+                    entity.entity_view(world).set(sketch);
+                }
+                None => return Err(corrupt(format!("'{}' is a DXF profile without its drawing", dto.name))),
+            },
             EntityKind::Tool => {
                 // validate_kind already refused a missing or insane one.
                 let tdto = dto
@@ -809,8 +822,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     number: tdto.number,
                 });
                 // #368: validate_kind already refused a body that is no body.
-                if let Some(b) = &tdto.body {
-                    let body = b.to_body(&dto.name).map_err(corrupt)?;
+                if let Some(body) =
+                    super::tool_body_wire::stated_body(tdto.holder.as_ref(), tdto.body.as_ref(), &dto.name).map_err(corrupt)?
+                {
                     crate::tool_body::set_body(world, &entity, Some(&body));
                 }
                 // #93: validate_kind already refused a cutter that disagrees.

@@ -194,11 +194,24 @@ fn kind_rows(ui: &mut Ui, state: &mut State) {
     }
 }
 
-/// The holder's two cylinders.
+/// The holder's two cylinders. #2016: when the editor's holder is a
+/// library entry, the entry sizes itself - shown, never typed.
 fn holder(ui: &mut Ui, state: &mut State) {
     let u = state.units();
-    prop_row(ui, "Holder diameter", |ui| num_row(ui, u, &mut state.tool_ui.holder_d));
-    prop_row(ui, "Holder length", |ui| num_row(ui, u, &mut state.tool_ui.holder_len));
+    if let Some((entry, d, len)) = state.editor_library_holder() {
+        let from = format!("from the library holder {entry} (Profile tab)");
+        prop_row(ui, "Holder diameter", |ui| {
+            ui.label(format!("{} {}", camcraft_app::units::len(d, u, 3), u.suffix()));
+            ui.label(&from);
+        });
+        prop_row(ui, "Holder length", |ui| {
+            ui.label(format!("{} {}", camcraft_app::units::len(len, u, 3), u.suffix()));
+            ui.label(from);
+        });
+    } else {
+        prop_row(ui, "Holder diameter", |ui| num_row(ui, u, &mut state.tool_ui.holder_d));
+        prop_row(ui, "Holder length", |ui| num_row(ui, u, &mut state.tool_ui.holder_len));
+    }
 }
 
 /// Speeds, feeds and the per-material table.

@@ -534,14 +534,13 @@ pub(crate) fn gizmos(state: &State) -> Vec<Gizmo> {
 /// the whole feature, so a ring half off-screen still draws honestly.
 /// Gone entities, hidden models, deleted features and stale ids draw
 /// nothing - a highlight must never promise a pick the click cannot make.
+#[cfg(test)]
 pub(crate) fn hover_features(state: &State, aspect: f64) -> Vec<([f32; 2], [f32; 2])> {
-    let mut out = Vec::new();
-    if let Some(hit) = &state.hover
-        && let Some(sel) = hit.feature
-    {
-        feature_segments(state, &hit.entity, sel, aspect, &mut out);
+    if !aspect.is_finite() || aspect <= 0.0 || state.hover.as_ref().and_then(|h| h.feature).is_none() {
+        return Vec::new();
     }
-    out
+    let resolved = crate::pick_highlight::resolved_hover(state);
+    crate::pick_highlight::project_segments(&resolved, true, &state.cam.mvp(aspect), aspect)
 }
 
 /// Stroke width of the Geometry-list row hover (#1507), over a
@@ -555,12 +554,13 @@ pub(crate) const ROW_HOVER_HALO_PX: f32 = 7.0;
 /// button) is hovered over (`state.geo_hover_drawn`, #1507), drawn strongly by the
 /// shell. Same resolution rules as [`hover_features`]: stale, hidden and
 /// gone draw nothing.
+#[cfg(test)]
 pub(crate) fn row_hover_segments(state: &State, aspect: f64) -> Vec<([f32; 2], [f32; 2])> {
-    let mut out = Vec::new();
-    if let Some(g) = &state.geo_hover_drawn {
-        feature_segments(state, &g.entity, g.feature, aspect, &mut out);
+    if !aspect.is_finite() || aspect <= 0.0 || state.geo_hover_drawn.is_none() {
+        return Vec::new();
     }
-    out
+    let resolved = crate::pick_highlight::resolved_row_hover(state);
+    crate::pick_highlight::project_segments(&resolved, true, &state.cam.mvp(aspect), aspect)
 }
 
 /// One (entity, feature) resolved to viewport-uv segments: gone entities,
@@ -605,10 +605,10 @@ pub(crate) fn feature_segments(
             push_poly(&mvp, &loc, &pts, chain.closed, out);
         }
         FeatureSel::Patch(pid) => {
-            let Some(rings) = feature::patch_rings(&features, pid) else {
+            let Some(rings) = model::patch_rings(&features, pid) else {
                 return; // stale id: the model re-meshed under the hover
             };
-            for r in &rings {
+            for r in rings.iter() {
                 let pts: Vec<[f64; 3]> = r
                     .verts
                     .iter()
@@ -1830,10 +1830,10 @@ fn feature_lines(state: &State, items: &[GeoSel]) -> Vec<[f32; 6]> {
                 // The weld's outline, not the seams inside it: the seam
                 // edges are exactly what the patch dissolved, and
                 // drawing them would advertise strips the pick is not.
-                let Some(rings) = feature::patch_rings(&features, pid) else {
+                let Some(rings) = model::patch_rings(&features, pid) else {
                     continue; // stale id: the model re-meshed since the pick
                 };
-                for r in &rings {
+                for r in rings.iter() {
                     let pts: Vec<[f64; 3]> = r
                         .verts
                         .iter()

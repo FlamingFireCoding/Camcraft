@@ -2043,6 +2043,12 @@ pub struct State {
     /// Display-only and ephemeral: never cached on the operation, freed
     /// with the refusal it belongs to.
     pub feedback_ghost: Option<camcraft_app::machining2d::Ghost>,
+    /// #2201: the resolved pick outlines, keyed by their inputs (the picks,
+    /// each body's features and pose), not by a document counter.
+    pub(crate) pick_highlight: crate::pick_highlight::HighlightCache,
+    /// #2201: each body's world-space vertices, keyed by its facet
+    /// allocation and its pose.
+    pub(crate) frame_cache: crate::frame_cache::FrameCache,
 }
 
 /// Which page of the Operations pane a refused command's message belongs
@@ -2298,6 +2304,8 @@ impl State {
             feedback_ctx: None,
             feedback_at: None,
             feedback_ghost: None,
+            pick_highlight: Default::default(),
+            frame_cache: Default::default(),
         }
     }
 
@@ -4703,10 +4711,10 @@ fn mesh_dialog() -> crate::file_dialog::FileDialog {
 }
 
 /// The model files Model > Open and a viewport drop read, lower case. A
-/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// Solidcraft `.sc`/`.solidcraft` imports its cached final body; the browser
 /// build does not read it, so its picker does not offer it.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc", "solidcraft"];
 #[cfg(target_arch = "wasm32")]
 pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 
