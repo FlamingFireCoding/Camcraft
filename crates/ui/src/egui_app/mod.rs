@@ -170,6 +170,8 @@ mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
 mod trochoid_page;
+// #1444: the Slot Undercut kind's fields.
+mod undercut_page;
 mod kind_editors;
 mod mill2d_more_page;
 mod mill2d_page;

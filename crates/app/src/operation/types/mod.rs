@@ -22,6 +22,9 @@ mod sinker;
 mod sane;
 pub use sane::POCKET_ADAPTIVE_RETIRED;
 mod sel;
+// #1444: the Slot Undercut's stored parameters.
+mod undercut;
+pub use undercut::SlotUndercutOp;
 mod wire_edm;
 
 pub use area::{

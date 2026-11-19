@@ -1297,6 +1297,10 @@ pub enum OpParams {
     /// move along an axis that burns the faced wall out by a stated
     /// amount (see [`crate::sinker_side`]).
     SinkerSideBurn(super::sinker::SinkerSideBurnOp),
+    /// Slot undercut (#1444): radial passes of an undercut cutter along
+    /// a straight or circular slot at one depth, entered and left
+    /// sideways (see [`crate::machining2d::undercut`]).
+    SlotUndercut(super::undercut::SlotUndercutOp),
 }
 
 impl OpParams {
@@ -1346,6 +1350,7 @@ impl OpParams {
             OpParams::WireContour(_) => OpType::WireContour,
             OpParams::SinkerBurn(_) => OpType::SinkerBurn,
             OpParams::SinkerSideBurn(_) => OpType::SinkerSideBurn,
+            OpParams::SlotUndercut(_) => OpType::SlotUndercut,
             OpParams::TrochoidalSlot { .. } => OpType::TrochoidalSlot,
         }
     }
@@ -1378,6 +1383,8 @@ impl OpParams {
             OpParams::WireContour(_) => None,
             // The electrode burns straight down Z (#541, #545).
             OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+            // The undercut's Z law is upright (#1444): no 3+2 index.
+            OpParams::SlotUndercut(_) => None,
             // The 5-axis kinds (M5.1 C) are the third answer, not the
             // second: the PART stands still and the TOOL AXIS moves -
             // a 3+2 index inside them would command the machine to
@@ -1452,6 +1459,7 @@ impl OpParams {
             // the work; its travel plane is the workpiece's top.
             OpParams::WireContour(p) => p.top_z,
             OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => p.clearance_z,
+            OpParams::SlotUndercut(p) => p.clearance_z,
             OpParams::Face { clearance_z, .. }
             | OpParams::Contour { clearance_z, .. }
             | OpParams::Pocket { clearance_z, .. }
@@ -1511,6 +1519,7 @@ impl OpParams {
             OpParams::WireContour(p) => p.top_z,
             // The electrode enters at the work top (#541).
             OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => p.top_z,
+            OpParams::SlotUndercut(p) => p.top_z,
             OpParams::Face { top_z, cut_z, .. } => top_z.unwrap_or(*cut_z),
             OpParams::Contour { top_z, .. }
             | OpParams::Pocket { top_z, .. }
@@ -1594,6 +1603,12 @@ impl OpParams {
                 f(p.clearance_z);
                 f(p.top_z);
                 f(p.floor_z);
+            }
+            OpParams::SlotUndercut(p) => {
+                f(p.clearance_z);
+                opt(&p.retract_z, &mut f);
+                f(p.top_z);
+                f(p.bottom_z);
             }
             OpParams::Face { clearance_z, cut_z, top_z, .. } => {
                 f(*clearance_z);

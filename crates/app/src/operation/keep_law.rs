@@ -143,6 +143,8 @@ pub fn is_stock_kept_kind(params: &OpParams) -> bool {
                 | OpParams::Face { .. }
                 | OpParams::Chamfer2D { .. }
                 | OpParams::Deburr { .. }
+                // #1444: an undercut off the stock keeps the setup's parts.
+                | OpParams::SlotUndercut(_)
         )
 }
 

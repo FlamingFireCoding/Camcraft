@@ -7,7 +7,7 @@ use camcraft_app::{model, tools, units};
 use egui::{TextEdit, Ui};
 
 /// Tool kind labels, same order as `ToolKind` (mirrors `ToolUi::from_tool`).
-const TOOL_KINDS: [(tools::ToolKind, &str); 18] = [
+const TOOL_KINDS: [(tools::ToolKind, &str); 22] = [
     (tools::ToolKind::EndMill, "End mill"),
     (tools::ToolKind::BallNose, "Ball nose"),
     (tools::ToolKind::BullNose, "Bull nose"),
@@ -30,6 +30,12 @@ const TOOL_KINDS: [(tools::ToolKind, &str); 18] = [
     (tools::ToolKind::Waterjet, "Waterjet nozzle"),
     // #2011: diameter = wire diameter in mm; it turns no spindle.
     (tools::ToolKind::Wire, "EDM wire"),
+    // #1444: the undercut cutters - a head on a narrower neck (the
+    // shank fields); the dovetail's tip angle is its flank angle.
+    (tools::ToolKind::TSlot, "T-slot cutter"),
+    (tools::ToolKind::Keyseat, "Keyseat cutter"),
+    (tools::ToolKind::Dovetail, "Dovetail cutter"),
+    (tools::ToolKind::Lollipop, "Lollipop cutter"),
 ];
 
 pub(crate) fn page(ui: &mut Ui, state: &mut State, name: &str) {

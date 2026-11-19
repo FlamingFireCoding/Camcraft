@@ -207,6 +207,8 @@ mod thread_bore;
 mod turn_cells;
 mod turn_hidden;
 mod types;
+// #1444: the undercut cutters' Z-move and neck law.
+mod undercut;
 mod upright;
 mod workholding;
 
@@ -219,6 +221,7 @@ pub use engine::{verify, verify_bodies};
 pub use thread_bore::{CHORD_CREDIT, ThreadBore};
 pub use air::cuts_no_material;
 pub use prior::{acquit_by_prior, prior_surface};
+pub use undercut::acquit_undercut_by_prior;
 pub use prior_traverse::{acquit_traverses_by_prior, Traverse};
 pub use traverse_solids::acquit_traverses_by_solids;
 pub use stock_top::acquit_by_stock_top;

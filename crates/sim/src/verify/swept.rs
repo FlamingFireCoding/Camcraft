@@ -82,7 +82,9 @@ impl Body {
 /// no height.
 pub(super) fn pen(b: &Body, atom: &Atom, cut_lo: f64, allow: f64, grow: f64, pts: &mut Vec<[f64; 2]>) -> f64 {
     let lo = atom.z0.max(cut_lo).max(b.zlo);
-    let hi = atom.z1.min(b.zhi);
+    // #1444: a cutting top face gets the tip's allowance (`Atom::cap`).
+    let top = if atom.cap { atom.z1 - cut_lo.max(0.0) } else { atom.z1 };
+    let hi = top.min(b.zhi);
     if lo.partial_cmp(&hi).is_none_or(|o| o.is_gt()) {
         return f64::NEG_INFINITY;
     }
@@ -93,7 +95,7 @@ pub(super) fn pen(b: &Body, atom: &Atom, cut_lo: f64, allow: f64, grow: f64, pts
     if hi - lo <= 1e-12 {
         return atom.rho(lo) + grow - d;
     }
-    let bound = atom.rho(hi) + grow - d;
+    let bound = atom.rho_peak(lo, hi) + grow - d;
     if atom.is_flat() || bound <= allow {
         return bound; // exact for a band; clear of the allowance otherwise
     }

@@ -248,6 +248,21 @@ pub(crate) struct Planned {
     /// #2441: a twist drill's cone carries a cylindrical flute above
     /// `r * cot`, unlike a truncated chamfer `Taper`.
     pub drill: bool,
+    /// An undercut cutter's pass (#1444): the head and neck solids and
+    /// the moves they cut. `moves` above is then EMPTY: an undercut
+    /// clears no column, so every column reader (the program verdict,
+    /// the carried stock, the rest grids) cuts nothing for it, and only
+    /// the field eye removes the true profile
+    /// (`Stock::simulate_undercut`). `None` for every other tool.
+    pub undercut: Option<UndercutPlan>,
+}
+
+/// An undercut op's cut, for the field eye ([`Planned::undercut`]).
+pub(crate) struct UndercutPlan {
+    pub cutter: camcraft_tools::undercut::Undercut,
+    /// The neck's length above the head, mm.
+    pub neck_len: f64,
+    pub moves: Vec<crate::cl::Move>,
 }
 
 /// The field eye's refusal of a sinker electrode (#541), said once.
@@ -404,6 +419,19 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
         // #546: a wear-compensated burn is judged as the worn electrode burns it.
         let moves = crate::operation::sinker_wear_op::judged(world, &op, electrode.as_ref().map(|e| e.gap), cache.path.moves)
             .map_err(|e| format!("{name}: {e}"))?;
+        // #1444: an undercut cutter's moves ride its own plan.
+        let undercut = if camcraft_tools::undercut::is_kind(tool.kind) {
+            let cutter = camcraft_tools::undercut::Undercut::of(&tool).ok_or_else(|| {
+                format!(
+                    "{name}: {}",
+                    camcraft_tools::undercut::refusal(&tool).unwrap_or_else(|| "its tool reads as no undercut cutter".into())
+                )
+            })?;
+            Some(UndercutPlan { cutter, neck_len: tool.shank_len, moves: moves.clone() })
+        } else {
+            None
+        };
+        let moves = if undercut.is_some() { Vec::new() } else { moves };
         planned.push(Planned {
             name: name.clone(),
             moves,
@@ -422,6 +450,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
             lathe,
             electrode,
             drill,
+            undercut,
         });
     }
     Ok(planned)
