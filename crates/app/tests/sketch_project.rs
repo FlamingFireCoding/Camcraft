@@ -95,10 +95,12 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
     let world = sheet_job();
     let text = saved(&world);
     let (file, row) = file_and_row(&text);
-    assert!(
-        PROJECT_VERSION >= 71,
-        "DXF profile rows require project v71 or later"
-    );
+    const {
+        assert!(
+            PROJECT_VERSION >= 71,
+            "DXF profile rows require project v71 or later"
+        );
+    }
     assert_eq!(file["version"], json!(PROJECT_VERSION));
     let dto = &file["entities"][row];
     assert_eq!(dto["name"], json!("plate"));
