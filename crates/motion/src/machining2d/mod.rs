@@ -99,6 +99,9 @@ mod slots;
 mod slot_ends;
 mod slot_room;
 mod unreached;
+mod vcarve;
+mod vcarve_axis;
+mod vcarve_walk;
 mod waterscan;
 
 #[cfg(test)]
@@ -145,6 +148,7 @@ pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
+pub use vcarve::{v_carve, VCarveParams};
 pub use unreached::{unreached_corner_note, unreached_corners, unreached_note, unreached_pieces};
 pub use adaptive::{rest_adaptive, RestStock, StockFloor, REST_STOCK_FILM};
 pub use adaptive_method::AdaptiveMethod;
