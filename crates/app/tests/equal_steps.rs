@@ -99,6 +99,25 @@ fn the_stamp_tells_the_two_ladders_apart() {
     let stamp = |equal: bool| operation::current_stamp(&world, "T", &SrcRef::Stock, &contour_op(equal), "X", None);
     assert!(stamp(false).is_some());
     assert_ne!(stamp(true), stamp(false));
+    // An approach that is not the default hashes its fields: the mode is
+    // one of them, so it also tells two such approaches apart.
+    let overlapped = |equal: bool| {
+        let mut p = contour_op(equal);
+        if let OpParams::Contour { links, .. } = &mut p {
+            links.approach.overlap = 1.0;
+        }
+        operation::current_stamp(&world, "T", &SrcRef::Stock, &p, "X", None)
+    };
+    assert!(overlapped(false).is_some());
+    assert_ne!(overlapped(true), overlapped(false));
+}
+
+#[test]
+fn the_region_law_reads_the_stepdown_of_the_ladder_mode() {
+    // `operation::area` builds the pocket region at the planes of this
+    // stepdown, so it must be the generator's.
+    assert_eq!(contour_op(false).ladder_stepdown(20.0, 2.0, 5.0), 5.0);
+    assert_eq!(contour_op(true).ladder_stepdown(20.0, 2.0, 5.0), 4.5);
 }
 
 /// The steps between the planes the generated path cuts at, top down.
