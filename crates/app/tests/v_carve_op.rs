@@ -115,11 +115,17 @@ fn a_letter_is_carved_verified_simulated_and_posted() {
     let blocking: Vec<&Warning> = tp.warnings.iter().filter(|w| w.blocks_post()).collect();
     assert!(blocking.is_empty(), "{blocking:?}");
     // The strokes are 4 mm wide: under a 90 degree cone the spine is
-    // 2 mm deep, less the wall allowance. The maximum depth is not met.
-    let floor = tp.path.moves.iter().filter(|m| m.kind != MoveKind::Rapid).map(|m| m.to.z).fold(f64::INFINITY, f64::min);
-    assert!((floor - (TOP - 2.0)).abs() < 0.03, "the spine is at {floor}");
-    // The reflex corner of the L is the widest place: deeper there.
-    assert!(floor < TOP - 2.0 + 0.011, "floor {floor}");
+    // 2 mm deep, less the 0.01 mm wall allowance. The maximum depth is
+    // not met.
+    let cuts = || tp.path.moves.iter().filter(|m| m.kind != MoveKind::Rapid);
+    let spine = cuts().filter(|m| m.to.y > 1.0).map(|m| m.to.z).fold(f64::INFINITY, f64::min);
+    assert!((spine - (TOP - 1.99)).abs() < 0.005, "the spine of the upright stroke is at {spine}");
+    // The junction of the two strokes is the widest place. Its circle
+    // touches the two outer walls and the reflex corner: the radius is
+    // 4 * sqrt(2) / (1 + sqrt(2)) = 2.343 mm. The tip is deepest there.
+    let widest = 4.0 * 2.0_f64.sqrt() / (1.0 + 2.0_f64.sqrt());
+    let floor = cuts().map(|m| m.to.z).fold(f64::INFINITY, f64::min);
+    assert!((floor - (TOP - (widest - 0.01))).abs() < 0.005, "the junction is at {floor}");
     // The program sim: the cut stays in the mark the operation states.
     let dev = stock_sim::simulate_document(&world).expect("the stock is judged").dev;
     assert_eq!(dev.gouge_cells, 0, "worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
@@ -128,7 +134,7 @@ fn a_letter_is_carved_verified_simulated_and_posted() {
     posting::post_setup(&world, &out).unwrap_or_else(|e| panic!("a legal V-carve posts: {e}"));
     let text = std::fs::read_to_string(&out).expect("the program");
     let _ = std::fs::remove_file(&out);
-    assert!(text.contains("G1") && text.contains('Z'), "{text}");
+    assert!(text.contains("G01 X4. Y-5. Z6.01"), "the spine of the lower stroke is posted: {text}");
 }
 
 #[test]
@@ -233,7 +239,7 @@ fn over_mcp_a_letter_is_carved_verified_and_undone() {
     let ver = call(&mut s, &mut id, "verify", json!({}))["structuredContent"].clone();
     assert_eq!(ver["ok"], json!(true), "a legal V-carve verifies ok: {ver}");
     let out = dir.join("letter.nc");
-    call(&mut s, &mut id, "post", json!({ "path": out.display().to_string() }));
+    call(&mut s, &mut id, "post", json!({ "output": out.display().to_string() }));
     assert!(out.exists(), "the program was written");
     // The MCP tool calls the undoable command: undo removes the operation.
     call(&mut s, &mut id, "undo", json!({}));
