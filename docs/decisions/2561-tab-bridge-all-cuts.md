@@ -97,3 +97,42 @@ The second refuses a legal program.
 of the line this is conservative: a turn-back past the end of the tab can
 read as nearer than it cuts. The result is a hold or a note, never a
 silent bridge.
+
+## #2561 - the two cuts beside a tab against the tab core (`tab_kerf`)
+
+**Decided.**
+
+- New module `crates/motion/src/machining2d/tab_kerf.rs`. `nearest_other`
+  reads the two cuts beside a tab also against the core of the tab line:
+  the line without its first and last `D / 2`. The two end kerfs (the
+  tool disc at each tab end) remove those parts.
+- A point of a cut beside the tab is skipped only while the cut stays in
+  the disc of radius `D` about the tab end and goes away from that end.
+  In that part, the cut is read against the core outside that disc. From
+  the first point where the cut leaves the disc, or turns back toward the
+  end by more than `TURN = 1e-3` mm, all of the cut is read against the
+  full core.
+- A distance under `D - SLACK` holds the loop with a `tabs:` note. A NaN
+  distance or a NaN limit holds the loop. The new read adds a hold only,
+  never a note. `departed` stays for the "narrow strip" note.
+
+**Why.** The review of head `57756c69a` (comment 7007645147) found a
+return run along the tab at a constant distance. `departed` dropped that
+run because it does not come nearer to the tab line. The meter read a
+neck of 0 mm with no note: a silent thin bridge.
+
+**Dropped.**
+
+- Read the full cut against the full tab line. Each cut touches the tab
+  end where it starts, so each tab would hold.
+- Skip a fixed length of each cut (`reach`). A short notch puts the
+  return run inside that length, and the run is not read.
+- Make `departed` stricter only. It measures "comes nearer"; a run at a
+  constant distance never does.
+
+**Limits.** The tool is a disc and the cut is its centre line. The read
+can hold a loop where the true neck still keeps the tab width (an acute
+V-notch, a tab end near a tight fold). Such a hold is safe: the tabbed
+levels cut nothing, and a note says so. A bore or a slot narrower than
+about two tool diameters keeps its tab-height ring of material uncut,
+with a note.

@@ -86,11 +86,13 @@ fn leave(path: &[Point2], end: Point2, d: f64) -> f64 {
     let mut peak = path.first().map_or(0.0, |&q| dist(q, end));
     for w in path.windows(2) {
         let len = dist(w[0], w[1]);
-        if !(pt_seg(end, w[0], w[1]) >= peak - TURN) {
+        // NaN on either side of each test reads as "left here".
+        let (g, lim) = (pt_seg(end, w[0], w[1]), peak - TURN);
+        if g < lim || g.is_nan() || lim.is_nan() {
             return run;
         }
         let r1 = dist(w[1], end);
-        if !(r1 < d) {
+        if r1 >= d || r1.is_nan() || d.is_nan() {
             // Leaves on this piece: bisect for the point (the distance from
             // `end` along a segment that starts inside the disc).
             let at = |u: f64| Point2::new(w[0].x + (w[1].x - w[0].x) * u, w[0].y + (w[1].y - w[0].y) * u);
@@ -117,7 +119,7 @@ fn core(line: &[Point2], lo: f64, hi: f64, holes: &[Point2], r: f64) -> Vec<(Poi
         let len = dist(a, b);
         let (t0, t1) = if len > 0.0 { (((lo - run) / len).max(0.0), ((hi - run) / len).min(1.0)) } else { (0.0, 0.0) };
         run += len;
-        if !(t0 <= t1) || len <= 0.0 {
+        if t1 < t0 || t0.is_nan() || t1.is_nan() || len <= 0.0 {
             continue;
         }
         let mut spans = vec![(t0, t1)];

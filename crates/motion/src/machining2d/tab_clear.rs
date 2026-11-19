@@ -143,7 +143,9 @@ fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], shares: &[bool], i: usize, j: 
                 _ => c.lead_in.iter().chain(&c.walk).copied().collect(),
             };
             let k = kerf_gap(&beside, line, after, before, d);
-            if !(k >= d - SLACK) {
+            // NaN on either side reads as a touch (the loop is held).
+            let lim = d - SLACK;
+            if k < lim || k.is_nan() || lim.is_nan() {
                 best = best.min(if k.is_nan() { 0.0 } else { k });
             }
             // One keep on both sides of the tab: `tab_bridge`'s reach.
