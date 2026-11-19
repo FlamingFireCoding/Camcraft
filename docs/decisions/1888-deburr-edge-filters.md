@@ -24,8 +24,10 @@
    `min_edge_angle_deg` to 40.0. A project file without the key reads 0.0
    (every crease), which is the ride the file stored. Each new key is absent
    from the file at its rest value, so an old file saves unchanged. The
-   operation stamp digests a filter only off its rest value, so an old
-   operation keeps its stamp and its cached path.
+   operation stamp digests a filter only off its rest value. An automatic
+   or face-only operation keeps its legacy stamp and cached path. A
+   chain-selected operation gets a selection-law version in its stamp and
+   must regenerate once. The previous generator ignored those chains.
 6. **The hole filter matches the bore's own cylinder.** A recognized hole
    (`drilling::recognize`, `recognize_cross`) whose diameter is in the range
    removes each exposed edge with both ends on its cylinder, within 0.05 mm,
@@ -39,6 +41,10 @@
    Selection block to the draft's `exclude_edges`. Apply writes them with
    the other parameters, as one `EditOperationParams` command.
 
+9. **Exclusion models are cache dependencies.** The stamp includes each
+   referenced model's geometry and placement in the setup frame. A missing
+   model makes the stamp unresolved and the cached operation stale.
+
 **Why**
 
 - The issue text says to remove Deburr from the `!selection_drives_region`
@@ -50,6 +56,8 @@
   not make that path (Prime Directive).
 - A silent change of the edges that an old project breaks is a change of
   posted G-code. The 0.0 default for old files prevents it.
+- Generation reads the geometry and placement of exclusion models. A
+  changed or missing reference must invalidate a cached path before posting.
 - Before this change, a Deburr with a selection source ignored the picks
   and rode every edge of the picked models. That was a silent wrong answer
   for a user who picked one edge.
@@ -60,6 +68,8 @@
 
 **Considered and dropped**
 
+- Invalidating every Deburr cache or changing the global stamp version:
+  unnecessary regeneration for automatic and face-only operations.
 - Removing Deburr from the guard as written: refused open chains and gave
   no path.
 - 40.0 for a file without the key: changes the path of each stored Deburr

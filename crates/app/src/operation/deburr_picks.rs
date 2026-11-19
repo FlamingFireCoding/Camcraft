@@ -16,16 +16,54 @@ use super::*;
 /// How many leading chains of [`chains_of`]'s list are the source's.
 pub(super) fn picked(src: &SrcRef) -> usize {
     match src {
-        SrcRef::Selection(items) => items.iter().filter(|g| matches!(g.feature, FeatureSel::Chain(_))).count(),
+        SrcRef::Selection(items) => items
+            .iter()
+            .filter(|g| matches!(g.feature, FeatureSel::Chain(_)))
+            .count(),
         SrcRef::Stock | SrcRef::Entity(_) => 0,
     }
 }
 
+/// The selection law and the models read by excluded chains are cache
+/// inputs. A missing model cannot validate an existing toolpath.
+pub(super) fn stamp_inputs(
+    world: &World,
+    setup: Option<&str>,
+    src: &SrcRef,
+    exclude: &[GeoSel],
+    h: &mut impl std::hash::Hasher,
+) -> Option<()> {
+    // Before #1888, chain picks named whole models. Keep their cached
+    // automatic rides stale until the selected edges are regenerated.
+    if picked(src) != 0 {
+        h.write(b"deburr-selected-edges-v1");
+    }
+    for g in exclude {
+        h.write(b"deburr-exclusion-model-v1");
+        let entity = model::find_by_name(world, &g.entity)?;
+        let loc = crate::setup_align::pose_in(world, &entity, setup).unwrap_or_default();
+        for v in [
+            loc.pos.x, loc.pos.y, loc.pos.z, loc.rot[0], loc.rot[1], loc.rot[2], loc.rot[3],
+        ] {
+            h.write(&v.to_bits().to_le_bytes());
+        }
+        h.write_u64(model::geometry_signature(world, &entity)?);
+    }
+    Some(())
+}
+
 /// The picked chains, then the excluded chains, in the setup's frame.
-pub(super) fn chains_of(world: &World, op: &Operation, exclude: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
+pub(super) fn chains_of(
+    world: &World,
+    op: &Operation,
+    exclude: &[GeoSel],
+) -> Result<Vec<Vec<Point3>>, GenError> {
     let mut out = Vec::new();
     if let SrcRef::Selection(items) = &op.src {
-        for g in items.iter().filter(|g| matches!(g.feature, FeatureSel::Chain(_))) {
+        for g in items
+            .iter()
+            .filter(|g| matches!(g.feature, FeatureSel::Chain(_)))
+        {
             out.push(chain(world, op.setup.as_deref(), g, "to break")?);
         }
     }
@@ -37,7 +75,12 @@ pub(super) fn chains_of(world: &World, op: &Operation, exclude: &[GeoSel]) -> Re
 
 /// One pick as a polyline where it stands; anything but a live edge
 /// chain is refused by its label.
-fn chain(world: &World, setup: Option<&str>, g: &GeoSel, role: &str) -> Result<Vec<Point3>, GenError> {
+fn chain(
+    world: &World,
+    setup: Option<&str>,
+    g: &GeoSel,
+    role: &str,
+) -> Result<Vec<Point3>, GenError> {
     let Some(entity) = model::find_by_name(world, &g.entity) else {
         return Err(GenError::Invalid(format!(
             "the Deburr edges {role} name '{}', which is gone",
