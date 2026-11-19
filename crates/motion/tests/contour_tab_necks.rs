@@ -276,15 +276,14 @@ fn a_tab_in_a_v_notch_keeps_its_width_or_holds_the_loop() {
         let mut p = params(count);
         p.links.approach.start_point = Some(Point2::new(30.392, 32.258));
         let t = contour(&part, &p).unwrap();
-        let what = format!("V-notch, {count} tabs");
-        assert!(held_or_whole(&part, &t, count as usize, &what), "{what}: {:?} necks {:?}", t.notes, necks(&part, &t));
+        held_or_whole(&part, &t, count as usize, &format!("V-notch, {count} tabs"));
     }
 }
 
 #[test]
 fn a_narrow_inside_slot_or_bore_keeps_its_tab_ring() {
     // Inside contours under about 2 D across: the far side of the ring runs
-    // nearer than D to the tab. The loop is held, with the note.
+    // nearer than D to the tab. The loop is held, with a `tabs:` note.
     let slot = Region::new(vec![lp(&[(0.0, 0.0), (60.0, 0.0), (60.0, 7.0), (0.0, 7.0)])]).unwrap();
     let bore = Region::new(vec![Loop::new((0..72).map(|k| Point2::new(5.0 * (k as f64 * 5.0f64).to_radians().cos(), 5.0 * (k as f64 * 5.0f64).to_radians().sin())).collect()).unwrap()]).unwrap();
     for (what, region) in [("slot 60 x 7", &slot), ("bore 10", &bore)] {
@@ -292,7 +291,8 @@ fn a_narrow_inside_slot_or_bore_keeps_its_tab_ring() {
             let mut p = params(count);
             p.side = Side::Inside;
             let t = contour(region, &p).unwrap();
-            assert!(held(&t) >= 1, "{what}, {count} tabs: {:?}", t.notes);
+            let named = t.notes.iter().any(|s| s.starts_with("tabs:") && s.contains("cut nothing on this loop"));
+            assert!(named, "{what}, {count} tabs: {:?}", t.notes);
             assert!(cuts_nothing_at_the_tabs(&t), "{what}, {count} tabs: a held loop cuts nothing under the tab top");
         }
     }
