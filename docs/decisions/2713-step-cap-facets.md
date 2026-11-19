@@ -44,3 +44,21 @@ other models import as before. The flip is capped at 8 flips for each
 facet of the face; a cap facet that is left then stays as it was.
 A cap facet whose long edge is on the face's boundary cannot be flipped
 and stays.
+
+## #2713 - Add the missing kernel fixture row in this PR
+
+**What was decided.** Add the triage row for `bar_cross_holes.step` to
+`crates/kernel/tests/step_agreement.rs` in this PR. The import refuses with
+`solidcore refuses: #655 at read: pcurves failed on`. The mesh reports
+`no exact solid to judge against`. The test `step_bar_cross_holes` pins
+these results.
+
+**Why.** The review found that the fixture has no row. The agreement test
+must cover every STEP fixture. The issue requires both this test and
+`feature_edge_g1_join` to pass.
+
+**Considered and dropped.** File a separate issue for the missing row.
+That leaves the agreement test red after this PR.
+
+**What it costs.** Run the kernel agreement suite explicitly. A later
+change to the fixture requires a new triage of its agreement row.

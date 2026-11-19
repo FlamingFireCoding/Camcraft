@@ -156,7 +156,7 @@ fn the_step_bars_wall_facets_lie_on_the_cylinder() {
 
 /// #2713: a wall facet's normal follows the cylinder. The #2600 split left
 /// flat "cap" facets (three points on the wall, the apex over the long
-/// edge's middle) whose normal stood 40 to 60 degrees off the radius; the
+/// edge's middle) whose normal stood up to 65.5 degrees off the radius; the
 /// pick then showed their edges as creases on the smooth wall.
 #[test]
 fn the_step_bars_wall_facet_normals_follow_the_cylinder() {
