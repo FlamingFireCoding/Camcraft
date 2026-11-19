@@ -67,6 +67,7 @@ use judge::{c_letter_problem, move_extremes, pose_problems, say, slowest_axis, t
 mod sheet;
 pub mod validate;
 // #383: the machine editor - property grid, draft, user folder and save.
+pub mod chain;
 pub mod draft;
 pub mod fields;
 pub mod order;

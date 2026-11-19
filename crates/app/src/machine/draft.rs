@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use super::chain::{self, Place, Step};
 use super::fields::{self, FieldGroup, FieldKind};
 use super::library::{text_of, MachineSource};
 use super::order::{self, KeyOrder};
@@ -203,6 +204,42 @@ impl MachineDraft {
             }
             _ => return Err(not_one()),
         }
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Add a linear axis part (X, Y, Z, U, V or W) at `place` (#2756).
+    /// Returns the new part's pointer. Refused by name, with the file
+    /// unchanged, when the name is taken or not a linear letter.
+    pub fn add_linear_axis(&mut self, place: Place, name: &str) -> Result<String, String> {
+        let at = chain::add_linear(&mut self.value, place, name.trim())?;
+        self.dirty = true;
+        Ok(at)
+    }
+
+    /// Add a rotary axis part (A, B or C) about `axis` at `place`
+    /// (#2756). Returns the new part's pointer. Refused by name, with
+    /// the file unchanged, on a taken name, a non-rotary letter or a
+    /// zero or non-finite direction.
+    pub fn add_rotary_axis(&mut self, place: Place, name: &str, axis: [f64; 3]) -> Result<String, String> {
+        let at = chain::add_rotary(&mut self.value, place, name.trim(), axis)?;
+        self.dirty = true;
+        Ok(at)
+    }
+
+    /// Move the axis part at `pointer` one row up or down the chain
+    /// (#2756). Returns where it is now. Refused by name at either end
+    /// or when the pointer names no axis.
+    pub fn move_axis(&mut self, pointer: &str, step: Step) -> Result<String, String> {
+        let at = chain::move_axis(&mut self.value, pointer, step)?;
+        self.dirty = true;
+        Ok(at)
+    }
+
+    /// Remove the axis part at `pointer` (#2756); the parts it carried
+    /// take its place. Refused by name when the pointer names no axis.
+    pub fn remove_axis(&mut self, pointer: &str) -> Result<(), String> {
+        chain::remove(&mut self.value, pointer)?;
         self.dirty = true;
         Ok(())
     }
