@@ -117,13 +117,14 @@ fn thin(walk: Vec<Option<Pt>>) -> Vec<Option<Pt>> {
     // the line to the next candidate.
     let mut dropped: Vec<Pt> = Vec::new();
     for next in walk {
-        if let (Some(b), [.., Some(a), Some(m)]) = (&next, out.as_slice()) {
-            if on_line(a, m, b) && dropped.iter().all(|q| on_line(a, q, b)) {
-                dropped.push(*m);
-                out.pop();
-                out.push(next);
-                continue;
-            }
+        if let (Some(b), [.., Some(a), Some(m)]) = (&next, out.as_slice())
+            && on_line(a, m, b)
+            && dropped.iter().all(|q| on_line(a, q, b))
+        {
+            dropped.push(*m);
+            out.pop();
+            out.push(next);
+            continue;
         }
         dropped.clear();
         out.push(next);

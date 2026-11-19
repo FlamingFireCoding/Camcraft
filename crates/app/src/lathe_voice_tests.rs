@@ -110,6 +110,8 @@ fn want(ty: OpType) -> Want {
         | OpType::Adaptive2D
         | OpType::Offset2D
         | OpType::Engrave
+        // #1443: a V-carve is a mill kind.
+        | OpType::VCarve
         | OpType::Chamfer2D
         | OpType::Circular
         | OpType::Thread
