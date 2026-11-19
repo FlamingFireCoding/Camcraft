@@ -352,6 +352,8 @@ fn pass_notes(p: &WireParams, start: Point2, lead: f64, reverse: bool) -> Vec<St
 #[cfg(test)]
 mod open_tests;
 #[cfg(test)]
+mod ruled_heal_tests;
+#[cfg(test)]
 mod ruled_tests;
 #[cfg(test)]
 mod ruled_widen_tests;

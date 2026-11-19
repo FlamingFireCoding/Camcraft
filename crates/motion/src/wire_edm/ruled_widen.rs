@@ -33,9 +33,10 @@
 //! readings. Our own code; no vendor post, control manual or CAM
 //! product behaviour was consulted.
 
+use super::laws::UncutRest;
 use super::pairing::{pair, Ring};
 use super::ring::{self, dist, pt_seg};
-use super::ruled::{arcs, emit, invalid, lead_in, too_far, WireRuled, SETTLED};
+use super::ruled::{arcs, emit, invalid, lead_in, too_far, CutReport, WireRuled, SETTLED};
 use super::ruled_laws::{clearance, crossing, fold_of, folds, foot, lean_law, lerp, tangle, Ruling, MAX_RULINGS};
 use super::{laws, start_side, WireParams, MIN_LEAD};
 use crate::cl::Toolpath;
@@ -238,8 +239,9 @@ pub(super) fn per_ruling(c: &Stated<'_>, planes: [(&[Point2], &Region); 2]) -> R
     let scaled = |z: f64, s: f64| WireParams { wire_diameter: p.wire_diameter * s, gap: p.gap * s, plane_z: z, ..p.clone() };
     let ring_u = ring::wire_ring(region_u, p.side, k)?;
     let ring_l = ring::wire_ring(region_l, p.side, k)?;
-    laws::cover(given_u, &ring_u, &scaled(r.top_z, 1.0))?;
-    laws::cover(given_l, &ring_l, &scaled(z0, 1.0))?;
+    let rest_u = laws::cover_healed(given_u, &ring_u, &scaled(r.top_z, 1.0), r.heal_tolerance)?;
+    let rest_l = laws::cover_healed(given_l, &ring_l, &scaled(z0, 1.0), r.heal_tolerance)?;
+    let mut uncut = UncutRest::worse(rest_l, rest_u);
     let (Some(wu), Some(wl)) = (Ring::new(&ring_u), Ring::new(&ring_l)) else {
         return Err(invalid("the wire path has collapsed - the profile is too small for the wire".into()));
     };
@@ -328,7 +330,8 @@ pub(super) fn per_ruling(c: &Stated<'_>, planes: [(&[Point2], &Region); 2]) -> R
             if let Some(q) = tangle(pts) {
                 return Err(tangled(q, z));
             }
-            laws::cover(given, pts, &scaled(z, wide))?;
+            let after = laws::cover_healed(given, pts, &scaled(z, wide), r.heal_tolerance)?;
+            uncut = UncutRest::worse(uncut, after);
         }
         let lead = dist(start, first.0);
         if !(lead.is_finite() && lead > MIN_LEAD) {
@@ -363,7 +366,7 @@ pub(super) fn per_ruling(c: &Stated<'_>, planes: [(&[Point2], &Region); 2]) -> R
             r.tolerance,
             wire.len()
         );
-        return emit(&wire, p, r, start, lead, steepest, held);
+        return emit(&wire, p, r, CutReport { start, lead, steepest, held, given_l, given_u, uncut });
     }
     Err(invalid(format!("the wire's offset from the paired surface ({rule}) did not settle - refused")))
 }
