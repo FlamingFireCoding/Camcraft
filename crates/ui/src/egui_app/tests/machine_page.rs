@@ -110,19 +110,27 @@ fn the_machine_page_is_laid_out_in_groups_like_the_wcs_page() {
 
 /// #2105: the ribbon is 22 px taller since #2027, and the machine page's
 /// action row fell under the fold of a 720 px window: the user had to
-/// scroll to reach the buttons. The row is reachable without a scroll -
-/// every action button's painted bottom sits inside the Properties leaf.
+/// scroll to reach the buttons. The page's visible bottom is NOT the
+/// bottom of the Properties leaf: `pages.rs` gives the page's ScrollArea
+/// the leaf height minus 40 px and draws the separator and the `Close`
+/// footer in that band. So the edge to measure against is the top of
+/// `Close`, read from the same pane as the buttons.
 #[test]
 fn the_machine_page_buttons_fit_without_scrolling_at_720_px() {
     let mut h = shell_harness();
     open_machine(&mut h, Some("Tormach 770MX"));
-    let leaf = super::layout::leaf_rect(&h.state().dock, &Tab::Properties).expect("the properties leaf");
-    assert!(top(&h, GROUPS[2]) < leaf.bottom(), "the action group title is in the fold: {:?} {leaf:?}", rect(&h, GROUPS[2]));
+    let close = h
+        .get_by_role_and_label(egui::accesskit::Role::Pane, "Properties")
+        .query_by_label("Close")
+        .expect("the Close footer of the Properties pane")
+        .rect();
+    let title = rect(&h, GROUPS[2]);
+    assert!(title.top() < close.top(), "the action group title is in the fold: {title:?} vs Close {close:?}");
     for label in ["Load other", "Edit", "Clear"] {
         let r = rect(&h, label);
         assert!(
-            r.bottom() <= leaf.bottom() + 0.5,
-            "{label} {r:?} falls under the fold of the Properties leaf {leaf:?}"
+            r.bottom() <= close.top() + 1.0,
+            "{label} {r:?} stands below the page's visible bottom - the Close footer {close:?} starts there"
         );
     }
 }
