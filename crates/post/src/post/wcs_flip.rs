@@ -185,7 +185,7 @@ pub fn apply(records: Vec<Record>, s: &Script) -> Result<Vec<Record>, PostError>
         if !s.translates_inverted_axes() {
             return Err(PostError::Refused(format!(
                 "{what}, and this post script is not verified for a mirrored program (it does not declare \
-                 axisInversion = true) - post with a script that does (Fanuc, Haas), or clear the flip on the WCS page"
+                 axisInversion = true) - post with a script that does (each built-in mill post does), or clear the flip on the WCS page"
             )));
         }
         if st.yaw.to_radians().abs() > 1e-9 {

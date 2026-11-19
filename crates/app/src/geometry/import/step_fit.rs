@@ -60,8 +60,10 @@
 //! equilateral ratio is 1.36 at a 30-degree facet).
 //!
 //! Limits, stated: B-spline, NURBS and swept faces are not measured here
-//! (their grid and parameter stretch are #1602's); a face whose mesh does
-//! not carry usable parameters is left as the kernel made it.
+//! (their grid and parameter stretch are #1602's). A curved face whose mesh
+//! does not carry usable parameters keeps the kernel's facets, unmeasured:
+//! the face and the reason are logged and the model is reported reduced
+//! fidelity ([`UNMEASURED`], #2719), so it is never verified as exact.
 
 use std::collections::HashMap;
 
@@ -95,6 +97,12 @@ pub(super) struct Fit {
 
 const KEPT: Fit = Fit { facets: None, off: 0.0, left: 0.0 };
 
+/// The height reported for a curved face whose kernel facets could not be
+/// measured (#2719), in the file's unit: past every verdict tolerance, so
+/// the model is reduced fidelity (#864) and verify refuses, and far under
+/// the unknown-fidelity sentinel (`model_fidelity::UNKNOWN_MM`) in any unit.
+pub(super) const UNMEASURED: f64 = 1.0e3;
+
 /// The curved elementary kinds measured here.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Curved {
@@ -115,9 +123,10 @@ impl Curved {
     }
 }
 
-/// [`fit`] for face `surface` of a shell, when its kind is measured here.
-pub(super) fn fit_face(surface: Option<&Metered>, poly: &PolygonMesh, tol: f64, room: usize) -> Fit {
-    let Some(s) = surface else { return KEPT };
+/// [`fit`] for face `index` (`surface`) of a shell, when its kind is
+/// measured here.
+pub(super) fn fit_face(index: usize, surface: Option<&Metered>, poly: &PolygonMesh, tol: f64, room: usize) -> Fit {
+    let Some(s) = surface else { return judged(index, Err("the shell holds no surface for it")) };
     let kind = match &s.inner {
         Surface::ElementarySurface(e) => match **e {
             ElementarySurface::Plane(_) => return KEPT,
@@ -134,11 +143,26 @@ pub(super) fn fit_face(surface: Option<&Metered>, poly: &PolygonMesh, tol: f64, 
         let p = s.inner.subs(u, v);
         [p.x, p.y, p.z]
     };
-    let fit = fit(poly, &at, tol, room, kind);
-    if fit.left > 0.0 {
-        tracing::warn!("step: a curved face's facets stand {:e} off its surface at tol {tol:e} and could not be refined", fit.left);
+    judged(index, fit(poly, &at, tol, room, kind))
+}
+
+/// What the import takes for face `index`: the fit, or, when the fit could
+/// not measure the face (#2719), the kernel's facets reported
+/// [`UNMEASURED`]. Each is logged with its face and its reason.
+fn judged(index: usize, fit: Result<Fit, &'static str>) -> Fit {
+    let face = index.saturating_add(1);
+    match fit {
+        Ok(fit) => {
+            if fit.left > 0.0 {
+                tracing::warn!("step: face {face}'s facets stand {:e} off its surface and could not be refined", fit.left);
+            }
+            fit
+        }
+        Err(why) => {
+            tracing::warn!("step: face {face} keeps the kernel's facets unmeasured ({why}); the model is reduced fidelity");
+            Fit { facets: None, off: UNMEASURED, left: 0.0 }
+        }
     }
-    fit
 }
 
 struct Vert {
@@ -157,9 +181,10 @@ fn key(a: u32, b: u32) -> (u32, u32) {
 /// Hold `poly`'s inside edges within `tol / kind.inside()` of the surface `at`
 /// evaluates in the mesh's own parameters, making at most `room` facets,
 /// and bound how far the kept facets stand off a surface of kind `kind`.
-pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f64, room: usize, kind: Curved) -> Fit {
+/// `Err` names why the mesh cannot be measured (#2719).
+pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f64, room: usize, kind: Curved) -> Result<Fit, &'static str> {
     if !(tol.is_finite() && tol > 0.0) {
-        return KEPT;
+        return Err("the pass tolerance is not a positive number");
     }
     let (pos, uvs) = (poly.positions(), poly.uv_coords());
     let mut verts: Vec<Vert> = Vec::new();
@@ -167,22 +192,22 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
     let mut tris: Vec<[u32; 3]> = Vec::new();
     for face in poly.face_iter() {
         if face.len() != 3 {
-            return KEPT;
+            return Err("a facet of its mesh is not a triangle");
         }
         let mut t = [0u32; 3];
         for (k, c) in face.iter().enumerate() {
-            let Some(ui) = c.uv else { return KEPT };
+            let Some(ui) = c.uv else { return Err("its mesh carries no surface parameters") };
             let id = match ids.get(&(c.pos, ui)) {
                 Some(id) => *id,
                 None => {
-                    let (Some(p), Some(uv)) = (pos.get(c.pos), uvs.get(ui)) else { return KEPT };
+                    let (Some(p), Some(uv)) = (pos.get(c.pos), uvs.get(ui)) else { return Err("its mesh names a point it does not hold") };
                     let v = Vert { uv: [uv.x, uv.y], p: [p.x, p.y, p.z] };
                     // The mesh's parameters must give the mesh's points, or
                     // they are not the plane it was triangulated in.
-                    let Ok(id) = u32::try_from(verts.len()) else { return KEPT };
+                    let Ok(id) = u32::try_from(verts.len()) else { return Err("its mesh has more points than the fit can count") };
                     let apart = dist(at(v.uv[0], v.uv[1]), v.p);
                     if apart.is_nan() || apart > tol * 1e-3 {
-                        return KEPT;
+                        return Err("its mesh's parameters do not give its points");
                     }
                     verts.push(v);
                     ids.insert((c.pos, ui), id);
@@ -215,7 +240,7 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
         (left, high) = (0.0, 0.0);
         let mut mids: HashMap<(u32, u32), u32> = HashMap::new();
         for ((a, b), n) in edges {
-            let (Some(va), Some(vb)) = (verts.get(a as usize), verts.get(b as usize)) else { return KEPT };
+            let (Some(va), Some(vb)) = (verts.get(a as usize), verts.get(b as usize)) else { return Err("its mesh names a point it does not hold") };
             let uv = [0.5 * (va.uv[0] + vb.uv[0]), 0.5 * (va.uv[1] + vb.uv[1])];
             let chord = [0.5 * (va.p[0] + vb.p[0]), 0.5 * (va.p[1] + vb.p[1]), 0.5 * (va.p[2] + vb.p[2])];
             let p = at(uv[0], uv[1]);
@@ -258,7 +283,7 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
     let facets = changed
         .then(|| tris.iter().map(|t| Some(Triangle::new(point(t[0])?, point(t[1])?, point(t[2])?))).collect::<Option<Vec<_>>>())
         .flatten();
-    Fit { facets, off: high * kind.inside(), left }
+    Ok(Fit { facets, off: high * kind.inside(), left })
 }
 
 /// The angle at `c` of the facet `a b c`, in space. `None` for a facet with

@@ -332,7 +332,7 @@ fn shell_facets(
         let polys = meshed.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
         // #2600: a curved face's facets are held to its surface, or their
         // chord height is carried as the mesh's.
-        let face = |i: usize, p: &PolygonMesh, room: usize| super::step_fit::fit_face(cshell.faces.get(i).map(|f| &f.surface), p, tol, room);
+        let face = |i: usize, p: &PolygonMesh, room: usize| super::step_fit::fit_face(i, cshell.faces.get(i).map(|f| &f.surface), p, tol, room);
         let (facets, ends, off) = super::step_facets::facets_of(&polys, budget, face)?;
         owners.borrow_mut().push((tol, ends, off));
         Ok(facets)

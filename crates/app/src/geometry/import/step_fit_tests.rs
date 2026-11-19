@@ -11,6 +11,8 @@ use truck_meshalgo::prelude::{Faces, PolygonMesh, StandardAttributes, Vector2};
 const TOL: f64 = 0.005;
 
 type At = dyn Fn(f64, f64) -> [f64; 3];
+/// A facet corner: the point, its parameters, its normal.
+type Corner = (usize, Option<usize>, Option<usize>);
 
 /// A lattice of `nu` x `nv` points from `(u0, v0)`, steps `du`, `dv`, odd
 /// rows shifted half a step, so the facets are near equilateral in (u, v).
@@ -39,7 +41,6 @@ fn lattice(at: &At, (u0, du, nu): (f64, f64, usize), (v0, dv, nv): (f64, f64, us
             }
         }
     }
-    type Corner = (usize, Option<usize>, Option<usize>);
     let faces: Vec<[Corner; 3]> = tris.iter().map(|t| t.map(|k| (k, Some(k), None))).collect();
     let faces = Faces::from_iter(faces.iter().map(|f| &f[..]));
     PolygonMesh::new(StandardAttributes { positions, uv_coords, normals: Vec::new() }, faces)
@@ -79,7 +80,7 @@ fn worst(facets: &[[[f64; 3]; 3]], gap: &dyn Fn([f64; 3]) -> f64) -> f64 {
 /// stands past the pass tolerance (the value the import reported before).
 fn pins(name: &str, kind: Curved, at: &At, gap: &dyn Fn([f64; 3]) -> f64, u: (f64, f64, usize), v: (f64, f64, usize)) {
     let poly = lattice(at, u, v);
-    let fit = fit(&poly, at, TOL, 1_000_000, kind);
+    let fit = fit(&poly, at, TOL, 1_000_000, kind).expect("the lattice is measured");
     let facets = kept(&fit, &poly);
     let w = worst(&facets, gap);
     eprintln!("{name}: reported {:.5} mm, sampled worst {w:.5} mm, {} facets", fit.off, facets.len());
@@ -162,4 +163,68 @@ fn a_flipped_edge_reports_its_height_and_keeps_the_chord_limit() {
         refused, before,
         "an edge above the chord limit must not replace the diagonal"
     );
+}
+
+/// The log lines `run` writes, with its result.
+fn logged(run: impl FnOnce() -> Fit) -> (Fit, String) {
+    use std::sync::{Arc, Mutex};
+    struct Sink(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Sink {
+        fn write(&mut self, d: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("log sink").extend_from_slice(d);
+            Ok(d.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let sink = buf.clone();
+    let sub = tracing_subscriber::fmt().with_ansi(false).with_writer(move || Sink(sink.clone())).finish();
+    let fit = tracing::subscriber::with_default(sub, run);
+    let text = String::from_utf8_lossy(&buf.lock().expect("log sink")).into_owned();
+    (fit, text)
+}
+
+/// The fallback (#2719): a face the fit cannot measure keeps the kernel's
+/// facets, the log names the face and the reason, and the import reports
+/// the face unmeasured, so the model is reduced fidelity and verify refuses.
+fn pins_unmeasured(name: &str, index: usize, poly: &PolygonMesh, at: &At, why: &str) {
+    let (kept, log) = logged(|| judged(index, fit(poly, at, TOL, 1_000_000, Curved::Cylinder)));
+    eprintln!("{name}: {}", log.trim());
+    assert!(kept.facets.is_none(), "{name}: the kernel's facets are kept");
+    assert_eq!(kept.off, UNMEASURED, "{name}: the face is reported unmeasured");
+    assert!(log.contains(&format!("face {}", index + 1)) && log.contains(why), "{name}: the log names the face and the reason: {log}");
+    // Through the import's facet pass: the kernel's facets, and the height.
+    let (facets, _, off) = super::super::step_facets::facets_of(&[Some(poly.clone())], 1_000_000, |i, p, room| judged(i, fit(p, at, TOL, room, Curved::Cylinder))).expect("in budget");
+    assert_eq!(facets.len(), poly.face_iter().count(), "{name}: the kernel's facets");
+    assert_eq!(off, UNMEASURED, "{name}: the pass carries the unmeasured height");
+    // Reduced fidelity in mm for any file unit from the micrometre to the
+    // kilometre, and never the unknown-fidelity sentinel.
+    for k in [1e-3, 1.0, 25.4, 1e6] {
+        assert!(super::super::step::coarse(UNMEASURED * k).is_some(), "{name}: reduced fidelity at {k} mm a unit");
+        assert!(!crate::model_fidelity::is_unknown(UNMEASURED * k), "{name}: not the unknown sentinel at {k} mm a unit");
+    }
+}
+
+fn cylinder_at(u: f64, v: f64) -> [f64; 3] {
+    [10.0 * u.cos(), 10.0 * u.sin(), v]
+}
+
+#[test]
+fn a_face_without_surface_parameters_is_logged_and_reported_unmeasured() {
+    let poly = lattice(&cylinder_at, (0.0, 0.08, 6), (0.0, 0.7, 6));
+    // The same mesh, its corners without parameters.
+    let corners: Vec<Vec<Corner>> = poly.face_iter().map(|f| f.iter().map(|c| (c.pos, None, None)).collect()).collect();
+    let faces = Faces::from_iter(corners.iter().map(|f| &f[..]));
+    let bare = PolygonMesh::new(StandardAttributes { positions: poly.positions().to_vec(), uv_coords: Vec::new(), normals: Vec::new() }, faces);
+    pins_unmeasured("no parameters", 3, &bare, &cylinder_at, "no surface parameters");
+}
+
+#[test]
+fn a_face_whose_parameters_miss_its_points_is_logged_and_reported_unmeasured() {
+    let poly = lattice(&cylinder_at, (0.0, 0.08, 6), (0.0, 0.7, 6));
+    // A surface 0.1 mm larger than the one the mesh was made on.
+    let other = |u: f64, v: f64| [10.1 * u.cos(), 10.1 * u.sin(), v];
+    pins_unmeasured("parameters miss", 0, &poly, &other, "parameters do not give its points");
 }

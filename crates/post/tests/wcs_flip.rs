@@ -8,7 +8,7 @@
 //! Provenance: RS-274 / NIST RS274NGC word semantics through the reader in
 //! `inverted_support`; fixture values are our own.
 //!
-//! Gate map (M4.4): covers camcraft_post::post::wcs_flip, post::invert, post::engine, assets/posts fanuc.cps + haas.cps.
+//! Gate map (M4.4): covers camcraft_post::post::wcs_flip, post::invert, post::engine, assets/posts fanuc.cps + haas.cps + mazak.cps.
 
 mod inverted_support;
 mod recorded;
@@ -200,8 +200,16 @@ fn a_flipped_z_refuses_by_name() {
 
 #[test]
 fn a_script_that_is_not_verified_for_a_mirror_refuses_by_name() {
-    for stem in ["mazak", "doosan-dnm", "sinumerik", "heidenhain", "mach4", "grblhal", "tormach", "tinyg", "carvera"] {
-        let e = refused(stem, &section(Some("X"), "Probe"));
+    // #2475: each mill script declares the flag now (`wcs_flip_dialects`).
+    // A script that does not - a lathe script, or a mill script of the
+    // user's own without the line - is still refused.
+    let undeclared = cps("mazak").replace("axisInversion = true;", "");
+    assert_ne!(undeclared, cps("mazak"), "the mazak script declares the flag");
+    for (stem, text) in [("fanuc-lathe", cps("fanuc-lathe")), ("tormach-lathe", cps("tormach-lathe")), ("mazak, flag removed", undeclared)] {
+        let e = match engine::run(&text, &machine(&[]), &cnc::serialize(&section(Some("X"), "Probe"))) {
+            Ok(out) => panic!("{stem}: must refuse, posted:\n{}", out.program),
+            Err(e) => e.to_string(),
+        };
         assert!(e.contains("the WCS has its X axis flipped"), "{stem}: {e}");
         assert!(e.contains("does not declare axisInversion = true"), "{stem}: {e}");
     }
