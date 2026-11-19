@@ -1938,7 +1938,7 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
 /// including the View3D readback and the fallback-adapter law).
 #[test]
 fn headless_run_succeeds() {
-    headless::run().map_err(|err| panic!("egui headless run failed: {err}")).ok();
+    headless::run(None).map_err(|err| panic!("egui headless run failed: {err}")).ok();
 }
 
 /// The churn gate for the migration: one rendered frame of the whole shell,

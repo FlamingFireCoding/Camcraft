@@ -353,8 +353,9 @@ mod sinker_machine_tests;
 mod rest_pocket_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
-/// selects the no-window proof (seeded document, fallback adapter, View3D
-/// readback); anything else opens the windowed shell.
+/// selects the no-window proof (seeded document, or the file named on the
+/// command line (#2648); fallback adapter, View3D readback); anything else
+/// opens the windowed shell.
 pub fn run(args: &[String]) -> i32 {
     // M4.2: the backend pick is validated before anything opens - a bad
     // name refuses by name (exit 2, the `--ui` shape), never silently auto.
@@ -388,7 +389,15 @@ pub fn run(args: &[String]) -> i32 {
         if pick != gpu::GpuPick::Auto || want.is_some() {
             diag_info!("gpu: --headless pins the fallback adapter for determinism; backend and adapter picks ignored");
         }
-        run_headless()
+        // #2648: a file named on a headless start opens there too, or is
+        // refused by name (rc 2) - never ignored.
+        match crate::launch_file::command(&crate::cli_options::files(args)) {
+            Ok(open) => run_headless(open),
+            Err(msg) => {
+                diag_warn!("egui shell headless: {msg}");
+                2
+            }
+        }
     } else {
         // #2462: the file named on the command line opens in the window.
         run_windowed(pick, want, mcp_port, &crate::cli_options::files(args))
@@ -396,10 +405,10 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_headless() -> i32 {
-    match shell::headless::run() {
-        Ok(()) => {
-            diag_info!("egui shell headless: seeded document, command world, View3D green");
+fn run_headless(open: Option<crate::state::CommandKind>) -> i32 {
+    match shell::headless::run(open) {
+        Ok(drawn) => {
+            diag_info!("egui shell headless: {drawn}, View3D green");
             0
         }
         Err(err) => {
@@ -412,7 +421,7 @@ fn run_headless() -> i32 {
 /// #31: the headless proof blocks on the adapter and the readback; the
 /// browser build refuses it by name like the windowed entry.
 #[cfg(target_arch = "wasm32")]
-fn run_headless() -> i32 {
+fn run_headless(_open: Option<crate::state::CommandKind>) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }

@@ -1012,20 +1012,29 @@ pub(crate) mod headless {
     use super::wgpu;
     use super::super::world;
 
-    pub(crate) fn run() -> Result<(), String> {
-        let mut state = State::new();
-        world::seed(&mut state);
-        state.pending.push_back(CommandKind::FrameAll);
-        state.drain_actions();
-        let op_ok = model::find_by_name(&state.world, "Contour1")
-            .and_then(|e| model::toolpath_of(&state.world, &e))
-            .map_or(0, |tp| tp.path.moves.len());
-        if op_ok == 0 {
-            return Err(format!(
-                "seed produced no cached toolpath for Contour1 (status: {})",
-                state.status
-            ));
-        }
+    /// `open`: the file named on the command line (#2648), drawn in place
+    /// of the seeded document; `None` runs the seeded proof. Ok carries
+    /// what was drawn, for the run's last line.
+    pub(crate) fn run(open: Option<CommandKind>) -> Result<String, String> {
+        let (state, cam, must_draw, said) = match open {
+            Some(cmd) => {
+                let opened = crate::headless_open::open(cmd)?;
+                let cam = opened.state.cam;
+                (opened.state, cam, opened.has_geometry, opened.said)
+            }
+            None => {
+                let (state, op_ok) = seeded()?;
+                // Same vantage the gpu_render smoke tests use on equivalent parts.
+                let cam = Camera {
+                    target: [0.0, 0.0, 20.0],
+                    yaw: 0.9,
+                    pitch: 0.5,
+                    dist: 160.0,
+                    ..Camera::default()
+                };
+                (state, cam, true, format!("seeded document, command world; Contour1 cached {op_ok} moves"))
+            }
+        };
 
         // Software adapter first, else the hardware one (#615: macOS's
         // Metal has no software fallback).
@@ -1041,14 +1050,6 @@ pub(crate) mod headless {
         view.set_document(&device, &queue, &scene.parts);
         view.set_overlay(&device, &queue, &scene.overlay);
 
-        // Same vantage the gpu_render smoke tests use on equivalent parts.
-        let cam = Camera {
-            target: [0.0, 0.0, 20.0],
-            yaw: 0.9,
-            pitch: 0.5,
-            dist: 160.0,
-            ..Camera::default()
-        };
         let (w, h) = view.extent();
         let mvp = cam.mvp(f64::from(w.max(1)) / f64::from(h.max(1)));
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1078,14 +1079,29 @@ pub(crate) mod headless {
             })
             .count();
         let total = (w as usize * h as usize).max(1);
-        if changed * 20 < total {
-            // less than 5% of the frame: the seeded stock did not rasterize
+        if must_draw && changed * 20 < total {
+            // less than 5% of the frame: the document did not rasterize
             return Err(format!("readback looks empty ({changed}/{total} changed px)"));
         }
-        diag_info!(
-            "headless snapshot: {w}x{h}, {}% pixels changed; Contour1 cached {op_ok} moves",
-            changed * 100 / total
-        );
-        Ok(())
+        diag_info!("headless snapshot: {w}x{h}, {}% pixels changed", changed * 100 / total);
+        Ok(said)
+    }
+
+    /// The seeded proof document, with Contour1's cached move count.
+    fn seeded() -> Result<(State, usize), String> {
+        let mut state = State::new();
+        world::seed(&mut state);
+        state.pending.push_back(CommandKind::FrameAll);
+        state.drain_actions();
+        let op_ok = model::find_by_name(&state.world, "Contour1")
+            .and_then(|e| model::toolpath_of(&state.world, &e))
+            .map_or(0, |tp| tp.path.moves.len());
+        if op_ok == 0 {
+            return Err(format!(
+                "seed produced no cached toolpath for Contour1 (status: {})",
+                state.status
+            ));
+        }
+        Ok((state, op_ok))
     }
 }
