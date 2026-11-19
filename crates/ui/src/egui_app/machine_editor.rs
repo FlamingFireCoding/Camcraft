@@ -92,7 +92,7 @@ pub(crate) fn window(ctx: &egui::Context, state: &mut State) {
                     }
                 }
                 ui.separator();
-                super::machine_grid::machine_grid(ui, "machine_editor_overview", &ed.machine, u, &[]);
+                super::machine_grid::machine_grid(ui, "machine_editor_overview", &ed.machine, u, &[], super::machine_grid::ROW_GAP);
             });
             ui.horizontal(|ui| {
                 if ui.button("Apply").clicked() {
