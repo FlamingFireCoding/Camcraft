@@ -520,3 +520,47 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v72_persists() {
     let _ = std::any::type_name::<SetOperationDoNotTouch>();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn project_v72_keeps_linked_sources_and_protection_and_refuses_a_bad_source() {
+    let (dir, mut c, _plate_top, tower_top_face, _edge, _vert) = setup_plate_and_tower("linked_protection");
+    let op_name = c.ok("add_operation", json!({
+        "kind": "3D Pocket", "tool": "SteppedMill", "source": "plate"
+    }))["operation"].as_str().expect("operation name").to_owned();
+    c.ok("set_operation_do_not_touch", json!({
+        "operation": op_name,
+        "clearance": 1.5,
+        "picks": [{ "model": "tower", "id": tower_top_face }]
+    }));
+    let path = dir.join("linked.camproj");
+    c.ok("save_project", json!({ "path": path.display().to_string() }));
+    let raw = std::fs::read_to_string(&path).expect("saved project");
+    let mut doc: Value = serde_json::from_str(&raw).expect("json");
+    assert_eq!(doc["version"], json!(72));
+    let rows = doc["entities"].as_array().expect("entities");
+    let tower = rows.iter().find(|row| row["name"] == "tower").expect("tower");
+    let source = tower["source"].clone();
+    assert_eq!(source["path"], json!(dir.join("tower.stl").display().to_string()));
+    assert_eq!(source["sha256"].as_str().map(str::len), Some(64));
+    let op = rows.iter().find(|row| row["name"] == op_name).expect("operation");
+    let area = op["area"].clone();
+    assert!(area.to_string().contains("do_not_touch"), "{area}");
+
+    let world = new_world();
+    project::open(&world, &raw).expect("both v72 additions open together");
+    let roundtrip = dir.join("roundtrip.camproj");
+    project::save(&world, &roundtrip).expect("round trip");
+    let before = std::fs::read_to_string(&roundtrip).expect("read round trip");
+    let restored: Value = serde_json::from_str(&before).expect("round trip json");
+    let rows = restored["entities"].as_array().expect("entities");
+    assert_eq!(rows.iter().find(|row| row["name"] == "tower").expect("tower")["source"], source);
+    assert_eq!(rows.iter().find(|row| row["name"] == op_name).expect("operation")["area"], area);
+
+    let rows = doc["entities"].as_array_mut().expect("entities");
+    rows.iter_mut().find(|row| row["name"] == "tower").expect("tower")["source"]["sha256"] = json!("ABC");
+    let err = project::open(&world, &doc.to_string()).expect_err("invalid linked source must refuse");
+    assert!(err.to_string().contains("'tower' records a source whose sha256 is not 64 lowercase hex digits"), "{err}");
+    project::save(&world, &roundtrip).expect("save after refusal");
+    assert_eq!(std::fs::read_to_string(&roundtrip).expect("unchanged project"), before, "the refusal makes no world writes");
+    let _ = std::fs::remove_dir_all(&dir);
+}
