@@ -592,7 +592,7 @@ tests are in `crates/ui/tests/`; they start the real app through
   | Tier | When | Target | Runs |
   |---|---|---|---|
   | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build for each crate, then one step for each debug test binary that is not slow (kernel and ui included), in parallel lanes; clippy |
   | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
 - **Heavy lanes at review** (#2568). `cargo xtask gate heavy [--base main]`
   maps the diff to the heavy lanes that it reaches and runs them in release
