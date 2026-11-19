@@ -277,17 +277,17 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
             if k == 0 {
                 // The rim ring: Top Z is the material top, never a
                 // level of its own (#2004), unless stock stands over it.
-                super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, floor, p.stepdown)
+                super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,floor, p.stepdown)
             } else {
                 // An inner ring: the previous ring's floor is a real
                 // cut for this one - the strip inside the previous
                 // ring's band still stands at the stock top, and it
                 // opens at that plane. Keep it as the first level.
                 let prev = p.bowl_z((rho + p.stepover + r).min(p.radius));
-                levels_from(prev, floor, p.stepdown)
+                levels_from(prev, floor, super::equal_steps::ladder_stepdown(&p.links.approach, prev, floor, p.stepdown))
             }
         } else {
-            super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)
+            super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,p.bottom_z, p.stepdown)
         }
         // #871: a part-way refusal hands back the rings cut so far.
         .map_err(|e| e.with_ghost_moves(b.moves()))?;
