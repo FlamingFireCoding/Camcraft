@@ -198,3 +198,55 @@ fn a_malformed_tree_refuses_by_part_id_and_key() {
     assert!(parse_mch_tree("not json").is_err_and(|e| e.starts_with("machine file: ")));
     assert!(parse_mch_tree("[]").is_err_and(|e| e.contains("expected a machine object")));
 }
+
+fn head_length_overflow_refuses(object: &str, key: &str) {
+    let parts = format!(r#"[{{ "id": "h", "type": "head", "{object}": {{ "{key}": 1e308 }} }}]"#);
+    let error = parse_mch_tree(&tree("inch", &parts)).expect_err("converted length must be finite");
+    assert!(error.starts_with("machine file: part h:"), "{error}");
+    assert!(error.contains(key), "{error} does not name {key}");
+    assert!(error.contains("finite"), "{error}");
+}
+
+#[test]
+fn inch_body_diameter_overflow_refuses() {
+    head_length_overflow_refuses("spindle", "body_diameter");
+}
+
+#[test]
+fn inch_body_length_overflow_refuses() {
+    head_length_overflow_refuses("spindle", "body_length");
+}
+
+#[test]
+fn inch_max_tool_length_overflow_refuses() {
+    head_length_overflow_refuses("tool_station", "max_tool_length");
+}
+
+#[test]
+fn inch_max_tool_diameter_overflow_refuses() {
+    head_length_overflow_refuses("tool_station", "max_tool_diameter");
+}
+
+#[test]
+fn absent_and_nonpositive_head_lengths_stay_unstated() {
+    for fields in [
+        "",
+        r#""body_diameter": null, "body_length": null, "max_tool_length": null, "max_tool_diameter": null"#,
+        r#""body_diameter": 0, "body_length": 0, "max_tool_length": 0, "max_tool_diameter": 0"#,
+        r#""body_diameter": -1e308, "body_length": -1e308, "max_tool_length": -1e308, "max_tool_diameter": -1e308"#,
+    ] {
+        let parts = format!(
+            r#"[{{ "id": "h", "type": "head", "spindle": {{ {fields} }}, "tool_station": {{ {fields} }} }}]"#
+        );
+        let t = parse_mch_tree(&tree("inch", &parts)).expect("unstated lengths must parse");
+        let h = t.head().expect("head");
+        let body = h.spindle_body.expect("body");
+        let station = h.tool_station.expect("station");
+        assert_eq!((body.diameter, body.length), (None, None), "{fields}");
+        assert_eq!(
+            (station.max_tool_length, station.max_tool_diameter),
+            (None, None),
+            "{fields}"
+        );
+    }
+}

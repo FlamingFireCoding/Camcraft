@@ -187,14 +187,22 @@ fn walk(list: &[Value], parent: Option<usize>, at: &str, f: f64, out: &mut Vec<T
             pivot: tr.pivot,
             offset: tr.offset,
             direction: direction(&id, p, rotary)?,
-            spindle_body: head_object(&id, p, "spindle")?.map(|s| SpindleBody {
-                diameter: scale(rate(s.get("body_diameter")), f),
-                length: scale(rate(s.get("body_length")), f),
-            }),
-            tool_station: head_object(&id, p, "tool_station")?.map(|s| ToolStation {
-                max_tool_length: scale(rate(s.get("max_tool_length")), f),
-                max_tool_diameter: scale(rate(s.get("max_tool_diameter")), f),
-            }),
+            spindle_body: head_object(&id, p, "spindle")?
+                .map(|s| {
+                    Ok::<_, String>(SpindleBody {
+                        diameter: head_length(&id, s, "body_diameter", f)?,
+                        length: head_length(&id, s, "body_length", f)?,
+                    })
+                })
+                .transpose()?,
+            tool_station: head_object(&id, p, "tool_station")?
+                .map(|s| {
+                    Ok::<_, String>(ToolStation {
+                        max_tool_length: head_length(&id, s, "max_tool_length", f)?,
+                        max_tool_diameter: head_length(&id, s, "max_tool_diameter", f)?,
+                    })
+                })
+                .transpose()?,
             moving_side: None,
             id: id.clone(),
             name,
@@ -208,6 +216,17 @@ fn walk(list: &[Value], parent: Option<usize>, at: &str, f: f64, out: &mut Vec<T
         }
     }
     Ok(())
+}
+
+/// Preserve unstated limits, but refuse a length that overflows in mm.
+fn head_length(id: &str, object: &Value, key: &str, f: f64) -> Result<Option<f64>, String> {
+    let length = scale(rate(object.get(key)), f);
+    if length.is_some_and(|value| !value.is_finite()) {
+        return Err(format!(
+            "machine file: part {id}: {key} must be finite after conversion to mm"
+        ));
+    }
+    Ok(length)
 }
 
 /// The `id` of a part: a word that is not empty. A part with no id is
