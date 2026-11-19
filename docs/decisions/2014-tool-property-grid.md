@@ -35,7 +35,11 @@ title now exists on the tool page; the catalog dock's own "Catalog"
 heading is a different widget in a different pane. The #2002 tests assert
 the dock's controls by their own names, so they still guard that
 separation. The waterjet recipe caption "Cutting data by material and
-thickness" is gone; the group header "Cutting data" carries it.
+thickness" is gone; the group header "Cutting data" carries it. The plasma
+cut-data recipe PR (#2596) brought that caption back on `main` as a nested
+`CollapsingHeader`; the merge of `main` into this branch applied the same
+rule again and kept the grid's single group, with the plasma PR's rules
+intact (a recipe does not fill a material slot).
 
 **What a change would cost later.** A new tool field goes in one group of
 `tool_settings_grid.rs` as a `prop_row`; a new group is one `group_open`
