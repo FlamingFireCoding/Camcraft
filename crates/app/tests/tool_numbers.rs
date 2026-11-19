@@ -78,7 +78,7 @@ fn two_tool_job() -> (World, History) {
     ] {
         let face = OpParams::Face {
             holes: Default::default(),
-            blend_turns: false,
+            blend_turns: false, blend_radius: None,
             tilt: None,
             stepover: 3.0,
             clearance_z: Height::fixed(25.0),
