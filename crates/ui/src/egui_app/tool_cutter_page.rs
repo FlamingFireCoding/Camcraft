@@ -20,12 +20,26 @@ use super::tool_profile_page::{BAD, points_grid, side_view};
 use crate::state::State;
 
 pub(super) fn cutter_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
-    ui.strong("Cutter profile");
     if !exists {
+        ui.strong("Cutter profile");
         ui.label("Add the tool first, then draw its cutter.");
         return;
     }
     state.sync_tool_cutter_ui();
+    // #2397: two columns - the parameters and Apply on the left, the
+    // points and the side view on the right.
+    ui.horizontal_top(|ui| {
+        ui.set_width(240.0);
+        ui.vertical(|ui| cutter_controls(ui, state, u));
+        ui.separator();
+        ui.vertical(|ui| cutter_view(ui, state, u));
+    });
+}
+
+/// The cutter's outline controls: what landed, Parametric / Custom, the
+/// kind's parameters, and Apply cutter.
+fn cutter_controls(ui: &mut Ui, state: &mut State, u: Unit) {
+    ui.strong("Cutter profile");
     let landed = state.editor_tool_cutter();
     ui.label(if landed.is_some() { "landed: a drawn cutter" } else { "landed: the cutter its numbers draw" });
     let custom = state.tool_cutter_ui.custom;
@@ -49,6 +63,25 @@ pub(super) fn cutter_section(ui: &mut Ui, state: &mut State, exists: bool, u: Un
     // re-synced at once so outline and numbers agree this very frame.
     super::tool_cutter_params::params_block(ui, state, u);
     state.sync_tool_cutter_ui();
+    let custom = state.tool_cutter_ui.custom;
+    // #93 slice 3: edited numbers make an Apply worth landing too.
+    let moved = state.editor_tool_changed();
+    let can = custom || landed.is_some() || moved;
+    if ui
+        .add_enabled(can, egui::Button::new("Apply cutter"))
+        .on_hover_text(if custom {
+            "land the drawn cutter, and any edited numbers with it, on the tool (one undo step); toolpaths and checks keep reading the numbers"
+        } else {
+            "drop the drawn cutter: the outline its numbers draw again (one undo step)"
+        })
+        .clicked()
+    {
+        state.queue_apply_tool_cutter();
+    }
+}
+
+/// The points table and the flat side view, with the live refusal.
+fn cutter_view(ui: &mut Ui, state: &mut State, u: Unit) {
     let custom = state.tool_cutter_ui.custom;
     let (insert, remove) = points_grid(ui, u, &mut state.tool_cutter_ui.points, custom, "tool_cutter_points");
     if let Some(i) = insert {
@@ -83,19 +116,5 @@ pub(super) fn cutter_section(ui: &mut Ui, state: &mut State, exists: bool, u: Un
         Err(e) => {
             ui.colored_label(BAD, e.to_string());
         }
-    }
-    // #93 slice 3: edited numbers make an Apply worth landing too.
-    let moved = state.editor_tool_changed();
-    let can = custom || landed.is_some() || moved;
-    if ui
-        .add_enabled(can, egui::Button::new("Apply cutter"))
-        .on_hover_text(if custom {
-            "land the drawn cutter, and any edited numbers with it, on the tool (one undo step); toolpaths and checks keep reading the numbers"
-        } else {
-            "drop the drawn cutter: the outline its numbers draw again (one undo step)"
-        })
-        .clicked()
-    {
-        state.queue_apply_tool_cutter();
     }
 }

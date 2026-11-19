@@ -199,7 +199,7 @@ fn kind_rows(ui: &mut Ui, state: &mut State) {
 fn holder(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     if let Some((entry, d, len)) = state.editor_library_holder() {
-        let from = format!("from the library holder {entry} (Profile tab)");
+        let from = format!("from the library holder {entry} (tool shape editor)");
         prop_row(ui, "Holder diameter", |ui| {
             ui.label(format!("{} {}", camcraft_app::units::len(d, u, 3), u.suffix()));
             ui.label(&from);

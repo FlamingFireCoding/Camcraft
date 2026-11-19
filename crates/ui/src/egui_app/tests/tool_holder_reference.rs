@@ -89,7 +89,7 @@ fn a_library_holder_sizes_the_holder_fields_until_its_outline_is_edited() {
 fn the_profile_tab_names_the_entry_and_the_picker_shows_it() {
     let mut h = properties();
     set_bt30(&mut h);
-    crate::actions::open_tool_editor(&mut h.state_mut().state, TOOL);
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, TOOL);
     h.run_steps(3);
     // The property grid settles the window's size over its first frames.
     // egui hit-tests a press with the previous frame, so hover the tab

@@ -32,7 +32,7 @@ fn setup_tool_list_edit_opens_tool_settings_in_properties() {
     h.get_by_label("Edit").click_accesskit();
     h.run_steps(3);
     assert_eq!(h.state().state.ui_target, UiTarget::Tool(TOOL.into()), "the setup's tool row opens the named Properties subject");
-    assert!(h.state().state.tool_editor.is_none(), "the setup tool list edits Properties directly");
+    assert!(h.state().state.tool_shape_editor.is_none(), "the setup tool list edits Properties directly");
     assert!(here(&h, "Diameter"));
     assert!(h.query_by_label("Import library…").is_none());
 }
@@ -48,11 +48,11 @@ fn browser_library_door_and_tool_selection_focus_their_own_dock_tabs() {
     select_tool(&mut h);
     assert!(here(&h, "Diameter"), "selecting a tool brings Properties in front of the catalog");
     assert!(h.query_by_label("Import library…").is_none(), "the catalog stays behind Properties");
-    crate::actions::open_tool_editor(&mut h.state_mut().state, TOOL);
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, TOOL);
     h.run_steps(2);
-    assert!(h.state().state.tool_editor.is_some());
+    assert!(h.state().state.tool_shape_editor.is_some());
     select_tool(&mut h);
-    assert!(h.state().state.tool_editor.is_none(), "browser selection closes the explicit tool editor");
+    assert!(h.state().state.tool_shape_editor.is_none(), "browser selection closes the explicit tool editor");
     assert!(here(&h, "Diameter"), "the tool's settings return to Properties");
 }
 
@@ -60,7 +60,7 @@ fn browser_library_door_and_tool_selection_focus_their_own_dock_tabs() {
 fn selected_tool_settings_live_in_properties_without_the_catalog() {
     let mut h = shell_harness();
     select_tool(&mut h);
-    assert!(h.state().state.tool_editor.is_none(), "selection must edit Properties directly");
+    assert!(h.state().state.tool_shape_editor.is_none(), "selection must edit Properties directly");
     let properties_x = super::at(&painted(&h), "Properties").x;
     let diameter = h
         .query_all_by_role(egui::accesskit::Role::SpinButton)
@@ -174,4 +174,41 @@ fn tool_settings_form_a_label_left_grid_in_collapsible_groups() {
     h.get_by_label("Holder").click();
     h.run_steps(2);
     assert!(here(&h, "Holder diameter"), "an open Holder group shows its rows again");
+}
+/// #2397: Properties shows the settings and the one side preview, and no
+/// body or profile editor. The one button opens the tool shape editor in
+/// its own window.
+#[test]
+fn properties_shows_the_settings_and_the_shape_window_holds_the_shape() {
+    let mut h = shell_harness();
+    select_tool(&mut h);
+    for label in [
+        "Holder library",
+        "Library holder",
+        "Apply holder",
+        "Apply profile",
+        "Import body…",
+        "Apply body",
+        "Profile",
+        "Draw holder",
+    ] {
+        assert!(h.query_by_label(label).is_none(), "Properties must not show the shape control {label:?}");
+    }
+    assert!(h.query_by_label("Edit tool shape").is_some(), "Properties offers the one door to the shape editor");
+    h.get_by_label("Edit tool shape").click();
+    h.run_steps(3);
+    assert_eq!(
+        h.state().state.tool_shape_editor.as_deref(),
+        Some(TOOL),
+        "the door opens the shape window"
+    );
+    let win = h
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("the shape window is titled by the tool");
+    for label in ["Holder library", "Library holder", "Body", "Profile", "Close"] {
+        assert!(win.query_by_label(label).is_some(), "the shape window shows {label:?}");
+    }
+    // The settings stay on the page behind it.
+    assert!(h.query_by_label("Shank diameter").is_some(), "Properties keeps the settings");
 }

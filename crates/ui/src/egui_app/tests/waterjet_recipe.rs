@@ -17,7 +17,10 @@ fn editor() -> Harness<'static, ShellUi> {
         name: NOZZLE.into(), tool: waterjet_tool(0.8),
     });
     h.run_steps(2);
-    crate::actions::open_tool_editor(&mut h.state_mut().state, NOZZLE);
+    // #2397: the recipe is a tool setting, so it is edited on the
+    // Properties page; the shape window does not carry it.
+    h.state_mut().state.ui_target = UiTarget::Tool(NOZZLE.into());
+    h.run_steps(1); // the page mirrors the tool into the draft
     super::super::tool_cutting_rows::add_row(&mut h.state_mut().state.tool_ui);
     h.run_steps(3);
     h
@@ -39,7 +42,7 @@ fn waterjet_recipe_controls_render_without_spindle_rpm() {
         w.pierce_method = PierceMethod::Dynamic;
     }
     h.run_steps(3);
-    let win = h.get_by_label("Tool: Recipe nozzle");
+    let win = h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties");
     assert!(win.query_by_label("Cutting data").is_some());
     let fields = [
         ("Plate thickness", "5.1 mm"),
@@ -77,11 +80,11 @@ fn waterjet_recipe_apply_refuses_invalid_and_accepts_valid_recipe() {
     let _g = snapshot_guard();
     let mut h = editor();
     assert!(h.state().state.tool_ui.to_tool().torch_refusal().is_some());
-    assert!(h.get_by_label("Tool: Recipe nozzle").get_by_label("Apply").accesskit_node().is_disabled(),
+    assert!(h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label("Apply").accesskit_node().is_disabled(),
         "zero thickness keeps Apply disabled");
     h.state_mut().state.tool_ui.cutting[0].waterjet.as_mut().unwrap().thickness = 5.0;
     h.run_steps(2);
-    assert!(!h.get_by_label("Tool: Recipe nozzle").get_by_label("Apply").accesskit_node().is_disabled(),
+    assert!(!h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label("Apply").accesskit_node().is_disabled(),
         "a valid recipe enables Apply");
     let valid = h.state().state.tool_ui.cutting[0].waterjet.unwrap();
     for field in ["thickness", "kerf", "pierce time", "abrasive delay", "re-pierce time"] {
@@ -96,12 +99,12 @@ fn waterjet_recipe_apply_refuses_invalid_and_accepts_valid_recipe() {
             _ => unreachable!(),
         }
         h.run_steps(2);
-        assert!(h.get_by_label("Tool: Recipe nozzle").get_by_label("Apply").accesskit_node().is_disabled(),
+        assert!(h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label("Apply").accesskit_node().is_disabled(),
             "invalid {field} disables Apply");
     }
     *h.state_mut().state.tool_ui.cutting[0].waterjet.as_mut().unwrap() = valid;
     h.run_steps(2);
-    h.get_by_label("Tool: Recipe nozzle").get_by_label("Apply").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").get_by_label("Apply").click();
     h.run_steps(2);
     let st = &h.state().state;
     let tool = model::find_by_name(&st.world, NOZZLE).and_then(|e| model::tool_of(&st.world, &e)).unwrap();
@@ -117,9 +120,7 @@ fn waterjet_properties_apply_preserves_recipe_refusal() {
         &mut h.state_mut().state, panes::Leaf::Tool(NOZZLE.into()),
     );
     h.run_steps(3);
-    super::super::tool_cutting_rows::add_row(&mut h.state_mut().state.tool_ui);
-    h.run_steps(3);
-    assert!(h.state().state.tool_editor.is_none());
+    assert!(h.state().state.tool_shape_editor.is_none());
     assert!(h.state().state.tool_ui.to_tool().torch_refusal().is_some());
     h.get_by_label("Apply").scroll_to_me();
     h.run_steps(3);

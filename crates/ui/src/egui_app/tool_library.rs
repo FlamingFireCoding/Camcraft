@@ -42,7 +42,7 @@ pub(crate) fn draw(ui: &mut Ui, state: &mut State) {
         state.set_import_tool_holders(holders);
     }
     if new {
-        actions::open_tool_editor(state, "");
+        actions::begin_new_tool(state);
     }
     if export {
         state.export_tool_library_dialog();

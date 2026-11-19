@@ -48,6 +48,41 @@ fn assert_modal_layout(h: &H, id: &str, who: &str, anchors: &[&str], dismiss: &s
     assert!(modal.expand(1.0).contains_rect(button), "{who}: {dismiss} {button:?} leaves {modal:?}");
 }
 
+// #2397: the tool shape editor window - the holder library first, then
+// the Body / Profile tabs, then Close.
+#[test]
+fn layout_window_tool_shape() {
+    let _g = snapshot_guard();
+    let mut h = shell_harness();
+    h.run_steps(2);
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, "EM-0600-4FL");
+    h.run_steps(3);
+    // The Profile tab: the points and the side view stand in the right
+    // column, the outline controls in the left.
+    h.get_by_label("Profile").click();
+    h.run_steps(2);
+
+    assert_window_layout(
+        &h,
+        "Tool shape: EM-0600-4FL",
+        &["Holder library", "Library holder", "Body", "Holder profile", "Parametric", "Apply profile"],
+    );
+    // Close is the window's fixed footer, under the shape.
+    let win = h
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("the shape window");
+    let close = win.get_by_label("Close");
+    assert!(
+        win.rect().contains_rect(close.rect()),
+        "Close {close:?} stands inside the shape window {win:?}"
+    );
+    assert!(
+        close.rect().top() > h.get_by_label("Apply profile").rect().top(),
+        "Close is the window's footer, under the profile controls"
+    );
+}
+
 #[test]
 fn layout_window_post_refusal() {
     let _g = snapshot_guard();

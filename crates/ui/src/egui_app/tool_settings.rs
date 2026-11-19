@@ -1,65 +1,68 @@
-//! A selected tool's Properties and the shared creation form (#2002).
-//! The settings are a label-left property grid in collapsible groups
-//! (#2014, `tool_settings_grid`); these commands stay the one way an
-//! edit lands.
+//! A selected tool's Properties (#2002) and the blank new-tool form
+//! (#2397). The settings are a label-left property grid in collapsible
+//! groups (#2014, `tool_settings_grid`); these commands stay the one way
+//! an edit lands. The body, the profile and the holder are not here: they
+//! have their own window (#2397, `tool_profile_page::editor`).
 //! Provenance: our own tool editor extracted from pages.rs, retaining its
 //! commands. No vendor material involved.
 
+use crate::actions;
 use crate::state::{CommandKind, ErrorScope, State};
 use camcraft_app::model;
 use egui::Ui;
 
 pub(crate) fn page(ui: &mut Ui, state: &mut State, name: &str) {
     if name.is_empty() {
-        ui.label("Open the Tool library from Tools to browse or create tools.");
-        return;
-    }
-    ui.heading(format!("Tool: {name}"));
-    if ui.button("Delete").clicked() {
-        state
-            .pending
-            .push_back(CommandKind::DeleteTool(name.to_owned()));
-    }
-    if state.tool_editor.is_some() {
-        ui.label("Finish or close the tool editor to edit these Properties.");
+        // The Tool target with the empty name is the tool destination. It
+        // shows the blank draft when New opened one, and the pointer to the
+        // library otherwise (#2397).
+        if !state.new_tool_form {
+            ui.label("Open the Tool library from Tools to browse or create tools.");
+            return;
+        }
+        ui.heading("New tool");
+        state.sync_tool_ui();
+        contents(ui, state);
         return;
     }
     state.tool_ui.name = name.to_owned();
     state.sync_tool_ui();
-    contents(ui, state, false);
+    if state.tool_ui.exists {
+        ui.heading(format!("Tool: {name}"));
+        if ui.button("Delete").clicked() {
+            state
+                .pending
+                .push_back(CommandKind::DeleteTool(name.to_owned()));
+        }
+        // #2397: the body, the profile and the holder have their own
+        // window; Properties keeps the settings and the one preview.
+        if ui
+            .button("Edit tool shape")
+            .on_hover_text("open the body, profile and holder editor in its own window")
+            .clicked()
+        {
+            actions::open_tool_shape_editor(state, name);
+        }
+    } else {
+        ui.heading("New tool");
+    }
+    contents(ui, state);
 }
 
-pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
+fn contents(ui: &mut Ui, state: &mut State) {
     let u = state.units();
     let exists = state.tool_ui.exists;
     // One snapshot of the draft drives the picture, so fields and
     // preview cannot disagree mid-frame; the grid still edits the live
     // draft, and the next frame's snapshot follows.
     let preview_tool = state.tool_ui.to_tool();
-    let columns = |ui: &mut Ui| {
-        // The property grid takes the whole pane: the label on the left
-        // half, the input on the right half (#2014). A fixed-width child
-        // keeps a row from asking the auto-sized window to grow (#2003).
-        let col_w = if wide { 240.0 } else { ui.available_width() };
-        ui.allocate_ui_with_layout(egui::vec2(col_w, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-            super::tool_settings_grid::grid(ui, state);
-        });
-        ui.vertical(|ui| {
-            // #371: the placed body's envelope rides the profile.
-            let body = if exists { super::tool_body_page::envelope(state) } else { None };
-            super::tool_preview::draw(ui, &preview_tool, u, body.as_deref(), wide);
-        });
-        ui.vertical(|ui| {
-            ui.set_width(if wide { 260.0 } else { ui.available_width().min(260.0) });
-            // #93: Body / Profile tabs for a milling tool.
-            super::tool_profile_page::third_column(ui, state, exists, u);
-        });
-    };
-    if wide {
-        ui.horizontal_top(columns);
-    } else {
-        ui.vertical(columns);
-    }
+    // The property grid takes the pane: the label on the left half, the
+    // input on the right half (#2014).
+    super::tool_settings_grid::grid(ui, state);
+    // #371: the placed body's envelope rides the profile. #2017: the one
+    // side preview, under the fields.
+    let body = if exists { super::tool_body_page::envelope(state) } else { None };
+    super::tool_preview::draw(ui, &preview_tool, u, body.as_deref(), false);
     ui.separator();
     let name_now = state.tool_ui.name.clone();
     let block = if name_now.trim().is_empty() {

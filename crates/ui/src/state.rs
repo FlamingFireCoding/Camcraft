@@ -1970,13 +1970,19 @@ pub struct State {
     /// Whether Properties is the visible dock tab this frame.
     pub properties_shown: bool,
     pub tool_ui: ToolUi,
-    /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
-    /// that tool, `Some("")` the blank creation form. Ephemeral window
-    /// state - never a command, never saved, never
-    /// undoable; the edits it drives are. `State::drain_actions` closes it
-    /// when the named tool vanishes (the ghost law, mirrored from
+    /// #2397: the tool shape editor window - `None` closed, `Some(name)`
+    /// editing that tool's body, profile and holder. The settings stay in
+    /// Properties; this window is the shape surface alone. Ephemeral
+    /// window state - never a command, never saved, never undoable; the
+    /// edits it drives are. `State::drain_actions` closes it when the named
+    /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
-    pub tool_editor: Option<String>,
+    pub tool_shape_editor: Option<String>,
+    /// #2397: Properties is showing the blank new-tool form. The Tool
+    /// target with the empty name is the destination; this says which of
+    /// its two faces shows - the pointer to the library, or the draft.
+    /// Ephemeral like [`State::tool_ui`]; a retarget drops it.
+    pub new_tool_form: bool,
     /// #371: the tool editor's body draft (imported mesh, placement,
     /// pick mode). Ephemeral like `tool_ui`; Apply body is the command.
     pub tool_body_ui: ToolBodyUi,
@@ -1987,7 +1993,7 @@ pub struct State {
     /// is the command.
     pub tool_cutter_ui: ToolCutterUi,
     /// The machine editor window (M3.3 stage C): `None` closed. An
-    /// ephemeral draft like [`State::tool_editor`] - the numbers under
+    /// ephemeral draft like [`State::tool_shape_editor`] - the numbers under
     /// edit are a copy of the machine until Apply pushes `LoadMachine`,
     /// which is the command, which is the undo.
     pub machine_editor: Option<crate::egui_app::machine_editor::MachineEditor>,
@@ -2281,7 +2287,8 @@ impl State {
                 name: String::from("Tool1"),
                 ..ToolUi::default()
             },
-            tool_editor: None,
+            tool_shape_editor: None,
+            new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),
             tool_cutter_ui: ToolCutterUi::default(),
@@ -2891,6 +2898,7 @@ impl State {
     /// Clear selection so pane_target cannot reopen a selected operation.
     pub(crate) fn close_property_editor(&mut self) {
         self.ui_target = UiTarget::None;
+        self.new_tool_form = false;
         self.pending.push_back(CommandKind::Select(None));
         self.op_ui.name.clear();
         self.op_synced = (String::new(), self.doc_version);
@@ -2905,9 +2913,11 @@ impl State {
         self.status = format!("closed operation {name}");
     }
 
-    pub(crate) fn close_tool_editor_window(&mut self) {
-        self.tool_editor = None;
-        self.tool_synced = (String::new(), self.doc_version);
+    /// Close the tool shape editor window and drop its shape drafts
+    /// (#2397). The settings draft in Properties is not touched: it
+    /// belongs to that page, not to this window.
+    pub(crate) fn close_tool_shape_editor(&mut self) {
+        self.tool_shape_editor = None;
         self.tool_body_ui = ToolBodyUi::default();
         self.tool_profile_ui = ToolProfileUi::default();
         self.tool_cutter_ui = ToolCutterUi::default();
@@ -3130,17 +3140,16 @@ impl State {
         crate::frame_cost::time("commands/retire_feedback", || self.retire_stale_feedback());
         // #406: the incoming stock's sheet follows the open setup page.
         crate::frame_cost::time("commands/incoming_view", || crate::incoming_view::refresh(self));
-        let _s = span("commands/tool_editor");
-        // The editor window's ghost law (M1.4), mirroring `pane_target`:
-        // an open editor never keeps pointing at a name the document lost
-        // under it - deleted, undone, or swapped by New/Open all land here.
-        // The blank form creates rather than points, so it survives.
-        if let Some(name) = &self.tool_editor
+        let _s = span("commands/tool_shape_editor");
+        // The editor window's ghost law, mirroring `pane_target`: an open
+        // editor never keeps pointing at a name the document lost under it
+        // - deleted, undone, or swapped by New/Open all land here.
+        if let Some(name) = &self.tool_shape_editor
             && !name.is_empty()
             && !model::find_by_name(&self.world, name)
                 .is_some_and(|e| model::is_tool(&self.world, &e))
         {
-            self.tool_editor = None;
+            self.tool_shape_editor = None;
         }
     }
 

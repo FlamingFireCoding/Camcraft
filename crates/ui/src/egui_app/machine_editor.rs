@@ -23,7 +23,7 @@ use super::{fields, pages};
 use crate::state::{CommandKind, State};
 
 /// The open window's whole state: the draft and where it was mounted
-/// from. Ephemeral like `tool_editor` - never saved, never undoable;
+/// from. Ephemeral like `tool_shape_editor` - never saved, never undoable;
 /// the Apply it drives is.
 pub struct MachineEditor {
     pub path: String,

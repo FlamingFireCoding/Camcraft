@@ -13,7 +13,10 @@ const TOOL: &str = "EM-0600-4FL";
 fn editor() -> Harness<'static, ShellUi> {
     let mut harness = shell_harness();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, TOOL);
+    // #2397: Properties shows the tool page, so its one side preview is
+    // drawn beside the shape window.
+    harness.state_mut().state.ui_target = UiTarget::Tool(TOOL.into());
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, TOOL);
     harness.run();
     harness.run();
     harness

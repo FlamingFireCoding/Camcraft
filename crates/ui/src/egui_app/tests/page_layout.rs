@@ -181,7 +181,7 @@ fn layout_page_tool() {
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Delete", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", "Delete", "Edit tool shape", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
     );
 }
 

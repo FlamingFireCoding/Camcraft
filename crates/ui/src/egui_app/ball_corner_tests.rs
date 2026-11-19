@@ -12,7 +12,6 @@ use egui_kittest::kittest::Queryable;
 use camcraft_app::model;
 use camcraft_app::tools::{Tool, catalog};
 
-use crate::actions;
 use crate::state::{CommandKind, State, UiTarget};
 
 /// A 6 mm ball nose from the catalog, saved with a corner field of 0 -
@@ -37,12 +36,13 @@ fn saved(state: &State, name: &str) -> Tool {
     model::find_by_name(&state.world, name).and_then(|e| model::tool_of(&state.world, &e)).expect("the tool")
 }
 
-/// The editor window open on `name`, drawn alone.
+/// The tool's Properties page on `name`, drawn alone. The settings live
+/// there (#2397); the shape editor window has the body and the profile.
 fn editor(mut state: State, name: &str) -> Harness<'static, State> {
-    actions::open_tool_editor(&mut state, name);
+    state.ui_target = UiTarget::Tool(name.to_owned());
     let mut h = Harness::builder()
         .with_size(Vec2::new(900.0, 1000.0))
-        .build_ui_state(|ui, st: &mut State| super::pages::tool_editor_window(ui.ctx(), st), state);
+        .build_ui_state(|ui, st: &mut State| super::pages::properties(ui, st, &super::theme::current()), state);
     h.run();
     h
 }

@@ -1,12 +1,14 @@
-//! The tool editor's Profile section (#93): a milling tool's holder as a
-//! spun (revolved) half-outline - Parametric (the cylinder its numbers
-//! state) or Custom (a table of points with optional arcs), a flat side
-//! view of cutter, shank and holder with their key dimensions that
+//! #2397: the tool shape editor's Profile section (#93) - a milling tool's
+//! holder as a spun (revolved) half-outline - Parametric (the cylinder its
+//! numbers state) or Custom (a table of points with optional arcs), a flat
+//! side view of cutter, shank and holder with their key dimensions that
 //! follows every keystroke, the live refusal by name, and Apply profile,
-//! which queues the one command. #93 slice 2: Draw cutter switches the
-//! tab to the tool's own cutter, neck and shank (`tool_cutter_page`),
-//! drawn the same way. Turning tools are not spun profiles:
-//! for them the column stays the Body section alone (owner, #93).
+//! which queues the one command. The holder library stands above the tabs
+//! (`tool_holder_picker`), so a holder is the first thing the user sees.
+//! #93 slice 2: Draw cutter switches the tab to the tool's own cutter,
+//! neck and shank (`tool_cutter_page`), drawn the same way. Turning tools
+//! are not spun profiles: for them the editor stays the Body section alone
+//! (owner, #93).
 //! Provenance: our own pane over `app::tool_body_view` and
 //! `app::spun`; the side view is the handbook's tool drawing. No vendor
 //! material consulted.
@@ -26,11 +28,15 @@ const NOTE: Color32 = Color32::from_rgb(0x9E, 0xA8, 0xB8);
 const HOLDER: Color32 = Color32::from_rgb(230, 160, 60);
 pub(super) const BAD: Color32 = Color32::from_rgb(230, 90, 80);
 
-/// The editor's third column: Body / Profile tabs for a milling tool,
-/// the Body section alone for a turning tool.
-pub(super) fn third_column(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
+/// #2397: the tool shape editor's body - the holder library first (a
+/// holder is the first thing the user looks for, not a row under the
+/// profile table), then the Body / Profile tabs for a milling tool, the
+/// Body section alone for a turning tool.
+pub(super) fn editor(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     let milling = is_spun_kind(state.tool_ui.tool_kind());
     if milling {
+        super::tool_holder_picker::holder_picker(ui, state, u);
+        ui.separator();
         ui.horizontal(|ui| {
             let c = state.tool_profile_ui.column;
             if ui.selectable_label(c == ToolColumn::Body, "Body").on_hover_text("import a holder or assembly mesh").clicked() {
@@ -60,6 +66,7 @@ pub(super) fn third_column(ui: &mut Ui, state: &mut State, exists: bool, u: Unit
                 }
             }
         });
+        ui.separator();
     }
     if milling && state.tool_profile_ui.column == ToolColumn::Profile {
         profile_section(ui, state, exists, u);
@@ -73,12 +80,27 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
         super::tool_cutter_page::cutter_section(ui, state, exists, u);
         return;
     }
-    ui.strong("Holder profile");
     if !exists {
+        ui.strong("Holder profile");
         ui.label("Add the tool first, then draw its holder.");
         return;
     }
     state.sync_tool_profile_ui();
+    // #2397: two columns - the outline controls on the left, the points
+    // and the to-scale side view on the right. The window is wide enough
+    // for both, so no row or button is clipped at the bottom.
+    ui.horizontal_top(|ui| {
+        ui.set_width(240.0);
+        ui.vertical(|ui| profile_controls(ui, state));
+        ui.separator();
+        ui.vertical(|ui| profile_view(ui, state, u));
+    });
+}
+
+/// The outline's controls: what landed, Parametric / Custom, Apply
+/// profile, and the DXF / STEP doors.
+fn profile_controls(ui: &mut Ui, state: &mut State) {
+    ui.strong("Holder profile");
     let landed = state.editor_tool_body();
     ui.label(match &landed {
         // #2016: a library holder is the entry, not a copy of it.
@@ -103,32 +125,6 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
             state.set_profile_custom(true);
         }
     });
-    points_table(ui, state, u);
-    let tool = state.tool_ui.to_tool();
-    let points = state.tool_profile_ui.points.clone();
-    let check = if points.is_empty() { Err("no holder - the tool states none".to_owned()) } else { tool_body_view::spun_preview(&tool, &points) };
-    let cutter = camcraft_app::tool_cutter::shown(&tool, state.editor_tool_cutter().as_ref()).map(|c| c.outline()).unwrap_or_default();
-    let holder: Vec<(f64, f64)> = check.as_ref().map_or_else(|_| points.iter().map(|p| (p.z, p.r)).collect(), SpunProfile::outline);
-    side_view(ui, &tool, (&cutter, true), (&holder, check.is_ok()), u);
-    match &check {
-        Ok(s) => {
-            state.retire_profile_refusal();
-            let top = s.points().last().map_or(0.0, |p| p.z);
-            let foot = s.points().first().map_or(0.0, |p| p.z);
-            let wide = s.max_radius();
-            ui.label(format!(
-                "holder Ø {} × {} {}, gauge {} {}",
-                units::len(2.0 * wide, u, 1),
-                units::len(top - foot, u, 1),
-                u.suffix(),
-                units::len(top, u, 1),
-                u.suffix()
-            ));
-        }
-        Err(e) => {
-            ui.colored_label(BAD, e);
-        }
-    }
     let state_custom = state.tool_profile_ui.custom;
     let can = state_custom || landed.is_some();
     if ui
@@ -145,7 +141,7 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     ui.small("Revolved body: non-revolved features are enveloped conservatively (never cut away); only the half-profile is editable.");
     let has_export = !state.tool_profile_ui.points.is_empty() || landed.is_some();
     let (imp_dxf, exp_dxf, imp_step) = ui
-        .horizontal(|ui| {
+        .horizontal_wrapped(|ui| {
             let imp_dxf = crate::browser_files::button(
                 ui,
                 state.in_browser(crate::browser_files::NEEDS_PICKER),
@@ -180,7 +176,36 @@ fn profile_section(ui: &mut Ui, state: &mut State, exists: bool, u: Unit) {
     if imp_step {
         state.import_step_profile_dialog();
     }
-    super::tool_holder_picker::holder_picker(ui, state, u);
+}
+
+/// The points table and the flat side view, with the live refusal.
+fn profile_view(ui: &mut Ui, state: &mut State, u: Unit) {
+    points_table(ui, state, u);
+    let tool = state.tool_ui.to_tool();
+    let points = state.tool_profile_ui.points.clone();
+    let check = if points.is_empty() { Err("no holder - the tool states none".to_owned()) } else { tool_body_view::spun_preview(&tool, &points) };
+    let cutter = camcraft_app::tool_cutter::shown(&tool, state.editor_tool_cutter().as_ref()).map(|c| c.outline()).unwrap_or_default();
+    let holder: Vec<(f64, f64)> = check.as_ref().map_or_else(|_| points.iter().map(|p| (p.z, p.r)).collect(), SpunProfile::outline);
+    side_view(ui, &tool, (&cutter, true), (&holder, check.is_ok()), u);
+    match &check {
+        Ok(s) => {
+            state.retire_profile_refusal();
+            let top = s.points().last().map_or(0.0, |p| p.z);
+            let foot = s.points().first().map_or(0.0, |p| p.z);
+            let wide = s.max_radius();
+            ui.label(format!(
+                "holder Ø {} × {} {}, gauge {} {}",
+                units::len(2.0 * wide, u, 1),
+                units::len(top - foot, u, 1),
+                u.suffix(),
+                units::len(top, u, 1),
+                u.suffix()
+            ));
+        }
+        Err(e) => {
+            ui.colored_label(BAD, e);
+        }
+    }
 }
 
 /// The points, tip-up: z, r, arc radius (0 = line), insert after,
