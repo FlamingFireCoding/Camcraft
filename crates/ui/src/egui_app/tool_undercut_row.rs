@@ -74,8 +74,7 @@ mod tests {
             (20, ToolKind::Dovetail),
             (21, ToolKind::Lollipop),
         ] {
-            let mut draft = ToolUi::default();
-            draft.kind = index;
+            let mut draft = ToolUi { kind: index, ..ToolUi::default() };
             assert_eq!(draft.tool_kind(), kind);
             seed(&mut draft);
             let tool = draft.to_tool();
