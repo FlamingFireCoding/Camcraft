@@ -32,7 +32,10 @@
 //! split is by the edge alone, so the two facets that share it split alike
 //! and the face stays one conforming mesh. An edge only one facet has is on
 //! the face's boundary, which the neighbouring face meshes too: it is never
-//! split, so the shell stays closed. What cannot be refined (the facet
+//! split here, so the shell stays closed. It is held fine enough before
+//! the pass instead: the shell's edge polyline that bounds a face curved
+//! two ways is divided [`Curved::inside`] times finer (#2754,
+//! [`edge_divisors`]), once for both of its faces. What cannot be refined (the facet
 //! budget, the round cap) is REPORTED as the mesh's chord error, never
 //! dropped: the model then carries reduced fidelity (#864) and the gate
 //! refuses to verify against it.
@@ -121,22 +124,76 @@ impl Curved {
             Curved::Cone | Curved::Sphere | Curved::Torus => 1.5,
         }
     }
+
+    /// The kind of a surface measured here; `None` for a plane and for the
+    /// kinds this module does not measure.
+    pub(super) fn of(surface: &Surface) -> Option<Curved> {
+        match surface {
+            Surface::ElementarySurface(e) => match **e {
+                ElementarySurface::Plane(_) => None,
+                ElementarySurface::CylindricalSurface(_) => Some(Curved::Cylinder),
+                ElementarySurface::ConicalSurface(_) => Some(Curved::Cone),
+                ElementarySurface::Sphere(_) => Some(Curved::Sphere),
+                ElementarySurface::ToroidalSurface(_) => Some(Curved::Torus),
+            },
+            _ => None,
+        }
+    }
+}
+
+/// How many times finer than the pass tolerance each of a shell's `edges`
+/// edges is divided (#2754), from its faces' kinds and edge indices
+/// (`faces`). [`fit`] never splits a boundary edge (the neighbour face
+/// meshes it too), and the report is the highest edge times
+/// [`Curved::inside`]: a boundary edge held only to the tolerance put a face
+/// curved two ways at 1.5 times it, past the promise, on every such model.
+/// So each edge is divided by the largest inside bound of the faces it
+/// bounds, once, in the shell's own edge polyline: both faces get the same
+/// points and the shell stays closed. The edge division measures the
+/// curve's own parameter midpoint and [`fit`] the face's; they agree on a
+/// circle on its own surface. Where they do not, the report is over the
+/// tolerance and says so (reduced fidelity), it is never under-stated.
+///
+/// A cylinder then takes the largest divisor of its own edges on all of
+/// them, until no edge changes: a cylinder meshes rim to rim (the module
+/// header), and a rim divided finer than the other rim slants its facets,
+/// so that each height of a plain wall cuts a different chord of it. An
+/// index past `edges` is skipped. Every value is at least 1.
+pub(super) fn edge_divisors(edges: usize, faces: &[(Option<Curved>, Vec<usize>)]) -> Vec<f64> {
+    let mut fine = vec![1.0f64; edges];
+    for (kind, ids) in faces {
+        let k = kind.map_or(1.0, Curved::inside);
+        for &i in ids {
+            if let Some(x) = fine.get_mut(i) {
+                *x = x.max(k);
+            }
+        }
+    }
+    // Each round raises at least one edge to a divisor some face already
+    // asks, so the rounds are bounded by the edges; the cap is a guard.
+    for _ in 0..=edges {
+        let mut changed = false;
+        for (_, ids) in faces.iter().filter(|(kind, _)| matches!(kind, Some(Curved::Cylinder))) {
+            let top = ids.iter().filter_map(|&i| <[f64]>::get(&fine, i).copied()).fold(1.0f64, f64::max);
+            for &i in ids {
+                if let Some(x) = <[f64]>::get_mut(&mut fine, i).filter(|x| **x < top) {
+                    *x = top;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    fine
 }
 
 /// [`fit`] for face `index` (`surface`) of a shell, when its kind is
 /// measured here.
 pub(super) fn fit_face(index: usize, surface: Option<&Metered>, poly: &PolygonMesh, tol: f64, room: usize) -> Fit {
     let Some(s) = surface else { return judged(index, Err("the shell holds no surface for it")) };
-    let kind = match &s.inner {
-        Surface::ElementarySurface(e) => match **e {
-            ElementarySurface::Plane(_) => return KEPT,
-            ElementarySurface::CylindricalSurface(_) => Curved::Cylinder,
-            ElementarySurface::ConicalSurface(_) => Curved::Cone,
-            ElementarySurface::Sphere(_) => Curved::Sphere,
-            ElementarySurface::ToroidalSurface(_) => Curved::Torus,
-        },
-        _ => return KEPT,
-    };
+    let Some(kind) = Curved::of(&s.inner) else { return KEPT };
     // Not through the meter: this is a measure of the finished pass.
     let at = |u: f64, v: f64| {
         let (u, v) = s.own(u, v);
