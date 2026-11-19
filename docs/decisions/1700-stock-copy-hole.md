@@ -22,11 +22,33 @@ the model is deleted or renamed"), so the hole now rides the same way.
 
 **File format:** the saver already wrote `mesh_open` for any entity that
 has one. The loader now also accepts it on a `FromModel` stock marked
-`fidelity_unknown`, and a hole without the mark stays corrupt. There is
-no version bump: #1610's strict check (a hole on anything but a model is
-corrupt) has not shipped in a cut yet, so no released reader refuses
-these files, and a reader from before #1610 drops the key and keeps the
-mark. Files without the key load unchanged.
+`fidelity_unknown`, and a hole without the mark stays corrupt. Commit
+`35b3422cf` (#1610) shipped in `v0.21.0` through `v0.24.0`, where
+`validate.rs` refuses `mesh_open` on any entity that is not a model
+marked `fidelity_unknown` as corrupt. A project file written with a hole
+on a `FromModel` stock row therefore does not open in `v0.21.0` to
+`v0.24.0`, making this an incompatible project-file change (marked with
+`fix(fidelity)!:` and a `BREAKING CHANGE:` footer).
+
+**Review follow-up (PR #2024):**
+- **Released `v0.21.0`–`v0.24.0` files:** those builds wrote
+  `fidelity_unknown: true` on the stock copy and `mesh_open` only on the
+  source model. `model_fidelity::adopt_copies` now heals such a copy on
+  load from its live source (so deleting the source later keeps the hole
+  and re-saving repairs the file), and `model_fidelity::coarse_source`
+  falls back to the source's hole if an unhealed copy has none. Pinned
+  by `a_v021_to_v024_copy_without_its_own_hole_keeps_naming_its_sources_hole`
+  in `crates/app/tests/stock_copy_hole.rs`.
+- **Project version:** kept unbumped on this branch (`67`, unchanged
+  from its `upstream/main` merge base) rather than bumping `67` to `68`
+  (which would conflict with `upstream/main`'s `v68`–`v71` ladder) or
+  pulling `upstream/main` and bumping past `v71`. `upstream/main` is
+  already at `v71` (above `v0.21.0`–`v0.24.0`'s `v61`–`v69`), so merged
+  saves already trigger `UnsupportedVersion` in those releases, while any
+  pre-#1700 `v67`–`v71` build fails closed as corrupt rather than dropping
+  the hole. Cost to change later: one `PROJECT_VERSION` bump and
+  no-op migration rung if a version refusal is wanted against unreleased
+  pre-#1700 `v71` builds.
 
 **Considered and dropped:**
 - Keeping a tombstone of the deleted source's hole (by name) in the

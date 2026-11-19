@@ -153,10 +153,14 @@ fn coarse_source(world: &World, name: &str) -> Option<Coarse> {
     };
     // A refusal names the model the facets came from, also once it is
     // gone: that is what a person re-imports. The hole is read off the
-    // entity that carries the sentinel (#1700): a copy's own, so it
-    // outlives the source too.
+    // entity that carries the sentinel (#1700), falling back to the
+    // source once when a v0.21-v0.24 file marked the copy without one.
     if let Some(c) = chord_of(world, &entity) {
-        let hole = crate::mesh_open::hole_of(world, &entity);
+        let hole = crate::mesh_open::hole_of(world, &entity).or_else(|| {
+            is_unknown(c)
+                .then(|| copied.as_deref().and_then(|s| crate::mesh_open::hole_behind(world, s)))
+                .flatten()
+        });
         return Some((copied.unwrap_or_else(|| name.to_string()), c, hole));
     }
     let source = copied?;
@@ -178,16 +182,28 @@ pub fn chord_behind(world: &World, source: &str) -> Option<f64> {
 /// The loader's last pass (#1056): a `FromModel` stock from a file that
 /// predates the copy's own flag takes its source's, so deleting that
 /// source later keeps the stock judged as coarse as its facets are.
+/// #1700: a copy marked `fidelity_unknown` without its own hole (written
+/// by v0.21.0-v0.24.0 before the copy carried `mesh_open`) takes its
+/// source's hole too, so a later delete keeps naming it and a re-save
+/// repairs the file.
 pub fn adopt_copies(world: &World) {
     for (_, e) in model::named_entities(world) {
-        if chord_of(world, &e).is_some() {
+        let Some(StockShape::FromModel { source }) = model::stock_def_of(world, &e) else {
             continue;
-        }
-        if let Some(StockShape::FromModel { source }) = model::stock_def_of(world, &e)
-            && let Some(src) = model::find_by_name(world, &source)
+        };
+        let Some(src) = model::find_by_name(world, &source) else {
+            continue;
+        };
+        if chord_of(world, &e).is_none()
             && let Some(c) = chord_of(world, &src)
         {
             set(world, &e, Some(c));
+        }
+        if chord_of(world, &e).is_some_and(is_unknown)
+            && crate::mesh_open::hole_of(world, &e).is_none()
+            && let Some(hole) = crate::mesh_open::hole_of(world, &src)
+        {
+            crate::mesh_open::set(world, &e, Some(&hole));
         }
     }
 }

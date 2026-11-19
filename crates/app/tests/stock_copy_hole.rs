@@ -6,10 +6,11 @@
 //! source, and save/load.
 //!
 //! Gate map (#1700): covers app::mesh_open (hole_behind, note_for),
-//! app::model_fidelity (op_problem), app::commands::set_stock,
-//! app::commands::setup (clone), app::commands::setup_delete,
-//! app::commands::update_model (stock copies), app::project (apply,
-//! validate: a stock's `mesh_open`), app::posting (verification_report).
+//! app::model_fidelity (op_problem, coarse_source, adopt_copies),
+//! app::commands::set_stock, app::commands::setup (clone),
+//! app::commands::setup_delete, app::commands::update_model (stock copies),
+//! app::project (apply, validate: a stock's `mesh_open`),
+//! app::posting (verification_report).
 //!
 //! Provenance: our own pins over our own laws; no vendor material.
 
@@ -174,4 +175,111 @@ fn the_copys_hole_rides_the_project_file_after_its_source_is_gone() {
     for f in [a, b, c] {
         let _ = std::fs::remove_file(f);
     }
+}
+
+#[test]
+fn a_v021_to_v024_copy_without_its_own_hole_keeps_naming_its_sources_hole() {
+    // Files saved by v0.21.0-v0.24.0 write `fidelity_unknown: true` on the
+    // copy and `mesh_open` only on the source model. Loading heals the
+    // copy from its source so refusals still name the hole (never the
+    // pre-v59 note), a later source delete keeps it, and re-saving writes it.
+    let tris: Vec<[[f64; 3]; 3]> = brick()
+        .facets
+        .iter()
+        .map(|t| [[t.a.x, t.a.y, t.a.z], [t.b.x, t.b.y, t.b.z], [t.c.x, t.c.y, t.c.z]])
+        .collect();
+    let facets_json = serde_json::to_string(&tris).expect("facets json");
+    let hand_made = format!(
+        r#"{{
+        "version": 62,
+        "entities": [
+            {{
+                "name": "OP",
+                "translation": [0.0, 0.0, 0.0],
+                "kind": "operation",
+                "operation": {{
+                    "tool": "T1",
+                    "src": "stock",
+                    "params": {{"face": {{
+                        "stepover": 3.0,
+                        "clearance_z": {{"reference": "top_of_stock", "offset": 25.0}},
+                        "cut_z": {{"reference": "top_of_stock", "offset": 0.0}},
+                        "feed": 1200.0,
+                        "plunge_feed": 300.0,
+                        "climb": true
+                    }}}}
+                }}
+            }},
+            {{
+                "name": "Stock",
+                "translation": [0.0, 0.0, 0.0],
+                "facets": {facets_json},
+                "fidelity_unknown": true,
+                "kind": "stock",
+                "stock": {{"from_model": {{"source": "part"}}}}
+            }},
+            {{
+                "name": "T1",
+                "translation": [0.0, 0.0, 0.0],
+                "kind": "tool",
+                "tool": {{
+                    "kind": "end_mill",
+                    "diameter": 10.0,
+                    "corner_r": 0.0,
+                    "flute_len": 25.0,
+                    "shank_d": 10.0,
+                    "shank_len": 40.0,
+                    "holder_d": 32.0,
+                    "holder_len": 35.0,
+                    "material_group": "general",
+                    "rpm": 8000.0,
+                    "feed": 1200.0
+                }}
+            }},
+            {{
+                "name": "part",
+                "translation": [0.0, 0.0, 0.0],
+                "facets": {facets_json},
+                "fidelity_unknown": true,
+                "mesh_open": "{HOLE}"
+            }}
+        ]
+    }}"#
+    );
+    let loaded = new_world();
+    project::open(&loaded, &hand_made).expect("v0.22-shape project loads");
+    let op = model::operation_of(&loaded, &model::find_by_name(&loaded, "OP").expect("op")).expect("operation");
+    let problem = model_fidelity::op_problem(&loaded, "OP", &op).expect("op_problem refuses");
+    assert!(problem.starts_with(&format!("OP: model 'part' was {SAID}")), "{problem}");
+    assert!(!problem.contains(OLD), "{problem}");
+    assert_eq!(hole(&loaded, "Stock").as_deref(), Some(HOLE), "loader heals the copy");
+
+    // Generate OP and confirm the full posting gate names the hole too,
+    // including after deleting the source model.
+    let mut h = History::default();
+    h.execute(&loaded, GenerateOperation::new(&loaded, "OP").expect("generate"));
+    names_the_hole(&loaded);
+    h.execute(&loaded, DeleteEntity::new(&loaded, "part").expect("delete the source"));
+    names_the_hole(&loaded);
+
+    // Re-saving persists the healed hole on the stock row.
+    let path = std::env::temp_dir().join(format!("camcraft-1700-heal-{}.camproj", std::process::id()));
+    project::save(&loaded, &path).expect("save");
+    let resaved = std::fs::read_to_string(&path).expect("read");
+    let _ = std::fs::remove_file(&path);
+    let doc: serde_json::Value = serde_json::from_str(&resaved).expect("json");
+    let row = doc["entities"]
+        .as_array()
+        .and_then(|r| r.iter().find(|e| e["name"] == "Stock"))
+        .cloned()
+        .expect("stock row");
+    assert_eq!(row["mesh_open"], serde_json::json!(HOLE), "{row}");
+
+    // And an unhealed in-memory copy carrying UNKNOWN_MM without MeshOpen
+    // still falls back to its live source's hole in coarse_source.
+    let (live, _h) = copied_stock();
+    let stock_e = model::find_by_name(&live, &stock_name(&live)).expect("stock entity");
+    mesh_open::set(&live, &stock_e, None);
+    assert_eq!(hole(&live, &stock_name(&live)), None);
+    names_the_hole(&live);
 }
