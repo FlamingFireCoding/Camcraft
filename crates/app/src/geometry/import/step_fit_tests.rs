@@ -197,3 +197,23 @@ fn a_face_whose_parameters_miss_its_points_is_logged_and_reported_unmeasured() {
     let other = |u: f64, v: f64| [10.1 * u.cos(), 10.1 * u.sin(), v];
     pins_unmeasured("parameters miss", 0, &poly, &other, "parameters do not give its points");
 }
+
+/// #2754: an edge that bounds a face curved two ways is divided by the
+/// inside bound, so its face's report (edge x bound) meets the pass; a
+/// cylinder wall carries its finest rim's divisor to every rim, across a
+/// chain of walls; a plane's own edges stay at 1; an index past the shell
+/// is skipped, never a panic.
+#[test]
+fn edge_divisors_hold_two_way_faces_and_match_cylinder_rims() {
+    let faces = vec![
+        (Some(Curved::Cone), vec![0, 1]),
+        (Some(Curved::Cylinder), vec![1, 2]),
+        (Some(Curved::Cylinder), vec![2, 3]),
+        (None, vec![3, 4, 99]),
+        (Some(Curved::Cylinder), vec![5, 6]),
+    ];
+    let fine = edge_divisors(7, &faces);
+    let cone = Curved::Cone.inside();
+    assert_eq!(fine, vec![cone, cone, cone, cone, 1.0, 1.0, 1.0]);
+    assert!(edge_divisors(0, &faces).is_empty());
+}
