@@ -252,11 +252,16 @@ fn still_frames_on_fig8_name_their_costs() {
 /// The 2D Adaptive operation of state (c), open with its Boundary group
 /// and its filled area preview.
 pub(super) fn adaptive_preview(h: &mut Harness<'static, ShellUi>) {
+    adaptive_preview_with(h, Some(Containment::Outside));
+}
+
+/// [`adaptive_preview`] under the given Containment (`None`: the default).
+fn adaptive_preview_with(h: &mut Harness<'static, ShellUi>, containment: Option<Containment>) {
     let patch = biggest_patch(&h.state().state);
     create(h, ADAPTIVE, OpType::Adaptive2D, vec![patch]);
     run(h, |st| {
         let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
-        let area = AreaControls { containment: Some(Containment::Outside), ..AreaControls::default() };
+        let area = AreaControls { containment, ..AreaControls::default() };
         st.pending.push_back(CommandKind::EditOperationBoundary { name: ADAPTIVE.into(), params: op.params, area });
     });
     open(h, UiTarget::Operation(ADAPTIVE.into()));
@@ -281,6 +286,24 @@ pub(super) fn adaptive_preview(h: &mut Harness<'static, ShellUi>) {
 fn fill(h: &Harness<'static, ShellUi>) -> crate::boundary_viz::Fill {
     let p = h.state().state.boundary_view.preview.as_ref().expect("a preview");
     p.fill.clone().expect("a filled preview")
+}
+
+/// #2766: the default Containment fills too. The region of the patch is
+/// the enclosed area minus the part that stands in it; that difference
+/// left loops of about 1e-8 mm2, and the triangulator refused them.
+#[test]
+fn area_preview_of_the_default_containment_is_filled() {
+    let mut h = fig8();
+    adaptive_preview_with(&mut h, None);
+    let st = &h.state().state;
+    let op = model::find_by_name(&st.world, ADAPTIVE).and_then(|e| model::operation_of(&st.world, &e)).expect("adaptive");
+    assert_eq!(op.area.containment, None, "the default Containment");
+    let region = operation::region_of(&st.world, &op).expect("a region");
+    let slivers: Vec<f64> = region.loops().iter().map(|l| l.area()).filter(|a| a.abs() < 1e-4).collect();
+    assert!(slivers.is_empty(), "no loop of near-zero area: {slivers:?}");
+    let tri = |t: &[camcraft_app::geo2d::Point2; 3]| 0.5 * ((t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (t[1].y - t[0].y)).abs();
+    let filled: f64 = fill(&h).iter().map(tri).sum();
+    assert!((filled - region.area()).abs() < 1e-6 * region.area(), "the fill covers the region: {filled} of {}", region.area());
 }
 
 /// #2246: the preview's triangles are made when the draft or the document
