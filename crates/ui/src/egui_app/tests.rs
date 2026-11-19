@@ -122,6 +122,7 @@ mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;
+mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
 mod theme_tree_hits;
 mod waterjet_recipe;
