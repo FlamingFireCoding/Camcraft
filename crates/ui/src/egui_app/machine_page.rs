@@ -92,35 +92,43 @@ fn library_row(ui: &mut Ui, state: &mut State, path: &str) {
     let text = current.map_or_else(|| "other".to_owned(), library_label);
     let mut pick: Option<MachineSource> = None;
     let mut reread = false;
+    // #2105: the Refresh button shares the Library row instead of taking a
+    // row of its own. One row on this page is worth ~28 px: with the taller
+    // ribbon of #2027 the action row sat 8 px under the fold of a 720 px
+    // window. Refresh belongs on the combo's row anyway - it re-reads the
+    // same folder the combo lists. The row lays out right to left: the
+    // button first, so the combo (which fills the remaining width) cannot
+    // push the button out of the cell.
     prop_grid(ui, "machine_library_grid", |ui| {
         ui.label("Library");
-        let cb = egui::ComboBox::from_id_salt("machine_library").selected_text(text).show_ui(ui, |ui| {
-            for (i, group) in [&mine, &shipped].into_iter().enumerate() {
-                if i == 1 && !mine.is_empty() && !shipped.is_empty() {
-                    ui.separator();
-                }
-                for e in group {
-                    let on = current.is_some_and(|c| c.source == e.source);
-                    let r = ui.add_enabled(e.is_valid(), egui::Button::selectable(on, library_label(e)));
-                    if r.clicked() && !on {
-                        pick = Some(e.source.clone());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let refresh = ui.button("Refresh").on_hover_text("Read the machine folder again");
+            if super::fields::named(refresh, REFRESH_MACHINES).clicked() {
+                // #2380: read the shipped folder again, then list the
+                // catalogue again (its shipped part is that scan).
+                posting::rescan();
+                reread = true;
+            }
+            let cb = egui::ComboBox::from_id_salt("machine_library").selected_text(text).show_ui(ui, |ui| {
+                for (i, group) in [&mine, &shipped].into_iter().enumerate() {
+                    if i == 1 && !mine.is_empty() && !shipped.is_empty() {
+                        ui.separator();
+                    }
+                    for e in group {
+                        let on = current.is_some_and(|c| c.source == e.source);
+                        let r = ui.add_enabled(e.is_valid(), egui::Button::selectable(on, library_label(e)));
+                        if r.clicked() && !on {
+                            pick = Some(e.source.clone());
+                        }
                     }
                 }
-            }
+            });
+            // Opening the list reads the folder again: a file saved outside
+            // the app shows up without a remount. Keep (never overwrite)
+            // the `true` the Refresh button just set.
+            reread |= cb.response.clicked();
+            super::fields::named(cb.response, "Machine library");
         });
-        // Opening the list reads the folder again: a file saved outside
-        // the app shows up without a remount.
-        reread = cb.response.clicked();
-        super::fields::named(cb.response, "Machine library");
-        ui.end_row();
-        ui.label("");
-        let refresh = ui.button("Refresh").on_hover_text("Read the machine folder again");
-        if super::fields::named(refresh, REFRESH_MACHINES).clicked() {
-            // #2380: read the shipped folder again, then list the catalogue
-            // again (its shipped part is that scan).
-            posting::rescan();
-            reread = true;
-        }
         ui.end_row();
     });
     if reread {

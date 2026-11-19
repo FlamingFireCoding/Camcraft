@@ -10,9 +10,9 @@ use crate::state::SetupPage;
 
 type H = Harness<'static, ShellUi>;
 
-/// The shell at the app's default height (800 px). The 720 px harness
-/// leaves the machine page's button row below the fold: the ribbon is 22 px
-/// taller since #2021 (see `shell_harness`).
+/// The shell at the app's default height (800 px). Kept for the click
+/// tests: before #2105 was fixed the 720 px harness left the machine
+/// page's button row below the fold (the ribbon grew 22 px in #2027).
 fn tall_harness() -> H {
     Harness::builder()
         .with_size(Vec2::new(1280.0, 800.0))
@@ -106,6 +106,25 @@ fn the_machine_page_is_laid_out_in_groups_like_the_wcs_page() {
     assert!(b.windows(2).all(|w| (w[0].top() - w[1].top()).abs() < 1.0 && w[0].right() < w[1].left()), "{b:?}");
     assert!(b.windows(2).all(|w| (w[0].width() - w[1].width()).abs() < 1.0), "equal widths: {b:?}");
     assert!(h.query_by_label("Load machine (.mch)").is_none(), "the no-machine button is not drawn with a machine");
+}
+
+/// #2105: the ribbon is 22 px taller since #2027, and the machine page's
+/// action row fell under the fold of a 720 px window: the user had to
+/// scroll to reach the buttons. The row is reachable without a scroll -
+/// every action button's painted bottom sits inside the Properties leaf.
+#[test]
+fn the_machine_page_buttons_fit_without_scrolling_at_720_px() {
+    let mut h = shell_harness();
+    open_machine(&mut h, Some("Tormach 770MX"));
+    let leaf = super::layout::leaf_rect(&h.state().dock, &Tab::Properties).expect("the properties leaf");
+    assert!(top(&h, GROUPS[2]) < leaf.bottom(), "the action group title is in the fold: {:?} {leaf:?}", rect(&h, GROUPS[2]));
+    for label in ["Load other", "Edit", "Clear"] {
+        let r = rect(&h, label);
+        assert!(
+            r.bottom() <= leaf.bottom() + 0.5,
+            "{label} {r:?} falls under the fold of the Properties leaf {leaf:?}"
+        );
+    }
 }
 
 /// A lathe states its own facts in the same rows - the page draws no

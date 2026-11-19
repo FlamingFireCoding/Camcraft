@@ -250,7 +250,14 @@ fn layout_page_setup_settings() {
 fn layout_page_setup_machine() {
     let _g = snapshot_guard();
     let h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Machine));
-    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Refresh machine list", "Load machine (.mch)"]);
+    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Load machine (.mch)"]);
+    // #2105: "Refresh" no longer stacks under the combo - it shares the
+    // Library row, right of it, the row whose 28 px the action row needs
+    // to fit a 720 px window.
+    let lib = h.query_by_label("Machine library").expect("the library combo").rect();
+    let refresh = h.query_by_label("Refresh machine list").expect("the refresh button").rect();
+    assert!((lib.top() - refresh.top()).abs() < 2.0, "Refresh shares the Library row: {lib:?} {refresh:?}");
+    assert!(refresh.left() > lib.left(), "Refresh right of the combo: {lib:?} {refresh:?}");
 }
 
 #[test]
