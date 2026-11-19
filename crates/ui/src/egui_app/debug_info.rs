@@ -94,10 +94,8 @@ fn report_with(state: &State, names_only: bool) -> String {
     // The status can repeat the project path ("saved <path>"): the shared
     // form puts the file name in its place there too.
     let mut status_text = state.status.clone();
-    if names_only {
-        if let Some(p) = state.project_path.as_deref() {
-            status_text = status_text.replace(&p.display().to_string(), &file_name_only(p));
-        }
+    if let Some(p) = state.project_path.as_deref().filter(|_| names_only) {
+        status_text = status_text.replace(&p.display().to_string(), &file_name_only(p));
     }
     lines.push(format!("Status: {}", or_none(&status_text)));
     lines.join("\n")
