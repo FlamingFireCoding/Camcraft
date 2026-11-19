@@ -20,6 +20,9 @@ pub mod diag;
 pub mod cli_options;
 #[cfg(test)]
 mod cli_options_tests;
+pub mod launch_file;
+#[cfg(test)]
+mod launch_file_tests;
 
 pub mod actions;
 pub mod play_precalc;
@@ -88,6 +91,8 @@ pub mod wcs_circle_pick;
 mod file_pick_tests;
 #[cfg(test)]
 mod law_tests;
+#[cfg(test)]
+mod ortho_pick_tests;
 #[cfg(test)]
 mod refusal_focus_tests;
 #[cfg(test)]
