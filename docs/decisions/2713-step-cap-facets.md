@@ -62,3 +62,21 @@ That leaves the agreement test red after this PR.
 
 **What it costs.** Run the kernel agreement suite explicitly. A later
 change to the fixture requires a new triage of its agreement row.
+
+## #2713 - Keep the measured bound when merging #2718
+
+**What was decided.** Keep the split and flip limit at
+`tol / kind.inside()`. Keep the measured height from #2718 and include the
+largest height of every new diagonal accepted by the flip. Multiply this
+bound by `kind.inside()` when reporting the mesh error.
+
+**Why.** The split measures the edges before the flip. A new diagonal can
+have a larger chord height than those edges. The reported bound must cover
+the edges that the flip adds, as well as the edges already measured.
+
+**Considered and dropped.** Keep the old measured bound without the new
+diagonals. That bound can understate the error of the mesh after a flip.
+
+**What it costs.** Each accepted flip updates the largest height. No extra
+surface evaluation or pass over the mesh is needed. The bound can retain
+the height of an edge that a later flip removes, which is conservative.

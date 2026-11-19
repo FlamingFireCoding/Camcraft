@@ -27,7 +27,8 @@
 //! torus - the kinds that take truck's own grid and are never stretched) is
 //! read as the planar triangulation it is in (u, v). An edge two facets of
 //! the face share is INSIDE the face; its chord height is measured, and one
-//! over [`SLACK`] times the pass tolerance is split at the surface. The
+//! over the pass tolerance (divided by [`Curved::inside`]) is split at the
+//! surface. The
 //! split is by the edge alone, so the two facets that share it split alike
 //! and the face stays one conforming mesh. An edge only one facet has is on
 //! the face's boundary, which the neighbouring face meshes too: it is never
@@ -39,6 +40,24 @@
 //! A refined face then gets its flat "cap" facets flipped away ([`relax`],
 //! #2713): the split holds the facets' points and edges to the surface, and
 //! the flip holds their normals to it.
+//!
+//! What is reported (#2718): the largest height of EVERY edge of the kept
+//! facets (inside and boundary, under the limit or not), times a bound for
+//! the inside of a facet. Provenance of the bound: the error of linear
+//! interpolation of a quadratic over a triangle is
+//! `1/2 * sum(l_i * l_j * q_ij)` over its edges (barycentric `l`, `q_ij`
+//! the edge's second difference; Waldron, "The error in linear
+//! interpolation at the vertices of a simplex", SIAM J. Numer. Anal. 35,
+//! 1998). An edge midpoint carries `q/8`, and `sum(l_i * l_j)` is at most
+//! 1/3, so no inside point stands more than 4/3 of the highest edge off a
+//! surface curved two ways (sphere, torus; on a sphere the equilateral
+//! facet reaches it). A cylinder is curved one way: its facet projects to
+//! a triangle inscribed in the circle, whose point nearest the axis is on
+//! an edge, so its edges bound it exactly. A cone is curved one way too,
+//! but its parameter midpoint is not the edge's nearest surface point; it
+//! takes the two-way bound. [`Curved::inside`] adds a margin over 4/3 for
+//! the higher-order terms a facet of real size carries (on a sphere the
+//! equilateral ratio is 1.36 at a 30-degree facet).
 //!
 //! Limits, stated: B-spline, NURBS and swept faces are not measured here
 //! (their grid and parameter stretch are #1602's); a face whose mesh does
@@ -52,11 +71,6 @@ use truck_stepio::r#in::alias::{ElementarySurface, ParametricSurface, Surface};
 use super::step_guard::Metered;
 use crate::geometry::{Point3 as P3, Triangle};
 
-/// An inside edge may stand this many pass tolerances off the surface.
-/// The kernel accepts a grid cell on one interior point, so a mesh that
-/// meets its test can stand a little past the tolerance at an edge; twice
-/// the 0.005 mm cap is the program verdict's own tolerance.
-pub(super) const SLACK: f64 = 2.0;
 /// Refinement rounds. Each halves an edge's parameter span, so its chord
 /// height falls to a quarter: 24 rounds take any span to round-off.
 const ROUNDS: usize = 24;
@@ -69,30 +83,60 @@ const FLIPS_PER_FACET: usize = 8;
 const FLIP_MARGIN: f64 = 1e-3;
 
 /// One face's verdict: the facets that replace the kernel's (`None`: keep
-/// them), and the chord height still over the limit (0 when none is).
+/// them), `off`: how far the kept facets may stand off the surface (the
+/// highest measured edge times the kind's inside bound, #2718; 0 for a
+/// face not measured), and `left`: the highest inside edge still over the
+/// limit (0 when none is).
 pub(super) struct Fit {
     pub facets: Option<Vec<Triangle>>,
     pub off: f64,
+    pub left: f64,
 }
 
-const KEPT: Fit = Fit { facets: None, off: 0.0 };
+const KEPT: Fit = Fit { facets: None, off: 0.0, left: 0.0 };
+
+/// The curved elementary kinds measured here.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Curved {
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+}
+
+impl Curved {
+    /// How far the inside of a facet may stand off the surface, as a
+    /// multiple of its highest edge (see the module header).
+    pub(super) fn inside(self) -> f64 {
+        match self {
+            Curved::Cylinder => 1.0,
+            Curved::Cone | Curved::Sphere | Curved::Torus => 1.5,
+        }
+    }
+}
 
 /// [`fit`] for face `surface` of a shell, when its kind is measured here.
 pub(super) fn fit_face(surface: Option<&Metered>, poly: &PolygonMesh, tol: f64, room: usize) -> Fit {
     let Some(s) = surface else { return KEPT };
-    match &s.inner {
-        Surface::ElementarySurface(e) if !matches!(**e, ElementarySurface::Plane(_)) => {}
+    let kind = match &s.inner {
+        Surface::ElementarySurface(e) => match **e {
+            ElementarySurface::Plane(_) => return KEPT,
+            ElementarySurface::CylindricalSurface(_) => Curved::Cylinder,
+            ElementarySurface::ConicalSurface(_) => Curved::Cone,
+            ElementarySurface::Sphere(_) => Curved::Sphere,
+            ElementarySurface::ToroidalSurface(_) => Curved::Torus,
+        },
         _ => return KEPT,
-    }
+    };
     // Not through the meter: this is a measure of the finished pass.
     let at = |u: f64, v: f64| {
         let (u, v) = s.own(u, v);
         let p = s.inner.subs(u, v);
         [p.x, p.y, p.z]
     };
-    let fit = fit(poly, &at, tol, room);
-    if fit.off > 0.0 {
-        tracing::warn!("step: a curved face's facets stand {:e} off its surface at tol {tol:e} and could not be refined", fit.off);
+    let fit = fit(poly, &at, tol, room, kind);
+    if fit.left > 0.0 {
+        tracing::warn!("step: a curved face's facets stand {:e} off its surface at tol {tol:e} and could not be refined", fit.left);
     }
     fit
 }
@@ -110,9 +154,10 @@ fn key(a: u32, b: u32) -> (u32, u32) {
     (a.min(b), a.max(b))
 }
 
-/// Hold `poly`'s inside edges within [`SLACK`] x `tol` of the surface `at`
-/// evaluates in the mesh's own parameters, making at most `room` facets.
-pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f64, room: usize) -> Fit {
+/// Hold `poly`'s inside edges within `tol / kind.inside()` of the surface `at`
+/// evaluates in the mesh's own parameters, making at most `room` facets,
+/// and bound how far the kept facets stand off a surface of kind `kind`.
+pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f64, room: usize, kind: Curved) -> Fit {
     if !(tol.is_finite() && tol > 0.0) {
         return KEPT;
     }
@@ -148,9 +193,14 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
         }
         tris.push(t);
     }
-    let limit = SLACK * tol;
+    // An inside edge is split until its facets' bound meets the pass
+    // tolerance, so what is reported is what was asked for (#2718). The
+    // limit was twice the tolerance, reported as the tolerance.
+    let limit = tol / kind.inside();
     let mut changed = false;
-    let mut off = 0.0f64;
+    // `left`: the highest inside edge over the limit; `high`: the highest
+    // edge of all, both of the facets the round measured.
+    let (mut left, mut high) = (0.0f64, 0.0f64);
     for round in 0..=ROUNDS {
         let mut uses: HashMap<(u32, u32), u8> = HashMap::with_capacity(tris.len() * 2);
         for t in &tris {
@@ -160,21 +210,23 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
             }
         }
         // In edge order, so the facets are the same on every run.
-        let mut inside: Vec<(u32, u32)> = uses.into_iter().filter(|&(_, n)| n == 2).map(|(e, _)| e).collect();
-        inside.sort_unstable();
-        off = 0.0;
+        let mut edges: Vec<((u32, u32), u8)> = uses.into_iter().collect();
+        edges.sort_unstable();
+        (left, high) = (0.0, 0.0);
         let mut mids: HashMap<(u32, u32), u32> = HashMap::new();
-        for (a, b) in inside {
+        for ((a, b), n) in edges {
             let (Some(va), Some(vb)) = (verts.get(a as usize), verts.get(b as usize)) else { return KEPT };
             let uv = [0.5 * (va.uv[0] + vb.uv[0]), 0.5 * (va.uv[1] + vb.uv[1])];
             let chord = [0.5 * (va.p[0] + vb.p[0]), 0.5 * (va.p[1] + vb.p[1]), 0.5 * (va.p[2] + vb.p[2])];
             let p = at(uv[0], uv[1]);
-            let d = dist(p, chord);
-            if d <= limit {
+            // A height that cannot be read is an unbounded one.
+            let d = Some(dist(p, chord)).filter(|d| d.is_finite()).unwrap_or(f64::INFINITY);
+            high = high.max(d);
+            // Only an inside edge is split; a boundary edge is measured.
+            if n != 2 || d <= limit {
                 continue;
             }
-            // A height that cannot be read is an unbounded one.
-            off = off.max(if d.is_finite() { d } else { f64::INFINITY });
+            left = left.max(d);
             let id = u32::try_from(verts.len()).ok().filter(|_| round < ROUNDS && p.iter().all(|c| c.is_finite()));
             if let Some(id) = id {
                 verts.push(Vert { uv, p });
@@ -189,20 +241,24 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
             split(*t, &mids, &mut next);
         }
         if next.len() > room {
-            break; // `off` is what the kept facets still stand off
+            break; // `left` and `high` are of the facets kept
         }
         tris = next;
         changed = true;
-        off = 0.0;
     }
+    // Every exit above leaves `tris` as the round measured them: a round
+    // that splits is followed by one that measures its facets, and the
+    // last round never splits (no id at ROUNDS).
     if changed {
-        relax(&verts, &mut tris, at, limit);
+        // A flip adds an edge after that measurement. Include every new
+        // edge's height, while keeping the old bound conservatively.
+        high = high.max(relax(&verts, &mut tris, at, limit));
     }
     let point = |i: u32| verts.get(i as usize).map(|v| P3::new(v.p[0], v.p[1], v.p[2]));
     let facets = changed
         .then(|| tris.iter().map(|t| Some(Triangle::new(point(t[0])?, point(t[1])?, point(t[2])?))).collect::<Option<Vec<_>>>())
         .flatten();
-    Fit { facets, off }
+    Fit { facets, off: high * kind.inside(), left }
 }
 
 /// The angle at `c` of the facet `a b c`, in space. `None` for a facet with
@@ -233,8 +289,10 @@ type Sides = (u8, [(usize, u32); 2]);
 /// than a half turn is replaced by the other diagonal. A flip is made only
 /// where the two new facets keep their winding in the parameter plane and
 /// the new edge passes the chord-height `limit` of the split, so the #2600
-/// law holds. No point moves and no boundary edge changes.
-fn relax(verts: &[Vert], tris: &mut [[u32; 3]], at: &dyn Fn(f64, f64) -> [f64; 3], limit: f64) {
+/// law holds. No point moves and no boundary edge changes. The return
+/// value bounds the chord height of every added edge.
+fn relax(verts: &[Vert], tris: &mut [[u32; 3]], at: &dyn Fn(f64, f64) -> [f64; 3], limit: f64) -> f64 {
+    let mut high = 0.0f64;
     let mut sides: HashMap<(u32, u32), Sides> = HashMap::with_capacity(tris.len() * 2);
     for (i, t) in tris.iter().enumerate() {
         for (a, b, c) in [(t[0], t[1], t[2]), (t[1], t[2], t[0]), (t[2], t[0], t[1])] {
@@ -274,6 +332,7 @@ fn relax(verts: &[Vert], tris: &mut [[u32; 3]], at: &dyn Fn(f64, f64) -> [f64; 3
         }
         let Some(left_now) = left.checked_sub(1) else { break };
         left = left_now;
+        high = high.max(off);
         if let Some(t) = tris.get_mut(i) {
             *t = n1;
         }
@@ -293,6 +352,7 @@ fn relax(verts: &[Vert], tris: &mut [[u32; 3]], at: &dyn Fn(f64, f64) -> [f64; 3
             queue.push(key(x, y));
         }
     }
+    high
 }
 
 /// One facet split by its marked edges, winding kept: one mark halves it,
@@ -311,3 +371,7 @@ fn split([a, b, c]: [u32; 3], mids: &HashMap<(u32, u32), u32>, out: &mut Vec<[u3
         (Some(ab), Some(bc), Some(ca)) => out.extend([[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]]),
     }
 }
+
+#[cfg(test)]
+#[path = "step_fit_tests.rs"]
+mod tests;
