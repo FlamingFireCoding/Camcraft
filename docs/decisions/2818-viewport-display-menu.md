@@ -19,7 +19,7 @@
   mode applies to the model, the stock and the fixtures in the same way. The
   stock still shows as its translucent faces.
 - "Shaded, with hidden edges" draws the cached model edge list a second time
-  with the depth test reversed and 35% alpha. No new buffer and no rebuild
+  with the depth test reversed and 50% alpha. No new buffer and no rebuild
   on a frame.
 - "Look at a face" arms one click. The click takes the first visible
   triangle under the cursor and turns the view to its normal with

@@ -120,7 +120,7 @@ fn fs_edge(in: VSOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_edge_hidden(in: VSOut) -> @location(0) vec4<f32> {
     let dark = vec3<f32>(0.06, 0.07, 0.09);
-    return vec4<f32>(mix(dark, u.warm.xyz, in.sel), 0.35);
+    return vec4<f32>(mix(dark, u.warm.xyz, in.sel), 0.5);
 }
 
 // Stock: same flat shading, cool steel tint, translucent - the model must
