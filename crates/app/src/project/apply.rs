@@ -536,6 +536,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // and break-through values remain unchanged in their DTOs.
         // v71 -> v72 (#2463): a model may record its source file; absent
         // is not linked.
+        // v72 -> v73 (#2055): absent `do_not_touch` protection defaults to
+        // empty picks and zero clearance. v72 readers must refuse v73
+        // rather than discard protected selections as unknown area fields.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {

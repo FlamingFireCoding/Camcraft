@@ -133,6 +133,7 @@ mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
+mod adaptive3d_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
 mod op_icon_table;
 mod tool_icon_wiring;
@@ -170,6 +171,8 @@ mod setup_rotary;
 mod setup_eye;
 // #155: Pause / Home entries in the operation list.
 mod program_entry;
+// #2055: "Do not touch" protected faces/edges in Boundaries.
+mod do_not_touch;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;

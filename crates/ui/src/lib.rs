@@ -30,6 +30,7 @@ mod launch_file_tests;
 pub mod actions;
 pub mod play_precalc;
 pub mod align_pick_viz;
+pub mod avoid_viz;
 pub(crate) mod machine_modes;
 mod axis_note;
 mod build_info;

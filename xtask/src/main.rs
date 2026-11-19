@@ -24,6 +24,7 @@ mod docs_images;
 #[cfg(test)]
 mod directory_tests;
 mod exec;
+mod fixture_inputs;
 mod lanes;
 #[cfg(test)]
 mod gate_maps_tests;

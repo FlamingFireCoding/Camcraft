@@ -112,9 +112,9 @@ pub use locate::{Locate, LocateFixture, LocatePart};
 pub use move_model::MoveModel;
 pub use operation::{
     ChangeOperationKind, ClearToolpath, CreateOperation, DeleteOperation, EditOperationLinks,
-    EditOperationParams,
-    GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll, RenameOperation,
-    ReorderOperation, SetOperationGeometry, StagedGeneration,
+    EditOperationParams, GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll,
+    RenameOperation, ReorderOperation, SetOperationDoNotTouch, SetOperationGeometry,
+    StagedGeneration,
 };
 pub use post::SelectPost;
 pub use post_options::SetPostOptions;

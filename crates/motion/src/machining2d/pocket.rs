@@ -82,7 +82,7 @@ pub struct PocketParams {
 }
 
 impl PocketParams {
-    pub(super) fn validate(&self) -> Result<(), GenError> {
+    pub(crate) fn validate(&self) -> Result<(), GenError> {
         let mut finite = [
             self.tool_diameter,
             self.stock_to_leave,
