@@ -208,9 +208,32 @@ pub(super) fn add_tool(env: &mut Env, a: &Map<String, Value>) -> Result<Value, S
     }))
 }
 
+/// #2576: the stock's turn from the optional `axis` ("z", "x", "y") or
+/// `angles_deg` ({yaw, pitch, roll}); one of them at most.
+fn stock_turn(a: &Map<String, Value>) -> Result<[f64; 4], String> {
+    use crate::geometry::stock_axis::{StockAxis, stock_axis_rot};
+    let axis = match (opt_str(a, "axis")?, a.get("angles_deg")) {
+        (Some(_), Some(_)) => return Err("give \"axis\" or \"angles_deg\", not both".into()),
+        (None, None) | (Some("z" | "Z"), None) => StockAxis::Z,
+        (Some("x" | "X"), None) => StockAxis::X,
+        (Some("y" | "Y"), None) => StockAxis::Y,
+        (Some(other), None) => return Err(format!("bad axis \"{other}\": give \"z\", \"x\" or \"y\"")),
+        (None, Some(v)) => {
+            let ang = |k: &str| match v.get(k) {
+                None => Ok(0.0),
+                Some(n) => n.as_f64().ok_or_else(|| format!("angles_deg.{k} must be a number")),
+            };
+            let angles = [ang("yaw")?, ang("pitch")?, ang("roll")?];
+            return stock_axis_rot(StockAxis::Custom, angles).ok_or_else(|| "a stock angle is not a finite number".into());
+        }
+    };
+    stock_axis_rot(axis, [0.0; 3]).ok_or_else(|| "bad stock axis".into())
+}
+
 pub(super) fn set_stock(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
-    let given: Vec<&String> = a.keys().collect();
-    if given.len() != 1 {
+    let rot = stock_turn(a)?;
+    let given = a.keys().filter(|k| !matches!(k.as_str(), "axis" | "angles_deg")).count();
+    if given != 1 {
         return Err("give exactly one of \"box\", \"cylinder\" or \"from_model\"".into());
     }
     let shape = match (a.get("box"), a.get("cylinder"), opt_str(a, "from_model")?) {
@@ -220,9 +243,11 @@ pub(super) fn set_stock(env: &mut Env, a: &Map<String, Value>) -> Result<Value, 
         _ => Err("give exactly one stock shape".into()),
     }
     .map_err(|e| format!("bad stock: {e}"))?;
-    let cmd = SetStock::new(&env.world, shape.clone(), Default::default()).map_err(cmd_err)?;
+    let at = crate::schema::Location { rot, ..Default::default() };
+    let cmd = SetStock::new(&env.world, shape.clone(), at).map_err(cmd_err)?;
     env.history.execute(&env.world, cmd);
-    Ok(json!({ "stock": project::stock_to_json(&shape) }))
+    let (axis, angles) = crate::geometry::stock_axis::stock_axis_of(rot);
+    Ok(json!({ "stock": project::stock_to_json(&shape), "axis": axis.label(), "angles_deg": angles }))
 }
 
 pub(super) fn add_operation(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
