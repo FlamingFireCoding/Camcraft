@@ -22,6 +22,11 @@ pub enum SolidcraftError {
 #[cfg(not(target_arch = "wasm32"))]
 pub use camcraft_kernel::solidcraft::hex_digest as sha256_hex;
 
+/// The same SHA-256 fed in pieces (#2689): a source file is hashed as it is
+/// read, from the bytes the import parses.
+#[cfg(not(target_arch = "wasm32"))]
+pub use camcraft_kernel::solidcraft::Sha256;
+
 /// Request cooperative cancellation after 300 seconds. The planner has no
 /// cancellation hook, so this is not a deadline for completion.
 #[cfg(not(target_arch = "wasm32"))]

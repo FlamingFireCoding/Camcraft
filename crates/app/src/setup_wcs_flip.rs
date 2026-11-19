@@ -9,7 +9,7 @@
 //! (`post::wcs_flip`: coordinate signs, `G2`/`G3`, `G41`/`G42`). This
 //! module reads and writes the flags and names, at the verification
 //! gate, each case the post does not carry: a flipped Z, a flipped WCS
-//! that is also rotated, a post script not verified for a mirrored
+//! tilted off Z, a post script not verified for a mirrored
 //! program, operation types outside 3-axis milling, and probing.
 //!
 //! Provenance: our own design notes (RS-274 / ISO 6983 work offsets are
@@ -67,7 +67,7 @@ fn owner_of(world: &World, declared: Option<&str>) -> String {
 }
 
 /// Why the post does not carry a setup's flip, `None` when no axis is
-/// flipped or the flip is carried (X and/or Y, unrotated, through a post
+/// flipped or the flip is carried (X and/or Y, square or Z-rotated, through a post
 /// script verified for a mirrored program).
 #[must_use]
 pub fn setup_problem(world: &World, declared: Option<&str>) -> Option<String> {
@@ -85,11 +85,14 @@ pub fn setup_problem(world: &World, declared: Option<&str>) -> Option<String> {
     }
     let rotated = crate::setup::wcs_entity(world, declared)
         .and_then(|e| model::transform_of(world, &e))
-        .is_some_and(|loc| crate::posting::offset_frame(&loc) != crate::posting::OffsetFrame::Square);
+        .is_some_and(|loc| !matches!(
+            crate::posting::offset_frame(&loc),
+            crate::posting::OffsetFrame::Square | crate::posting::OffsetFrame::Yaw { .. }
+        ));
     if rotated {
         return Some(format!(
-            "{what} and is also rotated; a flipped and rotated WCS is not supported yet - clear the flip \
-             or the rotation"
+            "{what} and has a rotated or invalid placement; only a finite Z rotation is supported with \
+             flipped axes - clear the flip or correct the placement"
         ));
     }
     let post = crate::setup_mount::post_of(world, declared);

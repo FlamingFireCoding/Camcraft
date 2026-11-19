@@ -478,6 +478,12 @@ pub enum ParamsDto {
         /// the plain level ladder is exactly what they generated.
         #[serde(default)]
         rest_rough: bool,
+        /// #1591: how an Adaptive level is cleared. Absent on every
+        /// older file, which reads as `spiral` - the path those files
+        /// always cut. Written as a word, like 2D Adaptive's (#1509), so
+        /// an MCP patch can name either value.
+        #[serde(default)]
+        method: AdaptiveMethodDto,
         /// (v13: read only when `strategy` is `Adaptive`; v12 files can
         /// carry no Adaptive ring family to feed it.)
         /// The pre-M11.4 word: the contact angle in degrees. Still READ

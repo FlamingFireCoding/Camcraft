@@ -152,6 +152,8 @@ mod area;
 mod stock_top_frame;
 use camcraft_motion::stock_top_frame::stock_top_in_frame;
 use area::*;
+pub mod avoid;
+pub use avoid::{overlap_issue as avoid_overlap_issue, route_links as route_avoid_links, verify_avoid};
 mod pocket_memo;
 pub use pocket_memo::pocket_slices;
 mod selection_memo;
