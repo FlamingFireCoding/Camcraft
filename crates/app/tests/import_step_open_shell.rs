@@ -1,4 +1,4 @@
-//! #1610: a STEP closed shell that meshes open lands as an INCOMPLETE
+//! #1610: a model whose closed shell meshes open lands as an INCOMPLETE
 //! model - loadable for viewing and setup, its hole named - and every
 //! operation on it, and the program verdict, is refused by name at the
 //! post. The hole rides undo, update and the project file; a whole
@@ -13,7 +13,7 @@
 //! app::commands::update_model, app::commands::delete_entity,
 //! app::project (wire, apply, validate: `mesh_open`), app::posting
 //! (verification_report, post_setup), app::geometry::import (the `*_open`
-//! loaders, step_closed).
+//! loaders).
 //!
 //! Provenance: our own pins over our own laws; no vendor material.
 
@@ -24,7 +24,7 @@ use std::time::Duration;
 use camcraft_app::commands::{
     AddTool, CreateOperation, DeleteEntity, GenerateOperation, History, ImportModel, SetStock, TagFixture, UpdateModel,
 };
-use camcraft_app::geometry::import::{self, step, Format};
+use camcraft_app::geometry::import::{self, Format};
 use camcraft_app::geometry::{cube, Mesh, Point3};
 use camcraft_app::operation::{Height, HeightReference, OpParams, SrcRef};
 use camcraft_app::stock::StockShape;
@@ -41,7 +41,7 @@ fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models").join(name)
 }
 
-/// `fillet_corner.step` with its corner blend bent so truck drops the blend.
+/// `fillet_corner.step` with its corner blend's weights bent.
 fn bent() -> String {
     let text = std::fs::read_to_string(fixture("fillet_corner.step")).expect("fixture");
     let weights = "RATIONAL_B_SPLINE_SURFACE(((1.0,1.0,2.0),";
@@ -105,44 +105,42 @@ fn hole(world: &World, name: &str) -> Option<String> {
     model::find_by_name(world, name).and_then(|e| mesh_open::hole_of(world, &e))
 }
 
+/// #917: solidcore meshes a solid closed or refuses it, so a STEP file no
+/// longer lands incomplete (truck dropped the bent blend and the shell
+/// landed with its hole named). The pin holds the law that is left: the
+/// bent file lands whole, or every loader refuses it by name - never a
+/// model with a wall missing and no hole named.
 #[test]
-fn a_closed_shell_that_meshes_open_imports_incomplete_with_its_hole_named() {
+fn a_bent_closed_shell_lands_whole_or_is_refused_by_every_loader() {
     let text = bent();
-    let cmd = within(Duration::from_secs(90), move || {
-        step::with_face_eval_cap(200_000, || ImportModel::from_bytes("bent.step", text.as_bytes(), None))
-    })
-    .expect("an open closed shell loads as a model, not a refusal");
-    let said = cmd.hole.clone().unwrap_or_default();
-    assert!(said.contains("closed shell #1288 (10 faces) meshes open"), "{said}");
-    assert!(said.contains("got no mesh from the kernel"), "the dropped face is named: {said}");
-    assert_eq!(cmd.coarse_mm, Some(model_fidelity::UNKNOWN_MM), "a mesh with a hole is of unknown fidelity");
-    let world = new_world();
-    let mut h = History::default();
-    h.execute(&world, cmd);
-    let e = model::find_by_name(&world, "bent").expect("the model landed");
-    assert!(model::facets_of(&world, &e).is_some_and(|f| !f.is_empty()), "its facets are there to view");
-    assert_eq!(mesh_open::hole_of(&world, &e).as_deref(), Some(said.as_str()));
-    let chord = model_fidelity::chord_of(&world, &e).expect("flagged");
-    let line = mesh_open::summary(&world, &e, chord);
-    assert!(line.starts_with("Incomplete: closed shell #1288 (10 faces) meshes open"), "{line}");
-    let facts = mesh_open::facts(&world, &e, chord);
-    assert_eq!(facts["incomplete"], serde_json::json!(true), "{facts}");
-
-    // A loader that cannot land a model incomplete still refuses it.
+    let cmd = within(Duration::from_secs(90), move || ImportModel::from_bytes("bent.step", text.as_bytes(), None));
     let text = bent();
-    let strict = within(Duration::from_secs(90), move || {
-        step::with_face_eval_cap(200_000, || import::parse_model_graded(text.as_bytes(), Format::Step))
-    });
-    let msg = strict.expect_err("the graded loader refuses a hole").to_string();
-    assert!(msg.contains("meshes open") && msg.contains("the model would import with walls missing"), "{msg}");
-    // The path loader a fixture or a tool body reads through, too.
+    let strict = within(Duration::from_secs(90), move || import::parse_model_graded(text.as_bytes(), Format::Step));
     let file = std::env::temp_dir().join(format!("camcraft-1610-{}.step", std::process::id()));
     std::fs::write(&file, bent()).expect("write");
     let path = file.clone();
-    let strict = within(Duration::from_secs(90), move || step::with_face_eval_cap(200_000, || import::load_model_graded(&path)));
+    let by_path = within(Duration::from_secs(90), move || import::load_model_graded(&path));
     let _ = std::fs::remove_file(&file);
-    let msg = strict.expect_err("the graded path loader refuses a hole").to_string();
-    assert!(msg.contains("the model would import with walls missing"), "{msg}");
+    match cmd {
+        Ok(cmd) => {
+            assert_eq!(cmd.hole, None, "solidcore hands out no mesh with a hole");
+            let graded = strict.expect("the graded loader agrees with the model import");
+            assert!(graded.open.is_none());
+            assert!(by_path.expect("the path loader agrees").open.is_none());
+            let world = new_world();
+            let mut h = History::default();
+            h.execute(&world, cmd);
+            let e = model::find_by_name(&world, "bent").expect("the model landed");
+            assert!(model::facets_of(&world, &e).is_some_and(|f| !f.is_empty()), "its facets are there");
+            assert_eq!(mesh_open::hole_of(&world, &e), None);
+        }
+        Err(e) => {
+            let said = e.to_string();
+            let strict = strict.expect_err("the graded loader refuses too").to_string();
+            assert!(!strict.trim().is_empty() && said.contains(&strict), "{said} / {strict}");
+            assert_eq!(by_path.expect_err("the path loader refuses too").to_string(), strict);
+        }
+    }
 }
 
 #[test]

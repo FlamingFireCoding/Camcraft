@@ -13,8 +13,7 @@
 //! edge outside the corner cube, less the corner cube's r^3 (1 - pi/6).
 //!
 //! Gate map (M4.4): covers app::geometry::import::step,
-//! app::geometry::import::step_pole, app::geometry::import::step_edge3d,
-//! app::geometry::import::step_guard.
+//! camcraft_geometry::step (solidcore since #917).
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -200,9 +199,7 @@ fn bent_corner_blends_end_cleanly_and_bounded() {
     for (needle, bent) in variants {
         let data = text.replace(needle, bent).into_bytes();
         let started = std::time::Instant::now();
-        let r = within(Duration::from_secs(90), move || {
-            step::with_face_eval_cap(200_000, || import::parse_model(&data, Format::Step))
-        });
+        let r = within(Duration::from_secs(90), move || import::parse_model(&data, Format::Step));
         if let Ok(m) = &r {
             assert!(m.facets.iter().all(|t| [t.a, t.b, t.c].iter().all(|p: &Point3| p.is_finite())), "{bent}");
         }

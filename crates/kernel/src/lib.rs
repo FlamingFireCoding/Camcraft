@@ -3,8 +3,8 @@
 //! candidate engines can be asked for: primitive construction (box, Z
 //! cylinder), the three booleans (subtract, union, intersect), whole-solid
 //! offset, constant-radius edge blends (round, chamfer), healing, and a [`Measure`]
-//! (volume + bounding box) the bench compares. Nothing else in the workspace
-//! depends on this crate yet; truck stays the live engine.
+//! (volume + bounding box) the bench compares. camcraft-geometry depends on
+//! this crate for the STEP and Solidcraft import (#917, #1456).
 //!
 //! Why `measure` and not `tessellate`: solidcore 1.0.1 does not port SMLib's
 //! tessellation (its README lists it among the unported SM_API entry points),
@@ -13,7 +13,7 @@
 //! tessellation. The bench compares those numbers.
 //!
 //! Stage 4 (#916) adds a STEP importer on the solidcore side
-//! ([`solidcore_step`]), bench only: the app still imports through truck.
+//! ([`solidcore_step`]); since #917 the app imports every STEP model there.
 //! #940 adds the machining mesh of such a solid ([`machining_mesh`]):
 //! solidcore-tess at a chord in mm, every shortfall a named refusal, the
 //! deviation from the exact surfaces measured ([`mesh_deviation`]).

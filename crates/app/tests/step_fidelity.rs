@@ -3,7 +3,7 @@
 //! one `parse` always made; a model forced over budget keeps a coarser mesh
 //! and says by how much.
 //!
-//! Gate map: covers app::geometry::import::step and step_refine.
+//! Gate map: covers app::geometry::import::step, camcraft_geometry::step.
 //!
 //! Provenance: our own pins over the importer's tessellation schedule.
 

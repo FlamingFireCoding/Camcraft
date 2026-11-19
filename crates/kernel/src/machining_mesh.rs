@@ -3,8 +3,8 @@
 //! it is whole and measured inside the tolerance. solidcore-tess is a
 //! display mesher that names what it could not do and meshes the rest;
 //! here every such shortfall is a named [`MeshRefusal`] - a toolpath over
-//! a missing or loose face is a gouge. BENCH / SEAM ONLY: the app still
-//! meshes STEP through truck (#917 switches it).
+//! a missing or loose face is a gouge. Since #917 the app meshes every
+//! STEP model here (through `camcraft_geometry::step`).
 //! Provenance: our own seam design over the public API of solidcore-tess
 //! (the solidcore workspace's mesher, Apache-2.0, at the commit pinned in
 //! Cargo.toml; solidcore is the Apache-2.0 port of NVIDIA's SMLib). The

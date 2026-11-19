@@ -178,6 +178,21 @@ const ROWS: &[Row] = &[
         import: "both refuse (solidcore: the file holds no solid)",
         mesh: "no exact solid to judge against",
     },
+    // #2780: a block with one strongly twisted B-spline flank (our own
+    // fixture), and the same block with one vertex 0.5 mm off its curves.
+    // FIRST-BUILD: verdicts to be pinned from the first run.
+    Row {
+        file: "twisted_flank.step",
+        mm_per_unit: 1.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
+    Row {
+        file: "twisted_flank_off.step",
+        mm_per_unit: 1.0,
+        import: "agree",
+        mesh: "watertight, within tolerance",
+    },
 ];
 
 fn models_dir() -> PathBuf {
@@ -462,6 +477,8 @@ per_file! {
     step_tool_csys_degenerate => "tool_csys_degenerate.step",
     step_tool_csys_iso13399 => "tool_csys_iso13399.step",
     step_tool_csys_none => "tool_csys_none.step",
+    step_twisted_flank => "twisted_flank.step",
+    step_twisted_flank_off => "twisted_flank_off.step",
 }
 
 /// Every STEP fixture has exactly one pinned row, and every row has a

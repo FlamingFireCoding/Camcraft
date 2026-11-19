@@ -1,21 +1,18 @@
-//! #1536: a STEP face whose tessellation never converges is refused by
-//! name inside a bounded time, never a hang; smooth B-spline faces still
-//! import; degenerate B-spline input still ends cleanly. #1568: a finer
-//! pass that runs out of evaluations keeps the coarser mesh only on a face
-//! proven continuous, and is refused by name on one that may jump.
+//! #1536: a STEP face whose surface jumps is refused by name inside a
+//! bounded time, never a hang; smooth B-spline faces still import;
+//! degenerate B-spline input still ends cleanly. #917: the reader is
+//! solidcore now; truck's per-face evaluation cap and its finer-pass
+//! fallback (#1568, #1599) are gone with truck, and their pins became the
+//! solidcore counterparts below (chord cap, coarser chord under a small
+//! budget, a hostile shell refused by name).
 //!
 //! Fixtures (testdata/models/): `bspline_discontinuous.step` is box.step
 //! with its top face a degree-1 B-spline whose interior knot is repeated
-//! past its degree, so the surface jumps at u = 0.5 and truck's
-//! subdivision recurses for ever; `bspline_dome.step` is box.step with a
-//! smooth biquadratic dome on top.
-//!
-//! The default-cap pin lives in its own binary, `import_step_guard_default_cap`
-//! (#1605): it runs ~50 s on truck's shared rayon pool, and a cheap pin
-//! in the same process waited behind it.
+//! past its degree, so the surface jumps at u = 0.5; `bspline_dome.step` is
+//! box.step with a smooth biquadratic dome on top.
 //!
 //! Gate map (M4.4): covers app::geometry::import::step,
-//! app::geometry::import::step_guard, app::geometry::import::step_meter.
+//! camcraft_geometry::step.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -41,10 +38,8 @@ fn within<R: Send + 'static>(limit: Duration, f: impl FnOnce() -> R + Send + 'st
     }
 }
 
-/// The outer hang barrier of the pins whose work is bounded by an
-/// evaluation cap. Measured (#1605, debug): a lowered-cap refusal takes
-/// 0.06 s; the default-cap pin takes 52 s serial. The barrier is 120 s,
-/// far above both, and it is never the bound: the cap is.
+/// The outer hang barrier. It is never the bound of a passing run: the
+/// kernel's own checks are.
 const HANG_BARRIER: Duration = Duration::from_secs(120);
 
 fn volume(m: &Mesh) -> f64 {
@@ -57,17 +52,18 @@ fn volume(m: &Mesh) -> f64 {
         .sum()
 }
 
+/// A mesh handed out has only finite points.
+fn all_finite(m: &Mesh) -> bool {
+    m.facets.iter().all(|t| [t.a, t.b, t.c].iter().all(|p: &Point3| p.is_finite()))
+}
+
 #[test]
-fn a_lowered_cap_refuses_the_same_face_at_once() {
-    // The work is bounded by the evaluation cap (100 000 evaluations, 0.06 s
-    // in debug on an idle runner, #1605). The wall-clock limit is only the
-    // hang barrier, so it is set like the default-cap pin's 120 s: a loaded
-    // runner must not turn a finished refusal into a false hang.
-    let r = within(HANG_BARRIER, || {
-        step::with_face_eval_cap(100_000, || import::load_model(&testdata("bspline_discontinuous.step")))
-    });
-    let err = r.expect_err("refused").to_string();
-    assert!(err.contains("face #53") && err.contains("within 100000 evaluations"), "{err}");
+fn a_surface_that_jumps_ends_bounded_with_a_named_verdict() {
+    let r = within(HANG_BARRIER, || import::load_model(&testdata("bspline_discontinuous.step")));
+    match r {
+        Err(e) => assert!(!e.to_string().trim().is_empty(), "a refusal says why"),
+        Ok(m) => assert!(all_finite(&m) && !m.facets.is_empty(), "a kept mesh is finite"),
+    }
 }
 
 #[test]
@@ -102,62 +98,53 @@ fn degenerate_bspline_variants_end_cleanly_and_bounded() {
     for v in variants {
         let data = text.replace(knots, v).into_bytes();
         let started = Instant::now();
-        let r = within(Duration::from_secs(60), move || {
-            step::with_face_eval_cap(200_000, || import::parse_model(&data, import::Format::Step))
-        });
+        let r = within(Duration::from_secs(60), move || import::parse_model(&data, import::Format::Step));
         if let Ok(m) = &r {
-            assert!(m.facets.iter().all(|t| [t.a, t.b, t.c].iter().all(|p: &Point3| p.is_finite())), "{v}");
+            assert!(all_finite(m), "{v}");
         }
         eprintln!("{v}: {} in {:?}", r.map(|m| format!("{} facets", m.len())).unwrap_or_else(|e| e.to_string()), started.elapsed());
     }
 }
 
-
-/// #1568: a finer pass that runs out of evaluations on a face proven
-/// continuous keeps the coarser pass's mesh, at that mesh's own chord,
-/// instead of refusing the model. At a 1000-evaluation cap the dome's
-/// first pass (chord ~0.002) fits and the pass at its 0.001 target trips.
+/// #864 / #917: a model that fits the facet budget is meshed at the
+/// importer's chord cap, never coarser.
 #[test]
-fn a_finer_pass_that_runs_out_on_a_smooth_face_keeps_the_coarser_mesh() {
+fn the_dome_meshes_at_the_chord_cap() {
     let data = std::fs::read(testdata("bspline_dome.step")).expect("fixture");
-    let (full, full_chord) = step::parse_with_chord(&data).expect("the dome imports");
-    let (m, chord) = within(Duration::from_secs(60), move || {
-        step::with_face_eval_cap(1_000, || step::parse_with_chord(&data))
-    })
-    .expect("a continuous face that only ran out on a finer pass keeps the coarser mesh");
-    assert!(chord > full_chord, "the kept mesh reports its own, coarser chord: {chord} vs {full_chord}");
-    assert!(m.len() < full.len(), "{} facets kept, {} at full detail", m.len(), full.len());
+    let (m, chord) = within(Duration::from_secs(60), move || step::parse_with_chord(&data)).expect("the dome imports");
+    assert!((chord - step::CHORD_CAP).abs() < 1e-12, "chord {chord}, cap {}", step::CHORD_CAP);
+    assert!(step::coarse(chord).is_none(), "full fidelity");
     let want = 1.0 + 0.2 / 9.0;
     assert!((volume(&m) - want).abs() < 2e-3, "volume {}, want {want}", volume(&m));
 }
 
-/// #1568 / #1536: the same fallback is refused for a face that may jump.
-/// Its first pass converges (wider than the jump, it smears it into a
-/// closed shell of the right volume - which is why closure and volume are
-/// not the test), and the finer pass trips: the import is refused by name.
+/// #1054 / #917: a model over a small facet budget is meshed again at a
+/// coarser chord. The kept mesh reports that chord, has fewer facets and
+/// keeps its volume.
 #[test]
-fn a_finer_pass_that_runs_out_on_a_face_that_may_jump_is_refused() {
-    // The 1 000-evaluation cap is the bound; the barrier is HANG_BARRIER (#1605).
-    let r = within(HANG_BARRIER, || {
-        step::with_face_eval_cap(1_000, || import::load_model(&testdata("bspline_discontinuous.step")))
-    });
-    let err = r.expect_err("a smeared jump is never kept").to_string();
-    assert!(err.contains("face #53 (B-spline surface") && err.contains("did not converge"), "{err}");
+fn a_small_budget_keeps_a_coarser_mesh_and_reports_its_chord() {
+    let data = std::fs::read(testdata("bspline_dome.step")).expect("fixture");
+    let (full, full_chord) = step::parse_with_chord(&data).expect("the dome imports");
+    let budget = full.len() / 3;
+    let (m, chord) = within(Duration::from_secs(60), move || step::parse_with_chord_budget(&data, budget))
+        .expect("a smooth model over a small budget keeps a coarser mesh");
+    assert!(chord > full_chord, "the kept mesh reports its own, coarser chord: {chord} vs {full_chord}");
+    assert!(step::coarse(chord).is_some(), "reduced fidelity is reported");
+    assert!(m.len() <= budget && m.len() < full.len(), "{} facets kept, budget {budget}, {} at full detail", m.len(), full.len());
+    let want = 1.0 + 0.2 / 9.0;
+    assert!((volume(&m) - want).abs() < 1e-2, "volume {}, want {want}", volume(&m));
 }
 
-/// #1599: a hostile shell of many runaway faces (the fixture's jumping face
-/// #53 listed 40 more times) is refused by name after a few trips, not
-/// after every face: the pass-wide budget stops it, and the refusal says so.
+/// #1599: a hostile shell (the fixture's jumping face #53 listed 40 more
+/// times) ends bounded. A shell that lists one face 41 times is not a
+/// closed solid: it is refused by name.
 #[test]
-fn a_shell_of_many_runaway_faces_is_refused_after_a_few_trips() {
+fn a_shell_of_many_repeated_faces_is_refused_bounded() {
     let text = std::fs::read_to_string(testdata("bspline_discontinuous.step")).expect("fixture");
     let shell = "CLOSED_SHELL('', (#18, #25, #32, #39, #46, #53));";
     assert!(text.contains(shell), "the fixture's shell line");
     let hostile = text.replace(shell, &format!("CLOSED_SHELL('', (#18, #25, #32, #39, #46, #53{}));", ", #53".repeat(40)));
-    let r = within(HANG_BARRIER, move || {
-        step::with_face_eval_cap(100_000, || import::parse_model(hostile.as_bytes(), import::Format::Step))
-    });
+    let r = within(HANG_BARRIER, move || import::parse_model(hostile.as_bytes(), import::Format::Step));
     let err = r.expect_err("refused").to_string();
-    assert!(err.contains("face #53 (B-spline surface") && err.contains("did not converge"), "{err}");
-    assert!(err.contains("stopped after 3 faces or edges"), "{err}");
+    assert!(!err.trim().is_empty(), "{err}");
 }

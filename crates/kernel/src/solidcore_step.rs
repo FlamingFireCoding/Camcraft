@@ -1,8 +1,7 @@
 //! STEP import on the solidcore side of the seam (M12.1 stage 4, #916):
 //! file bytes -> solids in millimetres + the file's length units +
-//! diagnostics, with a size bound and a time bound. BENCH ONLY: the app
-//! still imports STEP through truck-stepio; this is what the dual-importer
-//! bench (tests/step_agreement.rs) measures against it.
+//! diagnostics, with a size bound and a time bound. Since #917 this is the
+//! app's only STEP model reader (through `camcraft_geometry::step`).
 //! Provenance: calls the public API of solidcore-step (the ISO 10303-21
 //! exchange structure and ISO 10303-42 geometry and topology reader of the
 //! solidcore workspace, Apache-2.0, written from those public standards),
