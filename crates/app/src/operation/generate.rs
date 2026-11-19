@@ -394,7 +394,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         .map(|s| boundary_turn::turn_region(&s, turn))
                         .transpose()?
                 }
-                _ => None,
+                // #2437: under the lift law a hole counts only where
+                // material stands at the cut plane in or beside it; a
+                // hole wholly below the plane is no hole of the face.
+                machining2d::FaceHoles::Lift => {
+                    super::material_source::standing_at(m_gen, fparams.cut_z)
+                        .map(|s| boundary_turn::turn_region(&s, turn))
+                        .transpose()?
+                }
+                machining2d::FaceHoles::Through => None,
             };
             let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn)?;
             // M11.3 owed: the facer enters a radius off the footprint -
