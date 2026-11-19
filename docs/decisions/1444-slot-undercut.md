@@ -81,23 +81,94 @@
   where the neck slot is narrower than the neck (a collision the law
   already refuses), so it adds nothing.
 
-**Literature.** The issue asks for a Perplexity literature search first.
-This session had no web or Perplexity tool, so no search was run. The code
-was written from published material known to the author, named in each
-module's provenance line: Machinery's Handbook (T-slot cutters, Woodruff
-keyseat cutters, dovetail cutters: the cutter side views); the side-entry
-rule itself is general shop practice and is not taken from one text;
-Requicha and Voelcker,
-"Solid modeling: a historical summary and contemporary assessment", IEEE
-CG&A 1982 (a non-convex solid as a union of convex ones); Frisken, Perry,
-Rockwood and Jones, "Adaptively sampled distance fields", SIGGRAPH 2000
-(CSG on distance fields by min and max); Boyd and Vandenberghe, "Convex
-Optimization" 3.2.5 and Kiefer 1953 (already the solid law's sources: the
-convex gap function and golden-section search, which hold for the concave
-dovetail and ball profiles). Tri-dexel (Benouamer and Michelucci 1997) was
-considered for the column engine and not used: the field engine already
-holds an undercut. The maintainer can ask for the Perplexity search to be
-run against this list. camlib was not read.
+**Literature search (review follow-up, 2026-11-19)**
+
+The original implementation preceded this search. This follow-up checks its
+choices against published material; it does not change that history. The
+search used the web search tool because no Perplexity tool was available.
+Queries covered T-slot preparation and side entry, dovetail and lollipop
+contact geometry, distance-field CSG, and tri-dexel machining simulation.
+Only public Autodesk behaviour documentation, a machining handbook, and
+published research support the findings below. No camlib implementation,
+HSMWorks source, binary, output trace, or bundled asset was inspected.
+
+Checked sources and the choices they support:
+
+1. Walter, [Technical Compendium — Milling, 2024, section D2,
+   page D 140, “Strategies for preparing a T-slot”](https://cdn.walter-tools.com/files/sitecollectiondocuments/downloads/global/manuals/en-gb/technical-compendium-milling-2024-en.pdf).
+   The indexed section describes a prepared opening that extends below
+   the shoulder to leave the cutter shank clear. This supports checking
+   the neck against the opening as well as the head against the slot.
+   Our additional allowance for each radial pass follows from the neck's
+   lateral displacement. The handbook gives machining preparation
+   advice, not a proof of collision freedom for an arbitrary entry.
+2. Autodesk, [Sketch profile selection](https://help.autodesk.com/cloudhelp/ENU/Fusion-CAM/files/MFG-GEOMETRY-SELECTION-SKETCH-PROFILE.htm),
+   and [Is it possible to create a keyway undercut with a Slot operation
+   in Fusion?](https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/Is-it-possible-to-create-a-keyway-undercut-with-a-Slot-operation-in-Fusion.html)
+   (2025-11-04). The first describes tapered walls cut with a dovetail
+   cutter and clearance at both path ends. The second describes a gouge
+   with an ordinary slot path and returning to the entry position.
+   These support an explicit entry and exit clearance check. Our chosen
+   construction is more restrictive: descend at one outside station,
+   enter and leave laterally at depth, then retract at that station.
+   This construction and the separate stock check are our design.
+3. Autodesk, [Generate a Blend toolpath](https://help.autodesk.com/cloudhelp/ENU/Fusion-CAM/files/MFG-MULTI-AXIS-BLEND-STEPS.htm),
+   and [Lollipop cutter fails to completely deburr undercut hole using
+   'Flow' toolpath strategy in Fusion 360](https://help.autodesk.com/view/fusion360/ENU/?caas=caas/sfdcarticles/sfdcarticles/Lollipop-cutter-fails-to-completely-deburr-undercut-hole-using-Flow-toolpath-strategy-in-Fusion-360.html)
+   (2023-10-30). The first distinguishes surface-based undercut spacing
+   from tip-based spacing. The second identifies the ball diameter as a
+   limit on access to tight corners. These support using the actual
+   profile instead of treating the cutter as a point at its tip.
+   Our contact coordinates follow from elementary geometry: a cylindrical
+   disc and a narrowing frustum reach their largest radius at the bottom;
+   a sphere reaches it at the equator. These coordinates are our
+   derivation, not formulas copied from the documentation.
+4. Frisken, Perry, Rockwood and Jones, [Adaptively Sampled Distance
+   Fields: A General Representation of Shape for Computer Graphics](https://www.merl.com/publications/docs/TR2000-15.pdf),
+   SIGGRAPH 2000, pp. 249–254, sections 3 and 4.1. Section 4.1 gives
+   Boolean carving of object and tool fields. Section 3 discusses
+   sampling resolution and reconstruction error. This supports removing
+   swept head and neck solids from a volumetric field that can retain a
+   roof. It does not require a one-height stock model or establish our
+   sweep search's accuracy.
+5. Frisken and Perry, [Designing with Distance Fields](https://www.merl.com/publications/docs/TR2006-054.pdf),
+   2006, section 2.2 and Table 1; sections 4.1–4.3. The paper states the
+   sign convention for min/max CSG and warns that a combined field need
+   not remain a Euclidean distance field. It also describes aliasing and
+   resolution limits. Our inference is to sweep each convex head/neck
+   piece separately and combine the removed sets, rather than apply a
+   convex search to the complete non-convex cutter. This paper supports
+   the set representation, not the convex-search convergence claim.
+6. Ren, Zhu and Lee, [Feature Conservation and Conversion of Tri-dexel
+   Volumetric Models to Polyhedral Surface Models for Product
+   Prototyping](https://www.cad-journal.net/files/vol_5/CAD_5%286%29_2008_932-941.pdf),
+   Computer-Aided Design & Applications 5(6), 2008, pp. 932–941,
+   DOI 10.3722/cadaps.2008.932-941, sections 1 and 6. The paper describes
+   tri-dexel Boolean modelling and the work needed to preserve features
+   and produce a consistent surface. Tri-dexel is a valid alternative
+   for this class of stock representation. We retain the existing field
+   engine to avoid adding another representation and reconstruction
+   path. A single top height cannot represent air below a roof.
+
+Limits of this search and the retained design:
+
+- These sources support the selected shapes and representation. They do
+  not certify our implementation, feeds, engagement, or collision tests.
+  The original handbook and convex-search references in module comments
+  remain historical provenance; this search does not claim to have
+  checked every page of those references.
+- A prepared neck opening does not prove that the head can descend into
+  it. The outside station still needs the stock check before any Z move.
+  Returning along the entry path alone does not prove that path is clear.
+- The field is sampled and circular moves are approximated. Small roofs
+  and sharp features can depend on cell size and chord tolerance. CSG
+  set operations do not provide a global exact-distance guarantee.
+- Four ideal parametric heads do not describe arbitrary form cutters,
+  edge radii, or every flute/neck transition. Tilted tools and general
+  non-convex sweep searches remain outside this operation's scope.
+- No source found here supplies the exact straight/circular pass layout
+  or proves its safety. That layout is our own construction, checked by
+  the generator tests and the independent verification and profile laws.
 
 **Cost to change later**
 
