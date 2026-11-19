@@ -626,6 +626,14 @@ pub enum OpParams {
         /// the model itself, byte for byte. See
         /// [`crate::finishing3d::fill_openings`] for the rule.
         fill_openings: Option<f64>,
+        /// The link's author between two runs (the linking menu):
+        /// `Jump` hops to retract/clearance exactly as every older
+        /// file ran; `Straight` links the runs with one direct move
+        /// at their own heights where the exact sweep certifies it,
+        /// and keeps the hop when it cannot. Inert while `ramp`'s
+        /// own diagonal certifies the break.
+        /// See [`crate::finishing3d::GapLink`].
+        gap_link: finishing3d::GapLink,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
     /// authored number is `width` - the break's width in the edge's

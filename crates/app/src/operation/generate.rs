@@ -983,6 +983,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             steep_stepover,
             pencil_reference,
             fill_openings,
+            gap_link,
             ..
         } => {
             // Ball jurisdiction: the rings are the tangent locus of a
@@ -1022,6 +1023,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: *entry_ramp,
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
+                gap_link: *gap_link,
             };
             // The pattern picks the generator; Waterline never
             // reaches the raster code at all. SteepShallow is the
@@ -1283,6 +1285,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 pattern: if is_contour {
                     finishing3d::FinishPattern::Waterline
                 } else {
@@ -1377,6 +1380,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 // The ruling replaces the pattern's choice of lines;
                 // the geometry that remains is the parallel's exactly.
                 pattern: finishing3d::FinishPattern::Parallel,
@@ -1466,6 +1470,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 // The kind names the ladder - waterline rings about
                 // the axis, or passes along it - so the pattern byte
                 // answers the kernel's own reading.
@@ -1743,6 +1748,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 // The field replaces the pattern's choice of lines;
                 // the geometry that remains is the raster's exactly.
                 pattern: finishing3d::FinishPattern::Parallel,
