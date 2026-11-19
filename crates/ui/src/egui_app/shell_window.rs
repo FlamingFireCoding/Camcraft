@@ -30,7 +30,7 @@ mod frame;
 
 /// The windowed shell (the `--ui egui` entry without `--headless`); returns
 /// the process exit code.
-pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>) -> i32 {
+pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
     let event_loop = match EventLoop::new() {
         Ok(el) => el,
         Err(err) => {
@@ -43,6 +43,9 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // through the guarded Quit instead of ending the process.
     let _ = super::os_quit::install();
     let mut shell = Shell::new(pick, want);
+    // #2462: a file named on the command line goes through the same
+    // import / open command as the dialogs, on the first frame.
+    crate::launch_file::queue(&mut shell.state, files);
     // #1946: wake the Wait event loop whenever the AI chat worker queues
     // an event or dispatches an in-process MCP request.
     let ai_proxy = event_loop.create_proxy();

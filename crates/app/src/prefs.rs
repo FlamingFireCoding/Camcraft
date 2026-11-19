@@ -16,6 +16,11 @@
 //! person's habit for their own machine, not the part's, so it is kept
 //! here too (written only when off; absent reads as on).
 //!
+//! #1945 adds the AI Chat's "Offline only" switch: the person's policy
+//! for their own machine, kept here (written only when on). API keys are
+//! never kept here - they live in the OS keychain or the environment
+//! (`app::ai::secret`), and this file has no field that could hold one.
+//!
 //! Provenance: our own design, specced from issue #877; the folder and
 //! the atomic write are `app::recent`'s (#662).
 
@@ -38,6 +43,8 @@ pub struct ViewPrefs {
     /// #889: the tool library import leaves the file's holder bodies
     /// out (the page's "Import tool holders" unticked). `false` = take them.
     pub skip_tool_holders: bool,
+    /// #1945: the AI Chat reaches loopback model runtimes only.
+    pub ai_offline_only: bool,
 }
 
 /// The theme as the file spells it: a built-in name or a path, never one
@@ -62,6 +69,9 @@ struct OnDisk {
     /// #889: written only when false (holders left out of an import).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     import_tool_holders: Option<bool>,
+    /// #1945: written only when true (offline-only AI chat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_offline_only: Option<bool>,
 }
 
 fn vision_word(c: ColorVision) -> &'static str {
@@ -85,7 +95,8 @@ impl ViewPrefs {
         let color_vision =
             (self.color_vision != ColorVision::Off).then(|| vision_word(self.color_vision).to_owned());
         let import_tool_holders = self.skip_tool_holders.then_some(false);
-        let disk = OnDisk { format: FORMAT.to_owned(), theme, color_vision, import_tool_holders };
+        let ai_offline_only = self.ai_offline_only.then_some(true);
+        let disk = OnDisk { format: FORMAT.to_owned(), theme, color_vision, import_tool_holders, ai_offline_only };
         serde_json::to_string_pretty(&disk).unwrap_or_else(|e| {
             tracing::warn!("preferences not serialised: {e}");
             String::new()
@@ -124,7 +135,8 @@ impl ViewPrefs {
             },
         };
         let skip_tool_holders = disk.import_tool_holders == Some(false);
-        Ok((Self { theme, color_vision, skip_tool_holders }, notes))
+        let ai_offline_only = disk.ai_offline_only == Some(true);
+        Ok((Self { theme, color_vision, skip_tool_holders, ai_offline_only }, notes))
     }
 }
 
