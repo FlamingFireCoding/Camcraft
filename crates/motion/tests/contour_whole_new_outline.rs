@@ -194,6 +194,39 @@ fn every_new_outline_of_three_steps_steps_down_from_top_z() {
 }
 
 #[test]
+fn new_outline_steps_down_from_a_stock_top_over_top_z() {
+    // The #2597 part with the stock top 3 mm over Top Z: Top Z then cuts
+    // material, so a new outline takes a pass at Top Z too - its first pass
+    // is at most one stepdown under the stock top, not 8 mm.
+    let f = stepped(&[(30.0, 10.0), (15.0, 25.0)]);
+    let (top, step, r, stock) = (25.0, 5.0, 5.0, 28.0);
+    let top_reg = slice::slice(&f, top - 1e-3).expect("top slice");
+    let mut p = params(top, step, 2.0 * r);
+    p.links.approach.stock_top = Some(stock);
+    let path = contour_whole_bodies(&top_reg, &f, &[], &p).expect("whole contour");
+    assert!(path.all_finite() && path.is_chained());
+    assert_stepped(&ring_levels(&path, 15.0, r), stock, step, 10.0, "boss ring");
+    assert_stepped(&ring_levels(&path, 30.0, r), stock, step, 0.0, "base ring");
+    assert_eq!(depth_verify(&path, &top_reg, &f, stock, r), Vec::new(), "{:?}", path.notes);
+}
+
+#[test]
+fn new_outline_takes_top_z_when_the_stock_stands_a_stepdown_over_it() {
+    // Stock top 31, 6 mm over Top Z 25 (stepdown 5): band 0 bites 6 mm at
+    // Top Z, and only a pass at Top Z keeps the base ring's first bite as
+    // small - so the base ring takes Top Z and the flat levels under it.
+    let f = stepped(&[(30.0, 10.0), (15.0, 25.0)]);
+    let (top, step, r) = (25.0, 5.0, 5.0);
+    let top_reg = slice::slice(&f, top - 1e-3).expect("top slice");
+    let mut p = params(top, step, 2.0 * r);
+    p.links.approach.stock_top = Some(31.0);
+    let path = contour_whole_bodies(&top_reg, &f, &[], &p).expect("whole contour");
+    assert_eq!(ring_levels(&path, 15.0, r), vec![25.0, 20.0, 15.0, 10.0], "boss ring");
+    assert_eq!(ring_levels(&path, 30.0, r), vec![25.0, 20.0, 15.0, 10.0, 5.0, 0.0], "base ring");
+    assert_eq!(depth_verify(&path, &top_reg, &f, 31.0, r), Vec::new(), "{:?}", path.notes);
+}
+
+#[test]
 fn an_outline_that_does_not_grow_is_not_walked_again_above() {
     // A plain 40 x 40 block: one outline at every level, so every ring keeps
     // one pass per flat level - nothing is re-cut from Top Z.
