@@ -12,6 +12,7 @@ pub mod step_budget;
 pub mod step_csys;
 mod step_closed;
 mod step_facets;
+mod step_fit;
 mod step_continuity;
 mod step_diag;
 mod step_division;
@@ -29,7 +30,12 @@ mod step_stretch;
 #[cfg(test)]
 mod step_thread_fixture;
 mod step_units;
+#[cfg(not(target_arch = "wasm32"))]
+mod sourced;
 pub mod stl;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use sourced::load_model_open_sourced;
 
 use std::path::{Path, PathBuf};
 

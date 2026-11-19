@@ -79,11 +79,11 @@ pub mod tool_body;
 pub mod tool_cutter;
 // #300: a tool library file imported as one undo unit.
 pub mod tool_import;
-// #2517: the import's mode and report, split from tool_import.
-mod tool_import_report;
 // #221: a tool's controller number.
 pub mod tool_number;
 pub mod update_model;
+// #2463: link a model to its source file, or unlink it.
+pub mod model_link;
 // #547: a sinker electrode generated from a cavity's picked faces.
 pub mod electrode;
 
@@ -112,9 +112,9 @@ pub use locate::{Locate, LocateFixture, LocatePart};
 pub use move_model::MoveModel;
 pub use operation::{
     ChangeOperationKind, ClearToolpath, CreateOperation, DeleteOperation, EditOperationLinks,
-    EditOperationParams,
-    GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll, RenameOperation,
-    ReorderOperation, SetOperationGeometry, StagedGeneration,
+    EditOperationParams, GenerateOperation, MarkOperationReviewed, PasteOperation, RegenerateAll,
+    RenameOperation, ReorderOperation, SetOperationDoNotTouch, SetOperationGeometry,
+    StagedGeneration,
 };
 pub use post::SelectPost;
 pub use post_options::SetPostOptions;
@@ -123,6 +123,7 @@ pub use post_script_options::{
 };
 pub use program_info::SetProgramInfo;
 pub use program_entry::{AddProgramEntry, EditProgramEntry};
+pub use model_link::SetModelSource;
 pub use repair_model::RepairModel;
 pub use ribbon_pins::SetRibbonPins;
 pub use select_entity::SelectEntity;

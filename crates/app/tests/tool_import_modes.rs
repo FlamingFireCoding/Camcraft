@@ -6,7 +6,7 @@
 //! one. Every mode is one undo unit.
 //! Provenance: our own tests over our own command model.
 //!
-//! Gate map (M4.4): covers app::commands (tool_import, tool_import_report), app::script (importTools).
+//! Gate map (M4.4): covers app::commands (tool_import), app::script (importTools).
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportMode, ImportTools, SetStock, SetToolNumber,

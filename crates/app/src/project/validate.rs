@@ -31,6 +31,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
     if dto.step_source.is_some() && !matches!(kind, EntityKind::Model) {
         return Err(corrupt(format!("'{}' records STEP source but is not a model", dto.name)));
     }
+    // #2463: a source rides a model row only, with a path and a digest.
+    if let Some(src) = &dto.source {
+        src.check(&dto.name, matches!(kind, EntityKind::Model)).map_err(corrupt)?;
+    }
     // #1056: the unknown-fidelity mark rides a mesh row only, and never
     // beside a recorded chord - one entity cannot both know and not know.
     if dto.fidelity_unknown {
@@ -235,6 +239,34 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
                     "'{}' has an empty geometry source",
                     dto.name
                 )));
+            }
+            if !op.area.do_not_touch.is_default() {
+                let cl = op.area.do_not_touch.clearance;
+                if !cl.is_finite() || cl < 0.0 || cl > crate::operation::AREA_DISTANCE_MAX {
+                    return Err(corrupt(format!("'{}' has invalid Do not touch clearance", dto.name)));
+                }
+                if op.area.do_not_touch.items.iter().any(|g| {
+                    g.entity.is_empty() || matches!(g.feature, FeatureSelDto::Vertex { .. })
+                }) {
+                    return Err(corrupt(format!("'{}' has invalid Do not touch pick", dto.name)));
+                }
+                let ctrl = op.area.to_controls();
+                let params = op.params.to_params();
+                if let Some(why) = crate::operation::do_not_touch_unsupported(params.kind()) {
+                    return Err(corrupt(format!("'{}': {why}", dto.name)));
+                }
+                let src_ref = match &op.src {
+                    SrcDto::Stock => crate::operation::SrcRef::Stock,
+                    SrcDto::Entity { name } => crate::operation::SrcRef::Entity(name.clone()),
+                    SrcDto::Selection { items } => crate::operation::SrcRef::Selection(super::area::sel_of(items)),
+                };
+                if let Some(why) = crate::operation::do_not_touch_overlap_issue(
+                    &ctrl.do_not_touch.picks,
+                    Some(&src_ref),
+                    &ctrl,
+                ) {
+                    return Err(corrupt(format!("'{}': {why}", dto.name)));
+                }
             }
             if let SrcDto::Selection { items } = &op.src
                 && (items.is_empty() || items.iter().any(|g| g.entity.is_empty()))

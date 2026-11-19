@@ -131,6 +131,10 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
             if let Some(b) = crate::model_fidelity::budget_of(w, e) {
                 m["facet_budget"] = json!(b);
             }
+            // #2463: a linked model names its source file and digest.
+            if let Some(s) = crate::model_source::of(w, e) {
+                m["source"] = json!({ "path": s.path, "sha256": s.sha256 });
+            }
             m
         })
         .collect();
@@ -244,6 +248,7 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::SweepHit { at, .. } => ("sweep_hit", *at),
         Warning::RapidInStock { at } => ("rapid_in_stock", *at),
         Warning::FixtureHit { at, .. } => ("fixture_hit", *at),
+        Warning::AvoidHit { at, .. } => ("avoid_hit", *at),
         Warning::NonFinite { at } => ("non_finite", *at),
         Warning::Envelope { at, .. } => ("envelope", *at),
         Warning::RestUnjudged { at, .. } => ("rest_unjudged", *at),

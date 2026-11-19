@@ -120,6 +120,8 @@ pub struct GenJob {
     /// The area controls resolved against the world (M11.5); `None` for
     /// the identity - an untouched operation carries nothing new.
     pub(super) area: Option<Result<AreaCtx, GenError>>,
+    /// Protected "Do not touch" items resolved into job coordinates (#2055), plus requested clearance (mm).
+    pub(super) avoid: Option<Result<(Vec<verify::AvoidItem>, f64), GenError>>,
     /// The work offset's world origin (`posting::wcs_context`), the
     /// spindle a lathe or mill-turn post programs about: world Z
     /// through it. The cross drill measures its standoffs from this
@@ -279,6 +281,9 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     };
     let drive_chains = match &op.params {
         OpParams::MultiAxisContour { .. } => Some(drive_chains_of(world, op)),
+        // #1888: the deburr's picked chains ride the same slot - the
+        // WCS yaw turns them with the facets they lie on.
+        OpParams::Deburr { exclude_edges, .. } => Some(super::deburr_picks::chains_of(world, op, exclude_edges)),
         _ => None,
     };
     // #318: an op in a setup whose incoming stock must be carried across
@@ -337,6 +342,23 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         if turned || predrilled { crate::rest::drills_ahead(world, op_name, setup) } else { Vec::new() };
     let turned_ahead = if turned { crate::rest::turned_ahead(world, op_name, setup) } else { Vec::new() };
     let area = area_ctx(world, op, tool.diameter * 0.5, &material, part_solid);
+    let avoid = if op.area.do_not_touch.is_default() {
+        None
+    } else if let Some(why) = do_not_touch_unsupported(op.params.kind()) {
+        Some(Err(GenError::Invalid(why)))
+    } else if let Some(why) = super::avoid::overlap_issue(
+        world,
+        &op.area.do_not_touch.picks,
+        Some(&op.src),
+        &op.area,
+    ) {
+        Some(Err(GenError::Invalid(why)))
+    } else {
+        Some(
+            super::avoid::collect_items(world, setup, &op.area.do_not_touch, frame.as_ref())
+                .map(|items| (items, op.area.do_not_touch.clearance)),
+        )
+    };
     // #388: the op's own setup's machine, active or not.
     let machine_kind = crate::machine::kind_of_setup(world, setup);
     // The lathe spindle law (issue #62): every kind that turns about the
@@ -430,6 +452,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         keep_parts: super::keep_law::parts_in_stock(world, setup, &op.params, part_solid),
         neighbour_parts: super::keep_law::neighbour_parts(world, setup, &op.params, &op.src, part_solid),
         area,
+        avoid,
         wcs_origin,
         spindle_note,
         carried_overhang,

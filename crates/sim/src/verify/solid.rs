@@ -56,14 +56,14 @@ pub struct SolidLaw {
 /// Sagitta of the chords an XY arc is swept along, mm; every atom is
 /// widened by it, so the chord sweep encloses the arc's (conservative by
 /// at most this much, never blind).
-const ARC_SAG: f64 = 0.002;
+pub(super) const ARC_SAG: f64 = 0.002;
 
 /// The swept pieces of one move as (start tip, end tip, widening): a
 /// straight move is itself - one exact sweep; an XY arc or helix its
 /// chords at [`ARC_SAG`]; a vertical-plane arc (whose chord deviation is
 /// not horizontal) its on-arc points every `step`, the stated sampling
 /// limit. Bounded, never an unbounded loop on absurd lengths.
-fn pieces(m: &crate::cl::Move, step: f64) -> Vec<(Point3, Point3, f64)> {
+pub(super) fn pieces(m: &crate::cl::Move, step: f64) -> Vec<(Point3, Point3, f64)> {
     match m.arc {
         None => vec![(m.from, m.to, 0.0)],
         Some(arc) if arc.plane.is_xy() => m.segments3(ARC_SAG).into_iter().map(|(a, b)| (a, b, ARC_SAG)).collect(),
