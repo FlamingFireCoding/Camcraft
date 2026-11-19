@@ -167,12 +167,6 @@ impl Run {
         }
         println!("{}", crate::budget::header(self.budget, lanes));
         if lanes {
-            if self.budget_note.is_none() && std::env::var_os(crate::budget::ENV).is_none()
-                && let Ok(n) = std::thread::available_parallelism()
-                && n.get() > self.budget
-            {
-                println!("note: this machine has {n} cores; {}={n} lets the gate use them", crate::budget::ENV);
-            }
             self.run_lanes(plan)?;
         } else {
             for s in &plan.steps {

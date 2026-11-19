@@ -609,6 +609,14 @@ tests are in `crates/ui/tests/`; they start the real app through
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
   covers. Run the full set only at a release cut.
+- **Gate job budget** (#2814). The default is the available CPU count from
+  `std::thread::available_parallelism()`, with a floor of 2 and a cap of 64.
+  If CPU detection fails, the default is 2. `CAMCRAFT_GATE_JOBS` overrides
+  it with any positive whole number. The override has no floor or cap.
+  A bad value uses the default and prints a diagnostic. The gate and its
+  `--dry-run` plan print the budget and its source. Batch and release share
+  the budget over at most `max(1, budget / 2)` lanes. A build, an isolated
+  test, a UI step or clippy runs alone with the full budget.
 - **Shared compile cache** (optional, sccache, #900): never export
   `CARGO_TARGET_DIR`, because it makes each worktree miss the cache. The
   `gate` skill has the setup.

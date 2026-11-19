@@ -70,16 +70,21 @@ Quick prints its selection before it runs:
 
 ## Job budget (#2057)
 
-- One budget sets the jobs of the whole gate: 6 by default.
-  `CAMCRAFT_GATE_JOBS=<n>` (1 or more) changes it.
+- One budget sets the jobs of the whole gate. The default is the available
+  CPU count from `std::thread::available_parallelism()`, with a floor of 2
+  and a cap of 64. If CPU detection fails, the default is 2.
+- `CAMCRAFT_GATE_JOBS=<n>` overrides it with any positive whole number.
+  The override has no floor or cap. An empty value uses the default.
+  A bad value uses the default and prints a diagnostic that names the value.
 - A step that runs alone gets `-j <budget>` and `--test-threads=<budget>`.
-- The lanes of a release wave share the budget. N lanes get
+  Builds, `ISOLATED` tests, UI steps and clippy still run alone.
+- Batch and release queues share the budget. N lanes get
   `-j <budget / N>` each, minimum 1.
-- A wave has at most `budget / 2` lanes. A budget of 6 gives 3 lanes of 2
-  jobs.
-- The gate prints the budget, the lane limit and the jobs of each lane at
-  the start, and `-- wave K: N lane(s) x -j M` before each wave. The
-  `--dry-run` output shows the same lines.
+- A queue has at most `max(1, budget / 2)` lanes. A budget of 6 gives 3
+  lanes of 2 jobs. A budget of 32 allows 16 lanes of 2 jobs.
+- The gate prints the chosen budget and its source: available CPUs, the
+  fallback, or `CAMCRAFT_GATE_JOBS`. It also prints the lane limit and the
+  jobs of each lane. The `--dry-run` output shows the same information.
 - **The sum of `-j` of all builds on one machine stays at or below its core
   count.** This includes gates, reviews, worker builds and plain `cargo`
   calls. When other builds run, lower the budget of each one (for example
