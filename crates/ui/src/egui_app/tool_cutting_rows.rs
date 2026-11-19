@@ -17,7 +17,7 @@ use camcraft_app::units::Unit;
 
 use crate::state::ToolUi;
 
-use super::fields::{combo, num_feed_named, num_named, num_plain_named, num_row};
+use super::fields::{combo, num_feed_named, num_feed_row, num_named, num_plain_named, num_row};
 use super::layout::prop_row;
 
 /// Append a row for the first material the table does not name yet,
@@ -56,42 +56,38 @@ fn step_field(ui: &mut Ui, u: Unit, v: &mut Option<f64>, name: &str) {
 /// default: its material is fixed and it cannot be removed.
 pub(super) fn cutting_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit, torch: bool) {
     let waterjet = t.tool_kind() == ToolKind::Waterjet;
-    // HEAD (#2014): a six-column table is wider than the settings column,
-    // so it scrolls across and never widens the page or an auto-sized
-    // window. origin/main (the plasma recipe PR): the whole block sits in
-    // a CollapsingHeader, and a plasma recipe does not fill a material
-    // slot. Both rules stay: the header is main's chrome, the scroll is
-    // ours. The merged head takes the delta review.
-    let open = t.cutting.iter().any(|r| r.material.is_some());
-    egui::CollapsingHeader::new(if waterjet { "Cutting data by material and thickness" } else { "Cutting data by material" })
-        .id_salt("tool_cutting_header")
-        .default_open(open)
-        .show(ui, |ui| {
-            let remove = if waterjet {
-                waterjet_rows(ui, t, u)
-            } else {
-                egui::ScrollArea::horizontal()
-                    .id_salt("tool_cutting_table_scroll")
-                    .show(ui, |ui| table(ui, t, u, torch))
-                    .inner
-            };
-            if let Some(i) = remove
-                && i < t.cutting.len()
-            {
-                t.cutting.remove(i);
-            }
-            let full = !waterjet
-                && WorkMaterial::ALL
-                    .iter()
-                    .all(|m| t.cutting.iter().any(|r| r.material == Some(*m) && !r.is_recipe()));
-            if ui
-                .add_enabled(!full, egui::Button::new("Add material row"))
-                .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
-                .clicked()
-            {
-                add_row(t);
-            }
-        });
+    // #2014: no nested header here. The grid's "Cutting data" group
+    // header is the one header for these rows. `main`'s plasma recipe PR
+    // (#2596) wrapped this block in a CollapsingHeader; the merge of
+    // `main` into this branch replaces that header with the group
+    // header, with the plasma PR's rules intact (a recipe does not fill
+    // a material slot). A six-column table is wider than the settings
+    // column, so it scrolls across and never widens the page or an
+    // auto-sized window.
+    let remove = if waterjet {
+        waterjet_rows(ui, t, u)
+    } else {
+        egui::ScrollArea::horizontal()
+            .id_salt("tool_cutting_table_scroll")
+            .show(ui, |ui| table(ui, t, u, torch))
+            .inner
+    };
+    if let Some(i) = remove
+        && i < t.cutting.len()
+    {
+        t.cutting.remove(i);
+    }
+    let full = !waterjet
+        && WorkMaterial::ALL
+            .iter()
+            .all(|m| t.cutting.iter().any(|r| r.material == Some(*m) && !r.is_recipe()));
+    if ui
+        .add_enabled(!full, egui::Button::new("Add material row"))
+        .on_hover_text(if waterjet { "Add a recipe, then enter its material, thickness and pierce values" } else { "a row for the next material, starting from the rpm and feed above; the setup stock's material (else the document's) picks its row, else Unknown" })
+        .clicked()
+    {
+        add_row(t);
+    }
 }
 
 /// The speed-and-feed table; the index of a row to remove, if clicked.
@@ -181,7 +177,10 @@ fn waterjet_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit) -> Option<usize> {
             if let Some(m) = WorkMaterial::ALL.get(idx) {
                 row.material = Some(*m);
             }
-            prop_row(ui, &format!("Feed ({})", u.feed_suffix()), |ui| num_row(ui, u, &mut row.feed));
+            // The feed keeps the feed-rate widget: suffix `mm/min` or
+            // `in/min`, feed precision, and the unit lens. A length row
+            // here shows `731.0 mm` under a feed-rate label (#2663 review).
+            prop_row(ui, "Feed", |ui| num_feed_row(ui, u, &mut row.feed));
             if let Some(w) = &mut row.waterjet {
                 prop_row(ui, "Plate thickness", |ui| num_row(ui, u, &mut w.thickness));
                 prop_row(ui, "Kerf width", |ui| num_row(ui, u, &mut w.kerf));

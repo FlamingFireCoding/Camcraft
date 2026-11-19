@@ -10,10 +10,19 @@ use camcraft_app::waterjet_tools::{PierceMethod, waterjet_tool};
 const NOZZLE: &str = "Recipe nozzle";
 
 fn editor() -> Harness<'static, ShellUi> {
+    editor_in(Unit::Millimeters)
+}
+
+/// The same editor with the document's length unit set first.
+fn editor_in(unit: Unit) -> Harness<'static, ShellUi> {
     let mut h = Harness::builder()
         .with_size(Vec2::new(1600.0, 1600.0))
         .build_ui_state(frame, ShellUi::seeded());
-    h.state_mut().state.pending.push_back(CommandKind::AddTool {
+    let st = &mut h.state_mut().state;
+    if unit != Unit::Millimeters {
+        st.pending.push_back(CommandKind::SetUnits(unit));
+    }
+    st.pending.push_back(CommandKind::AddTool {
         name: NOZZLE.into(), tool: waterjet_tool(0.8),
     });
     h.run_steps(2);
@@ -78,6 +87,36 @@ fn waterjet_recipe_controls_render_without_spindle_rpm() {
     h.get_by_label("Wiggle").click();
     h.run_steps(2);
     assert_eq!(h.state().state.tool_ui.cutting[0].waterjet.unwrap().pierce_method, PierceMethod::Wiggle);
+}
+
+/// #2663 review: the recipe's feed row is a feed rate, not a length. It
+/// shows the `mm/min` / `in/min` suffix in both document unit modes.
+#[test]
+fn waterjet_recipe_feed_row_reads_as_a_feed_rate_in_both_unit_modes() {
+    let _g = snapshot_guard();
+    for (unit, name, expect) in [
+        (Unit::Millimeters, "mm", "731 mm/min"),
+        (Unit::Inches, "inch", "28.78 in/min"),
+    ] {
+        let mut h = editor_in(unit);
+        h.state_mut().state.tool_ui.cutting[0].feed = 731.0;
+        h.run_steps(3);
+        let win = h.get_by_label("Tool: Recipe nozzle");
+        let spins: Vec<String> = win
+            .query_all_by_role(egui::accesskit::Role::SpinButton)
+            .filter_map(|n| n.value())
+            .collect();
+        assert!(
+            spins.iter().any(|v| v.ends_with(&format!(" {}", unit.feed_suffix()))
+                && v.starts_with(expect.split(' ').next().unwrap())),
+            "{name} units: the recipe feed reads as a feed rate {expect}; values {spins:?}"
+        );
+        assert!(
+            spins.iter().all(|v| !v.starts_with("731")
+                || v.ends_with("mm/min") || v.ends_with("in/min")),
+            "{name} units: no recipe field shows the feed 731 as a plain length; values {spins:?}"
+        );
+    }
 }
 
 #[test]
