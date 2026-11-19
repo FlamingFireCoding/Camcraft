@@ -137,6 +137,54 @@ fn fixture_paths_select_cross_crate_directory_helpers() {
     assert!(selected_at(&temp.0, "testdata/models_extra/new.step", "kernel").is_empty());
 }
 
+/// #2775: a fixture-only edit must run library readers, including nested test helpers.
+#[test]
+fn fixture_only_changes_select_library_readers_and_keep_integration_readers() {
+    let temp = InputFixture::new("library-input-paths");
+    temp.write("crates/app/src/lib.rs", "mod geometry;\n");
+    temp.write("crates/app/src/geometry/mod.rs", "#[cfg(test)]\nmod tests;\n");
+    temp.write("crates/app/src/geometry/tests.rs", "mod helper;\n");
+    temp.write("crates/app/src/geometry/tests/helper.rs", "const MODELS: &str = \"../../testdata/models\";\n");
+    temp.write("crates/ui/src/lib.rs", "#[cfg(test)]\nmod tests {\n    const MODELS: &str = \"../../testdata/models/{file}\";\n}\n");
+    temp.write("crates/kernel/src/lib.rs", "const OTHER: &str = \"../../testdata/other\";\n");
+    temp.write("crates/app/tests/reader.rs", "const MODELS: &str = \"../../testdata/models\";\n");
+    for file in ["testdata/models/box.step", "testdata/models/deleted.step"] {
+        let plan = planned_at(&temp.0, file);
+        for krate in ["app", "ui"] {
+            let libs: Vec<_> = plan.steps.iter().filter(|s| {
+                s.name == format!("{krate} suites: lib")
+                    && s.args.iter().any(|a| a == "--lib")
+            }).collect();
+            assert_eq!(libs.len(), 1, "{file}: {krate} library reader must run once: {:?}", plan.steps);
+            assert!(!libs[0].args.iter().any(|a| a == "--test" || a == "--exact"), "library target must run whole");
+        }
+        assert!(plan.steps.iter().all(|s| !s.name.starts_with("kernel ")), "unrelated library selected: {:?}", plan.steps);
+        assert_eq!(selected_in(&plan, "app"), ["reader"], "integration reader must remain selected");
+        assert!(!plan.steps.iter().any(|s| s.args.windows(2).any(|w| w == ["--test", "lib"])), "lib is not an integration target");
+    }
+}
+
+fn assert_real_library_readers(file: &str) {
+    let plan = planned_at(&root(), file);
+    for krate in ["app", "ui"] {
+        assert!(plan.steps.iter().any(|s| {
+            s.name == format!("{krate} suites: lib") && s.args.iter().any(|a| a == "--lib")
+        }), "{file}: {krate} library reader missing: {:?}", plan.steps);
+    }
+}
+
+/// #2775: unchanged real app/UI sources read this model directory from library tests.
+#[test]
+fn changed_box_fixture_selects_real_library_readers() {
+    assert_real_library_readers("testdata/models/box.step");
+}
+
+/// #2775: the review's second fixture-only probe must also select the app/UI libraries.
+#[test]
+fn changed_bspline_fixture_selects_real_library_readers() {
+    assert_real_library_readers("testdata/models/bspline_discontinuous.step");
+}
+
 /// #2411: the DXF profile MCP suite must run when its app entry points change.
 #[test]
 fn tool_dxf_profile_mcp_is_selected_for_its_app_entry_points() {

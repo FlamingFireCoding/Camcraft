@@ -33,6 +33,7 @@ fn normalize(path: &Path) -> PathBuf {
 pub fn map(
     root: &Path,
     changed: &[String],
+    libs: &mut BTreeSet<String>,
     whole: &mut BTreeSet<String>,
     why: &mut BTreeMap<String, String>,
 ) -> Result<(), String> {
@@ -72,9 +73,20 @@ pub fn map(
     let quoted = scan::re(r#""([^"\r\n]+)""#)?;
     for dir in ALL_CRATES {
         let crate_root = root.join("crates").join(dir);
-        for binary in scan::binaries(root, dir) {
+        let mut targets: Vec<_> = scan::binaries(root, dir)
+            .into_iter()
+            .map(|binary| {
+                let entry = suites::entry(root, dir, &binary);
+                (Some(binary), entry)
+            })
+            .collect();
+        let lib = crate_root.join("src/lib.rs");
+        if lib.is_file() {
+            targets.push((None, lib));
+        }
+        for (binary, entry) in targets {
             let mut hit = None;
-            for source in suites::sources(&suites::entry(root, dir, &binary))? {
+            for source in suites::sources(&entry)? {
                 let text = std::fs::read_to_string(&source.path)
                     .map_err(|e| format!("fixture reader {}: {e}", source.path.display()))?;
                 for literal in quoted.captures_iter(&text) {
@@ -108,8 +120,14 @@ pub fn map(
                 }
             }
             if let Some(file) = hit {
-                let key = format!("{dir}:{binary}");
-                whole.insert(key.clone());
+                let key = if let Some(binary) = binary {
+                    let key = format!("{dir}:{binary}");
+                    whole.insert(key.clone());
+                    key
+                } else {
+                    libs.insert((*dir).to_string());
+                    format!("{dir}:lib")
+                };
                 why.entry(key)
                     .or_insert_with(|| format!("fixture directory read by suite: {file}"));
             }
