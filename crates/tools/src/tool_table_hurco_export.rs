@@ -166,8 +166,12 @@ fn verify_roundtrip(row: &ToolTableExportRow<'_>, gauge_len: f64, back: &Tool) -
         _ => true,
     };
     let pitch_ok = match row.tool.kind {
-        ToolKind::Tap | ToolKind::ThreadMill | ToolKind::ThreadMillSingle => {
+        ToolKind::Tap | ToolKind::ThreadMill => {
             (back.pitch - row.tool.pitch).abs() <= ROUNDTRIP_TOL_MM
+        }
+        ToolKind::ThreadMillSingle => {
+            (back.pitch - row.tool.pitch).abs() <= ROUNDTRIP_TOL_MM
+                && (back.pitch_min - row.tool.pitch_min).abs() <= ROUNDTRIP_TOL_MM
         }
         _ => true,
     };
