@@ -95,6 +95,7 @@ mod chord_clear;
 mod ring;
 mod tab_bridge;
 mod tab_clear;
+mod tab_kerf;
 mod slots;
 mod slot_ends;
 mod slot_room;

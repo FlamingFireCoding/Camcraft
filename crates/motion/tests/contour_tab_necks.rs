@@ -206,3 +206,119 @@ fn a_ring_that_stops_above_the_tabs_does_not_hold_another_loop() {
         "the deep island is cut at the tabbed level"
     );
 }
+
+/// The second review of #2705: the loop is held by name and cuts nothing
+/// under the tab top, or every tab keeps the tab width. Never a thin fin.
+/// Returns true when the loop is held.
+fn held_or_whole(part: &Region, t: &Toolpath, tabs: usize, what: &str) -> bool {
+    if held(t) > 0 {
+        assert!(cuts_nothing_at_the_tabs(t), "{what}: a held loop cuts nothing under the tab top");
+        return true;
+    }
+    assert_eq!(all_hold(part, t, what), tabs, "{what}: {:?}", t.notes);
+    false
+}
+
+/// The 10 mm notch (its ring 4 mm wide, floor at y = 18) with the start
+/// picked at `at`.
+fn notch_from(at: (f64, f64), count: u32, lead: Lead) -> (Region, Toolpath) {
+    let part = notched_to(10.0, 15.0);
+    let mut p = params(count);
+    p.lead = lead;
+    p.links.approach.start_point = Some(Point2::new(at.0, at.1));
+    let t = contour(&part, &p).unwrap();
+    (part, t)
+}
+
+#[test]
+fn a_tab_that_ends_on_the_return_run_holds_the_loop() {
+    // Second review of #2705: the pick is on the return leg, 2 mm above the
+    // notch floor. The tab grows back round the floor; the cut after it runs
+    // up the return leg 4 mm from the tab and never comes nearer, so it was
+    // read as a departure: no note, and the tab cut to a fin.
+    for count in [1, 2] {
+        let (part, t) = notch_from((32.0, 20.0), count, Lead::None);
+        let what = format!("return leg, {count} tabs");
+        assert!(held_or_whole(&part, &t, count as usize, &what), "{what}: {:?} necks {:?}", t.notes, necks(&part, &t));
+        assert_eq!(held(&t), 1, "{what}: {:?}", t.notes);
+    }
+}
+
+#[test]
+fn a_tab_that_ends_on_the_notch_floor_or_its_corner_holds_the_loop() {
+    // The tab end on the notch floor, and exactly on its near corner.
+    for at in [(30.0, 18.0), (32.0, 18.0)] {
+        for count in [1, 2] {
+            let (part, t) = notch_from(at, count, Lead::None);
+            let what = format!("floor {at:?}, {count} tabs");
+            assert!(held_or_whole(&part, &t, count as usize, &what), "{what}: {:?} necks {:?}", t.notes, necks(&part, &t));
+        }
+    }
+}
+
+#[test]
+fn a_tab_beside_a_return_run_with_a_lead_holds_the_loop() {
+    // The return-leg case with a perpendicular lead on every keep.
+    for count in [1, 2] {
+        let (part, t) = notch_from((32.0, 20.0), count, Lead::Perpendicular { length: 4.0 });
+        let what = format!("return leg with a lead, {count} tabs");
+        assert!(held_or_whole(&part, &t, count as usize, &what), "{what}: {:?} necks {:?}", t.notes, necks(&part, &t));
+    }
+}
+
+#[test]
+fn a_tab_in_a_v_notch_keeps_its_width_or_holds_the_loop() {
+    // A V-notch 10 mm wide and 25 deep: its ring ends in a sharp tip near
+    // (30, 30.3). The tab ends 2 mm up the second leg, so it grows back
+    // round the tip, and the two legs part slowly.
+    let part = Region::new(vec![lp(&[(0.0, 0.0), (60.0, 0.0), (60.0, 40.0), (35.0, 40.0), (30.0, 15.0), (25.0, 40.0), (0.0, 40.0)])]).unwrap();
+    for count in [1, 2] {
+        let mut p = params(count);
+        p.links.approach.start_point = Some(Point2::new(30.392, 32.258));
+        let t = contour(&part, &p).unwrap();
+        let what = format!("V-notch, {count} tabs");
+        assert!(held_or_whole(&part, &t, count as usize, &what), "{what}: {:?} necks {:?}", t.notes, necks(&part, &t));
+    }
+}
+
+#[test]
+fn a_narrow_inside_slot_or_bore_keeps_its_tab_ring() {
+    // Inside contours under about 2 D across: the far side of the ring runs
+    // nearer than D to the tab. The loop is held, with the note.
+    let slot = Region::new(vec![lp(&[(0.0, 0.0), (60.0, 0.0), (60.0, 7.0), (0.0, 7.0)])]).unwrap();
+    let bore = Region::new(vec![Loop::new((0..72).map(|k| Point2::new(5.0 * (k as f64 * 5.0f64).to_radians().cos(), 5.0 * (k as f64 * 5.0f64).to_radians().sin())).collect()).unwrap()]).unwrap();
+    for (what, region) in [("slot 60 x 7", &slot), ("bore 10", &bore)] {
+        for count in [1, 2] {
+            let mut p = params(count);
+            p.side = Side::Inside;
+            let t = contour(region, &p).unwrap();
+            assert!(held(&t) >= 1, "{what}, {count} tabs: {:?}", t.notes);
+            assert!(cuts_nothing_at_the_tabs(&t), "{what}, {count} tabs: a held loop cuts nothing under the tab top");
+        }
+    }
+}
+
+#[test]
+fn a_tab_near_a_corner_of_a_plain_part_is_not_held() {
+    // No false hold: picks along the ring round one corner, outside (a
+    // rounded ring corner) and inside (a sharp one), 1 and 2 tabs.
+    let square = Region::new(vec![lp(&[(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)])]).unwrap();
+    let outside = [(43.0, 30.0), (43.0, 34.0), (43.0, 37.0), (43.0, 40.0), (42.6, 41.5), (41.5, 42.6), (40.0, 43.0), (37.0, 43.0), (33.0, 43.0)];
+    let inside = [(37.0, 28.0), (37.0, 32.0), (37.0, 35.0), (37.0, 37.0), (35.0, 37.0), (32.0, 37.0), (28.0, 37.0)];
+    for count in [1, 2] {
+        for at in outside {
+            let mut p = params(count);
+            p.links.approach.start_point = Some(Point2::new(at.0, at.1));
+            let t = contour(&square, &p).unwrap();
+            let what = format!("outside {at:?}, {count} tabs");
+            assert!(!held_or_whole(&square, &t, count as usize, &what), "{what}: {:?}", t.notes);
+        }
+        for at in inside {
+            let mut p = params(count);
+            p.side = Side::Inside;
+            p.links.approach.start_point = Some(Point2::new(at.0, at.1));
+            let t = contour(&square, &p).unwrap();
+            assert_eq!(held(&t), 0, "inside {at:?}, {count} tabs: {:?}", t.notes);
+        }
+    }
+}

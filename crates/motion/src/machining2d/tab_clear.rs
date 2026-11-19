@@ -16,6 +16,7 @@ use super::fillet::Legal;
 use super::fillet_tally::FilletTally;
 use super::ring::{Ring, dist, tab_window, walked};
 use super::tab_bridge::{Cut, SLACK, TabFit, fit_tabs, held, keep_cut, pt_seg, seg_seg};
+use super::tab_kerf::kerf_gap;
 
 /// The tab fit of every loop of a band (`loops` index to fit), each ring
 /// seated as its tabbed levels walk it. `levels[i]` holds the tabbed
@@ -73,7 +74,7 @@ fn fit_band(rings: &[Ring], levels: &[Vec<u64>], picked: Option<usize>, p: &Cont
             if line.len() < 2 {
                 continue;
             }
-            let gap = nearest_other(&cuts, &shares, i, j, &line, need);
+            let gap = nearest_other(&cuts, &shares, i, j, &line, need, d);
             if worst.is_none_or(|w| gap < w.0) {
                 worst = Some((gap, line[line.len() / 2]));
             }
@@ -118,8 +119,11 @@ fn ring_cuts(ring: &Ring, keeps: &[(f64, f64)], p: &ContourParams, legal: &Legal
 /// first `need` of walk and their leads on the tab's side, and the rest
 /// stays out until it is `need` away from the line for the first time, or
 /// until it turns back toward the line. `shares[ri]`: ring `ri` is cut at
-/// a tabbed level of ring `i`.
-fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], shares: &[bool], i: usize, j: usize, line: &[Point2], need: f64) -> f64 {
+/// a tabbed level of ring `i`. The two cuts beside the tab are also read
+/// against the tab's core (`tab_kerf`, second review of #2705): a run
+/// beside the tab that does not come nearer is not a departure. That read
+/// counts only when it cuts into the tab (under `d`, the tool diameter).
+fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], shares: &[bool], i: usize, j: usize, line: &[Point2], need: f64, d: f64) -> f64 {
     let m = cuts[i].len();
     let mut best = f64::INFINITY;
     for (ri, ring) in cuts.iter().enumerate() {
@@ -132,6 +136,15 @@ fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], shares: &[bool], i: usize, j: 
             if !(before || after) {
                 best = best.min(near(line, &c.lead_in, need)).min(near(line, &c.walk, need)).min(near(line, &c.lead_out, need));
                 continue;
+            }
+            let beside: Vec<Point2> = match (before, after) {
+                (true, true) => c.walk.clone(),
+                (false, true) => c.walk.iter().chain(&c.lead_out).copied().collect(),
+                _ => c.lead_in.iter().chain(&c.walk).copied().collect(),
+            };
+            let k = kerf_gap(&beside, line, after, before, d);
+            if !(k >= d - SLACK) {
+                best = best.min(if k.is_nan() { 0.0 } else { k });
             }
             // One keep on both sides of the tab: `tab_bridge`'s reach.
             let reach = if m == 1 { need.min(c.len / 3.0) } else { need };
