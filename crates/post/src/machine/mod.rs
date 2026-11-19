@@ -21,6 +21,7 @@ pub use waterjet::waterjet_refusals;
 mod rows;
 mod swing;
 mod tooling;
+mod tree;
 mod trunnion;
 
 pub use def::*;
@@ -36,4 +37,5 @@ pub use edm_taper::{AngleSide, TaperAngle, TaperCorner};
 pub use parse::{parse_mch, parse_mch_with};
 pub use plasma::plasma_refusals;
 pub use tooling::{mount_check, tooling_refusals, HolderInfo, HolderLookup, SPINDLE_MOUNTS};
+pub use tree::{parse_mch_tree, MachineTree, MovingSide, PartKind, SpindleBody, ToolStation, TreePart};
 pub use trunnion::{trunnion_refusals, RotarySignConvention};
