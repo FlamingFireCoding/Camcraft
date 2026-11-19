@@ -29,6 +29,8 @@ const BOTTOM_MARGIN: f32 = 10.0;
 /// gate can ask the pane for room (pinned by `bar_fits_its_buttons`).
 pub(crate) const BAR_W: f32 = 12.0 * NAV_PX + 11.0 * NAV_GAP + 2.0 * PAD;
 const BAR_H: f32 = NAV_PX + 2.0 * PAD;
+const CTRL_H: f32 = 24.0;
+const ROW_GAP: f32 = 4.0;
 const BAR_RADIUS: f32 = 8.0;
 
 /// Camera buttons (#1198 follow-up): the projection is a direct
@@ -132,6 +134,30 @@ pub(crate) const NAV_TOOL_CLEAR: &str = "nav tool: off";
 pub(crate) fn bar_rect(pane: egui::Rect) -> egui::Rect {
     let min = egui::pos2(pane.center().x - BAR_W * 0.5, pane.max.y - BOTTOM_MARGIN - BAR_H);
     egui::Rect::from_min_size(min, egui::vec2(BAR_W, BAR_H))
+}
+
+/// The full rounded overlay rect: `bar_rect(pane)` at rest, extended
+/// upward by the Move / Rotate controls row when either mode is active.
+#[must_use]
+pub(crate) fn panel_rect(pane: egui::Rect, expanded: bool) -> egui::Rect {
+    let base = bar_rect(pane);
+    if !expanded {
+        return base;
+    }
+    egui::Rect::from_min_max(
+        egui::pos2(base.min.x, base.min.y - CTRL_H - ROW_GAP),
+        base.max,
+    )
+}
+
+/// The inner strip inside an expanded bar that holds the axis, typed
+/// value and snap step controls.
+#[must_use]
+pub(crate) fn controls_rect(panel: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_size(
+        egui::pos2(panel.min.x + PAD, panel.min.y + PAD),
+        egui::vec2((panel.width() - 2.0 * PAD).max(1.0), CTRL_H),
+    )
 }
 
 /// Each button's rect inside the ribbon, left to right in `NAVS` order.
@@ -257,3 +283,8 @@ mod tests;
 
 #[path = "viewport_bar_glyphs.rs"]
 mod glyphs;
+
+#[path = "viewport_bar_controls.rs"]
+pub(crate) mod controls;
+
+pub(crate) use controls::HandleBarState;

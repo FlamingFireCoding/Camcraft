@@ -32,7 +32,7 @@ pub(crate) fn draw(ui: &egui::Ui, state: &State, pointer: Option<[f32; 2]>, pane
         ui.painter().add(egui::Shape::line(line, egui::Stroke::new(w, col)));
     }
     if let Some(text) = turn_drag::readout(state) {
-        let bar = super::viewport_bar::bar_rect(pane);
+        let bar = super::viewport_bar::panel_rect(pane, true);
         let at = egui::pos2(bar.center().x, bar.min.y - 6.0);
         ui.painter().text(at + egui::vec2(1.0, 1.0), egui::Align2::CENTER_BOTTOM, &text, font.clone(), shade);
         ui.painter().text(at, egui::Align2::CENTER_BOTTOM, text, font.clone(), egui::Color32::WHITE);
