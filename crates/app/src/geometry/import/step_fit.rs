@@ -32,10 +32,17 @@
 //! split is by the edge alone, so the two facets that share it split alike
 //! and the face stays one conforming mesh. An edge only one facet has is on
 //! the face's boundary, which the neighbouring face meshes too: it is never
-//! split, so the shell stays closed. What cannot be refined (the facet
+//! split here, so the shell stays closed. It is held fine enough before
+//! the pass instead: the shell's edge polyline that bounds a face curved
+//! two ways is divided [`Curved::inside`] times finer (#2754,
+//! [`edge_divisors`]), once for both of its faces. What cannot be refined (the facet
 //! budget, the round cap) is REPORTED as the mesh's chord error, never
 //! dropped: the model then carries reduced fidelity (#864) and the gate
 //! refuses to verify against it.
+//!
+//! A refined face then gets its flat "cap" facets flipped away ([`relax`],
+//! #2713): the split holds the facets' points and edges to the surface, and
+//! the flip holds their normals to it.
 //!
 //! What is reported (#2718): the largest height of EVERY edge of the kept
 //! facets (inside and boundary, under the limit or not), times a bound for
@@ -72,6 +79,13 @@ use crate::geometry::{Point3 as P3, Triangle};
 /// Refinement rounds. Each halves an edge's parameter span, so its chord
 /// height falls to a quarter: 24 rounds take any span to round-off.
 const ROUNDS: usize = 24;
+
+/// Flips of [`relax`] for each facet of the face. A flip can make its
+/// neighbour edges due; the cap bounds the work on a mesh that never rests.
+const FLIPS_PER_FACET: usize = 8;
+/// An edge is flipped when its two opposite angles sum to more than a half
+/// turn plus this (radians), so a square cell's two equal diagonals stay.
+const FLIP_MARGIN: f64 = 1e-3;
 
 /// One face's verdict: the facets that replace the kernel's (`None`: keep
 /// them), `off`: how far the kept facets may stand off the surface (the
@@ -110,22 +124,76 @@ impl Curved {
             Curved::Cone | Curved::Sphere | Curved::Torus => 1.5,
         }
     }
+
+    /// The kind of a surface measured here; `None` for a plane and for the
+    /// kinds this module does not measure.
+    pub(super) fn of(surface: &Surface) -> Option<Curved> {
+        match surface {
+            Surface::ElementarySurface(e) => match **e {
+                ElementarySurface::Plane(_) => None,
+                ElementarySurface::CylindricalSurface(_) => Some(Curved::Cylinder),
+                ElementarySurface::ConicalSurface(_) => Some(Curved::Cone),
+                ElementarySurface::Sphere(_) => Some(Curved::Sphere),
+                ElementarySurface::ToroidalSurface(_) => Some(Curved::Torus),
+            },
+            _ => None,
+        }
+    }
+}
+
+/// How many times finer than the pass tolerance each of a shell's `edges`
+/// edges is divided (#2754), from its faces' kinds and edge indices
+/// (`faces`). [`fit`] never splits a boundary edge (the neighbour face
+/// meshes it too), and the report is the highest edge times
+/// [`Curved::inside`]: a boundary edge held only to the tolerance put a face
+/// curved two ways at 1.5 times it, past the promise, on every such model.
+/// So each edge is divided by the largest inside bound of the faces it
+/// bounds, once, in the shell's own edge polyline: both faces get the same
+/// points and the shell stays closed. The edge division measures the
+/// curve's own parameter midpoint and [`fit`] the face's; they agree on a
+/// circle on its own surface. Where they do not, the report is over the
+/// tolerance and says so (reduced fidelity), it is never under-stated.
+///
+/// A cylinder then takes the largest divisor of its own edges on all of
+/// them, until no edge changes: a cylinder meshes rim to rim (the module
+/// header), and a rim divided finer than the other rim slants its facets,
+/// so that each height of a plain wall cuts a different chord of it. An
+/// index past `edges` is skipped. Every value is at least 1.
+pub(super) fn edge_divisors(edges: usize, faces: &[(Option<Curved>, Vec<usize>)]) -> Vec<f64> {
+    let mut fine = vec![1.0f64; edges];
+    for (kind, ids) in faces {
+        let k = kind.map_or(1.0, Curved::inside);
+        for &i in ids {
+            if let Some(x) = fine.get_mut(i) {
+                *x = x.max(k);
+            }
+        }
+    }
+    // Each round raises at least one edge to a divisor some face already
+    // asks, so the rounds are bounded by the edges; the cap is a guard.
+    for _ in 0..=edges {
+        let mut changed = false;
+        for (_, ids) in faces.iter().filter(|(kind, _)| matches!(kind, Some(Curved::Cylinder))) {
+            let top = ids.iter().filter_map(|&i| <[f64]>::get(&fine, i).copied()).fold(1.0f64, f64::max);
+            for &i in ids {
+                if let Some(x) = <[f64]>::get_mut(&mut fine, i).filter(|x| **x < top) {
+                    *x = top;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    fine
 }
 
 /// [`fit`] for face `index` (`surface`) of a shell, when its kind is
 /// measured here.
 pub(super) fn fit_face(index: usize, surface: Option<&Metered>, poly: &PolygonMesh, tol: f64, room: usize) -> Fit {
     let Some(s) = surface else { return judged(index, Err("the shell holds no surface for it")) };
-    let kind = match &s.inner {
-        Surface::ElementarySurface(e) => match **e {
-            ElementarySurface::Plane(_) => return KEPT,
-            ElementarySurface::CylindricalSurface(_) => Curved::Cylinder,
-            ElementarySurface::ConicalSurface(_) => Curved::Cone,
-            ElementarySurface::Sphere(_) => Curved::Sphere,
-            ElementarySurface::ToroidalSurface(_) => Curved::Torus,
-        },
-        _ => return KEPT,
-    };
+    let Some(kind) = Curved::of(&s.inner) else { return KEPT };
     // Not through the meter: this is a measure of the finished pass.
     let at = |u: f64, v: f64| {
         let (u, v) = s.own(u, v);
@@ -263,11 +331,110 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
     // Every exit above leaves `tris` as the round measured them: a round
     // that splits is followed by one that measures its facets, and the
     // last round never splits (no id at ROUNDS).
+    if changed {
+        // A flip adds an edge after that measurement. Include every new
+        // edge's height, while keeping the old bound conservatively.
+        high = high.max(relax(&verts, &mut tris, at, limit));
+    }
     let point = |i: u32| verts.get(i as usize).map(|v| P3::new(v.p[0], v.p[1], v.p[2]));
     let facets = changed
         .then(|| tris.iter().map(|t| Some(Triangle::new(point(t[0])?, point(t[1])?, point(t[2])?))).collect::<Option<Vec<_>>>())
         .flatten();
     Ok(Fit { facets, off: high * kind.inside(), left })
+}
+
+/// The angle at `c` of the facet `a b c`, in space. `None` for a facet with
+/// a null side.
+fn angle_at(verts: &[Vert], c: u32, a: u32, b: u32) -> Option<f64> {
+    let (pc, pa, pb) = (verts.get(c as usize)?.p, verts.get(a as usize)?.p, verts.get(b as usize)?.p);
+    let (u, w) = ([pa[0] - pc[0], pa[1] - pc[1], pa[2] - pc[2]], [pb[0] - pc[0], pb[1] - pc[1], pb[2] - pc[2]]);
+    let m = ((u[0] * u[0] + u[1] * u[1] + u[2] * u[2]) * (w[0] * w[0] + w[1] * w[1] + w[2] * w[2])).sqrt();
+    let cos = (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / m;
+    (m > 0.0 && cos.is_finite()).then(|| cos.clamp(-1.0, 1.0).acos())
+}
+
+/// Twice the signed area of `a b c` in the parameter plane.
+fn uv_area2(verts: &[Vert], [a, b, c]: [u32; 3]) -> Option<f64> {
+    let (a, b, c) = (verts.get(a as usize)?.uv, verts.get(b as usize)?.uv, verts.get(c as usize)?.uv);
+    Some((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+}
+
+/// How many facets have an edge, and two of their (facet, opposite corner).
+type Sides = (u8, [(usize, u32); 2]);
+
+/// Flip the inside edges of a refined face that leave a flat "cap" facet
+/// (#2713). The split measures edges only: three points on the surface with
+/// the apex over the long edge's middle pass it, but the facet's normal
+/// stands far off the surface's, and the pick shows its edges as creases
+/// on a smooth wall. The rule is Lawson's ("Software for C1 surface
+/// interpolation", 1977): an edge whose two opposite angles sum to more
+/// than a half turn is replaced by the other diagonal. A flip is made only
+/// where the two new facets keep their winding in the parameter plane and
+/// the new edge passes the chord-height `limit` of the split, so the #2600
+/// law holds. No point moves and no boundary edge changes. The return
+/// value bounds the chord height of every added edge.
+fn relax(verts: &[Vert], tris: &mut [[u32; 3]], at: &dyn Fn(f64, f64) -> [f64; 3], limit: f64) -> f64 {
+    let mut high = 0.0f64;
+    let mut sides: HashMap<(u32, u32), Sides> = HashMap::with_capacity(tris.len() * 2);
+    for (i, t) in tris.iter().enumerate() {
+        for (a, b, c) in [(t[0], t[1], t[2]), (t[1], t[2], t[0]), (t[2], t[0], t[1])] {
+            let s = sides.entry(key(a, b)).or_insert((0, [(0, 0); 2]));
+            if let Some(slot) = s.1.get_mut(s.0 as usize) {
+                *slot = (i, c);
+            }
+            s.0 = s.0.saturating_add(1);
+        }
+    }
+    // In edge order, so the facets are the same on every run.
+    let mut queue: Vec<(u32, u32)> = sides.iter().filter(|(_, s)| s.0 == 2).map(|(e, _)| *e).collect();
+    queue.sort_unstable_by(|x, y| y.cmp(x));
+    let mut left = tris.len().saturating_mul(FLIPS_PER_FACET);
+    while let Some(e) = queue.pop() {
+        let Some(&(2, [(i, c), (j, d)])) = sides.get(&e) else { continue };
+        let (Some(ti), Some(tj)) = (tris.get(i).copied(), tris.get(j).copied()) else { continue };
+        if i == j || c == d || sides.contains_key(&key(c, d)) {
+            continue;
+        }
+        let (Some(at_c), Some(at_d)) = (angle_at(verts, c, e.0, e.1), angle_at(verts, d, e.0, e.1)) else { continue };
+        if at_c + at_d <= std::f64::consts::PI + FLIP_MARGIN {
+            continue;
+        }
+        // Facet `i` runs a -> b -> c, and `j` runs b -> a -> d.
+        let (a, b) = if ti.iter().zip(ti.iter().cycle().skip(1)).any(|(x, y)| (*x, *y) == e) { e } else { (e.1, e.0) };
+        let (n1, n2) = ([a, d, c], [d, b, c]);
+        let (Some(w0), Some(w1), Some(w2)) = (uv_area2(verts, ti), uv_area2(verts, n1), uv_area2(verts, n2)) else { continue };
+        if !(w0 != 0.0 && w1 * w0 > 0.0 && w2 * w0 > 0.0) || uv_area2(verts, tj).is_none_or(|w| w * w0 <= 0.0) {
+            continue;
+        }
+        let (Some(vc), Some(vd)) = (verts.get(c as usize), verts.get(d as usize)) else { continue };
+        let chord = [0.5 * (vc.p[0] + vd.p[0]), 0.5 * (vc.p[1] + vd.p[1]), 0.5 * (vc.p[2] + vd.p[2])];
+        let off = dist(at(0.5 * (vc.uv[0] + vd.uv[0]), 0.5 * (vc.uv[1] + vd.uv[1])), chord);
+        if off.is_nan() || off > limit {
+            continue;
+        }
+        let Some(left_now) = left.checked_sub(1) else { break };
+        left = left_now;
+        high = high.max(off);
+        if let Some(t) = tris.get_mut(i) {
+            *t = n1;
+        }
+        if let Some(t) = tris.get_mut(j) {
+            *t = n2;
+        }
+        sides.remove(&e);
+        sides.insert(key(c, d), (2, [(i, a), (j, b)]));
+        // The four outer edges: the facet on this side, and its far corner.
+        for (x, y, was, now) in [(a, d, j, (i, c)), (d, b, j, (j, c)), (b, c, i, (j, d)), (c, a, i, (i, d))] {
+            if let Some(s) = sides.get_mut(&key(x, y)) {
+                let n = usize::from(s.0.min(2));
+                if let Some(slot) = s.1.iter_mut().take(n).find(|slot| slot.0 == was) {
+                    *slot = now;
+                }
+            }
+            queue.push(key(x, y));
+        }
+    }
+    high
 }
 
 /// One facet split by its marked edges, winding kept: one mark halves it,
