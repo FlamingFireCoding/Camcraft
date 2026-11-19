@@ -895,6 +895,12 @@ function onCycle() {
     msg("canned cycle " + g + inOp() + " has no positive peck depth Q - LinuxCNC refuses Q of zero or less");
     return;
   }
+  // #2609: LinuxCNC's G73 and G85 formats have no P word.
+  if ((g === "G73" || g === "G85") && dwell > 0) {
+    var cycleName = g === "G73" ? "peck" : "ream";
+    msg("canned cycle " + g + " (" + cycleName + ") dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   // #2348: LinuxCNC's G83 format has no P word.
   if (g === "G83" && dwell > 0) {
     msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
