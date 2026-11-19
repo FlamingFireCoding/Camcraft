@@ -26,6 +26,9 @@ mod directory_tests;
 mod exec;
 mod fixture_inputs;
 mod lanes;
+mod light;
+#[cfg(test)]
+mod light_tests;
 #[cfg(test)]
 mod gate_maps_tests;
 #[cfg(test)]
@@ -85,6 +88,7 @@ const USAGE: &str = "\
 usage:
   cargo xtask gate quick [--base main] [--heavy]   tests the diff touches (test fns where it can)
   cargo xtask gate batch                           one build, then one step for each debug test binary minus SLOW_BINARIES, ui, clippy (#1941)
+  cargo xtask gate light                           the light twins of the heavy tests, in release (#2569): at review and merge time
   cargo xtask gate release [--no-snapshots]        everything, plus the --ignored heavy lanes (one step per binary) and the ui snapshot lane
                                                    (--no-snapshots: not the Windows-made pixel goldens - cut.yml on Linux, #1413)
   cargo xtask gate test <filter> [--crate c] [--binary b] [--exact]   exactly the matching test(s)
@@ -185,10 +189,10 @@ pub fn parse_gate(args: &[String]) -> Result<GateArgs, String> {
         return Err(format!("--no-snapshots applies to the release tier only, not '{}'", g.tier));
     }
     if g.tier == "test" && (!g.only.is_empty() || g.failed.is_some()) {
-        return Err("--only and --failed select steps of quick, batch or release, not of 'gate test'".into());
+        return Err("--only and --failed select steps of quick, batch, light or release, not of 'gate test'".into());
     }
     match g.tier.as_str() {
-        "quick" | "batch" | "release" => Ok(g),
+        "quick" | "batch" | "light" | "release" => Ok(g),
         "test" => match &g.filter {
             Some(f)
                 if f.split("::").all(|p| {
@@ -203,7 +207,7 @@ pub fn parse_gate(args: &[String]) -> Result<GateArgs, String> {
             None => Err(format!("gate test needs a filter\n{USAGE}")),
         },
         t => Err(format!(
-            "unknown tier '{t}' (quick | batch | release | test)\n{USAGE}"
+            "unknown tier '{t}' (quick | batch | light | release | test)\n{USAGE}"
         )),
     }
 }
@@ -315,6 +319,13 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
                 }
             }
         }
+        "light" => match light::plan(root) {
+            Ok(p) => p,
+            Err(e) => {
+                println!("{e}");
+                return Ok(1);
+            }
+        },
         _ => tier_plan(root, g),
     };
     let plan = select::apply(plan, &g.only, failed.as_deref())?;

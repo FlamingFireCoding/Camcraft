@@ -594,6 +594,19 @@ tests are in `crates/ui/tests/`; they start the real app through
   | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
   | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
   | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
+- **The light lane** (#2569). `cargo xtask gate light` runs the light twins
+  of the heavy tests, in release, at review and merge time. A light twin is
+  next to its full test, on a smaller fixture or a reduced set. The full
+  test keeps its golden asserts and its pinned readings. A red light run is
+  a note on the PR: the author runs the full heavy steps locally, and they
+  must pass before the cut gate starts again. A local run never replaces
+  the cut gate.
+  - A twin has the ignore reason `light lane: ...` and the name
+    `<full test>_light`. The gate refuses a twin whose file has no
+    `#[ignore]`d full test.
+  - A red light run prints the note: each red step, with the command of
+    its full heavy step (`cargo xtask gate release --only "<crate> heavy:
+    <target>"`).
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
@@ -763,6 +776,11 @@ has the procedure. Its rules:
   `main`. From step 1 of the cut to the tag, nothing else merges.
 - The release tier runs on the cut runner (`cut.yml`). The tagged tree is
   exactly the gated tree.
+- **Local full rerun** (#2569). After a red cut gate, the author runs the
+  red steps in full, locally, in release mode: `cargo xtask gate release
+  --failed gate-logs/<run>` (the logs of the red run), or `--only "<step>"`.
+  They must pass before the cut gate starts again. A local run never
+  replaces the cut gate.
 - Cuts and tags stay with the maintainer.
 
 **Every cut tag is published.** A cut is not complete until its tag is on
