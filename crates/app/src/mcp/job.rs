@@ -209,6 +209,10 @@ pub(super) fn list_operation_types(_env: &mut Env, _a: &Map<String, Value>) -> R
                 fields.push(json!({ "name": "break_through", "type": "number", "default": Value::Null }));
                 fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
             }
+            if matches!(key.as_str(), "sinker_burn" | "sinker_side_burn") {
+                fields.push(json!({ "name": "cavity_outline", "type": "array", "default": Value::Null }));
+                fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            }
             let mut kind = json!({
                 "label": k.label,
                 "key": key,
