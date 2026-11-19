@@ -69,6 +69,7 @@ fn a_deburr_on_a_finished_brick_links_its_runs_without_a_rapid_in_stock() {
         bottom_z: Height::fixed(6.0),
         feed: 500.0,
         plunge_feed: 100.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     };
     history.execute(
         &world,

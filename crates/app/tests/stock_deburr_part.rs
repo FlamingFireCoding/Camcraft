@@ -42,6 +42,7 @@ fn deburr() -> OpParams {
         bottom_z: Height::fixed(TOP - 1.5),
         feed: 600.0,
         plunge_feed: 200.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 

@@ -90,6 +90,7 @@ mod drape;
 mod edge;
 mod fill;
 mod flat;
+mod gaplink;
 mod geodesic;
 mod ladder;
 mod morph;
@@ -108,12 +109,12 @@ mod support;
 mod swarf;
 
 pub use params::{
-    scallop_stepdown, scallop_stepover, Finish3DParams, FinishPattern,
+    scallop_stepdown, scallop_stepover, Finish3DParams, FinishPattern, GapLink,
 };
 pub use center_cut::guard as center_cut_guard;
 pub use center_cut::guard_as as center_cut_guard_as;
 pub use center_cut::guard_shaped as center_cut_guard_shaped;
-pub use deburr::{deburr, DeburrParams};
+pub use deburr::{deburr, DeburrParams, UnreachableEdges};
 pub use fill::{fill_openings, Filled};
 pub use flat::flat;
 pub use geodesic::geodesic;

@@ -96,6 +96,7 @@ fn deburr() -> OpParams {
         bottom_z: Height::of(HeightReference::TopOfModel, -1.5),
         feed: 800.0,
         plunge_feed: 200.0,
+        unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 

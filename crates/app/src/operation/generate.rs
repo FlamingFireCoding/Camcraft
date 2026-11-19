@@ -394,7 +394,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                         .map(|s| boundary_turn::turn_region(&s, turn))
                         .transpose()?
                 }
-                _ => None,
+                // #2437: under the lift law a hole counts only where
+                // material stands at the cut plane in or beside it; a
+                // hole wholly below the plane is no hole of the face.
+                machining2d::FaceHoles::Lift => {
+                    super::material_source::standing_at(m_gen, fparams.cut_z)
+                        .map(|s| boundary_turn::turn_region(&s, turn))
+                        .transpose()?
+                }
+                machining2d::FaceHoles::Through => None,
             };
             let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn)?;
             // M11.3 owed: the facer enters a radius off the footprint -
@@ -983,6 +991,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             steep_stepover,
             pencil_reference,
             fill_openings,
+            gap_link,
             ..
         } => {
             // Ball jurisdiction: the rings are the tangent locus of a
@@ -1022,6 +1031,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 entry_ramp: *entry_ramp,
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
+                gap_link: *gap_link,
             };
             // The pattern picks the generator; Waterline never
             // reaches the raster code at all. SteepShallow is the
@@ -1175,6 +1185,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             width,
             feed,
             plunge_feed,
+            unreachable,
             ..
         } => {
             if tool.kind != crate::tools::ToolKind::Taper {
@@ -1220,6 +1231,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     bottom_z: req_z(hl.bottom, "Window Bottom Z")?,
                     feed: *feed,
                     plunge_feed: *plunge_feed,
+                    unreachable: *unreachable,
                 },
             )?;
             (region, path)
@@ -1283,6 +1295,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 pattern: if is_contour {
                     finishing3d::FinishPattern::Waterline
                 } else {
@@ -1377,6 +1390,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 // The ruling replaces the pattern's choice of lines;
                 // the geometry that remains is the parallel's exactly.
                 pattern: finishing3d::FinishPattern::Parallel,
@@ -1466,6 +1480,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 // The kind names the ladder - waterline rings about
                 // the axis, or passes along it - so the pattern byte
                 // answers the kernel's own reading.
@@ -1743,6 +1758,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 frame.as_ref(),
             )?;
             let fp = Finish3DParams {
+                gap_link: finishing3d::GapLink::Jump,
                 // The field replaces the pattern's choice of lines;
                 // the geometry that remains is the raster's exactly.
                 pattern: finishing3d::FinishPattern::Parallel,
