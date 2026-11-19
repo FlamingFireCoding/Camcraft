@@ -47,6 +47,8 @@ pub mod machine;
 // #25: deviation classes on the machined mesh.
 pub mod machined_classes;
 pub mod mcp;
+// #1945: AI provider endpoints, wire formats, keys and the HTTP client.
+pub mod ai;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
