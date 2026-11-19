@@ -38,6 +38,7 @@ fn params(top_z: f64, bottom_z: f64) -> DeburrParams {
         bottom_z,
         feed: 500.0,
         plunge_feed: 100.0,
+        unreachable: camcraft_motion::finishing3d::UnreachableEdges::SkipWithNote,
     }
 }
 

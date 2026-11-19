@@ -593,6 +593,11 @@ pub enum ParamsDto {
         bottom_z: HeightDto,
         feed: f64,
         plunge_feed: f64,
+        /// #1889: absent in each earlier file, which reads as the
+        /// default (`skip_with_note`). Always written, so that an MCP
+        /// patch and `list_operation_types` see the field.
+        #[serde(default)]
+        unreachable: UnreachableDto,
     },
     /// Declared at v24 with the simultaneous-axis kinds (M5.1 stage
     /// C). The renames state the tags for the familiar reason - the

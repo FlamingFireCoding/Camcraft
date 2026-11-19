@@ -660,6 +660,9 @@ pub enum OpParams {
         bottom_z: Height,
         feed: f64,
         plunge_feed: f64,
+        /// #1889: what an edge out of the cone's reach does - skipped
+        /// with a note (the default), or the operation is refused.
+        unreachable: finishing3d::UnreachableEdges,
     },
     /// Simultaneous 5-axis level finishing (M5.1 stage C): the waterline
     /// ring ladder a [`Self::Finish3D`] Waterline cuts, with a tool-axis

@@ -1177,6 +1177,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             width,
             feed,
             plunge_feed,
+            unreachable,
             ..
         } => {
             if tool.kind != crate::tools::ToolKind::Taper {
@@ -1222,6 +1223,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     bottom_z: req_z(hl.bottom, "Window Bottom Z")?,
                     feed: *feed,
                     plunge_feed: *plunge_feed,
+                    unreachable: *unreachable,
                 },
             )?;
             (region, path)
