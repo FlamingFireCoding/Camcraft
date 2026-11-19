@@ -27,7 +27,7 @@ pub(super) fn add_row(t: &mut ToolUi) -> bool {
     if t.tool_kind() == ToolKind::Waterjet {
         // Zero thickness deliberately needs the user's value before Apply succeeds.
         t.cutting.push(CuttingRow {
-            material: Some(WorkMaterial::ALL[0]), rpm: 0.0, feed: t.feed, stepdown: None, stepover: None,
+            material: Some(WorkMaterial::ALL[0]), rpm: 0.0, feed: t.feed, stepdown: None, stepover: None, plasma: None,
             waterjet: Some(WaterjetCutData {
                 thickness: 0.0, kerf: t.diameter, pierce_time: 0.0,
                 abrasive_delay: 0.0, re_pierce_time: 0.0, pierce_method: PierceMethod::Stationary,
@@ -35,7 +35,7 @@ pub(super) fn add_row(t: &mut ToolUi) -> bool {
         });
         return true;
     }
-    let Some(m) = WorkMaterial::ALL.into_iter().find(|m| !t.cutting.iter().any(|r| r.material == Some(*m))) else {
+    let Some(m) = WorkMaterial::ALL.into_iter().find(|m| !t.cutting.iter().any(|r| r.material == Some(*m) && !r.is_recipe())) else {
         return false;
     };
     t.cutting.push(CuttingRow::plain(Some(m), t.rpm, t.feed));
@@ -108,6 +108,11 @@ fn table_rows(ui: &mut Ui, t: &mut ToolUi, u: Unit, torch: bool) -> Option<usize
         ui.label("");
         ui.end_row();
         for (i, row) in t.cutting.iter_mut().enumerate() {
+            // #1521: a torch's thickness recipe is not a speed-and-feed
+            // row. It rides the draft untouched until it has an editor.
+            if row.is_recipe() {
+                continue;
+            }
             ui.push_id(("tool_cutting_row", i), |ui| {
                 ui.horizontal(|ui| match row.material {
                     None => {
@@ -231,5 +236,41 @@ mod tests {
         assert_eq!(d.cutting[0], first, "adding another thickness keeps the first recipe");
         for _ in 0..WorkMaterial::ALL.len() { assert!(add_row(&mut d)); }
         assert!(d.cutting.len() > WorkMaterial::ALL.len(), "waterjet rows are not capped at one per material");
+    }
+
+    /// #1521: a torch's thickness recipe is not a speed-and-feed row. The
+    /// table does not draw it, a material row may stand beside it, and it
+    /// rides the draft untouched.
+    #[test]
+    fn a_torch_recipe_rides_the_draft_and_is_not_drawn_as_a_material_row() {
+        use camcraft_app::plasma_cut_tools::PlasmaCutData;
+        use camcraft_app::tool_cutting_rows::CuttingRow;
+        use egui_kittest::kittest::Queryable;
+        let recipe = CuttingRow {
+            plasma: Some(PlasmaCutData {
+                thickness: 6.0, kerf: 1.5, cut_height: Some(1.5), pierce_height: Some(3.8), pierce_delay: Some(0.5),
+                transfer_height: None, puddle_jump: None, amperage: None, arc_voltage: None,
+                max_pierce_thickness: Some(12.0), edge_start: false,
+            }),
+            ..CuttingRow::plain(Some(WorkMaterial::ALL[0]), 0.0, 2400.0)
+        };
+        let mut torch = camcraft_app::tools::torch_tool(1.5);
+        torch.cutting = vec![recipe];
+        let mut d = ToolUi::from_tool("Torch", &torch, true);
+        assert_eq!(d.to_tool(), torch, "the draft carries the recipe both ways");
+        let count = |d: &ToolUi| {
+            let mut d = d.clone();
+            let mut h = egui_kittest::Harness::new_ui(move |ui| {
+                super::cutting_rows(ui, &mut d, camcraft_app::units::Unit::Millimeters, true);
+            });
+            h.run();
+            h.query_all_by_label("Remove").count()
+        };
+        assert_eq!(count(&d), 0, "a recipe is not drawn as a removable material row");
+        assert!(add_row(&mut d));
+        assert_eq!(d.cutting[1], CuttingRow::plain(Some(WorkMaterial::ALL[0]), d.rpm, d.feed), "the recipe's material is still free for a plain row");
+        assert_eq!(d.cutting[0], recipe);
+        assert_eq!(count(&d), 1, "only the plain material row is drawn");
+        assert!(d.to_tool().is_sane(), "{:?}", d.to_tool().why_not_sane());
     }
 }
