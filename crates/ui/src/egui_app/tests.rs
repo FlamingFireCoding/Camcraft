@@ -144,6 +144,7 @@ mod plane_face_pick;
 mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
+mod display_menu;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
 // #2047: turn rings turn a body - one undo step per drag.
@@ -488,10 +489,12 @@ fn click_toggles_view_state() {
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
     assert!(harness.state().state.show_all_paths);
-    // The display mode follows the same law through the same door: a real
-    // pointer event, view state (never a command, never the undo stack).
+    // The display mode follows the same law through its own door since
+    // #2818, the viewport's Display menu: a real pointer event, view state
+    // (never a command, never the undo stack).
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::ShadedEdges);
-    open_view_menu(&mut harness);
+    let p = hud(harness.state()).nav_rect(viewcube::Nav::Display).center();
+    click_viewport(&mut harness, p);
     harness.get_by_label("Wireframe").click();
     harness.run();
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::Wireframe);
