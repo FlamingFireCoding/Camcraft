@@ -23,6 +23,13 @@
   scrub slider (#2611).
 - The current operation is the first word of the existing readout
   (`sim_readout`), so no second label was added.
+- The starts are calculated one time for each timeline, not in each
+  frame (review of PR #2763, #2238 frame-cost rule). `OpStarts::of`
+  walks the segments one time; `next`, `prev` and `op_at` are binary
+  searches over one entry for each operation. The transport reads them
+  through `sim_steps::cached_op_starts`, kept in `State` beside the
+  cached script and keyed on the script's `Arc` (a `Weak`, so an old
+  script is freed). The `Script` methods stay for a one-time question.
 
 **Why:** a step is a scrub to a computed time. The stock follows the
 playhead as it does for a scrub, so a step and plain playback show the
@@ -37,5 +44,10 @@ same stock. `sim_op_step_stock` compares the two pictures.
   That changes the selection and the property page, which the user did
   not ask for. A later issue can add it.
 - Arrow keys. The slider uses them when it has the focus.
+- A starts field in `Script`, filled by `sim::script`. `Script` has
+  public fields and is built field by field in tests, so such a field
+  can disagree with the segments. A separate value cannot.
+- A cache in egui memory, held by the buttons. The UI rule says that the
+  writer invalidates and that no widget holds a cache.
 
 **Cost to change later:** low. The rules are in one file of each crate.

@@ -13,9 +13,9 @@ use super::*;
 
 use camcraft_app::cl::{Move, MoveKind, Toolpath};
 use camcraft_app::geometry::Point3;
-use camcraft_app::sim::{Script, Traverse, script};
+use camcraft_app::sim::{OpStarts, Script, Traverse, script};
 
-use crate::egui_app::sim_steps::{NEXT_KEY, NEXT_OP, PREV_KEY, PREV_OP, op_step_buttons, step_tip};
+use crate::egui_app::sim_steps::{NEXT_KEY, NEXT_OP, PREV_KEY, PREV_OP, cached_op_starts, op_step_buttons, step_tip};
 use crate::state::Sim;
 
 fn path(x: f64) -> Toolpath {
@@ -35,15 +35,16 @@ fn three() -> Script {
 struct Bar {
     sim: Sim,
     sc: Script,
+    starts: OpStarts,
     held: bool,
 }
 
 fn bar(t: f64, held: bool) -> Harness<'static, Bar> {
     Harness::builder().with_size(Vec2::new(600.0, 40.0)).build_ui_state(
         |ui, b: &mut Bar| {
-            ui.horizontal(|ui| op_step_buttons(ui, &mut b.sim, &b.sc, b.held));
+            ui.horizontal(|ui| op_step_buttons(ui, &mut b.sim, &b.sc, &b.starts, b.held));
         },
-        Bar { sim: Sim { t, playing: true, speed: 1.0 }, sc: three(), held },
+        Bar { sim: Sim { t, playing: true, speed: 1.0 }, starts: OpStarts::of(&three()), sc: three(), held },
     )
 }
 
@@ -128,3 +129,30 @@ fn the_shell_transport_has_the_steps_and_names_the_operation() {
     assert!(!first.is_empty(), "the seeded document has an operation on the timeline");
     assert!(h.query_by_label_contains(&format!("{first} · ")).is_some(), "the readout names the current operation");
 }
+
+/// Review of PR #2763 and the #2238 frame-cost rule: the transport walks
+/// a timeline's segments one time, not in each frame. Still frames give
+/// the same kept starts (a counter: the same `Arc`, no new walk). A
+/// document change gives a new timeline, and its starts are the ones a
+/// fresh walk gives. The kept `Weak` does not hold the old script.
+#[test]
+fn the_starts_are_walked_once_per_timeline() {
+    let mut h = shell_harness();
+    h.state_mut().state.sim = Some(Sim { t: 0.0, playing: false, speed: 1.0 });
+    h.run_steps(2);
+    let first = cached_op_starts(&mut h.state_mut().state);
+    let old_script = std::sync::Arc::downgrade(&crate::egui_app::shell::cached_script(&mut h.state_mut().state));
+    h.run_steps(3);
+    let still = cached_op_starts(&mut h.state_mut().state);
+    assert!(std::sync::Arc::ptr_eq(&first, &still), "a still frame walks no segment");
+    assert!(!first.as_slice().is_empty(), "the seeded document has operations on the timeline");
+    h.state_mut().state.doc_version += 1;
+    h.run_steps(2);
+    let st = &mut h.state_mut().state;
+    let changed = cached_op_starts(st);
+    assert!(!std::sync::Arc::ptr_eq(&first, &changed), "a document change walks the new timeline");
+    let fresh = OpStarts::of(&crate::egui_app::shell::cached_script(st));
+    assert_eq!(*changed, fresh, "the kept starts are the fresh walk's");
+    assert!(old_script.upgrade().is_none(), "the old timeline is freed");
+}
+

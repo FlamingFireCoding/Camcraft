@@ -8,7 +8,7 @@
 
 use camcraft_sim::cl::{Move, MoveKind, Toolpath};
 use camcraft_sim::geometry::Point3;
-use camcraft_sim::sim::{Script, Traverse, script};
+use camcraft_sim::sim::{OpStarts, Script, Traverse, script};
 
 fn p(x: f64, y: f64, z: f64) -> Point3 {
     Point3::new(x, y, z)
@@ -99,3 +99,45 @@ fn a_non_finite_playhead_reads_as_the_end() {
     assert_eq!(sc.next_op_start(f64::NAN), None);
     assert!(near(sc.prev_op_start(f64::INFINITY), sc.op_starts()[2].1));
 }
+
+/// Review of PR #2763: the value of each start, from the segments and not
+/// from `op_starts` itself. An operation starts where the last segment
+/// of the operation before it ends (`cum[k]`), and a moment before that
+/// the playhead is still in the operation before.
+#[test]
+fn each_start_is_the_end_of_the_last_segment_of_the_operation_before() {
+    let sc = three(true);
+    let s = sc.op_starts();
+    assert_eq!(s.len(), 3);
+    for w in 1..s.len() {
+        let (before, now) = (s[w - 1].0, s[w].0);
+        let k = sc.segs.iter().rposition(|g| g.op == before).expect("the operation before has segments");
+        assert_eq!(sc.segs[k + 1].op, now, "segment {} opens {}", k + 1, sc.ops[now]);
+        assert_eq!(s[w].1, sc.cum[k], "{} starts where {} ends", sc.ops[now], sc.ops[before]);
+        assert_eq!(sc.at(s[w].1 - 1e-6).op, Some(before), "a moment before the start of {}", sc.ops[now]);
+    }
+}
+
+/// The kept starts answer as the `Script` lookups do, at each start, a
+/// moment either side of it, and the two ends.
+#[test]
+fn kept_starts_answer_as_the_script_lookups() {
+    let sc = three(true);
+    let kept = OpStarts::of(&sc);
+    assert_eq!(kept.as_slice(), sc.op_starts().as_slice());
+    let mut ts = vec![0.0, sc.total, f64::NAN, f64::INFINITY, -1.0];
+    for &(_, s) in kept.as_slice() {
+        ts.extend([s, s - 1e-6, s + 1e-6, s + 1e-12]);
+    }
+    for t in ts {
+        assert_eq!(kept.next(t), sc.next_op_start(t), "next at {t}");
+        assert_eq!(kept.prev(t), sc.prev_op_start(t), "prev at {t}");
+    }
+    for &(op, s) in kept.as_slice() {
+        assert_eq!(kept.op_at(s), Some(op));
+        assert_eq!(sc.op_starting_at(s), sc.op_name(op));
+    }
+    assert_eq!(kept.op_at(sc.total + 1.0), None, "no operation starts past the end");
+    assert_eq!(OpStarts::of(&Script::default()), OpStarts::default());
+}
+
