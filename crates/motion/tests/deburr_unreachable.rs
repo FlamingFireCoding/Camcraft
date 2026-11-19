@@ -33,6 +33,10 @@ fn params(unreachable: UnreachableEdges) -> DeburrParams {
         feed: 500.0,
         plunge_feed: 100.0,
         unreachable,
+        min_edge_angle_deg: 0.0,
+        exclude_holes: false,
+        hole_min_diameter: 0.0,
+        hole_max_diameter: 0.0,
     }
 }
 
@@ -110,4 +114,21 @@ fn refuse_names_reach_before_empty_when_every_candidate_is_out_of_reach() {
     // The default still answers Empty by name, as before.
     let p = DeburrParams { unreachable: UnreachableEdges::SkipWithNote, ..p };
     assert!(matches!(deburr(&curtain(), &p), Err(GenError::Empty(_))));
+}
+
+#[test]
+fn active_edge_filters_preserve_the_unreachable_refusal() {
+    let p = DeburrParams {
+        min_edge_angle_deg: 40.0,
+        exclude_holes: true,
+        hole_min_diameter: 2.0,
+        hole_max_diameter: 9.0,
+        ..params(UnreachableEdges::Refuse)
+    };
+    let e = deburr(&curtain(), &p).expect_err("the unfiltered vertical rims are out of reach");
+    assert!(matches!(&e, GenError::Invalid(m) if m.contains("2 edges climb steeper") && m.contains("Refuse")), "{e:?}");
+    let skip = DeburrParams { unreachable: UnreachableEdges::SkipWithNote, ..p };
+    let t = deburr(&curtain(), &skip).expect("the level rim remains in reach with active filters");
+    assert!(!feeds(&t).is_empty());
+    assert!(t.notes.iter().any(|n| n.contains("2 edges climb steeper") && n.contains("skipped")), "{:?}", t.notes);
 }

@@ -215,11 +215,28 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             bottom_z,
             feed,
             plunge_feed,
+            exclude_edges,
+            min_edge_angle_deg,
+            exclude_holes,
+            hole_min_diameter,
+            hole_max_diameter,
             unreachable,
         } => {
             if tab == SEC_GEO {
                 prop_row(ui, "Break width", |ui| num(ui, u, width));
                 hint(ui, "measured in the edge's own plane; the tip stands width / tan(half-angle) below it - the cone is the tool's, so its angle authors the depth, never a field here");
+                // #1888: which exposed edges the ride keeps.
+                super::deburr_page::filters(
+                    ui,
+                    world,
+                    u,
+                    cx.picks,
+                    exclude_edges,
+                    min_edge_angle_deg,
+                    exclude_holes,
+                    hole_min_diameter,
+                    hole_max_diameter,
+                );
                 // #1889: what an edge out of the cone's reach does.
                 let mut i = usize::from(*unreachable == UnreachableEdges::Refuse);
                 prop_row(ui, "Unreachable edges", |ui| combo(ui, "deburr.unreachable", &mut i, &["Skip with note", "Refuse"]));

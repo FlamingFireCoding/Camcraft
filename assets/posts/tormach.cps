@@ -1400,6 +1400,23 @@ function onProbeResult() {
     block(["(DEBUG, PROBE " + a.Axis + " ERROR #" + (dev + i) + (inch ? " IN" : " MM") + ")"]);
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
+    // #2683: the write is exact (target = active offset + deviation) only
+    // in unrotated systems. With an XY rotation (R of G10 L2, parameter
+    // 5210 + 20 x the system number) the deviation lies along rotated
+    // axes, and a target with another rotation gets an origin that is
+    // right at this position only. The control holds R, so the program
+    // tests it and ends by name. A Z-only result needs no test.
+    var xy = false;
+    for (var q = 0; q < axes.length; q++) if (axes[q].Axis !== "Z") xy = true;
+    if (xy) {
+      var tgt = Number(p.SetWorkOffset) + 1;
+      var rotA = "[#" + (5210 + 20 * wcsIndex) + " NE 0]";
+      var g = nextO();
+      block([g, "if", tgt === wcsIndex ? rotA : "[" + rotA + " OR [#" + (5210 + 20 * tgt) + " NE 0]]"]);
+      block(["(MSG, PROBE: " + wcsWord + (tgt === wcsIndex ? "" : " OR " + workOffsetName(tgt)) + " XY ROTATION NOT ZERO - NO OFFSET WRITTEN)"]);
+      block(["M2"]);
+      block([g, "endif"]);
+    }
     var words = ["G10", "L20", "P" + (Number(p.SetWorkOffset) + 1)];
     for (var j = 0; j < axes.length; j++) {
       words.push(axes[j].Axis + "[#" + (5420 + probeAxis(axes[j].Axis)) + "-#" + (dev + j) + "]");
