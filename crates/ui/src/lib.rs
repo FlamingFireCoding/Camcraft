@@ -66,6 +66,7 @@ pub mod view_frame;
 pub mod mcp_host;
 pub mod operations;
 pub mod path_lines;
+pub(crate) mod path_overlay;
 pub mod pick_line_memo;
 pub(crate) mod refusal_ghost;
 pub mod post_file;
