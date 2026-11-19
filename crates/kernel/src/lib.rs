@@ -14,6 +14,8 @@
 //!
 //! Stage 4 (#916) adds a STEP importer on the solidcore side
 //! ([`solidcore_step`]), bench only: the app still imports through truck.
+//! #917 makes the pcurves the reader has no closed form for on the kernel
+//! ([`solidcore_trims`]).
 //! #940 adds the machining mesh of such a solid ([`machining_mesh`]):
 //! solidcore-tess at a chord in mm, every shortfall a named refusal, the
 //! deviation from the exact surfaces measured ([`mesh_deviation`]).
@@ -38,6 +40,7 @@ mod solidcore_blend;
 pub mod solidcore_impl;
 pub mod solidcore_import;
 pub mod solidcore_step;
+pub mod solidcore_trims;
 pub mod solidcraft;
 #[cfg(feature = "truck")]
 pub mod truck_impl;

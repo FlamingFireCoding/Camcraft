@@ -1,0 +1,74 @@
+//! #2780 at the kernel: a closed solid with one strongly twisted B-spline
+//! flank, read by the solidcore STEP reader with the kernel's own fitted
+//! pcurves (#917, `camcraft_kernel::solidcore_trims`). The exact model
+//! comes out closed at its true volume; the variant with a vertex lifted
+//! off its curves reads near that volume or is refused by name. Never a
+//! solid with a wall missing.
+//! Fixtures (our own, testdata/models/): `twisted_flank.step` (volume 8000
+//! mm3, top at z = 60) and `twisted_flank_off.step` (one vertex 0.5 mm off
+//! its curves and its surface).
+//! Provenance: our own fixtures, written from ISO 10303-21/-42.
+//!
+//! Gate map (M12.1): covers camcraft_kernel::solidcore_step (import_step)
+//! and camcraft_kernel::solidcore_trims (KernelTrims).
+
+mod step_util;
+
+use std::path::PathBuf;
+
+use camcraft_kernel::KernelError;
+use camcraft_kernel::solidcore_impl::SolidcoreKernel;
+use camcraft_kernel::solidcore_step::import_step;
+use step_util::{CASE_TIMEOUT, bounded_cancel};
+
+/// What one import gives: per solid its volume, bbox min z and max z.
+type Solids = Vec<(f64, f64, f64)>;
+
+fn import(file: &'static str) -> Result<Solids, KernelError> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models").join(file);
+    let bytes = std::fs::read(&path).unwrap_or_default();
+    assert!(!bytes.is_empty(), "fixture {file} is missing");
+    bounded_cancel(file, CASE_TIMEOUT, move |stop| {
+        let mut k = SolidcoreKernel::default();
+        import_step(&mut k, &bytes, stop).map(|i| {
+            i.solids
+                .iter()
+                .map(|s| (s.measure.volume, s.measure.min[2], s.measure.max[2]))
+                .collect()
+        })
+    })
+}
+
+/// A refusal names what it refused: an entity (`#n`), a face or a solid.
+fn named(e: &KernelError) -> bool {
+    let s = e.to_string();
+    !s.trim().is_empty() && (s.contains('#') || s.contains("face") || s.contains("solid"))
+}
+
+#[test]
+fn a_twisted_bspline_flank_reads_closed_at_its_volume() {
+    let solids = match import("twisted_flank.step") {
+        Ok(s) => s,
+        Err(e) => panic!("twisted_flank.step must read through the kernel pcurves: {e}"),
+    };
+    assert_eq!(solids.len(), 1, "one solid: {solids:?}");
+    for (v, zmin, zmax) in solids {
+        // Exact measure of a closed B-rep: the port's integrator, not a mesh.
+        assert!((v - 8000.0).abs() <= 0.8, "volume {v} mm3, want 8000");
+        assert!(zmin.abs() <= 1e-6, "bottom at z {zmin}");
+        assert!((zmax - 60.0).abs() <= 1e-3, "top at z {zmax}");
+    }
+}
+
+#[test]
+fn a_twisted_flank_with_a_vertex_off_its_curves_reads_or_is_refused_by_name() {
+    match import("twisted_flank_off.step") {
+        Ok(solids) => {
+            assert_eq!(solids.len(), 1, "one solid: {solids:?}");
+            for (v, _, _) in solids {
+                assert!((v - 8000.0).abs() < 80.0, "volume {v} mm3, want about 8000");
+            }
+        }
+        Err(e) => assert!(named(&e), "a refusal names its fault: {e}"),
+    }
+}
