@@ -1,152 +1,16 @@
-//! #2055: "Do not touch" protected faces and edges on 2D Offset and 3D Pocket.
-//! Pinning tests written first on unchanged base before the fix.
-//!
-//! Gate map (M4.4): covers app::operation (avoid, generate, boundary),
-//! app::commands::operation::do_not_touch, app::mcp, app::posting,
-//! app::project, motion::machining2d::pocket, motion::machining3d,
-//! sim::verify::avoid.
+//! #2055: Protection commands, generation and the post gate.
+//! Gate map (M4.4): covers app::operation, app::commands::operation::do_not_touch,
+//! app::mcp, app::posting, motion::machining2d::pocket, motion::machining3d, sim::verify::avoid.
 
 mod common;
+mod do_not_touch_support;
 
 use camcraft_app::commands::SetOperationDoNotTouch;
-use camcraft_app::mcp::Server;
-use camcraft_app::model;
-use camcraft_app::operation;
-use camcraft_app::posting;
-use camcraft_app::project::{self, PROJECT_VERSION, ProjectError};
 use camcraft_app::verify::{FixturePart, Warning};
 use camcraft_app::world::new_world;
-use serde_json::{Value, json};
-use std::path::PathBuf;
-
-fn tmp_dir(tag: &str) -> PathBuf {
-    let mut p = std::env::temp_dir();
-    p.push(format!("camcraft-2055-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&p);
-    std::fs::create_dir_all(&p).expect("temp dir");
-    p
-}
-
-/// Write a box STL with min (x0, y0, z0) and max (x1, y1, z1).
-fn write_box_stl(path: &std::path::Path, x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64) {
-    let v = |i: usize| -> [f64; 3] {
-        [
-            if i & 1 == 0 { x0 } else { x1 },
-            if i & 2 == 0 { y0 } else { y1 },
-            if i & 4 == 0 { z0 } else { z1 },
-        ]
-    };
-    let quads = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]];
-    let mut s = String::from("solid box\n");
-    for q in quads {
-        for tri in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] {
-            s.push_str(" facet normal 0 0 0\n  outer loop\n");
-            for i in tri {
-                let p = v(i);
-                s.push_str(&format!("   vertex {} {} {}\n", p[0], p[1], p[2]));
-            }
-            s.push_str("  endloop\n endfacet\n");
-        }
-    }
-    s.push_str("endsolid box\n");
-    std::fs::write(path, s).expect("write stl");
-}
-
-struct Client {
-    server: Server,
-    next: i64,
-}
-
-impl Client {
-    fn new() -> Self {
-        Self { server: Server::new(), next: 1 }
-    }
-
-    fn call(&mut self, name: &str, args: &Value) -> (bool, Value) {
-        let id = self.next;
-        self.next += 1;
-        let msg = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "tools/call",
-            "params": { "name": name, "arguments": args }
-        });
-        let reply = self.server.handle(&msg).expect("request answered");
-        let result = &reply["result"];
-        assert!(result.is_object(), "tools/call result: {reply}");
-        let is_err = result["isError"] == json!(true);
-        let body = if is_err {
-            result["content"][0]["text"].clone()
-        } else {
-            result["structuredContent"].clone()
-        };
-        (is_err, body)
-    }
-
-    fn ok(&mut self, name: &str, args: Value) -> Value {
-        let (is_err, body) = self.call(name, &args);
-        assert!(!is_err, "{name}({args}) failed unexpectedly: {body}");
-        body
-    }
-
-    fn refused(&mut self, name: &str, args: Value) -> String {
-        let (is_err, body) = self.call(name, &args);
-        assert!(is_err, "{name}({args}) should be refused, got: {body}");
-        body.as_str().expect("refusal message").to_owned()
-    }
-}
-
-fn setup_plate_and_tower(tag: &str) -> (PathBuf, Client, String, String, String, String) {
-    let dir = tmp_dir(tag);
-    let plate_stl = dir.join("plate.stl");
-    let tower_stl = dir.join("tower.stl");
-    write_box_stl(&plate_stl, -40.0, -40.0, 0.0, 40.0, 40.0, 10.0);
-    write_box_stl(&tower_stl, -6.0, -6.0, 0.0, 6.0, 6.0, 24.0);
-
-    let mut c = Client::new();
-    c.ok("import_model", json!({ "path": plate_stl.display().to_string(), "name": "plate" }));
-    c.ok("import_model", json!({ "path": tower_stl.display().to_string(), "name": "tower" }));
-    c.ok("set_stock", json!({ "box": { "dx": 80.0, "dy": 80.0, "dz": 24.0 } }));
-    c.ok("add_tool", json!({ "catalog": "EM-0400-2FL", "name": "SteppedMill" }));
-    c.ok("edit_tool", json!({
-        "name": "SteppedMill",
-        "patch": {
-            "diameter": 6.0,
-            "flute_len": 15.0,
-            "shank_d": 12.0,
-            "shank_len": 12.0,
-            "holder_d": 28.0,
-            "holder_len": 20.0,
-            "center_cutting": true
-        }
-    }));
-
-    let plate_feats = c.ok("list_features", json!({ "model": "plate", "kinds": ["faces"] }));
-    let plate_top = plate_feats["faces"]
-        .as_array()
-        .expect("plate faces")
-        .iter()
-        .find(|f| f["bounds"]["min"][2].as_f64().is_some_and(|z| (z - 10.0).abs() < 1e-3))
-        .expect("plate top face")["id"]
-        .as_str()
-        .expect("face id")
-        .to_owned();
-
-    let tower_feats = c.ok("list_features", json!({ "model": "tower", "kinds": ["faces", "chains", "vertices"] }));
-    let tower_top_face = tower_feats["faces"]
-        .as_array()
-        .expect("tower faces")
-        .iter()
-        .find(|f| f["bounds"]["min"][2].as_f64().is_some_and(|z| (z - 24.0).abs() < 1e-3))
-        .expect("tower top face")["id"]
-        .as_str()
-        .expect("face id")
-        .to_owned();
-    let tower_edge = tower_feats["chains"][0]["id"].as_str().expect("chain id").to_owned();
-    let tower_vert = tower_feats["vertices"][0]["id"].as_str().expect("vertex id").to_owned();
-
-    (dir, c, plate_top, tower_top_face, tower_edge, tower_vert)
-}
+use camcraft_app::{model, operation, posting, project};
+use do_not_touch_support::setup_plate_and_tower;
+use serde_json::json;
 
 /// Extract active G90 `(x, y, z)` motion waypoints from Fanuc NC text (skipping G28/G53 home lines).
 fn nc_waypoints(nc: &str) -> Vec<[f64; 3]> {
@@ -423,7 +287,7 @@ fn pocket3d_do_not_touch_keeps_clear_raises_links_and_blocks_impossible_cut() {
 }
 
 #[test]
-fn do_not_touch_post_gate_blocks_violations_and_project_v72_persists() {
+fn do_not_touch_post_gate_blocks_violations() {
     let (dir, mut c, plate_top, tower_top_face, tower_edge, _vert) = setup_plate_and_tower("proj_gate");
     let op_name = c.ok("add_operation", json!({
         "kind": "2D Offset",
@@ -452,42 +316,8 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v72_persists() {
     }));
     c.ok("generate", json!({ "name": op_name }));
 
-    // Save -> inspect current version -> reload into fresh server -> still intact & clean.
     let proj_path = dir.join("protected.camproj");
     c.ok("save_project", json!({ "path": proj_path.display().to_string() }));
-    let raw = std::fs::read_to_string(&proj_path).expect("read saved project");
-    let mut parsed: Value = serde_json::from_str(&raw).expect("valid json");
-    assert_eq!(parsed["version"], json!(PROJECT_VERSION));
-    // Main's v71 reader ignores unknown area fields. Its version barrier must
-    // reject the saved file before it can discard the protected selections.
-    const V71_READER_MAX_VERSION: u32 = 71;
-    assert_eq!(parsed["version"], json!(72));
-    assert!(
-        parsed["version"].as_u64().expect("saved version") > u64::from(V71_READER_MAX_VERSION),
-        "v71 readers must refuse the protected project before reading its area controls"
-    );
-    const {
-        assert!(
-            PROJECT_VERSION > V71_READER_MAX_VERSION,
-            "v71 and earlier readers must refuse Do not touch protection"
-        );
-    }
-    assert!(raw.contains("do_not_touch"));
-
-    let mut c2 = Client::new();
-    c2.ok("open_project", json!({ "path": proj_path.display().to_string() }));
-    let got2 = c2.ok("get_operation_do_not_touch", json!({ "operation": op_name }));
-    assert_eq!(got2["clearance"], json!(1.5));
-    assert_eq!(got2["picks"].as_array().map(Vec::len), Some(2));
-    assert_eq!(c2.ok("verify", json!({}))["ok"], json!(true));
-
-    // A future version is refused with UnsupportedVersion instead of ignoring protection.
-    parsed["version"] = json!(PROJECT_VERSION + 1);
-    let future_path = dir.join("future.camproj");
-    std::fs::write(&future_path, serde_json::to_string(&parsed).unwrap()).unwrap();
-    let future_world = new_world();
-    let err = project::load(&future_world, &future_path).expect_err("newer version must be refused");
-    assert!(matches!(err, ProjectError::UnsupportedVersion(v) if v == PROJECT_VERSION + 1), "{err:?}");
 
     // Moving the protected tower into the cut path stales the op AND is caught by live_avoid_problems,
     // blocking both verify and post without writing NC output.
@@ -518,49 +348,5 @@ fn do_not_touch_post_gate_blocks_violations_and_project_v72_persists() {
     // Clean API checks.
     assert!(Warning::AvoidHit { at: 0, item: 1, part: FixturePart::Holder, short_mm: 0.4 }.blocks_post());
     let _ = std::any::type_name::<SetOperationDoNotTouch>();
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn project_v72_keeps_linked_sources_and_protection_and_refuses_a_bad_source() {
-    let (dir, mut c, _plate_top, tower_top_face, _edge, _vert) = setup_plate_and_tower("linked_protection");
-    let op_name = c.ok("add_operation", json!({
-        "kind": "3D Pocket", "tool": "SteppedMill", "source": "plate"
-    }))["operation"].as_str().expect("operation name").to_owned();
-    c.ok("set_operation_do_not_touch", json!({
-        "operation": op_name,
-        "clearance": 1.5,
-        "picks": [{ "model": "tower", "id": tower_top_face }]
-    }));
-    let path = dir.join("linked.camproj");
-    c.ok("save_project", json!({ "path": path.display().to_string() }));
-    let raw = std::fs::read_to_string(&path).expect("saved project");
-    let mut doc: Value = serde_json::from_str(&raw).expect("json");
-    assert_eq!(doc["version"], json!(72));
-    let rows = doc["entities"].as_array().expect("entities");
-    let tower = rows.iter().find(|row| row["name"] == "tower").expect("tower");
-    let source = tower["source"].clone();
-    assert_eq!(source["path"], json!(dir.join("tower.stl").display().to_string()));
-    assert_eq!(source["sha256"].as_str().map(str::len), Some(64));
-    let op = rows.iter().find(|row| row["name"] == op_name).expect("operation");
-    let area = op["operation"]["area"].clone();
-    assert!(area.to_string().contains("do_not_touch"), "{area}");
-
-    let world = new_world();
-    project::open(&world, &raw).expect("both v72 additions open together");
-    let roundtrip = dir.join("roundtrip.camproj");
-    project::save(&world, &roundtrip).expect("round trip");
-    let before = std::fs::read_to_string(&roundtrip).expect("read round trip");
-    let restored: Value = serde_json::from_str(&before).expect("round trip json");
-    let rows = restored["entities"].as_array().expect("entities");
-    assert_eq!(rows.iter().find(|row| row["name"] == "tower").expect("tower")["source"], source);
-    assert_eq!(rows.iter().find(|row| row["name"] == op_name).expect("operation")["operation"]["area"], area);
-
-    let rows = doc["entities"].as_array_mut().expect("entities");
-    rows.iter_mut().find(|row| row["name"] == "tower").expect("tower")["source"]["sha256"] = json!("ABC");
-    let err = project::open(&world, &doc.to_string()).expect_err("invalid linked source must refuse");
-    assert!(err.to_string().contains("'tower' records a source whose sha256 is not 64 lowercase hex digits"), "{err}");
-    project::save(&world, &roundtrip).expect("save after refusal");
-    assert_eq!(std::fs::read_to_string(&roundtrip).expect("unchanged project"), before, "the refusal makes no world writes");
     let _ = std::fs::remove_dir_all(&dir);
 }

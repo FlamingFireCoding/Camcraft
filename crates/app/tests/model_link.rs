@@ -148,7 +148,7 @@ fn the_project_file_keeps_the_link_and_a_v71_file_opens_unlinked() {
     let text = saved(&world, &dir);
     let doc: Value = serde_json::from_str(&text).expect("json");
     assert_eq!(doc["version"], json!(project::PROJECT_VERSION));
-    assert_eq!(project::PROJECT_VERSION, 72);
+    assert!(doc["version"].as_u64().is_some_and(|v| v >= 72), "linked sources require the v72 format barrier");
     let row = doc["entities"].as_array().and_then(|e| e.iter().find(|e| e["name"] == "part")).expect("part row");
     let want = source_of(&world, "part").expect("linked");
     assert_eq!(row["source"], json!({ "path": want.path, "sha256": want.sha256 }));

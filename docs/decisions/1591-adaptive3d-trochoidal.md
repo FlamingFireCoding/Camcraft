@@ -98,3 +98,49 @@
 - Trochoidal controls on the 3D page: `troch::Run::level` passes
   `AdaptiveTrochParams::default()` at one place.
 - A format version for the word: one constant and one migration note.
+
+### Latest review corrections
+
+**What was decided**
+
+- Save protection data with project format 73. Add the forward migration
+  from format 72, default absent protection, and preserve linked model
+  source data.
+- Select the convex welded bore wall in the UI cost fixture. Require two
+  closed horizontal rims with matching XY bounds and different heights.
+  Require the nonzero XY turns to have the same sign.
+- Separate the protection command and generation tests from the project
+  persistence tests. Keep shared fixtures in a support module. Keep each
+  file below 400 lines.
+
+**Why**
+
+- The existing format 72 reader supports linked model sources but ignores
+  unknown area fields. It can discard protection data. Format 73 makes
+  that reader refuse the file before it can generate an unprotected path.
+- Upstream STEP refinements changed the face strip counts. Horizontal
+  rims alone can select the concave outer figure-eight wall, whose refined
+  points fail preview triangulation. The convex rim identifies the bore
+  wall needed by the filled area preview checks. The assertions remain
+  unchanged.
+- The separate files follow the command and persistence domains and keep
+  the source files within the repository size limit.
+
+**What was considered and dropped**
+
+- Keep format 72 or compare only with a format 71 reader. Dropped: neither
+  proves refusal by the existing format 72 reader.
+- Keep the strip-count selector or select the largest wall with matching
+  horizontal rims. Dropped: both can select the concave outer wall and
+  fail preview triangulation.
+- Remove the filled preview assertions. Dropped: the assertions check the
+  required preview.
+- Keep all protection tests in one file. Dropped: the file exceeds the
+  source size limit and combines separate test domains.
+
+**What it costs to change later**
+
+- A later project format change needs another forward migration and a
+  check of the older reader boundary.
+- A different fixture needs the same wall geometry and filled preview
+  assertions. Shared fixture changes must still cover both test domains.
