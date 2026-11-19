@@ -206,7 +206,8 @@ pub struct GeomPrintMemo {
 /// normal only. `data` holds the primitives in mm, the layer names, the
 /// source units, the join tolerance, the chains and the import summary;
 /// it is shared (`Arc`) and freed when the last holder goes. Written only
-/// by `ImportDxf`, `MoveSketch`, `DeleteEntity` and the project loader.
+/// by `ImportDxf`, `InsertText` (#2679: typed text as engraving strokes),
+/// `MoveSketch`, `DeleteEntity` and the project loader.
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct Sketch {
     pub setup: Option<String>,

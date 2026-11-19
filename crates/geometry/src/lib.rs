@@ -27,3 +27,5 @@ pub mod profile_mesh;
 pub mod sketch_chains;
 pub mod solidcraft;
 pub mod sketch_data;
+// #2679: typed text as single-line engraving strokes.
+pub mod stroke_text;
