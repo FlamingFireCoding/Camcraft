@@ -1,8 +1,9 @@
 //! Provenance: original floor and mouth classification by segment-triangle intersections, for #2601.
 
-use super::cylinder::{coord, hypot, ray_hit};
-use super::recognize::{set, Found, FIT_TOL};
+use super::cylinder::{coord, hypot, ray_hit, vkey};
+use super::recognize::{FIT_TOL, Found, set};
 use crate::geometry::{Point3, Triangle};
+use std::collections::{HashMap, HashSet};
 
 /// A segment from inside the bore to just beyond each wall end can
 /// meet a floor joined to that end's rim, but never a distant face or
@@ -27,11 +28,50 @@ pub(super) fn ends(
         set(&mut beyond, along, end + sign * 1e-6);
         let mut dir = Point3::new(0.0, 0.0, 0.0);
         set(&mut dir, along, sign);
-        tris.iter().any(|t| {
-            [t.a, t.b, t.c].into_iter().filter(|&p| on_rim(p)).count() >= 2
-                && ray_hit(inside, dir, t)
-                && !ray_hit(beyond, dir, t)
-        })
+        // Only floor patches inside this end's disc participate. Exterior
+        // annuli and surfaces crossing the bore cannot connect a false cap.
+        let floor_vertex = |p: Point3| {
+            (coord(p, along) - end).abs() <= 1e-6
+                && hypot(coord(p, u) - f.cu, coord(p, v) - f.cv) <= f.rad + FIT_TOL
+        };
+        let edges = |t: &Triangle| {
+            [(t.a, t.b), (t.b, t.c), (t.c, t.a)].map(|(a, b)| {
+                let (a, b) = (vkey(&a), vkey(&b));
+                if a <= b { (a, b) } else { (b, a) }
+            })
+        };
+        let mut by_edge: HashMap<_, Vec<usize>> = HashMap::new();
+        let mut pending = Vec::new();
+        for (i, t) in tris.iter().enumerate() {
+            let vertices = [t.a, t.b, t.c];
+            if !vertices.into_iter().all(floor_vertex) {
+                continue;
+            }
+            for edge in edges(t) {
+                by_edge.entry(edge).or_default().push(i);
+            }
+            if vertices.into_iter().filter(|&p| on_rim(p)).count() >= 2 {
+                pending.push(i);
+            }
+        }
+        // The hit facet can be wholly inside a subdivided floor. It must
+        // belong to a patch connected by full edges to the bore rim.
+        let mut visited = HashSet::new();
+        while let Some(i) = pending.pop() {
+            if !visited.insert(i) {
+                continue;
+            }
+            let t = &tris[i];
+            if ray_hit(inside, dir, t) && !ray_hit(beyond, dir, t) {
+                return true;
+            }
+            for edge in edges(t) {
+                if let Some(neighbors) = by_edge.get(&edge) {
+                    pending.extend(neighbors.iter().copied().filter(|j| !visited.contains(j)));
+                }
+            }
+        }
+        false
     };
     let low = capped(f.smin, -1.0);
     let high = capped(f.smax, 1.0);

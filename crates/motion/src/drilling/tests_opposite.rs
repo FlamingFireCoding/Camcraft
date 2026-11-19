@@ -173,3 +173,107 @@ fn six_blind_holes_on_a_d50_bar_keep_their_depths_and_mouths() {
         }
     }
 }
+
+/// Split only the blind floors. Each replacement preserves the original
+/// triangle's boundary and winding, but introduces interior vertices.
+fn subdivide_floors(mesh: Vec<Triangle>) -> Vec<Triangle> {
+    mesh.into_iter()
+        .flat_map(|t| {
+            if t.a.z.abs() == 17.0 && t.b.z == t.a.z && t.c.z == t.a.z {
+                let center = Point3::new(
+                    (t.a.x + t.b.x + t.c.x) / 3.0,
+                    (t.a.y + t.b.y + t.c.y) / 3.0,
+                    t.a.z,
+                );
+                vec![
+                    Triangle::new(t.a, t.b, center),
+                    Triangle::new(t.b, t.c, center),
+                    Triangle::new(t.c, t.a, center),
+                ]
+            } else {
+                vec![t]
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn subdivided_blind_z_floors_preserve_mouths_and_depths() {
+    let mut mesh = opposite_blind_block();
+    for _ in 0..2 {
+        mesh = subdivide_floors(mesh);
+        let found = recognize(&mesh);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].entry_z, 25.0);
+        assert_eq!(found[0].floor_z, 17.0);
+        assert_eq!(found[0].radius, 2.5);
+        assert!(!found[0].through);
+        let reverse = recognize_cross(&mesh);
+        assert_eq!(reverse.len(), 1, "{reverse:?}");
+        assert_eq!(reverse[0].origin, Point3::new(0.0, 0.0, -25.0));
+        assert_eq!(reverse[0].dir, Point3::new(0.0, 0.0, 1.0));
+        assert_eq!(reverse[0].radius, 2.5);
+        assert_eq!(reverse[0].entry_d, 0.0);
+        assert_eq!(reverse[0].floor_d, -8.0);
+        assert!(!reverse[0].through);
+    }
+}
+
+#[test]
+fn subdivided_blind_radial_floors_preserve_mouths_and_depths() {
+    let mut mesh = opposite_blind_block();
+    for _ in 0..2 {
+        mesh = subdivide_floors(mesh);
+        for along_x in [true, false] {
+            let rotate = |p: Point3| {
+                if along_x {
+                    Point3::new(p.z, p.x, p.y)
+                } else {
+                    Point3::new(p.y, p.z, p.x)
+                }
+            };
+            let radial: Vec<_> = mesh
+                .iter()
+                .map(|t| Triangle::new(rotate(t.a), rotate(t.b), rotate(t.c)))
+                .collect();
+            assert!(recognize(&radial).is_empty());
+            let found = recognize_cross(&radial);
+            assert_eq!(found.len(), 2, "{found:?}");
+            for side in [-1.0, 1.0] {
+                let origin = rotate(Point3::new(0.0, 0.0, side * 25.0));
+                let hole = found
+                    .iter()
+                    .find(|h| h.origin == origin)
+                    .unwrap_or_else(|| panic!("missing {origin:?}: {found:?}"));
+                assert_eq!(hole.dir, rotate(Point3::new(0.0, 0.0, -side)));
+                assert_eq!(hole.radius, 2.5);
+                assert_eq!(hole.entry_d, 0.0);
+                assert_eq!(hole.floor_d, -8.0);
+                assert!(!hole.through);
+            }
+        }
+    }
+}
+
+#[test]
+fn disconnected_crossing_faces_do_not_close_bore_mouths() {
+    let original = opposite_blind_block();
+    let mut mesh = original.clone();
+    // These patches intersect the probe rays, but have no edge path to a
+    // bore rim. The interior patch also lies between a mouth and its floor.
+    for z in [-25.0, -21.0, 21.0, 25.0] {
+        mesh.push(Triangle::new(
+            Point3::new(0.0, 0.0, z),
+            Point3::new(2.0, 0.0, z),
+            Point3::new(1.0, 2.0, z),
+        ));
+    }
+    assert_eq!(recognize(&mesh), recognize(&original));
+    assert_eq!(recognize_cross(&mesh), recognize_cross(&original));
+    let rotate = |p: Point3| Point3::new(p.z, p.x, p.y);
+    let radial: Vec<_> = mesh
+        .iter()
+        .map(|t| Triangle::new(rotate(t.a), rotate(t.b), rotate(t.c)))
+        .collect();
+    assert_eq!(recognize_cross(&radial), recognize_cross(&radial_block()));
+}

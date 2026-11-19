@@ -2,8 +2,10 @@
 
 **What was decided.** Merge coaxial wall components only when their axial
 spans touch or overlap. Test finite segments from inside the bore to its
-wall ends for a blind floor. Require a floor triangle to have at least two
-vertices on the fitted circular rim at that end. Use the opposite end as
+wall ends for a blind floor. Collect triangles in each end plane and within
+the fitted bore disc. Connect triangles across full shared edges with the
+existing exact-bit vertex keys. Start from triangles with a bore rim edge.
+Accept a segment hit on any triangle in the connected floor. Use the opposite end as
 the mouth and mark the hole as blind. Keep downward Z holes in `Hole`. Store lower-mouth Z
 holes in the existing directed `CrossHole` record. Report directed
 findings on mills through the existing detection command.
@@ -11,8 +13,10 @@ findings on mills through the existing detection command.
 **Why.** A shared axis does not make two blind holes one through hole.
 The solid core between their floors must remain outside both hole depths.
 A span check alone does not identify the entry side. Floor evidence gives
-each record its own mouth and inward direction. The rim edge identifies
-the floor as part of this bore. An unrelated face that crosses the bore
+each record its own mouth and inward direction. The connected rim edge identifies
+the floor as part of this bore, even when subdivision adds interior vertices.
+Disconnected interior patches and outer annuli cannot supply this evidence.
+An unrelated face that crosses the bore
 must not turn a through hole into a blind hole. Finite segments exclude
 distant model faces and the opposite hole's floor. Meshes that contain
 only walls keep the existing through classification when no floor exists.
@@ -29,7 +33,10 @@ The motion fixture copies the project's original
 `punched_bar` helper into the lowest crate that supplies its imports.
 
 **Considered and dropped.** A span check without mouth classification
-leaves incorrect lower-side records. General arbitrary-axis recognition
+leaves incorrect lower-side records. Requiring the hit triangle itself to
+contain a rim edge fails when a valid floor has interior vertices.
+Accepting a hit without checking its connection to the rim admits unrelated
+crossing faces. General arbitrary-axis recognition
 and indexed drilling need a separate design. They exceed this detection
 fix and would require new generation and machine checks.
 
