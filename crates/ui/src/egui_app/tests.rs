@@ -1299,7 +1299,8 @@ fn every_field_lives_on_exactly_one_section() {
             // once more).
             "Deburr",
             vec![
-                ("Geometry", vec!["Break width", "Unreachable edges"]),
+                // #1888 and #1889: keep the edge filters and reach policy.
+                ("Geometry", vec!["Break width", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
                 ("Heights", vec!["Clearance Z", "Window Top Z", "Window Bottom Z"]),
                 ("Feeds", vec!["Feed", "Plunge feed"]),
             ],

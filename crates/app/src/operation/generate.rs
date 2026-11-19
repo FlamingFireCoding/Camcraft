@@ -1185,6 +1185,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             width,
             feed,
             plunge_feed,
+            min_edge_angle_deg,
+            exclude_holes,
+            hole_min_diameter,
+            hole_max_diameter,
             unreachable,
             ..
         } => {
@@ -1221,7 +1225,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let path = finishing3d::deburr(
+            // #1888: the picked chains, then the excluded ones, in one
+            // list (`deburr_picks::chains_of`); the source's pick count
+            // is where it splits.
+            let chains = drive_chains.take().ok_or_else(|| unreached("deburr chains"))??;
+            let (include, exclude) = chains.split_at(super::deburr_picks::picked(&src).min(chains.len()));
+            let path = finishing3d::deburr_edges(
                 &material.facets,
                 &DeburrParams {
                     width: *width,
@@ -1231,8 +1240,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     bottom_z: req_z(hl.bottom, "Window Bottom Z")?,
                     feed: *feed,
                     plunge_feed: *plunge_feed,
+                    min_edge_angle_deg: *min_edge_angle_deg,
+                    exclude_holes: *exclude_holes,
+                    hole_min_diameter: *hole_min_diameter,
+                    hole_max_diameter: *hole_max_diameter,
                     unreachable: *unreachable,
                 },
+                &finishing3d::DeburrEdges { include, exclude },
             )?;
             (region, path)
         }

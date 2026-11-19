@@ -1141,6 +1141,15 @@ fn seed_deburr(c: &Carried) -> OpParams {
         bottom_z: c.bottom,
         feed: c.feed,
         plunge_feed: c.plunge,
+        // #1888: no edge is left out; a crease under 40 degrees is a
+        // facet seam of a smooth surface (the feature layer's own
+        // crease angle), and holes are edges until a machinist says
+        // which diameters a drill's own chamfer already broke.
+        exclude_edges: Vec::new(),
+        min_edge_angle_deg: 40.0,
+        exclude_holes: false,
+        hole_min_diameter: 0.0,
+        hole_max_diameter: 10.0,
         // #1889: skip with a note, as each earlier Deburr did.
         unreachable: crate::finishing3d::UnreachableEdges::SkipWithNote,
     }
