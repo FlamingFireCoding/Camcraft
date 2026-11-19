@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use camcraft_geometry::geometry::units::Unit;
 
 use crate::catalog_fields::MAX_SHORT;
-use crate::tool_table::{ToolTableEntry, ToolTableExportRow, base_tool, from_mm, to_mm};
-use crate::tool_table_xml::{XmlNode, escape_xml, parse_xml};
+use crate::tool_table::{ToolTableEntry, base_tool, to_mm};
+pub(crate) use crate::tool_table_hurco_export::export;
+use crate::tool_table_xml::{XmlNode, parse_xml};
 use crate::tools::{Tool, ToolKind};
 
 /// Strip optional `Tool.` / `FileInfo.` / `SpeedFeed.` prefixes so both
@@ -52,7 +53,7 @@ pub(crate) fn parse(text: &str, unit: Unit) -> Result<Vec<ToolTableEntry>, Strin
     Ok(entries)
 }
 
-fn parse_tool_node(
+pub(crate) fn parse_tool_node(
     node: &XmlNode,
     unit: Unit,
     seen_numbers: &mut HashSet<u32>,
@@ -285,115 +286,4 @@ fn hurco_unsupported_label(code: i32) -> &'static str {
         23 => "Taper Radius End Mill",
         _ => "unsupported Hurco tool type",
     }
-}
-
-fn camcraft_to_hurco_type(tool: &Tool) -> Result<i32, String> {
-    match tool.kind {
-        ToolKind::BullNose | ToolKind::Taper | ToolKind::BallNose if !tool.center_cutting =>
-            Err("non-center-cutting tool cannot be exported to a Hurco .TCM tool library".into()),
-        ToolKind::BullNose => Ok(0),
-        ToolKind::Taper => Ok(2),
-        ToolKind::Drill => Ok(11),
-        ToolKind::Tap if !tool.thread_hand.is_right() => {
-            Err("left-hand tap cannot be exported to a Hurco .TCM tool library".into())
-        }
-        ToolKind::Tap => Ok(12),
-        ToolKind::Bore => Ok(13),
-        ToolKind::EndMill => Ok(if tool.center_cutting { 14 } else { 15 }),
-        ToolKind::BallNose => Ok(16),
-        ToolKind::Probe => Ok(18),
-        ToolKind::ThreadMill => Ok(22),
-        ToolKind::ThreadMillSingle => Ok(26),
-        other => Err(format!("{other} cannot be exported to a Hurco .TCM tool library")),
-    }
-}
-
-pub(crate) fn export(rows: &[ToolTableExportRow<'_>], unit: Unit) -> Result<String, String> {
-    if rows.is_empty() {
-        return Err("the document has no tools to export".into());
-    }
-    let mut out = String::from("\u{FEFF}<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n");
-    out.push_str("<Hurco_Document Version=\"1.1\">\r\n");
-    out.push_str("  <FileInfo>\r\n");
-    out.push_str("    <Language>English</Language>\r\n");
-    out.push_str("  </FileInfo>\r\n");
-    out.push_str("  <Tools>\r\n");
-    for row in rows {
-        let type_code = camcraft_to_hurco_type(row.tool)
-            .map_err(|why| format!("tool '{}': {why}", row.name))?;
-        let id = deterministic_guid(row.number, row.name);
-        let dia = from_mm(row.tool.diameter, unit);
-        let flute_len = from_mm(row.tool.flute_len, unit);
-        let tool_len = from_mm(row.tool.flute_len + row.tool.shank_len, unit);
-        let shank_d = from_mm(row.tool.shank_d, unit);
-        let gauge_len = row
-            .gauge_len
-            .unwrap_or(row.tool.holder_len)
-            .max(0.0);
-
-        out.push_str(&format!("    <Tool Id=\"{id}\">\r\n"));
-        let mut elem = |tag: &str, val: &str| {
-            out.push_str(&format!("      <{tag}>{val}</{tag}>\r\n"));
-        };
-        elem("Name", &escape_xml(row.name));
-        elem("Number", &row.number.to_string());
-        elem("Diameter", &fmt_num(dia));
-        elem("ToolLength", &fmt_num(tool_len));
-        if shank_d > 0.0 {
-            elem("ShankDiameter", &fmt_num(shank_d));
-        }
-        elem("FluteLength", &fmt_num(flute_len));
-        if gauge_len > 0.0 {
-            elem("AbsoluteGaugeLength", &fmt_num(from_mm(gauge_len, unit)));
-        }
-        elem("ToolType", &type_code.to_string());
-        if let Some(z) = row.tool.flutes {
-            elem("NumberOfFlutes", &z.to_string());
-        }
-        if matches!(row.tool.kind, ToolKind::Tap | ToolKind::ThreadMill | ToolKind::ThreadMillSingle)
-            && row.tool.pitch > 0.0
-        {
-            elem("ThreadPitch", &fmt_num(from_mm(row.tool.pitch, unit)));
-        }
-        if matches!(
-            row.tool.kind,
-            ToolKind::Taper | ToolKind::Drill | ToolKind::ThreadMill | ToolKind::ThreadMillSingle
-        ) && row.tool.tip_angle > 0.0
-        {
-            elem("Angle", &fmt_num(row.tool.tip_angle));
-        }
-        if row.tool.kind == ToolKind::BullNose && row.tool.corner_r > 0.0 {
-            elem("TipRadius", &fmt_num(from_mm(row.tool.corner_r, unit)));
-        }
-        if let Some(vendor) = row.tool.catalog.vendor.as_deref() {
-            elem("Manufacturer", &escape_xml(vendor));
-        }
-        out.push_str("    </Tool>\r\n");
-    }
-    out.push_str("  </Tools>\r\n");
-    out.push_str("</Hurco_Document>\r\n");
-    Ok(out)
-}
-
-fn fmt_num(v: f64) -> String {
-    let rounded = (v * 1_000_000.0).round() / 1_000_000.0;
-    let s = format!("{rounded}");
-    if s == "-0" { "0".into() } else { s }
-}
-
-fn deterministic_guid(number: u32, name: &str) -> String {
-    let mut a: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut b: u64 = 0xaf63_bd4c_8601_b7df;
-    for byte in number.to_le_bytes().iter().chain(name.as_bytes()) {
-        a ^= u64::from(*byte);
-        a = a.wrapping_mul(0x100_0000_01b3);
-        b ^= u64::from(*byte).wrapping_add(0x9e);
-        b = b.wrapping_mul(0x100_0000_01b3);
-    }
-    let b1 = (a >> 32) as u32;
-    let b2 = ((a >> 16) & 0xffff) as u16;
-    let b3 = (((a & 0xffff) as u16) & 0x0fff) | 0x4000;
-    let b4 = (((b >> 48) as u16) & 0x3fff) | 0x8000;
-    let b5 = b & 0x0000_ffff_ffff_ffff;
-    format!("{b1:08x}-{b2:04x}-{b3:04x}-{b4:04x}-{b5:012x}")
 }

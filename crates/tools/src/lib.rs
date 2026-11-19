@@ -52,6 +52,7 @@ pub mod tool_sanity;
 // #2566: machine controller tool tables (Tormach PathPilot CSV, Hurco WinMax TCM).
 pub mod tool_table;
 mod tool_table_hurco;
+mod tool_table_hurco_export;
 mod tool_table_pathpilot;
 mod tool_table_pathpilot_desc;
 mod tool_table_xml;

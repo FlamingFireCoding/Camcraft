@@ -164,7 +164,7 @@ fn hurco_export_roundtrips_and_escapes_xml_without_control_state() {
         flute_len: 25.0,
         shank_d: 12.0,
         shank_len: 20.0,
-        holder_d: 40.0,
+        holder_d: 24.0,
         holder_len: 105.5,
         material_group: "aluminum".into(),
         rpm: 5000.0,
@@ -192,6 +192,7 @@ fn hurco_export_roundtrips_and_escapes_xml_without_control_state() {
     let back = parse_controller_table(ToolTableFormat::Hurco, &text, Unit::Millimeters).expect("re-parse");
     assert_eq!(back[0].number, 12);
     assert_eq!(back[0].name, "1/2\" EM & More");
+    assert_eq!(back[0].tool.holder_d, 24.0);
     assert_eq!(back[0].tool.holder_len, 110.25);
     assert_eq!(back[0].tool.catalog.vendor.as_deref(), Some("A & B <Carbide>"));
 }
@@ -362,4 +363,63 @@ fn hurco_refuses_non_center_cutting_exports_and_preserves_supported_roundtrips()
             }
         }
     }
+}
+
+#[test]
+fn hurco_refuses_lossy_holder_diameter_and_preserves_inferred_roundtrips() {
+    let xml = "<Hurco_Document><Tools><Tool><Name>4mm EM</Name><Number>3</Number>\
+<Diameter>4</Diameter><ShankDiameter>4</ShankDiameter><AbsoluteGaugeLength>35</AbsoluteGaugeLength>\
+<ToolType>14</ToolType></Tool></Tools></Hurco_Document>";
+    let base = parse_controller_table(ToolTableFormat::Hurco, xml, Unit::Millimeters)
+        .expect("sane mill tool").remove(0).tool;
+    assert_eq!(base.holder_d, 20.0);
+
+    let export = |name: &str, tool: &Tool, unit: Unit| export_controller_table(
+        ToolTableFormat::Hurco,
+        &[ToolTableExportRow { number: 3, name, tool, gauge_len: None }],
+        unit,
+    );
+
+    // Matching inferred holder diameter round-trips in mm and inches.
+    for unit in [Unit::Millimeters, Unit::Inches] {
+        let text = export("4mm EM", &base, unit).expect("matching inferred holder");
+        let back = parse_controller_table(ToolTableFormat::Hurco, &text, unit).expect("re-parse");
+        assert!((back[0].tool.holder_d - 20.0).abs() < 1e-4, "{unit:?}: {}", back[0].tool.holder_d);
+        assert!((back[0].tool.holder_len - 35.0).abs() < 1e-4, "{unit:?}: {}", back[0].tool.holder_len);
+    }
+
+    // Wider holders (including a 60 mm holder on a 4 mm shank) and mismatched holders must refuse by name.
+    for (holder_d, holder_len) in [(60.0, 35.0), (60.0, 0.0), (10.0, 35.0), (0.0, 35.0)] {
+        let wider = Tool { holder_d, holder_len, ..base.clone() };
+        assert!(wider.why_not_sane().is_none(), "fixture must be sane: ({holder_d}, {holder_len})");
+        let err = export("4mm Wide Holder", &wider, Unit::Millimeters)
+            .expect_err("Hurco export must refuse unpreserved holder diameter");
+        assert!(err.contains("4mm Wide Holder") && err.contains("holder diameter"), "{err}");
+    }
+}
+
+#[test]
+fn hurco_refuses_boring_bar_with_positive_nose_radius_and_roundtrips_zero() {
+    let xml = "<Hurco_Document><Tools><Tool><Name>Boring Bar</Name><Number>6</Number>\
+<Diameter>16</Diameter><ToolType>13</ToolType></Tool></Tools></Hurco_Document>";
+    let mut bore = parse_controller_table(ToolTableFormat::Hurco, xml, Unit::Millimeters)
+        .expect("sane boring bar").remove(0).tool;
+    assert_eq!(bore.kind, ToolKind::Bore);
+    assert_eq!(bore.nose_radius, 0.0);
+
+    let export = |name: &str, tool: &Tool| export_controller_table(
+        ToolTableFormat::Hurco,
+        &[ToolTableExportRow { number: 6, name, tool, gauge_len: None }],
+        Unit::Millimeters,
+    );
+
+    let zero_text = export("Boring Bar", &bore).expect("zero nose radius round-trips");
+    let back = parse_controller_table(ToolTableFormat::Hurco, &zero_text, Unit::Millimeters).expect("re-parse");
+    assert_eq!(back[0].tool.kind, ToolKind::Bore);
+    assert_eq!(back[0].tool.nose_radius, 0.0);
+
+    bore.nose_radius = 0.8;
+    assert!(bore.why_not_sane().is_none(), "fixture must be a sane boring bar");
+    let err = export("Ground Bore", &bore).expect_err("Hurco export must refuse positive boring nose radius");
+    assert!(err.contains("Ground Bore") && err.contains("nose radius"), "{err}");
 }

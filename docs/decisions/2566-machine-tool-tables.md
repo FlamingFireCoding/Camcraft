@@ -100,3 +100,18 @@ three cutter kinds. Changing the flag could permit an unsafe plunge.
 **Considered and dropped:** Writing an unverified controller field does not
 establish a safe round trip. Support for another field requires verification
 and round-trip tests before these exports can be accepted.
+
+**Decided after the fourth review:** Split `tool_table_hurco_export.rs` from
+`tool_table_hurco.rs` and verify every exported Hurco tool through the Hurco
+reader. Refuse Hurco export by tool name when the holder diameter or length
+cannot survive the conversion, and refuse boring bars with a positive nose
+radius. Export judged holder dimensions when a tool carries a modelled body.
+
+**Why:** Hurco `.TCM` has no verified holder diameter field and `TipRadius` is
+verified only for bull-nose cutters. Shrinking a wide holder or dropping a
+boring-bar nose radius changes collision and boring geometry silently.
+
+**Considered and dropped:** Guessing unverified Hurco XML tags or dropping the
+holder diameter to zero on import without an incomplete-holder gate. Both
+approaches remain reversible if verified controller fields or a general
+incomplete-holder gate are added later.

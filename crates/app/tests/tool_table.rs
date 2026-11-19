@@ -309,3 +309,39 @@ fn script_verbs_roundtrip_pathpilot_csv_and_hurco_tcm() {
     assert!(written.contains("<Hurco_Document Version=\"1.1\">"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn hurco_export_refuses_catalog_wider_holder_and_positive_nose_radius_bore() {
+    let dir = tmp_dir("hurco-refusals");
+    let out_tcm = dir.join("refused.TCM");
+
+    let mut c1 = Client::new();
+    c1.ok("add_tool", json!({ "catalog": "EM-0200-2FL" }));
+    let err = c1.refused("export_tool_library", json!({ "path": out_tcm.display().to_string() }));
+    assert!(err.contains("EM-0200-2FL") && err.contains("holder diameter"), "{err}");
+    assert!(!out_tcm.exists(), "refused export must not write file");
+
+    let mut c2 = Client::new();
+    c2.ok("add_tool", json!({ "catalog": "BR-1000" }));
+    let err = c2.refused("export_tool_library", json!({ "path": out_tcm.display().to_string() }));
+    assert!(err.contains("BR-1000") && err.contains("nose radius"), "{err}");
+    assert!(!out_tcm.exists(), "refused export must not write file");
+
+    let in_tcm = dir.join("in.TCM");
+    std::fs::write(
+        &in_tcm,
+        "<Hurco_Document Version=\"1.1\"><Tools><Tool Id=\"1\">\
+         <Name>6MM BALL</Name><Number>7</Number><Diameter>6.0</Diameter>\
+         <ShankDiameter>6.0</ShankDiameter><AbsoluteGaugeLength>98.25</AbsoluteGaugeLength>\
+         <ToolType>16</ToolType></Tool></Tools></Hurco_Document>",
+    )
+    .expect("write");
+    let mut c3 = Client::new();
+    c3.ok("import_tool_library", json!({ "path": in_tcm.display().to_string() }));
+    c3.ok("set_tool_holder", json!({ "tool": "6MM BALL", "library": "BT30 ER20" }));
+    let err = c3.refused("export_tool_library", json!({ "path": out_tcm.display().to_string() }));
+    assert!(err.contains("6MM BALL") && err.contains("holder diameter"), "{err}");
+    assert!(!out_tcm.exists(), "refused export must not write file");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

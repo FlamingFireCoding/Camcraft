@@ -71,16 +71,18 @@ pub fn export(world: &World, format: ToolTableFormat, unit: Unit) -> Result<Stri
     for (name, number) in assigned {
         let Some(entity) = model::find_by_name(world, &name) else { continue };
         let Some(tool) = model::tool_of(world, &entity) else { continue };
-        let gauge_len = tool_body::body_of(world, &entity).and_then(|b| {
-            if let Some(r) = b.library {
-                Some(r.gauge_len)
-            } else {
-                tool_body::judged(world, &entity, tool.clone())
-                    .ok()
-                    .map(|(j, _)| j.holder_len)
-                    .filter(|&g| g > 0.0)
+        let (tool, gauge_len) = match tool_body::body_of(world, &entity) {
+            Some(b) => {
+                let (judged, _) = tool_body::judged(world, &entity, tool)
+                    .map_err(|e| format!("tool '{name}': {e}"))?;
+                let gauge = b
+                    .library
+                    .map(|r| r.gauge_len)
+                    .or_else(|| (judged.holder_len > 0.0).then_some(judged.holder_len));
+                (judged, gauge)
             }
-        });
+            None => (tool, None),
+        };
         items.push(OwnedRow { number, name, tool, gauge_len });
     }
     items.sort_by_key(|r| (r.number, r.name.clone()));
