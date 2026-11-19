@@ -419,6 +419,7 @@ impl ParamsDto {
                 steep_stepover,
                 pencil_reference,
                 fill_openings,
+                gap_link,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
                 stepover: *stepover,
@@ -437,6 +438,7 @@ impl ParamsDto {
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
+                gap_link: (*gap_link).into(),
             },
             // The deburr ride (M2.5 E B): the six keys are the kind's
             // whole content - no pattern, no retract, nothing derived
@@ -1666,6 +1668,7 @@ impl ParamsDto {
                 steep_stepover,
                 pencil_reference,
                 fill_openings,
+                gap_link,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
                 stepover: *stepover,
@@ -1684,6 +1687,7 @@ impl ParamsDto {
                 steep_stepover: *steep_stepover,
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
+                gap_link: (*gap_link).into(),
             },
             // Read back whole, the blade kinds' way - sane or
             // nothing, `validate_kind`'s door first (M2.5 E B):
