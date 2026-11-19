@@ -21,6 +21,12 @@ workOffsetMax = 6;      // G54..G57, G505, G506 (#934); more G505+ frames need t
 wcsRotation = true;        // #760: writes ROT RPL=.. / ROT in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G710 / G700
 endUnits = "G700 G710";   // #2189: switches end units before M2 when asked
+// #1389: 840D Fundamentals, section 3.2.4: semicolon to block end.
+explains = "semi";
+explainWords = {
+  G700: "INCH LENGTHS AND FEEDS", G710: "MM LENGTHS AND FEEDS",
+  G505: "WORK OFFSET 5", G506: "WORK OFFSET 6", G58: "", G59: ""
+};
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -88,7 +94,9 @@ function block(words) {  // one numbered line per block - the DIN law
   }
   if (a.length > 0) {
     nLine += 10;
-    writeln("N" + nLine + " " + a.join(" "));
+    var line = "N" + nLine + " " + a.join(" "), c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
   }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
