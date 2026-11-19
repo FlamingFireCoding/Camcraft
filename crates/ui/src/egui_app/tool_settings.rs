@@ -168,6 +168,8 @@ pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
                 }
                 // The thread mills (#894): a form and a pitch.
                 super::tool_thread_mill_row::seed(&mut state.tool_ui);
+                // The undercut cutters (#1444): head wider than neck, and dovetail flank angle.
+                super::tool_undercut_row::seed(&mut state.tool_ui);
                 // The torch (#670): no spindle, no corner - a
                 // kerf. Leaving it, a spinning kind needs an rpm.
                 // The sinker electrode (#541) and EDM wire (#2011) turn none either.
@@ -285,6 +287,7 @@ pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
                 num_plain(ui, &mut state.tool_ui.tip_angle);
                 ui.label("the included angle of the taper - 180 minus twice the chamfer's slope, so 90 cuts a 45-degree face");
             }
+            super::tool_undercut_row::dovetail_row(ui, state);
             if state.tool_ui.tool_kind() == tools::ToolKind::BallNose {
                 // #263: a ball's corner IS its ball, half the
                 // diameter (`Tool::tip_corner_r`) - shown, never
@@ -301,6 +304,10 @@ pub(super) fn contents(ui: &mut Ui, state: &mut State, wide: bool) {
                     | tools::ToolKind::Wire
                     | tools::ToolKind::ThreadMill
                     | tools::ToolKind::ThreadMillSingle
+                    | tools::ToolKind::TSlot
+                    | tools::ToolKind::Keyseat
+                    | tools::ToolKind::Dovetail
+                    | tools::ToolKind::Lollipop
             ) {
                 field(ui, "Corner radius");
                 num(ui, u, &mut state.tool_ui.corner_r);

@@ -10,10 +10,10 @@
 //! STL by this test.
 //!
 //! Gate map: covers app::operation::slot_undercut_op, the SlotUndercut
-//! arms of app::operation::{generate, kinds, heights, keep_law},
+//! arms of app::operation::{generate, kinds, heights, keep_law, kept_rejudge},
 //! app::project (undercut_dto, the undercut tool kind words),
 //! app::stock_sim (the undercut plan) and app::mcp (add_operation,
-//! verify findings).
+//! edit_operation, verify findings).
 
 use camcraft_app::mcp::Server;
 
@@ -293,5 +293,86 @@ fn an_undercut_below_the_parts_floor_is_a_gouge_that_holds_the_post() {
     assert_eq!(ver["ok"], json!(false), "{ver}");
     assert!(kinds_of(&ver, "Undercut").contains(&"gouge".to_owned()), "{ver}");
     c.refused("post", json!({ "output": dir.join("x.nc").display().to_string(), "post": "Fanuc" }));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn write_box_stl(path: &Path, lo: [f64; 3], hi: [f64; 3]) {
+    let [x0, y0, z0] = lo;
+    let [x1, y1, z1] = hi;
+    let quads = [
+        [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]],
+        [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+        [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]],
+        [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]],
+        [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]],
+        [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]],
+    ];
+    let mut s = String::from("solid box\n");
+    for q in quads {
+        for tri in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] {
+            s.push_str(" facet normal 0 0 0\n  outer loop\n");
+            for p in tri {
+                s.push_str(&format!("   vertex {} {} {}\n", p[0], p[1], p[2]));
+            }
+            s.push_str("  endloop\n endfacet\n");
+        }
+    }
+    s.push_str("endsolid box\n");
+    std::fs::write(path, s).expect("write box stl");
+}
+
+#[test]
+fn a_part_source_undercut_keeps_neighbouring_parts() {
+    let dir = tmp_dir("neighbour");
+    let mut c = job(&dir);
+    let box_stl = dir.join("neighbour.stl");
+    write_box_stl(&box_stl, [40.0, -5.0, 0.0], [50.0, 5.0, 20.0]);
+    c.ok("import_model", json!({ "path": box_stl.display().to_string(), "name": "neighbour" }));
+
+    add_neck_slot(&mut c);
+    add_undercut(&mut c, json!({}));
+    c.ok("generate", json!({}));
+    let ver = c.ok("verify", json!({}));
+    assert_eq!(ver["ok"], json!(true), "{ver}");
+    c.ok("post", json!({ "output": dir.join("clear.nc").display().to_string(), "post": "Fanuc" }));
+
+    // Move the neighbour part into the undercut entry station (x -50..-40) without regenerating:
+    // kept_rejudge must catch the moved neighbour at post time.
+    c.ok("move_model", json!({ "name": "neighbour", "position": [-90.0, 0.0, 0.0] }));
+    let blocked = c.refused("post", json!({ "output": dir.join("moved.nc").display().to_string(), "post": "Fanuc" }));
+    assert!(blocked.contains("neighbour"), "{blocked}");
+
+    // Regenerating after the move must also flag the neighbour gouge on the operation itself.
+    c.ok("edit_operation", json!({ "name": "Undercut", "params": { "stepover": 1.9 } }));
+    c.ok("generate", json!({ "name": "Undercut" }));
+    let ver = c.ok("verify", json!({}));
+    assert_eq!(ver["ok"], json!(false), "{ver}");
+    assert!(kinds_of(&ver, "Undercut").contains(&"gouge".to_owned()), "{ver}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn list_operation_types_and_edit_operation_keep_zero_bulge_and_neck_slot() {
+    let dir = tmp_dir("zero-fields");
+    let mut c = job(&dir);
+
+    let kinds = c.ok("list_operation_types", json!({}));
+    let kind = kinds["kinds"]
+        .as_array()
+        .and_then(|k| k.iter().find(|k| k["key"] == json!("slot_undercut")))
+        .expect("slot_undercut kind");
+    let fields = kind["fields"].as_array().expect("slot_undercut fields");
+    assert!(fields.iter().any(|f| f["name"] == json!("bulge") && f["default"] == json!(0.0)), "{fields:?}");
+    assert!(fields.iter().any(|f| f["name"] == json!("neck_slot") && f["default"] == json!(0.0)), "{fields:?}");
+
+    add_undercut(&mut c, json!({ "bulge": 0.25, "neck_slot": 9.0 }));
+    c.ok("edit_operation", json!({ "name": "Undercut", "params": { "bulge": 0.0, "neck_slot": 0.0 } }));
+    let job = c.ok("get_job", json!({}));
+    let op = job["operations"]
+        .as_array()
+        .and_then(|o| o.iter().find(|o| o["key"] == json!("Undercut")))
+        .expect("Undercut");
+    assert_eq!(op["params"]["slot_undercut"]["bulge"], json!(0.0));
+    assert_eq!(op["params"]["slot_undercut"]["neck_slot"], json!(0.0));
     let _ = std::fs::remove_dir_all(&dir);
 }

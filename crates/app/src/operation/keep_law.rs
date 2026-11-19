@@ -244,7 +244,10 @@ pub(super) fn neighbour_parts(
 pub(super) fn is_part_kept_kind(params: &OpParams, src: &SrcRef) -> bool {
     super::generate::depth_law_of(params, src, true) != super::generate::DepthLaw::None
         || is_cross_drill(params)
-        || matches!(params, OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. })
+        || matches!(
+            params,
+            OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. } | OpParams::SlotUndercut(_)
+        )
 }
 
 /// The models whose meshes an operation's part laws read beyond its own

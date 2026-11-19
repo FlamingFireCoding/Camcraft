@@ -11,13 +11,13 @@ use crate::operation::SlotUndercutOp;
 pub struct SlotUndercutDto {
     pub a: [f64; 2],
     pub b: [f64; 2],
-    /// Absent: a straight slot.
-    #[serde(default, skip_serializing_if = "is_zero")]
+    /// 0.0: a straight slot.
+    #[serde(default)]
     pub bulge: f64,
     pub width: f64,
     pub run_in: f64,
-    /// Absent: nothing stands above the neck's path.
-    #[serde(default, skip_serializing_if = "is_zero")]
+    /// 0.0: nothing stands above the neck's path.
+    #[serde(default)]
     pub neck_slot: f64,
     pub clearance_z: HeightDto,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -28,10 +28,6 @@ pub struct SlotUndercutDto {
     pub feed: f64,
     pub plunge_feed: f64,
     pub climb: bool,
-}
-
-fn is_zero(v: &f64) -> bool {
-    *v == 0.0
 }
 
 impl SlotUndercutDto {

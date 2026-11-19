@@ -184,6 +184,8 @@ mod tool_library_import;
 mod tool_cutter;
 // #93 slice 3: the drawn cutter edited by its parameters.
 mod tool_cutter_params;
+// #1444: undercut tool editor seeding/angle/corner filter and Slot Undercut page.
+mod tool_undercut;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
 mod recent_door;
