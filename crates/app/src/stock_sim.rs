@@ -168,6 +168,9 @@ pub fn simulate_document(
     // #1595: and its mark - an Engrave's or Trace's own sweep, within
     // the budget the operation's own law holds it to.
     credit_marks(&mut dev, &display, &model_facets, &marks::program_marks(world, &planned, walked.spanned, &walked.frame));
+    // #2400: declared pocket/slot corner reliefs, bounded by cutter radius and cut floor.
+    let reliefs = program_corner_reliefs(world, &planned, walked.spanned, &walked.frame);
+    credit_corner_reliefs(&mut dev, &display, &model_facets, &reliefs);
     // #320: a gouge on a block a later setup set aside for a new one.
     if let Some(left) = &walked.left {
         carry::fold_left(&mut dev, left);
@@ -248,6 +251,21 @@ pub(crate) struct Planned {
     /// #2441: a twist drill's cone carries a cylindrical flute above
     /// `r * cot`, unlike a truncated chamfer `Taper`.
     pub drill: bool,
+    /// Declared inside-corner relief corridors computed live from operation geometry (#2400).
+    pub corner_reliefs: Vec<crate::verify::CornerReliefZone>,
+}
+
+pub(super) fn program_corner_reliefs(
+    world: &flecs_ecs::prelude::World,
+    planned: &[Planned],
+    spanned: bool,
+    frame: &Option<String>,
+) -> Vec<crate::verify::CornerReliefZone> {
+    planned
+        .iter()
+        .filter(|p| !spanned || crate::setup::effective(world, p.setup.as_deref()) == *frame)
+        .flat_map(|p| p.corner_reliefs.iter().copied())
+        .collect()
 }
 
 /// The field eye's refusal of a sinker electrode (#541), said once.
@@ -404,6 +422,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
         // #546: a wear-compensated burn is judged as the worn electrode burns it.
         let moves = crate::operation::sinker_wear_op::judged(world, &op, electrode.as_ref().map(|e| e.gap), cache.path.moves)
             .map_err(|e| format!("{name}: {e}"))?;
+        let corner_reliefs = crate::operation::corner_relief::zones_for_op(world, &op, name);
         planned.push(Planned {
             name: name.clone(),
             moves,
@@ -422,6 +441,7 @@ fn plan_ops(world: &flecs_ecs::prelude::World, ops: &[(String, flecs_ecs::prelud
             lathe,
             electrode,
             drill,
+            corner_reliefs,
         });
     }
     Ok(planned)
