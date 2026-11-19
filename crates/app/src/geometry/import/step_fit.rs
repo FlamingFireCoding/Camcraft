@@ -36,6 +36,10 @@
 //! dropped: the model then carries reduced fidelity (#864) and the gate
 //! refuses to verify against it.
 //!
+//! A refined face then gets its flat "cap" facets flipped away ([`relax`],
+//! #2713): the split holds the facets' points and edges to the surface, and
+//! the flip holds their normals to it.
+//!
 //! Limits, stated: B-spline, NURBS and swept faces are not measured here
 //! (their grid and parameter stretch are #1602's); a face whose mesh does
 //! not carry usable parameters is left as the kernel made it.
@@ -56,6 +60,13 @@ pub(super) const SLACK: f64 = 2.0;
 /// Refinement rounds. Each halves an edge's parameter span, so its chord
 /// height falls to a quarter: 24 rounds take any span to round-off.
 const ROUNDS: usize = 24;
+
+/// Flips of [`relax`] for each facet of the face. A flip can make its
+/// neighbour edges due; the cap bounds the work on a mesh that never rests.
+const FLIPS_PER_FACET: usize = 8;
+/// An edge is flipped when its two opposite angles sum to more than a half
+/// turn plus this (radians), so a square cell's two equal diagonals stay.
+const FLIP_MARGIN: f64 = 1e-3;
 
 /// One face's verdict: the facets that replace the kernel's (`None`: keep
 /// them), and the chord height still over the limit (0 when none is).
@@ -184,11 +195,104 @@ pub(super) fn fit(poly: &PolygonMesh, at: &dyn Fn(f64, f64) -> [f64; 3], tol: f6
         changed = true;
         off = 0.0;
     }
+    if changed {
+        relax(&verts, &mut tris, at, limit);
+    }
     let point = |i: u32| verts.get(i as usize).map(|v| P3::new(v.p[0], v.p[1], v.p[2]));
     let facets = changed
         .then(|| tris.iter().map(|t| Some(Triangle::new(point(t[0])?, point(t[1])?, point(t[2])?))).collect::<Option<Vec<_>>>())
         .flatten();
     Fit { facets, off }
+}
+
+/// The angle at `c` of the facet `a b c`, in space. `None` for a facet with
+/// a null side.
+fn angle_at(verts: &[Vert], c: u32, a: u32, b: u32) -> Option<f64> {
+    let (pc, pa, pb) = (verts.get(c as usize)?.p, verts.get(a as usize)?.p, verts.get(b as usize)?.p);
+    let (u, w) = ([pa[0] - pc[0], pa[1] - pc[1], pa[2] - pc[2]], [pb[0] - pc[0], pb[1] - pc[1], pb[2] - pc[2]]);
+    let m = ((u[0] * u[0] + u[1] * u[1] + u[2] * u[2]) * (w[0] * w[0] + w[1] * w[1] + w[2] * w[2])).sqrt();
+    let cos = (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / m;
+    (m > 0.0 && cos.is_finite()).then(|| cos.clamp(-1.0, 1.0).acos())
+}
+
+/// Twice the signed area of `a b c` in the parameter plane.
+fn uv_area2(verts: &[Vert], [a, b, c]: [u32; 3]) -> Option<f64> {
+    let (a, b, c) = (verts.get(a as usize)?.uv, verts.get(b as usize)?.uv, verts.get(c as usize)?.uv);
+    Some((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+}
+
+/// How many facets have an edge, and two of their (facet, opposite corner).
+type Sides = (u8, [(usize, u32); 2]);
+
+/// Flip the inside edges of a refined face that leave a flat "cap" facet
+/// (#2713). The split measures edges only: three points on the surface with
+/// the apex over the long edge's middle pass it, but the facet's normal
+/// stands far off the surface's, and the pick shows its edges as creases
+/// on a smooth wall. The rule is Lawson's ("Software for C1 surface
+/// interpolation", 1977): an edge whose two opposite angles sum to more
+/// than a half turn is replaced by the other diagonal. A flip is made only
+/// where the two new facets keep their winding in the parameter plane and
+/// the new edge passes the chord-height `limit` of the split, so the #2600
+/// law holds. No point moves and no boundary edge changes.
+fn relax(verts: &[Vert], tris: &mut [[u32; 3]], at: &dyn Fn(f64, f64) -> [f64; 3], limit: f64) {
+    let mut sides: HashMap<(u32, u32), Sides> = HashMap::with_capacity(tris.len() * 2);
+    for (i, t) in tris.iter().enumerate() {
+        for (a, b, c) in [(t[0], t[1], t[2]), (t[1], t[2], t[0]), (t[2], t[0], t[1])] {
+            let s = sides.entry(key(a, b)).or_insert((0, [(0, 0); 2]));
+            if let Some(slot) = s.1.get_mut(s.0 as usize) {
+                *slot = (i, c);
+            }
+            s.0 = s.0.saturating_add(1);
+        }
+    }
+    // In edge order, so the facets are the same on every run.
+    let mut queue: Vec<(u32, u32)> = sides.iter().filter(|(_, s)| s.0 == 2).map(|(e, _)| *e).collect();
+    queue.sort_unstable_by(|x, y| y.cmp(x));
+    let mut left = tris.len().saturating_mul(FLIPS_PER_FACET);
+    while let Some(e) = queue.pop() {
+        let Some(&(2, [(i, c), (j, d)])) = sides.get(&e) else { continue };
+        let (Some(ti), Some(tj)) = (tris.get(i).copied(), tris.get(j).copied()) else { continue };
+        if i == j || c == d || sides.contains_key(&key(c, d)) {
+            continue;
+        }
+        let (Some(at_c), Some(at_d)) = (angle_at(verts, c, e.0, e.1), angle_at(verts, d, e.0, e.1)) else { continue };
+        if at_c + at_d <= std::f64::consts::PI + FLIP_MARGIN {
+            continue;
+        }
+        // Facet `i` runs a -> b -> c, and `j` runs b -> a -> d.
+        let (a, b) = if ti.iter().zip(ti.iter().cycle().skip(1)).any(|(x, y)| (*x, *y) == e) { e } else { (e.1, e.0) };
+        let (n1, n2) = ([a, d, c], [d, b, c]);
+        let (Some(w0), Some(w1), Some(w2)) = (uv_area2(verts, ti), uv_area2(verts, n1), uv_area2(verts, n2)) else { continue };
+        if !(w0 != 0.0 && w1 * w0 > 0.0 && w2 * w0 > 0.0) || uv_area2(verts, tj).is_none_or(|w| w * w0 <= 0.0) {
+            continue;
+        }
+        let (Some(vc), Some(vd)) = (verts.get(c as usize), verts.get(d as usize)) else { continue };
+        let chord = [0.5 * (vc.p[0] + vd.p[0]), 0.5 * (vc.p[1] + vd.p[1]), 0.5 * (vc.p[2] + vd.p[2])];
+        let off = dist(at(0.5 * (vc.uv[0] + vd.uv[0]), 0.5 * (vc.uv[1] + vd.uv[1])), chord);
+        if off.is_nan() || off > limit {
+            continue;
+        }
+        let Some(left_now) = left.checked_sub(1) else { break };
+        left = left_now;
+        if let Some(t) = tris.get_mut(i) {
+            *t = n1;
+        }
+        if let Some(t) = tris.get_mut(j) {
+            *t = n2;
+        }
+        sides.remove(&e);
+        sides.insert(key(c, d), (2, [(i, a), (j, b)]));
+        // The four outer edges: the facet on this side, and its far corner.
+        for (x, y, was, now) in [(a, d, j, (i, c)), (d, b, j, (j, c)), (b, c, i, (j, d)), (c, a, i, (i, d))] {
+            if let Some(s) = sides.get_mut(&key(x, y)) {
+                let n = usize::from(s.0.min(2));
+                if let Some(slot) = s.1.iter_mut().take(n).find(|slot| slot.0 == was) {
+                    *slot = now;
+                }
+            }
+            queue.push(key(x, y));
+        }
+    }
 }
 
 /// One facet split by its marked edges, winding kept: one mark halves it,
