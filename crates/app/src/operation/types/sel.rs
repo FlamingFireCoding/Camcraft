@@ -118,6 +118,10 @@ pub enum OpType {
     /// M10.1's tool-law work; until it lands the name says what the
     /// path is, not what the tool must be.
     Engrave,
+    /// V-carve (#1443): a V-bit's tip on the medial axis of a closed
+    /// region, the depth set by the region's width (see
+    /// [`crate::machining2d::v_carve`]).
+    VCarve,
     /// 2D chamfer (M2.4 B): one ride of a taper tool's CONE lying ON
     /// the authored wall - apex at the top plane, offset solved so the
     /// cone coincides with the chamfer face (see
