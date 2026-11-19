@@ -1510,7 +1510,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let run = |q: &Finish3DParams| if is_contour {
                 crate::multiaxis::rotary_contour(&material.facets, q, &axis)
             } else {
-                crate::multiaxis::rotary_parallel(&material.facets, q, &axis)
+                crate::multiaxis::rotary_parallel_in(&material.facets, stock_facets.as_deref(), q, &axis)
             };
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
             // M13.5 B: the letter is the machine's. The fitted line
