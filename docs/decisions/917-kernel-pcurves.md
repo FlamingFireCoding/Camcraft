@@ -31,7 +31,11 @@
   - an edge interval that the kernel moved past the edge's reach (the
     larger of its vertex and edge tolerances);
   - a made pcurve whose lift onto the surface misses its 3D edge by more
-    than the held edge tolerance (33 samples, ends included).
+    than the held edge tolerance, but never more than `MAX_EDGE_GAP_MM`
+    (33 samples, ends included);
+  - a face, edge or vertex tolerance that is not a finite number of zero or
+    more, and a lift sample whose distance is not finite (`f64::max` drops a
+    NaN, so each is checked before it is used).
   The reader checks the whole record again after this
   (`record_check::agreement`). The interval and lift checks are in
   `crates/kernel/src/solidcore_trims/checks.rs` (the 400-line rule).
@@ -45,8 +49,68 @@
   vertex off its curves is refused by name (observed: the surface would
   move 0.89 mm, over the reach of 0.51 mm), and so is
   `bspline_discontinuous.step` (the gap cap below).
+- The two twisted-flank fixtures do not reach `KernelTrims`: the reader
+  makes their pcurves itself (a probe found no call). `fillet_corner.step`,
+  `bar_cross_holes.step` and `fig8.step` reach it, and
+  `crates/kernel/tests/step_closed_form.rs` pins that route against closed
+  forms. In `step_twisted_flank.rs`, only `bspline_discontinuous.step`
+  reaches it (the gap cap).
+- An inch file reaches it too: `fillet_corner_in_inches_reads_at_its_closed_form_volume_in_mm`
+  edits the length unit of `fillet_corner.step` to the inch in memory and
+  reads 25.4^3 times the closed form, in mm. The gap cap and the lift
+  tolerance are in mm after the unit change.
+- The two `Milling-test*.step` bench rows move from "disagree: bounding box"
+  to "agree" (Refs #939). The port's box at 2016386 stops at the flat at
+  Y = 19.719, as the file's vertices and both meshes do. This PR does not
+  close #939; its owner confirms the fix there.
 - The bench helper `step_util::solidcore_mesh` reads with `KernelTrims` too,
   so the sc-tess mesh is judged on the same record as the import.
+
+**Why.** At the pinned commit the reader refuses a face whose free-form
+edges have no pcurve ("pcurves failed on ..."). Real files have such faces:
+a user STEP file with a twisted B-spline flank was refused. The kernel
+already makes trims for its own booleans and blends, so the same code makes
+these. The maintainer chose this route (option 2) over the alternatives
+below.
+
+**Considered and dropped.**
+- Keep truck as a fallback for the faces that solidcore refuses. Dropped:
+  two readers give two sets of answers, and the maintainer asked to remove
+  truck.
+- Our own pcurve fit (project 3D samples onto the surface, fit a 2D
+  B-spline). Dropped: it is a second trim maker beside the kernel's, with
+  its own tolerances to keep in step.
+- Wait for the reader upstream to make the pcurves. Dropped: there is no
+  date, and the user file stays refused until then.
+- A fresh kernel for each face. Dropped: it loses the opt-in fixes and the
+  cancel token of the import.
+
+**Cost to change later.** Low. The seam is one trait. If the reader later
+makes the pcurves itself, `read_step` calls `read_solids` again and
+`solidcore_trims.rs` is deleted; the bench pins show any change of verdict.
+
+### The lift tolerance (held edge tolerance, at most 0.01 mm)
+
+**Chosen.** `lifts_onto` checks a made pcurve against
+`min(held, MAX_EDGE_GAP_MM)`. `held` is the edge's tolerance from the file,
+or as `cover_gaps` raised it. A loose file tolerance (or a raised one, which
+can reach `SURFACE_GAP_MARGIN` times 0.01 mm) does not pass a pcurve that
+misses its edge by more than the cap on an edge's gap.
+
+**Measured** (a temporary probe, removed before the commit):
+
+| Fixture | Held tolerance (mm) | Largest lift gap (mm) |
+|---|---|---|
+| fillet_corner.step | 1e-6 | at most 2.9e-7 |
+| bar_cross_holes.step | 2e-5 | 1.2e-5 |
+| bspline_discontinuous.step | 1e-6 | refused at the gap cap first |
+
+On each fixture the held tolerance is under 0.01 mm, so the rule changes no
+verdict. fig8, fillet_corner, bar_cross_holes and twisted_flank read at the
+same volumes, and the two refused fixtures stay refused.
+
+**Dropped.** The held tolerance alone: it follows the file, and a file can
+give any tolerance.
 
 ### The edge-gap cap (0.01 mm)
 
@@ -114,29 +178,6 @@ its volume is short (20651.68 against 26816.49 mm3; 45816.21 against
 
 **Dropped.** "agree" with a looser tolerance: it would hide truck's open
 mesh. Dropping the rows: the bench must name each fixture.
-
-**Why.** At the pinned commit the reader refuses a face whose free-form
-edges have no pcurve ("pcurves failed on ..."). Real files have such faces:
-a user STEP file with a twisted B-spline flank was refused. The kernel
-already makes trims for its own booleans and blends, so the same code makes
-these. The maintainer chose this route (option 2) over the alternatives
-below.
-
-**Considered and dropped.**
-- Keep truck as a fallback for the faces that solidcore refuses. Dropped:
-  two readers give two sets of answers, and the maintainer asked to remove
-  truck.
-- Our own pcurve fit (project 3D samples onto the surface, fit a 2D
-  B-spline). Dropped: it is a second trim maker beside the kernel's, with
-  its own tolerances to keep in step.
-- Wait for the reader upstream to make the pcurves. Dropped: there is no
-  date, and the user file stays refused until then.
-- A fresh kernel for each face. Dropped: it loses the opt-in fixes and the
-  cancel token of the import.
-
-**Cost to change later.** Low. The seam is one trait. If the reader later
-makes the pcurves itself, `read_step` calls `read_solids` again and
-`solidcore_trims.rs` is deleted; the bench pins show any change of verdict.
 
 ### Port verdicts that the pin move changed (solidcore 55d0e76 -> 2016386)
 

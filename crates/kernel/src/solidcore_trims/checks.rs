@@ -101,7 +101,7 @@ pub(super) fn lifts_onto(
         let p = curve
             .point(t)
             .ok_or_else(|| format!("the edge's curve has no point at {t}"))?;
-        gap = gap.max(s.distance(p));
+        gap = finite_max(gap, s.distance(p), t)?;
     }
     if !(above(tolerance, gap) || tolerance == gap) {
         return Err(format!(
@@ -109,6 +109,44 @@ pub(super) fn lifts_onto(
         ));
     }
     Ok(())
+}
+
+/// Every tolerance the face gives (its own, each edge's, each vertex's) is a
+/// finite number not below zero. The trims take the larger of two
+/// tolerances with `f64::max`, which drops a NaN: a NaN tolerance from the
+/// file is refused here by name, before any is used.
+pub(super) fn finite_tolerances(face: &TrimFace<'_>) -> Result<(), String> {
+    finite_tolerance("the face's", face.tolerance)?;
+    for (i, e) in face.edges.iter().enumerate() {
+        finite_tolerance(&format!("edge {i}'s"), e.tolerance)?;
+    }
+    for (i, &v) in face.vertex_tolerances.iter().enumerate() {
+        finite_tolerance(&format!("vertex {i}'s"), v)?;
+    }
+    Ok(())
+}
+
+/// `what` tolerance `value` is a finite number not below zero.
+fn finite_tolerance(what: &str, value: f64) -> Result<(), String> {
+    if value.is_finite() && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} tolerance {value} is not a finite number of zero or more"
+        ))
+    }
+}
+
+/// The larger of the gap so far and the distance at parameter `t`. A
+/// distance that is not a finite number (a NaN or an infinite sample) is
+/// refused by name: `f64::max` would drop a NaN and pass the lift.
+fn finite_max(gap: f64, distance: f64, t: f64) -> Result<f64, String> {
+    if !distance.is_finite() {
+        return Err(format!(
+            "a made pcurve's lift at {t} is not a finite distance from its edge ({distance})"
+        ));
+    }
+    Ok(gap.max(distance))
 }
 
 /// `x > y`, false where either is NaN (so `!above` refuses a NaN).
@@ -121,4 +159,40 @@ fn edge_eval(ours: &TrimEdge<'_>) -> Result<CurveEval, String> {
     let curve =
         solidcore_convert::curve(ours.nurbs.unwrap_or(ours.curve)).map_err(|e| e.to_string())?;
     CurveEval::new(&curve).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A NaN or infinite lift sample is refused by name; `f64::max` alone
+    /// would keep the gap so far and pass the lift.
+    #[test]
+    fn a_lift_sample_that_is_not_finite_is_refused_by_name() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let err = finite_max(1e-6, bad, 0.25).expect_err("a non-finite sample must refuse");
+            assert!(
+                err.starts_with(
+                    "a made pcurve's lift at 0.25 is not a finite distance from its edge"
+                ),
+                "{err}"
+            );
+        }
+        assert_eq!(finite_max(1e-6, 2e-6, 0.5), Ok(2e-6));
+        assert_eq!(finite_max(3e-6, 2e-6, 0.5), Ok(3e-6));
+    }
+
+    /// A tolerance that is NaN, infinite or below zero is refused by name.
+    #[test]
+    fn a_tolerance_that_is_not_finite_is_refused_by_name() {
+        for bad in [f64::NAN, f64::INFINITY, -1e-6] {
+            let err = finite_tolerance("edge 3's", bad).expect_err("a bad tolerance must refuse");
+            assert_eq!(
+                err,
+                format!("edge 3's tolerance {bad} is not a finite number of zero or more")
+            );
+        }
+        assert_eq!(finite_tolerance("the face's", 1e-5), Ok(()));
+        assert_eq!(finite_tolerance("the face's", 0.0), Ok(()));
+    }
 }

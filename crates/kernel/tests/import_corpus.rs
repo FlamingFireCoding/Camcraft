@@ -89,8 +89,14 @@ fn corpus() -> Vec<(&'static str, Vec<u8>)> {
             "inf vertex",
             edit_record(&t, "8 Vertices In Brep", 5, |_| "inf".into()).into_bytes(),
         ),
-        ("zero zone tolerance", zone_tolerance(&t, "0.0").into_bytes()),
-        ("negative zone tolerance", zone_tolerance(&t, "-1.0").into_bytes()),
+        (
+            "zero zone tolerance",
+            zone_tolerance(&t, "0.0").into_bytes(),
+        ),
+        (
+            "negative zone tolerance",
+            zone_tolerance(&t, "-1.0").into_bytes(),
+        ),
         ("NaN zone tolerance", zone_tolerance(&t, "nan").into_bytes()),
         (
             "face count 4294967295",

@@ -12,8 +12,10 @@
 //! Nothing is accepted unchecked (Prime Directive): an edge farther off its
 //! surface than [`MAX_EDGE_GAP_MM`], an edge interval the kernel moved past
 //! the edge's tolerance, and a made pcurve whose lift onto the surface
-//! misses its 3D edge by more than the edge's tolerance are each refused by
-//! name, and the reader then refuses the solid. The reader checks the record
+//! misses its 3D edge by more than the edge's tolerance (never more than
+//! [`MAX_EDGE_GAP_MM`]) are each refused by name, and so is a tolerance or a
+//! lift sample that is not a finite number. The reader then refuses the
+//! solid. The reader checks the record
 //! again after this (`record_check::agreement`).
 
 use std::cell::RefCell;
@@ -29,7 +31,7 @@ use solidcore_record::brep::{
 
 mod checks;
 
-use checks::{above, lifts_onto, on_our_interval};
+use checks::{above, finite_tolerances, lifts_onto, on_our_interval};
 
 /// The farthest an edge may lie off its face's surface (mm). The reader's
 /// 1 mm reach keeps edges a visible step off their faces (0.25 mm on a 1 mm
@@ -67,6 +69,8 @@ impl Trims for KernelTrims<'_> {
 }
 
 fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String> {
+    // Each `.max` on a tolerance below takes finite values only.
+    finite_tolerances(face)?;
     let (mut record, bare) = sheet(face)?;
     let build = |k: &mut Kernel, r: &b::Brep| {
         to_kernel_with_bare_uses(k, r, true, &bare).map_err(|e| e.to_string())
@@ -90,7 +94,10 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
     // Our edge `i` is the kernel's `order.edges[i]`, which the record read
     // back puts where `back.edges` names it.
     let edge_of = |i: u32| -> Result<usize, String> {
-        let id = order.edges.get(i as usize).ok_or("an edge the kernel lost")?;
+        let id = order
+            .edges
+            .get(i as usize)
+            .ok_or("an edge the kernel lost")?;
         back.edges
             .iter()
             .position(|x| x == id)
@@ -138,7 +145,10 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
                     .max(held)
             });
             let pc = on_our_interval(pc, ours, edge.interval, reach)?;
-            lifts_onto(face, ours, &pc, held)?;
+            // The lift is held to the edge's tolerance, but never looser
+            // than the cap on an edge's gap: a loose file tolerance (or one
+            // raised by the margin) does not pass a pcurve that misses.
+            lifts_onto(face, ours, &pc, held.min(MAX_EDGE_GAP_MM))?;
             pcs.push(pc);
         }
         result.push(pcs);

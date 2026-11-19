@@ -27,14 +27,25 @@ const MESH_REL: f64 = 1e-3;
 /// One solid's exact volume and box.
 type Exact = (f64, [f64; 3], [f64; 3]);
 
-/// The one solid of `file` and the file's bytes.
-fn exact(file: &'static str) -> (Exact, Vec<u8>) {
+/// The bytes of the fixture `file`.
+fn fixture(file: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata/models")
         .join(file);
     let bytes = std::fs::read(&path).unwrap_or_default();
     assert!(!bytes.is_empty(), "fixture {file} is missing");
-    let b = bytes.clone();
+    bytes
+}
+
+/// The one solid of `file` and the file's bytes.
+fn exact(file: &'static str) -> (Exact, Vec<u8>) {
+    let bytes = fixture(file);
+    (exact_of(file, bytes.clone()), bytes)
+}
+
+/// The one solid that `bytes` (named `file`) reads as.
+fn exact_of(file: &'static str, bytes: Vec<u8>) -> Exact {
+    let b = bytes;
     let read = bounded_cancel(file, CASE_TIMEOUT, move |stop| {
         let mut k = SolidcoreKernel::default();
         import_step(&mut k, &b, stop).map(|i| {
@@ -51,7 +62,7 @@ fn exact(file: &'static str) -> (Exact, Vec<u8>) {
     let [one] = solids.as_slice() else {
         panic!("{file}: one solid, got {solids:?}")
     };
-    (*one, bytes)
+    *one
 }
 
 fn rel(a: f64, b: f64) -> f64 {
@@ -80,13 +91,7 @@ fn mesh_agrees(file: &str, bytes: &[u8], v: f64) {
 
 #[test]
 fn fillet_corner_reads_at_its_closed_form_volume() {
-    // The fixture: a 30 mm cube on the origin, the three edges at
-    // (-15,-15,-15) rounded R = 3.125 and a spherical corner blend.
-    // Each round takes (1 - pi/4) r^2 along its edge outside the corner
-    // cube of side r, length (L - r); the corner cube keeps the sphere's
-    // octant, pi r^3 / 6, so it loses r^3 (1 - pi/6).
-    let (l, r) = (30.0_f64, 3.125_f64);
-    let want = l.powi(3) - 3.0 * (1.0 - PI / 4.0) * r * r * (l - r) - r.powi(3) * (1.0 - PI / 6.0);
+    let want = fillet_corner_volume();
     let ((v, min, max), bytes) = exact("fillet_corner.step");
     assert!(
         rel(v, want) <= EXACT_REL,
@@ -97,6 +102,42 @@ fn fillet_corner_reads_at_its_closed_form_volume() {
         assert!(ok, "box {min:?}..{max:?}");
     }
     mesh_agrees("fillet_corner.step", &bytes, v);
+}
+
+/// The fixture fillet_corner.step: a 30 mm cube on the origin, the three
+/// edges at (-15,-15,-15) rounded R = 3.125 and a spherical corner blend.
+/// Each round takes (1 - pi/4) r^2 along its edge outside the corner cube of
+/// side r, length (L - r); the corner cube keeps the sphere's octant,
+/// pi r^3 / 6, so it loses r^3 (1 - pi/6). In the file's units.
+fn fillet_corner_volume() -> f64 {
+    let (l, r) = (30.0_f64, 3.125_f64);
+    l.powi(3) - 3.0 * (1.0 - PI / 4.0) * r * r * (l - r) - r.powi(3) * (1.0 - PI / 6.0)
+}
+
+/// fillet_corner.step with its length unit changed from the millimetre to
+/// the inch (a conversion-based unit of 25.4 mm, ISO 10303-41). Every
+/// number of the file stays; the part is 25.4 times larger.
+#[test]
+fn fillet_corner_in_inches_reads_at_its_closed_form_volume_in_mm() {
+    let text = String::from_utf8(fixture("fillet_corner.step")).expect("ASCII fixture");
+    let mm = "#9=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));";
+    assert!(text.contains(mm), "fillet_corner.step: the unit line moved");
+    let inch = "#9=(CONVERSION_BASED_UNIT('INCH',#9001) LENGTH_UNIT() NAMED_UNIT(#9002));
+                #9001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#9003);
+                #9002=DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);
+                #9003=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));";
+    let bytes = text.replace(mm, inch).into_bytes();
+    let (v, min, max) = exact_of("fillet_corner.step in inches", bytes);
+    let want = fillet_corner_volume() * 25.4_f64.powi(3);
+    assert!(
+        rel(v, want) <= EXACT_REL,
+        "volume {v} mm3, closed form {want}"
+    );
+    let h = 15.0 * 25.4;
+    for i in 0..3 {
+        let ok = (min[i] + h).abs() <= 1e-4 && (max[i] - h).abs() <= 1e-4;
+        assert!(ok, "box {min:?}..{max:?}");
+    }
 }
 
 /// One blind radial hole of radius `a` in a cylinder of radius `big`, its
