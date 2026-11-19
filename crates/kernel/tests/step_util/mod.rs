@@ -1,7 +1,7 @@
 //! Shared helpers of the STEP bench (step_agreement.rs, step_corrupt.rs):
 //! the truck-stepio reading of a file as crates/app does it today, the
-//! solidcore mesher over the same file, mesh measures, and a time bound
-//! that cancels the import it bounds.
+//! solidcore mesher over the same file (with the kernel's pcurves, #917),
+//! mesh measures, and a time bound that cancels the import it bounds.
 //! Provenance: our own bench design (M12.1 retirement gate). The truck
 //! calls are the ones crates/app/src/geometry/import/step.rs makes
 //! (ruststep parse, `Table::from_data_section`, `to_compressed_shell`,
@@ -146,7 +146,9 @@ pub struct TruckStep {
 /// refused by name, and `stop` ends the meshing when the bench cancels it.
 pub fn truck_read(bytes: &[u8], mm_per_unit: f64, stop: &CancelToken) -> Result<TruckStep, String> {
     let text = std::str::from_utf8(bytes).map_err(|_| "not valid UTF-8".to_string())?;
-    let read = catch_unwind(AssertUnwindSafe(|| truck_read_text(text, mm_per_unit, stop)));
+    let read = catch_unwind(AssertUnwindSafe(|| {
+        truck_read_text(text, mm_per_unit, stop)
+    }));
     read.unwrap_or_else(|_| Err("truck panicked on this file".into()))
 }
 
@@ -241,7 +243,11 @@ pub fn solidcore_mesh(bytes: &[u8]) -> Result<SolidcoreMesh, String> {
 
 fn solidcore_mesh_text(text: &str) -> Result<SolidcoreMesh, String> {
     let ex = solidcore_step::p21::parse(text).map_err(|e| e.to_string())?;
-    let read = solidcore_step::topology::read_solids(&ex);
+    // The pcurves with no closed form come from the kernel, as in the
+    // import (`read_step`, #917): the mesh is judged on the same record.
+    let mut kernel = solidcore::Kernel::default();
+    let trims = camcraft_kernel::solidcore_trims::KernelTrims::new(&mut kernel);
+    let read = solidcore_step::topology::read_solids_with(&ex, &trims);
     if let Some(f) = read.failures.first() {
         return Err(format!("solid #{} not read: {}", f.item, f.message));
     }
