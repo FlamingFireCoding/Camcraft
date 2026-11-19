@@ -859,6 +859,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             optimal_load,
             feed_opt,
             shell,
+            method,
             ..
         } => {
             // The region is the model's own silhouette (see
@@ -887,7 +888,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1950: the Adaptive plain ladder reaches 2r past the stock,
             // so its stock ring is planned from the air. The shell and
             // rest variants keep the old band.
-            let air = matches!(strategy, PocketStrategy::Adaptive) && !*shell && !*rest_rough;
+            // #1591: the Trochoidal method reads the method only under
+            // Adaptive, off the shell (whose rings the method never
+            // replaces). Its loops are not planned from the air.
+            let troch = matches!(strategy, PocketStrategy::Adaptive) && !*shell && *method == machining2d::AdaptiveMethod::Trochoidal;
+            let air = matches!(strategy, PocketStrategy::Adaptive) && !*shell && !*rest_rough && !troch;
             let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5, air)?;
             let air_stock = if air && source_built && matches!(src, SrcRef::Entity(_)) { stock_region.as_ref() } else { None };
             let pp = Pocket3DParams {
@@ -933,6 +938,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // report's business (the simulation view), not a silent
             // extra here.
             let generated = match &avoid_spec {
+                spec if troch => {
+                    machining3d::pocket3d_trochoidal(&material.facets, &region, &pp, *rest_rough, mask, spec.as_ref())
+                }
                 Some(spec) if air_stock.is_some() => machining3d::pocket3d_open_avoid(
                     &material.facets,
                     &region,

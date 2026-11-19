@@ -112,6 +112,16 @@ option fields. The options include `skip_stops`, `per_op`, `threading`
 Read that field before assuming that every detected hole became an
 operation. A refused Bore is not silently replaced by Drill.
 
+### Tool libraries and machine tool tables
+
+`import_tool_library` and `export_tool_library` accept native
+`.camtools` files as well as Tormach PathPilot `.csv` tool tables and
+Hurco WinMax `.TCM` libraries. Pass optional `format` (`"auto"`,
+`"camtools"`, `"pathpilot"` or `"hurco"`) and `units` (`"mm"` or
+`"inch"`, defaulting to document units for controller tables). See
+[Tools and tool libraries](@/guide/set-up/tools.md#machine-tool-tables-tormach-pathpilot-and-hurco-winmax)
+for field mapping and refusals.
+
 ## Example session
 
 Each call is a `tools/call`; the answers below are shortened.

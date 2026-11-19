@@ -471,6 +471,7 @@ fn multiaxis_rough_stamp_moves_with_its_ladder_and_cone() {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         feed_opt: false,
         shell: false,
+        method: crate::machining2d::AdaptiveMethod::Spiral,
     };
     assert_ne!(
         digest(&rough(0.0, 0.0, 90.0)),

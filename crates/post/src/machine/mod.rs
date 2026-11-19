@@ -2,6 +2,7 @@
 //! file's reader (`parse`) - the same facts `post::machine::mirror`
 //! restates for scripts. Pure serde; no world, no units glue (that is
 //! the app's `machine` module, which re-exports all of this).
+//! [`MachineCheck`] judges program values without a document or ECS world.
 
 pub mod def;
 mod direction;
@@ -39,3 +40,9 @@ pub use plasma::plasma_refusals;
 pub use tooling::{mount_check, tooling_refusals, HolderInfo, HolderLookup, SPINDLE_MOUNTS};
 pub use tree::{parse_mch_tree, MachineTree, MovingSide, PartKind, SpindleBody, ToolStation, TreePart};
 pub use trunnion::{trunnion_refusals, RotarySignConvention};
+
+mod check;
+mod judge;
+pub use check::{MachineCheck, SourceLocation, REPORT_CAP};
+// Shared with the app-specific plasma, waterjet, EDM and posted-lathe checks.
+pub use judge::{move_extremes, say, slowest_axis, tap_gate};
