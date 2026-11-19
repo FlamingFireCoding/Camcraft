@@ -20,6 +20,9 @@
 - Process rule **Heavy lanes at review** (AGENTS.md "Testing"): the author
   runs the command on the final head before the PR is flagged ready, and the
   review comment lists the lanes that ran. "Not run" is never a pass.
+- The reviewer checks heavy reach after either the runner path or local
+  tests. A missing, stale or incomplete author result requires a local
+  heavy run or a blocker.
 
 **Why**
 
@@ -30,6 +33,8 @@
   is the case that the issue names, so the heavy reach does not use the
   Gate maps for source changes. A crate-level reach can run too much. It
   cannot miss a lane.
+- The runner runs quick and clippy only. A common heavy check prevents its
+  result from bypassing the heavy lanes.
 
 **Considered and dropped**
 
@@ -47,6 +52,9 @@
   that changes `xtask/`. The wrappers `scripts/gate.sh` and
   `scripts/gate.ps1` do not forward `heavy` yet; `cargo xtask gate heavy`
   is the command.
+
+- Keeping the heavy check only in the local test step: dropped, because
+  the runner path skips that step.
 
 **Cost**
 

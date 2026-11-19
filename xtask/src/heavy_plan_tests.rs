@@ -123,3 +123,35 @@ fn an_unreadable_manifest_is_an_error_not_a_smaller_plan() {
     let e = heavy::reach(&empty).expect_err("no manifest");
     assert!(e.contains("gate heavy: cannot read") && e.contains("Cargo.toml"), "{e}");
 }
+
+#[test]
+fn runner_review_requires_heavy_lanes_without_author_results() {
+    // A green quick/clippy runner does not run these release lanes. The reviewer
+    // is an instruction-driven agent, so pin its common-path policy as well as reach.
+    let p = heavy_plan(&["crates/motion/src/finish3d.rs"]);
+    for lane in ["motion heavy: finish3d", "app heavy: pocket3d_hsm"] {
+        assert!(names(&p).contains(&lane), "{lane} must require a heavy result");
+    }
+    let policy = include_str!("../../.claude/agents/PR-reviewer.md");
+    let runner = policy.split("3. **Worktree + trial merge**").next().expect("runner path");
+    assert!(runner.contains("and 4, then continue at step 5."), "runner must enter the common heavy check");
+    let common = policy
+        .split("5. **Heavy check on both paths**")
+        .nth(1)
+        .expect("heavy check outside skipped local steps")
+        .split("6. **Law check against AGENTS.md**")
+        .next()
+        .expect("common heavy check before law check");
+    for required in [
+        "required after runner results and after local tests",
+        "If no local worktree exists, create it and trial-merge as in step 3",
+        "cargo xtask gate heavy --base <main ref> --dry-run",
+        "head and all reached lanes match",
+        "If the author result is absent, stale or incomplete, run",
+        "cargo xtask gate heavy --base <main ref>` locally",
+        "report \"heavy lanes not run\" as a blocker, never a pass",
+        "A red reached\n   heavy test is a blocker",
+    ] {
+        assert!(common.contains(required), "common heavy check must require: {required}");
+    }
+}
