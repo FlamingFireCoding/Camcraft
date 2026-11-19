@@ -15,6 +15,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         )));
     }
     super::program_entry_dto::validate(dto, kind)?; // #155
+    super::sketch_dto::validate(dto, kind)?; // #1862
     // #1720: a flip rides a WCS row and nothing else.
     if dto.flip.is_some() && !matches!(kind, EntityKind::Wcs) {
         return Err(corrupt(format!("'{}' records a flipped axis but is not a WCS", dto.name)));
@@ -45,7 +46,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
     }
     match kind {
-        EntityKind::Entry => {}
+        EntityKind::Entry | EntityKind::Sketch => {}
         EntityKind::Model => {
             if dto.stock.is_some()
                 || dto.tool.is_some()

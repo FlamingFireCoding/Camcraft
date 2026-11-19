@@ -20,6 +20,9 @@ pub mod diag;
 pub mod cli_options;
 #[cfg(test)]
 mod cli_options_tests;
+pub mod launch_file;
+#[cfg(test)]
+mod launch_file_tests;
 
 pub mod actions;
 pub mod play_precalc;

@@ -152,7 +152,7 @@ impl EditOperationParams {
         }
         let picks: Vec<_> = area.picks().cloned().collect();
         if !picks.is_empty() {
-            valid_src(world, prev.setup.as_deref(), &SrcRef::Selection(picks))?;
+            valid_src(world, prev.setup.as_deref(), &SrcRef::Selection(picks), &params)?;
         }
         // The Apply door for the boundary shapes (M11.5 UX): an include /
         // exclude spelling an open chain is refused here, by name, never
@@ -217,6 +217,8 @@ impl ChangeOperationKind {
             )));
         }
         family_gate(world, prev.setup.as_deref(), &params)?;
+        // #1862: the new kind on the source the operation keeps.
+        super::gates::sketch_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         infeed_plan_gate(world, &params, &prev.tool)?;
         sinker_gate(world, prev.setup.as_deref(), &params)?;
         tool_door(world, &params, &prev.tool)?;
@@ -313,7 +315,7 @@ impl EditOperationLinks {
             wire_gate(world, prev.setup.as_deref(), tool, &next.params)?;
         }
         if let Some(src) = src {
-            valid_src(world, prev.setup.as_deref(), &src)?;
+            valid_src(world, prev.setup.as_deref(), &src, &next.params)?;
             // Retargeting onto a whole-model source under Inside would
             // arm the mirror law; refused here, and backstopped at
             // generate for commands that arrive via file load.
