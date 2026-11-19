@@ -81,7 +81,9 @@ objc2 = "0.5"
 egui = "=0.36.2"
 egui-winit = "=0.36.2"
 egui-wgpu = "=0.36.2"
-egui_dock = "=0.21.1"
+# "serde": the saved panel arrangement (#2339) is the dock's own tree, so an
+# arrangement keeps its splits, tab order, collapsed leaves and float rects.
+egui_dock = { version = "=0.21.1", features = ["serde"] }
 egui_kittest = { version = "=0.36.2", features = ["wgpu", "snapshot"] }
 # wasm32 only (#31): the browser shell. eframe's web runner owns the canvas,
 # the DOM events and the awaited GPU start-up; wasm-bindgen exports the

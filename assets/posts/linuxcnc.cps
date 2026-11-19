@@ -18,6 +18,7 @@ minimumRevision = 1;
 extension = "ngc";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+axisInversion = true; // verified on the engine's mirrored stream for a flipped WCS X/Y and an inverted machine X/Y (#2475): trace equivalence test + golden
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 9;      // LinuxCNC G-code reference: G54-G59.3 select coordinate systems 1-9
 coolantModes = true;    // reads PARAM Coolant (#112/#150)
@@ -100,6 +101,7 @@ declaredOptions = {
 
 // ---------------------------------------------------------------- state
 var wcsWord = "G54";       // from the WorkOffset PARAM
+var wcsIndex = 1;          // the offset number wcsWord writes (#2683: its rotation register)
 var sRpm = 0;              // spindle/T order follows the stream: PARAMs,
 var spindleWait = false;   // TOOL, SECTION - the preamble writes them
 var toolWait = false;      // when the first motion needs them legal
@@ -116,6 +118,7 @@ var setupNext = "";        // the section's PARAM SetupChange: the setup the pro
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
+var wcsFlip = "";          // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var smoothTol = 0;         // #616: the section's PARAM Smoothing, mm (0: none asked)
 var smoothActive = false;  // #616: this section wrote its smoothing words
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
@@ -372,11 +375,24 @@ function pathWords() {
   if (optStr("pathControl", "blend") === "exact") return ["G61"];
   return ["G64", "P" + fu(optNum("blendTolerance", 0.025))];
 }
+// The machine's inverted linear axes (#375): the engine has mirrored the
+// stream into the controller's frame, and the header says so, one note
+// for each axis. A standard machine lists none.
+function invertedNotes() {
+  var a = (typeof machine !== "undefined" && machine && machine.invertedAxes) || [];
+  var where = { X: "LEFT", Y: "TOWARD THE FRONT", Z: "DOWN" };
+  for (var i = 0; i < a.length; i++) {
+    var l = String(a[i]);
+    note("MACHINE " + l + "+ MOVES " + (where[l] || "THE OTHER WAY") + " - INVERTED AXIS");
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   if (optBool("percentDelimiters", false)) writeln("%");
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
   note(headTitle(nm));
+  invertedNotes();
   writeHeaderExtras();
   block([inch ? "G20" : "G21", "G17", "G90", "G91.1", "G94", "G40", "G49", "G80"]);
   block(pathWords());
@@ -455,6 +471,7 @@ function workOffsetName(n) {  // offset n -> this control's word; "" when it has
 function offsetWord(value) {
   var n = Number(value), wd = workOffsetName(n);
   if (!wd) { msg("work offset " + value + " - this post expresses work offsets 1-" + workOffsetMax + " only"); return wcsWord; }
+  wcsIndex = n;
   return wd;
 }
 
@@ -471,6 +488,7 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsFlip") wcsFlip = String(value || "");
 }
 
 function onSpindleSpeed() {
@@ -527,6 +545,8 @@ function startPreamble() {
   // stopped before its first move, whatever the tool change did.
   var probeStop = spindleWait && !(sRpm > 0);
   opNotes();
+  // #1649: the operator reads why every sign on a flipped axis is the other one.
+  if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   block(["G17", "G90", wcsWord, "G40", tlo ? "G49" : "", "G80"]);
   planeG = 17;              // the preamble states the plane
   if (toolWait) {
@@ -601,7 +621,7 @@ function afterOp() {
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
-function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028: the next section states its own hop
+function onSectionEnd() { endPreamble(); wcsFlip = ""; hopZ = null; clearZ = null; }  // #1028: the next section states its own hop
 
 // ------------------------------------------------------------ 3 axes only
 // A tilted record (an A, B or C word) has no axis to go to on this
@@ -1027,6 +1047,23 @@ function onProbeResult() {
     block(["(DEBUG, PROBE " + a.Axis + " ERROR #" + (dev + i) + (inch ? " IN" : " MM") + ")"]);
   }
   if (has(p.SetWorkOffset) && p.SetWorkOffset >= 0) {
+    // #2683: the write is exact (target = active offset + deviation) only
+    // in unrotated systems. With an XY rotation (R of G10 L2, parameter
+    // 5210 + 20 x the system number) the deviation lies along rotated
+    // axes, and a target with another rotation gets an origin that is
+    // right at this position only. The control holds R, so the program
+    // tests it and ends by name. A Z-only result needs no test.
+    var xy = false;
+    for (var q = 0; q < axes.length; q++) if (axes[q].Axis !== "Z") xy = true;
+    if (xy) {
+      var tgt = Number(p.SetWorkOffset) + 1;
+      var rotA = "[#" + (5210 + 20 * wcsIndex) + " NE 0]";
+      var g = nextO();
+      block([g, "if", tgt === wcsIndex ? rotA : "[" + rotA + " OR [#" + (5210 + 20 * tgt) + " NE 0]]"]);
+      block(["(MSG, PROBE: " + wcsWord + (tgt === wcsIndex ? "" : " OR " + workOffsetName(tgt)) + " XY ROTATION NOT ZERO - NO OFFSET WRITTEN)"]);
+      block(["M2"]);
+      block([g, "endif"]);
+    }
     var words = ["G10", "L20", "P" + (Number(p.SetWorkOffset) + 1)];
     for (var j = 0; j < axes.length; j++) {
       words.push(axes[j].Axis + "[#" + (5420 + probeAxis(axes[j].Axis)) + "-#" + (dev + j) + "]");

@@ -97,6 +97,7 @@ mod tool_list_page;
 mod stock_fit_sides;
 mod raw_stock_row;
 mod layout;
+mod panel_setups;
 mod machines_pane;
 mod machines_edit;
 mod machine_wire_edm;
@@ -120,6 +121,7 @@ mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;
+mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
 mod theme_tree_hits;
 mod waterjet_recipe;
@@ -130,6 +132,7 @@ mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
+mod adaptive3d_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
 mod op_icon_table;
 mod tool_icon_wiring;
@@ -167,6 +170,8 @@ mod setup_rotary;
 mod setup_eye;
 // #155: Pause / Home entries in the operation list.
 mod program_entry;
+// #2055: "Do not touch" protected faces/edges in Boundaries.
+mod do_not_touch;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;
@@ -1299,7 +1304,8 @@ fn every_field_lives_on_exactly_one_section() {
             // once more).
             "Deburr",
             vec![
-                ("Geometry", vec!["Break width", "Unreachable edges"]),
+                // #1888 and #1889: keep the edge filters and reach policy.
+                ("Geometry", vec!["Break width", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
                 ("Heights", vec!["Clearance Z", "Window Top Z", "Window Bottom Z"]),
                 ("Feeds", vec!["Feed", "Plunge feed"]),
             ],
@@ -1937,7 +1943,7 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
 /// including the View3D readback and the fallback-adapter law).
 #[test]
 fn headless_run_succeeds() {
-    headless::run().map_err(|err| panic!("egui headless run failed: {err}")).ok();
+    headless::run(None).map_err(|err| panic!("egui headless run failed: {err}")).ok();
 }
 
 /// The churn gate for the migration: one rendered frame of the whole shell,

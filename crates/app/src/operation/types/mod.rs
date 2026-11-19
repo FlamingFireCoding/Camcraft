@@ -13,6 +13,7 @@
 
 
 mod area;
+mod avoid;
 mod dwell;
 mod height;
 mod links;
@@ -22,11 +23,17 @@ mod sinker;
 mod sane;
 pub use sane::POCKET_ADAPTIVE_RETIRED;
 mod sel;
+mod tilt_basis;
+pub use tilt_basis::CURRENT_TILT_BASIS;
 mod wire_edm;
 
 pub use area::{
     AREA_DISTANCE_MAX, AreaControls, BoundaryMode, BoundaryShape, ChainSide, Containment, CornerStyle,
     ExtraBoundary, OpenBoundary, area_applies, area_unsupported,
+};
+pub use avoid::{
+    DoNotTouch, describe_sel, do_not_touch_applies, do_not_touch_overlap_issue,
+    do_not_touch_unsupported,
 };
 /// The coolant choice is the stream's own type (#112): one enum from the
 /// op field to the post's `PARAM Coolant`, no mapping to drift.

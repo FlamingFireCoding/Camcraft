@@ -18,8 +18,8 @@
 //! Refused by name, never guessed: a flipped Z (tool-length compensation
 //! and the canned cycles' retract assume the controller's +Z leaves the
 //! work), a script that does not declare `axisInversion = true`, a
-//! section that is also rotated (`WcsYaw`), turning, EDM and plasma
-//! sections, probing (the maintainer's decision of 2026-11-18: the probe's
+//! turning, EDM and plasma sections, probing (the maintainer's decision
+//! of 2026-11-18: the probe's
 //! work-offset write is proven for a machine axis that runs reversed,
 //! #392, not for a mirrored work offset), and everything the mirror
 //! itself refuses (threading cycles, A/B/C moves, live tooling). A
@@ -75,7 +75,6 @@ fn phrase(flip: [bool; 3]) -> String {
 #[derive(Default)]
 struct Stated {
     flip: Option<[bool; 3]>,
-    yaw: f64,
     origin: [bool; 2],
     start: [bool; 2],
     motion: bool,
@@ -98,7 +97,6 @@ fn read(chunk: &[Record]) -> Result<Stated, PostError> {
                     }
                     st.flip = Some(f);
                 }
-                "WcsYaw" => st.yaw = read_finite(value, "WcsYaw")?,
                 "OriginX" => st.origin[0] = true,
                 "OriginY" => st.origin[1] = true,
                 "StartX" => st.start[0] = true,
@@ -185,14 +183,7 @@ pub fn apply(records: Vec<Record>, s: &Script) -> Result<Vec<Record>, PostError>
         if !s.translates_inverted_axes() {
             return Err(PostError::Refused(format!(
                 "{what}, and this post script is not verified for a mirrored program (it does not declare \
-                 axisInversion = true) - post with a script that does (Fanuc, Haas), or clear the flip on the WCS page"
-            )));
-        }
-        if st.yaw.to_radians().abs() > 1e-9 {
-            return Err(PostError::Refused(format!(
-                "{what} and is also rotated {:.3} deg about Z; a flipped and rotated WCS is not supported yet - \
-                 clear the flip or the rotation",
-                st.yaw.abs()
+                 axisInversion = true) - post with a script that does (each built-in mill post does), or clear the flip on the WCS page"
             )));
         }
         if let Some(kind) = st.foreign {
@@ -207,8 +198,21 @@ pub fn apply(records: Vec<Record>, s: &Script) -> Result<Vec<Record>, PostError>
             )));
         }
         let rules = Rules { probing: false, helix: true, cause: "a flipped WCS axis" };
-        let mirrored = translate_rules(chunk, Flip { x: flip[0], y: flip[1], z: false }, rules)
+        let mut mirrored = translate_rules(chunk, Flip { x: flip[0], y: flip[1], z: false }, rules)
             .map_err(|why| PostError::Refused(format!("{what}: {}", why.join("; "))))?;
+        // #2476: one reflection conjugates rotation: F R(a) F = R(-a).
+        // The following rotation pass uses this mirrored-frame angle,
+        // so R(-yaw') F = F R(-yaw), and the controller voices yaw'.
+        // Two XY reflections preserve its angle. Bake never voices the angle.
+        if flip[0] != flip[1] {
+            for r in &mut mirrored {
+                if let Record::Param { name, value } = r
+                    && name == "WcsYaw"
+                {
+                    *value = serde_json::json!(-read_finite(value, "WcsYaw")?);
+                }
+            }
+        }
         out.extend(mirrored);
     }
     out.extend(it);

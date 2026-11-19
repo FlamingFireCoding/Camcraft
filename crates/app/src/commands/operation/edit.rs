@@ -108,6 +108,8 @@ impl EditOperationParams {
                 prev.params.kind()
             )));
         }
+        // #2599: new angles on a legacy tilt take the current frame basis.
+        let params = params.with_stepped_tilt_basis(&prev.params);
         infeed_plan_gate(world, &params, &prev.tool)?;
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
@@ -135,6 +137,15 @@ impl EditOperationParams {
         // and states a condition with spark gap < wire radius.
         wire_gate(world, prev.setup.as_deref(), &prev.tool, &params)?;
         let area = area.unwrap_or_else(|| prev.area.clone());
+        if !area.do_not_touch.is_default() {
+            super::do_not_touch::validate_do_not_touch(
+                world,
+                params.kind(),
+                &area.do_not_touch,
+                Some(&prev.src),
+                &area,
+            )?;
+        }
         if !area.is_sane_for(&params) {
             return Err(CommandError::Invalid(match operation::area_unsupported(params.kind()) {
                 None => "the Boundary settings are not usable - distances must be finite, within 10 m, the extension not negative, and every boundary must name its picks".to_string(),
@@ -234,6 +245,11 @@ impl ChangeOperationKind {
         // The area controls ride the retype when the new kind has an
         // area (M11.5); a kind without one keeps the identity, never
         // controls it cannot honor.
+        if !prev.area.do_not_touch.is_default()
+            && let Some(why) = crate::operation::do_not_touch_unsupported(params.kind())
+        {
+            return Err(CommandError::Invalid(why));
+        }
         let area = if operation::area_applies(params.kind()) {
             prev.area.clone()
         } else {
@@ -319,6 +335,16 @@ impl EditOperationLinks {
                 heights_gate(world, prev.setup.as_deref(), &src, &next.params)?;
             }
             area_gate(world, prev.setup.as_deref(), &src, &next.params)?;
+            if !next.area.do_not_touch.is_empty()
+                && let Some(why) = crate::operation::avoid_overlap_issue(
+                    world,
+                    &next.area.do_not_touch.picks,
+                    Some(&src),
+                    &next.area,
+                )
+            {
+                return Err(CommandError::Invalid(why));
+            }
             next.src = src;
         }
         Ok(EditOperationLinks { name: name.to_string(), prev, next })

@@ -150,6 +150,11 @@ pub(super) struct CurveGuard {
     pub inner: truck_stepio::r#in::alias::Curve3D,
     pub meter: std::sync::Arc<super::step_guard::Meter>,
     fallback: Point3,
+    /// The pass tolerance is divided by this for this edge (#2754, 1 for
+    /// most edges): an edge that bounds a face curved two ways is held
+    /// finer, so that its face's whole kept height meets the pass
+    /// (`step_fit::edge_divisors`).
+    fine: f64,
 }
 
 impl CurveGuard {
@@ -161,7 +166,14 @@ impl CurveGuard {
     /// An edge curve whose meter shares `pass` with its shell's faces (#1599).
     pub(super) fn in_pass(inner: truck_stepio::r#in::alias::Curve3D, cap: u64, pass: std::sync::Arc<super::step_meter::Pass>) -> Self {
         let meter = std::sync::Arc::new(super::step_guard::Meter::in_pass(cap, pass));
-        Self { inner, meter, fallback: Point3::new(0.0, 0.0, 0.0) }
+        Self { inner, meter, fallback: Point3::new(0.0, 0.0, 0.0), fine: 1.0 }
+    }
+
+    /// This edge divided `fine` times finer than the pass asks (#2754). A
+    /// value that is not finite or under 1 keeps the pass's own tolerance.
+    pub(super) fn finer(mut self, fine: f64) -> Self {
+        self.fine = if fine.is_finite() && fine > 1.0 { fine } else { 1.0 };
+        self
     }
 
     fn divide(&self, range: (f64, f64), tol: f64) -> Option<(Vec<f64>, Vec<Point3>)> {
@@ -215,6 +227,9 @@ impl truck_stepio::r#in::alias::ParameterDivision1D for CurveGuard {
     type Point = Point3;
     fn parameter_division(&self, range: (f64, f64), tol: f64) -> (Vec<f64>, Vec<Point3>) {
         use truck_stepio::r#in::alias::Curve3D;
+        // `fine` is at least 1 (`finer`): a bad pass tolerance stays bad
+        // and is refused below as before.
+        let tol = tol / self.fine;
         let split = match &self.inner {
             Curve3D::BSplineCurve(b) if jumps(b.knot_vec(), b.control_points(), range) => None,
             Curve3D::NurbsCurve(n) if {
@@ -261,7 +276,7 @@ pub(super) fn swept_division(
     tol: f64,
 ) -> (Vec<f64>, Vec<f64>) {
     use truck_stepio::r#in::alias::{ExtrudedCurve, ParameterDivision2D, RevolutedCurve, SweptCurve};
-    let wrap = |inner, fallback| CurveGuard { inner, meter: std::sync::Arc::clone(meter), fallback };
+    let wrap = |inner, fallback| CurveGuard { inner, meter: std::sync::Arc::clone(meter), fallback, fine: 1.0 };
     match swept {
         SweptCurve::ExtrudedCurve(e) => ExtrudedCurve::by_extrusion(wrap(e.entity_curve().clone(), Point3::new(0.0, 0.0, 0.0)), e.extruding_vector()).parameter_division(range, tol),
         // A refused generator collapses onto the axis, giving truck no

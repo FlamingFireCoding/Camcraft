@@ -496,6 +496,12 @@ pub enum ParamsDto {
         /// the plain level ladder is exactly what they generated.
         #[serde(default)]
         rest_rough: bool,
+        /// #1591: how an Adaptive level is cleared. Absent on every
+        /// older file, which reads as `spiral` - the path those files
+        /// always cut. Written as a word, like 2D Adaptive's (#1509), so
+        /// an MCP patch can name either value.
+        #[serde(default)]
+        method: AdaptiveMethodDto,
         /// (v13: read only when `strategy` is `Adaptive`; v12 files can
         /// carry no Adaptive ring family to feed it.)
         /// The pre-M11.4 word: the contact angle in degrees. Still READ
@@ -611,6 +617,19 @@ pub enum ParamsDto {
         bottom_z: HeightDto,
         feed: f64,
         plunge_feed: f64,
+        /// #1888, additive: each key is absent at its rest value, so a
+        /// file from before the keys reads as the ride it stored (no
+        /// exclusion, every crease, every hole) and saves unchanged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        exclude_edges: Vec<GeoSelDto>,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        min_edge_angle_deg: f64,
+        #[serde(default, skip_serializing_if = "is_false")]
+        exclude_holes: bool,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_min_diameter: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_max_diameter: f64,
         /// #1889: absent in each earlier file, which reads as the
         /// default (`skip_with_note`). Always written, so that an MCP
         /// patch and `list_operation_types` see the field.

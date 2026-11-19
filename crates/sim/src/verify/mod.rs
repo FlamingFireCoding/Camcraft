@@ -157,6 +157,11 @@ pub use crate::tools::ToolGeom;
 
 
 mod air;
+mod avoid_links;
+mod avoid_poly;
+
+pub use avoid_links::{AVOID_LINK_GAP, elevate_rapid_links};
+pub mod avoid;
 mod axis_door;
 mod arc_bulge;
 mod arc_wall;
@@ -210,6 +215,7 @@ mod types;
 mod upright;
 mod workholding;
 
+pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
 pub use excess::excess_floor;
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]

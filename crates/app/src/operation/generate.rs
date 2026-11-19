@@ -65,6 +65,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut keep_parts,
         mut neighbour_parts,
         mut area,
+        avoid,
         wcs_origin,
         unit,
         wcs_yaw,
@@ -77,6 +78,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         sinker_pass,
         sinker_wear,
     } = job;
+    let avoid_ok = avoid.transpose()?;
     // The sinker burn (#541) is its own law: one electrode plunged to a
     // depth read from its datum; no milling law has an electrode to
     // judge, the burn's door refuses a depth past the floor by name and
@@ -103,6 +105,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // with a body, the same bands above the shank, never the cylinder
     // enclosing them (#842: drill reach and the cross drill too).
     let cutter = verify::Cutter::of(&tool).with_body(&geom, &holder);
+    let avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
     // The probe (#108) cuts nothing: its own protected-move law judges
     // the stylus against the model, and no cutting law or region applies.
     if matches!(params, OpParams::Probe { .. }) {
@@ -828,11 +831,17 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     blend_turns: *blend_turns,
                     blend_radius: *blend_radius,
             };
-            let mut path = machining2d::pocket(&region, &pp)?;
+            let mut path = match &avoid_spec {
+                Some(spec) => machining2d::pocket_avoid(&region, &pp, spec)?,
+                None => machining2d::pocket(&region, &pp)?,
+            };
             if let Some(m) = carry_need!(&region, &path) {
                 pp.links.approach.material_top = Some(m);
                 lk = pp.links;
-                path = machining2d::pocket(&region, &pp)?;
+                path = match &avoid_spec {
+                    Some(spec) => machining2d::pocket_avoid(&region, &pp, spec)?,
+                    None => machining2d::pocket(&region, &pp)?,
+                };
             }
             (region, path)
         }
@@ -850,6 +859,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             optimal_load,
             feed_opt,
             shell,
+            method,
             ..
         } => {
             // The region is the model's own silhouette (see
@@ -878,7 +888,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1950: the Adaptive plain ladder reaches 2r past the stock,
             // so its stock ring is planned from the air. The shell and
             // rest variants keep the old band.
-            let air = matches!(strategy, PocketStrategy::Adaptive) && !*shell && !*rest_rough;
+            // #1591: the Trochoidal method reads the method only under
+            // Adaptive, off the shell (whose rings the method never
+            // replaces). Its loops are not planned from the air.
+            let troch = matches!(strategy, PocketStrategy::Adaptive) && !*shell && *method == machining2d::AdaptiveMethod::Trochoidal;
+            let air = matches!(strategy, PocketStrategy::Adaptive) && !*shell && !*rest_rough && !troch;
             let region = super::open_side::open_footprint(region, source_built, frame.is_some(), &src, &neighbour_parts, stock_region.as_ref(), d * 0.5, air)?;
             let air_stock = if air && source_built && matches!(src, SrcRef::Entity(_)) { stock_region.as_ref() } else { None };
             let pp = Pocket3DParams {
@@ -923,33 +937,55 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // still reports after the closing ladder is the closing
             // report's business (the simulation view), not a silent
             // extra here.
-            let generated = match (*shell, *rest_rough) {
-                // The level ladder, and its rest-closing sibling:
-                // planes all the way down (M2.1b).
-                (false, false) => {
-                    machining3d::pocket3d_open_prev(&material.facets, &region, air_stock, &pp, mask)
+            let generated = match &avoid_spec {
+                spec if troch => {
+                    machining3d::pocket3d_trochoidal(&material.facets, &region, &pp, *rest_rough, mask, spec.as_ref())
                 }
-                (false, true) => {
-                    machining3d::pocket3d_with_rest_prev(&material.facets, &region, &pp, mask)
+                Some(spec) if air_stock.is_some() => machining3d::pocket3d_open_avoid(
+                    &material.facets,
+                    &region,
+                    air_stock,
+                    &pp,
+                    mask,
+                    spec,
+                ),
+                Some(spec) => machining3d::pocket3d_avoid(
+                    &material.facets,
+                    &region,
+                    &pp,
+                    *rest_rough,
+                    *shell,
+                    mask,
+                    spec,
+                ),
+                None => match (*shell, *rest_rough) {
+                    // The level ladder, and its rest-closing sibling:
+                    // planes all the way down (M2.1b).
+                    (false, false) => {
+                        machining3d::pocket3d_open_prev(&material.facets, &region, air_stock, &pp, mask)
+                    }
+                    (false, true) => {
+                        machining3d::pocket3d_with_rest_prev(&material.facets, &region, &pp, mask)
+                            .map(|(p, _)| p)
+                    }
+                    // The offset shells (M2.5 F): the same XY plan, the
+                    // same superset laws, the rings riding the model's
+                    // relief between the planes - and on steep flanks
+                    // answering at the waterline, exactly where the plain
+                    // ladder's rings already stood.
+                    (true, false) => {
+                        machining3d::pocket3d_offset_prev(&material.facets, &region, &pp, mask)
+                    }
+                    (true, true) => {
+                        machining3d::pocket3d_offset_with_rest_prev(
+                            &material.facets,
+                            &region,
+                            &pp,
+                            mask,
+                        )
                         .map(|(p, _)| p)
-                }
-                // The offset shells (M2.5 F): the same XY plan, the
-                // same superset laws, the rings riding the model's
-                // relief between the planes - and on steep flanks
-                // answering at the waterline, exactly where the plain
-                // ladder's rings already stood.
-                (true, false) => {
-                    machining3d::pocket3d_offset_prev(&material.facets, &region, &pp, mask)
-                }
-                (true, true) => {
-                    machining3d::pocket3d_offset_with_rest_prev(
-                        &material.facets,
-                        &region,
-                        &pp,
-                        mask,
-                    )
-                    .map(|(p, _)| p)
-                }
+                    }
+                },
             };
             let path = match generated {
                 Ok(path) => path,
@@ -1185,6 +1221,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             width,
             feed,
             plunge_feed,
+            min_edge_angle_deg,
+            exclude_holes,
+            hole_min_diameter,
+            hole_max_diameter,
             unreachable,
             ..
         } => {
@@ -1221,7 +1261,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let path = finishing3d::deburr(
+            // #1888: the picked chains, then the excluded ones, in one
+            // list (`deburr_picks::chains_of`); the source's pick count
+            // is where it splits.
+            let chains = drive_chains.take().ok_or_else(|| unreached("deburr chains"))??;
+            let (include, exclude) = chains.split_at(super::deburr_picks::picked(&src).min(chains.len()));
+            let path = finishing3d::deburr_edges(
                 &material.facets,
                 &DeburrParams {
                     width: *width,
@@ -1231,8 +1276,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     bottom_z: req_z(hl.bottom, "Window Bottom Z")?,
                     feed: *feed,
                     plunge_feed: *plunge_feed,
+                    min_edge_angle_deg: *min_edge_angle_deg,
+                    exclude_holes: *exclude_holes,
+                    hole_min_diameter: *hole_min_diameter,
+                    hole_max_diameter: *hole_max_diameter,
                     unreachable: *unreachable,
                 },
+                &finishing3d::DeburrEdges { include, exclude },
             )?;
             (region, path)
         }
@@ -1510,7 +1560,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let run = |q: &Finish3DParams| if is_contour {
                 crate::multiaxis::rotary_contour(&material.facets, q, &axis)
             } else {
-                crate::multiaxis::rotary_parallel(&material.facets, q, &axis)
+                crate::multiaxis::rotary_parallel_in(&material.facets, stock_facets.as_deref(), q, &axis)
             };
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
             // M13.5 B: the letter is the machine's. The fitted line
@@ -3464,6 +3514,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             }
             // #894: a thread mill's passes retrace one helix by design.
             super::thread_op::stand_down_crossings(&params, &mut warns);
+            if let Some(spec) = &avoid_spec {
+                let mut route_notes = super::avoid::route_links(&mut path, spec, z_ceiling);
+                let (av_warns, av_notes) = super::avoid::verify_avoid(&path, spec);
+                path.notes.append(&mut route_notes);
+                path.notes.extend(av_notes);
+                warns.extend(av_warns);
+            }
             Ok((path, warns))
         }
         Some(f) => {
@@ -3596,6 +3653,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 spindle,
                 mesh_steel,
             ));
+            if let Some(spec) = &avoid_spec {
+                let (av_warns, av_notes) = super::avoid::verify_avoid(&path, spec);
+                path_world.notes.extend(av_notes);
+                warns.extend(av_warns);
+            }
             Ok((path_world, warns))
         }
     }

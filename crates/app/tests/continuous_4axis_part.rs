@@ -10,10 +10,9 @@
 //! and `site/tests/test_first_continuous_4axis_part.py` holds the page to
 //! these files.
 //!
-//! The guide runs this program as an air cut only. Rotary Parallel finishes
-//! both end faces of the model down to the A centreline; at the chuck end
-//! that is a cut through a bar that goes on into the jaws. One test here
-//! pins that fact, so the guide's warning stays true to the program.
+//! Rotary Parallel leaves the chuck-side end face of the model (#2343): the
+//! stock goes on past that end into the jaws, so the pass stops at the end
+//! plane. One test here pins that fact, so the guide stays true to the program.
 //! Provenance: our own test over our own commands, machine file and post.
 //!
 //! Regenerate the project and the program after an intentional change:
@@ -166,7 +165,16 @@ fn the_continuous_4axis_part_posts_its_wrapped_program() {
         ok(project::load_noted(&world, &repo(PROJECT)), "load the example project");
         std::fs::write(&golden, post(&world, "golden").program).expect("write the example program");
     }
-    let committed = std::fs::read_to_string(repo(PROJECT)).expect("the example project");
+    // Migrate the historical fixture through the reader before comparing its
+    // semantics with a fresh document. Keep the committed project and NC intact.
+    let fixture_world = camcraft_app::world::new_world();
+    ok(
+        project::load_noted(&fixture_world, &repo(PROJECT)),
+        "load the example project",
+    );
+    project::save(&fixture_world, &saved).expect("save the migrated example project");
+    let committed = std::fs::read_to_string(&saved).expect("the migrated example project");
+    let _ = std::fs::remove_file(&saved);
     continuous_project::compare(&text, &committed).unwrap_or_else(|e| {
         panic!("{PROJECT} is stale; regenerate with WRITE_GOLDEN=1: {e}")
     });
@@ -234,46 +242,51 @@ fn the_continuous_4axis_part_posts_its_wrapped_program() {
     let at_journal = lines.iter().filter(|l| l.starts_with("G1 ") && word(l, 'A').is_none())
         .filter_map(|l| word(l, 'Z')).filter(|z| (z - JOURNAL_R).abs() < 0.002).count();
     assert!(at_journal > 20, "the passes run at Z{JOURNAL_R}: {at_journal}");
-    // The tool passes each end of the journal by its own radius, 1/16",
-    // and stays 5/8" or more from the jaws at X-2.
+    // The tool passes the free end of the journal by its own radius, 1/16".
+    // At the chuck-side end it stops on the end plane (#2343), 3/4" from
+    // the jaws at X-2.
     let xs: Vec<f64> = lines.iter().filter(|l| l.contains("G1 ")).filter_map(|l| word(l, 'X')).collect();
     let (x_lo, x_hi) = xs.iter().fold((f64::MAX, f64::MIN), |(a, b), x| (a.min(*x), b.max(*x)));
-    assert!(x_lo > -JOURNAL_LEN - 0.125 && x_lo < -JOURNAL_LEN, "the chuck-side end: X{x_lo}");
+    assert!((x_lo + JOURNAL_LEN).abs() < 0.001, "the chuck-side end: X{x_lo}");
     assert!(x_hi < 0.125 && x_hi > 0.0, "the free end: X{x_hi}");
 }
 
-/// The fact behind the guide's "air cut only": the pass finishes both end
-/// faces of the model down to the A centreline. Past the chuck-side end
-/// (X-1.25) the tool tip feeds to the centreline, which on a bar that goes
-/// on into the jaws is a cut through the bar.
+/// #2343: the stock goes on 3/4" past the chuck-side end of the model
+/// (X-1.25), into the jaws. The pass leaves that end face: the centre of the
+/// ball stays on the model's side of the end plane, so the tip stops on the
+/// plane and never goes below the journal there, and the operation says so.
+/// The free end (X0) has air past the model: its end face is still cut to
+/// the centreline.
 #[test]
-fn the_pass_cuts_the_chuck_side_end_face_to_the_centreline() {
-    let nc = std::fs::read_to_string(repo(PROGRAM)).expect("the example program");
-    let deep = |chuck_side: bool| {
-        nc.lines().filter(|l| l.contains("G1 ")).filter(|l| {
-            word(l, 'X').is_some_and(|x| if chuck_side { x < -JOURNAL_LEN } else { x > 0.0 })
-        }).filter_map(|l| word(l, 'Z')).fold(f64::MAX, f64::min)
-    };
-    assert!(deep(true) < 0.01, "the chuck-side end face is cut to Z{}", deep(true));
-    assert!(deep(false) < 0.01, "the free end face is cut to Z{}", deep(false));
+fn the_pass_leaves_the_chuck_side_end_face() {
+    let world = build();
+    let nc = post(&world, "held").program;
+    let feeds: Vec<(f64, Option<f64>)> = nc.lines().filter(|l| l.contains("G1 "))
+        .filter_map(|l| word(l, 'X').map(|x| (x, word(l, 'Z')))).collect();
+    let x_lo = feeds.iter().map(|(x, _)| *x).fold(f64::MAX, f64::min);
+    assert!(x_lo > -JOURNAL_LEN - 0.001, "the tool passes the chuck-side end plane: X{x_lo}");
+    assert!(x_lo < -JOURNAL_LEN + 0.001, "the journal is finished to its end: X{x_lo}");
+    let low = feeds.iter().filter(|(x, _)| *x < -JOURNAL_LEN + 0.07).filter_map(|(_, z)| *z).fold(f64::MAX, f64::min);
+    assert!(low > JOURNAL_R - 0.002, "the tool goes below the journal at the chuck-side end: Z{low}");
+    let free = feeds.iter().filter(|(x, _)| *x > 0.0).filter_map(|(_, z)| *z).fold(f64::MAX, f64::min);
+    assert!(free < 0.01, "the free end face is cut to Z{free}");
+    let op = camcraft_app::model::find_by_name(&world, OP).expect("the operation");
+    let said = camcraft_app::model::toolpath_of(&world, &op).expect("generated").path.notes;
+    assert!(
+        said.iter().any(|n| n.starts_with("Rotary Parallel: the stock goes on") && n.contains("end face")),
+        "the operation names the end face that it left: {said:?}"
+    );
 }
 
-/// The guard the guide names: with a flute too short to reach the A
-/// centreline, the end-face cut puts the shank in the stock, and the post is
-/// blocked by name. The guide's tool posts only because its flute is long.
+/// Before #2343 a 1/2" flute was blocked at post: the cut down the
+/// chuck-side end face put the shank in the stock ("shank/holder at move N
+/// collides with the uncut stock"). That cut is gone, so the short flute
+/// posts, and its program keeps to the model's side of the end plane too.
 #[test]
-fn a_short_flute_is_blocked_at_the_chuck_side_end_face() {
-    let world = build_with(0.5);
-    let out = std::env::temp_dir().join(format!("camcraft_cont_4axis_short_{}.nc", std::process::id()));
-    let posted = posting::post_setup(&world, &out);
-    let _ = std::fs::remove_file(&out);
-    let refusal = match posted {
-        Ok(_) => panic!("a 1/2\" flute must not post the end-face cut"),
-        Err(e) => e.to_string(),
-    };
-    assert!(refusal.contains("post blocked"), "{refusal}");
-    assert!(refusal.contains("Journal: shank/holder at move"), "{refusal}");
-    assert!(refusal.contains("collides with the uncut stock"), "{refusal}");
+fn a_short_flute_posts_now_that_the_chuck_side_end_face_is_left() {
+    let nc = post(&build_with(0.5), "short").program;
+    let x_lo = nc.lines().filter(|l| l.contains("G1 ")).filter_map(|l| word(l, 'X')).fold(f64::MAX, f64::min);
+    assert!(x_lo > -JOURNAL_LEN - 0.001, "the tool passes the chuck-side end plane: X{x_lo}");
 }
 
 /// Each G93 move is held to both rates the guide names: its time (1/F
