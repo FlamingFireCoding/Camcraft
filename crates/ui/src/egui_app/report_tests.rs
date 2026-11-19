@@ -76,9 +76,43 @@ fn the_body_carries_the_questions_and_the_debug_report() {
     let body = report::report_body(&state);
     assert!(body.contains("**What happened**"), "{body}");
     assert!(body.contains("**Steps to reproduce**"), "{body}");
-    // Same fields, one source: the Debug info window's own report.
-    assert!(body.contains(&debug_info::report(&state)), "the body must embed the debug report");
+    // Same fields, one source: the Debug info window's report, in the form
+    // that leaves the machine (file names only, #2744).
+    assert!(body.contains(&debug_info::shared_report(&state)), "the body must embed the debug report");
+    assert!(body.contains("Project: unsaved"), "an unsaved project still reads: {body}");
     assert!(body.contains("clipboard"), "the body tells the reporter to paste the picture");
+}
+
+/// A project path inside a user's home directory, in this platform's form.
+fn user_project_path() -> (std::path::PathBuf, &'static str) {
+    let home = if cfg!(windows) { r"C:\Users\jane.doe" } else { "/home/jane.doe" };
+    (std::path::Path::new(home).join("Parts").join("bracket.camproj"), home)
+}
+
+#[test]
+fn the_report_door_url_has_the_project_file_name_and_no_directory() {
+    // #2744: the browser sends the URL to GitHub, so the user's directory
+    // (and the user name in it) must not be in it - neither as typed nor
+    // percent-encoded. The file name is enough for a triage.
+    let mut state = State::new();
+    let (path, home) = user_project_path();
+    state.project_path = Some(path.clone());
+    // The status strip can repeat the path after a save.
+    state.status = format!("saved {}", path.display());
+    let body = report::report_body(&state);
+    let url = report::issue_url(report::ReportKind::Bug, "Crash on post", &body);
+    assert!(body.contains("Project: bracket.camproj\n"), "{body}");
+    assert!(body.contains("Status: saved bracket.camproj"), "{body}");
+    assert!(url.contains(&report::url_encode("Project: bracket.camproj")), "{url}");
+    let dir = path.parent().map(|p| p.display().to_string()).unwrap_or_default();
+    for secret in [dir.as_str(), home, "jane.doe", "Parts"] {
+        assert!(!body.contains(secret), "the body leaks {secret:?}: {body}");
+        assert!(!url.contains(secret), "the URL leaks {secret:?}: {url}");
+        assert!(!url.contains(&report::url_encode(secret)), "the URL leaks encoded {secret:?}: {url}");
+    }
+    // The in-app Debug info stays on the machine and keeps the full path.
+    let local = debug_info::report(&state);
+    assert!(local.contains(&format!("Project: {}", path.display())), "{local}");
 }
 
 #[test]
