@@ -1,7 +1,7 @@
 ## #2762 - The fill triangulation bridges a hole to a walk vertex first
 
-**What was decided.** `merge_hole` in `crates/geometry/src/geo2d.rs` (the
-display fill of `Region::triangles`) tries the walk vertices first, nearest
+**What was decided.** `merge_hole` in `crates/geometry/src/geo2d.rs` (the hole
+bridge of `Region::triangles`) tries the walk vertices first, nearest
 first. The computed ray hit on an edge is now the last candidate. Before, the
 ray hit came first.
 
@@ -30,5 +30,9 @@ crossing, on material) still accept or refuse each bridge.
 
 **Cost to change later.** Local to `merge_hole`. The pin is
 `region_triangles_bridge_a_hole_to_a_steep_edge` in
-`crates/geometry/tests/geo2d.rs`. The fill is display-only: no toolpath,
-containment, gouge check or post reads it.
+`crates/geometry/tests/geo2d.rs`. The triangulation is not display-only:
+`motion::entry::dive_room` takes the centroid of the largest clear triangle
+as the plunge or helix point. A region with a hole can thus get a different
+dive point. Each candidate point is still checked with `Region::contains` and
+`boundary_clears`, so a changed point stays inside the room. The motion
+suites and the golden CL and G-code suites were run to show the effect.
