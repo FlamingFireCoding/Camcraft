@@ -57,7 +57,7 @@ pub fn export(world: &World, format: ToolTableFormat, unit: Unit) -> Result<Stri
         }
         return tool_library::export_tool_library(world);
     }
-    let assigned = tool_numbers::numbers(world);
+    let assigned = tool_numbers::numbers(world)?;
     if assigned.is_empty() {
         return Err("the document has no tools to export".into());
     }
