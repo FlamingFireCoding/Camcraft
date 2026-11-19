@@ -85,6 +85,24 @@ pub(crate) const NAVS: [Nav; NAV_COUNT] = [
     Nav::Zoom,
 ];
 
+/// Each icon's name and action, shown without changing the current view.
+fn tooltip(kind: Nav) -> &'static str {
+    match kind {
+        Nav::Frame => "Frame all\nFit the whole document in the view.",
+        Nav::Iso => "Isometric view\nLook at the model from an isometric angle.",
+        Nav::Wire => "Wireframe\nSwitch between shaded edges and wireframe.",
+        Nav::Paths => "Toolpaths\nShow or hide all cached toolpaths.",
+        Nav::Axes => "World axes\nShow or hide the world origin axes.",
+        Nav::PickThrough => "Pick through\nAllow selection through the part.",
+        Nav::Move => "Move part\nShow handles to move the selected part.",
+        Nav::Rotate => "Rotate part\nShow rings to rotate the selected part.",
+        Nav::Projection => "Projection\nSwitch between perspective and orthographic views.",
+        Nav::Orbit => "Orbit\nDrag to turn the camera around the model.",
+        Nav::Pan => "Pan\nDrag to move the view sideways.",
+        Nav::Zoom => "Zoom\nDrag to move the camera closer or farther.",
+    }
+}
+
 /// The plain-English state line of the pick-through button (#692).
 #[must_use]
 pub(crate) fn pick_through_label(on: bool) -> &'static str {
@@ -209,7 +227,7 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
     }
 }
 
-/// Paint the ribbon and its buttons. Pure state -> paint, like the cube.
+/// Paint the ribbon and its buttons, with hover help for each icon.
 pub(crate) fn draw(
     ui: &egui::Ui,
     bar: egui::Rect,
@@ -240,6 +258,10 @@ pub(crate) fn draw(
             Nav::Zoom => state.nav_tool == Some(DragMode::Zoom),
         };
         let hov = hover.is_some_and(|p| r.contains(p));
+        if hov {
+            ui.interact(r, ui.id().with(("viewport_bar", kind as usize)), egui::Sense::hover())
+                .on_hover_text(tooltip(kind));
+        }
         let fill = if hov { ink.button.saturating_add(28) } else { ink.button };
         ui.painter().rect_filled(r, 5.0, egui::Color32::from_gray(fill));
         if ink.outline_buttons {
