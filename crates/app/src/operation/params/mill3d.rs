@@ -38,6 +38,7 @@ impl OpParams {
                 optimal_load,
                 feed_opt,
                 shell,
+                method,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -80,6 +81,11 @@ impl OpParams {
                 // (the shell flag is the generator's switch, like
                 // `rest_rough` before it).
                 h.write_u8(u8::from(*shell));
+                // #1591: written only where the method is read and off
+                // its default, so every earlier op keeps its digest.
+                if *strategy == PocketStrategy::Adaptive && *method == crate::machining2d::AdaptiveMethod::Trochoidal {
+                    h.write_u8(0xA5);
+                }
             }
             OpParams::Finish3D {
                 pattern,

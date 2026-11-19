@@ -106,6 +106,7 @@ mod open_side;
 mod params;
 mod rest;
 mod shell;
+mod troch;
 
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -123,3 +124,4 @@ pub use open_side::{open_sides, stock_band, ADAPTIVE_BAND_PER_R, OPEN_SLACK};
 pub use hsm::{AIR_ENTRY, NARROW_HELIX, REST_RINGS, SHELL_RINGS};
 pub use params::{engagement_step, Entry3D, Pocket3DParams};
 pub use rest::material_above;
+pub use troch::{TROCH_SETTINGS, pocket3d_trochoidal};

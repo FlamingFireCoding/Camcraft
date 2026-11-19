@@ -9,6 +9,24 @@
 
 use super::fields::*;
 
+/// What the Trochoidal method does on a 3D Adaptive: the Passes hint.
+const TROCHOIDAL_HINT: &str = "trochoidal loops on every level, kept inside the level's own area; the optimal load is the most the loops advance a turn. A level the loops cannot cut is cut by the Spiral plan and says so; the offset shells and the rest pass keep Offset rings";
+
+/// 3D Adaptive's Method row (#1591): Spiral (the path it always cut)
+/// or Trochoidal - the 2D Adaptive's own names, in its order.
+fn method_row(ui: &mut Ui, method: &mut camcraft_app::machining2d::AdaptiveMethod) {
+    use camcraft_app::machining2d::AdaptiveMethod;
+    let names = super::kind_editors::adaptive_method_names();
+    let before = AdaptiveMethod::ALL.iter().position(|m| m == method).unwrap_or(0);
+    let mut idx = before;
+    prop_row(ui, "Method", |ui| combo(ui, "p3_method", &mut idx, &names));
+    if idx != before
+        && let Some(m) = AdaptiveMethod::ALL.get(idx)
+    {
+        *method = *m;
+    }
+}
+
 pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut Cx<'_>) {
     let (u, tab, op_ctx) = (cx.u, cx.tab, cx.op_ctx);
     let _ = (u, tab, op_ctx);
@@ -34,6 +52,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             optimal_load,
             feed_opt,
             shell,
+            method,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "p3", Some((entry, helix_radius)), links);
@@ -91,6 +110,12 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     super::load_field::optimal_load_field(ui, optimal_load);
                 }
                 if matches!(strategy, PocketStrategy::Adaptive) {
+                    // #1591: how an Adaptive level is cleared.
+                    method_row(ui, method);
+                }
+                if matches!(strategy, PocketStrategy::Adaptive) && *method == camcraft_app::machining2d::AdaptiveMethod::Trochoidal {
+                    hint(ui, TROCHOIDAL_HINT);
+                } else if matches!(strategy, PocketStrategy::Adaptive) {
                     hint(ui, "HSM adaptive clearing on every level: a spiral at the optimal load, lifted returns, arcs; a level the planner refuses (an island or channel past its budget) cuts Offset rings and says so");
                 }
                 hint(ui, "levels come from the mesh: each shelf cuts around the material standing above it");

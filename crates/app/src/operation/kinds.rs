@@ -1078,6 +1078,8 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
         // Feed modulation costs a sim run; the fresh op posts the
         // programmed feed everywhere until the user asks otherwise.
         feed_opt: false,
+        // #1591: the spiral is what every 3D Adaptive cut before the choice.
+        method: crate::machining2d::AdaptiveMethod::Spiral,
         // Off is the ladder exactly as it always generated; the shell
         // is the user's ask, not the fresh op's guess (M2.5 F).
         shell: false,

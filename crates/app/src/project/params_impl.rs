@@ -369,6 +369,7 @@ impl ParamsDto {
                 optimal_load,
                 feed_opt,
                 shell,
+                method,
             } => ParamsDto::Pocket3D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -396,6 +397,10 @@ impl ParamsDto {
                 },
                 helix_radius: *helix_radius,
                 rest_rough: *rest_rough,
+                method: match method {
+                    crate::machining2d::AdaptiveMethod::Spiral => AdaptiveMethodDto::Spiral,
+                    crate::machining2d::AdaptiveMethod::Trochoidal => AdaptiveMethodDto::Trochoidal,
+                },
                 max_engagement: None,
                 optimal_load: Some(*optimal_load),
                 feed_opt: *feed_opt,
@@ -1613,6 +1618,7 @@ impl ParamsDto {
                 entry,
                 helix_radius,
                 rest_rough,
+                method,
                 max_engagement,
                 optimal_load,
                 feed_opt,
@@ -1644,6 +1650,10 @@ impl ParamsDto {
                 },
                 helix_radius: *helix_radius,
                 rest_rough: *rest_rough,
+                method: match method {
+                    AdaptiveMethodDto::Spiral => crate::machining2d::AdaptiveMethod::Spiral,
+                    AdaptiveMethodDto::Trochoidal => crate::machining2d::AdaptiveMethod::Trochoidal,
+                },
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 feed_opt: *feed_opt,
                 shell: *shell,
