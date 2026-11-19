@@ -81,6 +81,28 @@ fn layout_window_tool_shape() {
         close.rect().top() > h.get_by_label("Apply profile").rect().top(),
         "Close is the window's footer, under the profile controls"
     );
+    // #2007 through #2397: the fixed frame keeps every door inside it.
+    let win_rect = win.rect();
+    for a in ["Draw holder", "Draw cutter", "Import DXF…", "Export DXF…", "Import STEP…"] {
+        for r in h.query_all_by_label(a).map(|n| n.rect()) {
+            assert!(win_rect.contains_rect(r), "Tool shape window: {a:?} {r:?} leaves the window {win_rect:?}");
+        }
+    }
+    // #2007 through #2397: the points table keeps all its rows - one
+    // remove button for each point, and the holder line stands under
+    // the last row, not across the table body. The table sits in the
+    // view column, below its "height mm" header.
+    let below = win.get_by_label("height mm").rect().bottom();
+    let col = win.get_by_label("height mm").rect().left();
+    let rows: Vec<egui::Rect> = win
+        .query_all_by_label("×")
+        .map(|n| n.rect())
+        .filter(|r| r.top() > below && r.left() > col - 1.0)
+        .collect();
+    assert_eq!(rows.len(), h.state().state.tool_profile_ui.points.len(), "one remove button for each point");
+    let last = rows.iter().fold(f32::MIN, |m, r| m.max(r.bottom()));
+    let under = win.query_all_by_label_contains("holder Ø").next().expect("the holder line under the table").rect();
+    assert!(under.top() >= last - 1.0, "Tool shape window: the table hides rows - its last row ends at {last}, the line under it starts at {}", under.top());
 }
 
 #[test]

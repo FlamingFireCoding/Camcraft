@@ -23,6 +23,11 @@ fn editor() -> Harness<'static, ShellUi> {
     h.run_steps(1); // the page mirrors the tool into the draft
     super::super::tool_cutting_rows::add_row(&mut h.state_mut().state.tool_ui);
     h.run_steps(3);
+    // The seeded waterjet tool has no recipe row, so the first frame that
+    // draws the cutting group leaves its header closed; the row added to
+    // the draft needs one click to open it (the same click a user makes).
+    h.get_by_label("Cutting data by material and thickness").click();
+    h.run_steps(2);
     h
 }
 
