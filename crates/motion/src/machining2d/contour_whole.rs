@@ -146,6 +146,34 @@ fn forward_band_notes(
     }
 }
 
+/// A band that stops at the next flat level `z_next` and still emits floor
+/// passes: an outer ring that stops there and has no floor level above it
+/// gets no pass, and the re-slice does not return to it (#2538). Name the
+/// uncut Z range of each such ring.
+fn note_rings_without_floor(
+    band: &PreparedBand,
+    lad: &Ladder,
+    trimmed: &Ladder,
+    z_next: f64,
+    ceiling: f64,
+    lead_notes: &mut Vec<String>,
+) {
+    for (li, l) in band.loops.iter().enumerate() {
+        if !l.is_ccw() || lad.walks(li, z_next) || !trimmed.ring(li).is_empty() {
+            continue;
+        }
+        let at = band.plan.get(li).and_then(|r| r.first().copied()).unwrap_or(Point2::new(0.0, 0.0));
+        say(
+            lead_notes,
+            format!(
+                "whole-model contour: the ring at ({:.3}, {:.3}) has no floor level between Z {z_next:.3} \
+                 and Z {ceiling:.3} - that wall is not cut; reduce the stepdown",
+                at.x, at.y
+            ),
+        );
+    }
+}
+
 fn stopped(msg: String, b: PathBuilder) -> GenError {
     let partial = b.finish();
     if partial.moves.is_empty() {
@@ -252,6 +280,7 @@ pub fn contour_whole_bodies_with(
                 let trimmed = trim_ladder(&lad, remaining[0]);
                 let emitted = trimmed.zs.last().is_some_and(|&z| z < ceiling - SAME_LEVEL);
                 if emitted {
+                    note_rings_without_floor(&band, &lad, &trimmed, remaining[0], ceiling, &mut lead_notes);
                     forward_band_notes(&band, &lad, last_z, true, ring_notes, &mut lead_notes);
                     emit_band(&mut b, &band, p, &trimmed, pick, exit, &mut said, &mut lead_notes, &mut tally)?;
                     walked.push(current_region.clone());
