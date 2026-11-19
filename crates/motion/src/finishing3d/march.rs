@@ -5,7 +5,8 @@ use crate::geo2d::Point2;
 use crate::geometry::Point3;
 
 use super::params::{Finish3DParams, GapLink};
-use super::support::{Sup, support_at};
+use super::grid::SupSet;
+use super::support::{support_at};
 /// Append a sample to the piece being marched. Runs are walked once;
 /// only the zero-length duplicate a finished bisection can leave
 /// behind is refused. The stored point rides the micron lattice
@@ -304,7 +305,7 @@ pub(super) const RAMP_PROBE_MAX: i64 = 4096;
 /// legal centers - linear z between them can only ride ABOVE a
 /// constant support, so the loop proves it and no special case is
 /// needed. Too long to certify within the probe cap: refused, hop.
-pub(super) fn diagonal_ok(from: Point3, to: Point3, r: f64, p: &Finish3DParams, sups: &[Sup]) -> bool {
+pub(super) fn diagonal_ok(from: Point3, to: Point3, r: f64, p: &Finish3DParams, sups: &SupSet) -> bool {
     let d = (to.x - from.x).hypot(to.y - from.y);
     if !(d.is_finite() && to.x.is_finite() && to.y.is_finite() && to.z.is_finite()) {
         return false;
@@ -347,7 +348,7 @@ pub(super) fn emit_runs(
     b: &mut PathBuilder,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
     runs: &[Vec<(Point2, f64)>],
     continuing: bool,
 ) {
