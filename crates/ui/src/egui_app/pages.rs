@@ -531,6 +531,8 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
             );
         }
     }
+    // #1339: a mesh of unknown fidelity can be vouched for, beside its line.
+    super::vouch_row::row(ui, state, &entity, &name);
     super::step_budget_row::row(ui, state, &entity);
     if let Some(a) = model::entity_world_aabb(&state.world, &entity) {
         ui.label(format!(

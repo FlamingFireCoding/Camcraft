@@ -118,6 +118,8 @@ mod prefs_ui;
 mod setups_ui;
 #[path = "state_step_budget.rs"]
 mod step_budget_ui;
+#[path = "state_vouch.rs"]
+mod vouch_ui;
 pub use step_budget_ui::StepBudgetUi;
 pub use tool_profile_ui::{ToolColumn, ToolProfileUi, is_spun_kind, parametric_points};
 use flecs_ecs::prelude::World;
@@ -758,6 +760,12 @@ pub enum CommandKind {
         name: String,
         weld_tol: f64,
         max_hole_edges: usize,
+    },
+    /// #1339: `by` vouches for the mesh of the model `name`, which is of
+    /// unknown fidelity; one undo unit, refused by name on any other mesh.
+    VouchModelFidelity {
+        name: String,
+        by: String,
     },
     /// Setup sheets (M3.2 stage D): render every setup and write the
     /// flip chart, one page per setup, form feeds as page breaks. The
@@ -1910,6 +1918,9 @@ pub struct State {
     /// #1054: the STEP facet budget the next import runs under (an import
     /// setting, not on the history; the import that uses it is).
     pub step_budget: StepBudgetUi,
+    /// #1339: the name typed on the model page's vouch row (a draft; the
+    /// vouch itself is `CommandKind::VouchModelFidelity`).
+    pub vouch_by: String,
     /// #789: each built-in accessory row's size draft, by name - view
     /// state; Apply lands it through `SetAccessory`.
     pub accessory_sizes: HashMap<String, AccessorySizeDraft>,
@@ -2312,6 +2323,7 @@ impl State {
             pocket_scan: PocketScan::default(),
             import_as_fixture: None,
             step_budget: StepBudgetUi::default(),
+            vouch_by: String::new(),
             accessory_sizes: HashMap::new(),
             profile_edits: HashMap::new(),
             fixture_mesh_cache: Default::default(),
@@ -4097,6 +4109,7 @@ impl State {
                     Err(err) => self.refuse(ErrorScope::Setup, format!("{name} not repaired: {err}")),
                 }
             }
+            CommandKind::VouchModelFidelity { name, by } => self.vouch_model(&name, &by),
             CommandKind::ImportFixtureDialog => {
                 if let Some(path) = pick_mesh_file() {
                     // Bind to the context the page shows: the active

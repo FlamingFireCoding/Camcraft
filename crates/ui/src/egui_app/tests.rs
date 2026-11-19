@@ -205,6 +205,8 @@ mod fixtures_page;
 mod model_fidelity;
 // #1610 review: incomplete model advice and import status are visible.
 mod model_incomplete;
+// #1339: the model page's vouch row for a mesh of unknown fidelity.
+mod model_vouch;
 // #1054: the STEP facet budget on the model page.
 mod step_budget;
 // #1573 review: what a STEP import changed is said on the status line.
