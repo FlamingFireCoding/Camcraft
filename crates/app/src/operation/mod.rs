@@ -135,6 +135,7 @@ mod probe_pick_round;
 pub use probe_pick::{PROBE_AXIS_TOL_DEG, ProbeSeed, probe_account, probe_from_picks, probe_seed, seeded_params};
 pub(crate) use probe::*;
 mod selection;
+mod deburr_picks;
 mod contour_auto_pick;
 pub use selection::*;
 mod picks;

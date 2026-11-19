@@ -290,9 +290,17 @@ refused by name; G92 and G41 / G42 are never written. The machine's
 T94 / T89 after each threading, before the C word (the manual's Program
 Example 1 order); unstated, nothing is written and the header says so.
 The tank fill / drain, flushing pump and wire-drive T codes are never
-written. It was not run on a control; what is unconfirmed is in
-`docs/decisions/617-sodick-wire-post.md`. Its golden rides under
-`nc/sodick-wire/` (`sodick_wire_post.rs`).
+written. Skim passes (#2649, from Sodick's 2012 LN1W / LN2W training
+manual) post on their own C words: each skim's C word is written after
+the previous pass's return to the threading point and before the skim's
+first move, with the wire left threaded (one T91, one T90). A skim
+condition id that is not a C word is refused by name. The boolean
+option `approachCondition` (default off) cuts the first approach move
+on `C000` (the manual's "Approach" row) and then selects the
+operation's C word. It was not run on a control; what is unconfirmed is
+in `docs/decisions/617-sodick-wire-post.md` and
+`docs/decisions/2649-sodick-ln-pass-structure.md`. Its goldens ride
+under `nc/sodick-wire/` (`sodick_wire_post.rs`, `sodick_wire_passes.rs`).
 
 ## Adding a post to the app
 

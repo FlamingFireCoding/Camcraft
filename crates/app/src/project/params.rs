@@ -593,6 +593,19 @@ pub enum ParamsDto {
         bottom_z: HeightDto,
         feed: f64,
         plunge_feed: f64,
+        /// #1888, additive: each key is absent at its rest value, so a
+        /// file from before the keys reads as the ride it stored (no
+        /// exclusion, every crease, every hole) and saves unchanged.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        exclude_edges: Vec<GeoSelDto>,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        min_edge_angle_deg: f64,
+        #[serde(default, skip_serializing_if = "is_false")]
+        exclude_holes: bool,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_min_diameter: f64,
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        hole_max_diameter: f64,
         /// #1889: absent in each earlier file, which reads as the
         /// default (`skip_with_note`). Always written, so that an MCP
         /// patch and `list_operation_types` see the field.
