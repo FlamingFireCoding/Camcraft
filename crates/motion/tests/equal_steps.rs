@@ -73,7 +73,7 @@ fn two_modes(what: &str, run: impl Fn(bool) -> Toolpath) {
 
 #[test]
 fn the_default_ladder_keeps_the_remainder_and_equal_steps_is_opt_in() {
-    assert!(!Approach::DEFAULT.equal_steps, "the default is the remainder ladder");
+    assert!(!Approach::default().equal_steps, "the default is the remainder ladder");
     let on = Approach { equal_steps: true, ..Approach::DEFAULT };
     assert_eq!(cut_levels(TOP, BOTTOM, STEP).ok(), Some(REMAINDER.to_vec()));
     assert_eq!(cut_levels_for(TOP, &Approach::DEFAULT, BOTTOM, STEP).ok(), Some(REMAINDER.to_vec()));
