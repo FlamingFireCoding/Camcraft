@@ -94,6 +94,7 @@ mod lead_page;
 mod start_exit_rows;
 pub(crate) mod op_tabs;
 mod painted;
+mod sim_steps;
 mod tree_badges;
 mod tree_glyphs;
 mod pages;

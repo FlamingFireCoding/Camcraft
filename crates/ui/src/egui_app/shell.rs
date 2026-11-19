@@ -343,6 +343,8 @@ fn viewport_panel(
                 stop = true;
             }
             if total > 0.0 {
+                // #2608: step to an operation's start (sim_steps).
+                super::sim_steps::op_step_buttons(ui, sim, &sc, held);
                 ui.add_enabled(!held, egui::Slider::new(&mut sim.t, 0.0..=total).show_value(false));
                 egui::ComboBox::from_id_salt("sim_speed")
                     .selected_text(format!("{:.0}x", sim.speed))
