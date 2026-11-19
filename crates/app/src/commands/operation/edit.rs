@@ -108,6 +108,8 @@ impl EditOperationParams {
                 prev.params.kind()
             )));
         }
+        // #2599: new angles on a legacy tilt take the current frame basis.
+        let params = params.with_stepped_tilt_basis(&prev.params);
         infeed_plan_gate(world, &params, &prev.tool)?;
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
