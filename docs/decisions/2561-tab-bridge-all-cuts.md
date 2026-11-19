@@ -59,3 +59,41 @@ this reads as "cuts into" only when the other ring cuts there.
 
 **Cost to change.** `tab_clear::fit_band` is one function with two
 thresholds. A later placement law (move the tab) replaces the hold arm.
+
+## #2561 - review fixes of PR #2705 (takeover by the owner account)
+
+**Decided.**
+
+- `tab_clear::departed` drops only the monotonic exit of a keep beside
+  the tab: the pieces whose distance from the tab line keeps growing. A
+  piece that comes nearer to the line than the farthest point before it
+  starts the counted part of the cut, also inside `reach` and before the
+  cut is `W + D` away. A U-turn in a shallow notch beside the tab is then
+  read and holds the loop.
+- With one keep on the ring, its lead-in and lead-out join the tab at
+  both ends. `nearest_other` now reads them through `departed` too, so a
+  lead that turns back toward the tab counts.
+- `tab_clear::fit_loops` takes the tabbed levels of each loop from the
+  depth ladder (`Ladder::ring`). A loop with no tabbed level is not
+  checked, and a ring is read against the tabs of ring `i` only when the
+  two rings share a tabbed level. With no tabbed level in the band, no
+  fit is made.
+
+**Why.** The review of head `edb566d33` found a neck of 0 mm with no note
+(an 18 mm deep notch), and a false hold of a deep island beside an island
+that stops on a shelf above the tabs. The first is a silent thin bridge.
+The second refuses a legal program.
+
+**Dropped.**
+
+- Check the pieces past `reach` against `D - SLACK` only. That reads the
+  turn-back but not a strip narrower than the tab width, so the note of
+  the strip case would depend on the notch depth.
+- Check the adjacent leads for each count of keeps. With two or more
+  keeps, `tab_bridge` measures those leads; the brief asked for the
+  one-keep case only.
+
+**Limits.** The distance is to the tab line as a segment. Near the ends
+of the line this is conservative: a turn-back past the end of the tab can
+read as nearer than it cuts. The result is a hold or a note, never a
+silent bridge.

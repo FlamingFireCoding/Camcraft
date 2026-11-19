@@ -9,8 +9,9 @@ mod common;
 use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::{Loop, Point2, Region};
+use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::Links;
-use camcraft_motion::machining2d::{ContourParams, Lead, Side, contour};
+use camcraft_motion::machining2d::{ContourParams, Lead, Side, contour, contour_on_part};
 use common::tab_neck::{Neck, tab_necks};
 
 const D: f64 = 6.0;
@@ -52,10 +53,11 @@ fn necks(part: &Region, t: &Toolpath) -> Vec<Neck> {
     tab_necks(part, t, D, BOTTOM + TAB_H, CELL).unwrap()
 }
 
-/// A 60 x 40 part with a notch `g` wide and 25 deep in its top edge.
-fn notched(g: f64) -> Region {
+/// A 60 x 40 part with a notch `g` wide in its top edge, its floor at
+/// `y = floor` (25 deep at `floor = 15`).
+fn notched_to(g: f64, floor: f64) -> Region {
     let (a, b) = (30.0 - g * 0.5, 30.0 + g * 0.5);
-    Region::new(vec![lp(&[(0.0, 0.0), (60.0, 0.0), (60.0, 40.0), (b, 40.0), (b, 15.0), (a, 15.0), (a, 40.0), (0.0, 40.0)])]).unwrap()
+    Region::new(vec![lp(&[(0.0, 0.0), (60.0, 0.0), (60.0, 40.0), (b, 40.0), (b, floor), (a, floor), (a, 40.0), (0.0, 40.0)])]).unwrap()
 }
 
 /// Two parts `g` apart: 30 x 30, and 30 x 50 beside it.
@@ -100,7 +102,11 @@ fn the_meter_reads_the_tab_width_on_a_plain_part() {
 
 /// The notched part with two tabs, the second one on the notch wall.
 fn notch_path(g: f64) -> (Region, Toolpath) {
-    let part = notched(g);
+    notch_path_to(g, 15.0)
+}
+
+fn notch_path_to(g: f64, floor: f64) -> (Region, Toolpath) {
+    let part = notched_to(g, floor);
     let mut p = params(2);
     p.links.approach.start_point = Some(Point2::new(30.0 - g * 0.5 - D * 0.5, 30.0));
     let t = contour(&part, &p).unwrap();
@@ -159,4 +165,44 @@ fn a_tab_that_a_second_ring_cuts_into_holds_the_loop() {
     let named = t.notes.iter().filter(|s| s.starts_with("tabs:") && s.contains("leaves only 2.000 mm of material beside it")).count();
     assert_eq!(named, 2, "{:?}", t.notes);
     assert_eq!(necks(&both, &t).len(), 8);
+}
+
+#[test]
+fn a_tab_that_a_u_turn_in_a_shallow_notch_cuts_into_holds_the_loop() {
+    // Review of #2705: an 18 mm deep notch, 10 mm wide. The return run
+    // passes 4 mm from the tab on the notch wall, but the ring turns back
+    // before it is `W + D` from the tab. That return run was not read: no
+    // note, and a neck of 0.
+    let (part, t) = notch_path_to(10.0, 22.0);
+    assert_eq!(held(&t), 1, "{:?} necks {:?}", t.notes, necks(&part, &t));
+    assert!(t.notes.iter().any(|s| s.contains("passes 4.000 mm from the tab")), "{:?}", t.notes);
+    assert!(cuts_nothing_at_the_tabs(&t), "a held loop cuts nothing under the tab top");
+}
+
+/// A box, its faces wound outward.
+fn boxf(min: [f64; 3], max: [f64; 3]) -> Vec<Triangle> {
+    let v = |i: usize| Point3::new([min[0], max[0]][i & 1], [min[1], max[1]][(i >> 1) & 1], [min[2], max[2]][(i >> 2) & 1]);
+    let quad = |a: usize, b: usize, c: usize, d: usize| [Triangle::new(v(a), v(b), v(c)), Triangle::new(v(a), v(c), v(d))];
+    [quad(4, 5, 7, 6), quad(0, 2, 3, 1), quad(0, 1, 5, 4), quad(2, 6, 7, 3), quad(1, 3, 7, 5), quad(2, 0, 4, 6)].concat()
+}
+
+#[test]
+fn a_ring_that_stops_above_the_tabs_does_not_hold_another_loop() {
+    // Review of #2705: two islands 10 mm apart. The second one stands on a
+    // shelf at Z = -1, so its ring stops at -1 and cuts nothing at the
+    // tabbed level -4. The deep island was held for a cut that is not there.
+    let part = pair(10.0);
+    let mut mesh = boxf([0.0, 0.0, BOTTOM], [30.0, 30.0, 0.0]);
+    mesh.extend(boxf([40.0, 0.0, -1.0], [70.0, 50.0, 0.0]));
+    mesh.extend(boxf([39.0, -5.0, BOTTOM], [75.0, 55.0, -1.0]));
+    let mut p = params(4);
+    p.stepdown = 1.0;
+    let t = contour_on_part(&part, &mesh, &p).unwrap();
+    assert_eq!(held(&t), 0, "{:?}", t.notes);
+    let deep: Vec<_> = t.moves.iter().filter(|m| m.kind != MoveKind::Rapid && m.from.z.min(m.to.z) < -1.0 - 1e-9).collect();
+    assert!(deep.iter().all(|m| m.from.x.max(m.to.x) < 37.0), "the shelf ring cuts below -1");
+    assert!(
+        deep.iter().any(|m| (m.from.z - BOTTOM).abs() < 1e-9 && (m.to.z - BOTTOM).abs() < 1e-9),
+        "the deep island is cut at the tabbed level"
+    );
 }

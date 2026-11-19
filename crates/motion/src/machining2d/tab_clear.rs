@@ -18,9 +18,18 @@ use super::ring::{Ring, dist, tab_window, walked};
 use super::tab_bridge::{Cut, SLACK, TabFit, fit_tabs, held, keep_cut, pt_seg, seg_seg};
 
 /// The tab fit of every loop of a band (`loops` index to fit), each ring
-/// seated as its tabbed levels walk it. Empty when no level is tabbed.
-pub(super) fn fit_loops(loops: &[Loop], pick: Option<(usize, Point2)>, p: &ContourParams, legal: &Legal) -> HashMap<usize, TabFit> {
-    if p.tab_count == 0 || p.tab_height.is_nan() || p.tab_height <= 0.0 {
+/// seated as its tabbed levels walk it. `levels[i]` holds the tabbed
+/// levels (`f64::to_bits`) that loop `i` is cut at: a tab is held only
+/// against the cuts of a level that it stands at. Empty when no loop
+/// walks a tabbed level.
+pub(super) fn fit_loops(
+    loops: &[Loop],
+    levels: &[Vec<u64>],
+    pick: Option<(usize, Point2)>,
+    p: &ContourParams,
+    legal: &Legal,
+) -> HashMap<usize, TabFit> {
+    if p.tab_count == 0 || p.tab_height.is_nan() || p.tab_height <= 0.0 || levels.iter().all(Vec::is_empty) {
         return HashMap::new();
     }
     let mut scratch = Vec::new();
@@ -33,20 +42,28 @@ pub(super) fn fit_loops(loops: &[Loop], pick: Option<(usize, Point2)>, p: &Conto
             Ring::new(seat(pts, picked, true, false, p, legal, &mut scratch))
         })
         .collect();
-    fit_band(&rings, pick.map(|(pi, _)| pi), p, legal).into_iter().enumerate().collect()
+    fit_band(&rings, levels, pick.map(|(pi, _)| pi), p, legal).into_iter().enumerate().collect()
 }
 
 /// Each ring's fit (`tab_bridge::fit_tabs`), then each tab against all the
 /// other cuts of the level, as first fitted. A tab that another cut cuts
 /// into holds the whole loop (its tabbed levels cut nothing), by name. A
 /// tab that keeps its width but has less than that width of material
-/// beside it gets a note.
-fn fit_band(rings: &[Ring], picked: Option<usize>, p: &ContourParams, legal: &Legal) -> Vec<TabFit> {
+/// beside it gets a note. Only the rings that share a tabbed level with
+/// ring `i` (`levels`) are read against its tabs: a ring that stops on a
+/// shelf above the tabs cuts nothing beside them.
+fn fit_band(rings: &[Ring], levels: &[Vec<u64>], picked: Option<usize>, p: &ContourParams, legal: &Legal) -> Vec<TabFit> {
     let mut fits: Vec<TabFit> = rings.iter().enumerate().map(|(i, r)| fit_tabs(r, p, picked == Some(i), legal)).collect();
     let need = tab_window(p.tab_width, p.tool_diameter);
     let d = need - p.tab_width;
     let cuts: Vec<Vec<((f64, f64), Cut)>> = rings.iter().zip(&fits).map(|(r, f)| ring_cuts(r, &f.keeps, p, legal)).collect();
+    let lv = |k: usize| levels.get(k).map_or(&[][..], Vec::as_slice);
     for (i, ring) in rings.iter().enumerate() {
+        let mine = lv(i);
+        if mine.is_empty() {
+            continue;
+        }
+        let shares: Vec<bool> = (0..rings.len()).map(|k| lv(k).iter().any(|z| mine.contains(z))).collect();
         let m = cuts[i].len();
         // The nearest other cut to any tab of this ring: (distance, tab).
         let mut worst: Option<(f64, Point2)> = None;
@@ -56,7 +73,7 @@ fn fit_band(rings: &[Ring], picked: Option<usize>, p: &ContourParams, legal: &Le
             if line.len() < 2 {
                 continue;
             }
-            let gap = nearest_other(&cuts, i, j, &line, need);
+            let gap = nearest_other(&cuts, &shares, i, j, &line, need);
             if worst.is_none_or(|w| gap < w.0) {
                 worst = Some((gap, line[line.len() / 2]));
             }
@@ -99,11 +116,16 @@ fn ring_cuts(ring: &Ring, keeps: &[(f64, f64)], p: &ContourParams, legal: &Legal
 /// of ring `i`) to every other cut of the level. The two cuts beside the
 /// tab count from where they have left it: `tab_bridge` measured their
 /// first `need` of walk and their leads on the tab's side, and the rest
-/// stays out until it is `need` away from the line for the first time.
-fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], i: usize, j: usize, line: &[Point2], need: f64) -> f64 {
+/// stays out until it is `need` away from the line for the first time, or
+/// until it turns back toward the line. `shares[ri]`: ring `ri` is cut at
+/// a tabbed level of ring `i`.
+fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], shares: &[bool], i: usize, j: usize, line: &[Point2], need: f64) -> f64 {
     let m = cuts[i].len();
     let mut best = f64::INFINITY;
     for (ri, ring) in cuts.iter().enumerate() {
+        if ri != i && !shares.get(ri).copied().unwrap_or(false) {
+            continue;
+        }
         for (ci, (_, c)) in ring.iter().enumerate() {
             let before = ri == i && ci == j;
             let after = ri == i && ci == (j + 1) % m;
@@ -128,6 +150,13 @@ fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], i: usize, j: usize, line: &[Po
                 path = departed(&path, line, reach, need);
             }
             best = best.min(near(line, &path, need));
+            if before && after {
+                // One keep (review of #2705): both of its leads join this
+                // tab. They count where they turn back toward it.
+                let lead_in: Vec<Point2> = c.lead_in.iter().rev().copied().collect();
+                best = best.min(near(line, &departed(&lead_in, line, 0.0, need), need));
+                best = best.min(near(line, &departed(&c.lead_out, line, 0.0, need), need));
+            }
         }
     }
     best
@@ -135,15 +164,25 @@ fn nearest_other(cuts: &[Vec<((f64, f64), Cut)>], i: usize, j: usize, line: &[Po
 
 /// `walk` (it starts at the tab) from where it has left the tab: past
 /// `reach` of its length, then on to its first point `need` from `line`.
+/// A walk that turns back toward `line` before that (a U-turn in a shallow
+/// notch beside the tab, review of #2705) counts from the piece where it
+/// turns: only the exit whose distance from the line keeps growing is
+/// dropped.
 fn departed(walk: &[Point2], line: &[Point2], reach: f64, need: f64) -> Vec<Point2> {
     let off = |q: Point2| line.windows(2).map(|w| pt_seg(q, w[0], w[1])).fold(f64::INFINITY, f64::min);
+    // The nearest approach of a piece to the line; NaN reads as a touch.
+    let low = |a: Point2, b: Point2| {
+        line.windows(2).map(|w| seg_seg(w[0], w[1], a, b)).map(|s| if s.is_nan() { 0.0 } else { s }).fold(f64::INFINITY, f64::min)
+    };
     let mut run = 0.0;
-    let mut out: Vec<Point2> = Vec::new();
-    for w in walk.windows(2) {
+    let mut peak = walk.first().map_or(0.0, |&q| off(q));
+    for (k, w) in walk.windows(2).enumerate() {
         let len = dist(w[0], w[1]);
-        if !out.is_empty() {
-            out.push(w[1]);
-        } else if run + len > reach && off(w[1]) >= need {
+        if low(w[0], w[1]) < peak - SLACK {
+            // The walk comes back toward the tab on this piece.
+            return walk[k..].to_vec();
+        }
+        if run + len > reach && off(w[1]) >= need {
             // The walk leaves on this piece: bisect for the point.
             let t0 = if len > 0.0 { ((reach - run) / len).clamp(0.0, 1.0) } else { 1.0 };
             let at = |t: f64| Point2::new(w[0].x + (w[1].x - w[0].x) * t, w[0].y + (w[1].y - w[0].y) * t);
@@ -155,12 +194,14 @@ fn departed(walk: &[Point2], line: &[Point2], reach: f64, need: f64) -> Vec<Poin
                 let mid = 0.5 * (lo + hi);
                 if off(at(mid)) >= need { hi = mid } else { lo = mid }
             }
-            out.push(at(hi));
-            out.push(w[1]);
+            let mut out = vec![at(hi)];
+            out.extend_from_slice(&walk[k + 1..]);
+            return out;
         }
+        peak = peak.max(off(w[1]));
         run += len;
     }
-    out
+    Vec::new()
 }
 
 /// The smallest distance from `line` to the polyline `pts`, read only
