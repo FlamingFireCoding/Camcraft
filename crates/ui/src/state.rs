@@ -1398,8 +1398,9 @@ pub enum GeoPick {
     Vertex,
 }
 
-/// How the viewport paints solid geometry. Transient view state - like
-/// the camera and [`GeoPick`], never a command, never saved. The wire is
+/// How the viewport paints solid geometry. View state - like the camera
+/// and [`GeoPick`], never a command; a kept preference since #2818, never
+/// in the project file. The wire is
 /// always the same feature-edge set (`geometry::feature`, crease and
 /// boundary); the modes differ in what happens *behind* it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
