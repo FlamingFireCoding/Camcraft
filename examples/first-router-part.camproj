@@ -1,5 +1,5 @@
 {
-  "version": 68,
+  "version": 71,
   "machine": {
     "path": "built-in: Sienci AltMill 4x4",
     "machine": {
@@ -151,14 +151,14 @@
             "helix_radius": 1.0
           }
         },
-        "stamp": 18038846728755413266,
+        "stamp": 1034857802180778734,
         "cache": {
           "moves": [
             {
               "kind": "rapid",
               "from": [
-                0.0,
-                0.0,
+                -100.0,
+                -80.0,
                 27.0
               ],
               "to": [
@@ -1259,14 +1259,14 @@
             "optimal_load": 0.1464466094067262
           }
         },
-        "stamp": 16974976417912780784,
+        "stamp": 17868310831142699188,
         "cache": {
           "moves": [
             {
               "kind": "rapid",
               "from": [
-                0.0,
-                0.0,
+                -100.0,
+                -80.0,
                 27.0
               ],
               "to": [
@@ -2033,7 +2033,8 @@
         "holder_len": 35.0,
         "material_group": "aluminum",
         "rpm": 7500.0,
-        "feed": 115.0
+        "feed": 115.0,
+        "number": 1
       }
     },
     {
@@ -2075,8 +2076,8 @@
             "cycle": "auto",
             "peck": 4.0,
             "dwell": 0.0,
-            "feed": 150.0,
-            "plunge_feed": 150.0,
+            "feed": 115.0,
+            "plunge_feed": 115.0,
             "holes": [
               {
                 "xy": [
@@ -2126,7 +2127,7 @@
             "break_through_from": "full_diameter"
           }
         },
-        "stamp": 5886684780336039941,
+        "stamp": 7481787925847761820,
         "cache": {
           "moves": [
             {
@@ -2154,7 +2155,7 @@
                 -30.0,
                 8.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2181,7 +2182,7 @@
                 -30.0,
                 4.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2208,7 +2209,7 @@
                 -30.0,
                 0.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2235,7 +2236,7 @@
                 -30.0,
                 -2.802582
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2301,7 +2302,7 @@
                 -30.0,
                 8.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2328,7 +2329,7 @@
                 -30.0,
                 4.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2355,7 +2356,7 @@
                 -30.0,
                 0.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2382,7 +2383,7 @@
                 -30.0,
                 -2.802582
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2448,7 +2449,7 @@
                 30.0,
                 8.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2475,7 +2476,7 @@
                 30.0,
                 4.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2502,7 +2503,7 @@
                 30.0,
                 0.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2529,7 +2530,7 @@
                 30.0,
                 -2.802582
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2595,7 +2596,7 @@
                 30.0,
                 8.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2622,7 +2623,7 @@
                 30.0,
                 4.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2649,7 +2650,7 @@
                 30.0,
                 0.0
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2676,7 +2677,7 @@
                 30.0,
                 -2.802582
               ],
-              "feed": 150.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
@@ -2718,7 +2719,36 @@
               ]
             }
           ],
-          "warnings": [],
+          "warnings": [
+            {
+              "drill_undersize": {
+                "at": 1,
+                "hole_mm": 6.2,
+                "drill_mm": 6.0
+              }
+            },
+            {
+              "drill_undersize": {
+                "at": 12,
+                "hole_mm": 6.2,
+                "drill_mm": 6.0
+              }
+            },
+            {
+              "drill_undersize": {
+                "at": 23,
+                "hole_mm": 6.2,
+                "drill_mm": 6.0
+              }
+            },
+            {
+              "drill_undersize": {
+                "at": 34,
+                "hole_mm": 6.2,
+                "drill_mm": 6.0
+              }
+            }
+          ],
           "cycles": [
             {
               "kind": "peck",
@@ -2811,7 +2841,8 @@
         "rpm": 9500.0,
         "feed": 1800.0,
         "tool_material": "carbide",
-        "flutes": 4
+        "flutes": 4,
+        "number": 2
       }
     },
     {

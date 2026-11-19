@@ -51,7 +51,7 @@ pub fn seed_into(params: &mut OpParams, tool: &Tool, material: Option<WorkMateri
     let Some(rated) = rated_feed(tool, material) else {
         return false;
     };
-    let mut set = |field: &mut f64, v: f64| {
+    let set = |field: &mut f64, v: f64| {
         let moved = *field != v;
         *field = v;
         moved
