@@ -16,6 +16,9 @@
 use std::path::{Path, PathBuf};
 
 use camcraft_app::mcp::Server;
+use camcraft_app::project;
+use camcraft_app::tool_cutting_rows::CuttingRow;
+use camcraft_app::tools::{Tool, WorkMaterial, catalog};
 use serde_json::{json, Value};
 
 struct Client {
@@ -246,5 +249,50 @@ fn setting_a_new_tool_takes_its_feed_and_undo_restores_the_old_one() {
     assert_eq!(c.feeds("D"), (120.0, 120.0), "the drill takes DR-0300's 120 mm/min in the same step");
     c.ok("undo", json!({}));
     assert_eq!(c.feeds("D"), (90.0, 80.0), "undo restores the hand-set feeds");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #2724: DR-0600 with a cutting-data row for mild steel at its own 115
+/// mm/min, on a mild-steel document. The user lowers the running feed to
+/// 80; the row stays at 115. The Drill op at 115 was passed by the post
+/// (the row alone was the rating); the lower of the two is the rating now.
+#[test]
+fn a_running_feed_lowered_below_the_material_row_is_the_rating() {
+    let dir = temp_dir("running");
+    let mut c = setup(&dir);
+    let dr = catalog().into_iter().find(|(n, _)| *n == "DR-0600").map(|(_, t)| t).expect("catalog drill");
+    let row = CuttingRow::plain(Some(WorkMaterial::MildSteel), dr.rpm, 115.0);
+    let def = project::tool_to_json(&Tool { cutting: vec![row], ..dr });
+    c.ok("edit_tool", json!({ "name": "DR-0600", "patch": { "cutting_data": def["cutting_data"].clone() } }));
+    c.ok("set_work_material", json!({ "material": "mild_steel" }));
+    assert_eq!(c.feeds("D"), (115.0, 115.0), "the drill feeds at the steel row's 115 mm/min");
+    c.ok("generate", json!({}));
+    assert_eq!(c.ok("verify", json!({}))["ok"], json!(true), "the row feed posts while the tool runs it");
+
+    c.ok("edit_tool", json!({ "name": "DR-0600", "patch": { "feed": 80.0 } }));
+    c.ok("generate", json!({}));
+    let v = c.ok("verify", json!({}));
+    assert_eq!(v["ok"], json!(false), "a feed above the lowered running feed holds the post: {v}");
+    let text = v.to_string();
+    assert!(text.contains("D: feeds 115 mm/min") && text.contains("80 mm/min") && text.contains("DR-0600"), "{v}");
+    let nc = dir.join("out.nc");
+    let why = c.refused("post", json!({ "output": nc.display().to_string(), "post": "Fanuc" }));
+    assert!(why.contains("D: feeds 115 mm/min, above the 80 mm/min"), "the post names the op and the limit: {why}");
+    assert!(!nc.exists(), "nothing is written");
+
+    // A new drill op on the tool seeds the feed that the check passes.
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0600", "source": "plate", "name": "D2" }));
+    assert_eq!(c.feeds("D2"), (80.0, 80.0), "the seed is the lowered running feed, not the row");
+    c.ok("undo", json!({}));
+
+    c.ok("edit_operation", json!({ "name": "D", "params": { "feed": 80.0, "plunge_feed": 80.0 } }));
+    c.ok("generate", json!({}));
+    c.ok("post", json!({ "output": nc.display().to_string(), "post": "Fanuc" }));
+    let posted = std::fs::read_to_string(&nc).expect("the program is written");
+    let cycles: Vec<_> = f_words(&posted).into_iter().filter(|(_, l)| l.contains("G73") || l.contains("G81") || l.contains("G83")).collect();
+    assert!(!cycles.is_empty(), "the drill posts a canned cycle:\n{posted}");
+    for (f, l) in &cycles {
+        assert_eq!(*f, 80.0, "the drill cycle posts the lowered feed: {l}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
