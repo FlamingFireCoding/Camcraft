@@ -58,8 +58,9 @@ pub(super) fn kerf_gap(path: &[Point2], line: &[Point2], from_end: bool, to_star
         for t in ts.windows(2) {
             let at = |u: f64| Point2::new(w[0].x + (w[1].x - w[0].x) * u, w[0].y + (w[1].y - w[0].y) * u);
             let mid = run + 0.5 * (t[0] + t[1]) * len;
-            // A NaN arc compares false: the piece is read as far, the strict class.
-            let (ne, ns) = (from_end && mid < a_e, to_start && mid > a_s);
+            // A NaN arc compares false: the piece is read as far, the strict
+            // class. A piece of no length on the mark (to a rounding) is near.
+            let (ne, ns) = (from_end && mid <= a_e + SLACK, to_start && mid >= a_s - SLACK);
             let pieces = match (ne, ns) {
                 (false, false) => &far,
                 (true, false) => &near_e,
