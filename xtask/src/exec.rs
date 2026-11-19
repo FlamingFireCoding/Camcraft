@@ -14,6 +14,8 @@ use crate::scan::re;
 pub struct Run {
     pub root: PathBuf,
     pub label: String,
+    /// Batch and release run their steps in the parallel lanes of `queue` (#2727); a quick gate that falls
+    /// back to the batch plan sets it too. Else the steps run one at a time.
     pub lanes: bool,
     pub dry: bool,
     /// The job budget of the whole run (#2057): the release queue's lanes share it, a step alone gets all of it.

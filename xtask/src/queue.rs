@@ -33,7 +33,7 @@ impl Run {
         let has_heavy = sched.queue.iter().chain(&sched.alone).any(|&i| heavy(&plan.steps[i]));
         let order = match &from {
             Some(f) => format!("longest first, by {}", f.display()),
-            None => format!("plan order (no gate-logs/{}-*/{} yet)", self.label, lanes::TIMINGS),
+            None => format!("plan order (no {} of an earlier run in gate-logs/ yet)", lanes::TIMINGS),
         };
         if has_heavy {
             println!("queue order: heavy targets first; {order}");
