@@ -14,7 +14,7 @@ and that the post writes as G2/G3.
 
 The check stays strict. It keeps all four quarter points in these cases:
 
-- The in-plane endpoints are 0.001 mm apart or less (`SAME_WORD`). Their NC
+- The in-plane endpoints are 0.01 mm apart or less (`SAME_WORD`). Their NC
   words can be equal, and a control turns equal endpoints a full circle.
 - The sweep reads zero or is not finite (endpoints on one ray, a bad center).
 
@@ -31,11 +31,18 @@ for XY, so the XY values do not change.
 
 **Why**
 
+A four-decimal inch post has a 0.00254 mm step on each axis. Endpoints
+less than 0.0036 mm apart can round to the same point on a diagonal.
+The 0.01 mm bound includes margin and agrees with `ring_zig::MIN_ARC_CHORD`.
+
 A shallow arc of a 22 m radius is a legal move. The old check judged points
 22 m away from the tool and refused the program on each machine size. The
 issue's reporter and the triage comment asked for the swept reading.
 
 **Considered and dropped**
+
+- A 0.001 mm endpoint bound. It misses endpoints that round to one point
+  with four-decimal inch words or three-decimal mm words.
 
 - A cap on the arc radius, or a switch to chords for large radii. Two
   readings of one arc can disagree; the swept quarter points are exact.

@@ -49,9 +49,11 @@ pub(super) fn move_extremes(mv: &crate::cl::Move) -> Vec<Point3> {
     v
 }
 
-/// In-plane endpoints this close (mm) can post as one point: no post
-/// writes a linear word finer than 0.0001 mm, and most write 0.001.
-const SAME_WORD: f64 = 1e-3;
+/// In-plane endpoints this close (mm) can post as one point. The
+/// coarsest words are four-decimal inch (0.00254 mm per axis), so
+/// chords below 0.0036 mm can round to one point. Use 0.01 mm for
+/// margin, as `ring_zig::MIN_ARC_CHORD` does.
+const SAME_WORD: f64 = 0.01;
 /// A quarter point within this angle (rad) of an endpoint counts as
 /// swept: float dust must never drop a point that the arc touches.
 const ANGLE_SLACK: f64 = 1e-9;

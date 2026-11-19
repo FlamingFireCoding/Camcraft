@@ -122,6 +122,22 @@ fn endpoints_that_post_as_one_point_keep_all_four_quarter_points() {
 }
 
 #[test]
+fn endpoints_that_round_to_one_inch_point_keep_all_four_quarter_points() {
+    // 2 um apart: both endpoints post as X117.9134 Y-0.3937 with
+    // four-decimal inch words. The control reads a whole turn.
+    let r = judged(
+        feed([2994.9995, -10.0, 0.0], [2995.0015, -10.0, 0.0])
+            .with_arc(Point2::new(2995.0005, 0.0), true),
+    );
+    assert!(
+        r.problems
+            .iter()
+            .any(|p| p.contains("reaches 3005.001 in X")),
+        "{r:?}"
+    );
+}
+
+#[test]
 fn an_arc_with_no_sweep_to_read_keeps_all_four_quarter_points() {
     // The endpoints stand on one ray from the center: the sweep reads
     // zero and names no side. Radius 20 about X-2990 reaches X-3010.
