@@ -815,6 +815,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "camcraft-gpu"
+version = "0.24.0"
+dependencies = [
+ "pollster 0.4.0",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
 name = "camcraft-kernel"
 version = "0.24.0"
 dependencies = [
@@ -893,6 +902,7 @@ name = "camcraft-ui"
 version = "0.24.0"
 dependencies = [
  "camcraft-app",
+ "camcraft-gpu",
  "chrono",
  "eframe",
  "egui",
