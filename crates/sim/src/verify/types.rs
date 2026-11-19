@@ -316,6 +316,16 @@ pub enum Warning {
     /// part (#1637): choosing the part as source instead of the stock
     /// avoids cutting into the part edge. Blocking like `Gouge`.
     StockChamferGouge { at: usize },
+    /// Move `at` violates a protected "Do not touch" face or edge (#2055):
+    /// `item` is its 1-based list index, `part` which section of the tool
+    /// assembly came inside clearance, and `short_mm` the shortfall.
+    /// Always blocks posting.
+    AvoidHit {
+        at: usize,
+        item: u32,
+        part: FixturePart,
+        short_mm: f64,
+    },
     /// The same for a stock-source Deburr (#2313): it breaks the stock's
     /// edge, and the part under that edge is cut. Blocking like `Gouge`.
     StockDeburrGouge { at: usize },
@@ -425,6 +435,17 @@ impl core::fmt::Display for Warning {
             Warning::SinkerFinishOrder { at, finish_mm, rough_mm } => write!(
                 f,
                 "sinker finish at move {at}: its electrode's undersize {finish_mm:.3} mm per side is not smaller than the rough's {rough_mm:.3} mm - the finish electrode is no larger than the rough and takes nothing off its walls (the post is not held)"
+            ),
+            Warning::AvoidHit { at, item, part, short_mm } => write!(
+                f,
+                "{} at move {at} violates protected 'Do not touch' item #{item} ({short_mm:.3} mm short of clearance)",
+                match part {
+                    FixturePart::Shank => "shank",
+                    FixturePart::Holder => "holder",
+                    FixturePart::Spindle => "spindle housing",
+                    FixturePart::Rapid => "rapid",
+                    FixturePart::Flute => "flute",
+                }
             ),
             Warning::DrillUndersize { at, hole_mm, drill_mm } => write!(
                 f,

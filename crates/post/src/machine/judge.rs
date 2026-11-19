@@ -25,7 +25,7 @@ use std::f64::consts::{FRAC_PI_2, PI, TAU};
 /// be equal, and a control turns equal endpoints a whole circle), or
 /// the arc is degenerate. The radius is the larger endpoint radius, so
 /// a ramping arc is never under-read.
-pub(super) fn move_extremes(mv: &crate::cl::Move) -> Vec<Point3> {
+pub fn move_extremes(mv: &crate::cl::Move) -> Vec<Point3> {
     let mut v = vec![mv.from, mv.to];
     let Some(arc) = &mv.arc else { return v };
     let pl = arc.plane;
@@ -58,14 +58,14 @@ const SAME_WORD: f64 = 0.01;
 /// swept: float dust must never drop a point that the arc touches.
 const ANGLE_SLACK: f64 = 1e-9;
 
-pub(super) fn slowest_axis(axes: &[AxisLimits], ceil: f64) -> String {
+pub fn slowest_axis(axes: &[AxisLimits], ceil: f64) -> String {
     axes.iter()
         .find(|a| a.feed == Some(ceil))
         .map(|a| a.name.clone())
         .unwrap_or_else(|| "an axis".into())
 }
 
-pub(super) fn say(out: &mut MachineCheck, s: String) {
+pub fn say(out: &mut MachineCheck, s: String) {
     if out.problems.len() < REPORT_CAP {
         out.problems.push(s);
     } else {
@@ -209,7 +209,7 @@ pub(super) fn c_letter_problem(machine: &Machine, i: usize, c: f64) -> Option<St
 /// (`spindle.rigid_tapping: false`), is refused by name - whatever post
 /// is chosen, and never converted to another cycle. Unstated reads as
 /// "not limited" (the unstated-limit law): nothing is said then.
-pub(super) fn tap_gate(out: &mut MachineCheck, machine: &Machine, name: &str, path: &crate::cl::Toolpath) {
+pub fn tap_gate(out: &mut MachineCheck, machine: &Machine, name: &str, path: &crate::cl::Toolpath) {
     if machine.rigid_tapping != Some(false) {
         return;
     }

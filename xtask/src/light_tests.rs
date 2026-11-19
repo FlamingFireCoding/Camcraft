@@ -24,8 +24,15 @@ fn gate_light_is_a_tier_of_its_own() {
     // The snapshot flag stays a release flag; the step selection works as for each tier.
     assert!(parse_gate(&a("light --no-snapshots")).is_err());
     assert_eq!(parse_gate(&a("light --only motion")).expect("only").only, ["motion"]);
+    let heavy = parse_gate(&a("heavy --base upstream/main --dry-run")).expect("heavy");
+    assert_eq!((heavy.tier.as_str(), heavy.base.as_str(), heavy.dry), ("heavy", "upstream/main", true));
+    for tier in ["heavy", "light"] {
+        assert!(crate::USAGE.contains(&format!("cargo xtask gate {tier}")), "help names {tier}");
+    }
+    let selection = parse_gate(&a("test pin --only motion")).expect_err("test has no step selection");
+    assert!(selection.contains("quick, heavy, batch, light or release"), "{selection}");
     let unknown = parse_gate(&a("nightly")).expect_err("unknown tier");
-    assert!(unknown.contains("quick | batch | light | release | test"), "{unknown}");
+    assert!(unknown.contains("quick | heavy | batch | light | release | test"), "{unknown}");
 }
 
 #[test]
@@ -122,6 +129,7 @@ fn a_red_light_run_names_the_full_heavy_rerun_of_each_red_step() {
 fn the_law_names_the_light_lane_and_the_local_full_rerun() {
     let law = scan::read(&root().join("AGENTS.md"));
     assert!(law.contains("**The light lane**") && law.contains("`cargo xtask gate light`"), "AGENTS.md names the light tier");
+    assert!(law.contains("**Heavy lanes at review**") && law.contains("`cargo xtask gate heavy [--base main]`"), "AGENTS.md keeps the heavy tier");
     assert!(law.contains("**Local full rerun**") && law.contains("--failed gate-logs/<run>"), "AGENTS.md names the local full rerun");
     assert!(law.contains("A local run never replaces\n  the cut gate") || law.contains("A local run never\n  replaces the cut gate"), "a local run is not the cut gate");
 }

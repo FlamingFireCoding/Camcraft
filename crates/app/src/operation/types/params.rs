@@ -537,6 +537,12 @@ pub enum OpParams {
         /// the programmed feed ([`crate::machining3d::optimize_feed`],
         /// M2.1d). Geometry is untouched; only feed words move.
         feed_opt: bool,
+        /// #1591: how each level is cleared under the `Adaptive`
+        /// strategy - the HSM spiral (every earlier 3D Adaptive, byte
+        /// for byte) or trochoidal loops
+        /// ([`crate::machining3d::pocket3d_trochoidal`]). Not read by
+        /// the other strategies.
+        method: crate::machining2d::AdaptiveMethod,
         /// Rough by OFFSET SHELLS of the model
         /// ([`crate::machining3d::pocket3d_offset`], M2.5 F): the
         /// level ladder keeps its XY plan and its dive superset law,

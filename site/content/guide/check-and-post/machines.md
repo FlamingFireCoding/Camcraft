@@ -57,6 +57,9 @@ rotary letters and angles.
 Posts: Fanuc (the default), Haas, Siemens 840D, Heidenhain, Mazak,
 Tormach PathPilot, Doosan DNM and Makera Carvera. Machine files:
 `3axis-vmc`, `vmc`, `tilthead`, the Carvera pair and the Tormach mills.
+To exchange tool tables with Tormach PathPilot (`.csv`) or Hurco WinMax
+(`.TCM`), see
+[Machine tool tables](@/guide/set-up/tools.md#machine-tool-tables-tormach-pathpilot-and-hurco-winmax).
 **Doosan DNM 5700** is the 3-axis machine; **Doosan DNM 5700 + rotary
 table** is the separate rotary configuration. Pick the one that matches
 your installed hardware.
