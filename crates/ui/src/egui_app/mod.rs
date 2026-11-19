@@ -95,6 +95,7 @@ mod lead_page;
 mod start_exit_rows;
 pub(crate) mod op_tabs;
 mod painted;
+mod ribbon_cell;
 mod tree_badges;
 mod tree_glyphs;
 mod pages;

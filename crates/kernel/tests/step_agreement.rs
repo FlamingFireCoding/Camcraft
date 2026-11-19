@@ -71,6 +71,14 @@ const ROWS: &[Row] = &[
         import: "both refuse (solidcore: read_step: invalid input: STEP syntax error)",
         mesh: "no exact solid to judge against",
     },
+    // solidcore refuses the cross-hole solid at its exact pcurves;
+    // truck reads the fixture. Keep the refusal visible in the bench.
+    Row {
+        file: "bar_cross_holes.step",
+        mm_per_unit: 1.0,
+        import: "solidcore refuses: #655 at read: pcurves failed on",
+        mesh: "no exact solid to judge against",
+    },
     Row {
         file: "box.step",
         mm_per_unit: 1.0,
@@ -438,6 +446,7 @@ per_file! {
     step_milling_test_inch => "Milling-test-inch.step",
     step_milling_test => "Milling-test.step",
     step_bad_entity_mid_data => "bad_entity_mid_data.step",
+    step_bar_cross_holes => "bar_cross_holes.step",
     step_box => "box.step",
     step_bspline_discontinuous => "bspline_discontinuous.step",
     step_bspline_dome => "bspline_dome.step",

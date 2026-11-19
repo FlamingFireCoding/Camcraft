@@ -139,7 +139,12 @@ unstated capability into existence.
 - `kinematics.default.parts` is the physical tree — `table` and `head`
   parts frame it; `linear` and `rotary` parts are the driven axes
   (`collect_axes` walks it depth-first: the nest chain is the
-  kinematics, the limit table is flat). Each axis part:
+  kinematics, the limit table is flat). The tree itself is read by
+  `post::machine::parse_mch_tree` (#2583, `MachineTree`): each part
+  with its `id`, its parent and its moving side - an axis with a `head`
+  part below it moves the tool, each other axis moves the table. That
+  reader refuses a part with no `id`, a repeated `id` and a `type`
+  outside the four words, by the part id and the key. Each axis part:
   - `name` (or `id`) — the RS-274 LETTER for driven parts (see
     convention below); `X`/`Y`/`Z` map to their direction, other
     linear names are dropped by the mirror.
