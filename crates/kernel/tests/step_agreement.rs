@@ -48,9 +48,8 @@ struct Row {
 /// flat as the file's own vertices and both meshes do.
 ///
 /// #917: the pcurves with no closed form (a free-form edge on a spline face)
-/// are made by the kernel (`solidcore_trims`), each checked by its lift, so
-/// bar_cross_holes, fig8 and fillet_corner read and are judged against
-/// truck's volumes.
+/// are made by the kernel (`solidcore_trims`), so bar_cross_holes, fig8 and
+/// fillet_corner read; the closed forms are in `step_closed_form.rs`.
 ///
 /// The three tool_csys files hold a coordinate system and no solid: both
 /// importers refuse them by name.
@@ -73,12 +72,12 @@ const ROWS: &[Row] = &[
         import: "both refuse (solidcore: read_step: invalid input: STEP syntax error)",
         mesh: "no exact solid to judge against",
     },
-    // Refused at its pcurves before #917 (a B-spline on a spline surface,
-    // 3 of 7 faces); the kernel makes them now.
+    // Refused at its pcurves before #917; the kernel makes them now. Truck's
+    // mesh has 1090 open edges, so its volume is short: DISAGREEMENT.
     Row {
         file: "bar_cross_holes.step",
         mm_per_unit: 1.0,
-        import: "agree",
+        import: "disagree: volume, area",
         mesh: "watertight, within tolerance",
     },
     Row {
@@ -88,7 +87,8 @@ const ROWS: &[Row] = &[
         mesh: "watertight, within tolerance",
     },
     // #1697: truck's face meter refuses face 6 (the B-spline that jumps);
-    // solidcore refuses the solid at its pcurves (a line on a spline).
+    // solidcore refuses the solid by name: an edge 0.25 mm off its face is
+    // over the cap of `solidcore_trims::MAX_EDGE_GAP_MM` (#917).
     Row {
         file: "bspline_discontinuous.step",
         mm_per_unit: 1.0,
@@ -118,12 +118,12 @@ const ROWS: &[Row] = &[
         import: "agree",
         mesh: "watertight, within tolerance",
     },
-    // The corner blend: refused at its pcurves before #917 (a NURBS on a
-    // spline surface); the kernel makes them now.
+    // The corner blend: refused at its pcurves before #917; the kernel makes
+    // them now. Truck's mesh has 121 open edges, so its volume is short.
     Row {
         file: "fillet_corner.step",
         mm_per_unit: 1.0,
-        import: "agree",
+        import: "disagree: volume, area",
         mesh: "watertight, within tolerance",
     },
     Row {

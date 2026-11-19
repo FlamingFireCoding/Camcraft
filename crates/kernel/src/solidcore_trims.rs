@@ -10,35 +10,40 @@
 //! consulted.
 //!
 //! Nothing is accepted unchecked (Prime Directive): an edge farther off its
-//! surface than the reader's reach, an edge interval the kernel moved past
+//! surface than [`MAX_EDGE_GAP_MM`], an edge interval the kernel moved past
 //! the edge's tolerance, and a made pcurve whose lift onto the surface
-//! misses its 3D edge by more than the edge's tolerance are each refused by
-//! name, and the reader then refuses the solid. The reader checks the record
+//! misses its 3D edge by more than the edge's tolerance (never more than
+//! [`MAX_EDGE_GAP_MM`]) are each refused by name, and so is a tolerance or a
+//! lift sample that is not a finite number. The reader then refuses the
+//! solid. The reader checks the record
 //! again after this (`record_check::agreement`).
 
 use std::cell::RefCell;
 
 use solidcore::Kernel;
-use solidcore::eval::{CurveEval, SurfaceEval};
 use solidcore::geom::tol::{SmallTopoType, context_xsect_tol_3d};
 use solidcore::heal::gap::GapFunction;
 use solidcore_convert::brep::{Order, to_kernel_with_bare_uses, to_record};
-use solidcore_ops::pcurve::{SURFACE_GAP_MARGIN, TrimEdge, TrimFace, Trims};
+use solidcore_ops::pcurve::{SURFACE_GAP_MARGIN, TrimFace, Trims};
 use solidcore_record::brep::{
     self as b, Curve2, EdgeUseRef, Loop, OrientedEdge, OrientedFace, Region, Shell, Vertex,
 };
 
-/// The farthest an edge may lie off its face's surface and still be kept
-/// (mm): the reader's own reach (its `MAX_TOLERANCE`, "a vertex or edge
-/// lies off its curve or surface by more than 1 mm" refuses the body).
-pub const MAX_EDGE_GAP_MM: f64 = 1.0;
+mod checks;
+
+use checks::{above, finite_tolerances, lifts_onto, on_our_interval};
+
+/// The farthest an edge may lie off its face's surface (mm). The reader's
+/// 1 mm reach keeps edges a visible step off their faces (0.25 mm on a 1 mm
+/// part reads as a solid of the wrong shape, #917). Set from data: the
+/// largest gap on the fixtures that read is 1.2e-6 mm (decision 917).
+pub const MAX_EDGE_GAP_MM: f64 = 0.01;
+
+/// A use of the sheet: `(face, loop, position)`.
+type UseAt = (u32, u32, u32);
 
 /// Samples of the gap function along one edge (the kernel's own default).
 const GAP_SAMPLES: usize = 20;
-
-/// Samples of a made pcurve's lift checked against its 3D edge, ends
-/// included (one more than this).
-const LIFT_SAMPLES: usize = 32;
 
 /// [`Trims`] by the kernel of the seam: the solidcore kernel the import runs
 /// on, so its tolerances, opt-in fixes and time bound hold here too.
@@ -64,6 +69,8 @@ impl Trims for KernelTrims<'_> {
 }
 
 fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String> {
+    // Each `.max` on a tolerance below takes finite values only.
+    finite_tolerances(face)?;
     let (mut record, bare) = sheet(face)?;
     let build = |k: &mut Kernel, r: &b::Brep| {
         to_kernel_with_bare_uses(k, r, true, &bare).map_err(|e| e.to_string())
@@ -87,7 +94,10 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
     // Our edge `i` is the kernel's `order.edges[i]`, which the record read
     // back puts where `back.edges` names it.
     let edge_of = |i: u32| -> Result<usize, String> {
-        let id = order.edges.get(i as usize).ok_or("an edge the kernel lost")?;
+        let id = order
+            .edges
+            .get(i as usize)
+            .ok_or("an edge the kernel lost")?;
         back.edges
             .iter()
             .position(|x| x == id)
@@ -135,7 +145,10 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
                     .max(held)
             });
             let pc = on_our_interval(pc, ours, edge.interval, reach)?;
-            lifts_onto(face, ours, &pc, held)?;
+            // The lift is held to the edge's tolerance, but never looser
+            // than the cap on an edge's gap: a loose file tolerance (or one
+            // raised by the margin) does not pass a pcurve that misses.
+            lifts_onto(face, ours, &pc, held.min(MAX_EDGE_GAP_MM))?;
             pcs.push(pc);
         }
         result.push(pcs);
@@ -149,13 +162,13 @@ fn trims(k: &mut Kernel, face: &TrimFace<'_>) -> Result<Vec<Vec<Curve2>>, String
 /// keeps an edge whole when it makes its trim only when its tolerance covers
 /// the gap, and otherwise trims the edge back to the patch. Whether any was
 /// raised; an edge farther off than [`MAX_EDGE_GAP_MM`] is refused with how
-/// far.
+/// far, whatever its own tolerance.
 fn cover_gaps(
     k: &Kernel,
     body: &solidcore::Brep,
     order: &Order,
     face: &TrimFace<'_>,
-    bare: &[(u32, u32, u32)],
+    bare: &[UseAt],
     record: &mut b::Brep,
 ) -> Result<bool, String> {
     let mut edges: Vec<usize> = Vec::new();
@@ -178,7 +191,7 @@ fn cover_gaps(
         let id = *order.edges.get(e).ok_or("an edge the kernel lost")?;
         let edge = body.edge(id).map_err(|x| x.to_string())?;
         let curve = edge.curve.as_ref().ok_or("an edge without a curve")?;
-        if !(edge.interval.max() > edge.interval.min()) {
+        if !above(edge.interval.max(), edge.interval.min()) {
             return Err("an empty edge interval".into());
         }
         let mut gaps = GapFunction::crv_srf(tol, curve, &edge.interval, surface, GAP_SAMPLES);
@@ -189,13 +202,16 @@ fn cover_gaps(
         if !gap.is_finite() {
             return Err("an edge whose gap to the surface is not finite".into());
         }
+        // A loose tolerance in the file does not make a stepped edge true.
+        if gap > MAX_EDGE_GAP_MM {
+            return Err(format!(
+                "edge {e} lies {gap:.4} mm off the face's surface, over the cap of {MAX_EDGE_GAP_MM} mm"
+            ));
+        }
         let need = SURFACE_GAP_MARGIN * gap;
         let given = record.edges.get_mut(e).ok_or("edge reference")?;
         if need <= given.tolerance {
             continue;
-        }
-        if !(need <= MAX_EDGE_GAP_MM) {
-            return Err(format!("an edge lies {gap} mm off the face's surface"));
         }
         given.tolerance = need;
         // A vertex's tolerance covers every edge that meets it.
@@ -209,109 +225,9 @@ fn cover_gaps(
     Ok(raised)
 }
 
-/// A pcurve the kernel made on its edge's interval `theirs`, on ours. The
-/// kernel may end an edge at a parameter of its own (a knot its vertex lies
-/// at, the end of the part on the face): where each end it chose is within
-/// `reach` of ours on the edge's curve (that end's vertex tolerance, or the
-/// edge's tolerance as the kernel held it where larger), the pcurve is mapped
-/// onto our interval by the affine change of parameter (exact for a
-/// B-spline: its knots move). Farther is the kernel trimming the edge,
-/// refused with how far.
-pub(crate) fn on_our_interval(
-    pc: Curve2,
-    ours: &TrimEdge<'_>,
-    theirs: [f64; 2],
-    reach: [f64; 2],
-) -> Result<Curve2, String> {
-    let [a, bb] = ours.interval;
-    let [c, d] = theirs;
-    if a == c && bb == d {
-        return Ok(pc);
-    }
-    let curve = edge_eval(ours)?;
-    let at = |t: f64| {
-        curve
-            .point(t)
-            .ok_or_else(|| format!("the edge's curve has no point at {t}"))
-    };
-    let shift = [at(a)?.distance(at(c)?), at(bb)?.distance(at(d)?)];
-    if !(shift[0] <= reach[0] && shift[1] <= reach[1]) || !(d > c) {
-        return Err(format!(
-            "the kernel moved an edge's interval from {:?} to {theirs:?}, its ends {shift:?} mm along its curve (tolerance {reach:?} mm)",
-            ours.interval
-        ));
-    }
-    let map = |x: f64| {
-        if x == c {
-            a
-        } else if x == d {
-            bb
-        } else {
-            a + (x - c) * ((bb - a) / (d - c))
-        }
-    };
-    Ok(match pc {
-        Curve2::Spline { knots, points } => Curve2::Spline {
-            knots: knots.into_iter().map(map).collect(),
-            points,
-        },
-        Curve2::RationalSpline { knots, homogeneous } => Curve2::RationalSpline {
-            knots: knots.into_iter().map(map).collect(),
-            homogeneous,
-        },
-    })
-}
-
-/// The lift check: `pc` taken onto the face's surface lies within
-/// `tolerance` of its 3D edge at every sample of the edge's interval, ends
-/// included. A made pcurve that misses is refused with how far - never a
-/// face trimmed along a curve that is not its edge.
-fn lifts_onto(
-    face: &TrimFace<'_>,
-    ours: &TrimEdge<'_>,
-    pc: &Curve2,
-    tolerance: f64,
-) -> Result<(), String> {
-    let surface = solidcore_convert::surface(face.nurbs.unwrap_or(face.surface))
-        .map_err(|e| e.to_string())?;
-    let on = SurfaceEval::new(&surface).map_err(|e| e.to_string())?;
-    let curve = edge_eval(ours)?;
-    let [t0, t1] = ours.interval;
-    let mut gap = 0.0_f64;
-    for i in 0..=LIFT_SAMPLES {
-        let t = if i == LIFT_SAMPLES {
-            t1
-        } else {
-            t0 + (t1 - t0) * (i as f64 / LIFT_SAMPLES as f64)
-        };
-        let q = solidcore_ops::pcurve::eval(pc, t)
-            .ok_or_else(|| format!("the made pcurve has no point at {t}"))?;
-        let s = on
-            .point(q)
-            .ok_or_else(|| format!("the surface has no point at {q:?}"))?;
-        let p = curve
-            .point(t)
-            .ok_or_else(|| format!("the edge's curve has no point at {t}"))?;
-        gap = gap.max(s.distance(p));
-    }
-    if !(gap <= tolerance) {
-        return Err(format!(
-            "a made pcurve lies {gap} mm off its edge on the surface (tolerance {tolerance} mm)"
-        ));
-    }
-    Ok(())
-}
-
-/// The evaluator of the curve an edge is parameterised on.
-fn edge_eval(ours: &TrimEdge<'_>) -> Result<CurveEval, String> {
-    let curve =
-        solidcore_convert::curve(ours.nurbs.unwrap_or(ours.curve)).map_err(|e| e.to_string())?;
-    CurveEval::new(&curve).map_err(|e| e.to_string())
-}
-
 /// The face as a one-face open sheet, and its uses that go without trims
 /// (each `(face, loop, position)`, in order, so sorted).
-fn sheet(face: &TrimFace<'_>) -> Result<(b::Brep, Vec<(u32, u32, u32)>), String> {
+fn sheet(face: &TrimFace<'_>) -> Result<(b::Brep, Vec<UseAt>), String> {
     let mut edges: Vec<b::Edge> = face
         .edges
         .iter()

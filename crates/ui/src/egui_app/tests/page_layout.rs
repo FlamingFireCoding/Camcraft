@@ -121,6 +121,25 @@ fn layout_shell() {
 }
 
 #[test]
+fn layout_page_viewport() {
+    let mut h = shell_harness();
+    h.run();
+    let nav = hud(h.state()).nav_rect(viewcube::Nav::Move).center();
+    click_viewport(&mut h, nav);
+    let pane = super::layout::leaf_rect(&h.state().dock, &Tab::Viewport).expect("viewport leaf");
+    let move_choice = h.get_by_label("Move value").rect();
+    let turn_choice = h.get_by_label("Rotate value").rect();
+    let field = h.get_by_label("Move distance").rect();
+    assert!(pane.contains(move_choice.min) && pane.contains(turn_choice.max), "value selectors fit inside the viewport");
+    assert!(move_choice.bottom() <= field.top(), "the editor sits below the value selectors");
+    assert!(field.bottom() <= hud(h.state()).nav_rect(viewcube::Nav::Move).top(), "the editor clears the icon bar");
+    h.get_by_label("Rotate value").click();
+    h.run();
+    let angle = h.get_by_label("Rotate angle").rect();
+    assert!(pane.contains(angle.min) && pane.contains(angle.max), "the angle editor fits inside the viewport");
+}
+
+#[test]
 fn layout_shell_light() {
     let _g = snapshot_guard();
     let mut h = shell_harness();
@@ -250,7 +269,15 @@ fn layout_page_setup_settings() {
 fn layout_page_setup_machine() {
     let _g = snapshot_guard();
     let h = page(UiTarget::SetupNode("Setup1".into(), SetupPage::Machine));
-    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Refresh machine list", "Load machine (.mch)"]);
+    assert_page_layout(&h, "Setup machine", &["This setup has its own machine", "Machine library", "Load machine (.mch)"]);
+    // #2105: "Refresh" no longer stacks under the combo - it shares the
+    // Library row, right of it. The action row's place above the page's
+    // visible bottom is the pin test's job:
+    // `machine_page::the_machine_page_buttons_fit_without_scrolling_at_720_px`.
+    let lib = h.query_by_label("Machine library").expect("the library combo").rect();
+    let refresh = h.query_by_label("Refresh machine list").expect("the refresh button").rect();
+    assert!((lib.top() - refresh.top()).abs() < 2.0, "Refresh shares the Library row: {lib:?} {refresh:?}");
+    assert!(refresh.left() > lib.left(), "Refresh right of the combo: {lib:?} {refresh:?}");
 }
 
 #[test]

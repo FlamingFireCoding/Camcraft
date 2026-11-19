@@ -131,7 +131,10 @@ pub fn analytic_distance(s: &brep::Surface, p: P3) -> Option<f64> {
                 rho.hypot(h - apex_h)
             }
         }
-        S::Spline { .. } | S::RationalSpline { .. } | S::PlacedRevolution { .. } | S::Blend { .. } => return None,
+        S::Spline { .. }
+        | S::RationalSpline { .. }
+        | S::PlacedRevolution { .. }
+        | S::Blend { .. } => return None,
     };
     d.is_finite().then_some(d)
 }

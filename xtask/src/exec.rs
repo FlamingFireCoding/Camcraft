@@ -14,6 +14,9 @@ use crate::scan::re;
 pub struct Run {
     pub root: PathBuf,
     pub label: String,
+    /// Batch and release run their steps in the parallel lanes of `queue` (#2727); a quick gate that falls
+    /// back to the batch plan sets it too. Else the steps run one at a time.
+    pub lanes: bool,
     pub dry: bool,
     /// The job budget of the whole run (#2057): the release queue's lanes share it, a step alone gets all of it.
     pub budget: usize,
@@ -144,6 +147,7 @@ impl Run {
             budget_note,
             root: root.to_path_buf(),
             label: label.into(),
+            lanes: matches!(label, "batch" | "release"),
             dry,
             log_dir,
             clock: Instant::now(),
@@ -157,7 +161,7 @@ impl Run {
         for n in &plan.notes {
             println!("{n}");
         }
-        let lanes = self.label == "release";
+        let lanes = self.lanes;
         if let Some(n) = &self.budget_note {
             println!("{n}");
         }
@@ -169,7 +173,7 @@ impl Run {
             {
                 println!("note: this machine has {n} cores; {}={n} lets the gate use them", crate::budget::ENV);
             }
-            self.run_release(plan)?;
+            self.run_lanes(plan)?;
         } else {
             for s in &plan.steps {
                 if self.check(&format!("before {}", s.name)) {
@@ -263,7 +267,7 @@ impl Run {
         }
         let bad = self.done.iter().filter(|d| !d.ok).count();
         let mins = self.clock.elapsed().as_secs_f64() / 60.0;
-        if self.label == "release" {
+        if self.lanes {
             let serial: u64 = self.done.iter().map(|d| d.secs).sum();
             println!("  summed lane wall time {serial}s (serial estimate; not a serial benchmark)");
         }

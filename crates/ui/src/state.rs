@@ -1703,6 +1703,9 @@ pub struct State {
     /// A ring drag in flight (#2047): the ephemeral preview. Only its
     /// release reaches history, as one `TurnModelBy`.
     pub body_turn: Option<crate::turn_drag::TurnDrag>,
+    /// The bottom bar's Move / Rotate strip state (#1198 d): axis, typed
+    /// distance/angle draft and Shift-snap steps (view state, never saved).
+    pub handle_bar: crate::egui_app::viewport_bar::HandleBarState,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -2244,6 +2247,7 @@ impl State {
             body_drag: None,
             rotate_handles: false,
             body_turn: None,
+            handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),

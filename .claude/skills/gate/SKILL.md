@@ -20,7 +20,7 @@ wrappers `scripts/gate.ps1` (`-Tier quick`, `-Test <name>`) and
 | Tier | Command | Runs |
 |---|---|---|
 | quick | `cargo xtask gate quick [--base main]` | Only the test binaries that the diff touches, from the gate maps and the touched crates. One build for each crate, then one step for each binary. Debug. No heavy lanes. Target: 5 minutes. |
-| batch | `cargo xtask gate batch` | One debug build (`--no-run`), then one step for each test target (`<crate> suites: lib`, `<crate> suites: <binary>`) that is not in `SLOW_BINARIES`, the `camcraft-kernel` suites (#1702), the ui suites from `crates/ui`, clippy. No release-mode heavy lanes. Target: 20 minutes. |
+| batch | `cargo xtask gate batch` | One debug build (`--no-run`) for each crate, then one step for each test target (`<crate> suites: lib`, `<crate> suites: <binary>`) that is not in `SLOW_BINARIES`, the `camcraft-kernel` suites (#1702), the ui suites from `crates/ui`, clippy. The steps run in the parallel lanes of `lanes.rs` (#2727). No release-mode heavy lanes. Target: 20 minutes. |
 | heavy | `cargo xtask gate heavy [--base main]` | The release `--ignored` heavy lanes that the diff reaches, also through the crate dependencies (#2568). One release build of the reached crates, then one step for each reached target. Before a PR is ready and at its review. |
 | release | `cargo xtask gate release` | One step for each debug test target (`lib`, `bins`, each binary, `doc`) and the `--ignored` heavy lanes in release. Only at a cut. On the cut runner: `cargo xtask gate release --no-snapshots`. |
 | test | `cargo xtask gate test <name> [--crate c] [--binary b] [--exact]` | One test by name. The plain form is `cargo test -p <crate> --test <binary> -- <name> --exact`. |
@@ -42,12 +42,17 @@ A fix for one red step then costs one step, not a full run.
 - Quick, batch and release plan one step for each test target, as the heavy lanes do (#1714). A step name is
   `<crate> suites: lib`, `<crate> suites: bins`, `<crate> suites: <binary>` or `<crate> suites: doc`. The ui
   steps are `ui suites: ...` and run in `crates/ui`.
-- Quick and batch build one time first (`debug build (--no-run)`, or `<crate> build (--no-run)` in quick when
-  a crate has more than one step). Each step then calls `cargo test -p <crate> --test <binary>`, which finds
+- Quick and batch build first (`debug build: <crate> (--no-run)` for each crate in batch, or
+  `<crate> build (--no-run)` in quick when a crate has more than one step). Batch builds each crate alone
+  (#2727): one build of all the crates gives a shared dependency the features of all of them, and each step
+  then compiles its crate again. Each step then calls `cargo test -p <crate> --test <binary>`, which finds
   the build ready. A step has its own log, its own time and its own pass or fail line.
 - Run one binary again: `cargo xtask gate batch --only "app suites: cmds"`. `--only "app suites"` selects
   each app step. `--failed gate-logs/<run>` runs only the red steps.
-- Quick and batch run the steps one after the other. The release tier runs them in the waves of `lanes.rs`.
+- Quick runs the steps one after the other. Batch and release run them in the lanes of `lanes.rs`: the builds
+  first and alone, then a shared queue (longest first, by the newest `timings.tsv`), then the `ISOLATED`
+  targets, the ui steps and clippy one at a time. A quick gate that falls back to batch uses the lanes too.
+  `CAMCRAFT_GATE_JOBS=<cores>` sets the job budget that the lanes share.
 - Each step starts cargo, about 0.5 s on Windows. A batch plan has about 700 steps.
 
 ## What quick selects
