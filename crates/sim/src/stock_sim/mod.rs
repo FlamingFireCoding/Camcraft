@@ -77,6 +77,7 @@ mod carry_side;
 mod columns;
 mod cut;
 mod dexel;
+mod laid_cylinder;
 mod dexel_ball;
 mod dexel_arc;
 // #541: the sinker electrode's box atom.

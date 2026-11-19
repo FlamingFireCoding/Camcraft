@@ -7,7 +7,8 @@
 //! exchange structure and ISO 10303-42 geometry and topology reader of the
 //! solidcore workspace, Apache-2.0, written from those public standards),
 //! solidcore-convert (`brep::to_kernel_body`) and solidcore (the Apache-2.0
-//! port of NVIDIA's SMLib: cancel token, area integrator), as their rustdoc
+//! port of NVIDIA's SMLib: cancel token, area integrator), with the pcurves
+//! that have no closed form made by [`crate::solidcore_trims`], as their rustdoc
 //! documents them, at the commit pinned in Cargo.toml. No reader internals
 //! are reimplemented here and no HSMWorks material was consulted.
 
@@ -22,6 +23,7 @@ use solidcore_step::{topology, units};
 
 use crate::solidcore_impl::{SolidcoreKernel, VOLUME_ACCURACY, checked, failed};
 use crate::solidcore_import::{HEAL_GAP_LIMIT, vertex_gaps};
+use crate::solidcore_trims::KernelTrims;
 use crate::{Kernel, KernelError, Measure};
 
 const NAME: &str = "solidcore";
@@ -189,7 +191,9 @@ fn read_guarded(
             out.length_units_mm
         ));
     }
-    let read = topology::read_solids(&ex);
+    // The pcurves with no closed form (a free-form edge on a spline face)
+    // are made by the kernel, each checked by its lift (#917).
+    let read = topology::read_solids_with(&ex, &KernelTrims::new(&mut k.k));
     if stop.is_cancelled() {
         return Err(timed_out("reading topology"));
     }
