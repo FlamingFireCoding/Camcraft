@@ -200,7 +200,7 @@ mod browser_tree;
 mod tree_entry;
 mod browser_pane;
 mod tree_menu;
-mod fixture_menu;
+pub(crate) mod fixture_menu;
 // #339 slice 6: the fixture library's Save / Insert dialogs.
 pub(crate) mod fixture_library_dialog;
 pub(crate) mod fixture_vise_dialog;

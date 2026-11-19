@@ -31,7 +31,7 @@ mod wrapped_nc;
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SelectPost,
-    SetStock, SetUnits,
+    SetModelSource, SetStock, SetUnits,
 };
 use camcraft_app::geometry::Point3;
 use camcraft_app::operation::{Height, OpParams, SrcRef};
@@ -95,6 +95,8 @@ fn build_with(flute_in: f64) -> World {
     h.execute(&world, ok(SetUnits::new(&world, Unit::Inches), "inch document"));
     h.execute(&world, ok(SelectPost::new(&world, PostRef::Named("Tormach PathPilot".into())), "post"));
     h.execute(&world, ok(ImportModel::new(&repo(MODEL)), "model"));
+    // The committed example names no file on this machine (#2463).
+    h.execute(&world, ok(SetModelSource::unlink(&world, MODEL_NAME), "unlink"));
     // The box the bar's 2" stick-out fits in, centred on the A centreline.
     let stock = SetStock::new(
         &world,
@@ -137,6 +139,13 @@ fn num(word: &str) -> Option<f64> {
 
 fn word(line: &str, letter: char) -> Option<f64> {
     line.split(' ').find(|w| w.starts_with(letter)).and_then(num)
+}
+
+#[test]
+fn the_committed_project_uses_the_current_file_version() {
+    let text = std::fs::read_to_string(repo(PROJECT)).expect("the example project");
+    let saved: serde_json::Value = serde_json::from_str(&text).expect("the example project JSON");
+    assert_eq!(saved["version"], project::PROJECT_VERSION, "regenerate {PROJECT}");
 }
 
 #[test]

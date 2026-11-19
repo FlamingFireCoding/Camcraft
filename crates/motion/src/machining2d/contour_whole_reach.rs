@@ -1,10 +1,11 @@
 //! Whole-model 2D contour (#2597): a ring of a deeper band whose tool sweep
 //! reaches outside every sweep cut so far starts at Top Z, not at the level
 //! where its outline appeared. The contour knows no stock outline, so the
-//! material outside the part is taken to stand up to Top Z; a ring that
-//! enters it first at a deep level would bury the tool (axial depth far over
-//! the stepdown). Such a ring takes every flat level above its first level,
-//! so each pass is at most one stepdown under the one before it. A ring that
+//! material outside the part is taken to stand up to Top Z, or up to the
+//! stock top when that is over Top Z; a ring that enters it first at a deep
+//! level would bury the tool (axial depth far over the stepdown). Such a
+//! ring takes the levels above its first level ([`upper_levels`]), so each
+//! pass is at most one stepdown under the one before it. A ring that
 //! cannot be proven clear at those levels refuses by name. Provenance: the
 //! 2.5D Z-level rule of published machining practice (no pass deeper than
 //! the stepdown into uncut material) with polygon offset and difference from
@@ -19,6 +20,7 @@ use super::contour::PreparedBand;
 use super::contour_depth::{Ladder, ladder};
 use super::contour_params::ContourParams;
 use super::face::GenError;
+use super::levels::stock_over;
 
 const SAME_LEVEL: f64 = 1e-6;
 /// Half the width (mm) under which a strip of the new sweep outside the cut
@@ -33,7 +35,38 @@ pub(super) fn band_sweep(center: &Region, r: f64) -> Result<Region, GenError> {
     Ok(center.offset(r)?.difference(&center.offset(-r)?)?)
 }
 
-/// `lad` with the flat levels above its first level put in front of each ring
+/// The levels a fresh ring takes above its `first` level. With no stock over
+/// Top Z (`over` is false, the predicate `cut_levels_under` keeps Top Z by),
+/// the material stands up to Top Z and a level there cuts nothing: the flat
+/// levels under Top Z. With stock over Top Z, the material stands up to the
+/// stock top, and the first bite must be at most one stepdown:
+/// - stock top under Top Z + stepdown: one stepdown at a time down from the
+///   stock top. These levels are off the flat grid on purpose: a pass at
+///   Top Z would share its plane with the ring cut there in band 0, and the
+///   lead of one can cross the other (`Crossing`, `contour_whole_step` case 1).
+/// - else only a pass at Top Z keeps the bite as small as band 0's own:
+///   Top Z and the flat levels under it (`flat` holds Top Z then).
+fn upper_levels(flat: &[f64], first: f64, over: bool, p: &ContourParams) -> Vec<f64> {
+    let above = |z: f64| z > first + SAME_LEVEL;
+    let stock = p.links.approach.stock_top.filter(|_| over);
+    let Some(stock) = stock else {
+        return flat.iter().copied().filter(|&z| above(z) && z < p.top_z - SAME_LEVEL).collect();
+    };
+    if stock - p.top_z >= p.stepdown - SAME_LEVEL {
+        return flat.iter().copied().filter(|&z| above(z)).collect();
+    }
+    let mut zs = Vec::new();
+    let mut z = stock - p.stepdown;
+    // `stepdown` is validated positive and `first` is under Top Z, so the
+    // walk ends; the cap is a second guard against a degenerate float.
+    while above(z) && zs.len() < flat.len().saturating_add(2) {
+        zs.push(z);
+        z -= p.stepdown;
+    }
+    zs
+}
+
+/// `lad` with the [`upper_levels`] above its first level put in front of each ring
 /// whose sweep reaches outside `cover` (the sweeps of every band cut so far).
 /// `flat` is the operation's full level list from Top Z down.
 pub(super) fn reach_up(
@@ -50,15 +83,10 @@ pub(super) fn reach_up(
     }
     let r = p.tool_diameter * 0.5;
     let mut per_ring = lad.per_ring.clone();
+    let over = stock_over(p.top_z, p.links.approach.stock_top, (p.top_z - p.bottom_z) * 1e-9);
     for (li, l) in band.loops.iter().enumerate() {
         let Some(&first) = lad.ring(li).first() else { continue };
-        // A level at Top Z cuts no material (the material is taken to stand
-        // up to Top Z, not above it), so only the levels under it are added.
-        let upper: Vec<f64> = flat
-            .iter()
-            .copied()
-            .filter(|&z| z > first + SAME_LEVEL && z < p.top_z - SAME_LEVEL)
-            .collect();
+        let upper = upper_levels(flat, first, over, p);
         let Some(ring) = band.plan.get(li) else { continue };
         if upper.is_empty() {
             continue;
