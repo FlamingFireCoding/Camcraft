@@ -193,6 +193,7 @@ mod theme_door;
 mod recent_door;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
+mod browser_delete;
 // #1450: a model file dropped on the window.
 mod file_drop;
 // #645: the browser's "Show origin names" switch and the per-user view file.
