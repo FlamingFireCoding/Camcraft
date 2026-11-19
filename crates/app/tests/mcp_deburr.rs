@@ -1,9 +1,8 @@
 //! The Deburr edge filters through MCP (#1888): `edit_operation` sets
 //! the minimum edge angle, the hole filter and the excluded edges, and
-//! `set_operation_geometry` takes edge chains only - a face pick is a
-//! tool error at the pick, before anything lands in the History.
+//! `set_operation_geometry` sets the edge chains to break.
 //!
-//! Gate map (#1888): covers app::mcp (pick `kind_door`, edit),
+//! Gate map (#1888): covers app::mcp (pick, edit),
 //! app::project (the Deburr params DTO), app::commands
 //! (SetOperationGeometry, EditOperationParams).
 
@@ -77,17 +76,10 @@ fn deburr_job(tag: &str) -> (Client, PathBuf) {
 #[test]
 fn deburr_takes_edge_chains_and_its_filters_through_mcp() {
     let (mut c, dir) = deburr_job("filters");
-    let f = c.ok("list_features", json!({ "model": "part", "kinds": ["faces", "chains"] }));
-    let face = f["faces"][0]["id"].as_str().expect("a face id").to_owned();
+    let f = c.ok("list_features", json!({ "model": "part", "kinds": ["chains"] }));
     let chain = f["chains"][0]["id"].as_str().expect("a chain id").to_owned();
 
-    // The pick door: a face is not an edge to break.
-    let why = c.refused("set_operation_geometry", json!({ "operation": "D1", "picks": [{ "model": "part", "id": face }] }));
-    assert!(why.contains("is not an edge chain"), "{why}");
-    let before = c.ok("get_operation_geometry", json!({ "operation": "D1" }));
-    assert_eq!(before["source"], json!({ "model": "part" }), "the refused pick changed nothing");
-
-    // A chain is: the source becomes the picked edge.
+    // An edge chain is a pick: the source becomes the picked edge.
     let set = c.ok("set_operation_geometry", json!({ "operation": "D1", "picks": [{ "model": "part", "id": chain }] }));
     assert_eq!(set["source"]["picks"][0]["id"], json!(chain), "{set}");
     c.ok("undo", json!({}));

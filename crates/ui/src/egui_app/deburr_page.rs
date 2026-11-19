@@ -61,6 +61,6 @@ pub(super) fn filters(
                 }
             }
         }
-        hint(ui, "picked edges are the only edges broken; with a whole model as the source, every exposed edge is broken except the edges listed here");
+        hint(ui, "picked edges are the only edges broken; with no edge picked, every exposed edge is broken except the edges listed here");
     });
 }

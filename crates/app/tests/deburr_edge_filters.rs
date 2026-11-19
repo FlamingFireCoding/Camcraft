@@ -122,13 +122,41 @@ fn a_picked_edge_is_the_only_edge_broken() {
     assert!(broken(&t).iter().all(|q| on_edge(q, -20.0) && (q.z - 10.0).abs() < 1e-6), "{:?}", t.breaks);
 }
 
+/// Some face of the plate, as a pick.
+fn a_face(world: &World) -> GeoSel {
+    let e = model::find_by_name(world, "plate").expect("plate");
+    let f = model::features_of(world, &e).expect("features");
+    GeoSel { entity: "plate".into(), feature: FeatureSel::Face(f.faces.first().expect("a face").id) }
+}
+
 #[test]
-fn a_pick_that_is_not_an_edge_chain_is_refused_by_name() {
+fn a_face_pick_names_the_model_and_keeps_the_automatic_ride() {
+    // #2284's reading stands: a face pick selects the model the ride
+    // reads. Only an edge chain narrows it.
     let (world, mut h) = job();
-    let face = GeoSel { entity: "plate".into(), feature: FeatureSel::Face(1) };
-    let e = generate(&world, &mut h, SrcRef::Selection(vec![face]), params()).expect_err("a face is no edge");
-    assert!(e.contains("is not an edge chain"), "{e}");
-    assert!(e.contains("Deburr"), "{e}");
+    let whole = generate(&world, &mut h, SrcRef::Entity("plate".into()), params()).expect("automatic ride");
+    let (world, mut h) = job();
+    let face = a_face(&world);
+    let t = generate(&world, &mut h, SrcRef::Selection(vec![face]), params()).expect("a face pick rides the model");
+    assert_eq!(t.breaks, whole.breaks, "the same edges as the whole model");
+
+    // A face beside a chain: the chain narrows, the face does not widen.
+    let (world, mut h) = job();
+    let picks = vec![a_face(&world), top_edge(&world, -20.0)];
+    let t = generate(&world, &mut h, SrcRef::Selection(picks), params()).expect("the picked edge rides");
+    assert_eq!(t.breaks.len(), 1, "{:?}", t.breaks);
+    assert!(broken(&t).iter().all(|q| on_edge(q, -20.0)));
+}
+
+#[test]
+fn an_excluded_pick_that_is_gone_is_refused_by_name() {
+    let (world, mut h) = job();
+    let mut p = params();
+    if let OpParams::Deburr { exclude_edges, .. } = &mut p {
+        exclude_edges.push(GeoSel { entity: "plate".into(), feature: FeatureSel::Chain(1) });
+    }
+    let e = generate(&world, &mut h, SrcRef::Entity("plate".into()), p).expect_err("no such chain");
+    assert!(e.contains("no longer in the model"), "{e}");
 }
 
 #[test]

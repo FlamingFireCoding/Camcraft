@@ -105,9 +105,8 @@ pub(super) fn picks_view(w: &World, items: &[GeoSel]) -> Vec<Value> {
 /// said at the pick instead, before anything lands in the History.
 pub(super) fn kind_door(w: &World, label: &str, params: &OpParams, items: &[GeoSel]) -> Result<(), String> {
     let first = |pred: fn(&FeatureSel) -> bool| items.iter().find(|g| pred(&g.feature));
-    if matches!(params, OpParams::MultiAxisContour { .. } | OpParams::Deburr { .. }) {
-        // Its picks ARE the path: curves only (selection's drive_chains;
-        // #1888: the deburr's picked edges, `deburr_picks`).
+    if matches!(params, OpParams::MultiAxisContour { .. }) {
+        // Its picks ARE the path: curves only (selection's drive_chains).
         if let Some(g) = first(|f| !matches!(f, FeatureSel::Chain(_))) {
             return Err(format!(
                 "{} is not an edge chain - a {label} operation machines picked edge chains",

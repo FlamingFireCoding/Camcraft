@@ -4,17 +4,19 @@
 //! layer's chain ids, the walk `selection::drive_chains` does for the
 //! drive-curve contour, with the deburr's own refusals.
 //!
-//! One list answers both: the source's chains first (one per pick),
-//! then the excluded ones. [`picked`] says where the list splits. An
-//! `Entity` or `Stock` source, or an empty selection, has no picked
-//! chains: the ride finds the model's exposed edges itself.
+//! One list answers both: the source's chains first (one per chain
+//! pick), then the excluded ones. [`picked`] says where the list
+//! splits. An `Entity` or `Stock` source, or a selection with no edge
+//! chain in it, has no picked chains: the ride finds the model's
+//! exposed edges itself. A face, patch or vertex pick names the model
+//! the ride reads, as it did before the chains (#2284's pin).
 
 use super::*;
 
 /// How many leading chains of [`chains_of`]'s list are the source's.
 pub(super) fn picked(src: &SrcRef) -> usize {
     match src {
-        SrcRef::Selection(items) => items.len(),
+        SrcRef::Selection(items) => items.iter().filter(|g| matches!(g.feature, FeatureSel::Chain(_))).count(),
         SrcRef::Stock | SrcRef::Entity(_) => 0,
     }
 }
@@ -23,7 +25,7 @@ pub(super) fn picked(src: &SrcRef) -> usize {
 pub(super) fn chains_of(world: &World, op: &Operation, exclude: &[GeoSel]) -> Result<Vec<Vec<Point3>>, GenError> {
     let mut out = Vec::new();
     if let SrcRef::Selection(items) = &op.src {
-        for g in items {
+        for g in items.iter().filter(|g| matches!(g.feature, FeatureSel::Chain(_))) {
             out.push(chain(world, op.setup.as_deref(), g, "to break")?);
         }
     }
@@ -51,7 +53,7 @@ fn chain(world: &World, setup: Option<&str>, g: &GeoSel, role: &str) -> Result<V
     let label = crate::pick::geo_label(world, g);
     let FeatureSel::Chain(cid) = g.feature else {
         return Err(GenError::Invalid(format!(
-            "{label} is not an edge chain - Deburr takes edge chains as the edges {role}; pick edges, or clear the picks to break every exposed edge"
+            "{label} is not an edge chain - Deburr takes edge chains as the edges {role}"
         )));
     };
     let Some(c) = crate::model::resolve_chain(&features, cid) else {

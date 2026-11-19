@@ -3,21 +3,23 @@
 **What was decided**
 
 1. **Picked chains narrow the ride; they do not bound a region.** A Deburr
-   whose source is a selection breaks only the exposed edges on the picked
-   edge chains. `OpParams::Deburr` stays in the `selection_drives_region`
+   whose source is a selection with edge chains breaks only the exposed
+   edges on those chains. `OpParams::Deburr` stays in the `selection_drives_region`
    list of mesh-driven kinds. The picks are read by a new module,
    `operation/deburr_picks.rs`, the way Multi-Axis Contour reads its drive
-   chains. A source that is a whole model, the stock, or an empty selection
-   keeps the automatic detection.
+   chains. A source that is a whole model, the stock, or a selection with
+   no edge chain keeps the automatic detection.
 2. **A pick selects among exposed edges only.** A picked chain that lies on
    a concave or flat meeting is not ridden. The path has a note for it. If
    no pick names an exposed edge, generation refuses by name.
 3. **A pick is not filtered.** The minimum edge angle and the hole filter
    judge the automatic edge set only. An excluded chain is removed in both
    modes.
-4. **A pick that is not an edge chain is refused by name**, at generation
-   and at the MCP pick door (`kind_door`). `exclude_edges` holds chains
-   only; `is_sane` refuses a face, a patch or a vertex there.
+4. **A face, patch or vertex pick in the source keeps its old meaning.**
+   It names the model that the ride reads and does not narrow the ride
+   (`setup_align_deburr.rs` pins this reading, #2284). `exclude_edges`
+   holds chains only; `is_sane` refuses a face, a patch or a vertex there.
+   An excluded chain that is no longer in the model is refused by name.
 5. **New operations get 40 degrees; old files get 0.** The seed sets
    `min_edge_angle_deg` to 40.0. A project file without the key reads 0.0
    (every crease), which is the ride the file stored. Each new key is absent
@@ -51,6 +53,10 @@
 - Before this change, a Deburr with a selection source ignored the picks
   and rode every edge of the picked models. That was a silent wrong answer
   for a user who picked one edge.
+- The first version of this change refused a face pick by name. The quick
+  gate showed that `turned_selected_deburr_cuts_like_the_baked_part` uses
+  a face pick to select the model. A refusal would break stored projects
+  that do the same, so the face pick keeps its meaning.
 
 **Considered and dropped**
 
@@ -74,8 +80,10 @@
   bore. The wider ring's rim is not on that cylinder and stays in the ride.
 - A rim of an open mesh has no bend, so the minimum angle does not remove
   it.
-- A behaviour change: a Deburr whose stored source is a selection of faces
-  now refuses by name. Before, it rode every edge of the picked models.
+- A behaviour change: a Deburr whose stored source has edge chains now
+  breaks only those edges. Before, it rode every edge of the picked models.
+- A face pick does not select the edges of that face. That is possible
+  later work.
 
 **Cost to change later**
 
