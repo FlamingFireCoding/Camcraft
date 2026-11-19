@@ -1269,6 +1269,12 @@ function onCycle() {
     }
     return;
   }
+  // #2609: PathPilot's and LinuxCNC's G73 and G85 formats have no P word.
+  if ((g === "G73" || g === "G85") && dwell > 0) {
+    var cycleName = g === "G73" ? "peck" : "ream";
+    msg("canned cycle " + g + " (" + cycleName + ") dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   // #2348: PathPilot's and LinuxCNC's G83 formats have no P word.
   if (g === "G83" && dwell > 0) {
     msg("canned cycle G83 (deep peck) dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");

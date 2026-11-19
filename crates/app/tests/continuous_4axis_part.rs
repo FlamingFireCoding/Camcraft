@@ -142,6 +142,13 @@ fn word(line: &str, letter: char) -> Option<f64> {
 }
 
 #[test]
+fn the_committed_project_uses_the_current_file_version() {
+    let text = std::fs::read_to_string(repo(PROJECT)).expect("the example project");
+    let saved: serde_json::Value = serde_json::from_str(&text).expect("the example project JSON");
+    assert_eq!(saved["version"], project::PROJECT_VERSION, "regenerate {PROJECT}");
+}
+
+#[test]
 fn the_continuous_4axis_part_posts_its_wrapped_program() {
     // The committed project is the built document, as the app saves it. The
     // committed program is what that saved project posts: a saved toolpath
