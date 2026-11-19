@@ -110,7 +110,7 @@ impl CreateOperation {
         // (AGENTS.md: validate early), not deep in the generator - and
         // so is a From: Selection height its source cannot answer.
         heights_gate(world, setup.as_deref(), &src, &params)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &src) {
+        if let Some(msg) = crate::operation::side_sane(world, &params, &src) {
             return Err(CommandError::Invalid(msg));
         }
         family_gate(world, setup.as_deref(), &params)?;
@@ -199,7 +199,7 @@ impl PasteOperation {
             return Err(CommandError::Invalid("copied operation parameters are not usable".into()));
         }
         heights_gate(world, context, &operation.src, &operation.params)?;
-        if let Some(msg) = crate::operation::side_sane(&operation.params, &operation.src) {
+        if let Some(msg) = crate::operation::side_sane(world, &operation.params, &operation.src) {
             return Err(CommandError::Invalid(msg));
         }
         family_gate(world, context, &operation.params)?;

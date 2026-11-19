@@ -168,6 +168,10 @@ pub enum OpParams {
         links: Links,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// #1864: optional per-chain side and direction overrides for DXF
+        /// sketch contours; empty by default so legacy operations stamp
+        /// identically.
+        chain_overrides: Vec<super::sel::ChainOverride>,
     },
     Pocket {
         stepover: f64,

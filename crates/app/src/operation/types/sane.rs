@@ -202,6 +202,7 @@ impl OpParams {
                 tab_width,
                 tab_height,
                 helix_radius,
+                chain_overrides,
                 ..
             } => {
                 // Structural only, the pocket doors' word (M8.2 A): a
@@ -209,7 +210,14 @@ impl OpParams {
                 // Helix does, the generator certifies it against the
                 // bore's wall per level - dive room is the refusal of
                 // record there, said in the path's notes.
-                nneg(*stock_to_leave)
+                let overrides_ok = chain_overrides.iter().enumerate().all(|(i, o)| {
+                    !o.entity.is_empty()
+                        && !chain_overrides[..i]
+                            .iter()
+                            .any(|prev| prev.entity == o.entity && prev.chain == o.chain)
+                });
+                overrides_ok
+                    && nneg(*stock_to_leave)
                     && clearance_z.is_sane()
                     && retract_z.is_sane()
                     && top_z.is_sane()

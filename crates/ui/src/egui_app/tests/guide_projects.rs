@@ -192,7 +192,7 @@ pub(super) fn build_workholding_world() -> World {
         stepdown: 2.0, feed: 1200.0, plunge_feed: 300.0, climb: true, side: Side::Outside,
         lead: Lead::Arc { radius: 4.0 }, tolerance: 0.01, tab_count: 0, tab_width: 8.0,
         tab_height: 3.0, entry: Entry3D::Plunge, helix_radius: 1.0, blend_turns: false,
-        links: Links::PLANAR, tilt: None,
+        links: Links::PLANAR, tilt: None, chain_overrides: Vec::new(),
     });
     world
 }

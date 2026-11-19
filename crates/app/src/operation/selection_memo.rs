@@ -38,12 +38,22 @@ impl PartialEq for Tris {
     }
 }
 
+/// A sketch drawing allocation, compared by address.
+struct SketchRef(Weak<crate::geometry::sketch_data::SketchData>);
+
+impl PartialEq for SketchRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.ptr_eq(&other.0)
+    }
+}
+
 /// One entity the walk reads, as the world holds it now.
 #[derive(PartialEq)]
 struct Body {
     name: String,
     entity: Option<Entity>,
     tris: Option<Tris>,
+    sketch: Option<SketchRef>,
     pose: Option<Location>,
     part: bool,
 }
@@ -82,6 +92,7 @@ impl Reads {
                     name: name.to_owned(),
                     entity,
                     tris: entity.and_then(|e| model::facets_of(world, &e)).map(|t| Tris(Arc::downgrade(&t))),
+                    sketch: entity.and_then(|e| crate::sketch::sketch_of(world, &e)).map(|s| SketchRef(Arc::downgrade(&s.data))),
                     pose: entity.and_then(|e| model::transform_of(world, &e)),
                     part: entity.is_some_and(|e| crate::setup_align::is_part(world, &e)),
                 }
@@ -115,6 +126,14 @@ impl Answer {
     /// One real walk - what every miss runs, and what the pins compare a
     /// hit against.
     pub(super) fn fresh(world: &World, setup: Option<&str>, items: &[GeoSel], params: &OpParams) -> Self {
+        let src = SrcRef::Selection(items.to_vec());
+        if super::contour_sketch::is_sketch_contour(world, &src, params) {
+            if let Some(why) = crate::sketch_model::source_problem(world, setup, &src, params) {
+                return Self { notes: Vec::new(), refusal: Some(why), inside: None };
+            }
+            let (notes, refusal, inside) = super::contour_sketch::account(world, &src, params);
+            return Self { notes, refusal, inside };
+        }
         let mut notes = Vec::new();
         match selection_geometry_impl(world, setup, items, params, Some(&mut notes)) {
             Ok((loops, _runs, auto)) => {

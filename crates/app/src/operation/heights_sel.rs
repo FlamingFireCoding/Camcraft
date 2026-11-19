@@ -44,6 +44,9 @@ pub fn selection_z_range(
     setup: Option<&str>,
     src: &SrcRef,
 ) -> Result<(f64, f64), &'static str> {
+    if let Some(sketch_span) = super::contour_sketch::sketch_z_range(world, src) {
+        return sketch_span;
+    }
     let span = match src {
         SrcRef::Stock => model::stock_world_aabb_for(world, setup)
             .map(|b| (b.min.z, b.max.z))
@@ -111,6 +114,9 @@ fn picks_z_range(world: &World, setup: Option<&str>, items: &[GeoSel]) -> Result
                     lo = lo.min(w.z);
                     hi = hi.max(w.z);
                 }
+            }
+            FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                return Err("sketch features require a DXF profile entity");
             }
         }
     }

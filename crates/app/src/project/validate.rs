@@ -241,7 +241,11 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
                 )));
             }
             if let SrcDto::Selection { items } = &op.src
-                && (items.is_empty() || items.iter().any(|g| g.entity.is_empty()))
+                && (items.is_empty()
+                    || items.iter().any(|g| {
+                        g.entity.is_empty()
+                            || matches!(&g.feature, FeatureSelDto::SketchLayer { layer } if layer.is_empty())
+                    }))
             {
                 return Err(corrupt(format!(
                     "'{}' has an empty or half-named geometry selection",

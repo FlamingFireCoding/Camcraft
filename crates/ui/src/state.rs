@@ -2660,11 +2660,11 @@ impl State {
             .enumerate()
             .map(|(gi, g)| {
                 let pick_name = camcraft_app::pick::geo_label(&self.world, g);
-                let (mut label, missing) = match g.feature {
+                let (mut label, missing) = match &g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
-                            .and_then(|f| f.faces.iter().find(|fa| fa.id == id).cloned());
+                            .and_then(|f| f.faces.iter().find(|fa| fa.id == *id).cloned());
                         match face {
                             Some(f) => {
                                 // Which axis the face sits at, on the
@@ -2698,7 +2698,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .map(|f| {
-                                let c = camcraft_app::model::resolve_chain(&f, id)?;
+                                let c = camcraft_app::model::resolve_chain(&f, *id)?;
                                 let pts = feature::chain_points(&f, &c);
                                 Some((c, pts))
                             })
@@ -2761,11 +2761,11 @@ impl State {
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
                                 // #2247: both memoized per feature set.
-                                let strips = model::patches(&f).iter().find(|p| p.id == id)?.faces.len();
+                                let strips = model::patches(&f).iter().find(|p| p.id == *id)?.faces.len();
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in model::patch_rings(&f, id)?.iter() {
+                                for r in model::patch_rings(&f, *id)?.iter() {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()
@@ -2829,7 +2829,7 @@ impl State {
                         }
                     }
                     FeatureSel::Vertex(id) => {
-                        match crate::vertex_pick::vertex_world(self, &g.entity, id) {
+                        match crate::vertex_pick::vertex_world(self, &g.entity, *id) {
                             Some(p) => (
                                 format!(
                                     "{pick_name} · ({}, {}, {}) {}",
@@ -2838,6 +2838,54 @@ impl State {
                                     units::len(p[2], unit, 2),
                                     unit.suffix()
                                 ),
+                                false,
+                            ),
+                            None => (format!("{pick_name} · missing"), true),
+                        }
+                    }
+                    FeatureSel::SketchChain(id) => {
+                        match camcraft_app::sketch::find(&self.world, &g.entity)
+                            .and_then(|(_, sk)| {
+                                let ch = sk.data.chains().find(*id)?;
+                                let len = ch.length();
+                                let closed = ch.is_closed();
+                                let layer = ch.layer().to_owned();
+                                let bounds = ch.bounds();
+                                Some((len, closed, layer, bounds))
+                            })
+                        {
+                            Some((len, true, layer, Some((lo, hi)))) => (
+                                format!(
+                                    "{pick_name} · closed · {} {} · {} × {} · {layer}",
+                                    units::len(len, unit, 1),
+                                    unit.suffix(),
+                                    units::len(hi.x - lo.x, unit, 1),
+                                    units::len(hi.y - lo.y, unit, 1),
+                                ),
+                                false,
+                            ),
+                            Some((len, _, layer, _)) => (
+                                format!(
+                                    "{pick_name} · open · {} {} · {layer}",
+                                    units::len(len, unit, 1),
+                                    unit.suffix(),
+                                ),
+                                false,
+                            ),
+                            None => (format!("{pick_name} · missing"), true),
+                        }
+                    }
+                    FeatureSel::SketchLayer(layer) => {
+                        match camcraft_app::sketch::find(&self.world, &g.entity).and_then(|(_, sk)| {
+                            sk.data.layers().iter().any(|l| l == layer).then(|| {
+                                let chains = sk.data.chains().by_layer(layer);
+                                let closed = chains.iter().filter(|c| c.is_closed()).count();
+                                let open = chains.len().saturating_sub(closed);
+                                (closed, open)
+                            })
+                        }) {
+                            Some((closed, open)) => (
+                                format!("{pick_name} · {closed} closed, {open} open"),
                                 false,
                             ),
                             None => (format!("{pick_name} · missing"), true),

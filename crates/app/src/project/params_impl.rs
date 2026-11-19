@@ -55,6 +55,7 @@ impl ParamsDto {
                 blend_turns,
                 links,
                 tilt,
+                chain_overrides,
             } => ParamsDto::Contour {
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -94,6 +95,15 @@ impl ParamsDto {
                 ramp_angle: contour_links_dto(links).1,
                 links: contour_links_dto(links).2,
                 tilt: (*tilt).map(Into::into),
+                chain_overrides: chain_overrides
+                    .iter()
+                    .map(|o| ChainOverrideDto {
+                        entity: o.entity.clone(),
+                        chain: ChainIdDto(o.chain),
+                        side: o.side.map(chain_side_dto),
+                        reverse: o.reverse,
+                    })
+                    .collect(),
             },
             OpParams::Pocket {
                 links,
@@ -1299,6 +1309,7 @@ impl ParamsDto {
                 ramp_angle,
                 links,
                 tilt,
+                chain_overrides,
             } => OpParams::Contour {
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -1340,6 +1351,15 @@ impl ParamsDto {
                 // over them.
                 links: contour_links(*level_link, *ramp_angle, links.as_ref()),
                 tilt: (*tilt).map(Into::into),
+                chain_overrides: chain_overrides
+                    .iter()
+                    .map(|o| crate::operation::ChainOverride {
+                        entity: o.entity.clone(),
+                        chain: o.chain.0,
+                        side: o.side.map(chain_side_of),
+                        reverse: o.reverse,
+                    })
+                    .collect(),
             },
             ParamsDto::Pocket {
                 links,

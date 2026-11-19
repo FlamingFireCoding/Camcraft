@@ -258,14 +258,33 @@ pub fn op_stamp(world: &World, op: &Operation, op_name: &str) -> Option<GenStamp
     let picks = |h: &mut std::hash::DefaultHasher, items: &[GeoSel]| -> Option<()> {
         h.write_usize(items.len());
         for g in items {
-            let (tag, id) = match g.feature {
-                FeatureSel::Face(id) => (0u8, id),
-                FeatureSel::Chain(id) => (1, id),
-                FeatureSel::Patch(id) => (2, id),
-                FeatureSel::Vertex(id) => (3, id),
-            };
-            h.write_u8(tag);
-            h.write_u64(id);
+            match &g.feature {
+                FeatureSel::Face(id) => {
+                    h.write_u8(0);
+                    h.write_u64(*id);
+                }
+                FeatureSel::Chain(id) => {
+                    h.write_u8(1);
+                    h.write_u64(*id);
+                }
+                FeatureSel::Patch(id) => {
+                    h.write_u8(2);
+                    h.write_u64(*id);
+                }
+                FeatureSel::Vertex(id) => {
+                    h.write_u8(3);
+                    h.write_u64(*id);
+                }
+                FeatureSel::SketchChain(id) => {
+                    h.write_u8(4);
+                    h.write_u128(id.0);
+                }
+                FeatureSel::SketchLayer(layer) => {
+                    h.write_u8(5);
+                    h.write_usize(layer.len());
+                    h.write(layer.as_bytes());
+                }
+            }
             h.write_usize(g.entity.len());
             h.write(g.entity.as_bytes());
             let e = model::find_by_name(world, &g.entity)?;
