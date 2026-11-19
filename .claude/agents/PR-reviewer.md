@@ -139,7 +139,13 @@ merge.
    binaries the diff touches or that cover the touched modules (each suite
    header names its gate map), one by one; `cargo test -p camcraft-ui --lib`
    from `crates/ui` if UI changed; `cargo clippy -p <touched crates>
-   --all-targets -- -D warnings`. Run builds and tests in the FOREGROUND with a
+   --all-targets -- -D warnings`. Heavy lanes (AGENTS.md "Heavy lanes at
+   review"): `cargo xtask gate heavy --base <main ref> --dry-run` lists the
+   release `--ignored` lanes that the diff reaches. If the PR body names a
+   green run of those lanes on this head, rely on it and say so. Otherwise
+   run `cargo xtask gate heavy --base <main ref>` (outside the time box
+   below, one command, FOREGROUND), or report "heavy lanes not run": that is
+   a blocker, never a pass. A red reached heavy test is a blocker. Run builds and tests in the FOREGROUND with a
    timeout (up to 10 min per command, split long runs by binary) - never
    background a run and wait on it: reviewers have stalled for an hour
    waiting on a run that had already died. Time box ~40 min of build+test.
@@ -196,6 +202,9 @@ merge.
      "on the self-hosted runner: <run url>" (and main's sha from the run
      summary), "locally", or both (Windows-only readings, ui re-runs);
      a runner run that gave no verdict is named with the fallback taken;
+   - Heavy lanes: each reached lane (`<crate> heavy: <target>`) with its
+     result and who ran it (the author's run that the PR body names, or
+     this review), or "the diff reaches no heavy lane";
    - Requested before merge (numbered, each with file:line and the fix);
    - Questions / notes (not blocking);
    - closing line: "A maintainer will approve and merge by hand."
