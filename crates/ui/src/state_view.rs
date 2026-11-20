@@ -69,7 +69,7 @@ impl State {
     }
 
     /// #2958: choose the overlay line width; kept at once.
-    pub(super) fn select_line_width(&mut self, next: view::LineWidth) {
+    pub(crate) fn select_line_width(&mut self, next: view::LineWidth) {
         self.line_width = next;
         self.persist_view();
         self.status = format!("line width: {} pt", next.word());
@@ -77,7 +77,7 @@ impl State {
 
     /// #2958: choose the anti-aliasing. A sample count that this graphics
     /// device does not offer is refused by name and never kept.
-    pub(super) fn select_antialias(&mut self, next: view::Antialias) {
+    pub(crate) fn select_antialias(&mut self, next: view::Antialias) {
         if !self.samples_offered.contains(&next.samples()) {
             self.refuse(
                 super::ErrorScope::Setup,

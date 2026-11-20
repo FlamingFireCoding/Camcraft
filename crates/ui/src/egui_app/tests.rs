@@ -194,8 +194,8 @@ mod tool_cutter_params;
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
-// #2958: the Theme door's line width and anti-aliasing groups.
-mod theme_door_quality;
+// #2958: the Display menu's line width and anti-aliasing entries.
+mod display_quality;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;

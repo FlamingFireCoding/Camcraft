@@ -98,12 +98,19 @@ clearly in both Horizon Day and Teal Night. Browser rows, their eye
 toggles and context-menu rows carry accessibility labels, so a screen
 reader or an automated test can name them.
 
-The **Theme** list also sets how the viewport draws its lines.
-**Line width** (1, 1.5, 2 or 3 pt; 1.5 is the default) sets the width of
-toolpaths, height planes, outlines and axes. **Anti-aliasing** (Off, 2x
-or 4x; 4x is the default) smooths the edges of lines and models. 4x uses
-more graphics memory; turn it down on a slow integrated graphics chip.
-A count that the graphics device does not offer shows as unavailable.
+### Line width and anti-aliasing
+
+The viewport's **Display** button opens a menu whose **Graphics** group
+sets how the viewport draws:
+
+- **Line width** (1, 1.5, 2 or 3 pt; 1.5 is the default) sets the width of
+  toolpaths, height planes, outlines and axes. These lines always have
+  smooth edges.
+- **Anti-aliasing** (Off, 2x or 4x; 4x is the default) smooths the edges
+  of models and stock. 4x uses the most graphics memory; turn it down on
+  a slow integrated graphics chip. A count that the graphics device does
+  not offer is shown, but cannot be chosen.
+
 Both choices are kept for the next start.
 
 ## A first toolpath

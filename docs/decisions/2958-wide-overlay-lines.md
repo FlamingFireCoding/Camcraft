@@ -9,10 +9,11 @@
 - Each end of a line extends half the line width past its point. Two lines that meet thus close the corner and do not overlap past it.
 - MSAA is a setting: Off, 2x or 4x. The default is 4x. All the viewport pipelines and the traced-stock composite use the same sample count. A change rebuilds the pipelines and the multisample and depth targets. The resolved colour target stays, so the egui texture stays bound.
 - The windowed shell requests `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES` when the adapter has it, and reads the adapter's sample counts for the colour and depth formats. Without the feature, only WebGPU's guaranteed counts (1 and 4) are offered. The browser build always offers only 1 and 4.
-- An anti-aliasing row for a count that the device does not offer is disabled, and its hover text gives the reason. A queued pick of such a count is refused by name.
+- An anti-aliasing entry for a count that the device does not offer is disabled, and its hover text gives the reason. A pick of such a count is refused by name.
 - A kept count that the device does not offer falls back to the highest offered count below it. The status line says so once.
 - The two settings are per-user view settings in `view.json` (`app::view`), with the origin-name switch. They are not in `prefs.json`. They are not on the undo history and do not make the document unsaved, the same as the theme.
-- The rows are in the Theme door, under "Colour vision", as the groups "Line width" and "Anti-aliasing".
+- The two settings are in the viewport's Display menu (#2818), in its Graphics group, after the projection. They were first in the Theme door. A manual test found that place wrong: line width and anti-aliasing are not part of a theme. #2818 had added the Display menu with a Graphics group, so they moved there. A general Settings window is proposed in #3025.
+- Like the other Display menu entries, a pick is a direct `State` method call (`select_line_width`, `select_antialias`), not a queued command.
 
 **Why.**
 
