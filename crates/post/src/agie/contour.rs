@@ -126,15 +126,19 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     }
     check_punch_envelope(&outline, job)?;
     let hole = [quantize(job.start[0])?, quantize(job.start[1])?];
-    let (edge, foot) = entry_face(&outline, hole).ok_or(
-        "Agie needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation"
-    )?;
+    let (edge, foot) = entry_face(&outline, hole)?;
     // Begin the nominal program at the middle of the chosen edge, facing along that edge. The
     // hole and the full three-millimetre lead share its exterior half-plane. Compensation is
     // deliberately left to the Agie technology. The closing move returns to the inserted point.
+    let exact_face = cross(outline[edge], outline[(edge + 1) % n], foot) == 0;
     outline.rotate_left((edge + 1) % n);
     let mut vertices = vec![foot];
     vertices.extend(outline);
+    // An exterior rounded seam adds a small convex corner and slightly
+    // changes its neighbours. Check the envelope of the actual ISO lines.
+    if !exact_face {
+        check_punch_envelope(&vertices, job)?;
+    }
     Ok(vertices
         .into_iter()
         .map(|p| [p[0] as f64 / UNITS, p[1] as f64 / UNITS])
@@ -197,45 +201,100 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob) -> Result<(), String> {
     Ok(())
 }
 
-fn entry_face(ring: &[Point], hole: Point) -> Option<(usize, Point)> {
+fn vector(a: Point, b: Point) -> Point {
+    [b[0] - a[0], b[1] - a[1]]
+}
+
+fn dot(a: Point, b: Point) -> i128 {
+    i128::from(a[0]) * i128::from(b[0]) + i128::from(a[1]) * i128::from(b[1])
+}
+
+const LEAD: i128 = 300_000; // 3 mm on the ISO lattice.
+
+/// The complete approach stays on the waste side of this emitted face.
+fn clears_entry_line(a: Point, b: Point, hole: Point) -> bool {
+    let side = cross(a, b, hole);
+    let edge = vector(a, b);
+    side < 0 && side * side >= LEAD * LEAD * dot(edge, edge)
+}
+
+/// Quantize the perpendicular projection without moving the start hole or
+/// cutting into the punch. Compare the four nearest cell corners against the
+/// exact rational projection. Allow at most one grid unit (0.00001 mm)
+/// Euclidean error to choose an exterior point when nearest rounding is inward.
+fn outside_seam(a: Point, b: Point, hole: Point, along: i128) -> Option<Point> {
+    let edge = vector(a, b);
+    let length2 = dot(edge, edge);
+    let numerator: [i128; 2] =
+        std::array::from_fn(|k| i128::from(a[k]) * length2 + i128::from(edge[k]) * along);
+    // The projected point lies strictly between bounded i64 endpoints.
+    let floor = numerator.map(|v| v.div_euclid(length2) as i64);
     let mut best = None;
+    for x in floor[0]..=floor[0] + 1 {
+        for y in floor[1]..=floor[1] + 1 {
+            let p = [x, y];
+            let residual: [i128; 2] =
+                std::array::from_fn(|k| i128::from(p[k]) * length2 - numerator[k]);
+            let error2 = residual[0] * residual[0] + residual[1] * residual[1];
+            if error2 > length2 * length2 || cross(a, b, p) > 0 {
+                continue;
+            }
+            let from_a = dot(vector(a, p), edge);
+            let from_b = length2 - from_a;
+            // Measure room along the original face, before and after the seam.
+            // Neither coordinate rounding nor a short angled leg may add
+            // fictitious room for the transition and separation segment.
+            if from_a <= 0
+                || from_b <= 0
+                || from_a * from_a < LEAD * LEAD * length2
+                || from_b * from_b < LEAD * LEAD * length2
+                || !clears_entry_line(a, p, hole)
+                || !clears_entry_line(p, b, hole)
+            {
+                continue;
+            }
+            if best.is_none_or(|(previous, _)| error2 < previous) {
+                best = Some((error2, p));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+fn entry_face(ring: &[Point], hole: Point) -> Result<(usize, Point), String> {
+    let mut best = None;
+    let mut nominal_room = false;
     let mut nearest = f64::INFINITY;
     for (i, &a) in ring.iter().enumerate() {
         let b = ring[(i + 1) % ring.len()];
-        let side = cross(a, b, hole);
-        if side >= 0 || ring.iter().any(|&p| cross(a, b, p) < 0) {
+        if !clears_entry_line(a, b, hole) || ring.iter().any(|&p| cross(a, b, p) < 0) {
             continue;
         }
-        let dx = (b[0] - a[0]) as f64;
-        let dy = (b[1] - a[1]) as f64;
-        let length = dx.hypot(dy);
-        let distance = -(side as f64) / length;
-        if distance < 3.0 * UNITS || distance >= nearest {
-            continue;
-        }
-        let t =
-            (((hole[0] - a[0]) as f64) * dx + ((hole[1] - a[1]) as f64) * dy) / (length * length);
-        if !(0.0 < t && t < 1.0) {
-            continue;
-        }
-        let foot = [
-            (a[0] as f64 + t * dx).round() as i64,
-            (a[1] as f64 + t * dy).round() as i64,
-        ];
-        // Room on each side for the control's 3 mm transition and 1 mm
-        // separation, independent of which way the resident pass runs.
-        let min_face = i128::from(300_000).pow(2);
-        if cross(a, b, foot) != 0
-            || [a, b].iter().any(|p| {
-                let dx = i128::from(foot[0] - p[0]);
-                let dy = i128::from(foot[1] - p[1]);
-                dx * dx + dy * dy < min_face
-            })
+        let edge = vector(a, b);
+        let length2 = dot(edge, edge);
+        let along = dot(vector(a, hole), edge);
+        let remaining = length2 - along;
+        if along <= 0
+            || remaining <= 0
+            || along * along < LEAD * LEAD * length2
+            || remaining * remaining < LEAD * LEAD * length2
         {
             continue;
         }
-        nearest = distance;
-        best = Some((i, foot));
+        nominal_room = true;
+        let distance = -(cross(a, b, hole) as f64) / (length2 as f64).sqrt();
+        if distance < nearest
+            && let Some(foot) = outside_seam(a, b, hole, along)
+        {
+            nearest = distance;
+            best = Some((i, foot));
+        }
     }
-    best
+    best.ok_or_else(|| {
+        if nominal_room {
+            "Agie cannot place an exterior entry on the 0.00001 mm ISO grid and keep the required 3 mm clearance".into()
+        } else {
+            "Agie needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation".into()
+        }
+    })
 }

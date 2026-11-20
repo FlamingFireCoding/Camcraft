@@ -114,6 +114,45 @@ fn oblique_punch_preserves_nominal_vertices_and_perpendicular_seam() {
 }
 
 #[test]
+fn oblique_seam_rounds_to_the_exterior_without_moving_nominal_vertices() {
+    let mut job = punch();
+    job.contour = vec![
+        [-20., -10.],
+        [16., -10.],
+        [22., -2.],
+        [18., 10.],
+        [-6., 10.],
+    ];
+    job.start = [-20.5, 6.];
+    let prepared = contour::prepare(&job).unwrap();
+    assert_eq!(prepared[0], [-12.64765, 0.50336]);
+    assert_eq!(&prepared[1..], job.contour.as_slice());
+    job.contour.reverse();
+    assert_eq!(contour::prepare(&job).unwrap(), prepared);
+
+    // Nearest-coordinate rounding here would cut inside the punch.
+    job.start[1] = 6.003;
+    assert_eq!(contour::prepare(&job).unwrap()[0], [-12.64625, 0.50537]);
+}
+
+#[test]
+fn outward_rounding_cannot_consume_the_required_lead_clearance() {
+    let mut job = punch();
+    job.contour = vec![
+        [-19.99933, -10.],
+        [16., -10.],
+        [22., -2.],
+        [18., 10.],
+        [-5.99933, 10.],
+    ];
+    job.start = [-15.5, 1.659];
+    // The exact approach measures 3.000002716 mm. Every exterior seam
+    // inside the ISO rounding budget leaves less than 3 mm to a new face.
+    let why = contour::prepare(&job).unwrap_err();
+    assert!(why.contains("0.00001 mm ISO grid"), "{why}");
+}
+
+#[test]
 fn an_acute_miter_needs_more_stock_than_a_round_corner() {
     let mut job = punch();
     job.contour = vec![[-20., -10.], [30., 0.], [-20., 10.]];
