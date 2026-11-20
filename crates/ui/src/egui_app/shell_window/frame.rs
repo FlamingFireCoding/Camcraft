@@ -189,7 +189,7 @@ impl Shell {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("egui-shell-frame"),
         });
-        view_pass::encode(state, view, stock_eye, device, queue, &mut encoder);
+        view_pass::encode(state, view, stock_eye, device, queue, &mut encoder, scale);
 
         // Pass 2: egui over the surface.
         let sd = ScreenDescriptor {

@@ -130,7 +130,6 @@ fn flank_step(turns: usize) -> String {
     // Corners: (0, 0), (1, CAP), (1, 1), (0, 1 - CAP).
     let corners = [cap_start[0], cap_start[CAP_POINTS], cap_end[0], cap_end[CAP_POINTS]];
     let v: Vec<String> = corners.iter().map(|p| point(&mut out, *p)).collect();
-    drop(point);
     let mut e = |body: String| ent(&mut out, body);
     let surface = e(format!(
         "( BOUNDED_SURFACE() B_SPLINE_SURFACE(1, 2, (({}), ({})), .UNSPECIFIED., .F., .F., .F.) \

@@ -128,6 +128,7 @@ mod waterjet_recipe;
 mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
+mod holes_fine_bore;
 mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
@@ -145,6 +146,9 @@ mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
 mod display_menu;
+// #2834 and #2958: the Display menu's quality, line width and
+// anti-aliasing entries.
+mod display_quality;
 mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
@@ -199,6 +203,7 @@ mod recent_door;
 mod home_page;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
+mod browser_delete;
 // #1450: a model file dropped on the window.
 mod file_drop;
 // #645: the browser's "Show origin names" switch and the per-user view file.
