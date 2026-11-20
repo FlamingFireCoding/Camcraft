@@ -45,16 +45,22 @@ fn check_guide_span(world: &World, setup: Option<&str>, lo: f64, hi: f64) -> Res
     let (_, machine) = crate::machine::of_setup(world, setup);
     let Some(edm) = machine.as_ref().and_then(|m| m.edm.as_ref()) else { return Ok(()) };
     let (_, origin) = crate::posting::wcs_context(world, setup);
-    let bottom = lo - origin[2];
-    let top = hi - origin[2];
+    // Place the guides in the same frame as the work, as guide_planes does for
+    // the post. Subtracting a decimal origin from the work can round a fit away.
+    let world_z = |guide_z: f64| {
+        let z = guide_z + origin[2];
+        z.is_finite().then_some(z).ok_or("the wire guide height in the work frame is not finite")
+    };
     if let Some(lower) = edm.lower_guide_z
-        && bottom < lower
+        && lo < world_z(lower)?
     {
+        let bottom = lo - origin[2];
         return Err(format!("work bottom Z{bottom:.3} is below the lower guide Z{lower:.3}, outside the guides' reach"));
     }
     if let Some(upper) = edm.upper_guide_z
-        && top > upper
+        && hi > world_z(upper)?
     {
+        let top = hi - origin[2];
         return Err(format!("work top Z{top:.3} is above the upper guide Z{upper:.3}, outside the guides' reach"));
     }
     Ok(())

@@ -194,10 +194,13 @@ fn guide_limits_use_the_setup_origin_and_include_stock_above_the_part() {
     use camcraft_app::schema::Location;
     use camcraft_app::stock::StockShape;
 
-    let (world, made) = punch(FIXTURE, 0.0);
+    let guides = FIXTURE
+        .replace("\"lower_guide_z\": -5.0", "\"lower_guide_z\": -9.7")
+        .replace("\"upper_guide_z\": 25.0", "\"upper_guide_z\": 2.3");
+    let (world, made) = punch(&guides, 0.0);
     made.expect("the vertical punch generates");
     let mut history = History::default();
-    let origin = Location { pos: Point3::new(0.0, 0.0, -13.0), ..Location::default() };
+    let origin = Location { pos: Point3::new(0.0, 0.0, 9.7), ..Location::default() };
     history.execute(&world, SetWcsOrigin::new(&world, origin).expect("set the work origin"));
     let mut post_stock = |stock_height, tag| {
         let shape = StockShape::Box { dx: 80.0, dy: 50.0, dz: stock_height };
@@ -205,10 +208,10 @@ fn guide_limits_use_the_setup_origin_and_include_stock_above_the_part() {
         history.execute(&world, GenerateOperation::new(&world, "Punch1").expect("regenerate"));
         post(&world, tag)
     };
-    // The part and stock both span machine Z13..25. The upper guide is at Z25.
+    // Both guides meet a face of the 12 mm work. In world Z the upper guide is 9.7 + 2.3.
     post_stock(12.0, "guide-at-stock").expect("the work fits up to the stated upper guide");
-    let err = post_stock(13.0, "guide-in-stock").expect_err("the stock extends beyond the upper guide");
-    assert!(err.contains("Punch1: work top Z26.000 is above the upper guide Z25.000"), "{err}");
+    let err = post_stock(12.001, "guide-in-stock").expect_err("the stock extends beyond the upper guide");
+    assert!(err.contains("Punch1: work top Z2.301 is above the upper guide Z2.300"), "{err}");
 }
 
 /// Done means: a taper whose lower edge burns into the part blocks the
