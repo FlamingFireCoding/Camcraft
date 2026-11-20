@@ -29,6 +29,7 @@ pub(crate) fn sync_scene(
     let d = scene.digest();
     if d != *scene_digest {
         view.set_document(device, queue, &scene.parts);
+        view.set_shade(device, queue, &scene.shade);
         view.set_overlay(device, queue, &scene.overlay);
         *scene_digest = d;
     }
@@ -94,6 +95,7 @@ pub(crate) fn encode(
     // M13.4: both verdict painters wear the viewer's palette.
     let pal = super::colorvision::palette_of(&state.world);
     view.set_palette(pal);
+    view.set_effects(state.effects());
     if let Some(se) = stock_eye.as_mut() {
         se.set_palette(pal);
     }

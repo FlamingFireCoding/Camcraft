@@ -6,10 +6,14 @@
 //!
 //! Each setting here draws through the one wgpu pass that the native window
 //! and the browser shell share (`view_pass`), so no entry is hidden on wasm.
+//! That holds for the ground shadow and the ambient occlusion too (#2834):
+//! they are vertex buffers and alpha blending, with no texture (`shade_pass`).
+//! Wireframe draws neither, so the two switches are disabled there and say so.
 //!
 //! Provenance: our own menu, written from the group list of issue #2818 and
 //! published CAD viewport practice; our own wording. No vendor material.
 
+use crate::display_quality::QualityPreset;
 use crate::state::{DisplayMode, State};
 use crate::viewport::ProjectionMode;
 
@@ -22,6 +26,9 @@ pub(crate) const SHOW_GRID: &str = "Grid";
 pub(crate) const SHOW_AXES: &str = "Origin axes";
 pub(crate) const PERSPECTIVE: &str = "Perspective view";
 pub(crate) const ORTHOGRAPHIC: &str = "Orthographic view";
+pub(crate) const LOOK_AT_PLANE: &str = "Look at a work plane";
+pub(crate) const GROUND_SHADOW: &str = "Ground shadow";
+pub(crate) const AMBIENT_OCCLUSION: &str = "Ambient occlusion";
 
 /// The gap between the menu and the button that opened it.
 const GAP: f32 = 8.0;
@@ -69,6 +76,13 @@ fn entries(ui: &mut egui::Ui, state: &mut State) {
         // The next click belongs to the view, so the menu moves away.
         state.display_menu_open = !state.look_at_armed;
     }
+    let plane = ui
+        .selectable_label(state.look_at_plane_armed, LOOK_AT_PLANE)
+        .on_hover_text("Click an axis of an origin in the view. The view turns to face the plane of that axis. A click on Z gives the XY work plane.");
+    if plane.clicked() {
+        crate::look_at_plane::arm(state, !state.look_at_plane_armed);
+        state.display_menu_open = !state.look_at_plane_armed;
+    }
     ui.separator();
     ui.strong(GROUP_GRAPHICS);
     kept |= ui
@@ -81,7 +95,38 @@ fn entries(ui: &mut egui::Ui, state: &mut State) {
         .on_hover_text("Far objects look smaller, as the eye sees them.");
     ui.radio_value(&mut state.cam.projection, ProjectionMode::Orthographic, ORTHOGRAPHIC)
         .on_hover_text("Parallel edges stay parallel. Sizes do not change with distance.");
+    ui.separator();
+    kept |= quality(ui, state);
     if kept {
         state.persist_view();
     }
+}
+
+/// The quality rows of the Graphics group (#2834): the two presets (one
+/// choice, or none after a switch changed by hand) and the two shading
+/// switches. True when a kept value changed.
+fn quality(ui: &mut egui::Ui, state: &mut State) -> bool {
+    let mut kept = false;
+    let active = QualityPreset::active(state.effects());
+    for preset in QualityPreset::ALL {
+        if ui.radio(active == Some(preset), preset.label()).on_hover_text(preset.tooltip()).clicked() {
+            preset.apply(state);
+            kept = true;
+        }
+    }
+    // Wireframe draws no lit face and no shadow of one. The switches keep
+    // their values for the next shaded mode.
+    let shaded = state.display != DisplayMode::Wireframe;
+    const NOT_IN_WIREFRAME: &str = "The Wireframe mode does not draw this. Select a shaded mode.";
+    kept |= ui
+        .add_enabled(shaded, egui::Checkbox::new(&mut state.ground_shadow, GROUND_SHADOW))
+        .on_hover_text("Draw a soft shadow of the model on the floor.")
+        .on_disabled_hover_text(NOT_IN_WIREFRAME)
+        .changed();
+    kept |= ui
+        .add_enabled(shaded, egui::Checkbox::new(&mut state.ambient_occlusion, AMBIENT_OCCLUSION))
+        .on_hover_text("Make the faces of the model darker in their corners.")
+        .on_disabled_hover_text(NOT_IN_WIREFRAME)
+        .changed();
+    kept
 }

@@ -48,7 +48,7 @@ fn a_flipped_choice_round_trips_through_the_file() {
 fn the_display_mode_and_the_grid_round_trip_and_an_old_file_loads_the_defaults() {
     let d = dir("display");
     let file = file_in(&d);
-    let chosen = ViewPrefs { show_gizmo_names: true, display: "wireframe".into(), show_grid: false };
+    let chosen = ViewPrefs { show_gizmo_names: true, display: "wireframe".into(), show_grid: false, ..ViewPrefs::default() };
     view::save(&file, &chosen).expect("save");
     assert_eq!(view::load(&file), (chosen, None), "the choice reads back");
     std::fs::write(&file, format!(r#"{{"format":"{FORMAT}","view":{{"show_gizmo_names":false}}}}"#))
@@ -60,6 +60,27 @@ fn the_display_mode_and_the_grid_round_trip_and_an_old_file_loads_the_defaults()
     assert_eq!(note, None, "an old file is not a complaint");
     assert_eq!(ViewPrefs::default().display, view::DEFAULT_DISPLAY);
     assert!(ViewPrefs::default().show_grid);
+}
+
+/// #2834: the ground shadow switch and the ambient occlusion switch ride the
+/// same file. An old file without the keys loads them off and says nothing.
+#[test]
+fn the_shading_switches_round_trip_and_an_old_file_loads_them_off() {
+    let d = dir("shading");
+    let file = file_in(&d);
+    for (shadow, occlusion) in [(true, false), (false, true), (true, true)] {
+        let chosen = ViewPrefs { ground_shadow: shadow, ambient_occlusion: occlusion, ..ViewPrefs::default() };
+        view::save(&file, &chosen).expect("save");
+        assert_eq!(view::load(&file), (chosen, None), "the choice reads back");
+    }
+    std::fs::write(&file, format!(r#"{{"format":"{FORMAT}","view":{{"display":"shaded","show_grid":false}}}}"#))
+        .expect("write the old file");
+    let (old, note) = view::load(&file);
+    assert!(!old.ground_shadow && !old.ambient_occlusion, "an old file loads the two switches off");
+    assert_eq!((old.display.as_str(), old.show_grid), ("shaded", false), "the keys that it has still read");
+    assert_eq!(note, None, "an old file is not a complaint");
+    let fresh = ViewPrefs::default();
+    assert!(!fresh.ground_shadow && !fresh.ambient_occlusion, "a new user starts with the view of #2818");
 }
 
 #[test]

@@ -246,6 +246,7 @@ pub(crate) mod move_handles;
 pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
+mod world_verts;
 
 #[cfg(test)]
 mod tests;

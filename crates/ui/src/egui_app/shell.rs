@@ -493,7 +493,10 @@ fn viewport_panel(
             hud = viewcube::Hud::with_controls(resp.rect, state.move_handles || state.rotate_handles);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if state.look_at_armed && left_pressed {
+            if state.look_at_plane_armed && left_pressed {
+                // #2834: the armed "Look at a work plane" takes this press.
+                crate::look_at_plane::click(state, parr(p));
+            } else if state.look_at_armed && left_pressed {
                 // #2818: the armed "Look at" takes this one press. It is
                 // never remembered, so the release picks nothing.
                 crate::look_at::click(state, parr(p));

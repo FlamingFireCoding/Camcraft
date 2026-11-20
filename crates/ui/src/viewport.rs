@@ -20,7 +20,7 @@ use egui_wgpu::wgpu;
 const VERTEX_STRIDE: u64 = 20;
 
 /// The one vertex-buffer law, shared by every solid pipeline.
-const VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+pub(crate) const VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
     array_stride: VERTEX_STRIDE,
     step_mode: wgpu::VertexStepMode::Vertex,
     attributes: &[
@@ -42,7 +42,7 @@ const VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayou
     ],
 };
 
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// `struct U`: mvp + eye + wire (80 bytes), six palette vec4s, then the
 /// wireframe edge ink of the live ground (#698).
@@ -79,26 +79,32 @@ fn vs_main(@location(0) pos: vec3<f32>, @location(1) sel: f32,
 // face normal from screen-space derivatives of the world position.
 // Key + fill give the broad gradient; a view-dependent specular adds the
 // CAD-style sheen that makes facet angles readable at a glance.
-@fragment
-fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    let cr = cross(dpdx(in.world), dpdy(in.world));
+// `open` scales the light: 1 on the plain face pass, the baked occlusion
+// value of the vertex on the occluded face pass (#2834, `shade_pass`).
+fn lit(world: vec3<f32>, sel: f32, cls: f32, open: f32) -> vec4<f32> {
+    let cr = cross(dpdx(world), dpdy(world));
     let len = length(cr);
     let n = select(vec3<f32>(0.0, 0.0, 1.0), cr / len, len > 1e-9);
     let key_dir = normalize(vec3<f32>(0.45, 0.60, 0.66));
     // abs(): two-sided, so flipped windings never render unlit-black.
     let key = abs(dot(n, key_dir));
     let fill = abs(dot(n, normalize(vec3<f32>(-0.55, 0.25, 0.40))));
-    let light = 0.34 + 0.52 * key + 0.18 * fill;
-    let to_eye = normalize(u.eye - in.world);
+    let light = (0.34 + 0.52 * key + 0.18 * fill) * open;
+    let to_eye = normalize(u.eye - world);
     let halfv = normalize(key_dir + to_eye);
-    let spec = pow(max(abs(dot(n, halfv)), 0.0), 24.0) * 0.35 * key;
+    let spec = pow(max(abs(dot(n, halfv)), 0.0), 24.0) * 0.35 * key * open;
     let base = vec3<f32>(0.66, 0.70, 0.76) * light + vec3<f32>(spec);
     let hot = vec3<f32>(0.98, 0.72, 0.20) * light + vec3<f32>(spec);
     // #339 slice 4: a fixture the selected op strikes wears the gouge
     // colour (class STRUCK_CLASS; plain models carry class 0).
-    let struck = step(3.5, in.cls);
+    let struck = step(3.5, cls);
     let hit = u.gouge.xyz * light + vec3<f32>(spec);
-    return vec4<f32>(mix(mix(base, hot, in.sel), hit, struck * 0.85), 1.0);
+    return vec4<f32>(mix(mix(base, hot, sel), hit, struck * 0.85), 1.0);
+}
+
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
+    return lit(in.world, in.sel, in.cls, 1.0);
 }
 
 // Facet edges: dark over the shaded pass, warm when the part is selected.
@@ -252,6 +258,8 @@ pub struct View3D {
     model_edge_count: u32,
     overlay_buf: wgpu::Buffer,
     overlay_count: u32,
+    /// The ground shadow pass and the occlusion pass (#2834).
+    shade: crate::shade_pass::ShadePass,
     _color_tex: wgpu::Texture,
     color_view: wgpu::TextureView,
     _depth_tex: wgpu::Texture,
@@ -269,7 +277,7 @@ impl View3D {
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("viewport3d"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(format!("{SHADER}{}", crate::shade_pass::WGSL).into()),
         });
 
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -607,6 +615,7 @@ impl View3D {
         let overlay_buf = dummy("viewport3d-obuf", wgpu::BufferUsages::VERTEX);
 
         let targets = make_targets(device, format, width, height);
+        let shade = crate::shade_pass::ShadePass::new(device, &shader, &layout, format);
 
         View3D {
             pipeline,
@@ -630,6 +639,7 @@ impl View3D {
             model_edge_count: 0,
             overlay_buf,
             overlay_count: 0,
+            shade,
             _color_tex: targets.color,
             color_view: targets.color_view,
             _depth_tex: targets.depth,
@@ -767,7 +777,22 @@ impl View3D {
             overlay_index_start: self.overlay_index_start,
             edge_count: self.edge_count,
             model_edge_count: self.model_edge_count,
+            shadow_vertex_count: self.shade.shadow_count,
+            occlusion_vertex_count: self.shade.occlusion_count,
         }
+    }
+
+    /// Replace the cached shade data (#2834): the ground shadow mesh and
+    /// the occlusion values of the model vertices of the last
+    /// `set_document`. Call it with each new document.
+    pub fn set_shade(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, shade: &crate::shade_pass::Shade) {
+        self.shade.set(device, queue, shade);
+    }
+
+    /// The shading switches that the next `render` reads (#2834). They pick
+    /// draw list steps; they do not touch a buffer.
+    pub fn set_effects(&mut self, effects: crate::draw_list::Effects) {
+        self.shade.effects = effects;
     }
 
     /// Replace the overlay line set: pairs of `[x, y, z, r, g, b]` vertices
@@ -904,13 +929,20 @@ impl View3D {
         // display mode, read from the cached index partition.
         pass.set_bind_group(0, &self.bind_group, &[]);
         use crate::draw_list::Pipe;
-        let plan = crate::draw_list::plan(display, &self.counts(), stock.is_some());
+        let plan = crate::draw_list::plan_with(display, &self.counts(), stock.is_some(), self.shade.effects);
         if self.index_count > 0 {
             pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
         }
         for step in plan.steps() {
             let pipeline = match step.pipe {
                 Pipe::Faces => &self.pipeline,
+                // No occlusion buffer: the plain faces (the list never asks).
+                Pipe::FacesOccluded => self.shade.bind_occluded(&mut pass).unwrap_or(&self.pipeline),
+                Pipe::GroundShadow => {
+                    self.shade.draw_shadow(&mut pass, step.range.clone());
+                    pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+                    continue;
+                }
                 Pipe::FacesDepthOnly => &self.depth_pipeline,
                 Pipe::Edges => &self.line_pipeline,
                 Pipe::HiddenEdges => &self.hidden_line_pipeline,

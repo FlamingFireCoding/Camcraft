@@ -144,6 +144,7 @@ impl WebShell {
         let scene = world::collect(&state);
         let scene_digest = scene.digest();
         view.set_document(&rs.device, &rs.queue, &scene.parts);
+        view.set_shade(&rs.device, &rs.queue, &scene.shade);
         view.set_overlay(&rs.device, &rs.queue, &scene.overlay);
         let view_tex =
             rs.renderer

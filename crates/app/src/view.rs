@@ -48,6 +48,14 @@ pub struct ViewPrefs {
     /// old file keeps the grid that it always had.
     #[serde(default = "default_names_on")]
     pub show_grid: bool,
+    /// Does the viewport draw the ground shadow of the model (#2834)?
+    /// Default OFF: an old file keeps the view that it always had.
+    #[serde(default)]
+    pub ground_shadow: bool,
+    /// Does the viewport darken the model faces in their corners (#2834)?
+    /// Default OFF, for the same reason.
+    #[serde(default)]
+    pub ambient_occlusion: bool,
 }
 
 /// The key of the default display mode: shaded faces with their edges.
@@ -55,7 +63,13 @@ pub const DEFAULT_DISPLAY: &str = "shaded-edges";
 
 impl Default for ViewPrefs {
     fn default() -> Self {
-        Self { show_gizmo_names: true, display: default_display(), show_grid: true }
+        Self {
+            show_gizmo_names: true,
+            display: default_display(),
+            show_grid: true,
+            ground_shadow: false,
+            ambient_occlusion: false,
+        }
     }
 }
 

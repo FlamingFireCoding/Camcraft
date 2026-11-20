@@ -18,6 +18,8 @@ pub(crate) const MISS: &str = "Look at: no face under the cursor - the view did 
 
 /// Arm or disarm the one-click pick.
 pub(crate) fn arm(state: &mut State, on: bool) {
+    // One pick at a time (#2834): the plane pick gives way.
+    state.look_at_plane_armed = false;
     state.look_at_armed = on;
     state.status = if on { ARMED } else { OFF }.to_owned();
 }
