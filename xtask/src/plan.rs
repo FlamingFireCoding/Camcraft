@@ -148,11 +148,12 @@ pub fn debug_build(dirs: &[&str]) -> Step {
 }
 
 /// One debug `--no-run` prebuild step for a single crate `d`, keeping its own feature resolution and
-/// CWD (`crates/ui` for `ui`) so later suite steps reuse the compiled artifacts (#2727).
+/// CWD (`crates/ui` for `ui`) so later suite steps reuse the compiled artifacts (#2727). Its JSON
+/// messages name the test executables, and the suite steps of `d` then start those without cargo (#1951).
 pub fn debug_build_crate(d: &str) -> Step {
     Step::new(
         format!("debug build: {d} (--no-run)"),
-        &["test", "-j", J, "-p", &pkg(d), "--no-run"],
+        &["test", "-j", J, "-p", &pkg(d), "--no-run", crate::direct::JSON],
         d,
     )
 }

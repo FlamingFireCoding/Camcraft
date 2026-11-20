@@ -57,6 +57,10 @@ fn display_button_toggles_the_menu_and_wire_works_from_each_mode() {
         act(&mut state, Nav::Wire);
         assert_eq!(state.display, DisplayMode::ShadedEdges);
     }
+    // #2636: the see-through wireframe is a wireframe: one press leaves it.
+    state.display = DisplayMode::WireframeSeeThrough;
+    act(&mut state, Nav::Wire);
+    assert_eq!(state.display, DisplayMode::ShadedEdges);
     assert!(state.pending.is_empty(), "view state, never a command");
 }
 

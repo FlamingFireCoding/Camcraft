@@ -179,7 +179,7 @@ fn main() {
     }
     let run = |steps| {
         let mut runner = crate::exec::Run::new(&root, "release", false).expect("runner");
-        runner.budget = crate::budget::DEFAULT; // two lanes must overlap whatever CAMCRAFT_GATE_JOBS says
+        runner.budget = 6; // two lanes must overlap whatever the machine or CAMCRAFT_GATE_JOBS says
         runner.plan(&crate::plan::Plan { notes: Vec::new(), steps }).expect("execute fixture");
         runner.summary()
     };
@@ -252,7 +252,7 @@ fn main() {
         step("ui suites: lib", &["alone"], "ui"),
     ];
     let mut runner = crate::exec::Run::new(&root, "batch", false).expect("runner");
-    runner.budget = crate::budget::DEFAULT;
+    runner.budget = 6;
     runner.plan(&crate::plan::Plan { notes: Vec::new(), steps }).expect("execute batch fixture");
     assert_eq!(runner.summary(), 0, "batch lanes must overlap ordinary suites and run ui alone after them");
     assert!(root.join("markers/alone").exists());

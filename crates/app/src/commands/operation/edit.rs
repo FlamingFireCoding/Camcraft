@@ -309,7 +309,12 @@ impl EditOperationLinks {
                 // seeds the op's milling feed; #2598: a Drill or Thread
                 // op takes the new tool's stated feed (same undo step).
                 if let Some(t) = model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e))
-                    && let Some(p) = crate::cutting_rows::retargeted_params(&next.params, &t, crate::stock_material::in_force(world, prev.setup.as_deref()))
+                    && let Some(p) = crate::cutting_rows::retargeted_params(
+                        &next.params,
+                        &t,
+                        crate::stock_material::in_force(world, prev.setup.as_deref()),
+                        crate::cutting::material_of(world),
+                    )
                 {
                     next.params = p;
                 }

@@ -124,6 +124,8 @@ impl Plan {
 ///   faces: the stock is a volume and its full wire reads truer.
 /// - Shaded, with hidden edges: as "with edges", and the model edges draw a
 ///   second time behind the faces.
+/// - Wireframe, see-through (#2636): edges, stock edges, regions. No face
+///   step at all, so the depth buffer stays empty and each edge draws.
 #[must_use]
 pub fn plan(display: DisplayMode, c: &Counts, traced: bool) -> Plan {
     plan_with(display, c, traced, Effects::default())
@@ -143,7 +145,7 @@ pub fn plan_with(display: DisplayMode, c: &Counts, traced: bool, fx: Effects) ->
     if c.index_count == 0 {
         return p;
     }
-    let wireframe = display == DisplayMode::Wireframe;
+    let wireframe = display.is_wireframe();
     let models = 0..c.model_index_count;
     let model_edges = 0..c.model_edge_count;
     let occluded = fx.ambient_occlusion && c.occlusion_vertex_count == c.model_index_count;
@@ -152,7 +154,11 @@ pub fn plan_with(display: DisplayMode, c: &Counts, traced: bool, fx: Effects) ->
         (false, true) => Pipe::FacesOccluded,
         (false, false) => Pipe::Faces,
     };
-    p.push(faces, models);
+    // See-through writes no depth: a depth prepass would hide the far edges,
+    // the stock wire and the toolpath lines behind the model.
+    if !display.sees_through() {
+        p.push(faces, models);
+    }
     // "Shaded" draws no wire: not on the model and not on the stock.
     let wire = display != DisplayMode::Shaded;
     if wire {

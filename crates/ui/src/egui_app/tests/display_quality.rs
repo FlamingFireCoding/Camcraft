@@ -92,11 +92,14 @@ fn wireframe_disables_the_two_switches_and_keeps_their_values() {
     press(&mut h, QUALITY);
     let disabled = |h: &Harness<'static, ShellUi>, l: &str| h.get_by_label(l).accesskit_node().is_disabled();
     assert!(!disabled(&h, menu::GROUND_SHADOW) && !disabled(&h, menu::AMBIENT_OCCLUSION));
-    press(&mut h, DisplayMode::Wireframe.label());
-    assert!(disabled(&h, menu::GROUND_SHADOW), "Wireframe draws no shadow, and the menu says so");
-    assert!(disabled(&h, menu::AMBIENT_OCCLUSION), "Wireframe draws no lit face, and the menu says so");
-    assert_eq!(switches(&h), (true, true), "the values stay for the next shaded mode");
-    assert_eq!(checked(&h, menu::GROUND_SHADOW), Some(Toggled::True));
+    // Both wireframe modes, "Wireframe, see-through" (#2636) included.
+    for mode in [DisplayMode::Wireframe, DisplayMode::WireframeSeeThrough] {
+        press(&mut h, mode.label());
+        assert!(disabled(&h, menu::GROUND_SHADOW), "{mode:?} draws no shadow, and the menu says so");
+        assert!(disabled(&h, menu::AMBIENT_OCCLUSION), "{mode:?} draws no lit face, and the menu says so");
+        assert_eq!(switches(&h), (true, true), "the values stay for the next shaded mode");
+        assert_eq!(checked(&h, menu::GROUND_SHADOW), Some(Toggled::True));
+    }
     press(&mut h, DisplayMode::Shaded.label());
     assert!(!disabled(&h, menu::GROUND_SHADOW) && !disabled(&h, menu::AMBIENT_OCCLUSION));
 }

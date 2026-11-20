@@ -279,7 +279,10 @@ fn cached_zero_finish_allowance_keeps_fanuc_g76_output() {
     for inch in [false, true] {
         let (world, _history) = thread_world(inch);
         let records = posting::stream_records(&world).expect("generated");
-        let cached = with_rec(&records, |t| t.finish_allowance = 0.0);
+        let cached = with_rec(&records, |t| {
+            t.finish_allowance = 0.0;
+            t.start_in_air = true;
+        });
         let mut options = posting::options_value(g76());
         options["Units"] = json!(posting::unit_word(camcraft_app::units::of(&world)));
         let fanuc = include_str!("../../../assets/posts/fanuc-lathe.cps");

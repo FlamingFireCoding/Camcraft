@@ -854,7 +854,7 @@ impl View3D {
         display: crate::state::DisplayMode,
         stock: Option<&dyn Fn(&mut wgpu::RenderPass<'_>)>,
     ) {
-        let wireframe = display == crate::state::DisplayMode::Wireframe;
+        let wireframe = display.is_wireframe();
         // The live theme's viewport ground (#698): the clear colour and
         // the wireframe ink follow it, so a light theme gets a light ground.
         let ground = crate::egui_app::theme::current().viewport;

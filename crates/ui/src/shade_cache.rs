@@ -17,7 +17,7 @@ use camcraft_app::geometry::Triangle;
 
 use crate::ground_shadow::ShadowVertex;
 use crate::shade_pass::Shade;
-use crate::state::{DisplayMode, State};
+use crate::state::State;
 use crate::viewport::GpuPart;
 
 /// One drawn model body: its facets, its shown pose and the world vertices
@@ -150,7 +150,9 @@ impl ShadeCache {
 pub(crate) fn collect(state: &State, parts: &[GpuPart], bodies: &[ModelSrc]) -> Shade {
     let fx = state.effects();
     let mut shade = Shade::default();
-    if state.display == DisplayMode::Wireframe {
+    // Both wireframe modes (#2636 added "Wireframe, see-through") draw no
+    // lit face and no shadow of one: build nothing.
+    if state.display.is_wireframe() {
         return shade;
     }
     let cache = &state.frame_cache.shade;

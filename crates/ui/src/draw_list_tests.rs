@@ -111,7 +111,9 @@ fn the_ground_shadow_pass_draws_after_the_model_and_before_the_stock() {
     // On, but no shadow data: nothing to draw.
     assert!(!plan_with(DisplayMode::ShadedEdges, &scene(), false, SHADOW).pipes().contains(&Pipe::GroundShadow));
     // Wireframe draws no faces, so it draws no shadow of them.
-    assert!(!plan_with(DisplayMode::Wireframe, &lit(), false, SHADOW).pipes().contains(&Pipe::GroundShadow));
+    for mode in [DisplayMode::Wireframe, DisplayMode::WireframeSeeThrough] {
+        assert!(!plan_with(mode, &lit(), false, SHADOW).pipes().contains(&Pipe::GroundShadow), "{mode:?}");
+    }
     for mode in [DisplayMode::Shaded, DisplayMode::ShadedHiddenEdges] {
         assert!(plan_with(mode, &lit(), false, SHADOW).pipes().contains(&Pipe::GroundShadow), "{mode:?}");
     }
@@ -130,6 +132,10 @@ fn the_occlusion_pass_takes_the_model_face_slot() {
         assert_eq!(plan_with(DisplayMode::ShadedEdges, &c, false, OCCLUSION).pipes().first(), Some(&Pipe::Faces), "{n}");
     }
     assert_eq!(plan_with(DisplayMode::Wireframe, &lit(), false, OCCLUSION).pipes().first(), Some(&Pipe::FacesDepthOnly));
+    // See-through draws no face at all: occlusion does not add a face pass.
+    let see = plan_with(DisplayMode::WireframeSeeThrough, &lit(), false, BOTH);
+    assert_eq!(see, plan(DisplayMode::WireframeSeeThrough, &lit(), false));
+    assert_eq!(see.pipes(), [Pipe::Edges, Pipe::Edges, Pipe::Region]);
 }
 
 #[test]
@@ -145,4 +151,21 @@ fn the_longest_draw_list_holds_each_pass() {
         p.pipes(),
         [Pipe::FacesOccluded, Pipe::Edges, Pipe::HiddenEdges, Pipe::GroundShadow, Pipe::TracedStock, Pipe::Stock, Pipe::Region]
     );
+}
+
+/// #2636: "Wireframe, see-through" draws each edge, front and back. No face
+/// goes to the color buffer or to the depth buffer, so the model hides
+/// nothing behind it: not the stock, not a fixture, not a toolpath.
+#[test]
+fn see_through_wireframe_draws_each_edge_and_no_face() {
+    let mode = DisplayMode::WireframeSeeThrough;
+    let p = plan(mode, &scene(), false);
+    assert_eq!(p.pipes(), [Pipe::Edges, Pipe::Edges, Pipe::Region]);
+    assert!(!p.pipes().contains(&Pipe::FacesDepthOnly), "no depth prepass: nothing is hidden");
+    let steps: Vec<Step> = p.steps().cloned().collect();
+    assert_eq!(steps[0].range, 0..24, "the cached model edges");
+    assert_eq!(steps[1].range, 24..48, "the cached stock edges");
+    // The traced stock is a shaded surface: this mode draws the stock wire.
+    let traced = plan(mode, &scene(), true);
+    assert_eq!(traced.pipes(), [Pipe::Edges, Pipe::Edges, Pipe::Region]);
 }

@@ -114,10 +114,10 @@ fn quality(ui: &mut egui::Ui, state: &mut State) -> bool {
             kept = true;
         }
     }
-    // Wireframe draws no lit face and no shadow of one. The switches keep
-    // their values for the next shaded mode.
-    let shaded = state.display != DisplayMode::Wireframe;
-    const NOT_IN_WIREFRAME: &str = "The Wireframe mode does not draw this. Select a shaded mode.";
+    // The two wireframe modes draw no lit face and no shadow of one. The
+    // switches keep their values for the next shaded mode.
+    let shaded = !state.display.is_wireframe();
+    const NOT_IN_WIREFRAME: &str = "The wireframe modes do not draw this. Select a shaded mode.";
     kept |= ui
         .add_enabled(shaded, egui::Checkbox::new(&mut state.ground_shadow, GROUND_SHADOW))
         .on_hover_text("Draw a soft shadow of the model on the floor.")

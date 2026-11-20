@@ -192,6 +192,7 @@ fn a_threading_cycle_refuses_by_name() {
         repeat_each_depth: false,
         hand: camcraft_post::cl::ThreadHand::Right,
         chip_break_dips: false,
+        start_in_air: false,
     }));
     let e = refused("fanuc", &["X"], &with(vec![t, Record::Thread(None)]));
     assert!(e.contains("a threading cycle is not supported for an inverted axis"), "{e}");

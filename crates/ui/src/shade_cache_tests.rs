@@ -30,6 +30,26 @@ fn switches_that_are_off_build_no_shade_data() {
     assert_eq!(builds(&st), (0, 0), "Performance costs nothing");
 }
 
+/// Both wireframe modes draw no lit face and no shadow, so the switches
+/// build nothing there. "Wireframe, see-through" (#2636) is a wireframe mode.
+#[test]
+fn the_wireframe_modes_build_no_shade_data() {
+    use crate::state::DisplayMode;
+    let mut st = State::new();
+    block(&st, "Part", 0.0);
+    st.ground_shadow = true;
+    st.ambient_occlusion = true;
+    for mode in [DisplayMode::Wireframe, DisplayMode::WireframeSeeThrough] {
+        st.display = mode;
+        let s = world::collect(&st);
+        assert!(s.shade.shadow.is_empty() && s.shade.occlusion.is_empty(), "{mode:?}");
+    }
+    assert_eq!(builds(&st), (0, 0), "a wireframe mode builds no shade data");
+    st.display = DisplayMode::ShadedEdges;
+    let _ = world::collect(&st);
+    assert_eq!(builds(&st), (1, 1), "a shaded mode builds the two");
+}
+
 #[test]
 fn a_still_frame_builds_no_shadow_data_and_a_moved_body_builds_again() {
     let mut st = State::new();
