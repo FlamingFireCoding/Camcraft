@@ -33,10 +33,20 @@ pub(super) fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The demo projects' output directory: `CAMCRAFT_GUIDE_PROJECTS_OUT` when
+/// set (the `cargo xtask docs-images` and catalog-media runs), else a
+/// directory of this test process only (#2543). A fixed name under the
+/// shared temp dir is owned by whichever account made it first; on a
+/// runner where another account made it, the save fails with
+/// "Permission denied", and two concurrent runs write the same files.
 pub(super) fn projects_dir() -> PathBuf {
     std::env::var_os("CAMCRAFT_GUIDE_PROJECTS_OUT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("camcraft-guide-projects"))
+        .unwrap_or_else(own_projects_dir)
+}
+
+fn own_projects_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("camcraft-guide-projects-{}", std::process::id()))
 }
 
 fn run<C: Command + 'static>(world: &World, h: &mut History, cmd: Result<C, camcraft_app::commands::CommandError>, label: &str) {
@@ -204,7 +214,7 @@ pub(super) fn build_3d_world() -> World {
         bottom_z: Height::of(HeightReference::BottomOfModel, 0.0),
         stepdown: 2.0, feed: 1200.0, plunge_feed: 300.0, climb: true,
         strategy: PocketStrategy::Waterline, entry: Entry3D::Helix, helix_radius: 1.5,
-        links: Links::ROUGH3D, rest_rough: false, optimal_load: 0.25, feed_opt: false, shell: false,
+        links: Links::ROUGH3D, rest_rough: false, optimal_load: 0.25, feed_opt: false, shell: false, method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
     });
     create_and_gen(&world, &mut h, "3D Finish1", "BN-0600", SrcRef::Entity("Mold".into()), OpParams::Finish3D {
         pattern: FinishPattern::Parallel, stepover: Some(2.0), tolerance: 0.08,
@@ -214,6 +224,9 @@ pub(super) fn build_3d_world() -> World {
         feed: 900.0, plunge_feed: 250.0, climb: true, ramp: true, min_step: None,
         ramp_angle: 45.0, entry_ramp: false, steep_stepover: None,
         pencil_reference: None, fill_openings: None,
+        // #1713: the guide walkthrough posts without gap links - the
+        // Jump link is the pre-gap-link behaviour, as the text states.
+        gap_link: camcraft_app::finishing3d::GapLink::Jump,
     });
     world
 }
@@ -274,6 +287,22 @@ fn demo_projects_build_and_load_with_valid_paths() {
         let world = World::new();
         let notes = project::load_noted(&world, &path).unwrap_or_else(|e| panic!("load {file}: {e}"));
         assert!(notes.is_empty(), "{file} had reload notes: {notes:?}");
+    }
+    // A directory of this process only: remove it, so that runs leave no files behind.
+    if dir == own_projects_dir() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[test]
+fn default_projects_dir_belongs_to_this_process() {
+    // #2543: a fixed shared temp path failed on a runner where another account owned it.
+    let dir = own_projects_dir();
+    assert!(dir.starts_with(std::env::temp_dir()));
+    let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    assert_eq!(name, format!("camcraft-guide-projects-{}", std::process::id()));
+    if std::env::var_os("CAMCRAFT_GUIDE_PROJECTS_OUT").is_none() {
+        assert_eq!(projects_dir(), dir);
     }
 }
 

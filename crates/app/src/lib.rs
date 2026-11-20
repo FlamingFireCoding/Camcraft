@@ -21,6 +21,7 @@ pub mod fixture_profile;
 // #339 slice 6: the user fixture library file.
 pub mod fixture_library;
 pub mod step_source;
+pub mod model_source;
 pub mod fixture_carried;
 // #561: locate the part in a fixture (or the fixture on the part) by mates.
 pub mod fixture_clash;
@@ -46,10 +47,14 @@ pub mod machine;
 // #25: deviation classes on the machined mesh.
 pub mod machined_classes;
 pub mod mcp;
+// #1945: AI provider endpoints, wire formats, keys and the HTTP client.
+pub mod ai;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
 pub mod mesh_open;
+pub mod mesh_solids;
+pub mod model_vouch;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;
@@ -90,17 +95,23 @@ pub mod ribbon;
 pub mod rotary_stack;
 pub mod schema;
 pub mod script;
+// #1862: DXF profiles placed on a setup's stock, and the virtual model reference.
+pub use camcraft_geometry::sketch_data;
+pub mod sketch;
+pub mod sketch_model;
 pub mod setup;
 pub mod setup_offsets;
 // #326: the part's alignment per setup.
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
+// #870: the WCS origin said in words ("top of stock, front-left corner").
+pub mod setup_origin;
 // #316: transforms between setups and the setup-relative link.
 pub mod setup_relative;
 // #1510: a tilted milling WCS is refused at generation.
 pub mod setup_wcs_tilt;
-// #1720: a flipped WCS axis is stored, and refused at post and generation.
+// #1720, #1649: a flipped WCS axis is stored; the post mirrors X/Y and refuses the rest.
 pub mod setup_wcs_flip;
 pub mod setup_post_options;
 // #1031: a setup's workholding (chuck/collet) rpm limit.
@@ -134,6 +145,7 @@ pub mod stock_play_worker;
 pub mod stock_turn;
 pub mod stock_view;
 pub mod tool_library;
+pub mod tool_table;
 pub mod tool_list;
 pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.
@@ -146,6 +158,8 @@ pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;
 pub use camcraft_tools::cutting_rows as tool_cutting_rows;
 pub use camcraft_tools::waterjet as waterjet_tools;
+// #1521: a torch's cut-data recipe per material and plate thickness.
+pub use camcraft_tools::plasma_cut as plasma_cut_tools;
 pub use camcraft_tools::wire as wire_tools;
 // #93: the drawn spun profile of a milling holder.
 pub use camcraft_tools::spun;

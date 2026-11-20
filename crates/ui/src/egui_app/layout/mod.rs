@@ -13,6 +13,10 @@
 
 mod controls;
 mod form;
+/// #2339: the saved panel arrangements - the dock's JSON, the start load.
+pub(crate) mod setups;
+// #2516: Tab, Shift+Tab and Enter over the pane's value fields.
+pub mod field_ring;
 pub(crate) use controls::*;
 pub(crate) use form::*;
 #[cfg(test)]
@@ -168,6 +172,11 @@ pub(crate) fn settle(state: &mut State, dock: &mut DockState<Tab>) {
     if let Some(req) = state.layout_request.take() {
         apply(dock, req);
     }
+    // #2339: the Panel setups window files one ask; the dock is read or
+    // swapped here, where the shell keeps it.
+    if let Some(ask) = state.panel_setup_ask.take() {
+        setups::apply_ask(state, dock, ask);
+    }
     state.panels_open = panels_open(dock);
     // #2262: the tab's own X closes the panel too, so the flag follows the dock.
     state.debug_info_open = is_open(dock, &Tab::DebugInfo);
@@ -181,15 +190,18 @@ pub(crate) enum ViewRow {
     /// Listed, always checked, inert: the viewport cannot close.
     Viewport,
     Panel(Panel),
+    /// #2339: open the Panel setups window (save, load, delete).
+    Setups,
     Reset,
 }
 
-const ROWS: [ViewRow; 6] = [
+const ROWS: [ViewRow; 7] = [
     ViewRow::Viewport,
     ViewRow::Panel(Panel::Browser),
     ViewRow::Panel(Panel::Properties),
     ViewRow::Panel(Panel::Machines),
     ViewRow::Panel(Panel::AiChat),
+    ViewRow::Setups,
     ViewRow::Reset,
 ];
 
@@ -200,6 +212,7 @@ fn row_label(r: ViewRow) -> &'static str {
         ViewRow::Panel(Panel::Properties) => "Properties",
         ViewRow::Panel(Panel::Machines) => "Machines",
         ViewRow::Panel(Panel::AiChat) => "AI Chat",
+        ViewRow::Setups => "Panel setups...",
         ViewRow::Reset => "Reset layout",
     }
 }
@@ -245,7 +258,8 @@ pub(super) fn view_drop(
         state.ribbon_view_open = false;
         return;
     };
-    let w = rows.first().map_or(0.0, |(_, r)| r.width());
+    let g = pal.dropdown();
+    let w = rows.first().map_or(g.menu_width, |(_, r)| r.width());
     let panel = Rect::from_min_size(top, Vec2::new(w, rows.len() as f32 * pal.row_height));
     let open = state.panels_open;
     let mut chose: Option<ViewRow> = None;
@@ -271,13 +285,13 @@ pub(super) fn view_drop(
                 let checked = match row {
                     ViewRow::Viewport => Some(true),
                     ViewRow::Panel(pn) => Some(open.get(*pn)),
-                    ViewRow::Reset => None,
+                    ViewRow::Setups | ViewRow::Reset => None,
                 };
                 super::painted::menu_item(&resp, row_label(*row), live, checked);
                 if let Some(on) = checked {
                     let b = Rect::from_center_size(
-                        r.left_center() + Vec2::new(14.0, 0.0),
-                        Vec2::splat(10.0),
+                        r.left_center() + Vec2::new(g.box_center_x, 0.0),
+                        Vec2::splat(g.box_px),
                     );
                     p.rect_stroke(
                         b,
@@ -290,7 +304,7 @@ pub(super) fn view_drop(
                     }
                 }
                 p.text(
-                    r.left_center() + Vec2::new(28.0, 0.0),
+                    r.left_center() + Vec2::new(g.icon_text_x, 0.0),
                     egui::Align2::LEFT_CENTER,
                     row_label(*row),
                     egui::FontId::proportional(pal.font_row),
@@ -313,6 +327,10 @@ pub(super) fn view_drop(
             state.layout_request = Some(LayoutRequest::Toggle(p));
             state.ribbon_view_open = false;
         }
+        Some(ViewRow::Setups) => {
+            state.panel_setups_open = true;
+            state.ribbon_view_open = false;
+        }
         Some(ViewRow::Reset) => {
             state.layout_request = Some(LayoutRequest::Reset);
             state.ribbon_view_open = false;
@@ -321,7 +339,7 @@ pub(super) fn view_drop(
             let outside = ui.input(|i| {
                 i.pointer.button_pressed(egui::PointerButton::Primary)
                     && i.pointer.interact_pos().is_none_or(|p| {
-                        !button.expand(2.0).contains(p) && !rows.iter().any(|(_, r)| r.contains(p))
+                        !button.expand(g.gap).contains(p) && !rows.iter().any(|(_, r)| r.contains(p))
                     })
             });
             if outside {

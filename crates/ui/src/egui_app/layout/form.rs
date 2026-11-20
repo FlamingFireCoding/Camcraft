@@ -2,7 +2,7 @@
 //! understand, hard to read"): every page lays its fields out through
 //! these helpers, so the whole operation dialog reads one way -
 //!
-//! - a property grid: label LEFT in a fixed-width column, control RIGHT
+//! - a property grid: label LEFT in a responsive column, control RIGHT
 //!   on the same row, right-aligned and compact ([`prop_row`],
 //!   [`check_row`], [`prop_grid`]);
 //! - units as a suffix on the value, never in the label
@@ -26,10 +26,9 @@
 //! is the generic pattern of desktop property inspectors. No vendor
 //! material, strings or layouts copied.
 
-use egui::{Align, Button, Color32, DragValue, Id, Label, Layout, Response, RichText, Ui, Vec2};
+use egui::{Align, Button, Color32, DragValue, Id, Label, Layout, Response, RichText, TextEdit, Ui, Vec2};
 
-/// The label column's width - one value, so every row of every page
-/// lines up.
+/// The label column's minimum width when the pane has room.
 pub const LABEL_W: f32 = 120.0;
 /// A compact control's width (combos, numbers).
 pub const CTRL_W: f32 = 96.0;
@@ -48,8 +47,11 @@ fn remember(ui: &Ui, r: &Response) {
 
 fn label_cell(ui: &mut Ui, label: &str) -> Response {
     let h = ui.spacing().interact_size.y;
-    ui.allocate_ui_with_layout(Vec2::new(LABEL_W, h), Layout::left_to_right(Align::Center), |ui| {
-        ui.set_min_width(LABEL_W);
+    let available = (ui.available_width() - ui.spacing().item_spacing.x).max(0.0);
+    // Share spare width with labels while keeping a compact control reachable.
+    let width = (available * 0.5).max(LABEL_W).min((available - CTRL_W).max(0.0));
+    ui.allocate_ui_with_layout(Vec2::new(width, h), Layout::left_to_right(Align::Center), |ui| {
+        ui.set_min_width(width);
         ui.add(Label::new(label).truncate())
     })
     .inner
@@ -83,19 +85,25 @@ pub fn prop_row_hint<R>(ui: &mut Ui, label: &str, help: &str, add: impl FnOnce(&
     out
 }
 
+/// A property row whose control is a single-line text field, named by the
+/// row's label (#1119). `width` sizes the field; the label keeps its cell.
+pub fn text_row(ui: &mut Ui, label: &str, text: &mut String, id_salt: &str, width: f32) -> Response {
+    prop_row(ui, label, |ui| {
+        let mut r = ui.add(TextEdit::singleline(text).id_salt(id_salt).desired_width(width));
+        if let Some(l) = row_label_id(ui) {
+            r = r.labelled_by(l);
+        }
+        r
+    })
+}
+
 /// A checkbox as a property row: the caption is the row's label, the
 /// box sits in the control column. Returns the box's response (callers
 /// read `.changed()`).
 pub fn check_row(ui: &mut Ui, label: &str, v: &mut bool) -> Response {
     ui.horizontal(|ui| {
         // The caption toggles too, as a checkbox's own text would.
-        let h = ui.spacing().interact_size.y;
-        let lab = ui
-            .allocate_ui_with_layout(Vec2::new(LABEL_W, h), Layout::left_to_right(Align::Center), |ui| {
-                ui.set_min_width(LABEL_W);
-                ui.add(Label::new(label).truncate())
-            })
-            .inner;
+        let lab = label_cell(ui, label);
         remember(ui, &lab);
         let hit = ui.interact(lab.rect, lab.id.with("toggle"), egui::Sense::click());
         let mut r = ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.checkbox(v, "")).inner.labelled_by(lab.id);
@@ -179,16 +187,25 @@ pub fn group_open<R>(
     let state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, default_open);
     let mut toggled = false;
     let mut on = true;
-    let header = state.show_header(ui, |ui| {
+    let mut title_clicked = false;
+    let mut header = state.show_header(ui, |ui| {
         if let Some(e) = enabled {
             toggled = ui.checkbox(e, "").on_hover_text(format!("use {title}")).changed();
             on = *e;
         }
-        ui.label(RichText::new(title).strong());
+        // The title folds the group as the arrow does: a header that names
+        // a group reads as its handle.
+        title_clicked = ui
+            .add(Label::new(RichText::new(title).strong()).sense(egui::Sense::click()))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked();
     });
+    if title_clicked {
+        header.toggle();
+    }
     let body = header.body(|ui| {
         if on {
-            Some(egui::Frame::NONE.inner_margin(egui::Margin { left: 2, right: 0, top: 0, bottom: 2 }).show(ui, add).inner)
+            Some(egui::Frame::NONE.inner_margin(egui::Margin { left: 2, right: 0, top: 0, bottom: 2 }).show(ui, |ui| super::field_ring::in_group(ui, id, add)).inner)
         } else {
             None
         }

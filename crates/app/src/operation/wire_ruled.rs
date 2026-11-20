@@ -70,7 +70,7 @@ pub(super) fn picks_of(world: &World, op: &Operation) -> Option<Result<RuledPick
 
 /// One pick as a flat profile.
 fn profile(world: &World, setup: Option<&str>, g: &GeoSel) -> Result<Picked, GenError> {
-    let label = format!("{} of '{}'", g.feature, g.entity);
+    let label = crate::pick::geo_label(world, g);
     let Some(entity) = model::find_by_name(world, &g.entity) else {
         return Err(GenError::Invalid(format!("the selection names '{}', which is gone", g.entity)));
     };
@@ -206,6 +206,7 @@ pub(super) fn generate(
         top_z: top,
         pairing,
         tolerance: four.tolerance,
+        heal_tolerance: 0.0,
         widening: four.widening,
         max_deg: cond.max_taper_deg,
         machine: cond.machine.clone(),

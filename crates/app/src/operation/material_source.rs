@@ -87,6 +87,13 @@ pub(super) fn standing_above(material: &Material, z: f64) -> Option<Region> {
     slice::project(&above, FOOTPRINT_SAMPLES).ok()
 }
 
+/// The outline of the material standing at or above the plane `z`
+/// (#2437): [`standing_above`] read 1 um below it, so a face whose top
+/// lies on the plane counts. `None` as there (every hole lifted).
+pub(super) fn standing_at(material: &Material, z: f64) -> Option<Region> {
+    standing_above(material, z - 1e-3)
+}
+
 pub(super) fn region_core(
     material: &Material,
     params: &OpParams,
@@ -203,14 +210,22 @@ fn source_region(
         | OpParams::Engrave { .. }
         | OpParams::Trace { .. } => {
             let z = z?;
-            section(&material.facets, z - oz)
+            section(&material.facets, &material.bodies, z - oz)
         }
         // The chamfer ride's machine area is the edge the cone lies
-        // along: the section at the apex plane - a boundary ride the
-        // contour's way (M2.4 B).
-        OpParams::Chamfer2D { .. } => {
-            let z = z?;
-            section(&material.facets, z - oz)
+        // along - a boundary ride the contour's way (M2.4 B). #2435: the
+        // tip touches the WALL at the corner depth, not the top plane's
+        // outline - on a model whose edge is already bevelled that
+        // outline is the bevel's top edge, inside the wall. Each top
+        // edge rides the wall section under it (a vertical wall: the
+        // top loop itself, unchanged); a top edge with no wall within
+        // the width refuses by name.
+        OpParams::Chamfer2D { width, angle_deg, .. } => {
+            let z = z? - oz;
+            let corner_z = z - width * angle_deg.to_radians().tan();
+            let top = section(&material.facets, &material.bodies, z)?;
+            let wall = section(&material.facets, &material.bodies, corner_z)?;
+            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z)
         }
         // #1731: the Slot's machine area is the stadium of its EXTENDED
         // ends - the channel the pass is asked to cut. Where the

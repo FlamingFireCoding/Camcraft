@@ -20,7 +20,7 @@ use camcraft_app::commands::{
     ActivateSetup, SetSetupRelative, SetSetupStockSource, SetSetupWorkOffset, AddTool, HolderPick, ApplyCuttingData, ChangeOperationKind, ChangeTool, CommandError, CreateOperation,
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, History, ImportModel,
-    MoveModel, PasteOperation, RegenerateAll, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
+    MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
     SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
@@ -46,6 +46,9 @@ mod browser;
 mod picked;
 #[cfg(test)]
 pub(crate) use picked::opens_a_chooser;
+#[cfg(test)]
+#[path = "state_test_import.rs"]
+mod test_import;
 #[path = "state_program_info.rs"]
 mod program_info;
 #[path = "state_tool_library.rs"]
@@ -63,6 +66,8 @@ mod setup_workholding;
 mod fixture_view;
 #[path = "state_locate.rs"]
 mod locate_ui;
+#[path = "state_move_by.rs"]
+mod move_by;
 #[path = "state_fixture_turn.rs"]
 mod fixture_turn_ui;
 pub(crate) use fixture_turn_ui::euler_deg;
@@ -112,8 +117,12 @@ mod wcs_ui;
 mod view_prefs_ui;
 #[path = "state_prefs.rs"]
 mod prefs_ui;
+#[path = "state_setups.rs"]
+mod setups_ui;
 #[path = "state_step_budget.rs"]
 mod step_budget_ui;
+#[path = "state_vouch.rs"]
+mod vouch_ui;
 pub use step_budget_ui::StepBudgetUi;
 pub use tool_profile_ui::{ToolColumn, ToolProfileUi, is_spun_kind, parametric_points};
 use flecs_ecs::prelude::World;
@@ -379,7 +388,7 @@ pub enum CommandKind {
         src: SrcRef,
         params: OpParams,
     },
-    PasteOperation { name: String, operation: OperationDef },
+    PasteOperation { name: String, operation: OperationDef, needs_review: Vec<String> },
     /// The properties page's parameter draft.
     EditOperationParams {
         name: String,
@@ -390,7 +399,8 @@ pub enum CommandKind {
     DetectedHoles {
         name: String,
         params: OpParams,
-        skipped: Vec<String>,
+        /// The skipped and the undersize holes' sentences (#1556, #2496).
+        notes: Vec<String>,
     },
     /// The same draft with its Boundary group (M11.5): one undo unit.
     EditOperationBoundary {
@@ -447,6 +457,7 @@ pub enum CommandKind {
     DeleteOperation(String),
     RenameOperation { name: String, label: String },
     ReorderOperation { name: String, target: String, after: bool },
+    MarkOperationReviewed(String),
     /// Throw away the operation's generated path and keep the operation
     /// (undoable: the cache comes back byte for byte).
     ClearToolpath(String),
@@ -574,6 +585,9 @@ pub enum CommandKind {
         setup: Option<String>,
     },
     UntagFixture(String),
+    /// #2463: the Browser's Unlink on a linked model, one undo step: its
+    /// file is no longer checked.
+    UnlinkModel(String),
     /// Whether the steel stands still while a rotary turns the part
     /// (M13.8 (2)): the fixtures page's check row, one undo unit.
     SetFixtureFixed {
@@ -724,6 +738,23 @@ pub enum CommandKind {
         pitch_deg: f64,
         yaw_deg: f64,
     },
+    /// A viewport handle drag's release (#1198 b): slide part `name` by
+    /// `delta` mm in the SHOWN frame (the active setup's). The drain turns
+    /// it into the one `MoveModel` the Model page runs, rotation kept bit
+    /// for bit - one undo step per drag, no new placement path.
+    MoveModelBy {
+        name: String,
+        delta: [f64; 3],
+    },
+    /// A viewport ring drag's release (#2047): turn part `name` by
+    /// `angle_rad` about SHOWN axis `axis` (0 X, 1 Y, 2 Z) through its
+    /// bounding-box centre. The drain turns it into the one `MoveModel`
+    /// the Model page's rotation fields run - one undo step per drag.
+    TurnModelBy {
+        name: String,
+        axis: usize,
+        angle_rad: f64,
+    },
     /// Mesh repair (M13.11): weld within `weld_tol` (mm) and fill every
     /// boundary loop of at most `max_hole_edges` edges, one undo unit
     /// over the model's facets. Only ever by this verb - never on
@@ -732,6 +763,12 @@ pub enum CommandKind {
         name: String,
         weld_tol: f64,
         max_hole_edges: usize,
+    },
+    /// #1339: `by` vouches for the mesh of the model `name`, which is of
+    /// unknown fidelity; one undo unit, refused by name on any other mesh.
+    VouchModelFidelity {
+        name: String,
+        by: String,
     },
     /// Setup sheets (M3.2 stage D): render every setup and write the
     /// flip chart, one page per setup, form feeds as page breaks. The
@@ -1011,14 +1048,6 @@ pub struct GeoChip {
     pub sel: GeoSel,
     pub label: String,
     pub missing: bool,
-}
-
-/// A feature id as the chips show it: the 16 hex digits, shortened to
-/// head and tail with an ellipsis. Long enough to tell two picks of one
-/// model apart at a glance, short enough for a chip row to stay one row.
-fn short_id(id: u64) -> String {
-    let h = format!("{id:016x}");
-    format!("{}…{}", &h[..4], &h[14..])
 }
 
 /// XY vertex set of a ring, quantized and sorted: the identity a patch
@@ -1356,6 +1385,8 @@ pub enum BoundaryPick {
     Open,
     /// An existing entry of `AreaControls::extra` (M11.5 UX re-pick).
     Extra(usize),
+    /// Protected faces and edges for "Do not touch" (#2055).
+    DoNotTouch,
 }
 
 /// What a viewport click selects. Transient view state - the mode
@@ -1378,8 +1409,9 @@ pub enum GeoPick {
     Vertex,
 }
 
-/// How the viewport paints solid geometry. Transient view state - like
-/// the camera and [`GeoPick`], never a command, never saved. The wire is
+/// How the viewport paints solid geometry. View state - like the camera
+/// and [`GeoPick`], never a command; a kept preference since #2818, never
+/// in the project file. The wire is
 /// always the same feature-edge set (`geometry::feature`, crease and
 /// boundary); the modes differ in what happens *behind* it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1387,10 +1419,19 @@ pub enum DisplayMode {
     /// Flat-shaded faces with the CAD wire over them - the default look.
     #[default]
     ShadedEdges,
+    /// Flat-shaded faces only (#2818): no wire on the model or the stock.
+    Shaded,
     /// Wireframe only: faces go to the depth buffer and nowhere else, so
     /// the model reads as a hidden-line drawing; the stock - never a
     /// surface you trust to occlude anything - draws as its full wire.
     Wireframe,
+    /// Shaded with the wire, and the edges behind the faces draw too, in a
+    /// lighter tone (#2818).
+    ShadedHiddenEdges,
+    /// Wireframe with no hidden-line removal (#2636): each edge draws,
+    /// front and back, and no face goes to the depth buffer, so the model
+    /// hides nothing behind it.
+    WireframeSeeThrough,
 }
 
 /// The thing under the cursor, from the viewport hover pass: the named
@@ -1523,6 +1564,19 @@ pub enum LayoutRequest {
     Reset,
 }
 
+/// A saved-setup ask from the Panel setups window (#2339). The dock lives
+/// beside `State` in the shell, so the window cannot read or swap it: the
+/// window files one ask and the shell answers on the same frame.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PanelSetupAsk {
+    /// Save this frame's arrangement under the typed name.
+    Save(String),
+    /// Put a saved arrangement back.
+    Load(String),
+    /// Forget a saved arrangement.
+    Delete(String),
+}
+
 /// Which closable panels the dock holds this frame - mirrored from the
 /// dock by the shell before the ribbon draws, so the View door's
 /// checkmarks read the truth without the ribbon touching the dock.
@@ -1550,6 +1604,7 @@ impl PanelsOpen {
 /// toolpaths are intentionally absent: Paste creates a fresh operation.
 #[derive(Clone)]
 pub struct OperationClipboard {
+    pub needs_review: Vec<String>,
     pub label: String,
     pub operation: OperationDef,
 }
@@ -1656,6 +1711,22 @@ pub struct State {
     /// Off by default, shown as off. View state like the axes toggle -
     /// not undoable, not saved; flipped from the viewport's nav column.
     pub pick_through: bool,
+    /// The bar's Move mode (#1198 b): the one selected part wears drag
+    /// handles. View state like the pick-through toggle - not undoable,
+    /// not saved; off by default so a plain click-drag still orbits.
+    pub move_handles: bool,
+    /// A handle drag in flight (#1198 b): the ephemeral preview. Only
+    /// its release reaches history, as one `MoveModelBy`.
+    pub body_drag: Option<crate::move_drag::BodyDrag>,
+    /// The bar's Rotate mode (#2047): the one selected part wears turn
+    /// rings. View state, off by default; never on with Move mode.
+    pub rotate_handles: bool,
+    /// A ring drag in flight (#2047): the ephemeral preview. Only its
+    /// release reaches history, as one `TurnModelBy`.
+    pub body_turn: Option<crate::turn_drag::TurnDrag>,
+    /// The bottom bar's Move / Rotate strip state (#1198 d): axis, typed
+    /// distance/angle draft and Shift-snap steps (view state, never saved).
+    pub handle_bar: crate::egui_app::viewport_bar::HandleBarState,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -1670,10 +1741,18 @@ pub struct State {
     /// the one the tree highlights. View state like the camera - not
     /// undoable, not saved; the overlay rebuild gate reads it.
     pub show_all_paths: bool,
-    /// How solids paint: shaded-with-wire or hidden-line wireframe. View
-    /// state like the camera - not undoable, not saved; the render call
-    /// reads it, nothing in the document does.
+    /// How solids paint: one of the four display modes. View state like
+    /// the camera - not undoable; the render call reads it, nothing in the
+    /// document does. A kept preference since #2818 (`state_view`).
     pub display: DisplayMode,
+    /// The viewport's Display menu is open (#2818). Ephemeral.
+    pub display_menu_open: bool,
+    /// "Look at a face" waits for one click in the viewport (#2818).
+    /// Ephemeral view state, never a command.
+    pub look_at_armed: bool,
+    /// Show the ground grid (#2818). View state and a kept preference;
+    /// the grid also needs `show_world_axes`.
+    pub show_grid: bool,
     /// M1.7c move simulation: None while off, [`Sim`] while the
     /// transport bar is up. View state like the camera - what it holds
     /// is only the playhead; the timeline is rebuilt from the world
@@ -1691,6 +1770,12 @@ pub struct State {
     /// floating). Mirrored from the dock each frame by `layout::settle`;
     /// view state - never a command.
     pub debug_info_open: bool,
+    /// #1696: the Report an issue window is open. View state - never a
+    /// command, never saved.
+    pub report_open: bool,
+    /// #1696: the title typed into the Report window, kept between visits
+    /// so a mis-click does not lose it. View state, never saved.
+    pub report_title: String,
     /// #2262: the frame-rate reading and its log rule, fed once a frame.
     pub frame_rate: crate::egui_app::frame_rate::FrameRate,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
@@ -1720,6 +1805,10 @@ pub struct State {
     /// is gone. Display-only (a Mutex because the scene is collected
     /// from `&State`).
     pub sim_tool_cache: std::sync::Mutex<camcraft_app::sim_tool_body::SimToolCache>,
+    /// The move handles' centre of the dragged body (#1198, #2238): walked
+    /// only when the facets or the shown pose change. Display-only (a Mutex
+    /// because the handles are read from `&State`).
+    pub move_center: std::sync::Mutex<crate::move_drag::CenterCache>,
     /// What `field_view` was walked for: (transport up, Deviate armed,
     /// the document version a playback plan was frozen at). A change
     /// retires the view and the playback - never a stale picture.
@@ -1743,6 +1832,9 @@ pub struct State {
     /// The Theme door's open flag (#441): the same dropdown law as
     /// `ribbon_view_open` - a frame fact, one door open at a time.
     pub ribbon_theme_open: bool,
+    /// #2384: the start page is up, opened over this `doc_version`; a
+    /// changed document closes it (`egui_app::home::is_open`). View state.
+    pub home_page: Option<u64>,
     /// The open recent-files drop-down (#662) under the Open (projects)
     /// or Model (models) button - the same door law, one open at a time.
     pub ribbon_recent_open: Option<camcraft_app::recent::RecentKind>,
@@ -1766,6 +1858,18 @@ pub struct State {
     pub panels_open: PanelsOpen,
     /// The View door's pending dock ask (see [`LayoutRequest`]).
     pub layout_request: Option<LayoutRequest>,
+    /// #2339: the saved panel arrangements. Application settings like the
+    /// theme - the screen's, never the project file's.
+    pub panel_setups: camcraft_app::prefs::PanelSetups,
+    /// Where the saved arrangements are written back; `None` (every
+    /// headless State) keeps them in memory only.
+    pub panel_setups_store: Option<PathBuf>,
+    /// The Panel setups window's open flag - a frame fact like the doors.
+    pub panel_setups_open: bool,
+    /// The window's name field, as typed.
+    pub setup_name_draft: String,
+    /// The window's pending dock ask (see [`PanelSetupAsk`]).
+    pub panel_setup_ask: Option<PanelSetupAsk>,
     /// The browser row whose retype menu stands open (M9.1): the op's
     /// name, anchored to its row and recomputed per frame like the
     /// ribbon's dropdowns - a frame fact, not a document fact; the
@@ -1809,6 +1913,8 @@ pub struct State {
     import_started: Option<Instant>,
     /// Imports queued while one is already running (drained FIFO on finish).
     import_queue: VecDeque<PathBuf>,
+    /// #2463: the check of the linked models' files (view state).
+    pub(crate) link_watch: crate::model_link_watch::LinkWatch,
     /// #2257: toolpath generation on a worker, for the viewport's
     /// progress overlay (`crate::gen_worker`).
     pub gen_jobs: crate::gen_worker::GenJobs,
@@ -1836,6 +1942,9 @@ pub struct State {
     /// #1054: the STEP facet budget the next import runs under (an import
     /// setting, not on the history; the import that uses it is).
     pub step_budget: StepBudgetUi,
+    /// #1339: the name typed on the model page's vouch row (a draft; the
+    /// vouch itself is `CommandKind::VouchModelFidelity`).
+    pub vouch_by: String,
     /// #789: each built-in accessory row's size draft, by name - view
     /// state; Apply lands it through `SetAccessory`.
     pub accessory_sizes: HashMap<String, AccessorySizeDraft>,
@@ -1939,13 +2048,19 @@ pub struct State {
     /// Whether Properties is the visible dock tab this frame.
     pub properties_shown: bool,
     pub tool_ui: ToolUi,
-    /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
-    /// that tool, `Some("")` the blank creation form. Ephemeral window
-    /// state - never a command, never saved, never
-    /// undoable; the edits it drives are. `State::drain_actions` closes it
-    /// when the named tool vanishes (the ghost law, mirrored from
+    /// #2397: the tool shape editor window - `None` closed, `Some(name)`
+    /// editing that tool's body, profile and holder. The settings stay in
+    /// Properties; this window is the shape surface alone. Ephemeral
+    /// window state - never a command, never saved, never undoable; the
+    /// edits it drives are. `State::drain_actions` closes it when the named
+    /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
-    pub tool_editor: Option<String>,
+    pub tool_shape_editor: Option<String>,
+    /// #2397: Properties is showing the blank new-tool form. The Tool
+    /// target with the empty name is the destination; this says which of
+    /// its two faces shows - the pointer to the library, or the draft.
+    /// Ephemeral like [`State::tool_ui`]; a retarget drops it.
+    pub new_tool_form: bool,
     /// #371: the tool editor's body draft (imported mesh, placement,
     /// pick mode). Ephemeral like `tool_ui`; Apply body is the command.
     pub tool_body_ui: ToolBodyUi,
@@ -1956,7 +2071,7 @@ pub struct State {
     /// is the command.
     pub tool_cutter_ui: ToolCutterUi,
     /// The machine editor window (M3.3 stage C): `None` closed. An
-    /// ephemeral draft like [`State::tool_editor`] - the numbers under
+    /// ephemeral draft like [`State::tool_shape_editor`] - the numbers under
     /// edit are a copy of the machine until Apply pushes `LoadMachine`,
     /// which is the command, which is the undo.
     pub machine_editor: Option<crate::egui_app::machine_editor::MachineEditor>,
@@ -2012,6 +2127,12 @@ pub struct State {
     /// Display-only and ephemeral: never cached on the operation, freed
     /// with the refusal it belongs to.
     pub feedback_ghost: Option<camcraft_app::machining2d::Ghost>,
+    /// #2201: the resolved pick outlines, keyed by their inputs (the picks,
+    /// each body's features and pose), not by a document counter.
+    pub(crate) pick_highlight: crate::pick_highlight::HighlightCache,
+    /// #2201: each body's world-space vertices, keyed by its facet
+    /// allocation and its pose.
+    pub(crate) frame_cache: crate::frame_cache::FrameCache,
 }
 
 /// Which page of the Operations pane a refused command's message belongs
@@ -2115,6 +2236,8 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            report_open: false,
+            report_title: String::new(),
             frame_rate: crate::egui_app::frame_rate::FrameRate::default(),
             gpu_line: None,
             spindle_as_vc: false,
@@ -2161,9 +2284,17 @@ impl State {
             cam: Camera::default(),
             show_world_axes: true,
             pick_through: false,
+            move_handles: false,
+            body_drag: None,
+            rotate_handles: false,
+            body_turn: None,
+            handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),
+            display_menu_open: false,
+            look_at_armed: false,
+            show_grid: true,
             sim: None,
             post_view: None,
             post_refusal: None,
@@ -2172,12 +2303,14 @@ impl State {
             field_play: None,
             sim_script_cache: None,
             sim_tool_cache: std::sync::Mutex::default(),
+            move_center: std::sync::Mutex::default(),
             field_mode: None,
             stock_mesh: camcraft_app::stock_export::MeshCache::default(),
             ribbon_more: None,
             ribbon_mode_open: false,
             ribbon_view_open: false,
             ribbon_theme_open: false,
+            home_page: None,
             ribbon_recent_open: None,
             recent: camcraft_app::recent::RecentFiles::default(),
             recent_store: None,
@@ -2186,6 +2319,11 @@ impl State {
             import_tool_holders: true,
             panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
+            panel_setups: camcraft_app::prefs::PanelSetups::default(),
+            panel_setups_store: None,
+            panel_setups_open: false,
+            setup_name_draft: String::new(),
+            panel_setup_ask: None,
             tree_menu: None,
             retype_confirm: None,
             rename_draft: None,
@@ -2203,6 +2341,7 @@ impl State {
             import_file: None,
             import_started: None,
             import_queue: VecDeque::new(),
+            link_watch: crate::model_link_watch::LinkWatch::default(),
             gen_jobs: crate::gen_worker::GenJobs::default(),
             stock_ui: StockUi::default(),
             wcs_ui: WcsUi {
@@ -2218,6 +2357,7 @@ impl State {
             pocket_scan: PocketScan::default(),
             import_as_fixture: None,
             step_budget: StepBudgetUi::default(),
+            vouch_by: String::new(),
             accessory_sizes: HashMap::new(),
             profile_edits: HashMap::new(),
             fixture_mesh_cache: Default::default(),
@@ -2239,7 +2379,8 @@ impl State {
                 name: String::from("Tool1"),
                 ..ToolUi::default()
             },
-            tool_editor: None,
+            tool_shape_editor: None,
+            new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),
             tool_cutter_ui: ToolCutterUi::default(),
@@ -2262,6 +2403,8 @@ impl State {
             feedback_ctx: None,
             feedback_at: None,
             feedback_ghost: None,
+            pick_highlight: Default::default(),
+            frame_cache: Default::default(),
         }
     }
 
@@ -2554,14 +2697,14 @@ impl State {
         // (#312), so a click and an agent store the same holes.
         match operation::detect_holes(&self.world, name, current, op.setup.as_deref(), &op.src) {
             Err(why) => self.refuse(ErrorScope::Operation, why),
-            Ok(operation::DetectedHoles { params, skipped }) => {
+            Ok(operation::DetectedHoles { params, skipped, undersize }) => {
                 if draft {
                     self.op_ui.params = params.clone();
                 }
                 self.pending.push_back(CommandKind::DetectedHoles {
                     name: name.to_string(),
                     params,
-                    skipped,
+                    notes: skipped.into_iter().chain(undersize).collect(),
                 });
             }
         }
@@ -2609,6 +2752,7 @@ impl State {
             .iter()
             .enumerate()
             .map(|(gi, g)| {
+                let pick_name = camcraft_app::pick::geo_label(&self.world, g);
                 let (mut label, missing) = match g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
@@ -2630,8 +2774,7 @@ impl State {
                                     ('y', f.offset)
                                 };
                                 let mut label = format!(
-                                    "Face {} · {axis}={} · {} {}",
-                                    g.entity,
+                                    "{pick_name} · {axis}={} · {} {}",
                                     units::len(v, unit, 2),
                                     units::area(f.area, unit),
                                     unit.area_suffix()
@@ -2641,10 +2784,7 @@ impl State {
                                 }
                                 (label, false)
                             }
-                            None => (
-                                format!("Face {} · {} · missing", g.entity, short_id(id)),
-                                true,
-                            ),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Chain(id) => {
@@ -2681,8 +2821,7 @@ impl State {
                                         }
                                     }
                                     format!(
-                                        "Chain {} · closed · {} {} · {} × {}",
-                                        g.entity,
+                                        "{pick_name} · closed · {} {} · {} × {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         units::len(hi[0] - lo[0], unit, 1),
@@ -2692,8 +2831,7 @@ impl State {
                                     let i = run_seq.entry(g.entity.clone()).or_default();
                                     *i += 1;
                                     format!(
-                                        "Chain {} · open · {} {} · {} of {}",
-                                        g.entity,
+                                        "{pick_name} · open · {} {} · {} of {}",
                                         units::len(len, unit, 1),
                                         unit.suffix(),
                                         i,
@@ -2702,11 +2840,7 @@ impl State {
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label =
-                                    format!("Chain {} · {} · missing", g.entity, short_id(id));
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Patch(id) => {
@@ -2775,32 +2909,23 @@ impl State {
                                             ),
                                         };
                                         format!(
-                                            "Welded face {} · {shape} · {} {} · {strips} strips",
-                                            g.entity,
+                                            "{pick_name} · {shape} · {} {} · {strips} strips",
                                             units::area(shoelace(rim), unit),
                                             unit.area_suffix()
                                         )
                                     }
-                                    None => format!("Welded face {} · open band", g.entity),
+                                    None => format!("{pick_name} · open band"),
                                 };
                                 (label, false)
                             }
-                            None => {
-                                let label = format!(
-                                    "Welded face {} · {} · missing",
-                                    g.entity,
-                                    short_id(id)
-                                );
-                                (label, true)
-                            }
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                     FeatureSel::Vertex(id) => {
                         match crate::vertex_pick::vertex_world(self, &g.entity, id) {
                             Some(p) => (
                                 format!(
-                                    "Vertex {} · ({}, {}, {}) {}",
-                                    g.entity,
+                                    "{pick_name} · ({}, {}, {}) {}",
                                     units::len(p[0], unit, 2),
                                     units::len(p[1], unit, 2),
                                     units::len(p[2], unit, 2),
@@ -2808,7 +2933,7 @@ impl State {
                                 ),
                                 false,
                             ),
-                            None => (format!("Vertex {} · {} · missing", g.entity, short_id(id)), true),
+                            None => (format!("{pick_name} · missing"), true),
                         }
                     }
                 };
@@ -2865,6 +2990,7 @@ impl State {
     /// Clear selection so pane_target cannot reopen a selected operation.
     pub(crate) fn close_property_editor(&mut self) {
         self.ui_target = UiTarget::None;
+        self.new_tool_form = false;
         self.pending.push_back(CommandKind::Select(None));
         self.op_ui.name.clear();
         self.op_synced = (String::new(), self.doc_version);
@@ -2879,9 +3005,11 @@ impl State {
         self.status = format!("closed operation {name}");
     }
 
-    pub(crate) fn close_tool_editor_window(&mut self) {
-        self.tool_editor = None;
-        self.tool_synced = (String::new(), self.doc_version);
+    /// Close the tool shape editor window and drop its shape drafts
+    /// (#2397). The settings draft in Properties is not touched: it
+    /// belongs to that page, not to this window.
+    pub(crate) fn close_tool_shape_editor(&mut self) {
+        self.tool_shape_editor = None;
         self.tool_body_ui = ToolBodyUi::default();
         self.tool_profile_ui = ToolProfileUi::default();
         self.tool_cutter_ui = ToolCutterUi::default();
@@ -2897,7 +3025,10 @@ impl State {
             return;
         };
         let label = model::operation_label(&self.world, name, &entity);
-        self.operation_clipboard = Some(OperationClipboard { label: label.clone(), operation });
+        self.operation_clipboard = Some(OperationClipboard {
+            label: label.clone(), operation,
+            needs_review: model::operation_meta_of(&self.world, &entity).needs_review,
+        });
         self.status = format!("copied operation {label}");
     }
 
@@ -2923,7 +3054,7 @@ impl State {
             };
             suffix = next;
         };
-        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation });
+        self.pending.push_back(CommandKind::PasteOperation { name, operation: clip.operation, needs_review: clip.needs_review });
     }
 
     /// Names of the tool entities, in document order.
@@ -3091,6 +3222,8 @@ impl State {
         drop(s);
         let s = span("commands/import+files");
         self.poll_import();
+        // #2463: a linked model whose file changed is imported again.
+        crate::model_link_watch::check(self, Instant::now());
         // #2257: a background generation that finished since the last frame.
         self.poll_generation();
         // #31: a file the browser's picker has read since the last frame.
@@ -3101,17 +3234,16 @@ impl State {
         crate::frame_cost::time("commands/retire_feedback", || self.retire_stale_feedback());
         // #406: the incoming stock's sheet follows the open setup page.
         crate::frame_cost::time("commands/incoming_view", || crate::incoming_view::refresh(self));
-        let _s = span("commands/tool_editor");
-        // The editor window's ghost law (M1.4), mirroring `pane_target`:
-        // an open editor never keeps pointing at a name the document lost
-        // under it - deleted, undone, or swapped by New/Open all land here.
-        // The blank form creates rather than points, so it survives.
-        if let Some(name) = &self.tool_editor
+        let _s = span("commands/tool_shape_editor");
+        // The editor window's ghost law, mirroring `pane_target`: an open
+        // editor never keeps pointing at a name the document lost under it
+        // - deleted, undone, or swapped by New/Open all land here.
+        if let Some(name) = &self.tool_shape_editor
             && !name.is_empty()
             && !model::find_by_name(&self.world, name)
                 .is_some_and(|e| model::is_tool(&self.world, &e))
         {
-            self.tool_editor = None;
+            self.tool_shape_editor = None;
         }
     }
 
@@ -3331,7 +3463,8 @@ impl State {
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
             CommandKind::LoadMachineDialog => {
-                if let Some(path) = pick_machine_file() {
+                let dir = crate::egui_app::machines_pane::user_dir(self);
+                if let Some(path) = pick_machine_file(dir.as_deref()) {
                     self.load_machine_path(path);
                 }
             }
@@ -3429,12 +3562,13 @@ impl State {
             // named in the status line (or why it was left off).
             CommandKind::AddTool { name, tool } => match AddTool::with_holder(&self.world, &name, tool, HolderPick::MachineDefault) {
                 Ok(command) => {
+                    let number = command.number();
                     let note = command.note();
                     self.history.execute(&self.world, command);
                     self.doc_version += 1;
                     self.status = match note {
-                        Some(n) => format!("tool {name} added - {n}"),
-                        None => format!("tool {name} added"),
+                        Some(n) => format!("tool {name} added (T{number}) - {n}"),
+                        None => format!("tool {name} added (T{number})"),
                     };
                 }
                 Err(err) => self.refuse(ErrorScope::Tool, format!("tool not added: {err}")),
@@ -3442,12 +3576,10 @@ impl State {
             CommandKind::SetToolNumber { name, number } => {
                 match SetToolNumber::new(&self.world, &name, number) {
                     Ok(command) => {
+                        let n = command.number();
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = match number {
-                            Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} posts as its list position"),
-                        };
+                        self.status = format!("tool {name} is now T{n}");
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),
                 }
@@ -3531,8 +3663,8 @@ impl State {
                     );
                 }
             },
-            CommandKind::PasteOperation { name, operation } => {
-                match PasteOperation::new(&self.world, &name, operation) {
+            CommandKind::PasteOperation { name, operation, needs_review } => {
+                match PasteOperation::new(&self.world, &name, operation, needs_review) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         History::execute_ephemeral(&self.world, SelectEntity::new(&self.world, Some(name.as_str())));
@@ -3559,15 +3691,15 @@ impl State {
                     }
                 }
             }
-            CommandKind::DetectedHoles { name, params, skipped } => {
+            CommandKind::DetectedHoles { name, params, notes } => {
                 match EditOperationParams::new(&self.world, &name, params) {
                     Ok(command) => {
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = if skipped.is_empty() {
+                        self.status = if notes.is_empty() {
                             format!("parameters updated for {name}")
                         } else {
-                            format!("holes detected for {name}; {}", skipped.join("; "))
+                            format!("holes detected for {name}; {}", notes.join("; "))
                         };
                     }
                     Err(err) => {
@@ -3701,6 +3833,14 @@ impl State {
                     self.status = format!("operation {name} moved");
                 }
                 Err(err) => self.refuse(ErrorScope::Operation, format!("reorder failed: {err}")),
+            },
+            CommandKind::MarkOperationReviewed(name) => match MarkOperationReviewed::new(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("marked {name} reviewed");
+                }
+                Err(err) => self.refuse(ErrorScope::Operation, format!("mark reviewed failed: {err}")),
             },
             CommandKind::GenerateOperation(name) => {
                 // Generation happens in the constructor (a refusal writes
@@ -3907,6 +4047,14 @@ impl State {
                     self.refuse(ErrorScope::Setup, format!("fixture not unmarked: {err}"));
                 }
             },
+            CommandKind::UnlinkModel(name) => match camcraft_app::commands::SetModelSource::unlink(&self.world, &name) {
+                Ok(command) => {
+                    self.history.execute(&self.world, command);
+                    self.doc_version += 1;
+                    self.status = format!("unlinked {name} - its file is no longer checked");
+                }
+                Err(err) => self.refuse_drop(format!("not unlinked: {err}")),
+            },
             CommandKind::SetFixtureFixed { name, fixed } => {
                 match SetFixtureFixed::new(&self.world, &name, fixed) {
                     Ok(command) => {
@@ -3982,6 +4130,8 @@ impl State {
                     Err(err) => self.refuse(ErrorScope::Setup, format!("part not moved: {err}")),
                 }
             }
+            CommandKind::MoveModelBy { name, delta } => self.move_model_by(&name, delta),
+            CommandKind::TurnModelBy { name, axis, angle_rad } => self.turn_model_by(&name, axis, angle_rad),
             CommandKind::RepairModel { name, weld_tol, max_hole_edges } => {
                 match RepairModel::new(&self.world, &name, weld_tol, max_hole_edges) {
                     Ok(command) => {
@@ -3994,6 +4144,7 @@ impl State {
                     Err(err) => self.refuse(ErrorScope::Setup, format!("{name} not repaired: {err}")),
                 }
             }
+            CommandKind::VouchModelFidelity { name, by } => self.vouch_model(&name, &by),
             CommandKind::ImportFixtureDialog => {
                 if let Some(path) = pick_mesh_file() {
                     // Bind to the context the page shows: the active
@@ -4191,6 +4342,12 @@ impl State {
             .map_or(0.0, |t| t.elapsed().as_secs_f64());
         match result {
             Ok(command) => {
+                // #2463: a file a model is linked to lands on that model,
+                // whatever the file is called.
+                let command = match file.as_deref().and_then(|f| crate::model_link_watch::linked_name(&self.world, f)) {
+                    Some(linked) if linked != command.name => command.renamed(&linked),
+                    _ => command,
+                };
                 let name = command.name.clone();
                 // #1573 review: what the importer changed (a STEP face
                 // flipped to agree with its neighbours) is said by name.
@@ -4232,7 +4389,7 @@ impl State {
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
                     let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget).with_step_source(command.step_source)) {
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
@@ -4670,10 +4827,10 @@ fn mesh_dialog() -> crate::file_dialog::FileDialog {
 }
 
 /// The model files Model > Open and a viewport drop read, lower case. A
-/// Solidcraft `.sc` (#1456) imports its cached final body; the browser
+/// Solidcraft `.sc`/`.solidcraft` imports its cached final body; the browser
 /// build does not read it, so its picker does not offer it.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc"];
+pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp", "sc", "solidcraft"];
 #[cfg(target_arch = "wasm32")]
 pub(crate) const MODEL_EXTENSIONS: &[&str] = &["stl", "obj", "step", "stp"];
 
@@ -4681,12 +4838,16 @@ fn project_dialog() -> crate::file_dialog::FileDialog {
     crate::file_dialog::FileDialog::new().add_filter("CamCraft Project", &["camproj"])
 }
 
-fn pick_machine_file() -> Option<PathBuf> {
+fn pick_machine_file(user_dir: Option<&std::path::Path>) -> Option<PathBuf> {
     // The `.mch` layout is the machine-definition JSON format we reuse
-    // by user instruction (M2.3 C); the filter just names it.
-    crate::file_dialog::FileDialog::new()
-        .add_filter("Machine Definition", &["mch"])
-        .pick_file()
+    // by user instruction (M2.3 C); the filter just names it. #2358: it
+    // opens in the user machines folder when that exists.
+    let dialog = crate::file_dialog::FileDialog::new().add_filter("Machine Definition", &["mch"]);
+    match crate::egui_app::machines_pane::dialog_start(user_dir) {
+        Some(dir) => dialog.set_directory(dir),
+        None => dialog,
+    }
+    .pick_file()
 }
 
 fn pick_post_file() -> Option<PathBuf> {
