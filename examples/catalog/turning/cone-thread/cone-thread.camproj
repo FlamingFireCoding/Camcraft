@@ -25136,11 +25136,7 @@
           ]
         ]
       ],
-      "rev": 1,
-      "source": {
-        "path": "model/cone-blank.obj",
-        "sha256": "80547ac1b9b63a57e1659fbb391fc5599d7357c19c39cc5080aab4ff67a9298b"
-      }
+      "rev": 1
     },
     {
       "name": "cone-thread",
@@ -87173,11 +87169,7 @@
           ]
         ]
       ],
-      "rev": 1,
-      "source": {
-        "path": "model/cone-thread.obj",
-        "sha256": "765afcc40df1ec08c6f89afeffd5c9c63d0db1bec39a592adcf5440dab3e7775"
-      }
+      "rev": 1
     }
   ]
 }

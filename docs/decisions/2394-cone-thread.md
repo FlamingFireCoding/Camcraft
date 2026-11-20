@@ -69,3 +69,16 @@ model, the G76 cycle and a filleted shoulder: edit the generator and
 `build.camscript`, run `cargo xtask catalog --case turning/cone-thread`,
 and update the pin's thread asserts. When #2882 is fixed, the committed
 `.nc` changes; rebuild the case in that PR.
+
+**Review fix (PR #2883).** Keep both meshes embedded in the saved project.
+After the imports, `build.camscript` uses `set_model_link` with `path: null`
+to remove the source link. The UI checks relative source paths from the
+process directory, which can differ from the case directory. An absolute
+path would tie the example to one checkout. A change to the product path
+resolver is outside this example fix.
+
+The tests `every_catalog_case_opens_regenerates_verifies_and_posts_byte_for_byte`
+and `every_catalog_case_rebuilds_from_camscript` pin the embedded meshes and
+absent links for both models in the committed and rebuilt projects.
+The UI test `catalog_cases_open_and_frame_cleanly` checks opening from
+`crates/ui`.

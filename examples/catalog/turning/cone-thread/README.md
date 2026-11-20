@@ -20,6 +20,7 @@ The 15 mm below the part is the chuck's grip. The part-off plane is Z15.
 `build.camscript` does these steps through CamCraft's undoable commands.
 
 1. **Import two models.** `cone-blank` is the turned blank: the part before the neck and the thread are cut. `cone-thread` is the finished part. The thread is modelled as ten V grooves, because the Threading operation cuts a modelled thread.
+   The script uses `set_model_link` with `path: null` after the imports. Both meshes stay embedded in the project. Opening the project does not depend on the working directory.
 2. **Set the stock.** A cylinder, 30 mm diameter, 79 mm long.
 3. **Mount the lathe.** `load_machine` mounts the built-in `Lathe` (`assets/machines/lathe.mch`). `add_setup` declares the setup `Turning`, and `set_setup_post` gives it the post `Fanuc Lathe` (`assets/posts/fanuc-lathe.cps`).
 4. **Add the tools.** T1 `TN-1600-0R8` (turning insert, 0.8 mm nose), T2 `GT-0300` (3 mm grooving blade), T3 `TD-1200-60` (60 degree threading insert, 1.2 mm wide, defined in the script).
@@ -60,7 +61,7 @@ Each limit has its own issue. The case can become simpler when they are fixed.
 - `model/gen_cone_thread_obj.py` — clean-room generator: one meridian polyline for each model, revolved in 48 steps, checked closed.
 - `model/cone-blank.obj`, `model/cone-thread.obj` — the generated meshes that `build.camscript` imports.
 - `build.camscript` — headless script that builds `cone-thread.camproj` and posts `cone-thread.nc`.
-- `cone-thread.camproj` — committed project with generated toolpaths.
+- `cone-thread.camproj` — committed project with both meshes embedded, no model source links, and generated toolpaths.
 - `cone-thread.nc` — committed Fanuc lathe program, verified byte for byte in `crates/app/tests/example_catalog.rs`.
 
 ## Rebuild and verify
@@ -71,4 +72,15 @@ From the repository root:
 python3 examples/catalog/turning/cone-thread/model/gen_cone_thread_obj.py
 cargo xtask catalog --case turning/cone-thread
 cargo test -p camcraft-app --test example_catalog
+```
+
+The app tests `every_catalog_case_opens_regenerates_verifies_and_posts_byte_for_byte`
+and `every_catalog_case_rebuilds_from_camscript` check that both models keep
+their embedded meshes without source links. They cover the committed and
+rebuilt projects. The UI test `catalog_cases_open_and_frame_cleanly` checks
+opening the committed project from `crates/ui`:
+
+```sh
+cd crates/ui
+cargo test -p camcraft-ui --test catalog_render
 ```

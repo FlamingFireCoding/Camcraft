@@ -116,21 +116,26 @@ fn copy_dir_all(src: &Path, dst: &Path) {
     }
 }
 
-// The portable contour-tabs example embeds its mesh. A relative source link
-// makes the UI reopen a file from the process directory instead of the case.
-fn assert_contour_tabs_embeds_model(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
-    if case.family != "2d" || case.name != "contour-tabs" {
-        return;
+// Portable examples embed their meshes. A relative source link makes the UI
+// reopen a file from the process directory instead of the case directory.
+fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
+    let names: &[&str] = match (case.family.as_str(), case.name.as_str()) {
+        ("2d", "contour-tabs") => &["contour-tabs"],
+        ("turning", "cone-thread") => &["cone-blank", "cone-thread"],
+        _ => return,
+    };
+    for name in names {
+        let entity = model::find_by_name(w, name).expect("catalog model must be present");
+        assert!(
+            camcraft_app::model_source::of(w, &entity).is_none(),
+            "{}/{}: {name} must open without a link to the script working directory",
+            case.family, case.name
+        );
+        assert!(
+            model::facets_of(w, &entity).is_some_and(|facets| !facets.is_empty()),
+            "{}/{}: {name} must keep its embedded mesh", case.family, case.name
+        );
     }
-    let entity = model::find_by_name(w, "contour-tabs").expect("contour-tabs model must be present");
-    assert!(
-        camcraft_app::model_source::of(w, &entity).is_none(),
-        "2d/contour-tabs: project must open without a link to the script working directory"
-    );
-    assert!(
-        model::facets_of(w, &entity).is_some_and(|facets| !facets.is_empty()),
-        "2d/contour-tabs: project must keep its embedded mesh"
-    );
 }
 
 #[test]
@@ -150,7 +155,7 @@ fn every_catalog_case_opens_regenerates_verifies_and_posts_byte_for_byte() {
         let notes = project::load_noted(&w, &proj_path)
             .unwrap_or_else(|e| panic!("{label}: load {}: {e}", proj_path.display()));
         assert!(notes.is_empty(), "{label}: unexpected load notes: {notes:?}");
-        assert_contour_tabs_embeds_model(case, &w);
+        assert_portable_models(case, &w);
 
         let ops = setup::operation_order(&w);
         assert!(!ops.is_empty(), "{label}: project has no operations");
@@ -236,12 +241,13 @@ fn every_catalog_case_rebuilds_from_camscript() {
 
         // Load outside the script's directory. Pin the rebuilt example too;
         // checking the committed project alone cannot catch a linked rebuild.
-        if case.family == "2d" && case.name == "contour-tabs" {
+        if matches!((case.family.as_str(), case.name.as_str()),
+            ("2d", "contour-tabs") | ("turning", "cone-thread")) {
             let w = world::new_world();
             let notes = project::load_noted(&w, &proj)
                 .unwrap_or_else(|e| panic!("{label}: load rebuilt project: {e}"));
             assert!(notes.is_empty(), "{label}: rebuilt project load notes: {notes:?}");
-            assert_contour_tabs_embeds_model(case, &w);
+            assert_portable_models(case, &w);
         }
 
         let want_nc = fs::read(case.dir.join(format!("{}.nc", case.name)))

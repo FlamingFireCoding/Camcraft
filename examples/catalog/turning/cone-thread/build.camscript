@@ -10,6 +10,9 @@
 // to the finished part.
 cam.import("model/cone-blank.obj", "cone-blank");
 cam.import("model/cone-thread.obj", "cone-thread");
+// Embed both meshes so opening the project does not depend on the working directory.
+cam.call("set_model_link", { model: "cone-blank", path: null });
+cam.call("set_model_link", { model: "cone-thread", path: null });
 
 // A 30 mm bar on the Z axis: z 0 at the chuck, z 79 at the free end.
 cam.call("set_stock", {
