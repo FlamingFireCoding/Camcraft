@@ -126,3 +126,12 @@ fn the_collector_finds_the_records_of_downloaded_artifacts() {
     assert!(verdict::run(&[]).is_err() && verdict::run(&["no-such-dir-2908".into()]).is_err());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_zero_step_lane_record_is_incomplete() {
+    let empty = rec(1, 1, "wopr", Vec::new());
+    let (text, ok) = verdict::verdict(&[empty], &[]);
+    assert!(!ok, "{text}");
+    assert!(text.contains("RED (1 of 1 lane(s) reported)"), "{text}");
+    assert!(text.contains("empty lane is incomplete"), "{text}");
+}

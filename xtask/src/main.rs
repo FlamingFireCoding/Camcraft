@@ -336,6 +336,7 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
         Some(lane) => lane_split::apply(plan, lane)?,
         None => plan,
     };
+    let planned = plan.steps.len();
     let plan = select::apply(plan, &g.only, failed.as_deref())?;
     if g.tier == "release" {
         match known_fail::check_issues(root, g.dry) {
@@ -348,7 +349,7 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
     }
     run.plan(&plan)?;
     if let Some(lane) = g.lane {
-        verdict::record(&run, lane, plan.steps.len());
+        verdict::record(&run, lane, planned);
     }
     Ok(run.summary())
 }

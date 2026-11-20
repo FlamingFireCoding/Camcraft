@@ -110,7 +110,7 @@ pub fn record(run: &Run, lane: Lane, planned: usize) {
         .collect();
     let result = if run.void.is_some() {
         "void"
-    } else if rows.iter().all(|r| r.ok) && rows.len() == planned {
+    } else if planned > 0 && rows.iter().all(|r| r.ok) && rows.len() == planned {
         "green"
     } else {
         "red"
@@ -187,6 +187,8 @@ pub fn verdict(records: &[Record], problems: &[String]) -> (String, bool) {
         }
         if r.result == "void" {
             faults.push(format!("lane {label} is void: the checkout moved during the run"));
+        } else if r.planned == 0 {
+            faults.push(format!("lane {label} planned no steps: an empty lane is incomplete"));
         } else if ran < r.planned {
             faults.push(format!("lane {label} ran {ran} of {} step(s): the other steps did not run", r.planned));
         } else if r.result != "green" && r.rows.iter().all(|row| row.ok) {
