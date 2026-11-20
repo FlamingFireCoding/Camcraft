@@ -182,7 +182,8 @@ impl<'a> SolidIndex<'a> {
                         // #1071: a thread being cut into its own minor wall;
                         // #2400: a declared inside-corner relief corridor.
                         let threaded = upright && excused(bores, &self.facets[f as usize], p0, q0, a.rho_max() + grow, allow);
-                        let relieved = upright && tri_in_zone(&self.facets[f as usize], p0, q0, a.rho_max() + grow, allow, reliefs);
+                        let relieved = upright && tri_in_zone(&self.facets[f as usize], p0, q0, a.rho_max() + grow,
+                            [p0.z.min(q0.z) + a.z0, p0.z.max(q0.z) + a.z1], allow, reliefs);
                         if pen > ex + allow && !threaded && !relieved {
                             return true;
                         }
@@ -194,7 +195,8 @@ impl<'a> SolidIndex<'a> {
         // outside; it can be inside only if its axis is inside the box.
         let within = (0..3).all(|k| axis_lo[k] >= self.lo[k] && axis_hi[k] <= self.hi[k]);
         let mid_p = fr.up(atoms.first().map_or(0.0, |a| 0.5 * (a.z0 + a.z1)));
-        within && !(upright && mid_in_zone(mid_p, p0, q0, allow, reliefs)) && self.inside(mid_p)
+        let band = [p0.z.min(q0.z) + atoms.iter().map(|a| a.z0).fold(f64::INFINITY, f64::min), p0.z.max(q0.z) + len];
+        within && !(upright && mid_in_zone(mid_p, p0, q0, band, allow, reliefs)) && self.inside(mid_p)
     }
 
     /// Ray parity up +Z from `p`. A ray that grazes an edge or vertex

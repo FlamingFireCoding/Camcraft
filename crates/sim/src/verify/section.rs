@@ -99,7 +99,7 @@ pub(super) fn tangency(
             let a = Point2::new(m.from.x, m.from.y);
             let b = Point2::new(m.to.x, m.to.y);
             let z_min = m.from.z.min(m.to.z);
-            zones.iter().any(|rc| super::corner_relief::move_on_zone(a, b, z_min, r, cx.gouge_tol, rc))
+            zones.iter().any(|rc| super::corner_relief::move_on_zone(a, b, z_min, m.from.z.max(m.to.z), r, cx.gouge_tol, rc))
         };
         let chords = segments(m, cx.mode, chord_tol, cx.stock_top_z + cx.z_tol);
         let mut ends = chords.first().map(|c| c.0).into_iter().chain(chords.iter().map(|c| c.1));

@@ -90,17 +90,19 @@ pub(super) fn valid_zones<'a>(
         .collect()
 }
 
-/// Whether segment `(a, b)` at `z_min` stays along `rc.start..rc.end` above `rc.z_bottom`.
+/// Whether a segment stays along the corridor and within both relief heights.
 #[inline]
 pub(super) fn move_on_zone(
     a: Point2,
     b: Point2,
     z_min: f64,
+    z_max: f64,
     r_eff: f64,
     tol: f64,
     rc: &CornerReliefZone,
 ) -> bool {
     z_min >= rc.z_bottom - tol
+        && z_max <= rc.z_top + tol
         && r_eff <= rc.radius + tol
         && seg_point_dist(a, rc.start, rc.end) <= tol
         && seg_point_dist(b, rc.start, rc.end) <= tol
@@ -112,18 +114,25 @@ pub(super) fn tri_in_zone(
     p0: Point3,
     q0: Point3,
     r_eff: f64,
+    band: [f64; 2],
     allow: f64,
     zones: &[CornerReliefZone],
 ) -> bool {
     if zones.is_empty() {
         return false;
     }
-    let tri_max_z = tri.a.z.max(tri.b.z).max(tri.c.z);
+    // Only the overlap of the facet and the swept atom can be a contact.
+    // The flute can extend above the relief into air without gaining an
+    // exemption for material above the relief.
+    let contact_min = tri.a.z.min(tri.b.z).min(tri.c.z).max(band[0]);
+    let contact_max = tri.a.z.max(tri.b.z).max(tri.c.z).min(band[1]);
     let a = Point2::new(p0.x, p0.y);
     let b = Point2::new(q0.x, q0.y);
     let z_min = p0.z.min(q0.z);
     zones.iter().any(|rc| {
-        move_on_zone(a, b, z_min, r_eff, allow, rc) && tri_max_z > rc.z_bottom - allow
+        move_on_zone(a, b, z_min, p0.z.max(q0.z), r_eff, allow, rc)
+            && contact_min >= rc.z_bottom - allow
+            && contact_max <= rc.z_top + allow
     })
 }
 
@@ -132,6 +141,7 @@ pub(super) fn mid_in_zone(
     p: Point3,
     p0: Point3,
     q0: Point3,
+    band: [f64; 2],
     allow: f64,
     zones: &[CornerReliefZone],
 ) -> bool {
@@ -143,8 +153,11 @@ pub(super) fn mid_in_zone(
     let q = Point2::new(p.x, p.y);
     let z_min = p0.z.min(q0.z);
     zones.iter().any(|rc| {
-        move_on_zone(a, b, z_min, rc.radius, allow, rc)
+        move_on_zone(a, b, z_min, p0.z.max(q0.z), rc.radius, allow, rc)
+            && band[0] >= rc.z_bottom - allow
+            && band[1] <= rc.z_top + allow
             && seg_point_dist(q, rc.start, rc.end) <= allow
             && p.z >= rc.z_bottom - allow
+            && p.z <= rc.z_top + allow
     })
 }
