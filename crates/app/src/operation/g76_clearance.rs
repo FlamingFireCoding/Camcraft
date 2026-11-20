@@ -59,7 +59,7 @@ impl AheadCut {
             });
         }
         let reach = self.nose - margin;
-        if !(reach > 0.0) {
+        if !reach.is_finite() || reach <= 0.0 {
             return false;
         }
         // Each signed segment capsule is convex. All four corners must
