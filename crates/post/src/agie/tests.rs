@@ -188,5 +188,35 @@ fn an_acute_miter_needs_more_stock_than_a_round_corner() {
     assert!(contour::prepare(&job).is_ok());
 
     job.contour = vec![[-20., -10.], [20., -10.], [0., 0.], [20., 10.], [-20., 10.]];
-    assert!(contour::prepare(&job).unwrap_err().contains("convex"));
+    assert!(
+        contour::prepare(&job)
+            .unwrap_err()
+            .contains("reentrant corner")
+    );
+}
+
+#[test]
+fn a_broad_notch_keeps_its_nominal_corner_and_requires_an_exterior_entry() {
+    let mut job = punch();
+    job.contour
+        .splice(3..3, [[10., 10.], [0., 9.], [-10., 10.]]);
+    let points = contour::prepare(&job).unwrap();
+    assert_eq!(points[0], [-20., 0.]);
+    assert_eq!(&points[1..], job.contour.as_slice());
+    // The drilled hole cannot sit in the retained right-hand shoulder.
+    job.start = [15., 9.7];
+    assert!(contour::prepare(&job).unwrap_err().contains("start hole"));
+    // This hole is outside, but the extension of the locally visible sloping
+    // face crosses the other bank. Entry requires a supporting exterior face.
+    job.start = [5., 16.];
+    assert!(contour::prepare(&job).unwrap_err().contains("start hole"));
+}
+
+#[test]
+fn a_gentle_but_narrow_notch_cannot_hold_the_rough_corner_joins() {
+    let mut job = punch();
+    job.contour
+        .splice(3..3, [[0.4, 10.], [0., 9.98], [-0.4, 10.]]);
+    let why = contour::prepare(&job).unwrap_err();
+    assert!(why.contains("segment"), "{why}");
 }

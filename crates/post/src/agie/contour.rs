@@ -175,14 +175,11 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result
         let length = dx.hypot(dy);
         [dy / length, -dx / length]
     };
+    let mut reentrant = false;
+    let mut max_miter: f64 = 0.0;
     for (i, &corner) in ring.iter().enumerate() {
         let previous = ring[(i + n - 1) % n];
         let next = ring[(i + 1) % n];
-        if cross(previous, corner, next) <= 0 {
-            return Err(
-                "Agie requires a convex punch contour; a reentrant corner is unsupported".into(),
-            );
-        }
         let a = outward(previous, corner);
         let b = outward(corner, next);
         // Use the squared bisector length instead of 1 + dot(a, b);
@@ -193,6 +190,20 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result
             return Err(
                 "Agie cannot bound the rough pass at a nearly reversed punch corner".into(),
             );
+        }
+        let reach = 2.0 * rough_offset / norm2.sqrt();
+        max_miter = max_miter.max(reach);
+        if cross(previous, corner, next) < 0 {
+            reentrant = true;
+            // At an inside turn the two offset faces intersect outside the
+            // drawing corner. The strict wire cover law permits 0.002 mm of
+            // rest. Use the largest resident offset across all four passes.
+            if reach - rough_offset > 0.002 * UNITS {
+                return Err(
+                    "Agie rough compensation cannot reach the reentrant corner within 0.002 mm"
+                        .into(),
+                );
+            }
         }
         for axis in 0..2 {
             if corner[axis] - stock_margin < lo[axis] || corner[axis] + stock_margin > hi[axis] {
@@ -207,6 +218,65 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result
             if miter - wire_and_allowance < left || miter + wire_and_allowance > right {
                 return Err(
                     "The Agie rough corner and wire can reach outside the stock at a punch vertex"
+                        .into(),
+                );
+            }
+        }
+    }
+    if reentrant {
+        // The full segment between two joins stays inside the nominal edge's
+        // capsule. Bound each join by the longest miter, plus a complete rough
+        // kerf allowance. Disjoint capsules on unrelated faces exclude contact
+        // at every smaller offset, including all trims.
+        let clearance = (2.0 * (max_miter + rough_offset)).ceil() as i64;
+        check_feature_spacing(ring, clearance)?;
+    }
+    Ok(())
+}
+
+fn point_clears_segment(p: Point, a: Point, b: Point, clearance2: i128) -> bool {
+    let edge = vector(a, b);
+    let from_a = vector(a, p);
+    let length2 = dot(edge, edge);
+    let projection = dot(edge, from_a);
+    if projection <= 0 {
+        dot(from_a, from_a) > clearance2
+    } else if projection >= length2 {
+        let from_b = vector(b, p);
+        dot(from_b, from_b) > clearance2
+    } else {
+        let side = cross(a, b, p);
+        side * side > clearance2 * length2
+    }
+}
+
+fn check_feature_spacing(ring: &[Point], clearance: i64) -> Result<(), String> {
+    let n = ring.len();
+    let clearance2 = i128::from(clearance).pow(2);
+    for (i, &a) in ring.iter().enumerate() {
+        let b = ring[(i + 1) % n];
+        let edge = vector(a, b);
+        // The two joins on a short face could meet before full rough offset.
+        if dot(edge, edge) <= clearance2 {
+            return Err(
+                "Agie cannot separate adjacent corner joins on a short reentrant profile segment"
+                    .into(),
+            );
+        }
+        for j in i + 2..n {
+            if i == 0 && j + 1 == n {
+                continue;
+            }
+            let (c, d) = (ring[j], ring[(j + 1) % n]);
+            // Nominal segments are disjoint. The minimum distance between two
+            // disjoint segments occurs at an endpoint of at least one segment.
+            if !point_clears_segment(a, c, d, clearance2)
+                || !point_clears_segment(b, c, d, clearance2)
+                || !point_clears_segment(c, a, b, clearance2)
+                || !point_clears_segment(d, a, b, clearance2)
+            {
+                return Err(
+                    "Agie cannot separate the rough pass from a nearby nonadjacent profile segment"
                         .into(),
                 );
             }

@@ -329,3 +329,39 @@ fn qn2_requires_the_rough_wire_size_in_the_mounted_condition() {
         assert!(!dest.exists());
     }
 }
+
+#[test]
+fn cli_posts_the_notched_punch_from_its_original_mesh() {
+    let dir = tempfile::tempdir().unwrap();
+    let examples = dir.path().join("examples/agie");
+    fs::create_dir_all(&examples).unwrap();
+    fs::write(
+        examples.join("notched-punch.obj"),
+        include_str!("../../../examples/agie/notched-punch.obj"),
+    )
+    .unwrap();
+    fs::write(
+        examples.join("notched-punch.camscript"),
+        include_str!("../../../examples/agie/notched-punch.camscript"),
+    )
+    .unwrap();
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_camcraft-cli"))
+        .current_dir(dir.path())
+        .args(["script", "examples/agie/notched-punch.camscript"])
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "{} {}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let iso = fs::read_to_string(dir.path().join("NOTCH20/NOTCH20.ISO")).unwrap();
+    for vertex in [
+        "X10.00000 Y10.00000",
+        "X0.00000 Y9.00000",
+        "X-10.00000 Y10.00000",
+    ] {
+        assert!(iso.contains(vertex), "{iso}");
+    }
+}
