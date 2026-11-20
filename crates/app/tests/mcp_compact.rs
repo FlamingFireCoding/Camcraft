@@ -194,3 +194,15 @@ fn the_core_tool_set_is_a_small_subset_of_the_full_table() {
     let gemini = provider::tools_in(Provider::Gemini, ToolSet::Core);
     assert_eq!(gemini[0]["functionDeclarations"].as_array().map(Vec::len), Some(core.len()));
 }
+
+#[test]
+fn tool_advertisements_keep_import_fidelity_guidance_and_job_summary() {
+    let tools = provider::tools_in(Provider::Anthropic, ToolSet::Core);
+    let importer = tools.iter().find(|t| t["name"] == json!("import_model")).expect("import_model");
+    let description = importer["description"].as_str().expect("import description");
+    assert!(description.contains("edges lie off their surfaces"), "{description}");
+    assert!(description.contains("tighter tolerance"), "{description}");
+
+    let job = tools.iter().find(|t| t["name"] == json!("get_job")).expect("get_job");
+    assert_eq!(job["input_schema"]["properties"]["summary"]["type"], json!("boolean"));
+}

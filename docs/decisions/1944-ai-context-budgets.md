@@ -55,3 +55,11 @@ line.
 
 **Cost to change.** Each limit is one constant in `budget.rs` or
 `compact.rs`. The core set is one list in `mcp/provider.rs`.
+
+**PR #3033 review fix.** Keep the upstream importer warning for edges that
+lie off their surfaces. Keep the compact `get_job` schema from this branch.
+These are separate tool entries. Taking either complete conflict side would
+remove the other change, so neither side is discarded. This resolution adds
+no behavior. The screenshot check uses a temporary harness that is not
+committed. Its images stay on the fork's `pr-screenshots` branch. The full
+chat tool card remains visible while the model reply is capped.

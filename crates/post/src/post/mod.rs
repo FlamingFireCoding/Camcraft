@@ -35,6 +35,7 @@ pub mod dialect;
 pub mod end_units;
 pub mod engine;
 pub mod explain;
+mod fine_bore;
 pub mod g93;
 pub mod invert;
 pub mod js;

@@ -204,6 +204,35 @@ pub(super) fn c_letter_problem(machine: &Machine, i: usize, c: f64) -> Option<St
         .then(|| format!("move {i} commands C {word:.3} deg, the travel is {lo:.3}..{hi:.3}"))
 }
 
+/// `spindle.orientation` of a machine file (#1445): true, false or
+/// unstated. A stated capability gates the fine-bore cycle, so a word
+/// that is not a boolean refuses the file - never a silent "not limited".
+pub(super) fn stated_orientation(spindle: Option<&serde_json::Value>) -> Result<Option<bool>, String> {
+    match spindle.and_then(|s| s.get("orientation")) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Bool(b)) => Ok(Some(*b)),
+        Some(x) => Err(format!("machine file: spindle.orientation must be true or false, not {x}")),
+    }
+}
+
+/// The fine-bore gate (#1445): a path that carries a fine-bore cycle, on
+/// a machine whose file says its spindle cannot stop oriented
+/// (`spindle.orientation: false`), is refused by name - whatever post is
+/// chosen, and never posted as a plain bore: without the oriented stop the
+/// shift is in an unknown direction and can push the tip into the wall
+/// (the published G76 fine boring cycle stops the spindle oriented before
+/// its shift). Unstated reads as "not limited" (the unstated-limit law).
+pub fn fine_bore_gate(out: &mut MachineCheck, machine: &Machine, name: &str, path: &crate::cl::Toolpath) {
+    if machine.spindle_orientation != Some(false) {
+        return;
+    }
+    let n = path.cycles.iter().filter(|c| c.kind == crate::cl::CycleKind::FineBore).count();
+    if n > 0 {
+        let m = &machine.model;
+        say(out, format!("{name}: {n} fine bore cycle(s) need an oriented spindle stop, which {m} cannot do - use a bore or a ream cycle"));
+    }
+}
+
 /// The rigid-tap gate (#786): a path that carries a tap cycle, on a
 /// machine whose file says its spindle cannot rigid-tap
 /// (`spindle.rigid_tapping: false`), is refused by name - whatever post
