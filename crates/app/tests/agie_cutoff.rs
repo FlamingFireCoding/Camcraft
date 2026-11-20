@@ -25,7 +25,10 @@ fn run(directory: &Path, script: &str) -> std::process::Output {
 
 #[test]
 fn a_native_cutoff_has_one_nominal_crossing_and_distinct_air_endpoints() {
-    for (name, script, y, air_y) in [("LOWER20", LOWER, -6., -3.), ("UPPER20", UPPER, 6., 3.)] {
+    for (name, script, y, air_y, side) in [
+        ("LOWER20", LOWER, -6., -3., "c_left"),
+        ("UPPER20", UPPER, 6., 3., "c_right"),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let result = run(dir.path(), script);
         assert!(
@@ -42,12 +45,7 @@ fn a_native_cutoff_has_one_nominal_crossing_and_distinct_air_endpoints() {
             "{iso}"
         );
         let sbl = fs::read_to_string(job.join(format!("{name}.SBL"))).unwrap();
-        let forward = iso.contains("G00 X-44.00000");
-        let side = if forward == (y < 0.0) {
-            "c_left"
-        } else {
-            "c_right"
-        };
+        assert!(iso.contains("G00 X-44.00000"), "{iso}");
         assert!(sbl.contains(&format!("ID_PUNCH,{side},")), "{sbl}");
         for field in [
             "ID_STPENTRY,\"stp1\"",
@@ -56,8 +54,7 @@ fn a_native_cutoff_has_one_nominal_crossing_and_distinct_air_endpoints() {
         ] {
             assert!(sbl.contains(field), "{field}");
         }
-        let (entry, exit) = if forward { (-44., 44.) } else { (44., -44.) };
-        for (id, x) in [("stp1", entry), ("stp2", exit)] {
+        for (id, x) in [("stp1", -44.), ("stp2", 44.)] {
             assert!(sbl.contains(&format!("\"{id}\",ID_POSX,\"{x:.3}\"")));
             assert!(sbl.contains(&format!("\"{id}\",ID_POSY,\"{air_y:.3}\"")));
         }
