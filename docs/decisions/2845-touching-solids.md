@@ -37,3 +37,25 @@ Do not add a `SmallVec` dependency for two inline uses.
 unique matching rule and safety cases for closure, winding, fins and
 line-only contact. Keep the final edge and volume checks. A larger inline
 capacity can change locally without a project-file or public type change.
+
+## #2845 - Refresh the Linux bore pin after the importer change
+
+**Chosen.** Pin the Linux bore path to 3158 moves, 3130 planar feeds and
+1141 arcs. Require the imported mesh to contain 6228 facets. Require all
+four cutting levels: Z 0, 5, 10 and 15. Keep the clean verification,
+fallback and planning-budget checks. Reject adjacent path counts in a
+separate exact-pin test.
+
+**Why.** PR #2904 replaced the 952-facet truck mesh with the solidcore
+mesh at the same chord cap. Decision #917 records this mesh change. The
+new mesh changes the cutting regions and fitted arcs. The fixture and
+HSM planner did not change. The old Linux counts described the truck
+mesh, while the review measured the solidcore path.
+
+**Dropped.** Do not widen the count range or disable the heavy pin. Do
+not weaken the arc proof or verification checks to match an old count.
+Rejected arc fits retain their safe chords.
+
+**Cost to change later.** A future mesh or planner change must explain
+and measure the new counts. The mesh, cutting levels and verification
+checks must still agree with that measurement.
