@@ -111,7 +111,7 @@ Use 20 mm cold die steel, Berco Cut 0.25 mm and AGIE_QN2. Model the retained sol
 
 Clamp both resulting pieces independently. Keep the clamps clear of the entire wire path, the 4 mm tails and both 3 mm approaches. The rough pass severs the offcut before three further trims. A catcher alone allows the offcut to move. Center the stock on the midpoints of the installed X and Y strokes. In **Passes**, confirm **Both pieces clamped through all passes** and **Stock centered in installed XY travel**. The post checks the air tails, approach points, work origin and wire envelope against the centered 350 × 250 mm travel. Use a run-out clearance of 3.6 mm or less.
 
-Choose **Agie native wire EDM**, set the separation cut length to zero and choose a new output directory. The controller alternates travel across the part on successive passes. Inspect the formal check and the plotted four cutting passes before machining.
+Choose **Agie native wire EDM**, set the separation cut length to zero and choose a new output directory. On Agie Control, [release the loaded works](#release-the-loaded-works-in-agie-control) before plotting. Inspect the formal check and all four plotted cutting passes. Each pass must cross the stock once, alternating direction.
 
 Run either original example from the repository root:
 
@@ -126,7 +126,7 @@ The examples select opposite sides of synthetic 80 × 60 × 20 mm stock. Each wr
 
 Keep the complete job directory together. In the control’s file manager, open **Imp/exp** and import every ISO resource into **ISO Sys**. Then import the SBL into **SBL Sys**, keeping the matching SBR beside the SBL. In the workpiece list choose **New workpiece → Script Files**, select the imported SBL and confirm with **OK**.
 
-Open the new piece and verify that each work has zero working steps. Follow [Release the loaded works in Agie Control](#release-the-loaded-works-in-agie-control) to inspect, select and assign the actual technology. Then run **FORMALCHECK** and inspect both errors and warnings. Save and close the piece, then run **GRAFICHECK** on that piece. Check the installed XY datum, available axis travel, entry from the drilled hole and compensation on the waste side of each face. In the tested 20 mm punch job, the main rough pass and three trims left a 1 mm section. The control then returned to cut and trim that section. Check the sequence and arrange support for release. CamCraft does not command a manual pause before the section cut.
+Open the new piece and verify that each work has zero working steps. Follow [Release the loaded works in Agie Control](#release-the-loaded-works-in-agie-control) to inspect, select and assign the actual technology. Then run **FORMALCHECK** and inspect both errors and warnings. Choose **Sluiten** (close), then **Ja** (yes) at **Opslaan?** (save). Run **GRAFICHECK** on the saved piece. Check the installed XY datum, available axis travel, entry from the drilled hole and compensation on the waste side of each face. In the tested 20 mm punch job, the main rough pass and three trims left a 1 mm section. The control then returned to cut and trim that section. Check the sequence and arrange support for release. CamCraft does not command a manual pause before the section cut.
 
 ### Punch from a placed DXF racetrack
 
@@ -167,7 +167,7 @@ cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/north-circl
 1. Create 20 mm box stock in a Wire EDM setup. Import the complete closed DXF loop and place it on the top stock face. Use true LINE and ARC entities. Each joint must be tangent, with the material on the inside through every turn. Arcs can have different radii from 0.5 to 20 mm and sweep up to 180 degrees.
 2. Add a **Wire Contour** with the complete placed drawing as its source. Select **Punch**, the Berco Cut 0.25 mm wire and the qualified machine condition. Set the heights to the two stock faces and confirm that the punch will be captured.
 3. Place the 2 mm threading hole outside a straight parallel to X or Y. Its perpendicular projection must lie at least 3 mm from both ends of that straight. Leave at least 3 mm from the hole center to the straight. Other faces may be oblique.
-4. Generate and verify the toolpath. Choose **Agie native wire EDM**, set the separation to 1 mm and choose a new output directory. Inspect the formal check and plot in Agie Control. The ISO preserves each nominal endpoint and arc center. The resident technology applies the compensation.
+4. Generate and verify the toolpath. Choose **Agie native wire EDM**, set the separation to 1 mm and choose a new output directory. On Agie Control, [release the loaded works](#release-the-loaded-works-in-agie-control) before checking the formal result and plot. The ISO preserves each nominal endpoint and arc center. The resident technology applies the compensation.
 
 Placed joints and centers must be representable on the five-decimal ISO grid. The post checks the two emitted radii and tangent direction at every joint. The normal verification preview uses up to 2,048 tangent vertices to enclose the source arcs. Drawings can contain up to 128 curve segments.
 
