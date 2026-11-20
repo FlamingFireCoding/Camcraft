@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use camcraft_app::mcp::provider::{
-    FallbackMode, Provider, is_read_only_tool, prompt_context, qa_context, tools,
+    FallbackMode, Provider, ToolSet, is_read_only_tool, prompt_context, qa_context, tools_in,
 };
 use camcraft_app::mcp::requires_approval;
 use serde_json::{Value, json};
@@ -205,10 +205,11 @@ pub(crate) fn requires_confirmation(
 }
 
 /// Build the provider/fallback tool schema payload sent alongside chat messages.
+/// `set` picks the whole tool table or the core subset (#1944).
 #[must_use]
-pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, project: &Value) -> Value {
+pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, set: ToolSet, project: &Value) -> Value {
     match mode {
-        FallbackMode::Native => json!({ "tools": tools(provider) }),
+        FallbackMode::Native => json!({ "tools": tools_in(provider, set) }),
         FallbackMode::PromptJson => prompt_context(project),
         FallbackMode::ReadOnly => qa_context(project),
     }

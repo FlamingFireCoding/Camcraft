@@ -288,7 +288,12 @@ fn limit_of(a: &Map<String, Value>) -> Result<usize, String> {
 pub(super) fn list_features(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
     let name = req_str(a, "model")?;
     let kinds = wanted_kinds(a)?;
-    let limit = limit_of(a)?;
+    // #1944: compact rows, and a chat-sized page unless `limit` says otherwise.
+    let compact = super::compact::flag(a, "compact")?;
+    let limit = match a.get("limit") {
+        None | Some(Value::Null) if compact => super::compact::COMPACT_LIMIT,
+        _ => limit_of(a)?,
+    };
     // #561: a fixture's faces are pickable too - `locate_part` mates them.
     let e = match model::find_by_name(&env.world, name) {
         Some(e) if model::is_fixture(&env.world, &e) => e,
@@ -312,9 +317,13 @@ pub(super) fn list_features(env: &mut Env, a: &Map<String, Value>) -> Result<Val
             _ => vertices_view(name, names.as_deref(), &g, &loc, limit),
         };
         truncated |= rows.len() < total;
+        let rows = if compact { super::compact::compact_rows(k, rows) } else { rows };
         out[k] = Value::Array(rows);
         out[format!("{k}_total")] = json!(total);
     }
     out["truncated"] = json!(truncated);
+    if compact {
+        out["compact"] = json!(true);
+    }
     Ok(out)
 }
