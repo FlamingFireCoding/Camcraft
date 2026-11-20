@@ -139,8 +139,7 @@ impl Hud {
 
     /// Where a nav button lives in this layout - the probes the
     /// gesture tests use to aim a click at one without recomputing the
-    /// arithmetic (nothing in the live frame asks).
-    #[cfg(test)]
+    /// arithmetic, and the anchor of the Display menu (#2818).
     #[must_use]
     pub fn nav_rect(&self, kind: Nav) -> egui::Rect {
         self.nav

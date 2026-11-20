@@ -226,6 +226,7 @@ mod rotary_law;
 pub(crate) mod spindle_law;
 pub use spindle_law::{spindle_reading, SpindleReading, SPINDLE_TOL};
 mod rotary_gate;
+mod rotary_picks;
 mod air_law;
 // #1595: the depth law an Engrave or Trace on the part carries itself.
 pub mod mark_law;
@@ -239,6 +240,7 @@ pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
 pub(crate) mod fidelity_law;
 mod clearance_stock;
+mod first_traverse;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
@@ -246,6 +248,7 @@ mod tap_core;
 pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
 pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
+mod g76_start;
 mod turning_axis;
 mod turning_feeds;
 mod turning_holder;
