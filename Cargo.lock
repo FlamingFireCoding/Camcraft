@@ -786,10 +786,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "truck-meshalgo",
- "truck-polymesh",
- "truck-stepio",
- "truck-topology",
  "url",
  "web-time",
 ]

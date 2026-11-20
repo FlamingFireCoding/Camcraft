@@ -64,6 +64,8 @@ pub struct UpdateModel {
     /// #1610: the hole of an incomplete mesh, traded the same way.
     hole: Option<String>,
     prev_hole: Option<String>,
+    /// #917: the closed solids of the facets it replaces, traded back.
+    prev_solids: Vec<std::ops::Range<usize>>,
     /// The STEP facet budget each mesh was made under (#1054), traded
     /// with the facets the same way; `None` is the default.
     facet_budget: Option<u64>,
@@ -121,6 +123,7 @@ impl UpdateModel {
             prev_coarse_mm: crate::model_fidelity::chord_of(world, &entity),
             hole: None,
             prev_hole: crate::mesh_open::hole_of(world, &entity),
+            prev_solids: crate::mesh_solids::of(world, &entity),
             facet_budget: None,
             prev_facet_budget: crate::model_fidelity::budget_of(world, &entity),
             step_source: None,
@@ -216,6 +219,7 @@ impl Command for UpdateModel {
             .unwrap_or_else(|| model::spawn(world, &self.name));
         model::set_facets(world, &entity, self.mesh.facets.clone());
         model::set_rev(world, &entity, self.prev_rev + 1);
+        crate::mesh_solids::set(world, &entity, self.mesh.solid_ranges());
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
         crate::mesh_open::set(world, &entity, self.hole.as_deref());
@@ -253,6 +257,7 @@ impl Command for UpdateModel {
                 }
             }
             model::set_rev(world, &entity, self.prev_rev);
+            crate::mesh_solids::set(world, &entity, &self.prev_solids);
             crate::model_fidelity::set(world, &entity, self.prev_coarse_mm);
             crate::model_fidelity::set_budget(world, &entity, self.prev_facet_budget);
             crate::mesh_open::set(world, &entity, self.prev_hole.as_deref());

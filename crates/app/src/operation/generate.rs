@@ -575,17 +575,17 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     }
                     // #1777: a run on a part is cut on its air side, read
                     // from the part's sections; Side applies to rings only.
-                    let cut = |f: &[Triangle], z: f64| match super::material::section(f, z) {
+                    let cut = |f: &[Triangle], b: &[std::ops::Range<usize>], z: f64| match super::material::section(f, b, z) {
                         Ok(r) => Ok(Some(r)),
                         Err(GenError::Empty(_)) => Ok(None),
                         Err(e) => Err(e),
                     };
-                    let section_at = |z: f64| cut(&m_gen.facets, z);
+                    let section_at = |z: f64| cut(&m_gen.facets, &m_gen.bodies, z);
                     // #1928: a run on the stock stands one radius off its
                     // line on the side Side names (a picked selection has
                     // no tilt frame: world facets are the job's frame).
-                    let stock_at = |z: f64| stock_facets.as_deref().map_or(Ok(None), |f| cut(f, z));
-                    let part_at = |z: f64| if keep_parts.is_empty() { Ok(None) } else { cut(&keep_parts, z) };
+                    let stock_at = |z: f64| stock_facets.as_deref().map_or(Ok(None), |f| cut(f, &[], z));
+                    let part_at = |z: f64| if keep_parts.is_empty() { Ok(None) } else { cut(&keep_parts, &[], z) };
                     for run in &runs {
                         // #1015: a run refused shows the rings and runs before it.
                         let next = if part_solid {

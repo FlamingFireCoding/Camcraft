@@ -14,6 +14,7 @@
 pub mod feature;
 mod mesh_solids;
 mod primitives;
+pub mod shared_edge;
 pub mod repair;
 pub mod revision;
 pub mod slice;
