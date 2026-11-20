@@ -197,21 +197,18 @@ fn guide_limits_use_the_setup_origin_and_include_stock_above_the_part() {
     let (world, made) = punch(FIXTURE, 0.0);
     made.expect("the vertical punch generates");
     let mut history = History::default();
-    let origin = Location { pos: Point3::new(0.0, 0.0, -10.0), ..Location::default() };
+    let origin = Location { pos: Point3::new(0.0, 0.0, -13.0), ..Location::default() };
     history.execute(&world, SetWcsOrigin::new(&world, origin).expect("set the work origin"));
-    // The part spans machine Z10..22. The 15 mm stock just fits the upper guide at Z25.
-    for (stock_height, tag) in [(15.0, "guide-at-stock"), (16.0, "guide-in-stock")] {
+    let mut post_stock = |stock_height, tag| {
         let shape = StockShape::Box { dx: 80.0, dy: 50.0, dz: stock_height };
         history.execute(&world, SetStock::new(&world, shape, Location::default()).expect("stock"));
         history.execute(&world, GenerateOperation::new(&world, "Punch1").expect("regenerate"));
-        let posted = post(&world, tag);
-        if stock_height == 15.0 {
-            posted.expect("the work fits up to the stated upper guide");
-        } else {
-            let err = posted.expect_err("the stock extends beyond the upper guide");
-            assert!(err.contains("Punch1: work top Z26.000 is above the upper guide Z25.000"), "{err}");
-        }
-    }
+        post(&world, tag)
+    };
+    // The part and stock both span machine Z13..25. The upper guide is at Z25.
+    post_stock(12.0, "guide-at-stock").expect("the work fits up to the stated upper guide");
+    let err = post_stock(13.0, "guide-in-stock").expect_err("the stock extends beyond the upper guide");
+    assert!(err.contains("Punch1: work top Z26.000 is above the upper guide Z25.000"), "{err}");
 }
 
 /// Done means: a taper whose lower edge burns into the part blocks the
