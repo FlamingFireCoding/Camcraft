@@ -25,7 +25,12 @@ use crate::solidcore_import::{HEAL_GAP_LIMIT, vertex_gaps};
 use crate::solidcore_trims::KernelTrims;
 use crate::{Kernel, KernelError, Measure};
 
-const NAME: &str = "solidcore";
+pub use crate::solidcore_step_import::{StepImport, StepModel, StepSheet, import_step, import_step_model};
+
+pub(crate) const NAME: &str = "solidcore";
+
+/// Why a surface model is not a solid.
+pub const SHEET: &str = "a surface model of open shells, not a closed solid";
 
 /// Largest STEP file the seam hands the reader (64 MiB, the native reader's
 /// bound). The reader's own cap is 512 MiB; it holds the text and every
@@ -81,8 +86,11 @@ pub struct StepRead {
     /// file). Empty: no context states a unit and the reader took
     /// millimetres. Every solid above is already in millimetres.
     pub length_units_mm: Vec<f64>,
-    /// File-level diagnostics (duplicate entity ids, mixed units).
+    /// File-level diagnostics (duplicate entity ids, mixed units, faces
+    /// wound against their neighbours).
     pub notes: Vec<String>,
+    /// The surface models (open shells only): read, not built as solids.
+    pub sheets: Vec<StepSheet>,
 }
 
 /// The time bound's watcher of the Part 21 parse.
@@ -191,6 +199,7 @@ fn read_guarded(
             out.length_units_mm
         ));
     }
+    out.notes.extend(crate::step_face_winding::notes(&ex));
     // The pcurves with no closed form (a free-form edge on a spline face)
     // are made by the kernel, each checked by its lift (#917).
     let read = topology::read_solids_with(&ex, &KernelTrims::new(&mut k.k));
@@ -209,7 +218,11 @@ fn read_guarded(
             return Err(timed_out("building solids"));
         }
         let item = s.item;
-        match build(k, s) {
+        if s.sheet {
+            out.sheets.push(StepSheet { item, name: s.name, record: s.brep, notes: s.notes });
+            continue;
+        }
+        match build_record(k, item, s.name, s.brep, s.notes) {
             Ok(solid) => out.solids.push(solid),
             Err(_) if stop.is_cancelled() => return Err(timed_out("building solids")),
             Err((stage, reason)) => out.refused.push(StepRefusal {
@@ -269,17 +282,6 @@ fn length_units(ex: &Exchange) -> Result<Vec<f64>, String> {
         }
     }
     Ok(found)
-}
-
-/// One record solid as a checked kernel solid. `Err` is `(stage, reason)`.
-fn build(k: &mut SolidcoreKernel, s: topology::Solid) -> Result<StepSolid, (&'static str, String)> {
-    if s.sheet {
-        return Err((
-            "read",
-            "a surface model of open shells, not a closed solid".into(),
-        ));
-    }
-    build_record(k, s.item, s.name, s.brep, s.notes)
 }
 
 /// One B-rep record (mm) from a file as a checked kernel solid: built,
@@ -343,54 +345,5 @@ pub(crate) fn build_record(
         area,
         vertex_gap: gaps.gap,
         notes,
-    })
-}
-
-/// A STEP file imported whole: every solid item of the file is a solid.
-#[derive(Debug)]
-pub struct StepImport {
-    /// The file's solids, in millimetres.
-    pub solids: Vec<StepSolid>,
-    /// See [`StepRead::length_units_mm`].
-    pub length_units_mm: Vec<f64>,
-    /// File-level diagnostics.
-    pub notes: Vec<String>,
-}
-
-/// The importer: [`read_step`], and a model only when EVERY solid item of
-/// the file came through. A file that reads only in part is refused by
-/// name, never handed out with a body missing - a toolpath planned against
-/// a part with a solid left out cuts through it.
-pub fn import_step(
-    k: &mut SolidcoreKernel,
-    bytes: &[u8],
-    stop: &CancelToken,
-) -> Result<StepImport, KernelError> {
-    let read = read_step(k, bytes, stop)?;
-    if let Some(first) = read.refused.first() {
-        return Err(KernelError::InvalidResult {
-            kernel: NAME,
-            op: "import_step",
-            detail: format!(
-                "{} of {} solid item(s) refused; first #{} at {}: {}",
-                read.refused.len(),
-                read.refused.len().saturating_add(read.solids.len()),
-                first.item,
-                first.stage,
-                first.reason
-            ),
-        });
-    }
-    if read.solids.is_empty() {
-        return Err(KernelError::InvalidResult {
-            kernel: NAME,
-            op: "import_step",
-            detail: "the file holds no solid".into(),
-        });
-    }
-    Ok(StepImport {
-        solids: read.solids,
-        length_units_mm: read.length_units_mm,
-        notes: read.notes,
     })
 }

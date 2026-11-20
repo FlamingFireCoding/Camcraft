@@ -138,6 +138,19 @@ pub struct MeshOpen {
     pub hole: String,
 }
 
+/// The closed solids of a model's facets (#917): index ranges, one per
+/// solid, as the STEP reader gave them. Valid only at the `Revision` and
+/// the facets it was landed with (`rev`, `len`); any other landing makes
+/// it stale and every reader then reads the plain soup. Written by the
+/// import, update and delete commands and the project loader, through
+/// `mesh_solids::set`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct SolidRanges {
+    pub rev: u64,
+    pub len: usize,
+    pub ranges: std::sync::Arc<[std::ops::Range<usize>]>,
+}
+
 /// Selection marker (tag). Only `SelectEntity` writes it (AGENTS.md: changes
 /// go through commands); the tree and viewport read it to highlight.
 #[derive(Component, Debug)]
@@ -873,6 +886,7 @@ pub fn register_schema(world: &World) {
     world.component::<StepSource>();
     world.component::<ModelSource>();
     world.component::<MeshOpen>();
+    world.component::<SolidRanges>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();

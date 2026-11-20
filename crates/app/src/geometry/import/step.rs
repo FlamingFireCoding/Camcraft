@@ -77,6 +77,16 @@ pub fn parse_with_chord_budget(data: &[u8], budget: usize) -> Result<(Mesh, f64)
 /// [`parse_with_chord_budget`], and what the reader and the mesher noted on
 /// the way, one line each, for the import result.
 pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>), ImportError> {
+    match parse_open(data, budget)? {
+        (mesh, chord, notes, None) => Ok((mesh, chord, notes)),
+        (_, _, _, Some(hole)) => Err(super::open_refusal(&hole)),
+    }
+}
+
+/// [`parse_noted`], with a solid that meshes with faces left out kept and
+/// its hole named (#1610): every left-out face with the mesher's reason.
+/// For the model import, which lands it incomplete; never a whole model.
+pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>, Option<String>), ImportError> {
     // The file's own syntax is checked before the kernel reads it, so the
     // refusals keep their wording: a nesting depth past the cap (#1075),
     // the bad entity by `#id` and line, a string or comment that never
@@ -89,7 +99,7 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
     if let Some(found) = super::step_diag::locate(text) {
         return Err(ImportError::Step(found.to_string()));
     }
-    let read = camcraft_geometry::step::parse(data, facet_budget(budget), CHORD_CAP).map_err(|e| match e {
+    let read = camcraft_geometry::step::parse_open(data, facet_budget(budget), CHORD_CAP).map_err(|e| match e {
         camcraft_geometry::step::StepError::TooLarge => ImportError::TooLarge,
         camcraft_geometry::step::StepError::Refused(reason) => ImportError::Step(reason),
     })?;
@@ -100,5 +110,5 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
     if read.mesh.facets.is_empty() {
         return Err(ImportError::Empty);
     }
-    Ok((read.mesh, chord, read.notes))
+    Ok((read.mesh, chord, read.notes, read.open))
 }

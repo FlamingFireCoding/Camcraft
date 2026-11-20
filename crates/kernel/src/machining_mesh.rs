@@ -57,12 +57,16 @@ pub struct MeshReport {
     pub triangles: usize,
     /// Record faces, every one with triangles.
     pub faces: usize,
-    /// Sides used by one triangle only: always 0 in a handed-out mesh.
+    /// Sides used by one triangle only: 0 in a solid's mesh; a sheet's or a
+    /// partial mesh's open sides (`machining_mesh_open`).
     pub open_sides: usize,
     /// The sampled deviation, `largest()` at or under `tolerance_mm`.
     pub deviation: Deviation,
-    /// Enclosed volume of the mesh (mm^3), positive.
+    /// Enclosed volume of the mesh (mm^3), positive; 0 for an open mesh.
     pub volume: f64,
+    /// The file wound every face of the solid inward and the mesh was
+    /// turned outward (#917): the caller says so.
+    pub turned_outward: bool,
     /// What the planner noted that does not touch the guarantee (an edge
     /// kept at a finer sampling, a display normal averaged at a pole, a
     /// face the planner capped but measured within tolerance).
@@ -127,10 +131,27 @@ pub enum MeshRefusal {
     TimedOut(&'static str),
 }
 
+/// A face the planner or the evaluator left without triangles.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LeftOut {
+    /// The record face (index in the record's face order).
+    pub face: usize,
+    /// Why, as the mesher says it.
+    pub reason: String,
+}
+
 /// Every planner shortfall as a refusal or a note (decision per entry in
 /// docs/decisions/940-machining-mesh.md). `Err`: the first refusal.
 pub fn judge_stats(stats: &PlanStats) -> Result<Vec<String>, MeshRefusal> {
-    if let Some(r) = stats.unmeshed.first() {
+    judge(stats, false).map(|(notes, _)| notes)
+}
+
+/// [`judge_stats`]; with `keep_left_out` a face the planner left out is
+/// handed back, not refused (the partial mesh of `machining_mesh_open`).
+fn judge(stats: &PlanStats, keep_left_out: bool) -> Result<(Vec<String>, Vec<LeftOut>), MeshRefusal> {
+    let left_out: Vec<LeftOut> =
+        stats.unmeshed.iter().map(|r| LeftOut { face: r.face, reason: r.reason.clone() }).collect();
+    if let (false, Some(r)) = (keep_left_out, left_out.first()) {
         return Err(MeshRefusal::FaceLeftOut {
             face: r.face,
             reason: r.reason.clone(),
@@ -186,7 +207,7 @@ pub fn judge_stats(stats: &PlanStats) -> Result<Vec<String>, MeshRefusal> {
             "pole {p:?}: display normal averaged (positions unchanged)"
         ));
     }
-    Ok(notes)
+    Ok((notes, left_out))
 }
 
 /// The machining mesh of one imported solid at `tol_mm` (see the module
@@ -202,6 +223,60 @@ pub fn machining_mesh(
     stop: &CancelToken,
 ) -> Result<MachiningMesh, MeshRefusal> {
     let record = &solid.record;
+    let planned = planned(record, tol_mm, stop, false)?;
+    let notes = planned.notes;
+    let (mesh, _) = evaluate(&planned.plan, record.faces.len(), false)?;
+    let (positions, triangles, tri_face) = weld(&mesh);
+    let (open, over, turned) = sides(&triangles);
+    if open > 0 || over > 0 || turned > 0 {
+        return Err(MeshRefusal::NotWatertight { open, over, turned });
+    }
+    let tris: Vec<[usize; 3]> = triangles.iter().map(|t| t.map(|i| i as usize)).collect();
+    let mut volume = mesh_signed_volume(&positions, &tris).unwrap_or(f64::NAN);
+    let mut triangles = triangles;
+    // An inward solid of one shell is turned outward and said by the
+    // caller from `turned_outward` (#917); a void solid, zero or NaN stays
+    // a refusal (`turn_outward`).
+    let turned_outward = turn_outward(&mut triangles, volume).map(|v| volume = v).is_some();
+    if !(volume.is_finite() && volume > 0.0) {
+        return Err(MeshRefusal::Volume(volume));
+    }
+    let report = MeshReport {
+        tolerance_mm: tol_mm,
+        triangles: triangles.len(),
+        faces: record.faces.len(),
+        open_sides: open,
+        deviation: planned.deviation,
+        volume,
+        turned_outward,
+        notes,
+    };
+    Ok(MachiningMesh {
+        positions,
+        triangles,
+        tri_face,
+        report,
+    })
+}
+
+/// A plan measured inside its tolerance, with the planner's notes and the
+/// faces it left out (always none unless asked to keep them).
+pub(crate) struct Planned {
+    pub plan: TessPlan,
+    pub deviation: Deviation,
+    pub notes: Vec<String>,
+    pub left_out: Vec<LeftOut>,
+}
+
+/// The plan of `record` at `tol_mm`, its deviation measured (see
+/// [`machining_mesh`]). `keep_left_out`: a face the planner leaves out is
+/// handed back in [`Planned::left_out`], not refused.
+pub(crate) fn planned(
+    record: &solidcore_record::brep::Brep,
+    tol_mm: f64,
+    stop: &CancelToken,
+    keep_left_out: bool,
+) -> Result<Planned, MeshRefusal> {
     let size = body_size(record);
     if !(tol_mm.is_finite() && tol_mm > 0.0) {
         return Err(MeshRefusal::Tolerance {
@@ -216,7 +291,7 @@ pub fn machining_mesh(
         });
     }
     let mut chord = tol_mm;
-    let (plan, deviation, mut notes) = loop {
+    loop {
         if stop.is_cancelled() {
             return Err(MeshRefusal::TimedOut("before planning"));
         }
@@ -229,7 +304,7 @@ pub fn machining_mesh(
         if stop.is_cancelled() {
             return Err(MeshRefusal::TimedOut("planning"));
         }
-        let notes = judge_stats(&stats)?;
+        let (mut notes, left_out) = judge(&stats, keep_left_out)?;
         let planned_tris: usize = plan.faces.iter().map(|f| f.triangles.len()).sum();
         if planned_tris > MAX_MACHINING_TRIANGLES {
             return Err(MeshRefusal::TooLarge(planned_tris));
@@ -258,48 +333,13 @@ pub fn machining_mesh(
                 face: deviation.worst_face,
             });
         }
-        break (plan, deviation, notes);
-    };
-    if chord < tol_mm {
-        notes.push(format!(
-            "replanned at {chord:e} mm chord to meet the requested {tol_mm:e} mm measured tolerance"
-        ));
+        if chord < tol_mm {
+            notes.push(format!(
+                "replanned at {chord:e} mm chord to meet the requested {tol_mm:e} mm measured tolerance"
+            ));
+        }
+        return Ok(Planned { plan, deviation, notes, left_out });
     }
-    let mesh = evaluate(&plan, record.faces.len())?;
-    let (positions, triangles, tri_face) = weld(&mesh);
-    let (open, over, turned) = sides(&triangles);
-    if open > 0 || over > 0 || turned > 0 {
-        return Err(MeshRefusal::NotWatertight { open, over, turned });
-    }
-    let tris: Vec<[usize; 3]> = triangles.iter().map(|t| t.map(|i| i as usize)).collect();
-    let mut volume = mesh_signed_volume(&positions, &tris).unwrap_or(f64::NAN);
-    let mut triangles = triangles;
-    // An inward solid of one shell is turned outward and said (#917); a
-    // void solid, zero or NaN stays a refusal (`turn_outward`).
-    if let Some(turned) = turn_outward(&mut triangles, volume) {
-        volume = turned;
-        notes.push(format!(
-            "the solid's faces all pointed inward (volume -{volume:.6e} mm^3); the mesh is turned outward"
-        ));
-    }
-    if !(volume.is_finite() && volume > 0.0) {
-        return Err(MeshRefusal::Volume(volume));
-    }
-    let report = MeshReport {
-        tolerance_mm: tol_mm,
-        triangles: triangles.len(),
-        faces: record.faces.len(),
-        open_sides: open,
-        deviation,
-        volume,
-        notes,
-    };
-    Ok(MachiningMesh {
-        positions,
-        triangles,
-        tri_face,
-        report,
-    })
 }
 
 /// The body's box diagonal from its vertices (the bench's size, mm).
@@ -315,27 +355,31 @@ fn body_size(record: &solidcore_record::brep::Brep) -> f64 {
     if record.vertices.is_empty() { 0.0 } else { d }
 }
 
-/// The plan evaluated, every face with triangles, none refused.
-fn evaluate(plan: &TessPlan, faces: usize) -> Result<solidcore_tess::Mesh, MeshRefusal> {
+/// The plan evaluated, every face with triangles, none refused; with
+/// `keep_left_out` the faces without triangles are handed back instead.
+pub(crate) fn evaluate(
+    plan: &TessPlan,
+    faces: usize,
+    keep_left_out: bool,
+) -> Result<(solidcore_tess::Mesh, Vec<LeftOut>), MeshRefusal> {
     let (mesh, refused) = catch_unwind(AssertUnwindSafe(|| plan.evaluate()))
         .map_err(|_| MeshRefusal::Planner("the evaluator panicked".into()))?;
-    if let Some(r) = refused.first() {
-        return Err(MeshRefusal::FaceLeftOut {
-            face: r.face,
-            reason: r.reason.clone(),
-        });
-    }
+    let mut left_out: Vec<LeftOut> =
+        refused.iter().map(|r| LeftOut { face: r.face, reason: r.reason.clone() }).collect();
     let mut has = vec![false; faces];
     for f in &mesh.tri_face {
         if let Some(h) = has.get_mut(*f as usize) {
             *h = true;
         }
     }
-    if let Some(face) = has.iter().position(|h| !h) {
-        return Err(MeshRefusal::FaceLeftOut {
-            face,
-            reason: "no triangles in the evaluated mesh".into(),
-        });
+    for (face, _) in has.iter().enumerate().filter(|(_, h)| !**h) {
+        if !left_out.iter().any(|l| l.face == face) {
+            left_out.push(LeftOut { face, reason: "no triangles in the evaluated mesh".into() });
+        }
     }
-    Ok(mesh)
+    if let (false, Some(r)) = (keep_left_out, left_out.first()) {
+        return Err(MeshRefusal::FaceLeftOut { face: r.face, reason: r.reason.clone() });
+    }
+    left_out.sort_by_key(|l| l.face);
+    Ok((mesh, left_out))
 }

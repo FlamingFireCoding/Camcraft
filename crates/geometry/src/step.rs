@@ -1,6 +1,7 @@
-//! STEP model import (#917): the kernel reads every solid of the file
-//! (`camcraft_kernel::solidcore_step::import_step`) and meshes each one with
-//! the machining mesh (watertight, outward, deviation measured) at the
+//! STEP model import (#917): the kernel reads every solid and every sheet of
+//! the file (`camcraft_kernel::solidcore_step::import_step_model`) and
+//! meshes each solid with the machining mesh (watertight, outward,
+//! deviation measured) and each sheet with its open boundary allowed, at the
 //! importer's chord cap; a model over the facet budget is meshed again at a
 //! coarser chord, and the chord it was made at is handed out (#864, #1054).
 //! Every kernel refusal keeps its reason.
@@ -26,17 +27,24 @@ pub enum StepError {
 #[derive(Debug)]
 pub struct StepMesh {
     /// Every solid of the file, each a watertight outward mesh, with one
-    /// facet range for each solid ([`Mesh::solid_ranges`]).
+    /// facet range for each solid ([`Mesh::solid_ranges`]). A file with a
+    /// sheet (a surface model of open shells), or a solid meshed with faces
+    /// left out, gives one mesh with no ranges, as one soup.
     pub mesh: Mesh,
     /// The chord tolerance the mesh was made at (mm): the chord cap, or
     /// coarser when the cap did not fit the facet budget.
     pub chord_mm: f64,
-    /// The largest certified distance (mm) from a facet to its solid's
-    /// surface, over every solid: the kernel's measured bound, never more
-    /// than `chord_mm` (a solid over its chord is refused).
+    /// The largest certified distance (mm) from a facet to its surface,
+    /// over every solid and sheet: the kernel's measured bound, never more
+    /// than `chord_mm` (a body over its chord is refused).
     pub deviation_mm: f64,
     /// What the reader and the mesher noted, one line each.
     pub notes: Vec<String>,
+    /// Only from [`parse_open`]: each solid that meshes with faces left
+    /// out, every such face named with the mesher's reason (#1610). The
+    /// mesh then has walls missing there: a caller lands it incomplete or
+    /// refuses it, never as a whole model.
+    pub open: Option<String>,
 }
 
 /// How many times a model over the facet budget is meshed again, coarser,
@@ -50,54 +58,68 @@ const COARSEN_MAX_STEP: f64 = 16.0;
 /// importer's tessellation refusals).
 pub const ADVICE: &str = "re-export the model, or import an STL";
 
-/// The solids of a STEP file as one watertight mesh in mm, at most `budget`
+/// The solids and sheets of a STEP file as one mesh in mm, at most `budget`
 /// facets, at the chord `chord_cap` (mm) or coarser when that does not fit.
+/// Every solid meshes whole or the file is refused ([`StepMesh::open`] is
+/// always `None`).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, StepError> {
-    use camcraft_kernel::machining_mesh::{MachiningMesh, machining_mesh};
+    read(data, budget, chord_cap, false)
+}
+
+/// [`parse`], but a solid whose faces the mesher leaves out is meshed with
+/// those faces missing and named in [`StepMesh::open`] (#1610): for the
+/// model import, which lands it incomplete. Every other refusal stays.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn parse_open(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, StepError> {
+    read(data, budget, chord_cap, true)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read(data: &[u8], budget: usize, chord_cap: f64, keep_open: bool) -> Result<StepMesh, StepError> {
+    use camcraft_kernel::machining_mesh::{MachiningMesh, MeshRefusal, machining_mesh};
+    use camcraft_kernel::machining_mesh_open::{partial_mesh, sheet_mesh};
     use camcraft_kernel::solidcore_impl::SolidcoreKernel;
-    use camcraft_kernel::solidcore_step::import_step;
+    use camcraft_kernel::solidcore_step::import_step_model;
 
     let stop = camcraft_kernel::CancelToken::new();
     let _watch = crate::kernel_import::Watchdog::start(stop.clone(), "STEP import");
-    let import = import_step(&mut SolidcoreKernel::default(), data, &stop)
+    let import = import_step_model(&mut SolidcoreKernel::default(), data, &stop)
         .map_err(|e| StepError::Refused(locate(data, e.to_string())))?;
+    let refused = |label: &str, e: MeshRefusal| StepError::Refused(format!("{label} could not be tessellated: {e} - {ADVICE}"));
     let mut chord = chord_cap;
     for _ in 0..=COARSEN_TRIES {
-        let mut meshes: Vec<MachiningMesh> = Vec::with_capacity(import.solids.len());
+        let mut meshes: Vec<(String, MachiningMesh)> = Vec::new();
+        let mut holes: Vec<String> = Vec::new();
         let mut total = 0usize;
         for solid in &import.solids {
-            let mesh = machining_mesh(solid, chord, &stop).map_err(|e| {
-                StepError::Refused(format!("{} could not be tessellated: {e} - {ADVICE}", solid_label(solid.item, &solid.name)))
-            })?;
+            let label = solid_label(solid.item, &solid.name);
+            let mesh = match machining_mesh(solid, chord, &stop) {
+                Ok(mesh) => mesh,
+                Err(MeshRefusal::FaceLeftOut { .. }) if keep_open => {
+                    let open = partial_mesh(solid, chord, &stop).map_err(|e| refused(&label, e))?;
+                    holes.push(hole(&label, solid.record.faces.len(), &open.left_out));
+                    open.mesh
+                }
+                Err(e) => return Err(refused(&label, e)),
+            };
             total = total.saturating_add(mesh.triangles.len());
+            meshes.push((label, mesh));
             if total > budget {
                 break;
             }
-            meshes.push(mesh);
+        }
+        for sheet in &import.sheets {
+            if total > budget {
+                break;
+            }
+            let label = format!("sheet #{}", sheet.item);
+            let mesh = sheet_mesh(&sheet.record, chord, &stop).map_err(|e| refused(&label, e))?;
+            total = total.saturating_add(mesh.triangles.len());
+            meshes.push((label, mesh));
         }
         if total <= budget {
-            // One facet range for each solid: solids that share a wall stay
-            // apart for the slicer and the winding check (#917).
-            let mut facets = Vec::new();
-            let mut ranges = Vec::with_capacity(meshes.len());
-            for mesh in &meshes {
-                let start = facets.len();
-                crate::kernel_import::push_facets(mesh, &mut facets).map_err(StepError::Refused)?;
-                ranges.push(start..facets.len());
-            }
-            let mut notes: Vec<String> = import.notes.iter().map(|n| format!("STEP: {n}")).collect();
-            for solid in &import.solids {
-                let label = solid_label(solid.item, &solid.name);
-                notes.extend(solid.notes.iter().map(|n| format!("STEP {label}: {n}")));
-            }
-            for (solid, mesh) in import.solids.iter().zip(&meshes) {
-                let label = solid_label(solid.item, &solid.name);
-                notes.extend(mesh.report.notes.iter().map(|n| format!("STEP {label}: {n}")));
-            }
-            let mesh = Mesh::from_solids(facets, ranges).map_err(|e| StepError::Refused(e.to_string()))?;
-            let deviation_mm = meshes.iter().map(|m| m.report.deviation.largest()).fold(0.0, f64::max);
-            return Ok(StepMesh { mesh, chord_mm: chord, deviation_mm, notes });
+            return finish(&import, &meshes, chord, &holes);
         }
         // Facets fall about as the chord rises; `total` may be a lower bound
         // (the count stops at the budget), so the chord at least doubles.
@@ -108,11 +130,76 @@ pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, Ste
     Err(StepError::TooLarge)
 }
 
+/// The meshes as one [`Mesh`], with every note.
+#[cfg(not(target_arch = "wasm32"))]
+fn finish(
+    import: &camcraft_kernel::solidcore_step::StepModel,
+    meshes: &[(String, camcraft_kernel::machining_mesh::MachiningMesh)],
+    chord: f64,
+    holes: &[String],
+) -> Result<StepMesh, StepError> {
+    // One facet range for each solid: solids that share a wall stay apart
+    // for the slicer and the winding check (#917). A sheet or a partial
+    // mesh is no solid, so a file with one gets no ranges.
+    let mut facets = Vec::new();
+    let mut ranges = Vec::with_capacity(meshes.len());
+    for (_, mesh) in meshes {
+        let start = facets.len();
+        crate::kernel_import::push_facets(mesh, &mut facets).map_err(StepError::Refused)?;
+        ranges.push(start..facets.len());
+    }
+    let mut notes: Vec<String> = import.notes.iter().map(|n| format!("STEP: {n}")).collect();
+    for solid in &import.solids {
+        let label = solid_label(solid.item, &solid.name);
+        notes.extend(solid.notes.iter().map(|n| format!("STEP {label}: {n}")));
+    }
+    for sheet in &import.sheets {
+        notes.extend(sheet.notes.iter().map(|n| format!("STEP sheet #{}: {n}", sheet.item)));
+    }
+    for (label, mesh) in meshes {
+        notes.extend(mesh.report.notes.iter().map(|n| format!("STEP {label}: {n}")));
+    }
+    // The earlier importer's wording for solids wound inward (#1617).
+    let inward: Vec<usize> = meshes.iter().filter(|(_, m)| m.report.turned_outward).map(|(_, m)| m.triangles.len()).collect();
+    if !inward.is_empty() {
+        let turned: usize = inward.iter().sum();
+        notes.push(format!(
+            "{} closed solid(s) wound inward (negative volume) were turned outward: {turned} facet(s) reversed",
+            inward.len()
+        ));
+    }
+    let mesh = if import.sheets.is_empty() && holes.is_empty() {
+        Mesh::from_solids(facets, ranges).map_err(|e| StepError::Refused(e.to_string()))?
+    } else {
+        Mesh::from_facets(facets)
+    };
+    let deviation_mm = meshes.iter().map(|(_, m)| m.report.deviation.largest()).fold(0.0, f64::max);
+    let open = (!holes.is_empty()).then(|| holes.join("; "));
+    Ok(StepMesh { mesh, chord_mm: chord, deviation_mm, notes, open })
+}
+
+/// `closed shell of solid #12 (10 faces) meshes open: face 4 of 10 got no
+/// mesh from the kernel (reason)`, every left-out face with its reason.
+#[cfg(not(target_arch = "wasm32"))]
+fn hole(label: &str, faces: usize, left_out: &[camcraft_kernel::machining_mesh::LeftOut]) -> String {
+    let named: Vec<String> = left_out
+        .iter()
+        .map(|l| format!("face {} of {faces} got no mesh from the kernel ({})", l.face.saturating_add(1), l.reason))
+        .collect();
+    format!("closed shell of {label} ({faces} faces) meshes open: {}", named.join(", "))
+}
+
 /// The browser build keeps solidcore out of its wasm: a STEP file is
 /// refused by name there.
 #[cfg(target_arch = "wasm32")]
 pub fn parse(_data: &[u8], _budget: usize, _chord_cap: f64) -> Result<StepMesh, StepError> {
     Err(StepError::Refused("STEP models open in the desktop app only, not in the browser build".into()))
+}
+
+/// [`parse`] in the browser build: refused by name.
+#[cfg(target_arch = "wasm32")]
+pub fn parse_open(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, StepError> {
+    parse(data, budget, chord_cap)
 }
 
 /// A syntax refusal ("... at line 9: ...") with the entity that holds the
@@ -178,10 +265,8 @@ fn scan(text: &str, line: usize) -> Spot {
                     id.push(d);
                 }
                 while chars.next_if(|w| *w == ' ' || *w == '\t').is_some() {}
-                if chars.peek() == Some(&'=') {
-                    if let Ok(id) = id.parse() {
-                        spot.entity = Some((id, at));
-                    }
+                if let (Some('='), Ok(id)) = (chars.peek(), id.parse()) {
+                    spot.entity = Some((id, at));
                 }
             }
             None => {}

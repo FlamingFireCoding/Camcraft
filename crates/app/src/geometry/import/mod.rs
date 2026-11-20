@@ -102,10 +102,10 @@ pub struct Graded {
     /// STEP reader repaired). Empty when it changed nothing.
     pub notes: Vec<String>,
     /// A model that meshes open, its hole named (#1610): the mesh has walls
-    /// missing there. Only the `*_open` loaders could return one; every
-    /// other loader refuses such a model by name. Since #917 the STEP
-    /// reader refuses a solid that does not mesh closed, so no importer
-    /// sets it today; a project that recorded one keeps it (`mesh_open`).
+    /// missing there. Only the `*_open` loaders return one; every other
+    /// loader refuses such a model by name. Since #917 a STEP solid whose
+    /// faces the kernel's mesher leaves out sets it, each such face named
+    /// with its reason; a project that recorded one keeps it (`mesh_open`).
     pub open: Option<String>,
     /// Raw STEP text preserved for library/project persistence (#744).
     pub step_source: Option<String>,
@@ -125,7 +125,7 @@ impl Graded {
 /// The refusal for a mesh with a hole, where the caller cannot land the
 /// model incomplete (a fixture, a tool body, a mesh-only import).
 #[must_use]
-fn open_refusal(hole: &str) -> ImportError {
+pub(crate) fn open_refusal(hole: &str) -> ImportError {
     ImportError::Step(format!("{hole} - the model would import with walls missing; re-export the model, or import an STL"))
 }
 
@@ -192,10 +192,10 @@ pub fn parse_model_open_within(data: &[u8], format: Format, budget: usize) -> Re
             (mesh, None, notes, None)
         }
         // #917: solidcore's machining mesh is watertight and outward; a
-        // solid that does not mesh closed is refused by name.
+        // solid with faces the mesher leaves out keeps its hole named.
         Format::Step => {
-            let (mesh, chord, notes) = step::parse_noted(data, budget)?;
-            (mesh, step::coarse(chord), notes, None)
+            let (mesh, chord, notes, open) = step::parse_open(data, budget)?;
+            (mesh, step::coarse(chord), notes, open)
         }
     };
     let step_source = (format == Format::Step)

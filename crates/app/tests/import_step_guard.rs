@@ -127,8 +127,13 @@ fn a_dome_over_its_facet_budget_keeps_a_coarser_mesh_at_its_own_chord() {
     .expect("a smooth face over the budget keeps a coarser mesh");
     assert!(chord > full_chord, "the kept mesh reports its own, coarser chord: {chord} vs {full_chord}");
     assert!(m.len() <= budget && m.len() < full.len(), "{} facets kept, {} at full detail", m.len(), full.len());
+    // Every facet stands at most `chord` off its surface, and only the dome
+    // (area under 1.2 mm^2) is curved: the volume is off by at most
+    // 1.2 * chord. The earlier 2e-3 bound was for a finer mesh; at a coarser
+    // chord the inscribed dome loses more (#917: 1.0194 at a 0.01 chord).
     let want = 1.0 + 0.2 / 9.0;
-    assert!((volume(&m) - want).abs() < 2e-3, "volume {}, want {want}", volume(&m));
+    assert!((volume(&m) - want).abs() <= 1.2 * chord, "volume {}, want {want} within {}", volume(&m), 1.2 * chord);
+    assert!((volume(&full) - want).abs() < 2e-3, "at the cap: volume {}, want {want}", volume(&full));
 }
 
 /// #1568 / #1536: a face that may jump is never smeared into a kept

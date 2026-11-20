@@ -53,6 +53,7 @@ pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
 pub mod mesh_open;
+pub mod mesh_solids;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;

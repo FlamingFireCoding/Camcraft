@@ -111,6 +111,20 @@ pub fn locate(text: &str) -> Option<Failure> {
                     i += 1;
                 }
             }
+            // A resource reference `<...>` (ISO 10303-21 ed. 3) is text: a
+            // `/*` or a `'` in it opens nothing (as `step_depth` reads it).
+            // Since #917 this scan runs on every file, not only on one the
+            // parser refused.
+            b'<' => {
+                while let Some(&c) = b.get(i + 1) {
+                    i += 1;
+                    match c {
+                        b'>' => break,
+                        b'\n' => line += 1,
+                        _ => {}
+                    }
+                }
+            }
             b'/' if b.get(i + 1) == Some(&b'*') => {
                 let open = line;
                 i += 2;

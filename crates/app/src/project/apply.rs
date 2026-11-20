@@ -748,6 +748,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // not the file's whole history. Staleness never reads
                 // it; the stamp's signature does the work.
                 model::set_rev(world, &entity, dto.rev);
+                // #917: ranges that do not tile the facets are dropped.
+                let len = model::facets_of(world, &entity).map_or(0, |f| f.len());
+                let solids = crate::mesh_solids::from_wire(dto.solids.as_deref(), len, &dto.name);
+                crate::mesh_solids::set(world, &entity, &solids);
                 // #864: the flag lands with the facets it describes; an
                 // absent key, or a value that is no coarse chord, is none.
                 crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));

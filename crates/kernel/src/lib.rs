@@ -31,6 +31,7 @@
 
 mod error;
 pub mod machining_mesh;
+pub mod machining_mesh_open;
 mod measure;
 pub mod mesh_bound;
 mod mesh_bound_blossom;
@@ -42,9 +43,11 @@ mod solidcore_blend;
 pub mod solidcore_impl;
 pub mod solidcore_import;
 pub mod solidcore_step;
+mod solidcore_step_import;
 pub mod solidcore_trims;
 pub mod solidcraft;
 mod step_curve_guard;
+mod step_face_winding;
 #[cfg(feature = "truck")]
 pub mod truck_impl;
 
