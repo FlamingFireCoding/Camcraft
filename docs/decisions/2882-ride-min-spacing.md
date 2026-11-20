@@ -27,3 +27,5 @@
 - Low. The change is one private function and one constant in `offset.rs`. The pinning test is `crates/motion/tests/turning_offset_spacing.rs`.
 - Changing `MIN_GAP_SHARE` changes the chord bound. Keep the bound at `2 * share`, or update the tolerance claim in this entry.
 - Known limit: at a very small user tolerance, for example 0.001 mm, the gap is below the posted resolution. Two rounded blocks can then still be equal. This is rare and it costs no position.
+
+**Review fix (PR #2897).** The catalog case `turning/cone-thread` reached main after this branch was cut. Its committed `.nc` had the repeated blocks. The branch merges main and rebuilds the case with `cargo xtask catalog --case turning/cone-thread`. The rebuild removes 465 `G01` lines and adds none. The runs of same-X `G01` blocks go from 509 to 82. The case README drops the limit line for #2882. The taper and thread blocks that the README names stay the same.
