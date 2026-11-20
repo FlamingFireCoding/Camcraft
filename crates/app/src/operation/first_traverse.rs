@@ -67,14 +67,49 @@ fn table_top_face(b: &FixtureBox) -> FixtureBox {
     FixtureBox { min: Point3::new(b.min.x, b.min.y, b.max.z), max: b.max }
 }
 
+/// How the machine table meets a 3+2 plane at local height `start_h`.
+enum TableRead {
+    /// The move along the tool axis to the plane can carry the tool under
+    /// the table top: the table's top face is steel the plane must clear.
+    Counts(FixtureBox),
+    /// No move along the tool axis to the plane goes under the table top.
+    Clear,
+    /// The tool axis points down toward the table and the move to the
+    /// plane can go under its top: the verdict cannot name a height to
+    /// raise to, so a note names the table as not judged.
+    Unjudged,
+}
+
+/// The table on a 3+2 plane (#2987). The control does not know where the
+/// tool stands, so the worst start is on the table top face itself. The
+/// move along the tool axis from there to the plane changes the world Z
+/// by `(start_h - h) * axis_z` (`h`: that start's local height). The
+/// table counts only when that move can drop the tool more than `Z_TOL`
+/// under the top. Then the in-plane traverse runs between two points
+/// over the table top (a convex half-space), so it cannot go under it.
+/// A horizontal axis (B 90) never changes the Z: the table never counts,
+/// although its far edge reads high along that axis.
+fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64) -> TableRead {
+    let face = table_top_face(b);
+    let up = f.axis[2];
+    if up > 0.0 {
+        let high = verify::box_top(&face, |p| f.z_local(p));
+        if (high - start_h) * up > Z_TOL { TableRead::Counts(face) } else { TableRead::Clear }
+    } else {
+        let low = -verify::box_top(&face, |p| -f.z_local(p));
+        if (start_h - low) * -up > Z_TOL { TableRead::Unjudged } else { TableRead::Clear }
+    }
+}
+
 /// Add the first-traverse verdict to `warns` when `path` (in `frame`'s
 /// local heights when it is tilted) starts under the stock or any steel.
 /// The note it returns says what a 3+2 plane could not judge.
 ///
 /// A 3+2 plane reads the tagged fixtures along its tool axis (they ride
 /// the table with the part). It reads the machine table's top face over
-/// the stated travel when the head tilts (#2987): the plane drops toward
-/// the table on its low side. When only the work tilts, the table stays
+/// the stated travel when the head tilts (#2987), only where the move
+/// along the tool axis can carry the tool under the table top
+/// (`table_read`). When only the work tilts, the table stays
 /// under the work (`work_tilts`). A mounted machine that states no travel
 /// gives no table box, and the note names that. Upright, the table's top
 /// is under the stock and never the higher top.
@@ -87,15 +122,21 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, b
         Some(f) => {
             let work_turns = over.rotaries.is_some_and(work_tilts);
             let is_table = |i: usize| over.names.get(i).is_some_and(|n| n == MACHINE_TABLE);
-            let steel: Vec<FixtureBox> = over
-                .fixtures
-                .iter()
-                .enumerate()
-                .filter_map(|(i, b)| match is_table(i) {
-                    true => (!work_turns).then(|| table_top_face(b)),
-                    false => Some(*b),
-                })
-                .collect();
+            let start_h = path.start().map(|p| p.z).filter(|z| z.is_finite());
+            let mut steel: Vec<FixtureBox> = Vec::with_capacity(over.fixtures.len());
+            for (i, b) in over.fixtures.iter().enumerate() {
+                if !is_table(i) {
+                    steel.push(*b);
+                    continue;
+                }
+                match start_h.filter(|_| !work_turns).map(|h| table_read(b, f, h)) {
+                    Some(TableRead::Counts(face)) => steel.push(face),
+                    Some(TableRead::Unjudged) => {
+                        note = Some(format!("{TABLE_UNJUDGED_NOTE}: the tool axis points down toward the table, so the move along it to the clearance plane can go under the table top"));
+                    }
+                    Some(TableRead::Clear) | None => {}
+                }
+            }
             let has_table = (0..over.fixtures.len()).any(is_table);
             if over.rotaries.is_some() && !work_turns && !has_table {
                 note = Some(format!("{TABLE_UNJUDGED_NOTE}: the machine does not state all of the X, Y and Z travel, so the first traverse is judged against the stock and the fixtures only"));
