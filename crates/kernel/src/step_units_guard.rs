@@ -4,14 +4,19 @@
 //! so the unit checks and the topology reader read the same long names. A
 //! plane angle unit that the reader cannot convert to radians, or an angle
 //! unit that does not say that it is one, is refused by name: the reader
-//! would read its angles as radians without a word.
+//! would read its angles as radians without a word. For the same reason, a
+//! solid item with no unit context is refused when the file states an angle
+//! unit that is not the radian (#3079).
 //! Provenance: the public ISO short-name registry
 //! (https://standards.iso.org/iso/10303/tech/short_names/short-names.txt) and
 //! ISO 10303-41 (NAMED_UNIT, SI_UNIT, CONVERSION_BASED_UNIT,
 //! PLANE_ANGLE_UNIT, PLANE_ANGLE_MEASURE_WITH_UNIT). Read through the public
 //! p21 API of solidcore-step. No HSMWorks material consulted.
 
+use std::collections::HashSet;
+
 use solidcore_step::p21::{Entity, Exchange, Param};
+use solidcore_step::topology;
 use solidcore_step::units::{self, UnitKind};
 
 /// The unit short names that the pinned parser leaves short, with their long
@@ -107,6 +112,82 @@ fn measures_angle(ex: &Exchange, unit: &Entity) -> bool {
     conversion_base(ex, unit)
         .and_then(|b| ex.get(b))
         .is_some_and(|b| b.has("PLANE_ANGLE_UNIT") || si_name(b) == Some("RADIAN"))
+}
+
+/// The solid items that the reader reads with no unit context, judged by the
+/// angle unit (#3079). Such an item takes the default units, its angles in
+/// radians. That is right only when the file states no other angle unit.
+pub(crate) struct UnlistedAngles {
+    /// The first stated plane angle unit that is not the radian.
+    unit: Option<u64>,
+    /// The items that a representation with a context lists, and the
+    /// pieces of each such solid (they take its context in the reader).
+    listed: HashSet<u64>,
+}
+
+impl UnlistedAngles {
+    pub(crate) fn new(ex: &Exchange) -> UnlistedAngles {
+        let mut ids: Vec<u64> = ex.entities.keys().copied().collect();
+        ids.sort_unstable();
+        let mut listed = HashSet::new();
+        let mut unit = None;
+        for &id in &ids {
+            let Some(e) = ex.get(id) else { continue };
+            if let Some((items, Some(_))) = representation(e) {
+                listed.extend(items);
+            }
+            if unit.is_none() {
+                unit = non_radian_unit(ex, e);
+            }
+        }
+        let solids: Vec<u64> = listed
+            .iter()
+            .copied()
+            .filter(|&s| ex.get(s).is_some_and(|e| topology::is_solid_item(e.name())))
+            .collect();
+        for s in solids {
+            listed.extend(topology::items(ex, s));
+        }
+        UnlistedAngles { unit, listed }
+    }
+
+    /// `Some(reason)`: item `item` has no unit context, but the file states
+    /// an angle unit that is not the radian, so its angles would be wrong.
+    pub(crate) fn refusal(&self, item: u64) -> Option<String> {
+        let unit = self.unit.filter(|_| !self.listed.contains(&item))?;
+        Some(format!(
+            "no representation gives it a unit context, so its angles would be read in radians, \
+             but the file states plane angle unit #{unit}, which is not the radian"
+        ))
+    }
+}
+
+/// The first plane angle unit of unit context `e` that is not the radian.
+fn non_radian_unit(ex: &Exchange, e: &Entity) -> Option<u64> {
+    let list = e.record("GLOBAL_UNIT_ASSIGNED_CONTEXT")?.first()?.as_list()?;
+    list.iter().filter_map(Param::as_ref_id).find(|&u| {
+        ex.get(u).is_some_and(|unit| unit.has("PLANE_ANGLE_UNIT"))
+            && !matches!(units::unit_factor(ex, u), Some((UnitKind::Angle, f)) if (f - 1.0).abs() <= 1e-12)
+    })
+}
+
+/// Items and context of a representation entity, plain or complex (the
+/// `representation` attributes name, items, context_of_items, ISO 10303-43).
+fn representation(e: &Entity) -> Option<(Vec<u64>, Option<u64>)> {
+    let p = if e.is_complex() {
+        e.record("REPRESENTATION").or_else(|| {
+            e.records
+                .iter()
+                .find(|r| r.name.ends_with("REPRESENTATION") && r.params.len() >= 3)
+                .map(|r| r.params.as_slice())
+        })?
+    } else if e.name().ends_with("REPRESENTATION") {
+        e.params()
+    } else {
+        return None;
+    };
+    let items = p.get(1)?.as_list()?.iter().filter_map(Param::as_ref_id).collect();
+    Some((items, p.get(2).and_then(Param::as_ref_id)))
 }
 
 #[cfg(test)]

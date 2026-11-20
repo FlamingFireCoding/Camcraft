@@ -232,11 +232,22 @@ fn read_guarded(
         cap,
         widest_mm: measured.max(raised),
     };
+    // An item with no unit context reads its angles in radians (#3079).
+    let unlisted = crate::step_units_guard::UnlistedAngles::new(&ex);
+    let mut read = read;
+    read.solids.retain(|s| match unlisted.refusal(s.item) {
+        Some(reason) => {
+            out.refused.push(StepRefusal { item: s.item, stage: "read", reason });
+            false
+        }
+        None => true,
+    });
     for f in read.failures {
         out.refused.push(StepRefusal {
             item: f.item,
             stage: "read",
-            reason: f.message,
+            // The wrong angle unit is the first cause of what then failed.
+            reason: unlisted.refusal(f.item).unwrap_or(f.message),
         });
     }
     for s in read.solids {

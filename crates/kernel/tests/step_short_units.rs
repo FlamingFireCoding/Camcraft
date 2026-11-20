@@ -120,6 +120,66 @@ fn unmarked_angle_unit_is_refused_by_name() {
     }
 }
 
+/// The representation lists the placement #70 in place of the solid #16, so
+/// no representation lists the solid and it has no unit context.
+fn unlisted(text: &str) -> String {
+    let out = text.replace(
+        "ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #11)",
+        "ADVANCED_BREP_SHAPE_REPRESENTATION('', (#70), #11)",
+    );
+    assert_ne!(out, text, "the fixture must list the solid #16");
+    out
+}
+
+/// #3079: the file states degrees, and the cone #16 has no context. The
+/// reader would read its semi-angle in radians, so it must refuse #16.
+#[test]
+fn unlisted_item_in_a_degree_file_is_refused_by_name() {
+    match import(&unlisted(CONE)) {
+        Err(KernelError::InvalidResult { detail, .. }) => assert!(
+            detail.contains("#16") && detail.contains("angle"),
+            "the refusal must name the item and the angle unit: {detail}"
+        ),
+        other => panic!("an unlisted item in a degree file must be refused, got {other:?}"),
+    }
+}
+
+/// #3079: the same cone, with a semi-angle that reads cleanly in radians.
+/// The reader builds the solid, so the refusal must come after the build
+/// and not only from a failed read.
+#[test]
+fn unlisted_item_that_reads_cleanly_is_refused_by_name() {
+    let base = unlisted(CONE);
+    let text = base.replace(
+        "CONICAL_SURFACE('', #70, 10.0, 1.0)",
+        "CONICAL_SURFACE('', #70, 10.0, 0.017453292519943295)",
+    );
+    assert_ne!(text, base, "the fixture must have the cone");
+    match import(&text) {
+        Err(KernelError::InvalidResult { detail, .. }) => assert!(
+            detail.contains("#16") && detail.contains("plane angle unit #13"),
+            "the refusal must name the item and the angle unit: {detail}"
+        ),
+        other => panic!("an unlisted item in a degree file must be refused, got {other:?}"),
+    }
+}
+
+/// #3079 control: a millimetre file that states the radian keeps an
+/// unlisted item, because the default angle unit is the stated one.
+#[test]
+fn unlisted_item_in_a_radian_file_is_kept() {
+    let mm = METRE.replace("SUNT($,.METRE.)", "SUNT(.MILLI.,.METRE.)");
+    assert_ne!(mm, METRE, "the fixture must state the metre");
+    let text = mm.replace(
+        "ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #11)",
+        "ADVANCED_BREP_SHAPE_REPRESENTATION('', (#81), #11)",
+    );
+    assert_ne!(text, mm, "the fixture must list the solid #16");
+    let (solids, _) = import(&text).expect("a radian file keeps its unlisted item");
+    assert_eq!(solids.len(), 1, "the unlisted cube must import");
+    assert!((solids[0].volume - 1.0).abs() < 1e-8, "a 1 mm cube: {:?}", solids[0]);
+}
+
 #[test]
 fn long_name_context_controls_import_with_correct_scale() {
     for (text, size) in [(INCH, 25.4), (METRE, 1000.0)] {
