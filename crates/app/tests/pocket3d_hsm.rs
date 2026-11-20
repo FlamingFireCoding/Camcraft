@@ -217,6 +217,23 @@ fn bore_path_matches(got: (usize, usize, usize)) -> bool {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn the_linux_x86_64_bore_count_pin_is_exact() {
+    assert!(bore_path_matches((3158, 3130, 1141)));
+    for got in [
+        (4726, 4698, 549),
+        (3157, 3130, 1141),
+        (3159, 3130, 1141),
+        (3158, 3129, 1141),
+        (3158, 3131, 1141),
+        (3158, 3130, 1140),
+        (3158, 3130, 1142),
+    ] {
+        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
+    }
+}
+
+#[test]
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn the_macos_arm64_bore_count_pin_is_exact() {
     assert!(bore_path_matches((3158, 3130, 1141)));
