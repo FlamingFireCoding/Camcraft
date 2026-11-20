@@ -1,5 +1,5 @@
 //! Provenance: issue #1545 adversarial STEP fixtures derived from our box.step.
-//! Gate map (M4.4): covers app::geometry::import::step, app::geometry::import::step_guard.
+//! Gate map (M4.4): covers app::geometry::import::step, camcraft_kernel::step_curve_guard.
 
 use camcraft_app::geometry::import::{self, Format};
 use std::sync::mpsc;

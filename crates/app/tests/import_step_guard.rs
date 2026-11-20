@@ -137,10 +137,11 @@ fn a_dome_over_its_facet_budget_keeps_a_coarser_mesh_at_its_own_chord() {
 }
 
 /// #1568 / #1536: a face that may jump is never smeared into a kept
-/// mesh. A small facet budget makes the importer try coarser chords; the
-/// jumping face is still refused by name, never meshed wide over the jump.
+/// mesh. Under a small facet budget the jumping face is still refused by
+/// name, never meshed wide over the jump. Since #917 the kernel refuses it
+/// when it reads the file, before the importer tries a coarser chord.
 #[test]
-fn a_face_that_may_jump_is_refused_at_a_coarser_chord_too() {
+fn a_face_that_may_jump_is_refused_by_name_under_a_small_facet_budget() {
     let r = within(HANG_BARRIER, || {
         step::with_facet_budget(12, || import::load_model(&testdata("bspline_discontinuous.step")))
     });

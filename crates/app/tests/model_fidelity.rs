@@ -156,17 +156,12 @@ fn an_inch_step_and_a_metre_step_are_full_fidelity_by_measure() {
     // millimetres at the cap, and its measured deviation proves it.
     let metre = ImportModel::new(&model("sample_ap214.step")).expect("the metre sample imports");
     assert_eq!(metre.coarse_mm, None, "a metre file meets the promise");
+    // The measured deviation at the cap is pinned where the reader lives:
+    // camcraft-geometry tests/step_metre_unit.rs (#2904 review).
     let bytes = std::fs::read(model("sample_ap214.step")).expect("read");
-    let read = camcraft_geometry::step::parse(&bytes, camcraft_app::geometry::import::MAX_FACETS, step::CHORD_CAP)
-        .expect("the metre sample meshes");
-    assert_eq!(read.chord_mm, step::CHORD_CAP, "meshed at the cap, not coarser");
-    assert!(
-        read.deviation_mm > 0.0 && read.deviation_mm <= step::CHORD_CAP,
-        "measured deviation {} mm, promise {} mm",
-        read.deviation_mm,
-        step::CHORD_CAP
-    );
-    assert_eq!(read.mesh.facets.len(), metre.mesh.facets.len(), "the same mesh the import landed");
+    let (mesh, chord) = step::parse_with_chord(&bytes).expect("the metre sample meshes");
+    assert_eq!(chord, step::CHORD_CAP, "meshed at the cap, not coarser");
+    assert_eq!(mesh.facets.len(), metre.mesh.facets.len(), "the same mesh the import landed");
 }
 
 #[test]
