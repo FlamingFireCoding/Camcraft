@@ -144,6 +144,8 @@ mod plane_face_pick;
 mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
+mod display_menu;
+mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
 // #2047: turn rings turn a body - one undo step per drag.
@@ -193,6 +195,8 @@ mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
 mod recent_door;
+// #2384: the Home button and the recent projects start page.
+mod home_page;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
 // #1450: a model file dropped on the window.
@@ -492,10 +496,12 @@ fn click_toggles_view_state() {
     harness.get_by_label("Show all toolpaths").click();
     harness.run();
     assert!(harness.state().state.show_all_paths);
-    // The display mode follows the same law through the same door: a real
-    // pointer event, view state (never a command, never the undo stack).
+    // The display mode follows the same law through its own door since
+    // #2818, the viewport's Display menu: a real pointer event, view state
+    // (never a command, never the undo stack).
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::ShadedEdges);
-    open_view_menu(&mut harness);
+    let p = hud(harness.state()).nav_rect(viewcube::Nav::Display).center();
+    click_viewport(&mut harness, p);
     harness.get_by_label("Wireframe").click();
     harness.run();
     assert_eq!(harness.state().state.display, crate::state::DisplayMode::Wireframe);
@@ -4377,7 +4383,11 @@ fn sim_readout_names_the_op_and_the_verb() {
     assert_eq!(sc.ops.len(), 1);
     let s = super::shell::sim_readout(&sc, 0.0, Unit::Millimeters);
     assert!(s.starts_with("Contour1 · STANDBY · "), "before the first move: {s}");
-    let r = super::shell::sim_readout(&sc, sc.cum[0] * 0.5, Unit::Millimeters);
+    // #2901: the opening rapid starts over its entry; a zero-length
+    // opening takes no time, so probe the first rapid that does.
+    let ri = sc.segs.iter().position(|g| g.secs > 0.0).expect("a timed segment");
+    let r0 = if ri == 0 { 0.0 } else { sc.cum[ri - 1] };
+    let r = super::shell::sim_readout(&sc, r0 + (sc.cum[ri] - r0) * 0.5, Unit::Millimeters);
     assert!(r.starts_with("Contour1 · RAPID · "), "the contour opens on a rapid: {r}");
     let e = super::shell::sim_readout(&sc, sc.total, Unit::Millimeters);
     assert!(e.starts_with("Contour1 · END · "), "the finish says so: {e}");

@@ -100,7 +100,7 @@ fn a_model_just_under_the_limit_posts_an_exact_finish_with_a_header_note() {
 fn a_model_just_over_the_limit_is_refused_by_name() {
     let world = faced_brick(Some(OVER));
     assert!(model_fidelity::verdict_tol(&world).is_err());
-    let refusal = "OP: model 'brick' was imported too coarsely to verify; re-import with a larger STEP facet budget (surfaces are approximated to within 0.021 mm)";
+    let refusal = "OP: model 'brick' was imported too coarsely to verify; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance (surfaces are approximated to within 0.021 mm)";
     let gate = posting::verification_gate(&world);
     assert!(gate.contains(&refusal.to_string()), "{gate:?}");
     let err = post(&world, "over").expect_err("nothing posts past the limit");

@@ -230,7 +230,7 @@ fn the_program_verdict_tightens_by_the_excess_while_a_tolerance_is_left() {
 fn a_model_too_coarse_to_verify_is_refused_by_name_with_no_gouge_verdict() {
     let world = faced_brick(Some(TOO_COARSE));
     assert!(model_fidelity::verdict_tol(&world).is_err());
-    let refusal = "OP: model 'brick' was imported too coarsely to verify; re-import with a larger STEP facet budget (surfaces are approximated to within 0.030 mm)";
+    let refusal = "OP: model 'brick' was imported too coarsely to verify; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance (surfaces are approximated to within 0.030 mm)";
     // The exactly finished flat face: refused by name, not called a gouge.
     let report = posting::verification_report(&world);
     assert_eq!(report.problems, vec![refusal.to_string()], "{:?}", report.problems);
@@ -274,7 +274,7 @@ fn a_kind_whose_laws_do_not_read_the_excess_is_refused_on_any_reduced_model() {
     assert_eq!(op(None), None);
     let why = op(Some(TIGHT)).expect("refused");
     assert!(why.starts_with("CH: model 'brick' was imported at reduced fidelity (surfaces are approximated to within 0.012 mm)"), "{why}");
-    assert!(why.ends_with("re-import with a larger STEP facet budget"), "{why}");
+    assert!(why.ends_with("re-import with a larger STEP facet budget, or export the file again with a tighter tolerance"), "{why}");
 }
 
 #[test]
@@ -333,6 +333,11 @@ fn mcp_reports_a_reduced_fidelity_import_and_says_nothing_of_a_normal_one() {
     let note = facts["note"].as_str().expect("a sentence");
     assert!(note.starts_with("Reduced fidelity: surfaces are approximated to within "), "{note}");
     assert!(!note.contains("chord") && !note.contains("sagitta"), "plain words: {note}");
+    // #2976: the document does not record the cause, so both remedies.
+    assert!(
+        note.ends_with("Re-import with a larger STEP facet budget, or export the file again with a tighter tolerance, to clear this."),
+        "{note}"
+    );
 
     // The model read tool carries the same facts, on that model only.
     let job = c.ok("get_job", json!({}));

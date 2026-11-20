@@ -59,8 +59,11 @@ use crate::stock::StockShape;
 use crate::stock_sim::DEV_TOL;
 use crate::verify::excess_floor;
 
-/// What every refusal here says, in the user's words.
-pub const TOO_COARSE: &str = "imported too coarsely to verify; re-import with a larger STEP facet budget";
+/// What every refusal here says, in the user's words. Two causes make a
+/// model coarse: the facet budget (#1054) and edges that lie off their
+/// surfaces (#2976). The document does not record which, so the advice
+/// names both.
+pub const TOO_COARSE: &str = "imported too coarsely to verify; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance";
 
 /// The chord a mesh of unknown fidelity carries (#1056), mm: far past any
 /// verdict tolerance, so every law refuses rather than tightens, and small
@@ -307,7 +310,7 @@ pub fn facts(world: &World, chord_mm: f64) -> serde_json::Value {
         "approximation_mm": chord_mm,
         "promised_mm": step::CHORD_CAP,
         "note": format!(
-            "{}. {checks}. Re-import with a larger STEP facet budget to clear this.",
+            "{}. {checks}. Re-import with a larger STEP facet budget, or export the file again with a tighter tolerance, to clear this.",
             summary(world, chord_mm)
         ),
     })
@@ -348,7 +351,7 @@ pub fn op_problem(world: &World, name: &str, op: &Operation) -> Option<String> {
     let said = format!("surfaces are approximated to within {}", within(world, chord));
     if !fidelity_law::excess_aware(&op.params) {
         return Some(format!(
-            "{name}: model '{model}' was imported at reduced fidelity ({said}) and this kind of operation cannot be verified against it; re-import with a larger STEP facet budget"
+            "{name}: model '{model}' was imported at reduced fidelity ({said}) and this kind of operation cannot be verified against it; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance"
         ));
     }
     // #2996: a kind whose laws also guard a holder, bar, shank or stylus

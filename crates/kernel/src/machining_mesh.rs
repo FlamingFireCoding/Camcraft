@@ -300,11 +300,14 @@ pub(crate) fn planned(
             solidcore_tess::plan(record, &tol, size)
         }))
         .map_err(|_| MeshRefusal::Planner("the planner panicked".into()))?;
-        let (plan, stats) = planned.map_err(|e| MeshRefusal::Planner(e.to_string()))?;
+        let (mut plan, stats) = planned.map_err(|e| MeshRefusal::Planner(e.to_string()))?;
         if stop.is_cancelled() {
             return Err(MeshRefusal::TimedOut("planning"));
         }
         let (mut notes, left_out) = judge(&stats, keep_left_out)?;
+        // A runaway strip is divided over its boundary nodes (#2844); the
+        // measure below judges the plan as it then stands.
+        notes.extend(crate::mesh_redivide::redivide(&mut plan, record, tol_mm, stop));
         let planned_tris: usize = plan.faces.iter().map(|f| f.triangles.len()).sum();
         if planned_tris > MAX_MACHINING_TRIANGLES {
             return Err(MeshRefusal::TooLarge(planned_tris));
