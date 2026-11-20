@@ -28,6 +28,10 @@ use crate::geo2d::Region;
 use crate::geometry::{Point3, Triangle};
 use crate::geometry::shared_edge::{self, EdgeUse};
 
+/// One facet on a shared edge: its index, its direction along the edge
+/// (low -> high corner) and its third corner.
+type SharedUse = (usize, bool, u32);
+
 use super::slice::{SliceError, material_above, material_overhead, shadow_above};
 
 /// Corners closer than this (mm) are one vertex: the importers' seam drift
@@ -124,7 +128,7 @@ pub(super) fn closed_solids(facets: &[Triangle]) -> Option<Vec<Vec<Triangle>>> {
     // Bodies link over plain edges (once each way). Closed and wound
     // consistently: every edge is plain, or (#917) an edge that 2k facets
     // use where closed solids touch along a wall (`shared_edge`).
-    let mut shared: HashMap<(u32, u32), Vec<(usize, bool, u32)>> = HashMap::new();
+    let mut shared: HashMap<(u32, u32), Vec<SharedUse>> = HashMap::new();
     for (i, [a, b, c]) in corners.iter().enumerate() {
         for (p, q, r) in [(*a, *b, *c), (*b, *c, *a), (*c, *a, *b)] {
             let key = if p < q { (p, q) } else { (q, p) };

@@ -231,6 +231,10 @@ struct EdgeUse {
     facet: u32,
 }
 
+/// One facet on an edge used more than twice: its index, its direction
+/// (low -> high corner) and its third corner.
+type OnEdge = (u32, bool, u32);
+
 /// #917: the edges used more than twice where closed solids touch along a
 /// wall (`shared_edge::solids_touch`, as the slicer's bodies), judged on the
 /// bodies linked over the other edges: they link and flag nothing. Any other
@@ -241,7 +245,7 @@ fn touching_solids(
     edges: &HashMap<(u32, u32), EdgeUse>,
     parent: &mut [u32],
 ) -> HashSet<(u32, u32)> {
-    let mut on: HashMap<(u32, u32), Vec<(u32, bool, u32)>> = HashMap::new();
+    let mut on: HashMap<(u32, u32), Vec<OnEdge>> = HashMap::new();
     for (i, k) in keys.iter().enumerate() {
         let Some([a, b, c]) = k else { continue };
         for (p, q, r) in [(*a, *b, *c), (*b, *c, *a), (*c, *a, *b)] {

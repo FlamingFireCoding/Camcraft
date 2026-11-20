@@ -138,8 +138,20 @@ fn a_bore_at_the_inch_holes_own_size_passes_the_gate() {
     assert_eq!(v["ok"], json!(true), "{v}");
 }
 
+/// 0.05 mm into the wall: the toolpath check holds the post. The stock
+/// sim's lattice is coarser than this depth since #917 (#2846); the 0.1 mm
+/// test below pins the program gate's own refusal.
 #[test]
 fn a_bore_cut_oversize_into_the_inch_holes_wall_is_still_refused() {
-    let (problems, v) = inch_bore_problems(0.05);
-    assert!(problems.iter().any(|p| p.starts_with("gouge:")), "0.05 mm into the wall is a gouge: {v}");
+    let (_, v) = inch_bore_problems(0.05);
+    assert_eq!(v["ok"], json!(false), "0.05 mm into the wall is refused: {v}");
+    assert_eq!(v["held_by"], json!(["OP"]), "the oversize bore holds the post: {v}");
+}
+
+/// 0.1 mm into the inch part's wall: the program gate names the gouge.
+#[test]
+fn a_bore_cut_a_tenth_into_the_inch_holes_wall_is_a_gate_gouge() {
+    let (problems, v) = inch_bore_problems(0.1);
+    assert!(problems.iter().any(|p| p.starts_with("gouge:")), "0.1 mm into the wall is a gouge: {v}");
+    assert_eq!(v["ok"], json!(false), "{v}");
 }

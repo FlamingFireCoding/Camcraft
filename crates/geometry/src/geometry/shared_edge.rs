@@ -42,7 +42,7 @@ const SAME_WALL_RAD: f64 = 1e-6;
 pub fn solids_touch(lo: Point3, hi: Point3, uses: &[EdgeUse]) -> bool {
     let n = uses.len();
     let fwd = uses.iter().filter(|u| u.forward).count();
-    if n < 4 || n % 2 != 0 || fwd * 2 != n {
+    if n < 4 || !n.is_multiple_of(2) || fwd * 2 != n {
         return false;
     }
     // Each body once each way.

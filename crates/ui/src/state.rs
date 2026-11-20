@@ -46,6 +46,9 @@ mod browser;
 mod picked;
 #[cfg(test)]
 pub(crate) use picked::opens_a_chooser;
+#[cfg(test)]
+#[path = "state_test_import.rs"]
+mod test_import;
 #[path = "state_program_info.rs"]
 mod program_info;
 #[path = "state_tool_library.rs"]
