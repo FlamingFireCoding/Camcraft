@@ -49,6 +49,8 @@ mod status_alert;
 
 mod stock_info;
 mod donate;
+// #2384: the Home button and the recent projects start page.
+pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
