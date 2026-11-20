@@ -1,4 +1,4 @@
-//! #2901: generate's seam to the first-traverse law (`verify::first_traverse_low`): which operations answer to it and which steel they read; our own reading of the shop rule "never traverse through uncut stock or steel", no vendor material consulted.
+//! #2901, #2965: generate's seam to the first-traverse laws (`verify::first_traverse_low`, `verify::first_traverse_low_swept`): which operations answer to them and which steel they read; our own reading of the shop rule "never traverse through uncut stock or steel", no vendor material consulted.
 
 use crate::cl::{TiltedFrame, Toolpath};
 use crate::fixture::{FixtureBox, MACHINE_TABLE};
@@ -24,6 +24,52 @@ pub(super) struct Over<'a> {
     /// over the table top (`None`: unstated, read as 0 - a start on the
     /// table top, the stricter premise).
     pub z_stroke: Option<f64>,
+    /// #2965: the work's rotary for a rotary kind (`Mode::Rotary`): the
+    /// law then reads the work swept about it. `None` for every other
+    /// kind.
+    pub turned: Option<Turned<'a>>,
+    /// The operation's clearance height in the path's frame. The post
+    /// rapids Z to the higher of it and the start before the X/Y
+    /// traverse (`traverseZ`); the #2965 kinds read that height.
+    pub clearance: f64,
+}
+
+/// What a rotary kind's first traverse is judged against (#2965): the
+/// fitted axis line in the part frame, the start stock's and the part's
+/// points, and the setup's steel split by whether it turns
+/// (`fixture::workholding_for`).
+#[derive(Clone, Copy)]
+pub(super) struct Turned<'a> {
+    pub axis: verify::RotaryAxis,
+    pub rides: &'a [Point3],
+    pub turning: &'a [FixtureBox],
+    pub fixed: &'a [FixtureBox],
+}
+
+/// The points that ride the rotary: each vertex of the start stock and
+/// of the part (the part can stand outside a stock that a user drew too
+/// small). A box with no facets gives its eight corners.
+pub(super) fn rides_of(stock: Option<&[crate::geometry::Triangle]>, aabb: Option<(Point3, Point3)>, part: &[crate::geometry::Triangle]) -> Vec<Point3> {
+    let mut out: Vec<Point3> = stock.unwrap_or(&[]).iter().chain(part).flat_map(|t| [t.a, t.b, t.c]).collect();
+    if stock.is_none_or(<[_]>::is_empty)
+        && let Some((lo, hi)) = aabb
+    {
+        out.extend((0..8).map(|i| Point3::new([lo.x, hi.x][(i >> 2) & 1], [lo.y, hi.y][(i >> 1) & 1], [lo.z, hi.z][i & 1])));
+    }
+    out
+}
+
+/// The axis a rotary kind (`Mode::Rotary`) turns its work about, on a
+/// mill: the job's (`fixture::rotary_axis_of`), else the same fit of
+/// the same facets that the generator ran. `Ok(None)` for every other
+/// kind. No axis: refused by name, as the law cannot judge the work.
+pub(super) fn turned_axis(params: &OpParams, mill: bool, job: Option<verify::RotaryAxis>, facets: &[crate::geometry::Triangle]) -> Result<Option<verify::RotaryAxis>, String> {
+    if !mill || params.kind().info().mode != verify::Mode::Rotary {
+        return Ok(None);
+    }
+    job.or_else(|| crate::multiaxis::axis::fit(facets).ok().map(|a| verify::RotaryAxis { origin: a.origin, dir: [a.dir.x, a.dir.y, a.dir.z] }))
+        .map(Some)
+        .ok_or_else(|| format!("{}: no rotary axis can be fitted to the part, so its first traverse cannot be judged", params.kind().info().label))
 }
 
 /// The rotary inventory of `job.machine_rotaries` as [`Over::rotaries`].
@@ -35,20 +81,38 @@ pub(super) fn rotaries_of(m: Option<&(String, Vec<AxisLimits>)>) -> Option<&[Axi
 /// could not judge (#2987).
 const TABLE_UNJUDGED_NOTE: &str = "First traverse: the machine table is not judged on this tilted plane";
 
-/// Whether the operation's first traverse is a move on a plane in its
-/// own frame on a mill: the planar and 3-D milling kinds and the
-/// vertical hole kinds, upright or 3+2. The multi-axis, rotary,
-/// turning, plasma and EDM kinds read their clearance on other
-/// surfaces or axes; the rapid laws judge their moves (decision #2901).
-fn answers(params: &OpParams, mill: bool, rotary: bool) -> bool {
-    if !mill || rotary {
-        return false;
-    }
-    match params.kind().info().section {
-        Section::Mill2D | Section::Mill3D => true,
-        Section::Drilling => !matches!(params, OpParams::Drill { cross, .. } if !cross.is_empty()),
-        _ => false,
-    }
+/// Whether the operation's first traverse comes from an unknown X/Y on
+/// a mill: the planar and 3-D milling kinds, the hole kinds (the cross
+/// drill included, #2965) and the multi-axis kinds (#2965). The post
+/// sends Z, then X/Y at that height, then the rotary words, for each of
+/// them. Turning, plasma and EDM read their clearance on other surfaces
+/// or axes; the rapid laws judge their moves (decision #2901). A lathe's
+/// live-tool cross drill is not a mill's: decision #2965.
+fn answers(params: &OpParams, mill: bool) -> bool {
+    mill && matches!(params.kind().info().section, Section::Mill2D | Section::Mill3D | Section::Drilling | Section::MultiAxis)
+}
+
+/// The kinds that #2965 brought under the law: the multi-axis and
+/// rotary kinds and the cross drill. Their op stamp takes one more
+/// word, so a cache judged without the law reads Stale once.
+pub(super) fn newly_judged(params: &OpParams) -> bool {
+    params.kind().info().section == Section::MultiAxis || matches!(params, OpParams::Drill { cross, .. } if !cross.is_empty())
+}
+
+/// The rotary kinds' law (#2965): the path's first point and its tool
+/// axis, carried to the world when the path is in a tilted frame, read
+/// against the work swept about its axis.
+fn judge_turned(path: &Toolpath, frame: Option<&TiltedFrame>, clearance: f64, t: &Turned<'_>) -> Option<Warning> {
+    let first = path.moves.first()?;
+    let (start, axis) = match frame {
+        Some(f) => (f.to_world(first.from), f.axis),
+        None => (first.from, first.axis.unwrap_or([0.0, 0.0, 1.0])),
+    };
+    let steel = verify::SweptSteel { turning: t.turning, fixed: t.fixed };
+    // A tilted frame's clearance is a local height: carried to the world
+    // it is no Z, so only the upright path's clearance lifts the start.
+    let clearance = if frame.is_some() { f64::NEG_INFINITY } else { clearance };
+    verify::first_traverse_low_swept(start, axis, clearance, &t.axis, t.rides, steel, Z_TOL)
 }
 
 /// Whether the machine reaches a 3+2 pose only by turning the WORK
@@ -58,9 +122,16 @@ fn answers(params: &OpParams, mill: bool, rotary: bool) -> bool {
 /// where the tool stands upright; the stock top over it is the higher
 /// top, and the index-swing clause judges the work against the table.
 fn work_tilts(rotaries: &[AxisLimits]) -> bool {
+    tilting_all(rotaries, true)
+}
+
+/// Whether the machine has a tilting rotary and each one states that it
+/// turns the part (`turns == true`) or rides the head (`false`). A
+/// rotary that an old file never stated matches neither.
+fn tilting_all(rotaries: &[AxisLimits], turns: bool) -> bool {
     let tilts = |a: &&AxisLimits| a.rotary && a.axis.is_none_or(|d| d[0].abs() > 1e-9 || d[1].abs() > 1e-9);
     let mut tilting = rotaries.iter().filter(tilts).peekable();
-    tilting.peek().is_some() && tilting.all(|a| a.turns_part == Some(true))
+    tilting.peek().is_some() && tilting.all(|a| a.turns_part == Some(turns))
 }
 
 /// The table where the tool can meet it (#2987): its box clipped to the
@@ -131,12 +202,42 @@ fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64, stroke: f64) -> Tab
 /// under the work (`work_tilts`). A mounted machine that states no travel
 /// gives no table box, and the note names that. Upright, the table's top
 /// is under the stock and never the higher top.
-pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, bool), frame: Option<&TiltedFrame>, over: &Over<'_>, warns: &mut Vec<Warning>) -> Option<String> {
-    if !answers(params, mill, rotary) {
+///
+/// A rotary kind (`over.turned`) also reads the work swept about its
+/// axis (#2965, [`judge_turned`]): the rotary words come after the X/Y
+/// traverse, so the work stands at an angle the program does not state.
+/// The multi-axis kinds and the cross drill read the upright law on
+/// their tip: a TCP post writes the tip in the part frame, so Z then
+/// X/Y run on the part's own plane, and the tool leans up from the tip
+/// in each pose that cuts from above (decision #2965).
+pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Option<&TiltedFrame>, over: &Over<'_>, warns: &mut Vec<Warning>) -> Option<String> {
+    if !answers(params, mill) {
         return None;
     }
+    let tilting = |turns: bool| over.rotaries.is_some_and(|r| tilting_all(r, turns));
+    // A rotary kind on a machine whose head alone tilts: the work never
+    // turns, so only the tip law reads it. On one whose work alone
+    // tilts, the post writes machine heights, so only the swept law.
+    // An unstated machine, or a mixed one, answers to both.
+    let swept = over.turned.as_ref().filter(|_| !tilting(false)).and_then(|t| judge_turned(path, frame, over.clearance, t));
+    // The #2965 kinds' start, lifted to the height the post traverses
+    // at. A rotary or multi-axis path opens at its own pose (a radial
+    // clearance about the axis), which can stand under the plane.
+    let lifted;
+    let path = match path.moves.first() {
+        Some(m) if newly_judged(params) && over.clearance.is_finite() && m.from.z < over.clearance => {
+            let mut m = *m;
+            m.from.z = over.clearance;
+            lifted = Toolpath::new(vec![m]);
+            &lifted
+        }
+        _ => path,
+    };
+    let tip_judged = over.turned.is_none() || !tilting(true);
     let mut note = None;
     let w = match frame {
+        _ if swept.is_some() => swept,
+        _ if !tip_judged => None,
         Some(f) => {
             let work_turns = over.rotaries.is_some_and(work_tilts);
             let is_table = |i: usize| over.names.get(i).is_some_and(|n| n == MACHINE_TABLE);

@@ -44,6 +44,12 @@ pub fn current_stamp(
     // rapid verdicts judged it: it reads Stale once and regenerates.
     // Bump this salt again whenever a verify law a cache records changes.
     h.write(b"camcraft-op-stamp-v4");
+    // #2965: the multi-axis, rotary and cross-drill kinds answer to the
+    // first-traverse law now. Only their caches read Stale once; the
+    // salt above stays, so no other kind's stamp moves.
+    if super::first_traverse::newly_judged(params) {
+        h.write(b"first-traverse-2965");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
