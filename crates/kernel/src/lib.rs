@@ -38,6 +38,8 @@ mod mesh_bound_blossom;
 mod mesh_bound_spline;
 pub mod mesh_deviation;
 mod mesh_distance;
+pub mod mesh_redivide;
+mod mesh_redivide_fill;
 pub mod mesh_weld;
 mod solidcore_blend;
 pub mod solidcore_impl;
