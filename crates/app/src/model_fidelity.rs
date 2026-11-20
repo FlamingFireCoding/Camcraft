@@ -351,7 +351,10 @@ pub fn op_problem(world: &World, name: &str, op: &Operation) -> Option<String> {
             "{name}: model '{model}' was imported at reduced fidelity ({said}) and this kind of operation cannot be verified against it; re-import with a larger STEP facet budget"
         ));
     }
-    excess_floor(fidelity_law::floor_of(&op.params), excess(chord))
+    // #2996: a kind whose laws also guard a holder, bar, shank or stylus
+    // reads the strict law (`fidelity_law::widens`).
+    let law = if fidelity_law::widens(&op.params) { excess_floor } else { crate::verify::strict_floor };
+    law(fidelity_law::floor_of(&op.params), excess(chord))
         .is_none()
         .then(|| format!("{name}: model '{model}' was {TOO_COARSE} ({said})"))
 }

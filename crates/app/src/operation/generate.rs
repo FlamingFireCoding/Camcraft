@@ -3378,7 +3378,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 // #904: tightened by a coarse model's excess, like the
                 // gouge laws - every reading the margin excuses shrinks.
-                margin: super::fidelity_law::tightened(GOUGE_TOL, material.excess),
+                margin: super::fidelity_law::tightened_strict(GOUGE_TOL, material.excess),
                 z_tol: Z_TOL,
                 drills: &drills_ahead,
                 ahead: &turned_ahead,
@@ -3506,7 +3506,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // own recognized bore - width, floor and existence, by
             // name at the cycle's first move.
             if lathe_axial {
-                let tol = super::fidelity_law::tightened(GOUGE_TOL, material.excess);
+                let tol = super::fidelity_law::tightened_strict(GOUGE_TOL, material.excess);
                 warns.extend(drilling::axial_warnings(
                     &material.facets,
                     &path,

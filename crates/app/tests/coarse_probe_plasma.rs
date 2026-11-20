@@ -79,13 +79,12 @@ fn judge(t: &Toolpath, tool: &Tool, facets: &[Triangle], excess: f64) -> (Vec<Wa
 #[test]
 fn the_stylus_slack_gives_the_excess_back_and_reads_plain_past_the_bound() {
     assert_eq!(stylus_slack(0.0), STYLUS_SLACK, "full fidelity is untouched");
-    // #2996: a 0.012 mm chord passes DEV_TOL, so only the promised
-    // 0.005 mm is given back.
-    assert!((stylus_slack(EXCESS) - (STYLUS_SLACK - 0.005)).abs() < 1e-12);
-    // Past the bound (a chord over 0.02 mm) the law reads plain; the
-    // program gate refuses the operation instead (`coarse_laws`' registry
-    // test, and below).
-    assert_eq!(stylus_slack(0.016), STYLUS_SLACK);
+    // #2996: the stylus slack never takes the widening - the whole
+    // excess comes off.
+    assert!((stylus_slack(EXCESS) - (STYLUS_SLACK - EXCESS)).abs() < 1e-12);
+    // Past the bound the law reads plain; the program gate refuses the
+    // operation instead (`coarse_laws`' registry test, and below).
+    assert_eq!(stylus_slack(0.012), STYLUS_SLACK);
     assert_eq!(stylus_slack(f64::NAN), STYLUS_SLACK, "a non-finite excess is no excess");
 }
 

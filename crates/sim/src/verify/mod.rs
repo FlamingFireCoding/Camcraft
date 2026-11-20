@@ -219,7 +219,7 @@ mod corner_relief;
 pub use corner_relief::CornerReliefZone;
 
 pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
-pub use excess::{band_growth, excess_floor, PROMISED_CHORD, WIDE_CHORD_LIMIT};
+pub use excess::{band_growth, excess_floor, strict_floor, PROMISED_CHORD, WIDE_CHORD_LIMIT};
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};

@@ -96,6 +96,21 @@ pub fn excess_floor(tol: f64, excess: f64) -> Option<f64> {
     (left.is_finite() && left > 0.0).then_some(left)
 }
 
+/// #864's law without the #2996 widening: `tol` less the WHOLE `excess`
+/// while that stays positive, `None` past it. For a reader that guards a
+/// body other than the cutting edge as well (a turning holder or bar, a
+/// rotary shank, a probe stylus): a wall may stand the whole excess
+/// nearer than its facets show, so such a reader never gets the
+/// widening. A non-finite or negative excess is no excess.
+#[must_use]
+pub fn strict_floor(tol: f64, excess: f64) -> Option<f64> {
+    if !(excess.is_finite() && excess > 0.0) {
+        return Some(tol);
+    }
+    let left = tol - excess;
+    (left.is_finite() && left > 0.0).then_some(left)
+}
+
 /// How far a collision band grows on a model `excess` coarser than
 /// promised (#904, #2996): the whole excess while a law held at `tol` is
 /// still judged ([`excess_floor`] leaves it positive), `0.0` at full
