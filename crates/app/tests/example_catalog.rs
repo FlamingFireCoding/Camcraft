@@ -227,3 +227,45 @@ fn every_catalog_case_rebuilds_from_camscript() {
 
     let _ = fs::remove_dir_all(&scratch);
 }
+
+/// The G word and the Z word of each motion block of a posted program.
+fn motion_blocks(nc: &str) -> Vec<(&str, f64)> {
+    nc.lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let g = words.next().filter(|w| matches!(*w, "G00" | "G01" | "G02" | "G03"))?;
+            let z = words.find_map(|w| w.strip_prefix('Z'))?.parse::<f64>().ok()?;
+            Some((g, z))
+        })
+        .collect()
+}
+
+/// #2859: the case 2d/contour-tabs posts what its README says. Each cut
+/// run has a lead-in arc and a linear lead-out. The levels are Z4, Z2 (the
+/// tab top) and Z0. The Z0 level lifts over each of the four tabs.
+#[test]
+fn contour_tabs_case_posts_the_lead_moves_and_the_tab_lifts() {
+    let nc_path = repo("examples/catalog/2d/contour-tabs/contour-tabs.nc");
+    let nc = fs::read_to_string(&nc_path)
+        .unwrap_or_else(|e| panic!("case 2d/contour-tabs must hold {}: {e}", nc_path.display()));
+    let blocks = motion_blocks(&nc);
+
+    // The outline is cut clockwise (G02 corners). Only a lead-in arc turns
+    // the other way (G03).
+    let lead_ins = |z: f64| blocks.iter().filter(|b| b.0 == "G03" && b.1 == z).count();
+    assert_eq!(lead_ins(4.0), 1, "one lead-in arc on the whole ring at Z4");
+    assert_eq!(lead_ins(2.0), 1, "one lead-in arc on the whole ring at Z2, the tab top");
+    assert_eq!(lead_ins(0.0), 4, "one lead-in arc for each run between two tabs at Z0");
+
+    // A lift goes from a cut level to a height above the stock top (Z6).
+    // The block before it is the end of the linear lead-out.
+    let lifts: Vec<usize> =
+        (1..blocks.len()).filter(|&i| blocks[i - 1].1 <= 4.0 && blocks[i].1 > 6.0).collect();
+    assert_eq!(lifts.len(), 6, "two whole rings and four tab runs each end with a lift");
+    for &i in &lifts {
+        assert_eq!(blocks[i - 1].0, "G01", "the block before lift {i} is the linear lead-out");
+    }
+    let tab_lifts = lifts.iter().filter(|&&i| blocks[i - 1].1 == 0.0).count();
+    assert_eq!(tab_lifts, 4, "the Z0 level lifts four times: one lift for each tab");
+    assert!(!blocks.iter().any(|b| b.1 < 0.0), "no block goes below the stock bottom (Z0)");
+}
