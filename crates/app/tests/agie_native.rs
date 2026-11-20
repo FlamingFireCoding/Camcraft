@@ -280,3 +280,28 @@ fn the_native_files_match_the_control_checked_rectangular_punch() {
         assert_eq!(fs::read(dest.join(name)).unwrap(), golden, "{name}");
     }
 }
+
+#[test]
+fn qn2_requires_the_rough_wire_size_in_the_mounted_condition() {
+    for (role, diameter) in [
+        ("rough", None),
+        ("rough", Some(0.2505)),
+        ("finish", Some(0.25)),
+        ("skim", Some(0.25)),
+    ] {
+        let mut profile: serde_json::Value = serde_json::from_str(&configured_profile()).unwrap();
+        let row = profile["edm"]["conditions"][0].as_object_mut().unwrap();
+        row.insert("role".into(), role.into());
+        match diameter {
+            Some(d) => row.insert("wire_diameter".into(), serde_json::json!(d)),
+            None => row.remove("wire_diameter"),
+        };
+        let world = punch_setup(20.0, [0., 0., 20.], [-30., 0.], 60., &profile.to_string());
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("REFUSED");
+        let why = posting::post_mounts_with_script_options(&world, &dest, Some(&separation(1.0)))
+            .unwrap_err();
+        assert!(why.contains("AGIE_QN2 machine condition"), "{why}");
+        assert!(!dest.exists());
+    }
+}

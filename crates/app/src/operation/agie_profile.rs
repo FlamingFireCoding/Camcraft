@@ -44,6 +44,10 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
         .1
         .and_then(|m| m.edm)
         .ok_or("Agie requires a mounted wire EDM profile")?;
+    let row = edm.condition(&condition.machine, &condition.id, &[])?;
+    if row.role != "rough" || !row.wire_diameter.is_some_and(|d| (d - 0.25).abs() <= 1e-9) {
+        return Err("Agie requires the AGIE_QN2 machine condition to state role rough and wire diameter 0.25 mm".into());
+    }
     if edm.flushing.is_some() || edm.skim_flushing.is_some() || edm.tank.is_some() {
         return Err("Agie QN2 controls the dielectric settings; explicit tank or flushing modes are unsupported".into());
     }
