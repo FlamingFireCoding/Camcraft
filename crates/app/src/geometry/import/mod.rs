@@ -12,9 +12,7 @@ pub mod step;
 pub mod step_budget;
 pub mod step_csys;
 pub mod step_depth;
-mod step_diag;
 mod step_outward;
-mod step_units;
 #[cfg(not(target_arch = "wasm32"))]
 mod sourced;
 pub mod stl;

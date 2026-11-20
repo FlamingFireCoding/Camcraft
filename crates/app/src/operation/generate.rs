@@ -45,6 +45,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut contour_sel,
         mut drive_chains,
         mut slot_bound,
+        mut rotary_picks,
         mut prior,
         verify_prior,
         mut drills_ahead,
@@ -1643,10 +1644,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 lag_deg: *lag_deg,
                 max_tilt_deg: Some(*max_tilt_deg),
             };
+            // #2848: picked faces. Rotary Parallel keeps its cut over
+            // them (the axis still reads the whole model); a selection
+            // the kind cannot use refuses here, by name.
+            let picked = super::rotary_picks::usable(rotary_picks.take(), &material.facets)?;
             let run = |q: &Finish3DParams| if is_contour {
                 crate::multiaxis::rotary_contour(&material.facets, q, &axis)
             } else {
-                crate::multiaxis::rotary_parallel_in(&material.facets, stock_facets.as_deref(), q, &axis)
+                crate::multiaxis::rotary_parallel_over(&material.facets, stock_facets.as_deref(), picked.as_deref(), q, &axis)
             };
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
             // M13.5 B: the letter is the machine's. The fitted line
@@ -1729,6 +1734,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // stated here so the field's double life is on record:
             // the kernel chords by its own arc-fit tolerance.
             let _ = tolerance;
+            // #2848: the ladder cannot keep to picked faces yet - a
+            // face selection refuses by name, never cut as the model.
+            if let Some(picks) = rotary_picks.take() {
+                picks?;
+            }
             // M13.5 B: the machine's letter for the line the ladder
             // wraps about, or the refusal by name.
             let spindle_c = rotary_letter_gate(machine_rotaries.as_ref(), &material.facets, "Rotary Offset")?;
@@ -3188,7 +3198,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // #339 slice 5: an upright mill's links are planned over the steel -
     // a struck link rises over it, an unclearable one refuses by name.
     // Posed and rotary paths keep the report-only verdict below.
-    let path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
+    let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
         let named: Vec<_> = fixture_names.into_iter().zip(fixture_boxes.iter().copied()).collect();
         let stack = verify::steel_stack(&geom, &holder, spindle);
         let steel = super::fixture_route::LinkSteel { boxes: &named, stack: &stack, ceiling: z_ceiling };
@@ -3396,6 +3406,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }),
             };
             super::turning_rapids::judge_axial_rapids(&params, &path, &meridian, &mut verify_prior, &mut warns);
+            // #2878: a Fanuc-type G76 moves to each pass's depth at rapid
+            // traverse, so record whether the start band stands in free air
+            // (in front of the end face or in a relief groove wider than
+            // the insert) against the part, stock and prior cuts.
+            super::g76_start::judge(&params, &mut path, &meridian, &mut verify_prior);
             // ...and a boring bar's head and shank on its FEEDS (#146),
             // against the same revolved material at each instant.
             super::turning_feeds::judge_bar_feeds(&params, &path, &meridian, &mut verify_prior, &mut warns);
