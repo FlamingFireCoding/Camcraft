@@ -7,7 +7,7 @@
 //! commands. No vendor material involved.
 
 use crate::actions;
-use crate::state::{CommandKind, ErrorScope, State};
+use crate::state::{CommandKind, ErrorScope, State, UiTarget};
 use camcraft_app::model;
 use egui::Ui;
 
@@ -90,11 +90,17 @@ fn contents(ui: &mut Ui, state: &mut State) {
     } else {
         let add = ui.add_enabled(block.is_empty(), egui::Button::new("Add tool"));
         if add.clicked() {
+            let landed = name_now.trim().to_owned();
             state.pending.push_back(CommandKind::AddTool {
-                name: name_now.trim().to_owned(),
+                name: landed.clone(),
                 tool: state.tool_ui.to_tool(),
             });
-            push_number_if_changed(state, name_now.trim());
+            push_number_if_changed(state, &landed);
+            // #2397 review: the saved tool becomes the selection, so the
+            // page leaves the new-tool form and shows its normal controls,
+            // including the Edit tool shape button, without a second
+            // browser click. The AddTool command lands in the same frame.
+            actions::target(state, UiTarget::Tool(landed));
         }
         if !block.is_empty() {
             ui.label(block);
