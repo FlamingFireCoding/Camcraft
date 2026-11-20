@@ -8,7 +8,8 @@
 //! change (#2901 reverses #2382's seat over the WCS origin). The path is
 //! the same for the two WCS positions; no move reaches the world origin;
 //! the posted X/Y words measure from G54; and a clamp that stands on the
-//! old origin-to-entry line changes nothing in the posted program.
+//! old origin-to-entry line gets no struck-move verdict and no routed
+//! link (only the first-traverse law reads it).
 //!
 //! Gate map (#2382, #2901): covers app::operation (generate), app::posting,
 //! cl::path (seat_approach), motion::machining2d, motion::finishing3d,
@@ -32,6 +33,7 @@ use camcraft_app::operation::{Height, OpParams, OpStatus, SrcRef};
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
+use camcraft_app::verify::Warning;
 use camcraft_app::{model, posting};
 
 /// The part's centre: far from the world origin in X and Y.
@@ -240,16 +242,25 @@ const G54_OFF: [f64; 3] = [C.0 + 60.0, C.1, 10.5];
 
 /// #2901: a clamp taller than the clearance plane stands on the line
 /// from the WCS origin to the face's entry. The machine never travels
-/// that line, so the clamp changes nothing: no fixture verdict, no
-/// routed lift, no `X0 Y0` block - the posted program is byte for byte
-/// the program posted with no clamp.
+/// that line: the bare program has no `X0 Y0` block, and with the clamp
+/// there is no fixture verdict on that line and no routed lift - the
+/// path is the bare path. The clamp still stands over the clearance
+/// plane, and the first traverse comes from an unknown X/Y, so the
+/// first-traverse law (not a struck move) holds the post by name.
 #[test]
-fn a_clamp_on_the_old_origin_to_entry_line_changes_nothing() {
+fn a_clamp_on_the_old_origin_to_entry_line_is_judged_by_the_first_traverse_law_only() {
     let (world, mut h) = world_at(G54_OFF);
     let t = run(&world, &mut h, "Face1", "EM-0400-2FL", SrcRef::Stock, face());
     opens_over_its_entry("Face1", &t, G54_OFF);
     let out = std::env::temp_dir().join(format!("camcraft_wcs_start_clamp_{}.nc", std::process::id()));
     let bare = posting::post_setup(&world, &out).unwrap_or_else(|e| panic!("the bare program posts: {e}")).program;
+    let _ = std::fs::remove_file(&out);
+    // `G28` / `G53` blocks go to the machine home, not the WCS origin.
+    for line in bare.lines().filter(|l| !l.contains("G28") && !l.contains("G53")) {
+        let (xs, ys) = (words(line, 'X'), words(line, 'Y'));
+        assert!(!(xs.iter().any(|v| near(*v, 0.0)) && ys.iter().any(|v| near(*v, 0.0))), "a block goes to the WCS origin: {line}
+{bare}");
+    }
 
     // The clamp: on the old line, past the stock's +X edge (x 80) and
     // the face's overrun, standing over the clearance plane.
@@ -264,20 +275,13 @@ fn a_clamp_on_the_old_origin_to_entry_line_changes_nothing() {
     h.execute(&world, TagFixture::new(&world, "Clamp1", None).expect("tagged"));
     h.execute(&world, GenerateOperation::new(&world, "Face1").expect("regenerate"));
     let op = model::find_by_name(&world, "Face1").expect("op");
-    assert_eq!(camcraft_app::operation::status_of(&world, &op), OpStatus::Ok, "no false refusal");
+    assert_eq!(camcraft_app::operation::status_of(&world, &op), OpStatus::Ok);
     let cached = model::toolpath_of(&world, &op).expect("cached path");
-    assert!(cached.warnings.is_empty(), "no fixture verdict on a move the machine never makes: {:?}", cached.warnings);
+    let first = Warning::FirstTraverseLow { at: 0, height_mm: CLEAR, top_mm: 40.0, fixture: true };
+    assert_eq!(cached.warnings, vec![first], "no fixture verdict on a move the machine never makes");
     assert_eq!(cached.path.moves, t.moves, "the clamp routed a link");
-
-    let posted = posting::post_setup(&world, &out);
-    let _ = std::fs::remove_file(&out);
-    let program = posted.unwrap_or_else(|e| panic!("the program posts with the clamp: {e}")).program;
-    // `G28` / `G53` blocks go to the machine home, not the WCS origin.
-    for line in program.lines().filter(|l| !l.contains("G28") && !l.contains("G53")) {
-        let (xs, ys) = (words(line, 'X'), words(line, 'Y'));
-        assert!(!(xs.iter().any(|v| near(*v, 0.0)) && ys.iter().any(|v| near(*v, 0.0))), "a block goes to the WCS origin: {line}\n{program}");
-    }
-    assert_eq!(program, bare, "the clamp changed the posted program");
+    let err = posting::post_setup_unwritten(&world).expect_err("the clamp over the plane holds the post");
+    assert!(err.contains("Face1") && err.contains("raise the clearance height above Z40.000"), "{err}");
 }
 
 /// #2901: a cache saved under the old law (stamp salt v3) holds the
