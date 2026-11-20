@@ -128,6 +128,7 @@ mod waterjet_recipe;
 mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
+mod holes_fine_bore;
 mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.

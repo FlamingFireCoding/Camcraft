@@ -172,6 +172,7 @@ mod crossing;
 mod cut_index;
 mod engine;
 mod excess;
+mod fine_bore;
 mod finish;
 mod hidden;
 mod hidden_span;

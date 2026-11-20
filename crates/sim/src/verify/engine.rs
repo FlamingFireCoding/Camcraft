@@ -79,6 +79,9 @@ pub fn verify_bodies(
 
     // (d) Rapids in stock - [`rapids`].
     rapids::rapids_in_stock(path, cx, &rest, &cutter, &mut warns);
+    // #1445: a fine bore's stopped-spindle rapids are read with the
+    // stopped bar, inside the cylinder its own feed in cut.
+    super::fine_bore::acquit(path, cx.tool.radius, cx.tool.shank_radius, &mut warns);
 
     // (d2) Rapids against fixtures (M3.2 stage B) - the law lives in
     // [`rapids_vs_fixtures`] so the post gate can run it without a

@@ -114,8 +114,9 @@ impl EditOperationParams {
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
         }
-        // #1445: a dwell that is not a time from 0 to the bound, by name.
-        if let Some(why) = params.dwell_refusal() {
+        // #1445: a dwell that is not a time from 0 to the bound, or a fine
+        // bore with no usable shift, by name.
+        if let Some(why) = params.dwell_refusal().or_else(|| params.fine_bore_refusal()) {
             return Err(CommandError::Invalid(why));
         }
         sinker_gate(world, prev.setup.as_deref(), &params)?;

@@ -212,6 +212,8 @@ pub enum CycleKindDto {
     BackBore,
     FloatingTap,
     Ream,
+    /// #1445: fine boring (G76). Older files never carry it.
+    FineBore,
 }
 
 impl CycleDto {
@@ -227,6 +229,7 @@ impl CycleDto {
                 CycleKind::Bore => CycleKindDto::Bore,
                 CycleKind::BackBore => CycleKindDto::BackBore,
                 CycleKind::Ream => CycleKindDto::Ream,
+                CycleKind::FineBore => CycleKindDto::FineBore,
             },
             xy: [lattice(c.xy.x), lattice(c.xy.y)],
             r_z: lattice(c.r_z),
@@ -250,6 +253,7 @@ impl CycleDto {
                 CycleKindDto::Bore => CycleKind::Bore,
                 CycleKindDto::BackBore => CycleKind::BackBore,
                 CycleKindDto::Ream => CycleKind::Ream,
+                CycleKindDto::FineBore => CycleKind::FineBore,
             },
             xy: Point2::new(self.xy[0], self.xy[1]),
             r_z: self.r_z,
