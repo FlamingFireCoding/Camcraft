@@ -91,6 +91,7 @@ fn read_one(file: &str, unit: f64, truck: &Truck) -> Reading {
     }
     match truck {
         Truck::Refused(e) => println!("  truck      (recorded) Err {e}"),
+        Truck::NotRecorded => println!("  truck      not recorded (fixture added after #2790)"),
         Truck::Read {
             shells,
             volume,
@@ -166,6 +167,7 @@ per_file! {
     step_modular_clamp_unit => "modular_clamp_unit.step",
     step_modular_lathe_head => "modular_lathe_head.step",
     step_sample_ap214 => "sample_ap214.step",
+    step_short_units_degree_cone => "short_units_degree_cone.step",
     step_short_units_inch => "short_units_inch.step",
     step_short_units_metre => "short_units_metre.step",
     step_spline_revolved => "spline_revolved.step",
@@ -228,6 +230,11 @@ fn recorded_truck_readings_keep_their_findings() {
     for row in ROWS {
         match &row.truck {
             Truck::Refused(e) => assert!(!e.is_empty(), "{}: a refusal with no reason", row.file),
+            Truck::NotRecorded => assert!(
+                row.import.starts_with("no truck reading") || row.import.starts_with("solidcore refuses"),
+                "{}: a fixture with no truck reading has a truck verdict",
+                row.file
+            ),
             Truck::Read {
                 shells,
                 volume,

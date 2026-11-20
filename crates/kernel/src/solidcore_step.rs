@@ -184,18 +184,9 @@ fn read_guarded(
         p21::Error::Cancelled => timed_out("parsing"),
         other => refused_input(other.to_string()),
     })?;
-    // Complete the parser's unit aliases from the public ISO short-name registry:
-    // https://standards.iso.org/iso/10303/tech/short_names/short-names.txt
     // Validation and topology must read the same canonical unit records.
-    for entity in ex.entities.values_mut() {
-        for record in &mut entity.records {
-            match record.name.as_str() {
-                "GUAC" => record.name = "GLOBAL_UNIT_ASSIGNED_CONTEXT".into(),
-                "SUNT" => record.name = "SI_UNIT".into(),
-                _ => {}
-            }
-        }
-    }
+    crate::step_units_guard::expand_short_names(&mut ex);
+    crate::step_units_guard::check_angle_units(&ex).map_err(refused_input)?;
     crate::step_curve_guard::check(&ex).map_err(refused_input)?;
     let units = crate::step_length_units::read(&ex).map_err(refused_input)?;
     let mut out = StepRead {
