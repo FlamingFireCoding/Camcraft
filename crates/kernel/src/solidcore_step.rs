@@ -177,10 +177,22 @@ fn read_guarded(
     text: &str,
     stop: &CancelToken,
 ) -> Result<StepRead, KernelError> {
-    let ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
+    let mut ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
         p21::Error::Cancelled => timed_out("parsing"),
         other => refused_input(other.to_string()),
     })?;
+    // Complete the parser's unit aliases from the public ISO short-name registry:
+    // https://standards.iso.org/iso/10303/tech/short_names/short-names.txt
+    // Validation and topology must read the same canonical unit records.
+    for entity in ex.entities.values_mut() {
+        for record in &mut entity.records {
+            match record.name.as_str() {
+                "GUAC" => record.name = "GLOBAL_UNIT_ASSIGNED_CONTEXT".into(),
+                "SUNT" => record.name = "SI_UNIT".into(),
+                _ => {}
+            }
+        }
+    }
     crate::step_curve_guard::check(&ex).map_err(refused_input)?;
     let mut out = StepRead {
         length_units_mm: length_units(&ex).map_err(refused_input)?,

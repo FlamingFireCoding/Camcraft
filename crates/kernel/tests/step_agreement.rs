@@ -150,6 +150,20 @@ const ROWS: &[Row] = &[
         import: "agree",
         mesh: "watertight, within tolerance",
     },
+    // #2919: the model reader expands unit aliases; the raw tessellator
+    // still assumes millimetres, and truck cannot read the short geometry names.
+    Row {
+        file: "short_units_inch.step",
+        mm_per_unit: 25.4,
+        import: "truck refuses: a shell's mesh is not finite",
+        mesh: "off: volume, area",
+    },
+    Row {
+        file: "short_units_metre.step",
+        mm_per_unit: 1000.0,
+        import: "truck refuses: a shell's mesh is not finite",
+        mesh: "off: volume, area",
+    },
     Row {
         file: "spline_revolved.step",
         mm_per_unit: 1.0,
@@ -476,6 +490,8 @@ per_file! {
     step_modular_clamp_unit => "modular_clamp_unit.step",
     step_modular_lathe_head => "modular_lathe_head.step",
     step_sample_ap214 => "sample_ap214.step",
+    step_short_units_inch => "short_units_inch.step",
+    step_short_units_metre => "short_units_metre.step",
     step_spline_revolved => "spline_revolved.step",
     step_tool_csys_box_iso13399 => "tool_csys_box_iso13399.step",
     step_tool_csys_degenerate => "tool_csys_degenerate.step",
