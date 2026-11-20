@@ -15,12 +15,17 @@ use egui_kittest::kittest::NodeT;
 /// A 6 mm end mill on a 6 mm shank (flutes 15, shank 40).
 const TOOL: &str = "EM-0600-4FL";
 
-fn profile_tab() -> Harness<'static, ShellUi> {
+fn editor() -> Harness<'static, ShellUi> {
     let mut harness = shell_harness();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, TOOL);
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, TOOL);
     harness.run();
     harness.run();
+    harness
+}
+
+fn profile_tab() -> Harness<'static, ShellUi> {
+    let mut harness = editor();
     harness.get_by_label("Profile").click();
     harness.run();
     harness.run();
@@ -35,11 +40,16 @@ fn drawn(state: &State) -> Option<Vec<(f64, f64)>> {
 }
 
 #[test]
-fn the_picker_stands_in_the_profile_tab_and_waits_for_a_pick() {
-    let harness = profile_tab();
+fn the_holder_library_is_the_first_thing_the_shape_editor_shows() {
+    // #2397: the Body tab is open, and the holder library still stands
+    // above it - a holder is not a row under the profile table.
+    let harness = editor();
     for label in ["Holder library", "Library holder", "Apply holder"] {
-        assert!(harness.query_by_label(label).is_some(), "{label} stands in the Profile tab");
+        assert!(harness.query_by_label(label).is_some(), "{label} heads the shape editor");
     }
+    assert!(harness.query_by_label("Body").is_some(), "the Body tab is the default");
+    assert!(harness.query_by_label("Import body…").is_some(), "the Body section is behind its tab");
+    assert!(harness.query_by_label("Apply profile").is_none(), "the profile table is behind its tab");
     assert!(harness.get_by_label("Apply holder").accesskit_node().is_disabled(), "nothing picked yet");
 }
 

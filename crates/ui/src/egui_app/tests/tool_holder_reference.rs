@@ -89,10 +89,20 @@ fn a_library_holder_sizes_the_holder_fields_until_its_outline_is_edited() {
 fn the_profile_tab_names_the_entry_and_the_picker_shows_it() {
     let mut h = properties();
     set_bt30(&mut h);
-    crate::actions::open_tool_editor(&mut h.state_mut().state, TOOL);
-    h.run_steps(2);
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, TOOL);
+    h.run_steps(3);
+    // The property grid settles the window's size over its first frames.
+    // egui hit-tests a press with the previous frame, so hover the tab
+    // for one frame before the click, as a real mouse always does.
+    h.get_by_label("Profile").hover();
+    h.run();
     h.get_by_label("Profile").click();
     h.run_steps(2);
+    assert_eq!(
+        h.state().state.tool_profile_ui.column,
+        crate::state::ToolColumn::Profile,
+        "the tab click lands on the Profile column"
+    );
     assert!(h.query_all_by_label_contains("In use: library holder BT30 ER20").next().is_some());
     let d = &h.state().state.tool_profile_ui;
     assert_eq!((d.library.as_deref(), d.gauge, d.projection), (Some("BT30 ER20"), 60.0, 55.0), "the picker shows the tool's holder");

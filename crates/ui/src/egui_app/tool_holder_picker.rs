@@ -18,7 +18,8 @@ use crate::state::State;
 const NOTE: Color32 = Color32::from_rgb(0x9E, 0xA8, 0xB8);
 const BAD: Color32 = Color32::from_rgb(230, 90, 80);
 
-/// The picker under the Profile section.
+/// The holder library picker, the first thing the shape editor shows
+/// (#2397).
 pub(super) fn holder_picker(ui: &mut Ui, state: &mut State, u: Unit) {
     ui.separator();
     ui.strong("Holder library");
