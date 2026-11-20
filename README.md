@@ -39,7 +39,7 @@ text, assets or post processors were used.
 - **Import** STL, OBJ and STEP models; repair meshes (weld vertices, fill
   holes).
 - **Set up** stock, work offsets (G54–G59), fixtures and machines (mill,
-  5-axis, lathe, mill-turn, and the Tormach 770MX, 770MX (ML), 770M,
+  5-axis, lathe, mill-turn (a lathe with live tooling), and the Tormach 770MX, 770MX (ML), 770M,
   1100M, 1100MX, 1500MX, PCNC 440, PCNC 770 (earlier and Series 3) and
   PCNC 1100 (Series I, II and 3) mills, and generic grblHAL, TinyG and
   LinuxCNC 3-axis machines).
