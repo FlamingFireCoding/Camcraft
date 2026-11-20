@@ -53,6 +53,8 @@ pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
 pub mod mesh_open;
+pub mod mesh_solids;
+pub mod model_vouch;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;
@@ -143,6 +145,7 @@ pub mod stock_play_worker;
 pub mod stock_turn;
 pub mod stock_view;
 pub mod tool_library;
+pub mod tool_table;
 pub mod tool_list;
 pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.

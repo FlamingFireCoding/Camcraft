@@ -781,6 +781,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         // Turning-point blends are opt-in (M11.1 C), as on Face.
         blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         tilt: c.tilt,
     }
 }
@@ -792,6 +793,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
         blend_radius: None, blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -818,6 +820,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
         blend_radius: None, blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -1087,6 +1090,8 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
         // Feed modulation costs a sim run; the fresh op posts the
         // programmed feed everywhere until the user asks otherwise.
         feed_opt: false,
+        // #1591: the spiral is what every 3D Adaptive cut before the choice.
+        method: crate::machining2d::AdaptiveMethod::Spiral,
         // Off is the ladder exactly as it always generated; the shell
         // is the user's ask, not the fresh op's guess (M2.5 F).
         shell: false,

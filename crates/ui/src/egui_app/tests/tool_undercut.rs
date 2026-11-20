@@ -94,11 +94,6 @@ fn dovetail_properties_and_editor_edit_flank_angle_without_corner_radius() {
     assert!(h.query_by_label("Flank angle (deg)").is_some(), "Properties shows Flank angle (deg)");
     assert!(h.query_by_label("Corner radius").is_none(), "Properties hides Corner radius for dovetail");
 
-    crate::actions::open_tool_editor(&mut h.state_mut().state, "DT-20-60");
-    h.run_steps(3);
-    assert!(h.query_by_label("Flank angle (deg)").is_some(), "editor window shows Flank angle (deg)");
-    assert!(h.query_by_label("Corner radius").is_none(), "editor window hides Corner radius for dovetail");
-
     let angle_drag = h
         .query_all_by_role(Role::SpinButton)
         .find(|n| n.accesskit_node().numeric_value() == Some(60.0))
@@ -119,6 +114,12 @@ fn dovetail_properties_and_editor_edit_flank_angle_without_corner_radius() {
         .and_then(|e| model::tool_of(&h.state().state.world, &e))
         .expect("updated dovetail");
     assert!((updated.tip_angle - staged).abs() < 1e-6, "Apply updates tip_angle in world");
+
+    // #2397: the body and profile have their own window; its cutter
+    // parameters show the dovetail's flank angle too.
+    crate::actions::open_tool_shape_editor(&mut h.state_mut().state, "DT-20-60");
+    h.run_steps(3);
+    assert!(h.query_by_label("flank angle °").is_some(), "shape window shows the flank angle");
 }
 
 #[test]

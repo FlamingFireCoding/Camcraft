@@ -127,6 +127,10 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
             if let Some(chord) = crate::model_fidelity::chord_of(w, e) {
                 m["reduced_fidelity"] = crate::mesh_open::facts(w, e, chord);
             }
+            // #1339: a mesh a person vouched for says who.
+            if let Some(by) = crate::model_vouch::by_of(w, e) {
+                m["fidelity_vouched"] = crate::model_vouch::facts(&by);
+            }
             // #1054: and one imported under a non-default STEP facet budget.
             if let Some(b) = crate::model_fidelity::budget_of(w, e) {
                 m["facet_budget"] = json!(b);
@@ -251,7 +255,9 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::HolderHit { at, .. } => ("holder_hit", *at),
         Warning::SweepHit { at, .. } => ("sweep_hit", *at),
         Warning::RapidInStock { at } => ("rapid_in_stock", *at),
+        Warning::FirstTraverseLow { at, .. } => ("first_traverse_low", *at),
         Warning::FixtureHit { at, .. } => ("fixture_hit", *at),
+        Warning::AvoidHit { at, .. } => ("avoid_hit", *at),
         Warning::NonFinite { at } => ("non_finite", *at),
         Warning::Envelope { at, .. } => ("envelope", *at),
         Warning::RestUnjudged { at, .. } => ("rest_unjudged", *at),

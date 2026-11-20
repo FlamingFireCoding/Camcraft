@@ -56,7 +56,7 @@ use crate::machining2d::{GenError, ARC_FIT_TOL};
 
 use super::axis::{self, Axis};
 use super::retip::{along, radial_at, tip_of};
-use super::{rotary_ends, rotary_links};
+use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
 
 /// The axis' tilt below which "standing" and "laid" trade places:
@@ -116,6 +116,21 @@ pub fn rotary_parallel_in(
     p: &Finish3DParams,
     c: &AxisControl,
 ) -> Result<Toolpath, GenError> {
+    rotary_parallel_over(facets, stock, None, p, c)
+}
+
+/// [`rotary_parallel_in`] kept to `picked` faces of the model (#2848):
+/// the axis and the raster still read every facet of `facets`, and the
+/// cut keeps only where the radial through the ball's center meets a
+/// picked facet ([`rotary_pick`]). None is the whole model. Picked
+/// faces that no pass stands over are refused by name.
+pub fn rotary_parallel_over(
+    facets: &[Triangle],
+    stock: Option<&[Triangle]>,
+    picked: Option<&[Triangle]>,
+    p: &Finish3DParams,
+    c: &AxisControl,
+) -> Result<Toolpath, GenError> {
     let ax = axis::fit(facets)?;
     let flat = 1.0 - ax.dir.dot(UP) * ax.dir.dot(UP);
     if flat < LEAN_MIN * LEAN_MIN {
@@ -161,6 +176,22 @@ pub fn rotary_parallel_in(
     let base = match &window {
         Some(w) => rotary_ends::clip(&base, w),
         None => base,
+    };
+    // #2848: picked faces keep the cut to their radial shadow, before
+    // the links are built - the relink then links the kept pieces.
+    let base = match picked {
+        None => base,
+        Some(faces) => {
+            let kept = rotary_pick::Shadow::of(&f.local_facets(faces)).map(|sh| rotary_pick::clip(&base, r, &sh));
+            match kept {
+                Some(k) if k.moves.iter().any(|m| m.kind == MoveKind::Feed) => k,
+                _ => {
+                    return Err(GenError::Empty(
+                        "Rotary Parallel: no pass lies over the picked faces - the tool stands on the radial through each cut point, so it reaches only faces of the turned surface; pick those, or set the geometry to the whole model".into(),
+                    ))
+                }
+            }
+        }
     };
     let span = window.as_ref().map_or((f64::NEG_INFINITY, f64::INFINITY), |w| (w.lo, w.hi));
     // M13.8: the raster's Z lifts become radial links - out along the

@@ -179,6 +179,9 @@ pub struct VerifyContext<'a> {
     /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
     /// path, and a turning one no axis fits - reads as it always did.
     pub lathe_axis: Option<crate::stock_sim::LatheAxis>,
+    /// Declared corner relief zones (#2400) for inside-corner pockets and
+    /// slots, bounded strictly to cutter radius, pocket floor Z, and stock.
+    pub corner_reliefs: &'a [super::CornerReliefZone],
 }
 
 /// The inert tool of [`VerifyContext::default`].
@@ -217,6 +220,7 @@ impl Default for VerifyContext<'_> {
             model_excess: 0.0,
             rims: &[],
             lathe_axis: None,
+            corner_reliefs: &[],
         }
     }
 }
@@ -271,6 +275,11 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
+    /// #2901: the path starts at `height_mm` (its frame's height), under
+    /// the `top_mm` of the start stock or of a fixture (`fixture`). The
+    /// first traverse comes from an X/Y the machine does not know, so it
+    /// can cross that top anywhere ([`super::first_traverse_low`]).
+    FirstTraverseLow { at: usize, height_mm: f64, top_mm: f64, fixture: bool },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
     /// it, `short_mm` the clearance shortfall - the radial depth the
@@ -329,6 +338,16 @@ pub enum Warning {
     /// part (#1637): choosing the part as source instead of the stock
     /// avoids cutting into the part edge. Blocking like `Gouge`.
     StockChamferGouge { at: usize },
+    /// Move `at` violates a protected "Do not touch" face or edge (#2055):
+    /// `item` is its 1-based list index, `part` which section of the tool
+    /// assembly came inside clearance, and `short_mm` the shortfall.
+    /// Always blocks posting.
+    AvoidHit {
+        at: usize,
+        item: u32,
+        part: FixturePart,
+        short_mm: f64,
+    },
     /// The same for a stock-source Deburr (#2313): it breaks the stock's
     /// edge, and the part under that edge is cut. Blocking like `Gouge`.
     StockDeburrGouge { at: usize },
@@ -408,6 +427,12 @@ impl core::fmt::Display for Warning {
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
+            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture } => write!(
+                f,
+                "the first rapid (move {at}) comes from an unknown X/Y at the clearance height Z{height_mm:.3}, under the {} \
+                 top at Z{top_mm:.3} - raise the clearance height above Z{top_mm:.3}",
+                if *fixture { "fixture" } else { "stock" }
+            ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
                 "{} at move {at} strikes a fixture",
@@ -447,6 +472,17 @@ impl core::fmt::Display for Warning {
             Warning::UndercutLift { at } => write!(
                 f,
                 "move {at} moves the undercut cutter in Z with material in or over its head (it must enter and leave sideways, clear of the stock)"
+            ),
+            Warning::AvoidHit { at, item, part, short_mm } => write!(
+                f,
+                "{} at move {at} violates protected 'Do not touch' item #{item} ({short_mm:.3} mm short of clearance)",
+                match part {
+                    FixturePart::Shank => "shank",
+                    FixturePart::Holder => "holder",
+                    FixturePart::Spindle => "spindle housing",
+                    FixturePart::Rapid => "rapid",
+                    FixturePart::Flute => "flute",
+                }
             ),
             Warning::DrillUndersize { at, hole_mm, drill_mm } => write!(
                 f,

@@ -8,8 +8,9 @@
 //! link landing, UnlinkModel), ui::egui_app::fixture_menu (Unlink row).
 //! Provenance: our own tests.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, SetStock};
 use camcraft_app::operation::{self, Height, OpParams, OpStatus, SrcRef};
@@ -51,14 +52,14 @@ fn box_stl(dx: f64, dy: f64, dz: f64) -> String {
 }
 
 /// A folder of its own for one test, holding `part.stl`.
-struct Dir(PathBuf);
+struct Dir(PathBuf, Cell<u64>);
 
 impl Dir {
     fn new(tag: &str) -> Self {
         let dir = std::env::temp_dir().join(format!("camcraft-ui-2463-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
-        let d = Dir(dir);
+        let d = Dir(dir, Cell::new(0));
         d.write(10.0, 10.0, 5.0);
         d
     }
@@ -67,6 +68,17 @@ impl Dir {
     }
     fn write(&self, dx: f64, dy: f64, dz: f64) {
         std::fs::write(self.part(), box_stl(dx, dy, dz)).expect("write part");
+        // The watcher caches (size, mtime). Same-size edits must move the
+        // file clock even when a busy full suite lands two writes in one
+        // filesystem timestamp tick. Advance the fixture clock explicitly.
+        let tick = self.1.get() + 1;
+        self.1.set(tick);
+        std::fs::File::options()
+            .write(true)
+            .open(self.part())
+            .expect("open part for timestamp")
+            .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000 + tick * 2))
+            .expect("advance part timestamp");
     }
 }
 
@@ -151,7 +163,11 @@ fn a_changed_file_is_imported_again_as_one_undo_step_and_its_operations_only_go_
     tick(&mut state, &mut at, 2);
     assert_eq!(rev(&state), 1, "the undo stays: the same file is not imported again");
 
+    let previous = std::fs::metadata(dir.part()).expect("previous file stamp");
     dir.write(12.0, 10.0, 8.0);
+    let changed = std::fs::metadata(dir.part()).expect("changed file stamp");
+    assert_eq!(previous.len(), changed.len(), "exercise a same-size file change");
+    assert_ne!(previous.modified().unwrap(), changed.modified().unwrap(), "the file clock advances independently of suite timing");
     tick(&mut state, &mut at, 2);
     assert_eq!(rev(&state), 2, "a new change is imported again: {}", state.status);
 }
