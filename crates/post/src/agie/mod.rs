@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 mod contour;
 mod cutoff;
 mod jescript;
-mod racetrack;
+mod round_profile;
 
 /// The closed cycle or the kerf side of a directed open cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +26,7 @@ impl AgieSide {
 pub struct AgieJob {
     pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
-    pub racetrack: Option<camcraft_geometry::wire_racetrack::Racetrack>,
+    pub round_profile: Option<camcraft_geometry::wire_round_profile::RoundProfile>,
     pub start: Option<[f64; 2]>,
     pub stock_min: [f64; 3],
     pub stock_max: [f64; 3],
@@ -85,8 +85,8 @@ impl Work {
         if !job.side.is_open() && separation != 1.0 {
             return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
         }
-        if let Some(shape) = job.racetrack {
-            return racetrack::prepare(job, shape, geometry);
+        if let Some(shape) = job.round_profile {
+            return round_profile::prepare(job, shape, geometry);
         }
         let (points, entry, exit, reach) = if job.side.is_open() {
             let cut = cutoff::prepare(job)?;
@@ -143,7 +143,7 @@ pub fn export_works(
         if jobs.len() != 2
             || jobs.iter().any(|job| {
                 job.side != AgieSide::Punch
-                    || job.racetrack.is_some()
+                    || job.round_profile.is_some()
                     || job.stock_min != first.stock_min
                     || job.stock_max != first.stock_max
                     || job.stock_min[2] != -20.0

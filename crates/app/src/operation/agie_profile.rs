@@ -133,13 +133,10 @@ pub(crate) fn agie_job(
     // A union of sampled slices can add rounded vertices along a sloping face.
     if let Some(placed) = super::wire_sketch::placed(world, op)? {
         let mut shape = placed.shape;
-        for p in &mut shape.centers {
-            p.x -= ox;
-            p.y -= oy;
-        }
+        shape.place_centers(|p| crate::geo2d::Point2::new(p.x - ox, p.y - oy));
         return Ok(agie::AgieJob {
             side,
-            racetrack: Some(shape),
+            round_profile: Some(shape),
             contour: Vec::new(),
             start: wire.start.map(|p| [p[0] - ox, p[1] - oy]),
             stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],
@@ -243,7 +240,7 @@ pub(crate) fn agie_job(
     };
     Ok(agie::AgieJob {
         side,
-        racetrack: None,
+        round_profile: None,
         contour: contour.iter().map(|p| [p.x - ox, p.y - oy]).collect(),
         start: wire.start.map(|p| [p[0] - ox, p[1] - oy]),
         stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],

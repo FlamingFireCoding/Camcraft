@@ -109,3 +109,14 @@ destination named `RACE20`.
 ```sh
 cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/racetrack.camscript
 ```
+
+A drawing with one DXF `CIRCLE` can also produce a 20 mm punch. The qualified
+circle has a 10 mm radius. Place the 2 mm threading hole on the negative X
+side, at the same Y as the center and at least 3 mm beyond the leftmost edge.
+The native file starts at that edge and defines the circle with two nominal
+semicircles. The control applies the 1 mm separation along the circumference.
+The whole rough wire and threading hole must fit inside the stock.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/circle-punch.camscript
+```

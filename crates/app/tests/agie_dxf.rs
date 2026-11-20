@@ -51,3 +51,54 @@ fn moved_stale_open_or_misplaced_profile_refuses_before_publication() {
         assert!(!dir.path().join("RACE20").exists());
     }
 }
+
+const CIRCLE_SCRIPT: &str = include_str!("../../../examples/agie/circle-punch.camscript");
+const CIRCLE_DXF: &str = include_str!("../../../examples/agie/circle-punch.dxf");
+
+#[test]
+fn a_source_circle_keeps_the_diameter_endpoints_and_radial_threading_hole() {
+    let dir = tempfile::tempdir().unwrap();
+    // The runner supplies one drawing and one script at the racetrack test paths.
+    let script = CIRCLE_SCRIPT.replace("circle-punch", "racetrack");
+    let result = run(dir.path(), &script, CIRCLE_DXF);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let iso = fs::read_to_string(dir.path().join("CIRCLE20/CIRCLE20.ISO")).unwrap();
+    assert_eq!(
+        iso.lines().collect::<Vec<_>>(),
+        [
+            "( CIRCLE20.ISO )",
+            "N0001 G00 X-10.00000 Y0.00000 ;",
+            "N0002 G03 X10.00000 Y0.00000 I10.00000 J0.00000 ;",
+            "N0003 G03 X-10.00000 Y0.00000 I-10.00000 J0.00000 ;",
+            "N0004 M02 ;",
+        ]
+    );
+    let sbl = fs::read_to_string(dir.path().join("CIRCLE20/CIRCLE20.SBL")).unwrap();
+    assert!(sbl.contains("ID_POSX,\"-17.000\""));
+    assert!(sbl.contains("ID_SEPCUT,\"1.0\"") && sbl.contains("ID_PUNCH,c_punch"));
+}
+
+#[test]
+fn a_nonradial_hole_or_unqualified_circle_radius_cannot_publish_a_job() {
+    let script = CIRCLE_SCRIPT.replace("circle-punch", "racetrack");
+    for (s, d) in [
+        (
+            script.replace("[-17, 0]", "[-17, 0.001]"),
+            CIRCLE_DXF.to_owned(),
+        ),
+        (
+            script.replace("[-17, 0]", "[-12, 0]"),
+            CIRCLE_DXF.to_owned(),
+        ),
+        (script.clone(), CIRCLE_DXF.replace("40\n10\n", "40\n0.4\n")),
+        (script, CIRCLE_DXF.replace("40\n10\n", "40\n9\n")),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!run(dir.path(), &s, &d).status.success());
+        assert!(!dir.path().join("CIRCLE20").exists());
+    }
+}

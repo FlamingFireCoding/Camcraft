@@ -7,12 +7,12 @@ use crate::{
     schema::Operation,
     setup, sketch,
 };
-use camcraft_geometry::{dxf::Primitive, wire_racetrack::Racetrack};
+use camcraft_geometry::{dxf::Primitive, wire_round_profile::RoundProfile};
 use flecs_ecs::prelude::{Entity, World};
 use std::hash::Hasher;
 
 pub(super) struct Placed {
-    pub shape: Racetrack,
+    pub shape: RoundProfile,
     pub ring: Loop,
     z: [f64; 2],
 }
@@ -70,8 +70,8 @@ pub(super) fn placed(world: &World, op: &Operation) -> Result<Option<Placed>, St
     }
     let pose =
         sketch::world_pose(world, &entity).ok_or("Cannot place the DXF punch on the stock")?;
-    let mut shape = Racetrack::from_sketch(&drawing.data)?;
-    shape.centers = shape.centers.map(|p| {
+    let mut shape = RoundProfile::from_sketch(&drawing.data)?;
+    shape.place_centers(|p| {
         let xy = transform_point(Point3::new(p.x, p.y, 0.), pose.pos, pose.rot);
         Point2::new(xy.x, xy.y)
     });

@@ -11,5 +11,13 @@ The Agie file uses the source arc centers and nominal endpoints. Posting
 requires cardinal straight faces and grid-representable coordinates so the
 formatted endpoints, radii and I/J centers stay consistent. Use the existing
 perpendicular straight entry and capture sequence. Keep mixed drawings,
-selected subchains, full circles, die openings from sketches and laser
+selected subchains, die openings from sketches and laser
 operations for separate qualification.
+
+Accept an independently qualified single DXF CIRCLE of radius 10 mm. Its
+threading hole lies on the negative-X radial line. The native printer uses
+two semicircles centered on the source drawing and the same 1 mm resident
+separation. On the control each bridge subtended 0.1 radians, with the main
+cut covering the remaining angle. Limit this version to the proven radius and
+entry side. An unrestricted-radius policy would assume more about how the
+controller separates small punches than these readings establish.
