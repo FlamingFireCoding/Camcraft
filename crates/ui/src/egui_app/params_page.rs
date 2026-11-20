@@ -33,6 +33,9 @@ pub(super) struct Cx<'a> {
     pub slot_fit: &'a Option<Result<String, String>>,
     /// #1815: diameter of the currently selected tool for seeding rest params.
     pub tool_diameter: Option<f64>,
+    /// #1888: the op's picked features - the Deburr page moves its
+    /// edge picks into the exclusion list. Empty for every other kind.
+    pub picks: &'a [camcraft_app::operation::GeoSel],
 }
 
 /// The note explaining what `PocketStrategy::Auto` will generate: when rest
@@ -40,6 +43,7 @@ pub(super) struct Cx<'a> {
 /// rather than the pocket's outline.
 fn pocket_auto_note(
     world: &World,
+    name: &str,
     op: Option<&camcraft_app::schema::Operation>,
     stepover: f64,
     rest_on: bool,
@@ -66,7 +70,8 @@ fn pocket_auto_note(
     let Some(o) = op else {
         return pick.into();
     };
-    let region = operation::region_of(world, o).unwrap_or_default();
+    // #2201: the kept region, built only when the operation changes.
+    let region = crate::frame_memo::region_of(world, name, o).unwrap_or_default();
     let diameter = model::find_by_name(world, &o.tool)
         .as_ref()
         .and_then(|t| model::tool_of(world, t))
@@ -104,7 +109,10 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     // ...and against the operation's own source, which a From: Selection
     // height reads (M11.3 A): handed to every height editor of this
     // pass through the frame's temp data, so no row signature moves.
-    ui.data_mut(|d| d.insert_temp(egui::Id::new(HEIGHT_SRC_ID), state.op_ui.src()));
+    ui.data_mut(|d| {
+        d.insert_temp(egui::Id::new(HEIGHT_SRC_ID), state.op_ui.src());
+        d.insert_temp(egui::Id::new(super::heights_page::HEIGHT_TILT_ID), state.op_ui.params.tilt());
+    });
     if let OpParams::Drill {
         cycle: camcraft_app::drilling::CycleChoice::Auto,
         holes,
@@ -178,7 +186,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     } = &state.op_ui.params
     {
         let _s = crate::frame_cost::span("ui/properties.op.fields.pocket_auto_note");
-        auto_note = Some(pocket_auto_note(&state.world, op.as_ref(), *stepover, rest.is_some()));
+        auto_note = Some(pocket_auto_note(&state.world, &nm, op.as_ref(), *stepover, rest.is_some()));
     }
 
     // Which Trace-shape name the arm below renders: the engrave twin
@@ -225,6 +233,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         .as_ref()
         .and_then(|t| model::tool_of(&state.world, t))
         .map(|t| t.diameter);
+    let picks = if matches!(state.op_ui.params, OpParams::Deburr { .. }) { state.op_ui.geo.clone() } else { Vec::new() };
     let mut cx = Cx {
         u,
         tab,
@@ -239,6 +248,7 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
         circle_fit: &circle_fit,
         slot_fit: &slot_fit,
         tool_diameter,
+        picks: &picks,
     };
     let world = &state.world;
     let params = &mut state.op_ui.params;
@@ -257,6 +267,17 @@ pub(super) fn params_fields(ui: &mut Ui, state: &mut State, tab: usize) {
     super::turning_more_page::fields(ui, world, params, &mut cx);
     let sync_toggle = cx.sync_toggle;
     let detect_holes = cx.detect_holes;
+    if tab == super::op_tabs::SEC_HEIGHTS
+        && let Some(note) = crate::height_memo::clearance_advice(
+            &state.world,
+            op_ctx.as_deref(),
+            &state.op_ui.src(),
+            &state.op_ui.params,
+            op.as_ref().map(|_| nm.as_str()),
+        )
+    {
+        super::layout::consequence(ui, &note);
+    }
     if sync_toggle {
         if state.wire_sync.armed {
             crate::wire_sync_pick::disarm(state);

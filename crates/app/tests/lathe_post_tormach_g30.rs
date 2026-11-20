@@ -32,7 +32,7 @@ use camcraft_app::operation::{Height, OpParams};
 use camcraft_app::post::{cnc, engine};
 use camcraft_app::posting;
 use camcraft_app::schema::PostOptions;
-use tormach_lathe_support::{create, g76, lathe_mch, program_with, revolve, stock_params, thread_world, world_with, CPS};
+use tormach_lathe_support::{create, g76, g76_world, lathe_mch, program_with, revolve, stock_params, thread_world, world_with, CPS};
 
 // ------------------------------------------------------------ fixtures
 
@@ -73,6 +73,7 @@ fn drill_world() -> (World, History) {
     let hole = Hole { xy: Point2::new(0.0, 0.0), radius: 2.05, entry_z: 20.0, floor_z: 10.0, through: false, stepped: false };
     let params = OpParams::Drill {
         break_through: None,
+        break_through_from: Default::default(),
         clearance_z: Height::fixed(30.0),
         retract_z: None,
         top_z: Height::fixed(20.0),
@@ -175,7 +176,7 @@ fn inside(seg: ((f64, f64), (f64, f64)), r: f64, top: f64) -> Option<(f64, f64)>
 #[test]
 fn the_first_move_after_g30_is_x_alone_then_z_alone() {
     // A turning start stands outside the stock's diameter: X first.
-    for text in [program_with(&turning_world().0, PostOptions::default()), program_with(&thread_world(false).0, g76())] {
+    for text in [program_with(&turning_world().0, PostOptions::default()), program_with(&g76_world(false).0, g76())] {
         let (after, _) = around_g30(&text);
         assert!(after.first().is_some_and(|a| a.len() == 2), "the approach is two rapids: {text}");
         for a in after.iter().filter(|a| a.len() > 1) {

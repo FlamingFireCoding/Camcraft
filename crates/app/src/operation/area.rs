@@ -134,7 +134,9 @@ fn minus_standing(
     if standing.area().abs() < ISLAND_AREA_MIN {
         return Ok(None);
     }
-    Ok(Some(enclosed.difference(&standing)?))
+    // #2766: the two tessellations of a shared wall leave loops of about
+    // 1e-8 mm2 in the difference. They are noise by the same measure.
+    Ok(Some(enclosed.difference(&standing)?.without_slivers(ISLAND_AREA_MIN)))
 }
 
 /// The pocket family on a WHOLE PART source (issue #12): the part is
@@ -169,8 +171,8 @@ pub(super) fn whole_model_pocket(
     if stock.is_empty() {
         return None;
     }
-    let t = resolve_height(world, setup, Some(src), top)?;
-    let b = resolve_height(world, setup, Some(src), bottom)?;
+    let t = fold_height(world, setup, Some(src), frame, top)?;
+    let b = fold_height(world, setup, Some(src), frame, bottom)?;
     let (part, part_top) = match material_of(world, setup, src) {
         Ok(m) => (m.facets, m.top),
         Err(e) => return Some(Err(e)),
@@ -217,8 +219,8 @@ pub(super) fn stock_pocket(
     if stock.is_empty() {
         return None;
     }
-    let t = resolve_height(world, setup, Some(src), top)?;
-    let b = resolve_height(world, setup, Some(src), bottom)?;
+    let t = fold_height(world, setup, Some(src), frame, top)?;
+    let b = fold_height(world, setup, Some(src), frame, bottom)?;
     let oz = frame.map_or(0.0, |f| f.origin.z);
     let mt = stock_top(world, setup, &parts, f64::NEG_INFINITY, frame);
     let (parts, stock) = match frame {

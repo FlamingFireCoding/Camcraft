@@ -2,8 +2,8 @@
 //! even when its start is exactly the seed (X0 Y0), where the generator's
 //! own rapid to the start is a zero-length move the builder drops.
 //!
-//! Gate map: covers cl::cl (PathBuilder::approached) and every motion
-//! generator seeded at (0, 0, clearance).
+//! Gate map: covers cl::cl (PathBuilder::approached, Toolpath::seat_approach)
+//! and every motion generator seeded at (0, 0, clearance).
 //!
 //! Provenance: #690's posted-program law (the first motion after the tool
 //! call is a rapid on the clearance plane); our own builder design.
@@ -57,6 +57,65 @@ fn a_plain_builder_keeps_its_old_behaviour() {
     let t = b.finish();
     assert_eq!(t.len(), 1);
     assert_eq!(t.moves[0].kind, MoveKind::Plunge);
+}
+
+/// #2901 (reverses #2382's seat over the WCS origin): the opening rapid
+/// out of the seed starts over its own entry point on the clearance
+/// plane; its end - the only point a post writes - is untouched.
+#[test]
+fn seat_approach_moves_the_seeded_start_over_the_entry_point() {
+    let seed = Point3::new(0.0, 0.0, CLEAR);
+    let mut b = PathBuilder::approached(seed);
+    b.push(MoveKind::Rapid, Point3::new(3.0, 4.0, CLEAR), None);
+    b.push(MoveKind::Plunge, Point3::new(3.0, 4.0, 0.0), Some(100.0));
+    let mut t = b.finish();
+    assert!(t.seat_approach(seed));
+    assert_eq!(t.moves[0].kind, MoveKind::Rapid, "the approach stays a rapid (#690)");
+    assert_eq!(t.moves[0].from, Point3::new(3.0, 4.0, CLEAR), "no X/Y travel from a point never visited");
+    assert_eq!(t.moves[0].to, Point3::new(3.0, 4.0, CLEAR));
+    assert_eq!(t.len(), 2, "no move is added or dropped");
+    assert!(t.is_chained());
+}
+
+/// An opening rapid that also changes height keeps its height change:
+/// it starts on the clearance plane over its own end X/Y (a vertical
+/// rapid), never at the seed's X/Y.
+#[test]
+fn seat_approach_keeps_the_height_of_a_descending_opening_rapid() {
+    let seed = Point3::new(0.0, 0.0, CLEAR);
+    let mut b = PathBuilder::approached(seed);
+    b.push(MoveKind::Rapid, Point3::new(-12.0, 7.0, 2.0), None);
+    b.push(MoveKind::Plunge, Point3::new(-12.0, 7.0, 0.0), Some(100.0));
+    let mut t = b.finish();
+    assert!(t.seat_approach(seed));
+    assert_eq!(t.moves[0].from, Point3::new(-12.0, 7.0, CLEAR));
+    assert_eq!(t.moves[0].to, Point3::new(-12.0, 7.0, 2.0));
+    assert!(t.is_chained());
+}
+
+/// A zero-length approach says the cut starts AT the seed; a path that
+/// opens elsewhere (a hole list, a lathe station) is not seeded there.
+#[test]
+fn seat_approach_leaves_other_openings_alone() {
+    let seed = Point3::new(0.0, 0.0, CLEAR);
+    let mut b = PathBuilder::approached(seed);
+    b.push(MoveKind::Plunge, Point3::new(0.0, 0.0, -1.0), Some(100.0));
+    let mut at_seed = b.finish();
+    let before = at_seed.clone();
+    assert!(!at_seed.seat_approach(seed));
+    assert_eq!(at_seed.moves, before.moves);
+
+    let mut b = PathBuilder::approached(Point3::new(7.0, 8.0, CLEAR));
+    b.push(MoveKind::Rapid, Point3::new(9.0, 8.0, CLEAR), None);
+    let mut elsewhere = b.finish();
+    assert!(!elsewhere.seat_approach(seed));
+    assert_eq!(elsewhere.moves[0].from, Point3::new(7.0, 8.0, CLEAR));
+
+    let mut b = PathBuilder::approached(seed);
+    b.push(MoveKind::Rapid, Point3::new(f64::NAN, 4.0, CLEAR), None);
+    let mut t = b.finish();
+    assert!(!t.seat_approach(seed), "a non-finite entry is refused");
+    assert_eq!(t.moves[0].from, seed);
 }
 
 #[test]

@@ -22,18 +22,20 @@ use crate::state::State;
 use crate::viewport::View3D;
 
 use super::frame_watch::FrameWatch;
+use super::layout;
 use super::shell::*;
 use super::{gpu, gpu_init, icons, theme, world};
 
+mod capture;
 mod frame;
 
 /// The windowed shell (the `--ui egui` entry without `--headless`); returns
 /// the process exit code.
-pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>) -> i32 {
+pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
     let event_loop = match EventLoop::new() {
         Ok(el) => el,
         Err(err) => {
-            eprintln!("cannot create event loop: {err}");
+            diag_warn!("cannot create event loop: {err}");
             return 1;
         }
     };
@@ -42,6 +44,11 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // through the guarded Quit instead of ending the process.
     let _ = super::os_quit::install();
     let mut shell = Shell::new(pick, want);
+    // #2462: a file named on the command line goes through the same
+    // import / open command as the dialogs, on the first frame.
+    crate::launch_file::queue(&mut shell.state, files);
+    // #2384: with no file named, the start page lists the recent projects.
+    super::home::at_start(&mut shell.state, files);
     // #1946: wake the Wait event loop whenever the AI chat worker queues
     // an event or dispatches an in-process MCP request.
     let ai_proxy = event_loop.create_proxy();
@@ -58,12 +65,12 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
         match camcraft_app::mcp::Inbox::listen(port, wake) {
             Ok(inbox) => {
                 if let Some(addr) = inbox.addr() {
-                    eprintln!("mcp: listening on {addr} (connect with: camcraft-cli mcp --connect {addr})");
+                    diag_warn!("mcp: listening on {addr} (connect with: camcraft-cli mcp --connect {addr})");
                 }
                 shell.state.mcp = Some(inbox);
             }
             Err(err) => {
-                eprintln!("mcp: cannot listen on 127.0.0.1:{port}: {err}");
+                diag_warn!("mcp: cannot listen on 127.0.0.1:{port}: {err}");
                 shell.state.status = format!("MCP server not started: 127.0.0.1:{port}: {err}");
             }
         }
@@ -71,7 +78,7 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     let code = match event_loop.run_app(&mut shell) {
         Ok(()) => shell.exit_code,
         Err(err) => {
-            eprintln!("event loop failed: {err}");
+            diag_warn!("event loop failed: {err}");
             1
         }
     };
@@ -135,6 +142,9 @@ struct Shell {
     /// the newest size when the next resize frame is due.
     pending_resize: Option<PhysicalSize<u32>>,
     last_resize_frame: Option<std::time::Instant>,
+    /// #1696: the whole-window picture the Report door asks for; idle
+    /// until a `ViewportCommand::Screenshot` reaches the frame loop.
+    capture: capture::Capture,
     state: State,
 }
 
@@ -155,7 +165,10 @@ impl Shell {
         state.load_view();
         // #877: the user's theme and colour-vision mode, read once.
         state.load_prefs();
-        let dock_state = build_dock();
+        // #2339: the saved panel setups, read once; the dock starts as the
+        // last one saved or loaded when the user keeps auto-load on.
+        state.load_panel_setups();
+        let dock_state = layout::setups::start_dock(&mut state);
         Self {
             window: None,
             window_title: state.window_title(),
@@ -185,12 +198,14 @@ impl Shell {
             occluded: false,
             pending_resize: None,
             last_resize_frame: None,
+            capture: capture::Capture::new(),
             state,
         }
     }
 
     fn fail(&mut self, el: &ActiveEventLoop, what: &str, err: impl std::fmt::Display) {
-        eprintln!("egui shell: {what}: {err}");
+        diag_warn!("egui shell: {what}: {err}");
+        camcraft_app::logging::startup_failure(&format!("egui shell: {what}: {err}"));
         self.failed = true;
         self.exit_code = 1;
         el.exit();
@@ -239,7 +254,7 @@ impl Shell {
                 }
             };
         let gpu_line = gpu::describe(&adapter).log_line();
-        println!("{gpu_line}");
+        diag_info!("{gpu_line}");
         self.state.gpu_line = Some(gpu_line);
 
         let mut renderer = Renderer::new(&device, config.format, RendererOptions::default());
@@ -250,7 +265,7 @@ impl Shell {
         let stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
             Ok(e) => Some(e),
             Err(err) => {
-                eprintln!("stock eye: {err} - the deviate sheet stands in");
+                diag_warn!("stock eye: {err} - the deviate sheet stands in");
                 None
             }
         };
@@ -294,7 +309,7 @@ impl Shell {
         surface.configure(device, config);
         let elapsed = started.elapsed();
         if elapsed > super::frame_watch::BUDGET {
-            eprintln!("gpu: slow resize configure {} ms", elapsed.as_millis());
+            diag_warn!("gpu: slow resize configure {} ms", elapsed.as_millis());
         }
     }
 
@@ -306,11 +321,7 @@ fn refuse_dialog(err: &str) {
     let dialog = rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
         .set_title("CamCraft cannot start the viewport")
-        .set_description(format!(
-            "{err}
-
-Try --gpu <adapter name> (or CAMCRAFT_GPU) to choose an adapter, or --gpu-backend dx12|vulkan|gl."
-        ))
+        .set_description(camcraft_app::logging::failure_message(err))
         .set_buttons(rfd::MessageButtons::Ok);
     // #1067: owned by the shell window, so the refusal is in front of the app.
     let dialog = match crate::file_dialog::parent() {

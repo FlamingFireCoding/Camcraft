@@ -352,6 +352,10 @@ pub fn take_pick(state: &mut State, target: BoundaryPick, pick: GeoSel, mods: Pi
             }
             EntryRef::Open
         }
+        BoundaryPick::DoNotTouch => {
+            take_do_not_touch_pick(state, pick, mods);
+            return;
+        }
     };
     let Some(current) = picks_mut(state, at).map(|p| p.clone()) else {
         state.status = "that boundary is the stock outline or the silhouette - it takes no picks".into();
@@ -369,9 +373,10 @@ pub fn take_pick(state: &mut State, target: BoundaryPick, pick: GeoSel, mods: Pi
     } else {
         (vec![pick.clone()], "picked")
     };
+    let pick_name = camcraft_app::pick::geo_label(&state.world, &pick);
     if next.is_empty() {
         remove(state, at);
-        state.status = format!("{} of '{}' removed - the boundary had no picks left, so it is gone", pick.feature, pick.entity);
+        state.status = format!("{pick_name} removed - the boundary had no picks left, so it is gone");
         return;
     }
     if let Some(p) = picks_mut(state, at) {
@@ -387,7 +392,40 @@ pub fn take_pick(state: &mut State, target: BoundaryPick, pick: GeoSel, mods: Pi
         Some(issue) => format!(" - {issue}"),
         None => " - Apply commits it".to_owned(),
     };
-    state.status = format!("{} of '{}' {verb}: {n} is {what}{tail}", pick.feature, pick.entity);
+    state.status = format!("{pick_name} {verb}: {n} is {what}{tail}");
+}
+
+fn take_do_not_touch_pick(state: &mut State, pick: GeoSel, mods: PickMods) {
+    if matches!(pick.feature, operation::FeatureSel::Vertex(_)) {
+        state.status = format!("{} of '{}' is a point - 'Do not touch' accepts faces or edges", pick.feature, pick.entity);
+        return;
+    }
+    let src = model::find_by_name(&state.world, &state.op_ui.name)
+        .and_then(|e| model::operation_of(&state.world, &e))
+        .map(|op| op.src);
+    if let Some(why) = operation::avoid_overlap_issue(
+        &state.world,
+        std::slice::from_ref(&pick),
+        src.as_ref(),
+        &state.op_ui.area,
+    ) {
+        state.status = why;
+        return;
+    }
+    let picks = &mut state.op_ui.area.do_not_touch.picks;
+    let verb = if let Some(pos) = picks.iter().position(|g| g == &pick) {
+        if mods.toggle {
+            picks.remove(pos);
+            "removed from"
+        } else {
+            state.status = format!("{} of '{}' is already protected in Do not touch", pick.feature, pick.entity);
+            return;
+        }
+    } else {
+        picks.push(pick.clone());
+        "added to"
+    };
+    state.status = format!("{} of '{}' {verb} Do not touch - Apply commits it", pick.feature, pick.entity);
 }
 
 /// Rebuild the machined-area preview when the draft or the document
@@ -411,7 +449,7 @@ pub fn refresh_preview(state: &mut State) {
     let region = if refusal.is_some() { None } else { operation::region_of(&state.world, &op) };
     let footprint = if region.is_some() { operation::machined_footprint(&state.world, &op) } else { None };
     let refusal = refusal.or_else(|| {
-        (region.is_none() && !op.area.is_default())
+        (region.is_none() && op.area.has_boundary_edits())
             .then(|| "the Boundary settings leave nothing to preview - Generate names the step".to_owned())
     });
     let fill = z.and(footprint.as_ref().or(region.as_ref())).and_then(crate::boundary_viz::fill_of);

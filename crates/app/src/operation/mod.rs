@@ -87,6 +87,10 @@ mod stamp_stock;
 pub use stamp_stock::reads_setup_stock;
 pub(crate) use stamp_stock::write_setup_stock;
 mod material;
+// #2496: a drill makes its own size; a wider hole is named.
+mod drill_size;
+// #2598: a Drill or Thread op's feed against its tool's stated feed.
+pub mod feed_rating;
 pub use material::*;
 mod material_region;
 pub(crate) use material_region::selection_drives_region;
@@ -131,6 +135,7 @@ mod probe_pick_round;
 pub use probe_pick::{PROBE_AXIS_TOL_DEG, ProbeSeed, probe_account, probe_from_picks, probe_seed, seeded_params};
 pub(crate) use probe::*;
 mod selection;
+mod deburr_picks;
 mod contour_auto_pick;
 pub use selection::*;
 mod picks;
@@ -147,6 +152,8 @@ mod area;
 mod stock_top_frame;
 use camcraft_motion::stock_top_frame::stock_top_in_frame;
 use area::*;
+pub mod avoid;
+pub use avoid::{overlap_issue as avoid_overlap_issue, route_links as route_avoid_links, verify_avoid};
 mod pocket_memo;
 pub use pocket_memo::pocket_slices;
 mod selection_memo;
@@ -179,7 +186,12 @@ use boundary_ctx::*;
 // operation's world reads and CL wrap (part_alignment x Tilt).
 mod frame;
 pub use frame::OpFrame;
+// #2389: a tilted op's reference heights read along its tool axis.
+mod tilt_heights;
+pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
+pub(crate) mod corner_relief;
+mod corner_relief_sim;
 mod job;
 pub use job::*;
 mod generate;
@@ -214,6 +226,7 @@ mod rotary_law;
 pub(crate) mod spindle_law;
 pub use spindle_law::{spindle_reading, SpindleReading, SPINDLE_TOL};
 mod rotary_gate;
+mod rotary_picks;
 mod air_law;
 // #1595: the depth law an Engrave or Trace on the part carries itself.
 pub mod mark_law;
@@ -221,11 +234,13 @@ pub mod mark_law;
 pub mod keep_law;
 // #1749: the 3D Pocket's footprint past its open edges.
 mod open_side;
+pub use open_side::AIR_BAND_FIXTURE;
 // #1628: the post's live re-judge of the parts `keep_law` keeps.
 pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
 pub(crate) mod fidelity_law;
 mod clearance_stock;
+mod first_traverse;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
@@ -233,6 +248,7 @@ mod tap_core;
 pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
 pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
+mod g76_start;
 mod turning_axis;
 mod turning_feeds;
 mod turning_holder;

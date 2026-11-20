@@ -17,10 +17,11 @@ use crate::operation::{
 };
 use crate::script::{fnum, Env};
 
+use flecs_ecs::prelude::World;
 use serde_json::{json, Map, Value};
 
 /// The controls as the tools show and take them.
-pub(super) fn area_view(a: &AreaControls) -> Value {
+pub(super) fn area_view(w: &World, a: &AreaControls) -> Value {
     json!({
         "containment": a.containment.map(|c| match c {
             Containment::Inside => "inside",
@@ -33,13 +34,13 @@ pub(super) fn area_view(a: &AreaControls) -> Value {
         "extra": a.extra.iter().map(|b| {
             let mode = match b.mode { BoundaryMode::Include => "include", BoundaryMode::Exclude => "exclude" };
             match &b.shape {
-                BoundaryShape::Picks(p) => json!({ "mode": mode, "from": "picks", "picks": picks_view(p) }),
+                BoundaryShape::Picks(p) => json!({ "mode": mode, "from": "picks", "picks": picks_view(w, p) }),
                 BoundaryShape::Stock => json!({ "mode": mode, "from": "stock" }),
                 BoundaryShape::Silhouette => json!({ "mode": mode, "from": "silhouette" }),
             }
         }).collect::<Vec<_>>(),
         "open": a.open.as_ref().map(|o| json!({
-            "picks": picks_view(&o.picks),
+            "picks": picks_view(w, &o.picks),
             "side": match o.side { ChainSide::Inside => "inside", ChainSide::Outside => "outside" },
         })),
     })
@@ -130,6 +131,7 @@ fn controls_of(env: &Env, v: &Value) -> Result<AreaControls, String> {
         extension: number(m, "extension")?,
         extra,
         open,
+        do_not_touch: Default::default(),
     })
 }
 
@@ -139,9 +141,10 @@ fn controls_of(env: &Env, v: &Value) -> Result<AreaControls, String> {
 /// closed boundary) with its text.
 pub(super) fn set_operation_area(env: &mut Env, a: &Map<String, Value>) -> Result<Value, String> {
     let key = find_op(env, req_str(a, "operation")?)?;
-    let area = controls_of(env, a.get("area").ok_or("\"area\" is required")?)?;
+    let mut area = controls_of(env, a.get("area").ok_or("\"area\" is required")?)?;
     let e = model::find_by_name(&env.world, &key).ok_or_else(|| format!("no operation named '{key}'"))?;
     let op = model::operation_of(&env.world, &e).ok_or_else(|| format!("'{key}' is not an operation"))?;
+    area.do_not_touch = op.area.do_not_touch;
     let cmd = EditOperationParams::with_area(&env.world, &key, op.params, area).map_err(|e| e.to_string())?;
     env.history.execute(&env.world, cmd);
     super::pick::geometry_view(env, &key)

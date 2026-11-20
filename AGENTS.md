@@ -29,6 +29,7 @@ disagree, this file is correct.
 | Cut a release | `release-cut` |
 | Work in a fork of NeoTech/Camcraft | `fork-sync` |
 | Install or change a self-hosted runner or a workflow | `runners` |
+| Start the agent team from a clean session | `start-orchestrator` |
 | Drive CamCraft through MCP | `camcraft-mcp` |
 
 A rule name in **bold** is a stable name. Skills, agents and code comments
@@ -58,9 +59,36 @@ He reviews them later. The work must not interrupt him.
   issue list is empty, start a subagent that reminds the session to claim
   the next issue. A stall is a bug.
 - **Side work rides subagents.** Subagents do all testing, documentation and
-  knowledge-graph updates. The main session plans, writes code and decides.
+  knowledge-graph updates. The coordinator plans and decides, and workers
+  write the code ("Agent roles").
   A subagent's completion notice starts the next step. Never give one
   subagent both a code change and its verification.
+
+### Agent roles
+
+Each role has one job (#2464). The model of each role is set only in its
+file in `.claude/agents/`.
+
+| Role | Agent file | Model | Does |
+|---|---|---|---|
+| Main session | - | - | Keeps the user: reports, questions, maintainer decisions (question dialog). Starts the coordinator. Orchestrates nothing |
+| Coordinator | `coordinator.md` | Fable; Opus if Fable is not available | Merges, picks issues, dispatches, resolves stuck processes, decides by reasoning. One long-running agent |
+| Worker | `issue-worker-max.md`, `-high.md`, `-medium.md` | Opus | Each code change. Comes and goes with its issue |
+| Small-fix worker | `issue-worker-low.md` | Sonnet | A quick, small fix that is easy to understand (`effort:low`) |
+| Context scout | `context-scout.md` | Haiku | Reads, searches, locates, queries the knowledge graph, writes context packs. Four run at all times |
+
+- **Scouts read, workers write.** The coordinator and the workers do not
+  explore the repository. A scout gives them a context pack with exact
+  paths and line ranges. A worker reads only those ranges and the lines
+  that it changes. The `work-issue` skill has the fallback for when no
+  scout answers.
+- **Scouts do not count as builds.** They never build, test or write to
+  GitHub. The limit on local builds applies to workers, gates and reviews.
+- **The coordinator writes no code and reads no source.** It reads `gh`
+  output and agent reports. A maintainer decision goes to the main session
+  as an `ASK:` line, and the coordinator continues with other work.
+- **Reviews and gates do not change.** The review tier, the gate-runner
+  and the graph-updater stay as they are.
 
 ## Issue Law - work is tracked as GitHub issues
 
@@ -92,8 +120,10 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   | `P9` | Someday: not picked while other work is free |
 
   - `P1`-`P3` are for defects only. "Wanted" is never a reason for them.
-  - Only `P1` and `P2` hold a release cut. A `P3` is worked before planned
-    work, but a cut does not wait for it.
+  - A priority does not hold a release cut. The maintainer names what a cut
+    includes (**The cut list**, "Commits and Releases"). An open `P1` or
+    `P2` that is not on the list goes under "Known issues". A `P3` is worked
+    before planned work.
   - Set `P4` only where the maintainer asked for the work in his own words.
     The issue quotes those words.
   - A follow-up found during work or review is `P7`, unless it is a defect.
@@ -205,7 +235,7 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   - **Safety floor.** Work that can change posted G-code, a collision or
     gouge check, stock simulation or geometry is `effort:high` or more. Each
     `P1` is `effort:high` or more.
-  - **Who works it.** The main session picks the issue and dispatches it to
+  - **Who works it.** The coordinator ("Agent roles") picks the issue and dispatches it to
     `.claude/agents/issue-worker-<effort>.md`. The worker runs the
     `work-issue` skill and never merges. The model for each effort is set
     only in those agent files. If the model is not available (a 404), run the
@@ -562,12 +592,44 @@ tests are in `crates/ui/tests/`; they start the real app through
   | Tier | When | Target | Runs |
   |---|---|---|---|
   | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build for each crate, then one step for each debug test binary that is not slow (kernel and ui included), in parallel lanes; clippy |
   | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
+- **The light lane** (#2569). `cargo xtask gate light` runs the light twins
+  of the heavy tests, in release, at review and merge time. A light twin is
+  next to its full test, on a smaller fixture or a reduced set. The full
+  test keeps its golden asserts and its pinned readings. A red light run is
+  a note on the PR: the author runs the full heavy steps locally, and they
+  must pass before the cut gate starts again. A local run never replaces
+  the cut gate.
+  - A twin has the ignore reason `light lane: ...` and the name
+    `<full test>_light`. The gate refuses a twin whose file has no
+    `#[ignore]`d full test.
+  - A red light run prints the note: each red step, with the command of
+    its full heavy step (`cargo xtask gate release --only "<crate> heavy:
+    <target>"`).
+- **Heavy lanes at review** (#2568). `cargo xtask gate heavy [--base main]`
+  maps the diff to the heavy lanes that it reaches and runs them in release
+  with `--ignored`. The reach follows the dependencies between our crates: a
+  change in `motion` reaches the `app` heavy lanes.
+  - A PR whose diff reaches a heavy lane is not ready while a reached heavy
+    test is red or not run. The author runs the command on the final head
+    before the PR is flagged ready. The PR body names the lanes that ran.
+  - The review comment lists the heavy lanes that ran and their results.
+    "Not run" is never a pass.
+  - The release tier at the cut stays the final check: the tagged tree is
+    exactly the gated tree.
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
   covers. Run the full set only at a release cut.
+- **Gate job budget** (#2814). The default is the available CPU count from
+  `std::thread::available_parallelism()`, with a floor of 2 and a cap of 64.
+  If CPU detection fails, the default is 2. `CAMCRAFT_GATE_JOBS` overrides
+  it with any positive whole number. The override has no floor or cap.
+  A bad value uses the default and prints a diagnostic. The gate and its
+  `--dry-run` plan print the budget and its source. Batch and release share
+  the budget over at most `max(1, budget / 2)` lanes. A build, an isolated
+  test, a UI step or clippy runs alone with the full budget.
 - **Shared compile cache** (optional, sccache, #900): never export
   `CARGO_TARGET_DIR`, because it makes each worktree miss the cache. The
   `gate` skill has the setup.
@@ -581,6 +643,21 @@ tests are in `crates/ui/tests/`; they start the real app through
   a cut, never for each edit. A split must not lose coverage: the `#[test]`
   count before and after is the same, and the ignored set keeps its golden
   asserts.
+- **Tests that start red use the known-fail marker** (#2567). A test that
+  is red on purpose must not use a plain `#[ignore]`. Use
+  `#[ignore = "known-fail #ISSUE | TARGET | FULL_TEST_NAME | PANIC_LINE_PREFIX"]`.
+  Set `TARGET` to `lib` or an integration binary in the `kernel`, `motion`
+  or `app` heavy lanes. Name the open issue and the full libtest name.
+  Put `// known-fail-assert` immediately before the one expected failing
+  assertion. The gate discovers the marker from the source. It pins the
+  assertion location and a panic message line prefix.
+  The release gate prints `SKIPPED (known fail, #N): <test>`, then checks
+  the test alone. The gate fails if the test passes, its issue closes, or
+  it fails for another reason. Both `cargo xtask gate release` and
+  `cargo xtask release` check the issue state. If `gh` cannot read the
+  state, the gate prints a warning and still checks the expected failure.
+  Reviewers reject a test that starts red with a plain ignore. They check
+  the issue, marker, assertion location and expected panic prefix.
 - **Pixel snapshots are release-lane** (#255). The PNG goldens
   (`crates/ui/tests/snapshots/*.png`) are `#[ignore]`d and run only in the
   release tier. A PR never changes a snapshot PNG. The goldens are made new
@@ -694,14 +771,35 @@ subagent, and the session does not wait for it.
 **A cut goes PR review -> merge to main -> tag.** The `release-cut` skill
 has the procedure. Its rules:
 
-- A cut does not start while a `P1` or `P2` issue is open. The check is made
-  one time, at the start. A `P1` or `P2` filed later does not restart the
-  cut: it goes under "Known issues" and its fix ships in the next minor. Only
-  the maintainer stops a cut. An agent that finds a late `P1` tells the
-  maintainer in one line and continues.
-- From step 1 to the tag, nothing else merges to `main`.
+- **The cut list.** A cut does not clear all `P1` and `P2` issues. Before a
+  cut starts, the maintainer decides which open issues and PRs the cut
+  includes. That list is the cut list. The agent proposes it one time, in
+  the question dialog: each open `P1` and `P2` and each waiting `feat` PR,
+  with "in" or "out" recommended. The maintainer's answer is the list.
+- **The cut line.** When the list is set, it is closed. Nothing is added to
+  it: not a new `P1`, not a defect that a review of a listed PR finds in
+  other code, not a PR that became `merge-ready` later. Only the maintainer
+  adds an item, in his own words.
+  - An agent does not hold, delay or restart a cut for an item that is not
+    on the list. An agent does not ask to add one. It files the issue, tells
+    the maintainer in one line if it is a `P1`, and continues.
+  - Each open `P1` or `P2` that is not on the list goes under "Known
+    issues" in the release notes. Its fix ships in the next minor.
+  - A listed item that is not ready when the others are merged is the
+    maintainer's decision: wait for it, or remove it from the list. The
+    agent asks one time.
+  - Two things are always in a cut and need no list entry: a fix for a main
+    that does not build or whose gate is red, and a fix for a failure of
+    the cut's own release gate.
+- From the cut line to the tag, only the items on the cut list merge to
+  `main`. From step 1 of the cut to the tag, nothing else merges.
 - The release tier runs on the cut runner (`cut.yml`). The tagged tree is
   exactly the gated tree.
+- **Local full rerun** (#2569). After a red cut gate, the author runs the
+  red steps in full, locally, in release mode: `cargo xtask gate release
+  --failed gate-logs/<run>` (the logs of the red run), or `--only "<step>"`.
+  They must pass before the cut gate starts again. A local run never
+  replaces the cut gate.
 - Cuts and tags stay with the maintainer.
 
 **Every cut tag is published.** A cut is not complete until its tag is on

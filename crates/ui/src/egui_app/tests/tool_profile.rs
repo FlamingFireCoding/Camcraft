@@ -13,7 +13,10 @@ const TOOL: &str = "EM-0600-4FL";
 fn editor() -> Harness<'static, ShellUi> {
     let mut harness = shell_harness();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, TOOL);
+    // #2397: Properties shows the tool page, so its one side preview is
+    // drawn beside the shape window.
+    harness.state_mut().state.ui_target = UiTarget::Tool(TOOL.into());
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, TOOL);
     harness.run();
     harness.run();
     harness
@@ -187,4 +190,147 @@ fn a_profile_refusal_retires_when_the_outline_validates() {
     harness.run();
     assert!(harness.state().state.error_for(ErrorScope::Tool).is_none(), "the corrected outline retires it");
     assert!(harness.query_all_by_label_contains("holder profile not set").next().is_none());
+}
+
+#[test]
+fn profile_tab_states_conservative_envelope_and_half_profile_rules_and_dxf_workflow() {
+    let mut harness = profile_tab();
+    for label in ["Import DXF…", "Export DXF…", "Import STEP…"] {
+        assert!(harness.query_by_label(label).is_some(), "{label} sits on the Profile tab");
+    }
+    assert!(
+        harness
+            .query_all_by_label_contains("covered by a larger safe shape, never cut away")
+            .next()
+            .is_some(),
+        "Profile tab states that parts that are not round get a larger safe shape"
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("you edit one half of its outline")
+            .next()
+            .is_some(),
+        "Profile tab states that only one half of the outline is edited"
+    );
+
+    // Pin the import help beside the control; no screenshot or native picker is needed.
+    let page = include_str!("../tool_profile_page.rs");
+    for convention in [
+        "parallel to Y",
+        "DXF +Y is tool +Z",
+        "z = 0 is the lower end of the centreline",
+        "independent of draw direction",
+    ] {
+        assert!(
+            page.contains(convention),
+            "missing import tooltip convention: {convention}"
+        );
+    }
+
+    // Import an ISO 13399 STEP box as an editable custom half-profile, export to DXF, re-import.
+    let step = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/tool_csys_box_iso13399.step");
+    let unaligned = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/box.step");
+
+    // A STEP without clear CSYS axis refuses by name.
+    harness.state_mut().state.import_step_profile_from(&unaligned);
+    harness.run();
+    assert!(
+        harness.state().state.error_for(ErrorScope::Tool).is_some(),
+        "unaligned STEP must refuse by name"
+    );
+
+    harness.state_mut().state.import_step_profile_from(&step);
+    harness.run();
+    assert!(harness.state().state.error_for(ErrorScope::Tool).is_none());
+    assert!(harness.state().state.tool_profile_ui.custom);
+    let points_after_step = harness.state().state.tool_profile_ui.points.clone();
+    assert!(points_after_step.len() >= 4);
+
+    let dxf_path = std::env::temp_dir().join(format!("camcraft_ui_dxf_{}.dxf", std::process::id()));
+    harness
+        .state()
+        .state
+        .export_profile_dxf_to(&dxf_path)
+        .expect("export DXF from profile tab");
+    // Reset to Parametric then re-import DXF.
+    harness.get_by_label("Parametric").click();
+    harness.run();
+    harness.state_mut().state.import_profile_dxf_from(&dxf_path);
+    harness.run();
+    let _ = std::fs::remove_file(&dxf_path);
+    assert!(harness.state().state.tool_profile_ui.custom);
+    assert_eq!(harness.state().state.tool_profile_ui.points.len(), points_after_step.len());
+}
+
+#[test]
+fn body_tab_convert_to_profile_refuses_unaligned_step_and_converts_iso_aligned_step() {
+    let mut harness = profile_tab();
+    harness.get_by_label("Body").click();
+    harness.run();
+
+    let unaligned = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/box.step");
+    harness.state_mut().state.import_tool_body_from(&unaligned);
+    harness.run();
+    assert!(harness.query_by_label("Convert to profile").is_some());
+    assert!(
+        harness
+            .query_all_by_label_contains("enveloped conservatively")
+            .next()
+            .is_some()
+    );
+    harness.get_by_label("Convert to profile").click();
+    harness.run();
+    assert!(
+        harness
+            .state()
+            .state
+            .error_for(ErrorScope::Tool)
+            .is_some_and(|e| e.contains("clear tool axis")),
+        "unaligned STEP draft must refuse instead of guessing +Z: {:?}",
+        harness.state().state.error_for(ErrorScope::Tool)
+    );
+
+    let step = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/tool_csys_box_iso13399.step");
+    harness.state_mut().state.import_tool_body_from(&step);
+    harness.run();
+    harness.get_by_label("Convert to profile").click();
+    harness.run();
+    assert!(
+        harness.state().state.error_for(ErrorScope::Tool).is_none(),
+        "aligned ISO 13399 STEP body must convert cleanly: {:?}",
+        harness.state().state.error_for(ErrorScope::Tool)
+    );
+    assert_eq!(
+        harness.state().state.tool_profile_ui.column,
+        crate::state::ToolColumn::Profile
+    );
+    assert!(harness.state().state.tool_profile_ui.custom);
+    assert!(harness.state().state.editor_tool_body().is_some());
+}
+
+/// #2007 / #2397: the Draw holder view stands in the shape window in
+/// plain words. The controls column reads top to bottom: what is in use,
+/// Parametric / Custom, Apply profile, the file buttons. The table with
+/// its headers and the side view stand beside it, in the view column.
+#[test]
+fn tool_profile_structure() {
+    use egui_kittest::kittest::NodeT;
+    let harness = profile_tab();
+    let win = harness
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("the shape window");
+    let view_left = win.get_by_label("height mm").rect().min.x;
+    let mut last_y = f32::MIN;
+    for label in ["Holder profile", "In use: the holder cylinder from the dimensions", "Parametric", "Apply profile", "Import DXF…"] {
+        let r = win.get_by_label(label).rect();
+        assert!(r.center().y > last_y, "{label:?} must follow the row above it");
+        assert!(r.max.x < view_left, "{label:?} sits in the controls column");
+        last_y = r.center().y;
+    }
+    for head in ["height mm", "radius mm", "arc"] {
+        let r = win.get_by_label(head).rect();
+        assert!(r.min.x >= view_left, "the {head:?} header sits in the view column");
+    }
+    assert!(win.query_all_by_label_contains("landed").next().is_none(), "no \"landed\" jargon on the page");
 }

@@ -79,7 +79,13 @@ pub(crate) use super::fields::{field, num, num_plain};
 /// The Setups page's pick rows mark themselves drawn; the shell's
 /// per-frame sweep (#664, #667) disarms the rest after the dock.
 pub fn properties(ui: &mut Ui, state: &mut State, pal: &Tokens) {
-    let resp = ui.scope(|ui| properties_body(ui, state, pal)).response;
+    let resp = ui
+        .scope(|ui| {
+            super::layout::field_ring::begin(ui);
+            properties_body(ui, state, pal);
+            super::layout::field_ring::finish(ui);
+        })
+        .response;
     resp.ctx.accesskit_node_builder(resp.id, |b| {
         b.set_role(egui::accesskit::Role::Pane);
         b.set_label("Properties");
@@ -98,15 +104,19 @@ fn properties_body(ui: &mut Ui, state: &mut State, pal: &Tokens) {
         super::op_page::operation_page(ui, state, n.as_str(), pal);
         return;
     }
-    let has_close = matches!(&t, UiTarget::Tool(_) | UiTarget::Stock | UiTarget::Wcs | UiTarget::Model(_) | UiTarget::SetupNode(..));
+    if let UiTarget::Tool(n) = &t {
+        super::tool_settings::page(ui, state, n);
+        return;
+    }
+    let is_wcs = matches!(t, UiTarget::Wcs);
+    let has_close = matches!(&t, UiTarget::Stock | UiTarget::Wcs | UiTarget::Model(_) | UiTarget::SetupNode(..));
     let content_height = (ui.available_height() - if has_close { 40.0 } else { 0.0 }).max(80.0);
     ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(content_height)
         .show(ui, |ui| match t {
             UiTarget::None => super::op_page::no_operation_page(ui),
-            UiTarget::Operation(_) => {}
-            UiTarget::Tool(n) => tool_page(ui, state, &n),
+            UiTarget::Operation(_) | UiTarget::Tool(_) => {}
             UiTarget::Stock => {
                 state.sync_setup_ui();
                 ui.heading("Stock");
@@ -119,6 +129,8 @@ fn properties_body(ui: &mut Ui, state: &mut State, pal: &Tokens) {
                 // #342: one WCS per setup; the word is its post label.
                 let active = camcraft_app::setup::active(&state.world);
                 ui.heading(camcraft_app::setup::wcs_label(&state.world, active.as_deref()));
+                // #870: where the origin is, in words, before any field.
+                super::wcs_footer::origin_line(ui, state);
                 ui.separator();
                 super::wcs_page::wcs_page(ui, state);
                 // #343: the WCS node's dialog names its post word too.
@@ -156,7 +168,13 @@ fn properties_body(ui: &mut Ui, state: &mut State, pal: &Tokens) {
         });
     if has_close {
         ui.separator();
-        if ui.button("Close").clicked() {
+        // #870: the WCS page's footer carries Set origin beside Close.
+        let close = if is_wcs {
+            super::wcs_footer::footer(ui, state)
+        } else {
+            ui.button("Close").clicked()
+        };
+        if close {
             state.close_property_editor();
         }
     }
@@ -167,6 +185,10 @@ fn setup_error(ui: &mut Ui, state: &State) {
         super::error_text::error_text(ui, super::colorvision::text_inks(ui, &state.world).error, &msg);
     }
 }
+
+/// The AccessKit name of the post picker's Refresh button (#2380).
+pub(super) const REFRESH_POSTS: &str = "Refresh post list";
+
 /// The document's post script (M3.3 A/B): setup furniture, read live
 /// off the world singleton like the machine section above. The label
 /// is exactly what the post resolves - one truth, so a pane can never
@@ -182,23 +204,18 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
     // #902: the unit the program is written in - the document's own.
     super::post_options::units_row(ui, state, "Program units");
     post_offer_banner(ui, state);
+    // #2380: the folder as last scanned - a removed file has no entry,
+    // an added `.cps` has one (loaded as a file, like "Load post").
+    let scan = super::post_pick::scan();
     ui.horizontal(|ui| {
         // The registry by name; the combo OFFERS only the dialects
         // that serve the mounted machine's kind (M13.5: a lathe lists
         // its turning post, a mill-turn lists both), while the
         // selected text still names whatever the document chose.
         let kind = camcraft_app::machine::kind_of(&state.world);
-        let names: Vec<&str> = posting::BUILTINS.iter().map(|(n, _)| *n).collect();
-        let sel: Option<usize> = match &current {
-            PostRef::Builtin => Some(0),
-            PostRef::Named(n) => names.iter().position(|m| *m == n.as_str()),
-            PostRef::File(_) => None,
-        };
-        let text = match sel {
-            Some(i) => names[i].to_owned(),
-            None => "custom".to_owned(),
-        };
+        let super::post_pick::PostChoice { names, sel, file_sel, text } = super::post_pick::choose(&current, &scan);
         let mut pick: Option<String> = None;
+        let mut pick_file: Option<std::path::PathBuf> = None;
         egui::ComboBox::from_id_salt("post_registry")
             .selected_text(text)
             .show_ui(ui, |ui| {
@@ -210,9 +227,21 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
                         pick = Some((*n).to_owned());
                     }
                 }
+                for (n, p) in &scan.extra {
+                    if ui.selectable_label(file_sel.is_some_and(|(_, q)| q == p), n).clicked() {
+                        pick_file = Some(p.clone());
+                    }
+                }
             });
+        let refresh = ui.button("Refresh").on_hover_text("Read the post folder again");
+        if super::fields::named(refresh, REFRESH_POSTS).clicked() {
+            posting::rescan();
+        }
         if let Some(name) = pick {
             state.pending.push_back(CommandKind::SelectPostNamed(name));
+        }
+        if let Some(p) = pick_file {
+            state.pending.push_back(CommandKind::SelectPostFile(p));
         }
         if crate::browser_files::button(ui, state.browser_refusal_of(&CommandKind::SelectPostDialog), "Load post (.cps)", "") {
             state.pending.push_back(CommandKind::SelectPostDialog);
@@ -221,6 +250,10 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
             state.pending.push_back(CommandKind::SelectPostBuiltin);
         }
     });
+    if let Some(why) = &scan.problem {
+        let msg = super::post_pick::folder_problem(why);
+        super::error_text::error_text(ui, super::colorvision::text_inks(ui, &state.world).error, &msg);
+    }
     // #110: post the program straight through - every operation keeps
     // its stop or trip home, the post leaves them all out. A command.
     let skip = posting::post_options(&state.world).skip_stops;
@@ -434,43 +467,62 @@ pub(super) fn sheet_footer(ui: &mut Ui, state: &mut State) {
 
 pub(super) use super::fixtures_page::fixtures_section;
 
-// ----------------------------------------------------------------- tool page
+// ----------------------------------------------------------------- tool shape window
 
-fn tool_page(ui: &mut Ui, state: &mut State, name: &str) {
-    super::tool_settings::page(ui, state, name);
-}
-
-/// The creation and explicit tool editor share the Properties form.
-pub(crate) fn tool_editor_window(ctx: &egui::Context, state: &mut State) {
-    let Some(_subject) = state.tool_editor.clone() else {
+/// #2397: the tool shape editor - its own modal window for the body, the
+/// profile and the holder, with the settings left in Properties. The old
+/// combined tool editor is gone; every door that opened it opens this.
+pub(crate) fn tool_shape_editor_window(ctx: &egui::Context, state: &mut State) {
+    let Some(_subject) = state.tool_shape_editor.clone() else {
         return;
     };
     state.sync_tool_ui();
     let exists = state.tool_ui.exists;
     let title = if exists {
-        format!("Tool: {}", state.tool_ui.name)
+        format!("Tool shape: {}", state.tool_ui.name)
     } else {
-        "New tool".to_owned()
+        "Tool shape".to_owned()
     };
+    let unit = state.units();
+    let err = state.error_for(ErrorScope::Tool).map(str::to_owned);
     let mut open = true;
     let mut close_clicked = false;
     Window::new(title)
-        .id(Id::new("tool-editor"))
+        .id(Id::new("tool-shape-editor"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        // #371 widened the window by the Body column (~270 px); its
-        // default anchor moved left by as much, so it stays centred.
         .default_pos([
-            ctx.viewport_rect().center().x - 520.0,
-            ctx.viewport_rect().center().y - 210.0,
+            ctx.viewport_rect().center().x - 287.0,
+            ctx.viewport_rect().center().y - 310.0,
         ])
+        // The shape window is a fixed frame: it never grows past the
+        // screen, and its body scrolls inside (#2397).
+        .max_size(egui::vec2(620.0, 640.0))
         .show(ctx, |ui| {
-            super::tool_settings::contents(ui, state, true);
+            // A fixed frame: the shape scrolls as one column if it must,
+            // and Close stays in view under it (#2007).
+            ui.set_width(560.0);
+            ui.set_max_height(590.0);
+            let footer_h: f32 = if err.is_some() { 72.0 } else { 36.0 };
+            egui::ScrollArea::vertical()
+                .max_height((590.0_f32 - footer_h).max(120.0))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    super::tool_profile_page::editor(ui, state, exists, unit);
+                });
+            ui.separator();
+            if let Some(msg) = &err {
+                super::error_text::error_text(
+                    ui,
+                    super::colorvision::text_inks(ui, &state.world).error,
+                    msg,
+                );
+            }
             close_clicked = ui.button("Close").clicked();
         });
     if !open || close_clicked {
-        state.close_tool_editor_window();
+        state.close_tool_shape_editor();
     }
 }
 
@@ -493,13 +545,16 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
         if camcraft_app::mesh_open::hole_of(&state.world, &entity).is_none() {
             hint(
             ui,
-            "This model was too large to import at full detail. Gouge checks against it are \
-             stricter to make up for that; when it is too coarse to check at all, its operations \
-             are refused at the post. Raise the STEP facet budget below and import the file \
-             again to clear this.",
+            "This model is approximated more coarsely than usual: it was too large to import at \
+             full detail, or the file's own edges lie off their surfaces. Gouge checks against it \
+             are stricter to make up for that; when it is too coarse to check at all, its \
+             operations are refused at the post. Raise the STEP facet budget below and import the \
+             file again, or export the file again with a tighter tolerance, to clear this.",
             );
         }
     }
+    // #1339: a mesh of unknown fidelity can be vouched for, beside its line.
+    super::vouch_row::row(ui, state, &entity, &name);
     super::step_budget_row::row(ui, state, &entity);
     if let Some(a) = model::entity_world_aabb(&state.world, &entity) {
         ui.label(format!(
@@ -630,13 +685,13 @@ mod turn_tests {
     use camcraft_app::tools;
     use super::*;
 
-    /// M1.4: opening the editor is pure view state - the named path
+    /// #2397: opening the shape editor is pure view state - the named path
     /// re-fetches the draft from the world (every field starts at the
-    /// document's numbers, the law that lets the live preview be honest),
-    /// the blank path starts a real draft numbered past what's taken, and
-    /// neither queues a command.
+    /// document's numbers, the law that lets the live preview be honest);
+    /// the new-tool door starts a real draft in Properties, numbered past
+    /// what's taken. Neither queues a command.
     #[test]
-    fn open_tool_editor_syncs_the_draft_from_the_world() {
+    fn open_tool_shape_editor_syncs_the_draft_from_the_world() {
         let mut state = State::new();
         let (name, tool) = tools::catalog()
             .into_iter()
@@ -647,20 +702,25 @@ mod turn_tests {
             tool: tool.clone(),
         });
         state.drain_actions();
-        actions::open_tool_editor(&mut state, name);
-        assert_eq!(state.tool_editor.as_deref(), Some(name));
+        actions::open_tool_shape_editor(&mut state, name);
+        assert_eq!(state.tool_shape_editor.as_deref(), Some(name));
         assert!(state.pending.is_empty(), "opening an editor queues nothing");
         assert!(state.tool_ui.exists);
         assert_eq!(state.tool_ui.name, name);
         assert_eq!(state.tool_ui.diameter, tool.diameter);
         assert_eq!(state.tool_ui.shank_d, tool.shank_d);
         assert_eq!(state.tool_ui.holder_len, tool.holder_len);
-        // The blank path: "Tool2" - numbered past the one tool the
-        // document now holds, with the starter's plausible numbers.
-        actions::open_tool_editor(&mut state, "");
-        assert_eq!(state.tool_editor.as_deref(), Some(""));
+        // The new-tool door: "Tool2" - numbered past the one tool the
+        // document now holds, with the starter's plausible numbers, on the
+        // empty Tool target that Properties reads as the draft.
+        actions::begin_new_tool(&mut state);
+        assert_eq!(state.ui_target, UiTarget::Tool(String::new()));
+        assert!(state.new_tool_form);
         assert_eq!(state.tool_ui.name, "Tool2");
         assert!(!state.tool_ui.exists);
         assert!(state.pending.is_empty());
+        // A retarget ends the draft.
+        actions::target(&mut state, UiTarget::Stock);
+        assert!(!state.new_tool_form);
     }
 }

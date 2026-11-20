@@ -21,7 +21,11 @@ area they work in is the model's shadow seen from above, and the levels,
 surfaces and edges come from the model's facets. Picking faces or edges
 does not draw a different region for them. 3D Pocket and 3D Finish take
 the Boundary settings on the Geometry tab (containment, offset, extra
-boundaries) to work a smaller area; Deburr has no area to bound.
+boundaries) to work a smaller area; **3D Pocket** also supports **Do not
+touch** protected faces and edges (keeping flutes, shank and holder
+clear across every cut, entry, shell lift, rest pass and rapid link at the
+configured **Clearance** plus **Stock to leave**, highlighted in the
+viewport while selected). Deburr has no area to bound.
 
 In a part-aligned milling setup, **3D Pocket**, **3D Adaptive** and
 **3D Finish** read the model, heights and area controls in that setup's
@@ -66,6 +70,7 @@ Adaptive** uses this same roughing path with its adaptive strategy.
 | Passes | Stock to leave | 0 |
 | Passes | Strategy | Auto (Zigzag, Waterline, Adaptive, Offset rings) |
 | Passes | Optimal load (% of D) | about 14.6 (used by Adaptive and Offset rings) |
+| Passes | Method (Adaptive only) | Spiral (Trochoidal) |
 | Passes | Offset shells | off |
 | Passes | Rest roughing | off |
 | Passes | Feed optimization | off |
@@ -73,7 +78,13 @@ Adaptive** uses this same roughing path with its adaptive strategy.
 | Lead in / Lead out | Between passes / Between levels | Keep down / Clearance plane |
 
 Adaptive plans each level at a constant load; a level its planner refuses
-is cut with Offset rings, and the path says so. **Offset shells** lets the
+is cut with Offset rings, and the path says so. Under Adaptive, **Method**
+chooses Spiral or Trochoidal. Trochoidal clears each level with loops
+that stay inside the area of that level. The loops enter by their own
+bore helix and link over the retract plane, so the Entry and link
+settings are not read on a trochoidal level. A level that the loops
+cannot cut is cut by the Spiral plan, and the path names its Z. Offset
+shells and Rest roughing keep Offset rings. **Offset shells** lets the
 rings follow the model's surface between levels, so a steep wall is cut
 like a waterline instead of a staircase. **Rest roughing** adds a closing
 ladder at half the step for what the levels leave standing. **Feed
@@ -97,6 +108,8 @@ also refused. The message names the tool and its shank or holder band:
 raise Bottom of Part Z or use a longer-reaching tool. This conservative
 depth check does not credit lateral room or material removed earlier,
 so a deep job can refuse even where there appears to be side clearance.
+
+![CamCraft 3D pocket roughing waterline levels clearing stock above a curved dome surface](../../../images/guide/op-3d-pocket-roughing.png)
 
 ## 3D Finish
 
@@ -125,6 +138,8 @@ re-enters through the clearance plane.
 
 There is no stepdown: the levels drop by 2 x sqrt(tool radius x
 tolerance), so the cusp under the ball stays within the tolerance.
+
+![CamCraft 3D parallel finishing passes flowing smoothly over a spherical dome with a ball-nose cutter](../../../images/guide/op-3d-finish-parallel.png)
 
 The patterns, in the Pattern list's order:
 

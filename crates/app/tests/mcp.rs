@@ -348,7 +348,29 @@ fn tool_library_import_modes_update_and_replace_over_mcp() {
     let rep = dst.ok("import_tool_library", json!({ "path": lib.display().to_string(), "mode": "replace" }));
     assert_eq!(rep["removed"], json!(["Extra"]), "{rep}");
     let job = dst.ok("get_job", json!({}));
-    assert_eq!(job["tools"], src.ok("get_job", json!({}))["tools"], "the document now holds the file's set");
+    let strip_nums = |tools: &serde_json::Value| -> Vec<serde_json::Value> {
+        tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .map(|row| {
+                let mut m = row.as_object().expect("tool object").clone();
+                m.remove("number");
+                m.remove("posts_as");
+                serde_json::Value::Object(m)
+            })
+            .collect()
+    };
+    assert_eq!(
+        strip_nums(&job["tools"]),
+        strip_nums(&src.ok("get_job", json!({}))["tools"]),
+        "the document now holds the file's set"
+    );
+    assert_eq!(
+        job["tools"][1]["number"],
+        json!(3),
+        "removing Extra did not shift b off its assigned T3: {job}"
+    );
     dst.ok("undo", json!({}));
     assert!(job_tool_names(&mut dst).contains(&"Extra".to_owned()), "undo brings Extra back");
     let msg = dst.refused("import_tool_library", json!({ "path": lib.display().to_string(), "mode": "merge" }));
@@ -678,5 +700,43 @@ fn fill_openings_rides_the_params_door_and_undoes() {
     c.ok("undo", json!({}));
     let job = c.ok("get_job", json!({}));
     assert!(job["operations"][0]["params"]["finish3d"].get("fill_openings").is_none(), "undo restores off: {job}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The gap link is a new word in the existing `edit_operation` params
+/// door: `jump` by default, `straight` written and read back, a word
+/// the grammar does not carry refused, and undo restoring the jump.
+#[test]
+fn gap_link_rides_the_params_door_and_undoes() {
+    let dir = tmp_dir("gaplink_mcp");
+    let stl = dir.join("block.stl");
+    write_box_stl(&stl);
+    let mut c = Client::new();
+    c.request("initialize", json!({ "protocolVersion": "2025-06-18" }));
+    c.ok("import_model", json!({ "path": stl.display().to_string() }));
+    c.ok("set_stock", json!({ "box": { "dx": 60.0, "dy": 60.0, "dz": 20.0 } }));
+    c.ok("add_tool", json!({ "catalog": "BN-0600" }));
+    let add = c.ok("add_operation", json!({ "kind": "3D Finish", "tool": "BN-0600" }));
+    let op = add["operation"].as_str().expect("op name").to_string();
+    let job = c.ok("get_job", json!({}));
+    assert_eq!(
+        job["operations"][0]["params"]["finish3d"]["gap_link"],
+        json!("jump"),
+        "jump by default: {job}"
+    );
+    let edit = c.ok("edit_operation", json!({ "name": op, "params": { "gap_link": "straight" } }));
+    assert_eq!(edit["params"]["finish3d"]["gap_link"], json!("straight"));
+    let bad = c.refused("edit_operation", json!({ "name": op, "params": { "gap_link": "sidestep" } }));
+    assert!(!bad.is_empty(), "a word the grammar does not carry is refused");
+    let generated = c.ok("generate", json!({}));
+    assert_eq!(generated["generated"][0]["status"], json!("ok"), "{generated}");
+    c.ok("undo", json!({}));
+    c.ok("undo", json!({}));
+    let job = c.ok("get_job", json!({}));
+    assert_eq!(
+        job["operations"][0]["params"]["finish3d"]["gap_link"],
+        json!("jump"),
+        "undo restores the jump: {job}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

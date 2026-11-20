@@ -73,6 +73,15 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
     // sideways), so the bar takes the same width under it.
     let max_h = (ui.available_height() - BAR_RESERVE).max(80.0);
     let out = ScrollArea::vertical().id_salt("op_page_scroll").max_height(max_h).auto_shrink([false, false]).show(ui, |ui| {
+        // egui draws the vertical scrollbar over the viewport's right
+        // edge. A control flush right in the control column - the box of
+        // a check_row is 18 px - then sits under the bar and the bar
+        // takes clicks meant for it. Stop the content short of that zone.
+        let style = ui.style();
+        let bar_total = style.spacing.scroll.bar_inner_margin
+            + style.spacing.scroll.bar_width
+            + style.spacing.scroll.bar_outer_margin;
+        ui.set_max_width((ui.available_width() - bar_total).max(120.0));
         ui.horizontal(|ui| {
             ui.heading(format!("Operation: {label}"));
             if exists && ui.small_button("Rename").clicked() {
@@ -104,6 +113,7 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         crate::frame_cost::time("ui/properties.op.header", || prop_grid(ui, "op_header", |ui| header_rows(ui, state, &target, live.as_ref(), exists)));
         if exists {
             crate::frame_cost::time("ui/properties.op.status", || status(ui, state, &target, pal));
+            needs_review_banner(ui, state, &target);
         }
         ui.separator();
         // The named sections (M1.4's tabs): a kind shows only the sections
@@ -320,8 +330,8 @@ pub(super) fn status_text(state: &State, target: &str) -> (String, super::layout
     let ent = model::find_by_name(&state.world, target);
     let (moves, warnings, notes): (usize, Vec<Warning>, Vec<String>) = ent
         .as_ref()
-        .and_then(|e| model::toolpath_of(&state.world, e))
-        .map(|tp| (tp.path.len(), tp.warnings, tp.path.notes))
+        // #2201: read in place - a clone of the whole path each frame.
+        .and_then(|e| model::with_toolpath(&state.world, e, |tp| (tp.path.len(), tp.warnings.clone(), tp.path.notes.clone())))
         .unwrap_or((0, Vec::new(), Vec::new()));
     let blocked = ent.as_ref().and_then(|e| operation::tool_gate::tool_problem_of(&state.world, e));
     let st = ent.as_ref().map(|e| operation::status_of(&state.world, e));
@@ -358,8 +368,7 @@ fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
     // #261: a warning line that names a move frames it on click (the
     // fold lines lead `details`, aligned with `warning_focus`).
     let focus: Vec<Option<[f64; 3]>> = model::find_by_name(&state.world, target)
-        .and_then(|e| model::toolpath_of(&state.world, &e))
-        .map(|tp| crate::path_lines::warning_focus(&tp))
+        .and_then(|e| model::with_toolpath(&state.world, &e, crate::path_lines::warning_focus))
         .unwrap_or_default();
     let links: Vec<bool> = focus.iter().map(Option::is_some).collect();
     let inks = text_inks(ui, &state.world);
@@ -377,6 +386,29 @@ fn status(ui: &mut Ui, state: &mut State, target: &str, pal: &Tokens) {
     }
 }
 
+/// Migration warning banner for un-carriable parameters dropped on open (#1517).
+fn needs_review_banner(ui: &mut Ui, state: &mut State, target: &str) {
+    let notes = model::find_by_name(&state.world, target)
+        .map(|e| model::operation_meta_of(&state.world, &e).needs_review)
+        .unwrap_or_default();
+    if notes.is_empty() {
+        return;
+    }
+    let warn = text_inks(ui, &state.world).warn;
+    ui.group(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.colored_label(warn, format!("Needs review: {}", notes.join("; ")));
+            if ui
+                .button("Mark reviewed")
+                .on_hover_text("Clear the migration review warning so this operation can post")
+                .clicked()
+            {
+                state.pending.push_back(CommandKind::MarkOperationReviewed(target.to_owned()));
+            }
+        });
+    });
+}
+
 /// The fixed bottom bar, with the one refusal line above it.
 fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation>, exists: bool, pal: &Tokens) {
     let unchanged = live.is_some_and(|o| o.params == state.op_ui.params && o.area == state.op_ui.area);
@@ -384,7 +416,7 @@ fn actions(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Operation
     // or which edited field the door will refuse (crate::feedback).
     let apply_hint = crate::feedback::apply_hint(live.map(|o| &o.params), &state.op_ui.params, unchanged);
     let has_path =
-        exists && model::find_by_name(&state.world, target).and_then(|e| model::toolpath_of(&state.world, &e)).is_some();
+        exists && model::find_by_name(&state.world, target).is_some_and(|e| model::has_toolpath(&state.world, &e));
     let inks = text_inks(ui, &state.world);
     if let Some(msg) = state.error_for(ErrorScope::Operation).map(str::to_owned) {
         // #261 part 2: a refusal that names its spot is a link that

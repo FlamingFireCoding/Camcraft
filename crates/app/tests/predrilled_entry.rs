@@ -101,6 +101,7 @@ fn drill(tip: f64, radius: f64) -> OpParams {
     let hole = Hole { xy: Point2::new(0.0, 0.0), radius, entry_z: TOP, floor_z: tip, through: false, stepped: false };
     OpParams::Drill {
         break_through: None,
+        break_through_from: Default::default(),
         clearance_z: Height::fixed(TOP + 15.0),
         retract_z: None,
         top_z: Height::fixed(TOP),
@@ -135,6 +136,7 @@ fn pocket(predrilled: bool) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: Links { approach: Approach { predrilled, ..Approach::DEFAULT }, ..Links::PLANAR },
+        corner_relief: Default::default(),
     }
 }
 

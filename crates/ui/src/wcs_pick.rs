@@ -48,6 +48,8 @@ pub struct WcsPick {
 /// and walls alike, so forcing one mode would blind the rest. A paused
 /// draft of the same setup resumes with its picks kept (#664).
 pub fn arm(state: &mut State, setup: &str) {
+    state.wcs_ui.pick_circle = false;
+    state.wcs_ui.pick_anchor = false;
     crate::plane_pick::disarm(state);
     crate::axis_pick::disarm(state);
     state.points_pick = None; // #555: one draft collects at a time
@@ -58,7 +60,7 @@ pub fn arm(state: &mut State, setup: &str) {
         None => state.wcs_pick =
             Some(WcsPick { setup: setup.to_owned(), role: Role::Z, picks: Vec::new(), picking: true }),
     }
-    state.status = format!("{setup}: pick faces, edges, corners or walls for the WCS - each takes the role set in the box");
+    state.status = format!("{setup}: pick faces, edges, corners or walls for the WCS - each fills the selected WCS row");
 }
 
 /// Stop collecting; the draft is dropped.
@@ -83,10 +85,10 @@ pub fn collecting(state: &State) -> bool {
 /// role's earlier pick is replaced in place - one pick per role, the
 /// newest wins, the other roles stay put.
 pub fn take(state: &mut State, pick: GeoSel) {
+    let what = camcraft_app::pick::geo_label(&state.world, &pick);
     let Some(draft) = state.wcs_pick.as_mut().filter(|d| d.picking) else { return };
     let role = draft.role;
     let setup = draft.setup.clone();
-    let what = format!("{} of '{}'", pick.feature, pick.entity);
     match draft.picks.iter_mut().position(|(_, r)| *r == role) {
         Some(i) => draft.picks[i] = (pick, role),
         None => draft.picks.push((pick, role)),

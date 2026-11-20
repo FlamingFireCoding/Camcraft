@@ -127,6 +127,12 @@ pub struct ThreadCycle {
     /// the passes are not a cycle's one-cut-per-depth ladder, so a
     /// cycle cannot state them.
     pub repeat_each_depth: bool,
+    /// The roughing passes carry in-pass chip-break dips (issue #419):
+    /// half-turns whose radius changes inside one synchronized chain.
+    /// Only a continuous-threading G32 chain can state them - no
+    /// cycle can, and a post that does not declare continuous
+    /// threading refuses them.
+    pub chip_break_dips: bool,
     /// Axial length of the angled pull-out at the thread's end (0: a
     /// square, radial retract).
     pub pull_out: f64,
@@ -139,6 +145,13 @@ pub struct ThreadCycle {
     /// in the span lays it ([`Self::is_sane`] holds them to it), so a
     /// post never has to infer it.
     pub hand: ThreadHand,
+    /// Whether the cycle's rapid infeed stands completely in free air
+    /// (issue #2878): in front of the end face, or in a relief groove
+    /// wider than the insert, clear of both part and remaining stock.
+    /// A Fanuc-type G76 moves the insert to pass depth at rapid
+    /// traverse, so a post that writes G76 refuses a record when this
+    /// is false.
+    pub start_in_air: bool,
 }
 
 impl ThreadCycle {

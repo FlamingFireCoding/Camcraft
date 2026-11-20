@@ -152,6 +152,7 @@ pub fn tap_through_a_lid(rotated: bool) -> Vec<Warning> {
     let hole = Hole { xy: Point2::new(0.0, 0.0), radius: 2.5, entry_z: TOP + 4.0, floor_z: 10.0, through: false, stepped: false };
     let params = OpParams::Drill {
         break_through: None,
+        break_through_from: Default::default(),
         clearance_z: Height::fixed(TOP + 14.0),
         retract_z: None,
         top_z: Height::fixed(TOP + 4.0),
@@ -182,6 +183,7 @@ pub fn job_without_part(half: f64) -> (World, History) {
 fn drill(cut: Cut, cycle: CycleChoice) -> OpParams {
     OpParams::Drill {
         break_through: None,
+        break_through_from: Default::default(),
         clearance_z: Height::fixed(30.0),
         retract_z: None,
         top_z: Height::fixed(TOP),
@@ -222,7 +224,8 @@ fn thread(cut: Cut) -> OpParams {
         top_z: Height::fixed(TOP),
         bottom_z: None,
         infeed: 0.1,
-        feed: 400.0,
+        // #2598: the thread mill's own 300 mm/min.
+        feed: 300.0,
         plunge_feed: 150.0,
         climb: true,
         holes: vec![cut.hole()],

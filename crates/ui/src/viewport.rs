@@ -115,6 +115,14 @@ fn fs_edge(in: VSOut) -> @location(0) vec4<f32> {
     return vec4<f32>(mix(unlit, sel, in.sel), 1.0);
 }
 
+// Hidden edges (#2818): the same wire where it lies behind a face, blended
+// thin over the lit metal so that it reads lighter than the front wire.
+@fragment
+fn fs_edge_hidden(in: VSOut) -> @location(0) vec4<f32> {
+    let dark = vec3<f32>(0.06, 0.07, 0.09);
+    return vec4<f32>(mix(dark, u.warm.xyz, in.sel), 0.5);
+}
+
 // Stock: same flat shading, cool steel tint, translucent - the model must
 // read through the raw material. Selected stock is warmer and denser.
 // The `cls` channel carries the deviation verdict (stock_sim's law: 0
@@ -212,6 +220,8 @@ pub struct View3D {
     /// prepass (same vertex stage and culling as `pipeline`, no color).
     depth_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
+    /// The model wire behind the faces ("Shaded, with hidden edges", #2818).
+    hidden_line_pipeline: wgpu::RenderPipeline,
     stock_pipeline: wgpu::RenderPipeline,
     region_pipeline: wgpu::RenderPipeline,
     overlay_pipeline: wgpu::RenderPipeline,
@@ -379,43 +389,54 @@ impl View3D {
         // Facet edges over the shaded pass. No culling (back-face wire is
         // hidden by depth anyway) and a negative slope bias so the lines
         // win the depth test against the faces they lie on.
-        let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("viewport3d-lines"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(VERTEX_LAYOUT)],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                // Lines may not carry a depth bias in wgpu 30, so edges win
-                // ties against the faces they lie on via LessEqual instead.
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_edge"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        // The hidden-edge pipeline (#2818) is the same wire with the depth
+        // test reversed: it draws only where a face is in front, blended.
+        let edge_pipe = |label, entry_point, depth_compare, blend| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(VERTEX_LAYOUT)],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    // Lines may not carry a depth bias in wgpu 30, so edges win
+                    // ties against the faces they lie on via LessEqual instead.
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(depth_compare),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let line_pipeline = edge_pipe("viewport3d-lines", "fs_edge", wgpu::CompareFunction::LessEqual, None);
+        let hidden_line_pipeline = edge_pipe(
+            "viewport3d-hidden-lines",
+            "fs_edge_hidden",
+            wgpu::CompareFunction::Greater,
+            Some(wgpu::BlendState::ALPHA_BLENDING),
+        );
 
         // Translucent stock: blended over whatever the opaque pass left,
         // never writing depth (models stay pickable-and-visible through it).
@@ -591,6 +612,7 @@ impl View3D {
             pipeline,
             depth_pipeline,
             line_pipeline,
+            hidden_line_pipeline,
             stock_pipeline,
             region_pipeline,
             overlay_pipeline,
@@ -735,6 +757,19 @@ impl View3D {
         self.model_edge_count = model_edges;
     }
 
+    /// The cached index partition that the draw list reads (#2818).
+    #[must_use]
+    pub const fn counts(&self) -> crate::draw_list::Counts {
+        crate::draw_list::Counts {
+            index_count: self.index_count,
+            model_index_count: self.model_index_count,
+            stock_index_end: self.stock_index_end,
+            overlay_index_start: self.overlay_index_start,
+            edge_count: self.edge_count,
+            model_edge_count: self.model_edge_count,
+        }
+    }
+
     /// Replace the overlay line set: pairs of `[x, y, z, r, g, b]` vertices
     /// drawn non-indexed after every solid - the WCS triads, world axes and
     /// cached toolpaths (the producers cap the list before it gets here).
@@ -769,8 +804,8 @@ impl View3D {
 
     /// Encode the 3D pass into the offscreen target. `eye` is the camera
     /// position in world space, for the specular term; `display` selects
-    /// shaded-with-wire or hidden-line wireframe (the buffers are identical
-    /// either way - only the pass order and the `u.wire` flag differ).
+    /// the display mode (the buffers are identical in each mode - only the
+    /// draw list, `crate::draw_list::plan`, and the `u.wire` flag differ).
     pub fn render(
         &self,
         queue: &wgpu::Queue,
@@ -794,7 +829,7 @@ impl View3D {
         display: crate::state::DisplayMode,
         stock: Option<&dyn Fn(&mut wgpu::RenderPass<'_>)>,
     ) {
-        let wireframe = display == crate::state::DisplayMode::Wireframe;
+        let wireframe = display.is_wireframe();
         // The live theme's viewport ground (#698): the clear colour and
         // the wireframe ink follow it, so a light theme gets a light ground.
         let ground = crate::egui_app::theme::current().viewport;
@@ -865,50 +900,34 @@ impl View3D {
         // hidden-line cull still holds) and drops the stock faces - the
         // box is a volume of stock, not a surface, and its full wire reads
         // truer than an occluded one.
+        // The order itself is `draw_list::plan` (#2818): one list for each
+        // display mode, read from the cached index partition.
         pass.set_bind_group(0, &self.bind_group, &[]);
+        use crate::draw_list::Pipe;
+        let plan = crate::draw_list::plan(display, &self.counts(), stock.is_some());
         if self.index_count > 0 {
             pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-            pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-            if wireframe {
-                if self.model_index_count > 0 {
-                    pass.set_pipeline(&self.depth_pipeline);
-                    pass.draw_indexed(0..self.model_index_count, 0, 0..1);
+        }
+        for step in plan.steps() {
+            let pipeline = match step.pipe {
+                Pipe::Faces => &self.pipeline,
+                Pipe::FacesDepthOnly => &self.depth_pipeline,
+                Pipe::Edges => &self.line_pipeline,
+                Pipe::HiddenEdges => &self.hidden_line_pipeline,
+                Pipe::Stock => &self.stock_pipeline,
+                Pipe::Region => &self.region_pipeline,
+                Pipe::TracedStock => {
+                    if let Some(draw) = stock {
+                        draw(&mut pass);
+                        pass.set_bind_group(0, &self.bind_group, &[]);
+                    }
+                    continue;
                 }
-            } else {
-                pass.set_pipeline(&self.pipeline);
-                pass.draw_indexed(0..self.model_index_count, 0, 0..1);
-            }
-            if self.model_edge_count > 0 {
-                pass.set_index_buffer(self.edge_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.line_pipeline);
-                pass.draw_indexed(0..self.model_edge_count, 0, 0..1);
-            }
-            let traced = stock.filter(|_| !wireframe);
-            if let Some(draw) = traced {
-                draw(&mut pass);
-                pass.set_bind_group(0, &self.bind_group, &[]);
-                // The overlay stock (the incoming stock, #406) is not the
-                // traced stock's to replace: it still draws.
-                if self.overlay_index_start < self.stock_index_end {
-                    pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.set_pipeline(&self.stock_pipeline);
-                    pass.draw_indexed(self.overlay_index_start..self.stock_index_end, 0, 0..1);
-                }
-            } else if self.model_index_count < self.stock_index_end && !wireframe {
-                pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.stock_pipeline);
-                pass.draw_indexed(self.model_index_count..self.stock_index_end, 0, 0..1);
-            }
-            if traced.is_none() && self.model_edge_count < self.edge_count {
-                pass.set_index_buffer(self.edge_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.line_pipeline);
-                pass.draw_indexed(self.model_edge_count..self.edge_count, 0, 0..1);
-            }
-            if self.stock_index_end < self.index_count {
-                pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.region_pipeline);
-                pass.draw_indexed(self.stock_index_end..self.index_count, 0, 0..1);
-            }
+            };
+            let indices = if step.pipe.uses_edge_buffer() { &self.edge_buf } else { &self.index_buf };
+            pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.set_pipeline(pipeline);
+            pass.draw_indexed(step.range.clone(), 0, 0..1);
         }
         if self.overlay_count > 0 {
             pass.set_pipeline(&self.overlay_pipeline);
@@ -1082,6 +1101,14 @@ impl Default for Camera {
     }
 }
 
+/// The distance behind the target the orthographic camera sits at. Its
+/// framing is independent of distance (the half-height is `dist * tan
+/// (fov/2)`), so nothing useful comes of pushing the eye toward the
+/// model - dollying along the view direction with `dist` only swallowed
+/// the model's near faces behind the camera as the zoom shrank. The
+/// ortho `dist` is a zoom factor; the eye stays at a nominal distance.
+pub(crate) const ORTHO_EYE_DIST: f64 = 100.0;
+
 impl Camera {
     pub fn orbit(&mut self, dx: f32, dy: f32) {
         self.yaw -= f64::from(dx) * 0.01;
@@ -1120,9 +1147,10 @@ impl Camera {
     /// Ray through an NDC cursor position (x right, y up, -1..1):
     /// (origin, normalized direction), or None on degenerate math.
     /// In [`ProjectionMode::Orthographic`] the ray is parallel to the
-    /// view axis and its origin is the cursor's point on the eye plane
-    /// - the mirror of the ortho box [`Camera::mvp`] draws, so a pick
-    ///   through the same matrix hits what the screen shows (#434).
+    /// view axis and its origin is the cursor's point on the near plane,
+    /// [`Camera::ortho_behind_eye`] behind the eye plane - the mirror of
+    /// the ortho box [`Camera::mvp`] draws, so a pick through the same
+    /// matrix hits what the screen shows (#434), nearer faces included (#2375).
     #[must_use]
     pub fn ray_through(&self, ndc: [f32; 2], aspect: f64) -> Option<([f64; 3], [f64; 3])> {
         let (fx, fy, fz) = self.fwd();
@@ -1139,10 +1167,11 @@ impl Camera {
             let h = self.ortho_half_height();
             let w = h * aspect;
             let e = self.eye();
+            let back = self.ortho_behind_eye();
             let origin = [
-                e[0] + nx * w * rx + ny * h * ux,
-                e[1] + nx * w * ry + ny * h * uy,
-                e[2] + nx * w * rz + ny * h * uz,
+                e[0] + nx * w * rx + ny * h * ux - back * fx,
+                e[1] + nx * w * ry + ny * h * uy - back * fy,
+                e[2] + nx * w * rz + ny * h * uz - back * fz,
             ];
             let dir = [fx, fy, fz];
             if !origin.iter().all(|v| v.is_finite())
@@ -1333,11 +1362,16 @@ impl Camera {
 
     #[must_use]
     pub(crate) fn eye(&self) -> [f64; 3] {
+        let d = if self.projection == ProjectionMode::Orthographic {
+            ORTHO_EYE_DIST
+        } else {
+            self.dist
+        };
         let cp = self.pitch.cos();
         let (ox, oy, oz) = self.frame.to_world((
-            self.dist * cp * self.yaw.cos(),
-            self.dist * cp * self.yaw.sin(),
-            self.dist * self.pitch.sin(),
+            d * cp * self.yaw.cos(),
+            d * cp * self.yaw.sin(),
+            d * self.pitch.sin(),
         ));
         [self.target[0] + ox, self.target[1] + oy, self.target[2] + oz]
     }
@@ -1401,14 +1435,28 @@ impl Camera {
                 1.0,
             ],
         ];
-        let near = 0.1f64;
-        let far = (self.dist * 40.0).max(1000.0);
+        // The near plane rides the view distance (minimally far from
+        // the eye): a fixed 0.1 clipped against any part smaller than
+        // half a millimetre near the camera, so zooming magnified cut
+        // the near faces away at the surface.
         let aspect = if aspect.is_finite() && aspect > 1e-6 {
             aspect
         } else {
             1.0
         };
+        // Perspective clips 0.1 mm in front of the eye - enough to kill
+        // the near-plane tunnel problem without a visible crop at sane
+        // distances. `dist` clamps to 0.5 mm, so the 0.1 mm plane still
+        // sits inside the clip volume at every zoom.
+        let near = (self.dist * 0.001).clamp(1e-5, 0.1);
+        let far = (self.dist * 40.0).max(1000.0);
         let proj = if self.projection == ProjectionMode::Orthographic {
+            // The eye stays a fixed nominal distance behind the target,
+            // so a near plane in front of it would sit 99.9 mm ahead of
+            // the target plane and any nearer geometry would vanish.
+            // The near plane reaches far behind the eye plane so nothing
+            // inside the visible box clips away.
+            let near = -self.ortho_behind_eye();
             // Parallel box (#434): half-height is what perspective sees at
             // the target plane, so `dist` keeps spelling zoom and the
             // mode switch never jumps the framing. Depth is linear and
@@ -1446,6 +1494,13 @@ impl Camera {
     #[must_use]
     pub(crate) fn ortho_half_height(&self) -> f64 {
         self.dist * (std::f64::consts::FRAC_PI_6).tan()
+    }
+
+    /// How far the orthographic near plane sits behind the eye plane, mm:
+    /// [`Camera::mvp`] clips there and [`Camera::ray_through`] starts there.
+    #[must_use]
+    pub(crate) fn ortho_behind_eye(&self) -> f64 {
+        (self.dist * 20.0).max(1000.0) - ORTHO_EYE_DIST
     }
 }
 

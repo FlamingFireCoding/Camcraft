@@ -5,6 +5,7 @@
 //! Gate map (#2361): covers app::commands, motion::drilling, geometry::geo2d, app::geometry,
 //! app::machine, app::model, app::operation, app::posting, app::schema, geometry::geometry::stock,
 //! app::world, tools::catalog, app::stock_sim.
+//! #2359 also covers post::engine and the schema's Bake operator label.
 //!
 //! Provenance: our own integration suite for rotated work offsets; no vendor material consulted.
 
@@ -97,6 +98,35 @@ fn tmp_nc(tag: &str) -> PathBuf {
     p.push(format!("camcraft-760-ctl-{tag}-{}.nc", std::process::id()));
     let _ = fs::remove_file(&p);
     p
+}
+
+#[test]
+fn bake_label_agrees_with_posted_table_coordinates_at_nonzero_yaw() {
+    // Synthetic input in our documented .cnc format; no geometry generator.
+    let stream = "; HSMW-CNC v1\n\
+        PARAM OperationName Bake wording\n\
+        PARAM SpindleSpeed 5000\n\
+        PARAM WorkOffset 1\n\
+        PARAM OriginX 10\n\
+        PARAM OriginY 5\n\
+        PARAM OriginZ 0\n\
+        PARAM ClearancePlane 25\n\
+        PARAM RetractPlane 15\n\
+        PARAM WcsYaw 90\n\
+        TOOL 1 EM\n\
+        SECTION\n\
+        Rapid X 10000 Y 5000 Z 25000\n\
+        Feed X 10000 Y 25000 Z -1000 F 600000\n\
+        ENDSECTION\n";
+    let machine = serde_json::from_str(include_str!("../../../assets/machines/3axis-vmc.mch"))
+        .expect("machine fixture");
+    let out = camcraft_post::post::engine::run(
+        include_str!("../../../assets/posts/fanuc.cps"), &machine, stream,
+    ).expect("Bake posts without controller rotation support");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.contains("X0. Y20."), "{}", out.program);
+    assert!(!out.program.contains("G68"), "{}", out.program);
+    assert_eq!(WcsRotationOutput::Bake.label(), "Bake into XY (table coordinates)");
 }
 
 #[test]
@@ -265,7 +295,9 @@ fn rotated_wcs_carries_pocket_slot_circular_and_drill_ops() {
         *bottom_z = Height::fixed(b.max.z - 2.0);
     }
     let mut drill = retype_params(&face_params(19.5, 25.0), OpType::Drill.ordinal());
-    if let OpParams::Drill { holes, clearance_z, retract_z, top_z, bottom_z, .. } = &mut drill {
+    if let OpParams::Drill { holes, clearance_z, retract_z, top_z, bottom_z, feed, plunge_feed, .. } = &mut drill {
+        // #2598: DR-0600's own feed; the face seed's 1200 / 300 is refused.
+        (*feed, *plunge_feed) = (115.0, 115.0);
         *clearance_z = Height::fixed(b.max.z + 5.0);
         *retract_z = None;
         *top_z = Height::fixed(b.max.z);

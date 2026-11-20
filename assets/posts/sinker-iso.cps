@@ -29,6 +29,7 @@ capabilities = 1;          // reference contract: integer feature mask
 coolantModes = true;       // reads PARAM Coolant - to refuse every ask but Off
 serves = ["sinker_edm"];   // posts for sinker EDMs only (#1266 manifest; the app's serves door, #1232)
 programUnits = "mm inch"; // #902, #1382: writes the document's unit (postOptions.Units) with edm.codes.metric / edm.codes.inch
+explains = "paren"; // #1389: explain ISO words; emit() leaves machine EDM codes unchanged
 
 // Determinism law: no timestamps, no randomness - the same stream always
 // posts to the same text (golden files depend on it).
@@ -66,7 +67,11 @@ function block(words) {
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
+  }
 }
 function msg(s) { if (typeof message === "function") message(s); else writeln("(" + s + ")"); }
 function refuse(key, s) {

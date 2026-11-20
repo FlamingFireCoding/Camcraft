@@ -67,6 +67,25 @@ How an index posts depends on the post:
 - Tool shank and holder against the part and fixtures along tilted moves.
 - The index swing: see [Checks](@/guide/multi-axis/checks.md).
 
+![Unsafe CamCraft indexed facing example with gouge warnings over a rectangular workpiece](../../../images/guide/op-indexed-3plus2.png)
+
+**Unsafe example — do not post or machine.** In
+`examples/guide-multiaxis.camproj`, `Indexed Face1` has **30 gouge warnings**:
+the cutter intrudes into the protected finish surface. It also has
+**1 first-traverse-low warning**: after a tool change the machine does not
+know where the tool is across the table, so the first move of the operation
+can pass over any part of the stock. Measured along the tilted tool from the
+origin of the tilted plane, the clearance height is 10 mm up and the highest
+corner of the block is 11.114 mm up, so that first move could hit the block. Raise the clearance height above the
+highest corner of the stock and of every fixture. This image illustrates
+the fixed tilted pose and the warning state, not a verified facing recipe.
+Before using this setup, align the tilted plane and its origin with the
+intended face, then correct the cut depth and cutting boundary so the cutter
+clears the protected finished model. Regenerate the toolpath and verify the
+corrected operation with no gouge or collision warnings before posting or
+machining. A posed program reported as "not judged" by stock simulation is
+not a safety pass; see [Checks](@/guide/multi-axis/checks.md).
+
 ## Recipe: a three-sided block, 3+1
 
 On a machine with an A table (for example the Tormach microARC 4 file).

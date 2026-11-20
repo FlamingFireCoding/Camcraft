@@ -110,6 +110,7 @@ pub fn run_program_with(
 ) -> Result<PostOutput, PostError> {
     let records = super::normalize_program_order(cnc::parse(stream)?);
     let mut s = Script::load(cps)?;
+    let mut tool_macros = super::tool_change::Macros::read(&mut s)?;
     // #902: an inch document on a script that cannot write inch.
     if let Some(why) = super::units::refusal(&mut s, options)? {
         return Err(PostError::Refused(why));
@@ -122,6 +123,9 @@ pub fn run_program_with(
     // #1386: Explain G-code on a script that states no comment form is
     // refused by name here, before any hook runs.
     let explain_form = super::explain::form(&mut s, options)?;
+    // #1649 / #2476: mirror each flipped WCS section and express its yaw
+    // in that frame. The rotation below then gives R(-yaw') F = F R(-yaw).
+    let records = super::wcs_flip::apply(records, &s)?;
     // #760: a Z-rotated work offset transforms coordinates into WCS XY
     // (before machine axis inversion so Bake mirrors in WCS slides), and
     // checks Control mode declarations (`coordinateRotation`, `wcsRotation`).
@@ -265,6 +269,10 @@ pub fn run_program_with(
                         "{who}cuts a thread that needs the spindle reversed (M04) for its hand, but this post script does not declare threadHands - it would cut the other hand; use a lathe post that states the thread's hand"
                     ));
                 }
+                if name == "ChipBreakDips" && !s.voices_continuous_threading() {
+                    let op = base.get("OperationName").and_then(Value::as_str).unwrap_or("");
+                    warnings.push(super::cnc_thread::dips_unvoiced(op));
+                }
                 // A left-hand-cut mill (#988) through a script that
                 // cannot start M04 would turn the cutter backwards.
                 if name == "MillSpindle" && value.as_str() == Some("reverse") && !s.voices_mill_spindle_reverse() {
@@ -298,7 +306,7 @@ pub fn run_program_with(
                 base.insert("ToolNumber".into(), json!(*number));
                 base.insert("ToolName".into(), json!(name));
                 s.set_properties(&merged(&base, &BTreeMap::new(), pos))?;
-                s.call("onToolChange", &format!("{}, {}", json!(number), json!(name)))?;
+                tool_macros.call(&mut s, *number, name)?;
             }
             Record::Section { begin } => {
                 s.call(if *begin { "onSection" } else { "onSectionEnd" }, "")?;

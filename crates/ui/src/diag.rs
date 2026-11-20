@@ -1,25 +1,27 @@
-//! The UI crate's one diagnostics seam (#31): a line for whoever launched
-//! the app. Natively that is the terminal (stderr for warnings, stdout for
-//! plain notes), exactly where `eprintln!` / `println!` put it before. In a
-//! browser std has no stderr or stdout - a line printed there is dropped -
-//! so on wasm32 the same line goes to the page's console instead. Shared
-//! code says `diag_warn!` / `diag_info!` and never prints directly; the
-//! law test below keeps it that way ("Log diagnostics, never silence").
-//! Provenance: our own code, specced from the std `eprintln!` docs and the
+//! The UI crate's one diagnostics seam (#31, #163): a line for whoever
+//! launched the app. Natively it is a `tracing` event (target
+//! `camcraft_ui`), so it reaches the terminal through the one subscriber
+//! `camcraft_app::logging::init` installs in `main` - with a level, a
+//! timestamp and the `CAMCRAFT_LOG` / `RUST_LOG` filter, like every other
+//! crate's lines. In a browser no subscriber prints, so on wasm32 the same
+//! line goes to the page's console instead. UI code says `diag_warn!` /
+//! `diag_info!` and never prints directly; the law test below keeps it
+//! that way ("Log diagnostics, never silence").
+//! Provenance: our own code, specced from the `tracing` macro docs and the
 //! web-sys `console` API.
 
-/// A warning or refusal: stderr natively, `console.warn` in a browser.
+/// A warning or refusal: a `warn` event natively, `console.warn` in a browser.
 pub fn warn(line: &str) {
     #[cfg(not(target_arch = "wasm32"))]
-    eprintln!("{line}");
+    tracing::warn!(target: "camcraft_ui", "{line}");
     #[cfg(target_arch = "wasm32")]
     eframe::web_sys::console::warn_1(&line.into());
 }
 
-/// A plain note: stdout natively, `console.log` in a browser.
+/// A plain note: an `info` event natively, `console.log` in a browser.
 pub fn info(line: &str) {
     #[cfg(not(target_arch = "wasm32"))]
-    println!("{line}");
+    tracing::info!(target: "camcraft_ui", "{line}");
     #[cfg(target_arch = "wasm32")]
     eframe::web_sys::console::log_1(&line.into());
 }
@@ -38,22 +40,16 @@ macro_rules! diag_info {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    /// Files that may print directly: this seam, code that is never
-    /// compiled for wasm32 (the native window, its GPU bring-up, the
-    /// headless proof and the test-device helper), and test files.
+    /// Files that may print directly: this seam and test-only code, whose
+    /// lines must reach a test run's output with no subscriber installed.
+    /// The native window, its GPU bring-up and the headless proof log
+    /// through the seam like everything else (#163).
     const NATIVE_OR_TEST: &[&str] = &[
         "diag.rs",
-        "main.rs",
-        "egui_app/shell_window.rs",
-        "egui_app/shell_window/frame.rs",
-        "egui_app/gpu_init.rs",
-        "egui_app/os_quit.rs",
-        "egui_app/frame_watch.rs",
-        // gpu.rs prints only inside its #[cfg(test)] module; shell.rs only
-        // inside the native-only `headless` proof; headless_gpu.rs only in
-        // the native-only `device_for_test`.
+        // gpu.rs prints only inside its #[cfg(test)] module; headless_gpu.rs
+        // only in `device_for_test`, whose "SKIPPED - NOT a pass" line a
+        // test run must show.
         "egui_app/gpu.rs",
-        "egui_app/shell.rs",
         "headless_gpu.rs",
     ];
 
@@ -94,10 +90,12 @@ mod tests {
         }
         assert!(
             offenders.is_empty(),
-            "these lines print directly, which a browser drops - use diag_warn!/diag_info!: {offenders:?}"
+            "these lines print directly, past the log filter and dropped by a browser - use diag_warn!/diag_info!: {offenders:?}"
         );
     }
 
+    /// The event levels of `warn` and `info` are pinned in
+    /// `tests/diag_events.rs`, a test binary of its own (#2595).
     #[test]
     fn the_macros_take_println_shaped_arguments() {
         let n = 3;
