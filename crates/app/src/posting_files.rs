@@ -144,6 +144,7 @@ pub const MACHINES: &[(&str, AssetFile)] = &[
     // #1501: a Sodick wire EDM, X Y U V travels and taper from Sodick's published
     // ALC series specifications (docs/decisions/1501-sodick-alc400g.md).
     ("Sodick ALC400G", AssetFile("sodick-alc400g.mch")),
+    ("AGIECUT Classic 2S (template)", AssetFile("agiecut-classic-2s.mch")),
 ];
 
 fn post_dir() -> &'static DataFiles {
@@ -385,6 +386,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("machines", "haas-dm1.mch") => Some(include_str!("../../../assets/machines/haas-dm1.mch")),
         ("machines", "sinker-edm.mch") => Some(include_str!("../../../assets/machines/sinker-edm.mch")),
         ("machines", "sodick-alc400g.mch") => Some(include_str!("../../../assets/machines/sodick-alc400g.mch")),
+        ("machines", "agiecut-classic-2s.mch") => Some(include_str!("../../../assets/machines/agiecut-classic-2s.mch")),
         ("machines", "3axis-vmc.mch") => Some(include_str!("../../../assets/machines/3axis-vmc.mch")),
         _ => None,
     }
