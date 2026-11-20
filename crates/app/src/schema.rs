@@ -103,6 +103,18 @@ pub struct ReducedFidelity {
     pub chord_mm: f64,
 }
 
+/// A person vouched for this model's mesh while it was of unknown fidelity
+/// (#1339): `by` is who, `rev` the geometry revision the word was given
+/// for. It speaks only while the model still has that revision and no
+/// `ReducedFidelity` (`model_vouch::by_of`). Written by
+/// `VouchModelFidelity`, its undo and the project loader, through
+/// `model_vouch::set`.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct FidelityVouched {
+    pub by: String,
+    pub rev: u64,
+}
+
 /// The STEP facet budget a model's mesh was imported under, when it is not
 /// the default (#1054; `step_budget::DEFAULT`). Absent on every model
 /// imported at the default, on STL/OBJ meshes and on every model of a
@@ -882,6 +894,7 @@ pub fn register_schema(world: &World) {
     world.component::<GeoSig>();
     world.component::<FeatureNamesMemo>();
     world.component::<ReducedFidelity>();
+    world.component::<FidelityVouched>();
     world.component::<StepBudget>();
     world.component::<StepSource>();
     world.component::<ModelSource>();

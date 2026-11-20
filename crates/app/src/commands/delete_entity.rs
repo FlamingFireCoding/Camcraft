@@ -14,6 +14,9 @@ pub struct DeleteEntity {
     name: String,
     location: Location,
     facets: Option<std::sync::Arc<[Triangle]>>,
+    /// #1339: a vouch comes back with the exact geometry revision it names.
+    revision: u64,
+    fidelity_vouched: Option<crate::schema::FidelityVouched>,
     /// #864: a reduced-fidelity model comes back flagged - an undo that
     /// dropped the flag would loosen every verdict against it.
     coarse_mm: Option<f64>,
@@ -78,6 +81,8 @@ impl DeleteEntity {
             name: name.to_string(),
             location: model::transform_of(world, &entity).unwrap_or_default(),
             facets: model::facets_of(world, &entity),
+            revision: model::rev_of(world, &entity),
+            fidelity_vouched: crate::model_vouch::record_of(world, &entity),
             coarse_mm: crate::model_fidelity::chord_of(world, &entity),
             facet_budget: crate::model_fidelity::budget_of(world, &entity),
             hole: crate::mesh_open::hole_of(world, &entity),
@@ -124,6 +129,8 @@ impl Command for DeleteEntity {
         if let Some(tris) = &self.facets {
             model::set_facets(world, &entity, tris.clone());
         }
+        model::set_rev(world, &entity, self.revision);
+        crate::model_vouch::set(world, &entity, self.fidelity_vouched.clone());
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
         crate::mesh_open::set(world, &entity, self.hole.as_deref());

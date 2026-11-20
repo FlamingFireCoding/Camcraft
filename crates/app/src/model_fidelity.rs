@@ -41,7 +41,7 @@
 //!   so every operation judged against it, and the program verdict, are
 //!   refused by name ([`UNKNOWN_NOTE`]), never tightened by a guess. It
 //!   rides every path the flag rides (copies, clones, undo, save) and only
-//!   a fresh import clears it.
+//!   a fresh import, or a person's vouch (#1339, `model_vouch`), clears it.
 
 use flecs_ecs::core::EntityViewGet;
 use flecs_ecs::prelude::{Entity, World};
@@ -87,8 +87,9 @@ pub fn chord_of(world: &World, entity: &Entity) -> Option<f64> {
     entity.entity_view(world).try_get::<&ReducedFidelity>(|r| r.chord_mm).and_then(step::coarse)
 }
 
-/// Write or clear the flag. For the import/update commands, their undo
-/// and the project loader only - it describes the facets it lands with.
+/// Write or clear the flag. For the import/update commands, the vouch
+/// (#1339), their undo and the project loader only - it describes the
+/// facets it lands with.
 pub fn set(world: &World, entity: &Entity, coarse_mm: Option<f64>) {
     let view = entity.entity_view(world);
     match coarse_mm.and_then(step::coarse) {

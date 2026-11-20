@@ -48,6 +48,8 @@ mod tests;
 #[cfg(test)]
 mod tests_cross;
 #[cfg(test)]
+mod tests_backbore;
+#[cfg(test)]
 mod tests_ream;
 
 pub use axial::{axial_doors, axial_warnings, AXIAL_TOL};

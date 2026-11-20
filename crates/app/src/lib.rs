@@ -54,6 +54,7 @@ pub mod model;
 pub mod model_fidelity;
 pub mod mesh_open;
 pub mod mesh_solids;
+pub mod model_vouch;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;

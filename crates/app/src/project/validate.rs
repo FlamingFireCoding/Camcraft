@@ -49,6 +49,11 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
     if dto.mesh_open.is_some() && !(dto.fidelity_unknown && matches!(kind, EntityKind::Model)) {
         return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
     }
+    // #1339: a vouch is a model's, and never rides beside a flag.
+    if let Some(vouch) = &dto.fidelity_vouched {
+        let flagged = dto.fidelity_unknown || dto.coarse_mm.is_some();
+        vouch.check(&dto.name, matches!(kind, EntityKind::Model), flagged).map_err(corrupt)?;
+    }
     match kind {
         EntityKind::Entry | EntityKind::Sketch => {}
         EntityKind::Model => {

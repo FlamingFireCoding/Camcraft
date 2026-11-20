@@ -57,9 +57,9 @@ impl Run {
                 return Ok(());
             }
             println!("-- build alone x -j {}", self.budget);
-            let d = Self::execute(&self.root, &self.log_dir, self.dry, i + 1, &plan.steps[i], self.budget)?;
+            let d = Self::execute(&self.root, &self.log_dir, self.dry, i + 1, &plan.steps[i], self.budget, &self.built)?;
             let ok = d.ok;
-            self.done.push(d);
+            self.keep(d);
             if !ok {
                 return Ok(());
             }
@@ -86,7 +86,7 @@ impl Run {
                     return Ok(());
                 }
                 println!("-- alone x -j {}", self.budget);
-                let d = Self::execute(&self.root, &self.log_dir, self.dry, i + 1, s, self.budget)?;
+                let d = Self::execute(&self.root, &self.log_dir, self.dry, i + 1, s, self.budget, &self.built)?;
                 self.done.push(d);
             }
         }
@@ -96,9 +96,9 @@ impl Run {
     /// Runs `queue` (plan indices, in pull order) on `lanes` threads of `jobs` each. A dry run prints the
     /// queue in pull order without threads. Results come back in plan order.
     fn drain(&mut self, plan: &Plan, queue: &[usize], lanes: usize, jobs: usize) -> Result<Vec<Done>, String> {
-        let (root, logs, dry, guard) = (&self.root, &self.log_dir, self.dry, &self.guard);
+        let (root, logs, dry, guard, built) = (&self.root, &self.log_dir, self.dry, &self.guard, &self.built);
         if dry {
-            return queue.iter().map(|&i| Self::execute(root, logs, true, i + 1, &plan.steps[i], jobs)).collect();
+            return queue.iter().map(|&i| Self::execute(root, logs, true, i + 1, &plan.steps[i], jobs, built)).collect();
         }
         let next = AtomicUsize::new(0);
         let stop = AtomicBool::new(false);
@@ -122,7 +122,7 @@ impl Run {
                                 }
                                 break;
                             }
-                            match Self::execute(root, logs, false, i + 1, step, jobs) {
+                            match Self::execute(root, logs, false, i + 1, step, jobs, built) {
                                 Ok(d) => lock(&done).push((i, d)),
                                 Err(e) => {
                                     stop.store(true, Ordering::SeqCst);
