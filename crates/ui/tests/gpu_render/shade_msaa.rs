@@ -53,7 +53,7 @@ fn set_samples_rebuilds_the_shade_pipelines_for_one_and_four_samples() {
         let shaded = frame(&view, &device, &queue);
         view.set_effects(Effects::default());
         let plain = frame(&view, &device, &queue);
-        let differ = shaded.chunks_exact(4).zip(plain.chunks_exact(4)).filter(|(a, b)| a != b).count();
+        let differ = shaded.as_chunks::<4>().0.iter().zip(plain.as_chunks::<4>().0).filter(|(a, b)| a != b).count();
         assert!(differ > 100, "{samples}: the shadow and the occlusion draw: {differ} px differ");
     }
 }
