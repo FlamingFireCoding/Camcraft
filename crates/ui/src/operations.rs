@@ -265,12 +265,16 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             Warning::StockChamferGouge { .. } | Warning::StockDeburrGouge { .. } => (1, true),
             Warning::ShankHit { part, .. } => (2, *part),
             Warning::RapidInStock { .. } => (3, false),
+            // #2901: the first traverse under a top - its own fix (raise
+            // the clearance height), clear of the avoid range (216..=220).
+            Warning::FirstTraverseLow { .. } => (221, false),
             Warning::NonFinite { .. } => (4, false),
             Warning::Envelope { .. } => (5, false),
             // Fixture hits group by the part that hit (M3.2 stage B): a
             // shank against a vise reads differently from a rapid into
             // the table, and the fixes differ too.
             Warning::FixtureHit { fixture_part, .. } => (6 + *fixture_part as u8, false),
+            Warning::AvoidHit { part, .. } => (216 + *part as u8, false),
             // Sweep hits (M5.1 stage G) split stock from part like the
             // shank law's two flavors; the key space starts clear of
             // the fixture range's worst case.
@@ -300,7 +304,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::HolderHit { at, .. }
             | Warning::SweepHit { at, .. }
             | Warning::RapidInStock { at }
+            | Warning::FirstTraverseLow { at, .. }
             | Warning::FixtureHit { at, .. }
+            | Warning::AvoidHit { at, .. }
             | Warning::NonFinite { at }
             | Warning::Envelope { at, .. }
             | Warning::RestUnjudged { at, .. }

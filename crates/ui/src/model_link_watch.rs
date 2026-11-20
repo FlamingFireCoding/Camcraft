@@ -10,8 +10,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
+// The clock seam (#31): std's Instant panics in the browser build.
+use camcraft_app::clock::Instant;
 use camcraft_app::model;
 use flecs_ecs::prelude::World;
 

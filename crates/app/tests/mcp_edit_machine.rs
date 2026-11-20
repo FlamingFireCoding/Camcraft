@@ -174,6 +174,15 @@ fn a_wire_tank_and_flushing_edit_is_one_undo_step_and_an_unknown_word_is_refused
     let bad = c.refused("edit_machine", json!({ "patch": { "edm": { "tank": "flooded" } } }));
     assert!(bad.contains("patch refused") && bad.contains("flooded"), "{bad}");
     assert_eq!(c.ok("get_job", json!({}))["machine"], before, "nothing changed");
+    // #2686: the skim passes' flushing is the same kind of edit; taking
+    // the rough cut's flushing back while it is stated is refused.
+    c.ok("edit_machine", json!({ "patch": { "edm": { "skim_flushing": "low" } } }));
+    assert_eq!(edm(&mut c)["skim_flushing"], json!("low"));
+    let bad = c.refused("edit_machine", json!({ "patch": { "edm": { "flushing": null } } }));
+    assert!(bad.contains("patch refused: edm.skim_flushing: needs edm.flushing"), "{bad}");
+    assert_eq!(edm(&mut c)["flushing"], json!("high"), "nothing changed");
+    c.ok("undo", json!({}));
+    assert_eq!(c.ok("get_job", json!({}))["machine"], before, "undo takes the skim flushing back");
     c.ok("undo", json!({}));
     let e = edm(&mut c);
     assert!(e.get("tank").is_none() && e.get("flushing").is_none(), "undo takes both back: {e}");

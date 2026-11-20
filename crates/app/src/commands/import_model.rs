@@ -49,17 +49,32 @@ impl ImportModel {
     /// it), is refused by name here, before any parsing.
     pub fn within(path: &Path, facet_budget: Option<u64>) -> Result<Self, CommandError> {
         let budget = checked_budget(path, facet_budget)?;
-        let graded = match native::route(path) {
-            // #1873: a qualified native file is converted to STEP first.
-            native::Route::Converted => converted(path, budget)?,
-            _ => import::load_model_open_within(path, budget)?,
-        };
-        let mut cmd = Self::graded(path, graded, facet_budget);
-        // #2463: the file is read once more for its digest, after the parse.
-        // A file that changes in between records the newer digest; the next
-        // change imports again. An unreadable file now records no link.
-        cmd.source = crate::model_source::read(path).ok();
-        Ok(cmd)
+        // #1873: a qualified native file is converted to STEP first. The
+        // converter reads the file itself, so its digest is read once more
+        // after the conversion (the #2463 two-read link): a file that
+        // changes in between records the newer digest, and the next change
+        // imports again. An unreadable file records no link.
+        if native::route(path) == native::Route::Converted {
+            let graded = converted(path, budget)?;
+            let mut cmd = Self::graded(path, graded, facet_budget);
+            cmd.source = crate::model_source::read(path).ok();
+            return Ok(cmd);
+        }
+        // #2689: one read - the link records the digest of the very bytes
+        // the parse used, so a file that changes during the import is seen
+        // as changed by the next check and imported again.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (graded, sha256) = import::load_model_open_sourced(path, budget)?;
+            let mut cmd = Self::graded(path, graded, facet_budget);
+            cmd.source = Some(crate::schema::ModelSource { path: path.to_string_lossy().into_owned(), sha256 });
+            Ok(cmd)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let graded = import::load_model_open_within(path, budget)?;
+            Ok(Self::graded(path, graded, facet_budget))
+        }
     }
 
     /// [`ImportModel::within`] over bytes already in hand, named by the
@@ -195,6 +210,7 @@ impl Command for ImportModel {
         // counts from there. ImportModel only ever spawns - a same-named
         // re-import is routed to UpdateModel by the caller, never here.
         model::set_rev(world, &entity, 1);
+        crate::mesh_solids::set(world, &entity, self.mesh.solid_ranges());
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
         crate::mesh_open::set(world, &entity, self.hole.as_deref());
