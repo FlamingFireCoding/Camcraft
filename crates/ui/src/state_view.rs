@@ -30,6 +30,8 @@ impl State {
     pub fn load_view_from(&mut self, path: &Path) {
         let (prefs, note) = view::load(path);
         self.show_gizmo_names = prefs.show_gizmo_names;
+        self.display = crate::state::DisplayMode::from_key(&prefs.display);
+        self.show_grid = prefs.show_grid;
         self.view_store = Some(path.to_path_buf());
         if let Some(why) = note {
             self.status = why;
@@ -43,9 +45,21 @@ impl State {
     /// way.
     pub(crate) fn set_gizmo_names(&mut self, on: bool) {
         self.show_gizmo_names = on;
-        let Some(path) = self.view_store.clone() else { return };
-        let prefs = view::ViewPrefs { show_gizmo_names: on };
-        let _ = view::save(&path, &prefs);
+        self.persist_view();
+    }
+
+    /// Write the kept view settings to the per-user file (#2818: the
+    /// display mode and the grid switch ride the same file as the gizmo
+    /// names). The headless suites have no file and write nothing. A
+    /// failed write is logged by `view::save`; the session stays right.
+    pub(crate) fn persist_view(&self) {
+        let Some(path) = &self.view_store else { return };
+        let prefs = view::ViewPrefs {
+            show_gizmo_names: self.show_gizmo_names,
+            display: self.display.key().to_owned(),
+            show_grid: self.show_grid,
+        };
+        let _ = view::save(path, &prefs);
     }
 
     /// #2177: add `line` to the status line once - a refusal that every

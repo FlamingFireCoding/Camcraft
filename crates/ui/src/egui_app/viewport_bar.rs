@@ -25,9 +25,9 @@ pub(crate) const NAV_PX: f32 = 26.0;
 const NAV_GAP: f32 = 4.0;
 const PAD: f32 = 6.0;
 const BOTTOM_MARGIN: f32 = 10.0;
-/// Twelve buttons in a row: the ribbon's width and height, so the layout
+/// Thirteen buttons in a row: the ribbon's width and height, so the layout
 /// gate can ask the pane for room (pinned by `bar_fits_its_buttons`).
-pub(crate) const BAR_W: f32 = 12.0 * NAV_PX + 11.0 * NAV_GAP + 2.0 * PAD;
+pub(crate) const BAR_W: f32 = 13.0 * NAV_PX + 12.0 * NAV_GAP + 2.0 * PAD;
 const BAR_H: f32 = NAV_PX + 2.0 * PAD;
 const CTRL_H: f32 = 52.0;
 const ROW_GAP: f32 = 4.0;
@@ -44,8 +44,13 @@ pub(crate) enum Nav {
     Frame,
     /// The house isometric, yaw 0.9 / pitch 0.5.
     Iso,
-    /// Shaded-with-wire <-> hidden-line wireframe (Solids radio's twin).
+    /// Wireframe on and off: one press gives the hidden-line wireframe from
+    /// each mode, the next gives shaded with edges (the Display menu has
+    /// the four modes).
     Wire,
+    /// Open or close the Display menu (#2818, `display_menu`): display
+    /// mode, Look at and graphics.
+    Display,
     /// Draw every cached path, not just the selected op's.
     Paths,
     /// The dimmed world origin axes.
@@ -71,11 +76,12 @@ pub(crate) enum Nav {
 
 /// The buttons in bar order. `NAV_COUNT` sizes the ribbon, and a test checks
 /// the two agree.
-pub(crate) const NAV_COUNT: usize = 12;
+pub(crate) const NAV_COUNT: usize = 13;
 pub(crate) const NAVS: [Nav; NAV_COUNT] = [
     Nav::Frame,
     Nav::Iso,
     Nav::Wire,
+    Nav::Display,
     Nav::Paths,
     Nav::Axes,
     Nav::PickThrough,
@@ -184,10 +190,12 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
         Nav::Iso => actions::view_iso(state),
         Nav::Wire => {
             state.display = match state.display {
-                DisplayMode::ShadedEdges => DisplayMode::Wireframe,
-                DisplayMode::Wireframe => DisplayMode::ShadedEdges,
+                m if m.is_wireframe() => DisplayMode::ShadedEdges,
+                _ => DisplayMode::Wireframe,
             };
+            state.persist_view();
         }
+        Nav::Display => state.display_menu_open = !state.display_menu_open,
         Nav::Paths => state.toggle_all_toolpaths(),
         Nav::Axes => state.show_world_axes = !state.show_world_axes,
         Nav::PickThrough => {
@@ -259,7 +267,8 @@ pub(crate) fn draw(
     for &(kind, r) in nav {
         let active = match kind {
             Nav::Frame | Nav::Iso => false,
-            Nav::Wire => state.display == DisplayMode::Wireframe,
+            Nav::Wire => state.display.is_wireframe(),
+            Nav::Display => state.display_menu_open,
             Nav::Paths => state.show_all_paths,
             Nav::Axes => state.show_world_axes,
             Nav::PickThrough => state.pick_through,
