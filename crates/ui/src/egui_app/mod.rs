@@ -101,6 +101,8 @@ mod pages;
 // #739: the WCS page, split out of pages.rs.
 mod wcs_page;
 mod step_budget_row;
+// #1339: the model page's "Vouch for this mesh" row.
+mod vouch_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
 mod stock_material_row;

@@ -618,6 +618,12 @@ pub struct EntityDto {
     /// still refuses every operation on the model; only the words go.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_open: Option<String>,
+    /// #1339: who vouched for this model's mesh while its fidelity was
+    /// unknown (`schema::FidelityVouched`), written only on a model with
+    /// no fidelity flag. An old reader dropping it loads the same
+    /// unmarked model; only the name goes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fidelity_vouched: Option<super::VouchDto>,
     /// The STEP facet budget a model was imported under when it is not the
     /// default (#1054, `schema::StepBudget`). Absent everywhere else, so a
     /// file from before the key existed - and every default import - reads
