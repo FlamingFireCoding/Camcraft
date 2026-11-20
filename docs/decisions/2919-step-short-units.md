@@ -45,7 +45,11 @@ this fix beyond the two missing mappings.
   (the same rule as the tool-body read, `camcraft_geometry::step_units`);
 - a unit context that names a unit that is not in the file;
 - a solid whose own representation context states no length unit while
-  a different context of the file states one.
+  a different context of the file states one;
+- a solid or sheet that no representation gives a context, while the file
+  states a length unit (second review, P1). Each piece that the reader
+  splits from a surface model takes the context of its model, the
+  reader's own rule (`topology::items`), and is judged in that context.
 
 **Why:** In each case the reader takes 1 mm per unit without a word, so an
 inch or metre model is 25.4 or 1000 times too small. Issue #2919 asks for
@@ -55,8 +59,10 @@ the first refusal by name.
 would still import a model at the wrong scale. Moving the predicate into a
 shared function for the tool-body read would widen the change into
 `camcraft-geometry`; the two copies are short and cite each other.
-A solid item that no representation lists (a piece split from a surface
-model) is not judged: it takes the context of its model in the reader.
+An exception for an item that no representation lists was dropped: the
+reader reads such an item at 1 mm per unit, and a split piece in a
+unitless context passed through it. A file that states no length unit
+keeps the millimetre default (#306).
 
 **Cost to change later:** Remove the two mappings when the pinned parser
 expands both names itself. Keep the inch and metre regression fixtures and

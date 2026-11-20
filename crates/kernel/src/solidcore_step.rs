@@ -254,14 +254,11 @@ fn read_guarded(
             return Err(timed_out("building solids"));
         }
         let item = s.item;
-        if let Some(ctx) = units.unstated_context(item) {
+        if let Some(reason) = units.unstated(item) {
             out.refused.push(StepRefusal {
                 item,
                 stage: "read",
-                reason: format!(
-                    "its context #{ctx} states no length unit, but the file states {:?} mm per unit",
-                    units.mm
-                ),
+                reason,
             });
             continue;
         }

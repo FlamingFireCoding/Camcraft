@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use solidcore_step::p21::{self, Entity, Exchange, Param};
-use solidcore_step::units;
+use solidcore_step::{topology, units};
 
 /// What the file's unit contexts state about length.
 #[derive(Debug, Default)]
@@ -20,24 +20,35 @@ pub(crate) struct LengthUnits {
     /// The contexts that state a length unit.
     stating: HashSet<u64>,
     /// Each representation item's context, the first representation by
-    /// entity id that lists it (the reader's own rule).
+    /// entity id that lists it, and each piece split from a surface model
+    /// in that model's context (the reader's own rules).
     context_of: HashMap<u64, u64>,
 }
 
 impl LengthUnits {
-    /// The context of solid item `item` when the file states a length unit
-    /// but that context does not: the reader takes 1 mm per unit there, so
-    /// the solid would be 25.4 or 1000 times off. `None`: the solid's
-    /// context states its unit, the file states none, or the item is not
-    /// listed by a representation (a piece split from a surface model).
-    pub(crate) fn unstated_context(&self, item: u64) -> Option<u64> {
+    /// Why item `item` (a solid, a sheet, or a piece split from a surface
+    /// model) must be refused: the file states a length unit, but the
+    /// reader takes 1 mm per unit for this item, so it would be 25.4 or
+    /// 1000 times off. That is the case when the item's context states no
+    /// length unit, or when no representation gives the item a context.
+    /// `None`: the item's context states its unit, or the file states no
+    /// length unit (the millimetre default, #306).
+    pub(crate) fn unstated(&self, item: u64) -> Option<String> {
         if self.mm.is_empty() {
             return None;
         }
-        self.context_of
-            .get(&item)
-            .copied()
-            .filter(|c| !self.stating.contains(c))
+        match self.context_of.get(&item) {
+            Some(c) if self.stating.contains(c) => None,
+            Some(c) => Some(format!(
+                "its context #{c} states no length unit, but the file states {:?} mm per unit",
+                self.mm
+            )),
+            None => Some(format!(
+                "no representation gives it a context, so it has no length unit, \
+                 but the file states {:?} mm per unit",
+                self.mm
+            )),
+        }
     }
 }
 
@@ -88,6 +99,7 @@ pub(crate) fn read(ex: &Exchange) -> Result<LengthUnits, String> {
             out.mm.push(len);
         }
     }
+    split_pieces(ex, &ids, &mut out.context_of);
     if out.mm.is_empty()
         && let Some(u) = unstated_length_unit(ex)
     {
@@ -98,6 +110,24 @@ pub(crate) fn read(ex: &Exchange) -> Result<LengthUnits, String> {
         ));
     }
     Ok(out)
+}
+
+/// The pieces that the topology reader splits from a surface model (each
+/// closed shell and each open shell of a mixed model, #2919 review) sit in
+/// the model's context: the reader's own rule, so that each piece is
+/// judged in the context that the reader reads it in.
+fn split_pieces(ex: &Exchange, ids: &[u64], context_of: &mut HashMap<u64, u64>) {
+    for &id in ids {
+        if !ex.get(id).is_some_and(|e| topology::is_solid_item(e.name())) {
+            continue;
+        }
+        let Some(ctx) = context_of.get(&id).copied() else { continue };
+        for piece in topology::items(ex, id) {
+            if piece != id {
+                context_of.insert(piece, ctx);
+            }
+        }
+    }
 }
 
 /// Millimetres per unit of length unit `#u`, when the reader converts it:
