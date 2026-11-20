@@ -118,6 +118,19 @@ kernel volume is 113295.5 mm3.
   program while the model is in the document, also when each operation
   leaves stock that covers the excess.
 
+**The advice of the reduced-fidelity texts (review fix).** The texts
+said "re-import with a larger STEP facet budget". For a model that is
+coarse because of its edge gaps, that advice is wrong. The document does
+not record why a model has reduced accuracy. Issue #2996 adds that record;
+then each text names the one cause. Until then each text names the two
+remedies: "re-import with a larger STEP facet budget, or export the file
+again with a tighter tolerance". This applies to `model_fidelity::TOO_COARSE`,
+the MCP note (`model_fidelity::facts`), the refusal of a kind that cannot
+read the excess (`op_problem`), the vouch refusal of a recorded chord, the
+model-page hint and the `import_model` tool description. Dropped: a stored
+cause in this PR (a schema and project-file change that #2996 makes
+anyway).
+
 **Posting waits for #2996.** The maintainer decided on 2026-11-20 to
 widen the verdict tolerance for such a model in a follow-up (#2996).
 Until then, on a model that opens at a chord of 0.02 mm, the user can:

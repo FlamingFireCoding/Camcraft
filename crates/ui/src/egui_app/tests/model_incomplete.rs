@@ -68,7 +68,8 @@ fn incomplete_model_page_and_import_status_name_the_hole_and_post_refusal() {
         "{label}"
     );
     for advice in [
-        "This model was too large",
+        "This model is approximated more coarsely",
+        "export the file again with a tighter tolerance",
         "Raise the STEP facet budget",
         "Reduced fidelity",
     ] {

@@ -537,10 +537,11 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
         if camcraft_app::mesh_open::hole_of(&state.world, &entity).is_none() {
             hint(
             ui,
-            "This model was too large to import at full detail. Gouge checks against it are \
-             stricter to make up for that; when it is too coarse to check at all, its operations \
-             are refused at the post. Raise the STEP facet budget below and import the file \
-             again to clear this.",
+            "This model is approximated more coarsely than usual: it was too large to import at \
+             full detail, or the file's own edges lie off their surfaces. Gouge checks against it \
+             are stricter to make up for that; when it is too coarse to check at all, its \
+             operations are refused at the post. Raise the STEP facet budget below and import the \
+             file again, or export the file again with a tighter tolerance, to clear this.",
             );
         }
     }
