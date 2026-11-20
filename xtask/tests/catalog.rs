@@ -110,6 +110,12 @@ fn catalog_screenshots_resolves_new_relative_outside_directory() {
     fs::create_dir_all(root.join("crates/ui")).unwrap();
     let init = Command::new("git").arg("init").arg(&root).output().unwrap();
     assert!(init.status.success(), "git init: {init:?}");
+    let remote = scratch.0.join("images.git");
+    assert!(Command::new("git")
+        .args(["init", "--bare"]).arg(&remote).status().unwrap().success());
+    assert!(Command::new("git")
+        .arg("-C").arg(&root).args(["remote", "add", "origin"])
+        .arg(&remote).status().unwrap().success());
 
     // Stand in for cargo's renderer subprocess, including its crates/ui CWD.
     // A PNG's bytes are opaque to the collection and images-only commit steps.
@@ -120,6 +126,8 @@ fn catalog_screenshots_resolves_new_relative_outside_directory() {
     )
     .unwrap();
     fs::set_permissions(&renderer, fs::Permissions::from_mode(0o755)).unwrap();
+    let script = fs::read_to_string(&renderer).unwrap();
+    fs::write(&renderer, format!("{script}\nfor name in 0-blank 1-Face1 2-2D-Pocket1 3-Drill1; do\n  printf '%s' \"$name\" > \"$CAMCRAFT_CATALOG_SCREENSHOTS_OUT/2d/first-part/$name.png\"\ndone\n")).unwrap();
     let capture = scratch.0.join("renderer-out");
     let expected = scratch.0.join("new-shots");
     assert!(!expected.exists(), "output directory must start absent");
@@ -169,4 +177,22 @@ fn catalog_screenshots_resolves_new_relative_outside_directory() {
         "collection must find and commit the rendered image"
     );
     assert_eq!(image.stdout, b"fixture image");
+    for name in ["0-blank", "1-Face1", "2-2D-Pocket1", "3-Drill1"] {
+        let image = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["show", &format!("pr-screenshots:catalog/2d/first-part/{name}.png")])
+            .output()
+            .unwrap();
+        assert!(image.status.success(), "missing operation image {name}");
+        assert_eq!(image.stdout, name.as_bytes());
+    }
+    let published = Command::new("git")
+        .arg("-C").arg(&remote)
+        .args(["ls-tree", "-r", "--name-only", "pr-screenshots"])
+        .output().unwrap();
+    assert!(published.status.success(), "images branch must be published: {published:?}");
+    let paths = String::from_utf8(published.stdout).unwrap();
+    assert_eq!(paths.lines().count(), 5);
+    assert!(paths.lines().all(|p| p.starts_with("catalog/2d/first-part/") && p.ends_with(".png")));
 }
