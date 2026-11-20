@@ -50,8 +50,7 @@ pub(super) fn post(
     let ops = super::program_ops(world)?;
     if !(1..=2).contains(&ops.len()) {
         return Err(
-            "An Agie job requires one active wire contour or two independent punch operations"
-                .into(),
+            "An Agie job requires one active wire contour or two independent closed works".into(),
         );
     }
     let operations = ops
@@ -70,7 +69,7 @@ pub(super) fn post(
         .iter()
         .any(|(_, op)| op.setup != first.setup || op.tool != first.tool)
     {
-        return Err("Agie grouped punches must use the same setup and wire tool".into());
+        return Err("Agie grouped works must use the same setup and wire tool".into());
     }
     if crate::setup_post_options::of(world, setup) != PostOptions::default() {
         return Err("Agie jobs require default post options and One program output".into());
@@ -107,7 +106,7 @@ pub(super) fn post(
         [(name, op)] => {
             let sketches = crate::sketch::placed_in(world, setup);
             if let ([], [profile]) = (models.as_slice(), sketches.as_slice()) {
-                vec![operation::agie_job(world, op, name, profile)?]
+                vec![operation::agie_job(world, op, name, profile, 1)?]
             } else {
                 if !sketches.is_empty() {
                     return Err(
@@ -117,8 +116,27 @@ pub(super) fn post(
                 let [(source, _)] = models.as_slice() else {
                     return Err("Agie requires exactly one modeled workpiece for one active contour; additional models can intersect the controller path".into());
                 };
-                vec![operation::agie_job(world, op, name, source)?]
+                vec![operation::agie_job(world, op, name, source, 1)?]
             }
+        }
+        [(_, left), (_, right)]
+            if [&left.params, &right.params].iter().all(|params| {
+                matches!(params, operation::OpParams::WireContour(wire) if wire.side == operation::WireSide::Die)
+            }) =>
+        {
+            let [(plate, _)] = models.as_slice() else {
+                return Err("Both Agie die operations must select through-openings on the same retained plate, with no other model".into());
+            };
+            if !crate::sketch::placed_in(world, setup).is_empty() {
+                return Err("The grouped Agie die plate must be the only workpiece".into());
+            }
+            // Each selection must match one of the two physical openings.
+            // The group preflight requires disjoint cut and threading envelopes,
+            // so selecting the same opening twice cannot leave an uncut rim.
+            operations
+                .iter()
+                .map(|(name, op)| operation::agie_job(world, op, name, plate, 2))
+                .collect::<Result<Vec<_>, _>>()?
         }
         [(_, left), (_, right)] => {
             let sources = [&left.src, &right.src].map(|src| match src {
@@ -126,7 +144,7 @@ pub(super) fn post(
                 _ => None,
             });
             let [Some(a), Some(b)] = sources else {
-                return Err("Select one complete modeled punch for each Agie work".into());
+                return Err("Select two complete punch models or two through-openings on the same die plate".into());
             };
             if a == b || models.len() != 2 || models.iter().any(|(name, _)| name != a && name != b)
             {
@@ -135,7 +153,7 @@ pub(super) fn post(
             operations
                 .iter()
                 .zip([a, b])
-                .map(|((name, op), owner)| operation::agie_job(world, op, name, owner))
+                .map(|((name, op), owner)| operation::agie_job(world, op, name, owner, 1))
                 .collect::<Result<Vec<_>, _>>()?
         }
         _ => return Err("Agie supports up to two works".into()),

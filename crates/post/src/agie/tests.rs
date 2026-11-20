@@ -318,3 +318,17 @@ fn fine_plus_uses_only_its_measured_height_and_single_punch_cycle() {
     );
     assert!(!destination.exists());
 }
+
+#[test]
+fn a_punch_and_a_die_cannot_share_a_group() {
+    let temp = tempfile::tempdir().unwrap();
+    let destination = temp.path().join("MIXED");
+    let mut die = punch();
+    die.side = AgieSide::Die;
+    assert!(
+        export_works(&[punch(), die], &destination, "MIXED", 1.0)
+            .unwrap_err()
+            .contains("two closed punches or two die openings")
+    );
+    assert!(!destination.exists());
+}

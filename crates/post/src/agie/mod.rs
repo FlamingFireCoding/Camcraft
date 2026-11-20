@@ -129,7 +129,7 @@ impl Work {
     }
 }
 
-/// Export a single work or two independently captured punches on the same 20 mm stock.
+/// Export a single work or two independent closed works of the same type on the same 20 mm stock.
 ///
 /// # Errors
 /// Refuses unsupported groups and shared cutting space before publishing the directory.
@@ -152,15 +152,16 @@ pub fn export_works(
     }
     if jobs.len() > 1 {
         if jobs.len() != 2
+            || first.side.is_open()
             || jobs.iter().any(|job| {
-                job.side != AgieSide::Punch
+                job.side != first.side
                     || job.racetrack.is_some()
                     || job.stock_min != first.stock_min
                     || job.stock_max != first.stock_max
                     || job.stock_min[2] != -20.0
             })
         {
-            return Err("The Agie work group requires two independent closed punches on the same 20 mm stock".into());
+            return Err("The Agie work group requires two closed punches or two die openings on the same 20 mm stock".into());
         }
         if program.len() > 7 {
             return Err("Choose an Agie group name up to seven characters so each work has a distinct geometry filename".into());
@@ -183,7 +184,7 @@ pub fn export_works(
     if let [a, b] = works.as_slice()
         && !(0..2).any(|i| a.max[i] < b.min[i] || b.max[i] < a.min[i])
     {
-        return Err("Agie punch groups require separate cutting areas for both retained solids, threading holes, leads and compensated cuts".into());
+        return Err("Select distinct Agie contours with separate cutting areas for both works, threading holes, leads and compensated cuts".into());
     }
     let mut files = Vec::new();
     let mut resources = String::new();

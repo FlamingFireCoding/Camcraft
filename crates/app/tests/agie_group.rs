@@ -1,8 +1,10 @@
-//! Gate map: native Agie grouped jobs from two complete modeled punches through camcraft-cli.
-//! Provenance: CAMCraft's original synthetic rectangular and five-sided vertical solids.
+//! Gate map: native Agie grouped jobs for independent punch and die contours through camcraft-cli.
+//! Provenance: CAMCraft's original synthetic retained solids and through-openings.
 use std::{fs, path::Path, process::Command};
 
 const SCRIPT: &str = include_str!("../../../examples/agie/punch-pair.camscript");
+const DIE_SCRIPT: &str = include_str!("../../../examples/agie/die-pair.camscript");
+const PLATE: &str = include_str!("../../../examples/agie/die-pair.obj");
 const LEFT: &str = include_str!("../../../examples/agie/pair-left.obj");
 const RIGHT: &str = include_str!("../../../examples/agie/pair-right.obj");
 
@@ -11,10 +13,11 @@ fn run(dir: &Path, script: &str) -> std::process::Output {
     fs::create_dir_all(&examples).unwrap();
     fs::write(examples.join("pair-left.obj"), LEFT).unwrap();
     fs::write(examples.join("pair-right.obj"), RIGHT).unwrap();
-    fs::write(examples.join("punch-pair.camscript"), script).unwrap();
+    fs::write(examples.join("die-pair.obj"), PLATE).unwrap();
+    fs::write(examples.join("group.camscript"), script).unwrap();
     Command::new(env!("CARGO_BIN_EXE_camcraft-cli"))
         .current_dir(dir)
-        .args(["script", "examples/agie/punch-pair.camscript"])
+        .args(["script", "examples/agie/group.camscript"])
         .output()
         .unwrap()
 }
@@ -62,5 +65,65 @@ fn a_shared_source_an_unowned_model_or_a_crossing_thread_path_writes_nothing() {
         let temp = tempfile::tempdir().unwrap();
         assert!(!run(temp.path(), &script).status.success());
         assert!(!temp.path().join("PAIR20").exists());
+    }
+}
+
+#[test]
+fn two_complete_rims_on_one_plate_bind_independent_inward_works() {
+    let temp = tempfile::tempdir().unwrap();
+    let result = run(temp.path(), DIE_SCRIPT);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let dir = temp.path().join("DUODI20");
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 4);
+    let sbl = fs::read_to_string(dir.join("DUODI20.SBL")).unwrap();
+    let sbr = fs::read_to_string(dir.join("DUODI20.SBR")).unwrap();
+    for (index, hole, wall) in [(1, "-35.500", "-42.50000"), (2, "24.500", "17.50000")] {
+        let name = format!("DUODI20{index}.ISO");
+        let work = format!("\"DUODI20\",\"CUT{index}\",");
+        assert!(sbl.contains(&format!("{work}NULL,ID_PUNCH,c_die")));
+        assert!(sbl.contains(&format!("{work}NULL,ID_SEPCUT,\"1.0\"")));
+        assert!(sbl.contains(&format!("{work}\"stp1\",ID_POSX,\"{hole}\"")));
+        assert!(sbl.contains(&format!("{work}NULL,ID_GEOMETRY,\"AGIE.USING_{name}\"")));
+        assert!(sbr.contains(&format!("AGIE.USING_{name} IMPORT {name};\r\n")));
+        let iso = fs::read_to_string(dir.join(name)).unwrap();
+        assert!(iso.contains(&format!("G00 X{wall} Y0.00000")));
+    }
+}
+
+#[test]
+fn missing_or_unsafe_die_works_leave_no_output_directory() {
+    for (case, script) in [
+        (
+            "same opening twice",
+            DIE_SCRIPT.replace("x: 24.5", "x: -35.5"),
+        ),
+        (
+            "unselected opening",
+            DIE_SCRIPT.replace(", {name: \"DieR\", x: 24.5}", ""),
+        ),
+        (
+            "pierce in the other opening",
+            DIE_SCRIPT.replace("start: [op.x, 0]", "start: [-35.5, 0]"),
+        ),
+        (
+            "partial rim",
+            DIE_SCRIPT.replace("rim.chains.map", "rim.chains.slice(1).map"),
+        ),
+        (
+            "extra body",
+            DIE_SCRIPT.replace(
+                "cam.generate();",
+                "cam.import(\"examples/agie/pair-right.obj\", \"extra\"); cam.generate();",
+            ),
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let result = run(temp.path(), &script);
+        assert!(!result.status.success(), "{case}");
+        assert!(!temp.path().join("DUODI20").exists(), "{case}");
     }
 }

@@ -36,6 +36,18 @@ cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/die-plate.c
 
 The example selects the complete upper opening rim on a 60 × 60 mm plate. The native `DIE20` job starts at X−5.5 Y0 and enters the straight wall at X−12.5 Y0. Inspect the **inside** compensation and the 1 mm rough separation in Agie Control. The controller completes the separation before it makes the three full trim passes. Arrange support for the slug and a clear trim path after release.
 
+### Group two die openings in one plate
+
+Use one retained plate with exactly two through-openings, one setup, 20 mm stock and the same **AGIE_QN2** wire condition for both operations. Create one **Wire Contour** for each opening. Select each opening's upper rim, enter its own threading hole and confirm capture for its slug. Leave a clear band along X or Y between the two cutting areas, including the leads and wire clearance. Generate both operations and post to a new job folder with a name of up to seven characters.
+
+Run the original two-opening example from the project root.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/die-pair.camscript
+```
+
+The `DUODI20` folder contains two ISO files, one SBR and one SBL. The left work threads at X−35.5 Y0. The right work threads at X24.5 Y0. Check each inward offset and the release of both slugs in the control preview before running the job.
+
 ### QN2 offsets by stock thickness
 
 Agie Control calculated these wire-centre offsets on the straight outside faces of a synthetic rectangular punch. All dimensions are in millimetres. The native job sends nominal geometry. The resident technology applies each offset.

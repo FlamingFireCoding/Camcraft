@@ -11,6 +11,7 @@ pub(crate) fn agie_job(
     op: &Operation,
     name: &str,
     source: &str,
+    expected_openings: usize,
 ) -> Result<agie::AgieJob, String> {
     let OpParams::WireContour(wire) = &op.params else {
         return Err("The Agie job requires a Wire Contour".into());
@@ -208,12 +209,12 @@ pub(crate) fn agie_job(
             ring.points()
         }
         agie::AgieSide::Die => {
-            if region.loops().len() != 2
+            if region.loops().len() != expected_openings + 1
                 || region.loops().iter().filter(|r| r.area() > 0.0).count() != 1
             {
-                return Err(
-                    "Agie requires one retained die plate with exactly one through-opening".into(),
-                );
+                return Err(format!(
+                    "Agie requires one retained die plate with exactly {expected_openings} through-opening(s), one per operation"
+                ));
             }
             if region
                 .loops()
@@ -223,11 +224,6 @@ pub(crate) fn agie_job(
             {
                 return Err("The retained Agie die plate must fit inside the stock".into());
             }
-            let hole = region
-                .loops()
-                .iter()
-                .find(|r| r.area() < 0.0)
-                .ok_or("Agie requires a through-opening in the retained plate")?;
             let (loops, open, _) = job
                 .contour_sel
                 .as_ref()
@@ -239,14 +235,29 @@ pub(crate) fn agie_job(
             };
             let footprint =
                 |r: &crate::geo2d::Loop| Region::new(vec![r.clone()]).map_err(|e| e.to_string());
-            let a = footprint(hole)?;
-            let b = footprint(picked)?;
-            if !open.is_empty()
-                || !a.difference(&b).is_ok_and(|r| r.is_empty())
-                || !b.difference(&a).is_ok_and(|r| r.is_empty())
-            {
-                return Err("The selected Agie chains must match the full through-opening of the retained die plate".into());
+            let selection = footprint(picked)?;
+            if !open.is_empty() {
+                return Err("Select one complete, closed through-opening rim".into());
             }
+            let mut matching_hole = None;
+            for hole in region.loops().iter().filter(|rim| rim.area() < 0.0) {
+                let candidate = footprint(hole)?;
+                if candidate
+                    .difference(&selection)
+                    .map_err(|e| e.to_string())?
+                    .is_empty()
+                    && selection
+                        .difference(&candidate)
+                        .map_err(|e| e.to_string())?
+                        .is_empty()
+                {
+                    if matching_hole.is_some() {
+                        return Err("The selected Agie rim matches more than one opening".into());
+                    }
+                    matching_hole = Some(hole);
+                }
+            }
+            let hole = matching_hole.ok_or("The selected Agie chains must match the full through-opening of the retained die plate")?;
             hole.points()
         }
     };
