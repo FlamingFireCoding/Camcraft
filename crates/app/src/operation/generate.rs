@@ -3713,7 +3713,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, st_local, true, &warns);
             // #2901: the first traverse, read along the plane's tool axis.
             let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names };
-            super::first_traverse::judge(&path, &params, (is_mill && !lathe_tool, rotary_axis.is_some()), Some(&f), &over, &mut warns);
+            super::first_traverse::judge(&path, &params, (is_mill && !lathe_tool, rotary_axis.is_some()), Some(f), &over, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
             // along every move against the part solid. The Section kinds
