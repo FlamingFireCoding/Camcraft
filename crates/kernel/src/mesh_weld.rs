@@ -17,8 +17,13 @@ pub const SNAP_GRID_MM: f64 = 1e-3;
 /// The snap window (mm): only a coordinate this close to a grid value is
 /// moved onto it. A coordinate farther off is never moved. The window is
 /// far under any machining tolerance (at least a millionth of the body,
-/// `MIN_TOL_FRACTION`), so the measured deviation stays true to 1e-9 mm.
+/// `MIN_TOL_FRACTION`). A vertex moves at most [`SNAP_MOVE_MM`].
 pub const SNAP_WINDOW_MM: f64 = 1e-9;
+
+/// The farthest the snap moves a vertex (mm): one window in each of the
+/// three axes, sqrt(3) * [`SNAP_WINDOW_MM`] (about 1.73e-9 mm). The mesher
+/// adds it to the measured deviation before it judges the tolerance.
+pub const SNAP_MOVE_MM: f64 = 1.732_050_807_568_877_2 * SNAP_WINDOW_MM;
 
 /// `c` moved onto the nearest multiple of [`SNAP_GRID_MM`] when it lies
 /// within [`SNAP_WINDOW_MM`] of it; otherwise `c` unchanged. The grid value
@@ -80,4 +85,52 @@ pub fn sides(tris: &[[u32; 3]]) -> (usize, usize, usize) {
     let over = count.values().filter(|n| n.0 > 2).count();
     let turned = count.values().filter(|n| n.0 == 2 && n.1 != 0).count();
     (open, over, turned)
+}
+
+/// The number of shells: groups of triangles joined side to side. Two
+/// shells that touch only at a vertex count as two (the safe reading for
+/// the inward turn, which is only done on one shell).
+pub fn shells(tris: &[[u32; 3]]) -> usize {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while let Some(&p) = parent.get(i) {
+            if p == i {
+                break;
+            }
+            let up = parent.get(p).copied().unwrap_or(p);
+            if let Some(slot) = parent.get_mut(i) {
+                *slot = up;
+            }
+            i = p;
+        }
+        i
+    }
+    let mut parent: Vec<usize> = (0..tris.len()).collect();
+    let mut first: HashMap<(u32, u32), usize> = HashMap::new();
+    for (k, t) in tris.iter().enumerate() {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let other = *first.entry((a.min(b), a.max(b))).or_insert(k);
+            let (ra, rb) = (root(&mut parent, k), root(&mut parent, other));
+            if ra != rb
+                && let Some(slot) = parent.get_mut(ra)
+            {
+                *slot = rb;
+            }
+        }
+    }
+    (0..tris.len()).filter(|&k| root(&mut parent, k) == k).count()
+}
+
+/// A mesh of ONE shell with a finite negative volume is a solid whose
+/// faces all point inward: its triangles are turned over and the positive
+/// volume is returned. Otherwise `None` and nothing changes: with two or
+/// more shells (a solid with a void) the sign of the sum does not tell
+/// which shell is turned, and a turn of all would make the void solid.
+pub fn turn_outward(tris: &mut [[u32; 3]], volume: f64) -> Option<f64> {
+    if !(volume.is_finite() && volume < 0.0) || shells(tris) != 1 {
+        return None;
+    }
+    for t in tris.iter_mut() {
+        t.swap(1, 2);
+    }
+    Some(-volume)
 }

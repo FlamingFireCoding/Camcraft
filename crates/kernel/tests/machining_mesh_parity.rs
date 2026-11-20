@@ -1,6 +1,7 @@
 //! The machining mesh's parity laws for the STEP switch (#917): positions
 //! snapped off their last-bit noise and never moved past the 1e-9 mm
-//! window, a solid whose faces all point inward turned outward and said,
+//! window, a solid whose faces all point inward turned outward and said
+//! (one shell only: a solid with a void is refused),
 //! and the fillet fixture meshed at the app chord (adaptive refinement of
 //! the deviation bound).
 //! Provenance: our own test design; fixtures are the repo's own.
@@ -10,8 +11,8 @@
 
 use std::path::PathBuf;
 
-use camcraft_kernel::machining_mesh::machining_mesh;
-use camcraft_kernel::mesh_weld::{SNAP_WINDOW_MM, snap};
+use camcraft_kernel::machining_mesh::{MeshRefusal, machining_mesh};
+use camcraft_kernel::mesh_weld::{SNAP_WINDOW_MM, shells, snap, turn_outward};
 use camcraft_kernel::solidcore_impl::SolidcoreKernel;
 use camcraft_kernel::solidcore_step::{StepSolid, import_step};
 use solidcore::kernel::CancelToken;
@@ -135,4 +136,121 @@ fn the_fillet_fixture_meshes_at_the_app_chord() {
     assert!(m.report.deviation.largest() <= TOL, "{:?}", m.report.deviation);
     assert_eq!(m.report.open_sides, 0);
     assert!(m.report.volume > 0.0);
+}
+
+/// box.step's solid with a void: the unit box, and inside it the same box
+/// at half size (0.25..0.75), renumbered by 1000, used as a void through
+/// an `ORIENTED_CLOSED_SHELL` `.F.`. `outer_inward` turns the outer
+/// shell's faces over ([`inward`] on the outer lines only).
+fn with_void(outer_inward: bool) -> String {
+    let base = text("box.step");
+    let renumber = |l: &str| -> String {
+        let mut out = String::new();
+        let mut rest = l;
+        while let Some(i) = rest.find('#') {
+            out.push_str(&rest[..i]);
+            let tail = &rest[i + 1..];
+            let n = tail.find(|c: char| !c.is_ascii_digit()).unwrap_or(tail.len());
+            let id: u32 = tail[..n].parse().unwrap_or(0);
+            out.push_str(&format!("#{}", id + 1000));
+            rest = &tail[n..];
+        }
+        out.push_str(rest);
+        out
+    };
+    let half = |l: &str| -> String {
+        if let Some(i) = l.find("CARTESIAN_POINT('', (") {
+            let start = i + "CARTESIAN_POINT('', (".len();
+            let end = l[start..].find(')').map_or(l.len(), |e| start + e);
+            let xs: Vec<String> = l[start..end]
+                .split(',')
+                .map(|v| format!("{:?}", 0.25 + 0.5 * v.trim().parse::<f64>().unwrap_or(0.0)))
+                .collect();
+            format!("{}{}{}", &l[..start], xs.join(", "), &l[end..])
+        } else {
+            l.replace(", 1.0);", ", 0.5);")
+        }
+    };
+    let solid = |l: &str| {
+        l.split(" = ")
+            .next()
+            .and_then(|id| id.trim_start_matches('#').parse::<u32>().ok())
+            .is_some_and(|id| id >= 17)
+    };
+    let mut out = Vec::new();
+    for l in base.lines() {
+        if l.starts_with("#16 = MANIFOLD_SOLID_BREP") {
+            out.push("#16 = BREP_WITH_VOIDS('', #17, (#2000));".to_owned());
+            out.push("#2000 = ORIENTED_CLOSED_SHELL('', *, #1017, .F.);".to_owned());
+        } else if l == "ENDSEC;" && out.iter().any(|o: &String| o.starts_with("#165 ")) {
+            for inner in base.lines().filter(|l| solid(l)) {
+                out.push(half(&renumber(inner)));
+            }
+            out.push(l.to_owned());
+        } else if outer_inward && solid(l) {
+            out.push(inward(l));
+        } else {
+            out.push(l.to_owned());
+        }
+    }
+    out.join("\n")
+}
+
+/// Review of #2843: a solid with a void whose outer shell points inward
+/// is refused by name, never turned whole (which would make the void
+/// solid). solidcore's reader refuses it when it measures the solid; if a
+/// later reader lets it through, the mesher's `Volume` refusal must hold.
+/// The same solid with its outer shell outward still meshes.
+#[test]
+fn a_solid_with_a_void_and_its_outer_shell_inward_is_refused() {
+    let good = solid_of("box.step with a void", &with_void(false));
+    let m = machining_mesh(&good, TOL, &CancelToken::new())
+        .unwrap_or_else(|e| panic!("a box with a void meshes: {e}"));
+    assert!((m.report.volume - 0.875).abs() < 1e-9, "volume {}", m.report.volume);
+    let mut k = SolidcoreKernel::default();
+    let said = match import_step(&mut k, with_void(true).as_bytes(), &CancelToken::new()) {
+        Err(e) => e.to_string(),
+        Ok(mut import) => {
+            assert_eq!(import.solids.len(), 1);
+            let bad = import.solids.remove(0);
+            let err = machining_mesh(&bad, TOL, &CancelToken::new())
+                .expect_err("a void solid with its outer shell inward is never turned");
+            assert!(matches!(err, MeshRefusal::Volume(v) if v < 0.0), "{err}");
+            err.to_string()
+        }
+    };
+    assert!(
+        said.contains("#16") && said.contains("not a positive")
+            || said.contains("encloses volume") && said.contains("not a positive one"),
+        "refused by name: {said}"
+    );
+}
+
+/// Review of #2843: the turn itself. Two cube shells (a box and a void)
+/// with a negative sum stay as they are; one inward cube is turned.
+#[test]
+fn only_one_shell_is_ever_turned_outward() {
+    // A cube's 12 triangles over corners 0..8 (bit 0 = x, 1 = y, 2 = z),
+    // wound outward.
+    let cube = |o: u32| -> Vec<[u32; 3]> {
+        [
+            [0, 2, 3], [0, 3, 1], [4, 5, 7], [4, 7, 6], [0, 1, 5], [0, 5, 4],
+            [2, 6, 7], [2, 7, 3], [0, 4, 6], [0, 6, 2], [1, 3, 7], [1, 7, 5],
+        ]
+        .iter()
+        .map(|t| t.map(|i| i + o))
+        .collect()
+    };
+    assert_eq!(shells(&cube(0)), 1);
+    let mut two: Vec<[u32; 3]> = cube(0);
+    two.extend(cube(8));
+    assert_eq!(shells(&two), 2);
+    let before = two.clone();
+    assert_eq!(turn_outward(&mut two, -1.125), None, "a void solid is never turned");
+    assert_eq!(two, before, "nothing changed");
+    let mut one = cube(0);
+    assert_eq!(turn_outward(&mut one, -1.0), Some(1.0));
+    assert_eq!(one.first(), Some(&[0, 3, 2]), "turned over");
+    assert_eq!(turn_outward(&mut one, 1.0), None, "an outward cube stays");
+    assert_eq!(turn_outward(&mut one, f64::NAN), None);
 }

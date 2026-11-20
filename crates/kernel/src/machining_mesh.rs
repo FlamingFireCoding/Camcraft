@@ -18,7 +18,7 @@ use solidcore::kernel::CancelToken;
 use solidcore_tess::{MeshTolerance, PlanStats, TessPlan};
 
 use crate::mesh_deviation::{self, Deviation, Unmeasured};
-use crate::mesh_weld::{sides, weld};
+use crate::mesh_weld::{SNAP_MOVE_MM, sides, turn_outward, weld};
 use crate::solidcore_step::StepSolid;
 use crate::{P3, mesh_signed_volume};
 
@@ -239,7 +239,11 @@ pub fn machining_mesh(
             other => MeshRefusal::Unmeasured(other),
         })?;
         // A NaN deviation is refused too.
-        if deviation.largest().is_nan() || deviation.largest() > tol_mm {
+        // The judged figure adds the snap's largest move (sqrt(3) windows,
+        // one in each axis): the weld after this check may move a vertex
+        // that far, and the measured bound must still hold for it.
+        let judged = deviation.largest() + SNAP_MOVE_MM;
+        if judged.is_nan() || judged > tol_mm {
             // The display planner checks sag at centroids and midpoints only;
             // continuous bounds between samples can overshoot near seams. Try
             // one finer plan with `PLAN_MARGIN`, keeping the requested tolerance.
@@ -270,14 +274,10 @@ pub fn machining_mesh(
     let tris: Vec<[usize; 3]> = triangles.iter().map(|t| t.map(|i| i as usize)).collect();
     let mut volume = mesh_signed_volume(&positions, &tris).unwrap_or(f64::NAN);
     let mut triangles = triangles;
-    // A watertight, consistently wound mesh that encloses a negative volume
-    // is a solid whose faces all point inward: the same shape, turned
-    // outward and said (#917). Zero or NaN stays a refusal.
-    if volume.is_finite() && volume < 0.0 {
-        for t in &mut triangles {
-            t.swap(1, 2);
-        }
-        volume = -volume;
+    // An inward solid of one shell is turned outward and said (#917); a
+    // void solid, zero or NaN stays a refusal (`turn_outward`).
+    if let Some(turned) = turn_outward(&mut triangles, volume) {
+        volume = turned;
         notes.push(format!(
             "the solid's faces all pointed inward (volume -{volume:.6e} mm^3); the mesh is turned outward"
         ));
