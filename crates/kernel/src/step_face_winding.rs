@@ -13,6 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use solidcore::kernel::CancelToken;
 use solidcore_step::p21::{Exchange, Param};
 
 /// The most faces one note names; the rest are counted.
@@ -23,15 +24,22 @@ const NAMED: usize = 8;
 /// group). A shell whose edge uses do not resolve to one winding (an edge
 /// used other than twice, or an odd cycle) gets no note: the reader and
 /// the mesh judge it.
-pub(crate) fn notes(ex: &Exchange) -> Vec<String> {
+/// `Err(Stopped)` when `stop` is cancelled during the pass: the caller
+/// refuses the file as timed out (the check reads each face of each shell,
+/// and a shell can name one large face many times).
+pub(crate) fn notes(ex: &Exchange, stop: &CancelToken) -> Result<Vec<String>, Stopped> {
     let mut out = Vec::new();
     for id in closed_shells(ex) {
-        if let Some(note) = shell_note(ex, id) {
+        if let Some(note) = shell_note(ex, id, stop)? {
             out.push(note);
         }
     }
-    out
+    Ok(out)
 }
+
+/// The time bound ran out during the winding check.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Stopped;
 
 /// Every CLOSED_SHELL, and every outer shell of a MANIFOLD_SOLID_BREP
 /// whatever its keyword, by id.
@@ -51,22 +59,31 @@ fn flag(p: Option<&Param>) -> Option<bool> {
     p.and_then(Param::as_bool)
 }
 
+/// The most ORIENTED_FACE / ORIENTED_EDGE wrappers read around one entity.
+/// A deeper chain (or one that names itself) is not read: the shell gets no
+/// note, and the topology reader judges it (#2904 review: no unbounded
+/// recursion on corrupt input).
+const MAX_WRAP: u32 = 4;
+
 /// The face entity of a shell member and whether the shell uses it as
 /// written.
-fn face_of(ex: &Exchange, id: u64) -> Option<(u64, bool)> {
+fn face_of(ex: &Exchange, id: u64, depth: u32) -> Option<(u64, bool)> {
     let e = ex.get(id)?;
-    if let Some(p) = e.record("ORIENTED_FACE") {
-        let (inner, fwd) = face_of(ex, p.get(2)?.as_ref_id()?)?;
-        return Some((inner, fwd == flag(p.get(3))?));
+    match e.record("ORIENTED_FACE") {
+        Some(p) if depth < MAX_WRAP => {
+            let (inner, fwd) = face_of(ex, p.get(2)?.as_ref_id()?, depth + 1)?;
+            Some((inner, fwd == flag(p.get(3))?))
+        }
+        Some(_) => None,
+        None => Some((id, true)),
     }
-    Some((id, true))
 }
 
 /// The edge entity of a loop member and whether the loop runs along it.
 fn edge_of(ex: &Exchange, id: u64, depth: u32) -> Option<(u64, bool)> {
     let e = ex.get(id)?;
     match e.record("ORIENTED_EDGE") {
-        Some(p) if depth < 4 => {
+        Some(p) if depth < MAX_WRAP => {
             let (inner, fwd) = edge_of(ex, p.get(3)?.as_ref_id()?, depth + 1)?;
             Some((inner, fwd == flag(p.get(4))?))
         }
@@ -96,23 +113,44 @@ fn edge_uses(ex: &Exchange, face: u64, fwd: bool) -> Option<Vec<(u64, bool)>> {
     Some(uses)
 }
 
-/// Union-find with parity: a face's winding relative to its root.
+/// Union-find with parity: a face's winding relative to its root. Union by
+/// size and full path compression keep each `find` near constant, whatever
+/// the order of the edges in the file (#2904 review: a hostile order made
+/// the plain chain quadratic).
 struct Parity {
     up: Vec<usize>,
     odd: Vec<bool>,
+    size: Vec<usize>,
+    /// Links walked by every `find` so far: the cost the tests bound.
+    steps: usize,
 }
 
 impl Parity {
+    fn new(n: usize) -> Self {
+        Self { up: (0..n).collect(), odd: vec![false; n], size: vec![1; n], steps: 0 }
+    }
+
     fn find(&mut self, f: usize) -> (usize, bool) {
-        let (mut r, mut odd) = (f, false);
+        let (mut r, mut total) = (f, false);
         while let Some(&u) = self.up.get(r) {
             if u == r {
                 break;
             }
-            odd ^= self.odd.get(r).copied().unwrap_or(false);
+            self.steps = self.steps.saturating_add(1);
+            total ^= self.odd.get(r).copied().unwrap_or(false);
             r = u;
         }
-        (r, odd)
+        // Second walk: point each node of the path at the root, with its
+        // own parity to the root.
+        let (mut x, mut p) = (f, total);
+        while x != r {
+            let (Some(up), Some(odd)) = (self.up.get_mut(x), self.odd.get_mut(x)) else { break };
+            let (next, was) = (*up, *odd);
+            (*up, *odd) = (r, p);
+            p ^= was;
+            x = next;
+        }
+        (r, total)
     }
 
     /// Joins `a` and `b` with `b` wound `differ` against `a`; `false` when
@@ -122,33 +160,54 @@ impl Parity {
         if ra == rb {
             return (pa ^ pb) == differ;
         }
-        if let (Some(u), Some(o)) = (self.up.get_mut(rb), self.odd.get_mut(rb)) {
-            (*u, *o) = (ra, pa ^ pb ^ differ);
+        // The smaller tree goes under the larger one; the link parity is
+        // the same either way round.
+        let (sa, sb) = (self.size.get(ra).copied().unwrap_or(1), self.size.get(rb).copied().unwrap_or(1));
+        let (child, root) = if sa < sb { (ra, rb) } else { (rb, ra) };
+        if let (Some(u), Some(o)) = (self.up.get_mut(child), self.odd.get_mut(child)) {
+            (*u, *o) = (root, pa ^ pb ^ differ);
+        }
+        if let Some(s) = self.size.get_mut(root) {
+            *s = sa.saturating_add(sb);
         }
         true
     }
 }
 
-fn shell_note(ex: &Exchange, shell: u64) -> Option<String> {
-    let members: Vec<u64> = ex
-        .get(shell)?
-        .params()
-        .get(1)?
-        .as_list()?
-        .iter()
-        .map(Param::as_ref_id)
-        .collect::<Option<_>>()?;
+fn shell_note(ex: &Exchange, shell: u64, stop: &CancelToken) -> Result<Option<String>, Stopped> {
+    let Some(members) = shell_members(ex, shell) else { return Ok(None) };
     let mut by_edge: BTreeMap<u64, Vec<(usize, bool)>> = BTreeMap::new();
     let mut names = Vec::with_capacity(members.len());
     for (i, m) in members.iter().enumerate() {
-        let (face, fwd) = face_of(ex, *m)?;
+        if stop.is_cancelled() {
+            return Err(Stopped);
+        }
+        let Some((face, fwd)) = face_of(ex, *m, 0) else { return Ok(None) };
         names.push(face);
-        for (edge, dir) in edge_uses(ex, face, fwd)? {
-            by_edge.entry(edge).or_default().push((i, dir));
+        let Some(uses) = edge_uses(ex, face, fwd) else { return Ok(None) };
+        for (edge, dir) in uses {
+            let at = by_edge.entry(edge).or_default();
+            if at.len() > 2 {
+                return Ok(None); // an edge used other than twice: not judged here
+            }
+            at.push((i, dir));
         }
     }
-    let n = members.len();
-    let mut parity = Parity { up: (0..n).collect(), odd: vec![false; n] };
+    if stop.is_cancelled() {
+        return Err(Stopped);
+    }
+    Ok(winding_note(shell, &names, &by_edge))
+}
+
+fn shell_members(ex: &Exchange, shell: u64) -> Option<Vec<u64>> {
+    ex.get(shell)?.params().get(1)?.as_list()?.iter().map(Param::as_ref_id).collect()
+}
+
+/// The note of one shell from its edge uses; `None` when the uses do not
+/// resolve to one winding or no face is wound against the rest.
+fn winding_note(shell: u64, names: &[u64], by_edge: &BTreeMap<u64, Vec<(usize, bool)>>) -> Option<String> {
+    let n = names.len();
+    let mut parity = Parity::new(n);
     for uses in by_edge.values() {
         let [(a, da), (b, db)] = uses.as_slice() else { return None };
         // Two uses the same way: the two faces are wound against each other.
@@ -187,4 +246,46 @@ fn shell_note(ex: &Exchange, shell: u64) -> Option<String> {
         flipped.len(),
         said.join(", ")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The order that made the plain chain quadratic: each join hangs the
+    /// whole group under a new single face, so face 0 sinks one level each
+    /// time. Without union by size and path compression this walks about
+    /// n^2 / 2 = 2e10 links; the bound below is linear.
+    #[test]
+    fn a_hostile_edge_order_costs_linear_steps_and_keeps_each_parity() {
+        let n = 200_000;
+        let mut p = Parity::new(n);
+        for k in 1..n {
+            assert!(p.join(k, 0, k % 2 == 1), "join {k}");
+            let _ = p.find(0);
+        }
+        assert!(p.steps <= 8 * n, "{} links walked for {n} faces", p.steps);
+        let (r0, p0) = p.find(0);
+        for k in 0..n {
+            let (r, pk) = p.find(k);
+            assert_eq!(r, r0, "face {k} is in the one group");
+            assert_eq!(pk ^ p0, k % 2 == 1, "face {k} parity against face 0");
+        }
+        assert!(!p.join(1, 0, false), "a contradiction is still seen after compression");
+        assert!(p.join(2, 0, false), "a consistent join is still accepted");
+    }
+
+    fn box_exchange() -> Exchange {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/box.step");
+        let text = std::fs::read_to_string(path).expect("box.step");
+        solidcore_step::p21::parse(&text).expect("box.step parses")
+    }
+
+    #[test]
+    fn a_cancelled_winding_pass_stops_by_name() {
+        let stop = CancelToken::new();
+        assert_eq!(notes(&box_exchange(), &stop), Ok(Vec::new()), "the good box has no note");
+        stop.cancel();
+        assert_eq!(notes(&box_exchange(), &stop), Err(Stopped));
+    }
 }

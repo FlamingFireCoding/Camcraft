@@ -199,7 +199,7 @@ fn read_guarded(
             out.length_units_mm
         ));
     }
-    out.notes.extend(crate::step_face_winding::notes(&ex));
+    out.notes.extend(crate::step_face_winding::notes(&ex, stop).map_err(|_| timed_out("checking face winding"))?);
     // The pcurves with no closed form (a free-form edge on a spline face)
     // are made by the kernel, each checked by its lift (#917).
     let read = topology::read_solids_with(&ex, &KernelTrims::new(&mut k.k));

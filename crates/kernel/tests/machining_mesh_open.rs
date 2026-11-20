@@ -104,3 +104,40 @@ fn a_face_wound_against_its_neighbours_is_named_once() {
         "{wound:?}"
     );
 }
+
+/// `box.step` with its first shell member #18 put behind `extra` (entity
+/// lines added to DATA) through the member id `via`.
+fn box_with_member(via: u64, extra: &str) -> String {
+    let text = box_text();
+    let shell = "#17 = CLOSED_SHELL('', (#18, #25, #32, #39, #46, #53));";
+    assert!(text.contains(shell), "fixture layout changed");
+    let text = text.replace(shell, &format!("#17 = CLOSED_SHELL('', (#{via}, #25, #32, #39, #46, #53));"));
+    let (head, tail) = text.rsplit_once("ENDSEC;").expect("DATA ends");
+    format!("{head}{extra}\nENDSEC;{tail}")
+}
+
+/// Corrupt input must return (a refusal or a defined read), never recurse
+/// until the stack overflows (#2904 review): no winding note is made.
+fn returns_without_a_winding_note(text: &str) {
+    let stop = CancelToken::new();
+    if let Ok(read) = import_step(&mut SolidcoreKernel::default(), text.as_bytes(), &stop) {
+        assert!(read.notes.iter().all(|n| !n.contains("wound")), "{:?}", read.notes);
+    }
+}
+
+#[test]
+fn an_oriented_face_that_names_itself_returns_without_a_note() {
+    returns_without_a_winding_note(&box_with_member(900, "#900 = ORIENTED_FACE('', *, #900, .T.);"));
+}
+
+#[test]
+fn an_oriented_face_chain_past_the_limit_returns_without_a_note() {
+    // 64 wrappers: #900 -> #901 -> ... -> #963 -> #18.
+    let chain: Vec<String> = (900..964)
+        .map(|id| {
+            let next = if id == 963 { 18 } else { id + 1 };
+            format!("#{id} = ORIENTED_FACE('', *, #{next}, .T.);")
+        })
+        .collect();
+    returns_without_a_winding_note(&box_with_member(900, &chain.join("\n")));
+}
