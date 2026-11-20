@@ -23,6 +23,7 @@ use solidcore_step::topology;
 use crate::solidcore_impl::{SolidcoreKernel, VOLUME_ACCURACY, checked, failed};
 use crate::solidcore_import::{HEAL_GAP_LIMIT, vertex_gaps};
 use crate::solidcore_trims::KernelTrims;
+use crate::step_edge_gap::{EdgeGap, EdgeGapCap, raised_edge_gap};
 use crate::{Kernel, KernelError, Measure};
 
 pub use crate::solidcore_step_import::{StepImport, StepModel, StepSheet, import_step, import_step_model};
@@ -91,6 +92,8 @@ pub struct StepRead {
     pub notes: Vec<String>,
     /// The surface models (open shells only): read, not built as solids.
     pub sheets: Vec<StepSheet>,
+    /// The file's edge-gap cap and the widest gap kept (#2976).
+    pub edge_gap: EdgeGap,
 }
 
 /// The time bound's watcher of the Part 21 parse.
@@ -214,11 +217,31 @@ fn read_guarded(
     }
     out.notes.extend(crate::step_face_winding::notes(&ex, stop).map_err(|_| timed_out("checking face winding"))?);
     // The pcurves with no closed form (a free-form edge on a spline face)
-    // are made by the kernel, each checked by its lift (#917).
-    let read = topology::read_solids_with(&ex, &KernelTrims::new(&mut k.k));
+    // are made by the kernel, each checked by its lift (#917), each edge
+    // held to the cap that the file's stated tolerance sets (#2976).
+    let cap = EdgeGapCap::read(&ex);
+    let (read, measured) = {
+        let trims = KernelTrims::with_cap(&mut k.k, cap);
+        let read = topology::read_solids_with(&ex, &trims);
+        (read, trims.widest_gap_mm())
+    };
     if stop.is_cancelled() {
         return Err(timed_out("reading topology"));
     }
+    // Never a silent widening: an edge kept over the cap of a file that
+    // states no tolerance is noted with its gap and the file's tolerance.
+    if measured > crate::step_edge_gap::MAX_EDGE_GAP_MM {
+        out.notes.push(format!(
+            "an edge lies {measured:.4} mm off its face's surface; the file states a tolerance of {:.4} mm, so the reader accepts up to {:.4} mm",
+            cap.stated_mm.unwrap_or(0.0),
+            cap.cap_mm
+        ));
+    }
+    let raised = read.solids.iter().map(|s| raised_edge_gap(&s.brep)).fold(0.0, f64::max);
+    out.edge_gap = EdgeGap {
+        cap,
+        widest_mm: measured.max(raised),
+    };
     for f in read.failures {
         out.refused.push(StepRefusal {
             item: f.item,
