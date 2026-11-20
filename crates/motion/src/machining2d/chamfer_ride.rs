@@ -134,9 +134,10 @@ pub fn ride_loops(top: &Region, corner: &Region, width: f64, corner_z: f64) -> R
 /// sharp))` - a point on each - when the loop has a bevelled segment
 /// AND more than `width` of sharp length: a ride of the wall would
 /// cut the sharp length, a ride of the top loop would stand inside
-/// the part at the bevel.
+/// the part at the bevel. #2936: a loop that is its wall moved whole
+/// (`leans`) carries no bevel at all.
 fn partly_bevelled(top: &[Point2], wall: &[Point2], width: f64) -> Option<(Point2, Point2)> {
-    if wall.is_empty() {
+    if wall.is_empty() || leans(top, wall) {
         return None;
     }
     let mut sharp_len: f64 = 0.0;
@@ -157,6 +158,53 @@ fn partly_bevelled(top: &[Point2], wall: &[Point2], width: f64) -> Option<(Point
         (Some(b), Some(s)) if sharp_len > width => Some((b, s)),
         _ => None,
     }
+}
+
+/// Plan slack of the lean test, mm: the sections stand on a 1e-6 mm
+/// grid, so two copies of one outline disagree by about that much.
+/// Far under `MATCH_SLACK`: no bevelled segment hides in it.
+const LEAN_SLACK: f64 = 1e-4;
+
+/// #2936: `top` is the whole of `wall` moved by one plan vector - the
+/// two sections of a prism whose walls lean in the operation's frame
+/// (a box stock under a tilted frame). No segment of such a loop is a
+/// modelled chamfer: the edge is the same edge all round, and the ride
+/// is the wall at the corner depth. The vector is the move of the area
+/// centroid, which no collinear vertex changes; each segment of each
+/// ring - both ends and the middle - must then stand on the other
+/// ring. A loop bevelled on part of its length is no moved copy of its
+/// wall: its bevelled side moved and its sharp sides did not.
+fn leans(top: &[Point2], wall: &[Point2]) -> bool {
+    let (Some(t), Some(w)) = (centroid(top), centroid(wall)) else {
+        return false;
+    };
+    let on = |from: &[Point2], to: &[Point2], dx: f64, dy: f64| {
+        from.iter().enumerate().all(|(i, &a)| {
+            let b = from[(i + 1) % from.len()];
+            let mid = Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+            [a, mid, b].iter().all(|p| near(Point2::new(p.x + dx, p.y + dy), to) <= LEAN_SLACK)
+        })
+    };
+    let (dx, dy) = (t.x - w.x, t.y - w.y);
+    on(top, wall, -dx, -dy) && on(wall, top, dx, dy)
+}
+
+/// The area centroid of the closed polyline `ring`; `None` when it
+/// encloses no area or is not finite.
+fn centroid(ring: &[Point2]) -> Option<Point2> {
+    let o = *ring.first()?;
+    let (mut area, mut cx, mut cy) = (0.0, 0.0, 0.0);
+    for (i, &p) in ring.iter().enumerate() {
+        let q = ring[(i + 1) % ring.len()];
+        // About the first vertex: the cross terms stay small.
+        let (ax, ay, bx, by) = (p.x - o.x, p.y - o.y, q.x - o.x, q.y - o.y);
+        let k = ax * by - bx * ay;
+        area += k;
+        cx += (ax + bx) * k;
+        cy += (ay + by) * k;
+    }
+    let c = Point2::new(o.x + cx / (3.0 * area), o.y + cy / (3.0 * area));
+    (area.abs() > 1e-12 && c.x.is_finite() && c.y.is_finite()).then_some(c)
 }
 
 /// The farthest any vertex of `from` stands from the closed polyline
@@ -295,5 +343,39 @@ mod tests {
         let (top, wall) = (rect(-19.0, -9.0, 19.0, 9.0), rect(-20.0, -10.0, 20.0, 10.0));
         assert_eq!(partly_bevelled(top.points(), wall.points(), 1.0), None);
         assert_eq!(partly_bevelled(wall.points(), wall.points(), 1.0), None);
+    }
+
+    /// #2936: the sections of a 70 mm box stock in a frame tilted 10
+    /// degrees, 1 mm apart - the corner section and the same outline
+    /// moved by `tan(10 deg)` in Y. The mesh diagonals leave a collinear
+    /// vertex at a different place on each side of each section.
+    fn leaning_box() -> (Region, Region) {
+        let ring = |y0: f64, y1: f64, mids: [f64; 4]| {
+            let p = [(35.0, mids[0]), (35.0, y1), (mids[1], y1), (-35.0, y1), (-35.0, mids[2]), (-35.0, y0), (mids[3], y0), (35.0, y0)];
+            Region::new(vec![Loop::new(p.iter().map(|&(x, y)| Point2::new(x, y)).collect()).expect("ring")]).expect("region")
+        };
+        let top = ring(-33.776662, 37.303201, [3.1953, -22.139987, 1.42424, -21.060124]);
+        let corner = ring(-33.952989, 37.126874, [-6.407086, -18.585993, 3.479512, -24.614117]);
+        (top, corner)
+    }
+
+    #[test]
+    fn a_wall_leaning_in_the_frame_is_not_a_modelled_chamfer() {
+        // No edge of the box carries a chamfer: the whole outline moved.
+        // The ride is the wall at the corner depth, as before #2887.
+        let (top, corner) = leaning_box();
+        let got = ride_loops(&top, &corner, 1.0, 9.0).expect("a leaning box rides its wall");
+        assert_eq!(got, corner);
+    }
+
+    #[test]
+    fn a_moved_outline_with_one_side_bevelled_still_refuses() {
+        // The leaning box with a 1 mm bevel on its X35 side as well:
+        // that side is no part of the lean, and the #2887 refusal holds.
+        let (top, corner) = leaning_box();
+        let bevelled: Vec<Point2> = top.loops()[0].points().iter().map(|p| Point2::new(p.x.min(34.0), p.y)).collect();
+        let top = Region::new(vec![Loop::new(bevelled).expect("ring")]).expect("top");
+        let err = ride_loops(&top, &corner, 1.0, 9.0).expect_err("a partly bevelled loop").to_string();
+        assert!(err.contains("only part of its length"), "{err}");
     }
 }
