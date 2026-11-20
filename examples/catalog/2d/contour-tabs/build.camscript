@@ -4,6 +4,8 @@
 //   camcraft-cli script build.camscript
 
 cam.import("model/contour-tabs.obj", "contour-tabs");
+// Keep the mesh in the project without a link to the script working directory.
+cam.call("set_model_link", { model: "contour-tabs", path: null });
 
 cam.call("set_stock", {
   box: { dx: 120.0, dy: 80.0, dz: 6.0 }

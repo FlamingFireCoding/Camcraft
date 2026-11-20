@@ -42,3 +42,13 @@ test `contour_tabs_case_posts_the_lead_moves_and_the_tab_lifts`.
 **Pinned by.** `crates/app/tests/example_catalog.rs`:
 `contour_tabs_case_posts_the_lead_moves_and_the_tab_lifts`, and the two
 catalog tests that read each case.
+
+**Review fix (PR #2877).** Keep the imported mesh embedded, and remove its
+source link in both the committed project and `build.camscript`. The UI
+checks a relative source path from the process directory. The example must
+open when that directory differs from the case directory. The seed project
+also embeds its mesh without a source link. An absolute path would tie the
+example to one checkout. A product path-resolution change is outside this
+example fix. The two app catalog tests pin the embedded mesh and the absent
+link in the committed and rebuilt projects. The existing UI catalog test
+checks that the committed project opens.

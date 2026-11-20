@@ -2042,11 +2042,7 @@
           ]
         ]
       ],
-      "rev": 1,
-      "source": {
-        "path": "model/contour-tabs.obj",
-        "sha256": "820e8533879b2286d46a200bad169dcff4602334b12e636c709a64547ee1cd7b"
-      }
+      "rev": 1
     }
   ]
 }
