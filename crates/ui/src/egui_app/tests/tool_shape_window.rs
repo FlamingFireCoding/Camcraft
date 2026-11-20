@@ -60,3 +60,49 @@ fn add_tool_selects_the_saved_tool_and_opens_its_shape() {
         "the shape window opens on the tool added without a browser selection"
     );
 }
+
+/// #2875 review: a draft name that matches a saved tool must not expose
+/// actions with the empty Properties target as their tool name.
+#[test]
+fn new_tool_matching_saved_name_has_no_empty_target_actions() {
+    let mut h = shell_harness();
+    begin_new_tool_from_the_library_door(&mut h);
+    assert!(h.query_by_label("Add tool").is_some());
+    let delete_count = h.query_all_by_label("Delete").count();
+
+    h.state_mut().state.tool_ui.name = "EM-0600-4FL".into();
+    h.run_steps(3);
+    assert!(
+        h.state().state.tool_ui.exists,
+        "the name resolves to the saved tool"
+    );
+    assert_eq!(h.state().state.ui_target, UiTarget::Tool(String::new()));
+    assert!(h.query_by_label("New tool").is_some());
+    for label in ["Tool: ", "Edit tool shape"] {
+        assert!(
+            h.query_all_by_label(label).next().is_none(),
+            "the blank target must not expose {label:?}"
+        );
+    }
+    assert_eq!(
+        h.query_all_by_label("Delete").count(),
+        delete_count,
+        "the blank target must not add a tool Delete action"
+    );
+    h.get_by_label("Apply").click_accesskit();
+    h.run_steps(3);
+    assert!(
+        h.state()
+            .state
+            .error_for(crate::state::ErrorScope::Tool)
+            .is_none(),
+        "Apply uses the resolved draft name without an error"
+    );
+    assert!(model::find_by_name(&h.state().state.world, "EM-0600-4FL").is_some());
+    assert!(h.state().state.tool_shape_editor.is_none());
+
+    h.get_by_label("Close").click_accesskit();
+    h.run_steps(3);
+    assert_eq!(h.state().state.ui_target, UiTarget::None);
+    assert!(!h.state().state.new_tool_form);
+}
