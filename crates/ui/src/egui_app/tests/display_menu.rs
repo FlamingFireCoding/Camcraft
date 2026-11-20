@@ -137,6 +137,51 @@ fn look_at_turns_the_view_to_face_the_clicked_face() {
 }
 
 #[test]
+fn look_at_uses_the_face_normal_in_the_active_setup_frame() {
+    use camcraft_app::commands::{ActivateSetup, AlignPartToSetup, CreateSetup};
+
+    let mut h = shell_harness();
+    h.run();
+    let st = &mut h.state_mut().state;
+    st.history.execute(
+        &st.world,
+        CreateSetup::new(&st.world, None, None).expect("Setup1"),
+    );
+    st.history.execute(
+        &st.world,
+        ActivateSetup::new(&st.world, Some("Setup1")).expect("activate Setup1"),
+    );
+    st.history.execute(
+        &st.world,
+        AlignPartToSetup::angles(&st.world, "Setup1", [90.0, 0.0, 0.0])
+            .expect("rotate the part about X"),
+    );
+    // The seeded block's local top centre [30, 30, 30] is shown at
+    // [30, -30, 30]. Its local +Z face has a shown normal of -Y.
+    st.cam.target = [30.0, -30.0, 30.0];
+    st.cam = st.cam.toward([0.2, -1.0, 0.3]);
+    crate::look_at::arm(st, true);
+    h.run();
+    let c = vp_center(h.state());
+    let d = crate::look_at::face_direction(&h.state().state, [c.x, c.y])
+        .expect("the ray hits the rotated top face");
+    for (actual, expected) in d.into_iter().zip([0.0, -1.0, 0.0]) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "the face normal is in the shown frame: {d:?}"
+        );
+    }
+    click_viewport(&mut h, c);
+    for (actual, expected) in forward(&h).into_iter().zip([0.0, 1.0, 0.0]) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "the view faces the rotated top face"
+        );
+    }
+    assert_eq!(h.state().state.status, crate::look_at::DONE);
+}
+
+#[test]
 fn look_at_on_empty_space_changes_nothing_and_says_so() {
     let mut h = shell_harness();
     h.run();

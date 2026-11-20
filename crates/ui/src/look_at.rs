@@ -6,7 +6,7 @@
 //! face direction is the triangle normal (a cross product). No vendor
 //! material.
 
-use camcraft_app::{model, pick};
+use camcraft_app::{model, pick, setup_align};
 
 use crate::state::State;
 
@@ -33,9 +33,9 @@ pub(crate) fn face_direction(state: &State, p: [f32; 2]) -> Option<[f64; 3]> {
     let (name, facet, _) = pick::first_hit_f(&state.world, origin, dir, |n| state.hidden_in_view(n))?;
     let entity = model::find_by_name(&state.world, &name)?;
     let tri = *model::facets_of(&state.world, &entity)?.get(facet)?;
-    // One triangle through the entity's rigid transform: never a copy of
-    // the whole mesh for a click.
-    let loc = model::transform_of(&state.world, &entity).unwrap_or_default();
+    // One triangle through the shown pose, as picking and drawing do:
+    // never a copy of the whole mesh for a click.
+    let loc = setup_align::view_pose(&state.world, &entity).unwrap_or_default();
     let at = |q| camcraft_app::geometry::transform_point(q, loc.pos, loc.rot);
     let (a, b, c) = (at(tri.a), at(tri.b), at(tri.c));
     let (u, v) = ([b.x - a.x, b.y - a.y, b.z - a.z], [c.x - a.x, c.y - a.y, c.z - a.z]);
