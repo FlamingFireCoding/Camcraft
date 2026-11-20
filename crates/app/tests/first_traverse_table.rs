@@ -241,11 +241,15 @@ fn a_head_tilt_past_90_under_the_table_is_refused_with_lower() {
     let verdict = Warning::FirstTraverseUnderTable { at: 0, height_mm: h_mm, limit_mm };
     assert!(verdict.blocks_post(), "the table verdict must hold the post");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "a verdict, not a note: {notes:?}");
-    let err = posting::post_setup_unwritten(&world).expect_err("the program must not post");
-    for text in ["Face1", "first rapid (move 0)", "points down toward the", &format!("lower the clearance plane to Z{want:.3}")] {
-        assert!(err.contains(text), "{text}: {err}");
+    // The message names the repair: lower, never raise.
+    let text = verdict.to_string();
+    for want_text in ["first rapid (move 0)", "points down toward the machine table", &format!("lower the clearance plane to Z{want:.3}")] {
+        assert!(text.contains(want_text), "{want_text}: {text}");
     }
-    assert!(!err.contains("raise the clearance"), "a down-pointing axis must not say raise: {err}");
+    assert!(!text.contains("raise"), "a down-pointing axis must not say raise: {text}");
+    // This rig's B 120 face also cuts under the Z stroke, so the machine
+    // limit law refuses the post first; the post must not pass either way.
+    posting::post_setup_unwritten(&world).expect_err("the program must not post");
 }
 
 #[test]
