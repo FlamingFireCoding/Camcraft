@@ -77,8 +77,17 @@ pub fn parse_with_chord_budget(data: &[u8], budget: usize) -> Result<(Mesh, f64)
 /// [`parse_with_chord_budget`], and what the reader and the mesher noted on
 /// the way, one line each, for the import result.
 pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>), ImportError> {
+    // The file's own syntax is checked before the kernel reads it, so the
+    // refusals keep their wording: a nesting depth past the cap (#1075),
+    // the bad entity by `#id` and line, a string or comment that never
+    // closes, and a file with no DATA section (#912).
+    super::step_depth::check(data)?;
     if data.is_empty() {
         return Err(ImportError::Empty);
+    }
+    let text = std::str::from_utf8(data).map_err(|_| ImportError::Step("file is not valid UTF-8".into()))?;
+    if let Some(found) = super::step_diag::locate(text) {
+        return Err(ImportError::Step(found.to_string()));
     }
     let read = camcraft_geometry::step::parse(data, facet_budget(budget), CHORD_CAP).map_err(|e| match e {
         camcraft_geometry::step::StepError::TooLarge => ImportError::TooLarge,

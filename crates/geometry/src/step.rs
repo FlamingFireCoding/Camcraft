@@ -25,11 +25,16 @@ pub enum StepError {
 /// A STEP model meshed in millimetres.
 #[derive(Debug)]
 pub struct StepMesh {
-    /// Every solid of the file, one watertight outward mesh.
+    /// Every solid of the file, each a watertight outward mesh, with one
+    /// facet range for each solid ([`Mesh::solid_ranges`]).
     pub mesh: Mesh,
     /// The chord tolerance the mesh was made at (mm): the chord cap, or
     /// coarser when the cap did not fit the facet budget.
     pub chord_mm: f64,
+    /// The largest certified distance (mm) from a facet to its solid's
+    /// surface, over every solid: the kernel's measured bound, never more
+    /// than `chord_mm` (a solid over its chord is refused).
+    pub deviation_mm: f64,
     /// What the reader and the mesher noted, one line each.
     pub notes: Vec<String>,
 }
@@ -72,9 +77,14 @@ pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, Ste
             meshes.push(mesh);
         }
         if total <= budget {
+            // One facet range for each solid: solids that share a wall stay
+            // apart for the slicer and the winding check (#917).
             let mut facets = Vec::new();
+            let mut ranges = Vec::with_capacity(meshes.len());
             for mesh in &meshes {
+                let start = facets.len();
                 crate::kernel_import::push_facets(mesh, &mut facets).map_err(StepError::Refused)?;
+                ranges.push(start..facets.len());
             }
             let mut notes: Vec<String> = import.notes.iter().map(|n| format!("STEP: {n}")).collect();
             for solid in &import.solids {
@@ -85,7 +95,9 @@ pub fn parse(data: &[u8], budget: usize, chord_cap: f64) -> Result<StepMesh, Ste
                 let label = solid_label(solid.item, &solid.name);
                 notes.extend(mesh.report.notes.iter().map(|n| format!("STEP {label}: {n}")));
             }
-            return Ok(StepMesh { mesh: Mesh::from_facets(facets), chord_mm: chord, notes });
+            let mesh = Mesh::from_solids(facets, ranges).map_err(|e| StepError::Refused(e.to_string()))?;
+            let deviation_mm = meshes.iter().map(|m| m.report.deviation.largest()).fold(0.0, f64::max);
+            return Ok(StepMesh { mesh, chord_mm: chord, deviation_mm, notes });
         }
         // Facets fall about as the chord rises; `total` may be a lower bound
         // (the count stops at the budget), so the chord at least doubles.
@@ -106,7 +118,7 @@ pub fn parse(_data: &[u8], _budget: usize, _chord_cap: f64) -> Result<StepMesh, 
 /// A syntax refusal ("... at line 9: ...") with the entity that holds the
 /// line named after it, and the string or comment that never closes (#912:
 /// the user finds the bad record by its id and its first line). Any other
-/// refusal is handed back as it is.
+/// refusal (a solid the kernel could not read) ends with [`ADVICE`].
 #[cfg(not(target_arch = "wasm32"))]
 fn locate(data: &[u8], reason: String) -> String {
     let Some(line) = reason
@@ -114,7 +126,7 @@ fn locate(data: &[u8], reason: String) -> String {
         .and_then(|(_, rest)| rest.split(|c: char| !c.is_ascii_digit()).next())
         .and_then(|n| n.parse::<usize>().ok())
     else {
-        return reason;
+        return format!("{reason} - {ADVICE}");
     };
     let Ok(text) = std::str::from_utf8(data) else {
         return reason;
