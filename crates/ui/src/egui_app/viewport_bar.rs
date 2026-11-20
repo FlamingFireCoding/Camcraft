@@ -190,7 +190,7 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
         Nav::Iso => actions::view_iso(state),
         Nav::Wire => {
             state.display = match state.display {
-                DisplayMode::Wireframe => DisplayMode::ShadedEdges,
+                m if m.is_wireframe() => DisplayMode::ShadedEdges,
                 _ => DisplayMode::Wireframe,
             };
             state.persist_view();
@@ -267,7 +267,7 @@ pub(crate) fn draw(
     for &(kind, r) in nav {
         let active = match kind {
             Nav::Frame | Nav::Iso => false,
-            Nav::Wire => state.display == DisplayMode::Wireframe,
+            Nav::Wire => state.display.is_wireframe(),
             Nav::Display => state.display_menu_open,
             Nav::Paths => state.show_all_paths,
             Nav::Axes => state.show_world_axes,

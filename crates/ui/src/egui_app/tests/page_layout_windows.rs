@@ -217,6 +217,7 @@ fn layout_window_display_menu() {
             "Shaded, with edges",
             "Shaded",
             "Wireframe",
+            "Wireframe, see-through",
             "Shaded, with hidden edges",
             "Look at",
             "Look at a face",

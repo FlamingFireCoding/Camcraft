@@ -85,3 +85,20 @@ fn an_empty_document_draws_nothing_and_empty_ranges_are_not_listed() {
     assert_eq!(plan(DisplayMode::ShadedEdges, &c, false).pipes(), [Pipe::Faces, Pipe::Edges]);
     assert_eq!(plan(DisplayMode::Shaded, &c, false).pipes(), [Pipe::Faces]);
 }
+
+/// #2636: "Wireframe, see-through" draws each edge, front and back. No face
+/// goes to the color buffer or to the depth buffer, so the model hides
+/// nothing behind it: not the stock, not a fixture, not a toolpath.
+#[test]
+fn see_through_wireframe_draws_each_edge_and_no_face() {
+    let mode = DisplayMode::WireframeSeeThrough;
+    let p = plan(mode, &scene(), false);
+    assert_eq!(p.pipes(), [Pipe::Edges, Pipe::Edges, Pipe::Region]);
+    assert!(!p.pipes().contains(&Pipe::FacesDepthOnly), "no depth prepass: nothing is hidden");
+    let steps: Vec<Step> = p.steps().cloned().collect();
+    assert_eq!(steps[0].range, 0..24, "the cached model edges");
+    assert_eq!(steps[1].range, 24..48, "the cached stock edges");
+    // The traced stock is a shaded surface: this mode draws the stock wire.
+    let traced = plan(mode, &scene(), true);
+    assert_eq!(traced.pipes(), [Pipe::Edges, Pipe::Edges, Pipe::Region]);
+}

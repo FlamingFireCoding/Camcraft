@@ -35,7 +35,7 @@ fn the_display_button_opens_and_closes_the_menu_and_the_labels_exist() {
     for group in [menu::GROUP_MODE, menu::GROUP_LOOK_AT, menu::GROUP_GRAPHICS] {
         assert!(h.query_by_label(group).is_some(), "group title {group:?}");
     }
-    for label in ["Shaded, with edges", "Shaded", "Wireframe", "Shaded, with hidden edges"] {
+    for label in ["Shaded, with edges", "Shaded", "Wireframe", "Wireframe, see-through", "Shaded, with hidden edges"] {
         assert!(h.query_by_label(label).is_some(), "display mode {label:?}");
     }
     for label in [menu::LOOK_AT_FACE, menu::SHOW_GRID, menu::SHOW_AXES, menu::PERSPECTIVE, menu::ORTHOGRAPHIC] {

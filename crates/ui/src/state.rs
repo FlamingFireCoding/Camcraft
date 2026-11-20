@@ -1417,6 +1417,10 @@ pub enum DisplayMode {
     /// Shaded with the wire, and the edges behind the faces draw too, in a
     /// lighter tone (#2818).
     ShadedHiddenEdges,
+    /// Wireframe with no hidden-line removal (#2636): each edge draws,
+    /// front and back, and no face goes to the depth buffer, so the model
+    /// hides nothing behind it.
+    WireframeSeeThrough,
 }
 
 /// The thing under the cursor, from the viewport hover pass: the named

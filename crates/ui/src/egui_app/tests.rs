@@ -145,6 +145,7 @@ mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
 mod display_menu;
+mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
 // #2047: turn rings turn a body - one undo step per drag.
