@@ -274,6 +274,21 @@ fn a_machine_that_names_its_post_is_offered_it_and_the_choice_rides_undo() {
     assert!(posting::post_offer(&world).is_none(), "a machine naming no post: a mill post serves, no offer");
 }
 
+/// #2374 with #2303: the generic LinuxCNC machine that main shipped after
+/// this branch names its post, as `MACHINES` pairs them.
+#[test]
+fn the_linuxcnc_machine_is_offered_the_linuxcnc_post() {
+    use camcraft_app::commands::{History, LoadMachine};
+    use camcraft_app::posting::OfferWhy;
+    use camcraft_app::schema::PostRef;
+    let world = camcraft_app::world::new_world();
+    let mut h = History::default();
+    h.execute(&world, LoadMachine::builtin(&world, "LinuxCNC 3-axis").expect("mount"));
+    assert_eq!(posting::post_of(&world), PostRef::Builtin, "the mount leaves Fanuc in place");
+    let offer = posting::post_offer(&world).expect("the machine's own post is offered");
+    assert_eq!((&offer.post, offer.why), (&PostRef::Named("LinuxCNC".into()), OfferWhy::Machine));
+}
+
 #[test]
 fn malformed_files_refuse_by_name_and_never_panic() {
     for (text, key) in [
