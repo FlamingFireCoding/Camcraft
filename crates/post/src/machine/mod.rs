@@ -17,6 +17,7 @@ mod kind;
 mod no_spindle;
 mod parse;
 mod plasma;
+mod post_name;
 mod waterjet;
 pub use waterjet::waterjet_refusals;
 mod rows;
@@ -37,6 +38,7 @@ pub use edm_conditions::{
 pub use edm_taper::{AngleSide, TaperAngle, TaperCorner};
 pub use parse::{parse_mch, parse_mch_with};
 pub use plasma::plasma_refusals;
+pub use post_name::{parse_post_name, post_name_refusal};
 pub use tooling::{mount_check, tooling_refusals, HolderInfo, HolderLookup, SPINDLE_MOUNTS};
 pub use tree::{parse_mch_tree, MachineTree, MovingSide, PartKind, SpindleBody, ToolStation, TreePart};
 pub use trunnion::{trunnion_refusals, RotarySignConvention};
@@ -45,4 +47,4 @@ mod check;
 mod judge;
 pub use check::{MachineCheck, SourceLocation, REPORT_CAP};
 // Shared with the app-specific plasma, waterjet, EDM and posted-lathe checks.
-pub use judge::{move_extremes, say, slowest_axis, tap_gate};
+pub use judge::{fine_bore_gate, move_extremes, say, slowest_axis, tap_gate};

@@ -53,6 +53,14 @@ pub struct ViewPrefs {
     /// old file keeps the grid that it always had.
     #[serde(default = "default_names_on")]
     pub show_grid: bool,
+    /// Does the viewport draw the ground shadow of the model (#2834)?
+    /// Default OFF: an old file keeps the view that it always had.
+    #[serde(default)]
+    pub ground_shadow: bool,
+    /// Does the viewport darken the model faces in their corners (#2834)?
+    /// Default OFF, for the same reason.
+    #[serde(default)]
+    pub ambient_occlusion: bool,
     /// #2958: the overlay line width. Default 1.5 pt.
     #[serde(default)]
     pub line_width: LineWidth,
@@ -70,6 +78,8 @@ impl Default for ViewPrefs {
             show_gizmo_names: true,
             display: default_display(),
             show_grid: true,
+            ground_shadow: false,
+            ambient_occlusion: false,
             line_width: LineWidth::default(),
             antialias: Antialias::default(),
         }
