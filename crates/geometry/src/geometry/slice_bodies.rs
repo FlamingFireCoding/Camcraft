@@ -140,6 +140,23 @@ pub(super) fn closed_solids(facets: &[Triangle]) -> Option<Vec<Vec<Triangle>>> {
         }
     }
     let at = |v: u32| welder.pts.get(v as usize).map(|v| Point3::new(v[0], v[1], v[2]));
+    // A contact face can have no plain boundary edge. Link only a unique
+    // nonzero-wedge matching, then validate every edge on the final bodies.
+    let mut contacts: Vec<_> = shared.iter().collect();
+    contacts.sort_by_key(|(key, _)| **key);
+    for ((lo, hi), on) in &contacts {
+        let uses: Option<Vec<_>> = on.iter().map(|&(i, forward, r)| {
+            Some(EdgeUse { body: root(&mut parent, i), forward, apex: at(r)? })
+        }).collect();
+        let uses = uses?;
+        if !shared_edge::solids_touch(at(*lo)?, at(*hi)?, &uses)
+            && let Some(pairs) = shared_edge::fragment_pairs(at(*lo)?, at(*hi)?, &uses)
+        {
+            for (i, j) in pairs {
+                union(&mut parent, on[i].0, on[j].0);
+            }
+        }
+    }
     for ((lo, hi), on) in &shared {
         let mut uses = Vec::with_capacity(on.len());
         for &(i, forward, r) in on {

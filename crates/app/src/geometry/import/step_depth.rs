@@ -3,7 +3,7 @@
 //! parser can overflow its stack on it (#1075).
 //!
 //! Provenance: lexical rules per ISO 10303-21, mirrored from the tokenizer
-//! of the pinned ruststep (rev 90fdc93: `parser/token.rs`,
+//! of ruststep as it was pinned until #2790 (rev 90fdc93: `parser/token.rs`,
 //! `parser/combinator.rs`, `parser/exchange/*.rs`); the cap is our own
 //! measurement, recorded in docs/decisions/1075-step-nesting-cap.md.
 //!
@@ -17,8 +17,9 @@
 //! the table below (written against ruststep's tokenizer, the stricter
 //! reading wherever the two differ) when the solidcore pin moves.
 //!
-//! The scan mirrors a third-party tokenizer, so it must be re-audited
-//! whenever the ruststep pin in the root `Cargo.toml` moves. ruststep
+//! The scan mirrors a third-party tokenizer. #2790 removed ruststep from
+//! the workspace, so its pin no longer moves; the re-audit follows the
+//! solidcore pin (above). ruststep
 //! recurses only on `(` (`list`, `typed_parameter`, `subsuper_record`,
 //! `anchor_item_list`), so the scan has to know exactly where a `(` is
 //! plain text. Where ruststep's treatment is unclear the scan COUNTS the

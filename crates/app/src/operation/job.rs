@@ -60,6 +60,8 @@ pub struct GenJob {
     pub(super) drive_chains: Option<Result<Vec<Vec<Point3>>, GenError>>,
     /// #1504: a picked Slot's room, read here; the Slot arm confines to it.
     pub(super) slot_bound: Option<Result<crate::machining2d::SlotBound, GenError>>,
+    /// #2848: a rotary op's picked faces, read here; the rotary arms keep to them or refuse by name.
+    pub(super) rotary_picks: Option<Result<super::rotary_picks::Picked, GenError>>,
     pub(super) prior: Option<Result<Arc<crate::rest::PriorState>, GenError>>,
     /// The program ahead of this op in its setup, uncut (issue #96
     /// review): verify's vertical-dive convictions are re-read against
@@ -432,6 +434,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         contour_sel,
         drive_chains,
         slot_bound,
+        rotary_picks: super::rotary_picks::picks_of(world, op),
         prior,
         verify_prior,
         drills_ahead,

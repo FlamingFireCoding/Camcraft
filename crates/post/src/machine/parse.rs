@@ -243,6 +243,7 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
                 Some(serde_json::Value::Bool(b)) => Some(*b),
                 Some(x) => return Err(format!("machine file: spindle.rigid_tapping must be true or false, not {x}")),
             };
+            m.spindle_orientation = super::judge::stated_orientation(sp)?; // #1445
             let ts = head.get("tool_station");
             m.max_tool_length = scale(rate(ts.and_then(|t| t.get("max_tool_length"))), f);
             m.max_tool_diameter = scale(rate(ts.and_then(|t| t.get("max_tool_diameter"))), f);

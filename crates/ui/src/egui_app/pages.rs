@@ -104,16 +104,19 @@ fn properties_body(ui: &mut Ui, state: &mut State, pal: &Tokens) {
         super::op_page::operation_page(ui, state, n.as_str(), pal);
         return;
     }
+    if let UiTarget::Tool(n) = &t {
+        super::tool_settings::page(ui, state, n);
+        return;
+    }
     let is_wcs = matches!(t, UiTarget::Wcs);
-    let has_close = matches!(&t, UiTarget::Tool(_) | UiTarget::Stock | UiTarget::Wcs | UiTarget::Model(_) | UiTarget::SetupNode(..));
+    let has_close = matches!(&t, UiTarget::Stock | UiTarget::Wcs | UiTarget::Model(_) | UiTarget::SetupNode(..));
     let content_height = (ui.available_height() - if has_close { 40.0 } else { 0.0 }).max(80.0);
     ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(content_height)
         .show(ui, |ui| match t {
             UiTarget::None => super::op_page::no_operation_page(ui),
-            UiTarget::Operation(_) => {}
-            UiTarget::Tool(n) => tool_page(ui, state, &n),
+            UiTarget::Operation(_) | UiTarget::Tool(_) => {}
             UiTarget::Stock => {
                 state.sync_setup_ui();
                 ui.heading("Stock");
@@ -465,11 +468,7 @@ pub(super) fn sheet_footer(ui: &mut Ui, state: &mut State) {
 
 pub(super) use super::fixtures_page::fixtures_section;
 
-// ----------------------------------------------------------------- tool page
-
-fn tool_page(ui: &mut Ui, state: &mut State, name: &str) {
-    super::tool_settings::page(ui, state, name);
-}
+// ----------------------------------------------------------------- tool shape window
 
 /// #2397: the tool shape editor - its own modal window for the body, the
 /// profile and the holder, with the settings left in Properties. The old
@@ -486,6 +485,7 @@ pub(crate) fn tool_shape_editor_window(ctx: &egui::Context, state: &mut State) {
         "Tool shape".to_owned()
     };
     let unit = state.units();
+    let err = state.error_for(ErrorScope::Tool).map(str::to_owned);
     let mut open = true;
     let mut close_clicked = false;
     Window::new(title)
@@ -505,12 +505,21 @@ pub(crate) fn tool_shape_editor_window(ctx: &egui::Context, state: &mut State) {
             // and Close stays in view under it (#2007).
             ui.set_width(560.0);
             ui.set_max_height(590.0);
+            let footer_h: f32 = if err.is_some() { 72.0 } else { 36.0 };
             egui::ScrollArea::vertical()
+                .max_height((590.0_f32 - footer_h).max(120.0))
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     super::tool_profile_page::editor(ui, state, exists, unit);
                 });
             ui.separator();
+            if let Some(msg) = &err {
+                super::error_text::error_text(
+                    ui,
+                    super::colorvision::text_inks(ui, &state.world).error,
+                    msg,
+                );
+            }
             close_clicked = ui.button("Close").clicked();
         });
     if !open || close_clicked {
@@ -537,10 +546,11 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
         if camcraft_app::mesh_open::hole_of(&state.world, &entity).is_none() {
             hint(
             ui,
-            "This model was too large to import at full detail. Gouge checks against it are \
-             stricter to make up for that; when it is too coarse to check at all, its operations \
-             are refused at the post. Raise the STEP facet budget below and import the file \
-             again to clear this.",
+            "This model is approximated more coarsely than usual: it was too large to import at \
+             full detail, or the file's own edges lie off their surfaces. Gouge checks against it \
+             are stricter to make up for that; when it is too coarse to check at all, its \
+             operations are refused at the post. Raise the STEP facet budget below and import the \
+             file again, or export the file again with a tighter tolerance, to clear this.",
             );
         }
     }
