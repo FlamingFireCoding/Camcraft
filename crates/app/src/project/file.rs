@@ -136,11 +136,20 @@ use super::*;
 /// unchanged. An old reader (including v0.22.0 at v62 and v69 builds)
 /// must refuse a v70 file rather than drop the reference and judge the
 /// smaller cylinder in its place.
-/// v71 (#2055): an operation's `area` controls may state `"do_not_touch"`
-/// protected faces/edges and standoff clearance. An old reader (up to v70)
+/// v71 (#1862): a DXF profile is an entity row of kind `sketch`, placed
+/// on the stock of a setup. A v70 file has none and steps up unchanged.
+/// An old reader must refuse a v71 file rather than open a setup without
+/// the profiles its operations cut.
+/// v72 (#2463): a model may record the file it was imported from and that
+/// file's SHA-256 (`source`): a linked model, imported again when the file
+/// changes. Absent is not linked - what every v71 model was - so a v71
+/// file steps up unchanged. An old reader must refuse a v72 file rather
+/// than save a linked model back unlinked without a word.
+/// v73 (#2055): an operation's `area` controls may state `"do_not_touch"`
+/// protected faces/edges and standoff clearance. An old reader (up to v72)
 /// must refuse the file rather than ignore the protection and cut across a
-/// protected feature. A v70 file steps up unchanged with empty protection.
-pub const PROJECT_VERSION: u32 = 71;
+/// protected feature. A v72 file steps up unchanged with empty protection.
+pub const PROJECT_VERSION: u32 = 73;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -321,6 +330,8 @@ pub enum EntityKind {
     Setup,
     /// A Pause / Home entry of the operation list (#155).
     Entry,
+    /// A DXF profile placed on a setup's stock (#1862).
+    Sketch,
 }
 
 /// The file mirror of `StockShape`, kept separate so the domain enum can

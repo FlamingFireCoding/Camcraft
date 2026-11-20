@@ -108,6 +108,8 @@ impl EditOperationParams {
                 prev.params.kind()
             )));
         }
+        // #2599: new angles on a legacy tilt take the current frame basis.
+        let params = params.with_stepped_tilt_basis(&prev.params);
         infeed_plan_gate(world, &params, &prev.tool)?;
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
@@ -152,7 +154,7 @@ impl EditOperationParams {
         }
         let picks: Vec<_> = area.picks().cloned().collect();
         if !picks.is_empty() {
-            valid_src(world, prev.setup.as_deref(), &SrcRef::Selection(picks))?;
+            valid_src(world, prev.setup.as_deref(), &SrcRef::Selection(picks), &params)?;
         }
         // The Apply door for the boundary shapes (M11.5 UX): an include /
         // exclude spelling an open chain is refused here, by name, never
@@ -217,6 +219,8 @@ impl ChangeOperationKind {
             )));
         }
         family_gate(world, prev.setup.as_deref(), &params)?;
+        // #1862: the new kind on the source the operation keeps.
+        super::gates::sketch_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
         infeed_plan_gate(world, &params, &prev.tool)?;
         sinker_gate(world, prev.setup.as_deref(), &params)?;
         tool_door(world, &params, &prev.tool)?;
@@ -302,9 +306,15 @@ impl EditOperationLinks {
             if tool != prev.tool {
                 tool_gate(world, &next.params, tool)?;
                 // #890: the new tool's row for the document material
-                // seeds the op's milling feed (same undo step).
+                // seeds the op's milling feed; #2598: a Drill or Thread
+                // op takes the new tool's stated feed (same undo step).
                 if let Some(t) = model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e))
-                    && let Some(p) = crate::cutting_rows::reseeded_params(&next.params, &t, crate::stock_material::in_force(world, prev.setup.as_deref()))
+                    && let Some(p) = crate::cutting_rows::retargeted_params(
+                        &next.params,
+                        &t,
+                        crate::stock_material::in_force(world, prev.setup.as_deref()),
+                        crate::cutting::material_of(world),
+                    )
                 {
                     next.params = p;
                 }
@@ -313,7 +323,7 @@ impl EditOperationLinks {
             wire_gate(world, prev.setup.as_deref(), tool, &next.params)?;
         }
         if let Some(src) = src {
-            valid_src(world, prev.setup.as_deref(), &src)?;
+            valid_src(world, prev.setup.as_deref(), &src, &next.params)?;
             // Retargeting onto a whole-model source under Inside would
             // arm the mirror law; refused here, and backstopped at
             // generate for commands that arrive via file load.

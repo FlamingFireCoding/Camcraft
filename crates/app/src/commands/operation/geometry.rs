@@ -62,7 +62,7 @@ impl SetOperationGeometry {
         // A probe's pick seeds its touch (#171) in this same command, so
         // one undo takes back the pick and the seed together; a pick the
         // probe cannot touch is refused here, by name.
-        let params = match crate::operation::probe_from_picks(world, &prev.params, src_items(&src)) {
+        let params = match crate::operation::probe_from_picks(world, prev.setup.as_deref(), &prev.params, src_items(&src)) {
             Some(seeded) => seeded.map_err(CommandError::Invalid)?,
             None => prev.params.clone(),
         };
@@ -108,6 +108,13 @@ fn valid_pick(world: &World, g: &GeoSel) -> Result<(), CommandError> {
     if model::is_wcs(world, &e) {
         return Err(CommandError::Invalid(format!(
             "'{}' is a work offset, not a solid",
+            g.entity
+        )));
+    }
+    // #1862: a DXF profile has chains of its own, not mesh features.
+    if crate::sketch::is_sketch(world, &e) {
+        return Err(CommandError::Invalid(format!(
+            "'{}' is a DXF profile - an operation takes the whole profile as its source; picked chains of a profile are not supported yet",
             g.entity
         )));
     }

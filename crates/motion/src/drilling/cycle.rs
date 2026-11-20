@@ -168,8 +168,12 @@ pub fn drill(p: &CycleParams) -> Result<Toolpath, GenError> {
                 b.push(MoveKind::Rapid, Point3::new(h.xy.x, h.xy.y, p.r_z), None);
             }
             CycleKind::BackBore => {
+                // #1480: G89 (and the G85 a post writes for a back-bore
+                // with no dwell) has one F word for both directions, so
+                // the chain feeds out at the feed it fed in at - what the
+                // control runs is what the verifier and simulation read.
                 b.push(MoveKind::Plunge, Point3::new(h.xy.x, h.xy.y, bottom), Some(p.plunge_feed));
-                b.push(MoveKind::Feed, Point3::new(h.xy.x, h.xy.y, p.r_z), Some(p.feed));
+                b.push(MoveKind::Feed, Point3::new(h.xy.x, h.xy.y, p.r_z), Some(p.plunge_feed));
             }
             CycleKind::Ream => {
                 // G85: one F word drives both directions, so the chain
@@ -179,8 +183,15 @@ pub fn drill(p: &CycleParams) -> Result<Toolpath, GenError> {
                 b.push(MoveKind::Feed, Point3::new(h.xy.x, h.xy.y, p.r_z), Some(p.plunge_feed));
             }
         }
+        // #1480: a back-bore carries the dwell too (G89 dwells at the
+        // bottom); each post writes its own P unit or refuses by name.
         let dwell = match kind {
-            CycleKind::Spot | CycleKind::Drill | CycleKind::Deep | CycleKind::Bore | CycleKind::FloatingTap => p.dwell,
+            CycleKind::Spot
+            | CycleKind::Drill
+            | CycleKind::Deep
+            | CycleKind::Bore
+            | CycleKind::BackBore
+            | CycleKind::FloatingTap => p.dwell,
             _ => 0.0,
         };
         b.push_cycle(Cycle {

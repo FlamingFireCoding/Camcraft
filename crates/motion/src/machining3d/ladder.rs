@@ -10,13 +10,14 @@ use super::level_ctx::{LevelCtx, feed_leg, walk_pass};
 use super::params::{Entry3D, Pocket3DParams};
 use super::rest::level_target;
 use super::shell::Field;
+use super::troch;
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::entry::chord_hits_plan;
 use crate::geo2d::{Point2, Region};
 use crate::geometry::{Point3, Triangle};
 use crate::links::{Link, LinkTally, NOT_PROVED, TOO_LONG};
-use crate::machining2d::{chord_clears, GenError};
+use crate::machining2d::{chord_clears, AdaptiveMethod, GenError};
 use crate::plunge_law;
 use crate::stock_sim::Columns;
 
@@ -94,6 +95,7 @@ pub(super) fn ladder(
     seam: Option<&hsm::Seam>,
     stock: Option<&Region>,
     avoid: Option<&AvoidSpec>,
+    method: AdaptiveMethod,
 ) -> Result<Toolpath, GenError> {
     let r = p.tool_diameter * 0.5;
     let hop_z = p.retract_z.unwrap_or(p.clearance_z).min(p.clearance_z);
@@ -125,7 +127,15 @@ pub(super) fn ladder(
     let mut too_narrow = false;
     let mut avoid_blocked = 0usize;
     let mut masked_empty = false;
+    // #1591: the Trochoidal method's levels (`troch`). Its levels can
+    // leave stock standing, so no level of such a run reads the plane
+    // above as cleared: each one enters as a first level does.
+    let mut tr = troch::Run::new(method, p, rest.is_none() && !shell && seam.is_none());
     for &z in zs {
+        if tr.on() {
+            prev_state = None;
+            prev_passes.clear();
+        }
         // The level law, in two region ops: the footprint minus the part
         // material standing above the plane - its cross-section and the
         // shadow of anything hanging over it (a blind floor's underside,
@@ -185,6 +195,9 @@ pub(super) fn ladder(
         // The level's plan: the strategy's tiling, or the HSM plan
         // (M11.4, `hsm`) - whose entry bore the level's params carry.
         // #871: a part-way refusal hands back the levels so far.
+        if tr.level(&mut b, &center, p, z, hop_z).map_err(|e| e.with_ghost_moves(b.moves()))? {
+            continue;
+        }
         let lp = hsm::plan_level(&mut b, &center, p, z, hop_z, rest.is_some(), shell, seam, stock)
             .map_err(|e| e.with_ghost_moves(b.moves()))?;
         let passes = &lp.passes;
@@ -391,6 +404,7 @@ pub(super) fn ladder(
         prev_state = Some((z, center));
     }
     lifted.say(&mut b, "level/pass");
+    tr.say(&mut b);
     if let Some(n) = p.links.approach.engagement_note()
         && prev_state.is_some()
     {

@@ -60,6 +60,8 @@ pub struct GenJob {
     pub(super) drive_chains: Option<Result<Vec<Vec<Point3>>, GenError>>,
     /// #1504: a picked Slot's room, read here; the Slot arm confines to it.
     pub(super) slot_bound: Option<Result<crate::machining2d::SlotBound, GenError>>,
+    /// #2848: a rotary op's picked faces, read here; the rotary arms keep to them or refuse by name.
+    pub(super) rotary_picks: Option<Result<super::rotary_picks::Picked, GenError>>,
     pub(super) prior: Option<Result<Arc<crate::rest::PriorState>, GenError>>,
     /// The program ahead of this op in its setup, uncut (issue #96
     /// review): verify's vertical-dive convictions are re-read against
@@ -187,6 +189,12 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
+    // #1862: an operation on a DXF profile, or a 3D kind in a setup
+    // whose model is virtual, is refused by name - never cut for want
+    // of a solid to check against.
+    if let Some(why) = crate::sketch_model::generation_problem(world, op) {
+        return Err(GenError::Invalid(why));
+    }
     // #763: the one machining-frame seam. Built before the first read;
     // the tilt's own refusal keeps its place below (`checked_frame`,
     // after the heights resolve) exactly where the old head raised it -
@@ -275,6 +283,9 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     };
     let drive_chains = match &op.params {
         OpParams::MultiAxisContour { .. } => Some(drive_chains_of(world, op)),
+        // #1888: the deburr's picked chains ride the same slot - the
+        // WCS yaw turns them with the facets they lie on.
+        OpParams::Deburr { exclude_edges, .. } => Some(super::deburr_picks::chains_of(world, op, exclude_edges)),
         _ => None,
     };
     // #318: an op in a setup whose incoming stock must be carried across
@@ -423,6 +434,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         contour_sel,
         drive_chains,
         slot_bound,
+        rotary_picks: super::rotary_picks::picks_of(world, op),
         prior,
         verify_prior,
         drills_ahead,

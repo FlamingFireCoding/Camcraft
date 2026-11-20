@@ -41,3 +41,17 @@ Main advanced to `PROJECT_VERSION` 70 (v68 for Drill `break_through_from`, #2441
 - `pocket3d_avoid`, `pocket3d_open_avoid`, and `pocket_avoid` keep `cut_levels_under` and `air_stock` while preserving `avoid` keep-outs, `Field::new` is restored alongside `Field::new_with_avoid`, and `Warning::AvoidHit` coexists with `Warning::DrillUndersize`.
 - `avoid::hits_named` sweeps continuous 3D chords `Move::segments3(ARC_SAG)` widened by `Bulge::of(...).deviation()` across all arc planes (including XZ/YZ vertical arcs) instead of stationary `solid::pieces` samples.
 - `avoid_viz` memoizes 3D protected geometry and projected screen marks keyed on picks, entity handles, hidden state, `Weak<Features>`, `Weak<[Triangle]>`, setup pose, and MVP bits, and `shell.rs` wraps painting in `frame_cost::time("ui/viewport.avoid_marks", ...)`.
+
+### Example-version review fix against main v72 (#2149)
+
+The branch merges current main and keeps its v72 linked-model fields,
+checks, and migration notes. Protected projects use v73 so v72 readers
+refuse the file instead of discarding protection. The committed continuous
+4-axis example is regenerated at v73. Its test compares the saved project
+directly with that example and keeps the posted-program checks.
+
+Keeping the example at an older version, or migrating it inside the
+comparison test, was rejected because either choice hides a stale committed
+example. Reusing v72 was rejected because it weakens the protection barrier.
+A later format change must update the writer, reader-floor pin, migration
+notes, and committed example together.

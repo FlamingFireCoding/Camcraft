@@ -181,3 +181,70 @@ fn detects_protected_edge_contact_between_vertical_arc_samples() {
     let clear = avoid_hits(&path, &clear_spec, AVOID_VERIFY_TOL).expect("verify runs");
     assert!(clear.is_empty(), "vertical arc clear of protected edge must pass: {clear:?}");
 }
+
+fn slim_cutter() -> Cutter {
+    Cutter::flat(&ToolGeom {
+        radius: 1.0,
+        nose_radius: 0.0,
+        flute_len: 10.0,
+        shank_radius: 1.0,
+        shank_len: 10.0,
+        holder_radius: 1.0,
+        holder_len: 10.0,
+    })
+}
+
+fn edge_spec(a: [f64; 3], b: [f64; 3]) -> AvoidSpec {
+    AvoidSpec {
+        items: vec![AvoidItem { label: "protected edge".into(), tris: vec![], edges: vec![(a, b)] }],
+        cutter: slim_cutter(),
+        clearance: 0.0,
+    }
+}
+
+#[test]
+fn omitted_axis_inherits_tilted_pose_for_protection() {
+    let spec = edge_spec([20.0, 0.0, 0.0], [20.0, 0.001, 0.0]);
+    let mut implicit = seg_path([-100.0, -100.0, 0.0], [-100.0, 0.0, 0.0]);
+    implicit.moves[0].axis = Some([1.0, 0.0, 0.0]);
+    implicit.moves.push(Move {
+        from: Point3::new(-100.0, 0.0, 0.0),
+        to: Point3::new(0.0, 0.0, 0.0),
+        axis: None,
+        ..implicit.moves[0]
+    });
+    let mut explicit = implicit.clone();
+    explicit.moves[1].axis = Some([1.0, 0.0, 0.0]);
+    let stated = avoid_hits(&explicit, &spec, 0.0001).expect("explicit pose verifies");
+    let inherited = avoid_hits(&implicit, &spec, 0.0001).expect("inherited pose verifies");
+    assert!(matches!(stated.as_slice(), [Warning::AvoidHit { at: 1, part: FixturePart::Shank, .. }]), "{stated:?}");
+    assert_eq!(inherited, stated, "omitted pose must retain the tilted full assembly");
+
+    let clear = edge_spec([20.0, 2.0, 0.0], [20.0, 2.001, 0.0]);
+    assert!(avoid_hits(&implicit, &clear, 0.0001).expect("clear pose verifies").is_empty());
+}
+
+#[test]
+fn detects_protected_edge_contact_between_rotating_poses() {
+    let spec = edge_spec([20.33586674390217, 0.999, 20.674925000450518], [20.33586674390217, 1.0, 20.674925000450518]);
+    let mut rotating = seg_path([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+    rotating.moves[0].to = rotating.moves[0].from;
+    rotating.moves[0].axis = Some([1.0, 0.0, 0.0]);
+    rotating.moves.push(Move { axis: Some([0.0, 0.0, 1.0]), ..rotating.moves[0] });
+
+    // Exact review repro: the holder touches this edge between midpoint poses.
+    let theta = std::f64::consts::FRAC_PI_2 * (1.0 - 48.0 / 95.0);
+    let mut contact = seg_path([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+    contact.moves[0].to = contact.moves[0].from;
+    contact.moves[0].axis = Some([theta.sin(), 0.0, theta.cos()]);
+    let stationary = avoid_hits(&contact, &spec, 0.0001).expect("contact pose verifies");
+    assert!(matches!(stationary.as_slice(), [Warning::AvoidHit { part: FixturePart::Holder, .. }]), "{stationary:?}");
+    let swept = avoid_hits(&rotating, &spec, 0.0001).expect("rotating pose verifies");
+    assert!(
+        matches!(swept.as_slice(), [Warning::AvoidHit { at: 1, part: FixturePart::Holder, .. }]),
+        "rotation must enclose contact between midpoint poses: {swept:?}"
+    );
+
+    let clear = edge_spec([20.33586674390217, 2.0, 20.674925000450518], [20.33586674390217, 2.001, 20.674925000450518]);
+    assert!(avoid_hits(&rotating, &clear, 0.0001).expect("clear rotation verifies").is_empty());
+}

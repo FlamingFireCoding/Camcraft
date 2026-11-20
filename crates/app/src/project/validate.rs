@@ -15,6 +15,7 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
         )));
     }
     super::program_entry_dto::validate(dto, kind)?; // #155
+    super::sketch_dto::validate(dto, kind)?; // #1862
     // #1720: a flip rides a WCS row and nothing else.
     if dto.flip.is_some() && !matches!(kind, EntityKind::Wcs) {
         return Err(corrupt(format!("'{}' records a flipped axis but is not a WCS", dto.name)));
@@ -30,6 +31,10 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
     if dto.step_source.is_some() && !matches!(kind, EntityKind::Model) {
         return Err(corrupt(format!("'{}' records STEP source but is not a model", dto.name)));
     }
+    // #2463: a source rides a model row only, with a path and a digest.
+    if let Some(src) = &dto.source {
+        src.check(&dto.name, matches!(kind, EntityKind::Model)).map_err(corrupt)?;
+    }
     // #1056: the unknown-fidelity mark rides a mesh row only, and never
     // beside a recorded chord - one entity cannot both know and not know.
     if dto.fidelity_unknown {
@@ -40,12 +45,20 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             return Err(corrupt(format!("'{}' records a chord error and an unknown fidelity at once", dto.name)));
         }
     }
-    // #1610: a hole is said of a model of unknown fidelity only.
-    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && matches!(kind, EntityKind::Model)) {
-        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
+    // #1610: a hole is said of a mesh of unknown fidelity only - a model,
+    // or (#1700) a stock copied from one, which carries its source's hole.
+    let copy = matches!(kind, EntityKind::Stock)
+        && dto.stock.as_ref().is_some_and(|s| matches!(s.to_shape(), StockShape::FromModel { .. }));
+    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && (matches!(kind, EntityKind::Model) || copy)) {
+        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown, or a stock copied from one", dto.name)));
+    }
+    // #1339: a vouch is a model's, and never rides beside a flag.
+    if let Some(vouch) = &dto.fidelity_vouched {
+        let flagged = dto.fidelity_unknown || dto.coarse_mm.is_some();
+        vouch.check(&dto.name, matches!(kind, EntityKind::Model), flagged).map_err(corrupt)?;
     }
     match kind {
-        EntityKind::Entry => {}
+        EntityKind::Entry | EntityKind::Sketch => {}
         EntityKind::Model => {
             if dto.stock.is_some()
                 || dto.tool.is_some()

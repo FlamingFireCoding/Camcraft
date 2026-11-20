@@ -140,14 +140,20 @@ impl AvoidSpec {
         let fl = self.cutter.flute_len;
         let sl = self.cutter.shank_len;
         let poses = midpose::poses(path);
-        let reach = atoms.iter().map(|a| a.z1).fold(0.0, f64::max);
+        // Every assembly point lies within this radius of the tip. Rotating it
+        // through at most `swing` radians moves it by at most `swing * reach`.
+        let reach = atoms.iter().map(|a| a.z0.abs().max(a.z1.abs()).hypot(a.rho_max())).fold(0.0, f64::max);
+        if !atoms.iter().all(|a| a.z0.is_finite() && a.z1.is_finite() && a.rho_max().is_finite()) || !reach.is_finite()
+        {
+            return Err("non-finite cutter reach for 'Do not touch' verification".into());
+        }
         let mut pts = Vec::with_capacity(16);
         let mut out = Vec::new();
         for (mi, m) in path.moves.iter().enumerate() {
             if !(m.from.is_finite() && m.to.is_finite()) {
                 continue;
             }
-            let axis = m.axis.and_then(normalize_axis).filter(|a| *a != [0.0, 0.0, 1.0]);
+            let axis = poses.get(mi).and_then(|&(_, to)| to).and_then(normalize_axis).filter(|a| *a != [0.0, 0.0, 1.0]);
             let mid = poses
                 .get(mi)
                 .and_then(|&(f, t)| midpose::change(f, t))
@@ -170,7 +176,25 @@ impl AvoidSpec {
                 for iv in &mid {
                     let ax = normalize_axis(iv.am).filter(|v| *v != [0.0, 0.0, 1.0]);
                     let fr = Frame::new(iv.p0, ax);
-                    check_frame_item(&fr, fr.local(iv.p1), item, &atoms, req + grow, tol, fl, sl, &mut pts, ii + 1, &mut hit)?;
+                    // The chord sweep at the midpoint pose, expanded by this
+                    // ball, encloses the rotating full assembly for the interval.
+                    let margin = req + grow + iv.swing * reach;
+                    if !margin.is_finite() {
+                        return Err(format!("move {mi} has non-finite pose geometry"));
+                    }
+                    check_frame_item(
+                        &fr,
+                        fr.local(iv.p1),
+                        item,
+                        &atoms,
+                        margin,
+                        tol,
+                        fl,
+                        sl,
+                        &mut pts,
+                        ii + 1,
+                        &mut hit,
+                    )?;
                 }
             }
             if let Some((item_idx, part, short_mm)) = hit {
