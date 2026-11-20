@@ -174,9 +174,12 @@ pub(super) fn post(
         .get("separationLengthMm")
         .and_then(|v| v.as_f64())
         .ok_or("The Agie post must declare its separation cut length in millimetres")?;
+    let first = jobs.first().ok_or("Agie requires an active Wire Contour")?;
+    let controller_review = first.quality.controller_review(first.stock_max[2] - first.stock_min[2])?;
     let bundle_files = camcraft_post::agie::export_works(&jobs, dest, name, separation)?;
     Ok(Posted {
         bundle_files,
+        controller_review: Some(controller_review),
         ops: jobs.len(),
         lines: 0,
         program: String::new(),

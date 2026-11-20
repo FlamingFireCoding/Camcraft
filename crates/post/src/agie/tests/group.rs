@@ -39,7 +39,7 @@ fn a_punch_and_a_die_cannot_share_a_group() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn every_qualified_group_size_has_a_unique_file_work_and_quality_for_each_punch() {
+fn every_punch_has_its_own_geometry_and_uses_the_requested_piece_quality() {
     let temp = tempfile::tempdir().unwrap();
     let make_job = |i: usize| {
         let x = (i % 3) as f64 * 70.0 - 70.0;
@@ -62,6 +62,13 @@ fn every_qualified_group_size_has_a_unique_file_work_and_quality_for_each_punch(
         let piece = std::fs::read_to_string(dir.join("PUNCH.SBL")).unwrap();
         let map = std::fs::read_to_string(dir.join("PUNCH.SBR")).unwrap();
         assert_eq!(map.lines().count(), count);
+        assert_eq!(piece.matches("JE_CreateQuality(").count(), 1);
+        assert!(
+            piece.contains(r#"JE_CreateQuality(je_piece,"CCB030","0.30,1.50,1.00,F,F,F",je_q1)"#)
+        );
+        assert!(!piece.contains("ASAGIE"));
+        assert_eq!(piece.matches(",ASDELETE,NULL)").count(), count);
+        let first_reset = piece.find("JE_GenerateCuts(WORK").unwrap();
         for n in 1..=count {
             let alias = format!("PUNCH{n}.ISO");
             assert!(dir.join(&alias).is_file());
@@ -69,7 +76,8 @@ fn every_qualified_group_size_has_a_unique_file_work_and_quality_for_each_punch(
             assert!(piece.contains(&format!(
                 "\"CUT{n}\",NULL,ID_GEOMETRY,\"AGIE.USING_{alias}\""
             )));
-            assert!(piece.contains(&format!("JE_CreateQuality(je_piece,\"QN{}\"", n + 1)));
+            let binding = format!(r#""CUT{n}",NULL,ID_QUALITY,je_q1,je_dim"#);
+            assert!(piece[..first_reset].contains(&binding));
         }
     }
     let jobs: Vec<_> = (0..=MAX_PUNCH_WORKS).map(make_job).collect();

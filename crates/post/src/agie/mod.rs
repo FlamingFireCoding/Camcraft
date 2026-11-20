@@ -159,6 +159,9 @@ pub fn export_works(
         return Err("AGIE_BERCO_RA035 requires a single closed punch in 20 mm stock".into());
     }
     if jobs.len() > 1 {
+        if jobs.iter().any(|job| job.quality != first.quality) {
+            return Err("All works in an Agie group must use the same qualified wire condition".into());
+        }
         if jobs.len() > MAX_PUNCH_WORKS
             || (first.side == AgieSide::Die && jobs.len() != 2)
             || first.side.is_open()

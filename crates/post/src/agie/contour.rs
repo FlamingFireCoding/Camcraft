@@ -57,20 +57,13 @@ pub(super) fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
     if job.stock_max[2] != 0.0 {
         return Err("The native Agie quality requires stock top Z0".into());
     }
-    let heights = job.quality.qualified_offsets();
-    for &(mm, offset) in heights {
-        if height == f64::from(mm) {
-            return Ok(offset);
-        }
-    }
-    let supported = heights
+    job.quality
+        .working_offsets(height)?
         .iter()
-        .map(|(mm, _)| mm.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    Err(format!(
-        "The selected Agie quality has no qualified offset for stock thickness {height} mm. Supported thicknesses in mm are {supported}"
-    ))
+        .copied()
+        .max()
+        .map(u32::from)
+        .ok_or_else(|| "The selected Agie quality has no working steps".into())
 }
 
 #[cfg(test)]

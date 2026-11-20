@@ -173,7 +173,7 @@ fn a_nonadjacent_collision_fails_before_publishing_any_group_resource() {
 }
 
 #[test]
-fn nine_model_owners_resolve_all_resources_with_two_digit_last_quality() {
+fn nine_model_owners_resolve_all_resources_and_the_same_registered_quality() {
     let temp = tempfile::tempdir().unwrap();
     let result = run(temp.path(), GRID);
     assert!(
@@ -188,6 +188,8 @@ fn nine_model_owners_resolve_all_resources_with_two_digit_last_quality() {
     assert_eq!(map.lines().count(), 9);
     assert_eq!(piece.matches("JE_Create(WORK,").count(), 9);
     assert_eq!(piece.matches("ID_SEPCUT,\"1.0\"").count(), 9);
+    assert_eq!(piece.matches("JE_CreateQuality(").count(), 1);
+    assert!(piece.contains(r#"JE_CreateQuality(je_piece,"CCB030","0.30,1.50,1.00,F,F,F",je_q1)"#));
     for i in 0..9 {
         let (x, y) = ((i % 3 - 1) * 32, (i / 3 - 1) * 32);
         let alias = format!("NINE20{}.ISO", i + 1);
@@ -196,7 +198,7 @@ fn nine_model_owners_resolve_all_resources_with_two_digit_last_quality() {
         assert!(piece.contains(&format!("{work}NULL,ID_GEOMETRY,\"AGIE.USING_{alias}\"")));
         assert!(piece.contains(&format!("{work}\"stp1\",ID_POSX,\"{}.000\"", x - 13)));
         assert!(piece.contains(&format!("{work}\"stp1\",ID_POSY,\"{y}.000\"")));
-        assert!(piece.contains(&format!("JE_CreateQuality(je_piece,\"QN{}\"", i + 2)));
+        assert!(piece.contains(&format!("{work}NULL,ID_QUALITY,je_q1,je_dim")));
         let iso = fs::read_to_string(dir.join(alias)).unwrap();
         assert!(iso.contains(&format!("G00 X{}.00000 Y{y}.00000", x - 7)));
     }

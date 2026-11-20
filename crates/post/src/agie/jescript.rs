@@ -1,10 +1,18 @@
 //! JEScript native piece/work attributes for a piece and its native works, per Quintin Smits's MIT Agie Processor.
-use super::{AgieJob, AgieQuality, Work};
+use super::{AgieJob, Work};
 
 fn attribute(lines: &mut Vec<String>, object: &str, context: &str, key: &str, value: &str) {
     lines.push(format!(
         "  ok=JE_AttribObject({object},SETATTR,je_piece,{context},{key},{value},je_dim)"
     ));
+}
+
+fn stop_on_error(lines: &mut Vec<String>) {
+    lines.extend([
+        "  if (ok<>0) then".into(),
+        "    stop".into(),
+        "  end if".into(),
+    ]);
 }
 
 fn quoted(value: impl std::fmt::Display) -> String {
@@ -21,6 +29,7 @@ pub(super) fn piece(
     let [right, back, top] = job.stock_max;
     let height = format!("{:.3}", top - z);
     let group = quoted(name);
+    let (quality_name, parameters) = job.quality.definition();
     let mut lines = vec!["'$Include \"jescript.sbh\"".into(), "sub SetOrigin".into()];
     for (field, value) in [
         ("ID_HEIGHT", height.clone()),
@@ -47,8 +56,11 @@ pub(super) fn piece(
         "  ok=JE_GenerateAttrib(c_tecalert,c_tecalert_sea)".into(),
         "end sub".into(),
         "sub CutPunch".into(),
-        format!("  ok=JE_Create(GROUP,je_piece,{group},NULL)"),
+        format!("  ok=JE_CreateQuality(je_piece,\"{quality_name}\",\"{parameters}\",je_q1)"),
     ]);
+    stop_on_error(&mut lines);
+    lines.push(format!("  ok=JE_Create(GROUP,je_piece,{group},NULL)"));
+    stop_on_error(&mut lines);
     for (index, item) in works.iter().enumerate() {
         append_work(
             &mut lines,
@@ -57,8 +69,15 @@ pub(super) fn piece(
             index,
             item,
             separation_length_mm,
-            job.quality,
         );
+    }
+    // A successful assignment can still resolve to a stale resident quality.
+    // Leave each work without cutting steps for inspection on the control.
+    for n in 1..=works.len() {
+        lines.push(format!(
+            "  ok=JE_GenerateCuts(WORK,je_piece,{group},\"CUT{n}\",ASDELETE,NULL)"
+        ));
+        stop_on_error(&mut lines);
     }
     lines.extend([
         "end sub".into(),
@@ -86,12 +105,12 @@ fn append_work(
     index: usize,
     item: &Work,
     separation_length_mm: f64,
-    quality: AgieQuality,
 ) {
     let work = format!("{group},\"CUT{}\"", index + 1);
     let work_context = format!("{work},NULL");
     let start_context = format!("{work},\"stp1\"");
     lines.push(format!("  ok=JE_Create(WORK,je_piece,{work})"));
+    stop_on_error(lines);
     attribute(
         lines,
         "WORK",
@@ -107,14 +126,9 @@ fn append_work(
     };
     attribute(lines, "WORK", &work_context, "ID_PUNCH", side);
     attribute(lines, "WORK", &work_context, "ID_WORKCOND", "\"2\"");
-    // The control selects the offsets and passes for the requested quality.
-    lines.push(format!(
-        "  ok=JE_CreateQuality(je_piece,\"QN{}\",\"{}\",je_q1)",
-        index + 2,
-        quality.parameters()
-    ));
+    attribute(lines, "WORK", &work_context, "ID_QUALITY", "je_q1");
+    stop_on_error(lines);
     for (field, value) in [
-        ("ID_QUALITY", "je_q1".into()),
         ("ID_THREAD", quoted("Berco Cut 0.25")),
         ("ID_ENTRYMODE", "c_entper".into()),
         ("ID_HEIGHT", quoted(height)),
@@ -185,8 +199,4 @@ fn append_work(
             &quoted(format!("{ey:.3}")),
         );
     }
-    lines.extend([
-        format!("  ok=JE_GenerateCuts(WORK,je_piece,{work},ASDELETE,NULL)"),
-        format!("  ok=JE_GenerateCuts(WORK,je_piece,{work},ASAGIE,NULL)"),
-    ]);
 }

@@ -37,10 +37,14 @@ fn native_punch_links_its_three_files_and_uses_the_uncompensated_contour() {
         "ID_DIAMETER,\"2.0\"",
         "ID_POSX,\"-30.000\"",
         "0.30,1.50,1.00,F,F,F",
-        "ASAGIE",
+        "ASDELETE",
     ] {
         assert!(script.contains(field), "{field}");
     }
+    assert!(
+        !script.contains("ASAGIE"),
+        "An imported work must have no automatic cuts"
+    );
     assert!(export(&punch(), &out, "PUNCH40", 1.0).is_err());
     assert_eq!(
         std::fs::read_to_string(out.join("PUNCH40.ISO")).unwrap(),

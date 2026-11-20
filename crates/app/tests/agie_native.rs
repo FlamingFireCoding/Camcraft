@@ -157,7 +157,18 @@ fn qualified_qn2_heights_set_both_piece_and_work_with_stock_top_at_zero() {
         let world = punch(height, [2., 3., height], [-30., 0.]);
         let tmp = tempfile::tempdir().unwrap();
         let dest = tmp.path().join("HEIGHT");
-        posting::post_mounts_with_script_options(&world, &dest, Some(&separation(1.0))).unwrap();
+        let posted =
+            posting::post_mounts_with_script_options(&world, &dest, Some(&separation(1.0)))
+                .unwrap();
+        let review = posted[0].posted.controller_review.as_ref().unwrap();
+        assert!(review.contains("CCB030") && review.contains(&format!("{height} mm")));
+        let expected_offsets = match height as u16 {
+            15 | 20 => "245, 155, 140, 134",
+            40 => "260, 170, 140, 130",
+            80 => "266, 176, 143, 133",
+            _ => unreachable!(),
+        };
+        assert!(review.contains(expected_offsets));
         let sbl = fs::read_to_string(dest.join("HEIGHT.SBL")).unwrap();
         let height_field = format!("ID_HEIGHT,\"{height:.3}\"");
         for context in ["JE_AttribObject(PIECE,", "JE_AttribObject(WORK,"] {

@@ -250,6 +250,7 @@ fn post_per_op_with(
             op: name.clone(),
             posted: Posted {
                 bundle_files: Vec::new(),
+                controller_review: None,
                 ops: 1,
                 lines: out.program.lines().count(),
                 program: out.program,
