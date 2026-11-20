@@ -1,6 +1,6 @@
 [package]
 name = "camcraft-kernel"
-description = "The B-rep kernel seam (M12.1 stage 1): a thin trait over solidcore (the SMLib port) with a truck-backed reference impl, plus the dual-kernel agreement bench. No other crate depends on it yet. Clean-room implementation, public sources only."
+description = "The B-rep kernel seam (M12.1 stage 1): a thin trait over solidcore (the SMLib port) with a truck-backed reference impl, plus the dual-kernel agreement bench. camcraft-geometry reads STEP and Solidcraft models through it. Clean-room implementation, public sources only."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -613,11 +613,19 @@ pub struct EntityDto {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fidelity_unknown: bool,
     /// #1610: the hole of a model imported from a STEP closed shell that
-    /// meshes open (`schema::MeshOpen`), written only on a model beside
-    /// `fidelity_unknown`. An old reader dropping it keeps the mark and
+    /// meshes open (`schema::MeshOpen`), written only beside
+    /// `fidelity_unknown` on such a model or (#1700) a stock copied from it. An old reader dropping it keeps the mark and
     /// still refuses every operation on the model; only the words go.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_open: Option<String>,
+    /// #917: the closed solids of a model's facets, `[start, end)` index
+    /// pairs (`schema::SolidRanges`), written only for two or more.
+    /// Absent is one soup - every older file - so no version step: an old
+    /// reader that drops it reads the soup, and refuses by name where it
+    /// is non-manifold. Pairs that do not tile the facets are dropped at
+    /// load with a logged note, never trusted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solids: Option<Vec<[usize; 2]>>,
     /// #1339: who vouched for this model's mesh while its fidelity was
     /// unknown (`schema::FidelityVouched`), written only on a model with
     /// no fidelity flag. An old reader dropping it loads the same

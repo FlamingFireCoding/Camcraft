@@ -4,10 +4,11 @@
 //! these files had to be re-pathed, and the app re-exports the whole
 //! tree so UI and integration paths compile untouched.
 //!
-//! What is NOT here, and why: the STL/OBJ/STEP importers (truck-bound,
-//! the design note keeps that seam in app) and the flecs singleton glue
-//! for units (crate::units in app - the enum itself moved to
-//! geometry::units at R0).
+//! What is NOT here, and why: the STL/OBJ importers and the import facade
+//! (the design note keeps that seam in app; since #917 the STEP and
+//! Solidcraft meshing through the solidcore kernel is here, in `step` and
+//! `solidcraft`) and the flecs singleton glue for units (crate::units in
+//! app - the enum itself moved to geometry::units at R0).
 //!
 //! Provenance: our own domain model, specced from public computational-
 //! geometry literature, RS-274 unit conventions and general CAD/CAM
@@ -26,4 +27,7 @@ pub mod profile_derive;
 pub mod profile_mesh;
 pub mod sketch_chains;
 pub mod solidcraft;
+#[cfg(not(target_arch = "wasm32"))]
+mod kernel_import;
+pub mod step;
 pub mod sketch_data;

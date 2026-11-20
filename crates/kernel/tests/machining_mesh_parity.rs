@@ -114,6 +114,7 @@ fn an_inward_solid_is_turned_outward_and_said() {
         "an outward box says nothing: {:?}",
         good.report.notes
     );
+    assert!(!good.report.turned_outward, "an outward box is not turned");
     let turned = inward(&text("box.step"));
     assert_ne!(turned, text("box.step"), "the senses were turned");
     let s = solid_of("box.step inward", &turned);
@@ -121,9 +122,13 @@ fn an_inward_solid_is_turned_outward_and_said() {
         .unwrap_or_else(|e| panic!("an inward closed box is the same box: {e}"));
     assert!(m.report.volume > 0.0);
     assert!((m.report.volume - good.report.volume).abs() <= good.report.volume * 1e-9);
+    // #917: the mesh says the turn as a flag; the STEP import gathers the
+    // flags of all solids into one note (#1617 wording), so the kernel
+    // adds no note of its own.
+    assert!(m.report.turned_outward, "the turn is said: {:?}", m.report.notes);
     assert!(
-        m.report.notes.iter().any(|n| n.contains("inward") && n.contains("turned outward")),
-        "the turn is said: {:?}",
+        !m.report.notes.iter().any(|n| n.contains("inward")),
+        "said once, by the import, not twice: {:?}",
         m.report.notes
     );
 }

@@ -15,15 +15,22 @@
 //!
 //! Prime Directive: the fallback only ever turns a refusal into the exact
 //! union, never a guess. Any facet that does not fit - a collapsed one, an
-//! edge used three or more times (two solids welded along an edge or face
-//! share it, so they cannot be told apart and stay one non-manifold body),
-//! an open or mixed-winding body, an inward (cavity) shell whose own section
-//! would read as material - and the caller keeps its non-manifold refusal.
+//! edge used an odd or unbalanced number of times, an edge used 2k times
+//! that is not closed solids touching along a wall (`shared_edge`, #917:
+//! one shell that meets itself, or solids welded only along the edge
+//! line), an open or mixed-winding body, an inward
+//! (cavity) shell whose own section would read as material - and the
+//! caller keeps its non-manifold refusal.
 
 use std::collections::HashMap;
 
 use crate::geo2d::Region;
-use crate::geometry::Triangle;
+use crate::geometry::{Point3, Triangle};
+use crate::geometry::shared_edge::{self, EdgeUse};
+
+/// One facet on a shared edge: its index, its direction along the edge
+/// (low -> high corner) and its third corner.
+type SharedUse = (usize, bool, u32);
 
 use super::slice::{SliceError, material_above, material_overhead, shadow_above};
 
@@ -70,6 +77,15 @@ impl Welder {
     }
 }
 
+fn union(parent: &mut [usize], a: usize, b: usize) {
+    let (ra, rb) = (root(parent, a), root(parent, b));
+    if ra != rb
+        && let Some(slot) = parent.get_mut(ra)
+    {
+        *slot = rb;
+    }
+}
+
 /// Union-find root with path halving; indices are always in range.
 fn root(parent: &mut [usize], mut i: usize) -> usize {
     while let Some(&p) = parent.get(i) {
@@ -107,17 +123,31 @@ pub(super) fn closed_solids(facets: &[Triangle]) -> Option<Vec<Vec<Triangle>>> {
             } else {
                 e.1 = e.1.saturating_add(1);
             }
-            let (ra, rb) = (root(&mut parent, e.2), root(&mut parent, i));
-            if ra != rb
-                && let Some(slot) = parent.get_mut(ra)
-            {
-                *slot = rb;
+        }
+    }
+    // Bodies link over plain edges (once each way). Closed and wound
+    // consistently: every edge is plain, or (#917) an edge that 2k facets
+    // use where closed solids touch along a wall (`shared_edge`).
+    let mut shared: HashMap<(u32, u32), Vec<SharedUse>> = HashMap::new();
+    for (i, [a, b, c]) in corners.iter().enumerate() {
+        for (p, q, r) in [(*a, *b, *c), (*b, *c, *a), (*c, *a, *b)] {
+            let key = if p < q { (p, q) } else { (q, p) };
+            match edges.get(&key) {
+                Some(&(1, 1, first)) => union(&mut parent, first, i),
+                Some(&(f, b, _)) if f == b && f >= 2 => shared.entry(key).or_default().push((i, p < q, r)),
+                _ => return None,
             }
         }
     }
-    // Closed and consistently wound: every edge once each way.
-    if edges.values().any(|&(f, b, _)| f != 1 || b != 1) {
-        return None;
+    let at = |v: u32| welder.pts.get(v as usize).map(|v| Point3::new(v[0], v[1], v[2]));
+    for ((lo, hi), on) in &shared {
+        let mut uses = Vec::with_capacity(on.len());
+        for &(i, forward, r) in on {
+            uses.push(EdgeUse { body: root(&mut parent, i), forward, apex: at(r)? });
+        }
+        if !shared_edge::solids_touch(at(*lo)?, at(*hi)?, &uses) {
+            return None;
+        }
     }
     let mut body_of_root: HashMap<usize, usize> = HashMap::new();
     let mut bodies: Vec<Vec<Triangle>> = Vec::new();

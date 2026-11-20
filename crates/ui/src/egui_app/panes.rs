@@ -1631,7 +1631,7 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // #2262: placed before the status line, which fills what is
             // left; behind it the label ran past the line onto the door.
             if ops_n > 0 {
-                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
+                ui.label(RichText::new(super::browser_tree::count(ops_n, "Operation")).color(pal.text_faint).small());
             }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())

@@ -3,8 +3,8 @@
 //! candidate engines can be asked for: primitive construction (box, Z
 //! cylinder), the three booleans (subtract, union, intersect), whole-solid
 //! offset, constant-radius edge blends (round, chamfer), healing, and a [`Measure`]
-//! (volume + bounding box) the bench compares. Nothing else in the workspace
-//! depends on this crate yet; truck stays the live engine.
+//! (volume + bounding box) the bench compares. camcraft-geometry depends on
+//! this crate for the STEP and Solidcraft import (#917, #1456).
 //!
 //! Why `measure` and not `tessellate`: solidcore 1.0.1 does not port SMLib's
 //! tessellation (its README lists it among the unported SM_API entry points),
@@ -13,8 +13,8 @@
 //! tessellation. The bench compares those numbers.
 //!
 //! Stage 4 (#916) adds a STEP importer on the solidcore side
-//! ([`solidcore_step`]), bench only: the app still imports through truck.
-//! #917 makes the pcurves the reader has no closed form for on the kernel
+//! ([`solidcore_step`]); since #917 the app imports every STEP model there,
+//! with the pcurves the reader has no closed form for made on the kernel
 //! ([`solidcore_trims`]).
 //! #940 adds the machining mesh of such a solid ([`machining_mesh`]):
 //! solidcore-tess at a chord in mm, every shortfall a named refusal, the
@@ -31,6 +31,7 @@
 
 mod error;
 pub mod machining_mesh;
+pub mod machining_mesh_open;
 mod measure;
 pub mod mesh_bound;
 mod mesh_bound_blossom;
@@ -42,9 +43,11 @@ mod solidcore_blend;
 pub mod solidcore_impl;
 pub mod solidcore_import;
 pub mod solidcore_step;
+mod solidcore_step_import;
 pub mod solidcore_trims;
 pub mod solidcraft;
 mod step_curve_guard;
+mod step_face_winding;
 #[cfg(feature = "truck")]
 pub mod truck_impl;
 
