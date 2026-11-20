@@ -153,6 +153,31 @@ fn outward_rounding_cannot_consume_the_required_lead_clearance() {
 }
 
 #[test]
+fn acute_corner_clearance_uses_the_largest_resident_offset_at_the_selected_height() {
+    let mut job = punch();
+    job.contour = vec![[-20., -10.], [30., 0.], [-20., 10.]];
+    // The miter at X30 grows with the rough offset. All three stock bounds
+    // pass the 0.4 mm straight-face check; only the height-specific miter distinguishes them.
+    for (height, right, fits) in [
+        (15., 31.430, true),
+        (20., 31.430, true),
+        (40., 31.430, false),
+        (40., 31.480, true),
+        (80., 31.480, false),
+        (80., 31.500, true),
+    ] {
+        job.stock_min[2] = -height;
+        job.stock_max[0] = right;
+        let result = contour::prepare(&job);
+        if fits {
+            result.unwrap();
+        } else {
+            assert!(result.unwrap_err().contains("rough corner"));
+        }
+    }
+}
+
+#[test]
 fn an_acute_miter_needs_more_stock_than_a_round_corner() {
     let mut job = punch();
     job.contour = vec![[-20., -10.], [30., 0.], [-20., 10.]];

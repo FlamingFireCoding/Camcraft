@@ -5,10 +5,23 @@ CamCraft writes the three native Agie files directly. The setup uses cold die st
 ## Post from the Wire EDM workspace
 
 1. Mount **AGIECUT Classic 2S (template)** as the setup machine. In the machine editor, open **EDM** and add a condition with ID **AGIE_QN2**, role **rough**, wire diameter **0.25 mm** and preview gap **0.005 mm**. Apply this change to the mounted machine. Choose **Agie native wire EDM** in the post picker.
-2. Define axis-aligned rectangular stock, 20 mm thick and at most 350 × 250 mm in plan. This span describes the stock. Verify the installed work datum and the available axis travel on Agie Control. CamCraft refuses profiles with a stated X or Y travel limit because its preview cannot check the full resident path against that limit. Put the first, unrotated work origin on the stock top. Its XY position determines the job coordinates.
-3. Use one modeled workpiece and create one **Wire Contour** on the complete punch model. Use a convex punch with straight sides, vertical walls and flat ends at the stock planes. Angled faces are supported. Leave at least 0.4 mm of stock around the nominal polygon. Acute corners can need more stock: the post also checks the intersection of the two offset face lines and the swept wire at that corner. On the tested 20 mm QN2 job, the rough wire centre ran 0.245 mm outside the punch. The stock margin includes the 0.125 mm wire radius. Additional bodies, selected subprofiles, holes, steps and concavities are refused. Select a 0.25 mm wire and condition **AGIE_QN2**. Set the work planes to the stock top and bottom, and specify how the punch is captured. The capture setting confirms support for the punch when it is released. Keep the wire vertical. Taper, four-axis, die cuts, burnout, explicit skims, tabs and fixture models are unsupported.
+2. Define axis-aligned rectangular stock at most 350 × 250 mm in plan. Choose a stock thickness of 15, 20, 40 or 80 mm. This span describes the stock. Verify the installed work datum and the available axis travel on Agie Control. CamCraft refuses profiles with a stated X or Y travel limit because its preview cannot check the full resident path against that limit. Put the first, unrotated work origin on the stock top. Its XY position determines the job coordinates.
+3. Use one modeled workpiece and create one **Wire Contour** on the complete punch model. Use a convex punch with straight sides, vertical walls and flat ends at the stock planes. Angled faces are supported. Leave at least 0.4 mm of stock around the nominal polygon. Acute corners can need more stock: the post also checks the intersection of the two offset face lines and the swept wire at that corner. CamCraft checks each corner with the rough offset for the selected stock thickness. The stock margin includes the 0.125 mm wire radius. Additional bodies, selected subprofiles, holes, steps and concavities are refused. Select a 0.25 mm wire and condition **AGIE_QN2**. Set the work planes to the stock top and bottom, and specify how the punch is captured. The capture setting confirms support for the punch when it is released. Keep the wire vertical. Taper, four-axis, die cuts, burnout, explicit skims, tabs and fixture models are unsupported.
 4. Place the centre of a predrilled 2 mm threading hole in the waste. The entire hole must be inside the stock. Allow a perpendicular approach to the interior of a straight outside face with at least 3 mm of lead and at least 3 mm of straight face on each side of the entry. Generate the operation.
 5. Open **Post**, choose **One program** and keep the general post settings at their defaults. Under **Agie technology**, set **Separation cut length (mm)** to **1.0**. Zero leaves the separation unspecified and blocks the post. This length applies to the separation segment that Agie Control generates. Check its position, trims and release sequence in the control’s job preview. Enter the parent folder and a fresh **Job folder name** such as `PUNCH40`. Use up to eight uppercase letters or digits, beginning with a letter. The post publishes the entire directory after validation. To retain an earlier job, give the new one a different name.
+
+### QN2 offsets by stock thickness
+
+Agie Control calculated these wire-centre offsets on the straight outside faces of a synthetic rectangular punch. All dimensions are in millimetres. The native job sends nominal geometry. The resident technology applies each offset.
+
+| Stock thickness | Rough | Trim 1 | Trim 2 | Trim 3 |
+| ---: | ---: | ---: | ---: | ---: |
+| 15 | 0.245 | 0.155 | 0.140 | 0.134 |
+| 20 | 0.245 | 0.155 | 0.140 | 0.134 |
+| 40 | 0.260 | 0.170 | 0.140 | 0.130 |
+| 80 | 0.266 | 0.176 | 0.143 | 0.133 |
+
+The clearance check rounds the rough offset plus the wire radius up to the next tenth of a millimetre. For these four heights this gives 0.4 mm on a straight face. At a pointed corner the post checks the miter for that height separately. Other heights require their own control measurements.
 
 ## Try the synthetic punch
 
