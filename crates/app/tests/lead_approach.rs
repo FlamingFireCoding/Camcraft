@@ -76,6 +76,7 @@ fn pocket_op(links: Links) -> OpParams {
         blend_turns: false,
         tilt: None,
         links,
+        corner_relief: Default::default(),
     }
 }
 

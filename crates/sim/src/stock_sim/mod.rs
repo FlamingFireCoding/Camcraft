@@ -87,6 +87,7 @@ mod dexel_bull;
 mod dexel_outline;
 mod deviate;
 mod edge_break;
+mod corner_relief;
 mod wall_anchor;
 // #1595: the mark an Engrave or Trace declared.
 mod mark;
@@ -149,6 +150,7 @@ pub use dexel::{reach, Dexel};
 pub use dexel_box::{simulate_box, BOX_ARC_REFUSAL};
 pub use dexel_outline::{simulate_outline, OUTLINE_ARC_REFUSAL};
 pub use edge_break::credit_breaks;
+pub use corner_relief::credit_corner_reliefs;
 pub use wall_anchor::{models_a_bevel, on_walls};
 pub use mark::{credit_marks, Mark};
 // The floor a mark must leave on the part's underside (#1595).

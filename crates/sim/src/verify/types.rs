@@ -166,6 +166,9 @@ pub struct VerifyContext<'a> {
     /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
     /// path, and a turning one no axis fits - reads as it always did.
     pub lathe_axis: Option<crate::stock_sim::LatheAxis>,
+    /// Declared corner relief zones (#2400) for inside-corner pockets and
+    /// slots, bounded strictly to cutter radius, pocket floor Z, and stock.
+    pub corner_reliefs: &'a [super::CornerReliefZone],
 }
 
 /// The inert tool of [`VerifyContext::default`].
@@ -204,6 +207,7 @@ impl Default for VerifyContext<'_> {
             model_excess: 0.0,
             rims: &[],
             lathe_axis: None,
+            corner_reliefs: &[],
         }
     }
 }
