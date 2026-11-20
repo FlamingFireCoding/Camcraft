@@ -12,7 +12,7 @@ use super::ladder::ladder;
 use crate::cl::Toolpath;
 use crate::geo2d::Region;
 use crate::geometry::Triangle;
-use crate::machining2d::{AdaptiveMethod, GenError};
+use crate::machining2d::{cut_levels_under, AdaptiveMethod, GenError};
 use crate::stock_sim::{Columns, StockReport};
 /// The per-level cutter plan and its walk, level after level - the 3-D
 /// sibling of `machining2d::pocket`'s run, with the passes recomputed
@@ -176,11 +176,13 @@ pub fn pocket3d_open_avoid(
 /// above `air_above` - where no part material can stand, so the
 /// level's target is its whole footprint - is cleared over
 /// `air_footprint`; every plane at or below it over `footprint`, exactly
-/// as [`pocket3d`] would. The planes are the one `cut_levels` ladder
-/// either way, and the second leg starts where the first ended (the
-/// rest ladder's chaining law), so the program differs from
-/// [`pocket3d`]'s only in what the air levels sweep. With no plane
-/// above `air_above` it IS [`pocket3d`], move for move.
+/// as [`pocket3d`] would. The planes are the one `cut_levels_under`
+/// ladder either way, and the second leg starts where the first ended
+/// (the rest ladder's chaining law). NO shallow-floor discovery (#2088):
+/// in the rotary wrap a flat face is a turned skin, not a blind floor,
+/// and a window whose only open level is the wrap top stays air. So with no plane above
+/// `air_above` it is [`pocket3d`] move for move only on a model with no
+/// flat floor between Top Z and the first level.
 pub fn pocket3d_air_split(
     facets: &[Triangle],
     air_footprint: &Region,
@@ -201,7 +203,7 @@ pub fn pocket3d_air_split(
         Some(Seam { lo: lo.x, hi: hi.x, period, reach })
     };
     let (sm_air, sm_cut) = (seam_of(air_footprint), seam_of(footprint));
-    let zs = cut_levels(facets, p, p.stepdown)?;
+    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let k = air_levels(&zs, air_above);
     if k == 0 || air_footprint.is_empty() {
         return ladder(facets, footprint, p, &zs, None, None, home(p), false, sm_cut.as_ref(), None, None, AdaptiveMethod::Spiral);

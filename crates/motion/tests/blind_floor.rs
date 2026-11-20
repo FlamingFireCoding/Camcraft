@@ -17,7 +17,7 @@ use camcraft_motion::geo2d::Region;
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::{Link, Links};
 use camcraft_motion::machining2d::PocketStrategy;
-use camcraft_motion::machining3d::{Entry3D, Pocket3DParams, material_above, pocket3d, pocket3d_offset};
+use camcraft_motion::machining3d::{Entry3D, Pocket3DParams, material_above, pocket3d, pocket3d_air_split, pocket3d_offset};
 use camcraft_motion::verify::{Mode, ToolGeom, VerifyContext, Warning, verify};
 
 /// Block half-width, hole half-width, block underside.
@@ -218,6 +218,21 @@ fn a_shallow_floor_keeps_stock_allowance_and_the_top_stock_level() {
             assert_eq!(first_gouge(&t, 3.0), None);
             assert_eq!(silent(&f, &region, &t), Vec::<Warning>::new());
         }
+    }
+}
+
+#[test]
+fn the_rotary_air_split_ladder_keeps_the_plain_level_law() {
+    // #2088 floor discovery is the 3D Pocket's only. The air-split ladder
+    // (the rotary wrap) keeps the plain law: the shallow hole that
+    // pocket3d now cuts at its floor gets no level here, and it refuses.
+    let f = block(3.0);
+    let region = camcraft_motion::geometry::slice::project(&f, 64).expect("silhouette");
+    let p = params(Entry3D::Plunge, PocketStrategy::Waterline, 4.0, ZB);
+    assert!(pocket3d(&f, &region, &p).is_ok(), "pocket3d cuts the shallow floor");
+    match pocket3d_air_split(&f, &region, &region, 100.0, None, &p) {
+        Err(camcraft_motion::machining2d::GenError::Empty(_)) => {}
+        other => panic!("the air-split ladder found a shallow floor level: {other:?}"),
     }
 }
 

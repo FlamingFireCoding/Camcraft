@@ -3,7 +3,10 @@
 **What was decided.** Add distinct heights from upward-facing, exactly flat
 triangles, plus `stock_to_leave`, strictly between Top Z and the first
 scheduled level below Top Z. Keep the regular levels. Use one helper for
-plain, offset-shell, open-side, air-split and rest generation. The rest pass
+plain, offset-shell, open-side and rest generation. The air-split ladder of
+the rotary wrap keeps the plain level law: there a flat face is a turned
+skin, and a window whose only open level is the wrap top stays air
+(`rotary_offset::the_height_window_names_the_stations_and_refuses_an_empty_one`). The rest pass
 uses its own half-stepdown. Keep the existing material targets, protected
 areas, entry checks and no-gouge checks. Refuse a level count above
 `MAX_PASSES`, while preserving an existing Top Z stock pass.
