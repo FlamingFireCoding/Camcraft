@@ -87,3 +87,25 @@ The examples select opposite sides of synthetic 80 × 60 × 20 mm stock. Each wr
 Keep all three files together. In the control’s file manager, open **Imp/exp** and import the ISO object into **ISO Sys**. Then import the SBL into **SBL Sys**, keeping the matching SBR beside the SBL. In the workpiece list choose **New workpiece → Script Files**, select the imported SBL and confirm with **OK**.
 
 Open the new piece and check the configuration data against the intended setup. Run **FORMALCHECK** and inspect both errors and warnings. Save and close the piece, then run **GRAFICHECK** on that piece. Check the installed XY datum, available axis travel, entry from the drilled hole and compensation on the waste side of each face. In the tested 20 mm punch job, the main rough pass and three trims left a 1 mm section. The control then returned to cut and trim that section. Check the sequence and arrange support for release. CamCraft does not command a manual pause before the section cut.
+
+### Punch from a placed DXF racetrack
+
+Create box stock, import one DXF profile, and place it on the stock face. Use
+the complete profile as the source for a captured vertical Wire Contour punch.
+The drawing must contain exactly two parallel straight lines and two tangent
+semicircular ARC entities of the same radius. Keep the radius between 0.5 and
+20 mm. For native posting, use 20 mm stock and place the straights parallel to
+X or Y. The cap centers and radius must fit the five-decimal native grid.
+Place the threading hole outside a straight side, at least 3 mm from it, with
+at least 3 mm of straight face on both sides of the perpendicular entry.
+
+The verified preview encloses each circular cap within 0.000025 mm. The native
+ISO file emits the nominal semicircles using their exact centers. The control
+applies its own wire offset. Regenerate the operation after moving the sketch.
+
+Run the translated, rotated example from the repository root with a fresh
+destination named `RACE20`.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/racetrack.camscript
+```

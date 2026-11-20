@@ -4,6 +4,7 @@ use super::*;
 fn punch() -> AgieJob {
     AgieJob {
         side: AgieSide::Punch,
+        racetrack: None,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
         start: Some([-30., 0.]),
         stock_min: [-40., -30., -20.],

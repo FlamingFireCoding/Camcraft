@@ -106,10 +106,20 @@ pub(super) fn post(
     let models = model::model_entities(world);
     let jobs = match operations.as_slice() {
         [(name, op)] => {
-            let [(source, _)] = models.as_slice() else {
-                return Err("Agie requires exactly one modeled workpiece for one active contour; additional models can intersect the controller path".into());
-            };
-            vec![operation::agie_job(world, op, name, source)?]
+            let sketches = crate::sketch::placed_in(world, setup);
+            if let ([], [profile]) = (models.as_slice(), sketches.as_slice()) {
+                vec![operation::agie_job(world, op, name, profile)?]
+            } else {
+                if !sketches.is_empty() {
+                    return Err(
+                        "Agie requires a single sketch or a single modeled workpiece".into(),
+                    );
+                }
+                let [(source, _)] = models.as_slice() else {
+                    return Err("Agie requires exactly one modeled workpiece for one active contour; additional models can intersect the controller path".into());
+                };
+                vec![operation::agie_job(world, op, name, source)?]
+            }
         }
         [(_, left), (_, right)] => {
             let sources = [&left.src, &right.src].map(|src| match src {

@@ -117,6 +117,7 @@ mod thread_r_plane;
 mod thread_boss;
 pub mod wire_op;
 mod agie_profile;
+mod wire_sketch;
 pub(crate) use agie_profile::agie_job;
 mod wire_ruled;
 // #534: the wire laws' inputs, read live at the post.

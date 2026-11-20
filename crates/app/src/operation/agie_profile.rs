@@ -131,6 +131,21 @@ pub(crate) fn agie_job(
     }
     // Both caps of the complete source model have the exact planar outline.
     // A union of sampled slices can add rounded vertices along a sloping face.
+    if let Some(placed) = super::wire_sketch::placed(world, op)? {
+        let mut shape = placed.shape;
+        for p in &mut shape.centers {
+            p.x -= ox;
+            p.y -= oy;
+        }
+        return Ok(agie::AgieJob {
+            side,
+            racetrack: Some(shape),
+            contour: Vec::new(),
+            start: wire.start.map(|p| [p[0] - ox, p[1] - oy]),
+            stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],
+            stock_max: [hi.x - ox, hi.y - oy, hi.z - oz],
+        });
+    }
     let region = crate::geometry::closed_vertical_prism(&job.material.facets, lo.z, hi.z).map_err(
         |why| format!("Agie requires one closed vertical prism spanning the stock height: {why}"),
     )?;
@@ -228,6 +243,7 @@ pub(crate) fn agie_job(
     };
     Ok(agie::AgieJob {
         side,
+        racetrack: None,
         contour: contour.iter().map(|p| [p.x - ox, p.y - oy]).collect(),
         start: wire.start.map(|p| [p[0] - ox, p[1] - oy]),
         stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],

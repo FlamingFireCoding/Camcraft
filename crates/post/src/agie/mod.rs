@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 mod contour;
 mod cutoff;
 mod jescript;
+mod racetrack;
 
 /// The closed cycle or the kerf side of a directed open cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,7 @@ impl AgieSide {
 pub struct AgieJob {
     pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
+    pub racetrack: Option<camcraft_geometry::wire_racetrack::Racetrack>,
     pub start: Option<[f64; 2]>,
     pub stock_min: [f64; 3],
     pub stock_max: [f64; 3],
@@ -67,6 +69,7 @@ struct Work {
     side: AgieSide,
     geometry: String,
     points: Vec<[f64; 2]>,
+    arc_centers: Vec<Option<[f64; 2]>>,
     entry: [f64; 2],
     exit: Option<[f64; 2]>,
     // Bounds of the captive solid, full threading corridor, separation and swept wire.
@@ -81,6 +84,9 @@ impl Work {
         }
         if !job.side.is_open() && separation != 1.0 {
             return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
+        }
+        if let Some(shape) = job.racetrack {
+            return racetrack::prepare(job, shape, geometry);
         }
         let (points, entry, exit, reach) = if job.side.is_open() {
             let cut = cutoff::prepare(job)?;
@@ -110,6 +116,7 @@ impl Work {
             side: job.side,
             geometry,
             points,
+            arc_centers: Vec::new(),
             entry,
             exit,
             min,
@@ -136,6 +143,7 @@ pub fn export_works(
         if jobs.len() != 2
             || jobs.iter().any(|job| {
                 job.side != AgieSide::Punch
+                    || job.racetrack.is_some()
                     || job.stock_min != first.stock_min
                     || job.stock_max != first.stock_max
                     || job.stock_min[2] != -20.0
@@ -171,7 +179,7 @@ pub fn export_works(
     for work in &works {
         let iso_name = format!("{}.ISO", work.geometry);
         resources.push_str(&format!("AGIE.USING_{iso_name} IMPORT {iso_name};\r\n"));
-        files.push((iso_name.clone(), iso(&iso_name, &work.points)));
+        files.push((iso_name.clone(), iso(&iso_name, work)));
     }
     files.push((format!("{program}.SBR"), resources));
     files.push((
@@ -181,9 +189,24 @@ pub fn export_works(
     publish(destination, &files)
 }
 
-fn iso(iso_name: &str, points: &[[f64; 2]]) -> String {
+fn iso(iso_name: &str, work: &Work) -> String {
+    let points = &work.points;
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().enumerate() {
+        if let (Some(Some(center)), Some(start)) = (
+            work.arc_centers.get(i),
+            i.checked_sub(1).and_then(|prev| points.get(prev)),
+        ) {
+            iso.push_str(&format!(
+                "N{:04} G03 X{:.5} Y{:.5} I{:.5} J{:.5} ;\r\n",
+                i + 1,
+                point[0],
+                point[1],
+                center[0] - start[0],
+                center[1] - start[1]
+            ));
+            continue;
+        }
         let motion = if i == 0 { "G00" } else { "G01" };
         iso.push_str(&format!(
             "N{:04} {motion} X{:.5} Y{:.5} ;\r\n",
