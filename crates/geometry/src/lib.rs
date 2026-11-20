@@ -31,3 +31,5 @@ pub mod solidcraft;
 mod kernel_import;
 pub mod step;
 pub mod sketch_data;
+// #2679: typed text as single-line engraving strokes.
+pub mod stroke_text;
