@@ -8,8 +8,10 @@ uses its own half-stepdown. Keep the existing material targets, protected
 areas, entry checks and no-gouge checks. Refuse a level count above
 `MAX_PASSES`, while preserving an existing Top Z stock pass.
 
-Stack this change on PR #2149 because both changes touch the same functions.
-Preserve its protected-face integration. Do not merge main into the parent.
+This change was stacked on PR #2149 because both changes touch the same
+functions. PR #2149 merged to main. The branch then took a merge of main.
+That merge keeps the shared `cut_levels` helper and main's `AdaptiveMethod`
+argument on each ladder call. The protected-face integration is main's own.
 Use `issue/2088-shallow-floor-levels` for this change. Preserve the older
 `issue/2088-pocket3d-shallow-blind-floor` branch from closed PR #2141.
 
