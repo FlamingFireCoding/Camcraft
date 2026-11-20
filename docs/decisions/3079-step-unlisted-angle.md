@@ -11,6 +11,21 @@ that the reader builds, and to the items that the reader fails to read.
 For a failed item the unit reason replaces the read message, because the
 wrong angle unit is the first cause of the failure.
 
+**Extended at the takeover review:** an item whose context states no plane
+angle unit is refused the same way, when the file states an angle unit that
+is not the radian. The reader gives that item the default units too, so its
+angles are read in radians. The refusal names the item and its context.
+`UnlistedAngles` now keeps each item's context by the reader's rules (the
+first representation that lists it with a context; a piece of a solid in
+that solid's context) and the contexts that state a plane angle unit. This
+is the same shape as the length rule of #2919
+(`crates/kernel/src/step_length_units.rs`). An item is kept when its
+context states an angle unit, or when every stated angle unit is the radian,
+or when no angle unit is stated. Pins:
+`item_in_a_context_with_no_angle_unit_in_a_degree_file_is_refused_by_name`
+and the control
+`item_in_a_context_with_no_angle_unit_in_a_radian_file_is_kept`.
+
 **Why:** The reader gives an item with no context the default units: its
 angles are read in radians. In a file that states degrees, the item then
 has wrong geometry. That is a silent wrong answer (Prime Directive). The

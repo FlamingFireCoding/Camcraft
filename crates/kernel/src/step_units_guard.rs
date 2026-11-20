@@ -5,15 +5,16 @@
 //! plane angle unit that the reader cannot convert to radians, or an angle
 //! unit that does not say that it is one, is refused by name: the reader
 //! would read its angles as radians without a word. For the same reason, a
-//! solid item with no unit context is refused when the file states an angle
-//! unit that is not the radian (#3079).
+//! solid item with no unit context, or in a context that states no angle
+//! unit, is refused when the file states an angle unit that is not the
+//! radian (#3079).
 //! Provenance: the public ISO short-name registry
 //! (https://standards.iso.org/iso/10303/tech/short_names/short-names.txt) and
 //! ISO 10303-41 (NAMED_UNIT, SI_UNIT, CONVERSION_BASED_UNIT,
 //! PLANE_ANGLE_UNIT, PLANE_ANGLE_MEASURE_WITH_UNIT). Read through the public
 //! p21 API of solidcore-step. No HSMWorks material consulted.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use solidcore_step::p21::{Entity, Exchange, Param};
 use solidcore_step::topology;
@@ -114,52 +115,86 @@ fn measures_angle(ex: &Exchange, unit: &Entity) -> bool {
         .is_some_and(|b| b.has("PLANE_ANGLE_UNIT") || si_name(b) == Some("RADIAN"))
 }
 
-/// The solid items that the reader reads with no unit context, judged by the
-/// angle unit (#3079). Such an item takes the default units, its angles in
-/// radians. That is right only when the file states no other angle unit.
+/// The solid items whose angles the reader reads in radians by default,
+/// judged by the angle unit (#3079). That is an item with no unit context,
+/// or one whose context states no plane angle unit: the reader gives it the
+/// default units, its angles in radians. That is right only when the file
+/// states no angle unit that is not the radian.
 pub(crate) struct UnlistedAngles {
     /// The first stated plane angle unit that is not the radian.
     unit: Option<u64>,
-    /// The items that a representation with a context lists, and the
-    /// pieces of each such solid (they take its context in the reader).
-    listed: HashSet<u64>,
+    /// Each item's context, by the reader's own rules: the first
+    /// representation by entity id that lists it with a context, and each
+    /// piece of a listed solid in that solid's context.
+    context_of: HashMap<u64, u64>,
+    /// The unit contexts that state a plane angle unit.
+    stating: HashSet<u64>,
 }
 
 impl UnlistedAngles {
     pub(crate) fn new(ex: &Exchange) -> UnlistedAngles {
         let mut ids: Vec<u64> = ex.entities.keys().copied().collect();
         ids.sort_unstable();
-        let mut listed = HashSet::new();
+        let mut context_of = HashMap::new();
+        let mut stating = HashSet::new();
         let mut unit = None;
         for &id in &ids {
             let Some(e) = ex.get(id) else { continue };
-            if let Some((items, Some(_))) = representation(e) {
-                listed.extend(items);
+            if let Some((items, Some(ctx))) = representation(e) {
+                for item in items {
+                    context_of.entry(item).or_insert(ctx);
+                }
+            }
+            if states_angle(ex, e) {
+                stating.insert(id);
             }
             if unit.is_none() {
                 unit = non_radian_unit(ex, e);
             }
         }
-        let solids: Vec<u64> = listed
-            .iter()
-            .copied()
-            .filter(|&s| ex.get(s).is_some_and(|e| topology::is_solid_item(e.name())))
-            .collect();
-        for s in solids {
-            listed.extend(topology::items(ex, s));
+        for &id in &ids {
+            if !ex.get(id).is_some_and(|e| topology::is_solid_item(e.name())) {
+                continue;
+            }
+            let Some(ctx) = context_of.get(&id).copied() else { continue };
+            for piece in topology::items(ex, id) {
+                if piece != id {
+                    context_of.insert(piece, ctx);
+                }
+            }
         }
-        UnlistedAngles { unit, listed }
+        UnlistedAngles { unit, context_of, stating }
     }
 
-    /// `Some(reason)`: item `item` has no unit context, but the file states
-    /// an angle unit that is not the radian, so its angles would be wrong.
+    /// `Some(reason)`: item `item` has no unit context, or its context
+    /// states no plane angle unit, but the file states an angle unit that
+    /// is not the radian, so its angles would be wrong.
     pub(crate) fn refusal(&self, item: u64) -> Option<String> {
-        let unit = self.unit.filter(|_| !self.listed.contains(&item))?;
-        Some(format!(
-            "no representation gives it a unit context, so its angles would be read in radians, \
-             but the file states plane angle unit #{unit}, which is not the radian"
-        ))
+        let unit = self.unit?;
+        match self.context_of.get(&item) {
+            Some(c) if self.stating.contains(c) => None,
+            Some(c) => Some(format!(
+                "its context #{c} states no plane angle unit, so its angles would be read in \
+                 radians, but the file states plane angle unit #{unit}, which is not the radian"
+            )),
+            None => Some(format!(
+                "no representation gives it a unit context, so its angles would be read in radians, \
+                 but the file states plane angle unit #{unit}, which is not the radian"
+            )),
+        }
     }
+}
+
+/// Whether unit context `e` states a plane angle unit.
+fn states_angle(ex: &Exchange, e: &Entity) -> bool {
+    e.record("GLOBAL_UNIT_ASSIGNED_CONTEXT")
+        .and_then(|r| r.first())
+        .and_then(Param::as_list)
+        .is_some_and(|list| {
+            list.iter()
+                .filter_map(Param::as_ref_id)
+                .any(|u| ex.get(u).is_some_and(|unit| unit.has("PLANE_ANGLE_UNIT")))
+        })
 }
 
 /// The first plane angle unit of unit context `e` that is not the radian.

@@ -323,6 +323,54 @@ fn unlisted_item_in_a_radian_file_is_kept() {
     assert!((solids[0].volume - 1.0).abs() < 1e-8, "a 1 mm cube: {:?}", solids[0]);
 }
 
+/// Representation #10 moved to the context #990, which states no unit.
+fn in_unitless_context(text: &str) -> String {
+    let out = text.replace(
+        "#10 = ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #11);",
+        "#10 = ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #990);\n\
+         #990 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('', '') );",
+    );
+    assert_ne!(out, text, "the fixture must list the solid #16 in context #11");
+    out
+}
+
+/// #3079 review: the cone #16 sits in the context #990, which states no
+/// angle unit, while the context #11 states degrees. The reader would read
+/// its semi-angle in radians, so it must refuse #16, whether the cone then
+/// fails to read (1.0 read as radians) or reads cleanly (1 degree written
+/// as radians).
+#[test]
+fn item_in_a_context_with_no_angle_unit_in_a_degree_file_is_refused_by_name() {
+    let base = in_unitless_context(CONE);
+    let clean = base.replace(
+        "CONICAL_SURFACE('', #70, 10.0, 1.0)",
+        "CONICAL_SURFACE('', #70, 10.0, 0.017453292519943295)",
+    );
+    assert_ne!(clean, base, "the fixture must have the cone");
+    for text in [base, clean] {
+        match import(&text) {
+            Err(KernelError::InvalidResult { detail, .. }) => assert!(
+                detail.contains("#16") && detail.contains("context #990 states no plane angle unit"),
+                "the refusal must name the item and its context: {detail}"
+            ),
+            other => panic!("an item with no angle unit in a degree file must be refused, got {other:?}"),
+        }
+    }
+}
+
+/// #3079 review control: in a millimetre file that states the radian, an
+/// item in a context with no unit is kept: the default angle unit is the
+/// stated one.
+#[test]
+fn item_in_a_context_with_no_angle_unit_in_a_radian_file_is_kept() {
+    let mm = METRE.replace("SUNT($,.METRE.)", "SUNT(.MILLI.,.METRE.)");
+    assert_ne!(mm, METRE, "the fixture must state the metre");
+    let (solids, units) = import(&in_unitless_context(&mm)).expect("a radian file keeps the item");
+    assert_eq!(units, [1.0], "the file states millimetres");
+    assert_eq!(solids.len(), 1, "the cube must import");
+    assert!((solids[0].volume - 1.0).abs() < 1e-8, "a 1 mm cube: {:?}", solids[0]);
+}
+
 #[test]
 fn long_name_context_controls_import_with_correct_scale() {
     for (text, size) in [(INCH, 25.4), (METRE, 1000.0)] {
