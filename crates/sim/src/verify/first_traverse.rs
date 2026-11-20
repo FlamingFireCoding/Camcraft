@@ -115,6 +115,9 @@ pub struct SweptSteel<'a> {
 /// on a horizontal axis reads the start's radius over the axis line.
 /// A tool axis that no turn about `ax` stands upright reads the lowest
 /// height the turn can carry the start to.
+/// The post rapids Z to the higher of `clearance` (the operation's
+/// clearance height, a machine Z; `-inf` when none) and that start
+/// height before the X/Y traverse, so the law reads the higher one.
 /// `rides` are the start stock's and the part's points in the part
 /// frame. `None` when the start stands at or over both tops within
 /// `z_tol`, or when the start is not finite.
@@ -122,6 +125,7 @@ pub struct SweptSteel<'a> {
 pub fn first_traverse_low_swept(
     start: Point3,
     tool_axis: [f64; 3],
+    clearance: f64,
     ax: &RotaryAxis,
     rides: &[Point3],
     steel: SweptSteel<'_>,
@@ -149,6 +153,9 @@ pub fn first_traverse_low_swept(
     let stock_top = finite_max(&mut rides.iter().map(|q| swept_top(*q, ax)));
     let turning = finite_max(&mut steel.turning.iter().map(|b| box_top(b, |p| swept_top(p, ax))));
     let fixed = finite_max(&mut steel.fixed.iter().map(|b| box_top(b, |p| p.z)));
+    // The post rapids Z to the higher of the clearance height and the
+    // start, and traverses X/Y there.
+    let height = if clearance.is_finite() { height.max(clearance) } else { height };
     verdict(height, stock_top, turning.max(fixed), z_tol)
 }
 
@@ -208,6 +215,7 @@ mod tests {
     }
 
     const NO_STEEL: SweptSteel<'static> = SweptSteel { turning: &[], fixed: &[] };
+    const NONE: f64 = f64::NEG_INFINITY;
 
     #[test]
     fn a_turned_bar_is_read_at_its_corner_radius_not_its_upright_top() {
@@ -215,11 +223,11 @@ mod tests {
         assert!((swept_top(Point3::new(0.0, 20.0, 20.0), &A) - top).abs() < 1e-12);
         // Upright the bar's top is Z20, so Z25 clears it; turned 45 deg
         // its edge stands at Z28.284 and the traverse runs through it.
-        let w = first_traverse_low_swept(Point3::new(5.0, 0.0, 25.0), [0.0, 0.0, 1.0], &A, &square_bar(), NO_STEEL, 1e-6);
+        let w = first_traverse_low_swept(Point3::new(5.0, 0.0, 25.0), [0.0, 0.0, 1.0], NONE, &A, &square_bar(), NO_STEEL, 1e-6);
         let Some(Warning::FirstTraverseLow { at: 0, height_mm, top_mm, fixture: false }) = w else { panic!("{w:?}") };
         assert!((height_mm - 25.0).abs() < 1e-12 && (top_mm - top).abs() < 1e-12, "{w:?}");
         assert!(w.is_some_and(|w| w.blocks_post()));
-        assert_eq!(first_traverse_low_swept(Point3::new(5.0, 0.0, 30.0), [0.0, 0.0, 1.0], &A, &square_bar(), NO_STEEL, 1e-6), None);
+        assert_eq!(first_traverse_low_swept(Point3::new(5.0, 0.0, 30.0), [0.0, 0.0, 1.0], NONE, &A, &square_bar(), NO_STEEL, 1e-6), None);
     }
 
     #[test]
@@ -228,7 +236,7 @@ mod tests {
         let radial = [0.0, s, s];
         for (r, refused) in [(25.0, true), (30.0, false)] {
             let start = Point3::new(5.0, r * s, r * s);
-            let w = first_traverse_low_swept(start, radial, &A, &square_bar(), NO_STEEL, 1e-6);
+            let w = first_traverse_low_swept(start, radial, NONE, &A, &square_bar(), NO_STEEL, 1e-6);
             match w {
                 Some(Warning::FirstTraverseLow { height_mm, fixture: false, .. }) if refused => assert!((height_mm - r).abs() < 1e-9, "{w:?}"),
                 None if !refused => {}
@@ -244,13 +252,13 @@ mod tests {
         let start = Point3::new(5.0, 0.0, 60.0);
         let up = [0.0, 0.0, 1.0];
         let turning = SweptSteel { turning: &[chuck], fixed: &[] };
-        let w = first_traverse_low_swept(start, up, &A, &square_bar(), turning, 1e-6);
+        let w = first_traverse_low_swept(start, up, NONE, &A, &square_bar(), turning, 1e-6);
         let Some(Warning::FirstTraverseLow { top_mm, fixture: true, .. }) = w else { panic!("{w:?}") };
         assert!((top_mm - 50.0 * 2f64.sqrt()).abs() < 1e-9, "the chuck's corner radius: {top_mm}");
         // The same box standing still: its top is Z45, not its radius 46.1.
         let fixed = SweptSteel { turning: &[], fixed: &[tail] };
-        assert_eq!(first_traverse_low_swept(Point3::new(5.0, 0.0, 45.5), up, &A, &square_bar(), fixed, 1e-6), None);
-        let w = first_traverse_low_swept(Point3::new(5.0, 0.0, 40.0), up, &A, &square_bar(), fixed, 1e-6);
+        assert_eq!(first_traverse_low_swept(Point3::new(5.0, 0.0, 45.5), up, NONE, &A, &square_bar(), fixed, 1e-6), None);
+        let w = first_traverse_low_swept(Point3::new(5.0, 0.0, 40.0), up, NONE, &A, &square_bar(), fixed, 1e-6);
         assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 40.0, top_mm: 45.0, fixture: true }));
     }
 
@@ -260,12 +268,15 @@ mod tests {
         assert_eq!(swept_top(Point3::new(30.0, 0.0, 7.0), &vertical), 7.0);
         // A radial live tool beside a C axis: no turn stands it upright,
         // so its start is read at its own Z, which a C turn keeps.
-        let w = first_traverse_low_swept(Point3::new(30.0, 0.0, 7.0), [1.0, 0.0, 0.0], &vertical, &[Point3::new(0.0, 0.0, 10.0)], NO_STEEL, 1e-6);
+        let w = first_traverse_low_swept(Point3::new(30.0, 0.0, 7.0), [1.0, 0.0, 0.0], NONE, &vertical, &[Point3::new(0.0, 0.0, 10.0)], NO_STEEL, 1e-6);
         assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 7.0, top_mm: 10.0, fixture: false }));
+        // The same start under a clearance height of 12: the post
+        // traverses at Z12, over the top.
+        assert_eq!(first_traverse_low_swept(Point3::new(30.0, 0.0, 7.0), [1.0, 0.0, 0.0], 12.0, &vertical, &[Point3::new(0.0, 0.0, 10.0)], NO_STEEL, 1e-6), None);
         let leaning = RotaryAxis { origin: Point3::new(0.0, 0.0, 0.0), dir: [1.0, 0.0, 1.0] };
         assert!((swept_top(Point3::new(0.0, 10.0, 0.0), &leaning) - 10.0 * 0.5f64.sqrt()).abs() < 1e-12);
         let nan = Point3::new(f64::NAN, 0.0, 0.0);
-        assert_eq!(first_traverse_low_swept(nan, [0.0, 0.0, 1.0], &A, &square_bar(), NO_STEEL, 1e-6), None);
-        assert_eq!(first_traverse_low_swept(Point3::new(0.0, 0.0, 1.0), [0.0, 0.0, 1.0], &A, &[], NO_STEEL, 1e-6), None);
+        assert_eq!(first_traverse_low_swept(nan, [0.0, 0.0, 1.0], NONE, &A, &square_bar(), NO_STEEL, 1e-6), None);
+        assert_eq!(first_traverse_low_swept(Point3::new(0.0, 0.0, 1.0), [0.0, 0.0, 1.0], NONE, &A, &[], NO_STEEL, 1e-6), None);
     }
 }

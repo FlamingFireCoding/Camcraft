@@ -10,8 +10,8 @@
 //! - A 5-axis kind reads its tip in the part frame: a far clamp over
 //!   the clearance plane holds the post; the same clamp under it does
 //!   not add the verdict.
-//! - A cross drill on a mill starts on its hole's line, at the hole's
-//!   height, under the stock top: the post is held by name.
+//! - A cross drill on a mill is refused by name before any traverse
+//!   (radial holes are live-tooling work).
 //!
 //! Provenance: our own fixtures (the rotary suite's turned bar, the
 //! multi-axis suite's dome, the cross-drill suite's punched bar); the
@@ -178,8 +178,12 @@ fn a_5_axis_kind_reads_a_far_clamp_over_its_clearance_plane() {
     assert_eq!(first_low(&warns), None, "a clamp under the plane: {warns:?}");
 }
 
+/// A cross drill on a mill never reaches a first traverse: radial holes
+/// are live-tooling work, and generation refuses them by name. The
+/// lathe and mill-turn cross drill is outside the mill law (decision
+/// #2965).
 #[test]
-fn a_cross_drill_on_a_mill_starts_under_the_stock_top_and_is_held() {
+fn a_cross_drill_on_a_mill_is_refused_before_any_traverse() {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
     tool(&world, &mut h, "DR-0400");
@@ -203,11 +207,8 @@ fn a_cross_drill_on_a_mill_starts_under_the_stock_top_and_is_held() {
         holes: vec![],
         cross: vec![hole()],
     };
-    let (status, warns) = generate(&world, &mut h, "DR-0400", "B", p);
-    assert_eq!(status, OpStatus::Ok, "{warns:?}");
-    let (at, height, top, fixture) = first_low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict in {warns:?}"));
-    assert_eq!((at, fixture), (0, false));
-    assert!(height.abs() < 1e-6, "the start stands on the hole's line at z 0: {height}");
-    assert!((top - punched_bar::TOP).abs() < 1e-6, "the bar stock's top: {top}");
-    held_by_name(&world, "under the stock top at Z20.000");
+    h.execute(&world, CreateOperation::new(&world, "OP", "DR-0400", SrcRef::Entity("B".into()), p).expect("create"));
+    let err = GenerateOperation::new(&world, "OP").err().map(|e| format!("{e:?}")).unwrap_or_default();
+    assert!(err.contains("OP") && err.contains("live-tooling work"), "refused by name: {err}");
+    assert!(posting::post_setup_unwritten(&world).is_err(), "no program posts");
 }

@@ -24,6 +24,10 @@ pub(super) struct Over<'a> {
     /// law then reads the work swept about it. `None` for every other
     /// kind.
     pub turned: Option<Turned<'a>>,
+    /// The operation's clearance height in the path's frame. The post
+    /// rapids Z to the higher of it and the start before the X/Y
+    /// traverse (`traverseZ`); the #2965 kinds read that height.
+    pub clearance: f64,
 }
 
 /// What a rotary kind's first traverse is judged against (#2965): the
@@ -94,14 +98,17 @@ pub(super) fn newly_judged(params: &OpParams) -> bool {
 /// The rotary kinds' law (#2965): the path's first point and its tool
 /// axis, carried to the world when the path is in a tilted frame, read
 /// against the work swept about its axis.
-fn judge_turned(path: &Toolpath, frame: Option<&TiltedFrame>, t: &Turned<'_>) -> Option<Warning> {
+fn judge_turned(path: &Toolpath, frame: Option<&TiltedFrame>, clearance: f64, t: &Turned<'_>) -> Option<Warning> {
     let first = path.moves.first()?;
     let (start, axis) = match frame {
         Some(f) => (f.to_world(first.from), f.axis),
         None => (first.from, first.axis.unwrap_or([0.0, 0.0, 1.0])),
     };
     let steel = verify::SweptSteel { turning: t.turning, fixed: t.fixed };
-    verify::first_traverse_low_swept(start, axis, &t.axis, t.rides, steel, Z_TOL)
+    // A tilted frame's clearance is a local height: carried to the world
+    // it is no Z, so only the upright path's clearance lifts the start.
+    let clearance = if frame.is_some() { f64::NEG_INFINITY } else { clearance };
+    verify::first_traverse_low_swept(start, axis, clearance, &t.axis, t.rides, steel, Z_TOL)
 }
 
 /// Whether the machine reaches a 3+2 pose only by turning the WORK
@@ -159,7 +166,20 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
     // turns, so only the tip law reads it. On one whose work alone
     // tilts, the post writes machine heights, so only the swept law.
     // An unstated machine, or a mixed one, answers to both.
-    let swept = over.turned.as_ref().filter(|_| !tilting(false)).and_then(|t| judge_turned(path, frame, t));
+    let swept = over.turned.as_ref().filter(|_| !tilting(false)).and_then(|t| judge_turned(path, frame, over.clearance, t));
+    // The #2965 kinds' start, lifted to the height the post traverses
+    // at. A rotary or multi-axis path opens at its own pose (a radial
+    // clearance about the axis), which can stand under the plane.
+    let lifted;
+    let path = match path.moves.first() {
+        Some(m) if newly_judged(params) && over.clearance.is_finite() && m.from.z < over.clearance => {
+            let mut m = *m;
+            m.from.z = over.clearance;
+            lifted = Toolpath::new(vec![m]);
+            &lifted
+        }
+        _ => path,
+    };
     let tip_judged = over.turned.is_none() || !tilting(true);
     let mut note = None;
     let w = match frame {

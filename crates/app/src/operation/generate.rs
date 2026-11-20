@@ -3366,7 +3366,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             super::clearance_stock::acquit(&path, mode, &reread, Some(&mut verify_prior), &mut warns);
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, stock_top_z, false, &warns);
             // #2901: the first traverse comes from an unknown X/Y.
-            let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned };
+            let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance };
             super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, None, &over, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
@@ -3717,7 +3717,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, st_local, true, &warns);
             // #2901: the first traverse, read along the plane's tool axis.
             // #2987: the table read where the tool can meet it.
-            let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned };
+            let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance };
             let table_note = super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, Some(f), &over, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
