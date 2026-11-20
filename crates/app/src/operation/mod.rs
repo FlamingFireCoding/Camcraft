@@ -240,7 +240,6 @@ pub mod kept_rejudge;
 // #864: what a kind's gouge laws need of its model's fidelity.
 pub(crate) mod fidelity_law;
 mod clearance_stock;
-mod first_traverse;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.

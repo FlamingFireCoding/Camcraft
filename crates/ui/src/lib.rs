@@ -16,9 +16,6 @@
 // First, so every module below sees its macros (`diag_warn!`, `diag_info!`).
 #[macro_use]
 pub mod diag;
-pub mod display_mode;
-pub mod draw_list;
-pub(crate) mod look_at;
 
 pub mod cli_options;
 #[cfg(test)]

@@ -278,32 +278,6 @@ fn layout_page_setup_tools() {
 
 /// The Debug info panel (a dock tab since #2262): inside the screen, its
 /// Copy button inside its tab's leaf.
-/// #2384: the start page stands where the dock stands, below the
-/// ribbon and above the status strip; its heading, the list and the
-/// actions stack top to bottom from the left.
-#[test]
-fn layout_page_home() {
-    use super::super::home::{OPEN, TITLE};
-    let mut h = shell_harness();
-    h.state_mut().state.recent = Default::default();
-    h.run();
-    h.get_by_role_and_label(egui::accesskit::Role::Button, super::super::home::HOME).click();
-    h.run_steps(2);
-    let band = h.get_by_role_and_label(egui::accesskit::Role::Button, "Donate").rect();
-    let screen = h.ctx.content_rect();
-    let mut last: Option<(&str, f32)> = None;
-    for a in [TITLE, super::super::home::NO_RECENT, OPEN] {
-        let r = h.query_all_by_label(a).next().unwrap_or_else(|| panic!("home page: no widget labelled {a:?}")).rect();
-        assert!(r.top() > band.bottom(), "home page: {a:?} {r:?} is below the top band");
-        assert!(r.bottom() < screen.bottom(), "home page: {a:?} {r:?} is on the screen");
-        assert!(r.left() < screen.center().x, "home page: {a:?} {r:?} starts in the left half");
-        if let Some((prev, y)) = last {
-            assert!(r.top() >= y, "home page: {a:?} is not below {prev:?}");
-        }
-        last = Some((a, r.bottom()));
-    }
-}
-
 #[test]
 fn layout_window_debug_info() {
     let _g = snapshot_guard();

@@ -34,32 +34,12 @@ fn a_flipped_choice_round_trips_through_the_file() {
     let d = dir("roundtrip");
     let file = file_in(&d);
     assert_eq!(view::load(&file), (ViewPrefs::default(), None), "no file yet: quiet defaults");
-    view::save(&file, &ViewPrefs { show_gizmo_names: false, ..ViewPrefs::default() }).expect("save creates the file");
+    view::save(&file, &ViewPrefs { show_gizmo_names: false }).expect("save creates the file");
     let (prefs, note) = view::load(&file);
     assert!(!prefs.show_gizmo_names, "the restart reads the choice back");
     assert_eq!(note, None, "a good file says nothing");
-    view::save(&file, &ViewPrefs { show_gizmo_names: true, ..ViewPrefs::default() }).expect("flip back");
+    view::save(&file, &ViewPrefs { show_gizmo_names: true }).expect("flip back");
     assert!(view::load(&file).0.show_gizmo_names, "and back on survives too");
-}
-
-/// #2818: the display mode and the grid switch ride the same file. An old
-/// file without the keys loads the defaults and says nothing.
-#[test]
-fn the_display_mode_and_the_grid_round_trip_and_an_old_file_loads_the_defaults() {
-    let d = dir("display");
-    let file = file_in(&d);
-    let chosen = ViewPrefs { show_gizmo_names: true, display: "wireframe".into(), show_grid: false };
-    view::save(&file, &chosen).expect("save");
-    assert_eq!(view::load(&file), (chosen, None), "the choice reads back");
-    std::fs::write(&file, format!(r#"{{"format":"{FORMAT}","view":{{"show_gizmo_names":false}}}}"#))
-        .expect("write the old file");
-    let (old, note) = view::load(&file);
-    assert_eq!(old.display, view::DEFAULT_DISPLAY, "an old file loads the default mode");
-    assert!(old.show_grid, "and the grid that it always had");
-    assert!(!old.show_gizmo_names, "the key that it has still reads");
-    assert_eq!(note, None, "an old file is not a complaint");
-    assert_eq!(ViewPrefs::default().display, view::DEFAULT_DISPLAY);
-    assert!(ViewPrefs::default().show_grid);
 }
 
 #[test]
@@ -120,6 +100,6 @@ fn the_config_dir_override_houses_the_view_file() {
         .expect("the override names a folder on every platform");
     assert_eq!(folder, d, "the absolute override wins over any home folder");
     let file = file_in(&folder);
-    view::save(&file, &ViewPrefs { show_gizmo_names: false, ..ViewPrefs::default() }).expect("save under the override");
+    view::save(&file, &ViewPrefs { show_gizmo_names: false }).expect("save under the override");
     assert!(!view::load(&file).0.show_gizmo_names, "the restart reads it back from there");
 }

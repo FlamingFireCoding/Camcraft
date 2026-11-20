@@ -59,7 +59,7 @@ const TOOLS: &[Tool] = &[
 
 /// Every row: this table, then the setup furniture's (#181), then the
 /// part placement (#716), ..., then operation names and order (#45), then the DXF profiles (#1862).
-fn all() -> impl Iterator<Item = &'static Tool> {
+pub(super) fn all() -> impl Iterator<Item = &'static Tool> {
     TOOLS
         .iter()
         .chain(super::setup_tools::TOOLS)

@@ -262,11 +262,6 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
-    /// #2901: the path starts at `height_mm` (its frame's height), under
-    /// the `top_mm` of the start stock or of a fixture (`fixture`). The
-    /// first traverse comes from an X/Y the machine does not know, so it
-    /// can cross that top anywhere ([`super::first_traverse_low`]).
-    FirstTraverseLow { at: usize, height_mm: f64, top_mm: f64, fixture: bool },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
     /// it, `short_mm` the clearance shortfall - the radial depth the
@@ -409,12 +404,6 @@ impl core::fmt::Display for Warning {
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
-            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture } => write!(
-                f,
-                "the first rapid (move {at}) comes from an unknown X/Y at the clearance height Z{height_mm:.3}, under the {} \
-                 top at Z{top_mm:.3} - raise the clearance height above Z{top_mm:.3}",
-                if *fixture { "fixture" } else { "stock" }
-            ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
                 "{} at move {at} strikes a fixture",

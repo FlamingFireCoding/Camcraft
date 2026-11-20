@@ -38,32 +38,6 @@ fn camera_buttons_flip_the_viewer_and_latch_a_tool() {
     }
 }
 
-/// #2818: the Display button opens and closes the menu and sits next to
-/// the wireframe switch. The switch still gives wireframe in one press from
-/// each of the four modes, and one more press gives the default mode.
-#[test]
-fn display_button_toggles_the_menu_and_wire_works_from_each_mode() {
-    let mut state = State::new();
-    act(&mut state, Nav::Display);
-    assert!(state.display_menu_open);
-    act(&mut state, Nav::Display);
-    assert!(!state.display_menu_open);
-    let at = |k: Nav| NAVS.iter().position(|n| *n == k);
-    assert_eq!(at(Nav::Display), at(Nav::Wire).map(|i| i + 1));
-    for mode in [DisplayMode::ShadedEdges, DisplayMode::Shaded, DisplayMode::ShadedHiddenEdges] {
-        state.display = mode;
-        act(&mut state, Nav::Wire);
-        assert_eq!(state.display, DisplayMode::Wireframe, "from {mode:?}");
-        act(&mut state, Nav::Wire);
-        assert_eq!(state.display, DisplayMode::ShadedEdges);
-    }
-    // #2636: the see-through wireframe is a wireframe: one press leaves it.
-    state.display = DisplayMode::WireframeSeeThrough;
-    act(&mut state, Nav::Wire);
-    assert_eq!(state.display, DisplayMode::ShadedEdges);
-    assert!(state.pending.is_empty(), "view state, never a command");
-}
-
 #[test]
 fn bar_fits_its_buttons() {
     assert_eq!(NAVS.len(), NAV_COUNT, "NAV_COUNT sizes the ribbon");

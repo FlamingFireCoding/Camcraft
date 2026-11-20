@@ -47,8 +47,6 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // #2462: a file named on the command line goes through the same
     // import / open command as the dialogs, on the first frame.
     crate::launch_file::queue(&mut shell.state, files);
-    // #2384: with no file named, the start page lists the recent projects.
-    super::home::at_start(&mut shell.state, files);
     // #1946: wake the Wait event loop whenever the AI chat worker queues
     // an event or dispatches an in-process MCP request.
     let ai_proxy = event_loop.create_proxy();

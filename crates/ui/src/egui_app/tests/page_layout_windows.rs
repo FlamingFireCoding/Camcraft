@@ -253,38 +253,3 @@ fn layout_window_panel_setups() {
         ],
     );
 }
-
-/// #2818: the Display menu of the viewport toolbar. It opens above its
-/// button, inside the viewport, with its groups from top to bottom.
-#[test]
-fn layout_window_display_menu() {
-    let mut h = shell_harness();
-    h.run();
-    let pane = super::layout::leaf_rect(&h.state().dock, &Tab::Viewport).expect("viewport leaf");
-    let button = hud(h.state()).nav_rect(viewcube::Nav::Display);
-    let bar = crate::egui_app::viewport_bar::bar_rect(pane);
-    assert!(bar.contains_rect(button), "the Display button sits in the toolbar");
-    click_viewport(&mut h, button.center());
-    assert_stack_in(
-        &h,
-        pane,
-        "Display menu",
-        &[
-            "Display mode",
-            "Shaded, with edges",
-            "Shaded",
-            "Wireframe",
-            "Wireframe, see-through",
-            "Shaded, with hidden edges",
-            "Look at",
-            "Look at a face",
-            "Graphics",
-            "Grid",
-            "Origin axes",
-            "Perspective view",
-            "Orthographic view",
-        ],
-    );
-    let last = h.get_by_label("Orthographic view").rect();
-    assert!(last.bottom() <= button.top(), "the menu stands above the Display button");
-}
