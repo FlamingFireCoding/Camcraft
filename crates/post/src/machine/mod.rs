@@ -45,4 +45,4 @@ mod check;
 mod judge;
 pub use check::{MachineCheck, SourceLocation, REPORT_CAP};
 // Shared with the app-specific plasma, waterjet, EDM and posted-lathe checks.
-pub use judge::{move_extremes, say, slowest_axis, tap_gate};
+pub use judge::{fine_bore_gate, move_extremes, say, slowest_axis, tap_gate};

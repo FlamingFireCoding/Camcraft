@@ -72,8 +72,8 @@ fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     let mut h = History::default();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/Milling-test.step");
     let imp = ImportModel::new(&path).expect("the user's STEP imports");
-    // PR #2904 replaces the 952-facet truck mesh with solidcore's mesh.
-    // The cutting regions and fitted arcs use this measured mesh.
+    // PR #2904 replaces the truck mesh (952 facets) with solidcore's
+    // measured machining mesh. The level regions and fitted arcs use it.
     if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         assert_eq!(imp.mesh.facets.len(), 6228, "the mesh behind the Linux path pin");
     }
@@ -190,24 +190,29 @@ notes {:?}", tp.path.notes);
 /// The bore's (moves, planar feeds, arcs) on this platform (issue #980).
 fn bore_path_matches(got: (usize, usize, usize)) -> bool {
     if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        // Issue #2004 (PR #2013): measured at 7c46c4d4c (release/v0.23.0),
-        // release, two runs identical; the Z 20 air level is gone, every
-        // other level is unchanged. Before: (16017, 15360, 1427), issue
-        // #1402, main 5eeb0370e.
-        got == (4716, 4688, 549)
+        // Issue #3050: measured on Windows x86_64, release, at d66400b78
+        // (upstream main): every level verifies clean, none falls back.
+        // The PR #2904 mesh (6228 facets at the same chord cap) moved the
+        // counts; they now equal the Linux and macOS arm64 triple. Before:
+        // (4716, 4688, 549), issue #2004 (PR #2013), 7c46c4d4c; and before
+        // that (16017, 15360, 1427), issue #1402, main 5eeb0370e.
+        got == (3158, 3130, 1141)
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         // PR #2904 (bac4a96c7) changes this fixture's mesh from 952 to
-        // 6228 facets at the same chord cap (decision #917). The new mesh
-        // changes cutting regions and arc fits. This pin refresh changes
-        // no fixture or planner code. The old truck-mesh reading
-        // was (4726, 4698, 549). Every cutting level still verifies clean,
-        // with no fallback or planning-budget stop.
+        // 6228 facets at the same chord cap (decision #917). The fixture
+        // and HSM planner are unchanged; the new mesh changes the level
+        // regions and their proved arc fits. The old truck-mesh reading
+        // was (4726, 4698, 549). With solidcore, all four cutting levels
+        // still verify clean, with no fallback or planning-budget stop.
+        got == (3158, 3130, 1141)
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        // Issue #2371: measured in release on PR #2934 at 48071efd4 and
+        // unmodified main 61a817bed. Every level verifies clean, none
+        // falls back, and no planning budget is reached.
         got == (3158, 3130, 1141)
     } else {
-        // Not measured here yet (macOS aarch64 included: its pin of issue
-        // #882, (16026, 15382, 1413), went stale with PR #2013, and issue
-        // #2371 owes its new triple). Measure this platform and add its
-        // exact triple above. Until then a band covering both measured ones.
+        // Not measured here yet. Measure this platform and add its exact
+        // triple above. Until then use the existing fallback band.
         let (moves, planar, arcs) = got;
         (4706..=4736).contains(&moves) && (4678..=4708).contains(&planar) && (539..=559).contains(&arcs)
     }
@@ -219,6 +224,39 @@ fn the_linux_x86_64_bore_count_pin_is_exact() {
     assert!(bore_path_matches((3158, 3130, 1141)));
     for got in [
         (4726, 4698, 549),
+        (3157, 3130, 1141),
+        (3159, 3130, 1141),
+        (3158, 3129, 1141),
+        (3158, 3131, 1141),
+        (3158, 3130, 1140),
+        (3158, 3130, 1142),
+    ] {
+        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+fn the_windows_x86_64_bore_count_pin_is_exact() {
+    assert!(bore_path_matches((3158, 3130, 1141)));
+    for got in [
+        (4716, 4688, 549),
+        (3157, 3130, 1141),
+        (3159, 3130, 1141),
+        (3158, 3129, 1141),
+        (3158, 3131, 1141),
+        (3158, 3130, 1140),
+        (3158, 3130, 1142),
+    ] {
+        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn the_macos_arm64_bore_count_pin_is_exact() {
+    assert!(bore_path_matches((3158, 3130, 1141)));
+    for got in [
         (3157, 3130, 1141),
         (3159, 3130, 1141),
         (3158, 3129, 1141),
