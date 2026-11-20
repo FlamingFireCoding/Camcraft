@@ -121,29 +121,10 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     if area == 0 {
         return Err("Agie nominal contour has no enclosed area".into());
     }
-    if n != 4
-        || (0..n).any(|i| {
-            let (a, b) = (outline[i], outline[(i + 1) % n]);
-            a[0] != b[0] && a[1] != b[1]
-        })
-    {
-        return Err(
-            "The verified Agie rough-pass envelope requires an axis-aligned rectangular punch"
-                .into(),
-        );
-    }
-    // The hole (radius 1 mm) and the expanded rectangle both fit in the
-    // convex stock. The straight perpendicular entry between them fits too.
-    for i in 0..2 {
-        let left = quantize(job.stock_min[i])? + STOCK_MARGIN;
-        let right = quantize(job.stock_max[i])? - STOCK_MARGIN;
-        if outline.iter().any(|p| !(left..=right).contains(&p[i])) {
-            return Err("The Agie rough pass and wire need at least 0.4 mm of stock beyond every punch face".into());
-        }
-    }
     if area < 0 {
         outline.reverse();
     }
+    check_punch_envelope(&outline, job)?;
     let hole = [quantize(job.start[0])?, quantize(job.start[1])?];
     let (edge, foot) = entry_face(&outline, hole).ok_or(
         "Agie needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation"
@@ -158,6 +139,62 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
         .into_iter()
         .map(|p| [p[0] as f64 / UNITS, p[1] as f64 / UNITS])
         .collect())
+}
+
+/// Check the swept wire against the stock before Agie chooses its corner joins.
+/// A round join lies within the rough offset of its nominal vertex. A miter
+/// reaches the intersection of the two parallel, outward-offset face lines.
+/// The segments connecting adjacent joins stay inside their stock bounds.
+fn check_punch_envelope(ring: &[Point], job: &AgieJob) -> Result<(), String> {
+    const ROUGH_OFFSET: f64 = 24_500.0; // 0.245 mm in the ISO lattice.
+    let wire_and_allowance = STOCK_MARGIN as f64 - ROUGH_OFFSET;
+    let lo = [quantize(job.stock_min[0])?, quantize(job.stock_min[1])?];
+    let hi = [quantize(job.stock_max[0])?, quantize(job.stock_max[1])?];
+    let n = ring.len();
+    let outward = |a: Point, b: Point| {
+        let dx = (b[0] - a[0]) as f64;
+        let dy = (b[1] - a[1]) as f64;
+        let length = dx.hypot(dy);
+        [dy / length, -dx / length]
+    };
+    for (i, &corner) in ring.iter().enumerate() {
+        let previous = ring[(i + n - 1) % n];
+        let next = ring[(i + 1) % n];
+        if cross(previous, corner, next) <= 0 {
+            return Err(
+                "Agie requires a convex punch contour; a reentrant corner is unsupported".into(),
+            );
+        }
+        let a = outward(previous, corner);
+        let b = outward(corner, next);
+        // Use the squared bisector length instead of 1 + dot(a, b);
+        // the latter loses precision when the punch corner is very sharp.
+        let bisector = [a[0] + b[0], a[1] + b[1]];
+        let norm2 = bisector[0] * bisector[0] + bisector[1] * bisector[1];
+        if norm2 <= f64::EPSILON {
+            return Err(
+                "Agie cannot bound the rough pass at a nearly reversed punch corner".into(),
+            );
+        }
+        for axis in 0..2 {
+            if corner[axis] - STOCK_MARGIN < lo[axis] || corner[axis] + STOCK_MARGIN > hi[axis] {
+                return Err(
+                    "The Agie rough pass and wire need at least 0.4 mm of stock beyond the punch"
+                        .into(),
+                );
+            }
+            let miter = 2.0 * ROUGH_OFFSET * bisector[axis] / norm2;
+            let left = (lo[axis] - corner[axis]) as f64;
+            let right = (hi[axis] - corner[axis]) as f64;
+            if miter - wire_and_allowance < left || miter + wire_and_allowance > right {
+                return Err(
+                    "The Agie rough corner and wire can reach outside the stock at a punch vertex"
+                        .into(),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 fn entry_face(ring: &[Point], hole: Point) -> Option<(usize, Point)> {
@@ -187,10 +224,13 @@ fn entry_face(ring: &[Point], hole: Point) -> Option<(usize, Point)> {
         ];
         // Room on each side for the control's 3 mm transition and 1 mm
         // separation, independent of which way the resident pass runs.
+        let min_face = i128::from(300_000).pow(2);
         if cross(a, b, foot) != 0
-            || [a, b]
-                .iter()
-                .any(|p| (foot[0] - p[0]).abs().max((foot[1] - p[1]).abs()) < 300_000)
+            || [a, b].iter().any(|p| {
+                let dx = i128::from(foot[0] - p[0]);
+                let dy = i128::from(foot[1] - p[1]);
+                dx * dx + dy * dy < min_face
+            })
         {
             continue;
         }

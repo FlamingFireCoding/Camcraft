@@ -76,14 +76,7 @@ fn stock_hole_and_entry_are_validated_before_output() {
 }
 
 #[test]
-fn the_native_pass_envelope_requires_a_rectangle_and_straight_face_for_separation() {
-    let mut job = punch();
-    job.contour[2][0] = 18.0;
-    assert!(
-        contour::prepare(&job)
-            .unwrap_err()
-            .contains("axis-aligned rectangular")
-    );
+fn separation_needs_three_millimetres_on_each_side_of_the_entry() {
     let mut job = punch();
     job.start = [-30., 9.5];
     assert!(
@@ -93,4 +86,43 @@ fn the_native_pass_envelope_requires_a_rectangle_and_straight_face_for_separatio
     );
     job.start = [-30., 7.];
     assert!(contour::prepare(&job).is_ok());
+}
+
+#[test]
+fn oblique_punch_preserves_nominal_vertices_and_perpendicular_seam() {
+    let mut job = punch();
+    job.contour = vec![
+        [-20., -10.],
+        [16., -10.],
+        [22., -2.],
+        [18., 10.],
+        [-5., 10.],
+    ];
+    job.start = [-20.5, 6.];
+    let prepared = contour::prepare(&job).unwrap();
+    assert_eq!(prepared[0], [-12.5, 0.]);
+    assert_eq!(&prepared[1..], job.contour.as_slice());
+    job.contour.reverse();
+    assert_eq!(contour::prepare(&job).unwrap(), prepared);
+
+    // 3.125 mm along the 3:4 face, even though each coordinate difference
+    // is smaller than 3 mm. A 2.5 mm length cannot hold the transition.
+    job.start = [-26.125, -1.5];
+    assert_eq!(contour::prepare(&job).unwrap()[0], [-18.125, -7.5]);
+    job.start = [-26.5, -2.];
+    assert!(contour::prepare(&job).is_err());
+}
+
+#[test]
+fn an_acute_miter_needs_more_stock_than_a_round_corner() {
+    let mut job = punch();
+    job.contour = vec![[-20., -10.], [30., 0.], [-20., 10.]];
+    job.stock_max[0] = 30.4;
+    let why = contour::prepare(&job).unwrap_err();
+    assert!(why.contains("rough corner"), "{why}");
+    job.stock_max[0] = 32.;
+    assert!(contour::prepare(&job).is_ok());
+
+    job.contour = vec![[-20., -10.], [20., -10.], [0., 0.], [20., 10.], [-20., 10.]];
+    assert!(contour::prepare(&job).unwrap_err().contains("convex"));
 }
