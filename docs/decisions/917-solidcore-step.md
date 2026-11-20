@@ -221,6 +221,49 @@ kept):
   fail #2849, the asserts do not change (see below). Two new pins for the
   corner check fix: motion `unreached::law::a_micron_bow_tie_cusp_gives_its_lobes_and_no_error`
   and `lead_approach::the_users_pocket_names_its_seven_sharp_corners_and_the_corner_check_runs`.
+- Review fixes on PR #2904 (no assert made weaker, no `#[test]` lost):
+  - `import_step_guard.rs`: renamed
+    `a_face_that_may_jump_is_refused_at_a_coarser_chord_too` ->
+    `a_face_that_may_jump_is_refused_by_name_under_a_small_facet_budget`.
+    Cause: the kernel refuses the face at read, before the importer tries
+    a coarser chord; the old name said more than the test proves. The
+    body does not change.
+  - `model_fidelity.rs`, `an_inch_step_and_a_metre_step_are_full_fidelity_by_measure`:
+    the call of `camcraft_geometry::step::parse` (the app does not
+    re-export it) -> the app's `step::parse_with_chord`; the chord and the
+    facet count asserts stay. The measured deviation assert (`> 0` and
+    `<= 0.005 mm`) moved to geometry `step_metre_unit.rs`
+    (`a_metre_step_meshes_at_the_cap_with_a_measured_deviation`), the crate
+    of the reader (test placement law). App count unchanged; geometry +1.
+  - New pins: kernel lib `step_face_winding::tests` (2: the hostile edge
+    order costs linear steps and keeps each parity; a cancelled pass stops
+    by name), kernel `machining_mesh_open.rs` (2: an `ORIENTED_FACE` that
+    names itself, a chain of 64), kernel `machining_mesh_bounds.rs` (1:
+    `a_face_with_no_surface_to_measure_is_refused_by_name`, #2903 item 1).
+
+**Review fixes, decided unattended (PR #2904).**
+- **The winding check is bounded.** `face_of` reads at most 4
+  `ORIENTED_FACE` wrappers, as `edge_of` reads `ORIENTED_EDGE` (and as the
+  solidcore reader's `MAX_NESTING`); a deeper or self-naming chain gives
+  the shell no note, and the topology reader judges it. The parity
+  union-find has union by size and full path compression. The pass reads
+  the import's cancel token for each shell member and stops with the
+  reader's time-out refusal (stage "checking face winding"). Dropped: a fixed cap on the member count
+  (the cancel token is in reach, and a cap would refuse a legal large
+  shell).
+- **#2780: `Refs`, not `Fixes`.** The twisted-flank reading and its refusal
+  are pinned in this PR (kernel, geometry and app `step_twisted_flank.rs`).
+  The speed item of #2780 ("the import does not become slower by a large
+  factor") stays open and is held by #2844. Dropped: timing runs of main
+  against this branch in this PR (two more builds for a number that #2844
+  will change).
+- **`Unmeasured::NoSurface` pin at the measure step.** The planner gives no
+  face without a surface for a STEP solid that can be written by hand, so
+  the pin edits the plan of `box.step` after planning (no surface, and a
+  surface index past the list) and asserts the named refusal of
+  `mesh_deviation::measure` and its `MeshRefusal::Unmeasured` text. The
+  map in `machining_mesh::planned` (`other => MeshRefusal::Unmeasured`) is
+  read, not driven by a test.
 
 **Known regressions, tracked.**
 - #2844: the four-turn thread flank gives 391338 facets (main: under 5000,
