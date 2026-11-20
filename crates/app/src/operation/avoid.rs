@@ -123,6 +123,13 @@ pub(super) fn collect_items(
                 }
             }
             FeatureSel::Vertex(_) => unreachable!(),
+            // #1864: the command refuses sketch picks; a hand-edited file
+            // that still holds one is refused here, never skipped.
+            FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                return Err(GenError::Invalid(format!(
+                    "{desc} is a sketch pick - 'Do not touch' protects model faces or edge chains, not DXF sketch chains or layers"
+                )));
+            }
         }
         out.push(AvoidItem { label: desc, tris, edges });
     }

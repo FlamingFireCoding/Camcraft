@@ -70,6 +70,8 @@ pub fn describe_sel(g: &GeoSel) -> String {
         FeatureSel::Patch(_) => "patch",
         FeatureSel::Chain(_) => "edge chain",
         FeatureSel::Vertex(_) => "vertex",
+        FeatureSel::SketchChain(_) => "sketch chain",
+        FeatureSel::SketchLayer(_) => "sketch layer",
     };
     let _ = write!(s, "{} {kind} #{:x}", g.entity, g.feature.id());
     s

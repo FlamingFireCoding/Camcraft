@@ -331,9 +331,14 @@ pub fn op_stamp(world: &World, op: &Operation, op_name: &str) -> Option<GenStamp
                 FeatureSel::Chain(id) => (1, id),
                 FeatureSel::Patch(id) => (2, id),
                 FeatureSel::Vertex(id) => (3, id),
+                FeatureSel::SketchChain(_) => (4, g.feature.id()),
+                FeatureSel::SketchLayer(_) => (5, 0),
             };
             h.write_u8(tag);
             h.write_u64(id);
+            if let FeatureSel::SketchLayer(name) = &g.feature {
+                h.write(name.as_bytes());
+            }
             h.write_usize(g.entity.len());
             h.write(g.entity.as_bytes());
             let e = model::find_by_name(world, &g.entity)?;

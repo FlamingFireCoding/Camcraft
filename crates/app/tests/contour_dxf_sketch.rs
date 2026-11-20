@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use camcraft_app::cl::MoveKind;
 use camcraft_app::commands::{
     AddTool, Command, CommandError, CreateOperation, DxfOptions, EditOperationParams,
-    GenerateOperation, History, ImportDxf, SetStock,
+    GenerateOperation, History, ImportDxf, SetOperationDoNotTouch, SetStock,
 };
 use camcraft_app::geometry::sketch_chains::ChainId;
 use camcraft_app::links::{Approach, Compensation, Links};
@@ -299,6 +299,22 @@ fn layer_and_chain_picks_per_chain_overrides_undo_and_project_v74_roundtrip() {
     let op_fresh = model::operation_of(&fresh, &op_fresh_e).expect("op component");
     let OpParams::Contour { chain_overrides, .. } = op_fresh.params else { panic!("Contour") };
     assert_eq!(chain_overrides.len(), 3);
+}
+
+#[test]
+fn do_not_touch_refuses_a_sketch_chain_or_layer_by_name() {
+    // #1864 on top of #2055: protection guards model faces and edge chains.
+    // A DXF sketch pick is refused at the command, by name, not skipped.
+    let (_dir, world, mut history) = sheet_world("dnt-sketch");
+    let ids = plate_ids(&world);
+    let params = operation::seed_params(OpType::Offset2D.ordinal());
+    run(&world, &mut history, CreateOperation::new(&world, "Off", TOOL, SrcRef::Stock, params), "create");
+    for feature in [FeatureSel::SketchChain(ids.big_circle), FeatureSel::SketchLayer("holes".into())] {
+        let dnt = operation::DoNotTouch { clearance: 1.0, picks: vec![GeoSel { entity: "plate".into(), feature }] };
+        let err = SetOperationDoNotTouch::new(&world, "Off", dnt).err().expect("sketch pick must be refused");
+        let msg = err.to_string();
+        assert!(msg.contains("sketch pick") && msg.contains("plate"), "{msg}");
+    }
 }
 
 #[test]
