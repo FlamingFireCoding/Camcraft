@@ -1,18 +1,15 @@
 //! Issue #2878: Fanuc G76 free-air start check in the meridian plane against the revolved part, remaining stock and prior turning ops - the rapid-infeed behaviour from public Fanuc lathe programming manuals read onto our own meridian outline; no vendor material consulted.
 
 use crate::cl::{MoveKind, ThreadCycle, Toolpath};
+use crate::turning::g76_clearance::{rectangle_clear, AheadCut, PilotCut};
 use crate::turning::profile::Frame;
 use crate::turning::{cycle_infeed_band, part_band_clear};
 
 use super::drill_prior::PriorCell;
-use super::turning_credit::{pilots, Pilot};
+use super::turning_credit::pilots;
 use super::turning_outline::Revolved;
 use super::turning_rapids::{faced_end, kerf_of, Meridian, SignedMeridian};
 use super::OpParams;
-
-#[path = "g76_clearance.rs"]
-mod clearance;
-use clearance::{rectangle_clear, AheadCut};
 
 /// Refine every [`ThreadCycle::start_in_air`] flag on a generated Threading
 /// path against the revolved part, the setup's stock and every prior op's
@@ -47,7 +44,15 @@ pub(super) fn judge(params: &OpParams, path: &mut Toolpath, cx: &Meridian, prior
         None => None,
     };
     let mut cap_cell: Option<Option<f64>> = None;
-    let pilot_cuts = pilots(cx.drills, &sm);
+    let pilot_cuts: Vec<PilotCut> = pilots(cx.drills, &sm)
+        .into_iter()
+        .map(|p| PilotCut {
+            lo: p.lo,
+            hi: p.hi,
+            r: p.r,
+            cot: p.cot,
+        })
+        .collect();
     for rec in &mut path.threads {
         rec.start_in_air = record_in_air(
             rec,
@@ -72,7 +77,7 @@ fn record_in_air(
     frame: &Frame,
     sm: &SignedMeridian,
     stock: Option<&Revolved>,
-    pilot_cuts: &[Pilot],
+    pilot_cuts: &[PilotCut],
     cap_cell: &mut Option<Option<f64>>,
     prior: &mut PriorCell,
     cx: &Meridian,

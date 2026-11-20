@@ -37,6 +37,7 @@ pub mod bore;
 pub mod contour;
 pub mod face;
 pub mod form;
+pub mod g76_clearance;
 pub mod infeed;
 pub mod offset;
 pub mod parting;

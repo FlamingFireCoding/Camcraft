@@ -1,17 +1,49 @@
 //! Conservative G76 meridian coverage by swept inserts and axial drill cones;
 //! convex-set geometry from machine-tool insert shapes, our own implementation.
 
-use super::super::turning_credit::Pilot;
-use super::super::turning_rapids::seg_dist;
-
 type Rect = (f64, f64, f64, f64);
 
 /// A prior feed segment with its cutting insert dimensions.
-pub(super) struct AheadCut {
-    pub(super) p: (f64, f64),
-    pub(super) q: (f64, f64),
-    pub(super) nose: f64,
-    pub(super) band: f64,
+/// Endpoints are `(axial station, signed radius)` in the spindle frame.
+pub struct AheadCut {
+    pub p: (f64, f64),
+    pub q: (f64, f64),
+    pub nose: f64,
+    pub band: f64,
+}
+
+/// An axial drill cut, from its point station to its entry station.
+/// Coordinates are `(axial station, radius)` in the same frame as [`AheadCut`].
+pub struct PilotCut {
+    pub lo: f64,
+    pub hi: f64,
+    pub r: f64,
+    /// Cotangent of the drill half-angle; `None` denotes a flat bottom.
+    pub cot: Option<f64>,
+}
+
+impl PilotCut {
+    fn removed(&self, s: f64, r: f64) -> bool {
+        if s < self.lo || s > self.hi {
+            return false;
+        }
+        let wide = match self.cot {
+            Some(k) if k > 0.0 => ((s - self.lo) / k).min(self.r),
+            _ => self.r,
+        };
+        r < wide
+    }
+}
+
+fn seg_dist(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (vx, vy) = (b.0 - a.0, b.1 - a.1);
+    let l2 = vx * vx + vy * vy;
+    let t = if l2 > 0.0 {
+        (((p.0 - a.0) * vx + (p.1 - a.1) * vy) / l2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (p.0 - a.0 - vx * t).hypot(p.1 - a.1 - vy * t)
 }
 
 fn corners((lo, hi, bottom, top): Rect) -> [(f64, f64); 4] {
@@ -72,15 +104,11 @@ impl AheadCut {
     }
 }
 
-/// Prove full coverage, never infer it from samples. Each accepted cell
+/// Prove full coverage of `(axial low, axial high, radial low, radial high)`.
+/// All cut values must use the same spindle frame. Never infer coverage from samples. Each accepted cell
 /// lies in one convex removed region because all its corners do. Cells
 /// spanning several cuts are subdivided; exhausted budgets refuse.
-pub(super) fn rectangle_clear(
-    rect: Rect,
-    ahead: &[AheadCut],
-    pilots: &[Pilot],
-    margin: f64,
-) -> bool {
+pub fn rectangle_clear(rect: Rect, ahead: &[AheadCut], pilots: &[PilotCut], margin: f64) -> bool {
     if ![rect.0, rect.1, rect.2, rect.3, margin]
         .iter()
         .all(|x| x.is_finite())
