@@ -38,7 +38,7 @@ const BAR_RADIUS: f32 = 8.0;
 /// zoom tools latch the drag onto that mode and leave the shortcut to
 /// the vertex (a tool latched is a tool any drag obeys). View state
 /// like the camera - never commands, never saved.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Nav {
     /// Reframe the whole document - the F key's button twin.
     Frame,
@@ -126,6 +126,107 @@ pub(crate) fn nav_tool_label(tool: DragMode) -> &'static str {
 
 /// The status line when a nav tool latches off.
 pub(crate) const NAV_TOOL_CLEAR: &str = "nav tool: off";
+
+/// The base plain-English label for each of the viewport controls.
+#[must_use]
+pub(crate) fn label(kind: Nav) -> &'static str {
+    match kind {
+        Nav::Frame => "Frame all",
+        Nav::Iso => "Isometric view",
+        Nav::Wire => "Display mode",
+        Nav::Paths => "Show all toolpaths",
+        Nav::Axes => "World axes",
+        Nav::PickThrough => "Pick through",
+        Nav::Move => "Move mode",
+        Nav::Rotate => "Rotate mode",
+        Nav::Projection => "Projection",
+        Nav::Orbit => "Orbit tool",
+        Nav::Pan => "Pan tool",
+        Nav::Zoom => "Zoom tool",
+    }
+}
+
+/// The descriptive hover tooltip for each of the viewport controls (#2914),
+/// reflecting the current state of toggle controls.
+#[must_use]
+pub(crate) fn tooltip(kind: Nav, state: &State) -> String {
+    match kind {
+        Nav::Frame => "Frame all (F): fit all objects in view".to_owned(),
+        Nav::Iso => "Isometric view: orient camera to isometric view".to_owned(),
+        Nav::Wire => match state.display {
+            DisplayMode::Wireframe => {
+                "Display mode: wireframe (click for shaded with edges)".to_owned()
+            }
+            DisplayMode::ShadedEdges => {
+                "Display mode: shaded with edges (click for wireframe)".to_owned()
+            }
+        },
+        Nav::Paths => {
+            if state.show_all_paths {
+                "Show all toolpaths: on".to_owned()
+            } else {
+                "Show all toolpaths: off".to_owned()
+            }
+        }
+        Nav::Axes => {
+            if state.show_world_axes {
+                "World axes: on".to_owned()
+            } else {
+                "World axes: off".to_owned()
+            }
+        }
+        Nav::PickThrough => {
+            if state.pick_through {
+                "Pick through: on (picks reach far side)".to_owned()
+            } else {
+                "Pick through: off (picks stop at front face)".to_owned()
+            }
+        }
+        Nav::Move => {
+            if state.move_handles {
+                "Move mode: on (drag handles to move part)".to_owned()
+            } else {
+                "Move mode: off (show move handles)".to_owned()
+            }
+        }
+        Nav::Rotate => {
+            if state.rotate_handles {
+                "Rotate mode: on (drag rings to rotate part)".to_owned()
+            } else {
+                "Rotate mode: off (show rotation rings)".to_owned()
+            }
+        }
+        Nav::Projection => match state.cam.projection {
+            ProjectionMode::Perspective => {
+                "Projection: perspective (P, click for orthographic)".to_owned()
+            }
+            ProjectionMode::Orthographic => {
+                "Projection: orthographic (P, click for perspective)".to_owned()
+            }
+        },
+        Nav::Orbit => {
+            if state.nav_tool == Some(DragMode::Orbit) {
+                "Orbit tool: active (drag to orbit)".to_owned()
+            } else {
+                "Orbit tool: click to latch orbit drag".to_owned()
+            }
+        }
+        Nav::Pan => {
+            if state.nav_tool == Some(DragMode::Pan) {
+                "Pan tool: active (drag to pan)".to_owned()
+            } else {
+                "Pan tool: click to latch pan drag".to_owned()
+            }
+        }
+        Nav::Zoom => {
+            if state.nav_tool == Some(DragMode::Zoom) {
+                "Zoom tool: active (drag to zoom)".to_owned()
+            } else {
+                "Zoom tool: click to latch zoom drag".to_owned()
+            }
+        }
+    }
+}
 
 /// The ribbon: centred on the pane's width, resting on its bottom edge at
 /// the same margin as before. Floats over the 3D view (#1198, maintainer:
@@ -279,6 +380,14 @@ pub(crate) fn draw(
         }
         let s = egui::Stroke::new(1.4, if active { ink.glyph_on } else { ink.glyph_off });
         glyphs::draw(ui, kind, r, s, ink.triad, state.cam.projection);
+
+        let lab = label(kind);
+        let tip = tooltip(kind, state);
+        let resp = ui.interact(r, ui.id().with(("viewport_nav", kind)), egui::Sense::hover());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, lab));
+        if state.drag.is_none() {
+            resp.on_hover_text(tip);
+        }
     }
 }
 

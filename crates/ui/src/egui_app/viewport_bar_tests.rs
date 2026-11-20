@@ -170,3 +170,125 @@ fn typed_move_and_turn_respect_units_and_refuse_bad_input() {
     assert!(!state.history.is_dirty());
     assert!(state.status.contains("part not turned"), "{}", state.status);
 }
+
+#[test]
+fn nav_buttons_have_distinct_labels_and_descriptive_tooltips() {
+    let mut state = State::new();
+    assert_eq!(NAVS.len(), NAV_COUNT);
+    for &kind in &NAVS {
+        let lab = label(kind);
+        assert!(!lab.is_empty(), "label for {:?} must not be empty", kind);
+        let tip = tooltip(kind, &state);
+        assert!(!tip.is_empty(), "tooltip for {:?} must not be empty", kind);
+    }
+
+    // Toggle states reflect in tooltips:
+    // Wireframe toggle
+    state.display = DisplayMode::ShadedEdges;
+    assert!(tooltip(Nav::Wire, &state).contains("shaded with edges"));
+    state.display = DisplayMode::Wireframe;
+    assert!(tooltip(Nav::Wire, &state).contains("wireframe"));
+
+    // Toolpaths toggle
+    state.show_all_paths = false;
+    assert!(tooltip(Nav::Paths, &state).contains("off"));
+    state.show_all_paths = true;
+    assert!(tooltip(Nav::Paths, &state).contains("on"));
+
+    // World axes toggle
+    state.show_world_axes = false;
+    assert!(tooltip(Nav::Axes, &state).contains("off"));
+    state.show_world_axes = true;
+    assert!(tooltip(Nav::Axes, &state).contains("on"));
+
+    // Pick through toggle
+    state.pick_through = false;
+    assert!(tooltip(Nav::PickThrough, &state).contains("off"));
+    state.pick_through = true;
+    assert!(tooltip(Nav::PickThrough, &state).contains("on"));
+
+    // Move handles toggle
+    state.move_handles = false;
+    assert!(tooltip(Nav::Move, &state).contains("off"));
+    state.move_handles = true;
+    assert!(tooltip(Nav::Move, &state).contains("on"));
+
+    // Rotate handles toggle
+    state.rotate_handles = false;
+    assert!(tooltip(Nav::Rotate, &state).contains("off"));
+    state.rotate_handles = true;
+    assert!(tooltip(Nav::Rotate, &state).contains("on"));
+
+    // Projection toggle
+    state.cam.projection = ProjectionMode::Perspective;
+    assert!(tooltip(Nav::Projection, &state).contains("perspective"));
+    state.cam.projection = ProjectionMode::Orthographic;
+    assert!(tooltip(Nav::Projection, &state).contains("orthographic"));
+
+    // Nav tools
+    state.nav_tool = None;
+    assert!(tooltip(Nav::Orbit, &state).contains("click to latch"));
+    assert!(tooltip(Nav::Pan, &state).contains("click to latch"));
+    assert!(tooltip(Nav::Zoom, &state).contains("click to latch"));
+    state.nav_tool = Some(DragMode::Orbit);
+    assert!(tooltip(Nav::Orbit, &state).contains("active"));
+    state.nav_tool = Some(DragMode::Pan);
+    assert!(tooltip(Nav::Pan, &state).contains("active"));
+    state.nav_tool = Some(DragMode::Zoom);
+    assert!(tooltip(Nav::Zoom, &state).contains("active"));
+}
+
+#[test]
+fn nav_buttons_attach_tooltips_on_hover() {
+    use egui_kittest::kittest::Queryable;
+    use egui_kittest::Harness;
+
+    let state = State::new();
+    let pane = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 600.0));
+    let bar = bar_rect(pane);
+    let btns = buttons(bar);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(900.0, 600.0))
+        .build_ui(move |ui| {
+            draw(ui, bar, &btns, &state, None);
+        });
+
+    h.ctx.all_styles_mut(|s| {
+        s.interaction.tooltip_delay = 0.0;
+        s.interaction.show_tooltips_only_when_still = false;
+    });
+
+    h.run_steps(2);
+
+    fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(t) => out.push(t.galley.text().to_owned()),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+            _ => {}
+        }
+    }
+
+    let all_buttons = buttons(bar);
+
+    // Verify all 12 buttons have accessible labels
+    for &(kind, btn_rect) in &all_buttons {
+        let lab = label(kind);
+        let node = h.get_by_label(lab);
+        assert_eq!(node.rect(), btn_rect, "node for {:?} must match button rect", kind);
+    }
+
+    // Verify hover tooltip is displayed when hovering over a button
+    h.hover_at(all_buttons[0].1.center());
+    h.run_steps(2);
+
+    let mut painted = Vec::new();
+    for shape in &h.output().shapes {
+        walk(&shape.shape, &mut painted);
+    }
+
+    assert!(
+        painted.iter().any(|s| s.contains("Frame all")),
+        "hovering over Frame button must paint a tooltip containing 'Frame all', got: {:?}",
+        painted
+    );
+}
