@@ -70,6 +70,46 @@ fn short_si_unit_only_import_keeps_scale() {
     }
 }
 
+/// The import must be refused, and the refusal must contain `named`.
+fn refused(text: &str, named: &str) {
+    let err = import(text).expect_err("a length unit read at 1 mm per unit must be refused");
+    let msg = err.to_string();
+    assert!(msg.contains(named), "the refusal must name `{named}`: {msg}");
+}
+
+/// #2919: a length unit, but no context that the reader can find states it.
+#[test]
+fn length_unit_without_unit_context_is_refused() {
+    for text in [INCH, METRE] {
+        let no_context = text.replace("GUAC((#12, #13, #14))", "");
+        assert!(!no_context.contains("GUAC("), "the fixture must lose its unit context");
+        refused(&no_context, "length unit #12 is in the file");
+    }
+}
+
+/// #2919 review: a unit context that names a unit missing from the file.
+#[test]
+fn unit_context_naming_missing_unit_is_refused() {
+    refused(
+        &INCH.replace("GUAC((#12, #13, #14))", "GUAC((#12, #13, #14, #777))"),
+        "unit context #11 names unit #777",
+    );
+}
+
+/// #2919 review: the solid's own context states no length unit, while a
+/// different context of the file states one.
+#[test]
+fn solid_in_unitless_context_is_refused() {
+    let text = INCH
+        .replace(
+            "#10 = ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #11);",
+            "#10 = ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #902);\n\
+             #902 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('', '') );",
+        );
+    assert!(text.contains("#902 ="), "the fixture must move the solid to a context with no unit");
+    refused(&text, "context #902 states no length unit");
+}
+
 #[test]
 fn long_name_context_controls_import_with_correct_scale() {
     for (text, size) in [(INCH, 25.4), (METRE, 1000.0)] {

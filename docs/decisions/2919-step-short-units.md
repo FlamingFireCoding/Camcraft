@@ -25,15 +25,38 @@ Separate cases exercise each alias and retain long-name controls.
 
 The agreement corpus lists each model fixture explicitly. Its new rows
 record the expected differences for these two fixtures. The model importer
-reads their scale correctly. The raw tessellator still assumes millimetres,
-and the truck reader cannot read the short geometry names. Extending that
-list keeps the corpus inventory complete; it does not change those readers.
+reads their scale correctly. The raw tessellator still assumes millimetres.
+The fixture geometry is in long form. The truck readings of the two rows
+come from the live bench at `72ab66fc1`. Extending that list keeps the
+corpus inventory complete; it does not change those readers.
 
 **Considered and dropped:** Text replacement could change strings and
-comments. A guessed scale could silently produce wrong geometry. A blanket
-refusal would reject legal files that the existing unit reader can handle
-after name expansion. A dependency update would widen this fix beyond the
-two missing mappings.
+comments. A guessed scale could silently produce wrong geometry. A refusal
+of every short-name file would reject legal files that the existing unit
+reader can handle after name expansion. A dependency update would widen
+this fix beyond the two missing mappings.
+
+### Refuse a length unit that the reader would read as millimetres
+
+**What was decided (review of PR #2927):** The model read
+(`camcraft_kernel::step_length_units`) refuses by name:
+
+- a file with a length unit when no unit context states a length unit
+  (the same rule as the tool-body read, `camcraft_geometry::step_units`);
+- a unit context that names a unit that is not in the file;
+- a solid whose own representation context states no length unit while
+  a different context of the file states one.
+
+**Why:** In each case the reader takes 1 mm per unit without a word, so an
+inch or metre model is 25.4 or 1000 times too small. Issue #2919 asks for
+the first refusal by name.
+
+**Considered and dropped:** A note instead of a refusal for the third case
+would still import a model at the wrong scale. Moving the predicate into a
+shared function for the tool-body read would widen the change into
+`camcraft-geometry`; the two copies are short and cite each other.
+A solid item that no representation lists (a piece split from a surface
+model) is not judged: it takes the context of its model in the reader.
 
 **Cost to change later:** Remove the two mappings when the pinned parser
 expands both names itself. Keep the inch and metre regression fixtures and
