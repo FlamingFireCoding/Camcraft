@@ -183,12 +183,11 @@ What the pane offers:
 - **Undo Turn** reverts all the changes of one chat turn in one click. It
   is disabled, and refuses, once you have made a later edit by hand.
 
-Not yet usable: the pane has no network transport in this release. Sending
-to any preset ends with "no live transport endpoint is configured for
-'<preset>'", and an API key setting is not shipped. To use an AI model
-today, connect an outside agent over MCP as described above. These
-worked examples and provider setup will be added when the transport
-ships.
+The native desktop pane connects to the cloud providers and local Ollama.
+Keys come from environment variables or the OS keychain; there is no key
+entry form. All local panel presets use Ollama, and the panel has no
+endpoint field. See [Use AI with CamCraft](@/guide/automate/ai.md) for
+provider setup, external clients, current limits and four worked CAM tasks.
 
 ## Undo and redo
 
