@@ -14,7 +14,7 @@ use camcraft_motion::cl::MoveKind;
 use camcraft_motion::finishing3d::{self, Finish3DParams, FinishPattern};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::multiaxis::axis::fit;
-use camcraft_motion::multiaxis::{rotary_contour, rotary_parallel, AxisControl};
+use camcraft_motion::multiaxis::{rotary_contour, rotary_contour_radial, rotary_parallel, rotary_parallel_radial, AxisControl, RadialHeights};
 
 const TAU: f64 = std::f64::consts::TAU;
 
@@ -388,4 +388,109 @@ fn the_parallel_leaves_the_end_face_where_the_stock_goes_on() {
         assert_eq!(same.moves, plain.moves);
         assert_eq!(same.notes, plain.notes);
     }
+}
+
+// ---- the radial heights law (#2774) -------------------------------
+
+#[test]
+fn the_radial_heights_hold_the_links_off_the_axis() {
+    // #2774: with a clearance and a retract RADIUS, the contour's links
+    // are cylinders, not planes: every retract leaves along its radius,
+    // every index rides the hop cylinder, every plunge comes in along a
+    // radius - and no link endpoint ever stands inside the hop radius.
+    // Under the Z-plane law (RadialHeights::NONE) the same ladder lifts
+    // along the axis instead, so the two paths differ move for move.
+    let facets = lathe_bar(16);
+    let p = finish(28.0, 0.0);
+    let c = control(0.0, 0.0, None);
+    let rho_hop = 4.5; // the bar's own largest radius is 2.5
+    let radial = RadialHeights { clearance: Some(6.0), retract: Some(rho_hop), top: None, bottom: None };
+    let got = rotary_contour_radial(&facets, &p, &c, radial).expect("the rings, linked radially");
+    let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
+    // The posed law (M13 pivot): a link's WORLD tip stands under its
+    // planning cylinder by one ball radius - the same shift the cut tips
+    // carry, so the hop stays clear of the posed skin by the same margin.
+    let ball = p.tool_diameter * 0.5;
+    let (hop_t, clr_t) = (rho_hop - ball, 6.0 - ball);
+    let mut hops = 0usize;
+    let mut radial_links = 0usize;
+    let on = |r: f64, at: f64| (r - at).abs() < 1e-6;
+    for m in &got.moves {
+        match m.kind {
+            MoveKind::Rapid => {
+                assert!(rho(m.to) >= hop_t - 1e-9, "an index drops under the hop cylinder: {}", rho(m.to));
+                if (rho(m.from) - rho(m.to)).abs() < 1e-9 && (m.from.z - m.to.z).abs() > 1e-9 {
+                    hops += 1; // riding the cylinder: constant radius, station changes
+                }
+            }
+            // A link retract: out to the hop cylinder. Ring chords (arc
+            // fits at the pattern tolerance) wobble a little; only a
+            // move that ENDS on the cylinder, without an arc, is one of
+            // the rebuilt links. (The world TIP rides one ball radius
+            // under the planning cylinder, and around a corner its
+            // azimuth follows the ball - the M13 pivot law - so the
+            // link law here is the cylinder, not a straight radius.)
+            MoveKind::Feed if m.arc.is_none() && on(rho(m.to), hop_t) && rho(m.from) < hop_t - 1e-3 => {
+                radial_links += 1;
+            }
+            // A link plunge: in from a cylinder - the hop one between
+            // passes, the clearance one for the program's first contact.
+            MoveKind::Plunge if m.arc.is_none() && (on(rho(m.from), hop_t) || on(rho(m.from), clr_t)) && rho(m.to) < hop_t - 1e-3 => {
+                radial_links += 1;
+            }
+            _ => {}
+        }
+    }
+    assert!(radial_links >= 4, "passes retract and plunge along radii, got {radial_links}");
+    assert!(hops >= 2, "the indexes ride the hop cylinder, got {hops}");
+    // The exit stands at the CLEARANCE radius, the hops one lower.
+    let last = got.moves.last().expect("the exit rapid");
+    assert_eq!(last.kind, MoveKind::Rapid);
+    assert!((rho(last.to) - clr_t).abs() < 1e-6, "the exit stands at the clearance radius, got {}", rho(last.to));
+    // The Z-plane law answers differently: same ladder, axial links.
+    let zed = rotary_contour(&facets, &p, &c).expect("the same rings, Z-plane links");
+    assert_ne!(zed.moves, got.moves, "a radial switch that changed nothing is not a switch");
+    let crossed = zed.moves.iter().any(|m| m.kind == MoveKind::Rapid && rho(m.to) < hop_t - 0.5);
+    assert!(crossed, "the Z-plane ladder links across the hop cylinder's circle as before");
+}
+
+#[test]
+fn a_radial_radius_inside_the_work_is_refused_by_name() {
+    // The generator's law is the gate's backstop: a hop radius inside the
+    // bar's own skin would retract the tool THROUGH the work.
+    let facets = lathe_bar(16);
+    let p = finish(28.0, 0.0);
+    let c = control(0.0, 0.0, None);
+    let e = rotary_contour_radial(&facets, &p, &c, RadialHeights { clearance: Some(6.0), retract: Some(2.0), top: None, bottom: None })
+        .expect_err("r2.0 stands inside the bar's r2.5");
+    assert!(e.to_string().contains("does not clear the work"), "{e}");
+    let e = rotary_contour_radial(&facets, &p, &c, RadialHeights { clearance: Some(2.0), retract: None, top: None, bottom: None })
+        .expect_err("a clearance r2.0 inside the bar refuses too");
+    assert!(e.to_string().contains("clearance"), "{e}");
+}
+
+#[test]
+fn the_parallel_links_its_passes_radially_under_the_radius_law() {
+    // #2774 on the parallel twin: its laid-frame links were already
+    // radial; the stated radii RAISE them - no link endpoint stands
+    // under the hop radius, and the program opens at the clearance
+    // cylinder. The Z-plane law stays byte-identical under NONE.
+    let facets = laid_bar(16);
+    let p = Finish3DParams {
+        clearance_z: 10.0,
+        ..finish(3.0, -3.0)
+    };
+    let c = control(0.0, 0.0, None);
+    let radial = RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: None, bottom: None };
+    let got = rotary_parallel_radial(&facets, None, &p, &c, radial).expect("a laid bar, radial heights");
+    let rho = |q: Point3| (q.y * q.y + q.z * q.z).sqrt(); // the laid axis is +x
+    for m in &got.moves {
+        if m.kind == MoveKind::Rapid {
+            assert!(rho(m.to) >= 7.0 - 1e-9, "a laid link drops under the hop cylinder: {}", rho(m.to));
+        }
+    }
+    let first = got.moves.first().expect("the opening move");
+    assert!(rho(first.from) >= 9.0 - 1e-6, "the program opens under the clearance cylinder: {}", rho(first.from));
+    let plain = rotary_parallel(&facets, &p, &c).expect("the Z-plane twin");
+    assert_ne!(plain.moves, got.moves, "the radial switch must move the links");
 }

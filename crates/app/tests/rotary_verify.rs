@@ -8,7 +8,9 @@
 //! every program opens on its clearance pose, and Rotary Parallel's
 //! links are radial. And the pose law the verdicts stand on: the ball the stream
 //! puts at the tip-plus-r-along-the-axis is the ball the ladder
-//! planned, tangent to the skin - not one radius off it.
+//! planned, tangent to the skin - not one radius off it. The radial door
+//! (#2774): a clearance, retract or band radius the bar would drive the
+//! tool through is refused by name when the command is made.
 //! Provenance: our own fixtures (the operations suite's turned bar);
 //! the law is the Prime Directive's "correct, or visibly refused".
 //!
@@ -18,12 +20,12 @@ use flecs_ecs::prelude::World;
 
 use camcraft_app::cl::MoveKind;
 use camcraft_app::commands::{
-    AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SetStock,
-    SetWcsOrigin,
+    AddTool, CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel,
+    LoadMachine, SetStock, SetWcsOrigin,
 };
 use camcraft_app::geometry::{quat_from_axis_angle, Mesh, Point3, Triangle, IDENTITY_Q};
 use camcraft_app::model;
-use camcraft_app::operation::{self, Height, OpParams, OpStatus, SrcRef};
+use camcraft_app::operation::{self, Height, OpParams, OpStatus, RadialHeight, RadialSource, SrcRef};
 use camcraft_app::posting;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
@@ -80,6 +82,10 @@ fn params(kind: Kind, clearance: f64) -> OpParams {
             retract_z: None,
             top_z: Height::fixed(14.0),
             bottom_z: Height::fixed(-14.0),
+            clearance_r: None,
+            retract_r: None,
+            top_r: None,
+            bottom_r: None,
             feed: 500.0,
             plunge_feed: 100.0,
             climb: true,
@@ -98,6 +104,10 @@ fn params(kind: Kind, clearance: f64) -> OpParams {
             retract_z: None,
             top_z: Height::fixed(6.0),
             bottom_z: Height::fixed(1.0),
+            clearance_r: None,
+            retract_r: None,
+            top_r: None,
+            bottom_r: None,
             feed: 500.0,
             plunge_feed: 100.0,
             climb: true,
@@ -115,6 +125,8 @@ fn params(kind: Kind, clearance: f64) -> OpParams {
             clearance_z: Height::fixed(clearance),
             top_z: Height::fixed(14.0),
             bottom_z: Height::fixed(-14.0),
+            clearance_r: None,
+            top_r: None,
             stepdown: 0.5,
             feed: 500.0,
             plunge_feed: 100.0,
@@ -427,4 +439,116 @@ fn rotary_parallel_retracts_along_the_radius_and_verifies_clean() {
         }
     }
     assert!(retracts > 3, "passes retract, got {retracts}");
+}
+
+/// A standing bar with one clean rotary contour on it, for the radial
+/// door's tests (#2774). The bar: part r6, stock d12.4, so the work floor
+/// about the axis is 6.2 mm.
+fn bar_with_contour(radial: [Option<RadialHeight>; 4]) -> World {
+    let world = new_world();
+    let mut h = History::default();
+    let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
+    h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    let loc = Location { pos: Point3::new(0.0, 0.0, -16.0), rot: IDENTITY_Q };
+    h.execute(&world, SetStock::new(&world, StockShape::Cylinder { diameter: 12.4, height: 32.0 }, loc).expect("bar stock"));
+    h.execute(&world, ImportModel::from_mesh("bar", Mesh::from_facets(revolve(16))));
+    let mut params = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, retract_r, top_r, bottom_r, .. } = &mut params {
+        *clearance_r = radial[0];
+        *retract_r = radial[1];
+        *top_r = radial[2];
+        *bottom_r = radial[3];
+    }
+    let op = CreateOperation::new(&world, "OP", "BN-0600", SrcRef::Entity("bar".into()), params).expect("create");
+    h.execute(&world, op);
+    world
+}
+
+#[test]
+fn a_radial_clearance_inside_the_work_is_refused_by_name() {
+    // #2774: a rapid cylinder at r5.9 about the axis - 0.3 mm inside the
+    // d12.4 bar's own skin - would drive the tool through metal on every
+    // hop. The door refuses it when the command is made, not at Generate.
+    let world = bar_with_contour([None, None, None, None]);
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, .. } = &mut p {
+        *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, -0.3));
+    }
+    let e = CreateOperation::new(&world, "OP2", "BN-0600", SrcRef::Entity("bar".into()), p)
+        .map(|_| ())
+        .expect_err("a clearance radius inside the bar must refuse the command");
+    let msg = e.to_string();
+    assert!(msg.contains("Clearance radius") && msg.contains("stands inside"), "{msg}");
+}
+
+#[test]
+fn a_radial_edit_inside_the_work_keeps_the_stored_heights() {
+    // The edit path answers the same door: the bad retract radius is
+    // refused at the command, and the op keeps the heights it stored.
+    let world = bar_with_contour([
+        Some(RadialHeight::of(RadialSource::StockOd, 5.0)),
+        Some(RadialHeight::of(RadialSource::StockOd, 10.0)),
+        None,
+        None,
+    ]);
+    let mut bad = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, retract_r, .. } = &mut bad {
+        *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, 5.0));
+        *retract_r = Some(RadialHeight::of(RadialSource::StockOd, -0.3));
+    }
+    let e = EditOperationParams::new(&world, "OP", bad).map(|_| ()).expect_err("a retract radius inside the bar must refuse the edit");
+    let msg = e.to_string();
+    assert!(msg.contains("Retract radius") && msg.contains("stands inside"), "{msg}");
+    let op = model::operation_of(&world, &model::find_by_name(&world, "OP").expect("op")).expect("params");
+    if let OpParams::RotaryContour { retract_r, .. } = op.params {
+        assert_eq!(retract_r, Some(RadialHeight::of(RadialSource::StockOd, 10.0)), "the refused edit must not touch the stored heights");
+    }
+}
+
+#[test]
+fn a_radial_band_crossed_is_refused_by_name() {
+    // #2774: Top r8 under Bottom r9 - the rho window empty - is refused
+    // at the command, with the two names in the words.
+    let world = bar_with_contour([None, None, None, None]);
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { top_r, bottom_r, .. } = &mut p {
+        *top_r = Some(RadialHeight::absolute(8.0));
+        *bottom_r = Some(RadialHeight::absolute(9.0));
+    }
+    let e = CreateOperation::new(&world, "OP2", "BN-0600", SrcRef::Entity("bar".into()), p)
+        .map(|_| ())
+        .expect_err("a top radius under the bottom radius must refuse the command");
+    let msg = e.to_string();
+    assert!(msg.contains("Top radius") && msg.contains("below Bottom radius"), "{msg}");
+}
+
+#[test]
+fn the_radial_heights_survive_the_project_round_trip() {
+    // #2774: the file stores the expression, never a resolved radius. The
+    // read-back is equal field for field, and a v73 writer (no radial
+    // keys) reads back as the Z-plane law - every v73 op's byte-identical
+    // behaviour, the no-op step the v74 rung records.
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, retract_r, top_r, bottom_r, .. } = &mut p {
+        *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, 5.0));
+        *retract_r = Some(RadialHeight::of(RadialSource::StockOd, 10.0));
+        *top_r = Some(RadialHeight::of(RadialSource::ModelMaxRadius, -0.5));
+        *bottom_r = Some(RadialHeight::absolute(2.5));
+    }
+    let saved = camcraft_app::project::params_to_json(&p);
+    assert_eq!(camcraft_app::project::params_from_json(&saved).expect("round trip"), p);
+    let mut v73 = saved.clone();
+    let obj = v73.get_mut("rotary_contour").and_then(serde_json::Value::as_object_mut).expect("rotary contour fields");
+    for k in ["clearance_r", "retract_r", "top_r", "bottom_r"] {
+        assert!(obj.remove(k).is_some(), "the save names {k}");
+    }
+    let mut plain = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, .. } = &mut plain {
+        *clearance_r = Some(RadialHeight::of(RadialSource::StockOd, 5.0));
+    }
+    let mut half = v73.clone();
+    let obj = half.get_mut("rotary_contour").and_then(serde_json::Value::as_object_mut).expect("rotary contour fields");
+    obj.insert("clearance_r".to_string(), saved["rotary_contour"]["clearance_r"].clone());
+    assert_eq!(camcraft_app::project::params_from_json(&half).expect("a v73 file plus one radial key"), plain);
+    assert_eq!(camcraft_app::project::params_from_json(&v73).expect("a v73 file"), params(Kind::Contour, 25.0));
 }

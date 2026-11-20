@@ -55,6 +55,7 @@ use crate::geometry::{Point3, Triangle};
 use crate::machining2d::{GenError, ARC_FIT_TOL};
 
 use super::axis::{self, Axis};
+use super::radial::{self, RadialHeights};
 use super::retip::{along, radial_at, tip_of};
 use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
@@ -83,8 +84,23 @@ pub fn rotary_contour(
     p: &Finish3DParams,
     c: &AxisControl,
 ) -> Result<Toolpath, GenError> {
+    rotary_contour_radial(facets, p, c, RadialHeights::NONE)
+}
+
+/// [`rotary_contour`] with #2774's radial heights: `clearance`/`retract` are
+/// TIP radii about the fitted axis, and the ladder's axial lifts are rebuilt
+/// as radial retracts and plunges. The band's top and bottom do not apply: a
+/// standing contour's ladder is a STATION ladder, so its axial window stays
+/// the `top_z`/`bottom_z` author. All `None` is the Z-plane law, byte for
+/// byte.
+pub fn rotary_contour_radial(
+    facets: &[Triangle],
+    p: &Finish3DParams,
+    c: &AxisControl,
+    radial: RadialHeights,
+) -> Result<Toolpath, GenError> {
     let ax = axis::fit(facets)?;
-    rotary_contour_about(facets, ax, p, c)
+    rotary_contour_about(facets, ax, p, c, radial)
 }
 
 /// [`rotary_contour`] about an axis the caller STATES and has judged
@@ -92,14 +108,17 @@ pub fn rotary_contour(
 /// line or the operation's own direction, anchored through the work
 /// offset's origin - never a line the model's faces were not read
 /// against. The fit stays inside the plain entry, so turning and
-/// drilling and every golden path keep their own axis.
+/// drilling and every golden path keep their own axis. `radial` is
+/// #2774's clearance and retract radii about that axis (see
+/// [`rotary_contour_radial`]).
 pub fn rotary_contour_stated(
     facets: &[Triangle],
     ax: Axis,
     p: &Finish3DParams,
     c: &AxisControl,
+    radial: RadialHeights,
 ) -> Result<Toolpath, GenError> {
-    rotary_contour_about(facets, ax, p, c)
+    rotary_contour_about(facets, ax, p, c, radial)
 }
 
 /// The contour ladder about `ax`, the plain entry's own body.
@@ -108,6 +127,7 @@ fn rotary_contour_about(
     ax: Axis,
     p: &Finish3DParams,
     c: &AxisControl,
+    radial: RadialHeights,
 ) -> Result<Toolpath, GenError> {
     let lean = ax.dir.dot(UP).abs();
     if lean < LEAN_MIN {
@@ -122,7 +142,19 @@ fn rotary_contour_about(
     let uz = if ax.dir.dot(UP) < 0.0 { -lean } else { lean };
     let q = stations(&local, p, &f, &|h| (h - ax.origin.z) / uz);
     let r = p.tool_diameter * 0.5;
-    let base = finishing3d::waterline(&local, &q).map_err(|e| to_world(e, &f, &ax, c, r))?;
+    let mut base = finishing3d::waterline(&local, &q).map_err(|e| to_world(e, &f, &ax, c, r))?;
+    if radial.clearance.is_some() || radial.retract.is_some() {
+        let clear = radial.clearance.unwrap_or(q.clearance_z);
+        let hop = radial.retract.map_or(clear, |h| h.min(clear));
+        let rho = local
+            .iter()
+            .flat_map(|t| [t.a, t.b, t.c])
+            .map(|p| p.x.hypot(p.y))
+            .filter(|v| v.is_finite())
+            .fold(0.0f64, f64::max);
+        base = radial::radial_relink_z(&base, clear, hop, rho, p.feed, p.plunge_feed, "Rotary Contour")
+            .map_err(|e| to_world(e, &f, &ax, c, r))?;
+    }
     posed(&f, &base, &ax, c, r)
 }
 
@@ -142,6 +174,7 @@ pub fn rotary_parallel(
 /// chuck - the pass stops at that end's plane and leaves the end face
 /// ([`rotary_ends`]), and a note names the end. None, or stock that
 /// ends with the model, is the plain raster.
+pub fn rotary_parallel_in(
 pub fn rotary_parallel_in(
     facets: &[Triangle],
     stock: Option<&[Triangle]>,
@@ -164,14 +197,32 @@ pub fn rotary_parallel_over(
     c: &AxisControl,
 ) -> Result<Toolpath, GenError> {
     let ax = axis::fit(facets)?;
-    rotary_parallel_about(facets, stock, picked, ax, p, c)
+    rotary_parallel_about(facets, stock, picked, ax, p, c, RadialHeights::NONE)
+}
+
+/// [`rotary_parallel_in`] with #2774's radial heights. In the laid-down
+/// frame the local z IS the radial direction, so `clearance`/`retract` are
+/// the tip radii of the rapid cylinders and `top`/`bottom` the radial band
+/// of the cut ladder. `None` on a field keeps the Z-plane reading.
+#[allow(clippy::too_many_arguments)]
+pub fn rotary_parallel_radial(
+    facets: &[Triangle],
+    stock: Option<&[Triangle]>,
+    p: &Finish3DParams,
+    c: &AxisControl,
+    radial: RadialHeights,
+) -> Result<Toolpath, GenError> {
+    let ax = axis::fit(facets)?;
+    rotary_parallel_about(facets, stock, None, ax, p, c, radial)
 }
 
 /// [`rotary_parallel_over`] about an axis the caller STATES and has
 /// judged (#2772 parts 1-2, `axis_stated::judged_any`) - the machine's
 /// rotary line or the operation's own direction, anchored through the
 /// work offset's origin. The same body the plain entry runs about its
-/// fit; the fit stays inside the plain entry.
+/// fit; the fit stays inside the plain entry. `radial` is #2774's band
+/// and rapid radii about that axis (see [`rotary_parallel_radial`]).
+#[allow(clippy::too_many_arguments)]
 pub fn rotary_parallel_over_stated(
     facets: &[Triangle],
     stock: Option<&[Triangle]>,
@@ -179,11 +230,13 @@ pub fn rotary_parallel_over_stated(
     ax: Axis,
     p: &Finish3DParams,
     c: &AxisControl,
+    radial: RadialHeights,
 ) -> Result<Toolpath, GenError> {
-    rotary_parallel_about(facets, stock, picked, ax, p, c)
+    rotary_parallel_about(facets, stock, picked, ax, p, c, radial)
 }
 
 /// The raster ladder about `ax`, the plain entry's own body.
+#[allow(clippy::too_many_arguments)]
 fn rotary_parallel_about(
     facets: &[Triangle],
     stock: Option<&[Triangle]>,
@@ -191,6 +244,7 @@ fn rotary_parallel_about(
     ax: Axis,
     p: &Finish3DParams,
     c: &AxisControl,
+    radial: RadialHeights,
 ) -> Result<Toolpath, GenError> {
     let flat = 1.0 - ax.dir.dot(UP) * ax.dir.dot(UP);
     if flat < LEAN_MIN * LEAN_MIN {
@@ -220,6 +274,13 @@ fn rotary_parallel_about(
     };
     let local = f.local_facets(facets);
     let mut q = stations(&local, p, &f, &|h| h - ax.origin.z);
+    // #2774: the cut band's radial window, when the op states it.
+    if let Some(top) = radial.top {
+        q.top_z = top;
+    }
+    if let Some(bottom) = radial.bottom {
+        q.bottom_z = bottom;
+    }
     // #15: the raster's certified diagonal hops and the rings' ramped
     // first contacts are an UPRIGHT tool's verbs - on the bar's flank
     // and end, posed radially, they run down the tool's own axis. The
@@ -277,13 +338,18 @@ fn rotary_parallel_about(
     // M13.8: the raster's Z lifts become radial links - out along the
     // radius to the retract cylinder, index, back in along the radius
     // ([`rotary_links`]); the planes read as radii in the laid frame.
-    let hop = q.retract_z.map_or(q.clearance_z, |h| h.min(q.clearance_z));
+    // #2774: when the op states radial heights, those are the cylinders.
+    let clear = radial.clearance.unwrap_or(q.clearance_z);
+    let hop = match radial.retract {
+        Some(h) => h.min(clear),
+        None => q.retract_z.map_or(clear, |h| h.min(clear)),
+    };
     let rho = rotary_links::local_rho_max(&local);
     // #15: under the sloped-entry law (`entry_ramp`, the centre-cutting
     // guard's retry) each infeed ramps along the pass where the ramp is
     // proved clear of the part; off, every infeed stays a radial plunge.
     let ramp = p.entry_ramp.then_some(rotary_links::Ramp { deg: p.ramp_angle, facets: &local, tol: p.tolerance, span });
-    let base = rotary_links::radial_relink(&base, r, q.clearance_z, hop, rho, p.feed, p.plunge_feed, ramp)
+    let base = rotary_links::radial_relink(&base, r, clear, hop, rho, p.feed, p.plunge_feed, ramp)
         .map_err(|e| to_world(e, &f, &ax, c, r))?;
     let mut out = posed(&f, &base, &ax, c, r)?;
     // #2970: the raster's and the rings' notes (samples refused, rest
