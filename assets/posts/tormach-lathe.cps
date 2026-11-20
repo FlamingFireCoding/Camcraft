@@ -790,16 +790,6 @@ function g76Why(p, r0, r1) {
   if (rev !== spinRev) {
     return "a " + p.Hand + "-hand thread cut " + (p.EndZ < p.Z ? "toward" : "away from") + " the chuck needs " + (rev ? "M4" : "M3") + ", the section's spindle runs " + (spinRev ? "M4" : "M3");
   }
-  // #2952 (the law of #2878): the public LinuxCNC G-code reference's
-  // G76 section says that, with no entry taper (this post writes no E
-  // / L), the tool rapids to the cut depth at the start Z, then
-  // synchronizes and cuts. If the start point stands above
-  // material (not in free air in front of the end face or in a relief
-  // groove wider than the insert), refuse the cycle by name and never
-  // write it. A record without the value (an older cache) reads false.
-  if (p.StartInAir !== true) {
-    return "the start point is above material (G76 moves the insert to pass depth at rapid traverse) - start the thread in free air in front of the end face or in a relief groove wider than the insert, regenerate the operation, or choose G33 passes";
-  }
   return null;
 }
 

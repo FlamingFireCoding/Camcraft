@@ -1,0 +1,141 @@
+//! Pins of #1882, the generic ISO abrasive-waterjet post
+//! (`assets/posts/waterjet-iso.cps`): its program for a recorded plate
+//! (one hole, one outer contour) as goldens, in mm with G2/G3 and in
+//! inch with G1 chords and CR LF, and its refusals by name - spindle
+//! words, a section that is not a waterjet cut, a machine that is not a
+//! waterjet, a cut outside the stated travel, a Z cut, a canned cycle.
+//!
+//! Regenerate after an intentional change, then read the diff:
+//! `WRITE_GOLDEN=1 cargo test -p camcraft-post --test waterjet_iso_post`
+//!
+//! Gate map (M4.4): covers assets/posts/waterjet-iso.cps,
+//! camcraft_post::post::engine, camcraft_post::post::cnc.
+
+use camcraft_post::post::engine;
+use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
+
+fn here() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/waterjet")
+}
+
+fn cps() -> String {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/posts/waterjet-iso.cps")).expect("the waterjet post")
+}
+
+fn plate() -> String {
+    std::fs::read_to_string(here().join("plate.cnc")).expect("the plate stream").replace("\r\n", "\n")
+}
+
+fn jet_machine() -> Value {
+    json!({ "name": "Test waterjet", "kind": "waterjet" })
+}
+
+fn post(mch: &Value, stream: &str, options: &Value) -> engine::PostOutput {
+    engine::run_with(&cps(), mch, stream, options).expect("the post runs")
+}
+
+fn golden(name: &str, text: &str) {
+    let path = here().join(name);
+    if std::env::var_os("WRITE_GOLDEN").is_some() {
+        std::fs::write(&path, text).expect("write the golden");
+        return;
+    }
+    let want = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read golden {}: {e}; create it with WRITE_GOLDEN=1", path.display()));
+    assert_eq!(want.replace("\r\n", "\n"), text, "golden {} is stale; regenerate with WRITE_GOLDEN=1", path.display());
+}
+
+#[test]
+fn waterjet_plate_posts_the_golden() {
+    let out = post(&jet_machine(), &plate(), &json!({}));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(!out.program.contains('\r'));
+    golden("plate.nc", &out.program);
+}
+
+#[test]
+fn waterjet_plate_inch_chords_crlf_posts_the_golden() {
+    let options = json!({
+        "Units": "inch", "arcs": "linear", "lineEnding": "crlf", "dwellWord": "p-milliseconds",
+        "waterOn": 64, "waterOff": 65, "abrasiveOn": 66, "abrasiveOff": 67,
+    });
+    let out = post(&jet_machine(), &plate(), &options);
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(out.program.ends_with("\r\n") && out.program.matches('\n').count() == out.program.matches("\r\n").count());
+    let lf = out.program.replace("\r\n", "\n");
+    assert!(!lf.lines().any(|l| l.starts_with("G2 ") || l.starts_with("G3 ")), "no circular word under arcs = linear:\n{lf}");
+    golden("plate_inch_chords.nc", &lf);
+}
+
+/// The counted warnings of one post.
+fn refusals(mch: &Value, stream: &str) -> Vec<String> {
+    post(mch, stream, &json!({})).warnings
+}
+
+fn assert_refused(w: &[String], why: &str) {
+    assert!(w.iter().any(|w| w.contains(why)), "expected a refusal with {why:?}, got {w:?}");
+}
+
+#[test]
+fn waterjet_post_refuses_spindle_words_by_name() {
+    let rpm = plate().replace("PARAM OriginZ", "PARAM SpindleSpeed 1200.000000\nPARAM OriginZ");
+    assert_refused(&refusals(&jet_machine(), &rpm), "operation Plate 100x60: states 1200 rpm - a waterjet turns no spindle (no S word, no G95");
+    let css = plate().replace("PARAM OriginZ", "PARAM SurfaceSpeed 200.000000\nPARAM OriginZ");
+    assert_refused(&refusals(&jet_machine(), &css), "constant surface speed - a waterjet turns no spindle (no G96)");
+}
+
+#[test]
+fn waterjet_post_refuses_a_section_that_is_not_a_waterjet_cut() {
+    let mill = plate()
+        .replace("WATERJET ABRASIVE DWELL800 LAG300\n", "")
+        .replace("JET ON C0 INNER\n", "")
+        .replace("JET OFF C0\n", "")
+        .replace("JET ON C1 OUTER\n", "")
+        .replace("JET OFF C1\n", "")
+        .replace("Waterjet Profile", "2D Contour");
+    assert_refused(&refusals(&jet_machine(), &mill), "a 2D Contour operation is not waterjet cutting");
+    let torch = plate().replace("WATERJET ABRASIVE DWELL800 LAG300", "PLASMA KERF1000");
+    let w = refusals(&jet_machine(), &torch);
+    assert_refused(&w, "does not define onTorchOn / onTorchOff");
+    assert_refused(&w, "no WATERJET header");
+}
+
+#[test]
+fn waterjet_post_refuses_a_machine_that_is_not_a_waterjet() {
+    assert_refused(&refusals(&Value::Null, &plate()), "no machine is stated, so none is declared a waterjet machine");
+    let mill = json!({ "name": "VMC", "kind": "mill" });
+    assert_refused(&refusals(&mill, &plate()), "VMC is not declared a waterjet machine");
+}
+
+#[test]
+fn waterjet_post_refuses_a_cut_outside_the_stated_travel() {
+    let small = json!({
+        "name": "Small jet", "kind": "waterjet",
+        "kinematics": { "static": { "axes": [
+            { "letter": "X", "direction": [1, 0, 0], "travel": [-10.0, 90.0] },
+            { "letter": "Y", "direction": [0, 1, 0], "travel": [-10.0, 500.0] }
+        ], "rotaries": [] } }
+    });
+    let w = refusals(&small, &plate());
+    assert_refused(&w, "the cut runs X -5.5 to 100.5 - outside the machine's stated X travel -10 to 90");
+    assert!(!w.iter().any(|w| w.contains("Y travel")), "{w:?}");
+    let big = json!({
+        "name": "Big jet", "kind": "waterjet",
+        "kinematics": { "static": { "axes": [
+            { "letter": "X", "direction": [1, 0, 0], "travel": [-10.0, 3000.0] },
+            { "letter": "Y", "direction": [0, 1, 0], "travel": [-10.0, 1500.0] }
+        ], "rotaries": [] } }
+    });
+    assert!(refusals(&big, &plate()).is_empty());
+}
+
+#[test]
+fn waterjet_post_refuses_a_z_cut_and_a_cycle() {
+    let z = plate().replace("Feed X 100500 Y 60500 Z 0", "Feed X 100500 Y 60500 Z -1000");
+    assert_refused(&refusals(&jet_machine(), &z), "a cutting move changes Z - a waterjet program cuts in X and Y only");
+    let dry = plate().replace("JET ON C1 OUTER\n", "").replace("JET OFF C1\n", "");
+    assert_refused(&refusals(&jet_machine(), &dry), "a cutting move with the jet off");
+    let cycle = plate().replace("Rapid X 0 Y 0 Z 0\n", "Rapid X 0 Y 0 Z 0\nCYCLE DRILL X 0 Y 0 Z -5000 R 2000\n");
+    assert_refused(&refusals(&jet_machine(), &cycle), "a canned cycle - a waterjet has no drilling cycle");
+}

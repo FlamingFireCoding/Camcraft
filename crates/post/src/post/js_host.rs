@@ -158,6 +158,9 @@ pub const HOOKS: &[&str] = &[
     "onPlasma",
     "onTorchOn",
     "onTorchOff",
+    // #1882: the waterjet jet spans.
+    "onJetOn",
+    "onJetOff",
     "onComment",
     "onClose",
 ];

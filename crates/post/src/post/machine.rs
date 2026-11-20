@@ -56,11 +56,11 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
         if let Some(f) = a.feed {
             speeds.insert("normal".to_owned(), json!(f));
         }
-        axes.push(json!({
-            "letter": a.name,
-            "direction": direction,
-            "speeds": Value::Object(speeds),
-        }));
+        let mut axis = json!({ "letter": a.name, "direction": direction, "speeds": Value::Object(speeds) });
+        if let (Some((lo, hi)), Some(o)) = (a.travel, axis.as_object_mut()) {
+            o.insert("travel".to_owned(), json!([lo, hi])); // #1882
+        }
+        axes.push(axis);
     }
     // Rates the script reads as ceilings: the fastest stated axis -
     // and stated axes are LINEAR only. A rotary's deg/min is not a
@@ -277,6 +277,8 @@ pub fn script_props(m: &Value) -> Value {
         "spindleMax": spindle,
         "coolants": coolants,
         "rotaries": rotaries,
+        // #1882: the linear axes' stated strokes, mm ([min, max] or null).
+        "travel": super::machine_travel::linear(m),
         "rtcp": rtcp,
         "signConvention": sign_convention,
         "spindles": spindles.map_or(Value::Null, |n| json!(n)),
