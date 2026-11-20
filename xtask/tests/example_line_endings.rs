@@ -86,10 +86,13 @@ fn all_golden_and_fixture_files_have_eol_lf() {
     let patterns = [
         "crates/*/tests/golden/**",
         "crates/*/tests/recorded/**",
+        "crates/*/tests/fixtures/**",
         "crates/*/tests/**/*.mch",
         "assets/machines/**/*.mch",
         "testdata/**/*.step",
         "testdata/**/*.stp",
+        "testdata/**/*.stl",
+        "testdata/**/*.obj",
         ".claude/**",
         ".github/**",
     ];

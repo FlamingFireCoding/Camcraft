@@ -9,6 +9,8 @@ crates/*/tests/**/*.mch text eol=lf
 assets/machines/**/*.mch text eol=lf
 
 # 3D models and test fixtures are parsed with LF line ends.
+# The STL rule is for ASCII STL only: a binary STL fixture needs its own
+# later `-text` line, or Git changes its bytes on `git add`.
 testdata/**/*.step text eol=lf
 testdata/**/*.stp text eol=lf
 testdata/**/*.stl text eol=lf
