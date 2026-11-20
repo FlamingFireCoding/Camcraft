@@ -7,11 +7,17 @@
 //! the same actions the old page combo queued. The pick is a user
 //! preference (#877): kept per user across restarts, never on the undo
 //! history; opening and closing the list is view state.
+//! #2958 adds two groups under the colour-vision rows: the viewport's
+//! overlay line width and its anti-aliasing (`SelectLineWidth` /
+//! `SelectAntialias`, kept in the per-user view file). An anti-aliasing
+//! count the graphics device does not offer is a disabled row that says
+//! why on hover.
 //! Provenance: our own code, the hand-drawn dropdown law of the View
 //! and machine doors (panes.rs, layout/mod.rs); no HSMWorks material.
 
 use camcraft_app::commands::{color_vision_of, theme_of};
 use camcraft_app::schema::{ColorVision, ThemeRef};
+use camcraft_app::view::{Antialias, LineWidth};
 use egui::{Rect, Sense, Ui, Vec2};
 
 use super::theme::Tokens;
@@ -27,6 +33,32 @@ pub(super) enum ThemeRow {
     VisionCaption,
     /// One colour-vision mode.
     Vision(ColorVision),
+    /// #2958: the inert caption over the line-width rows.
+    LineCaption,
+    /// #2958: one overlay line width.
+    Line(LineWidth),
+    /// #2958: the inert caption over the anti-aliasing rows.
+    SmoothCaption,
+    /// #2958: one anti-aliasing choice.
+    Smooth(Antialias),
+}
+
+impl ThemeRow {
+    const fn is_caption(&self) -> bool {
+        matches!(self, Self::VisionCaption | Self::LineCaption | Self::SmoothCaption)
+    }
+}
+
+/// The menu text of a line width.
+#[must_use]
+pub(super) fn line_label(w: LineWidth) -> String {
+    format!("{} pt", w.word())
+}
+
+/// Why an anti-aliasing row cannot be picked on this device, if it cannot.
+pub(super) fn smooth_refusal(state: &State, a: Antialias) -> Option<String> {
+    (!state.samples_offered.contains(&a.samples()))
+        .then(|| format!("this graphics device does not offer {} anti-aliasing", a.word()))
 }
 
 /// The command a theme row queues.
@@ -52,6 +84,10 @@ pub(super) fn rows_of(state: &State, button: Rect, strip: Rect, pal: &Tokens) ->
         .collect();
     rows.push(ThemeRow::VisionCaption);
     rows.extend(ColorVision::ALL.into_iter().map(ThemeRow::Vision));
+    rows.push(ThemeRow::LineCaption);
+    rows.extend(LineWidth::ALL.into_iter().map(ThemeRow::Line));
+    rows.push(ThemeRow::SmoothCaption);
+    rows.extend(Antialias::ALL.into_iter().map(ThemeRow::Smooth));
     let g = pal.dropdown();
     let w = g.fit_width(g.menu_width, strip.width());
     let left = g.fit_left(button.left(), strip, w);
@@ -104,29 +140,37 @@ pub(super) fn show(
                     ThemeRow::Theme(label, pick) => (label.clone(), pick.as_ref() == Some(&theme), true),
                     ThemeRow::VisionCaption => ("Colour vision".to_owned(), false, false),
                     ThemeRow::Vision(mode) => (format!("  {}", mode.label()), *mode == vision, true),
+                    ThemeRow::LineCaption => ("Line width".to_owned(), false, false),
+                    ThemeRow::Line(w) => (format!("  {}", line_label(*w)), *w == state.line_width, true),
+                    ThemeRow::SmoothCaption => ("Anti-aliasing".to_owned(), false, false),
+                    ThemeRow::Smooth(a) => (format!("  {}", a.word()), *a == state.antialias, true),
                 };
                 let why = match row {
                     ThemeRow::Theme(_, pick) if state.browser_build =>
-                        crate::browser_files::refusal(&command_of(pick.as_ref()), false),
+                        crate::browser_files::refusal(&command_of(pick.as_ref()), false).map(str::to_owned),
+                    ThemeRow::Smooth(a) => smooth_refusal(state, *a),
                     _ => None,
                 };
                 let live = live && why.is_none();
                 let resp = ui.add_enabled_ui(live, |ui| {
                     ui.interact(*r, id.with(("theme-row", k)), Sense::click())
                 }).inner;
-                if !matches!(row, ThemeRow::VisionCaption) {
+                if !row.is_caption() {
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, live, &label));
                 }
                 let resp = if let Some(why) = why { resp.on_disabled_hover_text(why) } else { resp };
                 if resp.hovered() && live {
                     p.rect_filled(*r, 0.0, pal.field_hover);
                 }
-                if matches!(row, ThemeRow::VisionCaption) {
+                if row.is_caption() {
                     p.hline(r.x_range(), r.top(), egui::Stroke::new(1.0, pal.border));
                 }
                 let text = if current { format!("{label}  (current)") } else { label };
-                let checked = matches!(row, ThemeRow::Theme(_, Some(_)) | ThemeRow::Vision(_))
-                    .then_some(current);
+                let checked = matches!(
+                    row,
+                    ThemeRow::Theme(_, Some(_)) | ThemeRow::Vision(_) | ThemeRow::Line(_) | ThemeRow::Smooth(_)
+                )
+                .then_some(current);
                 super::painted::menu_item(&resp, text.trim(), live, checked);
                 p.text(
                     r.left_center() + Vec2::new(g.pad_x, 0.0),
@@ -141,6 +185,8 @@ pub(super) fn show(
                     chose = Some(match row {
                         ThemeRow::Theme(_, pick) if !current => Some(command_of(pick.as_ref())),
                         ThemeRow::Vision(mode) if !current => Some(CommandKind::SelectColorVision(*mode)),
+                        ThemeRow::Line(w) if !current => Some(CommandKind::SelectLineWidth(*w)),
+                        ThemeRow::Smooth(a) if !current => Some(CommandKind::SelectAntialias(*a)),
                         _ => None,
                     });
                 }

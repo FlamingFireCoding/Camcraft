@@ -192,6 +192,8 @@ mod tool_cutter_params;
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
+// #2958: the Theme door's line width and anti-aliasing groups.
+mod theme_door_quality;
 mod recent_door;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;

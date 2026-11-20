@@ -283,6 +283,12 @@ pub enum CommandKind {
     /// gated (separation + readability through the simulated eye)
     /// before it is set, so a failing mode is never worn or stored.
     SelectColorVision(ColorVision),
+    /// #2958: the viewport overlay line width, a per-user view setting
+    /// (not on the history, not a document change).
+    SelectLineWidth(camcraft_app::view::LineWidth),
+    /// #2958: the viewport anti-aliasing; a sample count the device does
+    /// not offer is refused by name.
+    SelectAntialias(camcraft_app::view::Antialias),
     /// The active setup's WCS (#342: one per setup): origin plus full
     /// orientation as yaw-pitch-roll degrees (R = Rz ⊗ Ry ⊗ Rx). The world
     /// stores a unit quaternion; pure-yaw setups use roll = pitch = 0.
@@ -1726,6 +1732,14 @@ pub struct State {
     /// depend on it - only the names (`World`, each offset's entity
     /// name) do.
     pub show_gizmo_names: bool,
+    /// #2958: the viewport overlay line width and multisample
+    /// anti-aliasing, kept in the same per-user view file.
+    pub line_width: camcraft_app::view::LineWidth,
+    pub antialias: camcraft_app::view::Antialias,
+    /// #2958: the sample counts the graphics device offers for the 3D
+    /// targets, set by the windowed shell at bring-up. Headless and the
+    /// browser keep WebGPU's guaranteed pair, 1 and 4.
+    pub samples_offered: Vec<u32>,
     /// Show cached toolpaths beyond the selected operation's: with this on,
     /// every generated path draws (dimmed where unselected) instead of only
     /// the one the tree highlights. View state like the camera - not
@@ -2269,6 +2283,9 @@ impl State {
             body_turn: None,
             handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
+            line_width: camcraft_app::view::LineWidth::default(),
+            antialias: camcraft_app::view::Antialias::default(),
+            samples_offered: crate::viewport::GUARANTEED_SAMPLES.to_vec(),
             show_all_paths: false,
             display: DisplayMode::default(),
             sim: None,
@@ -3495,6 +3512,8 @@ impl State {
             }
             CommandKind::SelectTheme(next) => self.select_theme(next),
             CommandKind::SelectColorVision(next) => self.select_color_vision(next),
+            CommandKind::SelectLineWidth(next) => self.select_line_width(next),
+            CommandKind::SelectAntialias(next) => self.select_antialias(next),
             CommandKind::SelectThemeDialog => {
                 if let Some(path) = pick_theme_file() {
                     self.select_theme(ThemeRef::File(path.display().to_string()));

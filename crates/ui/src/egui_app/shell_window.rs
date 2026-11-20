@@ -254,6 +254,9 @@ impl Shell {
         let gpu_line = gpu::describe(&adapter).log_line();
         diag_info!("{gpu_line}");
         self.state.gpu_line = Some(gpu_line);
+        // #2958: the anti-aliasing the Theme door offers on this device.
+        self.state.samples_offered = crate::viewport::offered_samples(&adapter, device.features(), VIEW3D_FORMAT);
+        diag_info!("viewport: sample counts offered {:?}", self.state.samples_offered);
 
         let mut renderer = Renderer::new(&device, config.format, RendererOptions::default());
         let scene = world::collect(&self.state);
