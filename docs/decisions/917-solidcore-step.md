@@ -141,7 +141,9 @@ kept):
   and the "Incomplete:" line now name a test reason; the other asserts do
   not change.
 - `lead_approach.rs` (2 tests) and `shoulder_adaptive.rs` (1 test): known
-  fail #2849, the asserts do not change (see below).
+  fail #2849, the asserts do not change (see below). Two new pins for the
+  corner check fix: motion `unreached::law::a_micron_bow_tie_cusp_gives_its_lobes_and_no_error`
+  and `lead_approach::the_users_pocket_names_its_seven_sharp_corners_and_the_corner_check_runs`.
 
 **Known regressions, tracked.**
 - #2844: the four-turn thread flank gives 391338 facets (main: under 5000,
@@ -180,15 +182,41 @@ kept):
   verify still holds the post (`ok false`, `held_by`); a new "gouge:" pin
   at 0.1 mm keeps the gate's refusal. The lattice gap is #2846.
 - #2849: on the new meshes of `Milling-test.step` and `fig8.step` three
-  toolpath pins move. They pass on #2843's head.
-  - The stock-source pocket with a helix entry gets "the pass start ... is
-    in material" notes, and the corner check of `keep_law` reports "loop
-    crosses itself" and does not run.
-  - The `axis_start` contour posts its entry arc as chords (a note says so).
-  - The fig8 EM-0800 adaptive ends 31.4 mm from the part, not at the face;
-    it verifies clean and posts.
-  Each fallback is stated in a note; none is silent wrong output. The self
-  crossing loop is the defect to find.
+  toolpath pins move. They pass on #2843's head. Three causes:
+  - The corner check (fixed here). The leftover of the fine bore beside a
+    stock corner kept an 11-point bow-tie cusp (area 1.2e-4 mm2, 0.3 mm
+    long). `connected_pieces` read each outer loop with `Region::new`,
+    which refuses a loop that crosses itself, so the check said "did not
+    run". The loop is boolean output, not sketch input: `outer_fills` now
+    reads it with `Region::from_slices` (the even-odd reading). A simple
+    loop gives the same single path both ways, so every loop that
+    `Region::new` accepted gives the same pieces as before (the four
+    `unreached::law` tests and `narrow_band.rs` do not change). The check
+    names the same 7 corners as on #2843's head (four stock corners, three
+    wall boxes; the wall box edges move by at most 0.095 mm). Pins:
+    `a_micron_bow_tie_cusp_gives_its_lobes_and_no_error` (hand-made
+    bow-tie) and
+    `lead_approach::the_users_pocket_names_its_seven_sharp_corners_and_the_corner_check_runs`
+    (red without the fix, at the "did not run" assert).
+  - The horizontal arc entry (stays). The pass start moves from
+    (-31.789, 8.842) to (-31.878, 8.513), and the arc entry note changes
+    from "fits only under its radius - flown at 1.500 mm" to "does not
+    fit". Test 1 keeps its known-fail marker: it fails on that note.
+  - `axis_reseat` (stays, own item on #2849). The first edge of the ring is
+    a 0.973 mm chord 0.93 degrees off X, inside the 1 degree tolerance, so
+    the start is kept; then no standard plane fits and the contour posts 0
+    G18/G19 arcs (6 on #2843's head). The gap is on main too, for any start
+    edge between 0 and 1 degree.
+  - The fig8 EM-0800 adaptive (stays). On both heads the HSM plan is
+    refused and the Offset rings cut. The ring order changed by the chain
+    law of `waterline_passes`, not by a tie in a sort: the loops are listed
+    by offset and area (no equal areas at k 0..2), and a chain takes the
+    first loop whose chord clears. On the new mesh the face ring's start
+    vertex moved, the chord from the k 2 stock ring to the k 2 face ring
+    clears, and the k 1 and k 0 stock rings become the last chain. Test 3
+    removes no less material: 9098.7 mm of feed against 9128.7 mm, and the
+    smallest distance to the part is 4.0000 on both.
+  Each fallback is stated in a note; none is silent wrong output.
 
 **Considered and dropped.**
 - A new `camcraft-app -> camcraft-kernel` edge. Dropped: the seam goes

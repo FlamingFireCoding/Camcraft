@@ -253,6 +253,30 @@ fn the_horizontal_arc_entry_on_the_users_pocket_verifies_silent() {
 }
 
 #[test]
+fn the_users_pocket_names_its_seven_sharp_corners_and_the_corner_check_runs() {
+    // #2849: on the fine solidcore mesh the leftover of the bore kept a
+    // micron-wide cusp that crossed itself, and the corner check stopped
+    // with "did not run". It runs again and names the same seven corners
+    // as on the coarse mesh: the four stock corners and three wall boxes.
+    let mut op = pocket_op(with(Approach { arc_xy: true, ..Approach::DEFAULT }));
+    if let OpParams::Pocket { entry, .. } = &mut op {
+        *entry = Entry3D::Helix;
+    }
+    let (_w, t, _) = user_job("EM-0600-4FL", false, op);
+    assert!(!t.notes.iter().any(|n| n.contains("did not run")), "{:?}", t.notes);
+    let note = t.notes.iter().find(|n| n.contains("uncut corner material")).expect("the corner note");
+    assert_eq!(note.matches(", Y ").count(), 7, "{note}");
+    for corner in [
+        "X -35.000 mm to -32.000 mm, Y 32.000 mm to 35.000 mm",
+        "X 32.000 mm to 35.000 mm, Y 32.000 mm to 35.000 mm",
+        "X -35.000 mm to -32.000 mm, Y -35.000 mm to -32.000 mm",
+        "X 32.000 mm to 35.000 mm, Y -35.000 mm to -32.000 mm",
+    ] {
+        assert!(note.contains(corner), "{corner}: {note}");
+    }
+}
+
+#[test]
 fn the_approach_round_trips_and_the_defaults_write_no_key() {
     let lead = Lead::Tangential { radius: 5.0 };
     let _ = roundtrip(contour_op(lead, Links::PLANAR), None);
