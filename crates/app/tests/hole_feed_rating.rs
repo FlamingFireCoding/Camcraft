@@ -296,3 +296,78 @@ fn a_running_feed_lowered_below_the_material_row_is_the_rating() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// DR-0600 with `rows`, the document on mild steel, the running feed at
+/// `running`: the tool as #2724's two control cases need it.
+fn drill_with_rows(c: &mut Client, rows: Vec<CuttingRow>, running: f64) {
+    let dr = catalog().into_iter().find(|(n, _)| *n == "DR-0600").map(|(_, t)| t).expect("catalog drill");
+    let def = project::tool_to_json(&Tool { cutting: rows, ..dr });
+    c.ok("edit_tool", json!({ "name": "DR-0600", "patch": { "cutting_data": def["cutting_data"].clone() } }));
+    c.ok("set_work_material", json!({ "material": "mild_steel" }));
+    c.ok("edit_tool", json!({ "name": "DR-0600", "patch": { "feed": running } }));
+}
+
+/// #2724, the row lower: the user raises the running feed to 200 above the
+/// steel row's 115. The rating stays at 115 (the lower of the two). A
+/// rule that took the higher number or the running feed alone gives 200:
+/// then the op at 200 posts and a new op seeds 200, and the two asserts fail.
+#[test]
+fn a_running_feed_raised_above_the_material_row_keeps_the_row_rating() {
+    let dir = temp_dir("raised");
+    let mut c = setup(&dir);
+    let rpm = catalog().into_iter().find(|(n, _)| *n == "DR-0600").map(|(_, t)| t.rpm).expect("catalog drill");
+    drill_with_rows(&mut c, vec![CuttingRow::plain(Some(WorkMaterial::MildSteel), rpm, 115.0)], 200.0);
+    c.ok("edit_operation", json!({ "name": "D", "params": { "feed": 200.0, "plunge_feed": 200.0 } }));
+    c.ok("generate", json!({}));
+    let v = c.ok("verify", json!({}));
+    assert_eq!(v["ok"], json!(false), "a feed above the row holds the post when the running feed is higher: {v}");
+    let nc = dir.join("out.nc");
+    let why = c.refused("post", json!({ "output": nc.display().to_string(), "post": "Fanuc" }));
+    assert!(why.contains("D: feeds 200 mm/min, above the 115 mm/min"), "the row is the limit: {why}");
+    assert!(!nc.exists(), "nothing is written");
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0600", "source": "plate", "name": "D2" }));
+    assert_eq!(c.feeds("D2"), (115.0, 115.0), "the seed is the row, not the raised running feed");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #2724, the unchanged control: the stock states brass, the document
+/// mild steel. The running feed (80) follows the document material, so it
+/// does not speak for brass: the brass row's 150 stays the rating. A rule
+/// that took the lower number here too gives 80, and the asserts fail.
+#[test]
+fn a_stock_material_other_than_the_document_is_rated_by_its_own_row() {
+    let dir = temp_dir("stock");
+    let mut c = setup(&dir);
+    let rpm = catalog().into_iter().find(|(n, _)| *n == "DR-0600").map(|(_, t)| t.rpm).expect("catalog drill");
+    let rows = vec![
+        CuttingRow::plain(Some(WorkMaterial::MildSteel), rpm, 115.0),
+        CuttingRow::plain(Some(WorkMaterial::Brass), rpm, 150.0),
+    ];
+    drill_with_rows(&mut c, rows, 80.0);
+    c.ok("set_stock_material", json!({ "material": "brass" }));
+    c.ok("edit_operation", json!({ "name": "D", "params": { "feed": 150.0, "plunge_feed": 150.0 } }));
+    c.ok("generate", json!({}));
+    let v = c.ok("verify", json!({}));
+    assert_eq!(v["ok"], json!(true), "the brass row's feed posts on brass stock: {v}");
+    c.ok("add_operation", json!({ "kind": "drill", "tool": "DR-0600", "source": "plate", "name": "D2" }));
+    assert_eq!(c.feeds("D2"), (150.0, 150.0), "the seed is the brass row, not the document's running feed");
+    c.ok("undo", json!({}));
+    c.ok("edit_operation", json!({ "name": "D", "params": { "feed": 160.0, "plunge_feed": 160.0 } }));
+    c.ok("generate", json!({}));
+    let v = c.ok("verify", json!({}));
+    assert!(v.to_string().contains("D: feeds 160 mm/min, above the 150 mm/min"), "the brass row is the limit: {v}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #2724, the review's note: a row whose feed is zero or not finite gives
+/// no rating of its own, so the running feed is the rating.
+#[test]
+fn a_row_feed_that_is_not_usable_gives_the_running_feed() {
+    use camcraft_app::operation::feed_rating::rated_feed;
+    let dr = catalog().into_iter().find(|(n, _)| *n == "DR-0600").map(|(_, t)| t).expect("catalog drill");
+    let steel = Some(WorkMaterial::MildSteel);
+    for bad in [0.0, f64::NAN, f64::INFINITY, -5.0] {
+        let tool = Tool { cutting: vec![CuttingRow::plain(steel, dr.rpm, bad)], feed: 90.0, ..dr.clone() };
+        assert_eq!(rated_feed(&tool, steel, steel), Some(90.0), "row feed {bad}");
+    }
+}
