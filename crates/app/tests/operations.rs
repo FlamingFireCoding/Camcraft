@@ -5972,42 +5972,36 @@ fn a_standing_bar_refuses_rotary_parallel_by_name() {
     // and names the kind the stance wants. The laid twin no longer
     // refuses Rotary Contour (#3000): it cuts rings about X, pinned by
     // `a_laid_bar_cuts_rotary_contour_rings_about_x` below.
-    for (mname, name, mesh, params, wants) in [(
-        "lathe",
-        "RPx",
-        lathe_mesh(),
-        rotary_parallel_params(4.0, -4.0),
-        "Rotary Contour",
-    )] {
-        let world = new_world();
-        let mut history = History::default();
-        box_stock(&world, &mut history, 40.0, 40.0, 40.0);
-        add_tool(&world, &mut history, "BN-0600");
-        history.execute(&world, ImportModel::from_mesh(mname, mesh));
-        history.execute(
+    let (mname, name, wants) = ("lathe", "RPx", "Rotary Contour");
+    let (mesh, params) = (lathe_mesh(), rotary_parallel_params(4.0, -4.0));
+    let world = new_world();
+    let mut history = History::default();
+    box_stock(&world, &mut history, 40.0, 40.0, 40.0);
+    add_tool(&world, &mut history, "BN-0600");
+    history.execute(&world, ImportModel::from_mesh(mname, mesh));
+    history.execute(
+        &world,
+        CreateOperation::new(
             &world,
-            CreateOperation::new(
-                &world,
-                name,
-                "BN-0600",
-                SrcRef::Entity(mname.into()),
-                params,
-            )
-            .expect("create"),
-        );
-        let CommandError::Machining(msg) = GenerateOperation::new(&world, name)
-            .err()
-            .expect("a wrong-stance twin must refuse")
-        else {
-            panic!("expected a machining refusal");
-        };
-        assert!(msg.contains(wants), "{msg} should point at {wants}");
-        assert_eq!(
-            status(&world, name),
-            OpStatus::Never,
-            "the refusal leaves no path behind"
-        );
-    }
+            name,
+            "BN-0600",
+            SrcRef::Entity(mname.into()),
+            params,
+        )
+        .expect("create"),
+    );
+    let CommandError::Machining(msg) = GenerateOperation::new(&world, name)
+        .err()
+        .expect("a wrong-stance twin must refuse")
+    else {
+        panic!("expected a machining refusal");
+    };
+    assert!(msg.contains(wants), "{msg} should point at {wants}");
+    assert_eq!(
+        status(&world, name),
+        OpStatus::Never,
+        "the refusal leaves no path behind"
+    );
 }
 
 /// #3000: the laid twin that Rotary Contour refused before now cuts
