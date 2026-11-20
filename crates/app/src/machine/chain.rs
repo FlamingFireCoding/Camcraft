@@ -137,6 +137,33 @@ fn with_parts_of(axis: &Value, slot: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
+/// One row of the editor's axis chain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AxisRow {
+    /// Where the part lives: a JSON pointer into the file.
+    pub pointer: String,
+    /// The part's letter (its `name`, else its `id`).
+    pub name: String,
+    pub rotary: bool,
+    /// A head is below the part: it moves the tool, not the work.
+    pub carries_head: bool,
+}
+
+/// The axis parts in depth-first order, as `parse_mch` reads them.
+#[must_use]
+pub fn rows(v: &Value) -> Vec<AxisRow> {
+    axis_pointers(v)
+        .into_iter()
+        .filter_map(|pointer| {
+            let p = v.pointer(&pointer)?;
+            let name = p.get("name").and_then(Value::as_str).or_else(|| p.get("id").and_then(Value::as_str))?.to_owned();
+            let rotary = p.get("type").and_then(Value::as_str) == Some("rotary");
+            let carries_head = first_of_type(v, &format!("{pointer}/parts"), "head").is_some();
+            Some(AxisRow { pointer, name, rotary, carries_head })
+        })
+        .collect()
+}
+
 /// Every axis part's pointer, depth-first: the editor's rows.
 fn axis_pointers(v: &Value) -> Vec<String> {
     fn walk(v: &Value, at: &str, out: &mut Vec<String>) {

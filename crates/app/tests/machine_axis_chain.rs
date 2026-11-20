@@ -277,3 +277,14 @@ fn a_linear_u_is_added_on_the_table() {
         Err("axis A: a linear axis is named X, Y, Z, U, V or W".to_owned())
     );
 }
+
+#[test]
+fn the_rows_follow_the_chain_and_say_what_carries_the_head() {
+    let mut d = grblhal();
+    d.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("A added");
+    d.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("B added");
+    let rows: Vec<(String, bool, bool)> =
+        d.axis_rows().into_iter().map(|r| (r.name, r.rotary, r.carries_head)).collect();
+    let row = |n: &str, rotary, head| (n.to_owned(), rotary, head);
+    assert_eq!(rows, [row("Z", false, false), row("Y", false, false), row("X", false, false), row("A", true, false), row("B", true, true)]);
+}

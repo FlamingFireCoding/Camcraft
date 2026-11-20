@@ -26,6 +26,7 @@ use camcraft_app::machine::fields;
 use camcraft_app::machine::store::SaveError;
 
 use super::layout::{group_open, prop_grid};
+use super::machine_axis_chain::{self as axis_chain, AxisForm};
 use super::theme::Tokens;
 
 /// The confirmation step a save is waiting on.
@@ -54,6 +55,8 @@ pub struct MachineFileEditor {
     /// The new coolant's M code being typed (#869): added with its name,
     /// never codeless.
     pub new_coolant_code: String,
+    /// The "add axis" form (#2756).
+    pub axis_form: AxisForm,
     pub prompt: Option<Prompt>,
     /// The last save's outcome: (it worked, the words).
     pub status: Option<(bool, String)>,
@@ -78,6 +81,7 @@ impl MachineFileEditor {
             save_as_name,
             new_coolant: String::new(),
             new_coolant_code: String::new(),
+            axis_form: AxisForm::default(),
             prompt: None,
             status: None,
         }
@@ -224,10 +228,14 @@ pub(crate) fn draw(ui: &mut Ui, ed: &mut MachineFileEditor, dir: Option<&Path>, 
 
     let ink = if refusals.is_empty() { pal.accent } else { error };
     ui.label(RichText::new(verdict(refusals.len())).color(ink).strong());
-    for r in fields::unplaced(&groups, &refusals) {
+    // A refusal about an axis itself shows at its row in the chain.
+    let row_keys: Vec<String> = ed.draft.axis_rows().iter().flat_map(|r| axis_chain::row_keys(&r.name)).collect();
+    for r in fields::unplaced(&groups, &refusals).into_iter().filter(|r| !row_keys.contains(&r.key)) {
         super::error_text::error_text(ui, error, &r.to_string());
     }
     ui.add_space(4.0);
+
+    let chain_edit = axis_chain::draw(ui, &ed.draft, &mut ed.axis_form, &refusals, pal, error);
 
     let mut edits: Vec<(String, fields::FieldKind, String)> = Vec::new();
     let mut add_coolant = false;
@@ -303,6 +311,14 @@ pub(crate) fn draw(ui: &mut Ui, ed: &mut MachineFileEditor, dir: Option<&Path>, 
     if let Some(pointer) = remove_coolant {
         match ed.draft.remove_coolant(&pointer) {
             // The list's indices shifted: re-seed every buffer from the file.
+            Ok(()) => ed.buffers.clear(),
+            Err(e) => ed.status = Some((false, e)),
+        }
+    }
+    // Last, so this frame's fields wrote to the pointers they drew.
+    if let Some(edit) = chain_edit {
+        match axis_chain::apply(&mut ed.draft, &mut ed.axis_form, edit) {
+            // The parts' pointers shifted: re-seed every buffer from the file.
             Ok(()) => ed.buffers.clear(),
             Err(e) => ed.status = Some((false, e)),
         }

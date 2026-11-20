@@ -236,6 +236,12 @@ impl MachineDraft {
         Ok(at)
     }
 
+    /// The axis chain's rows in depth-first order (#2756).
+    #[must_use]
+    pub fn axis_rows(&self) -> Vec<chain::AxisRow> {
+        chain::rows(&self.value)
+    }
+
     /// Remove the axis part at `pointer` (#2756); the parts it carried
     /// take its place. Refused by name when the pointer names no axis.
     pub fn remove_axis(&mut self, pointer: &str) -> Result<(), String> {

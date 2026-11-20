@@ -20,7 +20,7 @@ use super::*;
 use crate::egui_app::machine_file_editor::Prompt;
 
 /// A fresh, empty user machines folder for one test.
-fn user_dir(tag: &str) -> PathBuf {
+pub(super) fn user_dir(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("camcraft_ui_machines_edit_{tag}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).expect("make the test folder");
@@ -43,7 +43,7 @@ fn select_row(h: &mut Harness<'static, ShellUi>, name: &str) {
     h.run_steps(2);
 }
 
-fn press(h: &mut Harness<'static, ShellUi>, label: &str) {
+pub(super) fn press(h: &mut Harness<'static, ShellUi>, label: &str) {
     h.get_by_label(label).scroll_to_me();
     h.run_steps(4);
     h.get_by_label(label).click();
@@ -52,7 +52,7 @@ fn press(h: &mut Harness<'static, ShellUi>, label: &str) {
 
 /// Replace a grid field's text the way a user does: click it, select
 /// all, type.
-fn type_into(h: &mut Harness<'static, ShellUi>, field: &str, text: &str) {
+pub(super) fn type_into(h: &mut Harness<'static, ShellUi>, field: &str, text: &str) {
     h.get_by_role_and_label(Role::TextInput, field).scroll_to_me();
     h.run_steps(6);
     h.get_by_role_and_label(Role::TextInput, field).click();
@@ -71,11 +71,11 @@ fn type_into(h: &mut Harness<'static, ShellUi>, field: &str, text: &str) {
     h.run_steps(3);
 }
 
-fn draft_at(h: &Harness<'static, ShellUi>, pointer: &str) -> Option<serde_json::Value> {
+pub(super) fn draft_at(h: &Harness<'static, ShellUi>, pointer: &str) -> Option<serde_json::Value> {
     h.state().state.machines_pane.editor.as_ref().and_then(|e| e.draft.value.pointer(pointer).cloned())
 }
 
-fn prompt(h: &Harness<'static, ShellUi>) -> Option<Prompt> {
+pub(super) fn prompt(h: &Harness<'static, ShellUi>) -> Option<Prompt> {
     h.state().state.machines_pane.editor.as_ref().and_then(|e| e.prompt.clone())
 }
 
@@ -264,7 +264,7 @@ fn new_blank_disabled(h: &Harness<'static, ShellUi>) -> bool {
 
 /// Open the kind dropdown (a ComboBox showing `now`) and pick `to`,
 /// with real pointer events like a user.
-fn pick_kind(h: &mut Harness<'static, ShellUi>, now: &str, to: &str) {
+pub(super) fn pick_kind(h: &mut Harness<'static, ShellUi>, now: &str, to: &str) {
     let at = h
         .get_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some(now))
         .rect()
