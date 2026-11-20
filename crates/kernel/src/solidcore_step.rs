@@ -17,8 +17,8 @@ use solidcore::kernel::CancelToken;
 use solidcore::mass::integrator::properties::brep_area;
 use solidcore::topology::Brep;
 use solidcore_convert::brep::to_kernel_body;
-use solidcore_step::p21::{self, Exchange, Progress};
-use solidcore_step::{topology, units};
+use solidcore_step::p21::{self, Progress};
+use solidcore_step::topology;
 
 use crate::solidcore_impl::{SolidcoreKernel, VOLUME_ACCURACY, checked, failed};
 use crate::solidcore_import::{HEAL_GAP_LIMIT, vertex_gaps};
@@ -188,8 +188,9 @@ fn read_guarded(
     crate::step_units_guard::expand_short_names(&mut ex);
     crate::step_units_guard::check_angle_units(&ex).map_err(refused_input)?;
     crate::step_curve_guard::check(&ex).map_err(refused_input)?;
+    let units = crate::step_length_units::read(&ex).map_err(refused_input)?;
     let mut out = StepRead {
-        length_units_mm: length_units(&ex).map_err(refused_input)?,
+        length_units_mm: units.mm.clone(),
         ..StepRead::default()
     };
     if !ex.duplicates.is_empty() {
@@ -255,6 +256,14 @@ fn read_guarded(
             return Err(timed_out("building solids"));
         }
         let item = s.item;
+        if let Some(reason) = units.unstated(item) {
+            out.refused.push(StepRefusal {
+                item,
+                stage: "read",
+                reason,
+            });
+            continue;
+        }
         if s.sheet {
             out.sheets.push(StepSheet { item, name: s.name, record: s.brep, notes: s.notes });
             continue;
@@ -271,54 +280,6 @@ fn read_guarded(
     }
     out.refused.sort_by_key(|r| r.item);
     Ok(out)
-}
-
-/// The distinct length units the file's representation contexts state, in
-/// millimetres per unit. A context whose unit list names no length unit
-/// states none. `Err` names a length unit the reader cannot convert: it
-/// would read such a unit as millimetres without a word (its units module
-/// says so), and a guessed scale is the silent wrong answer, so the seam
-/// refuses the file as `camcraft_geometry::step_units` does (#306).
-fn length_units(ex: &Exchange) -> Result<Vec<f64>, String> {
-    let mut found: Vec<f64> = Vec::new();
-    for (id, e) in &ex.entities {
-        let Some(list) = e
-            .record("GLOBAL_UNIT_ASSIGNED_CONTEXT")
-            .and_then(|r| r.first())
-            .and_then(p21::Param::as_list)
-        else {
-            continue;
-        };
-        let mut states_length = false;
-        for u in list.iter().filter_map(p21::Param::as_ref_id) {
-            let Some(unit) = ex.get(u).filter(|x| x.has("LENGTH_UNIT")) else {
-                continue;
-            };
-            states_length = true;
-            // An SI length is a (prefixed) metre; anything else must be a
-            // conversion the reader can follow to one.
-            let si_metre = unit
-                .record("SI_UNIT")
-                .map(|si| si.get(1).and_then(p21::Param::as_enum) == Some("METRE"));
-            let sized = match (si_metre, units::unit_factor(ex, u)) {
-                (Some(false), _) => None,
-                (None, _) if unit.record("CONVERSION_BASED_UNIT").is_none() => None,
-                (_, Some((units::UnitKind::Length, f))) if f.is_finite() && f > 0.0 => Some(f),
-                _ => None,
-            };
-            if sized.is_none() {
-                return Err(format!("length unit #{u} cannot be converted to millimetres"));
-            }
-        }
-        if !states_length {
-            continue;
-        }
-        let len = units::context(ex, *id).units.len;
-        if !found.iter().any(|f| f.to_bits() == len.to_bits()) {
-            found.push(len);
-        }
-    }
-    Ok(found)
 }
 
 /// One B-rep record (mm) from a file as a checked kernel solid: built,
