@@ -48,6 +48,71 @@ pub enum BreakThroughFromDto {
     Tip,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerReliefKindDto {
+    #[default]
+    None,
+    Dogbone,
+    #[serde(rename = "t_bone", alias = "tbone", alias = "t-bone", alias = "T-bone")]
+    TBone,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TBoneDirectionDto {
+    #[default]
+    LongEdge,
+    ShortEdge,
+    Horizontal,
+    Vertical,
+}
+
+impl TBoneDirectionDto {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerReliefChoiceDto {
+    None,
+    Dogbone,
+    #[serde(rename = "t_bone_first", alias = "tbone_first")]
+    TBoneFirst,
+    #[serde(rename = "t_bone_second", alias = "tbone_second")]
+    TBoneSecond,
+    #[serde(rename = "t_bone_x", alias = "tbone_x")]
+    TBoneX,
+    #[serde(rename = "t_bone_y", alias = "tbone_y")]
+    TBoneY,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct CornerReliefOverrideDto {
+    pub at: [f64; 2],
+    pub choice: CornerReliefChoiceDto,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct CornerReliefDto {
+    #[serde(default)]
+    pub kind: CornerReliefKindDto,
+    #[serde(default, skip_serializing_if = "TBoneDirectionDto::is_default")]
+    pub tbone_direction: TBoneDirectionDto,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<CornerReliefOverrideDto>,
+}
+
+impl CornerReliefDto {
+    pub(super) fn is_default(&self) -> bool {
+        self.kind == CornerReliefKindDto::None
+            && self.tbone_direction == TBoneDirectionDto::default()
+            && self.overrides.is_empty()
+    }
+}
+
 /// The file mirror of `operation::OpParams`, tool-free by the same rule as
 /// the domain type: the diameter lives in the tool, never a parameter.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -186,6 +251,9 @@ pub enum ParamsDto {
         /// no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rest: Option<RestDto>,
+        /// #2400 corner relief: absent is off on every earlier file - no version step.
+        #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
+        corner_relief: CornerReliefDto,
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
@@ -248,6 +316,9 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #2400 corner relief: absent is off on every earlier file.
+        #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
+        corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },
@@ -280,6 +351,9 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #2400 corner relief: absent is off on every earlier file.
+        #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
+        corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
     },

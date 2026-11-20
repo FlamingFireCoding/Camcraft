@@ -38,8 +38,12 @@ pub fn current_stamp(
     // clearance plane (#2121). The post gate trusts the verdicts a cache
     // carries, so a cache judged under the old law must not read fresh:
     // it reads Stale once and the post refuses it until a regenerate.
+    // v4 (#2901): the opening rapid of a clearance-seeded path starts
+    // over its own entry, not over the WCS origin (#2382). A v3 cache
+    // holds the invented rapid from the origin, and its fixture and
+    // rapid verdicts judged it: it reads Stale once and regenerates.
     // Bump this salt again whenever a verify law a cache records changes.
-    h.write(b"camcraft-op-stamp-v3");
+    h.write(b"camcraft-op-stamp-v4");
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
@@ -90,6 +94,13 @@ pub fn current_stamp(
     params.stamp_with(world, setup, Some(src), &mut h);
     if let OpParams::Deburr { exclude_edges, .. } = params {
         super::deburr_picks::stamp_inputs(world, setup, src, exclude_edges, &mut h)?;
+    }
+    // #2848: a rotary op's picks named the whole model before. A path
+    // cached under that reading is stale until the op is generated again.
+    if matches!(src, SrcRef::Selection(_))
+        && matches!(params, OpParams::RotaryContour { .. } | OpParams::RotaryParallel { .. } | OpParams::RotaryOffset { .. })
+    {
+        h.write(b"rotary-picked-faces-v1");
     }
     // #326: the setup's part alignment is a moved input for every op of
     // the setup (the parts it machines, verifies against or measures

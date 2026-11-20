@@ -238,14 +238,13 @@ pub fn thread_planned_in(
     };
     let c0 = (v_lo + v_hi) * 0.5;
     // The lattice whose footprints reach the window: every center
-    // whose band (center +- half) overlaps it. The valley itself is
-    // such a center, so the run never comes up empty. The top of the
-    // window is not clamped to the bar's end face (#2879): passes run
-    // toward the chuck and may start in free air in front of the part
-    // so spindle and feed synchronise before engagement.
-    let s_top = f.station_of(p.top_z);
+    // whose band (center +- half) overlaps it. When `top_z` extends
+    // past the bar's free end, the pass may start in free air in front
+    // of the end face (issue #2878). The valley itself is in the
+    // window, so the run never comes up empty.
+    let s_hi_pass = f.station_of(p.top_z).max(s_hi);
     let k_lo = ((s_lo - half - c0) / p.pitch).ceil();
-    let k_hi = ((s_top + half - c0) / p.pitch).floor();
+    let k_hi = ((s_hi_pass + half - c0) / p.pitch).floor();
     if k_hi - k_lo > blade::MAX_RUNGS {
         return Err(GenError::Invalid(format!(
             "the thread would run more than {:.0} turns - the pitch is far too fine for \
@@ -301,7 +300,7 @@ pub fn thread_planned_in(
     let last = b.moves_len().saturating_sub(1);
     b.push(MoveKind::Rapid, f.point(rho_clear, s_out), None);
     let mut path = b.finish();
-    thread_cycle::attach_cycle(&mut path, first, last, ref_top, root, p, plan, &passes);
+    thread_cycle::attach_cycle(&mut path, first, last, ref_top, root, p, plan, &passes, &f, &sg, stock);
     thread_dips::require_record(&plan.dips, &path)?;
     Ok(path)
 }

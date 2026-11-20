@@ -355,6 +355,8 @@ mod open_tests;
 #[cfg(test)]
 mod preimage_tests;
 #[cfg(test)]
+mod ruled_heal_tests;
+#[cfg(test)]
 mod ruled_tests;
 #[cfg(test)]
 mod ruled_widen_tests;

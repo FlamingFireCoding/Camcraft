@@ -14,6 +14,9 @@ use egui_kittest::kittest::NodeT;
 
 use super::*;
 
+#[path = "structural/corner_relief.rs"]
+mod corner_relief;
+
 #[path = "tool_properties.rs"]
 mod tool_properties;
 
@@ -28,6 +31,9 @@ mod break_through;
 
 #[path = "structural/donate.rs"]
 mod donate;
+
+#[path = "structural/ops_count.rs"]
+mod ops_count;
 
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {

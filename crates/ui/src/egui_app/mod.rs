@@ -43,10 +43,14 @@ mod debug_info;
 // #1696: the Report door - the window that fills GitHub's new-issue form
 // in, and the screenshot it puts on the clipboard.
 mod report;
+// #2744: the shared report names each path by its last component only.
+mod report_scrub;
 mod status_alert;
 
 mod stock_info;
 mod donate;
+// #2384: the Home button and the recent projects start page.
+pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
@@ -101,6 +105,8 @@ mod pages;
 // #739: the WCS page, split out of pages.rs.
 mod wcs_page;
 mod step_budget_row;
+// #1339: the model page's "Vouch for this mesh" row.
+mod vouch_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
 mod stock_material_row;
@@ -243,6 +249,7 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod display_menu;
 pub(crate) mod move_handles;
 pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;

@@ -105,6 +105,8 @@ mod slot_room;
 mod unreached;
 mod waterscan;
 mod pocket_avoid;
+mod corner_relief;
+mod corner_relief_spur;
 
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -143,10 +145,15 @@ pub use face_entry::{air_lead, AIR_MARGIN};
 pub use fillet::{fillet_corners, Legal};
 pub use fillet_tally::{corner_arc_radius, fillet_floor, FilletTally};
 pub use levels::{cut_levels, cut_levels_under};
-pub use pocket::{pocket, pocket_entered, PocketParams, PocketStrategy};
-pub use pocket_avoid::pocket_avoid;
+pub use corner_relief::{
+    CornerRelief, CornerReliefChoice, CornerReliefKind, CornerReliefOverride, CornerReliefPlan,
+    InsideCorner, ResolvedRelief, TBoneDirection, capsule_region, inside_corners, plan_corner_reliefs,
+};
+pub use corner_relief_spur::pocket_relief_plan;
+pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, PocketParams, PocketStrategy};
+pub use pocket_avoid::{pocket_avoid, pocket_avoid_with_relief};
 pub use predrilled::PreHole;
-pub use rest2d::{rest_plan, rest_pocket, rest_strategy, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
+pub use rest2d::{rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
 pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_ends::extended_ends as slot_extended_ends;
