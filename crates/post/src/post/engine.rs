@@ -110,6 +110,7 @@ pub fn run_program_with(
 ) -> Result<PostOutput, PostError> {
     let records = super::normalize_program_order(cnc::parse(stream)?);
     let mut s = Script::load(cps)?;
+    let mut tool_macros = super::tool_change::Macros::read(&mut s)?;
     // #902: an inch document on a script that cannot write inch.
     if let Some(why) = super::units::refusal(&mut s, options)? {
         return Err(PostError::Refused(why));
@@ -305,7 +306,7 @@ pub fn run_program_with(
                 base.insert("ToolNumber".into(), json!(*number));
                 base.insert("ToolName".into(), json!(name));
                 s.set_properties(&merged(&base, &BTreeMap::new(), pos))?;
-                s.call("onToolChange", &format!("{}, {}", json!(number), json!(name)))?;
+                tool_macros.call(&mut s, *number, name)?;
             }
             Record::Section { begin } => {
                 s.call(if *begin { "onSection" } else { "onSectionEnd" }, "")?;
