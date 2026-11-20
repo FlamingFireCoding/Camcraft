@@ -24,6 +24,8 @@ const MILL: &str = "EM-1000-4FL";
 /// Just under the limit, and just over it.
 const UNDER: f64 = 0.019;
 const OVER: f64 = 0.021;
+/// The limit itself: what #2994's importer meshes an edge-gap file at.
+const WIDE: f64 = 0.02;
 
 /// A brick imported at `coarse_mm`, its own stock, and a Face op that
 /// finishes its flat top exactly (at zero stock to leave).
@@ -35,7 +37,14 @@ fn faced_brick(coarse_mm: Option<f64>) -> World {
     h.execute(&world, SetStock::new(&world, StockShape::FromModel { source: "brick".into() }, Default::default()).expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == MILL).map(|(_, t)| t).expect("catalog mill");
     h.execute(&world, AddTool::new(&world, MILL, tool).expect("tool"));
-    let face = OpParams::Face {
+    h.execute(&world, CreateOperation::new(&world, "OP", MILL, SrcRef::Entity("brick".into()), face_op()).expect("create"));
+    h.execute(&world, GenerateOperation::new(&world, "OP").expect("generate"));
+    world
+}
+
+/// A Face op that finishes the stock top exactly.
+fn face_op() -> OpParams {
+    OpParams::Face {
         holes: Default::default(),
         tilt: None,
         stepover: 3.0,
@@ -47,10 +56,7 @@ fn faced_brick(coarse_mm: Option<f64>) -> World {
         plunge_feed: 300.0,
         climb: true,
         blend_turns: false,
-    };
-    h.execute(&world, CreateOperation::new(&world, "OP", MILL, SrcRef::Entity("brick".into()), face).expect("create"));
-    h.execute(&world, GenerateOperation::new(&world, "OP").expect("generate"));
-    world
+    }
 }
 
 /// Lower every cached move by `dz` (what a generator bug would post).
@@ -118,6 +124,26 @@ fn a_real_gouge_deeper_than_the_verdict_tolerance_still_blocks_a_widened_model()
     assert!(gate.iter().all(|l| !l.contains("too coarsely")), "judged, not refused: {gate:?}");
     let err = post(&world, "gouge").expect_err("a gouge blocks the post");
     assert!(err.contains("gouge"), "{err}");
+}
+
+#[test]
+fn the_edge_gap_step_file_opened_at_reduced_accuracy_posts_a_face_with_the_note() {
+    // #2976's fixture: edges 0.018 mm off their surfaces, meshed at the
+    // 0.02 mm limit (PR #2994). Before #2996 no program could post on it.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/edge_gap/edge_gap_018_stated_010.step");
+    let cmd = ImportModel::new(&path).expect("imports at reduced accuracy");
+    assert!(cmd.coarse_mm.is_some_and(|c| (c - WIDE).abs() < 1e-12), "{:?}", cmd.coarse_mm);
+    let world = new_world();
+    let mut h = History::default();
+    h.execute(&world, cmd.renamed("gap"));
+    h.execute(&world, SetStock::new(&world, StockShape::FromModel { source: "gap".into() }, Default::default()).expect("stock"));
+    let tool = catalog().into_iter().find(|(n, _)| *n == MILL).map(|(_, t)| t).expect("catalog mill");
+    h.execute(&world, AddTool::new(&world, MILL, tool).expect("tool"));
+    h.execute(&world, CreateOperation::new(&world, "OP", MILL, SrcRef::Entity("gap".into()), face_op()).expect("create"));
+    h.execute(&world, GenerateOperation::new(&world, "OP").expect("generate"));
+    let program = post(&world, "edge-gap").unwrap_or_else(|e| panic!("the post goes out: {e}"));
+    let low = program.to_ascii_lowercase();
+    assert!(low.contains("reduced accuracy") && low.contains("gap") && low.contains("0.020"), "{program}");
 }
 
 #[test]

@@ -47,9 +47,21 @@ judges against the mesh at `t'`:
 ### Each reader of the verdict tolerance
 
 - **Gouge laws** (`VerifyContext::tightened`, `loop_tol`, `finish.rs`
-  gate, `rapids.rs`, `rapids_posed.rs`, `section.rs`, the turning margin
-  `revolve::tightened`, the plasma kerf law, `mark_law`, the
-  `generate.rs` allowance): they read the widened `t'`.
+  gate, `rapids.rs`, `rapids_posed.rs`, `section.rs`, the plasma kerf
+  law, `mark_law`, `cross_part`, the `generate.rs` containment
+  allowance): they read the widened `t'`.
+- **Laws that also guard a body other than the cutting edge** read
+  #864's strict law (`verify::strict_floor`, `fidelity_law::tightened_strict`):
+  - the turning meridian margin (it also guards the holder and the bar),
+    the lathe axial-hole tolerance, and `revolve::gouge_tol_on`;
+  - the rotary field allowances (one allowance for the ball and the
+    shank);
+  - the probe stylus slack (it guards the stylus).
+
+  The program gate reads the strict law for these kinds
+  (`fidelity_law::widens`). On a model whose excess uses their floor,
+  they are refused by name, as before. Pin: the rotary line in
+  `a_rotary_contour_on_a_reduced_model_is_judged_and_past_the_bound_refused_by_name`.
 - **Collision bands** (`band_growth` in sim and in `fidelity_law`: the
   reach law, `rapids_radial`, `cross_stock`, `drill_reach`,
   `drill_station`): they grow by the WHOLE excess, also in the widened
@@ -73,7 +85,8 @@ judges against the mesh at `t'`:
   The engine writes each note through the script's own `onComment`,
   after `onOpen` (`ProgramId::notes`).
 - The model page and the MCP `facts` note add the same fact in plain
-  words.
+  words. The import note of #2994 (`step::loosened_consequence`) no
+  longer says that a program cannot be posted under the limit.
 
 ### What the user loses
 
@@ -94,8 +107,13 @@ judges against the mesh at `t'`:
   larger than `t`.
 - **Use `VouchModelFidelity`.** The issue excludes it: the chord is a
   measured value.
-- **Stack on PR #2994.** The law reads any recorded chord, so the code
-  and its pins do not need #2994's files. The PR stays independent.
+- **Widen every reader.** The first version did this. The quick gate
+  showed that the rotary allowance and the turning margin also guard a
+  shank, a holder or a bar. A widened tolerance there lets a body touch
+  the real part. Dropped: those kinds keep the strict law.
+- **Turning, rotary and probe on a widened model.** They are still
+  refused when the excess uses their floor. To judge them needs a
+  separate collision allowance in those laws. Not done here.
 
 ### Cost to change later
 

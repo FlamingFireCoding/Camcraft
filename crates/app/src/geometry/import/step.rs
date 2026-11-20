@@ -130,7 +130,12 @@ pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>,
 #[must_use]
 pub fn loosened_consequence(chord_mm: f64) -> &'static str {
     let excess = crate::model_fidelity::excess(chord_mm);
-    if crate::verify::excess_floor(crate::stock_sim::DEV_TOL, excess).is_none() {
+    if crate::fidelity_note::widened(chord_mm) {
+        // #2996: judged at its own accuracy, and the program says so.
+        "Gouge checks against this model allow its own accuracy, not the normal 0.010 mm. \
+         Each posted program names this model in its header. \
+         An operation that they cannot check is refused at the post."
+    } else if crate::verify::excess_floor(crate::stock_sim::DEV_TOL, excess).is_none() {
         "A program cannot be posted while this model is in the document. \
          Export the file again with a tighter tolerance to post one."
     } else {
