@@ -3116,15 +3116,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         Ok(ok) => ok,
         Err(e) => return Err(match yaw_ctx { Some((yw, _)) => yw.exit_err(e), None => e }),
     };
-    // #2382: the approach starts over the setup's WCS origin, never the
-    // frame's zero the generators seed at. Before the yaw exit (a turn
-    // about that same origin) and before every law below, so the routed
-    // links and the verdicts judge the rapid the viewport draws.
-    // A 3+2 path is local to its plane: the origin is read there too.
+    // #2901: the approach starts over its own entry point on the
+    // clearance plane - never the frame's zero the generators seed at,
+    // and never the WCS origin (#2382's seat, reversed): the machine
+    // does not know its X/Y after a tool change and goes Z first, then
+    // to the entry. Before the yaw exit and before every law below, so
+    // the routed links and the verdicts judge the rapid the viewport
+    // draws. The seed is in the path's own (3+2 or yaw) frame.
     let mut path = path;
-    let o = Point3::new(wcs_origin[0], wcs_origin[1], wcs_origin[2]);
-    let o = frame.as_ref().map_or(o, |f| f.to_local(o));
-    path.seat_approach(Point3::new(0.0, 0.0, hl.clearance), [o.x, o.y]);
+    path.seat_approach(Point3::new(0.0, 0.0, hl.clearance));
     let (region, path, relief_zones) = if let Some((yw, saved)) = yaw_ctx {
         material.facets = saved.material_facets;
         stock_facets = saved.stock_facets;

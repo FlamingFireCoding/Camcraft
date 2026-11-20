@@ -38,8 +38,12 @@ pub fn current_stamp(
     // clearance plane (#2121). The post gate trusts the verdicts a cache
     // carries, so a cache judged under the old law must not read fresh:
     // it reads Stale once and the post refuses it until a regenerate.
+    // v4 (#2901): the opening rapid of a clearance-seeded path starts
+    // over its own entry, not over the WCS origin (#2382). A v3 cache
+    // holds the invented rapid from the origin, and its fixture and
+    // rapid verdicts judged it: it reads Stale once and regenerates.
     // Bump this salt again whenever a verify law a cache records changes.
-    h.write(b"camcraft-op-stamp-v3");
+    h.write(b"camcraft-op-stamp-v4");
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
