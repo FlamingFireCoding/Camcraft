@@ -11,6 +11,10 @@ use std::collections::{HashMap, HashSet};
 use solidcore_step::p21::{self, Entity, Exchange, Param};
 use solidcore_step::{topology, units};
 
+/// Millimetres per unit that the reader takes for an item with no length
+/// unit (`solidcore_step` `Units::default`).
+const DEFAULT_MM: f64 = 1.0;
+
 /// What the file's unit contexts state about length.
 #[derive(Debug, Default)]
 pub(crate) struct LengthUnits {
@@ -27,14 +31,16 @@ pub(crate) struct LengthUnits {
 
 impl LengthUnits {
     /// Why item `item` (a solid, a sheet, or a piece split from a surface
-    /// model) must be refused: the file states a length unit, but the
-    /// reader takes 1 mm per unit for this item, so it would be 25.4 or
-    /// 1000 times off. That is the case when the item's context states no
-    /// length unit, or when no representation gives the item a context.
-    /// `None`: the item's context states its unit, or the file states no
-    /// length unit (the millimetre default, #306).
+    /// model) must be refused: the reader takes 1 mm per unit for this
+    /// item, but the file states a different length unit, so the item
+    /// would be 25.4 or 1000 times off. That is the case when the item's
+    /// context states no length unit, or when no representation gives the
+    /// item a context. `None`: the item's context states its unit, the file
+    /// states no length unit (the millimetre default, #306), or every unit
+    /// the file states is the millimetre, so the reader's default is the
+    /// file's own unit (a file of bare topology beside a mm context).
     pub(crate) fn unstated(&self, item: u64) -> Option<String> {
-        if self.mm.is_empty() {
+        if self.mm.iter().all(|f| (f - DEFAULT_MM).abs() <= DEFAULT_MM * 1e-12) {
             return None;
         }
         match self.context_of.get(&item) {

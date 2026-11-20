@@ -63,6 +63,13 @@ An exception for an item that no representation lists was dropped: the
 reader reads such an item at 1 mm per unit, and a split piece in a
 unitless context passed through it. A file that states no length unit
 keeps the millimetre default (#306).
+The two refusals for an item with no unit context apply only when the
+file states a unit other than the millimetre. When every unit that the
+file states is the millimetre, the reader's 1 mm default is the file's
+own unit, and the item imports at the right scale (stack-gate finding:
+the app's generated fixtures of bare topology beside a mm context, and
+the kernel corpus row "second copy of the solid"). A refusal there would
+refuse correct models.
 
 **Cost to change later:** Remove the two mappings when the pinned parser
 expands both names itself. Keep the inch and metre regression fixtures and

@@ -181,6 +181,38 @@ fn split_surface_model_pieces_in_inch_context_keep_scale() {
     }
 }
 
+/// The inch fixture restated in millimetres: the one unit the file states
+/// is the reader's own default.
+fn millimetre(text: &str) -> String {
+    let out = text.replace(
+        "#12 = ( CNBSUN('INCH', #900) LNGUNT() NMDUNT(*) );",
+        "#12 = ( LNGUNT() NMDUNT(*) SUNT(.MILLI.,.METRE.) );",
+    );
+    assert_ne!(out, text, "the fixture must restate its unit in millimetres");
+    out
+}
+
+/// Stack-gate finding on the refusals above: when every unit the file
+/// states is the millimetre, the reader's 1 mm default is the file's own
+/// unit. An unlisted solid and the pieces of a model in a context with no
+/// unit then import at the right scale, and are not refused.
+#[test]
+fn millimetre_file_keeps_items_with_no_unit_context() {
+    let unlisted = millimetre(&INCH.replace(
+        "#10 = ADVANCED_BREP_SHAPE_REPRESENTATION('', (#16), #11);",
+        "#10 = ADVANCED_BREP_SHAPE_REPRESENTATION('', (), #11);",
+    ));
+    let (solids, units) = import(&unlisted).expect("an unlisted solid of a mm file must import");
+    assert_scale(&solids, &units, 1.0);
+    let model = import_model(&millimetre(&split_model("#902")))
+        .expect("the pieces of a mm file in a context with no unit must import");
+    assert_eq!(model.length_units_mm, [1.0], "the file states millimetres");
+    assert_eq!(model.solids.len(), 1, "closed shell #17 must stay one solid");
+    assert_eq!(model.sheets.len(), 2, "open shells #903 and #904 must stay two sheets");
+    let measure = model.solids[0].measure;
+    assert!((measure.volume - 1.0).abs() < 1e-8, "wrong volume: {measure:?}");
+}
+
 #[test]
 fn long_name_context_controls_import_with_correct_scale() {
     for (text, size) in [(INCH, 25.4), (METRE, 1000.0)] {
