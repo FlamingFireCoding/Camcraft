@@ -96,7 +96,7 @@ pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>,
         return Err(ImportError::Empty);
     }
     let text = std::str::from_utf8(data).map_err(|_| ImportError::Step("file is not valid UTF-8".into()))?;
-    if let Some(found) = super::step_diag::locate(text) {
+    if let Some(found) = camcraft_geometry::step_diag::locate(text) {
         return Err(ImportError::Step(found.to_string()));
     }
     let read = camcraft_geometry::step::parse_open(data, facet_budget(budget), CHORD_CAP).map_err(|e| match e {
