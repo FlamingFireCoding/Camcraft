@@ -38,6 +38,7 @@ impl OpParams {
                 optimal_load,
                 feed_opt,
                 shell,
+                method,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -80,6 +81,11 @@ impl OpParams {
                 // (the shell flag is the generator's switch, like
                 // `rest_rough` before it).
                 h.write_u8(u8::from(*shell));
+                // #1591: written only where the method is read and off
+                // its default, so every earlier op keeps its digest.
+                if *strategy == PocketStrategy::Adaptive && *method == crate::machining2d::AdaptiveMethod::Trochoidal {
+                    h.write_u8(0xA5);
+                }
             }
             OpParams::Finish3D {
                 pattern,
@@ -202,6 +208,11 @@ impl OpParams {
                 bottom_z,
                 feed,
                 plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
                 unreachable,
             } => {
                 wh(h, *clearance_z);
@@ -209,6 +220,22 @@ impl OpParams {
                 wh(h, *bottom_z);
                 for v in [*width, *feed, *plunge_feed] {
                     w(h, v);
+                }
+                // #1888: the edge filters, each digested only off its
+                // rest value - an op from before them keeps its stamp.
+                if *min_edge_angle_deg != 0.0 {
+                    h.write_u8(0x4D);
+                    w(h, *min_edge_angle_deg);
+                }
+                if *exclude_holes {
+                    h.write_u8(0x4E);
+                    w(h, *hole_min_diameter);
+                    w(h, *hole_max_diameter);
+                }
+                for g in exclude_edges {
+                    h.write_u8(0x4F);
+                    h.write(g.entity.as_bytes());
+                    h.write_u64(g.feature.id());
                 }
                 // #1889: only `Refuse` writes a byte, so the stamp of
                 // each earlier Deburr (skip with a note) does not move.

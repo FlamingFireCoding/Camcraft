@@ -592,12 +592,31 @@ tests are in `crates/ui/tests/`; they start the real app through
   | Tier | When | Target | Runs |
   |---|---|---|---|
   | quick | each patch, by the agent or gate-runner | ≤ 5 min | only the test binaries that the diff touches, one step for each binary; debug; no heavy lanes |
-  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build, then one step for each debug test binary that is not slow (kernel and ui included), clippy |
+  | batch | before a batch is committed; each push to `main` | ≤ 20 min | one build for each crate, then one step for each debug test binary that is not slow (kernel and ui included), in parallel lanes; clippy |
   | release | only at a cut | - | one step for each debug test binary and the `--ignored` heavy lanes in release |
+- **Heavy lanes at review** (#2568). `cargo xtask gate heavy [--base main]`
+  maps the diff to the heavy lanes that it reaches and runs them in release
+  with `--ignored`. The reach follows the dependencies between our crates: a
+  change in `motion` reaches the `app` heavy lanes.
+  - A PR whose diff reaches a heavy lane is not ready while a reached heavy
+    test is red or not run. The author runs the command on the final head
+    before the PR is flagged ready. The PR body names the lanes that ran.
+  - The review comment lists the heavy lanes that ran and their results.
+    "Not run" is never a pass.
+  - The release tier at the cut stays the final check: the tagged tree is
+    exactly the gated tree.
 - **Test the change, not everything.** The tests that pin a fix prove it.
   Run them one by one: `cargo xtask gate test <name> [--crate c] [--binary b]
   [--exact]`. Run a full suite only when the change touches what that suite
   covers. Run the full set only at a release cut.
+- **Gate job budget** (#2814). The default is the available CPU count from
+  `std::thread::available_parallelism()`, with a floor of 2 and a cap of 64.
+  If CPU detection fails, the default is 2. `CAMCRAFT_GATE_JOBS` overrides
+  it with any positive whole number. The override has no floor or cap.
+  A bad value uses the default and prints a diagnostic. The gate and its
+  `--dry-run` plan print the budget and its source. Batch and release share
+  the budget over at most `max(1, budget / 2)` lanes. A build, an isolated
+  test, a UI step or clippy runs alone with the full budget.
 - **Shared compile cache** (optional, sccache, #900): never export
   `CARGO_TARGET_DIR`, because it makes each worktree miss the cache. The
   `gate` skill has the setup.

@@ -7,6 +7,16 @@
 //! `parser/combinator.rs`, `parser/exchange/*.rs`); the cap is our own
 //! measurement, recorded in docs/decisions/1075-step-nesting-cap.md.
 //!
+//! #2789: the app no longer parses with ruststep. Every STEP read (model
+//! import, tool coordinate systems, the syntax locator) goes through
+//! solidcore's Part 21 parser, which recurses on `(` too and refuses a
+//! parameter read deeper than its own private cap of 64. That cap is not
+//! the same law: an empty innermost `()` one past it is never read as a
+//! parameter, so the parser takes it. This scan stays the law in front of
+//! every read, with the same cap, and refuses that record by name. Re-audit
+//! the table below (written against ruststep's tokenizer, the stricter
+//! reading wherever the two differ) when the solidcore pin moves.
+//!
 //! The scan mirrors a third-party tokenizer, so it must be re-audited
 //! whenever the ruststep pin in the root `Cargo.toml` moves. ruststep
 //! recurses only on `(` (`list`, `typed_parameter`, `subsuper_record`,
@@ -36,7 +46,8 @@ use super::ImportError;
 /// handful deep (our fixtures reach 3); ruststep's parser, in a debug
 /// build, dies at about 400 levels on a 1 MiB stack (the Windows main
 /// thread, where an inline import runs) and about 820 on 2 MiB (release:
-/// about 530 and 1080).
+/// about 530 and 1080). solidcore's parser, which reads every STEP file
+/// since #2789, caps parameter depth at 64 itself; this cap stays the law.
 pub const MAX_NESTING: usize = 64;
 
 /// Refuse `data` by name if any record nests deeper than [`MAX_NESTING`].

@@ -46,6 +46,9 @@ mod browser;
 mod picked;
 #[cfg(test)]
 pub(crate) use picked::opens_a_chooser;
+#[cfg(test)]
+#[path = "state_test_import.rs"]
+mod test_import;
 #[path = "state_program_info.rs"]
 mod program_info;
 #[path = "state_tool_library.rs"]
@@ -114,8 +117,12 @@ mod wcs_ui;
 mod view_prefs_ui;
 #[path = "state_prefs.rs"]
 mod prefs_ui;
+#[path = "state_setups.rs"]
+mod setups_ui;
 #[path = "state_step_budget.rs"]
 mod step_budget_ui;
+#[path = "state_vouch.rs"]
+mod vouch_ui;
 pub use step_budget_ui::StepBudgetUi;
 pub use tool_profile_ui::{ToolColumn, ToolProfileUi, is_spun_kind, parametric_points};
 use flecs_ecs::prelude::World;
@@ -757,6 +764,12 @@ pub enum CommandKind {
         weld_tol: f64,
         max_hole_edges: usize,
     },
+    /// #1339: `by` vouches for the mesh of the model `name`, which is of
+    /// unknown fidelity; one undo unit, refused by name on any other mesh.
+    VouchModelFidelity {
+        name: String,
+        by: String,
+    },
     /// Setup sheets (M3.2 stage D): render every setup and write the
     /// flip chart, one page per setup, form feeds as page breaks. The
     /// export is a VIEW of the document - no command, no history, no
@@ -1372,6 +1385,8 @@ pub enum BoundaryPick {
     Open,
     /// An existing entry of `AreaControls::extra` (M11.5 UX re-pick).
     Extra(usize),
+    /// Protected faces and edges for "Do not touch" (#2055).
+    DoNotTouch,
 }
 
 /// What a viewport click selects. Transient view state - the mode
@@ -1539,6 +1554,19 @@ pub enum LayoutRequest {
     Reset,
 }
 
+/// A saved-setup ask from the Panel setups window (#2339). The dock lives
+/// beside `State` in the shell, so the window cannot read or swap it: the
+/// window files one ask and the shell answers on the same frame.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PanelSetupAsk {
+    /// Save this frame's arrangement under the typed name.
+    Save(String),
+    /// Put a saved arrangement back.
+    Load(String),
+    /// Forget a saved arrangement.
+    Delete(String),
+}
+
 /// Which closable panels the dock holds this frame - mirrored from the
 /// dock by the shell before the ribbon draws, so the View door's
 /// checkmarks read the truth without the ribbon touching the dock.
@@ -1686,6 +1714,9 @@ pub struct State {
     /// A ring drag in flight (#2047): the ephemeral preview. Only its
     /// release reaches history, as one `TurnModelBy`.
     pub body_turn: Option<crate::turn_drag::TurnDrag>,
+    /// The bottom bar's Move / Rotate strip state (#1198 d): axis, typed
+    /// distance/angle draft and Shift-snap steps (view state, never saved).
+    pub handle_bar: crate::egui_app::viewport_bar::HandleBarState,
     /// Do the origin gizmos wear their names (#727 drew them, #645
     /// asked for the switch)? View state like the camera - never a
     /// command, never on the history - but unlike the camera it is a
@@ -1721,6 +1752,12 @@ pub struct State {
     /// floating). Mirrored from the dock each frame by `layout::settle`;
     /// view state - never a command.
     pub debug_info_open: bool,
+    /// #1696: the Report an issue window is open. View state - never a
+    /// command, never saved.
+    pub report_open: bool,
+    /// #1696: the title typed into the Report window, kept between visits
+    /// so a mis-click does not lose it. View state, never saved.
+    pub report_title: String,
     /// #2262: the frame-rate reading and its log rule, fed once a frame.
     pub frame_rate: crate::egui_app::frame_rate::FrameRate,
     /// #157: the GPU the window came up on (`gpu::describe`'s line),
@@ -1800,6 +1837,18 @@ pub struct State {
     pub panels_open: PanelsOpen,
     /// The View door's pending dock ask (see [`LayoutRequest`]).
     pub layout_request: Option<LayoutRequest>,
+    /// #2339: the saved panel arrangements. Application settings like the
+    /// theme - the screen's, never the project file's.
+    pub panel_setups: camcraft_app::prefs::PanelSetups,
+    /// Where the saved arrangements are written back; `None` (every
+    /// headless State) keeps them in memory only.
+    pub panel_setups_store: Option<PathBuf>,
+    /// The Panel setups window's open flag - a frame fact like the doors.
+    pub panel_setups_open: bool,
+    /// The window's name field, as typed.
+    pub setup_name_draft: String,
+    /// The window's pending dock ask (see [`PanelSetupAsk`]).
+    pub panel_setup_ask: Option<PanelSetupAsk>,
     /// The browser row whose retype menu stands open (M9.1): the op's
     /// name, anchored to its row and recomputed per frame like the
     /// ribbon's dropdowns - a frame fact, not a document fact; the
@@ -1872,6 +1921,9 @@ pub struct State {
     /// #1054: the STEP facet budget the next import runs under (an import
     /// setting, not on the history; the import that uses it is).
     pub step_budget: StepBudgetUi,
+    /// #1339: the name typed on the model page's vouch row (a draft; the
+    /// vouch itself is `CommandKind::VouchModelFidelity`).
+    pub vouch_by: String,
     /// #789: each built-in accessory row's size draft, by name - view
     /// state; Apply lands it through `SetAccessory`.
     pub accessory_sizes: HashMap<String, AccessorySizeDraft>,
@@ -1975,13 +2027,19 @@ pub struct State {
     /// Whether Properties is the visible dock tab this frame.
     pub properties_shown: bool,
     pub tool_ui: ToolUi,
-    /// The tool editor window (M1.4): `None` closed, `Some(name)` editing
-    /// that tool, `Some("")` the blank creation form. Ephemeral window
-    /// state - never a command, never saved, never
-    /// undoable; the edits it drives are. `State::drain_actions` closes it
-    /// when the named tool vanishes (the ghost law, mirrored from
+    /// #2397: the tool shape editor window - `None` closed, `Some(name)`
+    /// editing that tool's body, profile and holder. The settings stay in
+    /// Properties; this window is the shape surface alone. Ephemeral
+    /// window state - never a command, never saved, never undoable; the
+    /// edits it drives are. `State::drain_actions` closes it when the named
+    /// tool vanishes (the ghost law, mirrored from
     /// [`State::pane_target`]).
-    pub tool_editor: Option<String>,
+    pub tool_shape_editor: Option<String>,
+    /// #2397: Properties is showing the blank new-tool form. The Tool
+    /// target with the empty name is the destination; this says which of
+    /// its two faces shows - the pointer to the library, or the draft.
+    /// Ephemeral like [`State::tool_ui`]; a retarget drops it.
+    pub new_tool_form: bool,
     /// #371: the tool editor's body draft (imported mesh, placement,
     /// pick mode). Ephemeral like `tool_ui`; Apply body is the command.
     pub tool_body_ui: ToolBodyUi,
@@ -1992,7 +2050,7 @@ pub struct State {
     /// is the command.
     pub tool_cutter_ui: ToolCutterUi,
     /// The machine editor window (M3.3 stage C): `None` closed. An
-    /// ephemeral draft like [`State::tool_editor`] - the numbers under
+    /// ephemeral draft like [`State::tool_shape_editor`] - the numbers under
     /// edit are a copy of the machine until Apply pushes `LoadMachine`,
     /// which is the command, which is the undo.
     pub machine_editor: Option<crate::egui_app::machine_editor::MachineEditor>,
@@ -2157,6 +2215,8 @@ impl State {
             project_path: None,
             browser_build: cfg!(target_arch = "wasm32"),
             debug_info_open: false,
+            report_open: false,
+            report_title: String::new(),
             frame_rate: crate::egui_app::frame_rate::FrameRate::default(),
             gpu_line: None,
             spindle_as_vc: false,
@@ -2207,6 +2267,7 @@ impl State {
             body_drag: None,
             rotate_handles: false,
             body_turn: None,
+            handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
             show_all_paths: false,
             display: DisplayMode::default(),
@@ -2233,6 +2294,11 @@ impl State {
             import_tool_holders: true,
             panels_open: PanelsOpen { browser: true, properties: true, machines: false, ai_chat: false },
             layout_request: None,
+            panel_setups: camcraft_app::prefs::PanelSetups::default(),
+            panel_setups_store: None,
+            panel_setups_open: false,
+            setup_name_draft: String::new(),
+            panel_setup_ask: None,
             tree_menu: None,
             retype_confirm: None,
             rename_draft: None,
@@ -2266,6 +2332,7 @@ impl State {
             pocket_scan: PocketScan::default(),
             import_as_fixture: None,
             step_budget: StepBudgetUi::default(),
+            vouch_by: String::new(),
             accessory_sizes: HashMap::new(),
             profile_edits: HashMap::new(),
             fixture_mesh_cache: Default::default(),
@@ -2287,7 +2354,8 @@ impl State {
                 name: String::from("Tool1"),
                 ..ToolUi::default()
             },
-            tool_editor: None,
+            tool_shape_editor: None,
+            new_tool_form: false,
             tool_body_ui: ToolBodyUi::default(),
             tool_profile_ui: ToolProfileUi::default(),
             tool_cutter_ui: ToolCutterUi::default(),
@@ -2897,6 +2965,7 @@ impl State {
     /// Clear selection so pane_target cannot reopen a selected operation.
     pub(crate) fn close_property_editor(&mut self) {
         self.ui_target = UiTarget::None;
+        self.new_tool_form = false;
         self.pending.push_back(CommandKind::Select(None));
         self.op_ui.name.clear();
         self.op_synced = (String::new(), self.doc_version);
@@ -2911,9 +2980,11 @@ impl State {
         self.status = format!("closed operation {name}");
     }
 
-    pub(crate) fn close_tool_editor_window(&mut self) {
-        self.tool_editor = None;
-        self.tool_synced = (String::new(), self.doc_version);
+    /// Close the tool shape editor window and drop its shape drafts
+    /// (#2397). The settings draft in Properties is not touched: it
+    /// belongs to that page, not to this window.
+    pub(crate) fn close_tool_shape_editor(&mut self) {
+        self.tool_shape_editor = None;
         self.tool_body_ui = ToolBodyUi::default();
         self.tool_profile_ui = ToolProfileUi::default();
         self.tool_cutter_ui = ToolCutterUi::default();
@@ -3138,17 +3209,16 @@ impl State {
         crate::frame_cost::time("commands/retire_feedback", || self.retire_stale_feedback());
         // #406: the incoming stock's sheet follows the open setup page.
         crate::frame_cost::time("commands/incoming_view", || crate::incoming_view::refresh(self));
-        let _s = span("commands/tool_editor");
-        // The editor window's ghost law (M1.4), mirroring `pane_target`:
-        // an open editor never keeps pointing at a name the document lost
-        // under it - deleted, undone, or swapped by New/Open all land here.
-        // The blank form creates rather than points, so it survives.
-        if let Some(name) = &self.tool_editor
+        let _s = span("commands/tool_shape_editor");
+        // The editor window's ghost law, mirroring `pane_target`: an open
+        // editor never keeps pointing at a name the document lost under it
+        // - deleted, undone, or swapped by New/Open all land here.
+        if let Some(name) = &self.tool_shape_editor
             && !name.is_empty()
             && !model::find_by_name(&self.world, name)
                 .is_some_and(|e| model::is_tool(&self.world, &e))
         {
-            self.tool_editor = None;
+            self.tool_shape_editor = None;
         }
     }
 
@@ -3481,12 +3551,10 @@ impl State {
             CommandKind::SetToolNumber { name, number } => {
                 match SetToolNumber::new(&self.world, &name, number) {
                     Ok(command) => {
+                        let n = command.number();
                         self.history.execute(&self.world, command);
                         self.doc_version += 1;
-                        self.status = match number {
-                            Some(n) => format!("tool {name} is now T{n}"),
-                            None => format!("tool {name} number cleared"),
-                        };
+                        self.status = format!("tool {name} is now T{n}");
                     }
                     Err(err) => self.refuse(ErrorScope::Tool, format!("tool number not set: {err}")),
                 }
@@ -4051,6 +4119,7 @@ impl State {
                     Err(err) => self.refuse(ErrorScope::Setup, format!("{name} not repaired: {err}")),
                 }
             }
+            CommandKind::VouchModelFidelity { name, by } => self.vouch_model(&name, &by),
             CommandKind::ImportFixtureDialog => {
                 if let Some(path) = pick_mesh_file() {
                     // Bind to the context the page shows: the active

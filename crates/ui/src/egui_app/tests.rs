@@ -97,6 +97,7 @@ mod tool_list_page;
 mod stock_fit_sides;
 mod raw_stock_row;
 mod layout;
+mod panel_setups;
 mod machines_pane;
 mod machines_edit;
 mod machine_wire_edm;
@@ -120,6 +121,7 @@ mod page_layout_windows;
 mod anchors;
 mod stock_fit;
 mod ribbon_rows;
+mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
 mod theme_tree_hits;
 mod waterjet_recipe;
@@ -130,6 +132,7 @@ mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
 mod adaptive_method;
+mod adaptive3d_method;
 // #661: every operation kind wears its own SVG-mastered glyph.
 mod op_icon_table;
 mod tool_icon_wiring;
@@ -167,6 +170,8 @@ mod setup_rotary;
 mod setup_eye;
 // #155: Pause / Home entries in the operation list.
 mod program_entry;
+// #2055: "Do not touch" protected faces/edges in Boundaries.
+mod do_not_touch;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;
@@ -183,6 +188,8 @@ mod tool_library_import;
 mod tool_cutter;
 // #93 slice 3: the drawn cutter edited by its parameters.
 mod tool_cutter_params;
+// #2397: the new-tool flow in Properties and the shape window it opens.
+mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
 mod recent_door;
@@ -200,6 +207,8 @@ mod fixtures_page;
 mod model_fidelity;
 // #1610 review: incomplete model advice and import status are visible.
 mod model_incomplete;
+// #1339: the model page's vouch row for a mesh of unknown fidelity.
+mod model_vouch;
 // #1054: the STEP facet budget on the model page.
 mod step_budget;
 // #1573 review: what a STEP import changed is said on the status line.
@@ -1299,7 +1308,8 @@ fn every_field_lives_on_exactly_one_section() {
             // once more).
             "Deburr",
             vec![
-                ("Geometry", vec!["Break width", "Unreachable edges"]),
+                // #1888 and #1889: keep the edge filters and reach policy.
+                ("Geometry", vec!["Break width", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
                 ("Heights", vec!["Clearance Z", "Window Top Z", "Window Bottom Z"]),
                 ("Feeds", vec!["Feed", "Plunge feed"]),
             ],
@@ -1937,7 +1947,7 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
 /// including the View3D readback and the fallback-adapter law).
 #[test]
 fn headless_run_succeeds() {
-    headless::run().map_err(|err| panic!("egui headless run failed: {err}")).ok();
+    headless::run(None).map_err(|err| panic!("egui headless run failed: {err}")).ok();
 }
 
 /// The churn gate for the migration: one rendered frame of the whole shell,
@@ -2000,16 +2010,18 @@ fn egui_shell_snapshot_light() {
     harness.run_steps(1); // leave LIVE dark for whatever frame follows.
 }
 
-/// M1.4: the graphical tool editor, end to end through the real drain. The
-/// selected tool starts in Properties; opening the explicit editor hides
-/// those fields so every label queried here resolves in one surface.
-/// A drag stages into `tool_ui` WITHOUT touching the world (the
-/// draft law); `Apply` lands it through `ChangeTool`; and the dock's
-/// `Delete` proves the ghost law - the named tool is gone, so the window
-/// is gone the next frame.
+/// #2397: the settings are edited live in Properties through the real
+/// drain, and the tool shape editor is its own window. A drag stages into
+/// `tool_ui` WITHOUT touching the world (the draft law); `Apply` lands it
+/// through `ChangeTool`; and the dock's `Delete` proves the ghost law -
+/// the named tool is gone, so the shape window is gone the next frame.
 #[test]
-fn tool_editor_window_edits_live_and_stages_through_commands() {
-    let mut harness = shell_harness();
+fn tool_settings_edit_live_and_the_shape_editor_follows_its_tool() {
+    // A tall shell: the whole tool page, Apply and Delete included, is on
+    // screen without a scroll.
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(1280.0, 1400.0))
+        .build_ui_state(frame, ShellUi::seeded());
     // Browser rows are painted strips; retargeting is the established
     // navigation idiom (state_mut like the gesture tests).
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
@@ -2021,22 +2033,16 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
             .map(|t| t.diameter)
     };
     assert!(harness.query_by_label("Diameter").is_some(), "Properties owns the selected tool's settings");
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
-    harness.run();
-    harness.run();
-    assert_eq!(harness.state().state.tool_editor.as_deref(), Some("EM-0600-4FL"));
-    assert!(harness.state().state.pending.is_empty(), "opening must queue nothing");
     let d0 = world_d(&harness).expect("the seed owns EM-0600-4FL");
     assert!(
         (harness.state().state.tool_ui.diameter - d0).abs() < 1e-12,
-        "the window must open on the world's diameter"
+        "the page must open on the world's diameter"
     );
-    // The window's first SpinButton is Diameter (Properties hides its
-    // fields while the explicit editor is open): 30 px at speed 0.1.
+    // The Properties page owns the DragValues now: 30 px at speed 0.1.
     let c = harness
         .get_all_by_role(egui::accesskit::Role::SpinButton)
         .next()
-        .expect("the editor window owns DragValues")
+        .expect("the tool page owns DragValues")
         .rect()
         .center();
     harness.drag_at(c);
@@ -2060,7 +2066,18 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
         "Apply must land the staged number (status: {})",
         harness.state().state.status
     );
-    // Ghost law: deleting the tool from the library closes the window.
+    // #2397: the shape editor is its own window, with the settings left in
+    // Properties.
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, "EM-0600-4FL");
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness.state().state.tool_shape_editor.as_deref(),
+        Some("EM-0600-4FL")
+    );
+    assert!(harness.query_by_label("Holder library").is_some(), "the shape window holds the holder library");
+    assert!(harness.query_by_label("Diameter").is_some(), "the settings stay in Properties");
+    // Ghost law: deleting the tool from the library closes the shape window.
     let pane_top = harness
         .state()
         .dock
@@ -2075,7 +2092,7 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
         .click();
     harness.run();
     assert!(
-        harness.state().state.tool_editor.is_none(),
+        harness.state().state.tool_shape_editor.is_none(),
         "the window must not outlive its tool"
     );
     assert!(
@@ -2085,9 +2102,10 @@ fn tool_editor_window_edits_live_and_stages_through_commands() {
     assert!(world_d(&harness).is_none(), "Delete must empty the library too");
 }
 
-/// The editor's pixels are their own churn gate, so the shell snapshot can
-/// keep its "window closed by default" law: fields left, banded to-scale
-/// profile right, floating over the dock. Regenerate with UPDATE_SNAPSHOTS=1.
+/// The shape editor's pixels are their own churn gate, so the shell snapshot
+/// can keep its "window closed by default" law: the holder library and the
+/// body or profile editor floating over the dock. Regenerate with
+/// UPDATE_SNAPSHOTS=1.
 #[test]
 #[ignore = "release lane (#255): pixel snapshot golden, run and regenerated only at minor/major cuts (gate -Tier release); structural twin in tests/structural.rs"]
 fn tool_editor_snapshot() {
@@ -2096,7 +2114,7 @@ fn tool_editor_snapshot() {
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(3);
     harness.snapshot_options(
         "egui_tool_editor",
@@ -2949,8 +2967,6 @@ fn inch_mode_drag_keeps_px_parity_and_types_onto_the_lattice() {
 
     harness.state_mut().state.ui_target = UiTarget::Tool("EM-0600-4FL".to_owned());
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
-    harness.run();
     harness.run();
     let world_d = |h: &Harness<'static, ShellUi>| {
         model::find_by_name(&h.state().state.world, "EM-0600-4FL")
@@ -2962,7 +2978,7 @@ fn inch_mode_drag_keeps_px_parity_and_types_onto_the_lattice() {
     let c = harness
         .get_all_by_role(egui::accesskit::Role::SpinButton)
         .next()
-        .expect("the editor window owns DragValues")
+        .expect("the tool page owns DragValues")
         .rect()
         .center();
     harness.drag_at(c);
@@ -3003,6 +3019,11 @@ fn inch_mode_drag_keeps_px_parity_and_types_onto_the_lattice() {
         12.7,
         "a typed half inch must store exactly 12.7 mm"
     );
+    // The tool settings page scrolls: on the default-height shell the
+    // Apply button sits below the fold, so the click needs the settled
+    // scrolled rect (the idiom the op-page draft test carries).
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
     harness.get_by_label("Apply").click();
     harness.run();
     assert_eq!(
@@ -4892,25 +4913,28 @@ fn close_property_editors_keep_stock_offsets_models_and_tools() {
 }
 
 #[test]
-fn close_tool_editor_window_keeps_the_tool() {
+fn close_tool_shape_editor_keeps_the_tool() {
     let mut harness = shell_harness();
     harness.state_mut().state.pending.push_back(CommandKind::Select(None));
     harness.state_mut().state.ui_target = UiTarget::None;
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, "EM-0600-4FL");
     harness.run_steps(2);
-    assert!(harness.state().state.tool_editor.is_some());
-    let original_diameter = model::find_by_name(&harness.state().state.world, "EM-0600-4FL")
-        .and_then(|entity| model::tool_of(&harness.state().state.world, &entity))
-        .expect("seed tool").diameter;
-    harness.state_mut().state.tool_ui.diameter = original_diameter + 3.0;
+    assert!(harness.state().state.tool_shape_editor.is_some());
+    // A library holder pick is a shape draft: it goes with the window.
+    harness.state_mut().state.pick_library_holder("BT30 ER20");
+    assert!(harness.state().state.tool_profile_ui.library.is_some());
     harness.get_by_label("Close").click();
     harness.run_steps(2);
     let state = &harness.state().state;
-    assert!(state.tool_editor.is_none());
+    assert!(state.tool_shape_editor.is_none());
+    assert!(state.tool_profile_ui.library.is_none(), "the shape draft goes with the window");
     assert!(model::find_by_name(&state.world, "EM-0600-4FL").is_some());
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, "EM-0600-4FL");
-    assert_eq!(harness.state().state.tool_ui.diameter, original_diameter,
-        "reopening discards the uncommitted draft");
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, "EM-0600-4FL");
+    harness.run_steps(2);
+    assert!(
+        harness.state().state.tool_profile_ui.library.is_none(),
+        "reopening starts a fresh shape draft"
+    );
 }
 
 #[test]

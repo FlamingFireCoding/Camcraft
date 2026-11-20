@@ -237,7 +237,10 @@ fn assert_full_plate_outline(t: &Toolpath, z: f64, tag: &str) {
 fn case1_chamfered_island_top_contours_plate_to_bottom_with_tabs() {
     // #2597: the stock top at Top Z (15) and over it (17); in the second
     // case the outline that grows under the chamfer steps down from Z 17.
-    for (oversized, dz) in [(false, 17.0), (true, 17.0), (false, 15.0), (true, 15.0)] {
+    // #2677: at 18.5 (one stepdown over Top Z) the grown ring shares the
+    // Top Z plane with the island top ring, and no lead may cross it.
+    let cases = [(false, 17.0), (true, 17.0), (false, 15.0), (true, 15.0), (false, 18.5), (true, 18.5)];
+    for (oversized, dz) in cases {
         let (world, mut h) = world_with_dz(stepped_slotted_flange(), oversized, dz);
         let params = contour_params(Height::of(HeightReference::TopOfModel, 0.0), 3.5, 5.0, 1.0);
         let (t, warns) = run(&world, &mut h, params);
@@ -261,7 +264,12 @@ fn case1_chamfered_island_top_contours_plate_to_bottom_with_tabs() {
         );
         // Stock over Top Z: the grown island ring takes Z 13.5 (one stepdown
         // under the stock top 17), not the Top Z plane of the island top ring.
-        assert_eq!(!feeds_at_z(&t, 13.5).is_empty(), dz > 15.0, "oversized={oversized} dz={dz}: pass at Z 13.5");
+        // At 18.5 one stepdown under the stock top is Top Z itself.
+        let off_grid = dz > 15.0 && dz < 18.5;
+        assert_eq!(!feeds_at_z(&t, 13.5).is_empty(), off_grid, "oversized={oversized} dz={dz}: pass at Z 13.5");
+        if dz > 18.0 {
+            assert!(!feeds_at_z(&t, 15.0).is_empty(), "oversized={oversized} dz={dz}: pass at Top Z 15");
+        }
         let nc = std::env::temp_dir().join(format!("camcraft-2436-c1-{oversized}-{dz}-{}.nc", std::process::id()));
         let _ = std::fs::remove_file(&nc);
         let posted = posting::post_setup(&world, &nc);

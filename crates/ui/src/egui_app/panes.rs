@@ -1612,6 +1612,12 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
                 // #2262: a dock tab like the other panels; the shell lands it.
                 state.layout_request = Some(crate::state::LayoutRequest::ToggleDebugInfo);
             }
+            // #1696: the Report door, next to it - opens the window that
+            // fills GitHub's new-issue form in (the forms' promised
+            // in-app "Report an Issue").
+            if super::report::button(ui, icons).clicked() {
+                state.report_open = !state.report_open;
+            }
             // #183: the live MCP server says it is listening.
             if let Some(note) = crate::mcp_host::badge(state) {
                 ui.label(RichText::new(note).color(pal.text_faint).small());
@@ -1625,7 +1631,7 @@ pub fn status(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconS
             // #2262: placed before the status line, which fills what is
             // left; behind it the label ran past the line onto the door.
             if ops_n > 0 {
-                ui.label(RichText::new(format!("{ops_n} Operations")).color(pal.text_faint).small());
+                ui.label(RichText::new(super::browser_tree::count(ops_n, "Operation")).color(pal.text_faint).small());
             }
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(Label::new(line).selectable(true).truncate())

@@ -46,7 +46,7 @@ pub const OPTIONS: &[Opt] = &[
         value: None,
         env: None,
         default: "off",
-        help: "Start with no window. Run a short self-check of the 3D view and exit.",
+        help: "Start with no window. Run a short self-check of the 3D view and exit. With a file, open that file and draw it in place of the sample; a file that does not open fails the run.",
     },
     Opt {
         flag: "--ui",
