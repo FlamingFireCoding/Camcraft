@@ -6,18 +6,19 @@
 //! file and speaks only for the facets it was given for.
 //!
 //! Gate map (#1339): covers app::commands::vouch_fidelity,
-//! app::model_vouch, app::model_fidelity (op_problem, gate_problems,
+//! app::commands::delete_entity, app::model_vouch, app::model_fidelity (op_problem, gate_problems,
 //! program_tol), app::project (the model's `fidelity_vouched`),
-//! app::posting (verification_report).
+//! app::posting (verification_report), app::mcp::job (get_job).
 //! Lane shape (M4.4): every test here runs in seconds.
 //!
 //! Provenance: our own pins over our own laws; no vendor material.
 
 use camcraft_app::commands::{
-    AddTool, CommandError, CreateOperation, GenerateOperation, History, ImportModel, SetStock, UpdateModel,
+    AddTool, CommandError, CreateOperation, DeleteEntity, GenerateOperation, History, ImportModel, SetStock, UpdateModel,
     VouchModelFidelity,
 };
 use camcraft_app::geometry::{cube, Mesh, Point3};
+use camcraft_app::mcp::Server;
 use camcraft_app::operation::{Height, HeightReference, OpParams, SrcRef};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
@@ -248,4 +249,109 @@ fn the_vouch_rides_the_project_file() {
     for p in [a, b] {
         let _ = std::fs::remove_file(p);
     }
+}
+
+#[test]
+fn delete_undo_keeps_the_vouch_and_its_revision_through_save_and_load() {
+    let world = new_world();
+    let mut history = History::default();
+    history.execute(&world, ImportModel::from_mesh("bar", brick()));
+    history.execute(
+        &world,
+        UpdateModel::new(&world, "bar", brick())
+            .expect("update")
+            .with_fidelity(Some(model_fidelity::UNKNOWN_MM)),
+    );
+    VouchModelFidelity::new(&world, "bar", "M. Kinney")
+        .expect("vouch")
+        .run(&mut history, &world);
+    let bar = model::find_by_name(&world, "bar").expect("bar");
+    let revision = model::rev_of(&world, &bar);
+    assert!(
+        revision > 1,
+        "a fresh entity revision must not match this vouch"
+    );
+    let record = model_vouch::record_of(&world, &bar).expect("vouch record");
+    assert_eq!(record.rev, revision);
+
+    // Each undo must recreate the same record for the same facets, even
+    // after the deletion has been repeated through redo.
+    for cycle in 0..2 {
+        if cycle == 0 {
+            history.execute(&world, DeleteEntity::new(&world, "bar").expect("delete"));
+        } else {
+            assert!(history.redo(&world));
+        }
+        assert!(model::find_by_name(&world, "bar").is_none());
+        assert!(history.undo(&world));
+        let restored = model::find_by_name(&world, "bar").expect("restored bar");
+        let restored_record =
+            model_vouch::record_of(&world, &restored).expect("restored vouch record");
+        assert_eq!(restored_record.by, record.by);
+        assert_eq!(restored_record.rev, record.rev);
+        assert_eq!(model::rev_of(&world, &restored), revision);
+        assert_eq!(vouched_by(&world, "bar").as_deref(), Some("M. Kinney"));
+        assert_eq!(chord(&world, "bar"), None);
+    }
+
+    let path = std::env::temp_dir().join(format!(
+        "camcraft-2821-delete-vouch-{}.camproj",
+        std::process::id()
+    ));
+    project::save(&world, &path).expect("save after undo");
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
+    let row = saved["entities"]
+        .as_array()
+        .expect("entities")
+        .iter()
+        .find(|row| row["name"] == "bar")
+        .expect("saved bar");
+    assert_eq!(
+        row["fidelity_vouched"]["by"],
+        serde_json::json!("M. Kinney")
+    );
+    assert_eq!(row["fidelity_vouched"]["rev"], serde_json::json!(revision));
+
+    let loaded = new_world();
+    project::load(&loaded, &path).expect("load after undo");
+    assert_eq!(vouched_by(&loaded, "bar").as_deref(), Some("M. Kinney"));
+    assert_eq!(chord(&loaded, "bar"), None);
+    let mut server = Server::new();
+    server
+        .handle(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 0, "method": "initialize",
+            "params": { "protocolVersion": "2025-06-18" }
+        }))
+        .expect("initialize MCP");
+    let mut request = |id, name, arguments| {
+        server
+            .handle(&serde_json::json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": name, "arguments": arguments }
+            }))
+            .expect("MCP response")
+    };
+    let opened = request(
+        1,
+        "open_project",
+        serde_json::json!({ "path": path.to_string_lossy() }),
+    );
+    assert_ne!(
+        opened["result"]["isError"],
+        serde_json::json!(true),
+        "{opened}"
+    );
+    let job = request(2, "get_job", serde_json::json!({}));
+    let row = job["result"]["structuredContent"]["models"]
+        .as_array()
+        .expect("MCP models")
+        .iter()
+        .find(|row| row["name"] == "bar")
+        .expect("MCP bar");
+    assert_eq!(
+        row["fidelity_vouched"]["by"],
+        serde_json::json!("M. Kinney")
+    );
+    std::fs::remove_file(&path).expect("remove project");
 }
