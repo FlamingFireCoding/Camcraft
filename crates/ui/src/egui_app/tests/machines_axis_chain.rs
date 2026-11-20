@@ -86,3 +86,68 @@ fn a_refused_letter_adds_nothing_and_a_removed_axis_leaves_the_rest() {
     assert_no_commands(&h);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn x_is_reversed_and_set_back_from_its_row() {
+    let (mut h, dir) = blank_mill("chain_reversed");
+    press(&mut h, "X reversed");
+    assert_eq!(draft_at(&h, &format!("{TABLE}/0/direction")), Some(serde_json::json!(-1)));
+    h.get_by_label("Validation: passes");
+    press(&mut h, "X reversed");
+    assert_eq!(draft_at(&h, &format!("{TABLE}/0/direction")), None, "standard is unstated");
+    assert_no_commands(&h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn turning_about_y_suggests_b_and_an_a_about_y_shows_a_note_at_its_row() {
+    let (mut h, dir) = blank_mill("chain_letter");
+    press(&mut h, "+Y");
+    let typed = h.state().state.machines_pane.editor.as_ref().map(|e| e.axis_form.name.clone());
+    assert_eq!(typed.as_deref(), Some("B"), "+Y suggests B");
+
+    type_into(&mut h, "New axis", "A");
+    press(&mut h, "Add axis");
+    assert_eq!(draft_at(&h, &format!("{TABLE}/3/axis")), Some(serde_json::json!([0.0, 1.0, 0.0])));
+    h.get_by_label("Note: A turns about Y: by RS-274 an axis about Y is B");
+
+    press(&mut h, "A about -X");
+    assert_eq!(draft_at(&h, &format!("{TABLE}/3/axis")), Some(serde_json::json!([-1.0, 0.0, 0.0])));
+    assert!(h.query_by_label("Note: A turns about Y: by RS-274 an axis about Y is B").is_none());
+    h.get_by_label("Validation: passes");
+    assert_no_commands(&h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The FlexiHAL router from sc-cam's `examples/cam/flexihal.json`
+/// (travel and A; its `pivot` waits for the Kinematics group): X -672..0,
+/// Y -1023..0, Z -160..0 and a continuous A about -X on the table.
+#[test]
+fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
+    let (mut h, dir) = blank_mill("chain_flexihal");
+    for (name, min) in [("X", "-672"), ("Y", "-1023"), ("Z", "-160")] {
+        type_into(&mut h, &format!("{name} travel min"), min);
+        type_into(&mut h, &format!("{name} travel max"), "0");
+    }
+    press(&mut h, "-X");
+    press(&mut h, "Add axis");
+    h.get_by_label("A - rotary, moves the work");
+    h.get_by_label("Validation: passes");
+
+    press(&mut h, "Save machine");
+    assert_eq!(prompt(&h), Some(Prompt::SaveAs));
+    press(&mut h, "Write file");
+    let text = std::fs::read_to_string(dir.join("new-mill.mch")).expect("the machine was written");
+    let m = camcraft_app::machine::parse_mch(&text).expect("the saved machine reads back");
+    let axis = |n: &str| m.axes.iter().find(|a| a.name == n).unwrap_or_else(|| panic!("no {n} in {text}"));
+    assert_eq!(axis("X").travel, Some((-672.0, 0.0)));
+    assert_eq!(axis("Y").travel, Some((-1023.0, 0.0)));
+    assert_eq!(axis("Z").travel, Some((-160.0, 0.0)));
+    let a = axis("A");
+    assert!(a.rotary);
+    assert_eq!(a.axis, Some([-1.0, 0.0, 0.0]));
+    assert_eq!(a.travel, None, "continuous");
+    assert_eq!(a.turns_part, Some(true), "on the table, A turns the work");
+    assert_no_commands(&h);
+    let _ = std::fs::remove_dir_all(&dir);
+}

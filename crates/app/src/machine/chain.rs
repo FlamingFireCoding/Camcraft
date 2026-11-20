@@ -1,5 +1,6 @@
-//! The axis chain of a machine file being edited (#2756): add or
-//! remove a linear or rotary part in `kinematics.default.parts`.
+//! The axis chain of a machine file being edited (#2756): add, move or
+//! remove a linear or rotary part in `kinematics.default.parts`, reverse
+//! a linear (#373) and turn a rotary about a new axis.
 //!
 //! Provenance: our own editor model, specced from issue #2756 and the
 //! `.mch` grammar in `assets/machines/AGENTS.md` (axis parts nest; a
@@ -47,12 +48,7 @@ pub fn add_rotary(v: &mut Value, place: Place, name: &str, axis: [f64; 3]) -> Re
     if !ROTARY_NAMES.contains(&name) {
         return Err(format!("axis {name}: a rotary is named A, B or C"));
     }
-    if !axis.iter().all(|x| x.is_finite()) {
-        return Err(format!("axis {name}: the axis direction must be three finite numbers"));
-    }
-    if axis.iter().all(|x| *x == 0.0) {
-        return Err(format!("axis {name}: the axis direction is zero"));
-    }
+    check_direction(name, axis)?;
     let part = json!({ "id": free_id(v, name), "name": name, "type": "rotary", "axis": axis });
     insert(v, place, name, part)
 }
@@ -138,7 +134,7 @@ fn with_parts_of(axis: &Value, slot: &Value) -> Option<Value> {
 }
 
 /// One row of the editor's axis chain.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AxisRow {
     /// Where the part lives: a JSON pointer into the file.
     pub pointer: String,
@@ -147,6 +143,83 @@ pub struct AxisRow {
     pub rotary: bool,
     /// A head is below the part: it moves the tool, not the work.
     pub carries_head: bool,
+    /// A linear whose `+` moves the other way: `"direction": -1` (#373).
+    pub reversed: bool,
+    /// A rotary's `axis` as three finite numbers; `None` on a linear or
+    /// when the file states no readable axis.
+    pub axis: Option<[f64; 3]>,
+}
+
+impl AxisRow {
+    /// The note a rotary row shows when its letter is not the one RS-274
+    /// gives its axis (an `A` about Y). `None` when they agree, when the
+    /// axis is tilted (no letter fits), or on a linear.
+    #[must_use]
+    pub fn letter_note(&self) -> Option<String> {
+        let axis = self.axis?;
+        let want = suggested_letter(axis)?;
+        if self.name.eq_ignore_ascii_case(want) {
+            return None;
+        }
+        let about = ["X", "Y", "Z"][ROTARY_NAMES.iter().position(|n| *n == want)?];
+        Some(format!("{} turns about {about}: by RS-274 an axis about {about} is {want}", self.name))
+    }
+}
+
+/// The letter RS-274 gives a rotary about `axis`: about X is `A`, about
+/// Y is `B`, about Z is `C`, either sign. `None` for a tilted axis (more
+/// than one component) or a zero one.
+#[must_use]
+pub fn suggested_letter(axis: [f64; 3]) -> Option<&'static str> {
+    let mut on = axis.iter().enumerate().filter(|(_, x)| **x != 0.0);
+    match (on.next(), on.next()) {
+        (Some((i, x)), None) if x.is_finite() => ROTARY_NAMES.get(i).copied(),
+        _ => None,
+    }
+}
+
+/// Reverse the linear axis at `pointer` (`"direction": -1`, #373), or
+/// set it back to standard by removing the key: unstated is standard.
+pub fn set_reversed(v: &mut Value, pointer: &str, reversed: bool) -> Result<(), String> {
+    let (name, rotary) = axis_at(v, pointer)?;
+    if rotary {
+        return Err(format!("axis {name}: a rotary is not reversed; turn its axis instead"));
+    }
+    let Some(Value::Object(o)) = v.pointer_mut(pointer) else { return Err(format!("{pointer}: not an axis part")) };
+    if reversed {
+        o.insert("direction".to_owned(), json!(-1));
+    } else {
+        o.remove("direction");
+    }
+    Ok(())
+}
+
+/// Turn the rotary at `pointer` about `axis`. Refused by name on a
+/// linear and on a zero or non-finite direction; its other keys stay.
+pub fn set_axis(v: &mut Value, pointer: &str, axis: [f64; 3]) -> Result<(), String> {
+    let (name, rotary) = axis_at(v, pointer)?;
+    if !rotary {
+        return Err(format!("axis {name}: a linear axis has no rotary axis"));
+    }
+    check_direction(&name, axis)?;
+    put(v, pointer, "axis", json!(axis))
+}
+
+/// The letter and kind of the axis part at `pointer`.
+fn axis_at(v: &Value, pointer: &str) -> Result<(String, bool), String> {
+    let p = v.pointer(pointer).filter(|p| is_axis(p)).ok_or_else(|| format!("{pointer}: not an axis part"))?;
+    let name = p.get("name").and_then(Value::as_str).or_else(|| p.get("id").and_then(Value::as_str)).unwrap_or(pointer);
+    Ok((name.to_owned(), p.get("type").and_then(Value::as_str) == Some("rotary")))
+}
+
+fn check_direction(name: &str, axis: [f64; 3]) -> Result<(), String> {
+    if !axis.iter().all(|x| x.is_finite()) {
+        return Err(format!("axis {name}: the axis direction must be three finite numbers"));
+    }
+    if axis.iter().all(|x| *x == 0.0) {
+        return Err(format!("axis {name}: the axis direction is zero"));
+    }
+    Ok(())
 }
 
 /// The axis parts in depth-first order, as `parse_mch` reads them.
@@ -159,7 +232,15 @@ pub fn rows(v: &Value) -> Vec<AxisRow> {
             let name = p.get("name").and_then(Value::as_str).or_else(|| p.get("id").and_then(Value::as_str))?.to_owned();
             let rotary = p.get("type").and_then(Value::as_str) == Some("rotary");
             let carries_head = first_of_type(v, &format!("{pointer}/parts"), "head").is_some();
-            Some(AxisRow { pointer, name, rotary, carries_head })
+            let reversed = !rotary && p.get("direction").and_then(Value::as_f64) == Some(-1.0);
+            let axis = p
+                .get("axis")
+                .and_then(Value::as_array)
+                .filter(|a| rotary && a.len() == 3)
+                .and_then(|a| a.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>())
+                .and_then(|d| <[f64; 3]>::try_from(d).ok())
+                .filter(|d| d.iter().all(|x| x.is_finite()));
+            Some(AxisRow { pointer, name, rotary, carries_head, reversed, axis })
         })
         .collect()
 }

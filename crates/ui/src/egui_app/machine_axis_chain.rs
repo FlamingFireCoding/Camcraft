@@ -1,14 +1,16 @@
 //! The file editor's "Axis chain" group (issue #2756): one row per axis
-//! part in chain order, with move up, move down and remove, and a form
-//! that adds a linear or rotary part on the table or under the head.
+//! part in chain order, with move up, move down and remove, a linear's
+//! reversed direction (#373), a rotary's axis with a note when its
+//! letter is not the RS-274 one, and a form that adds a linear or
+//! rotary part on the table or under the head.
 //!
 //! Provenance: our own layout, specced from issue #2756; the edits live
 //! in the app layer (`camcraft_app::machine::{chain, draft}`): this
 //! file draws the rows and calls the draft on a click.
 
-use egui::{Label, RichText, TextEdit, Ui};
+use egui::{DragValue, Label, RichText, TextEdit, Ui};
 
-use camcraft_app::machine::chain::{AxisRow, Place, Step};
+use camcraft_app::machine::chain::{suggested_letter, AxisRow, Place, Step};
 use camcraft_app::machine::draft::MachineDraft;
 use camcraft_app::machine::validate::Refusal;
 
@@ -44,6 +46,10 @@ impl Default for AxisForm {
 pub(crate) enum Edit {
     Move(String, Step),
     Remove(String),
+    /// A linear's `direction`: reversed (`-1`) or standard.
+    Reverse(String, bool),
+    /// A rotary's new `axis`.
+    TurnAbout(String, [f64; 3]),
     Add,
 }
 
@@ -91,6 +97,12 @@ pub(crate) fn draw(
                     edit = Some(Edit::Remove(r.pointer.clone()));
                 }
             });
+            if let Some(e) = row_fields(ui, r) {
+                edit = Some(e);
+            }
+            if let Some(note) = r.letter_note() {
+                ui.add(Label::new(RichText::new(format!("Note: {note}")).color(pal.text_dim)).wrap());
+            }
             let keys = row_keys(&r.name);
             for refusal in refusals.iter().filter(|x| keys.contains(&x.key)) {
                 super::error_text::error_text(ui, error, &refusal.to_string());
@@ -99,7 +111,8 @@ pub(crate) fn draw(
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             let l = ui.label("New axis");
-            ui.add(TextEdit::singleline(&mut form.name).desired_width(40.0).hint_text("A"))
+            let hint = DIRECTIONS.get(form.direction).and_then(|d| suggested_letter(d.1)).unwrap_or("A");
+            ui.add(TextEdit::singleline(&mut form.name).desired_width(40.0).hint_text(hint))
                 .labelled_by(l.id)
                 .on_hover_text("X, Y, Z, U, V or W for a linear; A, B or C for a rotary");
             ui.selectable_value(&mut form.place, Place::OnTable, "On the table")
@@ -109,8 +122,10 @@ pub(crate) fn draw(
         });
         ui.horizontal_wrapped(|ui| {
             ui.label("Rotary turns about");
-            for (i, (words, _)) in DIRECTIONS.iter().enumerate() {
-                ui.selectable_value(&mut form.direction, i, *words);
+            for (i, (words, axis)) in DIRECTIONS.iter().enumerate() {
+                if ui.selectable_value(&mut form.direction, i, *words).clicked() {
+                    suggest(form, *axis);
+                }
             }
         });
         if ui.button("Add axis").on_hover_text("Add the axis to the chain").clicked() {
@@ -120,12 +135,64 @@ pub(crate) fn draw(
     edit
 }
 
+/// A row's own fields: a linear's reversed box, a rotary's axis as
+/// ±X/±Y/±Z or three numbers.
+fn row_fields(ui: &mut Ui, r: &AxisRow) -> Option<Edit> {
+    let mut edit = None;
+    ui.horizontal_wrapped(|ui| {
+        if !r.rotary {
+            let mut reversed = r.reversed;
+            let b = ui.checkbox(&mut reversed, format!("{} reversed", r.name));
+            if b.on_hover_text("direction -1: this slide's + moves the other way").changed() {
+                edit = Some(Edit::Reverse(r.pointer.clone(), reversed));
+            }
+            return;
+        }
+        ui.label(format!("{} turns about", r.name));
+        for (words, axis) in DIRECTIONS {
+            let on = r.axis.is_some_and(|a| unit(a) == Some(axis));
+            if ui.selectable_label(on, format!("{} about {words}", r.name)).clicked() && !on {
+                edit = Some(Edit::TurnAbout(r.pointer.clone(), axis));
+            }
+        }
+        let mut a = r.axis.unwrap_or([0.0; 3]);
+        let mut changed = false;
+        for (c, word) in a.iter_mut().zip(["x", "y", "z"]) {
+            let d = ui.add(DragValue::new(c).speed(0.01).max_decimals(4));
+            changed |= d.on_hover_text(format!("{} axis {word}: any direction, not only ±X, ±Y, ±Z", r.name)).changed();
+        }
+        if changed {
+            edit = Some(Edit::TurnAbout(r.pointer.clone(), a));
+        }
+    });
+    edit
+}
+
+/// `axis` scaled to length one, if it has a length.
+fn unit(axis: [f64; 3]) -> Option<[f64; 3]> {
+    let len = axis.iter().map(|x| x * x).sum::<f64>().sqrt();
+    (len.is_finite() && len > 0.0).then(|| axis.map(|x| x / len))
+}
+
+/// Picking the new rotary's direction suggests its RS-274 letter, unless
+/// the user typed a linear letter.
+fn suggest(form: &mut AxisForm, axis: [f64; 3]) {
+    let typed = form.name.trim().to_ascii_uppercase();
+    if let Some(l) = suggested_letter(axis)
+        && matches!(typed.as_str(), "" | "A" | "B" | "C")
+    {
+        l.clone_into(&mut form.name);
+    }
+}
+
 /// Apply one edit to the draft. A refusal changes nothing and comes
 /// back by name for the status line.
 pub(crate) fn apply(draft: &mut MachineDraft, form: &mut AxisForm, edit: Edit) -> Result<(), String> {
     match edit {
         Edit::Move(at, step) => draft.move_axis(&at, step).map(|_| ()),
         Edit::Remove(at) => draft.remove_axis(&at),
+        Edit::Reverse(at, reversed) => draft.set_axis_reversed(&at, reversed),
+        Edit::TurnAbout(at, axis) => draft.set_rotary_axis(&at, axis),
         Edit::Add => {
             let name = form.name.trim().to_ascii_uppercase();
             let r = if matches!(name.as_str(), "A" | "B" | "C") {

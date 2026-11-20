@@ -236,6 +236,24 @@ impl MachineDraft {
         Ok(at)
     }
 
+    /// Reverse the linear axis at `pointer` (`"direction": -1`, #373),
+    /// or set it back to standard (the key goes: unstated is standard).
+    /// Refused by name on a rotary or when the pointer names no axis.
+    pub fn set_axis_reversed(&mut self, pointer: &str, reversed: bool) -> Result<(), String> {
+        chain::set_reversed(&mut self.value, pointer, reversed)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Turn the rotary at `pointer` about `axis` (#2756). Refused by
+    /// name, with the file unchanged, on a linear and on a zero or
+    /// non-finite direction.
+    pub fn set_rotary_axis(&mut self, pointer: &str, axis: [f64; 3]) -> Result<(), String> {
+        chain::set_axis(&mut self.value, pointer, axis)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// The axis chain's rows in depth-first order (#2756).
     #[must_use]
     pub fn axis_rows(&self) -> Vec<chain::AxisRow> {

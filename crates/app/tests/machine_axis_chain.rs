@@ -288,3 +288,77 @@ fn the_rows_follow_the_chain_and_say_what_carries_the_head() {
     let row = |n: &str, rotary, head| (n.to_owned(), rotary, head);
     assert_eq!(rows, [row("Z", false, false), row("Y", false, false), row("X", false, false), row("A", true, false), row("B", true, true)]);
 }
+
+#[test]
+fn a_linear_is_reversed_and_set_back_and_its_other_keys_stay() {
+    use camcraft_app::machine::AxisDirection;
+    let mut m = grblhal();
+    let x = pointer_of(&m, "X");
+    m.set_axis_reversed(&x, true).expect("X reversed");
+    assert_eq!(m.value.pointer(&format!("{x}/direction")), Some(&json!(-1)));
+    assert_eq!(axis(&m, "X").direction, AxisDirection::Inverted);
+    assert!(m.axis_rows().iter().any(|r| r.name == "X" && r.reversed));
+    assert_eq!(validate_text(&m.text()), [], "{}", m.text());
+
+    // Back to standard: unstated is the file's way of saying standard.
+    m.set_axis_reversed(&x, false).expect("X standard");
+    assert_eq!(m.value.pointer(&format!("{x}/direction")), None);
+    assert_eq!(axis(&m, "X").direction, AxisDirection::Standard);
+    unknown_keys_kept(&m.value);
+}
+
+#[test]
+fn a_rotary_cannot_be_reversed_and_a_linear_has_no_axis() {
+    let mut m = grblhal();
+    let a = m.add_rotary_axis(Place::OnTable, "A", [1.0, 0.0, 0.0]).expect("A added");
+    m.dirty = false;
+    assert_eq!(m.set_axis_reversed(&a, true), Err("axis A: a rotary is not reversed; turn its axis instead".to_owned()));
+    let x = pointer_of(&m, "X");
+    assert_eq!(m.set_rotary_axis(&x, [0.0, 1.0, 0.0]), Err("axis X: a linear axis has no rotary axis".to_owned()));
+    assert!(!m.dirty, "a refused edit changes nothing");
+}
+
+#[test]
+fn a_rotary_turns_about_a_new_axis_and_keeps_its_trunnion_keys() {
+    let mut m = tilting_head();
+    let before = trunnion_keys(&m, "B");
+    let b = pointer_of(&m, "B");
+    m.set_rotary_axis(&b, [0.0, 0.0, -1.0]).expect("B about -Z");
+    assert_eq!(axis(&m, "B").axis, Some([0.0, 0.0, -1.0]));
+    assert_eq!(trunnion_keys(&m, "B"), before);
+    assert_eq!(
+        m.set_rotary_axis(&b, [0.0, 0.0, 0.0]),
+        Err("axis B: the axis direction is zero".to_owned())
+    );
+    assert_eq!(
+        m.set_rotary_axis(&b, [f64::NAN, 0.0, 1.0]),
+        Err("axis B: the axis direction must be three finite numbers".to_owned())
+    );
+    assert_eq!(axis(&m, "B").axis, Some([0.0, 0.0, -1.0]), "a refused axis changes nothing");
+}
+
+#[test]
+fn the_letter_follows_the_axis_by_rs274() {
+    use camcraft_app::machine::chain::suggested_letter;
+    assert_eq!(suggested_letter([1.0, 0.0, 0.0]), Some("A"));
+    assert_eq!(suggested_letter([-1.0, 0.0, 0.0]), Some("A"));
+    assert_eq!(suggested_letter([0.0, -2.0, 0.0]), Some("B"));
+    assert_eq!(suggested_letter([0.0, 0.0, 1.0]), Some("C"));
+    assert_eq!(suggested_letter([1.0, 1.0, 0.0]), None, "no letter for a tilted axis");
+    assert_eq!(suggested_letter([0.0, 0.0, 0.0]), None);
+}
+
+#[test]
+fn a_row_whose_letter_and_axis_disagree_says_so() {
+    let mut m = grblhal();
+    m.add_rotary_axis(Place::OnTable, "A", [0.0, 1.0, 0.0]).expect("an A about Y is allowed");
+    let a = m.axis_rows().into_iter().find(|r| r.name == "A").expect("A row");
+    assert_eq!(a.axis, Some([0.0, 1.0, 0.0]));
+    assert_eq!(a.letter_note().as_deref(), Some("A turns about Y: by RS-274 an axis about Y is B"));
+    let a_ptr = a.pointer.clone();
+    m.set_rotary_axis(&a_ptr, [-1.0, 0.0, 0.0]).expect("A about -X");
+    let a = m.axis_rows().into_iter().find(|r| r.name == "A").expect("A row");
+    assert_eq!(a.letter_note(), None);
+    let x = m.axis_rows().into_iter().find(|r| r.name == "X").expect("X row");
+    assert_eq!((x.axis, x.letter_note()), (None, None));
+}
