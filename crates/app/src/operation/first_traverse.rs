@@ -152,3 +152,29 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, b
     }
     note
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `multiaxis/indexed` catalog case's Tilted pocket (#2987): A30
+    /// B30 on `tilthead.mch` (X +-600, Y +-500, Z -500..500, so the table
+    /// top is Z -500), tool axis (sqrt3/4, -0.5, 0.75), plane at Z52.120
+    /// along it. The top face reads 600 sqrt3/4 + 500/2 - 500 * 0.75 =
+    /// 134.808 at the X+ Y- corner. From a start on the table top there,
+    /// the move along the axis to the plane drops the tool (134.808 -
+    /// 52.120) * 0.75 = 62.0 mm under the table top: the table counts.
+    #[test]
+    fn the_catalog_tilted_pocket_reads_the_table_from_a_start_on_its_top() {
+        let axis = [3f64.sqrt() / 4.0, -0.5, 0.75];
+        let f = TiltedFrame { origin: Point3::new(0.0, 0.0, 0.0), u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], axis };
+        let table = FixtureBox { min: Point3::new(-600.0, -500.0, -1.0e6), max: Point3::new(600.0, 500.0, -500.0) };
+        let high = verify::box_top(&table_top_face(&table), |p| f.z_local(p));
+        assert!((high - 134.808).abs() < 1e-3, "the top face along the axis: {high}");
+        assert!(((high - 52.12) * axis[2] - 62.016).abs() < 1e-2, "the drop under the table top");
+        assert!(matches!(table_read(&table, &f, 52.12), TableRead::Counts(_)));
+        // Over the top face's highest reading, no move along the axis
+        // reaches under the table top.
+        assert!(matches!(table_read(&table, &f, 134.81), TableRead::Clear));
+    }
+}
