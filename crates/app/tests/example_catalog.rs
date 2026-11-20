@@ -41,7 +41,8 @@ mod catalog_multiaxis_indexed {
     use super::*;
     #[test]
     fn posts_two_single_axis_indexes_and_one_tilted_pocket() {
-        use camcraft_app::{model, operation::OpParams, project, setup, world};
+        use camcraft_app::operation::{self, OpParams};
+        use camcraft_app::{model, project, setup, world};
         let dir = repo("examples/catalog/multiaxis/indexed");
         let program = fs::read_to_string(dir.join("indexed.nc")).expect("indexed NC case");
         let w = world::new_world();
@@ -50,6 +51,7 @@ mod catalog_multiaxis_indexed {
         let ops = setup::operation_order(&w);
         assert_eq!(ops.len(), 3, "two indexed faces and one tilted face");
         for ((name, entity), (a, b)) in ops.iter().zip([(90.0, 0.0), (-90.0, 0.0), (30.0, 30.0)]) {
+            assert_eq!(operation::status_of(&w, entity), operation::OpStatus::Ok, "{name} saved cache");
             let op = model::operation_of(&w, entity).expect("pocket operation");
             let OpParams::Pocket { tilt: Some(tilt), .. } = op.params else {
                 panic!("{name} must be an indexed pocket");
