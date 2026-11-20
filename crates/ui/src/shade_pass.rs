@@ -10,6 +10,9 @@
 //!
 //! Both use plain vertex buffers and alpha blending: no texture, no second
 //! render target. The browser shell draws them like the native window.
+//! Both draw inside the viewport's one 3D pass, into its colour and depth
+//! targets, so both pipelines take the pass's sample count (#2958 MSAA) and
+//! `View3D::set_samples` rebuilds them with the other viewport pipelines.
 //!
 //! Provenance: our own wgpu wiring, specced from the wgpu documentation.
 //! The shadow is a blended planar shadow (Blinn 1988) and the occlusion is
@@ -120,6 +123,8 @@ const SHADOW_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayou
 pub(crate) struct ShadePass {
     occluded_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
+    /// The sample count the two pipelines are built for: the 3D pass's.
+    samples: u32,
     shadow_buf: Option<wgpu::Buffer>,
     pub(crate) shadow_count: u32,
     occlusion_buf: Option<wgpu::Buffer>,
@@ -128,88 +133,127 @@ pub(crate) struct ShadePass {
     pub(crate) effects: Effects,
 }
 
+/// The occluded face pipeline and the shadow pipeline for `samples` per
+/// pixel. Both draw into the 3D pass's own targets (no target of their
+/// own), so `samples` is always the pass's count.
+fn pipelines(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    layout: &wgpu::PipelineLayout,
+    format: wgpu::TextureFormat,
+    samples: u32,
+) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
+    let pipe = |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout<'_>>], cull, write, blend| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some(vs),
+                compilation_options: Default::default(),
+                buffers,
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: cull,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: crate::viewport::DEPTH_FORMAT,
+                depth_write_enabled: Some(write),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some(fs),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    // The face pipeline of the viewport, with the occlusion buffer.
+    let occluded_pipeline = pipe(
+        "viewport3d-occluded",
+        "vs_occluded",
+        "fs_occluded",
+        &[Some(crate::viewport::VERTEX_LAYOUT), Some(OCCLUSION_LAYOUT)],
+        Some(wgpu::Face::Back),
+        true,
+        None,
+    );
+    // The shadow shows from above and from below, writes no depth and
+    // keeps the alpha of the target, like the translucent stock.
+    let shadow_pipeline = pipe(
+        "viewport3d-ground-shadow",
+        "vs_shadow",
+        "fs_shadow",
+        &[Some(SHADOW_LAYOUT)],
+        None,
+        false,
+        Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Zero,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        }),
+    );
+    (occluded_pipeline, shadow_pipeline)
+}
+
 impl ShadePass {
     pub(crate) fn new(
         device: &wgpu::Device,
         shader: &wgpu::ShaderModule,
         layout: &wgpu::PipelineLayout,
         format: wgpu::TextureFormat,
+        samples: u32,
     ) -> Self {
-        let pipe = |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout<'_>>], cull, write, blend| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(layout),
-                vertex: wgpu::VertexState {
-                    module: shader,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers,
-                },
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: cull,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: crate::viewport::DEPTH_FORMAT,
-                    depth_write_enabled: Some(write),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: shader,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-        // The face pipeline of the viewport, with the occlusion buffer.
-        let occluded_pipeline = pipe(
-            "viewport3d-occluded",
-            "vs_occluded",
-            "fs_occluded",
-            &[Some(crate::viewport::VERTEX_LAYOUT), Some(OCCLUSION_LAYOUT)],
-            Some(wgpu::Face::Back),
-            true,
-            None,
-        );
-        // The shadow shows from above and from below, writes no depth and
-        // keeps the alpha of the target, like the translucent stock.
-        let shadow_pipeline = pipe(
-            "viewport3d-ground-shadow",
-            "vs_shadow",
-            "fs_shadow",
-            &[Some(SHADOW_LAYOUT)],
-            None,
-            false,
-            Some(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::SrcAlpha,
-                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                    operation: wgpu::BlendOperation::Add,
-                },
-                alpha: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::Zero,
-                    dst_factor: wgpu::BlendFactor::One,
-                    operation: wgpu::BlendOperation::Add,
-                },
-            }),
-        );
+        let samples = samples.max(1);
+        let (occluded_pipeline, shadow_pipeline) = pipelines(device, shader, layout, format, samples);
         ShadePass {
             occluded_pipeline,
             shadow_pipeline,
+            samples,
             shadow_buf: None,
             shadow_count: 0,
             occlusion_buf: None,
             occlusion_count: 0,
             effects: Effects::default(),
         }
+    }
+
+    /// Build the two pipelines again for `samples` per pixel (#2958): the
+    /// pass's targets changed their sample count. The buffers stay.
+    pub(crate) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        layout: &wgpu::PipelineLayout,
+        format: wgpu::TextureFormat,
+        samples: u32,
+    ) {
+        let samples = samples.max(1);
+        let (occluded, shadow) = pipelines(device, shader, layout, format, samples);
+        self.occluded_pipeline = occluded;
+        self.shadow_pipeline = shadow;
+        self.samples = samples;
+    }
+
+    /// The sample count of the two pipelines.
+    pub(crate) const fn samples(&self) -> u32 {
+        self.samples
     }
 
     /// Replace the two buffers. Empty data frees its buffer.

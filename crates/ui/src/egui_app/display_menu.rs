@@ -3,15 +3,21 @@
 //! at, and the graphics switches (what the view shows, and the projection).
 //! Each entry is view state: a direct field write, never a command. The
 //! display mode and the grid switch are kept preferences (`state_view`).
+//! #2958 adds the overlay line width and the anti-aliasing to Graphics,
+//! also kept in the view file. An anti-aliasing count that the graphics
+//! device does not offer is a disabled entry that says why on hover.
 //!
 //! Each setting here draws through the one wgpu pass that the native window
 //! and the browser shell share (`view_pass`), so no entry is hidden on wasm.
 //! That holds for the ground shadow and the ambient occlusion too (#2834):
 //! they are vertex buffers and alpha blending, with no texture (`shade_pass`).
-//! Wireframe draws neither, so the two switches are disabled there and say so.
+//! The two wireframe modes draw neither, so the two switches are disabled
+//! there and say so.
 //!
 //! Provenance: our own menu, written from the group list of issue #2818 and
 //! published CAD viewport practice; our own wording. No vendor material.
+
+use camcraft_app::view::{Antialias, LineWidth};
 
 use crate::display_quality::QualityPreset;
 use crate::state::{DisplayMode, State};
@@ -29,6 +35,20 @@ pub(crate) const ORTHOGRAPHIC: &str = "Orthographic view";
 pub(crate) const LOOK_AT_PLANE: &str = "Look at a work plane";
 pub(crate) const GROUND_SHADOW: &str = "Ground shadow";
 pub(crate) const AMBIENT_OCCLUSION: &str = "Ambient occlusion";
+pub(crate) const LINE_WIDTH: &str = "Line width";
+pub(crate) const ANTIALIAS: &str = "Anti-aliasing";
+
+/// The entry label of a line width.
+#[must_use]
+pub(crate) fn line_label(w: LineWidth) -> String {
+    format!("{} pt", w.word())
+}
+
+/// Why an anti-aliasing entry cannot be picked on this device, if it cannot.
+pub(crate) fn antialias_refusal(state: &State, a: Antialias) -> Option<String> {
+    (!state.samples_offered.contains(&a.samples()))
+        .then(|| format!("This graphics device does not offer {} anti-aliasing.", a.word()))
+}
 
 /// The gap between the menu and the button that opened it.
 const GAP: f32 = 8.0;
@@ -95,11 +115,39 @@ fn entries(ui: &mut egui::Ui, state: &mut State) {
         .on_hover_text("Far objects look smaller, as the eye sees them.");
     ui.radio_value(&mut state.cam.projection, ProjectionMode::Orthographic, ORTHOGRAPHIC)
         .on_hover_text("Parallel edges stay parallel. Sizes do not change with distance.");
+    lines(ui, state);
     ui.separator();
     kept |= quality(ui, state);
     if kept {
         state.persist_view();
     }
+}
+
+/// #2958: the overlay line width and the anti-aliasing. Each pick is kept
+/// at once by its `State` method (which also refuses an unoffered count).
+fn lines(ui: &mut egui::Ui, state: &mut State) {
+    ui.label(LINE_WIDTH).on_hover_text("The width of toolpaths, height planes, outlines and axes.");
+    ui.horizontal(|ui| {
+        for w in LineWidth::ALL {
+            if ui.radio(state.line_width == w, line_label(w)).clicked() && state.line_width != w {
+                state.select_line_width(w);
+            }
+        }
+    });
+    ui.label(ANTIALIAS).on_hover_text("Smooths the edges of models and stock. 4x uses the most graphics memory.");
+    ui.horizontal(|ui| {
+        for a in Antialias::ALL {
+            let why = antialias_refusal(state, a);
+            let r = ui.add_enabled(why.is_none(), egui::RadioButton::new(state.antialias == a, a.word()));
+            let r = match &why {
+                Some(why) => r.on_disabled_hover_text(why),
+                None => r,
+            };
+            if r.clicked() && state.antialias != a {
+                state.select_antialias(a);
+            }
+        }
+    });
 }
 
 /// The quality rows of the Graphics group (#2834): the two presets (one

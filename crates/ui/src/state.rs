@@ -1736,6 +1736,14 @@ pub struct State {
     /// depend on it - only the names (`World`, each offset's entity
     /// name) do.
     pub show_gizmo_names: bool,
+    /// #2958: the viewport overlay line width and multisample
+    /// anti-aliasing, kept in the same per-user view file.
+    pub line_width: camcraft_app::view::LineWidth,
+    pub antialias: camcraft_app::view::Antialias,
+    /// #2958: the sample counts the graphics device offers for the 3D
+    /// targets, set by the windowed shell at bring-up. Headless and the
+    /// browser keep WebGPU's guaranteed pair, 1 and 4.
+    pub samples_offered: Vec<u32>,
     /// Show cached toolpaths beyond the selected operation's: with this on,
     /// every generated path draws (dimmed where unselected) instead of only
     /// the one the tree highlights. View state like the camera - not
@@ -2299,6 +2307,9 @@ impl State {
             body_turn: None,
             handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
+            line_width: camcraft_app::view::LineWidth::default(),
+            antialias: camcraft_app::view::Antialias::default(),
+            samples_offered: crate::viewport::GUARANTEED_SAMPLES.to_vec(),
             show_all_paths: false,
             display: DisplayMode::default(),
             display_menu_open: false,

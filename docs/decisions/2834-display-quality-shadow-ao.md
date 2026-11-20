@@ -96,3 +96,18 @@
   and the `Shade` data. A different occlusion source fills the same
   `Shade::occlusion` values or replaces the one pipeline. The preset list is
   `QualityPreset::ALL`; a new switch adds a field to `Effects`.
+
+**Merge with #2958 (MSAA and wide lines)**
+
+- Chosen: the two shade pipelines take the sample count of the viewport's
+  3D pass, and `View3D::set_samples` builds them again with the other
+  pipelines (`ShadePass::rebuild`).
+- Why: the two passes have no target of their own. They draw inside the
+  one 3D pass, into its colour target (the multisample target when MSAA is
+  on) and its depth target. A pipeline whose sample count differs from the
+  pass is a wgpu validation error at run time.
+- Dropped: moving the two pipelines into `viewport::pipes::Pipes`. The
+  shade pipelines need a second vertex buffer layout and their own buffers.
+  `ShadePass` keeps them together with the count passed in.
+- The Display menu order is: projection, "Line width", "Anti-aliasing"
+  (#2958), then a separator and the quality rows of #2834.

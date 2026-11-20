@@ -8,12 +8,14 @@
 //!
 //! Provenance: our own tests, specced from #645's review ask.
 //!
+//! #2958: the line width and the anti-aliasing ride the same file.
+//!
 //! Gate map (M4.4): covers app::view.
 
 use std::path::{Path, PathBuf};
 
 use camcraft_app::recent;
-use camcraft_app::view::{self, ViewPrefs, FILE_NAME, FORMAT};
+use camcraft_app::view::{self, Antialias, LineWidth, ViewPrefs, FILE_NAME, FORMAT};
 
 /// A fresh, empty folder for one test.
 fn dir(tag: &str) -> PathBuf {
@@ -143,4 +145,32 @@ fn the_config_dir_override_houses_the_view_file() {
     let file = file_in(&folder);
     view::save(&file, &ViewPrefs { show_gizmo_names: false, ..ViewPrefs::default() }).expect("save under the override");
     assert!(!view::load(&file).0.show_gizmo_names, "the restart reads it back from there");
+}
+
+/// #2958: the line width and the anti-aliasing round-trip through the
+/// file. The defaults are 1.5 pt and 4x, a file from before #2958 reads
+/// as those defaults, and a word this build does not know is that one
+/// setting's default - the other choices in the file survive.
+#[test]
+fn the_line_width_and_the_antialias_round_trip() {
+    let d = ViewPrefs::default();
+    assert_eq!((d.line_width, d.antialias), (LineWidth::Normal, Antialias::X4));
+    assert!((LineWidth::Normal.points() - 1.5).abs() < f32::EPSILON);
+    let file = file_in(&dir("lines"));
+    for (w, a) in [(LineWidth::Thin, Antialias::Off), (LineWidth::Bold, Antialias::X2), (LineWidth::Heavy, Antialias::X4)] {
+        let chosen = ViewPrefs { line_width: w, antialias: a, ..ViewPrefs::default() };
+        view::save(&file, &chosen).expect("save");
+        assert_eq!(view::load(&file), (chosen, None), "{w:?} / {a:?} survive");
+    }
+    let older = format!(r#"{{"format":"{FORMAT}","view":{{"show_gizmo_names":false}}}}"#);
+    std::fs::write(&file, older).expect("write an older file");
+    let (p, note) = view::load(&file);
+    assert_eq!(note, None);
+    assert_eq!(p, ViewPrefs { show_gizmo_names: false, ..ViewPrefs::default() }, "an older file reads the defaults");
+    let odd = format!(r#"{{"format":"{FORMAT}","view":{{"show_gizmo_names":false,"line_width":"7","antialias":16}}}}"#);
+    std::fs::write(&file, odd).expect("write a newer file");
+    let (p, note) = view::load(&file);
+    assert_eq!(note, None, "an unknown word does not refuse the file");
+    assert!(!p.show_gizmo_names, "the other choice survives");
+    assert_eq!((p.line_width, p.antialias), (LineWidth::Normal, Antialias::X4));
 }

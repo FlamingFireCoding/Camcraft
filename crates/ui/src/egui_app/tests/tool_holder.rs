@@ -97,6 +97,12 @@ fn a_shank_the_holder_cannot_take_is_refused_by_name() {
     harness.run();
     assert!(drawn(&harness.state().state).is_none(), "nothing lands");
     assert!(harness.query_all_by_label_contains("holder not set").next().is_some(), "Apply refuses by name");
+    let win = harness
+        .query_all_by_role(egui::accesskit::Role::Window)
+        .find(|n| n.accesskit_node().label().as_deref() == Some("Tool shape: EM-0600-4FL"))
+        .expect("shape window");
+    assert!(win.query_all_by_label_contains("holder not set").next().is_some(), "the refusal shows inside the shape window");
+    assert!(win.rect().contains_rect(win.get_by_label("Close").rect()), "Close stays inside the shape window with an error");
 }
 
 /// #792 (#800 review): the projection - nose face above the tip -
@@ -109,7 +115,7 @@ fn the_projection_lands_through_apply_holder_and_undoes() {
     harness.state_mut().state.pick_library_holder("ER20 chuck");
     harness.run();
     harness.run();
-    assert!(harness.query_all_by_label_contains("projection").next().is_some(), "the projection field stands");
+    assert!(harness.query_all_by_label_contains("Projection").next().is_some(), "the projection field stands");
     assert!(harness.query_all_by_label_contains("straight-shank chuck").next().is_some(), "the pick says what it is");
     let st = &harness.state().state;
     assert_eq!((st.tool_profile_ui.gauge, st.tool_profile_ui.projection), (45.0, 55.0), "entry gauge, tool stickout");
@@ -136,7 +142,9 @@ fn the_projection_lands_through_apply_holder_and_undoes() {
 #[test]
 fn the_picker_lists_the_tts_holders_and_names_the_collar() {
     let mut harness = profile_tab();
-    harness.get_by_label("Library holder").click();
+    harness
+        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("choose a holder"))
+        .click();
     harness.run();
     harness.run();
     for n in ["TTS ER20", "TTS ER16", "TTS Weldon"] {
@@ -179,7 +187,9 @@ fn one_weldon_row_for_each_taper_takes_the_bore_of_the_shank() {
         harness.state().state.status
     );
     // The list: one Weldon row for each taper, none for each bore.
-    harness.get_by_label("Library holder").click();
+    harness
+        .get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("BT40 Weldon"))
+        .click();
     harness.run();
     harness.run();
     for t in ["BT30", "BT40", "CAT40", "TTS"] {

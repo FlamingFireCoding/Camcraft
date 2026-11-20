@@ -145,6 +145,8 @@ mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
 mod display_menu;
+// #2834 and #2958: the Display menu's quality, line width and
+// anti-aliasing entries.
 mod display_quality;
 mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.

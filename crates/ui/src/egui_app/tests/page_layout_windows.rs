@@ -284,6 +284,8 @@ fn layout_window_display_menu() {
             "Origin axes",
             "Perspective view",
             "Orthographic view",
+            "Line width",
+            "Anti-aliasing",
             "Performance",
             "Quality",
             "Ground shadow",
