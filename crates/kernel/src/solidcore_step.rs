@@ -180,10 +180,13 @@ fn read_guarded(
     text: &str,
     stop: &CancelToken,
 ) -> Result<StepRead, KernelError> {
-    let ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
+    let mut ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
         p21::Error::Cancelled => timed_out("parsing"),
         other => refused_input(other.to_string()),
     })?;
+    // Validation and topology must read the same canonical unit records.
+    crate::step_units_guard::expand_short_names(&mut ex);
+    crate::step_units_guard::check_angle_units(&ex).map_err(refused_input)?;
     crate::step_curve_guard::check(&ex).map_err(refused_input)?;
     let mut out = StepRead {
         length_units_mm: length_units(&ex).map_err(refused_input)?,

@@ -208,7 +208,7 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
     }
 }
 
-/// Paint the ribbon and its buttons. Pure state -> paint, like the cube.
+/// Paint the ribbon and its buttons, with hover help for each icon.
 pub(crate) fn draw(
     ui: &egui::Ui,
     bar: egui::Rect,
@@ -240,6 +240,13 @@ pub(crate) fn draw(
             Nav::Zoom => state.nav_tool == Some(DragMode::Zoom),
         };
         let hov = hover.is_some_and(|p| r.contains(p));
+        let lab = label(kind);
+        let tip = tooltip(kind, state);
+        let resp = ui.interact(r, ui.id().with(("viewport_nav", kind)), egui::Sense::hover());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, lab));
+        if hov && state.drag.is_none() {
+            resp.on_hover_text(tip);
+        }
         let fill = if hov { ink.button.saturating_add(28) } else { ink.button };
         ui.painter().rect_filled(r, 5.0, egui::Color32::from_gray(fill));
         if ink.outline_buttons {
@@ -248,14 +255,6 @@ pub(crate) fn draw(
         }
         let s = egui::Stroke::new(1.4, if active { ink.glyph_on } else { ink.glyph_off });
         glyphs::draw(ui, kind, r, s, ink.triad, state.cam.projection);
-
-        let lab = label(kind);
-        let tip = tooltip(kind, state);
-        let resp = ui.interact(r, ui.id().with(("viewport_nav", kind)), egui::Sense::hover());
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, lab));
-        if state.drag.is_none() {
-            resp.on_hover_text(tip);
-        }
     }
 }
 

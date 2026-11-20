@@ -91,7 +91,8 @@ fn nav_buttons_attach_tooltips_on_hover() {
     let mut h = Harness::builder()
         .with_size(egui::vec2(900.0, 600.0))
         .build_ui(move |ui| {
-            draw(ui, bar, &btns, &state, None);
+            let hover = ui.input(|i| i.pointer.hover_pos());
+            draw(ui, bar, &btns, &state, hover);
         });
 
     h.ctx.all_styles_mut(|s| {

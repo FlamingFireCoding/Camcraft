@@ -80,94 +80,94 @@ pub(crate) fn label(kind: Nav) -> &'static str {
 #[must_use]
 pub(crate) fn tooltip(kind: Nav, state: &State) -> String {
     match kind {
-        Nav::Frame => "Frame all (F): fit all objects in view".to_owned(),
-        Nav::Iso => "Isometric view: orient camera to isometric view".to_owned(),
+        Nav::Frame => "Frame all (F)\nFit the whole document in the view.".to_owned(),
+        Nav::Iso => "Isometric view\nLook at the model from an isometric angle.".to_owned(),
         Nav::Wire => match state.display {
             DisplayMode::Wireframe => {
-                "Display mode: wireframe (click for shaded with edges)".to_owned()
+                "Wireframe: wireframe (click for shaded with edges)\nSwitch between shaded edges and wireframe.".to_owned()
             }
             DisplayMode::WireframeSeeThrough => {
-                "Display mode: wireframe see-through (click for shaded with edges)".to_owned()
+                "Wireframe: wireframe see-through (click for shaded with edges)\nSwitch between shaded edges and wireframe.".to_owned()
             }
             DisplayMode::Shaded => {
-                "Display mode: shaded (click for wireframe)".to_owned()
+                "Wireframe: shaded (click for wireframe)\nSwitch between shaded edges and wireframe.".to_owned()
             }
             DisplayMode::ShadedHiddenEdges => {
-                "Display mode: shaded with hidden edges (click for wireframe)".to_owned()
+                "Wireframe: shaded with hidden edges (click for wireframe)\nSwitch between shaded edges and wireframe.".to_owned()
             }
             DisplayMode::ShadedEdges => {
-                "Display mode: shaded with edges (click for wireframe)".to_owned()
+                "Wireframe: shaded with edges (click for wireframe)\nSwitch between shaded edges and wireframe.".to_owned()
             }
         },
         Nav::Display => {
             if state.display_menu_open {
-                "Display menu: open".to_owned()
+                "Display menu: open\nOpen or close the menu of display modes and graphics.".to_owned()
             } else {
-                "Display menu: closed".to_owned()
+                "Display menu: closed\nOpen or close the menu of display modes and graphics.".to_owned()
             }
         }
         Nav::Paths => {
             if state.show_all_paths {
-                "Show all toolpaths: on".to_owned()
+                "Toolpaths: on\nShow or hide all cached toolpaths.".to_owned()
             } else {
-                "Show all toolpaths: off".to_owned()
+                "Toolpaths: off\nShow or hide all cached toolpaths.".to_owned()
             }
         }
         Nav::Axes => {
             if state.show_world_axes {
-                "World axes: on".to_owned()
+                "World axes: on\nShow or hide the world origin axes.".to_owned()
             } else {
-                "World axes: off".to_owned()
+                "World axes: off\nShow or hide the world origin axes.".to_owned()
             }
         }
         Nav::PickThrough => {
             if state.pick_through {
-                "Pick through: on (picks reach far side)".to_owned()
+                "Pick through: on (picks reach far side)\nAllow selection through the part.".to_owned()
             } else {
-                "Pick through: off (picks stop at front face)".to_owned()
+                "Pick through: off (picks stop at front face)\nAllow selection through the part.".to_owned()
             }
         }
         Nav::Move => {
             if state.move_handles {
-                "Move mode: on (drag handles to move part)".to_owned()
+                "Move part: on (drag handles to move part)\nShow handles to move the selected part.".to_owned()
             } else {
-                "Move mode: off (show move handles)".to_owned()
+                "Move part: off (show move handles)\nShow handles to move the selected part.".to_owned()
             }
         }
         Nav::Rotate => {
             if state.rotate_handles {
-                "Rotate mode: on (drag rings to rotate part)".to_owned()
+                "Rotate part: on (drag rings to rotate part)\nShow rings to rotate the selected part.".to_owned()
             } else {
-                "Rotate mode: off (show rotation rings)".to_owned()
+                "Rotate part: off (show rotation rings)\nShow rings to rotate the selected part.".to_owned()
             }
         }
         Nav::Projection => match state.cam.projection {
             ProjectionMode::Perspective => {
-                "Projection: perspective (P, click for orthographic)".to_owned()
+                "Projection: perspective (P, click for orthographic)\nSwitch between perspective and orthographic views.".to_owned()
             }
             ProjectionMode::Orthographic => {
-                "Projection: orthographic (P, click for perspective)".to_owned()
+                "Projection: orthographic (P, click for perspective)\nSwitch between perspective and orthographic views.".to_owned()
             }
         },
         Nav::Orbit => {
             if state.nav_tool == Some(DragMode::Orbit) {
-                "Orbit tool: active (drag to orbit)".to_owned()
+                "Orbit: active (drag to orbit)\nDrag to turn the camera around the model.".to_owned()
             } else {
-                "Orbit tool: click to latch orbit drag".to_owned()
+                "Orbit: click to latch\nDrag to turn the camera around the model.".to_owned()
             }
         }
         Nav::Pan => {
             if state.nav_tool == Some(DragMode::Pan) {
-                "Pan tool: active (drag to pan)".to_owned()
+                "Pan: active (drag to pan)\nDrag to move the view sideways.".to_owned()
             } else {
-                "Pan tool: click to latch pan drag".to_owned()
+                "Pan: click to latch\nDrag to move the view sideways.".to_owned()
             }
         }
         Nav::Zoom => {
             if state.nav_tool == Some(DragMode::Zoom) {
-                "Zoom tool: active (drag to zoom)".to_owned()
+                "Zoom: active (drag to zoom)\nDrag to move the camera closer or farther.".to_owned()
             } else {
-                "Zoom tool: click to latch zoom drag".to_owned()
+                "Zoom: click to latch\nDrag to move the camera closer or farther.".to_owned()
             }
         }
     }
