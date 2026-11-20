@@ -210,6 +210,40 @@ mod tests {
     }
 
     #[test]
+    fn the_full_verifier_keeps_the_shifted_holder_collisions() {
+        use super::super::types::{ToolGeom, VerifyContext};
+
+        let block = crate::geometry::cube(
+            Point3::new(22.3, -5.0, 30.0),
+            Point3::new(30.0, 5.0, 40.0),
+        );
+        let tool = ToolGeom {
+            radius: 10.0,
+            nose_radius: 0.0,
+            flute_len: 5.0,
+            shank_radius: 8.0,
+            shank_len: 20.0,
+            holder_radius: 22.0,
+            holder_len: 30.0,
+        };
+        let cx = VerifyContext {
+            model: Some(&block.facets),
+            tool: &tool,
+            gouge_tol: 0.01,
+            z_tol: 0.01,
+            ..Default::default()
+        };
+        let toward = super::super::verify(&fine_bore(0.5, 0.0), &cx);
+        for at in 2..=4 {
+            assert!(toward.contains(&Warning::RapidInStock { at }), "holder collision at {at}: {toward:?}");
+        }
+        let away = super::super::verify(&fine_bore(-0.5, 0.0), &cx);
+        for at in 2..=4 {
+            assert!(!away.contains(&Warning::RapidInStock { at }), "shifted away: {away:?}");
+        }
+    }
+
+    #[test]
     fn a_shift_with_no_room_for_the_bar_keeps_every_conviction() {
         let all: Vec<usize> = (0..6).collect();
         assert_eq!(left(&fine_bore(2.0, 0.0), 10.0, 8.0), all, "the bar touches the far wall");

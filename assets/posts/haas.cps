@@ -945,6 +945,12 @@ function onCycle() {
     msg("canned cycle G76 (fine bore) has no shift - refused: the stopped tip would drag up the finished wall; state the shift X and Y");
     return;
   }
+  // Read the same unit conversion and rounding that w uses for I and J.
+  // A nonzero millimetre shift can become zero in an inch program.
+  if (fine && Number(fn(p.ShiftX)) === 0 && Number(fn(p.ShiftY)) === 0) {
+    msg("canned cycle G76 (fine bore) shift rounds to zero in the output unit - refused: the stopped tip would drag up the finished wall");
+    return;
+  }
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);

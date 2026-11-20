@@ -209,6 +209,32 @@ fn a_fine_bore_with_no_shift_in_its_chain_is_refused_by_name() {
 }
 
 #[test]
+fn haas_refuses_a_fine_bore_shift_that_rounds_to_zero_in_inch_output() {
+    let cps = read("assets/posts/haas.cps");
+    for shift in [(0.001, 0.0), (0.0, -0.001)] {
+        let s = stream_of(&program(Some(shift), 0.0));
+        let out = engine::run_with(&cps, &mch(), &s, &serde_json::json!({"Units": "inch"})).expect("the engine runs");
+        assert!(
+            out.warnings.iter().any(|w| w.contains("G76 (fine bore) shift rounds to zero in the output unit")),
+            "the unrepresentable shift is refused by name: {:?}",
+            out.warnings
+        );
+        assert!(!out.program.contains("G76"), "no cycle with a zero output shift:\n{}", out.program);
+    }
+    // The guard uses the output unit, and either nonzero axis is sufficient.
+    for (units, shift, word) in [("mm", (0.001, 0.0), "I0.001"), ("inch", (0.0, -0.002), "J-0.0001")] {
+        let s = stream_of(&program(Some(shift), 0.0));
+        let out = engine::run_with(&cps, &mch(), &s, &serde_json::json!({"Units": units})).expect("the engine runs");
+        assert!(out.warnings.is_empty(), "a representable shift posts: {:?}", out.warnings);
+        assert!(
+            blocks(&out.program).iter().any(|b| b.iter().any(|w| w == "G76") && b.iter().any(|w| w == word)),
+            "the cycle retains a nonzero output shift:\n{}",
+            out.program
+        );
+    }
+}
+
+#[test]
 fn every_other_post_refuses_a_fine_bore_by_name() {
     let posts = all_posts();
     assert!(posts.len() >= 18, "the shipped posts: {posts:?}");
