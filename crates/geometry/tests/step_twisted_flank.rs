@@ -1,6 +1,7 @@
 //! #2780: a closed solid with one strongly twisted B-spline flank, read
-//! through the solidcore kernel. The importer reads it at its true volume,
-//! or refuses it by name; it never hands out a mesh with a wall missing.
+//! through the solidcore kernel. The exact file reads at its true volume;
+//! the file with a vertex off its curves is refused by name. Never a mesh
+//! with a wall missing.
 //! Fixtures (our own, testdata/models/): `twisted_flank.step` is a 40 x 40
 //! mm block whose top is the degree-3 B-spline z = 60uv (volume 8000 mm3);
 //! `twisted_flank_off.step` is the same solid with one vertex lifted 0.5 mm
@@ -36,32 +37,35 @@ fn volume(m: &Mesh) -> f64 {
         .sum()
 }
 
-/// A refusal names what it refused: a solid, an entity or a face.
-fn named(e: &StepError) -> bool {
-    let s = e.to_string();
-    !s.trim().is_empty() && (s.contains('#') || s.contains("solid"))
-}
+/// The volume tolerance of the kernel twin
+/// (`crates/kernel/tests/step_twisted_flank.rs`): 0.8 mm3 in 8000.
+const VOLUME_TOL: f64 = 0.8;
 
 #[test]
 fn a_twisted_bspline_flank_reads_at_its_volume() {
-    match read("twisted_flank.step") {
-        Ok(m) => {
-            let v = volume(&m.mesh);
-            assert!((v - 8000.0).abs() < 8.0, "volume {v} mm3, want 8000");
-            let b = m.mesh.bounds().expect("non-empty");
-            assert!((b.max.z - 60.0).abs() < 0.05 && b.min.z.abs() < 1e-6, "{b:?}");
-        }
-        Err(e) => assert!(named(&e), "a refusal names its fault: {e}"),
-    }
+    let m = match read("twisted_flank.step") {
+        Ok(m) => m,
+        Err(e) => panic!("twisted_flank.step must read: {e}"),
+    };
+    let v = volume(&m.mesh);
+    assert!((v - 8000.0).abs() <= VOLUME_TOL, "volume {v} mm3, want 8000");
+    let b = m.mesh.bounds().expect("non-empty");
+    assert!((b.max.z - 60.0).abs() < 0.05 && b.min.z.abs() < 1e-6, "{b:?}");
 }
 
 #[test]
-fn a_twisted_flank_with_a_vertex_off_its_curves_reads_or_is_refused_by_name() {
+fn a_twisted_flank_with_a_vertex_off_its_curves_is_refused_by_name() {
+    // The kernel twin pins the same refusal: the flank's pcurve would have to
+    // move the surface by up to 0.89 mm to reach the vertex.
     match read("twisted_flank_off.step") {
-        Ok(m) => {
-            let v = volume(&m.mesh);
-            assert!((v - 8000.0).abs() < 80.0, "volume {v} mm3, want about 8000");
+        Ok(m) => panic!(
+            "twisted_flank_off.step must be refused, read {} facets",
+            m.mesh.facets.len()
+        ),
+        Err(e) => {
+            let s = e.to_string();
+            assert!(s.contains("#117 at read: pcurves failed on"), "refusal names the entity: {s}");
+            assert!(s.contains("off the surface's range"), "refusal: {s}");
         }
-        Err(e) => assert!(named(&e), "a refusal names its fault: {e}"),
     }
 }
