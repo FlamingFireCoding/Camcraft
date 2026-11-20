@@ -1154,10 +1154,11 @@ pub fn op_streams(world: &World) -> Result<Vec<(String, Vec<cnc::Record>)>, Stri
 pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String, Vec<cnc::Record>)>, String> {
     let ops = program_ops(world)?;
 
-    // The T../H.. law (#221): a tool's own number when it has one, else
-    // its 1-based position among the named tools in document order - and
-    // two tools of one machine posting the same number refuse by name.
-    let tool_numbers = crate::tool_numbers::numbers(world);
+    // The T../H.. law (#221): a tool's own number (#2442: every file and
+    // command gives one; a fixture without one takes the lowest free number,
+    // and none free refuses by name, #2517) - and two tools of one machine
+    // posting the same number refuse by name.
+    let tool_numbers = crate::tool_numbers::numbers(world)?;
     // Judged per machine (#438): two machines are two tool tables.
     if let Some(msg) = crate::tool_numbers::clash_per_machine(world, &ops) {
         return Err(msg);

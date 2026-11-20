@@ -772,6 +772,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         // Turning-point blends are opt-in (M11.1 C), as on Face.
         blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         tilt: c.tilt,
     }
 }
@@ -783,6 +784,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
 fn seed_adaptive2d(c: &Carried) -> OpParams {
     OpParams::Adaptive2D {
         blend_radius: None, blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,
@@ -809,6 +811,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
 fn seed_offset2d(c: &Carried) -> OpParams {
     OpParams::Offset2D {
         blend_radius: None, blend_turns: false,
+        corner_relief: crate::machining2d::CornerRelief::default(),
         links: crate::links::Links::PLANAR,
         stepover: c.stepover,
         stock_to_leave: 0.0,

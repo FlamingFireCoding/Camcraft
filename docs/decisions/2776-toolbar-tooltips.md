@@ -1,6 +1,6 @@
 ## #2776 - Explain the bottom toolbar buttons on hover
 
-**What was decided:** Give each of the 12 buttons an original name and one
+**What was decided:** Give each of the 13 buttons an original name and one
 sentence that describes its action. Use an egui hover response with the
 standard tooltip behavior. Honor the existing hover suppression during a
 drag. Keep the existing button actions and layout.

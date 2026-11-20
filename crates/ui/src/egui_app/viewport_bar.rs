@@ -25,10 +25,12 @@ pub(crate) const NAV_PX: f32 = 26.0;
 const NAV_GAP: f32 = 4.0;
 const PAD: f32 = 6.0;
 const BOTTOM_MARGIN: f32 = 10.0;
-/// Twelve buttons in a row: the ribbon's width and height, so the layout
+/// Thirteen buttons in a row: the ribbon's width and height, so the layout
 /// gate can ask the pane for room (pinned by `bar_fits_its_buttons`).
-pub(crate) const BAR_W: f32 = 12.0 * NAV_PX + 11.0 * NAV_GAP + 2.0 * PAD;
+pub(crate) const BAR_W: f32 = 13.0 * NAV_PX + 12.0 * NAV_GAP + 2.0 * PAD;
 const BAR_H: f32 = NAV_PX + 2.0 * PAD;
+const CTRL_H: f32 = 52.0;
+const ROW_GAP: f32 = 4.0;
 const BAR_RADIUS: f32 = 8.0;
 
 /// Camera buttons (#1198 follow-up): the projection is a direct
@@ -42,8 +44,13 @@ pub(crate) enum Nav {
     Frame,
     /// The house isometric, yaw 0.9 / pitch 0.5.
     Iso,
-    /// Shaded-with-wire <-> hidden-line wireframe (Solids radio's twin).
+    /// Wireframe on and off: one press gives the hidden-line wireframe from
+    /// each mode, the next gives shaded with edges (the Display menu has
+    /// the four modes).
     Wire,
+    /// Open or close the Display menu (#2818, `display_menu`): display
+    /// mode, Look at and graphics.
+    Display,
     /// Draw every cached path, not just the selected op's.
     Paths,
     /// The dimmed world origin axes.
@@ -69,11 +76,12 @@ pub(crate) enum Nav {
 
 /// The buttons in bar order. `NAV_COUNT` sizes the ribbon, and a test checks
 /// the two agree.
-pub(crate) const NAV_COUNT: usize = 12;
+pub(crate) const NAV_COUNT: usize = 13;
 pub(crate) const NAVS: [Nav; NAV_COUNT] = [
     Nav::Frame,
     Nav::Iso,
     Nav::Wire,
+    Nav::Display,
     Nav::Paths,
     Nav::Axes,
     Nav::PickThrough,
@@ -91,6 +99,7 @@ fn tooltip(kind: Nav) -> &'static str {
         Nav::Frame => "Frame all\nFit the whole document in the view.",
         Nav::Iso => "Isometric view\nLook at the model from an isometric angle.",
         Nav::Wire => "Wireframe\nSwitch between shaded edges and wireframe.",
+        Nav::Display => "Display\nOpen or close the menu of display modes and graphics.",
         Nav::Paths => "Toolpaths\nShow or hide all cached toolpaths.",
         Nav::Axes => "World axes\nShow or hide the world origin axes.",
         Nav::PickThrough => "Pick through\nAllow selection through the part.",
@@ -118,7 +127,7 @@ pub(crate) fn rotate_label(on: bool) -> &'static str {
 /// The plain-English state line of the Move button (#1198 b).
 #[must_use]
 pub(crate) fn move_label(on: bool) -> &'static str {
-    if on { "Move: drag a ball on the selected part" } else { "Move: off" }
+    if on { "Move: drag a ball to move or a ring to rotate the selected part" } else { "Move: off" }
 }
 
 /// The status line the projection button flips the viewer between.
@@ -152,6 +161,30 @@ pub(crate) fn bar_rect(pane: egui::Rect) -> egui::Rect {
     egui::Rect::from_min_size(min, egui::vec2(BAR_W, BAR_H))
 }
 
+/// The full rounded overlay rect: `bar_rect(pane)` at rest, extended
+/// upward by the Move / Rotate controls row when either mode is active.
+#[must_use]
+pub(crate) fn panel_rect(pane: egui::Rect, expanded: bool) -> egui::Rect {
+    let base = bar_rect(pane);
+    if !expanded {
+        return base;
+    }
+    egui::Rect::from_min_max(
+        egui::pos2(base.min.x, base.min.y - CTRL_H - ROW_GAP),
+        base.max,
+    )
+}
+
+/// The inner strip inside an expanded bar that holds the axis, typed
+/// value and snap step controls.
+#[must_use]
+pub(crate) fn controls_rect(panel: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_size(
+        egui::pos2(panel.min.x + PAD, panel.min.y + PAD),
+        egui::vec2((panel.width() - 2.0 * PAD).max(1.0), CTRL_H),
+    )
+}
+
 /// Each button's rect inside the ribbon, left to right in `NAVS` order.
 #[must_use]
 pub(crate) fn buttons(bar: egui::Rect) -> Vec<(Nav, egui::Rect)> {
@@ -176,10 +209,12 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
         Nav::Iso => actions::view_iso(state),
         Nav::Wire => {
             state.display = match state.display {
-                DisplayMode::ShadedEdges => DisplayMode::Wireframe,
-                DisplayMode::Wireframe => DisplayMode::ShadedEdges,
+                m if m.is_wireframe() => DisplayMode::ShadedEdges,
+                _ => DisplayMode::Wireframe,
             };
+            state.persist_view();
         }
+        Nav::Display => state.display_menu_open = !state.display_menu_open,
         Nav::Paths => state.toggle_all_toolpaths(),
         Nav::Axes => state.show_world_axes = !state.show_world_axes,
         Nav::PickThrough => {
@@ -189,13 +224,18 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
         Nav::Move => {
             state.move_handles = !state.move_handles;
             // Leaving Move mode drops a drag in flight - nothing queued.
-            // The two modes never share the part: Move on puts Rotate off.
+            // One gizmo shows both kinds of handle (#2624).
             crate::move_drag::cancel(state);
             crate::turn_drag::cancel(state);
-            state.rotate_handles &= !state.move_handles;
+            state.rotate_handles = state.move_handles;
             state.status = move_label(state.move_handles).to_string();
         }
         Nav::Rotate => {
+            if state.move_handles {
+                // The legacy shortcut chooses a value, never hides a ring.
+                state.handle_bar.turn_value = true;
+                return;
+            }
             state.rotate_handles = !state.rotate_handles;
             crate::move_drag::cancel(state);
             crate::turn_drag::cancel(state);
@@ -246,7 +286,8 @@ pub(crate) fn draw(
     for &(kind, r) in nav {
         let active = match kind {
             Nav::Frame | Nav::Iso => false,
-            Nav::Wire => state.display == DisplayMode::Wireframe,
+            Nav::Wire => state.display.is_wireframe(),
+            Nav::Display => state.display_menu_open,
             Nav::Paths => state.show_all_paths,
             Nav::Axes => state.show_world_axes,
             Nav::PickThrough => state.pick_through,
@@ -279,3 +320,8 @@ mod tests;
 
 #[path = "viewport_bar_glyphs.rs"]
 mod glyphs;
+
+#[path = "viewport_bar_controls.rs"]
+pub(crate) mod controls;
+
+pub(crate) use controls::HandleBarState;

@@ -195,6 +195,27 @@ fn a_flipped_z_refuses_by_name() {
         let e = refused("fanuc", &section(Some(letters), "Probe"));
         assert!(e.contains("operation Probe: the WCS has its"), "{e}");
         assert!(e.contains("posting a flipped Z is not supported yet") && e.contains("clear Flip Z"), "{e}");
+        // #2474: the exact reason - the tool-length word cannot be known.
+        assert!(e.contains("a preset length needs G44") && e.contains("touched off on that control needs G43"), "{e}");
+        assert!(e.contains("moves the tool by twice its length"), "{e}");
+        assert!(e.contains("canned cycle, whose R plane a mirrored Z puts on the far side of the hole bottom"), "{e}");
+    }
+}
+
+/// #2474: the cycle clause is the section's own - a section without a
+/// canned cycle is refused for the tool-length word alone.
+/// The same reason applies when the section also uses #2476 rotation.
+#[test]
+fn a_flipped_z_without_a_cycle_names_the_tool_length_word_only() {
+    for yaw in [None, Some(30.0)] {
+        let mut records: Vec<Record> = section(Some("Z"), "Mill").into_iter().filter(|r| !matches!(r, Record::Cycle(_))).collect();
+        if let Some(yaw) = yaw {
+            records.insert(3, param("WcsYaw", json!(yaw)));
+        }
+        let e = refused("fanuc", &records);
+        assert!(e.contains("operation Mill: the WCS has its Z axis flipped; posting a flipped Z is not supported yet"), "{e}");
+        assert!(e.contains("a preset length needs G44") && e.contains("clear Flip Z"), "{e}");
+        assert!(!e.contains("canned cycle"), "no cycle in the section: {e}");
     }
 }
 
@@ -216,11 +237,11 @@ fn a_script_that_is_not_verified_for_a_mirror_refuses_by_name() {
 }
 
 #[test]
-fn a_flipped_and_rotated_section_refuses_by_name() {
+fn a_flipped_and_rotated_section_with_a_non_xy_arc_refuses_by_name() {
     let mut records = section(Some("Y"), "Probe");
     records.insert(3, param("WcsYaw", json!(30.0)));
     let e = refused("fanuc", &records);
-    assert!(e.contains("its Y axis flipped and is also rotated 30.000 deg about Z"), "{e}");
+    assert!(e.contains("an XZ/YZ (G18/G19) arc inside a rotated work offset cannot rotate in XY"), "{e}");
 }
 
 #[test]
