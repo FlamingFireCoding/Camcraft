@@ -18,3 +18,10 @@
 
 - **Cost to change later**:
   - Low: `AIR 1` is an additive optional flag on `THREAD` and `ThreadCycleDto`, and `tormach-lathe.cps` can read the exact same `properties.StartInAir` field whenever its G76 fixtures are updated.
+
+### Review fix: prove continuous stock clearance
+
+- **What was decided**: Bound each interval between stock profile breakpoints by a solid rectangle above the thread root. Prove that each rectangle is inside prior cut regions. Subdivide a rectangle when several cuts provide the coverage. Refuse G76 if the proof exceeds its depth or cell budget. Use the actual swept segment for blade cuts. Reduce blade and nose credit by the clearance margin.
+- **Why**: Isolated axial and radial samples can miss a narrow stock rib or a gap between prior cuts. A rectangle proof covers the material between the samples. Keeping each capsule proof on one signed side also avoids credit across the spindle axis.
+- **What was considered and dropped**: More samples cannot prove clearance between samples. Stock hole credit and tolerance-based gap closure were also dropped because they could credit material that the prior cuts did not remove.
+- **Cost to change later**: The conservative bounds can refuse hollow stock or a cut union whose boundary cannot be proved within the budget. A later exact coverage method can reduce these refusals without changing the cycle record or post contract.
