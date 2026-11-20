@@ -54,6 +54,7 @@ unstated capability into existence.
         "wire_diameters": [0.25, 0.20],                // wire, length unit
         "awt": true,                                   // wire, automatic threading
         "tank": "submerged", "flushing": "high",       // wire (#1499): submerged|non-submerged, high|low; unstated = set at the control
+        "skim_flushing": "low",                        // wire (#2686): high|low, the flushing of each skim pass; needs "flushing"
         "orbits": [ { "kind": "circular", "word": "..." } ],  // sinker: circular|vector|planetary + the control's word
         "max_orbit_radius": 2.0,                       // sinker, length unit
         "pickup": "...",                               // sinker, the holder system's name

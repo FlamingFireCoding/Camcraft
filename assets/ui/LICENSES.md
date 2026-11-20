@@ -34,7 +34,7 @@ source-form distributions.
     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
     USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## Original artwork (assets/ui/svg/*.svg except heart.svg and act-report.svg (the Tabler `banner` glyph, in the Tabler section below), and the PNG rasterised from each: the op-*, tool-*, tree-*, badge-* and act-* glyphs)
+## Original artwork (assets/ui/svg/*.svg except heart.svg, home.svg and act-report.svg (the Tabler `banner` glyph, in the Tabler section below), and the PNG rasterised from each: the op-*, tool-*, tree-*, badge-* and act-* glyphs)
 
 These glyphs are our own drawings. Each has an SVG master in
 assets/ui/svg/, rasterised to its 32 px PNG by `cargo xtask icons`, drawn
@@ -54,13 +54,18 @@ subjects, our renderings; no license notice owed, and they are not part of
 the Tabler set below. (The exclusion lists here are the only record of
 which pixels are ours, so both headings name the same files.)
 
-## Tabler Icons (file-plus, folder-open, file-import, device-floppy, arrow-back-up, arrow-forward-up, trash, tools, heart PNGs and assets/ui/svg/heart.svg, act-report PNG and assets/ui/svg/act-report.svg - loaded by crates/ui/src/egui_app/icons.rs)
+## Tabler Icons (file-plus, folder-open, file-import, device-floppy, arrow-back-up, arrow-forward-up, trash, tools, heart, home PNGs and assets/ui/svg/heart.svg, assets/ui/svg/home.svg, act-report PNG and assets/ui/svg/act-report.svg - loaded by crates/ui/src/egui_app/icons.rs)
 
 Outline glyphs from Tabler Icons (https://tabler-icons.io), version 3.49.0,
 MIT (below): recolored to white at load; shapes otherwise unmodified.
 
 The heart outline master comes from the Tabler Icons source at
 https://raw.githubusercontent.com/tabler/tabler-icons/main/icons/outline/heart.svg.
+Its PNG is rasterised from that master. The existing MIT notice below
+also covers this icon.
+
+The home outline master (#2384) comes from the Tabler Icons source at
+https://raw.githubusercontent.com/tabler/tabler-icons/v3.49.0/icons/outline/home.svg.
 Its PNG is rasterised from that master. The existing MIT notice below
 also covers this icon.
 
@@ -169,11 +174,12 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-## truck (STEP import and tessellation, crates/app/src/geometry/import/step.rs; reference kernel in crates/kernel's tests)
+## truck (reference kernel in crates/kernel: feature `truck` and its tests)
 
-`truck-stepio`, `truck-meshalgo`, `truck-modeling`, `truck-polymesh`,
-`truck-topology`, `truck-geometry`, `truck-geotrait`, `truck-base` (and,
-for crates/kernel's own tests only, `truck-shapeops`) - ricosjp/truck,
+`truck-meshalgo`, `truck-modeling`, `truck-shapeops`, `truck-polymesh`,
+`truck-topology`, `truck-geometry`, `truck-geotrait`, `truck-base`
+(crates/kernel's feature `truck` only; truck-stepio left with #2790) -
+ricosjp/truck,
 https://github.com/ricosjp/truck, authored by Yoshinori Tanimura (RICOS
 Co. Ltd.), licensed Apache-2.0 per each crate's Cargo.toml. The crates
 as published carry no NOTICE file. The Apache License 2.0 text is

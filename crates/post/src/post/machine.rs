@@ -178,6 +178,10 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
             if let Some(f) = e.flushing {
                 eo.insert("flushing".to_owned(), json!(f.word()));
             }
+            // #2686: the skim passes' flushing, only when stated.
+            if let Some(f) = e.skim_flushing {
+                eo.insert("skim_flushing".to_owned(), json!(f.word()));
+            }
         }
         o.insert("edm".to_owned(), edm);
     }
