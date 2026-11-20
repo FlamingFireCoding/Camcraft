@@ -51,6 +51,7 @@ pub mod solidcraft;
 mod step_curve_guard;
 pub mod step_edge_gap;
 mod step_face_winding;
+mod step_units_guard;
 #[cfg(feature = "truck")]
 pub mod truck_impl;
 
