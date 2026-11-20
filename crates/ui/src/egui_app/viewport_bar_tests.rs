@@ -215,6 +215,12 @@ fn nav_buttons_have_distinct_labels_and_descriptive_tooltips() {
     state.display = DisplayMode::Wireframe;
     assert!(tooltip(Nav::Wire, &state).contains("wireframe"));
 
+    // Display menu toggle
+    state.display_menu_open = false;
+    assert!(tooltip(Nav::Display, &state).contains("closed"));
+    state.display_menu_open = true;
+    assert!(tooltip(Nav::Display, &state).contains("open"));
+
     // Toolpaths toggle
     state.show_all_paths = false;
     assert!(tooltip(Nav::Paths, &state).contains("off"));
@@ -296,7 +302,7 @@ fn nav_buttons_attach_tooltips_on_hover() {
 
     let all_buttons = buttons(bar);
 
-    // Verify all 12 buttons have accessible labels
+    // Verify all buttons have accessible labels
     for &(kind, btn_rect) in &all_buttons {
         let lab = label(kind);
         let node = h.get_by_label(lab);
@@ -331,6 +337,7 @@ fn generate_evidence_screenshots() {
     let pane = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(600.0, 120.0));
     let bar = bar_rect(pane);
     let all_buttons = buttons(bar);
+    let find_btn = |nav: Nav| all_buttons.iter().position(|&(k, _)| k == nav);
 
     let render_shot = |name: &str, mut setup: Box<dyn FnMut(&mut State)>, hover: Option<usize>| {
         let mut state = State::new();
@@ -365,128 +372,140 @@ fn generate_evidence_screenshots() {
     render_shot("00_at_rest.png", Box::new(|_| {}), None);
 
     // 01: Frame all
-    render_shot("01_frame_all.png", Box::new(|_| {}), Some(0));
+    render_shot("01_frame_all.png", Box::new(|_| {}), find_btn(Nav::Frame));
 
     // 02: Isometric view
-    render_shot("02_iso_view.png", Box::new(|_| {}), Some(1));
+    render_shot("02_iso_view.png", Box::new(|_| {}), find_btn(Nav::Iso));
 
     // 03 & 04: Display mode (Shaded vs Wireframe)
     render_shot(
         "03_wire_shaded.png",
         Box::new(|st| st.display = DisplayMode::ShadedEdges),
-        Some(2),
+        find_btn(Nav::Wire),
     );
     render_shot(
         "04_wire_wireframe.png",
         Box::new(|st| st.display = DisplayMode::Wireframe),
-        Some(2),
+        find_btn(Nav::Wire),
     );
 
     // 05 & 06: Show all toolpaths (Off vs On)
     render_shot(
         "05_paths_off.png",
         Box::new(|st| st.show_all_paths = false),
-        Some(3),
+        find_btn(Nav::Paths),
     );
     render_shot(
         "06_paths_on.png",
         Box::new(|st| st.show_all_paths = true),
-        Some(3),
+        find_btn(Nav::Paths),
     );
 
     // 07 & 08: World axes (Off vs On)
     render_shot(
         "07_axes_off.png",
         Box::new(|st| st.show_world_axes = false),
-        Some(4),
+        find_btn(Nav::Axes),
     );
     render_shot(
         "08_axes_on.png",
         Box::new(|st| st.show_world_axes = true),
-        Some(4),
+        find_btn(Nav::Axes),
     );
 
     // 09 & 10: Pick through (Off vs On)
     render_shot(
         "09_pick_through_off.png",
         Box::new(|st| st.pick_through = false),
-        Some(5),
+        find_btn(Nav::PickThrough),
     );
     render_shot(
         "10_pick_through_on.png",
         Box::new(|st| st.pick_through = true),
-        Some(5),
+        find_btn(Nav::PickThrough),
     );
 
     // 11 & 12: Move mode (Off vs On)
     render_shot(
         "11_move_mode_off.png",
         Box::new(|st| st.move_handles = false),
-        Some(6),
+        find_btn(Nav::Move),
     );
     render_shot(
         "12_move_mode_on.png",
         Box::new(|st| st.move_handles = true),
-        Some(6),
+        find_btn(Nav::Move),
     );
 
     // 13 & 14: Rotate mode (Off vs On)
     render_shot(
         "13_rotate_mode_off.png",
         Box::new(|st| st.rotate_handles = false),
-        Some(7),
+        find_btn(Nav::Rotate),
     );
     render_shot(
         "14_rotate_mode_on.png",
         Box::new(|st| st.rotate_handles = true),
-        Some(7),
+        find_btn(Nav::Rotate),
     );
 
     // 15 & 16: Projection (Perspective vs Orthographic)
     render_shot(
         "15_projection_perspective.png",
         Box::new(|st| st.cam.projection = ProjectionMode::Perspective),
-        Some(8),
+        find_btn(Nav::Projection),
     );
     render_shot(
         "16_projection_ortho.png",
         Box::new(|st| st.cam.projection = ProjectionMode::Orthographic),
-        Some(8),
+        find_btn(Nav::Projection),
     );
 
     // 17 & 18: Orbit tool (Unlatched vs Latched Active)
     render_shot(
         "17_orbit_latched_off.png",
         Box::new(|st| st.nav_tool = None),
-        Some(9),
+        find_btn(Nav::Orbit),
     );
     render_shot(
         "18_orbit_latched_on.png",
         Box::new(|st| st.nav_tool = Some(DragMode::Orbit)),
-        Some(9),
+        find_btn(Nav::Orbit),
     );
 
     // 19 & 20: Pan tool (Unlatched vs Latched Active)
     render_shot(
         "19_pan_latched_off.png",
         Box::new(|st| st.nav_tool = None),
-        Some(10),
+        find_btn(Nav::Pan),
     );
     render_shot(
         "20_pan_latched_on.png",
         Box::new(|st| st.nav_tool = Some(DragMode::Pan)),
-        Some(10),
+        find_btn(Nav::Pan),
     );
 
     // 21 & 22: Zoom tool (Unlatched vs Latched Active)
     render_shot(
         "21_zoom_latched_off.png",
         Box::new(|st| st.nav_tool = None),
-        Some(11),
+        find_btn(Nav::Zoom),
     );
     render_shot(
         "22_zoom_latched_on.png",
         Box::new(|st| st.nav_tool = Some(DragMode::Zoom)),
-        Some(11),
+        find_btn(Nav::Zoom),
+    );
+
+    // 23 & 24: Display menu (Closed vs Open)
+    render_shot(
+        "23_display_menu_closed.png",
+        Box::new(|st| st.display_menu_open = false),
+        find_btn(Nav::Display),
+    );
+    render_shot(
+        "24_display_menu_open.png",
+        Box::new(|st| st.display_menu_open = true),
+        find_btn(Nav::Display),
     );
 }

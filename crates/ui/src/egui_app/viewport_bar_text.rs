@@ -62,6 +62,7 @@ pub(crate) fn label(kind: Nav) -> &'static str {
         Nav::Frame => "Frame all",
         Nav::Iso => "Isometric view",
         Nav::Wire => "Display mode",
+        Nav::Display => "Display menu",
         Nav::Paths => "Show all toolpaths",
         Nav::Axes => "World axes",
         Nav::PickThrough => "Pick through",
@@ -85,10 +86,26 @@ pub(crate) fn tooltip(kind: Nav, state: &State) -> String {
             DisplayMode::Wireframe => {
                 "Display mode: wireframe (click for shaded with edges)".to_owned()
             }
-            _ => {
+            DisplayMode::WireframeSeeThrough => {
+                "Display mode: wireframe see-through (click for shaded with edges)".to_owned()
+            }
+            DisplayMode::Shaded => {
+                "Display mode: shaded (click for wireframe)".to_owned()
+            }
+            DisplayMode::ShadedHiddenEdges => {
+                "Display mode: shaded with hidden edges (click for wireframe)".to_owned()
+            }
+            DisplayMode::ShadedEdges => {
                 "Display mode: shaded with edges (click for wireframe)".to_owned()
             }
         },
+        Nav::Display => {
+            if state.display_menu_open {
+                "Display menu: open".to_owned()
+            } else {
+                "Display menu: closed".to_owned()
+            }
+        }
         Nav::Paths => {
             if state.show_all_paths {
                 "Show all toolpaths: on".to_owned()
