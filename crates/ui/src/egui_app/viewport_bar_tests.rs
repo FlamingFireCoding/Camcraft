@@ -292,3 +292,176 @@ fn nav_buttons_attach_tooltips_on_hover() {
         painted
     );
 }
+
+#[test]
+fn generate_evidence_screenshots() {
+    let out_dir = std::env::var_os("CAMCRAFT_EVIDENCE_SCREENSHOTS_OUT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::PathBuf::from(
+                r"C:\Users\johns\.gemini\antigravity\brain\f1cc6eba-fe9f-4f4d-81b1-b22d340d69d1\screenshots",
+            )
+        });
+    let _ = std::fs::create_dir_all(&out_dir);
+    let pane = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(600.0, 120.0));
+    let bar = bar_rect(pane);
+    let all_buttons = buttons(bar);
+
+    let render_shot = |name: &str, mut setup: Box<dyn FnMut(&mut State)>, hover: Option<usize>| {
+        let mut state = State::new();
+        setup(&mut state);
+        let btns = all_buttons.clone();
+        let hover_pos = hover.map(|idx| btns[idx].1.center());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(600.0, 120.0))
+            .build_ui(move |ui| {
+                ui.painter().rect_filled(pane, 0.0, egui::Color32::from_rgb(0x17, 0x1A, 0x1F));
+                draw(ui, bar, &btns, &state, hover_pos);
+            });
+
+        h.ctx.all_styles_mut(|s| {
+            s.interaction.tooltip_delay = 0.0;
+            s.interaction.show_tooltips_only_when_still = false;
+        });
+
+        h.run_steps(2);
+        if let Some(pos) = hover_pos {
+            h.hover_at(pos);
+            h.run_steps(3);
+        }
+
+        h.render()
+            .expect("render")
+            .save(out_dir.join(name))
+            .expect("save image");
+    };
+
+    // 00: At rest (baseline)
+    render_shot("00_at_rest.png", Box::new(|_| {}), None);
+
+    // 01: Frame all
+    render_shot("01_frame_all.png", Box::new(|_| {}), Some(0));
+
+    // 02: Isometric view
+    render_shot("02_iso_view.png", Box::new(|_| {}), Some(1));
+
+    // 03 & 04: Display mode (Shaded vs Wireframe)
+    render_shot(
+        "03_wire_shaded.png",
+        Box::new(|st| st.display = DisplayMode::ShadedEdges),
+        Some(2),
+    );
+    render_shot(
+        "04_wire_wireframe.png",
+        Box::new(|st| st.display = DisplayMode::Wireframe),
+        Some(2),
+    );
+
+    // 05 & 06: Show all toolpaths (Off vs On)
+    render_shot(
+        "05_paths_off.png",
+        Box::new(|st| st.show_all_paths = false),
+        Some(3),
+    );
+    render_shot(
+        "06_paths_on.png",
+        Box::new(|st| st.show_all_paths = true),
+        Some(3),
+    );
+
+    // 07 & 08: World axes (Off vs On)
+    render_shot(
+        "07_axes_off.png",
+        Box::new(|st| st.show_world_axes = false),
+        Some(4),
+    );
+    render_shot(
+        "08_axes_on.png",
+        Box::new(|st| st.show_world_axes = true),
+        Some(4),
+    );
+
+    // 09 & 10: Pick through (Off vs On)
+    render_shot(
+        "09_pick_through_off.png",
+        Box::new(|st| st.pick_through = false),
+        Some(5),
+    );
+    render_shot(
+        "10_pick_through_on.png",
+        Box::new(|st| st.pick_through = true),
+        Some(5),
+    );
+
+    // 11 & 12: Move mode (Off vs On)
+    render_shot(
+        "11_move_mode_off.png",
+        Box::new(|st| st.move_handles = false),
+        Some(6),
+    );
+    render_shot(
+        "12_move_mode_on.png",
+        Box::new(|st| st.move_handles = true),
+        Some(6),
+    );
+
+    // 13 & 14: Rotate mode (Off vs On)
+    render_shot(
+        "13_rotate_mode_off.png",
+        Box::new(|st| st.rotate_handles = false),
+        Some(7),
+    );
+    render_shot(
+        "14_rotate_mode_on.png",
+        Box::new(|st| st.rotate_handles = true),
+        Some(7),
+    );
+
+    // 15 & 16: Projection (Perspective vs Orthographic)
+    render_shot(
+        "15_projection_perspective.png",
+        Box::new(|st| st.cam.projection = ProjectionMode::Perspective),
+        Some(8),
+    );
+    render_shot(
+        "16_projection_ortho.png",
+        Box::new(|st| st.cam.projection = ProjectionMode::Orthographic),
+        Some(8),
+    );
+
+    // 17 & 18: Orbit tool (Unlatched vs Latched Active)
+    render_shot(
+        "17_orbit_latched_off.png",
+        Box::new(|st| st.nav_tool = None),
+        Some(9),
+    );
+    render_shot(
+        "18_orbit_latched_on.png",
+        Box::new(|st| st.nav_tool = Some(DragMode::Orbit)),
+        Some(9),
+    );
+
+    // 19 & 20: Pan tool (Unlatched vs Latched Active)
+    render_shot(
+        "19_pan_latched_off.png",
+        Box::new(|st| st.nav_tool = None),
+        Some(10),
+    );
+    render_shot(
+        "20_pan_latched_on.png",
+        Box::new(|st| st.nav_tool = Some(DragMode::Pan)),
+        Some(10),
+    );
+
+    // 21 & 22: Zoom tool (Unlatched vs Latched Active)
+    render_shot(
+        "21_zoom_latched_off.png",
+        Box::new(|st| st.nav_tool = None),
+        Some(11),
+    );
+    render_shot(
+        "22_zoom_latched_on.png",
+        Box::new(|st| st.nav_tool = Some(DragMode::Zoom)),
+        Some(11),
+    );
+}
