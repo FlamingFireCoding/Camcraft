@@ -29,7 +29,11 @@ pins) and adds `g76_world`: the bar runs from Z-26 and ends at the free
 end face Z14.693, and the threading top is one lead further out (16.3),
 so the cycle starts at Z16 in free air. This is the fixture change of
 #2892 for the Fanuc suites. Every test that must post a Tormach `G76`
-uses `g76_world`. The G33 goldens do not change.
+uses `g76_world`. The G33 goldens do not change. In the two G76 goldens
+the start moves from Z14 to Z16 (inch Z0.5512 to Z0.6299), and the
+departure before the closing `G30` loses its `G0 Z40` (inch Z1.5748):
+the #1604 departure goes +Z only up to the stock face, and the shorter
+stock's face (Z14.693) is below the Z24 retract.
 
 **Other posts checked** (each `assets/posts/*.cps` on `main`, for
 `G76`, `G92`, `G78`, `G33`, `G32`, `CYCLE97` / `CYCLE98` and the
