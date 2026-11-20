@@ -10,6 +10,7 @@ use solidcore::kernel::CancelToken;
 use crate::KernelError;
 use crate::solidcore_impl::SolidcoreKernel;
 use crate::solidcore_step::{NAME, SHEET, StepRead, StepRefusal, StepSolid, read_step};
+use crate::step_edge_gap::EdgeGap;
 
 /// A surface model of a STEP file (`SHELL_BASED_SURFACE_MODEL` of open
 /// shells), in millimetres: a record to mesh with open sides
@@ -35,6 +36,8 @@ pub struct StepImport {
     pub length_units_mm: Vec<f64>,
     /// File-level diagnostics.
     pub notes: Vec<String>,
+    /// See [`StepRead::edge_gap`].
+    pub edge_gap: EdgeGap,
 }
 
 /// A STEP model imported whole: its solids and its surface models.
@@ -48,6 +51,8 @@ pub struct StepModel {
     pub length_units_mm: Vec<f64>,
     /// File-level diagnostics.
     pub notes: Vec<String>,
+    /// See [`StepRead::edge_gap`].
+    pub edge_gap: EdgeGap,
 }
 
 fn refused(op: &'static str, read: &StepRead, kept: usize) -> Option<KernelError> {
@@ -95,6 +100,7 @@ pub fn import_step(
         solids: read.solids,
         length_units_mm: read.length_units_mm,
         notes: read.notes,
+        edge_gap: read.edge_gap,
     })
 }
 
@@ -123,5 +129,6 @@ pub fn import_step_model(
         sheets: read.sheets,
         length_units_mm: read.length_units_mm,
         notes: read.notes,
+        edge_gap: read.edge_gap,
     })
 }
