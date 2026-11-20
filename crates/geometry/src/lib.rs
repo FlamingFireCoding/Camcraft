@@ -30,4 +30,10 @@ pub mod solidcraft;
 #[cfg(not(target_arch = "wasm32"))]
 mod kernel_import;
 pub mod step;
+pub mod step_csys;
+#[cfg(not(target_arch = "wasm32"))]
+mod step_csys_read;
+pub mod step_diag;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod step_units;
 pub mod sketch_data;
