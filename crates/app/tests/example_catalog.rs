@@ -297,3 +297,49 @@ fn contour_tabs_case_posts_the_lead_moves_and_the_tab_lifts() {
     assert_eq!(tab_lifts, 4, "the Z0 level lifts four times: one lift for each tab");
     assert!(!blocks.iter().any(|b| b.1 < 0.0), "no block goes below the stock bottom (Z0)");
 }
+
+/// #2862: the hole-work example keeps the four hole operations and posts
+/// drilling cycles plus a thread helix with simultaneous XY and Z motion.
+#[test]
+fn hole_work_case_posts_drilling_cycles_and_thread_helix() {
+    let dir = repo("examples/catalog/2d/hole-work");
+    let case = CatalogCase { family: "2d".into(), name: "hole-work".into(), dir };
+    assert_case_layout(&case);
+    let nc = fs::read_to_string(case.dir.join("hole-work.nc")).expect("read hole-work.nc");
+    let kinds: Vec<_> = nc.lines().filter(|line| line.starts_with("(OPERATION: "))
+        .filter_map(|line| line.split(" - ").nth(1)).collect();
+    assert_eq!(kinds, ["DRILL", "BORE", "CIRCULAR", "DRILL", "THREAD"]);
+    let section = |name: &str| -> Vec<&str> {
+        let header = format!("(OPERATION: {name} ");
+        nc.lines().skip_while(|line| !line.starts_with(&header)).skip(1)
+            .take_while(|line| !line.starts_with("(OPERATION: ")).collect()
+    };
+    let bolt = section("Bolt circle");
+    for xy in ["X0. Y30.", "X30. Y0.", "X0. Y-30.", "X-30. Y0."] {
+        assert!(bolt.iter().any(|line| line.starts_with(&format!("G81 {xy} Z-2.803 "))),
+            "missing bolt-circle drilling cycle at {xy}");
+    }
+    for name in ["Bore", "Circular"] {
+        assert!(section(name).iter().any(|line| line.starts_with("G03 ")),
+            "{name} must retain circular interpolation");
+    }
+    assert!(section("Tap drill").contains(&"G81 X0. Y0. Z4. R20. F80"));
+    let thread = section("Thread");
+    let helix: Vec<_> = thread.iter().filter(|line| {
+        let words: Vec<_> = line.split_whitespace().collect();
+        matches!(words.first(), Some(&"G02" | &"G03"))
+            && ['X', 'Y', 'Z', 'I', 'J'].iter().all(|address|
+                words.iter().any(|word| word.starts_with(*address)))
+    }).collect();
+    assert_eq!(helix.len(), 12, "three thread passes each have four helical blocks");
+    let z = |line: &str| -> f64 {
+        line.split_whitespace().find_map(|word| word.strip_prefix('Z'))
+            .expect("helix Z").parse().expect("numeric helix Z")
+    };
+    for pass in helix.as_chunks::<4>().0 {
+        assert_eq!(z(pass[0]), 8.313, "thread entry rises a quarter pitch");
+        assert_eq!(z(pass[3]), 9.875, "thread exit rises another quarter pitch");
+        assert!((z(pass[2]) - z(pass[1]) - 0.625).abs() < 0.001,
+            "half a turn must rise half the 1.25 mm pitch");
+    }
+}
