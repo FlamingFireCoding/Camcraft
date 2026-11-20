@@ -85,7 +85,7 @@ pub(crate) fn tooltip(kind: Nav, state: &State) -> String {
             DisplayMode::Wireframe => {
                 "Display mode: wireframe (click for shaded with edges)".to_owned()
             }
-            DisplayMode::ShadedEdges => {
+            _ => {
                 "Display mode: shaded with edges (click for wireframe)".to_owned()
             }
         },

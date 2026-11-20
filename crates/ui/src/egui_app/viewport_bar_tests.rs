@@ -294,14 +294,13 @@ fn nav_buttons_attach_tooltips_on_hover() {
 }
 
 #[test]
+#[ignore = "evidence generator: opt-in with CAMCRAFT_EVIDENCE_SCREENSHOTS_OUT"]
 fn generate_evidence_screenshots() {
-    let out_dir = std::env::var_os("CAMCRAFT_EVIDENCE_SCREENSHOTS_OUT")
+    let Some(out_dir) = std::env::var_os("CAMCRAFT_EVIDENCE_SCREENSHOTS_OUT")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::path::PathBuf::from(
-                r"C:\Users\johns\.gemini\antigravity\brain\f1cc6eba-fe9f-4f4d-81b1-b22d340d69d1\screenshots",
-            )
-        });
+    else {
+        return;
+    };
     let _ = std::fs::create_dir_all(&out_dir);
     let pane = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(600.0, 120.0));
     let bar = bar_rect(pane);
