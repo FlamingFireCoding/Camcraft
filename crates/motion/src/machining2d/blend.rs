@@ -91,10 +91,22 @@ pub(super) enum Turn {
 /// (the tool-radius law) - so a stride wider than the tool rounds too.
 /// A stride without that room turns on its semicircle, the largest
 /// tangent arc it holds: the radius shrinks, never grows.
+///
+/// The radius never grows past `rho` (review of #2831): a stride whose
+/// half exceeds `rho` by less than the straight-step floor turns on
+/// corner arcs shrunk to keep that floor, not on its larger semicircle;
+/// below [`MIN_BLEND_RADIUS`] it stays sharp (`Tiny`).
 pub(super) fn corner_turn(stride: f64, r: f64, rho: f64) -> Result<Turn, Sharp> {
     let ok = rho.is_finite() && rho >= MIN_BLEND_RADIUS && rho <= r && stride.is_finite();
-    if ok && stride * 0.5 - rho > MIN_BLEND_RADIUS * 0.5 {
+    let gap = stride * 0.5 - rho;
+    if ok && gap > MIN_BLEND_RADIUS * 0.5 {
         return Ok(Turn::Corners(rho));
+    }
+    // Float noise only: a semicircle within this of `rho` is `rho`.
+    const SAME: f64 = 1e-9;
+    if ok && gap > SAME {
+        let shrunk = stride * 0.5 - MIN_BLEND_RADIUS * 0.5;
+        return if shrunk >= MIN_BLEND_RADIUS { Ok(Turn::Corners(shrunk)) } else { Err(Sharp::Tiny) };
     }
     reversal_radius(stride, r).map(|_| Turn::Semicircle)
 }
@@ -162,6 +174,19 @@ mod law {
         let (plan, notes) = plan_reversals(&[0.0, 12.0, 20.0, 20.001], 5.0, true, Some(3.0));
         assert_eq!(plan, vec![Some(Turn::Corners(3.0)), Some(Turn::Corners(3.0)), None]);
         assert_eq!(notes.len(), 1, "{notes:?}");
+    }
+
+    #[test]
+    fn a_short_step_never_turns_on_an_arc_larger_than_the_radius() {
+        // Half the stride is 0.0025 mm past rho: no semicircle of 0.0125.
+        assert_eq!(corner_turn(0.025, 5.0, 0.01), Err(Sharp::Tiny));
+        // Room to shrink: corner arcs below rho, keeping the step floor.
+        match corner_turn(8.004, 5.0, 4.0) {
+            Ok(Turn::Corners(s)) => assert!(s < 4.0 && (s - 3.997).abs() < 1e-9, "{s}"),
+            other => panic!("{other:?}"),
+        }
+        // Exactly half the stride: the semicircle, radius == rho.
+        assert_eq!(corner_turn(8.0, 5.0, 4.0), Ok(Turn::Semicircle));
     }
 
     #[test]

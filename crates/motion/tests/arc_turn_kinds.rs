@@ -108,6 +108,23 @@ fn a_face_radius_past_half_the_row_spacing_turns_on_the_semicircle() {
 }
 
 #[test]
+fn a_face_turn_never_exceeds_the_radius_when_the_straight_step_is_short() {
+    // Review of #2831: half the spacing just past the radius once gave
+    // the semicircle (0.0125 mm for a 0.01 mm request).
+    for (spacing, rho) in [(0.025, 0.01), (0.028, 0.01), (8.004, 4.0), (8.009, 4.0)] {
+        let region = rect(0.0, 0.0, 60.0, 2.0 * FACE_R + spacing);
+        let t = face(&region, &fp(spacing, true, Some(rho))).unwrap();
+        assert!(t.is_chained() && t.all_finite());
+        let radii: Vec<f64> = t
+            .moves
+            .iter()
+            .filter_map(|m| m.arc.map(|a| (m.from.x - a.center.x).hypot(m.from.y - a.center.y)))
+            .collect();
+        assert!(radii.iter().all(|r| *r <= rho + 1e-6), "spacing {spacing}, requested {rho} mm; actual radii: {radii:?}");
+    }
+}
+
+#[test]
 fn a_face_radius_rounds_rows_spaced_wider_than_the_tool() {
     // 12 mm rows under a 10 mm tool: the semicircle would reach 6 mm
     // past the overrun and is refused; a 3 mm corner arc reaches 3 mm.
