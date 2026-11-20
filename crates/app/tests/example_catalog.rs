@@ -21,6 +21,22 @@ use support::*;
 #[path = "example_catalog/contract.rs"]
 mod contract;
 
+/// #2971: keep both named results for the groove and part-off case.
+#[test]
+fn groove_part_off_case_has_two_named_test_results() {
+    assert!(repo("examples/catalog/turning/groove-part-off").is_dir());
+    let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--list", "--format", "terse"])
+        .output()
+        .expect("list catalog tests");
+    assert!(output.status.success());
+    let listing = String::from_utf8_lossy(&output.stdout);
+    for action in ["regenerates", "rebuilds"] {
+        let name = format!("catalog_turning_groove_part_off::{action}: test");
+        assert!(listing.lines().any(|line| line == name), "missing case test {name}");
+    }
+}
+
 mod catalog_2d_contour_tabs {
     use super::*;
     #[test]
@@ -78,6 +94,18 @@ mod catalog_turning_cone_thread {
     #[test]
     fn rebuilds() {
         run_case("turning", "cone-thread", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_groove_part_off {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "groove-part-off", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "groove-part-off", "rebuilds", rebuild);
     }
 }
 
