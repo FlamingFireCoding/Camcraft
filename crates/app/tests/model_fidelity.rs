@@ -136,26 +136,32 @@ fn the_round_trip_of_a_unit_scaled_cap_is_not_a_reduced_fidelity_flag() {
     assert_eq!(step::coarse(step::CHORD_CAP), None);
     assert_eq!(step::coarse((step::CHORD_CAP / 25.4) * 25.4), None);
     assert_eq!(step::coarse(step::CHORD_CAP * (1.0 + 1e-12)), None);
-    assert_eq!(step::coarse(0.01), Some(0.01), "a metre file stopped at the kernel's 0.01 mm floor");
+    assert_eq!(step::coarse(0.01), Some(0.01), "a chord twice the promise is flagged");
+    // The old metre-file pin's excess floor (restored, #917): a model
+    // flagged at 0.01 mm still leaves a 0.005 mm verdict tolerance.
+    let left = camcraft_app::verify::excess_floor(DEV_TOL, model_fidelity::excess(0.01)).expect("a tolerance is left");
+    assert!((left - 0.005).abs() < 1e-9, "{left}");
     assert_eq!(step::coarse(f64::NAN), None);
 }
 
 #[test]
-fn an_inch_step_is_full_fidelity_and_a_metre_step_is_flagged_at_the_kernels_floor() {
+fn an_inch_step_and_a_metre_step_are_full_fidelity_by_measure() {
     let model = |n: &str| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models").join(n);
     // The inch twin of the fixture meets the promise: no flag (#839's cap
     // is unit-correct, and the unit round trip is not an excess).
     let inch = ImportModel::new(&model("Milling-test-inch.step")).expect("the inch part imports");
     assert_eq!(inch.coarse_mm, None);
-    // A metre file stops at the kernel's least tolerance, 1e-5 m: 0.01 mm,
-    // twice the promise. Before #864 that was a log line; now it is the
-    // same flag an over-budget model gets - with a tolerance left, so its
-    // verdicts are tightened, not refused.
+    // A metre file has no floor of its own since #917 (the old reader
+    // stopped at 1e-5 m, 0.01 mm, and was flagged): the kernel meshes it in
+    // millimetres at the cap, and its measured deviation proves it.
     let metre = ImportModel::new(&model("sample_ap214.step")).expect("the metre sample imports");
-    let chord = metre.coarse_mm.expect("flagged");
-    assert!((chord - 0.01).abs() < 1e-9, "{chord}");
-    let left = camcraft_app::verify::excess_floor(DEV_TOL, model_fidelity::excess(chord)).expect("a tolerance is left");
-    assert!((left - 0.005).abs() < 1e-9, "{left}");
+    assert_eq!(metre.coarse_mm, None, "a metre file meets the promise");
+    // The measured deviation at the cap is pinned where the reader lives:
+    // camcraft-geometry tests/step_metre_unit.rs (#2904 review).
+    let bytes = std::fs::read(model("sample_ap214.step")).expect("read");
+    let (mesh, chord) = step::parse_with_chord(&bytes).expect("the metre sample meshes");
+    assert_eq!(chord, step::CHORD_CAP, "meshed at the cap, not coarser");
+    assert_eq!(mesh.facets.len(), metre.mesh.facets.len(), "the same mesh the import landed");
 }
 
 #[test]

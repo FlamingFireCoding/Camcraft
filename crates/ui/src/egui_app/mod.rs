@@ -96,12 +96,15 @@ mod lead_page;
 mod start_exit_rows;
 pub(crate) mod op_tabs;
 mod painted;
+mod ribbon_cell;
 mod tree_badges;
 mod tree_glyphs;
 mod pages;
 // #739: the WCS page, split out of pages.rs.
 mod wcs_page;
 mod step_budget_row;
+// #1339: the model page's "Vouch for this mesh" row.
+mod vouch_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
 mod stock_material_row;
@@ -118,6 +121,8 @@ mod tool_thread_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
+// #2014: the tool Properties' label-left property grid and its groups.
+mod tool_settings_grid;
 mod tool_library;
 mod tool_preview;
 // #890: the tool editor's per-material cutting data.

@@ -72,13 +72,17 @@ pub struct LibraryTool {
     /// #889: the body the file carries for this tool (already judged
     /// against it), `None` for a tool with only its holder cylinder.
     pub body: Option<ToolBody>,
+    /// #2566: explicit controller tool number (`T..` / `H..`) carried by
+    /// a machine tool-table file (PathPilot `.csv` or Hurco `.TCM`),
+    /// `None` for `.camtools` JSON which leaves numbers to the document.
+    pub number: Option<u32>,
 }
 
 impl LibraryTool {
-    /// A library tool with no body - what every pre-#889 file holds.
+    /// A library tool with no body and no explicit controller number.
     #[must_use]
     pub fn bare(name: impl Into<String>, tool: Tool) -> Self {
-        Self { name: name.into(), tool, body: None }
+        Self { name: name.into(), tool, body: None, number: None }
     }
 }
 
@@ -178,7 +182,7 @@ pub fn parse_tool_library(text: &str) -> Result<Vec<LibraryTool>, String> {
             return Err(format!("tool '{name}' is refused: {why}"));
         }
         let body = read_body(def, &tool, name)?;
-        out.push(LibraryTool { name: name.to_owned(), tool, body });
+        out.push(LibraryTool { name: name.to_owned(), tool, body, number: None });
     }
     if out.is_empty() {
         return Err("the tool library holds no tools".into());

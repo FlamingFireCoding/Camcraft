@@ -92,6 +92,9 @@ mod edge;
 mod fill;
 mod flat;
 mod gaplink;
+mod grid;
+#[cfg(test)]
+mod grid_tests;
 mod geodesic;
 mod ladder;
 mod morph;

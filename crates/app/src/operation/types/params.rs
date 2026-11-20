@@ -211,6 +211,9 @@ pub enum OpParams {
         /// described here could not reach (`machining2d::rest_pocket`).
         /// `None` is off - every earlier file, and the plain pocket.
         rest: Option<RestParams>,
+        /// Corner relief (#2400): dogbone or T-bone relief for inside
+        /// corners of closed pockets and square-ended slots.
+        corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -258,6 +261,8 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Corner relief (#2400): dogbone or T-bone inside-corner relief.
+        corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -289,6 +294,8 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Corner relief (#2400): dogbone or T-bone inside-corner relief.
+        corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -537,6 +544,12 @@ pub enum OpParams {
         /// the programmed feed ([`crate::machining3d::optimize_feed`],
         /// M2.1d). Geometry is untouched; only feed words move.
         feed_opt: bool,
+        /// #1591: how each level is cleared under the `Adaptive`
+        /// strategy - the HSM spiral (every earlier 3D Adaptive, byte
+        /// for byte) or trochoidal loops
+        /// ([`crate::machining3d::pocket3d_trochoidal`]). Not read by
+        /// the other strategies.
+        method: crate::machining2d::AdaptiveMethod,
         /// Rough by OFFSET SHELLS of the model
         /// ([`crate::machining3d::pocket3d_offset`], M2.5 F): the
         /// level ladder keeps its XY plan and its dive superset law,
