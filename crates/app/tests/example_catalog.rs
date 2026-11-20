@@ -3,7 +3,8 @@
 //! `build.camscript`, `<case>.camproj`, `<case>.nc`, and `README.md`.
 //! Each case opens, regenerates every operation, verifies clean, and posts
 //! the committed `.nc` byte for byte; the seed case rebuilds end to end
-//! from `build.camscript`.
+//! from `build.camscript`. The turning case (#2394) also pins what its
+//! program shows: the taper and the thread passes.
 //!
 //! Gate map (#2393): covers app::commands, app::model, app::operation,
 //! app::posting, app::project, app::script, app::mcp, app::cli,
@@ -226,4 +227,83 @@ fn every_catalog_case_rebuilds_from_camscript() {
     }
 
     let _ = fs::remove_dir_all(&scratch);
+}
+
+/// The value of an address word (`X`, `Z`) in one NC block.
+fn word(block: &str, address: char) -> Option<f64> {
+    block
+        .split_whitespace()
+        .find_map(|w| w.strip_prefix(address))
+        .and_then(|v| v.parse().ok())
+}
+
+/// The blocks of one operation: from its `(OPERATION: <name> ` comment
+/// to the next operation comment.
+fn section<'a>(program: &'a str, op: &str) -> Vec<&'a str> {
+    let head = format!("(OPERATION: {op} ");
+    program
+        .lines()
+        .skip_while(|l| !l.starts_with(&head))
+        .skip(1)
+        .take_while(|l| !l.starts_with("(OPERATION: "))
+        .collect()
+}
+
+/// #2394: the turning case shows a spun profile - a cone with a threaded
+/// end. The committed program holds the six operations in order, the
+/// 20 mm to 10 mm taper over 40 mm in the finish ride, and the M10x1.5
+/// thread passes to the 8.16 mm root on the Fanuc-style lathe post.
+#[test]
+fn turning_cone_thread_case_posts_the_taper_and_the_thread() {
+    let dir = repo("examples/catalog/turning/cone-thread");
+    let case = CatalogCase { family: "turning".into(), name: "cone-thread".into(), dir: dir.clone() };
+    assert!(dir.is_dir(), "catalog case turning/cone-thread is missing: {}", dir.display());
+    assert_case_layout(&case);
+    let program = fs::read_to_string(dir.join("cone-thread.nc")).expect("read cone-thread.nc");
+
+    assert!(program.contains("G18"), "a lathe program states the ZX plane");
+    assert!(!program.lines().any(|l| word(l, 'Y').is_some()), "a 2-axis lathe program has no Y word");
+    let kinds: Vec<&str> = program
+        .lines()
+        .filter(|l| l.starts_with("(OPERATION: "))
+        .filter_map(|l| l.split(" - ").nth(1))
+        .collect();
+    assert_eq!(
+        kinds,
+        ["FACING", "PROFILE ROUGH", "PROFILE FINISH", "GROOVE FINISH", "THREADING", "PARTING"],
+        "face, rough profile, finish profile, the neck, the thread, part-off - in this order"
+    );
+
+    // The taper: every finish block on the cone cuts X and Z together at
+    // 10 mm of diameter over 40 mm of length (-0.25), and the blocks span
+    // the cone between the shoulder (Z20) and the thread diameter (Z60).
+    let finish = section(&program, "Finish profile");
+    let cone: Vec<(f64, f64)> = finish
+        .iter()
+        .filter(|l| l.starts_with("G01"))
+        .filter_map(|l| Some((word(l, 'X')?, word(l, 'Z')?)))
+        .filter(|&(x, z)| x < 20.0 && (20.0..=58.5).contains(&z))
+        .collect();
+    assert!(cone.len() >= 2, "the finish ride has no blocks on the cone: {finish:?}");
+    let span = cone[cone.len() - 1].1 - cone[0].1;
+    assert!(span > 30.0, "the cone blocks span {span} mm of the 40 mm taper: {cone:?}");
+    for w in cone.windows(2) {
+        let ((x0, z0), (x1, z1)) = (w[0], w[1]);
+        let slope = (x1 - x0) / (z1 - z0);
+        assert!((slope + 0.25).abs() < 0.005, "X{x0} Z{z0} to X{x1} Z{z1} is off the taper: {slope}");
+        assert!(x0 < 20.0 && x1 > 10.0, "X{x0} to X{x1} is outside the 20 to 10 mm cone");
+    }
+
+    // The thread: G32 passes at the 1.5 mm lead, the last one at the
+    // M10x1.5 root diameter, from the end face side down to the neck.
+    let thread = section(&program, "Thread");
+    assert!(thread.iter().any(|l| l.starts_with("(T0303 ") && l.contains("THREADING INSERT")), "{thread:?}");
+    assert!(thread.iter().any(|l| l.starts_with("G32 ") && l.ends_with("F1.5")), "no G32 pass at lead 1.5: {thread:?}");
+    assert!(thread.contains(&"G01 X8.16 Z77.4 F0.05"), "the last pass enters at the 8.16 mm root: {thread:?}");
+    assert!(thread.contains(&"G32 Z63.9 F1.5"), "each pass ends at the neck, Z63.9: {thread:?}");
+    assert!(!program.contains("G76"), "this case posts G32 passes, not the G76 cycle");
+
+    // The neck and the part-off: the 3 mm blade, to X8 and to the axis.
+    assert!(section(&program, "Neck").contains(&"G01 X8. Z60. F0.02"), "the neck is 8 mm at Z60");
+    assert!(section(&program, "Part off").iter().any(|l| l.starts_with("G01 X0. Z13.5")), "the part-off reaches the axis");
 }
