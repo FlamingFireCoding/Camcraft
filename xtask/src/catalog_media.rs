@@ -151,7 +151,7 @@ fn run_guide_renderer_hook(root: &Path, out_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn collect_pngs(
+pub(crate) fn collect_pngs(
     out_dir: &Path,
     cases: &[CatalogCase],
     with_guide: bool,
