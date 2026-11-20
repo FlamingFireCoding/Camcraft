@@ -17,6 +17,11 @@
 //!   laws judge with that smaller tolerance (`VerifyContext::model_excess`
 //!   at generation, [`verdict_tol`] for the program sim): stricter, never
 //!   looser. False gouges on a concave wall are the safe side.
+//! - #2996: past a chord of `DEV_TOL`, up to `verify::WIDE_CHORD_LIMIT`,
+//!   a law gives back only the promised chord, not the whole excess: the
+//!   verdict is read at the model's own chord error, and the program
+//!   header and the model page say so (`fidelity_note`). Collision bands
+//!   still grow by the whole excess (`verify::band_growth`).
 //! - Once the excess uses a whole tolerance, a tightened law would convict
 //!   every exactly finished flat face - a misleading verdict. The laws
 //!   then read untightened and [`gate_problems`] refuses the operation by
@@ -273,7 +278,12 @@ pub fn summary(world: &World, chord_mm: f64) -> String {
     if is_unknown(chord_mm) {
         return format!("Fidelity unknown: {UNKNOWN_NOTE}");
     }
-    format!("Reduced fidelity: surfaces are approximated to within {}", within(world, chord_mm))
+    let said = format!("Reduced fidelity: surfaces are approximated to within {}", within(world, chord_mm));
+    // #2996: a widened model says what its checks allow.
+    match crate::fidelity_note::clause(world, chord_mm) {
+        Some(clause) => format!("{said}; {clause}"),
+        None => said,
+    }
 }
 
 /// The same facts for MCP and the script API: the achieved error in mm,
@@ -287,11 +297,17 @@ pub fn facts(world: &World, chord_mm: f64) -> serde_json::Value {
             "note": format!("Fidelity unknown: this model was {UNKNOWN_NOTE}. Its operations are refused at the post until then."),
         });
     }
+    // #2996: a widened model's checks are looser than normal, not stricter.
+    let checks = if crate::fidelity_note::widened(chord_mm) {
+        "A gouge smaller than that is not found, and the posted program says so in its header"
+    } else {
+        "Gouge checks against this model are stricter; if it is too coarse to check, its operations are refused at the post"
+    };
     serde_json::json!({
         "approximation_mm": chord_mm,
         "promised_mm": step::CHORD_CAP,
         "note": format!(
-            "{}. Gouge checks against this model are stricter; if it is too coarse to check, its operations are refused at the post. Re-import with a larger STEP facet budget to clear this.",
+            "{}. {checks}. Re-import with a larger STEP facet budget to clear this.",
             summary(world, chord_mm)
         ),
     })

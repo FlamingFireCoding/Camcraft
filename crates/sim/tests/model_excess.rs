@@ -130,8 +130,9 @@ fn an_exactly_finished_flat_face_is_never_a_gouge_on_a_coarse_model() {
 #[test]
 fn past_the_tolerance_the_law_reads_untightened_and_leaves_the_refusal_to_the_gate() {
     let wall = coarse_boss();
-    // An excess that uses the whole tolerance: nothing honest is left.
-    for excess in [TOL, 0.02, 0.5] {
+    // An excess past the #2996 limit (a chord over 0.02 mm) uses the
+    // whole tolerance: nothing honest is left.
+    for excess in [0.016, 0.02, 0.5] {
         assert_eq!(excess_floor(TOL, excess), None, "excess {excess}");
         // Every path reads exactly as it does at full fidelity.
         for into in [0.0, 0.006, 0.05] {
@@ -151,7 +152,9 @@ fn the_excess_floor_only_ever_tightens() {
     assert_eq!(excess_floor(TOL, f64::INFINITY), Some(TOL), "an infinite excess is none");
     let t = excess_floor(TOL, 0.004).expect("positive");
     assert!((t - 0.006).abs() < 1e-12 && t < TOL);
-    assert_eq!(excess_floor(TOL, TOL), None, "zero left is a refusal, not a tolerance");
+    assert_eq!(excess_floor(CAP, CAP), None, "zero left is a refusal, not a tolerance");
+    // #2996: an excess past the limit (a chord over 0.02 mm) leaves none.
+    assert_eq!(excess_floor(TOL, 0.016), None, "past the limit: a refusal");
     // The default context carries no excess: every law reads as before.
     let cx = VerifyContext::default();
     assert_eq!(cx.model_excess, 0.0);
@@ -273,7 +276,10 @@ fn a_declared_rim_is_read_untightened_and_no_other_loop_is() {
     // Just under the bound: 0.0001 mm left of the tightened tolerance.
     let near = TOL - 1e-4;
     assert_eq!(judge(&rim, &drill, &plunge, 0.0, &[]), 0, "full fidelity: clean");
-    assert!(judge(&rim, &drill, &plunge, near, &[]) > 0, "undeclared, the excess eats the rim's own sagitta");
+    // #2996: past a chord of DEV_TOL the excess takes only the promised
+    // 0.005 mm, which leaves more than the rim's 0.0043 mm sagitta. Before
+    // #2996 the undeclared rim was convicted here.
+    assert_eq!(judge(&rim, &drill, &plunge, near, &[]), 0, "undeclared, the widened tolerance covers the rim's sagitta");
     assert_eq!(judge(&rim, &drill, &plunge, near, &declared), 0, "declared, the rim reads untightened");
     // An oversize drill against the declared rim still convicts.
     let fat = ToolGeom { radius: 2.01, ..drill };
@@ -284,4 +290,45 @@ fn a_declared_rim_is_read_untightened_and_no_other_loop_is() {
     let off = [(Point2::new(0.0, 0.0), BOSS_R - 0.01)];
     let t6 = tool();
     assert!(judge(&wall, &t6, &ring_cut(0.006), excess, &off) > 0);
+}
+
+// ---- #2996: a chord past DEV_TOL, up to the hard limit -------------------
+
+#[test]
+fn past_dev_tol_up_to_the_limit_only_the_promised_chord_is_taken() {
+    use camcraft_sim::verify::{band_growth, PROMISED_CHORD, WIDE_CHORD_LIMIT};
+    assert_eq!(PROMISED_CHORD, CAP);
+    assert_eq!(WIDE_CHORD_LIMIT, 0.02, "a constant no file can raise");
+    // Up to a chord of DEV_TOL: #864's law, the whole excess is taken.
+    for excess in [0.001, 0.004, CAP] {
+        let t = excess_floor(TOL, excess).expect("positive");
+        assert!((t - (TOL - excess)).abs() < 1e-12, "excess {excess}: {t}");
+    }
+    // Past it, up to a chord of 0.02 mm: only the promised chord.
+    for chord in [0.0101, 0.012, 0.019, WIDE_CHORD_LIMIT] {
+        let t = excess_floor(TOL, chord - CAP).expect("judged under the limit");
+        assert!((t - (TOL - CAP)).abs() < 1e-12, "chord {chord}: {t}");
+        // Never wider than the law's own tolerance: a tolerance smaller
+        // than the promised chord is still refused.
+        assert!(excess_floor(0.003, chord - CAP).is_none(), "chord {chord}");
+        // A collision band grows by the whole excess, never less.
+        assert!((band_growth(TOL, chord - CAP) - (chord - CAP)).abs() < 1e-12, "chord {chord}");
+    }
+    // Past the limit: the whole excess again, so nothing is left.
+    for chord in [0.0201, 0.021, 0.5] {
+        assert_eq!(excess_floor(TOL, chord - CAP), None, "chord {chord}");
+        assert_eq!(band_growth(TOL, chord - CAP), 0.0, "refused, not grown: chord {chord}");
+    }
+    assert_eq!(band_growth(TOL, 0.0), 0.0, "full fidelity grows nothing");
+}
+
+#[test]
+fn a_cut_deeper_than_the_widened_tolerance_into_a_convex_wall_is_still_convicted() {
+    // The boss's own chord error (0.0122 mm) is past DEV_TOL: judged at
+    // the widened tolerance, a cut that deep into the real wall is caught.
+    let (c, wall) = (chord(), coarse_boss());
+    let excess = c - CAP;
+    assert!(excess_floor(TOL, excess).is_some());
+    assert!(gouges(&ring_cut(c + TOL), &wall, excess) > 0, "a real gouge past the widened tolerance");
+    assert_eq!(gouges(&ring_cut(0.0), &wall, excess), 0, "the nominal ring stays clean");
 }

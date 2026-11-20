@@ -165,17 +165,20 @@ pub const HOOKS: &[&str] = &[
 /// The program's identity a post writes (#258): its number (the
 /// O-word of a numbering dialect, 1 when the document states none),
 /// whether the document stated that number, and the document's
-/// program comment ("" for none - the dialect writes its own default).
+/// program comment ("" for none - the dialect writes its own default),
+/// and the header notes the program must carry (#2996: a model checked
+/// at reduced accuracy), each voiced through `onComment` after `onOpen`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProgramId {
     pub number: u32,
     pub numbered: bool,
     pub comment: String,
+    pub notes: Vec<String>,
 }
 
 impl Default for ProgramId {
     fn default() -> Self {
-        Self { number: 1, numbered: false, comment: String::new() }
+        Self { number: 1, numbered: false, comment: String::new(), notes: Vec::new() }
     }
 }
 

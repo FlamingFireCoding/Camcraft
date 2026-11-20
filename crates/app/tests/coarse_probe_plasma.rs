@@ -79,10 +79,13 @@ fn judge(t: &Toolpath, tool: &Tool, facets: &[Triangle], excess: f64) -> (Vec<Wa
 #[test]
 fn the_stylus_slack_gives_the_excess_back_and_reads_plain_past_the_bound() {
     assert_eq!(stylus_slack(0.0), STYLUS_SLACK, "full fidelity is untouched");
-    assert!((stylus_slack(EXCESS) - (STYLUS_SLACK - EXCESS)).abs() < 1e-12);
-    // Past the bound the law reads plain; the program gate refuses the
-    // operation instead (`coarse_laws`' registry test, and below).
-    assert_eq!(stylus_slack(0.012), STYLUS_SLACK);
+    // #2996: a 0.012 mm chord passes DEV_TOL, so only the promised
+    // 0.005 mm is given back.
+    assert!((stylus_slack(EXCESS) - (STYLUS_SLACK - 0.005)).abs() < 1e-12);
+    // Past the bound (a chord over 0.02 mm) the law reads plain; the
+    // program gate refuses the operation instead (`coarse_laws`' registry
+    // test, and below).
+    assert_eq!(stylus_slack(0.016), STYLUS_SLACK);
     assert_eq!(stylus_slack(f64::NAN), STYLUS_SLACK, "a non-finite excess is no excess");
 }
 
@@ -210,17 +213,18 @@ fn cut(grow: f64, excess: f64) -> Result<Toolpath, String> {
 #[test]
 fn the_kerf_tolerance_gives_the_excess_back_and_reads_plain_past_the_bound() {
     assert_eq!(torch(0.0).kerf_tol(), KERF_TOL);
-    assert!((torch(EXCESS).kerf_tol() - (KERF_TOL - EXCESS)).abs() < 1e-12);
+    // #2996: only the promised 0.005 mm of a chord past DEV_TOL.
+    assert!((torch(EXCESS).kerf_tol() - (KERF_TOL - 0.005)).abs() < 1e-12);
     assert_eq!(torch(0.03).kerf_tol(), KERF_TOL, "past the bound the law reads plain");
 }
 
 #[test]
 fn a_kerf_between_the_tolerances_is_refused_only_on_the_coarse_model() {
     assert!(cut(0.0, 0.0).is_ok() && cut(0.0, EXCESS).is_ok(), "the drawn plate cuts on either model");
-    // The part 0.02 mm past the outline: inside the plain 0.025 mm,
-    // past the tightened 0.018 mm.
-    assert!(cut(0.02, 0.0).is_ok(), "silent at full fidelity: {:?}", cut(0.02, 0.0).err());
-    let why = cut(0.02, EXCESS).expect_err("refused on the coarse model");
+    // The part 0.022 mm past the outline: inside the plain 0.025 mm,
+    // past the tightened 0.020 mm (#2996).
+    assert!(cut(0.022, 0.0).is_ok(), "silent at full fidelity: {:?}", cut(0.022, 0.0).err());
+    let why = cut(0.022, EXCESS).expect_err("refused on the coarse model");
     assert!(why.contains("would carry the kerf into the part"), "refused by the kerf law, by name: {why}");
     // A real reach into the part (0.1 mm) is refused either way.
     assert!(cut(0.1, 0.0).is_err() && cut(0.1, EXCESS).is_err());

@@ -27,8 +27,8 @@ use flecs_ecs::prelude::World;
 use serde_json::{json, Value};
 
 const MILL: &str = "EM-1000-4FL";
-/// A chord error that leaves a positive tolerance (excess 0.007 of 0.01),
-/// and one that leaves none.
+/// A chord error that leaves a positive tolerance (past DEV_TOL, so #2996
+/// takes only the promised 0.005 of 0.01), and one that leaves none.
 const TIGHT: f64 = 0.012;
 const TOO_COARSE: f64 = 0.03;
 
@@ -213,8 +213,9 @@ fn the_program_verdict_tightens_by_the_excess_while_a_tolerance_is_left() {
     // Reduced fidelity with a tolerance left: an exactly finished flat
     // face still posts clean - and the same 0.006 mm is now convicted.
     let tight = faced_brick(Some(TIGHT));
+    // #2996: TIGHT passes DEV_TOL, so only the promised chord is taken.
     let tol = model_fidelity::verdict_tol(&tight).expect("a positive tolerance is left");
-    assert!((tol - (DEV_TOL - (TIGHT - step::CHORD_CAP))).abs() < 1e-12 && tol > 0.0, "{tol}");
+    assert!((tol - (DEV_TOL - step::CHORD_CAP)).abs() < 1e-12 && tol > 0.0, "{tol}");
     let e = model::find_by_name(&tight, "OP").expect("op");
     let cached = model::toolpath_of(&tight, &e).expect("cached");
     assert!(cached.warnings.iter().all(|w| !w.blocks_post()), "the generator's tightened laws pass a flat face: {:?}", cached.warnings);

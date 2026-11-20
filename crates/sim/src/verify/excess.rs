@@ -22,15 +22,14 @@ impl VerifyContext<'_> {
     }
 
     /// How far the collision laws grow a shank or holder band on a model
-    /// coarser than the importer promises (#904): what
-    /// [`Self::tightened`] takes out of the gouge tolerance - the excess
-    /// while it leaves that tolerance positive, nothing at full fidelity
-    /// and nothing past the bound (the program gate refuses there). A
-    /// wall the band clears by less than this may stand that much nearer
-    /// than its facets show.
+    /// coarser than the importer promises (#904): the whole excess while
+    /// the gouge tolerance is still judged, nothing at full fidelity and
+    /// nothing past the bound (the program gate refuses there) -
+    /// [`band_growth`]. A wall the band clears by less than this may
+    /// stand that much nearer than its facets show.
     #[must_use]
     pub fn band_growth(&self) -> f64 {
-        (self.gouge_tol - self.tightened(self.gouge_tol)).max(0.0)
+        band_growth(self.gouge_tol, self.model_excess)
     }
 
     /// The tolerance law (b) reads the region loop `l` at (#1057):
@@ -56,18 +55,56 @@ impl VerifyContext<'_> {
     }
 }
 
-/// `tol` less a model's `excess` chord error, while that is an honest
-/// tolerance (#864): `Some(tol)` untouched when there is no excess,
-/// `Some(tol - excess)` while it stays positive, `None` once the excess
-/// has used the whole tolerance - where the caller must refuse rather
-/// than judge. A non-finite or negative excess is no excess.
+/// The chord error the importer promises, mm: half the program verdict
+/// tolerance (app's `step::CHORD_CAP` is the same number). A model's
+/// EXCESS is its kept chord error less this.
+pub const PROMISED_CHORD: f64 = crate::stock_sim::DEV_TOL * 0.5;
+
+/// The coarsest chord error a model may carry and still be judged, mm
+/// (#2996). A constant: no file, budget or vouch can raise it.
+pub const WIDE_CHORD_LIMIT: f64 = 0.02;
+
+/// The excess at [`WIDE_CHORD_LIMIT`], with float dust allowed for: a
+/// chord recorded at exactly the limit is inside it.
+const WIDE_EXCESS_LIMIT: f64 = WIDE_CHORD_LIMIT - PROMISED_CHORD + 1e-9;
+
+/// `tol` less what a model's `excess` chord error takes from it, while
+/// that is an honest tolerance: `Some(tol)` untouched when there is no
+/// excess, `None` once nothing positive is left - where the caller must
+/// refuse rather than judge. A non-finite or negative excess is no excess.
+///
+/// What it takes (#864, widened by #2996):
+/// - an excess up to [`PROMISED_CHORD`] (a chord up to `DEV_TOL`): all
+///   of it, so the real surface is held to the same bound as at full
+///   fidelity - #864's law, unchanged;
+/// - a larger excess, up to a chord of [`WIDE_CHORD_LIMIT`]: only
+///   [`PROMISED_CHORD`]. The tolerance is widened by how far the chord
+///   passes `DEV_TOL`: the program verdict is then read at the model's
+///   own chord error, not at `DEV_TOL`. Never wider than `tol` itself;
+/// - past the limit: all of it again (#864), which leaves no gouge
+///   tolerance, so the operation is refused by name.
+///
+/// Collision bands never read this widening: they grow by the whole
+/// excess ([`band_growth`]).
 #[must_use]
 pub fn excess_floor(tol: f64, excess: f64) -> Option<f64> {
     if !(excess.is_finite() && excess > 0.0) {
         return Some(tol);
     }
-    let left = tol - excess;
+    let taken = if excess <= WIDE_EXCESS_LIMIT { excess.min(PROMISED_CHORD) } else { excess };
+    let left = tol - taken;
     (left.is_finite() && left > 0.0).then_some(left)
+}
+
+/// How far a collision band grows on a model `excess` coarser than
+/// promised (#904, #2996): the whole excess while a law held at `tol` is
+/// still judged ([`excess_floor`] leaves it positive), `0.0` at full
+/// fidelity and past that bound (the program gate refuses there). A
+/// wall may stand the whole excess nearer than its facets show, so the
+/// widening of the gouge tolerance is never given to a band.
+#[must_use]
+pub fn band_growth(tol: f64, excess: f64) -> f64 {
+    if excess.is_finite() && excess > 0.0 && excess_floor(tol, excess).is_some() { excess } else { 0.0 }
 }
 
 /// Whether every vertex of `l` (eight at least, as every rim has) stands

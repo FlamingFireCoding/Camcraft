@@ -26,11 +26,13 @@ use camcraft_sim::geo2d::{Loop, Point2, Region};
 use camcraft_sim::geometry::{cube, Point3, Triangle};
 use camcraft_sim::verify::{verify, Mode, ToolGeom, VerifyContext, Warning};
 
-/// The importer's promise, the gouge tolerance, and an excess that
-/// leaves 0.003 mm of it (a 0.012 mm mesh).
+/// The importer's promise, the gouge tolerance, an excess that is judged
+/// (a 0.012 mm mesh: #2996 leaves 0.005 mm of the tolerance, and the
+/// bands grow by all 0.007 mm), and one past the 0.02 mm chord limit.
 const CAP: f64 = 0.005;
 const TOL: f64 = 0.01;
 const EXCESS: f64 = 0.007;
+const PAST: f64 = 0.016;
 
 fn region(pts: Vec<Point2>) -> Region {
     match Loop::new(pts).and_then(|l| Region::new(vec![l])) {
@@ -100,7 +102,7 @@ fn a_holder_clearing_a_wall_by_less_than_the_excess_is_convicted_on_a_coarse_mod
     let hit = plunge(-0.5);
     assert!(!block_verdict(&hit, 0.0).is_empty() && !block_verdict(&hit, EXCESS).is_empty());
     // Past the tolerance the law reads untightened (the gate refuses).
-    for excess in [TOL, 0.02, 0.5] {
+    for excess in [PAST, 0.02, 0.5] {
         assert_eq!(block_verdict(&near, excess), block_verdict(&near, 0.0), "excess {excess}");
     }
 }
@@ -115,7 +117,7 @@ fn the_mid_turn_sweep_grows_the_band_the_same_way() {
     let turning = path(vec![mv(MoveKind::Plunge, (tip_x(0.004), 0.0, 30.0), (tip_x(0.004), 0.0, 5.0), Some(lean))]);
     assert!(block_verdict(&turning, 0.0).is_empty(), "{:?}", block_verdict(&turning, 0.0));
     assert_eq!(block_verdict(&turning, EXCESS), vec![Warning::SweepHit { at: 0, part: false }]);
-    for excess in [TOL, 0.5] {
+    for excess in [PAST, 0.5] {
         assert!(block_verdict(&turning, excess).is_empty(), "past the bound: untightened (excess {excess})");
     }
 }
@@ -179,7 +181,7 @@ fn a_rapid_grazing_a_convex_wall_inside_the_mesh_error_is_convicted_on_a_coarse_
     assert!(rapid_past(0.0, 0.0).is_empty() && rapid_past(0.0, excess).is_empty());
     assert!(!rapid_past(0.1, 0.0).is_empty() && !rapid_past(0.1, excess).is_empty());
     // Past the tolerance: untightened.
-    for excess in [TOL, 0.5] {
+    for excess in [PAST, 0.5] {
         assert!(rapid_past(0.018, excess).is_empty(), "excess {excess}");
     }
 }
@@ -251,7 +253,9 @@ fn full_fidelity_grows_nothing() {
     assert_eq!(cx.band_growth(), 0.0);
     let coarse = VerifyContext { gouge_tol: TOL, model_excess: EXCESS, ..Default::default() };
     assert!((coarse.band_growth() - EXCESS).abs() < 1e-12);
-    assert!((coarse.tightened(TOL) + coarse.band_growth() - TOL).abs() < 1e-12, "what the kerf loses, the band gains");
+    // #2996: past a chord of DEV_TOL the kerf loses only the promised
+    // chord, but the band still grows by the whole excess.
+    assert!((coarse.tightened(TOL) - (TOL - CAP)).abs() < 1e-12, "the kerf loses the promised chord");
     let past = VerifyContext { gouge_tol: TOL, model_excess: 0.02, ..Default::default() };
     assert_eq!(past.band_growth(), 0.0, "past the bound the gate refuses; the laws read untightened");
 }
@@ -289,7 +293,7 @@ fn a_radial_rapid_grazing_a_coarse_bar_inside_the_excess_is_convicted_only_on_a_
     assert!(radial_past(0.0, 0.0).is_empty() && radial_past(0.0, excess).is_empty());
     assert!(!radial_past(0.1, 0.0).is_empty() && !radial_past(0.1, excess).is_empty());
     // Past the tolerance: untightened.
-    for excess in [TOL, 0.5] {
+    for excess in [PAST, 0.5] {
         assert!(radial_past(0.018, excess).is_empty(), "excess {excess}");
     }
     // Over the stock's Z top: disc grazing within excess is convicted too.

@@ -130,11 +130,12 @@ pub(crate) fn tightened(tol: f64, excess: f64) -> f64 {
 }
 
 /// How much a measured standoff, entry or band grows on a model
-/// imported coarser than promised (#1053): `excess` while `GOUGE_TOL`
-/// stays positive, `0.0` past that (where [`floor_of`] makes the
-/// program gate refuse the operation instead).
+/// imported coarser than promised (#1053): the whole `excess` while
+/// `GOUGE_TOL` is still judged, also where #2996 widens that tolerance;
+/// `0.0` past that (where [`floor_of`] makes the program gate refuse the
+/// operation instead).
 pub(crate) fn band_growth(excess: f64) -> f64 {
-    (GOUGE_TOL - tightened(GOUGE_TOL, excess)).max(0.0)
+    crate::verify::band_growth(GOUGE_TOL, excess)
 }
 
 /// The band kinds' meridian-scan tolerance (`turning::revolve`), `None`

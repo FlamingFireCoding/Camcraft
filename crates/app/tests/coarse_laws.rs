@@ -250,9 +250,9 @@ fn a_probe_ask_is_judged_at_the_tightened_budget_on_a_reduced_model() {
     // The flush program meets the ask on the coarse model too.
     assert_eq!(ask_lines(&probed(Some(TIGHT), 0.05, 0.0)), Vec::<String>::new());
     // An ask the excess uses up is the Part's own floor: refused by name
-    // (0.006 mm asked, 0.007 mm of excess), though every 0.01 mm law
-    // still has a tolerance left.
-    let world = probed(Some(TIGHT), 0.006, 0.0);
+    // (0.005 mm asked; #2996 takes the promised 0.005 mm of a chord past
+    // DEV_TOL), though every 0.01 mm law still has a tolerance left.
+    let world = probed(Some(TIGHT), 0.005, 0.0);
     assert_eq!(fidelity_lines(&world), vec![refusal("P1", "0.012")]);
 }
 
