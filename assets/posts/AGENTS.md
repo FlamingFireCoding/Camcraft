@@ -99,6 +99,18 @@ the text ones, and every shipped post carries them.
 New files: `vendor = "Camcraft"` (the M4.3 naming law — the shipped
 five still carry the old label; do not copy that line's value).
 
+Explain coverage (#1389): Sinumerik declares `explains = "semi"`.
+grblHAL, TinyG, Carvera, PathPilot plasma and lathe, and generic ISO
+wire and sinker EDM declare `"paren"`. These posts append a comment
+only when the complete line fits within 80 characters. They never
+shorten executable words. Machine-supplied EDM codes stay unexplained:
+wire passes `true` as the second `block()` argument, and sinker writes
+them through `emit()`. Heidenhain and Sodick declare no form and refuse
+Explain by name. Heidenhain's comment placement beside its exported
+`*` terminator is unconfirmed. Sodick's `T91` and `T90` are wire
+commands, which the shared tool decoder cannot describe. Do not enable
+either post until its syntax and word meanings have dedicated support.
+
 ## The hook contract
 
 The engine calls, in this order, only the hooks you define (full

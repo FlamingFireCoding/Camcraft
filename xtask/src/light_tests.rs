@@ -29,6 +29,9 @@ fn gate_light_is_a_tier_of_its_own() {
     for tier in ["heavy", "light"] {
         assert!(crate::USAGE.contains(&format!("cargo xtask gate {tier}")), "help names {tier}");
     }
+    // The refresh keeps main's batch line (#2727) next to the light line (#2569).
+    let batch = crate::USAGE.lines().find(|l| l.contains("cargo xtask gate batch")).expect("batch line");
+    assert!(batch.contains("per-crate debug prebuilds") && batch.contains("#2727"), "{batch}");
     let selection = parse_gate(&a("test pin --only motion")).expect_err("test has no step selection");
     assert!(selection.contains("quick, heavy, batch, light or release"), "{selection}");
     let unknown = parse_gate(&a("nightly")).expect_err("unknown tier");

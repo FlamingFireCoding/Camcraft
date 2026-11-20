@@ -33,11 +33,11 @@
 //! readings. Our own code; no vendor post, control manual or CAM
 //! product behaviour was consulted.
 
-use super::pairing::{pair, Ring};
+use super::pairing::Ring;
 use super::ring::{self, dist, pt_seg};
-use super::ruled::{arcs, emit, invalid, lead_in, too_far, WireRuled, SETTLED};
+use super::ruled::{emit, invalid, lead_in, too_far, WireRuled, SETTLED};
 use super::ruled_laws::{clearance, crossing, fold_of, folds, foot, lean_law, lerp, tangle, Ruling, MAX_RULINGS};
-use super::{laws, start_side, WireParams, MIN_LEAD};
+use super::{laws, preimage, start_side, WireParams, MIN_LEAD};
 use crate::cl::Toolpath;
 use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
@@ -110,12 +110,12 @@ struct Ends {
 }
 
 impl Ends {
-    fn new(base: Vec<Point2>, given: &[Point2]) -> Self {
+    fn new(base: Vec<Point2>, given: &[Point2], healed: Option<(&[Point2], f64, super::WireSide)>) -> Self {
         let mut group = Vec::with_capacity(base.len());
         let mut off: Vec<(f64, f64)> = Vec::new();
         for (i, q) in base.iter().enumerate() {
             if i == 0 || off.is_empty() || dist(base[i - 1], *q) > SAME {
-                off.push(away(*q, given));
+                off.push(healed.map_or_else(|| away(*q, given), |(path, k, side)| preimage::surviving_away(*q, path, k, side)));
             }
             group.push(off.len().saturating_sub(1));
         }
@@ -243,16 +243,16 @@ pub(super) fn per_ruling(c: &Stated<'_>, planes: [(&[Point2], &Region); 2]) -> R
     let (Some(wu), Some(wl)) = (Ring::new(&ring_u), Ring::new(&ring_l)) else {
         return Err(invalid("the wire path has collapsed - the profile is too small for the wire".into()));
     };
-    let seam = wl.nearest(start, false).0;
-    let laid = transitions(&pair(&wu, &wl, &arcs(c.anchors, &wu, &wl, true), Some(seam))?);
+    let sewn = preimage::sew(&wu, &wl, [given_l, given_u], c.anchors, start)?;
+    let laid = transitions(&sewn.wire);
     let n = laid.len();
     if n > MAX_RULINGS {
         return Err(invalid(format!("the pairing lays {n} rulings, more than {MAX_RULINGS} - simplify the profiles")));
     }
     let base: Vec<Ruling> = laid.iter().map(|l| l.0).collect();
     folds(&base, z0, h, &rule, hint)?;
-    let mut lower = Ends::new(base.iter().map(|b| b.0).collect(), given_l);
-    let mut upper = Ends::new(base.iter().map(|b| b.1).collect(), given_u);
+    let mut lower = Ends::new(base.iter().map(|b| b.0).collect(), given_l, sewn.healed[0].then_some((&ring_l, k, p.side)));
+    let mut upper = Ends::new(base.iter().map(|b| b.1).collect(), given_u, sewn.healed[1].then_some((&ring_u, k, p.side)));
     for _ in 0..PASSES {
         let wire: Vec<Ruling> = (0..n).map(|i| (lower.at(i), upper.at(i))).collect();
         // Unequal widenings must not turn a step back: level the two.

@@ -165,16 +165,7 @@ fn the_continuous_4axis_part_posts_its_wrapped_program() {
         ok(project::load_noted(&world, &repo(PROJECT)), "load the example project");
         std::fs::write(&golden, post(&world, "golden").program).expect("write the example program");
     }
-    // Migrate the historical fixture through the reader before comparing its
-    // semantics with a fresh document. Keep the committed project and NC intact.
-    let fixture_world = camcraft_app::world::new_world();
-    ok(
-        project::load_noted(&fixture_world, &repo(PROJECT)),
-        "load the example project",
-    );
-    project::save(&fixture_world, &saved).expect("save the migrated example project");
-    let committed = std::fs::read_to_string(&saved).expect("the migrated example project");
-    let _ = std::fs::remove_file(&saved);
+    let committed = std::fs::read_to_string(repo(PROJECT)).expect("the example project");
     continuous_project::compare(&text, &committed).unwrap_or_else(|e| {
         panic!("{PROJECT} is stale; regenerate with WRITE_GOLDEN=1: {e}")
     });

@@ -101,7 +101,7 @@ fn cylindrical(f: &Frame, p: P3) -> Option<(f64, f64)> {
 }
 
 /// The distance from `p` to the untrimmed analytic surface of a record
-/// face, `None` for a surface with no closed form here (splines,
+/// face, `None` for a surface with no closed form here (splines, blends,
 /// revolutions) or a degenerate frame.
 #[must_use]
 pub fn analytic_distance(s: &brep::Surface, p: P3) -> Option<f64> {
@@ -131,7 +131,10 @@ pub fn analytic_distance(s: &brep::Surface, p: P3) -> Option<f64> {
                 rho.hypot(h - apex_h)
             }
         }
-        S::Spline { .. } | S::RationalSpline { .. } | S::PlacedRevolution { .. } => return None,
+        S::Spline { .. }
+        | S::RationalSpline { .. }
+        | S::PlacedRevolution { .. }
+        | S::Blend { .. } => return None,
     };
     d.is_finite().then_some(d)
 }

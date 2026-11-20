@@ -38,7 +38,7 @@
 
 use super::pairing::{pair, Anchor, Ring};
 use super::ruled_laws::{clearance, crossing, folds, lean_law, Ruling, MAX_RULINGS};
-use super::{laws, notes, ring, ruled_widen, start_side, WireParams, MIN_LEAD};
+use super::{laws, notes, preimage, ring, ruled_widen, start_side, WireParams, MIN_LEAD};
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Point3;
@@ -247,8 +247,8 @@ pub fn wire_contour_ruled(upper: WireProfile<'_>, lower: WireProfile<'_>, p: &Wi
         let (Some(wu), Some(wl)) = (Ring::new(&ring_u), Ring::new(&ring_l)) else {
             return Err(invalid("the wire path has collapsed - the profile is too small for the wire".into()));
         };
-        let (seam, lead) = wl.nearest(start, false);
-        let wire = pair(&wu, &wl, &arcs(&pts, &wu, &wl, true), Some(seam))?;
+        let lead = wl.nearest(start, false).1;
+        let wire = preimage::sew(&wu, &wl, [&given_l, &given_u], &pts, start)?.wire;
         if wire.len() > MAX_RULINGS {
             return Err(invalid(format!("the pairing lays {} rulings, more than {MAX_RULINGS} - simplify the profiles", wire.len())));
         }

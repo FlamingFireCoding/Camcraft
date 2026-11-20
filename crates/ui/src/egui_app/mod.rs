@@ -117,6 +117,8 @@ mod tool_thread_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
+// #2014: the tool Properties' label-left property grid and its groups.
+mod tool_settings_grid;
 mod tool_library;
 mod tool_preview;
 // #890: the tool editor's per-material cutting data.
