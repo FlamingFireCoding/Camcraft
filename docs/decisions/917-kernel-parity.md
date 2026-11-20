@@ -22,7 +22,11 @@ switch of the app to solidcore) is stacked on it.
   app's flat-level and floor logic compares levels exactly, so a level
   read off the mesh by one ulp gives a wrong floor. The window is far under
   any machining tolerance (the smallest tolerance is a millionth of the
-  body), so the measured deviation stays true to 1e-9 mm.
+  body). A vertex moves at most one window in each axis, sqrt(3) x 1e-9
+  = 1.73e-9 mm (`SNAP_MOVE_MM`), so the measured deviation stays true to
+  1.73e-9 mm. The mesher adds `SNAP_MOVE_MM` to the measured deviation
+  before it compares it with the tolerance, so the judged figure holds
+  for the snapped mesh too (review of #2843).
 - **Dropped.** A snap to the 1e-6 grid (it would move true model values
   such as 12.5000004). A relative window (a large part would move more).
   A snap after the weld (two near copies of one vertex then weld
@@ -39,18 +43,23 @@ switch of the app to solidcore) is stacked on it.
 
 ### An inward solid is turned outward (`machining_mesh`)
 
-- **Decided.** A watertight, consistently wound mesh with a finite
-  negative volume has all its faces pointed inward. The mesh swaps the
+- **Decided.** A watertight, consistently wound mesh of ONE shell (one
+  group of triangles joined side to side, `mesh_weld::shells`) with a
+  finite negative volume has all its faces pointed inward. The mesh swaps the
   second and third corner of each triangle, negates the volume and adds
   the note "the solid's faces all pointed inward (volume -X mm^3); the
   mesh is turned outward". A zero or NaN volume is still the `Volume`
-  refusal.
+  refusal. A mesh of two or more shells (a solid with a void) with a
+  negative volume is also the `Volume` refusal: the sign of the sum does
+  not tell which shell is turned, and a turn of all shells would make the
+  void solid (review of #2843).
 - **Why.** Main's truck path turned such a solid outward too
   (`step_outward.rs`). A closed shell with all senses turned over is the
   same solid.
 - **Dropped.** A refusal (a legal file would be refused). Turning only
   part of the faces (a mixed winding is already refused by `sides`).
-- **Pinned by** `an_inward_solid_is_turned_outward_and_said`.
+- **Pinned by** `an_inward_solid_is_turned_outward_and_said` and
+  `a_solid_with_a_void_and_its_outer_shell_inward_is_refused`.
 
 ### A breaking edge or swept spline is refused by name (`step_curve_guard`)
 
@@ -83,6 +92,11 @@ switch of the app to solidcore) is stacked on it.
     `dmax + longest side`. The distance to a surface is 1-Lipschitz, and
     no point of a flat triangle is farther from a corner than its longest
     side, so this is a true upper bound.
+  - The bound is one-sided. It bounds the distance from each point of
+    the mesh to the surface. It does not bound the distance from each
+    point of the surface to the mesh. A surface that folds back between
+    two samples could stand off the mesh by more than the tolerance with
+    no refusal. The algorithm is not changed for this (review of #2843).
 - **Why.** The fillet fixture has a pole. A sliver at the pole spans the
   full u range in parameters, so the parametric Hessian bound did not
   shrink with a split. The bound was about 12 times the true deviation and
