@@ -6,11 +6,11 @@
 //! table - is general CNC practice (RS-274's T word, ISO 6983); no vendor
 //! implementation inspected.
 //!
-//! A tool with its own number (`ToolDef::number`, set by `SetToolNumber`)
-//! posts as that number. A tool without one posts as its 1-based position
-//! in the document's tool list - the numbering every earlier document had,
-//! so their programs and goldens do not move. Because the two kinds of
-//! number mix, a program whose tools would post the same number is refused
+//! A tool receives its own number at creation or import (`ToolDef::number`,
+//! lowest unused in `1..=MAX`), and legacy pre-#2442 files freeze unnumbered
+//! tools to their 1-based name-sorted list position on load, so adding,
+//! renaming, or deleting a tool never shifts any other tool's number. A
+//! program whose tools on one machine post the same number is still refused
 //! by name: on a machine with a tool changer, `T5 M6` for two different
 //! tools loads one of them for both, with the other's length offset.
 
@@ -33,17 +33,59 @@ pub fn valid(n: u32) -> bool {
     (1..=MAX).contains(&n)
 }
 
-/// Every tool in document order, with the number it posts as.
+/// Lowest unused tool number in `1..=MAX` not present in `taken`.
 #[must_use]
-pub fn numbers(world: &World) -> Vec<(String, u32)> {
-    model::named_entities(world)
+pub fn next_free_from(taken: &[u32]) -> Option<u32> {
+    let used: std::collections::HashSet<u32> = taken.iter().copied().collect();
+    (1..=MAX).find(|n| !used.contains(n))
+}
+
+/// Lowest unused tool number in `1..=MAX` across all tools in the document.
+/// `None` also when a tool has no number and none is free for it: then no
+/// number is free for a new one either.
+#[must_use]
+pub fn next_free(world: &World) -> Option<u32> {
+    let taken: Vec<u32> = numbers(world).ok()?.into_iter().map(|(_, n)| n).collect();
+    next_free_from(&taken)
+}
+
+/// Every tool in document order, with the number it posts as.
+///
+/// # Errors
+/// A tool with no number of its own when none of `1..=MAX` is free for it
+/// (see [`assign`]).
+pub fn numbers(world: &World) -> Result<Vec<(String, u32)>, String> {
+    let tools: Vec<(String, Option<u32>)> = model::named_entities(world)
         .into_iter()
         .filter(|(_, e)| model::is_tool(world, e))
-        .enumerate()
-        .map(|(i, (name, e))| {
-            let position = u32::try_from(i.saturating_add(1)).unwrap_or(u32::MAX);
-            let number = model::tool_number_of(world, &e).unwrap_or(position);
-            (name, number)
+        .map(|(name, e)| (name, model::tool_number_of(world, &e)))
+        .collect();
+    assign(tools)
+}
+
+/// The number each tool posts as: its own, or - for a tool with none (a
+/// fixture; files and commands always give one, #2442) - the lowest number
+/// no tool has yet, in the given order.
+///
+/// # Errors
+/// An unnumbered tool when every number in `1..=MAX` is taken, by name
+/// (#2517): it has no number to post as, and must never post as a made-up one.
+pub fn assign(tools: Vec<(String, Option<u32>)>) -> Result<Vec<(String, u32)>, String> {
+    let mut taken: Vec<u32> = tools.iter().filter_map(|(_, n)| *n).collect();
+    tools
+        .into_iter()
+        .map(|(name, explicit)| {
+            let number = match explicit {
+                Some(n) => n,
+                None => {
+                    let free = next_free_from(&taken).ok_or_else(|| {
+                        format!("tool '{name}' has no tool number and none of {RANGE_TEXT} is free - give it its own tool number")
+                    })?;
+                    taken.push(free);
+                    free
+                }
+            };
+            Ok((name, number))
         })
         .collect()
 }
@@ -51,15 +93,19 @@ pub fn numbers(world: &World) -> Vec<(String, u32)> {
 /// The number the named tool posts as, if it is a tool.
 #[must_use]
 pub fn number_of(world: &World, tool: &str) -> Option<u32> {
-    numbers(world).into_iter().find(|(n, _)| n == tool).map(|(_, t)| t)
+    numbers(world).ok()?.into_iter().find(|(n, _)| n == tool).map(|(_, t)| t)
 }
 
 /// The clash law for one program: among the tools it uses (`used`, names,
 /// repeats allowed), two different tools posting the same number is a
 /// refusal naming both. `None` when every tool posts a number of its own.
+/// A tool that cannot get a number at all is that refusal too ([`assign`]).
 #[must_use]
 pub fn clash(world: &World, used: &[String]) -> Option<String> {
-    let all = numbers(world);
+    let all = match numbers(world) {
+        Ok(all) => all,
+        Err(why) => return Some(why),
+    };
     let mut seen: Vec<(&str, u32)> = Vec::new();
     for name in used {
         let Some((_, number)) = all.iter().find(|(n, _)| n == name) else {

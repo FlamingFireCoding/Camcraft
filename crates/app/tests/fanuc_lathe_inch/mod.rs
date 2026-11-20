@@ -173,6 +173,7 @@ pub fn fixture(name: &str) -> (World, PostOptions) {
             let hole = Hole { xy: Point2::new(0.0, 0.0), radius: 2.05, entry_z: 20.0, floor_z: 10.0, through: false, stepped: false };
             let p = OpParams::Drill {
                 break_through: None,
+                break_through_from: Default::default(),
                 clearance_z: h(30.0), retract_z: None, top_z: h(20.0), bottom_z: None, cycle: CycleChoice::Auto,
                 peck: 0.0, dwell: 0.0, feed: 120.0, plunge_feed: 80.0, holes: vec![hole], cross: vec![],
             };
@@ -192,7 +193,8 @@ fn thread(g76: bool, dips: bool) -> (World, PostOptions) {
     let (major, pitch, depth) = (6.0, 2.0, 1.2);
     let end: f64 = if dips { 24.0 } else { 14.0 };
     let half = depth * (30.0_f64).to_radians().tan();
-    let mut m = vec![(0.0, -16.0), (major, -16.0), (major, 8.0 - half)];
+    let z0 = if g76 { -26.0 } else { -16.0 };
+    let mut m = vec![(0.0, z0), (major, z0), (major, 8.0 - half)];
     let mut c = 8.0;
     while c <= end + 1e-9 {
         m.push((major - depth, c));
@@ -202,18 +204,25 @@ fn thread(g76: bool, dips: bool) -> (World, PostOptions) {
         }
         c += pitch;
     }
-    m.push((major, end + half));
-    m.push((major, 40.0));
-    m.push((0.0, 40.0));
-    let stock = StockShape::Cylinder { diameter: 12.0, height: 56.0 };
-    let (w, mut hi) = world(stock, -16.0, revolve(&m, 16), &["TD-1732-60"]);
+    let bar_top = if g76 {
+        // #2878: G76 starts in free air in front of the free end face.
+        end + half
+    } else {
+        m.push((major, end + half));
+        m.push((major, 40.0));
+        40.0
+    };
+    m.push((0.0, bar_top));
+    let stock = StockShape::Cylinder { diameter: 12.0, height: bar_top - z0 };
+    let (w, mut hi) = world(stock, z0, revolve(&m, 16), &["TD-1732-60"]);
     let infeed_plan = if dips {
         ThreadInfeed { dips: ThreadDips { interval: 4.0, height: 0.3, length: 0.0 }, ..ThreadInfeed::default() }
     } else {
         ThreadInfeed::default()
     };
+    let top_z = if g76 { end + pitch + 0.3 } else { end + 0.3 };
     let p = OpParams::Threading {
-        tolerance: 0.05, clearance_z: h(end + 10.0), top_z: h(end + 0.3), bottom_z: h(7.7), pitch, depth,
+        tolerance: 0.05, clearance_z: h(end + 10.0), top_z: h(top_z), bottom_z: h(7.7), pitch, depth,
         infeed: 0.4, feed: 120.0, plunge_feed: 40.0, hand: ThreadHand::Right, infeed_plan,
     };
     create(&w, &mut hi, "TH1", "TD-1732-60", p);

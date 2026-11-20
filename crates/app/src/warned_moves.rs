@@ -28,13 +28,16 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         | Warning::ShankHit { at, .. }
         | Warning::SweepHit { at, .. }
         | Warning::RapidInStock { at }
+        | Warning::FirstTraverseLow { at, .. }
         | Warning::FixtureHit { at, .. }
+        | Warning::AvoidHit { at, .. }
         | Warning::HolderHit { at, .. }
         | Warning::NonFinite { at }
         | Warning::Envelope { at, .. }
         | Warning::Scallop { at, .. }
         | Warning::ProbeSearch { at, .. }
-        | Warning::SinkerFinishOrder { at, .. } => [Some(*at), None],
+        | Warning::SinkerFinishOrder { at, .. }
+        | Warning::DrillUndersize { at, .. } => [Some(*at), None],
         Warning::RestUnjudged { .. } => [None, None],
     }
 }

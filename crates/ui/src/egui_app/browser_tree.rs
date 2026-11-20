@@ -255,7 +255,8 @@ fn setup_children(
     push_row(rows, leaves, "Post".to_owned(), post, painted::Kind::Section, Some(Icon::Post), page_open(SetupPage::Post), false, depth, Leaf::Page(name.to_owned(), SetupPage::Post));
 }
 
-fn count(n: usize, word: &str) -> String {
+/// "1 word" / "N words", empty for none (the browser suffixes, #2340's status count).
+pub(super) fn count(n: usize, word: &str) -> String {
     match n {
         0 => String::new(),
         1 => format!("1 {word}"),
@@ -313,7 +314,7 @@ fn op_row(
         operation::OpStatus::Ok => "ok",
         operation::OpStatus::Stale => "STALE",
     };
-    let warns = model::toolpath_of(w, entity).map_or(0, |tp| tp.warnings.len());
+    let warns = model::with_toolpath(w, entity, |tp| tp.warnings.len()).unwrap_or(0);
     let warn_text = match warns {
         0 => String::new(),
         1 => "  1 warning".to_owned(),
@@ -331,11 +332,13 @@ fn op_row(
         }
         s
     });
+    let meta = model::operation_meta_of(w, entity);
+    let review = if meta.needs_review.is_empty() { "" } else { "  needs review" };
     let problem = operation::tool_gate::tool_problem_of(w, entity);
-    let badge = status_badge(status, problem.is_some(), warns);
+    let badge = status_badge(status, problem.is_some() || !review.is_empty(), warns);
     let suffix = match problem {
-        Some(why) => format!("{kind}  BLOCKED{warn_text}{flow}  {why}"),
-        None => format!("{kind}  {tag}{warn_text}{flow}"),
+        Some(why) => format!("{kind}{review}  BLOCKED{warn_text}{flow}  {why}"),
+        None => format!("{kind}{review}  {tag}{warn_text}{flow}"),
     };
     let hidden = state.hidden_paths.iter().any(|p| p == name);
     let selected = matches!(t, UiTarget::Operation(n) if n == name);

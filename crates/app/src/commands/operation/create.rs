@@ -84,7 +84,7 @@ impl CreateOperation {
         // exactly. With no setups the name is `None`: the implicit-setup
         // law makes that the first/legacy context byte-identically.
         let setup = crate::setup::active(world);
-        valid_src(world, setup.as_deref(), &src)?;
+        valid_src(world, setup.as_deref(), &src, &params)?;
         // #1504: a Slot created on picks takes the slot that fills them.
         let params = match &src {
             SrcRef::Selection(items) => crate::operation::slot_from_picks(world, setup.as_deref(), &params, items).unwrap_or(params),
@@ -126,7 +126,7 @@ impl CreateOperation {
             .map_or_else(Default::default, |m| crate::operation::CoolantMode::machine_default(&m.coolants));
         Ok(CreateOperation {
             name: name.to_string(),
-            meta: OperationMeta { label: None, order: Some(order) },
+            meta: OperationMeta { label: None, order: Some(order), needs_review: Vec::new() },
             reordered,
             operation: Operation {
                 tool: tool.to_string(),
@@ -173,7 +173,12 @@ pub struct PasteOperation {
 }
 
 impl PasteOperation {
-    pub fn new(world: &World, name: &str, mut operation: Operation) -> Result<Self, CommandError> {
+    pub fn new(
+        world: &World,
+        name: &str,
+        mut operation: Operation,
+        needs_review: Vec<String>,
+    ) -> Result<Self, CommandError> {
         if name.trim().is_empty() || model::find_by_name(world, name).is_some() {
             return Err(CommandError::NameConflict(name.to_owned()));
         }
@@ -184,9 +189,12 @@ impl PasteOperation {
         }
         let context = operation.setup.as_deref();
         tool_door(world, &operation.params, &operation.tool)?;
-        valid_src(world, context, &operation.src)?;
+        valid_src(world, context, &operation.src, &operation.params)?;
         infeed_plan_gate(world, &operation.params, &operation.tool)?;
         sinker_gate(world, context, &operation.params)?;
+        if let Some(why) = operation.params.named_refusal() {
+            return Err(CommandError::Invalid(why));
+        }
         if !operation.params.is_sane() {
             return Err(CommandError::Invalid("copied operation parameters are not usable".into()));
         }
@@ -204,7 +212,7 @@ impl PasteOperation {
         Ok(Self {
             name: name.to_owned(),
             operation,
-            meta: OperationMeta { label: None, order: Some(order) },
+            meta: OperationMeta { label: None, order: Some(order), needs_review },
             reordered,
         })
     }

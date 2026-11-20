@@ -78,6 +78,17 @@ pub struct GeoSig {
     pub sig: u64,
 }
 
+/// Derived user-friendly feature name lookup table (#2403), paired with the
+/// revision and facet allocation it describes. Valid only while `&Facets`
+/// remains mounted at the same revision and allocation; derived only, never
+/// serialized, dies with its entity.
+#[derive(Component, Debug, Clone)]
+pub struct FeatureNamesMemo {
+    pub rev: u64,
+    pub tris: std::sync::Weak<[Triangle]>,
+    pub table: std::sync::Arc<crate::geometry::feature::FeatureNames>,
+}
+
 /// A model whose mesh stands for its curved surfaces more coarsely than
 /// the STEP importer promises (#864): `chord_mm` is the chord error the
 /// import actually kept, always above `step::CHORD_CAP`. Present ONLY on
@@ -90,6 +101,18 @@ pub struct GeoSig {
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct ReducedFidelity {
     pub chord_mm: f64,
+}
+
+/// A person vouched for this model's mesh while it was of unknown fidelity
+/// (#1339): `by` is who, `rev` the geometry revision the word was given
+/// for. It speaks only while the model still has that revision and no
+/// `ReducedFidelity` (`model_vouch::by_of`). Written by
+/// `VouchModelFidelity`, its undo and the project loader, through
+/// `model_vouch::set`.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct FidelityVouched {
+    pub by: String,
+    pub rev: u64,
 }
 
 /// The STEP facet budget a model's mesh was imported under, when it is not
@@ -106,6 +129,16 @@ pub struct StepBudget {
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct StepSource(pub String);
 
+/// The file a model was imported from and the SHA-256 of the bytes that
+/// were read (#2463): a linked model. While the project is open, a new
+/// hash of that file imports it again under the same name, as one undo
+/// step; operations only go Stale. Absent: not linked.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct ModelSource {
+    pub path: String,
+    pub sha256: String,
+}
+
 /// The hole of a model imported from a STEP closed shell that meshes open
 /// (#1610), said in words: the model rides fidelity unknown
 /// (`ReducedFidelity` at `model_fidelity::UNKNOWN_MM`) and every refusal
@@ -115,6 +148,19 @@ pub struct StepSource(pub String);
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct MeshOpen {
     pub hole: String,
+}
+
+/// The closed solids of a model's facets (#917): index ranges, one per
+/// solid, as the STEP reader gave them. Valid only at the `Revision` and
+/// the facets it was landed with (`rev`, `len`); any other landing makes
+/// it stale and every reader then reads the plain soup. Written by the
+/// import, update and delete commands and the project loader, through
+/// `mesh_solids::set`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct SolidRanges {
+    pub rev: u64,
+    pub len: usize,
+    pub ranges: std::sync::Arc<[std::ops::Range<usize>]>,
 }
 
 /// Selection marker (tag). Only `SelectEntity` writes it (AGENTS.md: changes
@@ -175,6 +221,24 @@ pub struct GeomPrintMemo {
     pub hash: [u64; 2],
 }
 
+/// A DXF profile placed on the stock of a setup (#1862, `crate::sketch`):
+/// 2D reference geometry for cutting, not a model. It never has `Facets`,
+/// so no 3D solid tool reads it as a mesh, and `model::is_model` is false
+/// for it. `setup` follows the declared-vs-effective law of
+/// `Operation::setup`. The entity's `Location` is not a world placement:
+/// it is relative to the top face of the setup's stock, at the stock
+/// origin (`sketch::face_frame`), with Z 0 and a turn about the face
+/// normal only. `data` holds the primitives in mm, the layer names, the
+/// source units, the join tolerance, the chains and the import summary;
+/// it is shared (`Arc`) and freed when the last holder goes. Written only
+/// by `ImportDxf`, `InsertText` (#2679: typed text as engraving strokes),
+/// `MoveSketch`, `DeleteEntity` and the project loader.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct Sketch {
+    pub setup: Option<String>,
+    pub data: std::sync::Arc<crate::sketch_data::SketchData>,
+}
+
 /// Unit tag marking an entity as a work coordinate system origin: a
 /// setup's one WCS (#342), named by `SetupDef::wcs` (`G54` for a document
 /// without setups), its `Location` the transform; there is no payload to
@@ -187,8 +251,8 @@ pub struct Wcs;
 /// Z order. Rides the `Wcs` entity beside its `Location`: a unit
 /// quaternion cannot hold a mirror. Absent is no flip (every older
 /// file); written only through `SetWcsFlip`, the project loader and the
-/// undo of a delete (`setup_wcs_flip::set`). The post and generation
-/// refuse a set flag by name until a flip is carried into the program.
+/// undo of a delete (`setup_wcs_flip::set`). The post mirrors a flipped
+/// X or Y into the program (#1649) and refuses a flipped Z by name.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WcsFlip(pub [bool; 3]);
 
@@ -198,11 +262,10 @@ pub struct WcsFlip(pub [bool; 3]);
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct ToolDef {
     pub tool: Tool,
-    /// The controller's number for this tool (#221): what the post writes
-    /// as `T..` / `H..`, matching the machine's tool table. `None` = not
-    /// stated, and the tool posts as its 1-based position in the document's
-    /// tool list (the numbering every earlier document had). Changed only
-    /// through `SetToolNumber`; `ChangeTool` leaves it as it is.
+    /// The controller's number for this tool (#221, #2442): what the post writes
+    /// as `T..` / `H..`, matching the machine's tool table. Assigned on add /
+    /// import to the lowest unused number in `1-99999` and frozen at legacy
+    /// list position on pre-#2442 load; changed only through `SetToolNumber`.
     pub number: Option<u32>,
 }
 
@@ -234,6 +297,12 @@ pub struct ToolBody {
     /// (`HolderProfile::floored`, in `tool_body::judged`). `false` for
     /// every body the user lands, and for every older file's.
     pub machine_default: bool,
+    /// #2016: the library entry this holder IS, with the two lengths
+    /// that place it. The outline, facets and bands above are then
+    /// that entry's, drawn by `tool_body::build_library` and by nothing
+    /// else, and the file stores this reference in their place. `None`
+    /// for a custom holder: a drawn profile, a mesh, a lathe body.
+    pub library: Option<camcraft_tools::holder_library::HolderRef>,
     /// #361 / #1040: individual modular pieces (head, adapter, clamping
     /// unit) with their tool-frame facets and coordinate systems. For
     /// single-body imports holds piece 0; empty only for drawn spun profiles.
@@ -411,12 +480,14 @@ pub struct Operation {
     pub suppressed: bool,
 }
 
-/// User-facing operation label and explicit position within its setup.
+/// User-facing operation label, explicit position within its setup, and
+/// un-carriable migration notes requiring review (#1517).
 /// The entity's `Name` remains a stable key for commands and undo history.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct OperationMeta {
     pub label: Option<String>,
     pub order: Option<u32>,
+    pub needs_review: Vec<String>,
 }
 
 /// A standalone Pause or Home entry in the operation list (#155): an
@@ -822,16 +893,21 @@ pub fn register_schema(world: &World) {
     world.component::<Facets>();
     world.component::<Revision>();
     world.component::<GeoSig>();
+    world.component::<FeatureNamesMemo>();
     world.component::<ReducedFidelity>();
+    world.component::<FidelityVouched>();
     world.component::<StepBudget>();
     world.component::<StepSource>();
+    world.component::<ModelSource>();
     world.component::<MeshOpen>();
+    world.component::<SolidRanges>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();
     world.component::<StockMaterial>();
     world.component::<GeomPrintMemo>();
     world.component::<Wcs>();
+    world.component::<Sketch>();
     world.component::<WcsFlip>();
     world.component::<ToolDef>();
     world.component::<ToolBody>();

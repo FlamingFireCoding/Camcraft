@@ -1,5 +1,5 @@
 {
-  "version": 67,
+  "version": 71,
   "entities": [
     {
       "name": "2D Pocket1",
@@ -4279,7 +4279,10 @@
               ]
             }
           ],
-          "warnings": []
+          "warnings": [],
+          "notes": [
+            "2D Pocket: some corners of the area to clear are tighter than the 6.000 mm tool, leaving uncut corner material at X -50.000 mm to -47.000 mm, Y 27.000 mm to 30.000 mm; X 47.000 mm to 50.000 mm, Y 27.000 mm to 30.000 mm; X -50.000 mm to -47.000 mm, Y -30.000 mm to -27.000 mm; X 47.000 mm to 50.000 mm, Y -30.000 mm to -27.000 mm - extend the Boundary or use a smaller tool"
+          ]
         }
       }
     },
@@ -4312,7 +4315,8 @@
         "holder_len": 35.0,
         "material_group": "aluminum",
         "rpm": 7500.0,
-        "feed": 115.0
+        "feed": 115.0,
+        "number": 1
       }
     },
     {
@@ -4350,8 +4354,8 @@
             "cycle": "auto",
             "peck": 0.0,
             "dwell": 0.0,
-            "feed": 1200.0,
-            "plunge_feed": 300.0,
+            "feed": 115.0,
+            "plunge_feed": 115.0,
             "holes": [
               {
                 "xy": [
@@ -4397,10 +4401,11 @@
                 "through": true,
                 "stepped": false
               }
-            ]
+            ],
+            "break_through_from": "full_diameter"
           }
         },
-        "stamp": 10933996840502590802,
+        "stamp": 11657592767958746871,
         "cache": {
           "moves": [
             {
@@ -4426,85 +4431,19 @@
               "to": [
                 38.0,
                 23.0,
-                4.0
+                16.0
               ],
-              "feed": 300.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
               "from": [
                 38.0,
                 23.0,
-                4.0
+                16.0
               ],
               "to": [
                 38.0,
-                23.0,
-                5.0
-              ]
-            },
-            {
-              "kind": "plunge",
-              "from": [
-                38.0,
-                23.0,
-                5.0
-              ],
-              "to": [
-                38.0,
-                23.0,
-                -1.0
-              ],
-              "feed": 300.0
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                38.0,
-                23.0,
-                -1.0
-              ],
-              "to": [
-                38.0,
-                23.0,
-                22.0
-              ]
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                38.0,
-                23.0,
-                22.0
-              ],
-              "to": [
-                38.0,
-                23.0,
-                45.0
-              ]
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                38.0,
-                23.0,
-                45.0
-              ],
-              "to": [
-                -38.0,
-                23.0,
-                45.0
-              ]
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                -38.0,
-                23.0,
-                45.0
-              ],
-              "to": [
-                -38.0,
                 23.0,
                 22.0
               ]
@@ -4512,93 +4451,27 @@
             {
               "kind": "plunge",
               "from": [
-                -38.0,
+                38.0,
                 23.0,
                 22.0
-              ],
-              "to": [
-                -38.0,
-                23.0,
-                4.0
-              ],
-              "feed": 300.0
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                -38.0,
-                23.0,
-                4.0
-              ],
-              "to": [
-                -38.0,
-                23.0,
-                5.0
-              ]
-            },
-            {
-              "kind": "plunge",
-              "from": [
-                -38.0,
-                23.0,
-                5.0
-              ],
-              "to": [
-                -38.0,
-                23.0,
-                -1.0
-              ],
-              "feed": 300.0
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                -38.0,
-                23.0,
-                -1.0
-              ],
-              "to": [
-                -38.0,
-                23.0,
-                22.0
-              ]
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                -38.0,
-                23.0,
-                22.0
-              ],
-              "to": [
-                -38.0,
-                23.0,
-                45.0
-              ]
-            },
-            {
-              "kind": "rapid",
-              "from": [
-                -38.0,
-                23.0,
-                45.0
               ],
               "to": [
                 38.0,
-                -23.0,
-                45.0
-              ]
+                23.0,
+                10.0
+              ],
+              "feed": 115.0
             },
             {
               "kind": "rapid",
               "from": [
                 38.0,
-                -23.0,
-                45.0
+                23.0,
+                10.0
               ],
               "to": [
                 38.0,
-                -23.0,
+                23.0,
                 22.0
               ]
             },
@@ -4606,27 +4479,268 @@
               "kind": "plunge",
               "from": [
                 38.0,
-                -23.0,
+                23.0,
                 22.0
               ],
               "to": [
                 38.0,
-                -23.0,
+                23.0,
                 4.0
               ],
-              "feed": 300.0
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                23.0,
+                4.0
+              ],
+              "to": [
+                38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                38.0,
+                23.0,
+                -2.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                23.0,
+                -2.0
+              ],
+              "to": [
+                38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                38.0,
+                23.0,
+                -2.802582
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                23.0,
+                -2.802582
+              ],
+              "to": [
+                38.0,
+                23.0,
+                45.0
+              ]
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                23.0,
+                45.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                45.0
+              ]
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                45.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                16.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                16.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                10.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                10.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                4.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                4.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                -2.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                -2.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                -2.802582
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                -2.802582
+              ],
+              "to": [
+                -38.0,
+                23.0,
+                45.0
+              ]
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                23.0,
+                45.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                45.0
+              ]
             },
             {
               "kind": "rapid",
               "from": [
                 38.0,
                 -23.0,
-                4.0
+                45.0
               ],
               "to": [
                 38.0,
                 -23.0,
-                5.0
+                22.0
               ]
             },
             {
@@ -4634,21 +4748,21 @@
               "from": [
                 38.0,
                 -23.0,
-                5.0
+                22.0
               ],
               "to": [
                 38.0,
                 -23.0,
-                -1.0
+                16.0
               ],
-              "feed": 300.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
               "from": [
                 38.0,
                 -23.0,
-                -1.0
+                16.0
               ],
               "to": [
                 38.0,
@@ -4657,11 +4771,106 @@
               ]
             },
             {
-              "kind": "rapid",
+              "kind": "plunge",
               "from": [
                 38.0,
                 -23.0,
                 22.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                10.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                -23.0,
+                10.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                38.0,
+                -23.0,
+                22.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                4.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                -23.0,
+                4.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                38.0,
+                -23.0,
+                22.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                -2.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                -23.0,
+                -2.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                38.0,
+                -23.0,
+                22.0
+              ],
+              "to": [
+                38.0,
+                -23.0,
+                -2.802582
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                38.0,
+                -23.0,
+                -2.802582
               ],
               "to": [
                 38.0,
@@ -4705,21 +4914,21 @@
               "to": [
                 -38.0,
                 -23.0,
-                4.0
+                16.0
               ],
-              "feed": 300.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
               "from": [
                 -38.0,
                 -23.0,
-                4.0
+                16.0
               ],
               "to": [
                 -38.0,
                 -23.0,
-                5.0
+                22.0
               ]
             },
             {
@@ -4727,21 +4936,21 @@
               "from": [
                 -38.0,
                 -23.0,
-                5.0
+                22.0
               ],
               "to": [
                 -38.0,
                 -23.0,
-                -1.0
+                10.0
               ],
-              "feed": 300.0
+              "feed": 115.0
             },
             {
               "kind": "rapid",
               "from": [
                 -38.0,
                 -23.0,
-                -1.0
+                10.0
               ],
               "to": [
                 -38.0,
@@ -4750,11 +4959,79 @@
               ]
             },
             {
-              "kind": "rapid",
+              "kind": "plunge",
               "from": [
                 -38.0,
                 -23.0,
                 22.0
+              ],
+              "to": [
+                -38.0,
+                -23.0,
+                4.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                -23.0,
+                4.0
+              ],
+              "to": [
+                -38.0,
+                -23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                -23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                -23.0,
+                -2.0
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                -23.0,
+                -2.0
+              ],
+              "to": [
+                -38.0,
+                -23.0,
+                22.0
+              ]
+            },
+            {
+              "kind": "plunge",
+              "from": [
+                -38.0,
+                -23.0,
+                22.0
+              ],
+              "to": [
+                -38.0,
+                -23.0,
+                -2.802582
+              ],
+              "feed": 115.0
+            },
+            {
+              "kind": "rapid",
+              "from": [
+                -38.0,
+                -23.0,
+                -2.802582
               ],
               "to": [
                 -38.0,
@@ -4766,61 +5043,61 @@
           "warnings": [],
           "cycles": [
             {
-              "kind": "peck",
+              "kind": "deep",
               "xy": [
                 38.0,
                 23.0
               ],
               "r_z": 22.0,
-              "bottom_z": -1.0,
+              "bottom_z": -2.802582,
               "entry_z": 10.0,
-              "peck": 18.0,
+              "peck": 6.0,
               "dwell": 0.0,
               "first_move": 1
             },
             {
-              "kind": "peck",
+              "kind": "deep",
               "xy": [
                 -38.0,
                 23.0
               ],
               "r_z": 22.0,
-              "bottom_z": -1.0,
+              "bottom_z": -2.802582,
               "entry_z": 10.0,
-              "peck": 18.0,
+              "peck": 6.0,
               "dwell": 0.0,
-              "first_move": 8
+              "first_move": 13
             },
             {
-              "kind": "peck",
+              "kind": "deep",
               "xy": [
                 38.0,
                 -23.0
               ],
               "r_z": 22.0,
-              "bottom_z": -1.0,
+              "bottom_z": -2.802582,
               "entry_z": 10.0,
-              "peck": 18.0,
+              "peck": 6.0,
               "dwell": 0.0,
-              "first_move": 15
+              "first_move": 25
             },
             {
-              "kind": "peck",
+              "kind": "deep",
               "xy": [
                 -38.0,
                 -23.0
               ],
               "r_z": 22.0,
-              "bottom_z": -1.0,
+              "bottom_z": -2.802582,
               "entry_z": 10.0,
-              "peck": 18.0,
+              "peck": 6.0,
               "dwell": 0.0,
-              "first_move": 22
+              "first_move": 37
             }
           ],
           "notes": [
-            "through holes run 1.000 mm past the part bottom (Break-through), the deepest to Z-1.000",
-            "Break-through below stock: the through hole at (38.000, 23.000) runs to Z-1.000, 1.000 mm under the stock bottom Z0.000 - whatever the stock sits on is cut there; model the parallels, spoil board or fixture under it so the fixture laws judge it, or lower the Break-through"
+            "through holes run 2.803 mm past the part bottom (Break-through), the deepest to Z-2.803",
+            "Break-through below stock: the through hole at (38.000, 23.000) runs to Z-2.803, 2.803 mm under the stock bottom Z0.000 - whatever the stock sits on is cut there; model the parallels, spoil board or fixture under it so the fixture laws judge it, or lower the Break-through"
           ]
         }
       }
@@ -4856,7 +5133,8 @@
         "rpm": 9500.0,
         "feed": 1800.0,
         "tool_material": "carbide",
-        "flutes": 4
+        "flutes": 4,
+        "number": 2
       }
     },
     {
@@ -4890,7 +5168,8 @@
         "rpm": 5800.0,
         "feed": 3000.0,
         "tool_material": "carbide",
-        "flutes": 4
+        "flutes": 4,
+        "number": 3
       }
     },
     {

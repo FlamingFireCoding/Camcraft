@@ -7,13 +7,21 @@
 //! packages' `assets/posts` and `assets/machines` beside the executable.
 
 use camcraft_post::data_dir::DataFiles;
+use camcraft_post::data_scan::FolderScan;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 /// A shipped data file, by its file name inside its `assets/<kind>`
 /// directory. A type of its own so no caller takes the name for the text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AssetFile(pub &'static str);
+
+impl AsRef<str> for AssetFile {
+    fn as_ref(&self) -> &str {
+        self.0
+    }
+}
 
 /// The default machine's file in `assets/machines`: a plain 3-axis VMC.
 pub const DEFAULT_MCH_FILE: AssetFile = AssetFile("3axis-vmc.mch");
@@ -36,6 +44,8 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     ("grblHAL", AssetFile("grblhal.cps")),
     // Synthetos TinyG: the other grbl-family controller, no canned cycles, M0 after each tool change.
     ("TinyG", AssetFile("tinyg.cps")),
+    // #2303: stock LinuxCNC (RS274NGC as linuxcnc.org documents it), no PathPilot conventions.
+    ("LinuxCNC", AssetFile("linuxcnc.cps")),
     // #2481: classic Grbl 1.1 - no canned cycles (drilling as plain moves), M0 tool change, 80-character lines.
     ("Grbl 1.1", AssetFile("grbl.cps")),
     ("Doosan DNM", AssetFile("doosan-dnm.cps")),
@@ -95,6 +105,9 @@ pub const MACHINES: &[(&str, AssetFile)] = &[
     ("grblHAL 3-axis", AssetFile("grblhal-3axis.mch")),
     // A generic TinyG router / mill; pairs with the "TinyG" post.
     ("TinyG 3-axis", AssetFile("tinyg-3axis.mch")),
+    // #2303: a generic LinuxCNC mill; pairs with the "LinuxCNC" post. It states no
+    // safe_retract and no rigid_tapping: the user states them for the real machine.
+    ("LinuxCNC 3-axis", AssetFile("linuxcnc-3axis.mch")),
     // #2481: a generic Grbl 1.1 router / mill; pairs with the "Grbl 1.1" post.
     ("Grbl 3-axis", AssetFile("grbl-3axis.mch")),
     // #620: the PathPilot routers, each from its own manual / spec sheet
@@ -146,6 +159,77 @@ fn post_dir() -> &'static DataFiles {
 fn machine_dir() -> &'static DataFiles {
     static F: OnceLock<DataFiles> = OnceLock::new();
     F.get_or_init(|| DataFiles::from_process("machines"))
+}
+
+/// The post and machine folders as last read (#2380): read at the first
+/// call and again at [`rescan`] (the Refresh buttons), never per frame.
+/// The scan itself is `camcraft_post::data_scan`; this cache binds it to
+/// the tables above and to the folders of this process. A name that a
+/// document needs and that has no file is still refused by name when the
+/// text is read (`builtin_post_text`, `builtin_machine_text`, #2319).
+type Scans = (FolderScan, FolderScan);
+static SCANS: Mutex<Option<Scans>> = Mutex::new(None);
+static SCAN_READS: AtomicU64 = AtomicU64::new(0);
+
+/// How many times this process read the two folders (first use and each
+/// [`rescan`]): the log and the tests see that a Refresh read them again.
+#[must_use]
+pub fn scan_reads() -> u64 {
+    SCAN_READS.load(Ordering::Relaxed)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_scans() -> Scans {
+    // The browser build has no folder: every table entry is compiled in.
+    let all = |t: &[(&'static str, AssetFile)]| FolderScan { present: t.iter().map(|(n, _)| *n).collect(), ..FolderScan::default() };
+    (all(BUILTINS), all(MACHINES))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_scans() -> Scans {
+    let one = |files: &DataFiles, ext: &str, table: &[(&'static str, AssetFile)], hidden: &[AssetFile]| match files.dir() {
+        Ok(dir) => camcraft_post::data_scan::scan_folder(dir, ext, table, hidden),
+        Err(why) => FolderScan { problem: Some(why), ..FolderScan::default() },
+    };
+    let posts = one(post_dir(), "cps", BUILTINS, &[]);
+    let machines = one(machine_dir(), "mch", MACHINES, &[DEFAULT_MCH_FILE]);
+    for (kind, s) in [("posts", &posts), ("machines", &machines)] {
+        for note in &s.skipped {
+            tracing::warn!("{kind} folder: {note}");
+        }
+        match &s.problem {
+            Some(why) => tracing::error!("{kind} folder: {why}"),
+            None => tracing::info!("{kind} folder: {} shipped, {} other file(s)", s.present.len(), s.extra.len()),
+        }
+    }
+    (posts, machines)
+}
+
+fn counted_read() -> Scans {
+    SCAN_READS.fetch_add(1, Ordering::Relaxed);
+    read_scans()
+}
+
+fn with_scans<T>(f: impl FnOnce(&Scans) -> T) -> T {
+    let mut g = SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    f(g.get_or_insert_with(counted_read))
+}
+
+/// The post folder as last read (read at first use).
+#[must_use]
+pub fn post_scan() -> FolderScan {
+    with_scans(|s| s.0.clone())
+}
+
+/// The machine folder as last read (read at first use).
+#[must_use]
+pub fn machine_scan() -> FolderScan {
+    with_scans(|s| s.1.clone())
+}
+
+/// Read both folders again (the Refresh buttons call this).
+pub fn rescan() {
+    *SCANS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(counted_read());
 }
 
 /// One read-once cell per table entry: the text lives in static storage
@@ -251,6 +335,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "tormach.cps") => Some(include_str!("../../../assets/posts/tormach.cps")),
         ("posts", "grblhal.cps") => Some(include_str!("../../../assets/posts/grblhal.cps")),
         ("posts", "tinyg.cps") => Some(include_str!("../../../assets/posts/tinyg.cps")),
+        ("posts", "linuxcnc.cps") => Some(include_str!("../../../assets/posts/linuxcnc.cps")),
         ("posts", "grbl.cps") => Some(include_str!("../../../assets/posts/grbl.cps")),
         ("posts", "doosan-dnm.cps") => Some(include_str!("../../../assets/posts/doosan-dnm.cps")),
         ("posts", "carvera.cps") => Some(include_str!("../../../assets/posts/carvera.cps")),
@@ -282,6 +367,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("machines", "tormach-1100m-plus.mch") => Some(include_str!("../../../assets/machines/tormach-1100m-plus.mch")),
         ("machines", "grblhal-3axis.mch") => Some(include_str!("../../../assets/machines/grblhal-3axis.mch")),
         ("machines", "tinyg-3axis.mch") => Some(include_str!("../../../assets/machines/tinyg-3axis.mch")),
+        ("machines", "linuxcnc-3axis.mch") => Some(include_str!("../../../assets/machines/linuxcnc-3axis.mch")),
         ("machines", "grbl-3axis.mch") => Some(include_str!("../../../assets/machines/grbl-3axis.mch")),
         ("machines", "tormach-24r.mch") => Some(include_str!("../../../assets/machines/tormach-24r.mch")),
         ("machines", "tormach-xstech-pro.mch") => Some(include_str!("../../../assets/machines/tormach-xstech-pro.mch")),

@@ -423,6 +423,10 @@ pub struct OperationDto {
     /// Position within the setup; absent preserves legacy name order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<u32>,
+    /// Un-carriable parameters dropped on a version migration (#1517);
+    /// non-empty blocks posting until reviewed and cleared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs_review: Vec<String>,
     pub tool: String,
     pub src: SrcDto,
     pub params: ParamsDto,
@@ -609,11 +613,25 @@ pub struct EntityDto {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fidelity_unknown: bool,
     /// #1610: the hole of a model imported from a STEP closed shell that
-    /// meshes open (`schema::MeshOpen`), written only on a model beside
-    /// `fidelity_unknown`. An old reader dropping it keeps the mark and
+    /// meshes open (`schema::MeshOpen`), written only beside
+    /// `fidelity_unknown` on such a model or (#1700) a stock copied from it. An old reader dropping it keeps the mark and
     /// still refuses every operation on the model; only the words go.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_open: Option<String>,
+    /// #917: the closed solids of a model's facets, `[start, end)` index
+    /// pairs (`schema::SolidRanges`), written only for two or more.
+    /// Absent is one soup - every older file - so no version step: an old
+    /// reader that drops it reads the soup, and refuses by name where it
+    /// is non-manifold. Pairs that do not tile the facets are dropped at
+    /// load with a logged note, never trusted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solids: Option<Vec<[usize; 2]>>,
+    /// #1339: who vouched for this model's mesh while its fidelity was
+    /// unknown (`schema::FidelityVouched`), written only on a model with
+    /// no fidelity flag. An old reader dropping it loads the same
+    /// unmarked model; only the name goes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fidelity_vouched: Option<super::VouchDto>,
     /// The STEP facet budget a model was imported under when it is not the
     /// default (#1054, `schema::StepBudget`). Absent everywhere else, so a
     /// file from before the key existed - and every default import - reads
@@ -624,6 +642,10 @@ pub struct EntityDto {
     /// Raw STEP text preserved on entities imported from STEP (#744).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_source: Option<String>,
+    /// #2463 (v72): the file a linked model was imported from and its
+    /// SHA-256. Absent: not linked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<super::SourceDto>,
     /// Absent means Model; only non-model entities carry the tag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<EntityKind>,
@@ -665,9 +687,13 @@ pub struct EntityDto {
     /// `kind == Some(Entry)`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<super::program_entry_dto::ProgramEntryDto>,
+    /// A DXF profile's drawing (#1862); present exactly when
+    /// `kind == Some(Sketch)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sketch: Option<super::sketch_dto::SketchDto>,
     /// #1720 (v67): a WCS row's flipped axes; present only on a WCS
     /// with at least one axis flipped. Absent is no flip - every older
-    /// file - and the post refuses a flipped WCS by name.
+    /// file. The post mirrors a flipped X or Y (#1649).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flip: Option<WcsFlipDto>,
 }

@@ -88,9 +88,12 @@ fn a_thread_posts_as_one_g76_block_with_the_option_in_mm_and_inch() {
         } else {
             // The grid law: Ø12.1 is 0.4764, Ø12 0.4724 (I -0.004, not a
             // second rounding of 0.1 mm); the root rounds OUT to 0.378
-            // (Ø9.6 is 0.37795 in), so K 0.0944 - never deeper.
+            // (Ø9.6 is 0.37795 in), so K 0.0944 - never deeper. J 0.0315,
+            // not the shallower 0.0314 (#1619): LinuxCNC's R1 ladder cuts
+            // ceil(K/J) passes, and 0.0944 / 0.0314 is four where the
+            // record lays three; 0.0315 is 0.000004 in over Ø0.8 mm.
             assert!(text.contains("G0 X0.4764\nG0 Z0.5512\nG76 "), "X first after G30, then Z (#1604): {text}");
-            assert_eq!(line, "G76 P0.07874 Z0.315 I-0.004 J0.0314 K0.0944 R1 Q0 H0");
+            assert_eq!(line, "G76 P0.07874 Z0.315 I-0.004 J0.0315 K0.0944 R1 Q0 H0");
         }
         assert_eq!(gated(&world, file), text, "the in-app post follows the document's option");
         common::write_golden(&format!("nc/tormach-lathe/{file}.nc"), &text);
@@ -276,7 +279,10 @@ fn cached_zero_finish_allowance_keeps_fanuc_g76_output() {
     for inch in [false, true] {
         let (world, _history) = thread_world(inch);
         let records = posting::stream_records(&world).expect("generated");
-        let cached = with_rec(&records, |t| t.finish_allowance = 0.0);
+        let cached = with_rec(&records, |t| {
+            t.finish_allowance = 0.0;
+            t.start_in_air = true;
+        });
         let mut options = posting::options_value(g76());
         options["Units"] = json!(posting::unit_word(camcraft_app::units::of(&world)));
         let fanuc = include_str!("../../../assets/posts/fanuc-lathe.cps");

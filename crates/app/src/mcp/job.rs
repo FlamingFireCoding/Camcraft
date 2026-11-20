@@ -69,6 +69,9 @@ fn setups_view(env: &Env) -> Vec<Value> {
                 "posts_with": crate::posting::post_ref_label(&crate::setup_mount::post_of(w, d)),
                 // #1031: the chuck's or collet's rated maximum rpm.
                 "workholding_max_rpm": s.as_deref().and_then(|n| crate::setup_workholding::of(w, Some(n))).map(fnum),
+                // #1862: what stands for the setup's model - a part, or the
+                // virtual reference of its placed DXF profiles (no solid).
+                "model_reference": super::sketch_tools::model_reference(env, d),
             })
         })
         .collect()
@@ -80,6 +83,7 @@ fn op_full(env: &Env, key: &str, e: &flecs_ecs::prelude::Entity, status: operati
     let w = &env.world;
     let op = model::operation_of(w, e);
     let warnings = model::toolpath_of(w, e).map_or(0, |t| t.warnings.len());
+    let needs_review = model::operation_meta_of(w, e).needs_review;
     json!({
         "name": model::operation_label(w, key, e),
         "key": key,
@@ -90,7 +94,10 @@ fn op_full(env: &Env, key: &str, e: &flecs_ecs::prelude::Entity, status: operati
         "coolant": op.as_ref().and_then(|o| serde_json::to_value(o.coolant).ok()),
         "status": api::st_str(status),
         "warnings": warnings,
+        "needs_review": needs_review,
         "params": op.as_ref().map(|o| project::params_to_json(&o.params)),
+        // #1862: an operation on a DXF profile says what it is checked against.
+        "checks_against": op.as_ref().and_then(|o| crate::sketch_model::checked_against(w, o)),
     })
 }
 
@@ -120,9 +127,17 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
             if let Some(chord) = crate::model_fidelity::chord_of(w, e) {
                 m["reduced_fidelity"] = crate::mesh_open::facts(w, e, chord);
             }
+            // #1339: a mesh a person vouched for says who.
+            if let Some(by) = crate::model_vouch::by_of(w, e) {
+                m["fidelity_vouched"] = crate::model_vouch::facts(&by);
+            }
             // #1054: and one imported under a non-default STEP facet budget.
             if let Some(b) = crate::model_fidelity::budget_of(w, e) {
                 m["facet_budget"] = json!(b);
+            }
+            // #2463: a linked model names its source file and digest.
+            if let Some(s) = crate::model_source::of(w, e) {
+                m["source"] = json!({ "path": s.path, "sha256": s.sha256 });
             }
             m
         })
@@ -149,6 +164,8 @@ pub(super) fn get_job(env: &mut Env, _a: &Map<String, Value>) -> Result<Value, S
         "work_material": super::cutting_tools::material_view(env),
         "setups": setups_view(env),
         "models": models,
+        // #1862: DXF profiles placed on a setup's stock - not models.
+        "profiles": super::sketch_tools::profiles_view(env),
         "tools": tools,
         "operations": ops,
         "machine": machine_view(w),
@@ -184,10 +201,18 @@ pub(super) fn list_operation_types(_env: &mut Env, _a: &Map<String, Value>) -> R
         .enumerate()
         .map(|(i, k)| {
             let (key, defaults) = kind_defaults(i);
-            let fields: Vec<Value> = defaults
+            let mut fields: Vec<Value> = defaults
                 .as_object()
                 .map(|m| m.iter().map(|(n, v)| json!({ "name": n, "type": json_type(v), "default": v })).collect())
                 .unwrap_or_default();
+            // `break_through` is skipped when `None` in ParamsDto serialization,
+            // so inject it into `list_operation_types` for every through-hole kind (#2441).
+            if matches!(key.as_str(), "drill" | "bore" | "thread")
+                && !fields.iter().any(|f| f["name"] == "break_through")
+            {
+                fields.push(json!({ "name": "break_through", "type": "number", "default": Value::Null }));
+                fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            }
             let mut kind = json!({
                 "label": k.label,
                 "key": key,
@@ -226,13 +251,16 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::HolderHit { at, .. } => ("holder_hit", *at),
         Warning::SweepHit { at, .. } => ("sweep_hit", *at),
         Warning::RapidInStock { at } => ("rapid_in_stock", *at),
+        Warning::FirstTraverseLow { at, .. } => ("first_traverse_low", *at),
         Warning::FixtureHit { at, .. } => ("fixture_hit", *at),
+        Warning::AvoidHit { at, .. } => ("avoid_hit", *at),
         Warning::NonFinite { at } => ("non_finite", *at),
         Warning::Envelope { at, .. } => ("envelope", *at),
         Warning::RestUnjudged { at, .. } => ("rest_unjudged", *at),
         Warning::Scallop { at, .. } => ("scallop", *at),
         Warning::ProbeSearch { at, .. } => ("probe_search", *at),
         Warning::SinkerFinishOrder { at, .. } => ("sinker_finish_order", *at),
+        Warning::DrillUndersize { at, .. } => ("drill_undersize", *at),
     };
     json!({
         "op": op,

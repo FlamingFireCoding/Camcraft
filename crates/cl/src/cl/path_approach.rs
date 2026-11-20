@@ -6,8 +6,48 @@
 //! Provenance: #690's posted-program law; our own builder design.
 
 use super::super::moves::{Move, MoveKind};
-use super::PathBuilder;
+use super::{PathBuilder, Toolpath};
 use crate::geometry::Point3;
+
+/// How close a stated seed must be to the opening rapid's start.
+const SEED_EPS: f64 = 1e-9;
+
+impl Toolpath {
+    /// Seat the opening approach over its own entry point (#2901).
+    ///
+    /// The generators seed their builder at the frame's zero on the
+    /// clearance plane (`seed`). The machine never visits that point:
+    /// after a tool change its X/Y is not known, and the post writes a
+    /// Z-only G00 and then the entry X/Y. So when the first move is a
+    /// rapid out of `seed` to somewhere else, its start moves to the
+    /// rapid's own end X/Y on the same plane. The rapid's end is
+    /// untouched, so no posted block changes - the post writes ends
+    /// only - and the drawn approach, the simulation, the fixture checks
+    /// and the link router see no travel from a point the machine never
+    /// visits: not the frame zero, not the WCS origin (#2382's seat,
+    /// reversed here).
+    ///
+    /// A path that does not open that way (a hole list seeded on its
+    /// first hole, a lathe seeded at its own station, a zero-length
+    /// rapid that says the cut starts AT the seed) is left as it is.
+    /// Returns whether the start moved.
+    pub fn seat_approach(&mut self, seed: Point3) -> bool {
+        let Some(first) = self.moves.first_mut() else {
+            return false;
+        };
+        let at_seed = (first.from.x - seed.x).abs() <= SEED_EPS
+            && (first.from.y - seed.y).abs() <= SEED_EPS
+            && (first.from.z - seed.z).abs() <= SEED_EPS;
+        let leaves = (first.to.x - first.from.x).abs() > SEED_EPS || (first.to.y - first.from.y).abs() > SEED_EPS;
+        let finite = first.to.x.is_finite() && first.to.y.is_finite();
+        if first.kind != MoveKind::Rapid || first.arc.is_some() || !at_seed || !leaves || !finite {
+            return false;
+        }
+        first.from.x = first.to.x;
+        first.from.y = first.to.y;
+        true
+    }
+}
 
 impl PathBuilder {
     /// A builder seeded at `at` on the clearance plane whose path always

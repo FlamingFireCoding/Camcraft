@@ -100,9 +100,11 @@ pub fn missing_source(
                 .then_some("no stock yet - set it up in Setup > Stock")
         }
         HeightReference::TopOfModel | HeightReference::BottomOfModel => {
-            crate::setup_align::part_aabb_in(world, setup)
-                .is_none()
-                .then_some("no model loaded")
+            // #1862: a virtual model reference is a model with no solid,
+            // so it has no top or bottom - said by name, not "no model".
+            crate::setup_align::part_aabb_in(world, setup).is_none().then(|| {
+                if crate::sketch_model::of(world, setup).is_some() { crate::sketch_model::NO_SOLID_HEIGHT } else { "no model loaded" }
+            })
         }
         HeightReference::WorkOffset => crate::setup::wcs_entity(world, setup)
             .is_none()
@@ -125,7 +127,7 @@ pub fn region_z(
     let resolve = |h| fold_height(world, setup, src, frame.as_ref(), h);
     match params {
         OpParams::Face { top_z, cut_z, .. } => top_z
-            .map(&resolve)
+            .map(resolve)
             .unwrap_or_else(|| resolve(*cut_z)),
         OpParams::Contour { top_z, .. }
         | OpParams::Pocket { top_z, .. }

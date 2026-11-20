@@ -1,10 +1,10 @@
-//! #221: a tool's own controller number. `SetToolNumber` sets and clears
-//! it (undoable, refusing out-of-range, taken and no-op numbers);
-//! `ChangeTool`, `DeleteTool` and `DeleteEntity` keep or restore it; the
-//! project file carries it (absent key = unnumbered, the older files'
-//! meaning); and the post writes it as T/H - with an unnumbered tool still
-//! posting as its list position, and two tools of one program that would
-//! post the same number refused by name.
+//! #221 / #2442: a tool's own controller number. `AddTool` and
+//! `ImportTools` assign the lowest unused number at creation, `SetToolNumber`
+//! changes it (undoable, refusing `None`, out-of-range, taken, and no-op
+//! numbers), `ChangeTool`, `DeleteTool`, and `DeleteEntity` keep or restore
+//! it, legacy unnumbered project files freeze to their 1-based name-sorted
+//! list position on load, and two tools on one machine that would post the
+//! same number are refused by name.
 //! Provenance: our own tests over our own commands and post stream.
 //!
 //! Gate map (M4.4): covers app::commands (tool, tool_number, delete_entity),
@@ -12,7 +12,7 @@
 
 use camcraft_app::commands::{
     AddTool, ChangeTool, CreateOperation, DeleteEntity, DeleteTool, GenerateOperation, History,
-    ImportModel, SetStock, SetToolNumber,
+    ImportModel, ImportTools, SetStock, SetToolNumber,
 };
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::model;
@@ -22,6 +22,7 @@ use camcraft_app::posting;
 use camcraft_app::project;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
+use camcraft_app::tool_library::LibraryTool;
 use camcraft_app::tool_numbers;
 use camcraft_app::tools::{Tool, catalog};
 use camcraft_app::world::new_world;
@@ -49,6 +50,13 @@ fn set(world: &World, h: &mut History, name: &str, n: Option<u32>) {
 /// Stock, a part, two end mills (catalog order: EM-0400 first) and one
 /// generated Face per tool, so the program uses both.
 fn two_tool_job() -> (World, History) {
+    tool_job(["EM-0400-2FL", "EM-0600-4FL"])
+}
+
+/// [`two_tool_job`] with the two end mills added in `order` (#2517: a
+/// document order that is not the name order). Face1 still uses EM-0400,
+/// Face2 EM-0600.
+fn tool_job(order: [&str; 2]) -> (World, History) {
     let world = new_world();
     let mut h = History::default();
     let stock = SetStock::new(
@@ -68,7 +76,7 @@ fn two_tool_job() -> (World, History) {
             cube(Point3::new(0.0, 0.0, 0.0), Point3::new(40.0, 40.0, 19.0)),
         ),
     );
-    for t in ["EM-0400-2FL", "EM-0600-4FL"] {
+    for t in order {
         h.execute(&world, AddTool::new(&world, t, tool(t)).expect("tool"));
     }
     for (op, t, z) in [
@@ -112,24 +120,34 @@ fn posted_tools(world: &World) -> Result<Vec<(u32, String)>, String> {
 }
 
 #[test]
-fn a_number_is_set_cleared_and_walked_by_undo_and_redo() {
+fn a_number_is_set_refused_to_clear_and_walked_by_undo_and_redo() {
     let (world, mut h) = two_tool_job();
     assert_eq!(
         number(&world, "EM-0400-2FL"),
-        None,
-        "tools start unnumbered"
+        Some(1),
+        "first added tool starts at T1"
+    );
+    assert_eq!(
+        number(&world, "EM-0600-4FL"),
+        Some(2),
+        "second added tool starts at T2"
     );
     set(&world, &mut h, "EM-0400-2FL", Some(31));
     assert_eq!(number(&world, "EM-0400-2FL"), Some(31));
-    set(&world, &mut h, "EM-0400-2FL", None);
-    assert_eq!(number(&world, "EM-0400-2FL"), None, "cleared");
-    assert!(h.undo(&world));
-    assert_eq!(number(&world, "EM-0400-2FL"), Some(31), "undo restores 31");
+    let clear_err = SetToolNumber::new(&world, "EM-0400-2FL", None)
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert!(
+        clear_err.contains("EM-0400-2FL") && clear_err.contains("1-99999"),
+        "{clear_err}"
+    );
+    assert_eq!(number(&world, "EM-0400-2FL"), Some(31));
     assert!(h.undo(&world));
     assert_eq!(
         number(&world, "EM-0400-2FL"),
-        None,
-        "undo restores unnumbered"
+        Some(1),
+        "undo restores add-time T1"
     );
     assert!(h.redo(&world));
     assert_eq!(number(&world, "EM-0400-2FL"), Some(31), "redo re-applies");
@@ -221,7 +239,7 @@ fn the_post_writes_a_tools_own_number_and_positions_for_the_rest() {
     assert_eq!(
         posted_tools(&world).expect("posts"),
         vec![(1, "EM-0400-2FL".to_owned()), (2, "EM-0600-4FL".to_owned())],
-        "unnumbered tools post as their list position, as before"
+        "tools post as the numbers assigned at add"
     );
     set(&world, &mut h, "EM-0400-2FL", Some(31));
     assert_eq!(
@@ -247,24 +265,37 @@ fn the_post_writes_a_tools_own_number_and_positions_for_the_rest() {
 #[test]
 fn two_tools_posting_one_number_refuse_by_name() {
     let (world, mut h) = two_tool_job();
-    // EM-0600 is second in the list, so it posts as T2 unnumbered; giving
-    // EM-0400 the number 2 makes both post as T2.
-    set(&world, &mut h, "EM-0400-2FL", Some(2));
-    let err = posted_tools(&world).err().unwrap_or_default();
+    // Simulate a legacy or hand-edited file where two tools share number 2;
+    // the post clash check still catches it and names both tools.
+    let path = std::env::temp_dir().join(format!(
+        "camcraft_tool_numbers_clash_{}.camproj",
+        std::process::id()
+    ));
+    project::save(&world, &path).expect("save");
+    let dup = std::fs::read_to_string(&path)
+        .expect("read")
+        .replacen("\"number\": 1", "\"number\": 2", 1);
+    std::fs::write(&path, &dup).expect("write");
+    let clash_world = new_world();
+    project::load(&clash_world, &path).expect("load");
+    let _ = std::fs::remove_file(&path);
+    let err = posted_tools(&clash_world).err().unwrap_or_default();
     assert!(
         err.contains("EM-0400-2FL") && err.contains("EM-0600-4FL") && err.contains("T2"),
         "{err}"
     );
     // Giving the other its own number clears it.
-    set(&world, &mut h, "EM-0600-4FL", Some(6));
+    let mut clash_h = History::default();
+    set(&clash_world, &mut clash_h, "EM-0600-4FL", Some(6));
     assert_eq!(
-        posted_tools(&world).expect("posts"),
+        posted_tools(&clash_world).expect("posts"),
         vec![(2, "EM-0400-2FL".to_owned()), (6, "EM-0600-4FL".to_owned())]
     );
+    let _ = &mut h;
 }
 
 #[test]
-fn the_project_file_carries_the_number_and_only_when_set() {
+fn the_project_file_carries_the_number_from_add() {
     let (world, mut h) = two_tool_job();
     let path = std::env::temp_dir().join(format!(
         "camcraft_tool_numbers_{}.camproj",
@@ -273,8 +304,8 @@ fn the_project_file_carries_the_number_and_only_when_set() {
     project::save(&world, &path).expect("save");
     let text = std::fs::read_to_string(&path).expect("read");
     assert!(
-        !text.contains("\"number\""),
-        "an unnumbered document writes no number key"
+        text.contains("\"number\": 1") && text.contains("\"number\": 2"),
+        "every added tool carries its own number into the project file:\n{text}"
     );
     set(&world, &mut h, "EM-0400-2FL", Some(31));
     project::save(&world, &path).expect("save");
@@ -285,7 +316,7 @@ fn the_project_file_carries_the_number_and_only_when_set() {
         Some(31),
         "the number survives a save and load"
     );
-    assert_eq!(number(&world2, "EM-0600-4FL"), None);
+    assert_eq!(number(&world2, "EM-0600-4FL"), Some(2));
     // A stated 0 is a corrupt file, refused by name - never "no tool".
     let corrupt = std::fs::read_to_string(&path)
         .expect("read")
@@ -301,3 +332,23 @@ fn the_project_file_carries_the_number_and_only_when_set() {
         "{err}"
     );
 }
+
+#[test]
+fn an_unnumbered_tool_with_no_free_number_is_refused_by_name() {
+    // #2517: every number taken, one tool without its own - it has no
+    // number to post as, so the law refuses it by name (it once took u32::MAX).
+    let mut tools: Vec<(String, Option<u32>)> =
+        (1..=tool_numbers::MAX).map(|n| (format!("T{n}"), Some(n))).collect();
+    tools.push(("LAST".to_owned(), None));
+    let err = tool_numbers::assign(tools).expect_err("no number is free");
+    assert!(err.contains("tool 'LAST'") && err.contains(tool_numbers::RANGE_TEXT), "{err}");
+    // With a number free, the unnumbered tool takes the lowest one, in order.
+    let tools = vec![("A".to_owned(), Some(1)), ("B".to_owned(), None), ("C".to_owned(), Some(2))];
+    let got = tool_numbers::assign(tools).expect("a number is free");
+    assert_eq!(got, vec![("A".to_owned(), 1), ("B".to_owned(), 3), ("C".to_owned(), 2)]);
+}
+
+// ---- Numbers that never shift (#2442) and legacy loads ---------------
+
+#[path = "tool_numbers/stable.rs"]
+mod stable;
