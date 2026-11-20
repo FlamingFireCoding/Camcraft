@@ -169,11 +169,12 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-## truck (STEP import and tessellation, crates/app/src/geometry/import/step.rs; reference kernel in crates/kernel's tests)
+## truck (reference kernel in crates/kernel: feature `truck` and its tests)
 
-`truck-stepio`, `truck-meshalgo`, `truck-modeling`, `truck-polymesh`,
-`truck-topology`, `truck-geometry`, `truck-geotrait`, `truck-base` (and,
-for crates/kernel's own tests only, `truck-shapeops`) - ricosjp/truck,
+`truck-meshalgo`, `truck-modeling`, `truck-shapeops`, `truck-polymesh`,
+`truck-topology`, `truck-geometry`, `truck-geotrait`, `truck-base`
+(crates/kernel's feature `truck` only; truck-stepio left with #2790) -
+ricosjp/truck,
 https://github.com/ricosjp/truck, authored by Yoshinori Tanimura (RICOS
 Co. Ltd.), licensed Apache-2.0 per each crate's Cargo.toml. The crates
 as published carry no NOTICE file. The Apache License 2.0 text is

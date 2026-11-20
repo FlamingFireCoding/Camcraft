@@ -252,7 +252,6 @@ fn edge(a: Point3, b: Point3) -> f64 {
 }
 
 #[test]
-#[ignore = "known-fail #2844 | import_step_thread | a_four_turn_thread_flank_meshes_at_full_fidelity_in_a_bounded_count | facet count over the bound: "]
 fn a_four_turn_thread_flank_meshes_at_full_fidelity_in_a_bounded_count() {
     let turns = 4;
     let text = flank_step(turns);
@@ -261,8 +260,8 @@ fn a_four_turn_thread_flank_meshes_at_full_fidelity_in_a_bounded_count() {
     // ~80 steps a turn at 5 um on a 6.35 mm radius, two triangles each;
     // the isotropic division made 523 K.
     // #2844: solidcore-tess plans the strip isotropically (391338 facets
-    // after a replan at half the chord); the bound stays the acceptance.
-    // known-fail-assert
+    // after a replan at half the chord); the kernel seam divides it over
+    // its boundary nodes (`camcraft_kernel::mesh_redivide`, 1150 facets).
     assert!(facets.len() < 5_000, "facet count over the bound: {} facets for a four-turn strip", facets.len());
     assert!(step::coarse(chord).is_none(), "meshed at the promised chord, not reduced: {chord} mm");
     // No triangle crosses the turns: the longest edge a sound mesh has is

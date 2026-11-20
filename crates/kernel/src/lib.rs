@@ -38,6 +38,8 @@ mod mesh_bound_blossom;
 mod mesh_bound_spline;
 pub mod mesh_deviation;
 mod mesh_distance;
+pub mod mesh_redivide;
+mod mesh_redivide_fill;
 pub mod mesh_weld;
 mod solidcore_blend;
 pub mod solidcore_impl;
@@ -56,6 +58,10 @@ pub use measure::{Measure, mesh_signed_volume};
 /// The time bound the readers and the mesher poll (#1456: the app passes
 /// one in without its own solidcore dependency).
 pub use solidcore::kernel::CancelToken;
+/// solidcore's ISO 10303-21 parser (#2789: camcraft-geometry's tool
+/// coordinate-system, unit and record readers use it without their own
+/// solidcore dependency, so the pin stays in this one manifest).
+pub use ::solidcore_step::p21;
 
 /// A point or extent in model units, `[x, y, z]`.
 pub type P3 = [f64; 3];
