@@ -69,8 +69,12 @@ unstated capability into existence.
   with no `(` `)`, or the file is refused by the name. A sinker post
   reads `metric` / `inch` (the unit word), `pickup` (`{tool}`),
   `reference` (`{offset}`, the electrode's pickup offset), `condition`
-  (`{id}`), `depth` (the servo burn, `{z}` and optionally `{f}`) and
-  `end` (`SINKER_CODES`); the wire post (#533) reads its own names. A
+  (`{id}`), `depth` (the servo burn, `{z}` and optionally `{f}`),
+  `side` (the lateral servo burn, all of `{x}` `{y}` `{z}` `{f}` required),
+  and `end` (`SINKER_CODES`); the wire post (#533) reads its own names.
+  The `side` coordinates are absolute endpoints in the work offset.
+  The post converts coordinates and feed to the document's units.
+  A Side Burn needs `side`; a straight burn does not. A
   code the post needs and the file does not state refuses the post by
   name. No vendor codes ship - fill them from the control's manual.
 
