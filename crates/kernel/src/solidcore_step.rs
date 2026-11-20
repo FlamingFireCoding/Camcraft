@@ -174,6 +174,7 @@ fn read_guarded(
         p21::Error::Cancelled => timed_out("parsing"),
         other => refused_input(other.to_string()),
     })?;
+    crate::step_curve_guard::check(&ex).map_err(refused_input)?;
     let mut out = StepRead {
         length_units_mm: length_units(&ex).map_err(refused_input)?,
         ..StepRead::default()

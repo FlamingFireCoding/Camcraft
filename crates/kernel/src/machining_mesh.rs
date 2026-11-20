@@ -12,13 +12,13 @@
 //! equal positions are welded) is textbook mesh topology. No HSMWorks
 //! material consulted.
 
-use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use solidcore::kernel::CancelToken;
 use solidcore_tess::{MeshTolerance, PlanStats, TessPlan};
 
 use crate::mesh_deviation::{self, Deviation, Unmeasured};
+use crate::mesh_weld::{SNAP_MOVE_MM, sides, turn_outward, weld};
 use crate::solidcore_step::StepSolid;
 use crate::{P3, mesh_signed_volume};
 
@@ -239,7 +239,11 @@ pub fn machining_mesh(
             other => MeshRefusal::Unmeasured(other),
         })?;
         // A NaN deviation is refused too.
-        if deviation.largest().is_nan() || deviation.largest() > tol_mm {
+        // The judged figure adds the snap's largest move (sqrt(3) windows,
+        // one in each axis): the weld after this check may move a vertex
+        // that far, and the measured bound must still hold for it.
+        let judged = deviation.largest() + SNAP_MOVE_MM;
+        if judged.is_nan() || judged > tol_mm {
             // The display planner checks sag at centroids and midpoints only;
             // continuous bounds between samples can overshoot near seams. Try
             // one finer plan with `PLAN_MARGIN`, keeping the requested tolerance.
@@ -268,7 +272,16 @@ pub fn machining_mesh(
         return Err(MeshRefusal::NotWatertight { open, over, turned });
     }
     let tris: Vec<[usize; 3]> = triangles.iter().map(|t| t.map(|i| i as usize)).collect();
-    let volume = mesh_signed_volume(&positions, &tris).unwrap_or(f64::NAN);
+    let mut volume = mesh_signed_volume(&positions, &tris).unwrap_or(f64::NAN);
+    let mut triangles = triangles;
+    // An inward solid of one shell is turned outward and said (#917); a
+    // void solid, zero or NaN stays a refusal (`turn_outward`).
+    if let Some(turned) = turn_outward(&mut triangles, volume) {
+        volume = turned;
+        notes.push(format!(
+            "the solid's faces all pointed inward (volume -{volume:.6e} mm^3); the mesh is turned outward"
+        ));
+    }
     if !(volume.is_finite() && volume > 0.0) {
         return Err(MeshRefusal::Volume(volume));
     }
@@ -325,50 +338,4 @@ fn evaluate(plan: &TessPlan, faces: usize) -> Result<solidcore_tess::Mesh, MeshR
         });
     }
     Ok(mesh)
-}
-
-/// Vertices welded by exact position (+0.0 and -0.0 are one); triangles
-/// that collapse onto a repeated vertex are dropped (they carry no area).
-fn weld(mesh: &solidcore_tess::Mesh) -> (Vec<P3>, Vec<[u32; 3]>, Vec<u32>) {
-    let mut ids: HashMap<[u64; 3], u32> = HashMap::new();
-    let mut positions: Vec<P3> = Vec::new();
-    let mut map: Vec<u32> = Vec::with_capacity(mesh.positions.len());
-    for p in &mesh.positions {
-        let q = [p.x, p.y, p.z];
-        let key = q.map(|c| (c + 0.0).to_bits());
-        let next = u32::try_from(positions.len()).unwrap_or(u32::MAX);
-        let id = *ids.entry(key).or_insert_with(|| {
-            positions.push(q);
-            next
-        });
-        map.push(id);
-    }
-    let mut tris = Vec::with_capacity(mesh.triangles.len());
-    let mut faces = Vec::with_capacity(mesh.triangles.len());
-    for (t, f) in mesh.triangles.iter().zip(&mesh.tri_face) {
-        let w = t.map(|i| map.get(i as usize).copied().unwrap_or(u32::MAX));
-        if w.contains(&u32::MAX) || w[0] == w[1] || w[1] == w[2] || w[2] == w[0] {
-            continue;
-        }
-        tris.push(w);
-        faces.push(*f);
-    }
-    (positions, tris, faces)
-}
-
-/// (sides used once, sides used more than twice, sides used twice in the
-/// same direction). Each use counts +1 running low-to-high index, -1 back.
-fn sides(tris: &[[u32; 3]]) -> (usize, usize, usize) {
-    let mut count: HashMap<(u32, u32), (u32, i32)> = HashMap::new();
-    for t in tris {
-        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-            let e = count.entry((a.min(b), a.max(b))).or_default();
-            e.0 = e.0.saturating_add(1);
-            e.1 += if a < b { 1 } else { -1 };
-        }
-    }
-    let open = count.values().filter(|n| n.0 == 1).count();
-    let over = count.values().filter(|n| n.0 > 2).count();
-    let turned = count.values().filter(|n| n.0 == 2 && n.1 != 0).count();
-    (open, over, turned)
 }
