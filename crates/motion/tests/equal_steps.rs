@@ -25,7 +25,7 @@ use camcraft_motion::machining2d::{
     cut_levels, cut_levels_for, equal_stepdown, pocket, pocket_avoid_with_relief,
     pocket_relief_plan, slot,
 };
-use camcraft_motion::machining3d::{Pocket3DParams, pocket3d};
+use camcraft_motion::machining3d::{Pocket3DParams, pocket3d, pocket3d_with_rest};
 use camcraft_motion::tools::ToolGeom;
 use camcraft_motion::verify::{AvoidItem, AvoidSpec, Cutter};
 
@@ -341,27 +341,40 @@ fn plate() -> Vec<Triangle> {
         .collect()
 }
 
+fn p3d(equal: bool) -> Pocket3DParams {
+    Pocket3DParams {
+        links: links(Links::ROUGH3D, equal),
+        tool_diameter: 6.0,
+        stepover: 2.4,
+        stock_to_leave: 0.0,
+        clearance_z: 30.0,
+        top_z: TOP,
+        bottom_z: BOTTOM,
+        stepdown: STEP,
+        feed: 500.0,
+        plunge_feed: 100.0,
+        climb: true,
+        strategy: PocketStrategy::OffsetRings,
+        retract_z: None,
+        entry: Entry3D::Plunge,
+        helix_radius: 1.5,
+        optimal_load: DEFAULT_OPTIMAL_LOAD,
+    }
+}
+
 #[test]
 fn a_3d_pocket_cuts_the_levels_of_its_mode() {
     two_modes("3D pocket", |equal| {
-        let p = Pocket3DParams {
-            links: links(Links::ROUGH3D, equal),
-            tool_diameter: 6.0,
-            stepover: 2.4,
-            stock_to_leave: 0.0,
-            clearance_z: 30.0,
-            top_z: TOP,
-            bottom_z: BOTTOM,
-            stepdown: STEP,
-            feed: 500.0,
-            plunge_feed: 100.0,
-            climb: true,
-            strategy: PocketStrategy::OffsetRings,
-            retract_z: None,
-            entry: Entry3D::Plunge,
-            helix_radius: 1.5,
-            optimal_load: DEFAULT_OPTIMAL_LOAD,
-        };
-        pocket3d(&plate(), &square(0.0, 0.0, 40.0), &p).expect("3D pocket")
+        pocket3d(&plate(), &square(0.0, 0.0, 40.0), &p3d(equal)).expect("3D pocket")
+    });
+}
+
+/// The rest pocket's coarse leg reads the mode too, through the #2088
+/// flat-floor level law. The plate leaves no rest material above the
+/// floor, so the path cuts only the coarse planes.
+#[test]
+fn a_3d_rest_pocket_cuts_the_coarse_levels_of_its_mode() {
+    two_modes("3D rest pocket", |equal| {
+        pocket3d_with_rest(&plate(), &square(0.0, 0.0, 40.0), &p3d(equal)).expect("3D rest").0
     });
 }
