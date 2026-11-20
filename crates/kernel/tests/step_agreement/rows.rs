@@ -4,6 +4,9 @@
 //! printout of truck-stepio 0.3.0 + truck-meshalgo 0.4.0 (ruststep at the
 //! #887 git pin), taken at commit 4b694c7c7 before #2790 removed the reader
 //! (docs/decisions/2790-remove-truck-step.md).
+//!
+//! Gate map (M12.1): covers camcraft_kernel::solidcore_step (read_step,
+//! import_step).
 
 /// What truck-stepio made of a file when the bench last ran it: the mesh
 /// numbers in millimetres at the app's chord target, or the refusal.

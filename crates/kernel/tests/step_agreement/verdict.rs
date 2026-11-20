@@ -2,6 +2,9 @@
 //! of a file, live, judged against the recorded truck reading of its row
 //! (rows.rs) and against solidcore's own mesh.
 //! Provenance: our own bench design (M12.1 retirement gate, #916).
+//!
+//! Gate map (M12.1): covers camcraft_kernel::solidcore_step (read_step,
+//! import_step).
 
 use camcraft_kernel::solidcore_step::StepRead;
 use camcraft_kernel::{KernelError, Measure};

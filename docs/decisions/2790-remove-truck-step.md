@@ -100,3 +100,5 @@ does not see them as test targets of their own. Each `#[test]` stays.
 `--lib -- --list`: the count is the same before and after (see the PR body
 for the numbers). Per binary: `step_import` goes from 4 to 3 and
 `step_agreement` from 22 to 23 (the moved test above).
+
+The release tier (heavy lanes) did not run for this PR. The cut gate runs it.
