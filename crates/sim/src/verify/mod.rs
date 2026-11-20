@@ -214,6 +214,9 @@ mod turn_hidden;
 mod types;
 mod upright;
 mod workholding;
+mod corner_relief;
+
+pub use corner_relief::CornerReliefZone;
 
 pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
 pub use excess::excess_floor;
@@ -241,7 +244,7 @@ pub use probe::Cutter;
 pub use rotary::{rotary_hits, RotaryAxis, RotaryLaw};
 pub use hole_wall::{HoleAxis, WALL_SAG, hole_is_round};
 pub use seat::{seat_skin, undersides, MARK_FLOOR};
-pub use solid::{SolidLaw, solid_hits, solid_hits_threaded, solid_hits_walled, stack_hits};
+pub use solid::{SolidLaw, solid_hits, solid_hits_relieved, solid_hits_threaded, solid_hits_walled, stack_hits};
 pub use mesh_steel::{mesh_refined, steel_stack, MeshSteel, SteelBand};
 #[doc(hidden)]
 pub use contact::posed_contact;

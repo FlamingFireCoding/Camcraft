@@ -753,6 +753,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
                 // #1610: validate_kind refused a hole without the mark.
                 crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
+                // #1339: validate_kind refused a vouch beside a flag.
+                crate::model_vouch::set(world, &entity, dto.fidelity_vouched.as_ref().map(super::VouchDto::to_record));
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
                 crate::step_source::set(world, &entity, dto.step_source.as_deref());

@@ -116,6 +116,23 @@ fn copy_dir_all(src: &Path, dst: &Path) {
     }
 }
 
+// The portable contour-tabs example embeds its mesh. A relative source link
+// makes the UI reopen a file from the process directory instead of the case.
+fn assert_contour_tabs_embeds_model(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
+    if case.family != "2d" || case.name != "contour-tabs" {
+        return;
+    }
+    let entity = model::find_by_name(w, "contour-tabs").expect("contour-tabs model must be present");
+    assert!(
+        camcraft_app::model_source::of(w, &entity).is_none(),
+        "2d/contour-tabs: project must open without a link to the script working directory"
+    );
+    assert!(
+        model::facets_of(w, &entity).is_some_and(|facets| !facets.is_empty()),
+        "2d/contour-tabs: project must keep its embedded mesh"
+    );
+}
+
 #[test]
 fn every_catalog_case_opens_regenerates_verifies_and_posts_byte_for_byte() {
     let cases = discover_cases(&repo("examples/catalog"));
@@ -133,6 +150,7 @@ fn every_catalog_case_opens_regenerates_verifies_and_posts_byte_for_byte() {
         let notes = project::load_noted(&w, &proj_path)
             .unwrap_or_else(|e| panic!("{label}: load {}: {e}", proj_path.display()));
         assert!(notes.is_empty(), "{label}: unexpected load notes: {notes:?}");
+        assert_contour_tabs_embeds_model(case, &w);
 
         let ops = setup::operation_order(&w);
         assert!(!ops.is_empty(), "{label}: project has no operations");
@@ -215,6 +233,16 @@ fn every_catalog_case_rebuilds_from_camscript() {
         );
         assert!(proj.is_file(), "{label}: build.camscript did not write {}", proj.display());
         assert!(nc.is_file(), "{label}: build.camscript did not write {}", nc.display());
+
+        // Load outside the script's directory. Pin the rebuilt example too;
+        // checking the committed project alone cannot catch a linked rebuild.
+        if case.family == "2d" && case.name == "contour-tabs" {
+            let w = world::new_world();
+            let notes = project::load_noted(&w, &proj)
+                .unwrap_or_else(|e| panic!("{label}: load rebuilt project: {e}"));
+            assert!(notes.is_empty(), "{label}: rebuilt project load notes: {notes:?}");
+            assert_contour_tabs_embeds_model(case, &w);
+        }
 
         let want_nc = fs::read(case.dir.join(format!("{}.nc", case.name)))
             .unwrap_or_else(|e| panic!("{label}: read committed .nc: {e}"));
@@ -306,4 +334,46 @@ fn turning_cone_thread_case_posts_the_taper_and_the_thread() {
     // The neck and the part-off: the 3 mm blade, to X8 and to the axis.
     assert!(section(&program, "Neck").contains(&"G01 X8. Z60. F0.02"), "the neck is 8 mm at Z60");
     assert!(section(&program, "Part off").iter().any(|l| l.starts_with("G01 X0. Z13.5")), "the part-off reaches the axis");
+}
+
+/// The G word and the Z word of each motion block of a posted program.
+fn motion_blocks(nc: &str) -> Vec<(&str, f64)> {
+    nc.lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let g = words.next().filter(|w| matches!(*w, "G00" | "G01" | "G02" | "G03"))?;
+            let z = words.find_map(|w| w.strip_prefix('Z'))?.parse::<f64>().ok()?;
+            Some((g, z))
+        })
+        .collect()
+}
+
+/// #2859: the case 2d/contour-tabs posts what its README says. Each cut
+/// run has a lead-in arc and a linear lead-out. The levels are Z4, Z2 (the
+/// tab top) and Z0. The Z0 level lifts over each of the four tabs.
+#[test]
+fn contour_tabs_case_posts_the_lead_moves_and_the_tab_lifts() {
+    let nc_path = repo("examples/catalog/2d/contour-tabs/contour-tabs.nc");
+    let nc = fs::read_to_string(&nc_path)
+        .unwrap_or_else(|e| panic!("case 2d/contour-tabs must hold {}: {e}", nc_path.display()));
+    let blocks = motion_blocks(&nc);
+
+    // The outline is cut clockwise (G02 corners). Only a lead-in arc turns
+    // the other way (G03).
+    let lead_ins = |z: f64| blocks.iter().filter(|b| b.0 == "G03" && b.1 == z).count();
+    assert_eq!(lead_ins(4.0), 1, "one lead-in arc on the whole ring at Z4");
+    assert_eq!(lead_ins(2.0), 1, "one lead-in arc on the whole ring at Z2, the tab top");
+    assert_eq!(lead_ins(0.0), 4, "one lead-in arc for each run between two tabs at Z0");
+
+    // A lift goes from a cut level to a height above the stock top (Z6).
+    // The block before it is the end of the linear lead-out.
+    let lifts: Vec<usize> =
+        (1..blocks.len()).filter(|&i| blocks[i - 1].1 <= 4.0 && blocks[i].1 > 6.0).collect();
+    assert_eq!(lifts.len(), 6, "two whole rings and four tab runs each end with a lift");
+    for &i in &lifts {
+        assert_eq!(blocks[i - 1].0, "G01", "the block before lift {i} is the linear lead-out");
+    }
+    let tab_lifts = lifts.iter().filter(|&&i| blocks[i - 1].1 == 0.0).count();
+    assert_eq!(tab_lifts, 4, "the Z0 level lifts four times: one lift for each tab");
+    assert!(!blocks.iter().any(|b| b.1 < 0.0), "no block goes below the stock bottom (Z0)");
 }
