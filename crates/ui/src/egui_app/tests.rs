@@ -4383,7 +4383,11 @@ fn sim_readout_names_the_op_and_the_verb() {
     assert_eq!(sc.ops.len(), 1);
     let s = super::shell::sim_readout(&sc, 0.0, Unit::Millimeters);
     assert!(s.starts_with("Contour1 · STANDBY · "), "before the first move: {s}");
-    let r = super::shell::sim_readout(&sc, sc.cum[0] * 0.5, Unit::Millimeters);
+    // #2901: the opening rapid starts over its entry; a zero-length
+    // opening takes no time, so probe the first rapid that does.
+    let ri = sc.segs.iter().position(|g| g.secs > 0.0).expect("a timed segment");
+    let r0 = if ri == 0 { 0.0 } else { sc.cum[ri - 1] };
+    let r = super::shell::sim_readout(&sc, r0 + (sc.cum[ri] - r0) * 0.5, Unit::Millimeters);
     assert!(r.starts_with("Contour1 · RAPID · "), "the contour opens on a rapid: {r}");
     let e = super::shell::sim_readout(&sc, sc.total, Unit::Millimeters);
     assert!(e.starts_with("Contour1 · END · "), "the finish says so: {e}");
