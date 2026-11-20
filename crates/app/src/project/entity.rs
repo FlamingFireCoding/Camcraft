@@ -613,8 +613,8 @@ pub struct EntityDto {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fidelity_unknown: bool,
     /// #1610: the hole of a model imported from a STEP closed shell that
-    /// meshes open (`schema::MeshOpen`), written only on a model beside
-    /// `fidelity_unknown`. An old reader dropping it keeps the mark and
+    /// meshes open (`schema::MeshOpen`), written only beside
+    /// `fidelity_unknown` on such a model or (#1700) a stock copied from it. An old reader dropping it keeps the mark and
     /// still refuses every operation on the model; only the words go.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_open: Option<String>,
