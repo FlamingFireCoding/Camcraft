@@ -1,10 +1,10 @@
 //! #2987: the first traverse of a 3+2 operation against the machine
-//! table. When the head tilts, the clearance plane drops toward the
-//! table on its low side; the table's top face over the stated travel
-//! must stay under it, or the post is held by name. The table counts only
-//! where the move along the tool axis can carry the tool under its top: a
-//! horizontal axis (B 90) never reads it, and an axis that points down
-//! toward the table gets a note. When only the work
+//! table. The tool starts at an unknown X/Y at the tool-change height
+//! (the Z travel top; decision premise (b)). When the head tilts, the
+//! move along the tool axis to the clearance plane goes down and out; if
+//! it can end under the table top, the post is held by name. A
+//! horizontal axis (B 90) keeps the Z and never reads the table, and an
+//! axis that points down toward the table gets a note. When only the work
 //! tilts (a rotary that turns the part), the table stays under the work
 //! and is not read. A head-tilt machine that states no travel gives a
 //! note that names the table as not judged - never a silent pass.
@@ -41,9 +41,10 @@ enum Rig {
     HeadNoTravel,
 }
 
-/// A small 5-axis mill: X and Y travel +-100 mm, Z travel 0..300 mm, so
-/// the table top is Z 0 - the bottom of the block.
-fn machine_text(rig: Rig) -> String {
+/// A small 5-axis mill: X travel +-`x_half` mm, Y travel +-100 mm, Z
+/// travel 0..300 mm, so the table top is Z 0 - the bottom of the block -
+/// and the tool-change height is Z 300.
+fn machine_text(rig: Rig, x_half: f64) -> String {
     let t = |lo: f64, hi: f64| match rig {
         Rig::HeadNoTravel => String::new(),
         _ => format!(r#", "travel": {{ "min": {lo}, "max": {hi} }}"#),
@@ -77,7 +78,7 @@ fn machine_text(rig: Rig) -> String {
   }} }} }},
   "tooling": {{ "number_of_tools": 24 }}
 }}"#,
-        x = t(-100.0, 100.0),
+        x = t(-x_half, x_half),
         y = t(-100.0, 100.0),
         z = t(0.0, 300.0),
     )
@@ -86,9 +87,14 @@ fn machine_text(rig: Rig) -> String {
 /// A 60 x 60 x 20 block (x -30..30, z 0..20) on `rig`, a B `b_deg` face
 /// with its clearance plane at world `clear` over the tilt origin.
 fn generate(rig: Rig, b_deg: f64, clear: f64) -> (World, OpStatus, Vec<Warning>, Vec<String>) {
+    generate_on(rig, 100.0, b_deg, clear)
+}
+
+/// [`generate`] on a machine with X travel +-`x_half` mm.
+fn generate_on(rig: Rig, x_half: f64, b_deg: f64, clear: f64) -> (World, OpStatus, Vec<Warning>, Vec<String>) {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
-    let m = parse_mch(&machine_text(rig)).unwrap_or_else(|e| panic!("test machine: {e}"));
+    let m = parse_mch(&machine_text(rig, x_half)).unwrap_or_else(|e| panic!("test machine: {e}"));
     h.execute(&world, LoadMachine::new(&world, "test-5axis.mch".into(), Some(m)).expect("machine"));
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 60.0, dy: 60.0, dz: 20.0 }, Location::default()).expect("stock"));
     let t = catalog().into_iter().find(|(n, _)| *n == "EM-0400-2FL").map(|(_, t)| t).expect("catalog");
@@ -122,44 +128,68 @@ fn low(warns: &[Warning]) -> Option<(f64, f64, bool)> {
     })
 }
 
-/// The table's top corner (x 100, z 0) along the B 30 deg axis, over the
-/// tilt origin: 100 sin 30 - 20 cos 30 = 32.68 mm. The block's own high
-/// corner (x 30, z 20) stands only 30 sin 30 = 15 mm there.
-fn table_top() -> f64 {
-    let b = B_DEG.to_radians();
-    100.0 * b.sin() - ORIGIN_Z * b.cos()
+/// The wide machine's X travel half-width, mm.
+const WIDE: f64 = 400.0;
+
+/// The lowest plane over the tilt origin, along the B `b_deg` axis, that
+/// a move from every tool-change start (x +-`x_half`, Z 300) reaches over
+/// the table top (Z 0): the worst start (x `x_half`, Z 300) reads
+/// `x_half` sin B + 280 cos B, and the move ends at Z 300 - (that - h)
+/// cos B. B 30: 100 mm wide gives -53.9 (under the block's 15: never
+/// the higher top); 400 mm wide gives 96.08.
+fn table_clear(x_half: f64, b_deg: f64) -> f64 {
+    let b = b_deg.to_radians();
+    x_half * b.sin() + (300.0 - ORIGIN_Z) * b.cos() - 300.0 / b.cos()
 }
 
 #[test]
-fn a_head_tilt_plane_under_the_table_inside_the_travel_is_refused_by_name() {
-    // Z 40: 20 mm over the origin - over the block (15), under the table (32.68).
-    let (world, status, warns, _) = generate(Rig::Head, B_DEG, 40.0);
-    assert_eq!(status, OpStatus::Ok);
-    let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict: {warns:?}"));
-    assert!((h_mm - 20.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
-    assert!((top_mm - table_top()).abs() < 1e-6, "the table top along the axis: {top_mm}, want {}", table_top());
-    assert!(fixture, "the table is steel, not stock");
-    let err = posting::post_setup_unwritten(&world).expect_err("the program must not post");
-    for text in ["Face1", "first rapid (move 0)", &format!("raise the clearance height above Z{:.3}", table_top())] {
-        assert!(err.contains(text), "{text}: {err}");
-    }
-}
-
-#[test]
-fn a_head_tilt_plane_over_the_table_top_face_passes() {
-    // Z 60: 40 mm over the origin - over the table's top face (32.68).
-    // Its slab, 1e6 mm deep, reads lower along this axis and never counts.
-    let (_, status, warns, notes) = generate(Rig::Head, B_DEG, 60.0);
+fn a_head_tilt_plane_that_the_tool_change_height_clears_passes() {
+    // Z 40: 20 mm over the origin - over the block (15). From Z 300 the
+    // move along the B 30 axis ends at Z 64 or higher (x +-100): over the
+    // table top. Premise (b) passes the plane that #2987 first refused.
+    assert!(table_clear(100.0, B_DEG) < 15.0);
+    let (_, status, warns, notes) = generate(Rig::Head, B_DEG, 40.0);
     assert_eq!(status, OpStatus::Ok);
     assert_eq!(low(&warns), None, "{warns:?}");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
 }
 
 #[test]
+fn a_head_tilt_plane_that_a_move_from_the_tool_change_height_takes_under_the_table_is_refused_by_name() {
+    // X +-400: from (400, y, 300) the move along the B 30 axis to a plane
+    // 20 mm over the origin ends at Z 300 - (442.49 - 20) cos 30 = -48.6,
+    // under the table top. Refused by name, with the height to clear.
+    let want = table_clear(WIDE, B_DEG);
+    assert!((want - 96.077).abs() < 1e-3, "{want}");
+    let (world, status, warns, _) = generate_on(Rig::Head, WIDE, B_DEG, 40.0);
+    assert_eq!(status, OpStatus::Ok);
+    let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict: {warns:?}"));
+    assert!((h_mm - 20.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
+    assert!((top_mm - want).abs() < 1e-6, "the height to clear along the axis: {top_mm}, want {want}");
+    assert!(fixture, "the table is steel, not stock");
+    let err = posting::post_setup_unwritten(&world).expect_err("the program must not post");
+    for text in ["Face1", "first rapid (move 0)", &format!("raise the clearance height above Z{want:.3}")] {
+        assert!(err.contains(text), "{text}: {err}");
+    }
+}
+
+#[test]
+fn a_head_tilt_plane_over_the_height_to_clear_passes() {
+    // X +-400, a plane 100 mm over the origin: over the 96.08 to clear.
+    let (_, status, warns, notes) = generate_on(Rig::Head, WIDE, B_DEG, ORIGIN_Z + 100.0);
+    assert_eq!(status, OpStatus::Ok);
+    assert_eq!(low(&warns), None, "{warns:?}");
+    assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
+    // The narrow machine at Z 60 passes too (its slab, 1e6 mm deep, never counts).
+    let (_, _, warns, _) = generate(Rig::Head, B_DEG, 60.0);
+    assert_eq!(low(&warns), None, "{warns:?}");
+}
+
+#[test]
 fn a_work_turning_rotary_keeps_the_table_under_the_work() {
-    // The same plane as the refused head-tilt case: the work tilts, the
-    // table stays under it, and only the block's top (15) counts.
-    let (_, status, warns, notes) = generate(Rig::Work, B_DEG, 40.0);
+    // The same plane and machine as the refused head-tilt case: the work
+    // tilts, the table stays under it, and only the block's top (15) counts.
+    let (_, status, warns, notes) = generate_on(Rig::Work, WIDE, B_DEG, 40.0);
     assert_eq!(status, OpStatus::Ok);
     assert_eq!(low(&warns), None, "{warns:?}");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
@@ -178,43 +208,44 @@ fn a_head_tilt_machine_with_no_travel_names_the_table_unjudged() {
 #[test]
 fn a_head_tilt_past_90_names_the_table_unjudged() {
     // B 120: the axis (sin 120, 0, cos 120) points down toward the table,
-    // so a HIGHER plane along it stands LOWER in the world. The table top
-    // face reads -100 sin 120 + 20 cos 60 = -76.6 at its low corner; a
-    // plane at 90 or 100 mm over the origin is far past it, and the move
-    // along the axis to the plane can go under the table top. The verdict
-    // can only say "raise", which is wrong here, so the note names the
-    // table as not judged (and the slab's underside, 5e5 mm along the
-    // axis, is never read as a top).
-    for over in [90.0, 100.0] {
-        let (_, _, warns, notes) = generate(Rig::Head, 120.0, ORIGIN_Z + over);
-        assert_eq!(low(&warns), None, "no table verdict past 90 deg: {warns:?}");
-        let note = notes.iter().find(|n| n.contains("machine table is not judged")).unwrap_or_else(|| panic!("no note at {over}: {notes:?}"));
-        assert!(note.contains("points down toward the table"), "{note}");
+    // so a HIGHER plane along it stands LOWER in the world, and the
+    // verdict can only say "raise", which is wrong here. X +-400: the
+    // worst start (-400, y, 300) reads -346.41 - 140 = -486.41 along the
+    // axis; the move from it to the plane drops (h + 486.41) * 0.5 mm,
+    // which reaches the 300 mm stroke at h = 113.59. At 100 the move
+    // stays over the table: no note. At 150 it can go under: the note
+    // names the table as not judged, and no verdict is given.
+    let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + 100.0);
+    assert_eq!(low(&warns), None, "{warns:?}");
+    assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
+    let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + 150.0);
+    assert_eq!(low(&warns), None, "no table verdict past 90 deg: {warns:?}");
+    let note = notes.iter().find(|n| n.contains("machine table is not judged")).unwrap_or_else(|| panic!("no note: {notes:?}"));
+    for text in ["points down toward the table", "from the tool-change height"] {
+        assert!(note.contains(text), "{text}: {note}");
     }
 }
 
 #[test]
 fn a_horizontal_head_axis_does_not_read_the_far_table_edge() {
-    // B 90: the axis is world +X. The table's far edge (x 100) reads 100
+    // B 90: the axis is world +X. The table's far edge (x 400) reads 400
     // along it, but a move along a horizontal axis keeps the world Z, so
     // the tool never goes under the table top. A plane 40 mm over the
     // origin clears the block (30 along X) and passes, with no note.
-    let (_, _, warns, notes) = generate(Rig::Head, 90.0, ORIGIN_Z + 40.0);
+    let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 90.0, ORIGIN_Z + 40.0);
     assert_eq!(low(&warns), None, "the table's far edge was read along a horizontal axis: {warns:?}");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
 }
 
 #[test]
-fn a_near_horizontal_head_axis_still_reads_the_table() {
-    // B 80: the axis has a small up component (cos 80 = 0.17). The table
-    // top face reads 100 sin 80 - 20 cos 80 = 95.0 along it. From a start
-    // on the table top at x 100, the move along the axis to a plane 40 mm
-    // over the origin drops the tool (95.0 - 40) cos 80 = 9.6 mm under
-    // the table top: refused by name, with the height to clear.
-    let b = 80f64.to_radians();
-    let top = 100.0 * b.sin() - ORIGIN_Z * b.cos();
-    let (_, _, warns, _) = generate(Rig::Head, 80.0, ORIGIN_Z + 40.0);
-    let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no verdict under the table top: {warns:?}"));
-    assert!((h_mm - 40.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
-    assert!(fixture && (top_mm - top).abs() < 1e-6, "the table's top face along the axis: {top_mm}, want {top}");
+fn a_near_horizontal_head_axis_passes_from_the_tool_change_height() {
+    // B 80: the axis has a small up component (cos 80 = 0.17). From Z 300
+    // the move along it to a plane 40 mm over the origin drops at most
+    // (400 sin 80 + 280 cos 80 - 40) cos 80 = 69.9 mm: it ends near Z 230,
+    // far over the table top. A near-horizontal axis needs a 1/cos B
+    // longer move to reach the table, so the table does not count.
+    assert!(table_clear(WIDE, 80.0) < 0.0);
+    let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 80.0, ORIGIN_Z + 40.0);
+    assert_eq!(low(&warns), None, "{warns:?}");
+    assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
 }

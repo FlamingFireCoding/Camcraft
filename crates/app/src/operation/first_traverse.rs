@@ -20,6 +20,10 @@ pub(super) struct Over<'a> {
     pub fixtures: &'a [FixtureBox],
     pub names: &'a [String],
     pub rotaries: Option<&'a [AxisLimits]>,
+    /// The Z stroke of the mounted machine, mm: the tool-change height
+    /// over the table top (`None`: unstated, read as 0 - a start on the
+    /// table top, the stricter premise).
+    pub z_stroke: Option<f64>,
 }
 
 /// The rotary inventory of `job.machine_rotaries` as [`Over::rotaries`].
@@ -70,7 +74,8 @@ fn table_top_face(b: &FixtureBox) -> FixtureBox {
 /// How the machine table meets a 3+2 plane at local height `start_h`.
 enum TableRead {
     /// The move along the tool axis to the plane can carry the tool under
-    /// the table top: the table's top face is steel the plane must clear.
+    /// the table top: a point on the tool axis at the lowest plane height
+    /// that clears it (`box_top` reads that height) is steel to clear.
     Counts(FixtureBox),
     /// No move along the tool axis to the plane goes under the table top.
     Clear,
@@ -80,24 +85,37 @@ enum TableRead {
     Unjudged,
 }
 
-/// The table on a 3+2 plane (#2987). The control does not know where the
-/// tool stands, so the worst start is on the table top face itself. The
-/// move along the tool axis from there to the plane changes the world Z
-/// by `(start_h - h) * axis_z` (`h`: that start's local height). The
-/// table counts only when that move can drop the tool more than `Z_TOL`
-/// under the top. Then the in-plane traverse runs between two points
-/// over the table top (a convex half-space), so it cannot go under it.
-/// A horizontal axis (B 90) never changes the Z: the table never counts,
-/// although its far edge reads high along that axis.
-fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64) -> TableRead {
+/// The table on a 3+2 plane (#2987), decision premise (b): the control
+/// does not know the tool's X/Y, but the tool starts at the tool-change
+/// height, the top of the Z travel (`stroke` over the table top) - the
+/// premise of the upright law too. The worst start is any point of the
+/// travel footprint at that height. The move along the tool axis from a
+/// start at local height `h` to the plane changes the world Z by
+/// `(start_h - h) * axis_z`; the table counts only when that move can end
+/// more than `Z_TOL` under the table top. Then the in-plane traverse
+/// runs between two points over the table top (a convex half-space), so
+/// it cannot go under it. A horizontal axis (B 90) never changes the Z.
+/// NOT covered: a program that starts with the tool low near the table
+/// (after a manual jog, for example).
+fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64, stroke: f64) -> TableRead {
     let face = table_top_face(b);
+    let z_top = face.max.z + stroke;
+    let starts = FixtureBox { min: Point3::new(face.min.x, face.min.y, z_top), max: Point3::new(face.max.x, face.max.y, z_top) };
     let up = f.axis[2];
     if up > 0.0 {
-        let high = verify::box_top(&face, |p| f.z_local(p));
-        if (high - start_h) * up > Z_TOL { TableRead::Counts(face) } else { TableRead::Clear }
+        let high = verify::box_top(&starts, |p| f.z_local(p));
+        if (high - start_h) * up - stroke <= Z_TOL {
+            return TableRead::Clear;
+        }
+        // The lowest plane that a move from every start reaches over the
+        // table top, as a point on the tool axis through the origin.
+        let clear = high - stroke / up;
+        let (o, a) = (f.origin, f.axis);
+        let p = Point3::new(o.x + clear * a[0], o.y + clear * a[1], o.z + clear * a[2]);
+        TableRead::Counts(FixtureBox { min: p, max: p })
     } else {
-        let low = -verify::box_top(&face, |p| -f.z_local(p));
-        if (start_h - low) * -up > Z_TOL { TableRead::Unjudged } else { TableRead::Clear }
+        let low = -verify::box_top(&starts, |p| -f.z_local(p));
+        if (start_h - low) * -up - stroke > Z_TOL { TableRead::Unjudged } else { TableRead::Clear }
     }
 }
 
@@ -108,8 +126,8 @@ fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64) -> TableRead {
 /// A 3+2 plane reads the tagged fixtures along its tool axis (they ride
 /// the table with the part). It reads the machine table's top face over
 /// the stated travel when the head tilts (#2987), only where the move
-/// along the tool axis can carry the tool under the table top
-/// (`table_read`). When only the work tilts, the table stays
+/// along the tool axis from the tool-change height can carry the tool
+/// under the table top (`table_read`). When only the work tilts, the table stays
 /// under the work (`work_tilts`). A mounted machine that states no travel
 /// gives no table box, and the note names that. Upright, the table's top
 /// is under the stock and never the higher top.
@@ -123,16 +141,17 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, b
             let work_turns = over.rotaries.is_some_and(work_tilts);
             let is_table = |i: usize| over.names.get(i).is_some_and(|n| n == MACHINE_TABLE);
             let start_h = path.start().map(|p| p.z).filter(|z| z.is_finite());
+            let stroke = over.z_stroke.filter(|s| s.is_finite() && *s >= 0.0).unwrap_or(0.0);
             let mut steel: Vec<FixtureBox> = Vec::with_capacity(over.fixtures.len());
             for (i, b) in over.fixtures.iter().enumerate() {
                 if !is_table(i) {
                     steel.push(*b);
                     continue;
                 }
-                match start_h.filter(|_| !work_turns).map(|h| table_read(b, f, h)) {
+                match start_h.filter(|_| !work_turns).map(|h| table_read(b, f, h, stroke)) {
                     Some(TableRead::Counts(face)) => steel.push(face),
                     Some(TableRead::Unjudged) => {
-                        note = Some(format!("{TABLE_UNJUDGED_NOTE}: the tool axis points down toward the table, so the move along it to the clearance plane can go under the table top"));
+                        note = Some(format!("{TABLE_UNJUDGED_NOTE}: the tool axis points down toward the table, so the move along it from the tool-change height (the Z travel top) to the clearance plane can go under the table top"));
                     }
                     Some(TableRead::Clear) | None => {}
                 }
@@ -158,23 +177,31 @@ mod tests {
     use super::*;
 
     /// The `multiaxis/indexed` catalog case's Tilted pocket (#2987): A30
-    /// B30 on `tilthead.mch` (X +-600, Y +-500, Z -500..500, so the table
-    /// top is Z -500), tool axis (sqrt3/4, -0.5, 0.75), plane at Z52.120
-    /// along it. The top face reads 600 sqrt3/4 + 500/2 - 500 * 0.75 =
-    /// 134.808 at the X+ Y- corner. From a start on the table top there,
-    /// the move along the axis to the plane drops the tool (134.808 -
-    /// 52.120) * 0.75 = 62.0 mm under the table top: the table counts.
+    /// B30 on `tilthead.mch` (X +-600, Y +-500, Z -500..500: the table
+    /// top is Z -500, the tool-change height Z 500, the stroke 1000),
+    /// tool axis (sqrt3/4, -0.5, 0.75), plane at 52.120 along it. The
+    /// worst start, (600, -500, 500), reads 600 sqrt3/4 + 250 + 375 =
+    /// 884.808; the move from it to the plane ends at Z 500 - (884.808 -
+    /// 52.120) * 0.75 = -124.5, 375.5 mm over the table top: Clear.
+    /// A plane under 884.808 - 1000 / 0.75 = -448.526 would end under it.
     #[test]
-    fn the_catalog_tilted_pocket_reads_the_table_from_a_start_on_its_top() {
+    fn the_catalog_tilted_pocket_clears_the_table_from_the_tool_change_height() {
         let axis = [3f64.sqrt() / 4.0, -0.5, 0.75];
         let f = TiltedFrame { origin: Point3::new(0.0, 0.0, 0.0), u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], axis };
         let table = FixtureBox { min: Point3::new(-600.0, -500.0, -1.0e6), max: Point3::new(600.0, 500.0, -500.0) };
-        let high = verify::box_top(&table_top_face(&table), |p| f.z_local(p));
-        assert!((high - 134.808).abs() < 1e-3, "the top face along the axis: {high}");
-        assert!(((high - 52.12) * axis[2] - 62.016).abs() < 1e-2, "the drop under the table top");
-        assert!(matches!(table_read(&table, &f, 52.12), TableRead::Counts(_)));
-        // Over the top face's highest reading, no move along the axis
-        // reaches under the table top.
-        assert!(matches!(table_read(&table, &f, 134.81), TableRead::Clear));
+        assert!(matches!(table_read(&table, &f, 52.12, 1000.0), TableRead::Clear));
+        let clear = 600.0 * axis[0] + 250.0 + 375.0 - 1000.0 / 0.75;
+        assert!((clear + 448.526).abs() < 1e-3, "{clear}");
+        assert!(matches!(table_read(&table, &f, clear + 0.01, 1000.0), TableRead::Clear));
+        match table_read(&table, &f, clear - 0.01, 1000.0) {
+            TableRead::Counts(b) => {
+                let top = verify::box_top(&b, |p| f.z_local(p));
+                assert!((top - clear).abs() < 1e-6, "the height to clear along the axis: {top}, want {clear}");
+            }
+            _ => panic!("a plane under the clear height must count the table"),
+        }
+        // With no stroke (a start on the table top, the stricter reading)
+        // the same plane at 52.120 counts: the move ends 62.0 mm under it.
+        assert!(matches!(table_read(&table, &f, 52.12, 0.0), TableRead::Counts(_)));
     }
 }
