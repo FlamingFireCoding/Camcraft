@@ -188,6 +188,18 @@ fn work_above_the_upper_guide_blocks_the_post() {
     assert!(err.contains("Punch1: work top Z12.000 is above the upper guide Z5.000"), "{err}");
 }
 
+/// #2923: the bottom of the work must fit above the lower guide too. A
+/// vertical cut, so no U/V law can refuse first: the words are the span's own.
+#[test]
+fn work_below_the_lower_guide_blocks_the_post() {
+    let high = FIXTURE.replace("\"lower_guide_z\": -5.0", "\"lower_guide_z\": 1.0");
+    let (world, made) = punch(&high, 0.0);
+    made.expect("the vertical punch generates");
+    // `post` asserts that no NC file is written for a refused program.
+    let err = post(&world, "lower-guide").expect_err("the lower guide is inside the work");
+    assert!(err.contains("Punch1: work bottom Z0.000 is below the lower guide Z1.000, outside the guides' reach"), "{err}");
+}
+
 #[test]
 fn guide_limits_use_the_setup_origin_and_include_stock_above_the_part() {
     use camcraft_app::commands::{SetStock, SetWcsOrigin};
