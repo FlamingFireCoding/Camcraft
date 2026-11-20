@@ -276,6 +276,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #2901: the first traverse under a top - its own fix (raise
             // the clearance height), clear of the avoid range (216..=220).
             Warning::FirstTraverseLow { .. } => (221, false),
+            // #3081: a down-pointing tool axis under the table top - the
+            // opposite fix (lower the clearance plane), so its own line.
+            Warning::FirstTraverseUnderTable { .. } => (222, false),
             Warning::NonFinite { .. } => (4, false),
             Warning::Envelope { .. } => (5, false),
             // Fixture hits group by the part that hit (M3.2 stage B): a
@@ -313,6 +316,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::SweepHit { at, .. }
             | Warning::RapidInStock { at }
             | Warning::FirstTraverseLow { at, .. }
+            | Warning::FirstTraverseUnderTable { at, .. }
             | Warning::FixtureHit { at, .. }
             | Warning::AvoidHit { at, .. }
             | Warning::NonFinite { at }
