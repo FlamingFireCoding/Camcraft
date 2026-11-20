@@ -224,6 +224,7 @@ mod rotary_law;
 pub(crate) mod spindle_law;
 pub use spindle_law::{spindle_reading, SpindleReading, SPINDLE_TOL};
 mod rotary_gate;
+mod rotary_picks;
 mod air_law;
 // #1595: the depth law an Engrave or Trace on the part carries itself.
 pub mod mark_law;

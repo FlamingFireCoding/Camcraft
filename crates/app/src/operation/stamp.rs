@@ -91,6 +91,13 @@ pub fn current_stamp(
     if let OpParams::Deburr { exclude_edges, .. } = params {
         super::deburr_picks::stamp_inputs(world, setup, src, exclude_edges, &mut h)?;
     }
+    // #2848: a rotary op's picks named the whole model before. A path
+    // cached under that reading is stale until the op is generated again.
+    if matches!(src, SrcRef::Selection(_))
+        && matches!(params, OpParams::RotaryContour { .. } | OpParams::RotaryParallel { .. } | OpParams::RotaryOffset { .. })
+    {
+        h.write(b"rotary-picked-faces-v1");
+    }
     // #326: the setup's part alignment is a moved input for every op of
     // the setup (the parts it machines, verifies against or measures
     // heights from). Written only when one is set, so no stamp of an
