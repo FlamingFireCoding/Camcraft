@@ -239,9 +239,13 @@ pub fn thread_planned_in(
     let c0 = (v_lo + v_hi) * 0.5;
     // The lattice whose footprints reach the window: every center
     // whose band (center +- half) overlaps it. The valley itself is
-    // such a center, so the run never comes up empty.
+    // such a center, so the run never comes up empty. The top of the
+    // window is not clamped to the bar's end face (#2879): passes run
+    // toward the chuck and may start in free air in front of the part
+    // so spindle and feed synchronise before engagement.
+    let s_top = f.station_of(p.top_z);
     let k_lo = ((s_lo - half - c0) / p.pitch).ceil();
-    let k_hi = ((s_hi + half - c0) / p.pitch).floor();
+    let k_hi = ((s_top + half - c0) / p.pitch).floor();
     if k_hi - k_lo > blade::MAX_RUNGS {
         return Err(GenError::Invalid(format!(
             "the thread would run more than {:.0} turns - the pitch is far too fine for \
