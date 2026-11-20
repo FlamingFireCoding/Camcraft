@@ -143,6 +143,11 @@ pub(crate) fn shell_layout(
     }
     state.locate_form_drawn = false;
     egui::CentralPanel::default().show(ui, |ui| {
+        // #2384: the start page stands in for the dock while it is up.
+        if super::home::is_open(state) {
+            super::home::page(ui, state, &pal);
+            return;
+        }
         DockArea::new(&mut *dock)
             .style(DockStyle::from_egui(ui.style().as_ref()))
             // No per-area close-all: it is the X that took whole panes

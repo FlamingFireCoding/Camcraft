@@ -193,6 +193,8 @@ mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
 mod recent_door;
+// #2384: the Home button and the recent projects start page.
+mod home_page;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
 // #1450: a model file dropped on the window.

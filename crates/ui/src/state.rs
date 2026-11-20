@@ -1814,6 +1814,9 @@ pub struct State {
     /// The Theme door's open flag (#441): the same dropdown law as
     /// `ribbon_view_open` - a frame fact, one door open at a time.
     pub ribbon_theme_open: bool,
+    /// #2384: the start page is up, opened over this `doc_version`; a
+    /// changed document closes it (`egui_app::home::is_open`). View state.
+    pub home_page: Option<u64>,
     /// The open recent-files drop-down (#662) under the Open (projects)
     /// or Model (models) button - the same door law, one open at a time.
     pub ribbon_recent_open: Option<camcraft_app::recent::RecentKind>,
@@ -2286,6 +2289,7 @@ impl State {
             ribbon_mode_open: false,
             ribbon_view_open: false,
             ribbon_theme_open: false,
+            home_page: None,
             ribbon_recent_open: None,
             recent: camcraft_app::recent::RecentFiles::default(),
             recent_store: None,
