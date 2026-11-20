@@ -12,7 +12,7 @@ CamCraft writes one native ISO geometry file per work and one SBL and SBR for th
 
 ### Group independently captured punches
 
-Use a single setup with 20 mm stock and two or three complete modeled punches. Create a **Wire Contour** for each solid, select **Punch** and the same wire tool, and enter its own threading hole. Confirm capture separately for each punch. Leave a clear band along X or Y between the complete cutting areas of every pair. The check includes each solid, threading hole, lead, and the furthest native rough corner. A shared corridor or another model prevents export.
+Use a single setup with 20 mm stock and two to nine complete modeled punches. Create a **Wire Contour** for each solid, select **Punch** and the same wire tool, and enter its own threading hole. Confirm capture separately for each punch. Leave a clear band along X or Y between the complete cutting areas of every pair. The check includes each solid, threading hole, lead, and the furthest native rough corner. A shared corridor or another model prevents export.
 
 Generate all operations. Select a new job name of up to seven letters and digits. The post adds one digit to the name for each ISO resource. The work names `CUT1`, `CUT2` and so on follow program order. They share the stock origin. In the control preview, check each threading location and the profile and separation sequence. The control can complete the profile passes on every punch before it starts their separation cuts.
 
@@ -24,10 +24,11 @@ cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/punch-pair.
 
 The left rectangular punch starts at X−30 Y0. The right five-sided punch starts at X1 Y0. Copy all four files in the directory together.
 
-The three-punch example imports three independently placed rectangles and creates a five-file job.
+The three-punch example creates a five-file job. The grid example places nine independent punches on a 32 mm pitch and creates eleven files in the NINE20 directory.
 
 ```sh
 cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/punch-trio.camscript
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/punch-grid.camscript
 ```
 
 ### Select a die opening
