@@ -5,8 +5,16 @@ use std::path::{Path, PathBuf};
 mod contour;
 mod jescript;
 
+/// The retained side of a closed contour. The control applies the wire offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgieSide {
+    Punch,
+    Die,
+}
+
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
 pub struct AgieJob {
+    pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
     pub start: [f64; 2],
     pub stock_min: [f64; 3],
@@ -39,7 +47,7 @@ pub fn export(
     separation_length_mm: f64,
 ) -> Result<Vec<PathBuf>, String> {
     if separation_length_mm != 1.0 {
-        return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed punch. A zero or unspecified separation cannot pass the control formal check".into());
+        return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
     }
     if !valid_name(program) {
         return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());

@@ -3,6 +3,7 @@ use super::*;
 
 fn punch() -> AgieJob {
     AgieJob {
+        side: AgieSide::Punch,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
         start: [-30., 0.],
         stock_min: [-40., -30., -20.],
@@ -219,4 +220,17 @@ fn a_gentle_but_narrow_notch_cannot_hold_the_rough_corner_joins() {
         .splice(3..3, [[0.4, 10.], [0., 9.98], [-0.4, 10.]]);
     let why = contour::prepare(&job).unwrap_err();
     assert!(why.contains("segment"), "{why}");
+}
+
+#[test]
+fn a_die_requires_the_qualified_thickness_and_reachable_inside_corners() {
+    let mut job = punch();
+    job.side = AgieSide::Die;
+    job.start = [0., 0.];
+    job.stock_min[2] = -40.;
+    assert!(contour::prepare(&job).unwrap_err().contains("20 mm"));
+    job.stock_min[2] = -20.;
+    // The requested opening has square corners. An inward QN2 rough pass
+    // cannot reach these corners to the 0.002 mm Wire Contour tolerance.
+    assert!(contour::prepare(&job).unwrap_err().contains("0.002 mm"));
 }

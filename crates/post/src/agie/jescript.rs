@@ -55,7 +55,11 @@ pub(super) fn piece(job: &AgieJob, name: &str, separation_length_mm: f64) -> Str
         "ID_GEOMETRY",
         &quoted(format!("AGIE.USING_{name}.ISO")),
     );
-    attribute(&mut lines, "WORK", &work_context, "ID_PUNCH", "c_punch");
+    let side = match job.side {
+        super::AgieSide::Punch => "c_punch",
+        super::AgieSide::Die => "c_die",
+    };
+    attribute(&mut lines, "WORK", &work_context, "ID_PUNCH", side);
     attribute(&mut lines, "WORK", &work_context, "ID_WORKCOND", "\"2\"");
     // The control selects its own offsets and passes for the expressly selected Fine Ra0.30
     // technology. No controller technology tables or previously programmed parts are embedded.

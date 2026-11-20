@@ -1,7 +1,8 @@
-//! Collect one nominal Agie punch before the wire generator offsets it.
+//! Collect one nominal Agie contour before the wire generator offsets it.
 //! Provenance: CAMCraft's Wire Contour geometry and named controller recipe.
 
-use super::{OpParams, WireSide, job};
+use super::{FeatureSel, OpParams, SrcRef, WireSide, job};
+use crate::geo2d::Region;
 use crate::{model, posting::agie, schema::Operation, setup};
 use flecs_ecs::prelude::World;
 
@@ -9,7 +10,7 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     let OpParams::WireContour(wire) = &op.params else {
         return Err("The Agie job requires a Wire Contour".into());
     };
-    if wire.side != WireSide::Punch
+    if !matches!(wire.side, WireSide::Punch | WireSide::Die)
         || !wire.capture
         || wire.taper_deg != 0.0
         || wire.tabs.is_some()
@@ -17,14 +18,29 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
         || !wire.skims.is_empty()
         || wire.four_axis.is_some()
     {
-        return Err("Agie supports one captured vertical punch. Disable taper, four-axis, tabs, burnout and requested skims; the controller selects trim passes".into());
+        return Err("Agie supports one captured vertical punch or die opening. Disable taper, four-axis, tabs, burnout and requested skims; the controller selects trim passes".into());
     }
-    let super::SrcRef::Entity(source) = &op.src else {
-        return Err("Agie requires the complete punch model as the source; selected features and stock are unsupported".into());
+    let side = match (&wire.side, &op.src) {
+        (WireSide::Punch, SrcRef::Entity(_)) => agie::AgieSide::Punch,
+        (WireSide::Die, SrcRef::Selection(_)) => agie::AgieSide::Die,
+        _ => return Err("Agie requires the complete punch model or a selected through-opening rim on the retained die plate".into()),
     };
     let models = model::model_entities(world);
-    if !matches!(models.as_slice(), [(name, _)] if name == source) {
-        return Err("Agie requires exactly one modeled workpiece, the complete punch; additional parts or fixture models can intersect the controller path".into());
+    let [(source, _)] = models.as_slice() else {
+        return Err("Agie requires exactly one modeled workpiece; additional models can intersect the controller path".into());
+    };
+    let on_source = match &op.src {
+        SrcRef::Entity(name) => source == name,
+        SrcRef::Selection(picks) => {
+            !picks.is_empty()
+                && picks.iter().all(|pick| {
+                    pick.entity == *source && matches!(pick.feature, FeatureSel::Chain(_))
+                })
+        }
+        SrcRef::Stock => false,
+    };
+    if !on_source {
+        return Err("Agie requires the complete punch or edge chains of one through-opening in the retained die plate".into());
     }
     let start = wire
         .start
@@ -107,12 +123,61 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     }
     // Both caps of the complete source model have the exact planar outline.
     // A union of sampled slices can add rounded vertices along a sloping face.
-    let region = crate::geometry::closed_vertical_prism(&job.material.facets, lo.z, hi.z)
-        .map_err(|why| format!("Agie requires one closed vertical prism spanning the stock height: {why}"))?;
-    let [ring] = region.loops() else {
-        return Err("Agie requires exactly one closed punch boundary, without openings or additional contours".into());
+    let region = crate::geometry::closed_vertical_prism(&job.material.facets, lo.z, hi.z).map_err(
+        |why| format!("Agie requires one closed vertical prism spanning the stock height: {why}"),
+    )?;
+    let ring = match side {
+        agie::AgieSide::Punch => {
+            let [ring] = region.loops() else {
+                return Err("Agie requires exactly one closed punch boundary, without openings or additional contours".into());
+            };
+            ring
+        }
+        agie::AgieSide::Die => {
+            if region.loops().len() != 2
+                || region.loops().iter().filter(|r| r.area() > 0.0).count() != 1
+            {
+                return Err(
+                    "Agie requires one retained die plate with exactly one through-opening".into(),
+                );
+            }
+            if region
+                .loops()
+                .iter()
+                .flat_map(|r| r.points())
+                .any(|p| p.x < lo.x || p.x > hi.x || p.y < lo.y || p.y > hi.y)
+            {
+                return Err("The retained Agie die plate must fit inside the stock".into());
+            }
+            let hole = region
+                .loops()
+                .iter()
+                .find(|r| r.area() < 0.0)
+                .ok_or("Agie requires a through-opening in the retained plate")?;
+            let (loops, open, _) = job
+                .contour_sel
+                .as_ref()
+                .ok_or("Select the complete die opening rim")?
+                .as_ref()
+                .map_err(ToString::to_string)?;
+            let [picked] = loops.as_slice() else {
+                return Err("Select the edge chains of exactly one closed die opening rim".into());
+            };
+            let footprint =
+                |r: &crate::geo2d::Loop| Region::new(vec![r.clone()]).map_err(|e| e.to_string());
+            let a = footprint(hole)?;
+            let b = footprint(picked)?;
+            if !open.is_empty()
+                || !a.difference(&b).is_ok_and(|r| r.is_empty())
+                || !b.difference(&a).is_ok_and(|r| r.is_empty())
+            {
+                return Err("The selected Agie chains must match the full through-opening of the retained die plate".into());
+            }
+            hole
+        }
     };
     Ok(agie::AgieJob {
+        side,
         contour: ring.points().iter().map(|p| [p.x - ox, p.y - oy]).collect(),
         start: [start[0] - ox, start[1] - oy],
         stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],

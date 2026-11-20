@@ -1,6 +1,6 @@
 // Original CAMCraft metadata for its native Agie job writer.
 // A single-file CPS surface cannot write a multi-file controller job.
-description = "Agie native wire EDM: one vertical punch, controller compensation and QN2 technology";
+description = "Agie native wire EDM: one vertical punch or die opening, controller compensation and QN2 technology";
 vendor = "Camcraft";
 extension = "agie";
 wireEdm = true;
