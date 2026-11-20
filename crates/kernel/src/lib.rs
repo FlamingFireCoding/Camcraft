@@ -36,12 +36,15 @@ pub mod mesh_bound;
 mod mesh_bound_blossom;
 mod mesh_bound_spline;
 pub mod mesh_deviation;
+mod mesh_distance;
+pub mod mesh_weld;
 mod solidcore_blend;
 pub mod solidcore_impl;
 pub mod solidcore_import;
 pub mod solidcore_step;
 pub mod solidcore_trims;
 pub mod solidcraft;
+mod step_curve_guard;
 #[cfg(feature = "truck")]
 pub mod truck_impl;
 

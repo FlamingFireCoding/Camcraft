@@ -174,6 +174,50 @@ pub(super) fn union_section(
     Some(Ok(acc.unwrap_or_default()))
 }
 
+/// [`slice`](super::slice::slice) of one mesh whose closed solids are known
+/// (#917, `Mesh::solid_ranges`): when the whole soup meets the plane
+/// non-manifold, each solid is sliced on its own and the sections are
+/// united. This parts solids that share a wall line or a whole wall, which
+/// [`closed_solids`] must refuse because it cannot tell them apart. Fewer
+/// than two ranges, or a soup that slices plainly, is the plain call. A
+/// solid whose own enclosed volume is not positive keeps the soup's
+/// refusal (its section would read a cavity as material); a solid that will
+/// not slice on its own refuses with its own error; a range outside
+/// `facets` is an input error.
+pub fn slice_of(
+    facets: &[Triangle],
+    bodies: &[std::ops::Range<usize>],
+    z: f64,
+) -> Result<Region, SliceError> {
+    let whole = super::slice::slice(facets, z);
+    if bodies.len() < 2 || !matches!(whole, Err(SliceError::NonManifold { .. })) {
+        return whole;
+    }
+    let mut acc: Option<Region> = None;
+    for b in bodies {
+        let Some(part) = facets.get(b.clone()) else {
+            return Err(SliceError::Invalid(format!(
+                "solid range {}..{} is outside the {} facets",
+                b.start,
+                b.end,
+                facets.len()
+            )));
+        };
+        if !outward(part) {
+            return whole;
+        }
+        let r = super::slice::slice(part, z)?;
+        if r.is_empty() {
+            continue;
+        }
+        acc = Some(match acc {
+            None => r,
+            Some(a) => a.union(&r)?,
+        });
+    }
+    Ok(acc.unwrap_or_default())
+}
+
 /// [`material_above`] of several bodies that TOUCH, read as the union
 /// they stand for (M13.11): `bodies` are index ranges of `facets`, one
 /// per closed solid. Two bodies butted face to face put two coincident
