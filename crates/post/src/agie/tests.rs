@@ -262,3 +262,25 @@ fn the_open_cut_includes_air_tails_wire_and_work_origin_in_travel() {
     job.contour = vec![[210., -120.], [210., 120.]];
     assert!(cutoff::prepare(&job).err().unwrap().contains("origin"));
 }
+
+#[test]
+fn a_group_rejects_an_unqualified_height_or_reserved_geometry_alias() {
+    let temp = tempfile::tempdir().unwrap();
+    for (height, name, expected) in [
+        (-40., "PAIR", "20 mm"),
+        (-20., "LPT", "non-reserved"),
+        (-20., "ABCDEFGH", "seven"),
+    ] {
+        let mut a = punch();
+        let mut b = punch();
+        a.stock_min[2] = height;
+        b.stock_min[2] = height;
+        let dir = temp.path().join(name);
+        assert!(
+            export_works(&[a, b], &dir, name, 1.0)
+                .unwrap_err()
+                .contains(expected)
+        );
+        assert!(!dir.exists());
+    }
+}

@@ -55,25 +55,133 @@ pub fn export(
     program: &str,
     separation_length_mm: f64,
 ) -> Result<Vec<PathBuf>, String> {
-    if job.side.is_open() && separation_length_mm != 0.0 {
-        return Err("Set separationLengthMm to zero for an Agie open cutoff".into());
+    export_works(
+        std::slice::from_ref(job),
+        destination,
+        program,
+        separation_length_mm,
+    )
+}
+
+struct Work {
+    side: AgieSide,
+    geometry: String,
+    points: Vec<[f64; 2]>,
+    entry: [f64; 2],
+    exit: Option<[f64; 2]>,
+    // Bounds of the captive solid, full threading corridor, separation and swept wire.
+    min: [f64; 2],
+    max: [f64; 2],
+}
+
+impl Work {
+    fn prepare(job: &AgieJob, geometry: String, separation: f64) -> Result<Self, String> {
+        if job.side.is_open() && separation != 0.0 {
+            return Err("Set separationLengthMm to zero for an Agie open cutoff".into());
+        }
+        if !job.side.is_open() && separation != 1.0 {
+            return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
+        }
+        let (points, entry, exit, reach) = if job.side.is_open() {
+            let cut = cutoff::prepare(job)?;
+            (cut.line.to_vec(), cut.entry, Some(cut.exit), 0.0)
+        } else {
+            let (mut points, reach) = contour::prepare_with_reach(job)?;
+            let seam = *points.first().ok_or("Agie requires a closed contour")?;
+            points.push(seam);
+            (
+                points,
+                job.start.ok_or("Agie requires a start hole")?,
+                None,
+                reach,
+            )
+        };
+        // The nominal ring encloses the retained punch. The wire can also reach
+        // the longest miter, a 3 mm lead, and one wire radius. The same padded
+        // rectangle includes the complete 2 mm threading hole and its return.
+        let margin = reach + 3.0 + 0.125;
+        let min = std::array::from_fn(|axis| {
+            points.iter().fold(entry[axis], |v, p| v.min(p[axis])) - margin
+        });
+        let max = std::array::from_fn(|axis| {
+            points.iter().fold(entry[axis], |v, p| v.max(p[axis])) + margin
+        });
+        Ok(Self {
+            side: job.side,
+            geometry,
+            points,
+            entry,
+            exit,
+            min,
+            max,
+        })
     }
-    if !job.side.is_open() && separation_length_mm != 1.0 {
-        return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
-    }
+}
+
+/// Export a single work or two independently captured punches on the same 20 mm stock.
+///
+/// # Errors
+/// Refuses unsupported groups and shared cutting space before publishing the directory.
+pub fn export_works(
+    jobs: &[AgieJob],
+    destination: &Path,
+    program: &str,
+    separation: f64,
+) -> Result<Vec<PathBuf>, String> {
+    let first = jobs.first().ok_or("Agie requires an active Wire Contour")?;
     if !valid_name(program) {
         return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
-    let (points, entry, exit) = if job.side.is_open() {
-        let cut = cutoff::prepare(job)?;
-        (cut.line.to_vec(), cut.entry, Some(cut.exit))
-    } else {
-        let mut points = contour::prepare(job)?;
-        let seam = *points.first().ok_or("Agie requires a closed contour")?;
-        points.push(seam);
-        (points, job.start.ok_or("Agie requires a start hole")?, None)
-    };
-    let iso_name = format!("{program}.ISO");
+    if jobs.len() > 1 {
+        if jobs.len() != 2
+            || jobs.iter().any(|job| {
+                job.side != AgieSide::Punch
+                    || job.stock_min != first.stock_min
+                    || job.stock_max != first.stock_max
+                    || job.stock_min[2] != -20.0
+            })
+        {
+            return Err("The Agie work group requires two independent closed punches on the same 20 mm stock".into());
+        }
+        if program.len() > 7 {
+            return Err("Choose an Agie group name up to seven characters so each work has a distinct geometry filename".into());
+        }
+    }
+    let mut works = Vec::with_capacity(jobs.len());
+    for (i, job) in jobs.iter().enumerate() {
+        let geometry = if jobs.len() == 1 {
+            program.to_owned()
+        } else {
+            format!("{program}{}", i + 1)
+        };
+        if !valid_name(&geometry) {
+            return Err(
+                "Choose an Agie group name that produces non-reserved geometry filenames".into(),
+            );
+        }
+        works.push(Work::prepare(job, geometry, separation)?);
+    }
+    if let [a, b] = works.as_slice()
+        && !(0..2).any(|i| a.max[i] < b.min[i] || b.max[i] < a.min[i])
+    {
+        return Err("Agie punch groups require separate cutting areas for both retained solids, threading holes, leads and compensated cuts".into());
+    }
+    let mut files = Vec::new();
+    let mut resources = String::new();
+    for work in &works {
+        let iso_name = format!("{}.ISO", work.geometry);
+        resources.push_str(&format!("AGIE.USING_{iso_name} IMPORT {iso_name};\r\n"));
+        files.push((iso_name.clone(), iso(&iso_name, &work.points)));
+    }
+    files.push((format!("{program}.SBR"), resources));
+    files.push((
+        format!("{program}.SBL"),
+        jescript::piece(first, program, separation, &works),
+    ));
+    publish(destination, &files)
+}
+
+fn iso(iso_name: &str, points: &[[f64; 2]]) -> String {
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().enumerate() {
         let motion = if i == 0 { "G00" } else { "G01" };
@@ -85,18 +193,7 @@ pub fn export(
         ));
     }
     iso.push_str(&format!("N{:04} M02 ;\r\n", points.len() + 1));
-    let files = [
-        (iso_name, iso),
-        (
-            format!("{program}.SBR"),
-            format!("AGIE.USING_{program}.ISO IMPORT {program}.ISO;\r\n"),
-        ),
-        (
-            format!("{program}.SBL"),
-            jescript::piece(job, program, separation_length_mm, entry, exit),
-        ),
-    ];
-    publish(destination, &files)
+    iso
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -124,7 +221,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
             ));
         }
     }
-    // The staging directory and the final name share a filesystem. The rename commits all three
+    // The staging directory and the final name share a filesystem. The rename commits all
     // files together. Its no-replace mode also protects a destination created since the check.
     let stage = tempfile::Builder::new()
         .prefix(".camcraft-agie-")

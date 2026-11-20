@@ -6,7 +6,12 @@ use crate::geo2d::Region;
 use crate::{model, posting::agie, schema::Operation, setup};
 use flecs_ecs::prelude::World;
 
-pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie::AgieJob, String> {
+pub(crate) fn agie_job(
+    world: &World,
+    op: &Operation,
+    name: &str,
+    source: &str,
+) -> Result<agie::AgieJob, String> {
     let OpParams::WireContour(wire) = &op.params else {
         return Err("The Agie job requires a Wire Contour".into());
     };
@@ -35,16 +40,12 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     } else if !wire.capture || wire.start.is_none() {
         return Err("Agie requires a captured closed contour and a predrilled 2 mm start hole on the waste side".into());
     }
-    let models = model::model_entities(world);
-    let [(source, _)] = models.as_slice() else {
-        return Err("Agie requires exactly one modeled workpiece; additional models can intersect the controller path".into());
-    };
     let on_source = match &op.src {
         SrcRef::Entity(name) => source == name,
         SrcRef::Selection(picks) => {
             !picks.is_empty()
                 && picks.iter().all(|pick| {
-                    pick.entity == *source && matches!(pick.feature, FeatureSel::Chain(_))
+                    pick.entity == source && matches!(pick.feature, FeatureSel::Chain(_))
                 })
         }
         SrcRef::Stock => false,

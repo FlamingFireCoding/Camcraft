@@ -11,8 +11,8 @@ use crate::post::{cnc, options::OptionValue};
 use crate::schema::{PostOptions, PostRef};
 use crate::{model, operation};
 
-pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
 pub use camcraft_post::agie::valid_name;
+pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
 
 pub const POST: &str = "Agie native wire EDM";
 const MODEL: &str = "AGIECUT CLASSIC 2S";
@@ -49,11 +49,30 @@ pub(super) fn post(
     let name = dest.file_name().and_then(|x| x.to_str()).filter(|s| valid_name(s))
         .ok_or("Choose a new Agie job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
     let ops = super::program_ops(world)?;
-    let [(op_name, entity)] = ops.as_slice() else {
-        return Err("An Agie job requires exactly one active Wire Contour operation".into());
-    };
-    let op = model::operation_of(world, entity).ok_or("Agie operation is unavailable")?;
-    let setup = op.setup.as_deref();
+    if !(1..=2).contains(&ops.len()) {
+        return Err(
+            "An Agie job requires one active wire contour or two independent punch operations"
+                .into(),
+        );
+    }
+    let operations = ops
+        .iter()
+        .map(|(name, entity)| {
+            model::operation_of(world, entity)
+                .map(|op| (name, op))
+                .ok_or("Agie operation is unavailable")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let (_, first) = operations
+        .first()
+        .ok_or("Agie requires an active Wire Contour")?;
+    let setup = first.setup.as_deref();
+    if operations
+        .iter()
+        .any(|(_, op)| op.setup != first.setup || op.tool != first.tool)
+    {
+        return Err("Agie grouped punches must use the same setup and wire tool".into());
+    }
     if crate::setup_post_options::of(world, setup) != PostOptions::default() {
         return Err("Agie jobs require default post options and One program output".into());
     }
@@ -70,7 +89,7 @@ pub(super) fn post(
     // Use the ordinary post's current operation order, freshness, warning
     // records, setup laws and verification. The wire centres in the stream
     // are only verification evidence; the writer receives the nominal ring.
-    for (_, records) in super::op_streams_by(world, false)? {
+    for (op_name, records) in super::op_streams_by(world, false)? {
         for record in records {
             if let cnc::Record::Warn { text } = record {
                 return Err(format!("Agie post blocked - {op_name}: {text}"));
@@ -84,7 +103,34 @@ pub(super) fn post(
             report.problems.join("; ")
         ));
     }
-    let job = operation::agie_job(world, &op, op_name)?;
+    let models = model::model_entities(world);
+    let jobs = match operations.as_slice() {
+        [(name, op)] => {
+            let [(source, _)] = models.as_slice() else {
+                return Err("Agie requires exactly one modeled workpiece for one active contour; additional models can intersect the controller path".into());
+            };
+            vec![operation::agie_job(world, op, name, source)?]
+        }
+        [(_, left), (_, right)] => {
+            let sources = [&left.src, &right.src].map(|src| match src {
+                operation::SrcRef::Entity(owner) => Some(owner),
+                _ => None,
+            });
+            let [Some(a), Some(b)] = sources else {
+                return Err("Select one complete modeled punch for each Agie work".into());
+            };
+            if a == b || models.len() != 2 || models.iter().any(|(name, _)| name != a && name != b)
+            {
+                return Err("The two Agie works must cover two distinct modeled punches, with no additional workpiece".into());
+            }
+            operations
+                .iter()
+                .zip([a, b])
+                .map(|((name, op), owner)| operation::agie_job(world, op, name, owner))
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        _ => return Err("Agie supports up to two works".into()),
+    };
     let options = super::program_options_for_script(
         world,
         super::builtin_post_text(POST)?,
@@ -96,10 +142,10 @@ pub(super) fn post(
         .get("separationLengthMm")
         .and_then(|v| v.as_f64())
         .ok_or("The Agie post must declare its separation cut length in millimetres")?;
-    let bundle_files = camcraft_post::agie::export(&job, dest, name, separation)?;
+    let bundle_files = camcraft_post::agie::export_works(&jobs, dest, name, separation)?;
     Ok(Posted {
         bundle_files,
-        ops: 1,
+        ops: jobs.len(),
         lines: 0,
         program: String::new(),
         line_pos: Vec::new(),

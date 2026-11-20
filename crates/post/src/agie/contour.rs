@@ -75,7 +75,13 @@ pub(super) fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
     ))
 }
 
+#[cfg(test)]
 pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
+    prepare_with_reach(job).map(|(points, _)| points)
+}
+
+/// Nominal ISO vertices and the maximum reach of any compensated corner, in mm.
+pub(super) fn prepare_with_reach(job: &AgieJob) -> Result<(Vec<[f64; 2]>, f64), String> {
     let offset_um = stock_offset_um(job)?;
     let start = job
         .start
@@ -154,7 +160,7 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     }
     // Material is on the left: inward miters of a die now use the same
     // join reach and feature-spacing checks as inside corners of a punch.
-    check_cut_envelope(&outline, job, offset_um)?;
+    let mut reach = check_cut_envelope(&outline, job, offset_um)?;
     let hole = [quantize(start[0])?, quantize(start[1])?];
     let (edge, foot) = entry::entry_face(&outline, hole, job.side)?;
     // Begin the nominal program at the middle of the chosen edge, facing along that edge. The
@@ -167,24 +173,25 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     // An exterior rounded seam adds a small convex corner and slightly
     // changes its neighbours. Check the envelope of the actual ISO lines.
     if !exact_face {
-        check_cut_envelope(&vertices, job, offset_um)?;
+        reach = reach.max(check_cut_envelope(&vertices, job, offset_um)?);
     }
     if job.side == AgieSide::Die {
         // Use the same CCW nominal ISO convention for both closed cycles.
         // Retain the first point so separation still occurs on the chosen face.
         vertices[1..].reverse();
     }
-    Ok(vertices
+    let points = vertices
         .into_iter()
         .map(|p| [p[0] as f64 / UNITS, p[1] as f64 / UNITS])
-        .collect())
+        .collect();
+    Ok((points, reach))
 }
 
 /// Check the swept wire against the stock before Agie chooses its corner joins.
 /// A round join lies within the rough offset of its nominal vertex. A miter
 /// reaches the intersection of the two face lines offset toward the waste.
 /// The segments connecting adjacent joins stay inside their stock bounds.
-fn check_cut_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result<(), String> {
+fn check_cut_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result<f64, String> {
     // Round the measured wire-centre offset plus the 125 µm wire radius
     // upwards to a tenth of a millimetre for the straight/round swept envelope.
     let margin_um = (offset_um + 125).next_multiple_of(100);
@@ -256,7 +263,7 @@ fn check_cut_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result<(
         let clearance = (2.0 * (max_miter + rough_offset)).ceil() as i64;
         check_feature_spacing(ring, clearance)?;
     }
-    Ok(())
+    Ok(max_miter / UNITS)
 }
 
 fn point_clears_segment(p: Point, a: Point, b: Point, clearance2: i128) -> bool {
