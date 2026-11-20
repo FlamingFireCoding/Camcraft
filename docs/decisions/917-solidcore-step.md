@@ -126,6 +126,22 @@ kept):
   a file with two inward solids gets one line, not two.
 - The plain-slice tests do not change: the slicer sections the sample
   through the solid ranges.
+- `bore_facet_sagitta.rs`, `step_chord_units.rs`: the 0.05 mm oversize
+  bore asserted a program-gate "gouge:" problem -> it asserts `ok` false
+  and the bore in `held_by` (the toolpath check holds the post). A new test
+  in each file asserts the "gouge:" problem at 0.1 mm. Cause: the finer
+  wall puts the 0.05 mm cut under the stock sim's 0.625 mm lattice
+  (#2846, see below).
+- ui `model_incomplete.rs`: the page test imported a box STEP with a face
+  removed, which landed as an incomplete model -> such a file is now
+  refused at read, so the test builds the open mesh in the test (a cube
+  with its top two facets removed) and lands it through the test seam
+  `State::land_import_for_test` (`crates/ui/src/state_test_import.rs`),
+  which calls the same `finish_import` as the import worker. The hole text
+  and the "Incomplete:" line now name a test reason; the other asserts do
+  not change.
+- `lead_approach.rs` (2 tests) and `shoulder_adaptive.rs` (1 test): known
+  fail #2849, the asserts do not change (see below).
 
 **Known regressions, tracked.**
 - #2844: the four-turn thread flank gives 391338 facets (main: under 5000,
@@ -162,7 +178,17 @@ kept):
   bore drop from 2 to 0 (0.1 mm: 10 -> 8; 0.3 mm: 34 -> 32). The ring holds
   only 8 cell centres, at r 12.507..12.509, inside the #299 slack. At 0.05
   verify still holds the post (`ok false`, `held_by`); a new "gouge:" pin
-  at 0.1 mm keeps the count.
+  at 0.1 mm keeps the gate's refusal. The lattice gap is #2846.
+- #2849: on the new meshes of `Milling-test.step` and `fig8.step` three
+  toolpath pins move. They pass on #2843's head.
+  - The stock-source pocket with a helix entry gets "the pass start ... is
+    in material" notes, and the corner check of `keep_law` reports "loop
+    crosses itself" and does not run.
+  - The `axis_start` contour posts its entry arc as chords (a note says so).
+  - The fig8 EM-0800 adaptive ends 31.4 mm from the part, not at the face;
+    it verifies clean and posts.
+  Each fallback is stated in a note; none is silent wrong output. The self
+  crossing loop is the defect to find.
 
 **Considered and dropped.**
 - A new `camcraft-app -> camcraft-kernel` edge. Dropped: the seam goes
