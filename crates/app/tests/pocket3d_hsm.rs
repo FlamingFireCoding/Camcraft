@@ -200,33 +200,43 @@ fn bore_path_matches(got: (usize, usize, usize)) -> bool {
         // 6228 facets at the same chord cap (decision #917). The fixture
         // and HSM planner are unchanged; the mesh changes the cutting
         // regions and their proved arc fits. The old truck-mesh reading
-        // was (4726, 4698, 549). Every cutting level still verifies clean,
-        // with no fallback or planning-budget stop.
+        // was (4726, 4698, 549), issue #2004 (PR #2013). Every cutting
+        // level still verifies clean, with no fallback or planning-budget
+        // stop.
+        got == (3158, 3130, 1141)
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        // Issue #2371: measured in release on PR #2934 at 48071efd4 and
+        // unmodified main 61a817bed. Every level verifies clean, none
+        // falls back, and no planning budget is reached.
         got == (3158, 3130, 1141)
     } else {
-        // Not measured here yet (macOS aarch64 included: its pin of issue
-        // #882, (16026, 15382, 1413), went stale with PR #2013, and issue
-        // #2371 owes its new triple). Measure this platform and add its
-        // exact triple above. Until then a band covering both measured ones.
+        // Not measured here yet. Measure this platform and add its exact
+        // triple above. Until then use the existing fallback band.
         let (moves, planar, arcs) = got;
         (4706..=4736).contains(&moves) && (4678..=4708).contains(&planar) && (539..=559).contains(&arcs)
+    }
+}
+
+/// The exact pin of a measured platform rejects each adjacent count.
+#[cfg(any(all(target_os = "linux", target_arch = "x86_64"), all(target_os = "macos", target_arch = "aarch64")))]
+fn assert_bore_pin_is_exact(pin: (usize, usize, usize)) {
+    assert!(bore_path_matches(pin));
+    let (m, p, a) = pin;
+    for got in [(m - 1, p, a), (m + 1, p, a), (m, p - 1, a), (m, p + 1, a), (m, p, a - 1), (m, p, a + 1)] {
+        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
     }
 }
 
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn the_linux_x86_64_bore_count_pin_is_exact() {
-    assert!(bore_path_matches((3158, 3130, 1141)));
-    for got in [
-        (3157, 3130, 1141),
-        (3159, 3130, 1141),
-        (3158, 3129, 1141),
-        (3158, 3131, 1141),
-        (3158, 3130, 1140),
-        (3158, 3130, 1142),
-    ] {
-        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
-    }
+    assert_bore_pin_is_exact((3158, 3130, 1141));
+}
+
+#[test]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+fn the_macos_arm64_bore_count_pin_is_exact() {
+    assert_bore_pin_is_exact((3158, 3130, 1141));
 }
 
 #[test]
