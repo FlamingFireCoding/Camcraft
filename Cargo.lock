@@ -779,7 +779,6 @@ dependencies = [
  "png 0.18.1",
  "rayon",
  "reqwest",
- "ruststep",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
