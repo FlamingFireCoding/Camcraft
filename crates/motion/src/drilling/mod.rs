@@ -36,6 +36,8 @@ mod cylinder;
 mod cross;
 mod cycle;
 mod hole;
+mod merge;
+mod mouth;
 mod recognize;
 
 #[cfg(test)]
@@ -45,6 +47,8 @@ use {cross::*, cycle::*, hole::*, recognize::*};
 mod tests;
 #[cfg(test)]
 mod tests_cross;
+#[cfg(test)]
+mod tests_backbore;
 #[cfg(test)]
 mod tests_ream;
 
@@ -57,3 +61,8 @@ pub use hole::{
     CycleParams, Hole, CHIP_BREAK, SPOT_DEPTH, THROUGH_CLEAR,
 };
 pub use recognize::{recognize, recognize_cross};
+
+#[cfg(test)]
+mod tests_opposite;
+#[cfg(test)]
+mod tests_punched_bar;

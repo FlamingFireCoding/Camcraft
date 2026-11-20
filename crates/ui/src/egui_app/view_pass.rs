@@ -77,11 +77,11 @@ pub(crate) fn encode(
     // has a frame; the field view is walked once per Deviate arming.
     let mut traced = false;
     if let Some(se) = stock_eye.as_mut().filter(|_| !state.active_stock_hidden()) {
-        if state.display != crate::state::DisplayMode::Wireframe {
+        if !state.display.is_wireframe() {
             crate::actions::ensure_field_view(state);
         }
         let fv = match &state.field_view {
-            Some(Ok(fv)) if state.display != crate::state::DisplayMode::Wireframe => Some(fv),
+            Some(Ok(fv)) if !state.display.is_wireframe() => Some(fv),
             _ => None,
         };
         match se.prepare(device, queue, encoder, fv, &state.cam, &mvp, (ew, eh)) {
@@ -136,6 +136,12 @@ pub(crate) fn state_redraw_delay(
     egui_delay: std::time::Duration,
     followup: bool,
 ) -> Option<std::time::Duration> {
+    // #2463: a linked model's file is checked about once a second.
+    let egui_delay = if crate::model_link_watch::wants_ticks(state) {
+        egui_delay.min(crate::model_link_watch::INTERVAL)
+    } else {
+        egui_delay
+    };
     redraw_delay(
         egui_delay,
         followup || !state.pending.is_empty() || state.layout_request.is_some(),

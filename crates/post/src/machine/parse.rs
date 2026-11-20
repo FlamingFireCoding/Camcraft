@@ -13,7 +13,7 @@ use super::direction::AxisDirection;
 /// negative or NaN reads `Some` only for travel bounds (where a
 /// negative stroke limit is the point), and `None` for rates (where
 /// it is a broken file, checked at the point of use).
-fn rate(v: Option<&serde_json::Value>) -> Option<f64> {
+pub(super) fn rate(v: Option<&serde_json::Value>) -> Option<f64> {
     let x = v?.as_f64()?;
     if x.is_finite() && x > 0.0 {
         Some(x)
@@ -25,7 +25,7 @@ fn rate(v: Option<&serde_json::Value>) -> Option<f64> {
 /// Length-unit factor: a file declaring inches multiplies every
 /// distance - and every distance-per-minute - by 25.4 on the way in,
 /// so the whole checker stays mm-only.
-fn mm_factor(units: Option<&serde_json::Value>) -> Option<f64> {
+pub(super) fn mm_factor(units: Option<&serde_json::Value>) -> Option<f64> {
     match units?.get("length")?.as_str()? {
         "inch" | "inches" => Some(25.4),
         _ => Some(1.0),
@@ -410,7 +410,7 @@ fn text_of(v: Option<&serde_json::Value>) -> String {
     v.and_then(|x| x.as_str()).unwrap_or("unknown").to_owned()
 }
 
-fn scale(v: Option<f64>, f: f64) -> Option<f64> {
+pub(super) fn scale(v: Option<f64>, f: f64) -> Option<f64> {
     v.map(|x| x * f)
 }
 

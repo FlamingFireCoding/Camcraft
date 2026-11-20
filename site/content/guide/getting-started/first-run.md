@@ -56,6 +56,21 @@ why in its tooltip, for example "No tool yet - add one (Setup > Tools)" or
 Every keyboard shortcut and mouse gesture, for Windows, Linux and macOS, is
 on the [Keyboard and mouse](@/guide/getting-started/keyboard-and-mouse.md) page.
 
+### The start page
+
+When you start CamCraft with no file named, it shows the start page in
+place of the panes. The page lists your recent projects, newest first.
+Click a project to open it. A project file that is no longer there is
+greyed and marked **(missing)**; hover it to see where it was. The page
+also has **Open project…**, **New project** and **Back to the project**.
+
+The {{ <icon name="home" /> }} **Home** button at the top right, beside **Donate**, shows the page
+again at any time. Press it again, or choose **Back to the project**, to
+return to your document. The page closes by itself when the document
+changes, for example when a project opens. Opening a project from the
+page asks first if you have unsaved changes, as any project open does.
+The version number shows at the right end of the ribbon.
+
 ### Open an example project
 
 A release package ships example projects in an `examples` folder beside
@@ -119,7 +134,10 @@ Complete first parts on one machine each:
 [Your first router part](@/guide/getting-started/first-router-part.md) (a
 sheet-goods router job) and
 [Your first 4-axis part](@/guide/getting-started/first-4axis-part.md)
-(indexed 3+1 work on a Tormach 770MX with a microARC 4).
+(indexed 3+1 work on a Tormach 770MX with a microARC 4). On the same
+machine,
+[Your first continuous 4-axis program](@/guide/getting-started/first-continuous-4axis-part.md)
+posts and air-cuts a program that turns A during the feed moves.
 
 ## Undo
 
