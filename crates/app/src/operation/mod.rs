@@ -203,6 +203,7 @@ mod cross_sag;
 mod cross_part;
 mod cross_spindle;
 mod cross_stock;
+mod cross_traverse;
 mod drill_reach;
 mod bore_reach;
 use camcraft_motion::break_through;
