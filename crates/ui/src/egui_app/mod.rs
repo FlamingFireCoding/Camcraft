@@ -43,6 +43,8 @@ mod debug_info;
 // #1696: the Report door - the window that fills GitHub's new-issue form
 // in, and the screenshot it puts on the clipboard.
 mod report;
+// #2744: the shared report names each path by its last component only.
+mod report_scrub;
 mod status_alert;
 
 mod stock_info;
