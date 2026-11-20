@@ -1626,6 +1626,8 @@ pub enum TreeMenuTarget {
     /// clicked row's index, so the menu anchors on the row clicked even
     /// when the name stands in the tree twice.
     Model { name: String, row: usize },
+    /// A tool row, anchored on the clicked occurrence.
+    Tool { name: String, row: usize },
     /// A setup's Fixtures node (`""` - the implicit setup): "Import
     /// fixture…".
     Fixtures(String),
@@ -1766,6 +1768,15 @@ pub struct State {
     /// "Look at a face" waits for one click in the viewport (#2818).
     /// Ephemeral view state, never a command.
     pub look_at_armed: bool,
+    /// "Look at a work plane" waits for one click on an origin axis
+    /// (#2834). Ephemeral view state, never a command.
+    pub look_at_plane_armed: bool,
+    /// Draw the soft shadow of the model on the floor (#2834). View state
+    /// and a kept preference (`state_view`).
+    pub ground_shadow: bool,
+    /// Darken the model faces in their corners (#2834). View state and a
+    /// kept preference (`state_view`).
+    pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
     /// the grid also needs `show_world_axes`.
     pub show_grid: bool,
@@ -2313,6 +2324,9 @@ impl State {
             display: DisplayMode::default(),
             display_menu_open: false,
             look_at_armed: false,
+            look_at_plane_armed: false,
+            ground_shadow: false,
+            ambient_occlusion: false,
             show_grid: true,
             sim: None,
             post_view: None,
