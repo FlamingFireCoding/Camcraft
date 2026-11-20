@@ -212,3 +212,39 @@ fn properties_shows_the_settings_and_the_shape_window_holds_the_shape() {
     // The settings stay on the page behind it.
     assert!(h.query_by_label("Shank diameter").is_some(), "Properties keeps the settings");
 }
+
+/// #2007: the Properties tool page keeps its action row (Apply / Add
+/// tool beside Close) fixed at the bottom without scrolling, and uses
+/// plain labels without "(0 = next free)".
+#[test]
+fn tool_page_keeps_apply_and_add_tool_beside_close_without_scrolling() {
+    let mut h = shell_harness();
+    select_tool(&mut h);
+    let leaf = super::super::layout::leaf_rect(&h.state().dock, &Tab::Properties).expect("Properties leaf");
+    let apply = h.get_by_label("Apply").rect();
+    let close = h.get_by_label("Close").rect();
+    assert!(leaf.expand(1.0).contains_rect(apply), "Apply {apply:?} must stay visible in Properties {leaf:?} without scrolling");
+    assert!(leaf.expand(1.0).contains_rect(close), "Close {close:?} must stay visible in Properties {leaf:?} without scrolling");
+    assert!((apply.center().y - close.center().y).abs() < 4.0, "Apply {apply:?} and Close {close:?} share a row");
+    assert!(apply.max.x <= close.min.x, "Apply sits left of Close: {apply:?} vs {close:?}");
+
+    crate::actions::begin_new_tool(&mut h.state_mut().state);
+    h.run_steps(3);
+    let add = h.get_by_label("Add tool").rect();
+    let close = h.get_by_label("Close").rect();
+    assert!(leaf.expand(1.0).contains_rect(add), "Add tool {add:?} must stay visible in Properties {leaf:?} without scrolling");
+    assert!(leaf.expand(1.0).contains_rect(close), "Close {close:?} must stay visible in Properties {leaf:?} without scrolling");
+    assert!((add.center().y - close.center().y).abs() < 4.0, "Add tool {add:?} and Close {close:?} share a row");
+    assert!(add.max.x <= close.min.x, "Add tool sits left of Close: {add:?} vs {close:?}");
+    assert!(h.query_by_label("Tool number (0 = next free)").is_none(), "no raw (0 = next free) label on Tool number");
+    assert!(here(&h, "Tool number"), "Catalog shows plain Tool number");
+
+    h.state_mut().state.tool_ui.name.clear();
+    h.run_steps(3);
+    let warn = h.get_by_label("Name the tool first.").rect();
+    let add = h.get_by_label("Add tool").rect();
+    let close = h.get_by_label("Close").rect();
+    assert!(leaf.expand(1.0).contains_rect(warn), "block message {warn:?} stays visible in {leaf:?}");
+    assert!(leaf.expand(1.0).contains_rect(add), "Add tool {add:?} stays visible with message in {leaf:?}");
+    assert!(leaf.expand(1.0).contains_rect(close), "Close {close:?} stays visible with message in {leaf:?}");
+}

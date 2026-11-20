@@ -4,11 +4,11 @@
 //!
 //! Provenance: record framing (`;` terminators, `'..'` strings with `''`
 //! escapes, `/* .. */` comments, `DATA;` .. `ENDSEC;` sections) from
-//! ISO 10303-21; each record is checked with ruststep's own entity parser.
-//! One linear pass: every byte is visited once and every record is parsed
-//! once, so a huge file costs no more than the parse that already failed.
-
-use ruststep::parser::exchange::entity_instance;
+//! ISO 10303-21; each record is checked with solidcore's Part 21 parser,
+//! the one the kernel reads the file with (#2789; it was ruststep's entity
+//! parser). One linear pass: every byte is visited once and every record is
+//! parsed once, so a huge file costs no more than the parse that already
+//! failed. Moved from the app (#2789): it reads text, not the document.
 
 /// What the re-scan found.
 #[derive(Debug, PartialEq, Eq)]
@@ -70,10 +70,7 @@ fn check_record(rec: &str, line: usize) -> Option<Failure> {
         return None;
     }
     let line = line + rec[..lead].matches('\n').count();
-    let mut probe = String::with_capacity(head.len() + 1);
-    probe.push_str(head);
-    probe.push(';');
-    if matches!(entity_instance(&probe), Ok((rest, _)) if rest.trim().is_empty()) {
+    if record_parses(head) {
         return None;
     }
     let id = head
@@ -188,4 +185,27 @@ fn unterminated(
         }
     }
     Failure::Unterminated { what, line }
+}
+
+/// Whether one DATA record (its text before the `;`) parses on its own, as
+/// solidcore's Part 21 parser reads it in a DATA section: one entity
+/// instance and nothing else. `head` holds no `;` outside a string or a
+/// comment ([`locate`] cut it there), so the frame around it cannot be
+/// closed early from inside.
+#[cfg(not(target_arch = "wasm32"))]
+fn record_parses(head: &str) -> bool {
+    const OPEN: &str = "ISO-10303-21;\nDATA;\n";
+    const CLOSE: &str = ";\nENDSEC;\nEND-ISO-10303-21;\n";
+    let mut probe = String::with_capacity(OPEN.len() + head.len() + CLOSE.len());
+    probe.push_str(OPEN);
+    probe.push_str(head);
+    probe.push_str(CLOSE);
+    camcraft_kernel::p21::parse(&probe).is_ok_and(|ex| ex.entities.len() == 1 && ex.duplicates.is_empty())
+}
+
+/// The browser build has no solidcore: every record passes here, and the
+/// STEP reader refuses the file by name after this scan.
+#[cfg(target_arch = "wasm32")]
+fn record_parses(_head: &str) -> bool {
+    true
 }
