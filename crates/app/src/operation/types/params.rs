@@ -258,6 +258,12 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Rest machining (#1446): cut only what the previous operations
+        /// of the setup left, read from the stock they leave
+        /// (`machining2d::rest_adaptive_previous`). `None` is off - every
+        /// earlier file. Only `RestSource::PreviousOperations` is taken:
+        /// an entered previous tool is refused by name (`rest_op`).
+        rest: Option<crate::machining2d::RestParams>,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },

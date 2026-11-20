@@ -102,6 +102,9 @@ pub(super) fn settle(entities: &mut [EntityDto], from: u32) -> Vec<String> {
             loop_width: None,
             blend_turns,
             blend_radius,
+            // #1446: the Pocket's rest group is not carried (noted above):
+            // the 2D Adaptive reads the previous operations only.
+            rest: None,
             tilt,
         };
         // Adaptive2D uses its own kind tag in the generation stamp digest.

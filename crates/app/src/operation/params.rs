@@ -264,6 +264,7 @@ impl OpParams {
                 optimal_load,
                 method,
                 troch,
+                rest,
                 tilt,
             } => {
                 w(h, *stepover);
@@ -313,6 +314,16 @@ impl OpParams {
                     if let Some(r) = blend_radius {
                         h.write_u8(0xB2);
                         w(h, *r);
+                    }
+                }
+                // #1446: written only when ON, so every 2D Adaptive
+                // without rest machining keeps its digest. The mode byte
+                // is the pocket's (0xD8).
+                if let Some(r) = rest {
+                    h.write_u8(0xD9);
+                    w(h, r.allowance);
+                    if r.source == crate::machining2d::RestSource::PreviousOperations {
+                        h.write_u8(0xD8);
                     }
                 }
             }

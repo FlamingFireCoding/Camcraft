@@ -171,6 +171,7 @@ impl ParamsDto {
                 troch,
                 blend_turns,
                 blend_radius,
+                rest,
                 tilt,
             } => {
                 let (troch_return, lift) = match troch.ret {
@@ -211,6 +212,7 @@ impl ParamsDto {
                     lift,
                     return_feed: troch.return_feed,
                     loop_width: troch.loop_width,
+                    rest: (*rest).map(Into::into),
                     tilt: (*tilt).map(Into::into),
                 }
             }
@@ -1438,6 +1440,7 @@ impl ParamsDto {
                 loop_width,
                 blend_turns,
                 blend_radius,
+                rest,
                 tilt,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1481,6 +1484,7 @@ impl ParamsDto {
                 },
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                rest: (*rest).map(Into::into),
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Offset2D {

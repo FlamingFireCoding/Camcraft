@@ -15,7 +15,10 @@ mod sim;
 
 use camcraft_motion::cl::MoveKind;
 use camcraft_motion::geo2d::{Point2, Region};
-use camcraft_motion::machining2d::{rest_adaptive, GenError, PocketParams, RestStock, StockFloor, REST_STOCK_FILM};
+use camcraft_motion::machining2d::{
+    rest_adaptive, rest_adaptive_previous, GenError, PocketParams, RestParams, RestSource, RestStock, StockFloor,
+    REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK, REST_STOCK_FILM,
+};
 use camcraft_motion::quality::rest_area;
 
 use sim::{
@@ -295,4 +298,54 @@ fn on_a_fine_grid_the_corners_read_within_the_planning_margin() {
     let r = read_leaving(&path, &region, &mut sim, 0.3);
     assert_load_within(&r, LOAD_SLACK);
     assert!(r.left < 0.05, "{:.3} mm2 of rest material in reach is left standing", r.left);
+}
+
+fn from_ops() -> RestParams {
+    RestParams {
+        source: RestSource::PreviousOperations,
+        previous_tool_diameter: 0.0,
+        previous_corner_radius: 0.0,
+        previous_stock_to_leave: 0.0,
+        allowance: 0.0,
+    }
+}
+
+#[test]
+fn the_column_stock_of_the_previous_operations_plans_the_rest_adaptive_pass() {
+    // Issue 1446: the stock is read from the simulated columns (not
+    // from the roughing path), and the path is held to every law.
+    let region = filleted(&rect(0.0, 0.0, 60.0, 40.0), 3.0);
+    let mut sim = Sim::new(&region);
+    let _ = roughed(&region, &mut sim, BOTTOM);
+    let before = rest_area(&sim.dex, &region, BOTTOM).unwrap();
+    let path = {
+        let cols = sim.dex.columns().unwrap();
+        rest_adaptive_previous(&region, &rest_params(), &from_ops(), Some(&cols)).unwrap()
+    };
+    assert!(path.notes.iter().any(|n| n.contains("reads the stock that the previous operations leave")), "{:?}", path.notes);
+    let r = read(&path, &region, &mut sim);
+    assert_load_held(&r);
+    assert!(before > 20.0 && r.left < 0.05, "{:.3} of {before:.1} mm2 of rest material is left standing", r.left);
+    for m in path.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
+        let (dx, dy) = (m.to.x.min(60.0 - m.to.x), m.to.y.min(40.0 - m.to.y));
+        assert!(dx < 14.0 && dy < 14.0, "a feed at ({}, {}) is outside the corners", m.to.x, m.to.y);
+    }
+}
+
+#[test]
+fn the_previous_operations_planner_refuses_what_it_cannot_prove() {
+    let region = filleted(&rect(0.0, 0.0, 60.0, 40.0), 3.0);
+    let p = rest_params();
+    // An entered previous tool proves nothing.
+    let entered = RestParams { source: RestSource::EnteredTool, previous_tool_diameter: 12.0, ..from_ops() };
+    let mut sim = Sim::new(&region);
+    let _ = roughed(&region, &mut sim, FIRST);
+    let cols = sim.dex.columns().unwrap();
+    assert!(refusal(rest_adaptive_previous(&region, &p, &entered, Some(&cols))).contains(REST_ADAPTIVE_ENTERED));
+    // No stock of the previous operations.
+    assert!(refusal(rest_adaptive_previous(&region, &p, &from_ops(), None)).contains(REST_ADAPTIVE_NO_STOCK));
+    // Roughed to Z-2 only: the floor at Z-4 stands whole, and no plunge
+    // is proved clear there.
+    let msg = refusal(rest_adaptive_previous(&region, &p, &from_ops(), Some(&cols)));
+    assert!(msg.contains("no proved-clear") || msg.contains("entry"), "{msg}");
 }

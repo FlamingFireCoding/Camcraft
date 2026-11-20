@@ -330,6 +330,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             entry,
             helix_radius,
             optimal_load, method, troch, blend_turns, blend_radius,
+            rest: _, // #1446: no rows on this page yet; the draft keeps the value
             tilt,
         } => roughing2d_pane(
             ui,

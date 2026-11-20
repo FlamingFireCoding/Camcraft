@@ -799,6 +799,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
+        rest: None,
         tilt: c.tilt,
     }
 }

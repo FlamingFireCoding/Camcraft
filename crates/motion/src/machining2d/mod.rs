@@ -93,6 +93,7 @@ mod adaptive_troch_level;
 mod adaptive_troch_slice;
 mod rest2d;
 mod rest_prior;
+mod rest_prior_adaptive;
 mod rest_anchor;
 mod rest_rings;
 mod chord_clear;
@@ -152,12 +153,13 @@ pub use rest2d::{
     REST_REACH,
 };
 pub use rest_prior::{rest_plan_stock, rest_pocket_previous, rest_stock_from_columns, PRIOR_Z_TOL};
+pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK};
 pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use unreached::{unreached_corner_note, unreached_corners, unreached_note, unreached_pieces};
-pub use adaptive::{rest_adaptive, RestStock, StockFloor, REST_STOCK_FILM};
+pub use adaptive::{rest_adaptive, rest_levels, RestStock, StockFloor, REST_STOCK_FILM};
 pub use adaptive_method::AdaptiveMethod;
 pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
 pub use trochoid_air::lifted_cut;
