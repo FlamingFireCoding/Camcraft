@@ -109,6 +109,16 @@ impl SetOperationGeometry {
                 _ => {}
             }
         }
+        if !prev.area.do_not_touch.is_empty()
+            && let Some(why) = crate::operation::avoid_overlap_issue(
+                world,
+                &prev.area.do_not_touch.picks,
+                Some(&src),
+                &prev.area,
+            )
+        {
+            return Err(CommandError::Invalid(why));
+        }
         let next = Operation { src, params, ..prev.clone() };
         Ok(SetOperationGeometry { name: name.to_string(), prev, next })
     }

@@ -3,7 +3,7 @@
 //! first pass buried at the level where the outline appeared. Each test reads
 //! the Z of every cutting pass, outline by outline.
 //!
-//! Gate map: covers camcraft_motion::machining2d (contour_whole, contour_whole_reach).
+//! Gate map: covers camcraft_motion::machining2d (contour_whole, contour_whole_reach, contour_whole_fence).
 //!
 //! Provenance: our own extruded manifold test meshes; no vendor material.
 
@@ -224,6 +224,31 @@ fn new_outline_takes_top_z_when_the_stock_stands_a_stepdown_over_it() {
     assert_eq!(ring_levels(&path, 15.0, r), vec![25.0, 20.0, 15.0, 10.0], "boss ring");
     assert_eq!(ring_levels(&path, 30.0, r), vec![25.0, 20.0, 15.0, 10.0, 5.0, 0.0], "base ring");
     assert_eq!(depth_verify(&path, &top_reg, &f, 31.0, r), Vec::new(), "{:?}", path.notes);
+}
+
+#[test]
+fn leads_of_one_outline_do_not_cross_a_grown_outline_on_the_same_level() {
+    // #2677: the base grows 1 mm out of the boss, so the base ring cuts the
+    // boss ring's levels from the top down, 1 mm outside it. An 8 mm linear
+    // lead of either ring must not cross the other ring on a level that
+    // they share (the verifier's Crossing law blocks the post). With the
+    // stock top 31 (a stepdown and more over Top Z 25) the base ring takes
+    // Top Z, as in `contour_whole_step` case 1 at stock top 18.5.
+    let f = stepped(&[(16.0, 10.0), (15.0, 25.0)]);
+    let (top, step, r) = (25.0, 5.0, 5.0);
+    let top_reg = slice::slice(&f, top - 1e-3).expect("top slice");
+    for stock in [None, Some(31.0)] {
+        let mut p = params(top, step, 2.0 * r);
+        p.lead = Lead::Linear { length: 8.0 };
+        p.links.approach.stock_top = stock;
+        let path = contour_whole_bodies(&top_reg, &f, &[], &p).expect("whole contour");
+        assert!(path.all_finite() && path.is_chained());
+        let from = stock.unwrap_or(top);
+        assert_stepped(&ring_levels(&path, 15.0, r), from, step.max(from - top), 10.0, "boss ring");
+        assert_stepped(&ring_levels(&path, 16.0, r), from, step.max(from - top), 0.0, "base ring");
+        let warns = depth_verify(&path, &top_reg, &f, from, r);
+        assert_eq!(warns, Vec::new(), "stock {stock:?}: {:?}", path.notes);
+    }
 }
 
 #[test]

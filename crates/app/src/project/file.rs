@@ -145,12 +145,17 @@ use super::*;
 /// changes. Absent is not linked - what every v71 model was - so a v71
 /// file steps up unchanged. An old reader must refuse a v72 file rather
 /// than save a linked model back unlinked without a word.
-/// v73 (#1864): feature selections add `sketch_chain` and `sketch_layer`
+/// v73 (#2055): an operation's `area` controls may state `"do_not_touch"`
+/// protected faces/edges and standoff clearance. An old reader (up to v72)
+/// must refuse the file rather than ignore the protection and cut across a
+/// protected feature. A v72 file steps up unchanged with empty protection.
+/// v74 (#1864): feature selections add `sketch_chain` and `sketch_layer`
 /// variants on DXF profiles, and `Contour` adds `chain_overrides`
-/// (absent is empty, so a v72 file steps up unchanged). An old reader
-/// must refuse a v73 file rather than drop per-chain side or direction
-/// overrides or reject sketch picks without explanation.
-pub const PROJECT_VERSION: u32 = 73;
+/// (absent is empty, so a v73 file steps up unchanged and keeps its
+/// `do_not_touch` protection). An old reader must refuse a v74 file
+/// rather than drop per-chain side or direction overrides or reject
+/// sketch picks without explanation.
+pub const PROJECT_VERSION: u32 = 74;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

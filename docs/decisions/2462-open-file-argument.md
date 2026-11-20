@@ -17,7 +17,8 @@
   (`open refused: ...`). The app then starts with an empty project. It does
   not exit: a user who double-clicks an unreadable file still gets the app.
 - `--headless` ignores a file. The headless run is a self-check of the 3D
-  view, not a document session.
+  view, not a document session. (Changed by #2648: a headless start now
+  opens the file or refuses it by name; `2648-headless-file.md`.)
 - `--help` shows `Usage: camcraft-ui [options] [file]` and a `File:` section.
 
 **Why.** Solidcraft proposes a "Send to CamCraft" command (Solidcraft RFC
