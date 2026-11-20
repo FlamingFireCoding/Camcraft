@@ -71,8 +71,17 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     }
     let mut tagged = Map::new();
     tagged.insert(key.clone(), Value::Object(fields));
-    let next = project::params_from_json(&Value::Object(tagged))
-        .map_err(|e| format!("bad params patch: {e}"))?;
+    let tagged = Value::Object(tagged);
+    let next = project::params_from_json(&tagged).map_err(|e| {
+        let mut context = Vec::new();
+        if e.contains("expected map with a single key") {
+            merged_key_context(&Value::Object(fields_of(base)), &tagged[&key], "", &mut context);
+        }
+        let detail = if context.is_empty() { String::new() } else {
+            format!("; merged object keys: {}; use null to remove unwanted keys before changing shape", context.join("; "))
+        };
+        format!("bad params patch: {e}{detail}")
+    })?;
     let Value::Object(back) = project::params_to_json(&next) else {
         return Err("the patched parameters could not be read back".into());
     };
@@ -90,6 +99,23 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
         return Err(format!("bad params patch: unknown field {path} - a {key} operation has no field \"{path}\"; see list_operation_types"));
     }
     Ok(next)
+}
+
+/// Context for a failed enum parse: merge patch can retain a former tag.
+/// These are merged keys, not a claim that every singleton object is an enum.
+fn merged_key_context(base: &Value, merged: &Value, path: &str, out: &mut Vec<String>) {
+    let (Some(base), Some(merged)) = (base.as_object(), merged.as_object()) else {
+        return;
+    };
+    for (key, value) in merged {
+        if let Some(old) = base.get(key) {
+            let child = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+            merged_key_context(old, value, &child, out);
+        }
+    }
+    if !path.is_empty() && base.len() == 1 && merged.len() > 1 && base.keys().all(|k| merged.contains_key(k)) {
+        out.push(format!("{path}: {}", merged.keys().cloned().collect::<Vec<_>>().join(", ")));
+    }
 }
 
 /// The kind's field object of `p`, without its tag.

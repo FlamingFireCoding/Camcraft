@@ -47,6 +47,9 @@ const SAME_EDGE: f64 = 1e-6;
 /// stands lower than that depth - refuses by name at that loop: the
 /// tip would ride below the edge's floor, into the material (a part or
 /// the stock, whichever the chamfer's source is - the text fits both, #2521).
+/// #2887: a top loop bevelled on only part of its length (a modelled
+/// chamfer on one side of a plate) refuses by name too: no whole
+/// outline of it can be ridden.
 pub fn ride_loops(top: &Region, corner: &Region, width: f64, corner_z: f64) -> Result<Region, GenError> {
     if !(width.is_finite() && width > 0.0 && corner_z.is_finite()) {
         return Err(GenError::Invalid("chamfer width must be positive".into()));
@@ -64,6 +67,20 @@ pub fn ride_loops(top: &Region, corner: &Region, width: f64, corner_z: f64) -> R
             .map(|c| (c, gap(t.points(), c.points())))
             .filter(|(_, g)| *g <= reach)
             .min_by(|a, b| a.1.total_cmp(&b.1));
+        // #2887: a loop bevelled on only part of its length has no whole
+        // outline to ride - refused by name, whichever way its
+        // tessellation would have read it.
+        if let Some((c, _)) = wall
+            && let Some((bevel, sharp)) = partly_bevelled(t.points(), c.points(), width)
+        {
+            return Err(GenError::At {
+                msg: format!(
+                    "the edge loop near X{:.3} Y{:.3} carries a modelled chamfer on only part of its length - it is sharp near X{:.3} Y{:.3} - a chamfer with no picks would cut the sharp part; pick the edges to break",
+                    bevel.x, bevel.y, sharp.x, sharp.y
+                ),
+                at: Point3::new(bevel.x, bevel.y, corner_z),
+            });
+        }
         match wall {
             Some((_, g)) if g <= SAME_EDGE => sharp.push(t.clone()),
             Some((c, _)) => out.push(c.clone()),
@@ -105,6 +122,41 @@ pub fn ride_loops(top: &Region, corner: &Region, width: f64, corner_z: f64) -> R
         });
     }
     Ok(got)
+}
+
+/// #2887: a top loop bevelled on only part of its length. Judged per
+/// segment of `top` - both ends and the middle against the wall ring -
+/// so an extra collinear vertex, or the lack of one, changes nothing
+/// (the vertex-only `gap` reads a one-sided bevel either way round).
+/// A segment standing on the wall (within `SAME_EDGE`) is sharp; one
+/// standing farther than `MATCH_SLACK` from it is bevelled; between
+/// the two is tessellation noise and counts as neither. `Some((bevel,
+/// sharp))` - a point on each - when the loop has a bevelled segment
+/// AND more than `width` of sharp length: a ride of the wall would
+/// cut the sharp length, a ride of the top loop would stand inside
+/// the part at the bevel.
+fn partly_bevelled(top: &[Point2], wall: &[Point2], width: f64) -> Option<(Point2, Point2)> {
+    if wall.is_empty() {
+        return None;
+    }
+    let mut sharp_len: f64 = 0.0;
+    let mut sharp_at: Option<Point2> = None;
+    let mut bevel_at: Option<Point2> = None;
+    for (i, &a) in top.iter().enumerate() {
+        let b = top[(i + 1) % top.len()];
+        let mid = Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+        let d = near(a, wall).max(near(mid, wall)).max(near(b, wall));
+        if d <= SAME_EDGE {
+            sharp_len += (b.x - a.x).hypot(b.y - a.y);
+            sharp_at = sharp_at.or(Some(mid));
+        } else if d > MATCH_SLACK {
+            bevel_at = bevel_at.or(Some(mid));
+        }
+    }
+    match (bevel_at, sharp_at) {
+        (Some(b), Some(s)) if sharp_len > width => Some((b, s)),
+        _ => None,
+    }
 }
 
 /// The farthest any vertex of `from` stands from the closed polyline
@@ -202,5 +254,46 @@ mod tests {
         let corner = Region::new(vec![rect(-30.0, -20.0, 30.0, 20.0), hole(-10.0, -5.0, 10.0, 5.0)]).expect("corner");
         let err = ride_loops(&top, &corner, 1.0, 9.0).expect_err("an orphan bevelled rim");
         assert!(err.to_string().contains("pick the edges to break"), "{err}");
+    }
+
+    /// #2887's plate: a 1 mm bevel on the X0 side only, the other three
+    /// sides sharp, and a sharp pocket. `extra` adds a collinear vertex
+    /// on the bevel's top edge.
+    fn one_side_bevelled(extra: bool) -> (Region, Region) {
+        let mut outer = vec![Point2::new(1.0, 0.0), Point2::new(60.0, 0.0), Point2::new(60.0, 40.0), Point2::new(1.0, 40.0)];
+        if extra {
+            outer.push(Point2::new(1.0, 20.0));
+        }
+        let top = Region::new(vec![Loop::new(outer).expect("outer"), hole(20.0, 15.0, 40.0, 25.0)]).expect("top");
+        let corner = Region::new(vec![rect(0.0, 0.0, 60.0, 40.0), hole(20.0, 15.0, 40.0, 25.0)]).expect("corner");
+        (top, corner)
+    }
+
+    #[test]
+    fn a_loop_bevelled_on_one_side_refuses_by_name() {
+        // Vertex gap 0 (both bevel corners lie on the wall's sides): the
+        // old reading was "sharp", the tip riding x = 1 inside the part.
+        let (top, corner) = one_side_bevelled(false);
+        let err = ride_loops(&top, &corner, 1.0, 9.0).expect_err("a partly bevelled loop").to_string();
+        assert!(err.contains("only part of its length"), "{err}");
+        assert!(err.contains("pick the edges to break"), "{err}");
+        assert!(err.contains("near X1.000 Y20.000"), "names the bevelled part: {err}");
+    }
+
+    #[test]
+    fn a_loop_bevelled_on_one_side_refuses_with_an_extra_vertex_too() {
+        // Vertex gap 1: the old reading was "bevelled", the wall ridden
+        // along the three sharp sides as well.
+        let (top, corner) = one_side_bevelled(true);
+        let err = ride_loops(&top, &corner, 1.0, 9.0).expect_err("a partly bevelled loop").to_string();
+        assert!(err.contains("only part of its length"), "{err}");
+        assert!(err.contains("pick the edges to break"), "{err}");
+    }
+
+    #[test]
+    fn a_loop_bevelled_all_round_is_not_partly_bevelled() {
+        let (top, wall) = (rect(-19.0, -9.0, 19.0, 9.0), rect(-20.0, -10.0, 20.0, 10.0));
+        assert_eq!(partly_bevelled(top.points(), wall.points(), 1.0), None);
+        assert_eq!(partly_bevelled(wall.points(), wall.points(), 1.0), None);
     }
 }
