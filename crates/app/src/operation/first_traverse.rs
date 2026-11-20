@@ -98,7 +98,7 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, b
                 .collect();
             let has_table = (0..over.fixtures.len()).any(is_table);
             if over.rotaries.is_some() && !work_turns && !has_table {
-                note = Some(format!("{TABLE_UNJUDGED_NOTE}: the machine states no X, Y and Z travel, so the first traverse is judged against the stock and the fixtures only"));
+                note = Some(format!("{TABLE_UNJUDGED_NOTE}: the machine does not state all of the X, Y and Z travel, so the first traverse is judged against the stock and the fixtures only"));
             }
             verify::first_traverse_low(path, over.stock_top, &steel, |p| f.z_local(p), Z_TOL)
         }

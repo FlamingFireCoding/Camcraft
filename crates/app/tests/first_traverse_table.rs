@@ -168,7 +168,8 @@ fn a_head_tilt_machine_with_no_travel_names_the_table_unjudged() {
     assert_eq!(status, OpStatus::Ok);
     assert_eq!(low(&warns), None, "no table box, so no table verdict: {warns:?}");
     let note = notes.iter().find(|n| n.contains("machine table is not judged")).unwrap_or_else(|| panic!("no note: {notes:?}"));
-    assert!(note.contains("states no X, Y and Z travel"), "{note}");
+    assert!(note.contains("does not state all of the X, Y and Z travel"), "{note}");
+    assert!(note.contains("judged against the stock and the fixtures only"), "{note}");
 }
 
 #[test]
