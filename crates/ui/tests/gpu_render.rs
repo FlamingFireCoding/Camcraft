@@ -31,6 +31,10 @@ use camcraft_ui::interact;
 use camcraft_ui::state::{CommandKind, DisplayMode, State};
 use camcraft_ui::viewport::{Camera, GpuPart, ProjectionMode, View3D};
 
+/// #2958: the wide overlay lines and MSAA, on this binary's device.
+#[path = "gpu_render/wide_lines.rs"]
+mod wide_lines;
+
 const SIDE: u32 = 256;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 // Concurrent fallback-device creation and teardown can crash in software

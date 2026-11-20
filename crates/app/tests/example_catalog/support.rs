@@ -286,17 +286,29 @@ pub(super) fn within(label: &str, budget: std::time::Duration, f: impl FnOnce() 
     });
     let result = rx.recv_timeout(budget.saturating_sub(start.elapsed()));
     // Direct stderr keeps successful timings visible with libtest capture on.
-    let _ = writeln!(
-        std::io::stderr(),
-        "catalog {label} elapsed={:.3}s budget={:.3}s",
-        start.elapsed().as_secs_f64(),
-        budget.as_secs_f64()
-    );
+    // One write for the whole line (#3043): stderr has no buffer, so a
+    // formatted write goes out in pieces, and the panic message of a parallel
+    // case thread can split the line between those pieces.
+    let line = timing_line(label, start.elapsed(), budget);
+    let _ = std::io::stderr().lock().write_all(line.as_bytes());
     match result {
         Ok(Ok(())) => {}
         Ok(Err(payload)) => resume_unwind(payload),
         Err(_) => panic!("{label}: did not finish within {budget:?}; move this case to app heavy: example_catalog or reduce its model"),
     }
+}
+
+// The full timing line of one case, with its newline, for one stderr write.
+fn timing_line(
+    label: &str,
+    elapsed: std::time::Duration,
+    budget: std::time::Duration,
+) -> String {
+    format!(
+        "catalog {label} elapsed={:.3}s budget={:.3}s\n",
+        elapsed.as_secs_f64(),
+        budget.as_secs_f64()
+    )
 }
 
 pub(super) fn run_case(family: &str, name: &str, action: &str, run: fn(&CatalogCase)) {
@@ -338,4 +350,18 @@ fn a_case_over_its_budget_fails_by_name() {
         "{message}"
     );
     assert!(message.contains("app heavy: example_catalog"), "{message}");
+}
+
+#[test]
+fn timing_line_is_one_whole_line() {
+    let line = timing_line(
+        "2d/first-part regenerates",
+        std::time::Duration::from_millis(1234),
+        std::time::Duration::from_secs(60),
+    );
+    assert_eq!(
+        line,
+        "catalog 2d/first-part regenerates elapsed=1.234s budget=60.000s\n"
+    );
+    assert_eq!(line.matches('\n').count(), 1, "{line:?}");
 }

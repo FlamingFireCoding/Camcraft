@@ -372,6 +372,12 @@ pub fn run_program_with(
                         _ => None,
                     }).collect();
                 let mut props = c.props();
+                if c.kind == crate::cl::CycleKind::FineBore {
+                    // #1445: refused for a script without `fineBoring`;
+                    // the shift is read from the chain itself.
+                    let op = base.get("OperationName").and_then(Value::as_str).unwrap_or("");
+                    super::fine_bore::voice(s.voices_fine_boring(), c, &records[i + 1..], op, &mut props, &mut warnings);
+                }
                 props.insert("ChainFeedRate".into(), json!(chain.first().and_then(|m| m.feed)));
                 props.insert("ChainBottomZ".into(), json!(chain.iter().map(|m| m.z).reduce(f64::min)));
                 s.set_properties(&merged(&base, &props, pos))?;

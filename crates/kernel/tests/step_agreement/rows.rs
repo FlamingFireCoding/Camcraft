@@ -27,6 +27,10 @@ pub enum Truck {
         /// The chord the meshes were made at, mm.
         chord_mm: f64,
     },
+    /// A fixture added after #2790 removed the truck reader: there is no
+    /// truck reading, and none is made up. Only the solidcore side and the
+    /// length unit are judged.
+    NotRecorded,
 }
 
 /// One fixture: its length unit (mm per unit, what crates/app's
@@ -237,6 +241,33 @@ pub const ROWS: &[Row] = &[
         ),
         import: "agree",
         mesh: "watertight, within tolerance",
+    },
+    // #2973: a 1 degree draft frustum whose angle unit has the short name
+    // PLANUN. It was added after #2790, so truck has no recorded reading.
+    // The bench's raw tessellator does not expand the short names, so it
+    // reads the angle in radians and its pcurve check refuses the cone.
+    Row {
+        file: "short_units_degree_cone.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "no mesh: solid #16 not read: pcurves failed",
+    },
+    // #2919: the model reader expands unit aliases; the raw tessellator
+    // still assumes millimetres, and truck cannot read the short geometry names.
+    Row {
+        file: "short_units_inch.step",
+        mm_per_unit: 25.4,
+        truck: Truck::Refused("a shell's mesh is not finite"),
+        import: "truck refuses: a shell's mesh is not finite",
+        mesh: "off: volume, area",
+    },
+    Row {
+        file: "short_units_metre.step",
+        mm_per_unit: 1000.0,
+        truck: Truck::Refused("a shell's mesh is not finite"),
+        import: "truck refuses: a shell's mesh is not finite",
+        mesh: "off: volume, area",
     },
     Row {
         file: "spline_revolved.step",
