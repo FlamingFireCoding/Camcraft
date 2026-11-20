@@ -3,7 +3,9 @@
 //! meshes each solid with the machining mesh (watertight, outward,
 //! deviation measured) and each sheet with its open boundary allowed, at the
 //! importer's chord cap; a model over the facet budget is meshed again at a
-//! coarser chord, and the chord it was made at is handed out (#864, #1054).
+//! coarser chord, and so is a model whose edges lie off their surfaces past
+//! the chord in a file that states a tolerance (at twice it, at most
+//! 0.02 mm, #2976); the chord it was made at is handed out (#864, #1054).
 //! Every kernel refusal keeps its reason.
 //! Provenance: our own glue over camcraft-kernel's public API (solidcore-step
 //! reads ISO 10303-21/-42 from the public standards, Apache-2.0); no
@@ -32,7 +34,8 @@ pub struct StepMesh {
     /// left out, gives one mesh with no ranges, as one soup.
     pub mesh: Mesh,
     /// The chord tolerance the mesh was made at (mm): the chord cap, or
-    /// coarser when the cap did not fit the facet budget.
+    /// coarser when the cap did not fit the facet budget or the model's
+    /// edge gaps (#2976).
     pub chord_mm: f64,
     /// The largest certified distance (mm) from a facet to its surface,
     /// over every solid and sheet: the kernel's measured bound, never more
@@ -87,8 +90,19 @@ fn read(data: &[u8], budget: usize, chord_cap: f64, keep_open: bool) -> Result<S
     let import = import_step_model(&mut SolidcoreKernel::default(), data, &stop)
         .map_err(|e| StepError::Refused(locate(data, e.to_string())))?;
     let refused = |label: &str, e: MeshRefusal| StepError::Refused(format!("{label} could not be tessellated: {e} - {ADVICE}"));
+    // A face whose edges lie off its surface by more than the chord cannot
+    // be meshed to the chord. A file that states a tolerance is then meshed
+    // once at the coarser tolerance its edge gaps allow (#2976): the chord
+    // handed out is coarser, so the model is reduced fidelity (#864).
+    let loosen = |chord: f64, e: &MeshRefusal| match e {
+        MeshRefusal::FaceCapped { .. } | MeshRefusal::EdgeCapped { .. } | MeshRefusal::Deviation { .. } => {
+            import.edge_gap.loose_chord_mm(chord)
+        }
+        _ => None,
+    };
     let mut chord = chord_cap;
-    for _ in 0..=COARSEN_TRIES {
+    let mut loosened = false;
+    'tries: for _ in 0..=COARSEN_TRIES {
         let mut meshes: Vec<(String, MachiningMesh)> = Vec::new();
         let mut holes: Vec<String> = Vec::new();
         let mut total = 0usize;
@@ -101,7 +115,13 @@ fn read(data: &[u8], budget: usize, chord_cap: f64, keep_open: bool) -> Result<S
                     holes.push(hole(&label, solid.record.faces.len(), &open.left_out));
                     open.mesh
                 }
-                Err(e) => return Err(refused(&label, e)),
+                Err(e) => match loosen(chord, &e) {
+                    Some(loose) => {
+                        (chord, loosened) = (loose, true);
+                        continue 'tries;
+                    }
+                    None => return Err(refused(&label, e)),
+                },
             };
             total = total.saturating_add(mesh.triangles.len());
             meshes.push((label, mesh));
@@ -114,12 +134,22 @@ fn read(data: &[u8], budget: usize, chord_cap: f64, keep_open: bool) -> Result<S
                 break;
             }
             let label = format!("sheet #{}", sheet.item);
-            let mesh = sheet_mesh(&sheet.record, chord, &stop).map_err(|e| refused(&label, e))?;
+            let mesh = match sheet_mesh(&sheet.record, chord, &stop) {
+                Ok(mesh) => mesh,
+                Err(e) => match loosen(chord, &e) {
+                    Some(loose) => {
+                        (chord, loosened) = (loose, true);
+                        continue 'tries;
+                    }
+                    None => return Err(refused(&label, e)),
+                },
+            };
             total = total.saturating_add(mesh.triangles.len());
             meshes.push((label, mesh));
         }
         if total <= budget {
-            return finish(&import, &meshes, chord, &holes);
+            let gap_note = loosened.then(|| import.edge_gap.loose_note(chord));
+            return finish(&import, &meshes, chord, &holes, gap_note);
         }
         // Facets fall about as the chord rises; `total` may be a lower bound
         // (the count stops at the budget), so the chord at least doubles.
@@ -137,6 +167,7 @@ fn finish(
     meshes: &[(String, camcraft_kernel::machining_mesh::MachiningMesh)],
     chord: f64,
     holes: &[String],
+    gap_note: Option<String>,
 ) -> Result<StepMesh, StepError> {
     // One facet range for each solid: solids that share a wall stay apart
     // for the slicer and the winding check (#917). A sheet or a partial
@@ -148,7 +179,8 @@ fn finish(
         crate::kernel_import::push_facets(mesh, &mut facets).map_err(StepError::Refused)?;
         ranges.push(start..facets.len());
     }
-    let mut notes: Vec<String> = import.notes.iter().map(|n| format!("STEP: {n}")).collect();
+    let mut notes: Vec<String> = gap_note.into_iter().collect();
+    notes.extend(import.notes.iter().map(|n| format!("STEP: {n}")));
     for solid in &import.solids {
         let label = solid_label(solid.item, &solid.name);
         notes.extend(solid.notes.iter().map(|n| format!("STEP {label}: {n}")));

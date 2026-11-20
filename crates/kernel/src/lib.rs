@@ -47,6 +47,7 @@ mod solidcore_step_import;
 pub mod solidcore_trims;
 pub mod solidcraft;
 mod step_curve_guard;
+pub mod step_edge_gap;
 mod step_face_winding;
 #[cfg(feature = "truck")]
 pub mod truck_impl;

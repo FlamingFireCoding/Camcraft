@@ -69,7 +69,8 @@ pub fn parse_with_chord(data: &[u8]) -> Result<(Mesh, f64), ImportError> {
 
 /// [`parse`], and the chord tolerance the kept mesh was made at, in
 /// millimetres (#864): [`CHORD_CAP`], or coarser when the model did not
-/// fit `budget` facets there (#1054). Never NaN, infinite or negative.
+/// fit `budget` facets there (#1054) or its edges lie off their surfaces
+/// past it (#2976). Never NaN, infinite or negative.
 pub fn parse_with_chord_budget(data: &[u8], budget: usize) -> Result<(Mesh, f64), ImportError> {
     parse_noted(data, budget).map(|(mesh, chord, _)| (mesh, chord))
 }
