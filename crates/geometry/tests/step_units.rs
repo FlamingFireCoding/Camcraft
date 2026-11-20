@@ -85,6 +85,34 @@ fn contexts_that_disagree_or_a_unit_that_cannot_be_read_refuse_by_name() {
     );
 }
 
+/// #2789 review: a length unit that no context states is refused by name,
+/// never read as 1 mm per unit. Angle units alone (a radian, a degree
+/// converted from it) are no length unit, and keep millimetres.
+#[test]
+fn a_length_unit_that_no_context_states_is_refused_by_name() {
+    // The context lists only the angle units; the inch stands beside it.
+    let data = format!(
+        "#10 = ( GEOMETRIC_REPRESENTATION_CONTEXT( 3 ) GLOBAL_UNIT_ASSIGNED_CONTEXT( ( #73, #74 ) ) REPRESENTATION_CONTEXT( '', '' ) );\n{ANGLES}\n\
+         #72 = ( CONVERSION_BASED_UNIT( 'INCH', #76 ) LENGTH_UNIT( ) NAMED_UNIT( * ) );\n\
+         #76 = LENGTH_MEASURE_WITH_UNIT( LENGTH_MEASURE( 25.4 ), #77 );\n\
+         #77 = ( LENGTH_UNIT( ) NAMED_UNIT( * ) SI_UNIT( .MILLI., .METRE. ) );"
+    );
+    let got = units(&data);
+    assert!(
+        got.as_ref().is_err_and(|e| e.contains("length unit #72") && e.contains("GLOBAL_UNIT_ASSIGNED_CONTEXT")),
+        "{got:?}"
+    );
+    // A metre SI unit without its LENGTH_UNIT part is a length unit too.
+    let bare = units("#72 = ( NAMED_UNIT( * ) SI_UNIT( $, .METRE. ) );");
+    assert!(bare.as_ref().is_err_and(|e| e.contains("length unit #72")), "{bare:?}");
+    // A degree is a conversion-based unit of an angle, not of a length.
+    let degree = format!(
+        "{ANGLES}\n#75 = ( CONVERSION_BASED_UNIT( 'DEGREE', #76 ) NAMED_UNIT( * ) PLANE_ANGLE_UNIT( ) );\n\
+         #76 = PLANE_ANGLE_MEASURE_WITH_UNIT( PLANE_ANGLE_MEASURE( 0.0174532925 ), #73 );"
+    );
+    assert_eq!(units(&degree), Ok(None));
+}
+
 /// #2789: a unit that converts to itself is refused at the chain cap, never
 /// followed forever.
 #[test]

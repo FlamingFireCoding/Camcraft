@@ -58,6 +58,37 @@ parser takes it. The scan refuses it. Pinned on both sides:
 (app). The scan's table was written against ruststep's tokenizer; re-audit
 it when the solidcore pin moves.
 
+**A length unit that no context states: refused (review of PR #2918).**
+The parser maps some ISO 10303-21 short names to long names (`A2PL3D`,
+`CRTPNT`, `DRCTN`, `LNGUNT`, `CNBSUN`, `LMWU`, ...) but not the short forms
+of `GLOBAL_UNIT_ASSIGNED_CONTEXT` and `SI_UNIT`.
+- Old reading (ruststep): it mapped no short names. A short-name tool file
+  gave no placement, and the tool body fell back to its numeric placement
+  ("the file names no coordinate systems").
+- Reading at the reviewed head: the CIP is found, the unit context is not,
+  and the reader took 1 mm per unit. An inch or metre file put the tool
+  25.4 or 1000 times too small, with no refusal.
+- New reading: when no context states a length unit but the file has one
+  (a `LENGTH_UNIT`, an `SI_UNIT` of the metre, or a `CONVERSION_BASED_UNIT`
+  over a `LENGTH_MEASURE_WITH_UNIT`), the read is refused by name ("length
+  unit #N is in the file, but no GLOBAL_UNIT_ASSIGNED_CONTEXT states a
+  length unit ..."). The maintainer confirmed: refuse.
+- A file with no unit record at all keeps 1 mm per unit, as the ruststep
+  reader did (`mm_per_unit` gave `None`, read as 1.0). Angle units alone
+  (radian, degree) are no length unit.
+- Pins: `a_short_name_tool_file_in_inches_or_metres_is_refused_by_name`,
+  `a_short_name_tool_file_with_a_long_unit_context_reads_at_its_scale`,
+  `a_long_name_tool_file_in_inches_reads_at_twenty_five_point_four`,
+  `a_tool_file_with_no_unit_record_keeps_millimetres` (`step_csys_read`) and
+  `a_length_unit_that_no_context_states_is_refused_by_name` (`step_units`).
+- Dropped: read the short-name context and SI unit (no public source in
+  the repository or the solidcore checkout states those two short names,
+  and a guessed name is a guessed scale); refuse every coordinate-system
+  read that finds no unit context (it would also refuse the old
+  no-unit-record files, which read the same as before).
+- The model import has the same gap in the kernel's `length_units`; that
+  is #2919, a separate fix.
+
 **Cost to change later.** Low. The readers are behind
 `camcraft_geometry::step_csys::read_tool_csys`, `step_units::length_unit_mm`
 and `step_diag::locate`; a change of reading is local to those files and

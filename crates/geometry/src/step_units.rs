@@ -30,11 +30,53 @@ pub fn length_unit_mm(text: &str) -> Result<Option<f64>, String> {
 /// Millimetres in one length unit of the file, read from every
 /// representation context's `GLOBAL_UNIT_ASSIGNED_CONTEXT`.
 ///
-/// `Ok(None)`: no context states a length unit; the caller keeps
+/// `Ok(None)`: the file has no length unit at all; the caller keeps
 /// millimetres, as every import did before. `Err`: a stated unit this
-/// reader can't convert, or contexts that disagree. A refusal names
-/// it, because guessing a part's scale is the silent wrong answer.
+/// reader can't convert, contexts that disagree, or a length unit in the
+/// file that no context states (see [`unstated_length_unit`]). A refusal
+/// names it, because guessing a part's scale is the silent wrong answer.
 pub(crate) fn mm_per_unit(ex: &Exchange) -> Result<Option<f64>, String> {
+    let found = stated_mm_per_unit(ex)?;
+    match (found, unstated_length_unit(ex)) {
+        (None, Some(id)) => Err(format!(
+            "length unit #{id} is in the file, but no GLOBAL_UNIT_ASSIGNED_CONTEXT \
+             states a length unit (the unit context is missing, or it is written \
+             in a form this reader does not read)"
+        )),
+        _ => Ok(found),
+    }
+}
+
+/// The first length-unit entity of the file, when no context states one
+/// (#2789 review). The parser maps some ISO 10303-21 short names to their
+/// long names (`LNGUNT`, `CNBSUN`, `LMWU`) but not the unit context's, so a
+/// short-name file shows its unit but not the context that assigns it.
+/// Reading it at 1 mm per unit would put an inch or metre file 25.4 or
+/// 1000 times too small. Evidence of a length unit: a `LENGTH_UNIT`, an
+/// `SI_UNIT` of the metre, or a `CONVERSION_BASED_UNIT` whose measure is a
+/// `LENGTH_MEASURE_WITH_UNIT`. Angle units (radian, degree) are not.
+fn unstated_length_unit(ex: &Exchange) -> Option<u64> {
+    let metre = |a: &[Param]| {
+        a.get(1)
+            .and_then(Param::as_enum)
+            .is_some_and(|e| e.trim_matches('.').eq_ignore_ascii_case("METRE"))
+    };
+    let length_measure = |a: &[Param]| {
+        a.get(1)
+            .and_then(Param::as_ref_id)
+            .and_then(|m| ex.get(m))
+            .is_some_and(|m| m.has("LENGTH_MEASURE_WITH_UNIT"))
+    };
+    ex.entities.iter().find_map(|(&id, e)| {
+        let length = e.has("LENGTH_UNIT")
+            || e.record("SI_UNIT").is_some_and(metre)
+            || e.record("CONVERSION_BASED_UNIT").is_some_and(length_measure);
+        length.then_some(id)
+    })
+}
+
+/// The length unit that the file's `GLOBAL_UNIT_ASSIGNED_CONTEXT`s state.
+fn stated_mm_per_unit(ex: &Exchange) -> Result<Option<f64>, String> {
     let mut found: Option<f64> = None;
     for e in ex.entities.values() {
         let Some(a) = e.record("GLOBAL_UNIT_ASSIGNED_CONTEXT") else {

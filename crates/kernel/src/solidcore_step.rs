@@ -241,7 +241,7 @@ fn read_guarded(
 /// states none. `Err` names a length unit the reader cannot convert: it
 /// would read such a unit as millimetres without a word (its units module
 /// says so), and a guessed scale is the silent wrong answer, so the seam
-/// refuses the file as crates/app's `step_units` does (#306).
+/// refuses the file as `camcraft_geometry::step_units` does (#306).
 fn length_units(ex: &Exchange) -> Result<Vec<f64>, String> {
     let mut found: Vec<f64> = Vec::new();
     for (id, e) in &ex.entities {

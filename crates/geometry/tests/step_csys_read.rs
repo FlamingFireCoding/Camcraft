@@ -36,6 +36,98 @@ fn the_fixture_reads_through_the_part_21_parser() {
     assert_eq!(r.find(CsysRole::Primary).map(|c| c.entity), Ok(30));
 }
 
+/// The fixture's millimetre unit line.
+const MM: &str = "#12 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );";
+/// An inch: 25.4 of the millimetre (ids 15-17 are free in the fixture).
+const INCH: &str = "#12 = ( CONVERSION_BASED_UNIT('INCH', #15) LENGTH_UNIT() NAMED_UNIT(#16) );\n\
+                    #15 = LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4), #17);\n\
+                    #16 = DIMENSIONAL_EXPONENTS(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);\n\
+                    #17 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );";
+/// The metre.
+const METRE: &str = "#12 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) );";
+
+/// `text` with the ISO 10303-21 short names that the parser maps to long
+/// names (`A2PL3D`, `CRTPNT`, `DRCTN`, `LNGUNT`, ...). The unit context
+/// gets `context`: the parser maps no short form of
+/// `GLOBAL_UNIT_ASSIGNED_CONTEXT`, so any name it leaves as written stands
+/// for one (we do not state the ISO short form here). `SI_UNIT` keeps its
+/// long name for the same reason.
+fn short_names(text: &str, context: &str) -> String {
+    [
+        ("AXIS2_PLACEMENT_3D(", "A2PL3D("),
+        ("CARTESIAN_POINT(", "CRTPNT("),
+        ("DIRECTION(", "DRCTN("),
+        ("GEOMETRIC_REPRESENTATION_CONTEXT(", "GMRPCN("),
+        ("LENGTH_UNIT(", "LNGUNT("),
+        ("NAMED_UNIT(", "NMDUNT("),
+        ("CONVERSION_BASED_UNIT(", "CNBSUN("),
+        ("LENGTH_MEASURE_WITH_UNIT(", "LMWU("),
+        ("DIMENSIONAL_EXPONENTS(", "DMNEXP("),
+        ("GLOBAL_UNIT_ASSIGNED_CONTEXT(", context),
+    ]
+    .iter()
+    .fold(text.to_string(), |t, (long, short)| t.replace(long, short))
+}
+
+/// The CIP's z in millimetres (the fixture writes -75 file units).
+fn cip_z(text: &str) -> Result<f64, String> {
+    let r = read_tool_csys(text)?;
+    r.find(CsysRole::InProcess).map(|c| c.origin[2])
+}
+
+/// #2789 review: a short-name tool file whose unit context the parser does
+/// not read, in inches or metres, is refused by name. The old reader found
+/// no placement in it; the new one finds the CIP and must not place it at
+/// 1 mm per unit (25.4 or 1000 times too small).
+#[test]
+fn a_short_name_tool_file_in_inches_or_metres_is_refused_by_name() {
+    for unit in [INCH, METRE] {
+        let text = short_names(&edited(MM, unit), "UNMAPPED_UNIT_CONTEXT(");
+        let got = cip_z(&text);
+        assert!(
+            got.as_ref()
+                .is_err_and(|e| e.contains("length unit #12") && e.contains("GLOBAL_UNIT_ASSIGNED_CONTEXT")),
+            "{unit}: {got:?}"
+        );
+    }
+}
+
+/// The same short-name files with a unit context that the parser reads
+/// place the CIP at the file's scale: the refusal above is the context's.
+#[test]
+fn a_short_name_tool_file_with_a_long_unit_context_reads_at_its_scale() {
+    for (unit, k) in [(INCH, 25.4), (METRE, 1000.0), (MM, 1.0)] {
+        let text = short_names(&edited(MM, unit), "GLOBAL_UNIT_ASSIGNED_CONTEXT(");
+        let z = cip_z(&text).expect("reads");
+        assert!((z + 75.0 * k).abs() < 1e-9, "{unit}: {z}");
+    }
+}
+
+#[test]
+fn a_long_name_tool_file_in_inches_reads_at_twenty_five_point_four() {
+    let z = cip_z(&edited(MM, INCH)).expect("reads");
+    assert!((z + 75.0 * 25.4).abs() < 1e-9, "{z}");
+}
+
+/// A file with no unit record at all keeps 1 mm per unit, as the ruststep
+/// reader did (its `mm_per_unit` gave `None`, read as 1.0).
+#[test]
+fn a_tool_file_with_no_unit_record_keeps_millimetres() {
+    let text = fixture("tool_csys_iso13399.step");
+    let context = text
+        .lines()
+        .find(|l| l.starts_with("#10 ="))
+        .expect("the fixture has its context")
+        .to_string();
+    let mut text = text.replacen(&context, "#10 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('', '') );", 1);
+    for id in ["#12 =", "#13 =", "#14 ="] {
+        let line = text.lines().find(|l| l.starts_with(id)).expect("unit line").to_string();
+        text = text.replacen(&format!("{line}\n"), "", 1);
+    }
+    assert!(!text.contains("_UNIT"), "no unit record is left");
+    assert_eq!(cip_z(&text), Ok(-75.0));
+}
+
 #[test]
 fn an_entity_id_defined_twice_is_refused_by_name() {
     // A second #51 that moves the CIP: the old reader took the last
@@ -107,7 +199,8 @@ fn corrupt_input_is_a_clean_error_never_a_panic() {
     for text in &cases {
         let _ = read_tool_csys(text);
     }
-    // A self-referencing placement and a unit that loops refuse, never hang.
+    // A self-referencing placement refuses, never hangs (a unit that loops:
+    // the `step_units` suite).
     let looped = edited("#50 = AXIS2_PLACEMENT_3D('CIP', #51, #52, #53);", "#50 = AXIS2_PLACEMENT_3D('CIP', #50, #50, #50);");
     let r = read_tool_csys(&looped).expect("reads");
     assert!(r.find(CsysRole::InProcess).is_err_and(|e| e.contains("#50")), "{:?}", r.refused);
