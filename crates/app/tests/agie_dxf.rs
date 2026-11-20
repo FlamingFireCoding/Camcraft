@@ -113,3 +113,91 @@ fn a_nonradial_hole_or_unqualified_circle_radius_cannot_publish_a_job() {
         assert!(!dir.path().join("CIRCLE20").exists());
     }
 }
+
+const ROUNDED_SCRIPT: &str = include_str!("../../../examples/agie/rounded-punch.camscript");
+const ROUNDED_DXF: &str = include_str!("../../../examples/agie/rounded-punch.dxf");
+
+#[test]
+fn a_mixed_radius_drawing_keeps_each_nominal_arc_and_its_straight_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = run(
+        dir.path(),
+        &ROUNDED_SCRIPT.replace("rounded-punch", "racetrack"),
+        ROUNDED_DXF,
+    );
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let iso = fs::read_to_string(dir.path().join("ROUND20/ROUND20.ISO")).unwrap();
+    assert!(iso.contains("G00 X0.00000 Y-14.00000"));
+    let arcs: Vec<&str> = iso
+        .lines()
+        .filter_map(|s| s.split_once(" G03 ").map(|(_, a)| a))
+        .collect();
+    assert_eq!(
+        arcs,
+        [
+            "X20.00000 Y-8.00000 I0.00000 J6.00000 ;",
+            "X16.00000 Y14.00000 I-4.00000 J0.00000 ;",
+            "X-20.00000 Y8.00000 I0.00000 J-6.00000 ;",
+            "X-16.00000 Y-14.00000 I4.00000 J0.00000 ;",
+        ]
+    );
+    assert!(iso.contains("G01 X0.00000 Y-14.00000"));
+}
+
+#[test]
+fn an_oblique_tangent_face_joins_three_distinct_source_arcs() {
+    let script = include_str!("../../../examples/agie/three-corner-punch.camscript")
+        .replace("three-corner-punch", "racetrack");
+    let dir = tempfile::tempdir().unwrap();
+    let result = run(
+        dir.path(),
+        &script,
+        include_str!("../../../examples/agie/three-corner-punch.dxf"),
+    );
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let iso = fs::read_to_string(dir.path().join("THREEARC/THREEARC.ISO")).unwrap();
+    assert_eq!(iso.matches("G03 ").count(), 3);
+    assert!(iso.contains("G03 X27.00000 Y4.00000 I0.00000 J5.00000"));
+    assert!(iso.contains("G01 X3.00000 Y22.00000"));
+    assert!(iso.contains("G03 X-5.00000 Y18.00000 I-3.00000 J-4.00000"));
+}
+
+#[test]
+fn the_tangent_punch_refuses_unsafe_seams_grid_changes_and_nonconvex_sources() {
+    let script = ROUNDED_SCRIPT.replace("rounded-punch", "racetrack");
+    let flat = "LINE\n8\nprofile\n10\n-16\n20\n-14\n11\n14\n21\n-14";
+    // These alternate semicircles have the same two endpoints as the flat.
+    let arc = "ARC\n8\nprofile\n10\n-1\n20\n-14\n40\n15\n50\n";
+    for (script, drawing) in [
+        (script.replace("[0, -21]", "[-15, -21]"), ROUNDED_DXF.into()),
+        (script.replace("[0, -21]", "[0, -12]"), ROUNDED_DXF.into()),
+        (
+            script.replace("position: [0, 0]", "position: [0.000003, 0]"),
+            ROUNDED_DXF.into(),
+        ),
+        (
+            script.replace("position: [0, 0]", "position: [19.8, 0]"),
+            ROUNDED_DXF.into(),
+        ),
+        (
+            script.clone(),
+            ROUNDED_DXF.replace(flat, &format!("{arc}0\n51\n180")),
+        ),
+        (
+            script,
+            ROUNDED_DXF.replace(flat, &format!("{arc}180\n51\n360")),
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!run(dir.path(), &script, &drawing).status.success());
+        assert!(!dir.path().join("ROUND20").exists());
+    }
+}

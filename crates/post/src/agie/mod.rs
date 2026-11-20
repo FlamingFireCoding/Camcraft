@@ -7,6 +7,7 @@ mod cutoff;
 mod jescript;
 mod quality;
 mod round_profile;
+mod tangent_profile;
 
 pub use quality::AgieQuality;
 
@@ -33,7 +34,7 @@ pub struct AgieJob {
     pub quality: AgieQuality,
     pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
-    pub round_profile: Option<camcraft_geometry::wire_round_profile::RoundProfile>,
+    pub round_profile: Option<camcraft_geometry::wire_round_profile::WireProfile>,
     pub start: Option<[f64; 2]>,
     pub stock_min: [f64; 3],
     pub stock_max: [f64; 3],
@@ -92,8 +93,12 @@ impl Work {
         if !job.side.is_open() && separation != 1.0 {
             return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
         }
-        if let Some(shape) = job.round_profile {
-            return round_profile::prepare(job, shape, geometry);
+        if let Some(shape) = &job.round_profile {
+            use camcraft_geometry::wire_round_profile::WireProfile;
+            return match shape {
+                WireProfile::Round(r) => round_profile::prepare(job, *r, geometry),
+                WireProfile::Tangent(t) => tangent_profile::prepare(job, t, geometry),
+            };
         }
         let (points, entry, exit, reach) = if job.side.is_open() {
             let cut = cutoff::prepare(job)?;

@@ -151,3 +151,19 @@ The whole rough wire and threading hole must fit inside the stock.
 cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/circle-punch.camscript
 cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/north-circle.camscript
 ```
+
+### Cut a convex DXF punch with tangent lines and arcs
+
+1. Create 20 mm box stock in a Wire EDM setup. Import the complete closed DXF loop and place it on the top stock face. Use true LINE and ARC entities. Each joint must be tangent, with the material on the inside through every turn. Arcs can have different radii from 0.5 to 20 mm and sweep up to 180 degrees.
+2. Add a **Wire Contour** with the complete placed drawing as its source. Select **Punch**, the Berco Cut 0.25 mm wire and the qualified machine condition. Set the heights to the two stock faces and confirm that the punch will be captured.
+3. Place the 2 mm threading hole outside a straight parallel to X or Y. Its perpendicular projection must lie at least 3 mm from both ends of that straight. Leave at least 3 mm from the hole center to the straight. Other faces may be oblique.
+4. Generate and verify the toolpath. Choose **Agie native wire EDM**, set the separation to 1 mm and choose a new output directory. Inspect the formal check and plot in Agie Control. The ISO preserves each nominal endpoint and arc center. The resident technology applies the compensation.
+
+Placed joints and centers must be representable on the five-decimal ISO grid. The post checks the two emitted radii and tangent direction at every joint. The normal verification preview uses up to 2,048 tangent vertices to enclose the source arcs. Drawings can contain up to 128 curve segments.
+
+Run the mixed-radius four-corner example or the three-corner example with an oblique side from the repository root.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/rounded-punch.camscript
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/three-corner-punch.camscript
+```

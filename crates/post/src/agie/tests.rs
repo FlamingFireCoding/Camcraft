@@ -303,7 +303,7 @@ fn fine_plus_uses_only_its_measured_height_and_single_punch_cycle() {
 fn qualified_circle_radii_and_cardinal_entries_keep_the_exact_diameter() {
     use camcraft_geometry::{
         geo2d::Point2,
-        wire_round_profile::{RoundProfile, Spine},
+        wire_round_profile::{RoundProfile, Spine, WireProfile},
     };
     let center = [2.0, -3.0];
     for radius in [6.0, 8.375, 10.0, 15.0] {
@@ -311,10 +311,10 @@ fn qualified_circle_radii_and_cardinal_entries_keep_the_exact_diameter() {
             for sign in [-1.0, 1.0] {
                 let mut job = punch();
                 job.contour.clear();
-                job.round_profile = Some(RoundProfile {
+                job.round_profile = Some(WireProfile::Round(RoundProfile {
                     spine: Spine::Circle(Point2::new(center[0], center[1])),
                     radius,
-                });
+                }));
                 let mut hole = center;
                 let mut seam = center;
                 let mut opposite = center;

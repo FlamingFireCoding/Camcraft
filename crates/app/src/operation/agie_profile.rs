@@ -142,7 +142,7 @@ pub(crate) fn agie_job(
     // A union of sampled slices can add rounded vertices along a sloping face.
     if let Some(placed) = super::wire_sketch::placed(world, op)? {
         let mut shape = placed.shape;
-        shape.place_centers(|p| crate::geo2d::Point2::new(p.x - ox, p.y - oy));
+        shape.place(|p| crate::geo2d::Point2::new(p.x - ox, p.y - oy));
         return Ok(agie::AgieJob {
             quality,
             side,

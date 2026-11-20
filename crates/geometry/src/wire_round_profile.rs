@@ -2,8 +2,11 @@
 use crate::dxf::Primitive;
 use crate::geo2d::{Loop, Point2};
 use crate::geometry::{Point3, Triangle};
-use crate::sketch_data::SketchData;
+use crate::{sketch_chains::ClosedChain, sketch_data::SketchData};
+
+mod tangent;
 use std::f64::consts::PI;
+pub use tangent::{TangentProfile, TangentSegment};
 
 const FIT: f64 = 1e-8;
 const SAG: f64 = 0.000025;
@@ -29,19 +32,18 @@ impl RoundProfile {
     /// Read a source circle or prove that four drawing primitives form a capsule.
     /// A joint within the drawing tolerance alone does not establish tangency.
     pub fn from_sketch(data: &SketchData) -> Result<Self, String> {
-        let failure = "Wire DXF requires one CIRCLE or one closed racetrack of two tangent lines and two semicircles";
-        let chains = data.chains();
-        let [chain] = chains.closed.as_slice() else {
-            return Err(failure.into());
-        };
-        if data.skipped_total() != 0
-            || !chains.open.is_empty()
-            || !chains.rejected.is_empty()
-            || !chain.nesting.as_ref().is_ok_and(|n| n.depth == 0)
-            || chain.max_gap > FIT
-        {
-            return Err(failure.into());
+        match WireProfile::from_sketch(data)? {
+            WireProfile::Round(shape) => Ok(shape),
+            WireProfile::Tangent(_) => Err("The DXF profile is not a circle or racetrack".into()),
         }
+    }
+
+    pub fn prism(&self, ring: &Loop, bottom: f64, top: f64) -> Vec<Triangle> {
+        WireProfile::Round(*self).prism(ring, bottom, top)
+    }
+
+    fn from_chain(data: &SketchData, chain: &ClosedChain) -> Result<Self, String> {
+        let failure = "Wire DXF requires one CIRCLE or one closed racetrack of two tangent lines and two semicircles";
         if let [entity] = data.primitives()
             && let Primitive::Circle { center, radius } = entity.primitive
         {
@@ -153,11 +155,73 @@ impl RoundProfile {
         }
         Loop::new(points).map_err(|e| e.to_string())
     }
+}
+
+/// The authoritative curves of one placed Wire Contour punch.
+#[derive(Clone, Debug)]
+pub enum WireProfile {
+    Round(RoundProfile),
+    Tangent(TangentProfile),
+}
+
+impl WireProfile {
+    pub fn from_sketch(data: &SketchData) -> Result<Self, String> {
+        if data.primitives().len() > 128 {
+            return Err("The wire profile exceeds 128 source segments".into());
+        }
+        let chains = data.chains();
+        let [chain] = chains.closed.as_slice() else {
+            return Err("Wire DXF needs one complete simple closed profile".into());
+        };
+        if data.skipped_total() != 0
+            || !chains.open.is_empty()
+            || !chains.rejected.is_empty()
+            || !chain.nesting.as_ref().is_ok_and(|n| n.depth == 0)
+            || chain.max_gap > FIT
+        {
+            return Err("Wire DXF needs one complete simple closed profile".into());
+        }
+        match RoundProfile::from_chain(data, chain) {
+            Ok(shape) => Ok(Self::Round(shape)),
+            Err(reason) if matches!(data.primitives(), [e] if matches!(e.primitive, Primitive::Circle { .. })) => {
+                Err(reason)
+            }
+            Err(_) if data.primitives().len() == chain.segments.len() => {
+                TangentProfile::from_chain(chain).map(Self::Tangent)
+            }
+            Err(_) => Err("The wire profile must use every source segment".into()),
+        }
+    }
+
+    pub fn place(&mut self, transform: impl Fn(Point2) -> Point2) {
+        match self {
+            Self::Round(r) => r.place_centers(transform),
+            Self::Tangent(t) => t.place(transform),
+        }
+    }
+
+    pub fn preview(&self) -> Result<Loop, String> {
+        match self {
+            Self::Round(r) => r.preview(),
+            Self::Tangent(t) => t.preview(),
+        }
+    }
 
     /// A convex fan at both ends and two outward triangles per wall.
     pub fn prism(&self, ring: &Loop, bottom: f64, top: f64) -> Vec<Triangle> {
-        let [a, b] = self.centers();
-        let mid = Point2::new((a.x + b.x) / 2., (a.y + b.y) / 2.);
+        let mid = match self {
+            Self::Round(shape) => {
+                let [a, b] = shape.centers();
+                Point2::new((a.x + b.x) / 2., (a.y + b.y) / 2.)
+            }
+            Self::Tangent(_) => {
+                let n = ring.points().len() as f64;
+                Point2::new(
+                    ring.points().iter().map(|p| p.x / n).sum(),
+                    ring.points().iter().map(|p| p.y / n).sum(),
+                )
+            }
+        };
         let at = |p: Point2, z| Point3::new(p.x, p.y, z);
         let mut facets = Vec::with_capacity(4 * ring.points().len());
         for (&p, &q) in ring
