@@ -132,8 +132,16 @@ fn next_from_inside_operation_1_shows_the_stock_after_operation_1() {
 
     // "Previous" from there goes back to the start, and shows the uncut stock.
     let back = sc.prev_op_start(t).expect("a previous operation");
+    assert_eq!(back, 0.0, "the start of Face1 is the start of the program");
     let (k0, _, pic0) = stepped(&world, &sc, back);
-    assert_eq!(k0, 0);
+    // #2901 / PR #2985: Face1 opens with its rapid seated on its own entry
+    // X/Y, a segment that takes no time. At t = 0 that segment is already
+    // complete, so the playback stands after it. Those moves are rapids
+    // (no feed), so they cut nothing: the picture is still the uncut stock.
+    let face1_op = sc.segs.first().map(|s| s.op).expect("Face1 has segments");
+    let lead = sc.segs.iter().take_while(|s| s.op == face1_op && s.secs == 0.0).count();
+    assert!(sc.segs[..lead].iter().all(|s| s.feed.is_none()), "the zero-time opening segments are rapids");
+    assert_eq!(k0, lead, "the start stands after the zero-time opening rapid of Face1, before any cut");
     assert!(same(&pic0, &played(&world, 0)), "the start shows the uncut stock");
 }
 
