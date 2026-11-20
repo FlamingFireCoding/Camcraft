@@ -25,3 +25,17 @@ diagonal servo feeds; the generated Side Burn does not need them.
 its public manual and inspection of its NC output. Additional motion
 types need a separate safety rule and pinning tests. Existing machine
 files remain valid and refuse Side Burn until they state `side`.
+
+### Bore fixture and editor coverage
+
+**Decided:** Refresh the Linux bore path pin for the current imported
+6,228-facet fixture. Pin the mesh size and exact cutting levels. Keep
+the verification, fallback, and time-budget checks. Pin `Code side` by
+its literal label in the existing machine editor test.
+
+**Why:** PR #2904 replaced the bore fixture. Its old Linux path counts
+describe the previous mesh. The explicit UI label assertion does not
+depend on the production code-role list.
+
+**Dropped:** Do not change the production planner to recover old fixture
+counts. Do not remove the exact path pin or weaken the safety checks.

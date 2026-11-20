@@ -72,6 +72,11 @@ fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     let mut h = History::default();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/Milling-test.step");
     let imp = ImportModel::new(&path).expect("the user's STEP imports");
+    // PR #2904 replaces the truck mesh (952 facets) with solidcore's
+    // measured machining mesh. The level regions and fitted arcs use it.
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        assert_eq!(imp.mesh.facets.len(), 6228, "the mesh behind the Linux path pin");
+    }
     let name = imp.name.clone();
     h.execute(&world, imp);
     let loc = Location { pos: Point3::new(0.0, 0.0, -7.0), ..Default::default() };
@@ -95,6 +100,13 @@ fn the_users_bore_roughs_adaptive_level_by_level_and_verifies_clean() {
     assert!(warns.is_empty(), "every level verifies clean: {warns:?}\nnotes {:?}", path.notes);
     let planar = path.moves.iter().filter(|m| m.kind == MoveKind::Feed && m.from.z == m.to.z).count();
     assert!(planar > 0, "the ladder cuts");
+    let mut levels: Vec<f64> = path.moves.iter()
+        .filter(|m| m.kind == MoveKind::Feed && m.from.z == m.to.z)
+        .map(|m| m.to.z)
+        .collect();
+    levels.sort_by(f64::total_cmp);
+    levels.dedup();
+    assert_eq!(levels, [0.0, 5.0, 10.0, 15.0], "every intended level cuts; no stock-face air level");
     // The HSM plan's arcs ride the levels (or the level says why not).
     let arcs = path.moves.iter().filter(|m| m.arc.is_some() && m.from.z == m.to.z).count();
     let fell: Vec<&String> = path.notes.iter().filter(|n| n.contains("Offset rings cut the level at Z")).collect();
@@ -184,11 +196,13 @@ fn bore_path_matches(got: (usize, usize, usize)) -> bool {
         // #1402, main 5eeb0370e.
         got == (4716, 4688, 549)
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        // Issue #2004 (PR #2013): measured by the cut runner, release, run
-        // 44127297984 at a8bb30f0c; every level verifies clean, none falls
-        // back, and no planning budget is reached. Before: (16029, 15372,
-        // 1427), issue #882.
-        got == (4726, 4698, 549)
+        // PR #2904 (bac4a96c7) changes this fixture's mesh from 952 to
+        // 6228 facets at the same chord cap (decision #917). The fixture
+        // and HSM planner are unchanged; the new mesh changes the level
+        // regions and their proved arc fits. The old truck-mesh reading
+        // was (4726, 4698, 549). With solidcore, all four cutting levels
+        // still verify clean, with no fallback or planning-budget stop.
+        got == (3158, 3130, 1141)
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         // Issue #2371: measured in release on PR #2934 at 48071efd4 and
         // unmodified main 61a817bed. Every level verifies clean, none
