@@ -1,7 +1,10 @@
 //! #2987: the first traverse of a 3+2 operation against the machine
 //! table. When the head tilts, the clearance plane drops toward the
 //! table on its low side; the table's top face over the stated travel
-//! must stay under it, or the post is held by name. When only the work
+//! must stay under it, or the post is held by name. The table counts only
+//! where the move along the tool axis can carry the tool under its top: a
+//! horizontal axis (B 90) never reads it, and an axis that points down
+//! toward the table gets a note. When only the work
 //! tilts (a rotary that turns the part), the table stays under the work
 //! and is not read. A head-tilt machine that states no travel gives a
 //! note that names the table as not judged - never a silent pass.
@@ -173,16 +176,45 @@ fn a_head_tilt_machine_with_no_travel_names_the_table_unjudged() {
 }
 
 #[test]
-fn a_head_tilt_past_90_reads_the_table_top_face_not_its_slab() {
-    // B 120: the axis points down-and-out, so the slab's underside (1e6
-    // mm deep) would read 5e5 mm "over" the plane. The top face reads
-    // 100 sin 120 + 20 cos 60 = 96.6; a plane 100 mm over the origin
-    // clears it, and one 90 mm over does not.
-    let b = 120f64.to_radians();
+fn a_head_tilt_past_90_names_the_table_unjudged() {
+    // B 120: the axis (sin 120, 0, cos 120) points down toward the table,
+    // so a HIGHER plane along it stands LOWER in the world. The table top
+    // face reads -100 sin 120 + 20 cos 60 = -76.6 at its low corner; a
+    // plane at 90 or 100 mm over the origin is far past it, and the move
+    // along the axis to the plane can go under the table top. The verdict
+    // can only say "raise", which is wrong here, so the note names the
+    // table as not judged (and the slab's underside, 5e5 mm along the
+    // axis, is never read as a top).
+    for over in [90.0, 100.0] {
+        let (_, _, warns, notes) = generate(Rig::Head, 120.0, ORIGIN_Z + over);
+        assert_eq!(low(&warns), None, "no table verdict past 90 deg: {warns:?}");
+        let note = notes.iter().find(|n| n.contains("machine table is not judged")).unwrap_or_else(|| panic!("no note at {over}: {notes:?}"));
+        assert!(note.contains("points down toward the table"), "{note}");
+    }
+}
+
+#[test]
+fn a_horizontal_head_axis_does_not_read_the_far_table_edge() {
+    // B 90: the axis is world +X. The table's far edge (x 100) reads 100
+    // along it, but a move along a horizontal axis keeps the world Z, so
+    // the tool never goes under the table top. A plane 40 mm over the
+    // origin clears the block (30 along X) and passes, with no note.
+    let (_, _, warns, notes) = generate(Rig::Head, 90.0, ORIGIN_Z + 40.0);
+    assert_eq!(low(&warns), None, "the table's far edge was read along a horizontal axis: {warns:?}");
+    assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
+}
+
+#[test]
+fn a_near_horizontal_head_axis_still_reads_the_table() {
+    // B 80: the axis has a small up component (cos 80 = 0.17). The table
+    // top face reads 100 sin 80 - 20 cos 80 = 95.0 along it. From a start
+    // on the table top at x 100, the move along the axis to a plane 40 mm
+    // over the origin drops the tool (95.0 - 40) cos 80 = 9.6 mm under
+    // the table top: refused by name, with the height to clear.
+    let b = 80f64.to_radians();
     let top = 100.0 * b.sin() - ORIGIN_Z * b.cos();
-    let (_, _, warns, _) = generate(Rig::Head, 120.0, ORIGIN_Z + 100.0);
-    assert_eq!(low(&warns), None, "the slab's underside was read: {warns:?}");
-    let (_, _, warns, _) = generate(Rig::Head, 120.0, ORIGIN_Z + 90.0);
-    let (_, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no verdict under the top face: {warns:?}"));
+    let (_, _, warns, _) = generate(Rig::Head, 80.0, ORIGIN_Z + 40.0);
+    let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no verdict under the table top: {warns:?}"));
+    assert!((h_mm - 40.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
     assert!(fixture && (top_mm - top).abs() < 1e-6, "the table's top face along the axis: {top_mm}, want {top}");
 }
