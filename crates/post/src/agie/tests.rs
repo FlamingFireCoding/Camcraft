@@ -5,7 +5,7 @@ fn punch() -> AgieJob {
     AgieJob {
         side: AgieSide::Punch,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
-        start: [-30., 0.],
+        start: Some([-30., 0.]),
         stock_min: [-40., -30., -20.],
         stock_max: [40., 30., 0.],
     }
@@ -60,11 +60,11 @@ fn final_rename_cannot_replace_an_empty_directory() {
 #[test]
 fn stock_hole_and_entry_are_validated_before_output() {
     let mut job = punch();
-    job.start = [0., 0.];
+    job.start = Some([0., 0.]);
     assert!(contour::prepare(&job).is_err());
-    job.start = [-20.5, 0.];
+    job.start = Some([-20.5, 0.]);
     assert!(contour::prepare(&job).is_err());
-    job.start = [-39.5, 0.];
+    job.start = Some([-39.5, 0.]);
     assert!(contour::prepare(&job).is_err());
     job = punch();
     job.contour.swap(0, 1);
@@ -79,13 +79,13 @@ fn stock_hole_and_entry_are_validated_before_output() {
 #[test]
 fn separation_needs_three_millimetres_on_each_side_of_the_entry() {
     let mut job = punch();
-    job.start = [-30., 9.5];
+    job.start = Some([-30., 9.5]);
     assert!(
         contour::prepare(&job)
             .unwrap_err()
             .contains("straight face on both sides")
     );
-    job.start = [-30., 7.];
+    job.start = Some([-30., 7.]);
     assert!(contour::prepare(&job).is_ok());
 }
 
@@ -99,7 +99,7 @@ fn oblique_punch_preserves_nominal_vertices_and_perpendicular_seam() {
         [18., 10.],
         [-5., 10.],
     ];
-    job.start = [-20.5, 6.];
+    job.start = Some([-20.5, 6.]);
     let prepared = contour::prepare(&job).unwrap();
     assert_eq!(prepared[0], [-12.5, 0.]);
     assert_eq!(&prepared[1..], job.contour.as_slice());
@@ -108,9 +108,9 @@ fn oblique_punch_preserves_nominal_vertices_and_perpendicular_seam() {
 
     // 3.125 mm along the 3:4 face, even though each coordinate difference
     // is smaller than 3 mm. A 2.5 mm length cannot hold the transition.
-    job.start = [-26.125, -1.5];
+    job.start = Some([-26.125, -1.5]);
     assert_eq!(contour::prepare(&job).unwrap()[0], [-18.125, -7.5]);
-    job.start = [-26.5, -2.];
+    job.start = Some([-26.5, -2.]);
     assert!(contour::prepare(&job).is_err());
 }
 
@@ -124,7 +124,7 @@ fn oblique_seam_rounds_to_the_exterior_without_moving_nominal_vertices() {
         [18., 10.],
         [-6., 10.],
     ];
-    job.start = [-20.5, 6.];
+    job.start = Some([-20.5, 6.]);
     let prepared = contour::prepare(&job).unwrap();
     assert_eq!(prepared[0], [-12.64765, 0.50336]);
     assert_eq!(&prepared[1..], job.contour.as_slice());
@@ -132,7 +132,7 @@ fn oblique_seam_rounds_to_the_exterior_without_moving_nominal_vertices() {
     assert_eq!(contour::prepare(&job).unwrap(), prepared);
 
     // Nearest-coordinate rounding here would cut inside the punch.
-    job.start[1] = 6.003;
+    job.start.as_mut().unwrap()[1] = 6.003;
     assert_eq!(contour::prepare(&job).unwrap()[0], [-12.64625, 0.50537]);
 }
 
@@ -146,7 +146,7 @@ fn outward_rounding_cannot_consume_the_required_lead_clearance() {
         [18., 10.],
         [-5.99933, 10.],
     ];
-    job.start = [-15.5, 1.659];
+    job.start = Some([-15.5, 1.659]);
     // The exact approach measures 3.000002716 mm. Every exterior seam
     // inside the ISO rounding budget leaves less than 3 mm to a new face.
     let why = contour::prepare(&job).unwrap_err();
@@ -205,11 +205,11 @@ fn a_broad_notch_keeps_its_nominal_corner_and_requires_an_exterior_entry() {
     assert_eq!(points[0], [-20., 0.]);
     assert_eq!(&points[1..], job.contour.as_slice());
     // The drilled hole cannot sit in the retained right-hand shoulder.
-    job.start = [15., 9.7];
+    job.start = Some([15., 9.7]);
     assert!(contour::prepare(&job).unwrap_err().contains("start hole"));
     // This hole is outside, but the extension of the locally visible sloping
     // face crosses the other bank. Entry requires a supporting exterior face.
-    job.start = [5., 16.];
+    job.start = Some([5., 16.]);
     assert!(contour::prepare(&job).unwrap_err().contains("start hole"));
 }
 
@@ -226,11 +226,39 @@ fn a_gentle_but_narrow_notch_cannot_hold_the_rough_corner_joins() {
 fn a_die_requires_the_qualified_thickness_and_reachable_inside_corners() {
     let mut job = punch();
     job.side = AgieSide::Die;
-    job.start = [0., 0.];
+    job.start = Some([0., 0.]);
     job.stock_min[2] = -40.;
     assert!(contour::prepare(&job).unwrap_err().contains("20 mm"));
     job.stock_min[2] = -20.;
     // The requested opening has square corners. An inward QN2 rough pass
     // cannot reach these corners to the 0.002 mm Wire Contour tolerance.
     assert!(contour::prepare(&job).unwrap_err().contains("0.002 mm"));
+}
+
+#[test]
+fn the_open_cut_includes_air_tails_wire_and_work_origin_in_travel() {
+    let mut job = punch();
+    job.side = AgieSide::Right;
+    job.contour = vec![[6., -120.], [6., 120.]];
+    job.stock_min[1] = -120.;
+    job.stock_max[1] = 120.;
+    job.start = None;
+    let geometry = cutoff::prepare(&job).unwrap();
+    assert_eq!(geometry.entry, [9., -124.]);
+    assert_eq!(geometry.exit, [9., 124.]);
+    // A 242 mm bar fits the 250 mm Y stroke. The two 4 mm tails
+    // would put the wire centre on its travel limits.
+    job.stock_min[1] = -121.;
+    job.stock_max[1] = 121.;
+    job.contour = vec![[6., -121.], [6., 121.]];
+    assert!(cutoff::prepare(&job).err().unwrap().contains("travel"));
+    job.stock_min[1] = -120.;
+    job.stock_max[1] = 120.;
+    job.contour = vec![[39., -120.], [39., 120.]];
+    assert!(cutoff::prepare(&job).err().unwrap().contains("corners"));
+    // A displaced WCS can put the controller's travel-to-origin outside the stroke.
+    job.stock_min[0] = 180.;
+    job.stock_max[0] = 250.;
+    job.contour = vec![[210., -120.], [210., 120.]];
+    assert!(cutoff::prepare(&job).err().unwrap().contains("origin"));
 }

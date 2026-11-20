@@ -39,8 +39,13 @@ fn intersects(a: Point, b: Point, c: Point, d: Point) -> bool {
         || (z == 0 && between(c, d, b))
 }
 
-fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
-    for &v in job.stock_min.iter().chain(&job.stock_max).chain(&job.start) {
+pub(super) fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
+    for &v in job
+        .stock_min
+        .iter()
+        .chain(&job.stock_max)
+        .chain(job.start.iter().flatten())
+    {
         quantize(v)?;
         if (v - (v * 1000.0).round() / 1000.0).abs() > 1e-9 {
             return Err(
@@ -54,11 +59,6 @@ fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
     }
     if job.stock_max[2] != 0.0 {
         return Err("The Agie Berco Fine Ra0.30 profile requires stock top Z0".into());
-    }
-    if !(0..2)
-        .all(|i| job.start[i] - 1.0 >= job.stock_min[i] && job.start[i] + 1.0 <= job.stock_max[i])
-    {
-        return Err("The complete 2 mm Agie start hole must lie inside the stock".into());
     }
     for &(mm, offset) in QN2_HEIGHTS {
         if height == f64::from(mm) {
@@ -77,6 +77,12 @@ fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
 
 pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     let offset_um = stock_offset_um(job)?;
+    let start = job
+        .start
+        .ok_or("Agie requires a predrilled 2 mm start hole")?;
+    if !(0..2).all(|i| start[i] - 1.0 >= job.stock_min[i] && start[i] + 1.0 <= job.stock_max[i]) {
+        return Err("The complete 2 mm Agie start hole must lie inside the stock".into());
+    }
     if job.side == AgieSide::Die && job.stock_min[2] != -20.0 {
         return Err("The Agie die opening requires the qualified 20 mm stock height".into());
     }
@@ -149,7 +155,7 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     // Material is on the left: inward miters of a die now use the same
     // join reach and feature-spacing checks as inside corners of a punch.
     check_cut_envelope(&outline, job, offset_um)?;
-    let hole = [quantize(job.start[0])?, quantize(job.start[1])?];
+    let hole = [quantize(start[0])?, quantize(start[1])?];
     let (edge, foot) = entry::entry_face(&outline, hole, job.side)?;
     // Begin the nominal program at the middle of the chosen edge, facing along that edge. The
     // hole and the full three-millimetre lead share its waste half-plane. Compensation is

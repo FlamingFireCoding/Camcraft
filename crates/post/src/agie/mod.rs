@@ -3,20 +3,29 @@
 use std::path::{Path, PathBuf};
 
 mod contour;
+mod cutoff;
 mod jescript;
 
-/// The retained side of a closed contour. The control applies the wire offset.
+/// The closed cycle or the kerf side of a directed open cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgieSide {
     Punch,
     Die,
+    Left,
+    Right,
+}
+
+impl AgieSide {
+    pub fn is_open(self) -> bool {
+        matches!(self, Self::Left | Self::Right)
+    }
 }
 
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
 pub struct AgieJob {
     pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
-    pub start: [f64; 2],
+    pub start: Option<[f64; 2]>,
     pub stock_min: [f64; 3],
     pub stock_max: [f64; 3],
 }
@@ -46,16 +55,27 @@ pub fn export(
     program: &str,
     separation_length_mm: f64,
 ) -> Result<Vec<PathBuf>, String> {
-    if separation_length_mm != 1.0 {
+    if job.side.is_open() && separation_length_mm != 0.0 {
+        return Err("Set separationLengthMm to zero for an Agie open cutoff".into());
+    }
+    if !job.side.is_open() && separation_length_mm != 1.0 {
         return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
     }
     if !valid_name(program) {
         return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
-    let points = contour::prepare(job)?;
+    let (points, entry, exit) = if job.side.is_open() {
+        let cut = cutoff::prepare(job)?;
+        (cut.line.to_vec(), cut.entry, Some(cut.exit))
+    } else {
+        let mut points = contour::prepare(job)?;
+        let seam = *points.first().ok_or("Agie requires a closed contour")?;
+        points.push(seam);
+        (points, job.start.ok_or("Agie requires a start hole")?, None)
+    };
     let iso_name = format!("{program}.ISO");
     let mut iso = format!("( {iso_name} )\r\n");
-    for (i, point) in points.iter().chain(points.first()).enumerate() {
+    for (i, point) in points.iter().enumerate() {
         let motion = if i == 0 { "G00" } else { "G01" };
         iso.push_str(&format!(
             "N{:04} {motion} X{:.5} Y{:.5} ;\r\n",
@@ -64,7 +84,7 @@ pub fn export(
             point[1]
         ));
     }
-    iso.push_str(&format!("N{:04} M02 ;\r\n", points.len() + 2));
+    iso.push_str(&format!("N{:04} M02 ;\r\n", points.len() + 1));
     let files = [
         (iso_name, iso),
         (
@@ -73,7 +93,7 @@ pub fn export(
         ),
         (
             format!("{program}.SBL"),
-            jescript::piece(job, program, separation_length_mm),
+            jescript::piece(job, program, separation_length_mm, entry, exit),
         ),
     ];
     publish(destination, &files)

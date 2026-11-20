@@ -11,7 +11,13 @@ fn quoted(value: impl std::fmt::Display) -> String {
     format!("\"{value}\"")
 }
 
-pub(super) fn piece(job: &AgieJob, name: &str, separation_length_mm: f64) -> String {
+pub(super) fn piece(
+    job: &AgieJob,
+    name: &str,
+    separation_length_mm: f64,
+    entry: [f64; 2],
+    exit: Option<[f64; 2]>,
+) -> String {
     let [x, y, z] = job.stock_min;
     let [right, back, top] = job.stock_max;
     let height = format!("{:.3}", top - z);
@@ -58,6 +64,8 @@ pub(super) fn piece(job: &AgieJob, name: &str, separation_length_mm: f64) -> Str
     let side = match job.side {
         super::AgieSide::Punch => "c_punch",
         super::AgieSide::Die => "c_die",
+        super::AgieSide::Left => "c_left",
+        super::AgieSide::Right => "c_right",
     };
     attribute(&mut lines, "WORK", &work_context, "ID_PUNCH", side);
     attribute(&mut lines, "WORK", &work_context, "ID_WORKCOND", "\"2\"");
@@ -79,14 +87,18 @@ pub(super) fn piece(job: &AgieJob, name: &str, separation_length_mm: f64) -> Str
         ("ID_RADIUSMINLA", quoted("T")),
         ("ID_I_TYPE", "c_radius_rm".into()),
         ("ID_E_TYPE", "c_radius_rm".into()),
-        ("ID_ENTRY", quoted("2")),
     ] {
         attribute(&mut lines, "WORK", &work_context, field, &value);
+    }
+    if exit.is_some() {
+        attribute(&mut lines, "WORK", &work_context, "ID_EXITMODE", "c_entper");
+    } else {
+        attribute(&mut lines, "WORK", &work_context, "ID_ENTRY", "\"2\"");
     }
     lines.push(format!(
         "  ok=JE_CreateStartPoint(WORK,\"stp1\",je_piece,{work})"
     ));
-    for (field, value) in [("ID_POSX", job.start[0]), ("ID_POSY", job.start[1])] {
+    for (field, value) in [("ID_POSX", entry[0]), ("ID_POSY", entry[1])] {
         attribute(
             &mut lines,
             "STARTPOINT",
@@ -95,8 +107,13 @@ pub(super) fn piece(job: &AgieJob, name: &str, separation_length_mm: f64) -> Str
             &quoted(format!("{value:.3}")),
         );
     }
-    attribute(&mut lines, "WORK", &work_context, "ID_STP", "\"stp1\"");
-    attribute(&mut lines, "WORK", &work_context, "ID_STPMODE", "c_work");
+    let (point_key, mode_key) = if exit.is_some() {
+        ("ID_STPENTRY", "ID_STPOPEN")
+    } else {
+        ("ID_STP", "ID_STPMODE")
+    };
+    attribute(&mut lines, "WORK", &work_context, point_key, "\"stp1\"");
+    attribute(&mut lines, "WORK", &work_context, mode_key, "c_work");
     attribute(
         &mut lines,
         "STARTPOINT",
@@ -111,6 +128,28 @@ pub(super) fn piece(job: &AgieJob, name: &str, separation_length_mm: f64) -> Str
         "ID_DIAMETER",
         "\"2.0\"",
     );
+    if let Some([ex, ey]) = exit {
+        let context = format!("{work},\"stp2\"");
+        lines.push(format!(
+            "  ok=JE_CreateStartPoint(WORK,\"stp2\",je_piece,{work})"
+        ));
+        attribute(&mut lines, "WORK", &work_context, "ID_STPEXIT", "\"stp2\"");
+        attribute(&mut lines, "WORK", &work_context, "ID_STPOPEX", "c_work");
+        attribute(
+            &mut lines,
+            "STARTPOINT",
+            &context,
+            "ID_POSX",
+            &quoted(format!("{ex:.3}")),
+        );
+        attribute(
+            &mut lines,
+            "STARTPOINT",
+            &context,
+            "ID_POSY",
+            &quoted(format!("{ey:.3}")),
+        );
+    }
     lines.extend([
         format!("  ok=JE_GenerateCuts(WORK,je_piece,{work},ASDELETE,NULL)"),
         format!("  ok=JE_GenerateCuts(WORK,je_piece,{work},ASAGIE,NULL)"),

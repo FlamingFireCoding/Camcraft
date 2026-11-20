@@ -10,21 +10,31 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     let OpParams::WireContour(wire) = &op.params else {
         return Err("The Agie job requires a Wire Contour".into());
     };
-    if !matches!(wire.side, WireSide::Punch | WireSide::Die)
-        || !wire.capture
-        || wire.taper_deg != 0.0
+    if wire.taper_deg != 0.0
         || wire.tabs.is_some()
         || wire.burnout.is_some()
         || !wire.skims.is_empty()
         || wire.four_axis.is_some()
     {
-        return Err("Agie supports one captured vertical punch or die opening. Disable taper, four-axis, tabs, burnout and requested skims; the controller selects trim passes".into());
+        return Err("Agie supports a captured vertical punch, die opening or clamped open cutoff. Disable taper, four-axis, tabs, burnout and requested skims; the controller selects trim passes".into());
     }
     let side = match (&wire.side, &op.src) {
         (WireSide::Punch, SrcRef::Entity(_)) => agie::AgieSide::Punch,
         (WireSide::Die, SrcRef::Selection(_)) => agie::AgieSide::Die,
+        (WireSide::Left, SrcRef::Selection(_)) => agie::AgieSide::Left,
+        (WireSide::Right, SrcRef::Selection(_)) => agie::AgieSide::Right,
         _ => return Err("Agie requires the complete punch model or a selected through-opening rim on the retained die plate".into()),
     };
+    if side.is_open() {
+        if !wire.both_pieces_restrained || !wire.stock_centered_in_xy_travel {
+            return Err("Agie open cutoff requires both pieces clamped through all passes and stock centered in installed XY travel".into());
+        }
+        if wire.start.is_some() || !(0.0..=3.6).contains(&wire.clearance) {
+            return Err("Agie open cutoff requires air threading and at most 3.6 mm run-out clearance for its 4 mm tails".into());
+        }
+    } else if !wire.capture || wire.start.is_none() {
+        return Err("Agie requires a captured closed contour and a predrilled 2 mm start hole on the waste side".into());
+    }
     let models = model::model_entities(world);
     let [(source, _)] = models.as_slice() else {
         return Err("Agie requires exactly one modeled workpiece; additional models can intersect the controller path".into());
@@ -42,9 +52,6 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     if !on_source {
         return Err("Agie requires the complete punch or edge chains of one through-opening in the retained die plate".into());
     }
-    let start = wire
-        .start
-        .ok_or("Agie requires a predrilled 2 mm start hole on the waste side")?;
     let setup = op.setup.as_deref();
     let condition = super::wire_op::condition_of(world, setup, &op.tool, wire)?;
     if condition.id != agie::CONDITION
@@ -126,12 +133,54 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
     let region = crate::geometry::closed_vertical_prism(&job.material.facets, lo.z, hi.z).map_err(
         |why| format!("Agie requires one closed vertical prism spanning the stock height: {why}"),
     )?;
-    let ring = match side {
+    let contour = match side {
+        agie::AgieSide::Left | agie::AgieSide::Right => {
+            let (rings, open, _) = job
+                .contour_sel
+                .as_ref()
+                .ok_or("Select one retained cutoff edge")?
+                .as_ref()
+                .map_err(ToString::to_string)?;
+            let [chain] = open.as_slice() else {
+                return Err("Agie requires exactly one open cutoff edge".into());
+            };
+            let [a, b] = chain.as_slice() else {
+                return Err("Agie requires a single straight edge for an open cutoff".into());
+            };
+            let [body] = region.loops() else {
+                return Err("Agie open cutoff requires one through prism without holes".into());
+            };
+            let vertices = body.points();
+            // One complete wall of the retained source must be the selected
+            // segment. The full cap must be on the non-cutting side of it.
+            let has_edge = vertices
+                .iter()
+                .zip(vertices.iter().cycle().skip(1))
+                .any(|(p, q)| (p == a && q == b) || (p == b && q == a));
+            let waste = if side == agie::AgieSide::Left {
+                1.
+            } else {
+                -1.
+            };
+            if !rings.is_empty()
+                || !has_edge
+                || vertices.iter().any(|p| {
+                    p.x < lo.x
+                        || p.x > hi.x
+                        || p.y < lo.y
+                        || p.y > hi.y
+                        || waste * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) > 0.
+                })
+            {
+                return Err("The selected Agie cutoff must span a full retained wall with the kerf on the waste side and the model within stock".into());
+            }
+            chain.as_slice()
+        }
         agie::AgieSide::Punch => {
             let [ring] = region.loops() else {
                 return Err("Agie requires exactly one closed punch boundary, without openings or additional contours".into());
             };
-            ring
+            ring.points()
         }
         agie::AgieSide::Die => {
             if region.loops().len() != 2
@@ -173,13 +222,13 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
             {
                 return Err("The selected Agie chains must match the full through-opening of the retained die plate".into());
             }
-            hole
+            hole.points()
         }
     };
     Ok(agie::AgieJob {
         side,
-        contour: ring.points().iter().map(|p| [p.x - ox, p.y - oy]).collect(),
-        start: [start[0] - ox, start[1] - oy],
+        contour: contour.iter().map(|p| [p.x - ox, p.y - oy]).collect(),
+        start: wire.start.map(|p| [p[0] - ox, p[1] - oy]),
         stock_min: [lo.x - ox, lo.y - oy, lo.z - oz],
         stock_max: [hi.x - ox, hi.y - oy, hi.z - oz],
     })
