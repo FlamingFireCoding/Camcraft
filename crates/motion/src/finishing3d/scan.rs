@@ -92,7 +92,7 @@ fn push_shallow_edge_supports(
         let ez = q1.z - q0.z;
         let (dx, dy) = (q1.x - q0.x, q1.y - q0.y);
         let l_xy = dx.hypot(dy);
-        if ez == 0.0 || l_xy <= 1e-9 || ez.abs() >= l_xy {
+        if ez == 0.0 || l_xy <= 1e-9 {
             continue;
         }
         let z_lo = q0.z.min(q1.z).max(cz - r);
@@ -123,11 +123,31 @@ fn push_shallow_edge_supports(
         let steps = (span / dtheta_max).ceil().max(1.0) as usize;
         let (ex, ey) = (dx / l_xy, dy / l_xy);
         let (px, py) = (-ey, ex);
+        let steep = ez.abs() > l_xy;
         let mut emit_theta = |theta: f64| {
             if theta.abs() >= std::f64::consts::FRAC_PI_2 - 1e-6 {
                 return;
             }
             let u_e = (-ez / l_xy) * theta.tan();
+            if steep {
+                // For steep edges, the smooth rolling parameterization breaks down.
+                // Just sample the edge endpoints that lie in the plane band.
+                if theta != 0.0 {
+                    return;
+                }
+                // theta == 0 is the z = cz crossing: emit both endpoints if in band.
+                if (cz - q0.z).abs() <= r {
+                    let rho = (r * r - (cz - q0.z) * (cz - q0.z)).max(0.0).sqrt();
+                    pts.push(Point2::new(lattice(q0.x + rho * ex), lattice(q0.y + rho * ey)));
+                    pts.push(Point2::new(lattice(q0.x - rho * ex), lattice(q0.y - rho * ey)));
+                }
+                if (cz - q1.z).abs() <= r {
+                    let rho = (r * r - (cz - q1.z) * (cz - q1.z)).max(0.0).sqrt();
+                    pts.push(Point2::new(lattice(q1.x + rho * ex), lattice(q1.y + rho * ey)));
+                    pts.push(Point2::new(lattice(q1.x - rho * ex), lattice(q1.y - rho * ey)));
+                }
+                return;
+            }
             if u_e.abs() >= 1.0 - 1e-9 {
                 return;
             }
@@ -147,13 +167,18 @@ fn push_shallow_edge_supports(
             pts.push(Point2::new(lattice(qx + rho * ux1), lattice(qy + rho * uy1)));
             pts.push(Point2::new(lattice(qx + rho * ux2), lattice(qy + rho * uy2)));
         };
-        for k in 0..=steps {
-            emit_theta(theta_lo + span * (k as f64 / steps as f64));
-        }
-        // Explicitly emit the z = cz slice crossing (theta = 0) so flat wall
-        // edges keep both tying crossings regardless of ds tie-breaking.
-        if theta_lo < 0.0 && 0.0 < theta_hi {
+        if steep {
+            // For steep edges, only emit the z=cz crossing (theta=0).
             emit_theta(0.0);
+        } else {
+            for k in 0..=steps {
+                emit_theta(theta_lo + span * (k as f64 / steps as f64));
+            }
+            // Explicitly emit the z = cz slice crossing (theta = 0) so flat wall
+            // edges keep both tying crossings regardless of ds tie-breaking.
+            if theta_lo < 0.0 && 0.0 < theta_hi {
+                emit_theta(0.0);
+            }
         }
     }
 }
