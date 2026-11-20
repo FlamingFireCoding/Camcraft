@@ -58,6 +58,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         fixture_names,
         unread_steel,
         z_ceiling,
+        z_stroke,
         workholding,
         fixture_meshes,
         rotary_axis,
@@ -3362,7 +3363,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             super::clearance_stock::acquit(&path, mode, &reread, Some(&mut verify_prior), &mut warns);
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, stock_top_z, false, &warns);
             // #2901: the first traverse comes from an unknown X/Y.
-            let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names };
+            let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), z_stroke };
             super::first_traverse::judge(&path, &params, (is_mill && !lathe_tool, rotary_axis.is_some()), None, &over, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
@@ -3712,8 +3713,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             super::clearance_stock::acquit(&path, mode, &reread, None, &mut warns);
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, st_local, true, &warns);
             // #2901: the first traverse, read along the plane's tool axis.
-            let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names };
-            super::first_traverse::judge(&path, &params, (is_mill && !lathe_tool, rotary_axis.is_some()), Some(f), &over, &mut warns);
+            // #2987: the table read where the tool can meet it.
+            let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), z_stroke };
+            let table_note = super::first_traverse::judge(&path, &params, (is_mill && !lathe_tool, rotary_axis.is_some()), Some(f), &over, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
             // along every move against the part solid. The Section kinds
@@ -3737,6 +3739,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // the setup's parts on a stock source).
             let mut path_world = path_world;
             path_world.notes.extend(clearance_note);
+            path_world.notes.extend(table_note);
             let mark_part = (depth_law == DepthLaw::Mark).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| parts_marked));
             if let Some(part) = mark_part {
                 let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess);
