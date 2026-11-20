@@ -1618,6 +1618,8 @@ pub enum TreeMenuTarget {
     /// clicked row's index, so the menu anchors on the row clicked even
     /// when the name stands in the tree twice.
     Model { name: String, row: usize },
+    /// A tool row, anchored on the clicked occurrence.
+    Tool { name: String, row: usize },
     /// A setup's Fixtures node (`""` - the implicit setup): "Import
     /// fixture…".
     Fixtures(String),
