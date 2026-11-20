@@ -37,6 +37,44 @@ fn groove_part_off_case_has_two_named_test_results() {
     }
 }
 
+mod catalog_multiaxis_indexed {
+    use super::*;
+    #[test]
+    fn posts_two_single_axis_indexes_and_one_tilted_pocket() {
+        use camcraft_app::operation::{self, OpParams};
+        use camcraft_app::{model, project, setup, world};
+        let dir = repo("examples/catalog/multiaxis/indexed");
+        let program = fs::read_to_string(dir.join("indexed.nc")).expect("indexed NC case");
+        let w = world::new_world();
+        let notes = project::load_noted(&w, &dir.join("indexed.camproj")).expect("indexed project");
+        assert!(notes.is_empty(), "load notes: {notes:?}");
+        let ops = setup::operation_order(&w);
+        assert_eq!(ops.len(), 3, "two indexed faces and one tilted face");
+        for ((name, entity), (a, b)) in ops.iter().zip([(90.0, 0.0), (-90.0, 0.0), (30.0, 30.0)]) {
+            assert_eq!(operation::status_of(&w, entity), operation::OpStatus::Ok, "{name} saved cache");
+            let op = model::operation_of(&w, entity).expect("pocket operation");
+            let OpParams::Pocket { tilt: Some(tilt), .. } = op.params else {
+                panic!("{name} must be an indexed pocket");
+            };
+            assert_eq!((tilt.a_deg, tilt.b_deg), (a, b), "{name} orientation");
+            let blocks = section(&program, name);
+            assert!(blocks.iter().any(|l| word(l, 'A') == Some(a)), "{name} posts A{a}");
+            assert!(blocks.iter().any(|l| word(l, 'B') == Some(b)), "{name} posts B{b}");
+            assert!(blocks.iter().any(|l| l.starts_with("G01 ")), "{name} cuts");
+        }
+        let part = model::find_by_name(&w, "indexed").expect("embedded model");
+        assert!(camcraft_app::model_source::of(&w, &part).is_none(), "portable model");
+    }
+    #[test]
+    fn regenerates() {
+        run_case("multiaxis", "indexed", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("multiaxis", "indexed", "rebuilds", rebuild);
+    }
+}
+
 mod catalog_2d_contour_tabs {
     use super::*;
     #[test]
