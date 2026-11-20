@@ -124,6 +124,14 @@ fn fs_edge(in: VSOut) -> @location(0) vec4<f32> {
     return vec4<f32>(mix(unlit, sel, in.sel), 1.0);
 }
 
+// Hidden edges (#2818): the same wire where it lies behind a face, blended
+// thin over the lit metal so that it reads lighter than the front wire.
+@fragment
+fn fs_edge_hidden(in: VSOut) -> @location(0) vec4<f32> {
+    let dark = vec3<f32>(0.06, 0.07, 0.09);
+    return vec4<f32>(mix(dark, u.warm.xyz, in.sel), 0.5);
+}
+
 // Stock: same flat shading, cool steel tint, translucent - the model must
 // read through the raw material. Selected stock is warmer and denser.
 // The `cls` channel carries the deviation verdict (stock_sim's law: 0
@@ -481,6 +489,19 @@ impl View3D {
         self.overlay_count = u32::try_from(lines.len() / 2).unwrap_or(u32::MAX);
     }
 
+    /// The cached index partition that the draw list reads (#2818).
+    #[must_use]
+    pub const fn counts(&self) -> crate::draw_list::Counts {
+        crate::draw_list::Counts {
+            index_count: self.index_count,
+            model_index_count: self.model_index_count,
+            stock_index_end: self.stock_index_end,
+            overlay_index_start: self.overlay_index_start,
+            edge_count: self.edge_count,
+            model_edge_count: self.model_edge_count,
+        }
+    }
+
     /// The overlay segment count of the last upload.
     #[must_use]
     pub const fn overlay_segments(&self) -> u32 {
@@ -531,8 +552,8 @@ impl View3D {
 
     /// Encode the 3D pass into the offscreen target. `eye` is the camera
     /// position in world space, for the specular term; `display` selects
-    /// shaded-with-wire or hidden-line wireframe (the buffers are identical
-    /// either way - only the pass order and the `u.wire` flag differ).
+    /// the display mode (the buffers are identical in each mode - only the
+    /// draw list, `crate::draw_list::plan`, and the `u.wire` flag differ).
     pub fn render(
         &self,
         queue: &wgpu::Queue,
@@ -556,7 +577,7 @@ impl View3D {
         display: crate::state::DisplayMode,
         stock: Option<&dyn Fn(&mut wgpu::RenderPass<'_>)>,
     ) {
-        let wireframe = display == crate::state::DisplayMode::Wireframe;
+        let wireframe = display.is_wireframe();
         // The live theme's viewport ground (#698): the clear colour and
         // the wireframe ink follow it, so a light theme gets a light ground.
         let ground = crate::egui_app::theme::current().viewport;
@@ -634,50 +655,34 @@ impl View3D {
         // hidden-line cull still holds) and drops the stock faces - the
         // box is a volume of stock, not a surface, and its full wire reads
         // truer than an occluded one.
+        // The order itself is `draw_list::plan` (#2818): one list for each
+        // display mode, read from the cached index partition.
         pass.set_bind_group(0, &self.bind_group, &[]);
+        use crate::draw_list::Pipe;
+        let plan = crate::draw_list::plan(display, &self.counts(), stock.is_some());
         if self.index_count > 0 {
             pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-            pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-            if wireframe {
-                if self.model_index_count > 0 {
-                    pass.set_pipeline(&self.pipes.depth_pipeline);
-                    pass.draw_indexed(0..self.model_index_count, 0, 0..1);
+        }
+        for step in plan.steps() {
+            let pipeline = match step.pipe {
+                Pipe::Faces => &self.pipes.pipeline,
+                Pipe::FacesDepthOnly => &self.pipes.depth_pipeline,
+                Pipe::Edges => &self.pipes.line_pipeline,
+                Pipe::HiddenEdges => &self.pipes.hidden_line_pipeline,
+                Pipe::Stock => &self.pipes.stock_pipeline,
+                Pipe::Region => &self.pipes.region_pipeline,
+                Pipe::TracedStock => {
+                    if let Some(draw) = stock {
+                        draw(&mut pass);
+                        pass.set_bind_group(0, &self.bind_group, &[]);
+                    }
+                    continue;
                 }
-            } else {
-                pass.set_pipeline(&self.pipes.pipeline);
-                pass.draw_indexed(0..self.model_index_count, 0, 0..1);
-            }
-            if self.model_edge_count > 0 {
-                pass.set_index_buffer(self.edge_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.pipes.line_pipeline);
-                pass.draw_indexed(0..self.model_edge_count, 0, 0..1);
-            }
-            let traced = stock.filter(|_| !wireframe);
-            if let Some(draw) = traced {
-                draw(&mut pass);
-                pass.set_bind_group(0, &self.bind_group, &[]);
-                // The overlay stock (the incoming stock, #406) is not the
-                // traced stock's to replace: it still draws.
-                if self.overlay_index_start < self.stock_index_end {
-                    pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.set_pipeline(&self.pipes.stock_pipeline);
-                    pass.draw_indexed(self.overlay_index_start..self.stock_index_end, 0, 0..1);
-                }
-            } else if self.model_index_count < self.stock_index_end && !wireframe {
-                pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.pipes.stock_pipeline);
-                pass.draw_indexed(self.model_index_count..self.stock_index_end, 0, 0..1);
-            }
-            if traced.is_none() && self.model_edge_count < self.edge_count {
-                pass.set_index_buffer(self.edge_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.pipes.line_pipeline);
-                pass.draw_indexed(self.model_edge_count..self.edge_count, 0, 0..1);
-            }
-            if self.stock_index_end < self.index_count {
-                pass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                pass.set_pipeline(&self.pipes.region_pipeline);
-                pass.draw_indexed(self.stock_index_end..self.index_count, 0, 0..1);
-            }
+            };
+            let indices = if step.pipe.uses_edge_buffer() { &self.edge_buf } else { &self.index_buf };
+            pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.set_pipeline(pipeline);
+            pass.draw_indexed(step.range.clone(), 0, 0..1);
         }
         if self.overlay_count > 0 {
             pass.set_pipeline(&self.pipes.wide_pipeline);

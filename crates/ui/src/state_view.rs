@@ -32,6 +32,8 @@ impl State {
     pub fn load_view_from(&mut self, path: &Path) {
         let (prefs, note) = view::load(path);
         self.show_gizmo_names = prefs.show_gizmo_names;
+        self.display = crate::state::DisplayMode::from_key(&prefs.display);
+        self.show_grid = prefs.show_grid;
         self.line_width = prefs.line_width;
         self.antialias = prefs.antialias;
         self.view_store = Some(path.to_path_buf());
@@ -50,12 +52,16 @@ impl State {
         self.persist_view();
     }
 
-    /// Write every view setting back to the per-user file (a failed
-    /// write is logged by `view::save`; the choice stays for this run).
-    fn persist_view(&self) {
+    /// Write every view setting back to the per-user file (#2818: the
+    /// display mode and the grid switch; #2958: the line width and the
+    /// anti-aliasing). The headless suites have no file and write nothing.
+    /// A failed write is logged by `view::save`; the session stays right.
+    pub(crate) fn persist_view(&self) {
         let Some(path) = &self.view_store else { return };
         let prefs = view::ViewPrefs {
             show_gizmo_names: self.show_gizmo_names,
+            display: self.display.key().to_owned(),
+            show_grid: self.show_grid,
             line_width: self.line_width,
             antialias: self.antialias,
         };

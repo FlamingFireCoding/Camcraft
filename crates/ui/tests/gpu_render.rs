@@ -338,6 +338,37 @@ fn wireframe_paints_wire_not_faces() {
     assert!(t * 3 < s, "wireframe paints lines, not faces: {t} vs {s}");
 }
 
+/// #2818: the two new display modes on a real GPU. "Shaded" fills the same
+/// silhouette as "Shaded, with edges" but draws no model wire. "Shaded,
+/// with hidden edges" fills it too and adds the wire behind the faces, so
+/// it differs from the two others inside the silhouette.
+#[test]
+fn shaded_drops_the_wire_and_hidden_edges_add_the_far_wire() {
+    let cube = [model_part(60.0)];
+    let Some((edges, _, _)) = render(&cube, &test_cam()) else {
+        eprintln!("gpu test skipped: no usable adapter");
+        return;
+    };
+    let Some((plain, _, _)) = render_mode(&cube, &test_cam(), DisplayMode::Shaded) else {
+        return;
+    };
+    let Some((hidden, _, _)) = render_mode(&cube, &test_cam(), DisplayMode::ShadedHiddenEdges) else {
+        return;
+    };
+    let differ = |a: &[u8], b: &[u8]| a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count();
+    let fill = changed_pixels(&edges);
+    for (name, img) in [("Shaded", &plain), ("Shaded, with hidden edges", &hidden)] {
+        let n = changed_pixels(img);
+        assert!(n * 10 > fill * 9 && n * 9 < fill * 10, "{name} fills the same silhouette: {n} vs {fill}");
+    }
+    let wire = differ(&edges, &plain);
+    assert!(wire > 100, "the front wire is gone in Shaded: {wire} px differ");
+    let far = differ(&edges, &hidden);
+    assert!(far > 50, "the hidden edges add wire behind the faces: {far} px differ");
+    assert!(far < fill / 4, "the hidden edges are lines, not faces: {far} of {fill}");
+    assert!(differ(&plain, &hidden) > wire, "hidden edges keep the front wire and add the far wire");
+}
+
 #[test]
 fn wireframe_hides_wire_behind_solids() {
     // The hidden-line half of the law: the wireframe faces write depth, so

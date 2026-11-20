@@ -44,6 +44,15 @@ pub struct ViewPrefs {
     /// a user already has.
     #[serde(default = "default_names_on")]
     pub show_gizmo_names: bool,
+    /// The viewport's display mode, as the key that the UI names it by
+    /// (#2818). A missing key is the default mode, so an old file loads
+    /// unchanged; the UI reads an unknown key as the default too.
+    #[serde(default = "default_display")]
+    pub display: String,
+    /// Does the viewport show its ground grid (#2818)? Default ON: an
+    /// old file keeps the grid that it always had.
+    #[serde(default = "default_names_on")]
+    pub show_grid: bool,
     /// #2958: the overlay line width. Default 1.5 pt.
     #[serde(default)]
     pub line_width: LineWidth,
@@ -52,9 +61,18 @@ pub struct ViewPrefs {
     pub antialias: Antialias,
 }
 
+/// The key of the default display mode: shaded faces with their edges.
+pub const DEFAULT_DISPLAY: &str = "shaded-edges";
+
 impl Default for ViewPrefs {
     fn default() -> Self {
-        Self { show_gizmo_names: true, line_width: LineWidth::default(), antialias: Antialias::default() }
+        Self {
+            show_gizmo_names: true,
+            display: default_display(),
+            show_grid: true,
+            line_width: LineWidth::default(),
+            antialias: Antialias::default(),
+        }
     }
 }
 
@@ -173,6 +191,10 @@ impl<'de> Deserialize<'de> for Antialias {
 
 const fn default_names_on() -> bool {
     true
+}
+
+fn default_display() -> String {
+    DEFAULT_DISPLAY.to_owned()
 }
 
 /// The file layout. Unknown keys are ignored so a newer build's file

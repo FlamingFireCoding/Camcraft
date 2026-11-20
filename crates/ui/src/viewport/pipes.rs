@@ -17,6 +17,8 @@ pub(super) struct Pipes {
     /// prepass (same vertex stage and culling as `pipeline`, no color).
     pub depth_pipeline: wgpu::RenderPipeline,
     pub line_pipeline: wgpu::RenderPipeline,
+    /// The model wire behind the faces ("Shaded, with hidden edges", #2818).
+    pub hidden_line_pipeline: wgpu::RenderPipeline,
     pub stock_pipeline: wgpu::RenderPipeline,
     pub region_pipeline: wgpu::RenderPipeline,
     /// #2958: the overlay as wide anti-aliased quads, one instance per
@@ -128,6 +130,16 @@ pub(super) fn build(
             depth_write: false,
             compare: less_eq,
             ..solid("", "fs_edge", false, None, all)
+        }),
+        // The hidden-edge pipeline (#2818) is the same wire with the depth
+        // test reversed: it draws only where a face is in front, blended.
+        hidden_line_pipeline: make(Spec {
+            label: "viewport3d-hidden-lines",
+            topology: wgpu::PrimitiveTopology::LineList,
+            cull: None,
+            depth_write: false,
+            compare: wgpu::CompareFunction::Greater,
+            ..solid("", "fs_edge_hidden", false, Some(wgpu::BlendState::ALPHA_BLENDING), all)
         }),
         // Translucent stock: blended over whatever the opaque pass left,
         // never writing depth (models stay pickable-and-visible through it).

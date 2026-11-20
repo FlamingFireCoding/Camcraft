@@ -44,6 +44,26 @@ fn a_flipped_choice_round_trips_through_the_file() {
     assert!(view::load(&file).0.show_gizmo_names, "and back on survives too");
 }
 
+/// #2818: the display mode and the grid switch ride the same file. An old
+/// file without the keys loads the defaults and says nothing.
+#[test]
+fn the_display_mode_and_the_grid_round_trip_and_an_old_file_loads_the_defaults() {
+    let d = dir("display");
+    let file = file_in(&d);
+    let chosen = ViewPrefs { show_gizmo_names: true, display: "wireframe".into(), show_grid: false, ..ViewPrefs::default() };
+    view::save(&file, &chosen).expect("save");
+    assert_eq!(view::load(&file), (chosen, None), "the choice reads back");
+    std::fs::write(&file, format!(r#"{{"format":"{FORMAT}","view":{{"show_gizmo_names":false}}}}"#))
+        .expect("write the old file");
+    let (old, note) = view::load(&file);
+    assert_eq!(old.display, view::DEFAULT_DISPLAY, "an old file loads the default mode");
+    assert!(old.show_grid, "and the grid that it always had");
+    assert!(!old.show_gizmo_names, "the key that it has still reads");
+    assert_eq!(note, None, "an old file is not a complaint");
+    assert_eq!(ViewPrefs::default().display, view::DEFAULT_DISPLAY);
+    assert!(ViewPrefs::default().show_grid);
+}
+
 #[test]
 fn a_corrupt_or_foreign_file_starts_at_the_defaults_and_says_why() {
     let d = dir("corrupt");

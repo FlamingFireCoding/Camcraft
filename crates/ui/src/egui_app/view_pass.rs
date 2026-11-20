@@ -109,11 +109,11 @@ pub(crate) fn encode(
     // has a frame; the field view is walked once per Deviate arming.
     let mut traced = false;
     if let Some(se) = stock_eye.as_mut().filter(|_| !state.active_stock_hidden()) {
-        if state.display != crate::state::DisplayMode::Wireframe {
+        if !state.display.is_wireframe() {
             crate::actions::ensure_field_view(state);
         }
         let fv = match &state.field_view {
-            Some(Ok(fv)) if state.display != crate::state::DisplayMode::Wireframe => Some(fv),
+            Some(Ok(fv)) if !state.display.is_wireframe() => Some(fv),
             _ => None,
         };
         match se.prepare(device, queue, encoder, fv, &state.cam, &mvp, (ew, eh)) {

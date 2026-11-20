@@ -1415,8 +1415,9 @@ pub enum GeoPick {
     Vertex,
 }
 
-/// How the viewport paints solid geometry. Transient view state - like
-/// the camera and [`GeoPick`], never a command, never saved. The wire is
+/// How the viewport paints solid geometry. View state - like the camera
+/// and [`GeoPick`], never a command; a kept preference since #2818, never
+/// in the project file. The wire is
 /// always the same feature-edge set (`geometry::feature`, crease and
 /// boundary); the modes differ in what happens *behind* it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1424,10 +1425,19 @@ pub enum DisplayMode {
     /// Flat-shaded faces with the CAD wire over them - the default look.
     #[default]
     ShadedEdges,
+    /// Flat-shaded faces only (#2818): no wire on the model or the stock.
+    Shaded,
     /// Wireframe only: faces go to the depth buffer and nowhere else, so
     /// the model reads as a hidden-line drawing; the stock - never a
     /// surface you trust to occlude anything - draws as its full wire.
     Wireframe,
+    /// Shaded with the wire, and the edges behind the faces draw too, in a
+    /// lighter tone (#2818).
+    ShadedHiddenEdges,
+    /// Wireframe with no hidden-line removal (#2636): each edge draws,
+    /// front and back, and no face goes to the depth buffer, so the model
+    /// hides nothing behind it.
+    WireframeSeeThrough,
 }
 
 /// The thing under the cursor, from the viewport hover pass: the named
@@ -1745,10 +1755,18 @@ pub struct State {
     /// the one the tree highlights. View state like the camera - not
     /// undoable, not saved; the overlay rebuild gate reads it.
     pub show_all_paths: bool,
-    /// How solids paint: shaded-with-wire or hidden-line wireframe. View
-    /// state like the camera - not undoable, not saved; the render call
-    /// reads it, nothing in the document does.
+    /// How solids paint: one of the four display modes. View state like
+    /// the camera - not undoable; the render call reads it, nothing in the
+    /// document does. A kept preference since #2818 (`state_view`).
     pub display: DisplayMode,
+    /// The viewport's Display menu is open (#2818). Ephemeral.
+    pub display_menu_open: bool,
+    /// "Look at a face" waits for one click in the viewport (#2818).
+    /// Ephemeral view state, never a command.
+    pub look_at_armed: bool,
+    /// Show the ground grid (#2818). View state and a kept preference;
+    /// the grid also needs `show_world_axes`.
+    pub show_grid: bool,
     /// M1.7c move simulation: None while off, [`Sim`] while the
     /// transport bar is up. View state like the camera - what it holds
     /// is only the playhead; the timeline is rebuilt from the world
@@ -1828,6 +1846,9 @@ pub struct State {
     /// The Theme door's open flag (#441): the same dropdown law as
     /// `ribbon_view_open` - a frame fact, one door open at a time.
     pub ribbon_theme_open: bool,
+    /// #2384: the start page is up, opened over this `doc_version`; a
+    /// changed document closes it (`egui_app::home::is_open`). View state.
+    pub home_page: Option<u64>,
     /// The open recent-files drop-down (#662) under the Open (projects)
     /// or Model (models) button - the same door law, one open at a time.
     pub ribbon_recent_open: Option<camcraft_app::recent::RecentKind>,
@@ -2288,6 +2309,9 @@ impl State {
             samples_offered: crate::viewport::GUARANTEED_SAMPLES.to_vec(),
             show_all_paths: false,
             display: DisplayMode::default(),
+            display_menu_open: false,
+            look_at_armed: false,
+            show_grid: true,
             sim: None,
             post_view: None,
             post_refusal: None,
@@ -2303,6 +2327,7 @@ impl State {
             ribbon_mode_open: false,
             ribbon_view_open: false,
             ribbon_theme_open: false,
+            home_page: None,
             ribbon_recent_open: None,
             recent: camcraft_app::recent::RecentFiles::default(),
             recent_store: None,
