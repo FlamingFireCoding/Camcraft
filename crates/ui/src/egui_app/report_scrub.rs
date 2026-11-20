@@ -37,9 +37,6 @@ pub(crate) fn scrub_paths(text: &str) -> String {
 
 const LEAD: &[char] = &['"', '\'', '(', '[', '<', '{', '`'];
 const TRAIL: &[char] = &['"', '\'', ')', ']', '>', '}', '`', ',', ';', ':', '.', '!', '?'];
-/// Trailing marks that end a path: a path never runs past `open failed:
-/// <path>: <reason>` into the reason.
-const ENDS_PATH: &[char] = &[',', ';', ':', ')', ']', '>', '}', '"', '\'', '`'];
 
 /// A word split into its leading marks, its body and its trailing marks.
 fn split_marks(word: &str) -> (&str, &str, &str) {
@@ -79,30 +76,20 @@ fn scrub_line(line: &str) -> String {
             i += 1;
             continue;
         }
-        // A folder name can hold spaces (`C:\Users\jane doe\x.camproj`):
-        // the path runs on to the last later word that has a separator,
-        // unless a word ends it first with a mark such as `:` or `,`.
-        let mut end = i;
-        if !ends_path(words[i]) {
-            for (j, w) in words.iter().enumerate().skip(i + 1) {
-                if has_separator(split_marks(w).1) {
-                    end = j;
-                }
-                if ends_path(w) {
-                    break;
-                }
-            }
-        }
+        // A folder name can hold spaces and marks (`C:\Users\jane doe\x`,
+        // `OneDrive - Contoso, Ltd\x`, `ACME (old) parts/x`): the path runs
+        // on to the LAST later word of the line that has a separator. A
+        // mark never ends it early, so no folder name before it survives.
+        // Two paths on one line merge into the last file name: shorter
+        // text, never a directory. The reason after a path (`<path>: not
+        // found`) has no separator, so it stays.
+        let end = (i..words.len()).rev().find(|&j| has_separator(words[j])).unwrap_or(i);
         let joined = words[i..=end].join(" ");
         let (_, body, trail) = split_marks(&joined[lead.len()..]);
         out.push(format!("{lead}{}{trail}", last_component(body)));
         i = end + 1;
     }
     out.join(" ")
-}
-
-fn ends_path(word: &str) -> bool {
-    word.ends_with(ENDS_PATH)
 }
 
 #[cfg(test)]
@@ -141,6 +128,12 @@ mod tests {
             ("feed 1200 mm/min, ok", "feed 1200 mm/min, ok"),
             ("debug info copied to the clipboard", "debug info copied to the clipboard"),
             ("line one\n/home/someone/x.nc", "line one\nx.nc"),
+            // Delta review: a mark inside a folder name does not end the path.
+            (r"open failed: C:\Users\jane\OneDrive - Contoso, Ltd\Parts\x.camproj: access denied", "open failed: x.camproj: access denied"),
+            ("saved /home/jane/ACME (old) parts/x.camproj", "saved x.camproj"),
+            (r"saved C:\Users\jane\Shop; north\x.camproj", "saved x.camproj"),
+            (r#"written to /home/jane/"Shop" files/x.nc"#, "written to x.nc"),
+            ("open failed: C:/Users/someone/part.camproj: access denied", "open failed: part.camproj: access denied"),
         ];
         for (input, want) in cases {
             assert_eq!(scrub_paths(input), want, "{input:?}");

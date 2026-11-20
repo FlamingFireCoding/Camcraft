@@ -21,10 +21,16 @@ name is enough for a triage. The machine line had the same leak (`from
   the whole report text (`report_scrub::scrub_paths`): each path-like word
   shrinks to its last component. A path starts with `/`, `\`, UNC `\\`, a drive
   (`C:\`, `C:/`), `~`, `./` or `../`, or has a `\` or two `/`. A path runs
-  over spaces to the last later word with a separator, and stops at a word
-  that ends with `:`, `,`, `;` or a closing mark. One `/` alone (`mm/min`)
-  is not a path. A scrub that guesses wrong can only shorten good text; it
-  cannot send a directory.
+  over spaces and marks to the last later word of the same line that has a
+  separator. A mark (`,`, `;`, `)`, a quote) inside a folder name does not
+  end the path (`OneDrive - Contoso, Ltd\...`). Two paths on one line merge
+  into the last file name. One `/` alone (`mm/min`) is not a path. Known
+  limits:
+  - A path to a folder keeps the last folder name.
+  - A relative path without a root keeps its first word when that word has
+    no separator (`jane doe/x/y` keeps `jane`).
+  - A non-path text with two `/` (for example a GPU driver text) shrinks
+    to its last part.
 - Changes at each status message: there are many, and a new one can leak
   again. One scrub at the report builder covers each field.
 - `Path::file_name` for the file name: it reads only the separators of the
