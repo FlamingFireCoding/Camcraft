@@ -46,7 +46,10 @@ pub(super) fn temp_stl(tag: &str) -> std::path::PathBuf {
 pub(super) fn editor() -> Harness<'static, ShellUi> {
     let mut harness = shell_harness();
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, TOOL);
+    // #2397: Properties shows the tool page, so its one side preview is
+    // drawn beside the shape window.
+    harness.state_mut().state.ui_target = UiTarget::Tool(TOOL.into());
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, TOOL);
     harness.run();
     harness.run();
     harness
@@ -245,7 +248,7 @@ fn the_simulated_tool_reaches_from_its_tip_into_the_body_on_the_users_document()
     harness.run();
     harness.state_mut().state.pending.push_back(CommandKind::OpenProjectFile(STEP_BLOCK.into()));
     harness.run();
-    crate::actions::open_tool_editor(&mut harness.state_mut().state, TOOL);
+    crate::actions::open_tool_shape_editor(&mut harness.state_mut().state, TOOL);
     harness.run();
     let path = temp_stl("user");
     prism_stl(&path, 20.0, 0.0, 50.0, 24);
@@ -256,7 +259,7 @@ fn the_simulated_tool_reaches_from_its_tip_into_the_body_on_the_users_document()
     harness.run();
     harness.run();
     assert!(body_source(&harness.state().state).is_some(), "status: {}", harness.state().state.status);
-    harness.state_mut().state.close_tool_editor_window();
+    harness.state_mut().state.close_tool_shape_editor();
     harness.state_mut().state.pending.push_back(CommandKind::Select(Some("Face1".into())));
     // Paused at 0, as the user saw it.
     harness.state_mut().state.sim = Some(crate::state::Sim { t: 0.0, playing: false, speed: 1.0 });

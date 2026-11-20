@@ -786,10 +786,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "truck-meshalgo",
- "truck-polymesh",
- "truck-stepio",
- "truck-topology",
  "url",
  "web-time",
 ]
@@ -824,6 +820,7 @@ dependencies = [
  "serde_json",
  "solidcore",
  "solidcore-convert",
+ "solidcore-ops",
  "solidcore-record",
  "solidcore-step",
  "solidcore-tess",
@@ -4770,7 +4767,7 @@ dependencies = [
 [[package]]
 name = "solidcore"
 version = "1.0.1"
-source = "git+https://github.com/NeoTech/solidcore?rev=55d0e7638b9e1ebbf91ab8c10657e595c114ecda#55d0e7638b9e1ebbf91ab8c10657e595c114ecda"
+source = "git+https://github.com/NeoTech/solidcore?rev=2016386442dfee3b2a0c3a1bfdd4017c5254dac8#2016386442dfee3b2a0c3a1bfdd4017c5254dac8"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -4779,7 +4776,7 @@ dependencies = [
 [[package]]
 name = "solidcore-convert"
 version = "0.1.0"
-source = "git+https://github.com/NeoTech/solidcore?rev=55d0e7638b9e1ebbf91ab8c10657e595c114ecda#55d0e7638b9e1ebbf91ab8c10657e595c114ecda"
+source = "git+https://github.com/NeoTech/solidcore?rev=2016386442dfee3b2a0c3a1bfdd4017c5254dac8#2016386442dfee3b2a0c3a1bfdd4017c5254dac8"
 dependencies = [
  "solidcore",
  "solidcore-record",
@@ -4788,7 +4785,7 @@ dependencies = [
 [[package]]
 name = "solidcore-ops"
 version = "0.1.0"
-source = "git+https://github.com/NeoTech/solidcore?rev=55d0e7638b9e1ebbf91ab8c10657e595c114ecda#55d0e7638b9e1ebbf91ab8c10657e595c114ecda"
+source = "git+https://github.com/NeoTech/solidcore?rev=2016386442dfee3b2a0c3a1bfdd4017c5254dac8#2016386442dfee3b2a0c3a1bfdd4017c5254dac8"
 dependencies = [
  "solidcore",
  "solidcore-convert",
@@ -4798,7 +4795,7 @@ dependencies = [
 [[package]]
 name = "solidcore-record"
 version = "0.1.0"
-source = "git+https://github.com/NeoTech/solidcore?rev=55d0e7638b9e1ebbf91ab8c10657e595c114ecda#55d0e7638b9e1ebbf91ab8c10657e595c114ecda"
+source = "git+https://github.com/NeoTech/solidcore?rev=2016386442dfee3b2a0c3a1bfdd4017c5254dac8#2016386442dfee3b2a0c3a1bfdd4017c5254dac8"
 dependencies = [
  "serde",
  "serde_json",
@@ -4808,7 +4805,7 @@ dependencies = [
 [[package]]
 name = "solidcore-step"
 version = "0.1.0"
-source = "git+https://github.com/NeoTech/solidcore?rev=55d0e7638b9e1ebbf91ab8c10657e595c114ecda#55d0e7638b9e1ebbf91ab8c10657e595c114ecda"
+source = "git+https://github.com/NeoTech/solidcore?rev=2016386442dfee3b2a0c3a1bfdd4017c5254dac8#2016386442dfee3b2a0c3a1bfdd4017c5254dac8"
 dependencies = [
  "solidcore",
  "solidcore-convert",
@@ -4819,7 +4816,7 @@ dependencies = [
 [[package]]
 name = "solidcore-tess"
 version = "0.1.0"
-source = "git+https://github.com/NeoTech/solidcore?rev=55d0e7638b9e1ebbf91ab8c10657e595c114ecda#55d0e7638b9e1ebbf91ab8c10657e595c114ecda"
+source = "git+https://github.com/NeoTech/solidcore?rev=2016386442dfee3b2a0c3a1bfdd4017c5254dac8#2016386442dfee3b2a0c3a1bfdd4017c5254dac8"
 dependencies = [
  "rayon",
  "serde",

@@ -1,6 +1,6 @@
-//! STEP syntax-error locator (#912): when `ruststep` rejects a file it fails
-//! the whole DATA section and its position is not the entity that broke, so
-//! we re-scan ourselves to name the first bad entity's `#id` and line.
+//! STEP syntax-error locator (#912): before the kernel reads a file
+//! (#917), a re-scan names the first bad entity's `#id` and line, a string
+//! or comment that never closes, and a file with no DATA section.
 //!
 //! Provenance: record framing (`;` terminators, `'..'` strings with `''`
 //! escapes, `/* .. */` comments, `DATA;` .. `ENDSEC;` sections) from
@@ -109,6 +109,20 @@ pub fn locate(text: &str) -> Option<Failure> {
                         _ => {}
                     }
                     i += 1;
+                }
+            }
+            // A resource reference `<...>` (ISO 10303-21 ed. 3) is text: a
+            // `/*` or a `'` in it opens nothing (as `step_depth` reads it).
+            // Since #917 this scan runs on every file, not only on one the
+            // parser refused.
+            b'<' => {
+                while let Some(&c) = b.get(i + 1) {
+                    i += 1;
+                    match c {
+                        b'>' => break,
+                        b'\n' => line += 1,
+                        _ => {}
+                    }
                 }
             }
             b'/' if b.get(i + 1) == Some(&b'*') => {

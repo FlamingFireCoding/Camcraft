@@ -61,6 +61,9 @@ pub(super) struct StockSnap {
     /// The stock's own reduced-fidelity flag (#1056): a clone of a coarse
     /// copy is as coarse as the copy, and an undone delete restores it.
     pub(super) coarse_mm: Option<f64>,
+    /// #1700: the copy's hole when its model was imported incomplete,
+    /// carried with the flag.
+    pub(super) hole: Option<String>,
     /// #2015: the stock's workpiece material, cloned and restored with it.
     pub(super) material: Option<crate::tools::WorkMaterial>,
 }
@@ -186,6 +189,7 @@ impl CreateSetup {
                     location: model::transform_of(world, &entity).unwrap_or_default(),
                     facets: model::facets_of(world, &entity).unwrap_or_default(),
                     coarse_mm: crate::model_fidelity::chord_of(world, &entity),
+                    hole: crate::mesh_open::hole_of(world, &entity),
                     material: crate::stock_material::of_entity(world, &entity),
                 });
             }
@@ -224,6 +228,7 @@ impl Command for CreateSetup {
             model::set_transform(world, &e, s.location);
             model::set_facets(world, &e, s.facets.clone());
             crate::model_fidelity::set(world, &e, s.coarse_mm);
+            crate::mesh_open::set(world, &e, s.hole.as_deref());
             e.entity_view(world).set(StockDef {
                 shape: s.shape.clone(),
             });

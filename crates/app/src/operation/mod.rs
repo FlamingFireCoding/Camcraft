@@ -190,6 +190,8 @@ pub use frame::OpFrame;
 mod tilt_heights;
 pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
+pub(crate) mod corner_relief;
+mod corner_relief_sim;
 mod job;
 pub use job::*;
 mod generate;

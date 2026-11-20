@@ -9,7 +9,7 @@
 //! or under the maximum depth of cut is general machining knowledge.
 //!
 //! Gate map: covers camcraft_motion::machining2d (equal_steps, levels,
-//! pocket, adaptive_troch, contour, slots, bore, circular) and
+//! pocket, pocket_avoid, adaptive_troch, contour, slots, bore, circular) and
 //! camcraft_motion::machining3d (entry).
 
 use camcraft_motion::approach::Approach;
@@ -20,10 +20,14 @@ use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::Links;
 use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
 use camcraft_motion::machining2d::{
-    adaptive_trochoidal, bore, circular, contour, cut_levels, cut_levels_for, equal_stepdown, pocket, slot, BoreHole,
-    BoreParams, CircularParams, ContourParams, Lead, PocketParams, PocketStrategy, Side, SlotParams,
+    BoreHole, BoreParams, CircularParams, ContourParams, CornerRelief, CornerReliefKind, Lead,
+    PocketParams, PocketStrategy, Side, SlotParams, adaptive_trochoidal, bore, circular, contour,
+    cut_levels, cut_levels_for, equal_stepdown, pocket, pocket_avoid_with_relief,
+    pocket_relief_plan, slot,
 };
-use camcraft_motion::machining3d::{pocket3d, Pocket3DParams};
+use camcraft_motion::machining3d::{Pocket3DParams, pocket3d};
+use camcraft_motion::tools::ToolGeom;
+use camcraft_motion::verify::{AvoidItem, AvoidSpec, Cutter};
 
 /// The issue's example: 18 mm of depth, a 5 mm stepdown.
 const TOP: f64 = 20.0;
@@ -153,6 +157,55 @@ fn a_pocket_cuts_the_levels_of_its_mode() {
     for s in [PocketStrategy::OffsetRings, PocketStrategy::Adaptive] {
         two_modes(&format!("2D pocket {s:?}"), |equal| pocket(&reg, &pp(s, equal)).unwrap_or_else(|e| panic!("{s:?}: {e}")));
     }
+}
+
+#[test]
+fn a_pocket_with_keepouts_and_relief_cuts_the_levels_of_its_mode() {
+    let reg = square(0.0, 0.0, 24.0);
+    let relief = CornerRelief {
+        kind: CornerReliefKind::Dogbone,
+        ..Default::default()
+    };
+    let plan = pocket_relief_plan(&reg, 6.0, 0.0, &relief).expect("relief plan");
+    assert!(!plan.reliefs.is_empty());
+    // A remote protected edge selects the keep-out ladder without blocking a cut.
+    let avoid = AvoidSpec {
+        items: vec![AvoidItem {
+            label: "remote edge".into(),
+            tris: vec![],
+            edges: vec![([100.0, 100.0, BOTTOM], [100.0, 101.0, TOP])],
+        }],
+        cutter: Cutter::flat(&ToolGeom {
+            radius: 3.0,
+            nose_radius: 0.0,
+            flute_len: 8.0,
+            shank_radius: 4.5,
+            shank_len: 10.0,
+            holder_radius: 12.0,
+            holder_len: 20.0,
+        }),
+        clearance: 1.0,
+    };
+    assert!(!avoid.is_empty());
+    two_modes("pocket with keep-outs and relief", |equal| {
+        let path = pocket_avoid_with_relief(
+            &reg,
+            &pp(PocketStrategy::OffsetRings, equal),
+            &avoid,
+            &relief,
+        )
+        .expect("pocket with keep-outs and relief");
+        for relief in &plan.reliefs {
+            assert!(
+                path.moves.iter().any(|m| {
+                    (m.to.x - relief.end.x).hypot(m.to.y - relief.end.y) < 1e-2
+                        && (m.to.z - BOTTOM).abs() < 1e-6
+                }),
+                "missing corner relief at the bottom plane"
+            );
+        }
+        path
+    });
 }
 
 #[test]
