@@ -36,6 +36,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut material,
         frame,
         hs,
+        radial,
         mut stock_facets,
         mut stock_aabb,
         analytic_stock,
@@ -1558,9 +1559,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 max_tilt_deg: Some(*max_tilt_deg),
             };
             let run = |q: &Finish3DParams| if is_contour {
-                crate::multiaxis::rotary_contour(&material.facets, q, &axis)
+                crate::multiaxis::rotary_contour_radial(&material.facets, q, &axis, radial.into())
             } else {
-                crate::multiaxis::rotary_parallel_in(&material.facets, stock_facets.as_deref(), q, &axis)
+                crate::multiaxis::rotary_parallel_radial(&material.facets, stock_facets.as_deref(), q, &axis, radial.into())
             };
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
             // M13.5 B: the letter is the machine's. The fitted line
@@ -1649,11 +1650,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // M13.8: the ladder peels from the setup STOCK's outer
             // radius about the fitted axis (the part's skin when no
             // separate stock is set, or when the stock sits inside it).
-            let path = crate::multiaxis::rotary_offset_in(
+            let path = crate::multiaxis::rotary_offset_radial(
                 &material.facets,
                 stock_facets.as_deref(),
                 &pp,
                 &axis,
+                radial.into(),
             )?;
             // Issue #33: on the spindle's C the path states its angle,
             // split to the verify budget so the machine's C-linear

@@ -18,6 +18,20 @@ impl OpParams {
     ) {
         let wh = |h: &mut std::hash::DefaultHasher, v: Height| digest::wh(world, setup, src, h, v);
         let wh_opt = |h: &mut std::hash::DefaultHasher, v: Option<Height>| digest::wh_opt(world, setup, src, h, v);
+        // #2774: a radial height is a source word plus an offset; the
+        // digest carries both so a change to either regenerates once.
+        let wr_opt = |h: &mut std::hash::DefaultHasher, v: Option<RadialHeight>| match v {
+            None => h.write_u8(0),
+            Some(r) => {
+                h.write_u8(1);
+                h.write_u8(match r.source {
+                    crate::operation::RadialSource::StockOd => 0,
+                    crate::operation::RadialSource::ModelMaxRadius => 1,
+                    crate::operation::RadialSource::Absolute => 2,
+                });
+                digest::w(h, r.offset);
+            }
+        };
         match self {
             // The 5-axis twins and plain swarf (tags 8/9/10): the
             // finish's scalar law with the pattern byte dropped - the
@@ -84,6 +98,7 @@ impl OpParams {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                ..
             }
             | OpParams::RotaryParallel {
                 tolerance,
@@ -163,6 +178,15 @@ impl OpParams {
                 for v in [*lead_deg, *lag_deg, *max_tilt_deg] {
                     w(h, v);
                 }
+                // #2774: the radial heights of the rotary twins ride the
+                // same read-back law, absent on every Z-plane op.
+                if let OpParams::RotaryContour { clearance_r, retract_r, top_r, bottom_r, .. }
+                | OpParams::RotaryParallel { clearance_r, retract_r, top_r, bottom_r, .. } = self
+                {
+                    for v in [*clearance_r, *retract_r, *top_r, *bottom_r] {
+                        wr_opt(h, v);
+                    }
+                }
                 // The or-pattern cannot bind stage F's flag (the
                 // swarf and rotary twins answer shank contact with
                 // surface truth, not a free axis - it is not their
@@ -188,6 +212,8 @@ impl OpParams {
                 clearance_z,
                 top_z,
                 bottom_z,
+                clearance_r,
+                top_r,
                 stepdown,
                 feed,
                 plunge_feed,
@@ -200,6 +226,9 @@ impl OpParams {
                 lag_deg,
                 max_tilt_deg,
             } => {
+                for v in [*clearance_r, *top_r] {
+                    wr_opt(h, v);
+                }
                 w(h, *stepover);
                 w(h, *stock_to_leave);
                 wh(h, *clearance_z);

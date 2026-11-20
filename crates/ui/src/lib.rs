@@ -61,6 +61,7 @@ mod headless_open;
 pub mod interact;
 mod height_display;
 mod height_memo;
+mod radial_view;
 pub mod locate_pick;
 pub mod move_drag;
 pub mod turn_drag;

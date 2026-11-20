@@ -41,7 +41,7 @@ pub use camcraft_post::post::CoolantMode;
 /// The after-operation action is the stream's own type too (#110).
 pub use camcraft_post::post::AfterOperation;
 pub use dwell::MAX_DWELL_S;
-pub use height::{Height, HeightReference};
+pub use height::{Height, HeightReference, RadialHeight, RadialSource};
 pub use params::{OpParams, Tilt};
 pub use plasma::{PlasmaComp, PlasmaOp};
 pub use sinker::{

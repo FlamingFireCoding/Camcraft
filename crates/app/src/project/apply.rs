@@ -539,6 +539,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v72 -> v73 (#2055): absent `do_not_touch` protection defaults to
         // empty picks and zero clearance. v72 readers must refuse v73
         // rather than discard protected selections as unknown area fields.
+        // v73 -> v74 (#2774): a rotary op may state radial heights; absent
+        // is the Z-plane law a v73 file ran, so it steps up unchanged
+        // (serde default carries it). A v73 reader must refuse v74 rather
+        // than ignore the radii.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {

@@ -149,7 +149,12 @@ use super::*;
 /// protected faces/edges and standoff clearance. An old reader (up to v72)
 /// must refuse the file rather than ignore the protection and cut across a
 /// protected feature. A v72 file steps up unchanged with empty protection.
-pub const PROJECT_VERSION: u32 = 73;
+/// v74 (#2774): a rotary operation may state its heights as radii about the
+/// fitted axis (`clearance_r`, `retract_r`, `top_r`, `bottom_r`). Absent is
+/// the Z-plane law every older file ran, so a v73 file steps up unchanged.
+/// An old reader must refuse a v74 file rather than read only the Z fields
+/// and post a clearance shape that does not match the stored radii.
+pub const PROJECT_VERSION: u32 = 74;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

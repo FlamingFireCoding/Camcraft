@@ -133,6 +133,29 @@ pub(crate) fn height_echo(
     }
 }
 
+/// What a radial row echoes after its offset box: the radius it resolves
+/// to about the fitted axis, or - never a stale or guessed number - what
+/// is missing. The twin of [`height_echo`] for the rotary kinds' radial
+/// heights (#2774); the same axis the generators pose about.
+pub(crate) fn radial_echo(
+    world: &World,
+    setup: Option<&str>,
+    src: Option<&camcraft_app::operation::SrcRef>,
+    h: &camcraft_app::operation::RadialHeight,
+) -> String {
+    let Some(src) = src else {
+        return "(unresolved: the operation has no source to read its radii about)".to_string();
+    };
+    match crate::height_memo::radial_axis(world, setup, src) {
+        Some(v) => match operation::resolve_one("", *h, v.part_rho, v.stock_rho) {
+            Ok(r) if r.is_finite() && r > 0.0 => format!("(= R {})", units::len(r, units::of(world), 3)),
+            Ok(_) => "(unresolved: the radius is not positive)".to_string(),
+            Err(reason) => format!("(unresolved: {reason})"),
+        },
+        None => "(unresolved: the model gives no rotation axis to read about)".to_string(),
+    }
+}
+
 /// The first unresolved reason of a set of heights, phrased for a note:
 /// `Err(reason)` when any fails, else every Z in order.
 fn resolve_all<const N: usize>(
