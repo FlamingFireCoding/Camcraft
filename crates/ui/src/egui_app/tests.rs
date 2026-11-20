@@ -146,6 +146,9 @@ mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
 mod display_menu;
+// #2834 and #2958: the Display menu's quality, line width and
+// anti-aliasing entries.
+mod display_quality;
 mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
@@ -195,8 +198,6 @@ mod tool_cutter_params;
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
-// #2958: the Display menu's line width and anti-aliasing entries.
-mod display_quality;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;
