@@ -183,6 +183,7 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
     // its ends, interval by interval; every other move pays nothing.
     let poses = midpose::poses(path);
     let reach = atoms.iter().map(|a| a.z1).fold(0.0, f64::max);
+    let stopped = super::fine_bore::stopped_rapids(path, cutter.radius, cutter.shank_radius);
     let mut out = Vec::new();
     for (i, m) in path.moves.iter().enumerate() {
         if !(m.from.is_finite() && m.to.is_finite()) {
@@ -211,6 +212,15 @@ fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw,
                 }))
         };
         if m.kind == MoveKind::Rapid {
+            if stopped.contains(&i) {
+                // #1445: a fine bore's stopped rapid. Its edge zone stays in
+                // the cylinder the feed in cut ([`super::fine_bore`]); the
+                // shank and holder are read where the shift puts them.
+                if hits(&body) {
+                    out.push(Warning::RapidInStock { at: i });
+                }
+                continue;
+            }
             let lifts = stack_only && axis.is_none() && m.arc.is_none() && m.from.x == m.to.x && m.from.y == m.to.y && m.to.z >= m.from.z;
             let from_cut = i.checked_sub(1).and_then(|j| path.moves.get(j)).is_some_and(|c| c.kind != MoveKind::Rapid && c.to == m.from);
             if lifts && from_cut {

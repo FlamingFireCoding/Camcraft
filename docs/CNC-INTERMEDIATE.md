@@ -41,7 +41,7 @@ committed golden is a legal post input.
 | `TORCH ON C<id> OUTER\|INNER\|OPEN [PARENT<id>] [SMALL<f×1000>]` / `TORCH OFF C<id>` | the torch struck before the next motion record / put out after the previous one (#671): the `.cl` v5 `; TORCH` records without their `; ` |
 | `START X <i> Y <i> Z <i>` / `END` | legacy `.cl` position lines: consumed silently (END ends the record span) |
 
-`CYCLE` TYPE ∈ SPOT DRILL PECK DEEP TAP FLOATINGTAP BORE BACKBORE REAM. Word meanings
+`CYCLE` TYPE ∈ SPOT DRILL PECK DEEP TAP FLOATINGTAP BORE BACKBORE REAM FINEBORE. Word meanings
 match the `.cl` v3 `; CYCLE` marker the M1.6 goldens use, and one
 parser reads both: X Y center, Z (or `BZ`) bottom, R (or `RZ`)
 retract/feed plane, `ENTRY` entry plane, Q (or `PECK`) peck, P (or
@@ -117,7 +117,8 @@ behavior only):
 | `SetWorkOffset` | on a probing result (`onProbeResult`, #108): the work offset the measured deviation is written into, **0-based** (0 is the first offset, `G54`; -1 sets none). Not the same count as `WorkOffset`, which is 1-based: work offset n of a section is `SetWorkOffset` n-1 of a probe. A probe can only set offsets 1-6 (`0..=5`) |
 | `Tolerance` | the `PROBE` ask's deviation budget in mm (present only on probe events; the µm lattice word `PROBE <µm>` is its stream spelling) |
 | `CircularDirection` | `CW` / `CCW` (arcs) |
-| `CycleType` | cycle intent delivered to hooks: `SPOT` `DRILL` `PECK` `DEEP` `TAP` `BORE` `BACKBORE` `REAM` (feed in, feed out at the same feed, no dwell: G85); `FLOATINGTAP` is normalized to `TAP` here and distinguished by `TappingMode` |
+| `CycleType` | cycle intent delivered to hooks: `SPOT` `DRILL` `PECK` `DEEP` `TAP` `BORE` `BACKBORE` `REAM` (feed in, feed out at the same feed, no dwell: G85) `FINEBORE` (feed in, dwell, oriented spindle stop, shift, rapid out: G76 on a mill; #1445); `FLOATINGTAP` is normalized to `TAP` here and distinguished by `TappingMode` |
+| `ShiftX` `ShiftY` | on a `FINEBORE` cycle only (#1445): the shift off the wall, mm along X and Y, read by the engine from the cycle's own chain (the lateral rapid at the bottom). `null` when the chain carries none, which the engine also refuses. A script writes the cycle only when it declares `fineBoring = true`; without the flag the engine refuses the cycle by name |
 | `TappingMode` | `rigid` for legacy `TAP`; `floating` only for the explicit `FLOATINGTAP` stream kind |
 | `EntryZ` `Q` `P` `FeedRate` | cycle entry plane, peck mm, dwell s, cutting feed mm/min (`null` for legacy markers) |
 | `ChainFeedRate` | optional-valued engine property: feed on the first subsequent non-rapid move in the expanded cycle chain, mm/min; `null` if absent; legacy posts may use it when cycle `FeedRate` is `null` |
