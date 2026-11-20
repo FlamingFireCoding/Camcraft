@@ -74,6 +74,7 @@ mod wcs_flip_tools;
 // #2463: link a model to its source file, or unlink it.
 mod model_link_tools;
 mod rotary_tools;
+mod thread_infeed_tools;
 mod workholding_tools;
 
 // #183: the same tool table served live from inside the GUI, over a
