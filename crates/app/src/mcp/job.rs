@@ -67,6 +67,8 @@ fn setups_view(env: &Env) -> Vec<Value> {
                 // #1233: the setup's own post (null: follows the document's) and what it posts with.
                 "post": crate::setup_mount::own_post(w, d).as_ref().map(crate::posting::post_ref_label),
                 "posts_with": crate::posting::post_ref_label(&crate::setup_mount::post_of(w, d)),
+                // #2374: the post its machine asks for, until the agent takes it.
+                "post_offer": super::post_offer_view::offer_view(w, d),
                 // #1031: the chuck's or collet's rated maximum rpm.
                 "workholding_max_rpm": s.as_deref().and_then(|n| crate::setup_workholding::of(w, Some(n))).map(fnum),
                 // #1862: what stands for the setup's model - a part, or the
