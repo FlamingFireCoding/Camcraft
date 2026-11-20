@@ -64,7 +64,7 @@ pub(super) fn judge(path: &Toolpath, origin: [f64; 3], tool: &Tool, work: &LiveW
         return Err(GenError::Invalid(format!(
             "cross drill: the first rapid comes from the turret's index position (the top of the X and Z travel) \
              to radius {r:.3} at Z{:.3}; the post sends X and Z in one rapid after C, so the tool can pass every \
-             radius from {r:.3} out at Z{:.3} and above, and {what} {reach} there - move it clear of that band, \
+             radius from {r:.3} out at Z{:.3} and above in the station's plane, and {what} {reach} there - move it clear of that band, \
              or drill these holes in a setup where nothing stands beyond them",
             at.z,
             at.z - r_tool
