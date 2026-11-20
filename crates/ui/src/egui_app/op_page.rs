@@ -234,14 +234,10 @@ fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Option<&Opera
 
     // Source: the stock or one of the user's parts - never a work
     // offset (G54...), a setup or a fixture (user review 2026-11-06).
-    let models: Vec<String> = model::model_entities(&state.world)
-        .into_iter()
-        .filter(|(_, e)| !model::is_fixture(&state.world, e))
-        .map(|(n, _)| n)
-        .collect();
+    let op_setup = live.and_then(|o| o.setup.clone()).or_else(|| camcraft_app::setup::active(&state.world));
+    let src_items = super::op_source::source_items(&state.world, op_setup.as_deref(), &state.op_ui.params);
+    let models: Vec<String> = src_items.iter().skip(1).cloned().collect();
     ui.label("Source");
-    let mut src_items: Vec<String> = vec!["Stock".to_owned()];
-    src_items.extend(models.iter().cloned());
     let mut s_idx: usize = if state.op_ui.src_kind != 0 && !state.op_ui.src_name.is_empty() {
         match models.iter().position(|m| *m == state.op_ui.src_name) {
             Some(p) => 1 + p,
