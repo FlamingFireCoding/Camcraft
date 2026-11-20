@@ -45,9 +45,9 @@ pinned the old refusal now pin the new result:
   axial station window, rings at more than three stations, and the
   column-verdict refusal of a rotary program.
 - `setup_align_multiaxis::turned_rotary_contour_cuts_posts_and_fits_axis_like_the_baked_part`
-  expected a refusal for the as-modelled stance (the bar lies along X). That
-  stance now cuts. The test requires a fitted axis along X, radial poses about
-  X on each posed move, and a path that differs from the turned path. The
+  expected a refusal for the as-modelled stance (the bar lies flat along Y: `unturn_xz` maps the bar axis z to y). That
+  stance now cuts. The test requires a fitted axis along Y, radial poses about
+  Y on each posed move, and a path that differs from the turned path. The
   turned and baked cases keep their equal-path and equal-post checks.
 
 Dropped: keep the refusal for these two fixtures only. That would make the

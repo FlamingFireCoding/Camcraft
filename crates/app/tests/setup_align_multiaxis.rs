@@ -355,7 +355,7 @@ fn prove_rotary(kind: &str, raw: Vec<Triangle>, stock: &(StockShape, Location), 
 #[test]
 fn turned_rotary_contour_cuts_posts_and_fits_axis_like_the_baked_part() {
     let rc = OpParams::RotaryContour { tolerance: 0.1, clearance_z: Height::fixed(25.0), retract_z: None, top_z: Height::fixed(6.0), bottom_z: Height::fixed(-6.0), feed: 500.0, plunge_feed: 100.0, climb: true, lead_deg: 0.0, lag_deg: 0.0, max_tilt_deg: 60.0 };
-    prove_rotary("RotaryContour", unturn_xz(bar_facets()), &cyl_stock(12.4, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), rc, [0.0, 0.0, 1.0], (false, true, OnModelled::CutsAbout([1.0, 0.0, 0.0])));
+    prove_rotary("RotaryContour", unturn_xz(bar_facets()), &cyl_stock(12.4, 32.0, Point3::new(0.0, 0.0, -16.0), IDENTITY_Q), rc, [0.0, 0.0, 1.0], (false, true, OnModelled::CutsAbout([0.0, 1.0, 0.0])));
 }
 
 #[test]
