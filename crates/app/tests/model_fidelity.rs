@@ -137,6 +137,10 @@ fn the_round_trip_of_a_unit_scaled_cap_is_not_a_reduced_fidelity_flag() {
     assert_eq!(step::coarse((step::CHORD_CAP / 25.4) * 25.4), None);
     assert_eq!(step::coarse(step::CHORD_CAP * (1.0 + 1e-12)), None);
     assert_eq!(step::coarse(0.01), Some(0.01), "a chord twice the promise is flagged");
+    // The old metre-file pin's excess floor (restored, #917): a model
+    // flagged at 0.01 mm still leaves a 0.005 mm verdict tolerance.
+    let left = camcraft_app::verify::excess_floor(DEV_TOL, model_fidelity::excess(0.01)).expect("a tolerance is left");
+    assert!((left - 0.005).abs() < 1e-9, "{left}");
     assert_eq!(step::coarse(f64::NAN), None);
 }
 

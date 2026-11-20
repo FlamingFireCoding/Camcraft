@@ -162,6 +162,8 @@ fn a_shell_of_many_runaway_faces_is_refused_after_a_few_trips() {
         import::parse_model(hostile.as_bytes(), import::Format::Step)
     });
     let err = r.expect_err("refused").to_string();
-    assert!(err.contains("face #53") && err.contains("used twice"), "{err}");
+    // The old "stopped after 3 faces or edges": now no face is meshed at
+    // all; the solid is refused when its shell is read.
+    assert!(err.contains("first #16 at read: face #53 is used twice"), "{err}");
     assert!(started.elapsed() < Duration::from_secs(30), "refused in {:?}", started.elapsed());
 }
