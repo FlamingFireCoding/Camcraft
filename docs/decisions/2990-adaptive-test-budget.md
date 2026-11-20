@@ -80,3 +80,29 @@ needs a larger case. Change the execution budget or debug cell size only
 with measured evidence. A different target split needs only test moves
 and helper imports. Keep the assertions and test count when changing
 the fixtures or target layout.
+
+## PR #3032 - Refresh the reached Linux bore pin
+
+**What was decided.** Pin the Linux x86_64 bore path to 3158 moves,
+3130 planar feeds and 1141 arcs. Require the imported mesh to contain
+6228 facets. Require the four cutting levels at Z 0, 5, 10 and 15.
+Add a quick test that rejects the old tuple and adjacent count tuples.
+Keep the existing verification, fallback and planning-budget checks.
+
+**Why.** The review found a stale baseline in the reached release heavy
+lane. PR #2904 (`bac4a96c7`) replaced the STEP importer. Decision #917
+records that `Milling-test.step` changed from 952 truck facets to 6228
+solidcore facets, with measured deviation within the requested tolerance.
+The changed mesh affects the cutting regions and their arc fits.
+The review measured the new tuple on both this PR and upstream main.
+The mesh and cutting-level assertions bind the count to that input and
+require every intended level to remain present.
+
+**Considered and dropped.** Do not widen the count range, ignore the
+failure, or move the test out of its lane. Do not change production code
+to recreate the old truck-mesh count. Keep the safety assertions and
+measure the corrected pin in the release heavy lane.
+
+**Cost to change later.** A later mesh or planner change must explain
+and measure a new tuple. Keep the mesh, cutting-level and safety checks
+when the count changes.
