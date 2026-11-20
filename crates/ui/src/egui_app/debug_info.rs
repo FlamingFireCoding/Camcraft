@@ -11,6 +11,7 @@ use egui::{Button, Image, Response, RichText, Ui, Vec2};
 use camcraft_app::{machine, model, operation, setup, units};
 
 use super::icons::{Icon, IconSet};
+use super::report_scrub::{self, file_name_only};
 use crate::build_info;
 use crate::state::State;
 
@@ -41,15 +42,11 @@ pub(crate) fn report(state: &State) -> String {
 /// The same report for a page that leaves this machine (the Report door's
 /// GitHub URL, #2744): the project and machine files by name only. A full
 /// path usually holds the user's name, and the browser sends it to GitHub.
+/// After the build, each path in ANY field (status, GPU, machine vendor and
+/// model) shrinks to its last component: a status such as `open failed:
+/// <path>` names a path that is not the project's.
 pub(crate) fn shared_report(state: &State) -> String {
-    report_with(state, true)
-}
-
-/// The last part of a path, for the shared report. A path with no file
-/// name part (a root, `..`) gives a fixed word, never the path itself.
-fn file_name_only(path: &std::path::Path) -> String {
-    path.file_name()
-        .map_or_else(|| "(no file name)".to_owned(), |n| n.to_string_lossy().into_owned())
+    report_scrub::scrub_paths(&report_with(state, true))
 }
 
 fn report_with(state: &State, names_only: bool) -> String {
@@ -91,13 +88,8 @@ fn report_with(state: &State, names_only: bool) -> String {
         status(operation::OpStatus::Never),
     ));
     lines.push(state.frame_rate.report_line(camcraft_app::clock::Instant::now()));
-    // The status can repeat the project path ("saved <path>"): the shared
-    // form puts the file name in its place there too.
-    let mut status_text = state.status.clone();
-    if let Some(p) = state.project_path.as_deref().filter(|_| names_only) {
-        status_text = status_text.replace(&p.display().to_string(), &file_name_only(p));
-    }
-    lines.push(format!("Status: {}", or_none(&status_text)));
+    // The shared form scrubs the paths of the status (`shared_report`).
+    lines.push(format!("Status: {}", or_none(&state.status)));
     lines.join("\n")
 }
 

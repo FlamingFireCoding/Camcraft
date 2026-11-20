@@ -116,6 +116,30 @@ fn the_report_door_url_has_the_project_file_name_and_no_directory() {
 }
 
 #[test]
+fn the_report_door_scrubs_a_status_path_that_is_not_the_project() {
+    // #2744 review: with no saved project, a status such as `open failed:
+    // <path>` still names a full path. The shared report keeps only its
+    // file name, in the Windows and the POSIX form, on every system.
+    for failed in [r"C:\Users\someone\Documents\secret\part.camproj", "/home/someone/secret/part.camproj"] {
+        let mut state = State::new();
+        state.status = format!("open failed: {failed}: The system cannot find the file");
+        let body = report::report_body(&state);
+        let url = report::issue_url(report::ReportKind::Bug, "Open fails", &body);
+        assert!(body.contains("Project: unsaved"), "{body}");
+        assert!(body.contains("Status: open failed: part.camproj: The system cannot find the file"), "{body}");
+        assert!(url.contains(&report::url_encode("part.camproj")), "{url}");
+        for secret in ["someone", "secret", "Documents", "Users", "home"] {
+            assert!(!body.contains(secret), "the body leaks {secret:?}: {body}");
+            assert!(!url.contains(secret), "the URL leaks {secret:?}: {url}");
+            assert!(!url.contains(&report::url_encode(secret)), "the URL leaks encoded {secret:?}: {url}");
+        }
+        // The status strip and the in-app Debug info keep the full text.
+        assert!(state.status.contains(failed));
+        assert!(debug_info::report(&state).contains(failed));
+    }
+}
+
+#[test]
 fn the_door_opens_the_window_and_a_kind_button_files_the_url() {
     let mut h = harness();
     h.run();

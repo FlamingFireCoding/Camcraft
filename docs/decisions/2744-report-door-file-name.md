@@ -15,11 +15,23 @@ name is enough for a triage. The machine line had the same leak (`from
 **Dropped.**
 - A second, separate report text for the door: two sources drift. One
   builder with a "names only" switch keeps the fields the same.
-- A general scrub of the `Status:` line: the status text is free text, and
-  a scrub that guesses paths can remove good text. The shared form only
-  replaces the exact project path in the status (for example after a save)
-  with the file name.
+- Only the exact project path replaced in the status (the first form of
+  this PR): the review found other status texts with other full paths
+  (`open failed: <path>`, `written to <path>`). The shared form now scrubs
+  the whole report text (`report_scrub::scrub_paths`): each path-like word
+  shrinks to its last component. A path starts with `/`, `\`, UNC `\\`, a drive
+  (`C:\`, `C:/`), `~`, `./` or `../`, or has a `\` or two `/`. A path runs
+  over spaces to the last later word with a separator, and stops at a word
+  that ends with `:`, `,`, `;` or a closing mark. One `/` alone (`mm/min`)
+  is not a path. A scrub that guesses wrong can only shorten good text; it
+  cannot send a directory.
+- Changes at each status message: there are many, and a new one can leak
+  again. One scrub at the report builder covers each field.
+- `Path::file_name` for the file name: it reads only the separators of the
+  running system, so a Windows path in a project opened on Linux came back
+  whole. `report_scrub::last_component` reads `/` and `\` on every system.
 - A home-directory replace (`~/...`): the directory names under the home
   can still identify the user or the customer. The file name is enough.
 
-**Cost to change later.** Low: one switch in `debug_info::report_with`.
+**Cost to change later.** Low: one switch in `debug_info::report_with`
+and one scrub pass in `debug_info::shared_report`.
