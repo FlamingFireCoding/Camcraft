@@ -14,10 +14,12 @@ perpendicular straight entry and capture sequence. Keep mixed drawings,
 selected subchains, die openings from sketches and laser
 operations for separate qualification.
 
-Accept an independently qualified single DXF CIRCLE of radius 10 mm. Its
-threading hole lies on the negative-X radial line. The native printer uses
-two semicircles centered on the source drawing and the same 1 mm resident
-separation. On the control each bridge subtended 0.1 radians, with the main
-cut covering the remaining angle. Limit this version to the proven radius and
-entry side. An unrestricted-radius policy would assume more about how the
-controller separates small punches than these readings establish.
+Accept one DXF CIRCLE of radius 6 to 15 mm with a cardinal radial threading
+hole. All diameter endpoints and incremental centers must fit the native grid.
+The control plotted the same 1 mm nominal separation (angle 1/R radians) at
+R6, R10 and R15. At R10, each of the four cardinal threading holes led to the
+same swept circle. The main cut covers the remaining angle and all four passes
+share the original center. A fixture-driven radius bound and a cardinal entry
+give a direct clearance check at all intermediate radii. Retain the stock
+clearance and full hole checks for each actual placement. An oblique hole
+needs an additional grid and lead proof before it can be supported.

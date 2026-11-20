@@ -57,13 +57,34 @@ pub(super) fn prepare(
         max: std::array::from_fn(|i| max[i].max(entry[i]) + margin),
     };
     let Spine::Stadium(pair) = shape.spine else {
-        // The verified circular separation is a 1 mm arc, with a radial
-        // approach from negative X. The ISO diameter ends are exact lattice points.
-        if radius != 10.0 || entry[1] != a[1] || entry[0] > a[0] - radius - 3. {
-            return Err("Native Agie circles require radius 10 mm and a horizontal radial start at least 3 mm to the left of the circle".into());
+        // A cardinal radial approach and its diameter endpoints are exactly
+        // representable on the ISO grid. The 1 mm bridge subtends 1/R at
+        // every nominal radius; this entire interval leaves more than a
+        // semicircle for the main profile and room for the radial approach.
+        if !(6.0..=15.0).contains(&radius) {
+            return Err("Native Agie circles require a radius between 6 and 15 mm".into());
         }
-        let seam = [grid(a[0] - radius)?, a[1]];
-        let opposite = [grid(a[0] + radius)?, a[1]];
+        let axis = if entry[1] == a[1] {
+            0
+        } else if entry[0] == a[0] {
+            1
+        } else {
+            return Err(
+                "The native Agie start hole must be on an exact horizontal or vertical radius"
+                    .into(),
+            );
+        };
+        let radial = entry[axis] - a[axis];
+        if radial.abs() < radius + 3.0 {
+            return Err(
+                "The Agie threading hole must be at least 3 mm beyond the circular edge".into(),
+            );
+        }
+        let diameter_end = radius * radial.signum();
+        let mut seam = a;
+        let mut opposite = a;
+        seam[axis] = grid(a[axis] + diameter_end)?;
+        opposite[axis] = grid(a[axis] - diameter_end)?;
         return Ok(finish(
             vec![seam, opposite, seam],
             vec![None, Some(a), Some(a)],

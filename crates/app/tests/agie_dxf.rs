@@ -95,7 +95,18 @@ fn a_nonradial_hole_or_unqualified_circle_radius_cannot_publish_a_job() {
             CIRCLE_DXF.to_owned(),
         ),
         (script.clone(), CIRCLE_DXF.replace("40\n10\n", "40\n0.4\n")),
-        (script, CIRCLE_DXF.replace("40\n10\n", "40\n9\n")),
+        (
+            script.replace(
+                "cam.post(",
+                "cam.call(\"move_dxf_profile\", {name:\"racetrack\",position:[0,2]});\ncam.post(",
+            ),
+            CIRCLE_DXF.to_owned(),
+        ),
+        (script, CIRCLE_DXF.replace("40\n10\n", "40\n5.99\n")),
+        (
+            CIRCLE_SCRIPT.replace("circle-punch", "racetrack"),
+            CIRCLE_DXF.replace("40\n10\n", "40\n15.01\n"),
+        ),
     ] {
         let dir = tempfile::tempdir().unwrap();
         assert!(!run(dir.path(), &s, &d).status.success());
