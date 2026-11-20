@@ -108,12 +108,84 @@ kept):
   The #1568 pin now uses a facet budget, and the volume bound is
   `1.2 * chord` at the kept chord (1.0194 at a 0.01 chord). Cause: the
   evaluation cap is gone with truck.
+  Per assert (old reading -> new reading; cause; why not weaker):
+  - `import_step_guard_default_cap.rs`: "face #53 (B-spline surface, face
+    6 of 6 in shell #17)" and "did not converge" -> "first #16 at read:
+    pcurves failed on 1 of 6 faces; first: face #53", "edge 0 lies 0.2500
+    mm off the face's surface" and "import an STL". Cause: the kernel names
+    the solid (`MANIFOLD_SOLID_BREP` #16), not the shell (#17), and it does
+    not print the surface kind. Not weaker: the face, its solid and the face
+    count are still asserted (restored on the final head), and the reason
+    is now a measured gap (0.25 mm over the 0.01 mm cap), not a time-out.
+    The surface kind ("B-spline surface") has no text in the new refusal.
+  - `import_step_guard.rs`, `a_dome_over_its_facet_budget_keeps_a_coarser_mesh_at_its_own_chord`:
+    volume bound `2e-3` -> `1.2 * chord` for the kept, coarser mesh; the
+    `2e-3` bound stays on the full mesh at the cap. Cause: the old fallback
+    kept a mesh of chord ~0.002 mm; the new fallback keeps a mesh at the
+    budget's chord (0.01 mm reads 1.0194 against 1.0222). Not weaker for
+    safety: the kept mesh carries its chord in `coarse_mm`, so the program
+    verdict tightens by the excess or refuses (#864, `model_fidelity.rs`);
+    the bound follows that chord (curved area under 1.2 mm2, each facet at
+    most `chord` off its surface).
+  - `import_step_guard.rs`, `a_shell_of_many_runaway_faces_is_refused_after_a_few_trips`:
+    "stopped after 3 faces or edges" -> "first #16 at read: face #53 is
+    used twice" (restored to the full text on the final head) and a time
+    bound under 30 s. Cause: the old pass-wide trip budget stopped a mesh
+    pass after 3 failed faces; the kernel refuses the repeated face when it
+    reads the shell, so no face is meshed at all. Not weaker: the law (a
+    hostile shell ends at once, by name) holds at zero meshed faces, and the
+    time bound pins "at once".
+  - `import_step_closed_shell.rs` (3 tests): "closed shell #1288 (10 faces)
+    meshes open", "boundary edges lie more than", "got no mesh from the
+    kernel" (the dropped face named) and "in shell #1288 could not be
+    tessellated" / "returned no mesh for it" -> the one refusal at read,
+    "first #1289 at read: face #1228: weight: 1... out of range". Probed on
+    the final head: none of the old texts is in the new refusal, so none
+    can be restored. Cause: solidcore refuses the bent weight before any
+    mesh. Not weaker: the old asserts named a face that was dropped from a
+    mesh; now no mesh exists, and the refusal names the same face (#1228)
+    and its value. The dropped-face path itself is pinned at the kernel
+    (`machining_mesh_open.rs`).
+  - `import_step_open_shell.rs` test 1: the STEP-level incomplete-hole
+    wording ("closed shell #1288 (10 faces) meshes open", "got no mesh
+    from the kernel", `coarse_mm == UNKNOWN_MM`, the "Incomplete:" line,
+    MCP `incomplete: true`, "the model would import with walls missing")
+    is no longer asserted from a STEP file anywhere. Cause: no STEP text
+    reaches the partial path at the pinned commit (probe table). Not
+    weaker: each of those laws is still asserted in the same file, on a
+    synthetic hole that lands through the same command
+    (`HOLE`/`SAID` constants, `UNKNOWN_MM`, `mesh_open::hole_of`, the post
+    refusal "walls missing", `verdict_tol`), and the kernel pins the
+    partial mesh. The ui seam (`model_incomplete.rs`) is the same case: no
+    ui test reaches "Incomplete:" from a STEP file now.
 - `import_step_curve_guard.rs`, `import_step_corner_blend.rs`: the
   `with_face_eval_cap` wrapper is removed; the asserts do not change.
 - `model_fidelity.rs`: a metre file was flagged at the old reader's 0.01 mm
   floor -> it meets the promise at the cap, with the measured deviation
   under the cap. Cause: solidcore meshes in millimetres; it has no floor of
-  its own.
+  its own. The dropped assert `excess_floor(DEV_TOL, excess(0.01)) ==
+  0.005` did not read the metre file, only the 0.01 mm number; it still
+  holds, so it is restored as a pure pin in
+  `the_round_trip_of_a_unit_scaled_cap_is_not_a_reduced_fidelity_flag`.
+  Not weaker: the new metre pin asserts the measured deviation
+  (`0 < deviation_mm <= CHORD_CAP`), which is the promise itself; the old
+  pin asserted only that a flagged model kept a tolerance.
+- `crates/geometry/tests/step_twisted_flank.rs` (2 tests, new with this
+  branch): they first accepted Ok or a named Err. Now they are hard:
+  `twisted_flank.step` reads Ok at 7999.857 mm3 (5132 facets), within the
+  kernel twin's 0.8 mm3; `twisted_flank_off.step` is refused with "#117 at
+  read: pcurves failed on" and "off the surface's range" (face #93, a
+  0.89 mm shift over a 0.51 mm reach). The app twin
+  `crates/app/tests/import_step_twisted_flank.rs` pins the same two
+  readings through `ImportModel` (#2780).
+- `feature_edge_g1_join.rs`,
+  `no_pickable_edge_is_a_tangent_piece_of_a_longer_one_in_any_step_fixture`:
+  known-fail #2845. Old reading: no tangent pair in any STEP fixture.
+  New reading: 216 tangent pairs on `sample_ap214.step`. Cause: the
+  feature graph reads the shared edges of touching solids as
+  non-manifold and splits tangent pieces there (#2845). Not a safety
+  loss: it changes which edge pieces a user can pick, not a toolpath
+  (pins named under #2845 below). The assert is kept on its marker.
 - `import_step_thread.rs`, `import_step_doubly_curved.rs`: the fixture
   shell now stands in a `SHELL_BASED_SURFACE_MODEL` (ISO 10303-42). The
   thread pin is known-fail #2844 (see below).
@@ -131,7 +203,12 @@ kept):
   and the bore in `held_by` (the toolpath check holds the post). A new test
   in each file asserts the "gouge:" problem at 0.1 mm. Cause: the finer
   wall puts the 0.05 mm cut under the stock sim's 0.625 mm lattice
-  (#2846, see below).
+  (#2846, see below). The warning that holds the post is pinned too
+  (`held_by_a_toolpath_gouge`): a `verify` finding of OP with kind
+  `gouge`, `blocks_post` true, "move N cuts past the finish surface" (the
+  generator's toolpath gouge check, not the stock sim). Not weaker for
+  safety: the post is still refused at 0.05 mm, now by a named gouge
+  warning.
 - ui `model_incomplete.rs`: the page test imported a box STEP with a face
   removed, which landed as an incomplete model -> such a file is now
   refused at read, so the test builds the open mesh in the test (a cube
@@ -217,6 +294,46 @@ kept):
     removes no less material: 9098.7 mm of feed against 9128.7 mm, and the
     smallest distance to the part is 4.0000 on both.
   Each fallback is stated in a note; none is silent wrong output.
+
+**Removed truck modules (100 `#[test]`).** The truck `step_*` modules of
+`crates/app/src/geometry/import/` and their tests are removed with the
+truck reader. For each: the law, and the pin on the solidcore path or the
+reason the law has no object (the truck step is gone, and no branch code
+does it; the solidcore internals are in the external `solidcore` git
+dependency). Open safety items are filed as #2903 (P7).
+
+| Module (tests) | Law | Pin on the new path, or no object |
+|---|---|---|
+| `step_continuity.rs` (8) | A face is proven continuous (no jump) only with sound knots and weights; this let a coarser mesh be kept. | The proof is gone with the evaluation cap. Breaks are refused at read: kernel `step_curve_guard.rs` (`a_spline_with_a_zero_weight_is_refused_by_name`, `an_edge_spline_that_breaks_at_a_repeated_knot_is_refused_by_name`, `a_swept_surface_on_a_breaking_spline_is_refused_by_name`, `a_repeated_knot_with_no_break_still_imports`); app `import_step_curve_guard.rs`. Non-finite input: kernel `step_import.rs` (`corrupt_step_files_never_panic_or_hang`). |
+| `step_division_tests.rs` (13) | Truck's curve and face division: parity with truck, a division budget, a jump refused at any tolerance. | Parity and the budget have no object (no truck division). The mesh is within tolerance by certified bounds: kernel `machining_mesh_bounds.rs` (`spline_and_revolved_step_fixture_meshes_within_tolerance`, `between_sample_sag_past_tolerance_is_refused`, `between_sample_spline_sag_past_tolerance_is_refused`), `machining_mesh.rs` (`machining_mesh_is_watertight_and_within_tolerance`). Jump: app `import_step_guard.rs` (`the_jumping_face_is_refused_by_name_at_once`). |
+| `step_fit_tests.rs` (8) | The reported deviation is never under the true stand-off of the facets; a face that cannot be measured is said, never silent. | Stand-off: kernel `machining_mesh.rs` (`the_deviation_measure_sees_a_moved_node_and_a_wrong_surface`, `analytic_distances_are_the_closed_forms`) and `mesh_bound.rs` (`analytic_bounds_dominate_dense_barycentric_samples`). The unmeasured refusal (`Unmeasured::NoSurface`) has no pin: #2903 item 1. |
+| `step_guard_tests.rs` (18, 1 ignored) | The evaluation meter: a runaway face trips the cap, a jumping face is refused by name, no hang. | The meter and cap have no object (the ignored heavy test measured the old cap's headroom). Read-time refusals: kernel `step_twisted_flank.rs` (`an_edge_a_quarter_millimetre_off_its_face_is_refused_by_name`, `a_twisted_flank_with_a_vertex_off_its_curves_is_refused_by_name`); app `import_step_guard.rs` (`the_jumping_face_is_refused_by_name_at_once`, `a_face_that_may_jump_is_refused_at_a_coarser_chord_too`, `a_smooth_bspline_face_still_imports_closed_at_its_volume`, `degenerate_bspline_variants_end_cleanly_and_bounded`), `import_step_guard_default_cap.rs`. |
+| `step_nearest_tests.rs` (8) | A boundary point lands on its own sheet, inside the knot domain, or is refused (the #2780 class). | Truck's search has no object. Kernel, geometry and app `step_twisted_flank.rs` pin the class on two fixtures (volume 8000; refusal "#117 ... off the surface's range"). The per-sheet, root-band and fold cases have no pin: #2903 item 2. |
+| `step_orient_tests.rs` (9) | Face orientation by vote: one answer in every order, one decision per shell, a cavity keeps its faces, a lone curved face keeps its winding. | Truck's vote has no object; solidcore orients each face with its shell. Kernel `machining_mesh_parity.rs` (`only_one_shell_is_ever_turned_outward`, `a_solid_with_a_void_and_its_outer_shell_inward_is_refused`, `an_inward_solid_is_turned_outward_and_said`); app `import_step_outward.rs` (`a_lone_curved_face_is_left_alone`, `an_inward_closed_box_is_turned_outward_and_said`); kernel `machining_mesh_open.rs` (`a_face_wound_against_its_neighbours_is_named_once`). Order independence has no pin: #2903 item 3. |
+| `step_pass_tests.rs` (6) | A pass with many runaway faces stops after a few trips. | The pass budget has no object. The hang law is a time bound: app `import_step_guard.rs` (`a_shell_of_many_runaway_faces_is_refused_after_a_few_trips`, under 30 s, refused at read); kernel `step_import.rs` (`importer_keeps_its_size_and_time_bounds`). |
+| `step_pole.rs` (6) | Truck's rescue of a nearest-point answer outside the knot domain (a pole of a corner blend). | No object: truck's answer is not used. The outcome on the corner blend: kernel `step_closed_form.rs` (`fillet_corner.step` at its closed-form volume), `machining_mesh_parity.rs` (at the app chord). |
+| `step_refine.rs` (7) | A dropped finer pass keeps the coarser mesh and says its chord; a jumping face is refused. | The multi-pass meter has no object. Its successor, the facet budget: app `import_step_guard.rs` (`a_dome_over_its_facet_budget_keeps_a_coarser_mesh_at_its_own_chord`, `a_face_that_may_jump_is_refused_at_a_coarser_chord_too`), `step_fidelity.rs` (`a_model_forced_over_budget_reports_the_coarser_chord_it_kept`). |
+| `step_seams_tests.rs` (15) | Face-by-face meshes close at their seams within a tolerance; a real gap or a missing face is found; flipped faces are named. | Solidcore reads closed solids and the kernel welds by side count. A missing face: kernel `machining_mesh_open.rs` (`a_face_left_out_meshes_partially_and_is_named`). A real gap: kernel `step_twisted_flank.rs` (`an_edge_a_quarter_millimetre_off_its_face_is_refused_by_name`), `heal_import.rs` (`vertex_gap_is_closed_by_the_importer`). Flipped face: `a_face_wound_against_its_neighbours_is_named_once`. A bow within the tolerance against one past it has no pin: #2903 item 4. |
+| `step_stretch.rs` (2) | Truck's mesher plane is stretched to a square face. | No object and no safety law: it changed the parameter plane only; the deviation is measured on the mesh (`mesh_deviation.rs`). |
+
+**#2850 and the corner check.** Coordinator decision on #917, 2026-11-20.
+- **What was decided.** PR B keeps its own fix bc5daa32d (`outer_fills`
+  in `crates/motion/src/machining2d/unreached.rs`). Its pin
+  `lead_approach::the_users_pocket_names_its_seven_sharp_corners_and_the_corner_check_runs`
+  needs the fix, and PR B must be green alone. Draft PR #2850 makes the
+  same behaviour change inline in the same function, so the two PRs have
+  one conflicting hunk. No order is forced. The PR that merges second takes
+  `git merge origin/main`, keeps the `outer_fills` form, and keeps three
+  pins: `a_micron_bow_tie_cusp_gives_its_lobes_and_no_error`,
+  `a_chord_cusp_that_crosses_itself_does_not_stop_the_corner_check` (it
+  comes with #2850; it is not on this branch) and
+  the lead_approach pin above. The three `known-fail #2849` markers stay:
+  their causes 2 and 3 are open on #2849.
+- **Why.** Each PR stays green alone, and the merge rule keeps one form
+  and all the pins.
+- **Considered and dropped.** Wait for #2850 before PR B: it would hold the
+  #917 stack on a draft of a different session. Remove bc5daa32d from PR
+  B: its pin would be red.
 
 **Considered and dropped.**
 - A new `camcraft-app -> camcraft-kernel` edge. Dropped: the seam goes
