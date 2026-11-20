@@ -37,6 +37,13 @@ fn answers(params: &OpParams, mill: bool, rotary: bool) -> bool {
 /// Add the first-traverse verdict to `warns` when `path` (in `frame`'s
 /// local heights when it is tilted) starts under the stock or any steel.
 ///
+/// #2991: the verdict names the heights in the frame the user sets them
+/// in. Generate shifts each height by `h - origin.z` into the frame, so
+/// the verdict adds `origin.z` back: a 3+2 plane at origin Z 20 with a
+/// clearance of 30 reads 30, not the local 10. A frame that is not
+/// upright marks the verdict `tilted`, and its text says that the heights
+/// are measured along the tool axis.
+///
 /// A 3+2 plane reads the tagged fixtures along its tool axis (they ride
 /// the table with the part), but not the machine table: its box is the
 /// slab under the whole travel (`MAX_FIXTURE_DIM` wide), so a tilted
@@ -55,7 +62,7 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, b
                 .filter(|(i, _)| over.names.get(*i).is_none_or(|n| n != MACHINE_TABLE))
                 .map(|(_, b)| *b)
                 .collect();
-            verify::first_traverse_low(path, over.stock_top, &steel, |p| f.z_local(p), Z_TOL)
+            verify::first_traverse_low(path, over.stock_top, &steel, |p| f.z_local(p), Z_TOL).map(|w| in_user_frame(w, f))
         }
         None => verify::first_traverse_low(path, over.stock_top, over.fixtures, |p| p.z, Z_TOL),
     };
@@ -63,5 +70,21 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, (mill, rotary): (bool, b
         && !warns.contains(&w)
     {
         warns.push(w);
+    }
+}
+
+/// The law's local verdict in the user's heights frame (#2991): both
+/// heights shifted back by the frame's `origin.z`, `tilted` set when the
+/// frame is not upright. Other warnings pass unchanged.
+fn in_user_frame(w: Warning, f: &TiltedFrame) -> Warning {
+    match w {
+        Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, .. } => Warning::FirstTraverseLow {
+            at,
+            height_mm: height_mm + f.origin.z,
+            top_mm: top_mm + f.origin.z,
+            fixture,
+            tilted: !f.is_upright(),
+        },
+        other => other,
     }
 }

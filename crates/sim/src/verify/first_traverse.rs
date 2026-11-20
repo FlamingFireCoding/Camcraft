@@ -52,7 +52,7 @@ pub fn first_traverse_low(
     let fixture_top = steel.iter().map(|b| box_top(b, &z_of)).filter(|z| z.is_finite()).fold(f64::NEG_INFINITY, f64::max);
     let stock_top = if stock_top.is_finite() { stock_top } else { f64::NEG_INFINITY };
     let (top, fixture) = if fixture_top > stock_top { (fixture_top, true) } else { (stock_top, false) };
-    (top.is_finite() && start.z < top - z_tol).then_some(Warning::FirstTraverseLow { at: 0, height_mm: start.z, top_mm: top, fixture })
+    (top.is_finite() && start.z < top - z_tol).then_some(Warning::FirstTraverseLow { at: 0, height_mm: start.z, top_mm: top, fixture, tilted: false })
 }
 
 #[cfg(test)]
@@ -74,14 +74,14 @@ mod tests {
     #[test]
     fn a_start_under_the_stock_top_is_named_with_both_heights() {
         let w = first_traverse_low(&opening(8.0), 10.0, &[], |p| p.z, 1e-6);
-        assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 8.0, top_mm: 10.0, fixture: false }));
+        assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 8.0, top_mm: 10.0, fixture: false, tilted: false }));
         assert!(w.is_some_and(|w| w.blocks_post()));
     }
 
     #[test]
     fn a_far_fixture_taller_than_the_start_is_named() {
         let w = first_traverse_low(&opening(15.0), 10.0, &[clamp(12.0), clamp(20.0)], |p| p.z, 1e-6);
-        assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 15.0, top_mm: 20.0, fixture: true }));
+        assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 15.0, top_mm: 20.0, fixture: true, tilted: false }));
     }
 
     #[test]
@@ -100,6 +100,32 @@ mod tests {
         let along_x = |p: Point3| p.x;
         assert_eq!(box_top(&clamp(1.0), along_x), 210.0);
         let w = first_traverse_low(&opening(150.0), 100.0, &[clamp(1.0)], along_x, 1e-6);
-        assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 150.0, top_mm: 210.0, fixture: true }));
+        assert_eq!(w, Some(Warning::FirstTraverseLow { at: 0, height_mm: 150.0, top_mm: 210.0, fixture: true, tilted: false }));
+    }
+
+    /// #2991: a cache saved before the `tilted` field reads as upright,
+    /// with the upright text it had.
+    #[test]
+    fn a_verdict_saved_before_tilted_reads_as_upright() {
+        let old = r#"{"first_traverse_low":{"at":0,"height_mm":8.0,"top_mm":10.0,"fixture":false}}"#;
+        let w: Warning = serde_json::from_str(old).expect("an old cache loads");
+        assert_eq!(w, Warning::FirstTraverseLow { at: 0, height_mm: 8.0, top_mm: 10.0, fixture: false, tilted: false });
+        assert!(w.to_string().contains("raise the clearance height above Z10.000"), "{w}");
+    }
+
+    /// #2991: the 3+2 text says that the heights are along the tilted tool
+    /// axis, names the raise, and has no Z value or axis letters.
+    #[test]
+    fn a_tilted_verdict_names_the_raise_not_a_z_value() {
+        let w = Warning::FirstTraverseLow { at: 0, height_mm: 30.0, top_mm: 31.114, fixture: true, tilted: true };
+        let text = w.to_string();
+        assert_eq!(
+            text,
+            "the first rapid (move 0) comes from an unknown position at the clearance height 30.000 mm, under the \
+             fixture top at 31.114 mm (both measured along the tilted tool axis) - raise the clearance height by at \
+             least 1.114 mm"
+        );
+        let json = serde_json::to_string(&w).expect("serializes");
+        assert_eq!(serde_json::from_str::<Warning>(&json).expect("round trip"), w);
     }
 }
