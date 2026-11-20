@@ -31,12 +31,9 @@ fn editor_in(unit: Unit) -> Harness<'static, ShellUi> {
     h.state_mut().state.ui_target = UiTarget::Tool(NOZZLE.into());
     h.run_steps(1); // the page mirrors the tool into the draft
     super::super::tool_cutting_rows::add_row(&mut h.state_mut().state.tool_ui);
+    // #2014 merge: the rows stand in the settings grid's "Cutting data"
+    // group, which draws open; no header click is needed.
     h.run_steps(3);
-    // The seeded waterjet tool has no recipe row, so the first frame that
-    // draws the cutting group leaves its header closed; the row added to
-    // the draft needs one click to open it (the same click a user makes).
-    h.get_by_label("Cutting data by material and thickness").click();
-    h.run_steps(2);
     h
 }
 
@@ -101,7 +98,7 @@ fn waterjet_recipe_feed_row_reads_as_a_feed_rate_in_both_unit_modes() {
         let mut h = editor_in(unit);
         h.state_mut().state.tool_ui.cutting[0].feed = 731.0;
         h.run_steps(3);
-        let win = h.get_by_label("Tool: Recipe nozzle");
+        let win = h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties");
         let spins: Vec<String> = win
             .query_all_by_role(egui::accesskit::Role::SpinButton)
             .filter_map(|n| n.value())
