@@ -169,6 +169,7 @@ function onOpen() {
   var e = (typeof machine !== "undefined" && machine && machine.edm) || {};
   if (e.tank) note("TANK " + clean(e.tank).toUpperCase() + " IS STATED BUT NOT PROGRAMMED - SET IT AT THE CONTROL");
   if (e.flushing) note("FLUSHING " + clean(e.flushing).toUpperCase() + " IS STATED BUT NOT PROGRAMMED - SET IT AT THE CONTROL");
+  if (e.skim_flushing) note("SKIM FLUSHING " + clean(e.skim_flushing).toUpperCase() + " IS STATED BUT NOT PROGRAMMED - SET IT AT THE CONTROL"); // #2686
   block([inch ? "G20" : "G21", "G90", "G17"]);
 }
 
