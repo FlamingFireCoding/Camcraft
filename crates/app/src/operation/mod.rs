@@ -244,6 +244,7 @@ mod tap_core;
 pub use clearance_stock::{CLEARANCE_STOCK_WARNING, creation_advice as clearance_in_stock_advice};
 pub use top_stock::{CARRIED_STOCK_NOTE, TOP_STOCK_WARNING};
 mod turning_credit;
+mod g76_start;
 mod turning_axis;
 mod turning_feeds;
 mod turning_holder;

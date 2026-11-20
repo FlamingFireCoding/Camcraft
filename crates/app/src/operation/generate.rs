@@ -3101,7 +3101,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // #339 slice 5: an upright mill's links are planned over the steel -
     // a struck link rises over it, an unclearable one refuses by name.
     // Posed and rotary paths keep the report-only verdict below.
-    let path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
+    let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
         let named: Vec<_> = fixture_names.into_iter().zip(fixture_boxes.iter().copied()).collect();
         let stack = verify::steel_stack(&geom, &holder, spindle);
         let steel = super::fixture_route::LinkSteel { boxes: &named, stack: &stack, ceiling: z_ceiling };
@@ -3308,6 +3308,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }),
             };
             super::turning_rapids::judge_axial_rapids(&params, &path, &meridian, &mut verify_prior, &mut warns);
+            // #2878: a Fanuc-type G76 moves to each pass's depth at rapid
+            // traverse, so record whether the start band stands in free air
+            // (in front of the end face or in a relief groove wider than
+            // the insert) against the part, stock and prior cuts.
+            super::g76_start::judge(&params, &mut path, &meridian, &mut verify_prior);
             // ...and a boring bar's head and shank on its FEEDS (#146),
             // against the same revolved material at each instant.
             super::turning_feeds::judge_bar_feeds(&params, &path, &meridian, &mut verify_prior, &mut warns);
