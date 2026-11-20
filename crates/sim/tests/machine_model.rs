@@ -175,6 +175,104 @@ fn vmc_bodies_at_two_axis_positions() {
 }
 
 #[test]
+fn a_linear_head_keeps_its_spindle_tool_envelope_and_travel_block() {
+    for travel in [Some((-50.0, 50.0)), None] {
+        let mut spec = vmc();
+        spec.parts[4].joint = JointKind::Linear;
+        spec.parts[4].axis = Some([0.0, 0.0, 1.0]);
+        spec.parts[4].travel = travel;
+        let model = machine_model::generate(&spec).expect("the moving head generates");
+        assert_eq!(
+            model.bodies.iter().filter(|b| b.part_id == "head").count(),
+            if travel.is_some() { 3 } else { 2 }
+        );
+        for value in [0.0, 40.0] {
+            let posed = model
+                .pose(&[("x", 0.0), ("y", 0.0), ("z", -200.0), ("head", value)])
+                .expect("linear head pose");
+            assert_cylinder(
+                find(&posed, "head", BodyKind::Spindle),
+                2,
+                -200.0 + value,
+                -50.0 + value,
+                [0.0; 3],
+                50.0,
+            );
+            assert_cylinder(
+                find(&posed, "head", BodyKind::ToolEnvelope),
+                2,
+                -450.0 + value,
+                -200.0 + value,
+                [0.0; 3],
+                40.0,
+            );
+            if travel.is_some() {
+                assert_box(
+                    &posed,
+                    "head",
+                    [-12.5, -12.5, -50.0 + value],
+                    [12.5, 12.5, 50.0 + value],
+                );
+            }
+        }
+        if travel.is_some() {
+            assert!(model.notes.is_empty(), "{:?}", model.notes);
+        }
+    }
+}
+
+#[test]
+fn a_rotary_head_keeps_and_turns_its_spindle_and_tool_envelope() {
+    let mut spec = vmc();
+    spec.parts[4].joint = JointKind::Rotary;
+    spec.parts[4].axis = Some([0.0, 1.0, 0.0]);
+    let model = machine_model::generate(&spec).expect("the rotary head generates");
+    assert_eq!(
+        model.bodies.iter().filter(|b| b.part_id == "head").count(),
+        2
+    );
+    assert!(model.notes.is_empty(), "{:?}", model.notes);
+    let home = model
+        .pose(&[("x", 0.0), ("y", 0.0), ("z", -200.0), ("head", 0.0)])
+        .expect("home pose");
+    assert_cylinder(
+        find(&home, "head", BodyKind::Spindle),
+        2,
+        -200.0,
+        -50.0,
+        [0.0; 3],
+        50.0,
+    );
+    assert_cylinder(
+        find(&home, "head", BodyKind::ToolEnvelope),
+        2,
+        -450.0,
+        -200.0,
+        [0.0; 3],
+        40.0,
+    );
+    let turned = model
+        .pose(&[("x", 0.0), ("y", 0.0), ("z", -200.0), ("head", 90.0)])
+        .expect("turned pose");
+    assert_cylinder(
+        find(&turned, "head", BodyKind::Spindle),
+        0,
+        0.0,
+        150.0,
+        [0.0, 0.0, -200.0],
+        50.0,
+    );
+    assert_cylinder(
+        find(&turned, "head", BodyKind::ToolEnvelope),
+        0,
+        -250.0,
+        0.0,
+        [0.0, 0.0, -200.0],
+        40.0,
+    );
+}
+
+#[test]
 fn tilt_head_bodies_at_two_axis_positions() {
     let model = machine_model::generate(&tilt_head()).expect("the tilt head generates");
     // A rotary part states an angle, no length: no body, and a named note.

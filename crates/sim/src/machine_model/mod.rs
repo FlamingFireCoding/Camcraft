@@ -305,16 +305,17 @@ pub fn generate(spec: &MachineSpec) -> Result<MachineModel, String> {
     for (i, (p, link)) in spec.parts.iter().zip(&links).enumerate().rev() {
         let mut made = Vec::new();
         let mut said = Vec::new();
-        let mut height = 0.0;
+        let mut height = if p.is_head() { head(p, &mut made, &mut said) } else { 0.0 };
         match (link.joint, p.travel) {
             (Joint::Linear { axis }, Some((lo, hi))) => {
-                let (triangles, h) = slide(axis, hi - lo, carries[i], if carries[i] { up[i] } else { down[i] });
+                let reach = if carries[i] { up[i] + height } else { down[i] };
+                let (triangles, h) = slide(axis, hi - lo, carries[i], reach);
                 made.push((BodyKind::Block, triangles));
-                height = h;
+                height += h;
             }
             (Joint::Linear { .. }, None) => said.push(note(&p.id, "no travel is stated to size it")),
+            (Joint::Rotary { .. } | Joint::Fixed, _) if p.is_head() => {}
             (Joint::Rotary { .. }, _) => said.push(note(&p.id, "a rotary part states an angle and no length")),
-            (Joint::Fixed, _) if p.is_head() => height = head(p, &mut made, &mut said),
             (Joint::Fixed, _) if link.parent.is_none() || !carries[i] => {
                 if plan[0] > 0.0 && plan[1] > 0.0 {
                     height = BED_RATIO * plan[0].max(plan[1]);

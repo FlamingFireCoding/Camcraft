@@ -17,6 +17,8 @@
     section of 0.25 of the span;
   - a root or table part: a block with the linear travel of the machine
     along X and Y, and a thickness of 0.1 of the larger side.
+- Head dimensions generate bodies for fixed, linear and rotary joints.
+  A linear head with travel also keeps its slide block above its spindle.
 - The tool station gives one more body of its own kind, `ToolEnvelope`:
   the room of the largest tool below the nose. It is not steel. A check
   selects bodies by `BodyKind`.
@@ -45,9 +47,13 @@
   length) when it knows them.
 - A missing pose value that reads as zero would show a body where the
   machine does not put it.
+- Accepted spindle and tool dimensions must produce their bodies. The
+  joint kind changes their pose, not whether the bodies exist.
 
 **Considered and dropped**
 
+- A named refusal for spindle or tool dimensions on moving parts:
+  dropped, because the existing joint frames can pose these bodies.
 - A side flag (tool or table) in the input, with the sign applied in the
   module: dropped, because it puts a post convention in two crates.
 - A body for a rotary part with a guessed size: dropped, the issue
@@ -70,5 +76,7 @@
 - The ratios (`SECTION_RATIO`, `BED_RATIO`) and the stack rule are in one
   function each. A change moves the pinned boxes in
   `crates/sim/tests/machine_model.rs`.
+- A later restriction on moving heads would change input validation and
+  the moving-head pins in `crates/sim/tests/machine_model.rs`.
 - #2591 (the optional `body` key) adds a `BodySource` variant. Each
   `match` on `BodySource` then needs the new arm.
