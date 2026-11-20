@@ -1,6 +1,6 @@
 # Post an Agie Classic Cut 2S job
 
-CamCraft writes one native ISO geometry file per work and one SBL and SBR for the complete job. The setup uses cold die steel (material 0001), Berco Cut 0.25 mm wire and the resident QN2 Fine Ra 0.30 µm technology. Use this recipe only when those settings match the work and the installed control. The controller calculates the wire offsets and trim passes from that technology. CamCraft displays a wire-center preview with a representative finishing gap of 0.005 mm.
+CamCraft writes one native ISO geometry file per work and one SBL and SBR for the complete job. The setup uses cold die steel (material 0001), Berco Cut 0.25 mm wire and a quality selected from the installed control. The original **AGIE_QN2** condition requests Fine Ra 0.30 µm. Use this recipe only when those settings match the work and the installed control. The controller calculates the wire offsets and trim passes from that technology. CamCraft displays a wire-center preview with a representative finishing gap of 0.005 mm.
 
 ## Post from the Wire EDM workspace
 
@@ -48,6 +48,18 @@ Agie Control calculated these wire-centre offsets on the straight outside faces 
 | 80 | 0.266 | 0.176 | 0.143 | 0.133 |
 
 The clearance check rounds the rough offset plus the wire radius up to the next tenth of a millimetre. For these four heights this gives 0.4 mm on a straight face. At a pointed corner the post checks the miter for that height separately. Other heights require their own control measurements.
+
+### Request Fine+ Ra 0.35 µm for a 20 mm punch
+
+For one closed punch in 20 mm cold die steel, add a mounted machine condition named **AGIE_BERCO_RA035**. Use role **rough**, Berco Cut **0.25 mm** wire and a **0.005 mm** preview gap. Select **AGIE_BERCO_RA035** in the Wire Contour condition field and save the project. The native job requests Ra 0.35 µm, Te 1.50 µm and Tkm 1.00 µm.
+
+The offline Agie Control selected T100 for the main cut and three trim passes. The straight-face wire offsets matched the 20 mm row above. The Ra value is the requested surface finish. Measuring the resulting surface requires a physical cut. Groups, dies, open cuts and other stock heights require their own qualification for this quality.
+
+Run the example from the repository root into a fresh `FINE20` directory.
+
+```sh
+cargo run -p camcraft-app --bin camcraft-cli -- script examples/agie/fine-punch.camscript
+```
 
 ## Try the synthetic punch
 

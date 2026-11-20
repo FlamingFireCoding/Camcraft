@@ -12,11 +12,10 @@ use crate::schema::{PostOptions, PostRef};
 use crate::{model, operation};
 
 pub use camcraft_post::agie::valid_name;
-pub(crate) use camcraft_post::agie::{AgieJob, AgieSide};
+pub(crate) use camcraft_post::agie::{AgieJob, AgieQuality, AgieSide};
 
 pub const POST: &str = "Agie native wire EDM";
 const MODEL: &str = "AGIECUT CLASSIC 2S";
-pub(crate) const CONDITION: &str = "AGIE_QN2";
 pub(crate) const PREVIEW_GAP: f64 = 0.005;
 
 pub fn is_native(post: &PostRef) -> bool {

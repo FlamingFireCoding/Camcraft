@@ -1,5 +1,5 @@
 //! JEScript native piece/work attributes for a piece and its native works, per Quintin Smits's MIT Agie Processor.
-use super::{AgieJob, Work};
+use super::{AgieJob, AgieQuality, Work};
 
 fn attribute(lines: &mut Vec<String>, object: &str, context: &str, key: &str, value: &str) {
     lines.push(format!(
@@ -57,6 +57,7 @@ pub(super) fn piece(
             index,
             item,
             separation_length_mm,
+            job.quality,
         );
     }
     lines.extend([
@@ -85,6 +86,7 @@ fn append_work(
     index: usize,
     item: &Work,
     separation_length_mm: f64,
+    quality: AgieQuality,
 ) {
     let work = format!("{group},\"CUT{}\"", index + 1);
     let work_context = format!("{work},NULL");
@@ -105,11 +107,11 @@ fn append_work(
     };
     attribute(lines, "WORK", &work_context, "ID_PUNCH", side);
     attribute(lines, "WORK", &work_context, "ID_WORKCOND", "\"2\"");
-    // The control selects its own offsets and passes for the expressly selected Fine Ra0.30
-    // technology. No controller technology tables or previously programmed parts are embedded.
+    // The control selects the offsets and passes for the requested quality.
     lines.push(format!(
-        "  ok=JE_CreateQuality(je_piece,\"QN{}\",\"0.30,1.50,1.00,F,F,F\",je_q1)",
-        index + 2
+        "  ok=JE_CreateQuality(je_piece,\"QN{}\",\"{}\",je_q1)",
+        index + 2,
+        quality.parameters()
     ));
     for (field, value) in [
         ("ID_QUALITY", "je_q1".into()),

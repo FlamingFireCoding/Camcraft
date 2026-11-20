@@ -3,6 +3,7 @@ use super::*;
 
 fn punch() -> AgieJob {
     AgieJob {
+        quality: AgieQuality::FineRa030,
         side: AgieSide::Punch,
         racetrack: None,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
@@ -284,4 +285,36 @@ fn a_group_rejects_an_unqualified_height_or_reserved_geometry_alias() {
         );
         assert!(!dir.exists());
     }
+}
+
+#[test]
+fn fine_plus_uses_only_its_measured_height_and_single_punch_cycle() {
+    let temp = tempfile::tempdir().unwrap();
+    let destination = temp.path().join("FINE20");
+    let mut job = punch();
+    job.quality = AgieQuality::FinePlusRa035;
+    assert_eq!(contour::stock_offset_um(&job).unwrap(), 245);
+    for height in [15., 19.999, 20.001, 40., 80.] {
+        job.stock_min[2] = -height;
+        assert!(
+            export(&job, &destination, "FINE20", 1.0)
+                .unwrap_err()
+                .contains("thickness")
+        );
+        assert!(!destination.exists());
+    }
+    job.stock_min[2] = -20.;
+    job.side = AgieSide::Die;
+    assert!(
+        export(&job, &destination, "FINE20", 1.0)
+            .unwrap_err()
+            .contains("single closed punch")
+    );
+    job.side = AgieSide::Punch;
+    assert!(
+        export_works(&[punch(), job], &destination, "FINE20", 1.0)
+            .unwrap_err()
+            .contains("single closed punch")
+    );
+    assert!(!destination.exists());
 }

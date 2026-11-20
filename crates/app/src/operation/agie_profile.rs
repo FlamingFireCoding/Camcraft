@@ -55,14 +55,19 @@ pub(crate) fn agie_job(
     }
     let setup = op.setup.as_deref();
     let condition = super::wire_op::condition_of(world, setup, &op.tool, wire)?;
-    if condition.id != agie::CONDITION
-        || (condition.wire_diameter - 0.25).abs() > 1e-9
+    let quality = agie::AgieQuality::from_condition(&condition.id).ok_or(
+        "Select AGIE_QN2 or AGIE_BERCO_RA035 for cold die steel 0001 and Berco Cut 0.25 mm wire",
+    )?;
+    if (condition.wire_diameter - 0.25).abs() > 1e-9
         || (condition.gap - agie::PREVIEW_GAP).abs() > 1e-9
     {
-        return Err("Select AGIE_QN2 for cold die steel 0001, Berco Cut 0.25 mm, Fine Ra 0.30, and its unmodified preview gap".into());
+        return Err(
+            "The selected Agie quality requires Berco Cut 0.25 mm and its 0.005 mm preview gap"
+                .into(),
+        );
     }
     if crate::stock_material::in_force(world, setup).is_some() {
-        return Err("The stated stock material conflicts with AGIE_QN2 cold die steel 0001".into());
+        return Err("The stated stock material conflicts with Agie cold die steel 0001".into());
     }
     let edm = crate::machine::of_setup(world, setup)
         .1
@@ -70,10 +75,13 @@ pub(crate) fn agie_job(
         .ok_or("Agie requires a mounted wire EDM profile")?;
     let row = edm.condition(&condition.machine, &condition.id, &[])?;
     if row.role != "rough" || !row.wire_diameter.is_some_and(|d| (d - 0.25).abs() <= 1e-9) {
-        return Err("Agie requires the AGIE_QN2 machine condition to state role rough and wire diameter 0.25 mm".into());
+        return Err(format!(
+            "Agie requires the {} machine condition to state role rough and wire diameter 0.25 mm",
+            condition.id
+        ));
     }
     if edm.flushing.is_some() || edm.skim_flushing.is_some() || edm.tank.is_some() {
-        return Err("Agie QN2 controls the dielectric settings; explicit tank or flushing modes are unsupported".into());
+        return Err("The Agie resident technology controls the dielectric settings; explicit tank or flushing modes are unsupported".into());
     }
     if op.after != super::AfterOperation::None
         || op.coolant != super::CoolantMode::default()
@@ -138,6 +146,7 @@ pub(crate) fn agie_job(
             p.y -= oy;
         }
         return Ok(agie::AgieJob {
+            quality,
             side,
             racetrack: Some(shape),
             contour: Vec::new(),
@@ -242,6 +251,7 @@ pub(crate) fn agie_job(
         }
     };
     Ok(agie::AgieJob {
+        quality,
         side,
         racetrack: None,
         contour: contour.iter().map(|p| [p.x - ox, p.y - oy]).collect(),

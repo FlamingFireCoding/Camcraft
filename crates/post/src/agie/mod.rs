@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 mod contour;
 mod cutoff;
 mod jescript;
+mod quality;
 mod racetrack;
+
+pub use quality::AgieQuality;
 
 /// The closed cycle or the kerf side of a directed open cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +27,7 @@ impl AgieSide {
 
 /// Nominal geometry in setup coordinates (millimetres, stock top at zero).
 pub struct AgieJob {
+    pub quality: AgieQuality,
     pub side: AgieSide,
     pub contour: Vec<[f64; 2]>,
     pub racetrack: Option<camcraft_geometry::wire_racetrack::Racetrack>,
@@ -138,6 +142,13 @@ pub fn export_works(
     let first = jobs.first().ok_or("Agie requires an active Wire Contour")?;
     if !valid_name(program) {
         return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
+    }
+    if jobs
+        .iter()
+        .any(|job| job.quality == AgieQuality::FinePlusRa035)
+        && (jobs.len() != 1 || first.side != AgieSide::Punch)
+    {
+        return Err("AGIE_BERCO_RA035 requires a single closed punch in 20 mm stock".into());
     }
     if jobs.len() > 1 {
         if jobs.len() != 2

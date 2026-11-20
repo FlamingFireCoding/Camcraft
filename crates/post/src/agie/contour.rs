@@ -5,9 +5,6 @@ mod entry;
 type Point = [i64; 2];
 const UNITS: f64 = 100_000.0; // Five decimal places in the native ISO geometry file.
 const MAX_VERTICES: usize = 4096;
-// Stock thickness (mm) and the furthest observed QN2 wire-centre offset (µm).
-// Measurements are for Berco Cut 0.25 mm, cold die steel and Fine Ra0.30.
-const QN2_HEIGHTS: &[(u16, u32)] = &[(15, 245), (20, 245), (40, 260), (80, 266)];
 
 fn quantize(v: f64) -> Result<i64, String> {
     if !v.is_finite() || v.abs() > 9999.9999 {
@@ -58,20 +55,21 @@ pub(super) fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
         return Err("Agie stock must fit the stated 350 × 250 mm working span".into());
     }
     if job.stock_max[2] != 0.0 {
-        return Err("The Agie Berco Fine Ra0.30 profile requires stock top Z0".into());
+        return Err("The native Agie quality requires stock top Z0".into());
     }
-    for &(mm, offset) in QN2_HEIGHTS {
+    let heights = job.quality.qualified_offsets();
+    for &(mm, offset) in heights {
         if height == f64::from(mm) {
             return Ok(offset);
         }
     }
-    let supported = QN2_HEIGHTS
+    let supported = heights
         .iter()
         .map(|(mm, _)| mm.to_string())
         .collect::<Vec<_>>()
         .join(", ");
     Err(format!(
-        "Agie QN2 has no qualified offset for stock thickness {height} mm. Supported thicknesses in mm are {supported}"
+        "The selected Agie quality has no qualified offset for stock thickness {height} mm. Supported thicknesses in mm are {supported}"
     ))
 }
 
