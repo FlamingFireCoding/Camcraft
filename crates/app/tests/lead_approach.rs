@@ -243,11 +243,11 @@ fn the_horizontal_arc_entry_on_the_users_pocket_verifies_silent() {
         }
         let (_w, t, warns) = user_job("EM-0600-4FL", false, op);
         let warns = beside_the_cut_part(warns);
-        // known-fail-assert
         assert!(warns.is_empty(), "{entry:?}: {warns:?} / {:?}", t.notes);
         assert!(t.is_chained() && t.all_finite());
         let first = t.moves.iter().find(|m| m.kind == MoveKind::Feed && m.from.z == m.to.z).expect("a cut");
         assert!(first.arc.is_some_and(|a| a.plane.is_xy()), "{entry:?}: the first cut is the G17 arc: {first:?} / {:?}", t.notes);
+        // known-fail-assert
         assert!(!t.notes.iter().any(|n| n.contains("horizontal arc entry does not fit")), "{entry:?}: {:?}", t.notes);
     }
 }
