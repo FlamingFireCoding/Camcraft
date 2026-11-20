@@ -13,254 +13,196 @@
 //! host, and example catalog cases.
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use camcraft_app::commands::{GenerateOperation, History};
-use camcraft_app::operation::OpStatus;
-use camcraft_app::{model, operation, posting, project, setup, world};
+#[path = "example_catalog/support.rs"]
+mod support;
+use support::*;
 
-struct CatalogCase {
-    family: String,
-    name: String,
-    dir: PathBuf,
-}
+#[path = "example_catalog/contract.rs"]
+mod contract;
 
-fn repo(rel: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
-}
-
-fn discover_cases(catalog_root: &Path) -> Vec<CatalogCase> {
-    assert!(
-        catalog_root.is_dir(),
-        "example catalog directory missing: {}",
-        catalog_root.display()
-    );
-    let mut families: Vec<PathBuf> = fs::read_dir(catalog_root)
-        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_root.display()))
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.is_dir())
-        .collect();
-    families.sort();
-
-    let mut cases = Vec::new();
-    for fam_dir in families {
-        let family = fam_dir
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_owned();
-        let mut children: Vec<PathBuf> = fs::read_dir(&fam_dir)
-            .unwrap_or_else(|e| panic!("read {}: {e}", fam_dir.display()))
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| p.is_dir())
-            .collect();
-        children.sort();
-        for dir in children {
-            let name = dir
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default()
-                .to_owned();
-            cases.push(CatalogCase { family: family.clone(), name, dir });
-        }
-    }
-    cases
-}
-
-fn assert_case_layout(case: &CatalogCase) {
-    let model_dir = case.dir.join("model");
-    assert!(model_dir.is_dir(), "{}/{}: missing model/", case.family, case.name);
-    let model_entries: Vec<_> = fs::read_dir(&model_dir)
-        .unwrap_or_else(|e| panic!("read {}: {e}", model_dir.display()))
-        .filter_map(Result::ok)
-        .collect();
-    assert!(
-        !model_entries.is_empty(),
-        "{}/{}: model/ must hold generator and mesh",
-        case.family,
-        case.name
-    );
-    for req in [
-        "build.camscript".to_owned(),
-        format!("{}.camproj", case.name),
-        format!("{}.nc", case.name),
-        "README.md".to_owned(),
+/// #2865: three original parts demonstrate the five additional turning kinds.
+#[test]
+fn turning_cases_cover_five_additional_kinds() {
+    for (case, kinds) in [
+        ("bushing", &["BORING", "FORM TURNING"][..]),
+        ("contour-finishes", &["CHAMFERING", "MULTI-PASS TURNING"][..]),
+        ("taper-finish", &["TAPER TURNING"][..]),
     ] {
-        let p = case.dir.join(&req);
-        assert!(p.is_file(), "{}/{}: missing {}", case.family, case.name, req);
-        assert!(
-            fs::metadata(&p).map(|m| m.len()).unwrap_or(0) > 0,
-            "{}/{}: empty {}",
-            case.family,
-            case.name,
-            req
-        );
+        let dir = repo(&format!("examples/catalog/turning/{case}"));
+        assert!(dir.is_dir(), "catalog case turning/{case} is missing");
+        let program = fs::read_to_string(dir.join(format!("{case}.nc"))).expect("read case NC");
+        let actual: Vec<&str> = program
+            .lines()
+            .filter(|line| line.starts_with("(OPERATION: "))
+            .filter_map(|line| line.split(" - ").nth(1))
+            .collect();
+        assert_eq!(actual, kinds, "turning/{case} operation kinds");
+        assert!(program.contains("G18"), "turning/{case} states the ZX plane");
+        assert!(!program.lines().any(|line| word(line, 'Y').is_some()));
     }
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) {
-    fs::create_dir_all(dst).unwrap_or_else(|e| panic!("mkdir {}: {e}", dst.display()));
-    for entry in fs::read_dir(src).unwrap_or_else(|e| panic!("read {}: {e}", src.display())) {
-        let entry = entry.expect("dir entry");
-        let path = entry.path();
-        let target = dst.join(entry.file_name());
-        if path.is_dir() {
-            copy_dir_all(&path, &target);
-        } else {
-            fs::copy(&path, &target)
-                .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", path.display(), target.display()));
-        }
-    }
-}
-
-// Portable examples embed their meshes. A relative source link makes the UI
-// reopen a file from the process directory instead of the case directory.
-fn assert_portable_models(case: &CatalogCase, w: &flecs_ecs::prelude::World) {
-    let names: &[&str] = match (case.family.as_str(), case.name.as_str()) {
-        ("2d", "contour-tabs") => &["contour-tabs"],
-        ("turning", "cone-thread") => &["cone-blank", "cone-thread"],
-        _ => return,
-    };
-    for name in names {
-        let entity = model::find_by_name(w, name).expect("catalog model must be present");
-        assert!(
-            camcraft_app::model_source::of(w, &entity).is_none(),
-            "{}/{}: {name} must open without a link to the script working directory",
-            case.family, case.name
-        );
-        assert!(
-            model::facets_of(w, &entity).is_some_and(|facets| !facets.is_empty()),
-            "{}/{}: {name} must keep its embedded mesh", case.family, case.name
-        );
-    }
-}
-
+/// #2971: keep both named results for the groove and part-off case.
 #[test]
-fn every_catalog_case_opens_regenerates_verifies_and_posts_byte_for_byte() {
-    let cases = discover_cases(&repo("examples/catalog"));
-    assert!(
-        cases.iter().any(|c| c.family == "2d" && c.name == "first-part"),
-        "seed case 2d/first-part must be present under examples/catalog/"
-    );
-    for case in &cases {
-        assert_case_layout(case);
-        let label = format!("{}/{}", case.family, case.name);
-        let proj_path = case.dir.join(format!("{}.camproj", case.name));
-        let nc_path = case.dir.join(format!("{}.nc", case.name));
+fn groove_part_off_case_has_two_named_test_results() {
+    assert!(repo("examples/catalog/turning/groove-part-off").is_dir());
+    let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--list", "--format", "terse"])
+        .output()
+        .expect("list catalog tests");
+    assert!(output.status.success());
+    let listing = String::from_utf8_lossy(&output.stdout);
+    for action in ["regenerates", "rebuilds"] {
+        let name = format!("catalog_turning_groove_part_off::{action}: test");
+        assert!(listing.lines().any(|line| line == name), "missing case test {name}");
+    }
+}
 
+mod catalog_multiaxis_indexed {
+    use super::*;
+    #[test]
+    fn posts_two_single_axis_indexes_and_one_tilted_pocket() {
+        use camcraft_app::operation::{self, OpParams};
+        use camcraft_app::{model, project, setup, world};
+        let dir = repo("examples/catalog/multiaxis/indexed");
+        let program = fs::read_to_string(dir.join("indexed.nc")).expect("indexed NC case");
         let w = world::new_world();
-        let notes = project::load_noted(&w, &proj_path)
-            .unwrap_or_else(|e| panic!("{label}: load {}: {e}", proj_path.display()));
-        assert!(notes.is_empty(), "{label}: unexpected load notes: {notes:?}");
-        assert_portable_models(case, &w);
-
+        let notes = project::load_noted(&w, &dir.join("indexed.camproj")).expect("indexed project");
+        assert!(notes.is_empty(), "load notes: {notes:?}");
         let ops = setup::operation_order(&w);
-        assert!(!ops.is_empty(), "{label}: project has no operations");
-
-        let mut history = History::default();
-        for (op_name, _) in &ops {
-            let cmd = GenerateOperation::new(&w, op_name)
-                .unwrap_or_else(|e| panic!("{label}: regenerate {op_name}: {e}"));
-            history.execute(&w, cmd);
+        assert_eq!(ops.len(), 3, "two indexed faces and one tilted face");
+        for ((name, entity), (a, b)) in ops.iter().zip([(90.0, 0.0), (-90.0, 0.0), (30.0, 30.0)]) {
+            assert_eq!(operation::status_of(&w, entity), operation::OpStatus::Ok, "{name} saved cache");
+            let op = model::operation_of(&w, entity).expect("pocket operation");
+            let OpParams::Pocket { tilt: Some(tilt), .. } = op.params else {
+                panic!("{name} must be an indexed pocket");
+            };
+            assert_eq!((tilt.a_deg, tilt.b_deg), (a, b), "{name} orientation");
+            let blocks = section(&program, name);
+            assert!(blocks.iter().any(|l| word(l, 'A') == Some(a)), "{name} posts A{a}");
+            assert!(blocks.iter().any(|l| word(l, 'B') == Some(b)), "{name} posts B{b}");
+            assert!(blocks.iter().any(|l| l.starts_with("G01 ")), "{name} cuts");
         }
-
-        for (op_name, entity) in setup::operation_order(&w) {
-            let status = operation::status_of(&w, &entity);
-            assert_eq!(status, OpStatus::Ok, "{label}: {op_name} status after regenerate");
-            if let Some(tp) = model::toolpath_of(&w, &entity) {
-                let blocking: Vec<String> = tp
-                    .warnings
-                    .iter()
-                    .filter(|warn| warn.blocks_post())
-                    .map(ToString::to_string)
-                    .collect();
-                assert!(
-                    blocking.is_empty(),
-                    "{label}: {op_name} holds blocking warnings: {blocking:?}"
-                );
-            }
-        }
-
-        let report = posting::verification_report(&w);
-        assert!(
-            report.problems.is_empty(),
-            "{label}: verification failed: {:?}",
-            report.problems
-        );
-
-        let posted = posting::post_setup_unwritten(&w)
-            .unwrap_or_else(|e| panic!("{label}: post failed: {e}"));
-        let want = fs::read(&nc_path)
-            .unwrap_or_else(|e| panic!("{label}: read {}: {e}", nc_path.display()));
-        assert_eq!(
-            posted.program.as_bytes(),
-            want.as_slice(),
-            "{label}: regenerated NC differs from {}",
-            nc_path.display()
-        );
+        let part = model::find_by_name(&w, "indexed").expect("embedded model");
+        assert!(camcraft_app::model_source::of(&w, &part).is_none(), "portable model");
+    }
+    #[test]
+    fn regenerates() {
+        run_case("multiaxis", "indexed", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("multiaxis", "indexed", "rebuilds", rebuild);
     }
 }
 
-#[test]
-fn every_catalog_case_rebuilds_from_camscript() {
-    let cases = discover_cases(&repo("examples/catalog"));
-    assert!(!cases.is_empty(), "at least one catalog case required");
-
-    let scratch = std::env::temp_dir().join(format!("camcraft-catalog-test-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&scratch);
-
-    for case in &cases {
-        let label = format!("{}/{}", case.family, case.name);
-        let work = scratch.join(&case.family).join(&case.name);
-        copy_dir_all(&case.dir, &work);
-
-        let proj = work.join(format!("{}.camproj", case.name));
-        let nc = work.join(format!("{}.nc", case.name));
-        let _ = fs::remove_file(&proj);
-        let _ = fs::remove_file(&nc);
-
-        let output = Command::new(env!("CARGO_BIN_EXE_camcraft-cli"))
-            .arg("script")
-            .arg("build.camscript")
-            .current_dir(&work)
-            .output()
-            .unwrap_or_else(|e| panic!("{label}: run camcraft-cli: {e}"));
-
-        assert!(
-            output.status.success(),
-            "{label}: build.camscript failed (exit {:?}):\nstdout: {}\nstderr: {}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        assert!(proj.is_file(), "{label}: build.camscript did not write {}", proj.display());
-        assert!(nc.is_file(), "{label}: build.camscript did not write {}", nc.display());
-
-        // Load outside the script's directory. Pin the rebuilt example too;
-        // checking the committed project alone cannot catch a linked rebuild.
-        if matches!((case.family.as_str(), case.name.as_str()),
-            ("2d", "contour-tabs") | ("turning", "cone-thread")) {
-            let w = world::new_world();
-            let notes = project::load_noted(&w, &proj)
-                .unwrap_or_else(|e| panic!("{label}: load rebuilt project: {e}"));
-            assert!(notes.is_empty(), "{label}: rebuilt project load notes: {notes:?}");
-            assert_portable_models(case, &w);
-        }
-
-        let want_nc = fs::read(case.dir.join(format!("{}.nc", case.name)))
-            .unwrap_or_else(|e| panic!("{label}: read committed .nc: {e}"));
-        let got_nc = fs::read(&nc)
-            .unwrap_or_else(|e| panic!("{label}: read rebuilt .nc: {e}"));
-        assert_eq!(
-            got_nc, want_nc,
-            "{label}: build.camscript NC differs from committed .nc"
-        );
+mod catalog_2d_contour_tabs {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("2d", "contour-tabs", "regenerates", regenerate);
     }
+    #[test]
+    fn rebuilds() {
+        run_case("2d", "contour-tabs", "rebuilds", rebuild);
+    }
+}
 
-    let _ = fs::remove_dir_all(&scratch);
+mod catalog_2d_edge_work {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("2d", "edge-work", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("2d", "edge-work", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_2d_first_part {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("2d", "first-part", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("2d", "first-part", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_2d_hole_work {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("2d", "hole-work", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("2d", "hole-work", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_bushing {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "bushing", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "bushing", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_contour_finishes {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "contour-finishes", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "contour-finishes", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_taper_finish {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "taper-finish", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "taper-finish", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_cone_thread {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "cone-thread", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "cone-thread", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_groove_part_off {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "groove-part-off", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "groove-part-off", "rebuilds", rebuild);
+    }
 }
 
 /// The value of an address word (`X`, `Z`) in one NC block.
