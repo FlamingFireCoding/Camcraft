@@ -39,3 +39,26 @@ depend on the production code-role list.
 
 **Dropped:** Do not change the production planner to recover old fixture
 counts. Do not remove the exact path pin or weaken the safety checks.
+
+### Aligned-setup sinker test: the refusal names the missing code
+
+**Decided:** Change the expected refusal text of
+`sinker_electrode_burn_matches_baked_and_side_burn_stays_refused`
+(`crates/app/tests/setup_align_non_mill.rs`). The fixture dialect
+`SINKER EDM SYNTHETIC DIALECT (FIXTURE)` states no `edm.codes.side`.
+The post still refuses its Side Burn and writes no file. The refusal now
+names the missing code: "states no edm.codes.side". The test also
+asserts that the refusal does not name `edm.codes.depth`, so the plain
+burn SB1 in the same program still posts.
+
+**Why:** The old text "a Sinker Side Burn moves the electrode sideways"
+described a post that wrote no lateral move at all. This PR replaces
+that refusal with one that names the machine data to add. The test's
+meaning stays: a machine without a lateral servo template refuses the
+Side Burn by name. The straight burn half of the test (the aligned and
+baked programs are equal) is unchanged and passes.
+
+**Dropped:** Do not add `edm.codes.side` to the fixture dialect. That
+would make the test post a Side Burn and drop the pin that a dialect
+without the template refuses it. Do not weaken the assert to "any
+refusal".
