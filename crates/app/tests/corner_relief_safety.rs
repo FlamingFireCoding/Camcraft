@@ -1,4 +1,6 @@
 //! Provenance: independent corner-relief reachability and boundary refusal tests.
+//! Gate map (#2400): covers app::operation::corner_relief (reachability and boundary refusals),
+//! app::commands (CreateOperation, ImportModel).
 
 mod corner_relief_support;
 mod pocket_support;

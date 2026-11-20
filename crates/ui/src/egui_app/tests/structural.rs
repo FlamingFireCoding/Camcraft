@@ -32,6 +32,9 @@ mod break_through;
 #[path = "structural/donate.rs"]
 mod donate;
 
+#[path = "structural/ops_count.rs"]
+mod ops_count;
+
 /// Every painted text of the last frame with its top-left, in paint order.
 pub(super) fn painted(h: &Harness<'static, ShellUi>) -> Vec<(String, egui::Pos2)> {
     fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Pos2)>) {

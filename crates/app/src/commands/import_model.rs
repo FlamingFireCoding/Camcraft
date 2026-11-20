@@ -171,6 +171,7 @@ impl Command for ImportModel {
         // counts from there. ImportModel only ever spawns - a same-named
         // re-import is routed to UpdateModel by the caller, never here.
         model::set_rev(world, &entity, 1);
+        crate::mesh_solids::set(world, &entity, self.mesh.solid_ranges());
         crate::model_fidelity::set(world, &entity, self.coarse_mm);
         crate::model_fidelity::set_budget(world, &entity, self.facet_budget);
         crate::mesh_open::set(world, &entity, self.hole.as_deref());

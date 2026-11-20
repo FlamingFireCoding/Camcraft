@@ -23,7 +23,7 @@ pub struct Run {
     pub budget: usize,
     budget_note: Option<String>,
     pub(crate) log_dir: PathBuf,
-    clock: Instant,
+    pub(crate) clock: Instant,
     pub(crate) done: Vec<Done>,
     /// HEAD and the working tree when the gate started (#1201); every later reading is compared with it.
     pub(crate) guard: Reading,

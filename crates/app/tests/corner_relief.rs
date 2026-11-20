@@ -1,4 +1,6 @@
 //! Provenance: independent corner-relief cutting, simulation and golden CL tests.
+//! Gate map (#2400): covers app::operation::corner_relief, app::operation::corner_relief_sim,
+//! app::commands (CreateOperation, GenerateOperation with corner relief).
 
 mod common;
 mod corner_relief_support;

@@ -1,4 +1,6 @@
 //! Provenance: corner-relief project and MCP round trips through public app APIs.
+//! Gate map (#2400): covers app::project (corner-relief round trip), app::mcp (corner-relief
+//! parameters), app::operation::corner_relief.
 
 mod corner_relief_support;
 mod pocket_support;

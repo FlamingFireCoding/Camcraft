@@ -45,9 +45,12 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             return Err(corrupt(format!("'{}' records a chord error and an unknown fidelity at once", dto.name)));
         }
     }
-    // #1610: a hole is said of a model of unknown fidelity only.
-    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && matches!(kind, EntityKind::Model)) {
-        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
+    // #1610: a hole is said of a mesh of unknown fidelity only - a model,
+    // or (#1700) a stock copied from one, which carries its source's hole.
+    let copy = matches!(kind, EntityKind::Stock)
+        && dto.stock.as_ref().is_some_and(|s| matches!(s.to_shape(), StockShape::FromModel { .. }));
+    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && (matches!(kind, EntityKind::Model) || copy)) {
+        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown, or a stock copied from one", dto.name)));
     }
     // #1339: a vouch is a model's, and never rides beside a flag.
     if let Some(vouch) = &dto.fidelity_vouched {
