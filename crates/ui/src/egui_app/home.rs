@@ -67,6 +67,21 @@ pub(crate) fn row_label(e: &RecentEntry) -> String {
     if e.missing { format!("{} (missing)", e.name) } else { e.name.clone() }
 }
 
+/// A stored path as the page shows it. The list keeps canonical paths,
+/// which carry the `\\?\` verbatim prefix on Windows; the page shows the
+/// plain form (`\\?\UNC\server\share` as `\\server\share`). Display
+/// only: the open uses the stored path.
+pub(crate) fn shown_path(path: &std::path::Path) -> String {
+    let s = path.display().to_string();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        s
+    }
+}
+
 /// The Home button, right-aligned so that its right edge is `right`, in
 /// the top band. Returns its left edge. A click shows or hides the page.
 pub(super) fn button(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&IconSet>, band: Rect, right: f32) -> f32 {
@@ -113,7 +128,7 @@ pub(super) fn page(ui: &mut Ui, state: &mut State, pal: &Tokens) {
             ui.horizontal(|ui| {
                 let row = Button::new(RichText::new(row_label(e)).size(pal.font_row)).frame(false);
                 let resp = ui.add_enabled(!e.missing, row);
-                let path = e.path.display().to_string();
+                let path = shown_path(&e.path);
                 let clicked = resp.clicked();
                 resp.on_hover_text(&path).on_disabled_hover_text(e.refusal(RecentKind::Project));
                 ui.label(RichText::new(path).size(pal.font_row).color(pal.text_faint));

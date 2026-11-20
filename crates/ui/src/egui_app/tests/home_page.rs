@@ -165,3 +165,13 @@ fn the_page_shows_at_a_start_with_no_file_only() {
     assert!(page_up(&h), "still frames keep the start page up");
 }
 
+/// The list keeps canonical paths; on Windows they carry the verbatim
+/// prefix, which the page does not show.
+#[test]
+fn the_page_shows_a_stored_path_without_the_verbatim_prefix() {
+    use std::path::Path;
+    assert_eq!(home::shown_path(Path::new(r"\\?\C:\jobs\a.camproj")), r"C:\jobs\a.camproj");
+    assert_eq!(home::shown_path(Path::new(r"\\?\UNC\shop\jobs\a.camproj")), r"\\shop\jobs\a.camproj");
+    assert_eq!(home::shown_path(Path::new("/home/me/a.camproj")), "/home/me/a.camproj");
+}
+

@@ -22,6 +22,12 @@
   the harnesses, the snapshots and the browser build start as before.
 - The version label was already the rightmost toolbar item (#556). It
   stays where it is; a test pins that it is painted at the right.
+- The page shows each path without the Windows verbatim prefix
+  (`home::shown_path`): the list stores canonical paths, which carry it.
+  The open still uses the stored path.
+- The action row uses the form seam's `action_bar`. The list rows are
+  plain buttons and labels: the form helpers have no list-row helper yet
+  (#1122).
 - The glyph is Tabler's home outline (MIT), with its SVG master in
   `assets/ui/svg/home.svg` and its notice in `assets/ui/LICENSES.md`.
 
