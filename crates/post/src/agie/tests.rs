@@ -5,7 +5,7 @@ fn punch() -> AgieJob {
     AgieJob {
         quality: AgieQuality::FineRa030,
         side: AgieSide::Punch,
-        racetrack: None,
+        round_profile: None,
         contour: vec![[-20., -10.], [20., -10.], [20., 10.], [-20., 10.]],
         start: Some([-30., 0.]),
         stock_min: [-40., -30., -20.],
@@ -331,4 +331,36 @@ fn a_punch_and_a_die_cannot_share_a_group() {
             .contains("two closed punches or two die openings")
     );
     assert!(!destination.exists());
+}
+
+#[test]
+fn qualified_circle_radii_and_cardinal_entries_keep_the_exact_diameter() {
+    use camcraft_geometry::{
+        geo2d::Point2,
+        wire_round_profile::{RoundProfile, Spine},
+    };
+    let center = [2.0, -3.0];
+    for radius in [6.0, 8.375, 10.0, 15.0] {
+        for axis in [0, 1] {
+            for sign in [-1.0, 1.0] {
+                let mut job = punch();
+                job.contour.clear();
+                job.round_profile = Some(RoundProfile {
+                    spine: Spine::Circle(Point2::new(center[0], center[1])),
+                    radius,
+                });
+                let mut hole = center;
+                let mut seam = center;
+                let mut opposite = center;
+                hole[axis] += sign * (radius + 7.0);
+                seam[axis] += sign * radius;
+                opposite[axis] -= sign * radius;
+                job.start = Some(hole);
+                let work = Work::prepare(&job, "CIRCLE".into(), 1.0).unwrap();
+                assert_eq!(work.entry, hole);
+                assert_eq!(work.points, [seam, opposite, seam]);
+                assert_eq!(work.arc_centers, [None, Some(center), Some(center)]);
+            }
+        }
+    }
 }
