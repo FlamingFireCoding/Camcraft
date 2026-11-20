@@ -36,6 +36,18 @@ and `verify` is ok. The rows touch a round end only at their end points.
 keeps the 2 mm stepover, because it shows the behaviour clearly. A fix for
 #2906 changes `slots.nc`: rebuild the case with the fix.
 
+**Merge with main: the case tests are in the heavy lane.** Main now has
+one test module for each case (`catalog_<family>_<case>`), with a 60 s
+budget for each test. The module `catalog_2d_slots` takes about 40 s for
+each test in debug when it runs alone. In the parallel suite, it went over
+its budget. It also pushed `turning/cone-thread` over its budget. The two
+tests of `catalog_2d_slots` are `#[ignore]`d with a heavy-lane reason. The
+budget message tells the author to do this. `cargo xtask gate heavy` runs
+them in release. The default suite keeps
+`slots_case_posts_a_slot_and_a_trochoidal_slot_to_the_same_floor`, which
+reads the committed program. Dropped: a smaller model (it changes the
+committed program), and a larger budget (it changes a rule of main).
+
 **Considered and dropped.**
 
 - Two parts or two cases, one for each operation. The comparison needs the

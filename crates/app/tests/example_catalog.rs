@@ -85,6 +85,23 @@ mod catalog_2d_hole_work {
     }
 }
 
+// #2861: about 40 s each in debug alone, over the 60 s budget beside the
+// other cases. `slots_case_posts_a_slot_and_a_trochoidal_slot_to_the_same_floor`
+// keeps the committed program pinned in the default suite.
+mod catalog_2d_slots {
+    use super::*;
+    #[test]
+    #[ignore = "heavy lane (#2861 2d/slots): ~40 s in debug alone, over its 60 s budget under the parallel suite - run with --release -- --ignored"]
+    fn regenerates() {
+        run_case("2d", "slots", "regenerates", regenerate);
+    }
+    #[test]
+    #[ignore = "heavy lane (#2861 2d/slots): ~40 s in debug alone, over its 60 s budget under the parallel suite - run with --release -- --ignored"]
+    fn rebuilds() {
+        run_case("2d", "slots", "rebuilds", rebuild);
+    }
+}
+
 mod catalog_turning_cone_thread {
     use super::*;
     #[test]
