@@ -4,6 +4,7 @@ use std::{fs, path::Path, process::Command};
 
 const SCRIPT: &str = include_str!("../../../examples/agie/punch-pair.camscript");
 const TRIO: &str = include_str!("../../../examples/agie/punch-trio.camscript");
+const GRID: &str = include_str!("../../../examples/agie/punch-grid.camscript");
 const DIE_SCRIPT: &str = include_str!("../../../examples/agie/die-pair.camscript");
 const PLATE: &str = include_str!("../../../examples/agie/die-pair.obj");
 const LEFT: &str = include_str!("../../../examples/agie/pair-left.obj");
@@ -169,4 +170,58 @@ fn a_nonadjacent_collision_fails_before_publishing_any_group_resource() {
         "{message}"
     );
     assert!(!dir.path().join("TRIO20").exists());
+}
+
+#[test]
+fn nine_model_owners_resolve_all_resources_with_two_digit_last_quality() {
+    let temp = tempfile::tempdir().unwrap();
+    let result = run(temp.path(), GRID);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let dir = temp.path().join("NINE20");
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 11);
+    let map = fs::read_to_string(dir.join("NINE20.SBR")).unwrap();
+    let piece = fs::read_to_string(dir.join("NINE20.SBL")).unwrap();
+    assert_eq!(map.lines().count(), 9);
+    assert_eq!(piece.matches("JE_Create(WORK,").count(), 9);
+    assert_eq!(piece.matches("ID_SEPCUT,\"1.0\"").count(), 9);
+    for i in 0..9 {
+        let (x, y) = ((i % 3 - 1) * 32, (i / 3 - 1) * 32);
+        let alias = format!("NINE20{}.ISO", i + 1);
+        let work = format!("\"NINE20\",\"CUT{}\",", i + 1);
+        assert!(map.contains(&format!("AGIE.USING_{alias} IMPORT {alias};")));
+        assert!(piece.contains(&format!("{work}NULL,ID_GEOMETRY,\"AGIE.USING_{alias}\"")));
+        assert!(piece.contains(&format!("{work}\"stp1\",ID_POSX,\"{}.000\"", x - 13)));
+        assert!(piece.contains(&format!("{work}\"stp1\",ID_POSY,\"{y}.000\"")));
+        assert!(piece.contains(&format!("JE_CreateQuality(je_piece,\"QN{}\"", i + 2)));
+        let iso = fs::read_to_string(dir.join(alias)).unwrap();
+        assert!(iso.contains(&format!("G00 X{}.00000 Y{y}.00000", x - 7)));
+    }
+}
+
+#[test]
+fn exceeding_nine_works_or_leaving_an_unused_owner_writes_nothing() {
+    for script in [
+        // Add a tenth independent operation and model before any import.
+        GRID.replacen(
+            "for (const [i, center]",
+            "centers.push([0, 16]);\nfor (const [i, center]",
+            1,
+        ),
+        GRID.replace(
+            "cam.generate();",
+            "cam.import(\"examples/agie/pair-left.obj\", \"unused\"); cam.generate();",
+        ),
+        GRID.replace(
+            "source: \"Retained\" + (i + 1)",
+            "source: \"Retained\" + (i === 8 ? 1 : i + 1)",
+        ),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(!run(temp.path(), &script).status.success());
+        assert!(!temp.path().join("NINE20").exists());
+    }
 }

@@ -12,7 +12,7 @@ mod tangent_profile;
 pub use quality::AgieQuality;
 
 /// Maximum independently qualified punch works per native group. Geometry aliases use one digit.
-pub const MAX_PUNCH_WORKS: usize = 3;
+pub const MAX_PUNCH_WORKS: usize = 9;
 
 /// The closed cycle or the kerf side of a directed open cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
