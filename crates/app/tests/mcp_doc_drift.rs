@@ -2,6 +2,9 @@
 //! a wrapper, the guide or the local prompt names is a live MCP tool,
 //! and every live tool is documented in the generated reference and the
 //! guide.
+//!
+//! Gate map: covers app::mcp::tools, app::mcp::catalog,
+//! app::mcp::provider, app::mcp::fallback.
 
 use camcraft_app::mcp::catalog;
 use std::path::PathBuf;
@@ -15,6 +18,27 @@ const DOCS: [&str; 4] = [
     "site/content/guide/automate/mcp.md",
 ];
 const GUIDE: &str = "site/content/guide/automate/mcp.md";
+
+#[test]
+fn the_drift_suite_maps_the_tool_table_catalog_and_prompt_context() {
+    let source = read("crates/app/tests/mcp_doc_drift.rs");
+    let header = source.lines().take_while(|line| line.starts_with("//!")).collect::<Vec<_>>();
+    let map = header
+        .iter()
+        .skip_while(|line| !line.contains("Gate map:"))
+        .take_while(|line| line.trim() != "//!")
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for module in ["tools", "catalog", "provider", "fallback"] {
+        let module = format!("app::mcp::{module}");
+        assert!(
+            map.split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != ':')
+                .any(|name| name == module),
+            "the drift suite Gate map must cover {module}"
+        );
+    }
+}
 
 fn read(rel: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
