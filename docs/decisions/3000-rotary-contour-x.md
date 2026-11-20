@@ -30,3 +30,27 @@ A new ring-generation algorithm would duplicate the existing waterline law.
 parameter, UI, and compatibility changes. The station and clearance pins must
 change with that contract. The ball-center conversion and radial link reuse
 can remain if their geometric conventions remain the same.
+
+**Refusals that this change removes on purpose.** The old horizontal-stance
+refusal ("a laid bar is finished with passes along it: Rotary Parallel") was
+not a safety law. It said only that the height law had no world-Z divisor.
+This change gives the laid stance its own station law, so two app tests that
+pinned the old refusal now pin the new result:
+
+- `operations::the_rotary_twins_refuse_each_other_stances_by_name` becomes
+  `a_standing_bar_refuses_rotary_parallel_by_name`. The standing-bar refusal
+  of Rotary Parallel stays, with its name check. The laid twin moves to
+  `a_laid_bar_cuts_rotary_contour_rings_about_x`. That test requires status
+  Ok, zero blocking warnings, radial poses about X, ball centers inside the
+  axial station window, rings at more than three stations, and the
+  column-verdict refusal of a rotary program.
+- `setup_align_multiaxis::turned_rotary_contour_cuts_posts_and_fits_axis_like_the_baked_part`
+  expected a refusal for the as-modelled stance (the bar lies along X). That
+  stance now cuts. The test requires a fitted axis along X, radial poses about
+  X on each posed move, and a path that differs from the turned path. The
+  turned and baked cases keep their equal-path and equal-post checks.
+
+Dropped: keep the refusal for these two fixtures only. That would make the
+generator depend on the caller, and #3000 asks for exactly this stance.
+Dropped: change the tests to "differs or refuses". That accepts a refusal,
+so it is weaker than the old assert.
