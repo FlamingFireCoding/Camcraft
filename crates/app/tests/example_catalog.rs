@@ -157,6 +157,9 @@ mod catalog_2d_hole_work {
     }
 }
 
+// #2861: the case 2d/slots, its two case tests and its program pin.
+include!("example_catalog/case_2d_slots.rs");
+
 mod catalog_turning_bushing {
     use super::*;
     #[test]
