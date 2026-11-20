@@ -40,6 +40,26 @@ fn planes(lo: f64, hi: f64) -> Vec<f64> {
     (0..n).map(|i| lo + eps + (span - 2.0 * eps) * i as f64 / (n - 1) as f64).collect()
 }
 
+/// Check the full height swept by the wire against each stated guide.
+fn check_guide_span(world: &World, setup: Option<&str>, lo: f64, hi: f64) -> Result<(), String> {
+    let (_, machine) = crate::machine::of_setup(world, setup);
+    let Some(edm) = machine.as_ref().and_then(|m| m.edm.as_ref()) else { return Ok(()) };
+    let (_, origin) = crate::posting::wcs_context(world, setup);
+    let bottom = lo - origin[2];
+    let top = hi - origin[2];
+    if let Some(lower) = edm.lower_guide_z
+        && bottom < lower
+    {
+        return Err(format!("work bottom Z{bottom:.3} is below the lower guide Z{lower:.3}, outside the guides' reach"));
+    }
+    if let Some(upper) = edm.upper_guide_z
+        && top > upper
+    {
+        return Err(format!("work top Z{top:.3} is above the upper guide Z{upper:.3}, outside the guides' reach"));
+    }
+    Ok(())
+}
+
 /// Judge one Wire Contour against the world as it stands now: `None`
 /// for any other kind; `Err` names why the laws cannot run (no path, no
 /// condition, no part to judge against, a section that cannot be cut).
@@ -78,6 +98,7 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
         if !(lo.is_finite() && hi.is_finite()) {
             return Err("the wire laws find no height to judge - neither the planes nor the part resolve".into());
         }
+        check_guide_span(world, setup, lo, hi)?;
         let cut = |f: &[Triangle], z: f64, what: &str| {
             slice::slice(f, z).map_err(|e| format!("the {what}'s section at Z{z:.3} cannot be cut: {e}"))
         };
