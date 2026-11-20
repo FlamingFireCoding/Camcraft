@@ -50,7 +50,7 @@ pub(crate) fn page(ui: &mut Ui, state: &mut State, name: &str) {
         .auto_shrink([false, false])
         .max_height(scroll_h)
         .show(ui, |ui| {
-            if exists {
+            if exists && !name.is_empty() {
                 ui.heading(format!("Tool: {name}"));
                 if ui.button("Delete").clicked() {
                     state
