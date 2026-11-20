@@ -1,6 +1,8 @@
 //! Native Agie bundle integrity, nominal seam, and no-clobber checks on an original rectangular punch.
 use super::*;
 
+mod group;
+
 fn punch() -> AgieJob {
     AgieJob {
         quality: AgieQuality::FineRa030,
@@ -266,28 +268,6 @@ fn the_open_cut_includes_air_tails_wire_and_work_origin_in_travel() {
 }
 
 #[test]
-fn a_group_rejects_an_unqualified_height_or_reserved_geometry_alias() {
-    let temp = tempfile::tempdir().unwrap();
-    for (height, name, expected) in [
-        (-40., "PAIR", "20 mm"),
-        (-20., "LPT", "non-reserved"),
-        (-20., "ABCDEFGH", "seven"),
-    ] {
-        let mut a = punch();
-        let mut b = punch();
-        a.stock_min[2] = height;
-        b.stock_min[2] = height;
-        let dir = temp.path().join(name);
-        assert!(
-            export_works(&[a, b], &dir, name, 1.0)
-                .unwrap_err()
-                .contains(expected)
-        );
-        assert!(!dir.exists());
-    }
-}
-
-#[test]
 fn fine_plus_uses_only_its_measured_height_and_single_punch_cycle() {
     let temp = tempfile::tempdir().unwrap();
     let destination = temp.path().join("FINE20");
@@ -315,20 +295,6 @@ fn fine_plus_uses_only_its_measured_height_and_single_punch_cycle() {
         export_works(&[punch(), job], &destination, "FINE20", 1.0)
             .unwrap_err()
             .contains("single closed punch")
-    );
-    assert!(!destination.exists());
-}
-
-#[test]
-fn a_punch_and_a_die_cannot_share_a_group() {
-    let temp = tempfile::tempdir().unwrap();
-    let destination = temp.path().join("MIXED");
-    let mut die = punch();
-    die.side = AgieSide::Die;
-    assert!(
-        export_works(&[punch(), die], &destination, "MIXED", 1.0)
-            .unwrap_err()
-            .contains("two closed punches or two die openings")
     );
     assert!(!destination.exists());
 }

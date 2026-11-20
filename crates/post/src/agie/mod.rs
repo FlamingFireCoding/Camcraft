@@ -10,6 +10,9 @@ mod round_profile;
 
 pub use quality::AgieQuality;
 
+/// Maximum independently qualified punch works per native group. Geometry aliases use one digit.
+pub const MAX_PUNCH_WORKS: usize = 3;
+
 /// The closed cycle or the kerf side of a directed open cut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgieSide {
@@ -129,7 +132,7 @@ impl Work {
     }
 }
 
-/// Export a single work or two independent closed works of the same type on the same 20 mm stock.
+/// Export a single work, independent punches, or two die openings on common 20 mm stock.
 ///
 /// # Errors
 /// Refuses unsupported groups and shared cutting space before publishing the directory.
@@ -151,7 +154,8 @@ pub fn export_works(
         return Err("AGIE_BERCO_RA035 requires a single closed punch in 20 mm stock".into());
     }
     if jobs.len() > 1 {
-        if jobs.len() != 2
+        if jobs.len() > MAX_PUNCH_WORKS
+            || (first.side == AgieSide::Die && jobs.len() != 2)
             || first.side.is_open()
             || jobs.iter().any(|job| {
                 job.side != first.side
@@ -161,7 +165,9 @@ pub fn export_works(
                     || job.stock_min[2] != -20.0
             })
         {
-            return Err("The Agie work group requires two closed punches or two die openings on the same 20 mm stock".into());
+            return Err(format!(
+                "The Agie work group requires 2 to {MAX_PUNCH_WORKS} independent closed punches or two die openings on the same 20 mm stock"
+            ));
         }
         if program.len() > 7 {
             return Err("Choose an Agie group name up to seven characters so each work has a distinct geometry filename".into());
@@ -181,10 +187,17 @@ pub fn export_works(
         }
         works.push(Work::prepare(job, geometry, separation)?);
     }
-    if let [a, b] = works.as_slice()
-        && !(0..2).any(|i| a.max[i] < b.min[i] || b.max[i] < a.min[i])
-    {
-        return Err("Select distinct Agie contours with separate cutting areas for both works, threading holes, leads and compensated cuts".into());
+    for (index, work) in works.iter().enumerate() {
+        for previous in &works[..index] {
+            if !(0..2).any(|axis| {
+                work.max[axis] < previous.min[axis] || previous.max[axis] < work.min[axis]
+            }) {
+                return Err(format!(
+                    "Agie works {} and {} share a cutting area. Separate their threading holes, leads and compensated cuts",
+                    previous.geometry, work.geometry
+                ));
+            }
+        }
     }
     let mut files = Vec::new();
     let mut resources = String::new();

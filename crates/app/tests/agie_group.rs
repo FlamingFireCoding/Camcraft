@@ -3,6 +3,7 @@
 use std::{fs, path::Path, process::Command};
 
 const SCRIPT: &str = include_str!("../../../examples/agie/punch-pair.camscript");
+const TRIO: &str = include_str!("../../../examples/agie/punch-trio.camscript");
 const DIE_SCRIPT: &str = include_str!("../../../examples/agie/die-pair.camscript");
 const PLATE: &str = include_str!("../../../examples/agie/die-pair.obj");
 const LEFT: &str = include_str!("../../../examples/agie/pair-left.obj");
@@ -126,4 +127,46 @@ fn missing_or_unsafe_die_works_leave_no_output_directory() {
         assert!(!result.status.success(), "{case}");
         assert!(!temp.path().join("DUODI20").exists(), "{case}");
     }
+}
+
+#[test]
+fn three_independently_placed_models_export_their_own_geometry_and_starts() {
+    let temp = tempfile::tempdir().unwrap();
+    let result = run(temp.path(), TRIO);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let dir = temp.path().join("TRIO20");
+    let map = fs::read_to_string(dir.join("TRIO20.SBR")).unwrap();
+    let piece = fs::read_to_string(dir.join("TRIO20.SBL")).unwrap();
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 5);
+    assert_eq!(piece.matches("JE_Create(WORK,").count(), 3);
+    assert_eq!(piece.matches("ID_SEPCUT,\"1.0\"").count(), 3);
+    for (index, x) in [-32, 0, 32].into_iter().enumerate() {
+        let n = index + 1;
+        let iso_name = format!("TRIO20{n}.ISO");
+        assert!(map.contains(&format!("AGIE.USING_{iso_name} IMPORT {iso_name};")));
+        let work = format!("\"TRIO20\",\"CUT{n}\",");
+        assert!(piece.contains(&format!("{work}NULL,ID_GEOMETRY,\"AGIE.USING_{iso_name}\"")));
+        assert!(piece.contains(&format!("{work}\"stp1\",ID_POSX,\"{}.000\"", x - 13)));
+        let iso = fs::read_to_string(dir.join(iso_name)).unwrap();
+        assert!(iso.contains(&format!("G00 X{}.00000 Y0.00000", x - 7)));
+    }
+}
+
+#[test]
+fn a_nonadjacent_collision_fails_before_publishing_any_group_resource() {
+    let dir = tempfile::tempdir().unwrap();
+    // Place work 3 on work 1 while keeping work 2 clear of both.
+    let script = TRIO.replace("[32, 0]]", "[-32, 0]]");
+    let result = run(dir.path(), &script);
+    let message = String::from_utf8_lossy(&result.stderr);
+    assert!(!result.status.success());
+    assert!(
+        message.contains("TRIO201 and TRIO203 share a cutting area"),
+        "{message}"
+    );
+    assert!(!dir.path().join("TRIO20").exists());
 }

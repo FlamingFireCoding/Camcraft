@@ -1,9 +1,10 @@
 //! Native Agie job dispatch and posting preflight. Provenance: CAMCraft's
 //! verified Wire Contour workflow and the local Agie controller job contract.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use camcraft_post::agie::MAX_PUNCH_WORKS;
 use flecs_ecs::prelude::World;
 
 use super::{Posted, mounts};
@@ -48,10 +49,10 @@ pub(super) fn post(
     let name = dest.file_name().and_then(|x| x.to_str()).filter(|s| valid_name(s))
         .ok_or("Choose a new Agie job directory named with 1 to 8 uppercase letters or digits, starting with a letter")?;
     let ops = super::program_ops(world)?;
-    if !(1..=2).contains(&ops.len()) {
-        return Err(
-            "An Agie job requires one active wire contour or two independent closed works".into(),
-        );
+    if !(1..=MAX_PUNCH_WORKS).contains(&ops.len()) {
+        return Err(format!(
+            "An Agie job requires one active contour, up to {MAX_PUNCH_WORKS} independent punches or two die openings"
+        ));
     }
     let operations = ops
         .iter()
@@ -138,25 +139,29 @@ pub(super) fn post(
                 .map(|(name, op)| operation::agie_job(world, op, name, plate, 2))
                 .collect::<Result<Vec<_>, _>>()?
         }
-        [(_, left), (_, right)] => {
-            let sources = [&left.src, &right.src].map(|src| match src {
-                operation::SrcRef::Entity(owner) => Some(owner),
-                _ => None,
-            });
-            let [Some(a), Some(b)] = sources else {
-                return Err("Select two complete punch models or two through-openings on the same die plate".into());
-            };
-            if a == b || models.len() != 2 || models.iter().any(|(name, _)| name != a && name != b)
-            {
-                return Err("The two Agie works must cover two distinct modeled punches, with no additional workpiece".into());
+        _ => {
+            let mut owners = BTreeSet::new();
+            let mut jobs = Vec::with_capacity(operations.len());
+            for (name, op) in &operations {
+                let operation::SrcRef::Entity(owner) = &op.src else {
+                    return Err("Select each complete punch model or two through-openings on the same die plate".into());
+                };
+                if !matches!(&op.params, operation::OpParams::WireContour(wire) if wire.side == operation::WireSide::Punch) {
+                    return Err("Every operation in an Agie punch group must be a closed punch".into());
+                }
+                if !owners.insert(owner.as_str()) {
+                    return Err("Each Agie punch must have a distinct modeled source".into());
+                }
+                jobs.push(operation::agie_job(world, op, name, owner, 1)?);
             }
-            operations
-                .iter()
-                .zip([a, b])
-                .map(|((name, op), owner)| operation::agie_job(world, op, name, owner, 1))
-                .collect::<Result<Vec<_>, _>>()?
+            if owners.len() != models.len()
+                || models.iter().any(|(name, _)| !owners.contains(name.as_str()))
+                || !crate::sketch::placed_in(world, setup).is_empty()
+            {
+                return Err("The Agie punch group must cover every modeled workpiece without an additional model or placed sketch".into());
+            }
+            jobs
         }
-        _ => return Err("Agie supports up to two works".into()),
     };
     let options = super::program_options_for_script(
         world,
