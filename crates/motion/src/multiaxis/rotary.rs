@@ -88,10 +88,10 @@ pub fn rotary_contour(
     let f = frame(&ax)?;
     let local = f.local_facets(facets);
     let uz = if ax.dir.dot(UP) < 0.0 { -lean } else { lean };
-    let q = stations(&local, p, &f, &|h| (h - ax.origin.z) / uz);
+    let q = stations(&local, p, &|h| (h - ax.origin.z) / uz);
     let r = p.tool_diameter * 0.5;
     let base = finishing3d::waterline(&local, &q).map_err(|e| to_world(e, &f, &ax, c, r))?;
-    posed(&f, &base, &ax, c, r)
+    posed(&f, &base, &ax, c, r, false)
 }
 
 /// The rotary parallel: generatrix passes along the axis, stepping
@@ -159,7 +159,7 @@ pub fn rotary_parallel_over(
         axis: [up.x, up.y, up.z],
     };
     let local = f.local_facets(facets);
-    let mut q = stations(&local, p, &f, &|h| h - ax.origin.z);
+    let mut q = stations(&local, p, &|h| h - ax.origin.z);
     // #15: the raster's certified diagonal hops and the rings' ramped
     // first contacts are an UPRIGHT tool's verbs - on the bar's flank
     // and end, posed radially, they run down the tool's own axis. The
@@ -205,7 +205,7 @@ pub fn rotary_parallel_over(
     let ramp = p.entry_ramp.then_some(rotary_links::Ramp { deg: p.ramp_angle, facets: &local, tol: p.tolerance, span });
     let base = rotary_links::radial_relink(&base, r, q.clearance_z, hop, rho, p.feed, p.plunge_feed, ramp)
         .map_err(|e| to_world(e, &f, &ax, c, r))?;
-    let mut out = posed(&f, &base, &ax, c, r)?;
+    let mut out = posed(&f, &base, &ax, c, r, true)?;
     if ramp.is_some() {
         out.notes.extend(base.notes.iter().filter(|n| n.starts_with("Rotary Parallel:")).cloned());
     }
@@ -226,7 +226,7 @@ pub fn rotary_parallel_over(
 /// frame's own `to_world`. A ghost that exit refuses (a cycle, nothing
 /// finite) is dropped, never drawn in the planning frame.
 fn to_world(e: GenError, f: &TiltedFrame, ax: &Axis, c: &AxisControl, r: f64) -> GenError {
-    e.map_location(|q| f.to_world(q)).map_ghost(|t| posed(f, t, ax, c, r).unwrap_or_default())
+    e.map_location(|q| f.to_world(q)).map_ghost(|t| posed(f, t, ax, c, r, false).unwrap_or_default())
 }
 
 /// The contour frame: the axis as local z, the canonical foot as
@@ -246,16 +246,25 @@ fn frame(ax: &Axis) -> Result<TiltedFrame, GenError> {
 fn stations(
     local: &[Triangle],
     p: &Finish3DParams,
-    f: &TiltedFrame,
     hmap: &dyn Fn(f64) -> f64,
 ) -> Finish3DParams {
     let mut q = *p;
     q.clearance_z = hmap(p.clearance_z);
     q.retract_z = p.retract_z.map(hmap);
     q.bottom_z = hmap(p.bottom_z);
+    // Clamp bottom_z to the model's lowest local Z, mirroring how top_z is
+    // clamped to the model's highest local Z. Without this, a bottom_z set
+    // below the model makes the ladder step past the model's bottom before
+    // bottom_z is reached: the last level with facets in range sits above
+    // the model, and bottom_z itself has none - leaving a circumferential
+    // gap at the bottom of the part.
+    let model_bottom = local.iter().fold(f64::INFINITY, |x, t| {
+        x.min(t.a.z).min(t.b.z).min(t.c.z)
+    });
+    q.bottom_z = q.bottom_z.max(model_bottom);
     let top = hmap(p.top_z);
     q.top_z = local.iter().fold(top, |x, t| {
-        x.max(f.to_local(t.a).z).max(f.to_local(t.b).z).max(f.to_local(t.c).z)
+        x.max(t.a.z).max(t.b.z).max(t.c.z)
     });
     q
 }
@@ -280,6 +289,7 @@ fn posed(
     ax: &Axis,
     c: &AxisControl,
     r: f64,
+    flip_bottom: bool,
 ) -> Result<Toolpath, GenError> {
     if !base.cycles.is_empty() {
         return Err(GenError::Invalid(
@@ -320,7 +330,24 @@ fn posed(
                 radial_at(ax, w).or(held)
             } else {
                 match cut_pose(ax, c, w, w - prev) {
-                    Some(a) => Some(a),
+                    Some(a) => {
+                        // At the bottom of a laid part the radial from the
+                        // axis to the ball center points down, so `tip_of =
+                        // center - r * pose` lifts the tip away from the
+                        // surface instead of down onto it. Flip the pose so
+                        // the tool hangs below the center, on the surface.
+                        // Only Rotary Parallel lays the bar down - Rotary
+                        // Contour stands it up and wraps rings around it,
+                        // where the radial stays horizontal and no flip is
+                        // wanted. Air moves stay radial (no flip): their
+                        // links must ride the retract cylinder.
+                        let flipped = if flip_bottom && a[2] < 0.0 {
+                            [-a[0], -a[1], -a[2]]
+                        } else {
+                            a
+                        };
+                        Some(flipped)
+                    }
                     None => {
                         tracing::warn!("multiaxis: no radial exists at {w:?}; the move holds vertical");
                         Some([0.0, 0.0, 1.0])

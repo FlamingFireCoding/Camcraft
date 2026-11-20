@@ -134,6 +134,10 @@ fn center_at(p: Point3, axis: Option<[f64; 3]>) -> Point3 {
 }
 
 /// The pose stated at `p` is the pure radial of its own ball center.
+/// At the bottom of a laid part the tool hangs below the center (pose
+/// points up) while the radial from the axis to the center points down,
+/// so the pose is anti-aligned with the radial there - both are
+/// collinear with the radius, which is what the check needs.
 fn radial_pose(p: Point3, axis: Option<[f64; 3]>, lying: bool) -> bool {
     let Some(a) = axis else { return false };
     let c = center_at(p, axis);
@@ -142,7 +146,7 @@ fn radial_pose(p: Point3, axis: Option<[f64; 3]>, lying: bool) -> bool {
     } else {
         ([c.x, c.y, 0.0], (c.x * c.x + c.y * c.y).sqrt())
     };
-    l > 1e-9 && (a[0] * n[0] + a[1] * n[1] + a[2] * n[2]) / l > 1.0 - 1e-9
+    l > 1e-9 && (a[0] * n[0] + a[1] * n[1] + a[2] * n[2]).abs() / l > 1.0 - 1e-9
 }
 
 /// Where the program starts: its first record is a RAPID, it starts
