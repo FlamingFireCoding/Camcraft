@@ -58,6 +58,9 @@ judges against the mesh at `t'`:
     shank);
   - the probe stylus slack (it guards the stylus).
 
+  The cutting-edge laws of these kinds in `VerifyContext` (law (f) on
+  the nose or the ball) still read the widened tolerance: they judge
+  the cutter, and the bodies are guarded by the strict readers above.
   The program gate reads the strict law for these kinds
   (`fidelity_law::widens`). On a model whose excess uses their floor,
   they are refused by name, as before. Pin: the rotary line in
