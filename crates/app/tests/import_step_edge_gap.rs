@@ -12,6 +12,7 @@
 //! Provenance: our own pins over our own fixtures; no vendor material.
 
 use camcraft_app::commands::{History, ImportModel};
+use camcraft_app::geometry::import::step;
 use camcraft_app::world::new_world;
 use camcraft_app::{model, model_fidelity};
 
@@ -27,7 +28,9 @@ fn a_model_with_edges_off_its_surfaces_lands_flagged_with_its_note() {
     assert!(
         cmd.notes.iter().any(|n| n
             == "This file's edges sit up to 0.018 mm off their surfaces. The file states a tolerance of 0.010 mm. \
-                The model is used at reduced accuracy: checks allow 0.020 mm."),
+                The model is used at reduced accuracy (0.020 mm). \
+                A program cannot be posted while this model is in the document. \
+                Export the file again with a tighter tolerance to post one."),
         "{:?}",
         cmd.notes
     );
@@ -47,4 +50,17 @@ fn a_gap_over_the_cap_is_refused_and_tight_fixtures_stay_full_fidelity() {
         assert_eq!(cmd.coarse_mm, None, "{file} keeps full fidelity");
         assert!(!cmd.notes.iter().any(|n| n.contains("reduced accuracy")), "{file}: {:?}", cmd.notes);
     }
+}
+
+#[test]
+fn the_note_says_what_the_fidelity_law_does_at_the_chord() {
+    // Past the verdict tolerance (excess 0.015 mm over 0.01 mm): no verdict
+    // is left, and the program gate refuses (`model_fidelity::verdict_tol`).
+    assert!(step::loosened_consequence(0.02).starts_with("A program cannot be posted while this model is in the document."));
+    assert!(step::loosened_consequence(0.01524).starts_with("A program cannot be posted"));
+    // Inside it (excess 0.007 mm): the checks are tightened, not refused.
+    assert_eq!(
+        step::loosened_consequence(0.012),
+        "Gouge checks against this model are stricter, and an operation that they cannot check is refused at the post."
+    );
 }

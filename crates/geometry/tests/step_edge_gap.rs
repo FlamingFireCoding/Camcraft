@@ -36,18 +36,20 @@ fn a_gap_under_the_cap_meshes_coarser_with_a_plain_note() {
         m.notes.first().map(String::as_str),
         Some(
             "This file's edges sit up to 0.018 mm off their surfaces. The file states a tolerance of 0.010 mm. \
-             The model is used at reduced accuracy: checks allow 0.020 mm."
+             The model is used at reduced accuracy (0.020 mm)."
         ),
         "{:?}",
         m.notes
     );
+    assert!(m.loosened);
 }
 
 #[test]
 fn an_inch_file_meshes_at_twice_its_converted_tolerance() {
     let m = read("edge_gap/edge_gap_inch_014.step").expect("imports at reduced fidelity");
     assert!((m.chord_mm - 0.01524).abs() <= 1e-9, "chord {}", m.chord_mm);
-    assert!(m.notes.iter().any(|n| n.ends_with("checks allow 0.015 mm.")), "{:?}", m.notes);
+    assert!(m.loosened);
+    assert!(m.notes.first().is_some_and(|n| n.ends_with("reduced accuracy (0.015 mm).")), "{:?}", m.notes);
 }
 
 #[test]
@@ -73,5 +75,6 @@ fn the_tracked_fixtures_keep_the_chord_cap() {
         let m = read(file).unwrap_or_else(|e| panic!("{file}: {e}"));
         assert!((m.chord_mm - CHORD).abs() <= 1e-12, "{file}: chord {}", m.chord_mm);
         assert!(!m.notes.iter().any(|n| n.contains("reduced accuracy")), "{file}: {:?}", m.notes);
+        assert!(!m.loosened, "{file}");
     }
 }

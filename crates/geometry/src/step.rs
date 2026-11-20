@@ -48,6 +48,9 @@ pub struct StepMesh {
     /// mesh then has walls missing there: a caller lands it incomplete or
     /// refuses it, never as a whole model.
     pub open: Option<String>,
+    /// Whether the chord was made coarser because the model's edges lie off
+    /// their surfaces (#2976); its note is then the first of `notes`.
+    pub loosened: bool,
 }
 
 /// How many times a model over the facet budget is meshed again, coarser,
@@ -179,6 +182,7 @@ fn finish(
         crate::kernel_import::push_facets(mesh, &mut facets).map_err(StepError::Refused)?;
         ranges.push(start..facets.len());
     }
+    let loosened = gap_note.is_some();
     let mut notes: Vec<String> = gap_note.into_iter().collect();
     notes.extend(import.notes.iter().map(|n| format!("STEP: {n}")));
     for solid in &import.solids {
@@ -207,7 +211,7 @@ fn finish(
     };
     let deviation_mm = meshes.iter().map(|(_, m)| m.report.deviation.largest()).fold(0.0, f64::max);
     let open = (!holes.is_empty()).then(|| holes.join("; "));
-    Ok(StepMesh { mesh, chord_mm: chord, deviation_mm, notes, open })
+    Ok(StepMesh { mesh, chord_mm: chord, deviation_mm, notes, open, loosened })
 }
 
 /// `closed shell of solid #12 (10 faces) meshes open: face 4 of 10 got no

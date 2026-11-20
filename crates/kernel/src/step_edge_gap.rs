@@ -112,7 +112,8 @@ impl EdgeGap {
     }
 
     /// The note for a model meshed at `chord_mm` because of its edge gaps,
-    /// in plain words.
+    /// in plain words: the facts only. What the checks then do is the
+    /// app's fidelity law; the app adds that sentence.
     #[must_use]
     pub fn loose_note(&self, chord_mm: f64) -> String {
         let stated = self
@@ -121,7 +122,7 @@ impl EdgeGap {
             .map_or_else(|| "no tolerance".to_string(), |s| format!("a tolerance of {s:.3} mm"));
         format!(
             "This file's edges sit up to {:.3} mm off their surfaces. The file states {stated}. \
-             The model is used at reduced accuracy: checks allow {chord_mm:.3} mm.",
+             The model is used at reduced accuracy ({chord_mm:.3} mm).",
             self.widest_mm
         )
     }
@@ -219,7 +220,7 @@ mod tests {
         assert_eq!(
             gap(Some(0.01), 0.01507).loose_note(0.02),
             "This file's edges sit up to 0.015 mm off their surfaces. The file states a tolerance of 0.010 mm. \
-             The model is used at reduced accuracy: checks allow 0.020 mm."
+             The model is used at reduced accuracy (0.020 mm)."
         );
     }
 }

@@ -42,9 +42,22 @@
    judges each check against it. The fidelity law is not derived a second
    time. No schema or project-file change was necessary.
 4. **Notes.** These are the notes that the user sees:
-   - The importer note, in plain words: "This file's edges sit up to
-     0.018 mm off their surfaces. The file states a tolerance of 0.010 mm.
-     The model is used at reduced accuracy: checks allow 0.020 mm."
+   - The importer note, in plain words. The geometry crate writes the
+     facts: "This file's edges sit up to 0.018 mm off their surfaces. The
+     file states a tolerance of 0.010 mm. The model is used at reduced
+     accuracy (0.020 mm)." The app adds what the fidelity law does at that
+     chord (`geometry::import::step::loosened_consequence`, which reads
+     `model_fidelity::excess`, `excess_floor` and `DEV_TOL`, the same law
+     as `verdict_tol`):
+     - excess over `DEV_TOL` (every chord over 0.015 mm, so 0.02 mm and the
+       inch fixture's 0.01524 mm): "A program cannot be posted while this
+       model is in the document. Export the file again with a tighter
+       tolerance to post one."
+     - excess inside `DEV_TOL`: "Gouge checks against this model are
+       stricter, and an operation that they cannot check is refused at the
+       post."
+   - Review fix: the first text said "checks allow 0.020 mm". That was
+     false. The checks are stricter, or the post refuses.
    - The kernel note for each kept gap over 0.01 mm: "an edge lies
      0.0180 mm off its face's surface; the file states a tolerance of
      0.0100 mm, so the reader accepts up to 0.0200 mm". The cap is never
@@ -100,11 +113,21 @@ kernel volume is 113295.5 mm3.
   floor does not cover the excess (`op_problem`, `excess_floor`).
   `VouchModelFidelity` does not apply, because the chord is a recorded
   measurement.
-- In practice, `Lobe.step` now opens and can be programmed, but a
-  program that needs a verdict at zero stock is refused at the post
-  gate. To post it, the model must be exported again at a tighter
-  tolerance, or the fidelity law must change. That is a separate decision
-  for the maintainer.
+- `gate_problems` adds the `verdict_tol` refusal when no operation is
+  refused by itself. Thus at a chord of 0.02 mm the post refuses each
+  program while the model is in the document, also when each operation
+  leaves stock that covers the excess.
+
+**Posting waits for #2996.** The maintainer decided on 2026-11-20 to
+widen the verdict tolerance for such a model in a follow-up (#2996).
+Until then, on a model that opens at a chord of 0.02 mm, the user can:
+- open the model, see it, measure it and set up stock and fixtures;
+- make and generate operations (the gate names each operation that it
+  cannot verify);
+- read the reduced-fidelity flag and the note.
+
+The user cannot post a program while this model is in the document.
+Export the file again with a tighter tolerance to post one.
 - The user sees the reduced-fidelity flag on the model page, in the MCP
   reply and in the project file, and the note names the gap and the
   file's tolerance.
