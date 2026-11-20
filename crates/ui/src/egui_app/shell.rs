@@ -143,6 +143,11 @@ pub(crate) fn shell_layout(
     }
     state.locate_form_drawn = false;
     egui::CentralPanel::default().show(ui, |ui| {
+        // #2384: the start page stands in for the dock while it is up.
+        if super::home::is_open(state) {
+            super::home::page(ui, state, &pal);
+            return;
+        }
         DockArea::new(&mut *dock)
             .style(DockStyle::from_egui(ui.style().as_ref()))
             // No per-area close-all: it is the X that took whole panes
@@ -159,13 +164,14 @@ pub(crate) fn shell_layout(
     // A locate draft whose form the dock did not draw is dropped (#566).
     crate::locate_pick::sweep(state);
     crate::axis_pick::disarm_hidden(state); // #664/#667: undrawn rows' picks stop
-    // Last, so it floats over the dock: the M1.4 graphical tool editor.
-    // An in-app egui::Window - this is the shell's only kind of extra
-    // surface; the single-OS-window law stands. Closed by default
-    // (`state.tool_editor` is None on a fresh State), so no panel below
-    // it ever moves in the snapshot until something opens it.
+    // Last, so it floats over the dock: the #2397 tool shape editor - the
+    // body, the profile and the holder in their own window, with the
+    // settings in Properties. An in-app egui::Window - this is the shell's
+    // only kind of extra surface; the single-OS-window law stands. Closed
+    // by default (`state.tool_shape_editor` is None on a fresh State), so
+    // no panel below it ever moves in the snapshot until something opens it.
     let windows = crate::frame_cost::span("ui/windows");
-    pages::tool_editor_window(ui.ctx(), state);
+    pages::tool_shape_editor_window(ui.ctx(), state);
     // M1.7d: the G-code viewer - same window law as the tool editor (an
     // in-app egui::Window over the dock; the single-OS-window law
     // stands). None on a fresh State, closed by ✖, reopened by the next
@@ -445,7 +451,7 @@ fn viewport_panel(
     // The M1.5 corner furniture, laid out from the pane rect alone: the
     // pointer law consults it before it arms any gesture, the overlay
     // pass draws it last, and both calls see the same rects.
-    let hud = viewcube::Hud::new(resp.rect);
+    let mut hud = viewcube::Hud::with_controls(resp.rect, state.move_handles || state.rotate_handles);
 
     // One wheel notch must dolly by one line in both shells: egui bakes
     // `line_scroll_speed` pixels into smooth_scroll_delta, so undo it here
@@ -488,11 +494,16 @@ fn viewport_panel(
         if let Some(h) = &hud
             && over_hud
             && left_pressed
+            && viewcube::click(state, h, p)
         {
-            viewcube::click(state, h, p);
+            hud = viewcube::Hud::with_controls(resp.rect, state.move_handles || state.rotate_handles);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if let Some(tool) = state.nav_tool {
+            if state.look_at_armed && left_pressed {
+                // #2818: the armed "Look at" takes this one press. It is
+                // never remembered, so the release picks nothing.
+                crate::look_at::click(state, parr(p));
+            } else if let Some(tool) = state.nav_tool {
                 // A nav tool owns the drag whatever the button is;
                 // a press remembers nothing, so the release's pick
                 // law sees no press to resolve.
@@ -526,7 +537,12 @@ fn viewport_panel(
 
     // #1198 b: Escape drops a body drag in flight - nothing reaches history.
     let handle_drag = state.body_drag.is_some() || state.body_turn.is_some();
-    if handle_drag && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+    if handle_drag
+        && ui.input_mut(|i| {
+            i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)
+                || i.consume_key(egui::Modifiers::SHIFT, egui::Key::Escape)
+        })
+    {
         crate::move_drag::cancel(state);
         crate::turn_drag::cancel(state);
     }
@@ -546,6 +562,8 @@ fn viewport_panel(
     // A body drag's release is its one command, never a pick.
     if left_released && (state.body_drag.is_some() || state.body_turn.is_some()) {
         left_press.take();
+        crate::move_drag::resnap(state, mods.shift);
+        crate::turn_drag::resnap(state, mods.shift);
         crate::move_drag::release(state);
         crate::turn_drag::release(state);
     } else if left_released {
@@ -575,10 +593,15 @@ fn viewport_panel(
     // button promotes to orbit past the travel threshold. Hover recomputes
     // every frame (imgui checks inside draw, so a parked cursor keeps its
     // feature outline); interact gates it on drag/hot/inside itself.
-    if motion != egui::Vec2::ZERO && (state.body_drag.is_some() || state.body_turn.is_some()) {
-        if let Some(p) = pos {
-            crate::move_drag::motion(state, parr(p));
-            crate::turn_drag::motion(state, parr(p));
+    if state.body_drag.is_some() || state.body_turn.is_some() {
+        if motion != egui::Vec2::ZERO
+            && let Some(p) = pos
+        {
+            crate::move_drag::motion_snapped(state, parr(p), mods.shift);
+            crate::turn_drag::motion_snapped(state, parr(p), mods.shift);
+        } else {
+            crate::move_drag::resnap(state, mods.shift);
+            crate::turn_drag::resnap(state, mods.shift);
         }
     } else if motion != egui::Vec2::ZERO {
         match state.drag {
@@ -652,6 +675,15 @@ fn viewport_panel(
         }
         // #738: the alignment draft's picks - filled faces, bold edges, discs.
         crate::frame_cost::time("ui/viewport.align_pick", || crate::align_pick_viz::paint(ui.painter(), egui::Rect::from_min_size(to_px([0.0, 0.0]), egui::vec2(rw, rh)), state, aspect));
+        // #2055: "Do not touch" protected faces and edges while this operation is selected.
+        crate::frame_cost::time("ui/viewport.avoid_marks", || {
+            crate::avoid_viz::paint(
+                ui.painter(),
+                egui::Rect::from_min_size(to_px([0.0, 0.0]), egui::vec2(rw, rh)),
+                state,
+                aspect,
+            );
+        });
         // #709: picked points, violet and never occluded; the hover over them.
         for (a, b) in crate::vertex_pick::picked_point_marks(state, aspect) {
             ui.painter().line_segment([to_px(a), to_px(b)], egui::Stroke::new(2.0, rgb8(super::ground_ink::overlay(super::ground_ink::Overlay::Pick))));
@@ -845,12 +877,13 @@ fn viewport_panel(
         // with the frame's fonts, decides where the ribbon's neighbours sit -
         // the empty-document line and the control legend - so none of them
         // lands on another or on the view cube.
-        let furn = super::viewport_layout::furniture(
+        let furn = super::viewport_layout::furniture_with_bar(
             ui.ctx(),
             resp.rect,
             !empty,
             hud.as_ref().map(|h| h.cube),
             &font,
+            hud.as_ref().map_or_else(|| super::viewport_bar::bar_rect(resp.rect), |h| h.bar),
         );
         if let (Some(r), Some(g)) = (furn.placed.empty, &furn.empty_text) {
             ui.painter().galley_with_override_text_color(
@@ -887,10 +920,14 @@ fn viewport_panel(
                 None
             };
             viewcube::draw(ui, h, &state.cam, state, hp, font);
+            if let Some(controls) = h.controls {
+                super::viewport_bar::controls::draw(ui, state, controls);
+            }
+            super::display_menu::draw(ui, state, h.nav_rect(viewcube::Nav::Display), resp.rect);
         }
     }
     // The furniture asks for the pointer's hand, not the crosshair.
-    if hot && hud.as_ref().is_some_and(|h| pos.is_some_and(|p| h.contains(p))) {
+    if hot && hud.as_ref().is_some_and(|h| pos.is_some_and(|p| h.nav_or_cube_contains(p))) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 }

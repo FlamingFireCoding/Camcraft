@@ -24,6 +24,7 @@
 //! a rapid that does is a [`Warning::RapidInStock`] - the part is stock
 //! too, and steel at rapid feed is a crash.
 
+use super::corner_relief::CornerReliefZone;
 use super::hole_wall::HoleAxis;
 use super::midpose;
 use super::probe::{Atom, Cutter, Frame, Prof};
@@ -56,14 +57,14 @@ pub struct SolidLaw {
 /// Sagitta of the chords an XY arc is swept along, mm; every atom is
 /// widened by it, so the chord sweep encloses the arc's (conservative by
 /// at most this much, never blind).
-const ARC_SAG: f64 = 0.002;
+pub(super) const ARC_SAG: f64 = 0.002;
 
 /// The swept pieces of one move as (start tip, end tip, widening): a
 /// straight move is itself - one exact sweep; an XY arc or helix its
 /// chords at [`ARC_SAG`]; a vertical-plane arc (whose chord deviation is
 /// not horizontal) its on-arc points every `step`, the stated sampling
 /// limit. Bounded, never an unbounded loop on absurd lengths.
-fn pieces(m: &crate::cl::Move, step: f64) -> Vec<(Point3, Point3, f64)> {
+pub(super) fn pieces(m: &crate::cl::Move, step: f64) -> Vec<(Point3, Point3, f64)> {
     match m.arc {
         None => vec![(m.from, m.to, 0.0)],
         Some(arc) if arc.plane.is_xy() => m.segments3(ARC_SAG).into_iter().map(|(a, b)| (a, b, ARC_SAG)).collect(),
@@ -109,7 +110,18 @@ pub fn solid_hits_threaded(
     walls: &[HoleAxis],
     bores: &[ThreadBore],
 ) -> Vec<Warning> {
-    judged(path, facets, cutter, law, walls, bores, false)
+    judged(path, facets, cutter, law, Exemptions { walls, bores, ..Exemptions::none() })
+}
+
+/// [`solid_hits`] for a pocket or slot with inside-corner relief zones (#2400).
+pub fn solid_hits_relieved(
+    path: &Toolpath,
+    facets: &[Triangle],
+    cutter: &Cutter,
+    law: &SolidLaw,
+    reliefs: &[CornerReliefZone],
+) -> Vec<Warning> {
+    judged(path, facets, cutter, law, Exemptions { reliefs, ..Exemptions::none() })
 }
 
 /// The stack's half of the solid law, for a kind whose cutting edge
@@ -127,21 +139,29 @@ pub fn solid_hits_threaded(
 /// part overhang the retract carries the assembly into is a
 /// `RapidInStock` on the lift. Fails closed as [`solid_hits`] does.
 pub fn stack_hits(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw) -> Vec<Warning> {
-    judged(path, facets, cutter, law, &[], &[], true)
+    judged(path, facets, cutter, law, Exemptions { stack_only: true, ..Exemptions::none() })
+}
+
+struct Exemptions<'a> {
+    walls: &'a [HoleAxis],
+    bores: &'a [ThreadBore],
+    reliefs: &'a [CornerReliefZone],
+    stack_only: bool,
+}
+
+impl<'a> Exemptions<'a> {
+    fn none() -> Self {
+        Self { walls: &[], bores: &[], reliefs: &[], stack_only: false }
+    }
 }
 
 /// The one walk both readings share; `stack_only` leaves a cutting
 /// move's edge to its caller's own law.
-fn judged(
-    path: &Toolpath,
-    facets: &[Triangle],
-    cutter: &Cutter,
-    law: &SolidLaw,
-    walls: &[HoleAxis],
-    bores: &[ThreadBore],
-    stack_only: bool,
-) -> Vec<Warning> {
-    let walls = if law.hole_walls { walls } else { &[] };
+fn judged(path: &Toolpath, facets: &[Triangle], cutter: &Cutter, law: &SolidLaw, ex: Exemptions<'_>) -> Vec<Warning> {
+    let walls = if law.hole_walls { ex.walls } else { &[] };
+    let bores = ex.bores;
+    let reliefs = ex.reliefs;
+    let stack_only = ex.stack_only;
     let first_cut = path.moves.iter().position(|m| m.kind != MoveKind::Rapid);
     if facets.is_empty() {
         return Vec::new();
@@ -179,7 +199,7 @@ fn judged(
             !set.is_empty()
                 && (pieces(m, law.step).into_iter().any(|(a, b, grow)| {
                     let fr = Frame::new(a, axis);
-                    index.hits(&fr, fr.local(b), set, allow, grow, &axes_in(&fr, walls), bores)
+                    index.hits(&fr, fr.local(b), set, allow, grow, &axes_in(&fr, walls), bores, reliefs)
                 }) || mid.iter().any(|iv| {
                     // The interval's tip travel swept exactly under the
                     // pose held at its midpoint: the pose's own turn
@@ -187,7 +207,7 @@ fn judged(
                     // (STEP of far-end travel), the same as the fixture
                     // laws' posed sweep.
                     let fr = Frame::new(iv.p0, normalize_axis(iv.am).filter(|a| !is_upright(a)));
-                    index.hits(&fr, fr.local(iv.p1), set, allow, grow_mid, &axes_in(&fr, walls), bores)
+                    index.hits(&fr, fr.local(iv.p1), set, allow, grow_mid, &axes_in(&fr, walls), bores, reliefs)
                 }))
         };
         if m.kind == MoveKind::Rapid {
@@ -197,7 +217,7 @@ fn judged(
                 // Out of the kerf that cut made: the edge's start pose is
                 // the caller's; everything the lift enters is ours.
                 let (fr, column) = (Frame::new(m.from, None), rise(&edge, m.to.z - m.from.z));
-                if hits(&body) || (!column.is_empty() && index.hits(&fr, [0.0; 3], &column, allow, 0.0, &[], &[])) {
+                if hits(&body) || (!column.is_empty() && index.hits(&fr, [0.0; 3], &column, allow, 0.0, &[], &[], &[])) {
                     out.push(Warning::RapidInStock { at: i });
                 }
                 continue;

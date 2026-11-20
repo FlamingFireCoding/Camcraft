@@ -16,6 +16,9 @@
 // First, so every module below sees its macros (`diag_warn!`, `diag_info!`).
 #[macro_use]
 pub mod diag;
+pub mod display_mode;
+pub mod draw_list;
+pub(crate) mod look_at;
 
 pub mod cli_options;
 #[cfg(test)]
@@ -30,6 +33,7 @@ mod launch_file_tests;
 pub mod actions;
 pub mod play_precalc;
 pub mod align_pick_viz;
+pub mod avoid_viz;
 pub(crate) mod machine_modes;
 mod axis_note;
 mod build_info;

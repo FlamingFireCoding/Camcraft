@@ -145,7 +145,11 @@ use super::*;
 /// changes. Absent is not linked - what every v71 model was - so a v71
 /// file steps up unchanged. An old reader must refuse a v72 file rather
 /// than save a linked model back unlinked without a word.
-pub const PROJECT_VERSION: u32 = 72;
+/// v73 (#2055): an operation's `area` controls may state `"do_not_touch"`
+/// protected faces/edges and standoff clearance. An old reader (up to v72)
+/// must refuse the file rather than ignore the protection and cut across a
+/// protected feature. A v72 file steps up unchanged with empty protection.
+pub const PROJECT_VERSION: u32 = 73;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

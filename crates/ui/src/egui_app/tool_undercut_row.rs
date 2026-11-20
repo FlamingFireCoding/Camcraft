@@ -15,7 +15,8 @@ use camcraft_app::undercut;
 
 use crate::state::{State, ToolUi};
 
-use super::fields::{field, num_plain};
+use super::fields::num_plain_row;
+use super::layout::prop_row_hint;
 
 /// Seed valid numbers for an undercut kind when the draft was just
 /// switched onto it and its inherited numbers would fail `undercut::refusal`
@@ -56,9 +57,12 @@ pub(super) fn dovetail_row(ui: &mut Ui, state: &mut State) {
     if state.tool_ui.tool_kind() != ToolKind::Dovetail {
         return;
     }
-    field(ui, "Flank angle (deg)");
-    num_plain(ui, &mut state.tool_ui.tip_angle);
-    ui.label("angle between the dovetail flank and its bottom face (0 to 90 degrees)");
+    prop_row_hint(
+        ui,
+        "Flank angle (deg)",
+        "angle between the dovetail flank and its bottom face (0 to 90 degrees)",
+        |ui| num_plain_row(ui, &mut state.tool_ui.tip_angle),
+    );
 }
 
 #[cfg(test)]

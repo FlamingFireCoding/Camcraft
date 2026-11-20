@@ -39,6 +39,19 @@
 6. **Refusal instead of support where nothing is verified:** a flipped WCS
    and a rotated work offset refuse the kind; an aligned setup and a WCS
    yaw do not list it (refused by their own doors); no 3+2 tilt.
+7. **A cylinder against a 'Do not touch' item** (merge of main, #2055).
+   Main's avoid law grows each atom by the clearance
+   (`swept::rho_expanded`). For `Prof::Dove` and `Prof::Ball` it reads the
+   circumscribed cylinder: the head's largest radius over the atom's
+   height. `avoid_poly` stretches an atom over a Z range, and a profile
+   that is not non-decreasing would then report too small a radius above
+   its bottom. The cylinder holds the head at each stretch, so the law
+   can refuse a legal move near a protected item by at most the head's
+   taper, and never passes a violation. The stretched atom has no `cap`
+   allowance: a protected item is never cut. *Dropped:* the exact grown
+   frustum and ball, which are correct only for an atom that is not
+   stretched and need a second code path for the keep-out.
+   Pinned by `crates/sim/tests/verify_avoid_undercut.rs`.
 
 **Why**
 
