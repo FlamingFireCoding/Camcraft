@@ -77,6 +77,11 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
         return Err("the patched parameters could not be read back".into());
     };
     let mut back = back.get(&key).and_then(Value::as_object).cloned().unwrap_or_default();
+    // The project DTO omits a zero wire taper. Use the typed value when
+    // checking the patch so an explicit return to vertical is accepted.
+    if let OpParams::WireContour(wire) = &next {
+        back.insert("taper_deg".into(), json!(wire.taper_deg));
+    }
     // An opt-in flag (`blend_turns`) is written only when ON, so `false`
     // never comes back: it is kept when `true` would have come back.
     for (k, v) in patch {
