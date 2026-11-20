@@ -21,6 +21,28 @@ use support::*;
 #[path = "example_catalog/contract.rs"]
 mod contract;
 
+/// #2865: three original parts demonstrate the five additional turning kinds.
+#[test]
+fn turning_cases_cover_five_additional_kinds() {
+    for (case, kinds) in [
+        ("bushing", &["BORING", "FORM TURNING"][..]),
+        ("contour-finishes", &["CHAMFERING", "MULTI-PASS TURNING"][..]),
+        ("taper-finish", &["TAPER TURNING"][..]),
+    ] {
+        let dir = repo(&format!("examples/catalog/turning/{case}"));
+        assert!(dir.is_dir(), "catalog case turning/{case} is missing");
+        let program = fs::read_to_string(dir.join(format!("{case}.nc"))).expect("read case NC");
+        let actual: Vec<&str> = program
+            .lines()
+            .filter(|line| line.starts_with("(OPERATION: "))
+            .filter_map(|line| line.split(" - ").nth(1))
+            .collect();
+        assert_eq!(actual, kinds, "turning/{case} operation kinds");
+        assert!(program.contains("G18"), "turning/{case} states the ZX plane");
+        assert!(!program.lines().any(|line| word(line, 'Y').is_some()));
+    }
+}
+
 /// #2971: keep both named results for the groove and part-off case.
 #[test]
 fn groove_part_off_case_has_two_named_test_results() {
@@ -120,6 +142,42 @@ mod catalog_2d_hole_work {
     #[test]
     fn rebuilds() {
         run_case("2d", "hole-work", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_bushing {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "bushing", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "bushing", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_contour_finishes {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "contour-finishes", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "contour-finishes", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_taper_finish {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "taper-finish", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "taper-finish", "rebuilds", rebuild);
     }
 }
 
