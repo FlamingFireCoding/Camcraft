@@ -499,7 +499,11 @@ fn viewport_panel(
             hud = viewcube::Hud::with_controls(resp.rect, state.move_handles || state.rotate_handles);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if let Some(tool) = state.nav_tool {
+            if state.look_at_armed && left_pressed {
+                // #2818: the armed "Look at" takes this one press. It is
+                // never remembered, so the release picks nothing.
+                crate::look_at::click(state, parr(p));
+            } else if let Some(tool) = state.nav_tool {
                 // A nav tool owns the drag whatever the button is;
                 // a press remembers nothing, so the release's pick
                 // law sees no press to resolve.
@@ -919,6 +923,7 @@ fn viewport_panel(
             if let Some(controls) = h.controls {
                 super::viewport_bar::controls::draw(ui, state, controls);
             }
+            super::display_menu::draw(ui, state, h.nav_rect(viewcube::Nav::Display), resp.rect);
         }
     }
     // The furniture asks for the pointer's hand, not the crosshair.
