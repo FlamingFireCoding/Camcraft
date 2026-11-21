@@ -204,6 +204,7 @@ fn sketch_frame_caches_skip_still_frames_and_track_changed_inputs() {
     let l0 = crate::sketch_memo::sketch_layer_builds();
     let z0 = operation::sketch_z_builds();
     let u0 = crate::height_memo::unresolved_builds();
+    let f0 = operation::sketch_z_fresh_reads();
     let ((), costs) = crate::frame_cost::record(|| {
         for _ in 0..4 {
             harness.step();
@@ -213,6 +214,7 @@ fn sketch_frame_caches_skip_still_frames_and_track_changed_inputs() {
     assert_eq!(operation::sketch_chain_info_builds() - i0, 0, "still frame scans no sketch_chain_infos");
     assert_eq!(crate::sketch_memo::sketch_layer_builds() - l0, 0, "still frame scans no sketch layers");
     assert_eq!(operation::sketch_z_builds() - z0, 0, "still frame samples no sketch Z range");
+    assert_eq!(operation::sketch_z_fresh_reads() - f0, 0, "still frame takes no authoritative sketch Z read");
     assert_eq!(crate::height_memo::unresolved_builds() - u0, 0, "still frame resolves no unresolved_note");
     for span in [
         "ui/properties.op.fields.contour_auto_side",
@@ -258,11 +260,22 @@ fn sketch_frame_caches_skip_still_frames_and_track_changed_inputs() {
     // Clicking a layer changes src -> recomputes chain infos and contour_auto_side once.
     let i1 = operation::sketch_chain_info_builds();
     let w1 = operation::selection_walks();
+    let cb = crate::sketch_chip_memo::sketch_chip_builds();
     harness.get_by_label("holes (1)").click();
     harness.run_steps(2);
+    assert!(crate::sketch_chip_memo::sketch_chip_builds() > cb, "the new layer chip is built through its cache");
     assert!(operation::sketch_chain_info_builds() > i1);
     assert!(operation::selection_walks() > w1);
     assert_fresh(&harness);
+
+    // The layer pick shows a Geometry chip; still frames read it from the cache.
+    let chips = harness.state().state.geo_chips();
+    assert!(chips.iter().any(|c| c.label.contains("1 closed, 0 open") && !c.missing), "{:?}", chips.iter().map(|c| &c.label).collect::<Vec<_>>());
+    let c0 = crate::sketch_chip_memo::sketch_chip_builds();
+    for _ in 0..4 {
+        harness.step();
+    }
+    assert_eq!(crate::sketch_chip_memo::sketch_chip_builds() - c0, 0, "still frame reads no sketch chip");
 
     // Changing stock Z height recomputes sketch_z_range and unresolved_note once, and undo restores.
     let z1 = operation::sketch_z_builds();
