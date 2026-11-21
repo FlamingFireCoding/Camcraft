@@ -36,16 +36,16 @@ const TOOLS: &[Tool] = &[
     Tool { name: "delete_tool", description: "Delete a document tool through the app's undoable DeleteTool, one undo step (undo restores it with its number, holder body and cutter). Refused by tool name, changing nothing: an unknown name, an entity that is not a tool, or a tool an operation still uses (give that operation another tool with set_tool first).", schema: s_name_only_tool, run: tool_delete::delete_tool },
     Tool { name: "export_tool_library", description: "Write the document's tools to a CamCraft library (.camtools), a Tormach PathPilot tool table (.csv), or a Hurco WinMax tool library (.TCM), detected from path or chosen with format. units (mm or inch) applies to controller tables and defaults to document units. Refuses a document with no tools, an unwriteable path, or a tool that cannot fit the target table.", schema: s_library, run: export_tool_library },
     Tool { name: "import_tool_library", description: "Import a CamCraft library (.camtools/.json), Tormach PathPilot tool table (.csv), or Hurco WinMax tool library (.TCM) as one undo step. format (default auto) overrides detection; units (mm or inch) applies to controller tables and defaults to document units. mode add (default): skips an identical tool, renames a clashing name; update: updates matching names in place; replace: removes absent tools unless used. holders (default true) takes holders from .camtools files. Malformed rows, unsupported Hurco tool types, or tool-number clashes refuse by name.", schema: s_import_library, run: import_tool_library },
-    Tool { name: "set_stock", description: "Set the active setup's stock: a box, a cylinder, or a copy of a model.", schema: s_stock, run: edit::set_stock },
+    Tool { name: "set_stock", description: "Set the active setup's stock: a box, a cylinder, or a copy of a model, through the undoable SetStock. Optional axis (z, x or y) or angles_deg {yaw, pitch, roll} turns it; the simulation refuses a stock tilted off the axes, by name.", schema: s_stock, run: super::stock_tools::set_stock },
     Tool { name: "add_operation", description: "Add an operation of a kind (see list_operation_types) with a tool, on the stock, a model or a placed DXF profile (2D milling, plasma and wire EDM kinds only; a kind that needs a solid model refuses a profile by name), seeded with the kind's defaults and an optional params patch. Not generated until generate runs.", schema: s_add_op, run: edit::add_operation },
     Tool { name: "edit_operation", description: "Patch an operation's parameters: the given fields replace the current ones (JSON merge patch over the kind's fields; null clears an optional field). One undo step.", schema: s_edit_op, run: edit::edit_operation },
     Tool { name: "detect_holes", description: "Fill a Drill, Bore or Thread operation's hole list from its source model's holes (the app's Detect holes button); a Thread operation whose params say external: true gets the model's upright round bosses instead. A Bore operation leaves out holes wider than its tool's ring clears without a core (3 x tool diameter + 2 x stock to leave) and names each in `skipped`. A Drill operation keeps a hole wider than its Drill-kind drill (a pilot is valid) and names each in `undersize`; its toolpath then carries a `drill_undersize` warning per such hole that does not hold the post. One undo step.", schema: s_name, run: edit::detect_holes },
     Tool { name: "detect_pockets", description: "A model's recognised pockets and slots (closed or open pockets, straight slots with open, round or square ends): boundary, floor and top Z, depth, tightest inside corner, slot width and open sides. With create, adds the operation that machines one of them (a Pocket over its floor, or a Slot along its centreline). One undo step.", schema: pockets::s_detect_pockets, run: pockets::detect_pockets },
     Tool { name: "delete_operation", description: "Delete an operation and its cached toolpath.", schema: s_name, run: edit::delete_operation },
     Tool { name: "set_tool", description: "Assign a document tool to an operation (the tool must suit the operation's kind).", schema: s_set_tool, run: edit::set_tool },
-    Tool { name: "list_features", description: "A model's (or a fixture's) pickable features with stable ids: faces (each boundary loop with the edge chains that run it), edge chains, welded smooth faces and vertices, in world coordinates.", schema: pick::s_list_features, run: features::list_features },
-    Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, or picked features), its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
-    Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
+    Tool { name: "list_features", description: "A model's, fixture's, or DXF profile's pickable features with stable ids: faces, edge chains, welded smooth faces and vertices on models, or sketch chains and layers on DXF profiles, in world coordinates.", schema: pick::s_list_features, run: features::list_features },
+    Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, a DXF profile, or picked features), per-chain overrides, its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
+    Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops, or DXF sketch chains and layers with optional per-chain side and direction overrides) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
     Tool { name: "set_operation_area", description: "Replace an operation's area controls (containment, offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step.", schema: area::s_set_area, run: area::set_operation_area },
     Tool { name: "get_operation_do_not_touch", description: "Read an operation's 'Do not touch' protected faces/edges and standoff clearance (mm).", schema: pick::s_op, run: do_not_touch::get_operation_do_not_touch },
     Tool { name: "set_operation_do_not_touch", description: "Set protected faces or edge chains (plus standoff clearance, mm) that 2D Offset and 3D Pocket paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step.", schema: do_not_touch::s_set_do_not_touch, run: do_not_touch::set_operation_do_not_touch },
@@ -87,6 +87,7 @@ pub(super) fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::rotary_tools::TOOLS)
         .chain(super::thread_infeed_tools::TOOLS)
         .chain(super::workholding_tools::TOOLS)
+        .chain(super::sheet_job_tools::TOOLS)
         .chain(super::order_tools::TOOLS)
         .chain(super::sinker_tools::TOOLS)
         .chain(super::machine_tools::TOOLS)
@@ -345,7 +346,11 @@ fn s_stock() -> Value {
             "cylinder": { "type": "object", "description": "{diameter, height} in mm.",
                 "properties": { "diameter": {"type": "number"}, "height": {"type": "number"} },
                 "required": ["diameter", "height"] },
-            "from_model": { "type": "string", "description": "A model name whose mesh becomes the stock." }
+            "from_model": { "type": "string", "description": "A model name whose mesh becomes the stock." },
+            "axis": { "type": "string", "enum": ["z", "x", "y"],
+                "description": "The direction of the cylinder axis or the box height (default z). x and y lay the stock on its side." },
+            "angles_deg": { "type": "object", "description": "A custom turn in degrees instead of axis: {yaw, pitch, roll}, each 0 when absent.",
+                "properties": { "yaw": {"type": "number"}, "pitch": {"type": "number"}, "roll": {"type": "number"} } }
         }),
         &[],
     )

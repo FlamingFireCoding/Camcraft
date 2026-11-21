@@ -43,6 +43,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut section_z,
         mut picked_region,
         mut contour_sel,
+        mut sketch_contour,
         mut drive_chains,
         mut slot_bound,
         mut rotary_picks,
@@ -72,10 +73,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         unit,
         wcs_yaw,
         spindle_note: _,
+        post_order,
         carried_overhang: _,
         op_name: _,
         wire,
         wire_ruled,
+        wire_sketch,
         sinker_gap,
         sinker_pass,
         sinker_wear,
@@ -141,19 +144,29 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // the kerf offset of the machine's condition, on the stated side;
     // the generator certifies its kerf and corner laws (#534 verifies).
     if let OpParams::WireContour(op) = &params {
-        let picks = contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains));
+        let cond = wire.ok_or_else(|| unreached("wire condition"))?;
+        let k = cond.0.wire_diameter * 0.5 + cond.0.gap;
+        let picks = if let Some(sketch) = &wire_sketch {
+            Some((vec![sketch.straight_ring(op).map_err(GenError::Invalid)?], Vec::new()))
+        } else {
+            contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains))
+        };
         // #1109: an open run is entered from the stock's edge - the
         // setup's stock outline, read only when a run is picked.
         let stock = || stock_facets.as_deref().and_then(|f| slice::project(f, FOOTPRINT_SAMPLES).ok()).filter(|r| !r.is_empty());
-        return super::wire_op::generate_wire(
+        let (path, warnings) = super::wire_op::generate_wire(
             op,
-            wire.ok_or_else(|| unreached("wire condition")),
+            Ok(cond),
             &hs,
             picks,
             wire_ruled,
             || region_for_job(&mut picked_region, &mut section_z, &src, &params, &material, None),
             stock,
-        );
+        )?;
+        if let Some(sketch) = &wire_sketch {
+            sketch.check_path(&path, k).map_err(GenError::Invalid)?;
+        }
+        return Ok((path, warnings));
     }
     // The program ahead, cut only when a law asks (#89, #96 review).
     let mut verify_prior = super::drill_prior::PriorCell::new(verify_prior);
@@ -178,6 +191,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 &mut stock_aabb,
                 &mut picked_region,
                 &mut contour_sel,
+                &mut sketch_contour,
                 &mut drive_chains,
                 &mut slot_bound,
                 &mut prior,
@@ -271,7 +285,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // controlled one, resolved here once into the slot `region_for_job`
     // reads first. The Contour selection arm resolves its own (its side
     // is only known there). Face keeps the band constraints and turn.
-    let contour_sel_arm = matches!((&params, &src), (OpParams::Contour { .. }, SrcRef::Selection(_)));
+    let contour_sel_arm = matches!((&params, &src), (OpParams::Contour { .. }, SrcRef::Selection(_)))
+        || sketch_contour.is_some();
     let mut area = area.transpose()?;
     // A Contour under an open boundary rides the chain itself (its arm
     // below, `contour_open`): no area law runs for it.
@@ -451,8 +466,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // Backstop for a committed file that carries Inside on a
             // whole-model source (commands refuse it at creation): the
             // mirror-gouge law must never reach a path.
-            if let Some(msg) = side_sane(&params, &src) {
-                return Err(GenError::Invalid(msg));
+            if sketch_contour.is_none()
+                && *side == Side::Inside
+                && !matches!(&src, SrcRef::Selection(_))
+            {
+                return Err(GenError::Invalid(
+                    "Side 'Inside' needs picked rings: this source machines the whole model section, whose \
+                     hole walls are already cut from inside - switch Side to Auto, or pick the wall's edges"
+                        .into(),
+                ));
             }
             // Control-side compensation (M13.11) rides the closed-ring
             // contour only: an open boundary, an open run and a 3+2
@@ -493,7 +515,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 blend_turns: *blend_turns,
             links: lk,
             };
-            let (region, path) = if contour_open {
+            let (region, path) = if let Some(plan_res) = sketch_contour.take() {
+                let mut carry = |reach: &Region, candidate: &Toolpath| -> Option<f64> {
+                    carry_need!(reach, candidate)
+                };
+                let (reg, path, mat_top) = super::contour_sketch::generate_plan(
+                    plan_res?,
+                    &cp,
+                    *side,
+                    *climb,
+                    area.take(),
+                    d,
+                    comp_name,
+                    &mut carry,
+                )?;
+                lk.approach.material_top = mat_top;
+                (reg, path)
+            } else if contour_open {
                 // The open boundary replaces the selection's own path:
                 // the selection's area only says which side is Inside,
                 // and is what the verify keeps the tool out of.
@@ -3264,7 +3302,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let turned_axis = super::first_traverse::turned_axis(&params, mill_order, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
     // #3084: the work that the machine's own work-turning rotaries can
     // leave at any pose before the rotary words; an unbounded one refuses.
-    let posed_turn = super::first_traverse_posed::turn_of(&params, mill_order, super::first_traverse::rotaries_of(machine_rotaries.as_ref()), wcs_origin).map_err(GenError::Invalid)?;
+    // #3100: unless the setup's post declares that it turns the rotaries
+    // at the safe Z before that traverse (`rotariesBeforeTraverse`).
+    let posed_turn = if post_order.first { None } else { super::first_traverse_posed::turn_of(&params, mill_order, super::first_traverse::rotaries_of(machine_rotaries.as_ref()), wcs_origin).map_err(GenError::Invalid)? };
     let rides = if turned_axis.is_some() || posed_turn.is_some() { super::first_traverse::rides_of(stock_facets.as_deref(), stock_aabb, &material.facets) } else { Vec::new() };
     let turned = turned_axis.map(|axis| super::first_traverse::Turned { axis, rides: &rides, turning: &workholding.0, fixed: &workholding.1 });
     // #339 slice 5: an upright mill's links are planned over the steel -
@@ -3446,7 +3486,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3077's reading.
             let mill_post_cross = machine_kind == crate::machine::Kind::MillTurn && !lathe_tool && matches!(&params, OpParams::Drill { cross, .. } if !cross.is_empty());
             super::first_traverse::judge(&path, &params, mill_order || mill_post_cross, None, &over, &mut warns);
-            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance };
+            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()) };
             super::first_traverse_posed::judge(&path, &params, None, &posed, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
@@ -3804,7 +3844,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2987: the table read where the tool can meet it.
             let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
             let table_note = super::first_traverse::judge(&path, &params, mill_order, Some(f), &over, &mut warns);
-            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance };
+            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()) };
             super::first_traverse_posed::judge(&path, &params, Some(f), &posed, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept

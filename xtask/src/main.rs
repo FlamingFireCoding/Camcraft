@@ -92,6 +92,10 @@ mod single;
 #[cfg(test)]
 mod step_tests;
 mod suites;
+mod unit_env;
+mod unit_sweep;
+#[cfg(test)]
+mod unit_sweep_tests;
 #[cfg(test)]
 mod tests;
 mod verdict;
