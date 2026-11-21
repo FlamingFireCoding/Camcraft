@@ -60,3 +60,17 @@
 `crates/motion/src/finishing3d/deburr_size.rs`. If ball-tipped cutters
 come, the Round refusal in `DeburrParams::validate` must become a check
 of the tool.
+
+**Review corrections for PR #3220.** These replace the earlier sizing and
+version decisions above. Size each cut from the cone contacts with both
+faces. The symmetric wedge setback alone does not give the actual cone
+radius on a general face orientation. Refuse a real face without a valid
+cone contact, including an underside that a vertical cone cannot reach.
+An open rim uses an orthogonal virtual second face. Do not use the old
+symmetric drop when the real contact calculation fails: that would state
+the wrong cut size. Tests measure the actual contacts independently.
+
+Use project v76. Main already uses v75 for machine controller data.
+Migrate Deburr widths from v75 and earlier, and preserve the controller
+fields. Check every pass against the tip window before emitting moves.
+Normalize the accepted numeric skin vertically to clearance before travel.

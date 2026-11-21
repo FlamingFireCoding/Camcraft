@@ -196,3 +196,26 @@ fn the_size_law_names_the_wedges_it_reaches_and_its_bound() {
         assert!(w.setback(1.0, theta).is_some_and(|s| s <= w.max_setback(1.0) + 1e-12), "{theta}");
     }
 }
+
+#[test]
+fn a_real_bottom_face_without_cone_contact_refuses_by_name() {
+    let mut p = params(DeburrBreak::default());
+    p.top_z = -10.0;
+    p.bottom_z = -12.0;
+    let error = deburr(&wedge_block(), &p).expect_err("the cutter cannot contact the underside");
+    assert!(error.to_string().contains("unsupported face orientation"), "{error}");
+}
+
+#[test]
+fn clearance_normalizes_the_numeric_skin_before_any_traverse() {
+    let mut p = params(DeburrBreak::default());
+    p.top_z = -p.drop();
+    p.bottom_z = p.top_z;
+    p.clearance_z = p.top_z;
+    let t = deburr(&wedge_block(), &p).expect("the single final tip fits the exact window");
+    assert_eq!(t.moves.last().expect("moves").to.z, p.clearance_z, "finish exactly at clearance");
+    for m in t.moves.iter().filter(|m| m.kind == MoveKind::Rapid && (m.from.x != m.to.x || m.from.y != m.to.y)) {
+        assert_eq!(m.from.z, p.clearance_z, "a traverse starts at clearance");
+        assert_eq!(m.to.z, p.clearance_z, "a traverse stays at clearance");
+    }
+}
