@@ -26,3 +26,22 @@
 - Serialize the new key for old rectangular operations. Omitting it keeps their stored files unchanged.
 
 **Cost to change later:** Medium. A different wall or corner law changes one motion module and its tests. Removing the parameter also changes the operation, DTO, digest and MCP schema. Directional orbit support needs a separate proof of coverage.
+
+## #1810 review fixes on the refresh with main (undercut laws carried from #2714)
+
+**Decided:**
+
+- In `verify::swept::rho_expanded`, keep main's arm that reads a dovetail and a lollipop ball as the circumscribed cylinder. Remove this branch's dovetail-cylinder and lollipop-capsule arms. Main's arm made them unreachable.
+- In `verify::avoid_poly`, keep main's `cap: false` for a protected item.
+- In the undercut stock law, replace the ring samples with an exact disc-polygon test: the centre is in the stock, or a stock edge is within the head radius.
+- Draw a lollipop as its ball united with the neck, up to the height where the ball narrows to the neck. Let the drawn-cutter width law accept the undercut head that the laws read above the flute top.
+
+**Why:** The cylinder contains the capsule, so main's reading is the more conservative keep-out. Both readings are sound, and the brute-force pins still prove the cylinder never under-reports. The sampled stock test missed a stock corner between samples (review finding 1). The exact test cannot miss it. The drawn outline must show the radius the verifier and the stock simulation use (review finding 3).
+
+**Considered and dropped:**
+
+- Keep the capsule arm for the ball. It is tighter, but it weakens main's merged guard.
+- Make the ring samples denser. A corner can still fall between any finite samples.
+- Draw the upper ball only in the preview and not in the cutter law. Then the stored cutter outline would refuse the shape that the laws read.
+
+**Cost to change later:** Low. Each choice is one function with its own pins.

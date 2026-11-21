@@ -80,6 +80,37 @@ fn the_drawn_outline_is_the_head_then_the_neck() {
     assert!(ball.iter().all(|&(z, r)| z.is_finite() && r.is_finite() && r <= 5.0 + 1e-12));
 }
 
+/// The widest drawn radius at height `z` on the outline `p`.
+fn drawn_at(p: &[(f64, f64)], z: f64) -> f64 {
+    p.windows(2)
+        .filter(|w| w[0].0.min(w[1].0) <= z && z <= w[0].0.max(w[1].0))
+        .map(|w| {
+            let (a, b) = (w[0], w[1]);
+            if (b.0 - a.0).abs() < 1e-12 { a.1.max(b.1) } else { a.1 + (b.1 - a.1) * (z - a.0) / (b.0 - a.0) }
+        })
+        .fold(0.0, f64::max)
+}
+
+#[test]
+fn the_drawn_lollipop_is_the_whole_ball_united_with_the_neck() {
+    // The 10 mm ball on a 4 mm neck that starts at its equator (Z 5).
+    // At Z 8 the ball is sqrt(25 - 9) = 4 mm wide, not the 2 mm neck.
+    let t = lollipop();
+    let p = t.profile();
+    assert!((drawn_at(&p, 8.0) - 4.0).abs() < 0.05, "Z 8 draws {}: {p:?}", drawn_at(&p, 8.0));
+    // Above the equator up to the neck top: never narrower than the
+    // ball the verifier reads, or the neck. The chords may stand a
+    // little inside the circle.
+    let u = Undercut::of(&t).unwrap();
+    for k in 0..=200 {
+        let z = 5.0 + 30.0 * f64::from(k) / 200.0;
+        let want = u.rho(z).max(2.0);
+        assert!(drawn_at(&p, z) >= want - 0.05, "Z {z}: drawn {} < {want}", drawn_at(&p, z));
+    }
+    // The outline climbs: no point goes back down in Z.
+    assert!(p.windows(2).all(|w| w[1].0 >= w[0].0), "{p:?}");
+}
+
 #[test]
 fn each_outline_passes_the_drawn_cutter_law() {
     for t in [tslot(), dovetail(), lollipop()] {
