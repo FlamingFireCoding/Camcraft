@@ -13,6 +13,8 @@ use crate::dxf::ImportSummary;
 
 /// The deepest chain of `use` references followed.
 const MAX_USE_DEPTH: usize = 16;
+/// Bound the active call stack across both groups and reference expansion.
+const MAX_ACTIVE_DEPTH: usize = 256;
 
 /// Never drawn and never noted: definitions and document furniture.
 const SILENT: &[&str] = &[
@@ -66,19 +68,34 @@ impl<'a> Walk<'a> {
 
     /// Walk the children of the root element under the root transform.
     pub fn root(&mut self, root_map: Affine) -> Result<(), SvgError> {
+        if let Some(root) = self.node(0) {
+            if hidden(root) {
+                return self.note("hidden");
+            }
+            for attr in ["clip-path", "mask"] {
+                if root.attr(attr).is_some() {
+                    self.note(attr)?;
+                }
+            }
+        }
         let children = self.node(0).map(|n| n.children.clone()).unwrap_or_default();
         for child in children {
             let layer = self.node(child).filter(|n| n.name == "g").map(|n| {
                 n.attr("inkscape:label").or_else(|| n.attr("id")).unwrap_or(DEFAULT_LAYER).to_owned()
             });
             self.sink.layer = layer.unwrap_or_else(|| DEFAULT_LAYER.to_owned());
-            self.element(child, root_map, 0)?;
+            self.element(child, root_map, 0, 0)?;
         }
         Ok(())
     }
 
     /// Draw element `index` whose parent maps user space through `parent`.
-    fn element(&mut self, index: usize, parent: Affine, uses: usize) -> Result<(), SvgError> {
+    fn element(&mut self, index: usize, parent: Affine, uses: usize, depth: usize) -> Result<(), SvgError> {
+        if depth >= MAX_ACTIVE_DEPTH {
+            return Err(invalid(format!(
+                "active traversal depth exceeds {MAX_ACTIVE_DEPTH} elements across groups and references"
+            )));
+        }
         if self.visits >= self.max_entities {
             return Err(invalid(format!(
                 "traversal visits more than {} elements: reference expansion exceeds the import budget",
@@ -106,11 +123,11 @@ impl<'a> Walk<'a> {
         match name.as_str() {
             "g" | "a" | "switch" => {
                 for child in node.children.clone() {
-                    self.element(child, map, uses)?;
+                    self.element(child, map, uses, depth + 1)?;
                 }
                 Ok(())
             }
-            "use" => self.reference(node, map, uses),
+            "use" => self.reference(node, map, uses, depth),
             "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon" => {
                 self.count()?;
                 let saved = std::mem::replace(&mut self.sink.map, map);
@@ -131,7 +148,7 @@ impl<'a> Walk<'a> {
     }
 
     /// A `use` of an element in this file: drawn at its x, y; any other reference is noted.
-    fn reference(&mut self, node: &'a Node, map: Affine, uses: usize) -> Result<(), SvgError> {
+    fn reference(&mut self, node: &'a Node, map: Affine, uses: usize, depth: usize) -> Result<(), SvgError> {
         let href = node.attr("href").or_else(|| node.attr("xlink:href")).unwrap_or("").trim();
         let tree = self.tree;
         let target = href.strip_prefix('#').and_then(|id| tree.nodes.iter().position(|n| n.attr("id") == Some(id)));
@@ -147,7 +164,7 @@ impl<'a> Walk<'a> {
         match self.node(target) {
             // A symbol needs its own viewport, including the dimensions of this use.
             Some(sym) if sym.name == "symbol" => Err(invalid("<symbol> viewport references are not supported")),
-            _ => self.element(target, map, uses + 1),
+            _ => self.element(target, map, uses + 1, depth + 1),
         }
     }
 }

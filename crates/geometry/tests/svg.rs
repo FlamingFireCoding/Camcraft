@@ -191,6 +191,30 @@ fn svg_rounded_rect_polyline_and_hidden_or_unsupported_content() {
 }
 
 #[test]
+fn svg_root_display_none_skips_all_descendants_and_reports_hidden_content() {
+    for attr in [r#"display="none""#, r#"style="display: none""#] {
+        let text = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" {attr}><rect width="20" height="20"/></svg>"#
+        );
+        let doc = svg::parse(text.as_bytes(), None).expect("hidden root reads");
+        assert!(doc.primitives.is_empty(), "{attr}: hidden root must emit no geometry");
+        assert_eq!(doc.summary.skipped.get("hidden"), Some(&1), "{attr}: {:?}", doc.summary.skipped);
+    }
+}
+
+#[test]
+fn svg_root_clipping_and_masking_are_reported_as_unsupported() {
+    for attr in ["clip-path", "mask"] {
+        let text = format!(
+            r##"<svg width="100mm" height="100mm" viewBox="0 0 100 100" {attr}="url(#c)"><defs><clipPath id="c"><rect width="5" height="5"/></clipPath></defs><rect width="20" height="20"/></svg>"##
+        );
+        let doc = svg::parse(text.as_bytes(), None).expect("unsupported root attribute reads");
+        assert_eq!(doc.primitives.len(), 4);
+        assert_eq!(doc.summary.skipped.get(attr), Some(&1), "{attr}: {:?}", doc.summary.skipped);
+    }
+}
+
+#[test]
 fn svg_bunched_curve_vertices_merge_so_no_piece_is_shorter_than_the_join_tolerance() {
     // A cubic with both control points on its start runs as x = 10 t^3: evenly spaced t gives
     // pieces far shorter than the 0.01 mm join tolerance near the start. They must merge.

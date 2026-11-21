@@ -137,6 +137,33 @@ fn svg_acyclic_shared_references_refuse_excess_traversal_work() {
 }
 
 #[test]
+fn svg_combined_group_and_reference_depth_is_refused_without_stack_overflow() {
+    // Each XML subtree and reference chain is legal by itself. Their combined
+    // active traversal must be refused before it exhausts a normal test stack.
+    let mut body = String::from("<defs>");
+    for level in 0..16 {
+        body.push_str(&format!(r#"<g id="g{level}">"#));
+        body.push_str(&"<g>".repeat(230));
+        if level < 15 {
+            body.push_str(&format!(r##"<use href="#g{}"/>"##, level + 1));
+        } else {
+            body.push_str(r#"<rect width="10" height="10"/>"#);
+        }
+        body.push_str(&"</g>".repeat(231));
+    }
+    body.push_str(r##"</defs><use href="#g0"/>"##);
+    refuses(&page(&body), "depth");
+}
+
+#[test]
+fn svg_near_circular_large_ellipse_cannot_exceed_the_absolute_chord_bound() {
+    // The old relative test emitted a circle 0.0095 mm from each axis.
+    // The 0.005 mm chord bound requires flattening, which exceeds this budget.
+    let text = r#"<svg width="100000000mm" height="100000000mm" viewBox="0 0 100000000 100000000"><ellipse rx="40000000" ry="40000000.019"/></svg>"#;
+    refuses(text, "import budget");
+}
+
+#[test]
 fn svg_deterministic_smoke_fuzz_never_panics() {
     let seed = page(
         r#"<g transform="translate(5 5) rotate(30)"><path d="M0 0 C10 0 10 10 0 10 S-10 20 0 20 Q5 25 10 20 T20 20 A5 3 20 1 0 30 30 Z"/>

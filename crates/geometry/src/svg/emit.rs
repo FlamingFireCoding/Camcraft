@@ -146,9 +146,16 @@ impl Sink {
         let (p, r, q) = (m00 * m00 + m10 * m10, m01 * m01 + m11 * m11, m00 * m01 + m10 * m11);
         let big = p.max(r);
         let whole = dt.abs() >= TAU - 1e-12;
-        if (p - r).abs() <= 1e-9 * big && q.abs() <= 1e-9 * big {
-            // A circle after the mapping: keep it analytic.
-            let radius = ((p + r) / 2.0).sqrt();
+        let radius = ((p + r) / 2.0).sqrt();
+        let spread = (((p - r) / 2.0).powi(2) + q * q).sqrt();
+        let largest = ((p + r) / 2.0 + spread).sqrt();
+        let smallest = (((p + r) / 2.0 - spread).max(0.0)).sqrt();
+        let circle_error = (largest - radius).abs().max((smallest - radius).abs());
+        // Singular values bound the distance to a circle. An arc also aligns its
+        // start angle to the ellipse, which can add at most twice the same error again.
+        let analytic_error = if whole { circle_error } else { 3.0 * circle_error };
+        if (p - r).abs() <= 1e-9 * big && q.abs() <= 1e-9 * big && analytic_error <= self.chord {
+            // A circle within the absolute chord bound: keep it analytic.
             if whole {
                 return self.push(Primitive::Circle { center: o, radius });
             }
@@ -159,7 +166,6 @@ impl Sink {
             return self.push(Primitive::Arc { center: o, radius, start_angle, sweep_angle });
         }
         let dt = if whole { TAU.copysign(dt) } else { dt };
-        let largest = ((p + r) / 2.0 + (((p - r) / 2.0).powi(2) + q * q).sqrt()).sqrt();
         let step = if self.chord < largest { 2.0 * (1.0 - self.chord / largest).acos() } else { dt.abs() };
         let n = (dt.abs() / step).ceil();
         let n = Self::segment_budget("ellipse", n, 4)?;
