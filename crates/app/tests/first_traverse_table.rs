@@ -6,7 +6,8 @@
 //! horizontal axis (B 90) keeps the Z and never reads the table, and an
 //! axis that points down toward the table gets a note. When only the work
 //! tilts (a rotary that turns the part), the table stays under the work
-//! and is not read. A head-tilt machine that states no travel gives a
+//! and is never the higher top; the posed law (#3100) reads the work at
+//! every pose the rotaries can leave. A head-tilt machine that states no travel gives a
 //! note that names the table as not judged - never a silent pass.
 //!
 //! Provenance: our own machine files and fixtures; the shop rule "never
@@ -16,7 +17,8 @@
 //! Gate map (#2987): covers app::operation (first_traverse, generate),
 //! app::posting, sim::verify (first_traverse).
 
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, LoadMachine, SetStock};
+use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, LoadMachine, SetStock, SetWcsOrigin};
+use camcraft_app::geometry::{Point3, IDENTITY_Q};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::operation::{Height, OpParams, OpStatus, SrcRef, Tilt};
 use camcraft_app::schema::Location;
@@ -96,6 +98,10 @@ fn generate_on(rig: Rig, x_half: f64, b_deg: f64, clear: f64) -> (World, OpStatu
     let mut h = History::default();
     let m = parse_mch(&machine_text(rig, x_half)).unwrap_or_else(|e| panic!("test machine: {e}"));
     h.execute(&world, LoadMachine::new(&world, "test-5axis.mch".into(), Some(m)).expect("machine"));
+    if matches!(rig, Rig::Work) {
+        // #3100: the posed law reads the work about the WCS origin.
+        h.execute(&world, SetWcsOrigin::new(&world, Location { pos: Point3::ZERO, rot: IDENTITY_Q }).expect("G54 on the lines"));
+    }
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 60.0, dy: 60.0, dz: 20.0 }, Location::default()).expect("stock"));
     let t = catalog().into_iter().find(|(n, _)| *n == "EM-0400-2FL").map(|(_, t)| t).expect("catalog");
     h.execute(&world, AddTool::new(&world, "EM-0400-2FL", t).expect("tool"));
@@ -192,11 +198,23 @@ fn a_head_tilt_plane_over_the_height_to_clear_passes() {
 #[test]
 fn a_work_turning_rotary_keeps_the_table_under_the_work() {
     // The same plane and machine as the refused head-tilt case: the work
-    // tilts, the table stays under it, and only the block's top (15) counts.
+    // tilts, and the table stays fixed under it - never the higher top.
+    // #3100: the X/Y traverse runs before the rotary words, at the pose
+    // the previous program left, so the block reads on its sphere about
+    // the WCS origin: the corner (30, 30, 20) stands sqrt(2200) from it,
+    // 29.584 over the plane origin along B 30. At the op's own pose the
+    // block's top (15) was the only top. A plane 20 over the origin is
+    // held by the stock, not the table; 30 over it passes.
+    let want = 2200f64.sqrt() - ORIGIN_Z * B_DEG.to_radians().cos();
     let (_, status, warns, notes) = generate_on(Rig::Work, WIDE, B_DEG, 40.0);
     assert_eq!(status, OpStatus::Ok);
-    assert_eq!(low(&warns), None, "{warns:?}");
+    let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict: {warns:?}"));
+    assert!((h_mm - 20.0).abs() < 1e-6, "{h_mm}");
+    assert!((top_mm - want).abs() < 1e-6 && !fixture, "the block on its sphere: {top_mm}, want {want}");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
+    let (_, status, warns, _) = generate_on(Rig::Work, WIDE, B_DEG, ORIGIN_Z + 30.0);
+    assert_eq!(status, OpStatus::Ok);
+    assert_eq!(low(&warns), None, "{warns:?}");
 }
 
 #[test]
