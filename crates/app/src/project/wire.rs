@@ -180,6 +180,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     .filter(|c| !crate::model_fidelity::is_unknown(*c)),
                 fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
                     .is_some_and(crate::model_fidelity::is_unknown),
+                file_tolerance: crate::model_fidelity::file_tolerance_of(world, &entity),
                 mesh_open: crate::mesh_open::hole_of(world, &entity),
                 solids: kind.is_none().then(|| crate::mesh_solids::to_wire(&crate::mesh_solids::of(world, &entity))).flatten(),
                 fidelity_vouched: kind.is_none().then(|| super::VouchDto::of(world, &entity)).flatten(),
