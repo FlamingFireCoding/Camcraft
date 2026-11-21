@@ -326,6 +326,22 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
     note
 }
 
+/// The law's local verdict in the user's heights frame (#2991): both
+/// heights shifted back by the frame's `origin.z`, `tilted` set when the
+/// frame is not upright. Other warnings pass unchanged.
+fn in_user_frame(w: Warning, f: &TiltedFrame) -> Warning {
+    match w {
+        Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, .. } => Warning::FirstTraverseLow {
+            at,
+            height_mm: height_mm + f.origin.z,
+            top_mm: top_mm + f.origin.z,
+            fixture,
+            tilted: !f.is_upright(),
+        },
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,21 +423,5 @@ mod tests {
         // With no stroke (a start on the table top, the stricter reading)
         // the same plane at 52.120 counts: the move ends 62.0 mm under it.
         assert!(matches!(table_read(&table, &f, 52.12, 0.0), TableRead::Counts(_)));
-    }
-}
-
-/// The law's local verdict in the user's heights frame (#2991): both
-/// heights shifted back by the frame's `origin.z`, `tilted` set when the
-/// frame is not upright. Other warnings pass unchanged.
-fn in_user_frame(w: Warning, f: &TiltedFrame) -> Warning {
-    match w {
-        Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, .. } => Warning::FirstTraverseLow {
-            at,
-            height_mm: height_mm + f.origin.z,
-            top_mm: top_mm + f.origin.z,
-            fixture,
-            tilted: !f.is_upright(),
-        },
-        other => other,
     }
 }
