@@ -275,3 +275,46 @@ fn a_still_frame_builds_no_profile_lines_and_a_move_builds_once() {
     assert_eq!(builds(&h), first + 1, "and then reads the cache");
     assert!(!moved.is_empty());
 }
+
+#[test]
+fn more_than_32_visible_profiles_build_nothing_on_a_still_frame() {
+    let mut h = stock_only();
+    for index in 0..33 {
+        h.state_mut()
+            .state
+            .pending
+            .push_back(CommandKind::ImportDxf {
+                source: bytes(&format!("plate-{index}.dxf"), Some(4)),
+                units: None,
+            });
+    }
+    h.state_mut().state.drain_actions();
+    let builds = |h: &Harness<'static, ShellUi>| h.state().state.frame_cache.sketches.builds();
+    let lines = crate::sketch_overlay::sketch_lines(&h.state().state);
+    let first = builds(&h);
+    assert_eq!(first, 33, "each visible profile builds once");
+    assert!(!lines.is_empty());
+    for _ in 0..3 {
+        let unchanged = crate::sketch_overlay::sketch_lines(&h.state().state);
+        assert_eq!(unchanged, lines);
+        assert_eq!(builds(&h), first, "all visible profiles stay cached");
+    }
+    h.state_mut()
+        .state
+        .pending
+        .push_back(CommandKind::MoveSketch {
+            name: "plate-0".into(),
+            x: 5.0,
+            y: 0.0,
+            angle_deg: 0.0,
+        });
+    h.state_mut().state.drain_actions();
+    let _ = crate::sketch_overlay::sketch_lines(&h.state().state);
+    assert_eq!(builds(&h), first + 1, "only the moved profile rebuilds");
+    let _ = crate::sketch_overlay::sketch_lines(&h.state().state);
+    assert_eq!(
+        builds(&h),
+        first + 1,
+        "the next unchanged frame builds nothing"
+    );
+}

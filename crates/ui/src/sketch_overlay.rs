@@ -33,8 +33,6 @@ pub(crate) const OPEN_END_RGB: [f32; 3] = [0.95, 0.25, 0.80];
 const SEGMENTS_PER_TURN: f64 = 72.0;
 /// The most segments one arc is drawn with.
 const MAX_ARC_SEGMENTS: usize = 720;
-/// The most profiles the line cache keeps.
-const CACHE_CAP: usize = 32;
 
 struct Entry {
     data: Weak<SketchData>,
@@ -55,6 +53,20 @@ pub(crate) struct SketchLineCache {
 }
 
 impl SketchLineCache {
+    /// Keep exactly the visible inputs, including distinct poses of shared data.
+    fn retain_visible(&self, profiles: &[(Arc<SketchData>, Location)]) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        inner.entries.retain(|entry| {
+            profiles.iter().any(|(data, pose)| {
+                std::ptr::eq(entry.data.as_ptr(), Arc::as_ptr(data))
+                    && entry.pose == crate::frame_cache::pose_bits(pose)
+            })
+        });
+    }
+
     fn lines(&self, data: &Arc<SketchData>, pose: &Location) -> Arc<Vec<[f32; 6]>> {
         let key = crate::frame_cache::pose_bits(pose);
         let hit = |e: &Entry| std::ptr::eq(e.data.as_ptr(), Arc::as_ptr(data)) && e.pose == key;
@@ -65,9 +77,6 @@ impl SketchLineCache {
         }
         let lines = Arc::new(build(data, pose));
         inner.builds = inner.builds.saturating_add(1);
-        if inner.entries.len() >= CACHE_CAP {
-            inner.entries.remove(0);
-        }
         inner.entries.push(Entry { data: Arc::downgrade(data), pose: key, lines: Arc::clone(&lines) });
         lines
     }
@@ -83,14 +92,20 @@ impl SketchLineCache {
 pub(crate) fn sketch_lines(state: &State) -> Vec<[f32; 6]> {
     let world = &state.world;
     let active = setup::active(world);
-    let mut out = Vec::new();
+    let mut profiles = Vec::new();
     for name in sketch::placed_in(world, active.as_deref()) {
         if state.hidden_models.contains(&name) {
             continue;
         }
         let Some((entity, profile)) = sketch::find(world, &name) else { continue };
         let Some(pose) = sketch::world_pose(world, &entity) else { continue };
-        out.extend_from_slice(&state.frame_cache.sketches.lines(&profile.data, &pose));
+        profiles.push((Arc::clone(&profile.data), pose));
+    }
+    let cache = &state.frame_cache.sketches;
+    cache.retain_visible(&profiles);
+    let mut out = Vec::new();
+    for (data, pose) in profiles {
+        out.extend_from_slice(&cache.lines(&data, &pose));
     }
     out
 }
