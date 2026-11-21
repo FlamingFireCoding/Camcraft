@@ -38,8 +38,35 @@ pub fn current_stamp(
     // clearance plane (#2121). The post gate trusts the verdicts a cache
     // carries, so a cache judged under the old law must not read fresh:
     // it reads Stale once and the post refuses it until a regenerate.
+    // v4 (#2901): the opening rapid of a clearance-seeded path starts
+    // over its own entry, not over the WCS origin (#2382). A v3 cache
+    // holds the invented rapid from the origin, and its fixture and
+    // rapid verdicts judged it: it reads Stale once and regenerates.
     // Bump this salt again whenever a verify law a cache records changes.
-    h.write(b"camcraft-op-stamp-v3");
+    h.write(b"camcraft-op-stamp-v4");
+    // #2965: the multi-axis, rotary and cross-drill kinds answer to the
+    // first-traverse law now. Only their caches read Stale once; the
+    // salt above stays, so no other kind's stamp moves.
+    if super::first_traverse::newly_judged(params) {
+        h.write(b"first-traverse-2965");
+    }
+    // #3077: the cross drill's first rapid from the turret's index
+    // position is judged now; only its caches read Stale once.
+    if matches!(params, OpParams::Drill { cross, .. } if !cross.is_empty()) {
+        h.write(b"live-traverse-3077");
+    }
+    // #3081: a 3+2 plane whose tool axis points down toward the table
+    // now gets a verdict (it had a note). Only tilted caches read Stale
+    // once; the salt above stays, so no other kind's stamp moves.
+    if params.tilt().is_some() {
+        h.write(b"first-traverse-table-3081");
+    }
+    // #3083: a mill kind on a mill-turn setup answers to the first-
+    // traverse laws now. Only those caches read Stale once; the salt
+    // above stays, so no mill's stamp moves.
+    if super::first_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
+        h.write(b"first-traverse-mill-turn-3083");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
@@ -90,6 +117,13 @@ pub fn current_stamp(
     params.stamp_with(world, setup, Some(src), &mut h);
     if let OpParams::Deburr { exclude_edges, .. } = params {
         super::deburr_picks::stamp_inputs(world, setup, src, exclude_edges, &mut h)?;
+    }
+    // #2848: a rotary op's picks named the whole model before. A path
+    // cached under that reading is stale until the op is generated again.
+    if matches!(src, SrcRef::Selection(_))
+        && matches!(params, OpParams::RotaryContour { .. } | OpParams::RotaryParallel { .. } | OpParams::RotaryOffset { .. })
+    {
+        h.write(b"rotary-picked-faces-v1");
     }
     // #326: the setup's part alignment is a moved input for every op of
     // the setup (the parts it machines, verifies against or measures

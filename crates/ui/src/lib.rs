@@ -17,8 +17,14 @@
 #[macro_use]
 pub mod diag;
 pub mod display_mode;
+pub mod display_quality;
 pub mod draw_list;
+pub mod ground_shadow;
 pub(crate) mod look_at;
+pub(crate) mod look_at_plane;
+pub mod occlusion;
+pub(crate) mod shade_cache;
+pub mod shade_pass;
 
 pub mod cli_options;
 #[cfg(test)]

@@ -452,7 +452,7 @@ pub(crate) const GIZMO_OUTLINE_PX: f32 = 5.0;
 const AXIS_NAMES: [&str; 3] = ["X", "Y", "Z"];
 
 /// Triad extent for the current document (never smaller than 10 mm).
-fn gizmo_len(state: &State) -> f64 {
+pub(crate) fn gizmo_len(state: &State) -> f64 {
     let extent = model::solid_world_aabb(&state.world)
         .map(|b| {
             (b.max.x - b.min.x)

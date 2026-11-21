@@ -143,6 +143,11 @@ pub(crate) fn shell_layout(
     }
     state.locate_form_drawn = false;
     egui::CentralPanel::default().show(ui, |ui| {
+        // #2384: the start page stands in for the dock while it is up.
+        if super::home::is_open(state) {
+            super::home::page(ui, state, &pal);
+            return;
+        }
         DockArea::new(&mut *dock)
             .style(DockStyle::from_egui(ui.style().as_ref()))
             // No per-area close-all: it is the X that took whole panes
@@ -159,13 +164,14 @@ pub(crate) fn shell_layout(
     // A locate draft whose form the dock did not draw is dropped (#566).
     crate::locate_pick::sweep(state);
     crate::axis_pick::disarm_hidden(state); // #664/#667: undrawn rows' picks stop
-    // Last, so it floats over the dock: the M1.4 graphical tool editor.
-    // An in-app egui::Window - this is the shell's only kind of extra
-    // surface; the single-OS-window law stands. Closed by default
-    // (`state.tool_editor` is None on a fresh State), so no panel below
-    // it ever moves in the snapshot until something opens it.
+    // Last, so it floats over the dock: the #2397 tool shape editor - the
+    // body, the profile and the holder in their own window, with the
+    // settings in Properties. An in-app egui::Window - this is the shell's
+    // only kind of extra surface; the single-OS-window law stands. Closed
+    // by default (`state.tool_shape_editor` is None on a fresh State), so
+    // no panel below it ever moves in the snapshot until something opens it.
     let windows = crate::frame_cost::span("ui/windows");
-    pages::tool_editor_window(ui.ctx(), state);
+    pages::tool_shape_editor_window(ui.ctx(), state);
     // M1.7d: the G-code viewer - same window law as the tool editor (an
     // in-app egui::Window over the dock; the single-OS-window law
     // stands). None on a fresh State, closed by ✖, reopened by the next
@@ -493,7 +499,10 @@ fn viewport_panel(
             hud = viewcube::Hud::with_controls(resp.rect, state.move_handles || state.rotate_handles);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if state.look_at_armed && left_pressed {
+            if state.look_at_plane_armed && left_pressed {
+                // #2834: the armed "Look at a work plane" takes this press.
+                crate::look_at_plane::click(state, parr(p));
+            } else if state.look_at_armed && left_pressed {
                 // #2818: the armed "Look at" takes this one press. It is
                 // never remembered, so the release picks nothing.
                 crate::look_at::click(state, parr(p));

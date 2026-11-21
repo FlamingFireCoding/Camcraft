@@ -5,7 +5,8 @@
 //! Provenance: our own pass order, moved out of `View3D::render_with`; the
 //! hidden-edge pass is the reversed depth test of published hidden-line
 //! practice (Foley, van Dam et al., "Computer Graphics: Principles and
-//! Practice"). No vendor material.
+//! Practice"). The ground shadow pass and the occlusion pass (#2834) are
+//! listed here too; `shade_pass` has their sources. No vendor material.
 
 use std::ops::Range;
 
@@ -16,6 +17,11 @@ use crate::state::DisplayMode;
 pub enum Pipe {
     /// Lit model faces.
     Faces,
+    /// Lit model faces, darkened by the cached occlusion values (#2834).
+    FacesOccluded,
+    /// The cached ground shadow mesh, blended on the floor (#2834). Its
+    /// range counts vertices of the shadow buffer, not indices.
+    GroundShadow,
     /// Model faces to the depth buffer only: the hidden-line prepass.
     FacesDepthOnly,
     /// Feature edges in front of the faces.
@@ -57,6 +63,18 @@ pub struct Counts {
     /// All edge indices: model edges, then stock edges.
     pub edge_count: u32,
     pub model_edge_count: u32,
+    /// Vertices of the cached ground shadow mesh (#2834); 0 with no data.
+    pub shadow_vertex_count: u32,
+    /// Cached occlusion values (#2834): one for each model vertex, or 0.
+    pub occlusion_vertex_count: u32,
+}
+
+/// The shading switches of the Display menu (#2834). View state: the draw
+/// list reads them, nothing in the document does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Effects {
+    pub ground_shadow: bool,
+    pub ambient_occlusion: bool,
 }
 
 /// The most steps that one frame can hold.
@@ -106,16 +124,41 @@ impl Plan {
 ///   faces: the stock is a volume and its full wire reads truer.
 /// - Shaded, with hidden edges: as "with edges", and the model edges draw a
 ///   second time behind the faces.
+/// - Wireframe, see-through (#2636): edges, stock edges, regions. No face
+///   step at all, so the depth buffer stays empty and each edge draws.
 #[must_use]
 pub fn plan(display: DisplayMode, c: &Counts, traced: bool) -> Plan {
+    plan_with(display, c, traced, Effects::default())
+}
+
+/// [`plan`] with the shading switches (#2834). The two passes belong to the
+/// shaded modes: wireframe draws no lit face and no shadow of one.
+///
+/// - Ambient occlusion: the occluded face pass takes the model face slot. It
+///   needs one cached value for each model vertex; data that does not fit is
+///   never read, and the plain face pass draws.
+/// - Ground shadow: the cached shadow mesh draws after the model (so that
+///   the model hides the part below it) and before the translucent stock.
+#[must_use]
+pub fn plan_with(display: DisplayMode, c: &Counts, traced: bool, fx: Effects) -> Plan {
     let mut p = Plan::new();
     if c.index_count == 0 {
         return p;
     }
-    let wireframe = display == DisplayMode::Wireframe;
+    let wireframe = display.is_wireframe();
     let models = 0..c.model_index_count;
     let model_edges = 0..c.model_edge_count;
-    p.push(if wireframe { Pipe::FacesDepthOnly } else { Pipe::Faces }, models);
+    let occluded = fx.ambient_occlusion && c.occlusion_vertex_count == c.model_index_count;
+    let faces = match (wireframe, occluded) {
+        (true, _) => Pipe::FacesDepthOnly,
+        (false, true) => Pipe::FacesOccluded,
+        (false, false) => Pipe::Faces,
+    };
+    // See-through writes no depth: a depth prepass would hide the far edges,
+    // the stock wire and the toolpath lines behind the model.
+    if !display.sees_through() {
+        p.push(faces, models);
+    }
     // "Shaded" draws no wire: not on the model and not on the stock.
     let wire = display != DisplayMode::Shaded;
     if wire {
@@ -123,6 +166,9 @@ pub fn plan(display: DisplayMode, c: &Counts, traced: bool) -> Plan {
     }
     if display == DisplayMode::ShadedHiddenEdges {
         p.push(Pipe::HiddenEdges, model_edges);
+    }
+    if fx.ground_shadow && !wireframe {
+        p.push(Pipe::GroundShadow, 0..c.shadow_vertex_count);
     }
     let traced = traced && !wireframe;
     if traced {

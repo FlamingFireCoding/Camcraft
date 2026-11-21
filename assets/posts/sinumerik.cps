@@ -791,7 +791,10 @@ function onCycle() {
   // Manual (SINUMERIK ONE / 840D sl / 828D, 07/2021), section 6.3, lists
   // no P in its G73 and G83 formats; an unverified G73 dwell is refused
   // above (#2354). G84 and G85 dwells are refused above (#2357).
-  if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
+  // #1480: Siemens ISO dialects Function Manual (07/2021), table 6-1,
+  // page 95, gives G89 dwell in milliseconds. Section 6.3.1 says cycle
+  // parameters are modal: write P0 when a Back bore has no dwell.
+  if ((ms > 0 && g !== "G73" && g !== "G84") || g === "G89") words.push("P" + ms);
   words.push(fw(p.FeedRate));
   block(words);
   cycX = p.X; cycY = p.Y; cycR = p.R;
