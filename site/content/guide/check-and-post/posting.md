@@ -21,6 +21,9 @@ Sinker EDM (ISO). Select a post for your machine kind and control.
 A post is a `.cps` script, so you can load your own with
 **Load post (.cps)**.
 
+To write or debug a script, see the
+[Post-processor API](@/guide/reference/post-processors.md).
+
 The Post dialog opens where this document last posted, or beside the saved
 project with the project's name and the `.nc` extension.
 

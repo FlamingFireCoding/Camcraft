@@ -118,6 +118,8 @@ pub mod setup_wcs_flip;
 pub mod setup_post_options;
 // #1031: a setup's workholding (chuck/collet) rpm limit.
 pub mod setup_workholding;
+// #3070: the guided sheet job - stock, Z zero, allowance, clamp plane.
+pub mod sheet_job;
 pub mod setup_sheet;
 // #320: a setup's stock source - its own, or what the setup before leaves.
 pub mod setup_stock;

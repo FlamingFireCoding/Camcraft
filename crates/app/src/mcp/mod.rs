@@ -81,6 +81,8 @@ mod vouch_tools;
 mod rotary_tools;
 mod thread_infeed_tools;
 mod workholding_tools;
+// #3070: the guided sheet job.
+mod sheet_job_tools;
 
 // #183: the same tool table served live from inside the GUI, over a
 // loopback socket, against the app's own document and History.

@@ -174,6 +174,13 @@ fn boundary_chain_error(error: boundary_chains::BoundaryError) -> GenError {
     }
 }
 mod contour_open;
+mod contour_sketch_pick;
+mod sketch_memo;
+pub use contour_sketch_pick::{SketchChainInfo, sketch_chain_infos_fresh, sketch_z_range_fresh};
+pub use sketch_memo::{
+    display_heights, sketch_chain_info_builds, sketch_chain_infos, sketch_z_builds, sketch_z_fresh_reads,
+};
+mod contour_sketch;
 mod finish_clip;
 mod finish_entry;
 mod boundary_ctx;
