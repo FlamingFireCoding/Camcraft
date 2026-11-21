@@ -191,6 +191,18 @@ pub fn chamfer_open_runs(
     let mut passes: Vec<Vec<Point2>> = Vec::with_capacity(runs.len());
     let mut breaks: Vec<EdgeBreak> = Vec::with_capacity(runs.len());
     for pts in runs {
+        let tangent = |a: Point2, b: Point2| -> Result<Point2, GenError> {
+            let len = (b.x - a.x).hypot(b.y - a.y);
+            if !len.is_finite() || len <= 1e-9 {
+                return Err(GenError::Empty(
+                    "a chamfer edge holds a collapsed segment - re-pick the edge".into(),
+                ));
+            }
+            Ok(Point2::new((b.x - a.x) / len, (b.y - a.y) / len))
+        };
+        for pair in pts.windows(2) {
+            tangent(pair[0], pair[1])?;
+        }
         let run = simple(pts)?;
         let mut levels = Vec::new();
         for at in [z + probe, p.top_z - probe] {
@@ -217,13 +229,6 @@ pub fn chamfer_open_runs(
             (pass.first(), pass.get(1), pass.last(), pass.get(pass.len() - 2))
         else {
             return Err(GenError::Empty("a chamfer edge needs at least two points".into()));
-        };
-        let tangent = |a: Point2, b: Point2| -> Result<Point2, GenError> {
-            let len = (b.x - a.x).hypot(b.y - a.y);
-            if !len.is_finite() || len <= 0.0 {
-                return Err(GenError::Empty("a chamfer edge holds a collapsed segment".into()));
-            }
-            Ok(Point2::new((b.x - a.x) / len, (b.y - a.y) / len))
         };
         let entry_air = air_side(tangent(first, second)?, p.climb);
         let exit_air = air_side(tangent(before_last, last)?, p.climb);

@@ -190,6 +190,27 @@ fn separate_selected_edges_generate_separate_open_passes() {
 }
 
 #[test]
+fn open_chamfer_runs_with_boundary_area_settings_refuse_by_name() {
+    let w = world();
+    let mut o = op(
+        SrcRef::Selection(vec![north(&w)]),
+        params(),
+        AreaControls {
+            offset: 1.0,
+            ..Default::default()
+        },
+    );
+    o.tool = CONE.into();
+    let why = run(&w, &o).expect_err("Boundary settings cannot shape open chamfer runs");
+    assert!(
+        why.contains("Boundary settings shape an area"),
+        "{why}"
+    );
+    assert!(why.contains("open chamfer runs"), "{why}");
+    assert!(why.contains("reset them"), "{why}");
+}
+
+#[test]
 fn an_open_chamfer_does_not_credit_an_unselected_edge() {
     let w = world();
     let path = generate(&w, vec![north(&w)]);

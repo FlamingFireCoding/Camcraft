@@ -275,6 +275,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             SrcRef::Selection(_)
         )
     );
+    if matches!((&params, &src), (OpParams::Chamfer2D { .. }, SrcRef::Selection(_)))
+        && area.is_some()
+        && matches!(
+            contour_sel.as_ref(),
+            Some(Ok((loops, runs, _))) if loops.is_empty() && !runs.is_empty()
+        )
+    {
+        return Err(GenError::Invalid(
+            "the Boundary settings shape an area, and these picks are open chamfer runs - reset them, or pick closed rings"
+                .into(),
+        ));
+    }
     let mut area = area.transpose()?;
     // A Contour under an open boundary rides the chain itself (its arm
     // below, `contour_open`): no area law runs for it.
@@ -2256,11 +2268,6 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     if loops.is_empty() && runs.is_empty() {
                         return Err(GenError::Empty(
                             "nothing in the selection bounds an area or an edge run".into(),
-                        ));
-                    }
-                    if loops.is_empty() && area.is_some() {
-                        return Err(GenError::Invalid(
-                            "the Boundary settings shape an area, and these picks are open chamfer runs - reset them, or pick closed rings".into(),
                         ));
                     }
                     let base = if loops.is_empty() {
