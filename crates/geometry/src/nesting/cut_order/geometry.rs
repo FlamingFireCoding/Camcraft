@@ -199,7 +199,9 @@ pub(super) fn forest(features: &[CutFeature]) -> Result<Vec<Node>, GeoError> {
         let mut depth = 0;
         while let Some(parent) = at {
             // Every parent has strictly larger area, so no cycle is possible.
-            depth += 1;
+            if features[parent].release_phase.is_some() {
+                depth += 1;
+            }
             at = nodes[parent].parent;
         }
         nodes[i].depth = depth;

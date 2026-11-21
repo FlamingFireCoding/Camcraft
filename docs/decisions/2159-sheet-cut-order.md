@@ -15,8 +15,12 @@ Check self-intersections and adjacent retracing before containment.
 Use checked `i128` area accumulation and refuse values outside its range.
 
 Traverse the forest in iterative post-order. Sort siblings by increasing
-enclosed area, then stable ID. Resolve `Auto` closed sides by depth parity;
-resolve open chains to `OnLine`. Refuse invalid side requests by name.
+enclosed area, then stable ID. Resolve `Auto` closed sides by the parity of
+material-releasing ancestors. Retain non-releasing geometric parents for
+scheduling, but exclude them from this depth because they do not separate
+material. Reject counting all closed ancestors: an engraving or blind pocket
+would reverse the side of a nested through hole.
+Resolve open chains to `OnLine`. Refuse invalid side requests by name.
 
 Schedule four global phases: marking, internal cuts, rough profiles, and
 final breakthrough. Each feature states its `release_phase` explicitly.
