@@ -71,6 +71,8 @@ fn setups_view(env: &Env) -> Vec<Value> {
                 "post_offer": super::post_offer_view::offer_view(w, d),
                 // #1031: the chuck's or collet's rated maximum rpm.
                 "workholding_max_rpm": s.as_deref().and_then(|n| crate::setup_workholding::of(w, Some(n))).map(fnum),
+                // #3070: the guided sheet job (allowance always shown).
+                "sheet_job": s.as_deref().and_then(|n| crate::sheet_job::of(w, n)).as_ref().map(super::sheet_job_tools::job_view),
                 // #1862: what stands for the setup's model - a part, or the
                 // virtual reference of its placed DXF profiles (no solid).
                 "model_reference": super::sketch_tools::model_reference(env, d),
@@ -109,7 +111,7 @@ fn machine_view(w: &flecs_ecs::prelude::World) -> Value {
     let (path, m) = crate::machine::document_of(w);
     json!({
         "path": (!path.is_empty()).then_some(path),
-        "definition": m.as_ref().and_then(|m| serde_json::to_value(m).ok()),
+        "definition": m.as_ref().and_then(|m| super::machine_tools::definition(m).ok()),
     })
 }
 
