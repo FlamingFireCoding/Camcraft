@@ -40,6 +40,11 @@ pub(super) fn collect_items(
                 "{desc} is a vertex - 'Do not touch' protects faces or edge chains, not vertices"
             )));
         }
+        if matches!(g.feature, FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_)) {
+            return Err(GenError::Invalid(format!(
+                "{desc} is a sketch pick - 'Do not touch' protects model faces or edge chains, not DXF sketch chains"
+            )));
+        }
         if !cache.contains_key(g.entity.as_str()) {
             let entity = model::find_by_name(world, &g.entity).ok_or_else(|| {
                 GenError::Invalid(format!("'Do not touch' references '{}', which is gone", g.entity))
@@ -122,12 +127,9 @@ pub(super) fn collect_items(
                     edges.push(([a.x, a.y, a.z], [b.x, b.y, b.z]));
                 }
             }
-            FeatureSel::Vertex(_) => unreachable!(),
-            // #1864: the command refuses sketch picks; a hand-edited file
-            // that still holds one is refused here, never skipped.
-            FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+            FeatureSel::Vertex(_) | FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
                 return Err(GenError::Invalid(format!(
-                    "{desc} is a sketch pick - 'Do not touch' protects model faces or edge chains, not DXF sketch chains or layers"
+                    "{desc} cannot be protected - 'Do not touch' protects faces or edge chains"
                 )));
             }
         }

@@ -44,7 +44,9 @@ pub fn selection_z_range(
     setup: Option<&str>,
     src: &SrcRef,
 ) -> Result<(f64, f64), &'static str> {
-    if let Some(sketch_span) = super::sketch_memo::sketch_z_range(world, src) {
+    // Fresh on the authoritative path; the frame memo only inside a
+    // display scope (`sketch_memo::display_heights`).
+    if let Some(sketch_span) = super::sketch_memo::sketch_z_for_heights(world, src) {
         return sketch_span;
     }
     let span = match src {

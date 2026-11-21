@@ -219,8 +219,7 @@ fn build_world_geom(state: &State, items: &[GeoSel]) -> WorldGeom {
                     push_world_poly(&loc, &pts, chain.closed, &mut out.edges);
                 }
             }
-            // #1864: 'Do not touch' refuses sketch picks at the command,
-            // so a protected sketch pick has nothing to draw.
+            // Sketch picks are refused as protection; nothing to draw.
             FeatureSel::Vertex(_) | FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {}
         }
     }

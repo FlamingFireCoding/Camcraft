@@ -81,7 +81,10 @@ fn mark_z(state: &State) -> Option<f64> {
     let src = camcraft_app::model::find_by_name(&state.world, &state.op_ui.name)
         .and_then(|e| camcraft_app::model::operation_of(&state.world, &e))
         .map(|o| (o.setup, o.src))?;
-    operation::region_z(&state.world, src.0.as_deref(), Some(&src.1), &state.op_ui.params)
+    // A per-frame display read: the sketch Z span may come from the frame memo.
+    operation::display_heights(|| {
+        operation::region_z(&state.world, src.0.as_deref(), Some(&src.1), &state.op_ui.params)
+    })
 }
 
 /// Every mark of the group this frame (empty when not [`active`]).

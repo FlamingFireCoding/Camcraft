@@ -2961,51 +2961,11 @@ impl State {
                             None => (format!("{pick_name} · missing"), true),
                         }
                     }
-                    FeatureSel::SketchChain(id) => {
-                        match camcraft_app::sketch::find(&self.world, &g.entity)
-                            .and_then(|(_, sk)| {
-                                let ch = sk.data.chains().find(*id)?;
-                                let len = ch.length();
-                                let closed = ch.is_closed();
-                                let layer = ch.layer().to_owned();
-                                let bounds = ch.bounds();
-                                Some((len, closed, layer, bounds))
-                            })
-                        {
-                            Some((len, true, layer, Some((lo, hi)))) => (
-                                format!(
-                                    "{pick_name} · closed · {} {} · {} × {} · {layer}",
-                                    units::len(len, unit, 1),
-                                    unit.suffix(),
-                                    units::len(hi.x - lo.x, unit, 1),
-                                    units::len(hi.y - lo.y, unit, 1),
-                                ),
-                                false,
-                            ),
-                            Some((len, _, layer, _)) => (
-                                format!(
-                                    "{pick_name} · open · {} {} · {layer}",
-                                    units::len(len, unit, 1),
-                                    unit.suffix(),
-                                ),
-                                false,
-                            ),
-                            None => (format!("{pick_name} · missing"), true),
-                        }
-                    }
-                    FeatureSel::SketchLayer(layer) => {
-                        match camcraft_app::sketch::find(&self.world, &g.entity).and_then(|(_, sk)| {
-                            sk.data.layers().iter().any(|l| l == layer).then(|| {
-                                let chains = sk.data.chains().by_layer(layer);
-                                let closed = chains.iter().filter(|c| c.is_closed()).count();
-                                let open = chains.len().saturating_sub(closed);
-                                (closed, open)
-                            })
-                        }) {
-                            Some((closed, open)) => (
-                                format!("{pick_name} · {closed} closed, {open} open"),
-                                false,
-                            ),
+                    // #2238 frame cost: the sketch chip text is cached by
+                    // drawing, entity, pick and display unit.
+                    FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                        match crate::sketch_chip_memo::sketch_chip(&self.world, &g.entity, &g.feature, unit) {
+                            Some((tail, missing)) => (format!("{pick_name} · {tail}"), missing),
                             None => (format!("{pick_name} · missing"), true),
                         }
                     }

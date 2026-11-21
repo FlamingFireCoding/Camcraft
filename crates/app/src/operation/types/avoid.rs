@@ -38,7 +38,11 @@ impl DoNotTouch {
             && self.clearance >= 0.0
             && self.clearance <= AREA_DISTANCE_MAX
             && self.picks.iter().all(|g| {
-                !g.entity.is_empty() && !matches!(g.feature, FeatureSel::Vertex(_))
+                !g.entity.is_empty()
+                    && !matches!(
+                        g.feature,
+                        FeatureSel::Vertex(_) | FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_)
+                    )
             })
     }
 }

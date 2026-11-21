@@ -71,13 +71,7 @@ impl Body {
         let entity = model::find_by_name(&state.world, name);
         let sketch = camcraft_app::sketch::find(&state.world, name)
             .map(|(_, s)| SketchPtr(Arc::downgrade(&s.data)));
-        let pose = entity.and_then(|e| {
-            if sketch.is_some() {
-                camcraft_app::sketch::world_pose(&state.world, &e)
-            } else {
-                camcraft_app::setup_align::view_pose(&state.world, &e)
-            }
-        });
+        let sketch_pose = entity.and_then(|e| camcraft_app::sketch::world_pose(&state.world, &e));
         Self {
             name: name.to_owned(),
             hidden: state.hidden_in_view(name),
@@ -86,7 +80,10 @@ impl Body {
                 .and_then(|e| model::features_of(&state.world, &e))
                 .map(|f| Feats(Arc::downgrade(&f))),
             sketch,
-            pose,
+            // A sketch's build reads `sketch::world_pose` (it rides the
+            // stock top), not its local `view_pose`: key on what the build
+            // reads, so a stock move or height change rebuilds (#1864 review).
+            pose: sketch_pose.or_else(|| entity.and_then(|e| camcraft_app::setup_align::view_pose(&state.world, &e))),
         }
     }
 }

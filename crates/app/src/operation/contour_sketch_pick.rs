@@ -265,8 +265,8 @@ pub(super) fn collect_chains(
             }
         }
         out.push(ResolvedSketchChain {
-            entity: entity_name.to_owned(),
             chain_id,
+            entity: entity_name.to_owned(),
             label,
             closed,
             pts,

@@ -151,10 +151,9 @@ use super::*;
 /// protected feature. A v72 file steps up unchanged with empty protection.
 /// v74 (#1864): feature selections add `sketch_chain` and `sketch_layer`
 /// variants on DXF profiles, and `Contour` adds `chain_overrides`
-/// (absent is empty, so a v73 file steps up unchanged and keeps its
-/// `do_not_touch` protection). An old reader must refuse a v74 file
-/// rather than drop per-chain side or direction overrides or reject
-/// sketch picks without explanation.
+/// (absent is empty, so a v73 file steps up unchanged). An old reader
+/// must refuse a v74 file rather than drop per-chain side or direction
+/// overrides or reject sketch picks without explanation.
 pub const PROJECT_VERSION: u32 = 74;
 
 #[derive(Debug, thiserror::Error)]

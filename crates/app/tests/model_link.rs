@@ -175,8 +175,7 @@ fn the_project_file_keeps_the_link_and_a_v71_file_opens_unlinked() {
     let mut newer = doc;
     newer["version"] = json!(project::PROJECT_VERSION + 1);
     let err = project::open(&new_world(), &serde_json::to_string(&newer).expect("json")).expect_err("too new");
-    let want = format!("unsupported project version {}", project::PROJECT_VERSION + 1);
-    assert!(err.to_string().contains(&want), "{err}");
+    assert!(err.to_string().contains(&format!("unsupported project version {}", project::PROJECT_VERSION + 1)), "{err}");
 
     let plain = new_world();
     let mut h = History::default();
