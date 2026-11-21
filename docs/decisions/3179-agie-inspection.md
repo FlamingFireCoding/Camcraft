@@ -10,4 +10,6 @@ The inspection piece requests the reference settings for 10 mm steel 0001 and Be
 
 The inspection action checks the entire threading disk and the nominal contour against the other drawing primitives. A retraced line on the same layer belongs to the selection only when the chainer identifies its original and both endpoints match exactly. The export rounds ISO coordinates to five decimals and checks the resulting contour again. A synthetic R2 corner with a 0.000005038 mm difference between the rounded endpoint radii registered as a closed CCW die contour in the offline control. Larger discrepancies are refused. All three files become visible together in a new directory.
 
+The mounted machine's X and Y limits apply in the selected work frame. The export checks analytic arc extrema before and after coordinate rounding. The native format used here cannot carry reversed axis polarity. An unspecified travel limit stays unverified. The controller displays a perpendicular lead default and the nominal Z datum. Neither establishes the physical stock position or a verified lead trajectory.
+
 Machining this geometry would require verified leads, effective resident technology and physical slug retention. Those inputs belong in the cutting workflow.

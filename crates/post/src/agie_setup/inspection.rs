@@ -11,7 +11,7 @@ use std::f64::consts::TAU;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-pub const INSPECTION_RECEIPT: &str = "0 working steps; inspection only; holding, leads and erosion settings unverified. Physical stock XY unknown and unchecked (native length and width 0). ISO coordinates rounded by at most 0.000005 mm per axis. Import into a new piece and confirm [0] working steps.";
+pub const INSPECTION_RECEIPT: &str = "0 working steps; inspection only; holding, leads and erosion settings unverified. Physical stock XY unknown and unchecked (native length and width 0). The perpendicular controller lead default, physical stock Z and installed travel without stated limits are unverified. ISO coordinates rounded by at most 0.000005 mm per axis. Import into a new piece and confirm [0] working steps.";
 
 const SCALE: f64 = 100_000.0;
 const LIMIT: f64 = 350.0;
@@ -201,7 +201,52 @@ impl InspectionProfile {
                     .into(),
             );
         }
-        let bounds = chain_bounds(&ring.segments).ok_or("the inspection opening has no bounds")?;
+        let (lo, hi) =
+            chain_bounds(&ring.segments).ok_or("the inspection opening has no bounds")?;
+        // Include source extrema as well as the native curve. The encodable circle with two
+        // slightly unequal radii uses a bounded topology centre adjustment (see Block::new).
+        let original: Vec<_> = spans
+            .iter()
+            .map(|s| {
+                let primitive = match s.arc {
+                    None => Primitive::Line {
+                        start: s.start,
+                        end: s.end,
+                    },
+                    Some((center, sweep_angle)) => {
+                        let x = s.start.x - center.x;
+                        let y = s.start.y - center.y;
+                        Primitive::Arc {
+                            center,
+                            radius: x.hypot(y),
+                            start_angle: y.atan2(x),
+                            sweep_angle,
+                        }
+                    }
+                };
+                LayeredPrimitive {
+                    layer: String::new(),
+                    primitive,
+                }
+            })
+            .collect();
+        let (source_lo, source_hi) = camcraft_geometry::sketch_data::bounds(&original)
+            .ok_or("the source inspection opening has no bounds")?;
+        let adjusted = blocks.iter().any(|b| {
+            b.center
+                .is_some_and(|c| radius_squared(b.start, c) != radius_squared(b.end, c))
+        });
+        let margin = if adjusted { 4.0 / SCALE } else { 0.0 };
+        let bounds = (
+            Point2::new(
+                (lo.x - margin).min(source_lo.x),
+                (lo.y - margin).min(source_lo.y),
+            ),
+            Point2::new(
+                (hi.x + margin).max(source_hi.x),
+                (hi.y + margin).max(source_hi.y),
+            ),
+        );
         Ok(Self {
             blocks,
             clearance,
@@ -221,6 +266,32 @@ impl InspectionProfile {
                 "unselected DXF primitive {} touches or enters the inspection opening",
                 index + 1
             ));
+        }
+        Ok(())
+    }
+
+    /// Compare nominal curve extrema in the declared WCS with the mounted table's program travel.
+    pub fn check_machine(&self, machine: &crate::machine::Machine) -> Result<(), String> {
+        if let Some(axis) = machine.axes.iter().find(|a| !a.direction.is_standard()) {
+            return Err(format!(
+                "Agie inspection cannot encode the inverted {} axis in its native geometry",
+                axis.name
+            ));
+        }
+        let (lo, hi) = self.bounds;
+        for (k, (first, last)) in [(lo.x, hi.x), (lo.y, hi.y)].into_iter().enumerate() {
+            let name = ["X", "Y"][k];
+            let axis = machine
+                .axis(k)
+                .filter(|a| !a.rotary)
+                .ok_or_else(|| format!("Agie inspection requires a mounted linear {name} axis"))?;
+            if let Some((min, max)) = axis.program_travel()
+                && (!min.is_finite() || !max.is_finite() || min >= max || first < min || last > max)
+            {
+                return Err(format!(
+                    "the nominal inspection contour reaches {first:.5}..{last:.5} in {name}; mounted travel is {min:.5}..{max:.5}"
+                ));
+            }
         }
         Ok(())
     }

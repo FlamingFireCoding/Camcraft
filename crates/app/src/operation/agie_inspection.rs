@@ -83,18 +83,15 @@ pub(crate) fn prepare_inspection(
     }
     let declared = op.setup.as_deref();
     let setup_name = setup::effective(world, declared);
-    if !crate::setup_mount::machine_of(world, declared)
+    let machine = crate::setup_mount::machine_of(world, declared)
         .1
-        .is_some_and(|m| {
+        .filter(|m| {
             m.model == "AGIECUT CLASSIC 2S"
-                && crate::machine::kind(Some(&m)) == crate::machine::Kind::WireEdm
+                && crate::machine::kind(Some(m)) == crate::machine::Kind::WireEdm
         })
-    {
-        return Err(
-            "mount the AGIECUT CLASSIC 2S template on the operation’s setup for nominal inspection"
-                .into(),
-        );
-    }
+        .ok_or(
+            "mount the AGIECUT CLASSIC 2S template on the operation’s setup for nominal inspection",
+        )?;
     if declared.is_some_and(|n| !setup::exists(world, n))
         || setup::wcs_slot(world, declared) != 0
         || crate::setup_wcs_flip::of_setup(world, declared) != [false; 3]
@@ -206,6 +203,7 @@ pub(crate) fn prepare_inspection(
         });
     }
     let mut profile = InspectionProfile::new(&spans, hole)?;
+    profile.check_machine(&machine)?;
     let data = selected.data.primitives();
     let owned: HashSet<_> = ring.segments.iter().map(|s| s.primitive).collect();
     let mut used = owned.clone();

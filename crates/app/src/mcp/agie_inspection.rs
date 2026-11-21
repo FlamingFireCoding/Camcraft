@@ -28,7 +28,7 @@ pub(super) const TOOLS: &[Tool] = &[
             obj(
                 json!({
                     "name":{"type":"string"}, "tool":{"type":"string"}, "drawing":{"type":"string"},
-                    "chain":{"type":"string","description":"Stable 32-digit DXF chain id from list_features"},
+                    "chain":{"type":"string","description":"DXF sketch_chain: feature id from list_features, or its bare 32-digit lowercase hex id"},
                     "start":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2,"description":"Centre of the 3 mm hole in world XY millimetres"}
                 }),
                 &["name", "tool", "drawing", "chain", "start"],
@@ -40,8 +40,18 @@ pub(super) const TOOLS: &[Tool] = &[
 
 fn create(env: &mut Env, args: &Map<String, Value>) -> Result<Value, String> {
     let name = req_str(args, "name")?;
-    let id = crate::geometry::sketch_chains::parse_chain_id_hex(req_str(args, "chain")?)
-        .ok_or("use a 32-digit lowercase hexadecimal chain id")?;
+    let chain = req_str(args, "chain")?;
+    let id = match crate::geometry::sketch_chains::parse_chain_id_hex(chain) {
+        Some(id) => id,
+        None => match super::pick::parse_feature_id(chain)? {
+            crate::operation::FeatureSel::SketchChain(id) => id,
+            _ => {
+                return Err(
+                    "use the sketch_chain: id of a closed DXF chain from list_features".into(),
+                );
+            }
+        },
+    };
     let start = super::setup_tools::opt_nums::<2>(args, "start")?
         .ok_or("state the 3 mm hole centre in world XY")?;
     let cmd = crate::commands::CreateOperation::agie_inspection(

@@ -75,11 +75,16 @@ fn native_inspection_writes_one_closed_nominal_loop_and_zero_steps() {
         "ID_PUNCH,c_left",
         "ID_DIAMETER,\"3.0\"",
         "ID_SEPCUT,\"0\"",
+        "ID_ENTRYMODE,c_entper",
         "ID_DIML,\"0\"",
         "ID_DIMB,\"0\"",
     ] {
         assert!(sbl.contains(word), "{word}");
     }
+    let receipt = camcraft_post::agie_setup::INSPECTION_RECEIPT;
+    assert!(receipt.contains("perpendicular controller lead default"));
+    assert!(receipt.contains("physical stock Z"));
+    assert!(receipt.contains("travel without stated limits are unverified"));
     assert!(!sbl.contains("ASCREATE"));
     std::fs::write(&files[0], "KEEP").unwrap();
     assert!(profile.export(&dest).is_err());

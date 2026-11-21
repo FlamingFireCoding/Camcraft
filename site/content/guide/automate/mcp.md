@@ -130,7 +130,7 @@ Mount the Classic 2S template on the active setup. Place a DXF on the top of a 1
 
 Call `export_agie_inspection` with the saved operation name and a new directory. The last part of the directory name supplies the uppercase DOS file stem. The CLI equivalent is `camcraft-cli export-agie-inspection <project.camproj> <operation> <new-directory>`. The desktop creation form is under **Setup → Post → Agie nominal inspection**. Select the saved operation to use **Export Agie inspection setup**.
 
-Import the ISO geometry and keep its SBR beside the SBL during script import. Create a new piece and confirm zero working steps. The native piece has zero length and width because physical stock XY is unknown. Holding, entry, exit and effective erosion settings remain unverified.
+Import the ISO geometry and keep its SBR beside the SBL during script import. Create a new piece and confirm zero working steps. The native piece has zero length and width because physical stock XY is unknown. The contour uses the project work datum. Physical stock Z and travel without stated machine limits remain unverified. The work selects the controller’s perpendicular lead default. Holding, actual entry and exit paths, and effective erosion settings remain unverified.
 
 ### Tool libraries and machine tool tables
 
