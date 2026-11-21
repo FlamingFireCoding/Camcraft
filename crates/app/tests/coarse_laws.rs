@@ -122,7 +122,7 @@ fn fidelity_lines(world: &World) -> Vec<String> {
 }
 
 fn refusal(op: &str, mm: &str) -> String {
-    format!("{op}: model 'bar' was imported too coarsely to verify; re-import with a larger STEP facet budget (surfaces are approximated to within {mm} mm)")
+    format!("{op}: model 'bar' was imported too coarsely to verify; re-import with a larger STEP facet budget, or export the file again with a tighter tolerance (surfaces are approximated to within {mm} mm)")
 }
 
 fn groove_finish(tolerance: f64) -> OpParams {
@@ -296,6 +296,10 @@ fn a_rotary_contour_on_a_reduced_model_is_judged_and_past_the_bound_refused_by_n
     let low = rotary(Some(TIGHT), 10.0);
     assert!(blocking(&low, "OP").iter().any(|w| matches!(w, Warning::RapidInStock { .. })), "{:?}", blocking(&low, "OP"));
     assert_eq!(fidelity_lines(&rotary(Some(TOO_COARSE), 25.0)), vec![refusal("OP", "0.030")]);
+    // #2996: the rotary field's allowance also guards the shank, so the
+    // kind never takes the widening: a 0.019 mm model, which a mill kind
+    // posts against, still refuses it by name.
+    assert_eq!(fidelity_lines(&rotary(Some(0.019), 25.0)), vec![refusal("OP", "0.019")]);
 }
 
 // ---- the registry ----------------------------------------------------------

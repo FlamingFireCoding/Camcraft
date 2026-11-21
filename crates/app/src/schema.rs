@@ -101,6 +101,20 @@ pub struct FeatureNamesMemo {
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct ReducedFidelity {
     pub chord_mm: f64,
+    /// File tolerance alone caused this chord; false keeps the strict law.
+    pub file_tolerance: bool,
+}
+
+/// A person vouched for this model's mesh while it was of unknown fidelity
+/// (#1339): `by` is who, `rev` the geometry revision the word was given
+/// for. It speaks only while the model still has that revision and no
+/// `ReducedFidelity` (`model_vouch::by_of`). Written by
+/// `VouchModelFidelity`, its undo and the project loader, through
+/// `model_vouch::set`.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct FidelityVouched {
+    pub by: String,
+    pub rev: u64,
 }
 
 /// The STEP facet budget a model's mesh was imported under, when it is not
@@ -136,6 +150,19 @@ pub struct ModelSource {
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct MeshOpen {
     pub hole: String,
+}
+
+/// The closed solids of a model's facets (#917): index ranges, one per
+/// solid, as the STEP reader gave them. Valid only at the `Revision` and
+/// the facets it was landed with (`rev`, `len`); any other landing makes
+/// it stale and every reader then reads the plain soup. Written by the
+/// import, update and delete commands and the project loader, through
+/// `mesh_solids::set`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct SolidRanges {
+    pub rev: u64,
+    pub len: usize,
+    pub ranges: std::sync::Arc<[std::ops::Range<usize>]>,
 }
 
 /// Selection marker (tag). Only `SelectEntity` writes it (AGENTS.md: changes
@@ -206,7 +233,8 @@ pub struct GeomPrintMemo {
 /// normal only. `data` holds the primitives in mm, the layer names, the
 /// source units, the join tolerance, the chains and the import summary;
 /// it is shared (`Arc`) and freed when the last holder goes. Written only
-/// by `ImportDxf`, `MoveSketch`, `DeleteEntity` and the project loader.
+/// by `ImportDxf`, `InsertText` (#2679: typed text as engraving strokes),
+/// `MoveSketch`, `DeleteEntity` and the project loader.
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct Sketch {
     pub setup: Option<String>,
@@ -869,10 +897,12 @@ pub fn register_schema(world: &World) {
     world.component::<GeoSig>();
     world.component::<FeatureNamesMemo>();
     world.component::<ReducedFidelity>();
+    world.component::<FidelityVouched>();
     world.component::<StepBudget>();
     world.component::<StepSource>();
     world.component::<ModelSource>();
     world.component::<MeshOpen>();
+    world.component::<SolidRanges>();
     world.component::<Selected>();
     world.component::<StockDef>();
     world.component::<StockSourceOnly>();

@@ -195,6 +195,27 @@ fn a_flipped_z_refuses_by_name() {
         let e = refused("fanuc", &section(Some(letters), "Probe"));
         assert!(e.contains("operation Probe: the WCS has its"), "{e}");
         assert!(e.contains("posting a flipped Z is not supported yet") && e.contains("clear Flip Z"), "{e}");
+        // #2474: the exact reason - the tool-length word cannot be known.
+        assert!(e.contains("a preset length needs G44") && e.contains("touched off on that control needs G43"), "{e}");
+        assert!(e.contains("moves the tool by twice its length"), "{e}");
+        assert!(e.contains("canned cycle, whose R plane a mirrored Z puts on the far side of the hole bottom"), "{e}");
+    }
+}
+
+/// #2474: the cycle clause is the section's own - a section without a
+/// canned cycle is refused for the tool-length word alone.
+/// The same reason applies when the section also uses #2476 rotation.
+#[test]
+fn a_flipped_z_without_a_cycle_names_the_tool_length_word_only() {
+    for yaw in [None, Some(30.0)] {
+        let mut records: Vec<Record> = section(Some("Z"), "Mill").into_iter().filter(|r| !matches!(r, Record::Cycle(_))).collect();
+        if let Some(yaw) = yaw {
+            records.insert(3, param("WcsYaw", json!(yaw)));
+        }
+        let e = refused("fanuc", &records);
+        assert!(e.contains("operation Mill: the WCS has its Z axis flipped; posting a flipped Z is not supported yet"), "{e}");
+        assert!(e.contains("a preset length needs G44") && e.contains("clear Flip Z"), "{e}");
+        assert!(!e.contains("canned cycle"), "no cycle in the section: {e}");
     }
 }
 

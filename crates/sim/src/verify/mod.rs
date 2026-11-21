@@ -172,11 +172,14 @@ mod crossing;
 mod cut_index;
 mod engine;
 mod excess;
+mod fine_bore;
 mod finish;
+mod first_traverse;
 mod hidden;
 mod hidden_span;
 mod hole_wall;
 mod laws;
+mod live_traverse;
 mod mesh_posed;
 mod mesh_steel;
 mod midpose;
@@ -214,9 +217,14 @@ mod turn_hidden;
 mod types;
 mod upright;
 mod workholding;
+mod corner_relief;
+
+pub use corner_relief::CornerReliefZone;
 
 pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
-pub use excess::excess_floor;
+pub use excess::{band_growth, excess_floor, excess_floor_for, strict_floor, PROMISED_CHORD, WIDE_CHORD_LIMIT};
+pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
+pub use live_traverse::{live_first_traverse, LiveHit, LiveSolids, LiveStart, LiveUnjudged};
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};
@@ -241,7 +249,7 @@ pub use probe::Cutter;
 pub use rotary::{rotary_hits, RotaryAxis, RotaryLaw};
 pub use hole_wall::{HoleAxis, WALL_SAG, hole_is_round};
 pub use seat::{seat_skin, undersides, MARK_FLOOR};
-pub use solid::{SolidLaw, solid_hits, solid_hits_threaded, solid_hits_walled, stack_hits};
+pub use solid::{SolidLaw, solid_hits, solid_hits_relieved, solid_hits_threaded, solid_hits_walled, stack_hits};
 pub use mesh_steel::{mesh_refined, steel_stack, MeshSteel, SteelBand};
 #[doc(hidden)]
 pub use contact::posed_contact;

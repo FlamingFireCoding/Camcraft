@@ -25,6 +25,7 @@ workOffsetMax = 6;      // G54..G59; extended offsets not verified for this firm
 coolantModes = true; // reads PARAM Coolant (#869): the op's ask is posted, or refused by name
 programUnits = "mm"; // #902: millimetres only - the engine refuses an inch document by name
 endUnits = "note";   // #2189: mm-only firmware halts on G20; notes once when asked for inch
+explains = "paren"; // #1389: trailing RS-274 comments; shared helper guards their text
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -121,7 +122,9 @@ function block(words) {  // join the non-empty words onto one line
         seqNextForce = false;
       }
     }
-    writeln(prefix + body);
+    var line = prefix + body, c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
   }
 }
 function writeHeaderExtras() {
@@ -248,6 +251,8 @@ function joinDash(parts) {
   return a.join(" - ");
 }
 function note(s) { block(["(" + s + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
