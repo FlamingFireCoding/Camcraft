@@ -160,6 +160,7 @@ fn pocket_params(top: Height, bottom: Height, stepdown: f64) -> OpParams {
         helix_radius: 1.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     }
 }
 
@@ -184,6 +185,7 @@ fn adaptive_params(top: Height, bottom: Height, stepdown: f64) -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method: AdaptiveMethod::Spiral,
         troch: Default::default(),
+        corner_relief: Default::default(),
     }
 }
 

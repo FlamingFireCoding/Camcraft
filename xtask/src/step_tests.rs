@@ -128,6 +128,7 @@ fn batch_prebuild_leaves_suite_steps_fresh_with_truck_dev_dep() {
             .args(&build.args)
             .current_dir(&dir)
             .env_remove("CARGO_TARGET_DIR")
+            .stdout(std::process::Stdio::null()) // the JSON messages of the build (#1951)
             .status()
             .expect("run batch prebuild");
         assert!(st.success(), "prebuild {} failed", build.name);

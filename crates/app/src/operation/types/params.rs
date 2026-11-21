@@ -219,6 +219,9 @@ pub enum OpParams {
         /// described here could not reach (`machining2d::rest_pocket`).
         /// `None` is off - every earlier file, and the plain pocket.
         rest: Option<RestParams>,
+        /// Corner relief (#2400): dogbone or T-bone relief for inside
+        /// corners of closed pockets and square-ended slots.
+        corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -266,6 +269,8 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Corner relief (#2400): dogbone or T-bone inside-corner relief.
+        corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -297,6 +302,8 @@ pub enum OpParams {
         blend_turns: bool,
         /// The corner arc's radius, mm; `None` is the tool radius.
         blend_radius: Option<f64>,
+        /// Corner relief (#2400): dogbone or T-bone inside-corner relief.
+        corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },

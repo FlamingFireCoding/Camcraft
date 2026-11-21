@@ -192,6 +192,7 @@ impl ImportTools {
             Vec::new()
         };
         let mut number_owners: Vec<(String, u32)> = crate::tool_numbers::numbers(world)
+            .map_err(CommandError::Invalid)?
             .into_iter()
             .filter(|(n, _)| !removed_names.contains(n) && !reassigned.contains(&n.as_str()))
             .collect();

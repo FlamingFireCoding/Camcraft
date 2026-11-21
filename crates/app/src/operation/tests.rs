@@ -98,6 +98,7 @@ fn params_sanity_gates() {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     assert!(!bad.is_sane());
     // A depth range that runs upward is nonsense, refused at command
@@ -515,6 +516,7 @@ fn the_arc_entry_splits_the_stamp_and_leaves_the_others_alone() {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     };
     let digest = |p: &OpParams| {
         let mut h = std::hash::DefaultHasher::new();

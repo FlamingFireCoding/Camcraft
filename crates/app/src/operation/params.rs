@@ -4,7 +4,7 @@
 //! Provenance: our own digest law over this repo's operation registry.
 
 use super::*;
-use digest::{w, wt};
+use digest::{w, write_corner_relief, wt};
 
 impl OpParams {
     /// The digest-relevant scalars, written to a hasher in a fixed
@@ -177,6 +177,7 @@ impl OpParams {
             OpParams::Pocket {
                 blend_radius,
                 rest,
+                corner_relief,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -247,6 +248,7 @@ impl OpParams {
                         w(h, v);
                     }
                 }
+                write_corner_relief(corner_relief, h);
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
             // the strategy byte - the kind tag at the head already
@@ -255,6 +257,7 @@ impl OpParams {
             OpParams::Adaptive2D {
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 links: _,
                 stepover,
                 stock_to_leave,
@@ -322,6 +325,7 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
+                write_corner_relief(corner_relief, h);
             }
             OpParams::Offset2D { .. }
             | OpParams::Slot { .. }

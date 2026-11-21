@@ -15,6 +15,7 @@
 mod area;
 mod avoid;
 mod dwell;
+mod fine_bore;
 mod height;
 mod links;
 mod params;
@@ -30,6 +31,9 @@ mod wire_edm;
 pub use area::{
     AREA_DISTANCE_MAX, AreaControls, BoundaryMode, BoundaryShape, ChainSide, Containment, CornerStyle,
     ExtraBoundary, OpenBoundary, area_applies, area_unsupported,
+};
+pub use crate::machining2d::{
+    CornerRelief, CornerReliefChoice, CornerReliefKind, CornerReliefOverride, TBoneDirection,
 };
 pub use avoid::{
     DoNotTouch, describe_sel, do_not_touch_applies, do_not_touch_overlap_issue,

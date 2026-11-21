@@ -748,11 +748,17 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // not the file's whole history. Staleness never reads
                 // it; the stamp's signature does the work.
                 model::set_rev(world, &entity, dto.rev);
+                // #917: ranges that do not tile the facets are dropped.
+                let len = model::facets_of(world, &entity).map_or(0, |f| f.len());
+                let solids = crate::mesh_solids::from_wire(dto.solids.as_deref(), len, &dto.name);
+                crate::mesh_solids::set(world, &entity, &solids);
                 // #864: the flag lands with the facets it describes; an
                 // absent key, or a value that is no coarse chord, is none.
-                crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
+                crate::model_fidelity::set_with_cause(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown), dto.file_tolerance);
                 // #1610: validate_kind refused a hole without the mark.
                 crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
+                // #1339: validate_kind refused a vouch beside a flag.
+                crate::model_vouch::set(world, &entity, dto.fidelity_vouched.as_ref().map(super::VouchDto::to_record));
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
                 crate::step_source::set(world, &entity, dto.step_source.as_deref());
@@ -783,7 +789,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // #1056: a model copy carries its source's flag itself;
                 // a parametric block is meshed here, never coarse.
                 if matches!(shape, StockShape::FromModel { .. }) {
-                    crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
+                    crate::model_fidelity::set_with_cause(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown), dto.file_tolerance);
+                    // #1700: and its source's hole; validate_kind refused
+                    // a hole without the mark.
+                    crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
                 }
                 entity.entity_view(world).set(StockDef {
                     shape: shape.clone(),
