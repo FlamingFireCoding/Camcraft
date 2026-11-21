@@ -334,6 +334,14 @@ stated LINEAR rates — absent everywhere → 0 → silence, never a fake
 ceiling), `spindleMax` rpm, `coolants[]`, `rotaries[]
 {name, direction, travel}`, and `rtcp`.
 
+- `spindleMin` gives the minimum spindle speed in rpm, or zero when unstated.
+- `controllerIdentity`, when stated, has `model`, `nc_software` and an
+  optional `installed_options` list. An absent list means unknown. An empty
+  list means the installation has no options.
+- `linearAxes` lists the linear axis letters when the machine states a
+  controller identity. It includes additional linear axes, such as W.
+- `toolChangeMode`, when stated, is `manual`, `manual-retract-top` or `changer`.
+
 `rtcp` defaults to GEOMETRIC derivation: true iff some rotary states a
 direction that is not the Z column (z² < 0.99·(x²+y²+z²)) AND
 `controller.rtcp` is not `false` (#1962). A C table ([0,0,1]) is not

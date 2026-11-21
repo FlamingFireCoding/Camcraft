@@ -5,6 +5,9 @@ in the machine file and in saved projects. The machine can also state its
 installed options and tool-change procedure. An omitted option list means
 unknown. An empty list means the installation has no options. The Machines
 pane shows the stated facts and the post engine exposes them to scripts.
+Saved projects use format version 75. A version 74 project opens with
+these facts unstated. A version 74 reader refuses the newer file so the
+next save cannot silently discard the machine's installation facts.
 
 **Reason.** One controller family spans several releases. Each machine can
 have different options, a tool changer, or a manual change procedure. The post
