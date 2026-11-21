@@ -335,6 +335,9 @@ function onTorchOff() { refuse("unsupported torch operation"); }
 // text (including the accuracy bound) and strip control-language delimiters.
 // A WARN record still blocks the program through the failOnWarning manifest.
 function onComment(text) {
-  var words = commentText(text).match(/.{1,64}(?: |$)|.{1,64}/g) || [];
+  // Preserve word boundaries in multiline notes before the host replaces
+  // non-printable characters with question marks.
+  var singleLine = String(text || "").replace(/\s+/g, " ");
+  var words = commentText(singleLine).match(/.{1,64}(?: |$)|.{1,64}/g) || [];
   for (var i = 0; i < words.length; ++i) block("; " + words[i].trim());
 }
