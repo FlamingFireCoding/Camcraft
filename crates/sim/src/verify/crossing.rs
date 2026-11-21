@@ -53,7 +53,7 @@ pub(super) fn crossings(path: &Toolpath, cx: &VerifyContext, chord_tol: f64) -> 
     // Mode::Carve stands it down too (#1443): a V-carve rides each
     // branch of the medial axis from its two walls, and the two rides
     // lie on one another within the chord tolerance.
-    if matches!(cx.mode, Mode::Envelope | Mode::Revolve | Mode::Radial | Mode::Rotary | Mode::Carve) {
+    if matches!(cx.mode, Mode::Envelope | Mode::Revolve | Mode::Radial | Mode::Rotary | Mode::Carve | Mode::Undercut) {
         return Vec::new();
     }
     crossed_pairs(path, chord_tol)

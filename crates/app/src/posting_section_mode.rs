@@ -90,6 +90,7 @@ pub fn classify(params: &OpParams, path: &Toolpath) -> Option<SectionMode> {
         | OpParams::PlasmaProfile(_)
         | OpParams::WireContour(_)
         | OpParams::SinkerBurn(_)
+        | OpParams::SlotUndercut(_)
         | OpParams::SinkerSideBurn(_) => None,
     }
 }

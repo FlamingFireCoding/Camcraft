@@ -38,6 +38,12 @@ judged instead by the plasma laws at the post gate (below).
 
 ## Plasma Profile
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-plasma-profile" /> }} ![Top view of torch travel from a pierce point along the lead and outer plate profile.](../../../operation-paths.svg#PlasmaProfile)
 
 ### Stored torch recipes
