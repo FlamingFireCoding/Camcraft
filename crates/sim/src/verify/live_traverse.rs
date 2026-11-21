@@ -22,7 +22,8 @@
 //! machine frame at an angle the part frame does not state: it is read
 //! revolved about the spindle. A face that only touches the swept solid
 //! (within `tol`) passes, as in the other traverse laws; the work's
-//! model excess (a coarse model, #842) grows the swept solid.
+//! model excess (a coarse model, #1053) tightens that tolerance while a
+//! positive one is left, and past that the law reads untightened.
 //! NOT covered: a program that starts with the turret low near the work
 //! (after a manual jog, for example) - decision #3077.
 
@@ -88,7 +89,7 @@ struct Swept {
     z: f64,
     bands: Vec<Band>,
     /// Added to every band's width and taken off the first band's inner
-    /// radius: the work's excess less the touch tolerance.
+    /// radius: less the touch tolerance (tightened by the work's excess).
     grow: f64,
 }
 
@@ -126,7 +127,11 @@ impl Swept {
             return None;
         }
         let bands = bands_of(&tool)?;
-        Some(Swept { o: spindle, u: [dx / r, dy / r], r, z: start.z, bands, grow: excess - tol })
+        // #1053: the excess tightens the tolerance while a positive one is
+        // left; past that the law reads untightened (the program gate
+        // refuses the coarse model by name).
+        let t = if tol > excess { tol - excess } else { tol };
+        Some(Swept { o: spindle, u: [dx / r, dy / r], r, z: start.z, bands, grow: -t })
     }
 
     /// `(along, across)` of `p` about the spindle line.
@@ -233,9 +238,10 @@ fn box_facets(b: &FixtureBox) -> Vec<Triangle> {
 }
 
 /// The live-tool first-traverse law (#3077). `Ok(Some(hit))` names the
-/// first solid in the way: the work (grown by `excess`) or the turning
-/// steel that meets the swept solid, or the fixed steel that reaches it
-/// read revolved. A face within `tol` of it passes. `Ok(None)` when the
+/// first solid in the way: the work or the turning steel that meets the
+/// swept solid, or the fixed steel that reaches it read revolved. A face
+/// within `tol` of it passes; on the work `tol` less `excess` while that
+/// is positive (#1053). `Ok(None)` when the
 /// traverse is clear.
 ///
 /// # Errors

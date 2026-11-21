@@ -71,9 +71,21 @@ fn a_face_that_only_touches_the_first_points_radius_passes_unless_the_model_is_c
     let hit = work_box(&start(), proud, 0.0);
     let Ok(Some(LiveHit::Work { index: 0, along_mm, z_mm })) = hit else { panic!("{hit:?}") };
     assert!((along_mm - 15.01).abs() < 1e-9 && (13.0..=15.0).contains(&z_mm), "{along_mm} {z_mm}");
-    // A coarse model may stand its excess past its facets: the touch
-    // reads as a hit there.
-    assert!(matches!(work_box(&start(), flange, 0.05), Ok(Some(LiveHit::Work { .. }))));
+    // #1053: past the tolerance the excess reads untightened.
+    assert_eq!(work_box(&start(), flange, 0.05), Ok(None));
+}
+
+#[test]
+fn a_coarse_models_excess_tightens_the_tolerance_while_one_is_left() {
+    // A face 0.005 proud: inside a 0.01 tolerance, past it tightened by
+    // a 0.007 excess (0.003 left).
+    let proud = b([10.0, -5.0, 13.0], [15.005, 5.0, 15.0]);
+    let at = |excess: f64| live_first_traverse(&start(), &LiveSolids { work_boxes: &[proud], ..LiveSolids::default() }, 0.01, excess);
+    assert_eq!(at(0.0), Ok(None));
+    assert!(matches!(at(0.007), Ok(Some(LiveHit::Work { .. }))));
+    // The steel is never a model: no excess tightens it.
+    let s = live_first_traverse(&start(), &LiveSolids { turning: &[proud], ..LiveSolids::default() }, 0.01, 0.007);
+    assert_eq!(s, Ok(None));
 }
 
 #[test]
