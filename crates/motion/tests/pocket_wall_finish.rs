@@ -159,3 +159,27 @@ fn zigzag_pocket_without_island_finishes_walls() {
 fn blended_zigzag_pocket_finishes_walls_without_crossings() {
     assert_walls_finished(true, &params(PocketStrategy::Zigzag, true, true), "zigzag blended");
 }
+
+/// #3021: a square island close to the walls. A blended row turn
+/// reached across the closing ring here until the blends obeyed the
+/// crossing law.
+#[test]
+fn blended_zigzag_turns_do_not_cross_the_closing_rings() {
+    let sq = |a: f64, b: f64| lp(vec![Point2::new(a, a), Point2::new(b, a), Point2::new(b, b), Point2::new(a, b)]);
+    let Ok(region) = Region::new(vec![sq(0.0, 30.0), sq(10.0, 20.0)]) else { panic!("fixture region") };
+    // Plunge entries: two helices in this 2 mm band overlap on their own,
+    // before and after #3021 (a separate defect).
+    let p = PocketParams {
+        tool_diameter: 8.0,
+        stepover: 3.0,
+        bottom_z: -4.0,
+        entry: Entry3D::Plunge,
+        ..params(PocketStrategy::Zigzag, true, true)
+    };
+    let path = match pocket(&region, &p) {
+        Ok(t) => t,
+        Err(e) => panic!("pocket refused: {e:?}"),
+    };
+    let crossed = camcraft_motion::verify::crossed_pairs(&path, ARC_FIT_TOL);
+    assert!(crossed.is_empty(), "crossing feed pairs {crossed:?}");
+}

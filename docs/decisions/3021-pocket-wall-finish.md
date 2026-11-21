@@ -20,6 +20,12 @@ each island). The row points stand on the 1 um lattice.
   their chords as crossings (`setup_align`). Lattice row points remove
   that. The snap moves a point by less than 0.5 um, inside the 10 um gap.
 
+- With blended turns, a row-turn fillet or a ring-corner fillet can
+  cross the other pass. The Zigzag pocket now holds its blends to the
+  crossing law (`hold_crossings`), as the rest pocket does. A fillet
+  that would cross stays a sharp turn. The ring corners of a square
+  pocket then stay sharp.
+
 **Dropped.**
 - A verify law that names unfinished walls. The cut is the defect; a
   warning on every Zigzag pocket is noise.
