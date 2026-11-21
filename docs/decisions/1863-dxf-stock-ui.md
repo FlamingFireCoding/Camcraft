@@ -29,8 +29,13 @@
   `sketch::world_pose`. The free ends of open chains get a magenta X, a
   colour that no curve uses.
 - The operation page's Source list offers the setup's profiles for a kind
-  that `sketch_model::admits` (2D milling, plasma, wire EDM). The app's
-  profile law still refuses a wrong pairing by name.
+  that `sketch_model::admits` (2D milling, plasma, wire EDM), skipping
+  duplicates. On merge with #1864 (which appended `sketch::placed_in` for all
+  kinds), we kept `op_source::source_items`'s `sketch_model::admits` filter
+  and added #1864's duplicate check, because `sketch_model::source_problem`
+  refuses non-admitted kinds by name. Existing operations read `o.setup`
+  strictly; draft operations (`live` is `None`) fall back to
+  `setup::active`.
 - `camcraft_app` re-exports `camcraft_geometry::dxf`, so the UI can name the
   `Primitive` variants of a sketch. This adds no crate dependency.
 

@@ -20,7 +20,11 @@ pub(crate) fn source_items(world: &World, setup: Option<&str>, params: &OpParams
         model::model_entities(world).into_iter().filter(|(_, e)| !model::is_fixture(world, e)).map(|(n, _)| n),
     );
     if sketch_model::admits(params) {
-        items.extend(sketch::placed_in(world, setup));
+        for s in sketch::placed_in(world, setup) {
+            if !items.contains(&s) {
+                items.push(s);
+            }
+        }
     }
     items
 }

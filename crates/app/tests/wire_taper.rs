@@ -133,7 +133,7 @@ fn a_tapered_punch_posts_its_golden_and_its_cl_shows_the_poses() {
     assert!(comp < on && on < off && off < cut, "{text}");
     let moves = &lines[on + 1..off];
     assert!(moves.iter().all(|l| l.starts_with("G1 X") && l.contains(" U") && l.contains(" V")), "{text}");
-    assert!(moves.last().is_some_and(|l| l.ends_with("U0 V0")), "the lead-out stands the wire upright: {text}");
+    assert!(moves.last().is_some_and(|l| l.ends_with("U0. V0.")), "the lead-out stands the wire upright: {text}");
 }
 
 /// Done means: a zero taper is the vertical cut's golden byte for byte,

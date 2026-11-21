@@ -52,9 +52,14 @@ pub(super) fn header_rows(ui: &mut Ui, state: &mut State, target: &str, live: Op
         coolant_row(ui, state, target, live);
     }
 
-    // Source: the stock or one of the user's parts - never a work
-    // offset (G54...), a setup or a fixture (user review 2026-11-06).
-    let op_setup = live.and_then(|o| o.setup.clone()).or_else(|| camcraft_app::setup::active(&state.world));
+    // Source: the stock, one of the user's parts, or (for 2D milling,
+    // plasma and wire EDM via `sketch_model::admits`) a placed DXF
+    // profile in this operation's setup - never a work offset, setup or
+    // fixture (user review 2026-11-06, #1863, #1864).
+    let op_setup = match live {
+        Some(o) => o.setup.clone(),
+        None => camcraft_app::setup::active(&state.world),
+    };
     let mut src_items = super::super::op_source::source_items(&state.world, op_setup.as_deref(), &state.op_ui.params);
     let models: Vec<String> = src_items.iter().skip(1).cloned().collect();
     ui.label("Source");
