@@ -15,6 +15,7 @@ use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
 use super::levels::{Cert, Motion, WalkState, cut_levels_under, walk_one_level};
 use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, plan_passes};
+use super::pocket_zigzag::rest_passes;
 use super::{GenError, pocket_entered_with_relief};
 
 /// Plan a 2D pocket/offset path whose tool assembly stays clear of `avoid`.
@@ -122,6 +123,10 @@ pub fn pocket_avoid_with_relief(
                 super::pocket_hsm::adaptive_passes(&level_center, p, &what, true, None)?;
             notes.extend(anotes);
             (ps, act, rm, js)
+        } else if matches!(strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
+            // #3129: rows alone leave a cusp between row ends on each wall,
+            // island and keep-out edge; the level closes with its rings.
+            (rest_passes(&level_center, p.tiling_step(), p.climb)?, strategy, None, Vec::new())
         } else {
             (plan_passes(&level_center, p.tiling_step(), p.climb, strategy)?, strategy, None, Vec::new())
         };

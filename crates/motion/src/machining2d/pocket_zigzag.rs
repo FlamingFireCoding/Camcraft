@@ -14,7 +14,7 @@ use super::waterscan::scan_row;
 /// on the 1 um lattice (the gap holds them inside): a helix entry snaps
 /// its turns there, and an off-lattice start made two levels' helices
 /// at one start read as crossing chords (#3021).
-pub(super) fn rest_passes(center: &Region, step: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
+pub(crate) fn rest_passes(center: &Region, step: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
     let rows = center.offset(-0.01_f64.min(step * 0.25))?;
     let mut passes = if rows.is_empty() { Vec::new() } else { zigzag_passes(&rows, step, climb)? };
     for p in passes.iter_mut().flatten() {
