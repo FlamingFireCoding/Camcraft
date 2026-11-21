@@ -452,7 +452,7 @@ pub(crate) const GIZMO_OUTLINE_PX: f32 = 5.0;
 const AXIS_NAMES: [&str; 3] = ["X", "Y", "Z"];
 
 /// Triad extent for the current document (never smaller than 10 mm).
-fn gizmo_len(state: &State) -> f64 {
+pub(crate) fn gizmo_len(state: &State) -> f64 {
     let extent = model::solid_world_aabb(&state.world)
         .map(|b| {
             (b.max.x - b.min.x)
@@ -850,10 +850,11 @@ const GRID_MAJOR_EVERY: i64 = 5;
 /// screen-space overlay, so the part occludes it like a real table.
 ///
 /// The same switch as the triads (`show_world_axes`): the grid is
-/// reference furniture, and hiding the axes hides it too. It fades toward
-/// the viewport ground at the rim rather than stopping on a rectangle.
+/// reference furniture, and hiding the axes hides it too. The Display
+/// menu's "Grid" box (`show_grid`, #2818) hides the grid alone. It fades
+/// toward the viewport ground at the rim rather than stopping on a rectangle.
 pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
-    if !state.show_world_axes {
+    if !state.show_world_axes || !state.show_grid {
         return Vec::new();
     }
     let step = nice_step(state.cam.dist / 10.0);

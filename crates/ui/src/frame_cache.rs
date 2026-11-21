@@ -44,6 +44,8 @@ pub(crate) struct FrameCache {
     inner: Mutex<FrameCacheInner>,
     /// The toolpath overlay lines and the chevron arm (#2201).
     pub(crate) paths: crate::path_overlay::PathLineCache,
+    /// The ground shadow mesh and the occlusion values (#2834).
+    pub(crate) shade: crate::shade_cache::ShadeCache,
 }
 
 fn lock_inner(cache: &FrameCache) -> std::sync::MutexGuard<'_, FrameCacheInner> {

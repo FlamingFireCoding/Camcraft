@@ -7,7 +7,8 @@ use crate::machining2d::GenError;
 
 use super::ladder::levels;
 use super::params::{Finish3DParams, FinishPattern, dirs, refinement_floor, scallop_stepdown, scallop_stepover, validate};
-use super::support::{Sup, build_sups, plunge_support};
+use super::grid::SupSet;
+use super::support::{build_sups, plunge_support};
 use super::march::{emit_runs, march_curve};
 use super::raster_bridge::bridge_line;
 use super::rim::rim_rows;
@@ -23,7 +24,7 @@ pub(super) fn raster_pass(
     b: &mut PathBuilder,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
     ux: f64,
     uy: f64,
     continuing: bool,
@@ -41,7 +42,7 @@ pub(super) fn raster_pass_spaced(
     b: &mut PathBuilder,
     p: &Finish3DParams,
     r: f64,
-    sups: &[Sup],
+    sups: &SupSet,
     (ux, uy): (f64, f64),
     continuing: bool,
     spacing_tol: f64,
@@ -280,7 +281,7 @@ pub(super) fn rings_and_tail_with_trim(
 /// and the smallest shallow tilt - the cos-law's `m_z`. `None`
 /// when every facet is steep: the rings alone carry the model,
 /// exactly as the raster answers to that case.
-pub(super) fn shallow_footprint(sups: &[Sup]) -> Option<(Point2, f64, f64)> {
+pub(super) fn shallow_footprint(sups: &SupSet) -> Option<(Point2, f64, f64)> {
     let (mut x0, mut x1, mut y0, mut y1) =
         (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
     let mut mz = 1.0f64;

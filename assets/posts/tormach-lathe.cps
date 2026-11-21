@@ -33,6 +33,10 @@ programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units
 // Explain G-code (#1399): T0101 is tool 1, offset 1 (the PathPilot lathe
 // T word above), never "tool 101". Read only when Explain is on.
 explainTool = "station-offset";
+explains = "paren"; // #1389: PathPilot comments and LinuxCNC extended coordinate systems
+explainWords = {
+  "G59.1": "WORK OFFSET 7", "G59.2": "WORK OFFSET 8", "G59.3": "WORK OFFSET 9"
+};
 // liveTooling is NOT declared: PathPilot's lathe tables list no C axis
 // and no live-tool words, so the engine refuses a C-axis section by
 // name before this script ever sees it.
@@ -194,7 +198,11 @@ function block(words) {
   for (var i = 0; i < words.length; i++) {
     if (words[i] !== "" && words[i] !== null && words[i] !== undefined) a.push(words[i]);
   }
-  if (a.length > 0) writeln(a.join(" "));
+  if (a.length > 0) {
+    var line = a.join(" "), c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
+  }
 }
 function msg(s) { if (typeof message === "function") message(s); else writeln("(" + clean(s, 200) + ")"); }
 // Refuse by name, once per reason per program (per-line is noise).
@@ -781,6 +789,16 @@ function g76Why(p, r0, r1) {
   var rev = (p.Hand === "right") === (p.EndZ > p.Z);
   if (rev !== spinRev) {
     return "a " + p.Hand + "-hand thread cut " + (p.EndZ < p.Z ? "toward" : "away from") + " the chuck needs " + (rev ? "M4" : "M3") + ", the section's spindle runs " + (spinRev ? "M4" : "M3");
+  }
+  // #2952 (the law of #2878): the public LinuxCNC G-code reference's
+  // G76 section says that, with no entry taper (this post writes no E
+  // / L), the tool rapids to the cut depth at the start Z, then
+  // synchronizes and cuts. If the start point stands above
+  // material (not in free air in front of the end face or in a relief
+  // groove wider than the insert), refuse the cycle by name and never
+  // write it. A record without the value (an older cache) reads false.
+  if (p.StartInAir !== true) {
+    return "the start point is above material (G76 moves the insert to pass depth at rapid traverse) - start the thread in free air in front of the end face or in a relief groove wider than the insert, regenerate the operation, or choose G33 passes";
   }
   return null;
 }

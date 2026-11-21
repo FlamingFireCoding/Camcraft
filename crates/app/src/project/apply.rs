@@ -536,8 +536,11 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // and break-through values remain unchanged in their DTOs.
         // v71 -> v72 (#2463): a model may record its source file; absent
         // is not linked.
-        // v72 -> v73 (#1864): sketch chain/layer picks and per-chain contour
-        // overrides arrive; a v72 file has none and steps up unchanged.
+        // v72 -> v73 (#2055): absent `do_not_touch` protection defaults to
+        // empty picks and zero clearance. v72 readers must refuse v73
+        // rather than discard protected selections as unknown area fields.
+        // v73 -> v74 (#1864): sketch chain/layer picks and per-chain contour
+        // overrides arrive; a v73 file has none and steps up unchanged.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
@@ -747,11 +750,17 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // not the file's whole history. Staleness never reads
                 // it; the stamp's signature does the work.
                 model::set_rev(world, &entity, dto.rev);
+                // #917: ranges that do not tile the facets are dropped.
+                let len = model::facets_of(world, &entity).map_or(0, |f| f.len());
+                let solids = crate::mesh_solids::from_wire(dto.solids.as_deref(), len, &dto.name);
+                crate::mesh_solids::set(world, &entity, &solids);
                 // #864: the flag lands with the facets it describes; an
                 // absent key, or a value that is no coarse chord, is none.
                 crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
                 // #1610: validate_kind refused a hole without the mark.
                 crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
+                // #1339: validate_kind refused a vouch beside a flag.
+                crate::model_vouch::set(world, &entity, dto.fidelity_vouched.as_ref().map(super::VouchDto::to_record));
                 // #1054: validate_kind refused a budget out of bounds.
                 crate::model_fidelity::set_budget(world, &entity, dto.facet_budget);
                 crate::step_source::set(world, &entity, dto.step_source.as_deref());
@@ -783,6 +792,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 // a parametric block is meshed here, never coarse.
                 if matches!(shape, StockShape::FromModel { .. }) {
                     crate::model_fidelity::set(world, &entity, crate::model_fidelity::loaded(dto.coarse_mm, dto.fidelity_unknown));
+                    // #1700: and its source's hole; validate_kind refused
+                    // a hole without the mark.
+                    crate::mesh_open::set(world, &entity, dto.mesh_open.as_deref());
                 }
                 entity.entity_view(world).set(StockDef {
                     shape: shape.clone(),

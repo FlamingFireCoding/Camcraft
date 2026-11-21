@@ -187,7 +187,7 @@ fn build_demo_world() -> flecs_ecs::prelude::World {
         top_z: Height::of(HeightReference::TopOfModel, 0.0), bottom_z: Height::of(HeightReference::TopOfModel, -4.0),
         stepdown: 2.0, feed: 1800.0, plunge_feed: 400.0, climb: true, strategy: PocketStrategy::Waterline,
         entry: Entry3D::Helix, helix_radius: 1.2, links: Links::PLANAR, optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
-        blend_turns: false, blend_radius: None, tilt: None,
+        blend_turns: false, blend_radius: None, tilt: None, corner_relief: Default::default(),
     };
     h.execute(&world, CreateOperation::new(&world, "2D Pocket1", "EM-0600-4FL", pocket_src, pocket_params).expect("pocket op"));
     h.execute(&world, EditOperationParams::with_coolant(&world, "2D Pocket1", CoolantMode::Off).expect("dry pocket"));

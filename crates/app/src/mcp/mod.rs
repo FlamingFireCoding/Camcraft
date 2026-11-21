@@ -16,6 +16,8 @@
 //! reason - never a panic, never a silent success.
 
 pub mod provider;
+// #1947: the tool reference and local prompt, generated from the tool table.
+pub mod catalog;
 mod provider_calls;
 mod fallback;
 mod schema_validation;
@@ -28,6 +30,7 @@ mod coolant_tools;
 // #93 slice 2: a milling tool's drawn cutter outline.
 mod cutter_tools;
 mod cutting_tools;
+mod do_not_touch;
 mod edit;
 mod features;
 mod fixture_profile_tools;
@@ -50,6 +53,7 @@ mod box_pick;
 mod pockets;
 // #1534: document and per-setup post options (`SetPostOptions` / `SetSetupPostOptions`).
 mod post_options_tools;
+mod post_offer_view;
 mod render;
 mod selection;
 mod setup_tools;
@@ -72,7 +76,10 @@ mod wcs_tools;
 mod wcs_flip_tools;
 // #2463: link a model to its source file, or unlink it.
 mod model_link_tools;
+// #1339: vouch for a mesh of unknown fidelity.
+mod vouch_tools;
 mod rotary_tools;
+mod thread_infeed_tools;
 mod workholding_tools;
 
 // #183: the same tool table served live from inside the GUI, over a

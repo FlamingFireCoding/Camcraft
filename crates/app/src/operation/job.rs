@@ -64,6 +64,8 @@ pub struct GenJob {
     pub(super) drive_chains: Option<Result<Vec<Vec<Point3>>, GenError>>,
     /// #1504: a picked Slot's room, read here; the Slot arm confines to it.
     pub(super) slot_bound: Option<Result<crate::machining2d::SlotBound, GenError>>,
+    /// #2848: a rotary op's picked faces, read here; the rotary arms keep to them or refuse by name.
+    pub(super) rotary_picks: Option<Result<super::rotary_picks::Picked, GenError>>,
     pub(super) prior: Option<Result<Arc<crate::rest::PriorState>, GenError>>,
     /// The program ahead of this op in its setup, uncut (issue #96
     /// review): verify's vertical-dive convictions are re-read against
@@ -92,6 +94,9 @@ pub struct GenJob {
     pub(super) unread_steel: Vec<String>,
     /// The highest world Z the tip reaches (WCS origin + stated Z top).
     pub(super) z_ceiling: Option<f64>,
+    /// The mounted machine's Z stroke, mm (#2987): the tool-change height
+    /// over the table top for the 3+2 first-traverse law.
+    pub(super) z_stroke: Option<f64>,
     /// `fixtures` split by whether the steel turns with the part
     /// (M13.8 (2)): `.0` rides the rotary, `.1` stands still (the
     /// declared-fixed models, then the machine table) - the post gate's
@@ -124,6 +129,8 @@ pub struct GenJob {
     /// The area controls resolved against the world (M11.5); `None` for
     /// the identity - an untouched operation carries nothing new.
     pub(super) area: Option<Result<AreaCtx, GenError>>,
+    /// Protected "Do not touch" items resolved into job coordinates (#2055), plus requested clearance (mm).
+    pub(super) avoid: Option<Result<(Vec<verify::AvoidItem>, f64), GenError>>,
     /// The work offset's world origin (`posting::wcs_context`), the
     /// spindle a lathe or mill-turn post programs about: world Z
     /// through it. The cross drill measures its standoffs from this
@@ -350,6 +357,23 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         if turned || predrilled { crate::rest::drills_ahead(world, op_name, setup) } else { Vec::new() };
     let turned_ahead = if turned { crate::rest::turned_ahead(world, op_name, setup) } else { Vec::new() };
     let area = area_ctx(world, op, tool.diameter * 0.5, &material, part_solid);
+    let avoid = if op.area.do_not_touch.is_default() {
+        None
+    } else if let Some(why) = do_not_touch_unsupported(op.params.kind()) {
+        Some(Err(GenError::Invalid(why)))
+    } else if let Some(why) = super::avoid::overlap_issue(
+        world,
+        &op.area.do_not_touch.picks,
+        Some(&op.src),
+        &op.area,
+    ) {
+        Some(Err(GenError::Invalid(why)))
+    } else {
+        Some(
+            super::avoid::collect_items(world, setup, &op.area.do_not_touch, frame.as_ref())
+                .map(|items| (items, op.area.do_not_touch.clearance)),
+        )
+    };
     // #388: the op's own setup's machine, active or not.
     let machine_kind = crate::machine::kind_of_setup(world, setup);
     // The lathe spindle law (issue #62): every kind that turns about the
@@ -382,6 +406,12 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         .and_then(|m| m.axis(2))
         .and_then(crate::machine::AxisLimits::program_travel)
         .map(|(lo, hi)| wcs_origin[2] + lo.max(hi));
+    let z_stroke = mounted
+        .as_ref()
+        .and_then(|m| m.axis(2))
+        .and_then(crate::machine::AxisLimits::program_travel)
+        .map(|(lo, hi)| (hi - lo).abs())
+        .filter(|s| s.is_finite());
     let sinker_gap = match &op.params {
         OpParams::SinkerBurn(p) => Some(super::sinker_op::burn_gap(world, setup, p)),
         // #545: the side burn's gap, once its allowance holds under it.
@@ -424,6 +454,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         sketch_contour,
         drive_chains,
         slot_bound,
+        rotary_picks: super::rotary_picks::picks_of(world, op),
         prior,
         verify_prior,
         drills_ahead,
@@ -436,6 +467,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         fixture_names,
         unread_steel,
         z_ceiling,
+        z_stroke,
         workholding,
         fixture_meshes,
         rotary_axis,
@@ -444,6 +476,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         keep_parts: super::keep_law::parts_in_stock(world, setup, &op.params, part_solid),
         neighbour_parts: super::keep_law::neighbour_parts(world, setup, &op.params, &op.src, part_solid),
         area,
+        avoid,
         wcs_origin,
         spindle_note,
         carried_overhang,
