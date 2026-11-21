@@ -121,7 +121,9 @@ fn turning_about_y_suggests_b_and_an_a_about_y_shows_a_note_at_its_row() {
 
 /// The FlexiHAL router from sc-cam's `examples/cam/flexihal.json`
 /// (travel and A; its `pivot` waits for the Kinematics group): X -672..0,
-/// Y -1023..0, Z -160..0 and a continuous A about -X on the table.
+/// Y -1023..0, Z -160..0 and a continuous A about -X on the table, its
+/// centre 40 mm above the table and (from the pivot's Z -98.08, an
+/// estimate) 98.08 mm below the nose at Z 0.
 #[test]
 fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
     let (mut h, dir) = blank_mill("chain_flexihal");
@@ -132,6 +134,8 @@ fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
     press(&mut h, "-X");
     press(&mut h, "Add axis");
     h.get_by_label("A - rotary, moves the work");
+    type_into(&mut h, "A nose to axis", "98.08");
+    type_into(&mut h, "A axis to table", "40");
     h.get_by_label("Validation: passes");
 
     press(&mut h, "Save machine");
@@ -148,6 +152,7 @@ fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
     assert_eq!(a.axis, Some([-1.0, 0.0, 0.0]));
     assert_eq!(a.travel, None, "continuous");
     assert_eq!(a.turns_part, Some(true), "on the table, A turns the work");
+    assert_eq!((a.nose_to_axis, a.axis_to_table), (Some(98.08), Some(40.0)));
     assert_no_commands(&h);
     let _ = std::fs::remove_dir_all(&dir);
 }

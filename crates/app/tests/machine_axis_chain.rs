@@ -362,3 +362,42 @@ fn a_row_whose_letter_and_axis_disagree_says_so() {
     let x = m.axis_rows().into_iter().find(|r| r.name == "X").expect("X row");
     assert_eq!((x.axis, x.letter_note()), (None, None));
 }
+
+fn field(m: &MachineDraft, label: &str) -> camcraft_app::machine::fields::Field {
+    let f = m.groups().into_iter().flat_map(|g| g.fields).find(|f| f.label == label);
+    f.unwrap_or_else(|| panic!("no field {label}"))
+}
+
+/// #804, #1107: a rotary that turns the work states its two work lengths
+/// in "Rotaries and limits"; one that carries the head has neither row.
+#[test]
+fn a_table_rotary_states_its_work_lengths_and_a_head_rotary_has_none() {
+    let mut m = grblhal();
+    m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
+    m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
+    let labels: Vec<String> = m.groups().into_iter().flat_map(|g| g.fields).map(|f| f.label).collect();
+    assert!(!labels.iter().any(|x| x.starts_with("B nose") || x.starts_with("B axis to")), "{labels:?}");
+    for (label, text) in [("A nose to axis", "98.08"), ("A axis to table", "40")] {
+        let f = field(&m, label);
+        m.set(&f.pointer, f.kind, text).expect("the edit applies");
+    }
+    assert_eq!(validate_text(&m.text()), [], "{}", m.text());
+    let a = axis(&m, "A");
+    assert_eq!((a.nose_to_axis, a.axis_to_table), (Some(98.08), Some(40.0)));
+    unknown_keys_kept(&m.value);
+}
+
+/// A work length is above zero and only on a rotary that turns the work;
+/// each refusal sits at its row, and a stated key shows its row to clear.
+#[test]
+fn a_bad_work_length_is_refused_at_its_row() {
+    let mut m = grblhal();
+    let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
+    let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
+    m.value.pointer_mut(&a).expect("A")["nose_to_axis"] = json!(-1.0);
+    m.value.pointer_mut(&b).expect("B")["axis_to_table"] = json!(5.0);
+    let r = m.refusals();
+    let on = |label: &str| -> Vec<String> { field(&m, label).refusals(&r).iter().map(|r| r.key.clone()).collect() };
+    assert_eq!(on("A nose to axis"), ["A nose_to_axis"]);
+    assert_eq!(on("B axis to table"), ["B axis_to_table"]);
+}

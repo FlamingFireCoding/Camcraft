@@ -105,6 +105,7 @@ pub fn validate_text(text: &str) -> Vec<Refusal> {
     out.extend(
         super::trunnion_refusals(&v, &axes)
             .into_iter()
+            .chain(super::work_length_refusals(&axes))
             .map(|(key, rule)| Refusal::new(key, rule)),
     );
     for head in head_parts(&v) {

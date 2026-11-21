@@ -160,6 +160,13 @@ pub fn groups(raw: &Value) -> Vec<FieldGroup> {
         }
         if *rotary {
             g.add(format!("{name} resolution"), format!("{name}.resolution"), format!("{at}/resolution"), N, &[format!("{name} resolution")]);
+            // #804, #1107: the work lengths, on a rotary that turns the
+            // work - or wherever the file states one, so it can be cleared.
+            let part = raw.pointer(at).unwrap_or(&Value::Null);
+            for key in super::WORK_LENGTHS.into_iter().filter(|k| super::turns_work(part) || part.get(*k).is_some()) {
+                let words = key.replace('_', " ");
+                g.add(format!("{name} {words}"), format!("{name}.{key}"), format!("{at}/{key}"), N, &[format!("{name} {key}")]);
+            }
         }
     }
     out.push(lin.group);
