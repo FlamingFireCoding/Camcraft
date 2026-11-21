@@ -82,6 +82,9 @@ mod release_pack;
 #[cfg(test)]
 mod release_tests;
 mod scan;
+mod seed;
+#[cfg(test)]
+mod seed_tests;
 mod select;
 #[cfg(test)]
 mod select_tests;
@@ -89,6 +92,7 @@ mod single;
 #[cfg(test)]
 mod step_tests;
 mod suites;
+mod unit_env;
 #[cfg(test)]
 mod tests;
 mod verdict;
@@ -278,6 +282,7 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
         None => None,
     };
     let mut run = exec::Run::new(root, &g.tier, g.dry)?;
+    seed::before_gate(root, g.dry);
     if let Some(name) = &g.filter {
         let f = single::Filter {
             name,

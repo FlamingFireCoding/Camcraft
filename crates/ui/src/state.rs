@@ -2778,11 +2778,11 @@ impl State {
             .enumerate()
             .map(|(gi, g)| {
                 let pick_name = camcraft_app::pick::geo_label(&self.world, g);
-                let (mut label, missing) = match g.feature {
+                let (mut label, missing) = match &g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
-                            .and_then(|f| f.faces.iter().find(|fa| fa.id == id).cloned());
+                            .and_then(|f| f.faces.iter().find(|fa| fa.id == *id).cloned());
                         match face {
                             Some(f) => {
                                 // Which axis the face sits at, on the
@@ -2816,7 +2816,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .map(|f| {
-                                let c = camcraft_app::model::resolve_chain(&f, id)?;
+                                let c = camcraft_app::model::resolve_chain(&f, *id)?;
                                 let pts = feature::chain_points(&f, &c);
                                 Some((c, pts))
                             })
@@ -2879,11 +2879,11 @@ impl State {
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
                                 // #2247: both memoized per feature set.
-                                let strips = model::patches(&f).iter().find(|p| p.id == id)?.faces.len();
+                                let strips = model::patches(&f).iter().find(|p| p.id == *id)?.faces.len();
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in model::patch_rings(&f, id)?.iter() {
+                                for r in model::patch_rings(&f, *id)?.iter() {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()
@@ -2947,7 +2947,7 @@ impl State {
                         }
                     }
                     FeatureSel::Vertex(id) => {
-                        match crate::vertex_pick::vertex_world(self, &g.entity, id) {
+                        match crate::vertex_pick::vertex_world(self, &g.entity, *id) {
                             Some(p) => (
                                 format!(
                                     "{pick_name} · ({}, {}, {}) {}",
@@ -2958,6 +2958,14 @@ impl State {
                                 ),
                                 false,
                             ),
+                            None => (format!("{pick_name} · missing"), true),
+                        }
+                    }
+                    // #2238 frame cost: the sketch chip text is cached by
+                    // drawing, entity, pick and display unit.
+                    FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                        match crate::sketch_chip_memo::sketch_chip(&self.world, &g.entity, &g.feature, unit) {
+                            Some((tail, missing)) => (format!("{pick_name} · {tail}"), missing),
                             None => (format!("{pick_name} · missing"), true),
                         }
                     }
