@@ -274,7 +274,8 @@ Do not re-review, re-gate or refresh anything between wave-1 merges.
   says. Never bump the file inside a PR (#1153).
 - **Don't refresh the rest.** Open PRs this batch turned `CONFLICTING` and
   that are not about to merge are left alone (label `conflicts` if they were
-  `merge-ready`). They are refreshed when their turn to merge comes.
+  `merge-ready`). They are refreshed when their turn to merge comes, or
+  earlier by their author's agents under AGENTS.md "Own blocked PRs first".
 
 For each PR answered **no**, leave it open and unchanged (labels too); just
 list it in the report.

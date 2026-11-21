@@ -148,7 +148,8 @@ That applies to our own PRs; a fork contributor's PR is left as they set
 it, and the review comment says what to fix.
 
 A conflicting PR of ours that waits for the merge batch therefore stays a
-draft until merge time. The merging session refreshes it, and then flags it
+draft until its author's agents fix it (AGENTS.md "Own blocked PRs
+first") or until merge time. The merging session refreshes it, and then flags it
 ready (`gh pr ready <N>`) right before the merge, with one PR comment naming
 the `--delta` class (SAME, MECHANICAL or DELTA) - AGENTS.md "Every PR opens
 as a draft", decided in #1221 ("Refresh only at merge time"). The review

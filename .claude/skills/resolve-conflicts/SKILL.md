@@ -72,7 +72,9 @@ gh pr list --repo NeoTech/Camcraft --state open --author "$me" --limit 100 \
 
 Re-read `mergeable` for each (retry while `UNKNOWN`, up to ~6 tries). Work
 only on the PR the merge batch is about to merge - the next PR of wave 2
-in `cargo xtask merge-plan <PRs>` - or the one PR the author named. Never
+in `cargo xtask merge-plan <PRs>` - or the one PR the author named, or
+each of the author's own `conflicts` PRs under AGENTS.md "Own blocked PRs
+first". Never
 every `CONFLICTING` PR at once: an early refresh is undone by the next
 merge to main and costs a delta review (AGENTS.md "Refresh only at merge
 time"). Order stacks parent first: if PR B contains PR A's commits (A's head

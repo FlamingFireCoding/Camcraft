@@ -197,7 +197,7 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   it lists the open PRs of the current account that have `conflicts` or
   `needs-rework`: `gh pr list --state open --author @me --label conflicts`
   and `gh pr list --state open --author @me --label needs-rework`. It fixes
-  each one before it picks a new issue. A PR whose issue has `claimed` is
+  each one, or sends a worker to fix it, before it picks a new issue. A PR whose issue has `claimed` is
   already in work and is skipped.
   - `conflicts`: merge `origin/main` into the branch (never rebase, never
     force-push), run the targeted gate and push (`resolve-conflicts`
@@ -369,11 +369,14 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     re-read each `conflicts` PR and send each clean one to the review that it
     needs.
 - **Refresh only at merge time.** A conflicting PR has the `conflicts` label
-  and is not touched by maintenance or by reviewers. Its author's agents
-  touch it only under **Own blocked PRs first**. It takes `git merge
-  origin/main` only then, when it is the next PR in a merge batch, or when
-  its author pushes a review fix and chooses to. The merging
-  session runs `cargo xtask merge-plan <PR>...` (or `--label merge-ready`).
+  and is not touched by maintenance or by reviewers. It takes `git merge
+  origin/main` only in one of three cases:
+  - its author's agents fix it under **Own blocked PRs first**;
+  - it is the next PR in a merge batch;
+  - its author pushes a review fix and chooses to.
+
+  The merging session runs `cargo xtask merge-plan <PR>...` (or `--label
+  merge-ready`).
   The planner simulates the merges with `git merge-tree` and gives the order.
   Wave 1 merges as one batch, with no refresh and no delta review. Wave 2 is
   refreshed one PR at a time against the main of that moment, and each PR
