@@ -2,7 +2,8 @@
 //! references inside the file, layers from top-level groups, and the content that is skipped
 //! with a note.
 //! Provenance: the W3C SVG 1.1 structure chapter (g, defs, symbol, use, the `display`
-//! property) and Inkscape's public `inkscape:label` layer convention; original implementation.
+//! property), its painting chapter (`visibility`), and Inkscape's public `inkscape:label`
+//! layer convention; original implementation.
 
 use super::emit::Sink;
 use super::shapes::{self, Drawn};
@@ -85,6 +86,11 @@ impl<'a> Walk<'a> {
     /// Walk the children of the root element under the root transform.
     pub fn root(&mut self, root_map: Affine) -> Result<(), SvgError> {
         if let Some(root) = self.node(0) {
+            // Visibility is inherited and permits child overrides. Refuse the whole
+            // subtree until those rules can be evaluated without adding hidden cuts.
+            if has_property(root, "visibility") {
+                return self.note("visibility");
+            }
             if hidden(root) {
                 return self.note("hidden");
             }
@@ -123,6 +129,9 @@ impl<'a> Walk<'a> {
         let name = node.name.clone();
         if SILENT.contains(&name.as_str()) {
             return Ok(());
+        }
+        if has_property(node, "visibility") {
+            return self.note("visibility");
         }
         if hidden(node) {
             return self.note("hidden");

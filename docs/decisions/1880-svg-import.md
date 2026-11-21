@@ -32,6 +32,10 @@
   A `use` of another file is skipped and counted. Text, images, nested `svg`, `style`,
   `clip-path` and `mask` are counted by kind in `summary.skipped`. `display:none` content is
   counted as "hidden". Fill and stroke are not read.
+- A `visibility` presentation attribute or inline declaration is reported by name, and its
+  subtree is skipped. This prevents hidden contours from becoming cuts without evaluating
+  inheritance and child overrides. Full visibility evaluation was dropped from this fix;
+  adding it later needs explicit inherited state and regression tests for child overrides.
 - `ImportSvg` is its own command in `commands/import_svg.rs`. It wraps an `ImportDxf` value
   (a new `ImportDxf::placed` constructor), so apply and invert are the same code. It repeats
   the 10-line setup and stock check of `ImportDxf::build` instead of a change to `build`:

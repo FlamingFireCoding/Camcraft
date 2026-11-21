@@ -13,6 +13,16 @@ const HIDDEN_STYLES: &[&str] = &[
     "display:none",
 ];
 const VISIBLE_RECT: &str = r#"<rect x="70" y="70" width="10" height="10"/>"#;
+const VISIBILITY_DECLARATIONS: &[&str] = &[
+    r#"visibility="hidden""#,
+    r#"style="visibility:hidden""#,
+    r#"style="VISIBILITY: hidden !important""#,
+    r#"style="fill: black; ViSiBiLiTy : collapse ! IMPORTANT; stroke: none""#,
+    r#"visibility="visible""#,
+    r#"style="visibility:inherit""#,
+    r#"visibility="hidden" display="none""#,
+    r#"style="display:none; visibility:hidden""#,
+];
 
 fn page(body: &str) -> String {
     format!(r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100">{body}</svg>"#)
@@ -71,4 +81,35 @@ fn svg_switch_reports_unsupported_without_importing_any_alternative() {
     assert!(doc.primitives.is_empty(), "no switch alternative emits geometry");
     assert_eq!(doc.summary.skipped.get("switch"), Some(&1));
     assert_eq!(doc.summary.skipped.len(), 1);
+}
+
+#[test]
+fn svg_root_visibility_is_reported_without_importing_descendants_or_overrides() {
+    for declaration in VISIBILITY_DECLARATIONS {
+        let text = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" {declaration}><rect width="20" height="20"/><g visibility="visible"><rect x="30" width="20" height="20"/></g></svg>"#
+        );
+        let doc = svg::parse(text.as_bytes(), None).expect("the unsupported root reads");
+        assert!(doc.primitives.is_empty(), "unsupported root emits no geometry: {declaration}");
+        assert_eq!(doc.summary.skipped.get("visibility"), Some(&1), "{declaration}");
+        assert_eq!(doc.summary.skipped.len(), 1, "{declaration}");
+    }
+}
+
+#[test]
+fn svg_group_visibility_is_reported_without_importing_descendants_or_overrides() {
+    for declaration in VISIBILITY_DECLARATIONS {
+        let text = page(&format!(
+            r#"<g {declaration}><rect width="20" height="20"/><g style="visibility:visible"><rect x="30" width="20" height="20"/></g></g>{VISIBLE_RECT}"#
+        ));
+        assert_only_visible_sibling(&text, "visibility");
+    }
+}
+
+#[test]
+fn svg_shape_visibility_is_reported_without_importing_its_contour() {
+    for declaration in VISIBILITY_DECLARATIONS {
+        let text = page(&format!(r#"<rect width="20" height="20" {declaration}/>{VISIBLE_RECT}"#));
+        assert_only_visible_sibling(&text, "visibility");
+    }
 }
