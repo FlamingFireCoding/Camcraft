@@ -38,6 +38,15 @@ boundary chain. Include and Exclude boundaries must remain closed.
 
 Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
+## DXF profiles
+
+A DXF profile belongs to a setup's stock; it is not a solid model. See
+[Place a DXF profile](@/guide/set-up/setups.md#place-a-dxf-profile).
+A 2D operation can name the profile as its source, but **generation from
+its chains is not available yet**. Generate refuses by name and leaves no
+toolpath. Import a solid model for a job you need to machine now. A
+profile has no model top or bottom: use stock or fixed height references.
+
 ## Face
 
 {{ <icon name="op-face" /> }} ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
@@ -251,6 +260,12 @@ across the full tool assembly (flutes, shank and holder). **Clearance**
 sets extra 3D standoff in addition to **Stock to leave**. Protected
 faces and edges stay highlighted in the viewport while the operation is
 selected.
+
+**Breaking file change:** protected operations require project format
+version 73. An older build that supports only version 72 or earlier
+refuses the newer file. It cannot open it and ignore the protection.
+Older projects load with no protected picks. Keep an older copy if you
+must return to an older build.
 
 **Common refusals:** as Pocket; picking an item already in the
 operation's machining selection or Include boundary; or leaving no safe
