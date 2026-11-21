@@ -5,9 +5,13 @@
 
 use std::hash::Hasher;
 
-use crate::machining2d::{PocketStrategy, RestParams, RestSource};
+use crate::geo2d::Point2;
+use crate::machining2d::{
+    CornerRelief, CornerReliefChoice, CornerReliefKind, CornerReliefOverride, PocketStrategy, RestParams, RestSource,
+};
 use crate::machining3d::Entry3D;
 use crate::operation::{Height, OpParams};
+use super::rest_op::REST_ADAPTIVE_CORNER_RELIEF;
 
 fn pocket(rest: Option<RestParams>) -> OpParams {
     OpParams::Pocket {
@@ -116,4 +120,30 @@ fn the_adaptive_rest_group_refuses_bad_values_without_a_tool() {
         assert!(why.contains("rest allowance") || why.contains("must be finite"), "{bad}: {why}");
         assert!(!p.is_sane(), "{bad}");
     }
+}
+
+/// #1446 / #2400: corner relief beside rest machining on a 2D Adaptive
+/// is refused by name at the door, and remains legal when rest is off.
+#[test]
+fn the_adaptive_rest_group_refuses_corner_relief() {
+    let dogbone = CornerRelief { kind: CornerReliefKind::Dogbone, ..Default::default() };
+    let ov_only = CornerRelief {
+        overrides: vec![CornerReliefOverride { at: Point2::new(1.0, 2.0), choice: CornerReliefChoice::Dogbone }],
+        ..Default::default()
+    };
+    for relief in [dogbone.clone(), ov_only] {
+        let mut p = adaptive(Some(FROM_OPS));
+        if let OpParams::Adaptive2D { corner_relief, .. } = &mut p {
+            *corner_relief = relief;
+        }
+        let why = p.named_refusal().unwrap_or_default();
+        assert!(why.contains(REST_ADAPTIVE_CORNER_RELIEF), "expected '{REST_ADAPTIVE_CORNER_RELIEF}', got: {why}");
+        assert!(!p.is_sane());
+    }
+    let mut off = adaptive(None);
+    if let OpParams::Adaptive2D { corner_relief, .. } = &mut off {
+        *corner_relief = dogbone;
+    }
+    assert_eq!(off.named_refusal(), None);
+    assert!(off.is_sane());
 }

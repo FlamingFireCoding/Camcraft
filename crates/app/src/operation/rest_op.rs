@@ -5,8 +5,9 @@
 //!
 //! #1446: the 2D Adaptive carries the same group. It reads the previous
 //! operations only (`machining2d::rest_adaptive_previous`): the entered
-//! previous tool, the Trochoidal method, arc turns and a tilt are refused
-//! by name beside it (pre-drilled entry is the Pocket's alone already).
+//! previous tool, the Trochoidal method, arc turns, corner relief and a
+//! tilt are refused by name beside it (pre-drilled entry is the
+//! Pocket's alone already).
 //!
 //! Provenance: our own operation laws over this project's rest
 //! generator; no other CAM product's code, text or output consulted.
@@ -32,6 +33,11 @@ pub const REST_ADAPTIVE_TROCHOIDAL: &str = "rest machining is not available with
 /// Rest machining beside arc turns (#1446): the rest planner rolls its
 /// own arcs off the walls and does not read the option.
 pub const REST_ADAPTIVE_ARC_TURNS: &str = "arc turns at corners are not available with rest machining on a 2D Adaptive - turn off one of the two";
+
+/// Rest machining beside corner relief (#1446, #2400): the rest
+/// Adaptive planner cuts the material left by the previous operations
+/// and does not cut inside-corner reliefs.
+pub const REST_ADAPTIVE_CORNER_RELIEF: &str = "corner relief is not available with rest machining on a 2D Adaptive - turn off one of the two";
 
 /// The tilt refusal of previous-operations rest mode, in the words of
 /// the kind of `p`.
@@ -114,7 +120,7 @@ pub fn rest_of(p: &OpParams) -> Option<&RestParams> {
 /// (it proves nothing), values the generator refuses, and each option
 /// the rest planner does not read - refused, never silently dropped.
 fn adaptive_rest_refusal(p: &OpParams) -> Option<String> {
-    let OpParams::Adaptive2D { rest: Some(r), method, blend_turns, .. } = p else {
+    let OpParams::Adaptive2D { rest: Some(r), method, blend_turns, corner_relief, .. } = p else {
         return None;
     };
     if r.source != RestSource::PreviousOperations {
@@ -127,6 +133,8 @@ fn adaptive_rest_refusal(p: &OpParams) -> Option<String> {
         REST_ADAPTIVE_TROCHOIDAL
     } else if *blend_turns {
         REST_ADAPTIVE_ARC_TURNS
+    } else if !corner_relief.is_off() {
+        REST_ADAPTIVE_CORNER_RELIEF
     } else if p.tilt().is_some() {
         REST_ADAPTIVE_TILTED
     } else {

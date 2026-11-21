@@ -27,11 +27,14 @@ use camcraft_app::commands::{
 use camcraft_app::geo2d::Point2;
 use camcraft_app::links::Links;
 use camcraft_app::machining2d::{
-    AdaptiveMethod, AdaptiveTrochParams, PocketStrategy, RestParams, RestSource, REST_ADAPTIVE_ENTERED,
+    AdaptiveMethod, AdaptiveTrochParams, CornerRelief, CornerReliefChoice, CornerReliefKind, CornerReliefOverride,
+    PocketStrategy, RestParams, RestSource, REST_ADAPTIVE_ENTERED,
 };
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::mcp::Server;
-use camcraft_app::operation::rest_op::{REST_ADAPTIVE_ARC_TURNS, REST_ADAPTIVE_TILTED, REST_ADAPTIVE_TROCHOIDAL};
+use camcraft_app::operation::rest_op::{
+    REST_ADAPTIVE_ARC_TURNS, REST_ADAPTIVE_CORNER_RELIEF, REST_ADAPTIVE_TILTED, REST_ADAPTIVE_TROCHOIDAL,
+};
 use camcraft_app::operation::{self, FeatureSel, GeoSel, Height, OpParams, OpStatus, SrcRef, Tilt};
 use camcraft_app::stock::StockShape;
 use camcraft_app::stock_sim::Columns;
@@ -84,15 +87,22 @@ fn rough(bottom: f64) -> OpParams {
         helix_radius: 2.0,
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
         tilt: None,
     }
 }
 
 fn adaptive(rest: Option<RestParams>) -> OpParams {
-    adaptive_with(rest, AdaptiveMethod::Spiral, false, None)
+    adaptive_with(rest, AdaptiveMethod::Spiral, false, Default::default(), None)
 }
 
-fn adaptive_with(rest: Option<RestParams>, method: AdaptiveMethod, blend_turns: bool, tilt: Option<Tilt>) -> OpParams {
+fn adaptive_with(
+    rest: Option<RestParams>,
+    method: AdaptiveMethod,
+    blend_turns: bool,
+    corner_relief: CornerRelief,
+    tilt: Option<Tilt>,
+) -> OpParams {
     OpParams::Adaptive2D {
         rest,
         blend_radius: None,
@@ -113,7 +123,7 @@ fn adaptive_with(rest: Option<RestParams>, method: AdaptiveMethod, blend_turns: 
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method,
         troch: AdaptiveTrochParams::default(),
-        corner_relief: Default::default(),
+        corner_relief,
         tilt,
     }
 }
@@ -283,11 +293,19 @@ fn what_the_rest_planner_does_not_read_is_refused_by_name_at_the_edit() {
     let why = edit_refused(&world, adaptive(Some(RestParams { allowance: -0.1, ..from_ops() })));
     assert!(why.contains("rest allowance"), "{why}");
     let tilted = Tilt { basis_version: 1, a_deg: 20.0, b_deg: 0.0, origin: [0.0, 0.0, TOP] };
+    let dogbone = CornerRelief { kind: CornerReliefKind::Dogbone, ..Default::default() };
+    let ov_only = CornerRelief {
+        overrides: vec![CornerReliefOverride { at: Point2::new(15.0, 10.0), choice: CornerReliefChoice::Dogbone }],
+        ..Default::default()
+    };
     let on = Some(from_ops());
+    let off = CornerRelief::default();
     let cases = [
-        (REST_ADAPTIVE_TROCHOIDAL, adaptive_with(on, AdaptiveMethod::Trochoidal, false, None)),
-        (REST_ADAPTIVE_ARC_TURNS, adaptive_with(on, AdaptiveMethod::Spiral, true, None)),
-        (REST_ADAPTIVE_TILTED, adaptive_with(on, AdaptiveMethod::Spiral, false, Some(tilted))),
+        (REST_ADAPTIVE_TROCHOIDAL, adaptive_with(on, AdaptiveMethod::Trochoidal, false, off.clone(), None)),
+        (REST_ADAPTIVE_ARC_TURNS, adaptive_with(on, AdaptiveMethod::Spiral, true, off.clone(), None)),
+        (REST_ADAPTIVE_CORNER_RELIEF, adaptive_with(on, AdaptiveMethod::Spiral, false, dogbone.clone(), None)),
+        (REST_ADAPTIVE_CORNER_RELIEF, adaptive_with(on, AdaptiveMethod::Spiral, false, ov_only, None)),
+        (REST_ADAPTIVE_TILTED, adaptive_with(on, AdaptiveMethod::Spiral, false, off, Some(tilted))),
     ];
     for (name, p) in cases {
         let why = edit_refused(&world, p);
@@ -295,6 +313,7 @@ fn what_the_rest_planner_does_not_read_is_refused_by_name_at_the_edit() {
     }
     // The same options without rest machining stay legal or keep their own refusal.
     assert!(EditOperationParams::new(&world, "A2", adaptive(None)).is_ok());
+    assert!(EditOperationParams::new(&world, "A2", adaptive_with(None, AdaptiveMethod::Spiral, false, dogbone, None)).is_ok());
 }
 
 #[test]
@@ -303,12 +322,15 @@ fn a_document_past_the_door_is_refused_at_generation() {
     generate(&world, &mut h, "R1");
     let e = model::find_by_name(&world, "A2").expect("op");
     let entered = RestParams { source: RestSource::EnteredTool, previous_tool_diameter: 12.0, ..from_ops() };
-    for (name, rest, method) in [
-        (REST_ADAPTIVE_ENTERED, entered, AdaptiveMethod::Spiral),
-        (REST_ADAPTIVE_TROCHOIDAL, from_ops(), AdaptiveMethod::Trochoidal),
+    let dogbone = CornerRelief { kind: CornerReliefKind::Dogbone, ..Default::default() };
+    let off = CornerRelief::default();
+    for (name, rest, method, relief) in [
+        (REST_ADAPTIVE_ENTERED, entered, AdaptiveMethod::Spiral, off.clone()),
+        (REST_ADAPTIVE_TROCHOIDAL, from_ops(), AdaptiveMethod::Trochoidal, off),
+        (REST_ADAPTIVE_CORNER_RELIEF, from_ops(), AdaptiveMethod::Spiral, dogbone),
     ] {
         let mut op = model::operation_of(&world, &e).expect("operation");
-        op.params = adaptive_with(Some(rest), method, false, None);
+        op.params = adaptive_with(Some(rest), method, false, relief, None);
         e.entity_view(&world).set(op);
         let why = refused(&world, "A2");
         assert!(why.contains(name), "expected '{name}', got: {why}");

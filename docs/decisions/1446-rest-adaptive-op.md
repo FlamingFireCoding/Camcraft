@@ -20,7 +20,16 @@ for the 2D Pocket.
 - A roughing pass that stops above the floor is refused by name ("no
   entry with proved clearance"). The whole pocket is not guessed.
 - Beside the group, these are refused by name and not dropped: the
-  Trochoidal method, arc turns, a tilt.
+  Trochoidal method, arc turns, corner relief, a tilt.
+- Equal steps (`Approach::equal_steps`, #2012 / #2842) run inside
+  `adaptive::rest_levels` (`ladder_stepdown`), so both `rest_adaptive`
+  and `rest_adaptive_previous` step and read the stock at the same
+  equal-step depths.
+- Corner relief (`#2400`) beside rest machining on `OpParams::Adaptive2D`
+  is refused by name (`REST_ADAPTIVE_CORNER_RELIEF`) at the edit and at
+  generation (and skipped in `corner_relief_sim`), because
+  `rest_adaptive` plans no inside-corner reliefs. The 2D Pocket keeps
+  corner relief in both rest modes (#2822).
 - The film of the stock is `cell * (1 + sqrt 2)`. The column reading
   leaves a band of that thickness along each wall that an earlier tool
   cut to. The planner plans no pass for the band. The band still stands

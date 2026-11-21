@@ -15,9 +15,10 @@ mod sim;
 
 use camcraft_motion::cl::MoveKind;
 use camcraft_motion::geo2d::{Point2, Region};
+use camcraft_motion::links::{Approach, Links};
 use camcraft_motion::machining2d::{
-    rest_adaptive, rest_adaptive_previous, GenError, PocketParams, RestParams, RestSource, RestStock, StockFloor,
-    REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK, REST_STOCK_FILM,
+    rest_adaptive, rest_adaptive_previous, rest_levels, rest_stock_from_columns, GenError, PocketParams, RestParams,
+    RestSource, RestStock, StockFloor, REST_ADAPTIVE_ENTERED, REST_ADAPTIVE_NO_STOCK, REST_STOCK_FILM,
 };
 use camcraft_motion::quality::rest_area;
 
@@ -348,4 +349,46 @@ fn the_previous_operations_planner_refuses_what_it_cannot_prove() {
     // is proved clear there.
     let msg = refusal(rest_adaptive_previous(&region, &p, &from_ops(), Some(&cols)));
     assert!(msg.contains("no proved-clear") || msg.contains("entry"), "{msg}");
+}
+
+#[test]
+fn rest_levels_and_previous_ops_honour_equal_steps() {
+    let region = filleted(&rect(0.0, 0.0, 60.0, 40.0), 3.0);
+    let mut sim = Sim::new(&region);
+    let _ = roughed(&region, &mut sim, BOTTOM);
+    let mut p = rest_params();
+    p.top_z = TOP;
+    p.bottom_z = BOTTOM;
+    p.stepdown = 1.5;
+    p.links = Links { approach: Approach { equal_steps: true, ..Links::PLANAR.approach }, ..Links::PLANAR };
+
+    let zs = rest_levels(&p).unwrap();
+    let expected = [0.0, -4.0 / 3.0, -8.0 / 3.0, -4.0];
+    assert_eq!(zs.len(), expected.len(), "expected 4 equal-step levels, got {zs:?}");
+    for (&got, &want) in zs.iter().zip(&expected) {
+        assert!((got - want).abs() < 1e-9, "got {zs:?}, expected {expected:?}");
+    }
+
+    let cols = sim.dex.columns().unwrap();
+    let prev_path = rest_adaptive_previous(&region, &p, &from_ops(), Some(&cols)).unwrap();
+    let stock = rest_stock_from_columns(&cols, &region, &zs).unwrap().with_film(cols.cell() * (1.0 + std::f64::consts::SQRT_2)).unwrap();
+    let rest_path = rest_adaptive(&region, &p, &stock).unwrap();
+    for (label, path) in [("rest_adaptive_previous", &prev_path), ("rest_adaptive", &rest_path)] {
+        let mut cut_zs: Vec<f64> = path
+            .moves
+            .iter()
+            .filter(|m| m.kind == MoveKind::Feed && (m.from.z - m.to.z).abs() < 1e-9)
+            .map(|m| m.to.z)
+            .collect();
+        cut_zs.sort_by(f64::total_cmp);
+        cut_zs.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        for z in [-4.0 / 3.0, -8.0 / 3.0, -4.0] {
+            assert!(cut_zs.iter().any(|&c| (c - z).abs() < 1e-6), "{label}: missing cut at Z{z}: {cut_zs:?}");
+        }
+        assert!(
+            cut_zs.iter().all(|&c| zs.iter().any(|&want| (c - want).abs() < 1e-6)),
+            "{label}: unexpected cut depth in {cut_zs:?}"
+        );
+        assert_eq!(check(path, &region), Vec::new(), "{label}: verifier warnings");
+    }
 }

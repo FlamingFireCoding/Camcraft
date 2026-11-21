@@ -139,5 +139,5 @@ fn grown(stock: &RestStock, region: &Region, allowance: f64) -> Result<RestStock
 }
 
 #[cfg(test)]
-#[path = "rest_prior_adaptive_tests.rs"]
+#[path = "tests/rest_prior_adaptive.rs"]
 mod tests;
