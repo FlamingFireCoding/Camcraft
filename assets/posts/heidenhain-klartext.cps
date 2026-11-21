@@ -77,8 +77,9 @@ function onOpen() {
   if (machine.model !== "Fehlmann Picomax 55 (iTNC 530)") {
     refuse("the manual quill procedure requires the Fehlmann Picomax 55 (iTNC 530) installation");
   }
-  if (machine.kind !== "mill" || !Array.isArray(machine.linearAxes) ||
-      machine.linearAxes.slice().sort().join(",") !== "X,Y,Z" ||
+  var axes = Array.isArray(machine.linearAxes) ? machine.linearAxes.slice().sort() : [];
+  if (machine.kind !== "mill" || axes.length !== 3 ||
+      axes[0] !== "X" || axes[1] !== "Y" || axes[2] !== "Z" ||
       machine.rotaries.length || machine.spindles !== 1) {
     refuse("requires a single-spindle XYZ milling machine");
   }
@@ -103,10 +104,16 @@ function onParameter(name, value) {
     case "StockXYLeft": case "StockXYRight": case "StockXYFront": case "StockXYBack":
     case "StockZBottom": case "StockZTop": case "ClearancePlane":
     case "SpindleSpeed": case "WorkOffset": case "Coolant":
-    case "SetupName": case "OperationName": case "ToolKind":
+    case "SetupName": case "OperationName":
       section[name] = value;
       return;
-    case "ToolCornerRadius": case "ToolDiameter": case "OperationKind":
+    case "ToolKind": case "ToolDiameter": case "ToolCornerRadius":
+      if (section[name] !== undefined && section[name] !== value) {
+        refuse("conflicting " + name + " declarations in one section");
+      }
+      section[name] = value;
+      return;
+    case "OperationKind":
     case "RetractPlane": case "TopOfStock":
       return;
     case "SectionMode":
@@ -119,8 +126,31 @@ function onToolChange(number, name) {
   if (inSection || !Number.isInteger(number) || number < 1 || number > 32767) {
     refuse("missing or invalid tool number");
   }
+  if (section.tool !== undefined) refuse("multiple TOOL declarations in one section");
   section.tool = number;
-  section.toolName = cleanText(name);
+  section.toolName = name;
+}
+var toolDefinitions = Object.create(null);
+function checkToolDefinition() {
+  var kind = typeof section.ToolKind === "string" ? section.ToolKind.toLowerCase() : "";
+  if (["flat end mill", "ball-nose", "bull-nose", "chamfer mill"].indexOf(kind) === -1) {
+    refuse("unsupported milling tool kind " + (kind || "(unstated)"));
+  }
+  var diameter = required(section.ToolDiameter, "ToolDiameter");
+  var cornerRadius = section.ToolCornerRadius === undefined ? 0 : section.ToolCornerRadius;
+  if (diameter <= 0) {
+    refuse("ToolDiameter must be positive");
+  }
+  if (required(cornerRadius, "ToolCornerRadius") < 0 || cornerRadius > diameter / 2) {
+    refuse("ToolCornerRadius requires a compatible ToolDiameter");
+  }
+  // Compare the original identity, before shortening it for a program comment.
+  // Keep every slot for the entire program, including tools used again later.
+  var definition = JSON.stringify([section.toolName, kind, diameter, cornerRadius]);
+  if (toolDefinitions[section.tool] !== undefined && toolDefinitions[section.tool] !== definition) {
+    refuse("conflicting definitions for tool T" + section.tool + " (name, kind, diameter or corner radius)");
+  }
+  toolDefinitions[section.tool] = definition;
 }
 function floodRequested() {
   if (section.Coolant === "off") return false;
@@ -171,7 +201,7 @@ function writeSetup() {
 function onSection() {
   if (inSection) refuse("nested operation sections");
   if (section.tool === undefined) refuse("operation has no tool call");
-  if (/probe/i.test(section.ToolKind || "")) refuse("probing is unsupported");
+  checkToolDefinition();
   var rpm = rate(section.SpindleSpeed, machine.spindleMax, "SpindleSpeed");
   if (Math.min(section.SpindleSpeed, rpm) < machine.spindleMin) {
     refuse("SpindleSpeed is below the machine minimum");
@@ -197,7 +227,7 @@ function onSection() {
     block("; CHECK DRIVES OFF BEFORE TOUCHING TOOL");
     block("; CHECK QUILL AT PHYSICAL CHANGE POSITION");
     block("; ABORT IF EITHER CHECK FAILS");
-    block("; THEN INSTALL TOOL " + section.tool + " " + section.toolName);
+    block("; THEN INSTALL TOOL " + section.tool + " " + cleanText(section.toolName));
     block("M0");
   }
   block("TOOL CALL " + section.tool + " Z S" + rpm);

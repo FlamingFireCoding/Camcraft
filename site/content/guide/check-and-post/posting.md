@@ -97,6 +97,9 @@ It refuses drilling and tapping cycles, probing, tilted tool axes, helices,
 and control-side cutter compensation. Select Off or the machine's M8
 flood circuit for coolant.
 
+Use a flat, ball-nose, bull-nose, or chamfer mill. Each tool number
+must identify the same cutter and geometry throughout the program.
+
 The machine definition states a spindle range of 50–9000 rpm. The post
 checks the requested speed against the stated range. The bundled machine
 definition gives rapid rates only. The post checks the numeric range of

@@ -29,4 +29,9 @@ interlocks. Read spindle limits from the machine definition so a restricted
 installation can state a lower maximum. The Picomax file states rapid rates.
 Cutting-feed and machine-coordinate travel limits require independent checks.
 
+Keep each tool number associated with one tool name, type, diameter, and
+corner radius for the whole program. A standalone intermediate file can
+give different tools the same number. Refuse the job before saving it,
+including when a previous tool number returns after a tool change.
+
 The post opts in to a hard refusal for all engine and script warnings, including the standalone CLI. Keeping only script-level refusals could release a program using the previously accepted preset when the engine rejects a later work offset. Other posts retain their existing warning handling. Informational accuracy notes remain in the program header.

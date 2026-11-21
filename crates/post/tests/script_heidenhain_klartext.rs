@@ -179,6 +179,7 @@ fn unsupported_motion_or_missing_setup_data_is_refused() {
         STREAM.replace("PARAM ClearancePlane 15", "PARAM ClearancePlane 10"),
         STREAM.replace("PARAM StartZ 15", "PARAM StartZ 9"),
         STREAM.replace("TOOL 2 FLAT-6\n", ""),
+        STREAM.replace("PARAM ToolDiameter 6\n", ""),
         STREAM.replace("PARAM SpindleSpeed 3500", "PARAM SpindleSpeed 0"),
         STREAM.replace("PARAM SpindleSpeed 3500", "PARAM SpindleSpeed 9001"),
         STREAM.replace("F 220000", "F 100000000"),
@@ -234,15 +235,12 @@ fn an_unconfirmed_release_preserves_an_existing_cli_output() {
     assert_eq!(saved, "old program");
 }
 
-#[test]
-fn an_engine_refusal_after_a_valid_preset_preserves_the_cli_destination() {
-    // The engine rejects the second index before onParameter sees it. A post
-    // must never write the job using the previous valid preset.
-    let dir = std::env::temp_dir().join(format!("camcraft-klartext-work-offset-{}", std::process::id()));
+fn assert_cli_keeps_destination(case: &str, stream: &str, diagnostic: &str) {
+    let dir = std::env::temp_dir().join(format!("camcraft-klartext-{case}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let input = dir.join("job.cnc");
     let nc = dir.join("job.H");
-    std::fs::write(&input, STREAM.replace("PARAM WorkOffset 2", "PARAM WorkOffset 2\nPARAM WorkOffset 7")).unwrap();
+    std::fs::write(&input, stream).unwrap();
     std::fs::write(&nc, "old program").unwrap();
     let run = std::process::Command::new(env!("CARGO_BIN_EXE_post"))
         .arg("--machine")
@@ -253,11 +251,52 @@ fn an_engine_refusal_after_a_valid_preset_preserves_the_cli_destination() {
         .output()
         .unwrap();
     assert!(!run.status.success());
-    assert!(String::from_utf8_lossy(&run.stderr).contains("work offset 7"));
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains(diagnostic), "{stderr}");
     assert_eq!(std::fs::read_to_string(&nc).unwrap(), "old program");
     std::fs::remove_file(nc).unwrap();
     std::fs::remove_file(input).unwrap();
     std::fs::remove_dir(dir).unwrap();
+}
+
+#[test]
+fn an_engine_refusal_after_a_valid_preset_preserves_the_cli_destination() {
+    // The engine rejects the second index before onParameter sees it.
+    let stream = STREAM.replace("PARAM WorkOffset 2", "PARAM WorkOffset 2\nPARAM WorkOffset 7");
+    assert_cli_keeps_destination("work-offset", &stream, "work offset 7");
+}
+
+#[test]
+fn conflicting_definitions_of_one_tool_preserve_the_cli_destination() {
+    // These tool names would look identical after sanitizing them for an NC comment.
+    let first = STREAM.replace("FLAT-6", "FLAT/6");
+    let other_slot = first.replace("TOOL 2", "TOOL 3");
+    for (field, changed) in [
+        ("name", first.replace("FLAT/6", "FLAT?6")),
+        ("kind", first.replace("Flat end mill", "ball-nose")),
+        ("diameter", first.replace("ToolDiameter 6", "ToolDiameter 12")),
+        ("corner", first.replace("ToolDiameter 6", "ToolDiameter 6\nPARAM ToolCornerRadius 0.5")),
+    ] {
+        for (order, middle) in [("adjacent", ""), ("returned", other_slot.as_str())] {
+            assert_cli_keeps_destination(
+                &format!("{field}-{order}"),
+                &format!("{first}{middle}{changed}"),
+                "conflicting definitions for tool T2",
+            );
+        }
+    }
+}
+
+#[test]
+fn milling_cutter_kinds_are_explicit_and_incompatible_tools_refuse_the_cli_save() {
+    for kind in ["flat end mill", "ball-nose", "bull-nose", "chamfer mill"] {
+        let stream = STREAM.replace("Flat end mill", kind);
+        assert!(post(MCH, &stream, &Value::Null).is_ok(), "{kind}");
+    }
+    for kind in ["wire", "turning insert", "tap", "touch probe"] {
+        let stream = STREAM.replace("Flat end mill", kind);
+        assert_cli_keeps_destination("non-mill", &stream, "unsupported milling tool kind");
+    }
 }
 
 #[test]
@@ -294,6 +333,14 @@ fn only_explicit_single_spindle_xyz_geometry_and_a_confirmed_change_can_post() {
     let mut wrong_axis: Value = serde_json::from_str(MCH).unwrap();
     wrong_axis["kinematics"]["default"]["parts"][0]["name"] = Value::from("U");
     let why = post(&wrong_axis.to_string(), STREAM, &Value::Null).expect_err("unknown X travel");
+    assert!(why.contains("XYZ"), "{why}");
+
+    let mut combined_axes: Value = serde_json::from_str(MCH).unwrap();
+    let x = &mut combined_axes["kinematics"]["default"]["parts"][0];
+    x["name"] = Value::from("X,Y");
+    x["parts"] = serde_json::json!([{"id":"table", "name":"Table", "type":"table"}]);
+    let why = post(&combined_axes.to_string(), STREAM, &Value::Null)
+        .expect_err("one axis name cannot qualify two linear axes");
     assert!(why.contains("XYZ"), "{why}");
 
     let mut missing_mode: Value = serde_json::from_str(MCH).unwrap();
