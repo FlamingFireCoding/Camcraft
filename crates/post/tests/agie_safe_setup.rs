@@ -1,4 +1,5 @@
 //! Setup-only Classic Cut 2S reference records from CamCraft's offline controller-checked synthetic punch.
+//! Gate map: covers camcraft_post::agie_setup.
 use camcraft_post::agie_setup::{PunchSetup20, SetupError};
 
 fn punch() -> PunchSetup20<'static> {

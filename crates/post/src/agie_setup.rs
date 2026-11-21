@@ -6,8 +6,12 @@
 //! The piece uses stock top Z0, 20 mm steel 0001, Berco Cut 0.25 and a 1 mm separation.
 //!
 //! Place the SBL script and SBR resource manifest beside the ISO, with the same
-//! stem and their respective extensions. On import, inspect the new piece and
-//! its work on the control. See [`SetupFiles::controller_review`] before release.
+//! stem and their respective extensions. Import the ISO geometry into ISO Sys.
+//! Keep the matching SBR beside the SBL when importing the script into SBL Sys.
+//! Create a new workpiece from the imported script. Earlier pieces can retain
+//! their erosion steps on repeat import. In the new piece, match the work's ISO
+//! geometry and start hole to the setup and confirm zero steps. Follow
+//! [`SetupFiles::controller_review`] before assigning TECCUT.
 //!
 //! ```
 //! use camcraft_post::agie_setup::PunchSetup20;
@@ -85,7 +89,15 @@ impl PunchSetup20<'_> {
         Ok(SetupFiles {
             sbl: piece(self),
             sbr: format!("AGIE.USING_{0}.ISO IMPORT {0}.ISO;\r\n", self.stem),
-            controller_review: "On import, verify the new work shows zero steps. Confirm steel 0001, Berco Cut 0.25 and 20 mm. CCB030 requests Ra 0.30, Te 1.50, Tkm 1.00 and three disabled options. Check the effective values and both visible options on this work. Assign the matching TECCUT row. Check offsets of 245, 155, 140 and 134 µm in order before GRAFICHECK and FORMALCHECK.",
+            controller_review: concat!(
+                "Import the ISO into ISO Sys and keep its SBR beside the SBL during script import. ",
+                "Select the newly created piece. Earlier pieces can retain their steps on repeat import. ",
+                "Match this work's ISO resource, geometry and start hole to the setup. Confirm zero steps. ",
+                "Verify steel 0001, Berco Cut 0.25 and 20 mm. CCB030 requests Ra 0.30, Te 1.50, ",
+                "Tkm 1.00 and three disabled options. Check the effective values and both visible options ",
+                "on this work. Assign the matching TECCUT row. Check offsets of 245, 155, 140 and ",
+                "134 µm in order before GRAFICHECK and FORMALCHECK.",
+            ),
         })
     }
 }
