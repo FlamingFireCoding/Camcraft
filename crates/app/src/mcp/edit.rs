@@ -86,11 +86,14 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
         return Err("the patched parameters could not be read back".into());
     };
     let mut back = back.get(&key).and_then(Value::as_object).cloned().unwrap_or_default();
-    // An opt-in flag (`blend_turns`) is written only when ON, so `false`
-    // never comes back: it is kept when `true` would have come back.
+    // Opt-in fields are omitted at their false/zero default, but a
+    // literal patch of that default is still a known field.
     for (k, v) in patch {
-        if *v == Value::Bool(false) && !back.contains_key(k) && flag_kept(&key, &fields_of(base), k) {
-            back.insert(k.clone(), Value::Bool(false));
+        if (*v == Value::Bool(false) || v.as_f64() == Some(0.0))
+            && !back.contains_key(k)
+            && opt_in_kept(&key, &fields_of(base), k, v.is_boolean())
+        {
+            back.insert(k.clone(), v.clone());
         } else if k == "corner_relief" && !back.contains_key(k) && corner_relief_kept(&key, &fields_of(base)) {
             back.insert(k.clone(), v.clone());
         }
@@ -130,15 +133,18 @@ fn fields_of(p: &OpParams) -> Map<String, Value> {
     .unwrap_or_default()
 }
 
-/// True when the kind `key` has a boolean field `k`: set to `true`, it
+/// True when `key` has an opt-in field `k`: a true or positive probe
 /// survives the typed round-trip. A misspelled key never does.
-fn flag_kept(key: &str, fields: &Map<String, Value>, k: &str) -> bool {
+fn opt_in_kept(key: &str, fields: &Map<String, Value>, k: &str, boolean: bool) -> bool {
     let mut probe = fields.clone();
-    probe.insert(k.to_owned(), Value::Bool(true));
+    probe.insert(
+        k.to_owned(),
+        if boolean { Value::Bool(true) } else { Value::from(1.0) },
+    );
     let mut tagged = Map::new();
     tagged.insert(key.to_owned(), Value::Object(probe));
     project::params_from_json(&Value::Object(tagged))
-        .map(|p| fields_of(&p).get(k) == Some(&Value::Bool(true)))
+        .map(|p| fields_of(&p).contains_key(k))
         .unwrap_or(false)
 }
 

@@ -213,6 +213,19 @@ pub(super) fn list_operation_types(_env: &mut Env, _a: &Map<String, Value>) -> R
                 fields.push(json!({ "name": "break_through", "type": "number", "default": Value::Null }));
                 fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
             }
+            // The zero default is omitted by ParamsDto to preserve old
+            // project bytes, but it is still an authored operation
+            // parameter on the MCP surface (#3153).
+            if key == "chamfer2_d"
+                && !fields.iter().any(|f| f["name"] == "minimum_cone_radius")
+            {
+                fields.push(json!({
+                    "name": "minimum_cone_radius",
+                    "type": "number",
+                    "default": 0.0
+                }));
+                fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            }
             let mut kind = json!({
                 "label": k.label,
                 "key": key,

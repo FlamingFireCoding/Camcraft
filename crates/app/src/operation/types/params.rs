@@ -321,16 +321,22 @@ pub enum OpParams {
     /// 2D chamfer (M2.4 B): one ride whose center line stands so the
     /// taper tool's CONE lies on the chamfer face the two authored
     /// numbers state - `width` along the top plane, `angle_deg` off it.
+    /// A positive `minimum_cone_radius` selects the same cone farther
+    /// from its axis, without widening the authored face.
     /// There is no `bottom_z` to author: the face's depth is
     /// `width·tan(angle)`, and a second number for the same line could
     /// only disagree with the first. The cut edge is picked like
-    /// [`Self::Trace`]'s chains; `side` says which wall the cone lies
-    /// on, exactly as contour's does.
+    /// [`Self::Trace`]'s chains; `side` names the air side the cone
+    /// centerline moves toward, exactly as contour's side law.
     Chamfer2D {
         /// The chamfer face's width, measured in the top plane.
         width: f64,
         /// The face's slope off the top plane, degrees, in (0, 90).
         angle_deg: f64,
+        /// Radius of the cone band the cut starts at, mm; zero selects
+        /// the ideal tip. The requested face still ends at radius
+        /// `minimum_cone_radius + width`.
+        minimum_cone_radius: f64,
         clearance_z: Height,
         /// Hop plane between chains; None hops to clearance - the
         /// trace's shape.

@@ -384,6 +384,10 @@ pub enum ParamsDto {
     Chamfer2D {
         width: f64,
         angle_deg: f64,
+        /// #3153: an absent key is the ideal-tip cone band, which is
+        /// exactly what every older chamfer project used.
+        #[serde(default, skip_serializing_if = "is_zero_f64")]
+        minimum_cone_radius: f64,
         clearance_z: HeightDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         retract_z: Option<HeightDto>,

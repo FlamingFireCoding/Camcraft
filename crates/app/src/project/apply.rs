@@ -539,6 +539,9 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v72 -> v73 (#2055): absent `do_not_touch` protection defaults to
         // empty picks and zero clearance. v72 readers must refuse v73
         // rather than discard protected selections as unknown area fields.
+        // v73 -> v74 (#3153): absent `minimum_cone_radius` is zero, the
+        // ideal-tip Chamfer path that every v73 file already stated. A v73
+        // reader must refuse v74 rather than drop a positive band radius.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {

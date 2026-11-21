@@ -206,11 +206,13 @@ impl OpParams {
             }
             // The chamfer ride digests its whole promise: the land,
             // the angle, the side the cone rides, the chord budget,
-            // and the ONE height it stands on - the depth is derived
-            // from width and angle, so nothing else to write (M2.4 B).
+            // and the ONE height it stands on. The opt-in cone-band
+            // radius writes a new marker only when positive, so every
+            // zero-radius cache keeps its old bytes (M2.4 B / #3153).
             OpParams::Chamfer2D {
                 width,
                 angle_deg,
+                minimum_cone_radius,
                 clearance_z,
                 retract_z,
                 top_z,
@@ -234,6 +236,10 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
+                if *minimum_cone_radius != 0.0 {
+                    h.write_u8(0xC1);
+                    w(h, *minimum_cone_radius);
+                }
             }
             // The circular ladder digests the pocket family's bytes
             // plus the authored disk: center, radius, and the dome

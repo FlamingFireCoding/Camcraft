@@ -1,4 +1,5 @@
-//! Gate map: covers ui::egui_app::heights_page, ui::operations.
+//! Gate map: covers ui::egui_app::heights_page,
+//! ui::egui_app::mill2d_more_page, ui::operations.
 //! Regression pins for height relationship notes in the production Heights page.
 //! Provenance: the asymmetric fixture and local tool-axis display law from #2416.
 use super::*;
@@ -50,6 +51,7 @@ fn tilted_corner_note_uses_the_same_local_frame_as_its_top_row() {
     let mut state = asymmetric_tilted_pocket();
     state.op_ui.params = OpParams::Chamfer2D {
         width: 1.0, angle_deg: 45.0,
+        minimum_cone_radius: 2.0,
         clearance_z: Height::of(R::TopOfStock, 10.0), retract_z: None,
         top_z: Height::of(R::TopOfStock, 0.0),
         feed: 800.0, plunge_feed: 200.0, climb: true,
@@ -59,8 +61,44 @@ fn tilted_corner_note_uses_the_same_local_frame_as_its_top_row() {
     let mut harness = heights_tab(state);
     harness.run();
     assert!(harness.query_by_label("(= 11.000 along tool axis)").is_some());
-    assert!(harness.query_by_label("the corner stands at 10.000 - derived: width x tan(angle) below the top plane").is_some(),
-        "the corner is one unit below the local top, not below setup Z");
+    assert!(harness.query_by_label("the virtual cone tip stands at 8.000 - derived: (minimum cone radius + width) x tan(angle) below the top plane").is_some(),
+        "the tip is radius plus width below the local top, not below setup Z");
+}
+
+#[test]
+fn chamfer_geometry_exposes_the_minimum_cone_radius() {
+    let mut state = asymmetric_tilted_pocket();
+    state.op_ui.params = OpParams::Chamfer2D {
+        width: 1.0,
+        angle_deg: 45.0,
+        minimum_cone_radius: 2.0,
+        clearance_z: Height::of(R::TopOfStock, 10.0),
+        retract_z: None,
+        top_z: Height::of(R::TopOfStock, 0.0),
+        feed: 800.0,
+        plunge_feed: 200.0,
+        climb: true,
+        side: camcraft_app::machining2d::Side::Outside,
+        tolerance: 0.01,
+        tilt: state.op_ui.params.tilt(),
+    };
+    let mut harness = Harness::builder()
+        .with_size(Vec2::new(600.0, 900.0))
+        .build_ui_state(
+            |ui, state: &mut State| {
+                super::super::params_page::params_fields(
+                    ui,
+                    state,
+                    super::super::op_tabs::SEC_GEO,
+                )
+            },
+            state,
+        );
+    harness.run();
+    assert!(
+        harness.query_by_label("Minimum cone radius").is_some(),
+        "the Geometry page exposes the cone-band radius"
+    );
 }
 
 

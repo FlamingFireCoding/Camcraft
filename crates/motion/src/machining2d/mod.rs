@@ -33,6 +33,7 @@ mod bore;
 mod bore_core;
 mod chamfer;
 mod chamfer_ride;
+mod chamfer_side;
 mod circular;
 mod thread_mill;
 mod thread_passes;

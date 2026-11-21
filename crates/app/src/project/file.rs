@@ -149,7 +149,11 @@ use super::*;
 /// protected faces/edges and standoff clearance. An old reader (up to v72)
 /// must refuse the file rather than ignore the protection and cut across a
 /// protected feature. A v72 file steps up unchanged with empty protection.
-pub const PROJECT_VERSION: u32 = 73;
+/// v74 (#3153): a 2D Chamfer may select a positive `minimum_cone_radius`.
+/// The zero default is omitted, so a v73 Chamfer reads and cuts exactly as
+/// before. An old reader must refuse v74 rather than drop a positive
+/// radius and post the old tip-on-wall cone.
+pub const PROJECT_VERSION: u32 = 74;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
