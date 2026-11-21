@@ -101,6 +101,8 @@ pub struct FeatureNamesMemo {
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct ReducedFidelity {
     pub chord_mm: f64,
+    /// File tolerance alone caused this chord; false keeps the strict law.
+    pub file_tolerance: bool,
 }
 
 /// A person vouched for this model's mesh while it was of unknown fidelity

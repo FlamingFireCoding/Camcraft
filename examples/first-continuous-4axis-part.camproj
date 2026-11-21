@@ -85,7 +85,8 @@
       "rigid_tapping": true,
       "safe_retract_z": 0.0,
       "spindle_mount": "BT30",
-      "default_holder": "BT30 ER20"
+      "default_holder": "BT30 ER20",
+      "post": "Tormach PathPilot"
     }
   },
   "post": {
@@ -173,7 +174,7 @@
             "max_tilt_deg": 60.0
           }
         },
-        "stamp": 14393424193179829167,
+        "stamp": 9057664075614831553,
         "cache": {
           "moves": [
             {

@@ -34,6 +34,8 @@ impl State {
         self.show_gizmo_names = prefs.show_gizmo_names;
         self.display = crate::state::DisplayMode::from_key(&prefs.display);
         self.show_grid = prefs.show_grid;
+        self.ground_shadow = prefs.ground_shadow;
+        self.ambient_occlusion = prefs.ambient_occlusion;
         self.line_width = prefs.line_width;
         self.antialias = prefs.antialias;
         self.view_store = Some(path.to_path_buf());
@@ -62,10 +64,19 @@ impl State {
             show_gizmo_names: self.show_gizmo_names,
             display: self.display.key().to_owned(),
             show_grid: self.show_grid,
+            ground_shadow: self.ground_shadow,
+            ambient_occlusion: self.ambient_occlusion,
             line_width: self.line_width,
             antialias: self.antialias,
         };
         let _ = view::save(path, &prefs);
+    }
+
+    /// The shading switches of the Display menu (#2834), as the draw list
+    /// and the scene read them.
+    #[must_use]
+    pub fn effects(&self) -> crate::draw_list::Effects {
+        crate::draw_list::Effects { ground_shadow: self.ground_shadow, ambient_occlusion: self.ambient_occlusion }
     }
 
     /// #2958: choose the overlay line width; kept at once.

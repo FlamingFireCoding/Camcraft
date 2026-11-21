@@ -203,6 +203,7 @@ mod cross_sag;
 mod cross_part;
 mod cross_spindle;
 mod cross_stock;
+mod cross_traverse;
 mod drill_reach;
 mod bore_reach;
 use camcraft_motion::break_through;
@@ -226,6 +227,7 @@ mod rotary_law;
 pub(crate) mod spindle_law;
 pub use spindle_law::{spindle_reading, SpindleReading, SPINDLE_TOL};
 mod rotary_gate;
+mod rotary_traverse;
 mod rotary_picks;
 mod air_law;
 // #1595: the depth law an Engrave or Trace on the part carries itself.
@@ -241,6 +243,7 @@ pub mod kept_rejudge;
 pub(crate) mod fidelity_law;
 mod clearance_stock;
 mod first_traverse;
+mod first_traverse_posed;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
