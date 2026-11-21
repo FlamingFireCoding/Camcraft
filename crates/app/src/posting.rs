@@ -931,6 +931,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     // #1031/#1174: the work spindle over a setup's workholding maximum,
     // by name - judged for the post dialect each op runs through.
     problems.extend(crate::setup_workholding::program_problems_by(world, voice));
+    // #3070: a sheet job's allowance floor and clamp plane, by name.
+    problems.extend(crate::sheet_job::program_problems(world));
     // The carried-stock clause (#319): a feed move into carried material
     // outside a setup's declared stock is engagement nothing verified.
     problems.extend(crate::operation::carried_problems(world));
