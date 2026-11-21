@@ -376,6 +376,12 @@ use the Retract return to hop higher".
 
 ## Slot Undercut
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-slot-undercut" /> }}
 
 **For:** the part of a slot that is wider below than at its mouth: a
