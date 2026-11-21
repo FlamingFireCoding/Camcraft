@@ -2424,7 +2424,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     } else {
                         super::cross_spindle::Solids { source: &keep_parts, stock: Some(&material.facets), kept: &keep_parts, neighbours: &[] }
                     };
-                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?
+                    let t = super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?;
+                    // #3077: the first rapid from the turret's index position.
+                    let own = if part_solid { "the part" } else { "the stock" };
+                    let stock = stock_facets.as_deref().filter(|s| !s.is_empty());
+                    let mut named: Vec<(&str, &[crate::geometry::Triangle])> = vec![(own, &material.facets[..]), ("a kept part", &keep_parts[..]), ("a neighbour part", &neighbour_parts[..])];
+                    named.extend(stock.map(|s| ("the stock", s)));
+                    let work = super::cross_traverse::LiveWork { solids: &named, stock_box: stock_aabb.filter(|_| stock.is_none()), turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                    super::cross_traverse::judge(&t, wcs_origin, &tool, &work)?;
+                    t
                 }
             } else {
                 // M13.5 A: on a plain lathe the Drill kind is the
@@ -3376,7 +3384,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, stock_top_z, false, &warns);
             // #2901: the first traverse comes from an unknown X/Y.
             let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
-            super::first_traverse::judge(&path, &params, mill_order, None, &over, &mut warns);
+            // #3077: a mill-turn's cross drill also answers to the upright
+            // law - its default post is the mill's (Z, then X/Y, then the
+            // rotary words), so its X/Y traverse comes from an unknown X/Y.
+            // #3083: `mill_order` holds that drill too; the flag stays for
+            // #3077's reading.
+            let mill_post_cross = machine_kind == crate::machine::Kind::MillTurn && !lathe_tool && matches!(&params, OpParams::Drill { cross, .. } if !cross.is_empty());
+            super::first_traverse::judge(&path, &params, mill_order || mill_post_cross, None, &over, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
             // less what the program ahead faced and this path cut.

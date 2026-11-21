@@ -62,6 +62,11 @@ pub fn current_stamp(
     if super::first_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
         h.write(b"first-traverse-mill-turn-3083");
     }
+    // #3077: the cross drill's first rapid from the turret's index
+    // position is judged now; only its caches read Stale once.
+    if matches!(params, OpParams::Drill { cross, .. } if !cross.is_empty()) {
+        h.write(b"live-traverse-3077");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
