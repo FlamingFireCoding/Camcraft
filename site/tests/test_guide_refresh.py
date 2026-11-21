@@ -43,6 +43,24 @@ class GuideRefresh(unittest.TestCase):
                     with self.subTest(fact=fact):
                         self.assertIn(fact, page)
 
+    def test_plasma_profile_starts_with_icon_and_schematic(self):
+        page = (GUIDE / "operations/operations-plasma.md").read_text()
+        profile = page.split("## Plasma Profile\n", 1)[1].lstrip()
+        first_paragraph = profile.split("\n\n", 1)[0]
+        self.assertTrue(first_paragraph.startswith('{{ <icon name="op-plasma-profile" /> }}'))
+        self.assertIn("../../../operation-paths.svg#PlasmaProfile", first_paragraph)
+        self.assertIn("### Stored torch recipes", profile)
+
+    def test_ai_chat_connection_names_panel_limits_and_guide(self):
+        page = read_page("reference/troubleshooting.md")
+        connection = page.split("## ai chat connection settings", 1)[1].split("## ", 1)[0]
+        self.assertIn("all local panel presets use ollama", connection)
+        self.assertIn("no endpoint field", connection)
+        self.assertNotIn("lm studio", connection)
+        self.assertNotIn("#1949", connection)
+        self.assertIn("[ai guide](../../automate/ai/)", connection)
+        self.assertIn("other runtimes and external agents", connection)
+
     def test_deburr_filters_and_unreachable_edges_are_documented(self):
         page = read_page("operations/operations-3d.md")
         deburr = page.split("## deburr", 1)[1].split("## ", 1)[0]

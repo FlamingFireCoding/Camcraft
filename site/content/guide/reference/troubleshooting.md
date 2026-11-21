@@ -444,16 +444,16 @@ screenshot arrived. Check the open issues first to avoid a duplicate.
 
 Open **AI Chat** from **View > Panels**. Choose a **Provider** and a
 **Model**. Desktop builds support Anthropic, OpenAI Chat and Responses,
-Gemini, and local runtimes such as Ollama and LM Studio. Cloud keys come
-from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` first, then
-the OS keychain. Keys are not saved in the project or preferences; there
+Gemini, and Ollama. All local panel presets use Ollama. The panel has
+no endpoint field. For other runtimes and external agents, see the
+[AI guide](../../automate/ai/). Cloud keys come from `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY` or `GEMINI_API_KEY` first, then the OS keychain. Keys are not saved in the project or preferences; there
 is no key-entry control in this panel yet.
 
 **Offline only** is remembered between runs and permits only loopback
 endpoints on this computer. Turn it off to use a cloud provider. A
 nonlocal plain HTTP endpoint is refused. This is a short connection
-pointer; the full AI guide is tracked in
-[issue #1949](https://github.com/NeoTech/Camcraft/issues/1949).
+pointer; see the [AI guide](../../automate/ai/) for the full setup steps.
 
 ## Not covered yet
 

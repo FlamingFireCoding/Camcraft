@@ -38,6 +38,8 @@ judged instead by the plasma laws at the post gate (below).
 
 ## Plasma Profile
 
+{{ <icon name="op-plasma-profile" /> }} ![Top view of torch travel from a pierce point along the lead and outer plate profile.](../../../operation-paths.svg#PlasmaProfile)
+
 ### Stored torch recipes
 
 A plasma torch can store cut-data recipes by material and exact plate
@@ -58,8 +60,6 @@ thicker than the stated pierce capacity requires an edge start. Material
 alone never selects a thickness recipe, and no nearest thickness is used.
 
 ### Operation settings
-
-{{ <icon name="op-plasma-profile" /> }} ![Top view of torch travel from a pierce point along the lead and outer plate profile.](../../../operation-paths.svg#PlasmaProfile)
 
 **For:** cutting parts out of flat plate: one through-cut per contour,
 with the kerf offset to the waste side, arc leads, holes before the
