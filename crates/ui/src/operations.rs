@@ -215,9 +215,7 @@ pub(crate) fn unresolved_note(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Option<String> {
-    operation::resolve_params(world, setup, src, params)
-        .err()
-        .map(|why| format!("{why}; set the source up or switch the reference"))
+    crate::height_memo::unresolved_note(world, setup, src, params)
 }
 
 /// Swap the draft's parameter variant, carrying over every shared number
@@ -518,6 +516,7 @@ mod height_row_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         }
     }
 

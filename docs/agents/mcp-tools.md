@@ -1,7 +1,7 @@
 <!-- Generated from crates/app/src/mcp/tools.rs. Do not edit by hand. Write it again with: cargo run -p camcraft-app --bin camcraft-cli -- mcp reference > docs/agents/mcp-tools.md -->
 # CamCraft MCP tool reference
 
-The server lists 116 tools. The live `tools/list` reply is the authority; this file is generated from the same table. An argument with `?` is optional.
+The server lists 117 tools. The live `tools/list` reply is the authority; this file is generated from the same table. An argument with `?` is optional.
 
 | Tool | Arguments | What it does |
 |---|---|---|
@@ -26,9 +26,9 @@ The server lists 116 tools. The live `tools/list` reply is the authority; this f
 | `detect_pockets` | `create?`, `model`, `name?`, `tool?` | A model's recognised pockets and slots (closed or open pockets, straight slots with open, round or square ends): boundary, floor and top Z, depth, tightest inside corner, slot width and open sides. With create, adds the operation that machines one of them (a Pocket over its floor, or a Slot along its centreline). One undo step. |
 | `delete_operation` | `name` | Delete an operation and its cached toolpath. |
 | `set_tool` | `operation`, `tool` | Assign a document tool to an operation (the tool must suit the operation's kind). |
-| `list_features` | `kinds?`, `limit?`, `model` | A model's (or a fixture's) pickable features with stable ids: faces (each boundary loop with the edge chains that run it), edge chains, welded smooth faces and vertices, in world coordinates. |
-| `get_operation_geometry` | `operation` | What an operation machines: its source (stock, a model, or picked features), its area controls, and what the picks resolve to. |
-| `set_operation_geometry` | `operation`, `picks` | Set the features an operation machines (faces, edge chains, loops) by list_features ids. One undo step; undo restores the previous source. |
+| `list_features` | `kinds?`, `limit?`, `model` | A model's, fixture's, or DXF profile's pickable features with stable ids: faces, edge chains, welded smooth faces and vertices on models, or sketch chains and layers on DXF profiles, in world coordinates. |
+| `get_operation_geometry` | `operation` | What an operation machines: its source (stock, a model, a DXF profile, or picked features), per-chain overrides, its area controls, and what the picks resolve to. |
+| `set_operation_geometry` | `operation`, `picks` | Set the features an operation machines (faces, edge chains, loops, or DXF sketch chains and layers with optional per-chain side and direction overrides) by list_features ids. One undo step; undo restores the previous source. |
 | `set_operation_area` | `area`, `operation` | Replace an operation's area controls (containment, offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step. |
 | `get_operation_do_not_touch` | `operation` | Read an operation's 'Do not touch' protected faces/edges and standoff clearance (mm). |
 | `set_operation_do_not_touch` | `clearance?`, `operation`, `picks?` | Set protected faces or edge chains (plus standoff clearance, mm) that 2D Offset and 3D Pocket paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step. |
@@ -107,6 +107,7 @@ The server lists 116 tools. The live `tools/list` reply is the authority; this f
 | `get_thread_infeed` | `name` | Read a Threading operation's infeed plan, including default values, spring passes and repeat_each_depth. |
 | `set_thread_infeed` | `infeed_plan`, `name` | Patch a Threading operation's infeed plan through EditOperationParams. Unspecified fields keep their values. One undo step. Refuses unknown fields and invalid plans by name. |
 | `set_workholding_max_rpm` | `max_rpm`, `setup?` | State the rated maximum rpm of a lathe setup's chuck or collet (null clears it). Constant surface speed clamps to the lowest of the machine's, the tool's and this limit (Fanuc G50 S, Tormach G96 D); a constant-rpm turning operation over it is refused by name at the post. One undo step. |
+| `set_sheet_job` | `allowance?`, `clamp_clearance?`, `clear?`, `length?`, `thickness?`, `width?`, `xy_zero?`, `z_zero?` | Set up the active setup as a flat-sheet router job, as one undo step: the stock becomes a box of the sheet's length (X), width (Y) and thickness; the WCS moves to Z zero at the sheet top or the spoilboard and XY zero on the stated corner (front_left by default). The through-cut allowance (how far a cut may go into the spoilboard, mm) is required and always stated; the post refuses by name a move below the sheet bottom less the allowance, or a rapid across below the sheet top plus the clamp clearance. {"clear": true} drops only the record. Sizes in mm. |
 | `rename_operation` | `name`, `new_name` | Change an operation's display name. Its stable key (what scripts, saved files and other tools address it by) and its place in the program do not change; naming it back to its key clears the display name. Names are unique and cannot take another operation's key. One undo step. |
 | `reorder_operation` | `name`, `place?`, `target` | Move an operation before or after another operation of the SAME setup, as the browser's drag and drop does. The order is saved with the project and is the order the program posts, simulates and computes rest material in; moving between setups is refused. Answers with that setup's operations in their new order. One undo step. |
 | `mark_operation_reviewed` | `name` | Clear an operation's migration needs-review warning once you have inspected the migrated operation. Refused by name when the operation is not flagged. One undo step. |

@@ -140,7 +140,7 @@ pub fn stylus_hits(path: &Toolpath, ball_r: f64, facets: &[Triangle]) -> Vec<War
 /// that much nearer the real part.
 #[must_use]
 pub fn stylus_slack(excess: f64) -> f64 {
-    super::fidelity_law::tightened(STYLUS_SLACK, excess)
+    super::fidelity_law::tightened_strict(STYLUS_SLACK, excess)
 }
 
 /// [`stylus_hits`] on a model `excess` coarser than promised (#1053):

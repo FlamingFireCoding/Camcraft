@@ -62,6 +62,8 @@ pub use pockets::PocketScan;
 mod setup_post_options;
 #[path = "state_setup_workholding.rs"]
 mod setup_workholding;
+#[path = "state_sheet_job.rs"]
+mod sheet_job;
 #[path = "state_fixture.rs"]
 mod fixture_view;
 #[path = "state_locate.rs"]
@@ -255,6 +257,8 @@ pub enum CommandKind {
     /// #1031: state (`Some`) or clear a setup's workholding maximum rpm
     /// (`SetSetupWorkholdingRpm`).
     SetSetupWorkholdingRpm { setup: String, max_rpm: Option<f64> },
+    /// #3070: set up (`Some`) or clear the setup's sheet job (`SetSheetJob`).
+    SetSheetJob { setup: String, job: Option<camcraft_app::sheet_job::SheetJob> },
     /// The post's user options (issue #34): the undoable
     /// `SetPostOptions` with the picked value.
     SetPostOptions(camcraft_app::schema::PostOptions),
@@ -2778,11 +2782,11 @@ impl State {
             .enumerate()
             .map(|(gi, g)| {
                 let pick_name = camcraft_app::pick::geo_label(&self.world, g);
-                let (mut label, missing) = match g.feature {
+                let (mut label, missing) = match &g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
-                            .and_then(|f| f.faces.iter().find(|fa| fa.id == id).cloned());
+                            .and_then(|f| f.faces.iter().find(|fa| fa.id == *id).cloned());
                         match face {
                             Some(f) => {
                                 // Which axis the face sits at, on the
@@ -2816,7 +2820,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .map(|f| {
-                                let c = camcraft_app::model::resolve_chain(&f, id)?;
+                                let c = camcraft_app::model::resolve_chain(&f, *id)?;
                                 let pts = feature::chain_points(&f, &c);
                                 Some((c, pts))
                             })
@@ -2879,11 +2883,11 @@ impl State {
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
                                 // #2247: both memoized per feature set.
-                                let strips = model::patches(&f).iter().find(|p| p.id == id)?.faces.len();
+                                let strips = model::patches(&f).iter().find(|p| p.id == *id)?.faces.len();
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in model::patch_rings(&f, id)?.iter() {
+                                for r in model::patch_rings(&f, *id)?.iter() {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()
@@ -2947,7 +2951,7 @@ impl State {
                         }
                     }
                     FeatureSel::Vertex(id) => {
-                        match crate::vertex_pick::vertex_world(self, &g.entity, id) {
+                        match crate::vertex_pick::vertex_world(self, &g.entity, *id) {
                             Some(p) => (
                                 format!(
                                     "{pick_name} · ({}, {}, {}) {}",
@@ -2958,6 +2962,14 @@ impl State {
                                 ),
                                 false,
                             ),
+                            None => (format!("{pick_name} · missing"), true),
+                        }
+                    }
+                    // #2238 frame cost: the sketch chip text is cached by
+                    // drawing, entity, pick and display unit.
+                    FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                        match crate::sketch_chip_memo::sketch_chip(&self.world, &g.entity, &g.feature, unit) {
+                            Some((tail, missing)) => (format!("{pick_name} · {tail}"), missing),
                             None => (format!("{pick_name} · missing"), true),
                         }
                     }
@@ -3503,6 +3515,7 @@ impl State {
             CommandKind::SetupOwnPostOptions { setup, own } => self.own_post_options(&setup, own),
             CommandKind::SetupNoseToAxis { setup, value } => self.set_setup_nose(&setup, value),
             CommandKind::SetSetupWorkholdingRpm { setup, max_rpm } => self.set_workholding_rpm(&setup, max_rpm),
+            CommandKind::SetSheetJob { setup, job } => self.set_sheet_job(&setup, job),
             CommandKind::EditMachineDialog => {
                 let (path, m) = machine::of(&self.world);
                 match m {
@@ -4414,7 +4427,7 @@ impl State {
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
                     let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_file_tolerance(command.file_tolerance).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);
