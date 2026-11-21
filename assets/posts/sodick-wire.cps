@@ -125,6 +125,8 @@ function clean(s) {
   return t.length > 48 ? t.substring(0, 48).trim() : t;
 }
 function note(s) { block(["(" + s + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 
 // ------------------------------------------------------------- machine
 function machineName() {

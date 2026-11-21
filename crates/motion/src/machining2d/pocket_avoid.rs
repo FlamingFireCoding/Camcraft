@@ -13,7 +13,8 @@ use super::corner_relief::{CornerRelief, capsule_region, plan_corner_reliefs};
 use super::corner_relief_spur::inject_relief_spurs;
 use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
-use super::levels::{Cert, Motion, WalkState, cut_levels_under, walk_one_level};
+use super::equal_steps::cut_levels_for;
+use super::levels::{Cert, Motion, WalkState, walk_one_level};
 use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, plan_passes};
 use super::{GenError, pocket_entered_with_relief};
 
@@ -60,7 +61,7 @@ pub fn pocket_avoid_with_relief(
         }
         s => s,
     };
-    let zs = cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
+    let zs = cut_levels_for(p.top_z, &p.links.approach, p.bottom_z, p.stepdown)?;
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     let mut ws = WalkState::new(p.links.approach.entry_top(p.top_z));
     let mut prev_center: Option<Region> = None;

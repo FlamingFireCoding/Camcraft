@@ -94,6 +94,13 @@ function formatFeed(v) {
   return String(Math.round(v));
 }
 function onComment(s) { writeln(s); }
+// Full program notes retain their bound; name cleaners may truncate it.
+// Remove the delimiter and control characters used by the shipped dialects.
+function commentText(s) {
+  return String(s === null || s === undefined ? "" : s)
+    .replace(/[()%;*\/!~{}$]/g, " ").replace(/[^\x20-\x7E]/g, "?")
+    .replace(/\s+/g, " ").trim();
+}
 // Bar-feeder lifecycle defaults (M5.2 G.2): the events carry no
 // motion and no post may invent an M-code, so the default voices
 // the intent as a comment - visible to the operator, harmless to
@@ -172,17 +179,20 @@ pub const HOOKS: &[&str] = &[
 /// The program's identity a post writes (#258): its number (the
 /// O-word of a numbering dialect, 1 when the document states none),
 /// whether the document stated that number, and the document's
-/// program comment ("" for none - the dialect writes its own default).
+/// program comment ("" for none - the dialect writes its own default),
+/// and the header notes the program must carry (#2996: a model checked
+/// at reduced accuracy), each voiced through `onComment` after `onOpen`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProgramId {
     pub number: u32,
     pub numbered: bool,
     pub comment: String,
+    pub notes: Vec<String>,
 }
 
 impl Default for ProgramId {
     fn default() -> Self {
-        Self { number: 1, numbered: false, comment: String::new() }
+        Self { number: 1, numbered: false, comment: String::new(), notes: Vec::new() }
     }
 }
 
