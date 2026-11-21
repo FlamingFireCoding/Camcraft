@@ -37,8 +37,12 @@ pub(super) struct Walk<'a> {
 fn hidden(node: &Node) -> bool {
     let style_none = node.attr("style").is_some_and(|s| {
         s.split(';').any(|decl| {
-            let mut kv = decl.splitn(2, ':').map(str::trim);
-            matches!((kv.next(), kv.next()), (Some("display"), Some("none")))
+            decl.split_once(':').is_some_and(|(property, value)| {
+                // CSS property names and keywords are case-insensitive. An importance
+                // suffix must never make a hidden contour eligible for cutting.
+                property.trim().eq_ignore_ascii_case("display")
+                    && value.split('!').next().is_some_and(|keyword| keyword.trim().eq_ignore_ascii_case("none"))
+            })
         })
     });
     style_none || node.attr("display").is_some_and(|d| d.trim() == "none")
@@ -133,7 +137,7 @@ impl<'a> Walk<'a> {
             }
         }
         match name.as_str() {
-            "g" | "a" | "switch" => {
+            "g" | "a" => {
                 for child in node.children.clone() {
                     self.element(child, map, uses, depth + 1)?;
                 }
