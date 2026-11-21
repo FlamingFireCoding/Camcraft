@@ -132,6 +132,8 @@ Call `export_agie_inspection` with the saved operation name and a new directory.
 
 Import the ISO geometry and keep its SBR beside the SBL during script import. Create a new piece and confirm zero working steps. The native piece has zero length and width because physical stock XY is unknown. The contour uses the project work datum. Physical stock Z and travel without stated machine limits remain unverified. The work selects the controller’s perpendicular lead default. Holding, actual entry and exit paths, and effective erosion settings remain unverified.
 
+On the offline Classic 2S, the formal check of the work reports undefined technology (`Technologie: te definiëren`). Checking the whole piece also reports that its dimensions are too small (`Dimensions X, Y, Z: Waarde te laag`), because the inspection piece records zero for its unknown length and width.
+
 ### Tool libraries and machine tool tables
 
 `import_tool_library` and `export_tool_library` accept native

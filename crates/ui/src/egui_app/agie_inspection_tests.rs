@@ -6,7 +6,8 @@ use crate::state::{CommandKind, State};
 use camcraft_app::commands::{DxfOptions, GenerateOperation, ImportDxf};
 use camcraft_app::operation::OpParams;
 use camcraft_app::{machine, model, project, sketch, stock::StockShape, wire_tools};
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui::accesskit::Role;
+use egui_kittest::{Harness, kittest::Queryable};
 
 const BUTTON: &str = "Export Agie inspection setup";
 const DXF: &str = "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
@@ -131,4 +132,54 @@ fn saved_selected_opening_exports_zero_steps_through_the_desktop_action() {
     assert!(st.status.contains("refused"));
     assert!(!parent.join("REFUSED").exists());
     std::fs::remove_dir_all(parent).expect("remove test bundle");
+}
+
+#[test]
+fn setup_post_inspection_fields_and_submit_fit_the_visible_panel() {
+    let (state, _) = inspection_page();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(750.0, 830.0))
+        .build_ui_state(
+            |ui, (st, panel): &mut (State, egui::Rect)| {
+                *panel = ui.clip_rect().intersect(ui.available_rect_before_wrap());
+                super::super::setup_pages::page(ui, st, "", crate::state::SetupPage::Post);
+            },
+            (state, egui::Rect::NOTHING),
+        );
+    h.run();
+    h.get_by_label_contains("Agie nominal inspection").click();
+    h.run();
+
+    let panel = h.state().1;
+    let mut previous_bottom = panel.top();
+    for (name, role) in [
+        ("Operation name", Role::TextInput),
+        ("Wire tool", Role::ComboBox),
+        ("DXF opening", Role::ComboBox),
+        ("Start X (world mm)", Role::TextInput),
+        ("Start Y (world mm)", Role::TextInput),
+    ] {
+        let label = h.get_by_role_and_label(Role::Label, name).rect();
+        let control = h
+            .query_all_by_role(role)
+            .map(|n| n.rect())
+            .find(|r| label.y_range().contains(r.center().y))
+            .unwrap_or_else(|| panic!("missing control on the {name} row"));
+        assert!(control.left() >= label.right(), "{name} overlaps its label");
+        let row = label.union(control);
+        assert!(
+            panel.contains_rect(row),
+            "{name} outside {panel:?}: {row:?}"
+        );
+        assert!(
+            row.top() >= previous_bottom,
+            "{name} overlaps the preceding row"
+        );
+        previous_bottom = row.bottom();
+    }
+    let submit = h.get_by_role_and_label(Role::Button, "Create inspection opening");
+    assert!(panel.contains_rect(submit.rect()) && submit.rect().top() >= previous_bottom);
+    submit.click();
+    h.run();
+    assert!(h.state().0.status.contains("Enter an operation name"));
 }
