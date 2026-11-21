@@ -217,6 +217,15 @@ fn a_small_bevel_on_one_side_is_no_draft() {
 }
 
 #[test]
+fn a_bevel_ending_below_half_depth_is_no_draft() {
+    // The 0.25 mm bevel ends 0.7 mm below the top. The vertical wall
+    // below it makes the half-depth section depart from a straight draft.
+    let (top, mid, corner) = x0_side_off(0.25, 0.25 * (0.7 - 0.5) / 0.7);
+    let err = ride_loops(&top, &mid, &corner, 1.0, 1.0, 9.0, UPRIGHT).expect_err("a partly bevelled loop").to_string();
+    assert!(err.contains("only part of its length"), "{err}");
+}
+
+#[test]
 fn a_straight_face_steeper_than_a_draft_is_a_chamfer() {
     // #2929: a 1 mm 45 degree bevel deeper than the ride is one
     // straight face too; its slope is no draft's, and #2887 holds.

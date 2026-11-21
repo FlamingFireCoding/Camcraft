@@ -211,8 +211,8 @@ const DRAFT_TAN: f64 = 0.267_949_192_431_122_7;
 /// plane, at no more than a draft's slope. Measured along the frame's
 /// `lean`, the piece stands `d` off the wall, at most `depth *
 /// DRAFT_TAN`, and the section half way down stands half of `d` off
-/// it (within a quarter of `d`). A modelled chamfer that ends above
-/// half depth puts that section on the wall itself, not half way.
+/// it within the section grid slack. A modelled chamfer that ends
+/// before the corner plane does not keep this straight slope.
 fn drafted(m: Point2, wall: &[Point2], mid: &Region, depth: f64, lean: Point2) -> bool {
     if !(depth.is_finite() && depth > 0.0) {
         return false;
@@ -220,7 +220,7 @@ fn drafted(m: Point2, wall: &[Point2], mid: &Region, depth: f64, lean: Point2) -
     let d = near(Point2::new(m.x - lean.x, m.y - lean.y), wall);
     let half = Point2::new(m.x - lean.x * 0.5, m.y - lean.y * 0.5);
     let dm = mid.loops().iter().map(|l| near(half, l.points())).fold(f64::INFINITY, f64::min);
-    d > SAME_EDGE && d <= depth * DRAFT_TAN && (dm - d * 0.5).abs() <= d * 0.25
+    d > SAME_EDGE && d <= depth * DRAFT_TAN && (dm - d * 0.5).abs() <= LEAN_SLACK
 }
 
 /// #2944: the segment `a`-`b` cut at the foot of each vertex of `wall`
