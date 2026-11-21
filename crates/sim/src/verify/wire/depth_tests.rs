@@ -97,3 +97,62 @@ fn a_kerf_that_only_grazes_the_part_still_reads_its_entry() {
     let (z, depth, _) = gouge(&v);
     assert!(z.abs() < 1e-9 && (depth - 0.05).abs() < 1e-9, "{z} {depth}");
 }
+
+#[test]
+fn an_inside_interval_between_coarse_samples_reports_its_full_depth() {
+    // Review counterexample: all 33 former coarse samples are outside.
+    let region = Region::new(vec![
+        Loop::new(vec![
+            Point2::new(50.5625, -1.0),
+            Point2::new(52.5625, -1.0),
+            Point2::new(52.5625, 1.0),
+            Point2::new(50.5625, 1.0),
+        ])
+        .expect("loop"),
+    ])
+    .expect("region");
+    let product = Product::Part(&region);
+    let a = Point2::new(0.0, 0.0);
+    let b = Point2::new(100.0, 0.0);
+    let (signed, at) = dist::entry(&product, a, b);
+    assert!(
+        (signed + 1.0).abs() <= 100.0 / 1024.0,
+        "expected signed depth -1; got {signed} at {at:?}"
+    );
+    assert!(
+        product.contains(at),
+        "the reported point must be in the product: {at:?}"
+    );
+    assert!((K - signed - 1.162).abs() <= 100.0 / 1024.0);
+}
+
+#[test]
+fn a_stock_limited_die_entry_keeps_the_bound_at_the_stock_edge() {
+    // The distance to the opening jumps from zero when the move enters
+    // the stock. A global Lipschitz bound on that masked value is false.
+    let opening = square(1.0);
+    let stock = Region::new(vec![
+        Loop::new(vec![
+            Point2::new(50.5625, -1.0),
+            Point2::new(52.5625, -1.0),
+            Point2::new(52.5625, 1.0),
+            Point2::new(50.5625, 1.0),
+        ])
+        .expect("loop"),
+    ])
+    .expect("region");
+    let product = Product::Around {
+        opening: &opening,
+        stock: Some(&stock),
+    };
+    let (signed, at) = dist::entry(&product, Point2::new(0.0, 0.0), Point2::new(100.0, 0.0));
+    let deepest = 52.5625 - 1.0;
+    assert!(
+        (signed + deepest).abs() <= 100.0 / 1024.0,
+        "expected signed depth -{deepest}; got {signed} at {at:?}"
+    );
+    assert!(
+        product.contains(at),
+        "the reported point must be in the stock: {at:?}"
+    );
+}

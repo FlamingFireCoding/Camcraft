@@ -85,28 +85,93 @@ pub(super) fn clearance(p: &Product<'_>, a: Point2, b: Point2) -> (f64, Point2) 
 /// entry there is its reach plus that distance, not the reach alone.
 pub(super) fn entry(p: &Product<'_>, a: Point2, b: Point2) -> (f64, Point2) {
     let (d, at) = clearance(p, a, b);
-    if d > 0.0 {
-        return (d, at);
-    }
     let at_t = |t: f64| Point2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
-    let inside = |t: f64| {
-        let q = at_t(t);
-        if p.contains(q) { to_boundary(p, q) } else { 0.0 }
-    };
-    // The inside distance changes by at most the walked length (it is
-    // 1-Lipschitz): a coarse walk, then a fine walk around its best.
-    const N: usize = 32;
-    let best_of = |lo: f64, hi: f64| {
-        (0..=N).map(|i| lo + (hi - lo) * i as f64 / N as f64).fold((0.0, lo), |(bd, bt), t| {
-            let dd = inside(t);
-            if dd > bd { (dd, t) } else { (bd, bt) }
-        })
-    };
-    let (coarse, t0) = best_of(0.0, 1.0);
-    let h = 1.0 / N as f64;
-    let (fine, t1) = best_of((t0 - h).max(0.0), (t0 + h).min(1.0));
-    let (deep, t) = if fine > coarse { (fine, t1) } else { (coarse, t0) };
-    if deep > 0.0 { (-deep, at_t(t)) } else { (d, at) }
+    let length = pp(a, b);
+    let tolerance = (length / 1024.0).max(f64::MIN_POSITIVE);
+    let mut cuts = vec![0.0, 1.0];
+    crossings(p.boundary(), a, b, &mut cuts);
+    if let Product::Around {
+        stock: Some(stock), ..
+    } = p
+    {
+        crossings(stock, a, b, &mut cuts);
+    }
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup();
+    let mut best = (0.0, at);
+    // Bound each inside interval independently. Stock containment can
+    // make the inside distance discontinuous at a stock edge, so split
+    // there too; the boundary distance within each interval is 1-Lipschitz.
+    for pair in cuts.windows(2) {
+        let (lo, hi) = (pair[0], pair[1]);
+        if !p.contains(at_t(lo + (hi - lo) / 2.0)) {
+            continue;
+        }
+        let dl = to_boundary(p, at_t(lo));
+        let dh = to_boundary(p, at_t(hi));
+        for (t, depth) in [(lo, dl), (hi, dh)] {
+            let q = at_t(t);
+            if depth > best.0 && p.contains(q) {
+                best = (depth, q);
+            }
+        }
+        let mut pending = vec![(lo, hi, dl, dh)];
+        while let Some((lo, hi, dl, dh)) = pending.pop() {
+            let mid = lo + (hi - lo) / 2.0;
+            let q = at_t(mid);
+            let dm = to_boundary(p, q);
+            if dm > best.0 && p.contains(q) {
+                best = (dm, q);
+            }
+            // The two endpoint cones bound every possible deeper entry,
+            // including one whose coarse samples would both be outside.
+            let upper = (dl + dh + length * (hi - lo)) / 2.0;
+            if upper <= best.0 + tolerance || mid <= lo || mid >= hi {
+                continue;
+            }
+            pending.push((lo, mid, dl, dm));
+            pending.push((mid, hi, dm, dh));
+        }
+    }
+    if best.0 > 0.0 {
+        (-best.0, best.1)
+    } else {
+        (d, at)
+    }
+}
+
+/// Split a move at every crossing of a polygon boundary. Between these
+/// parameters, containment is constant. Collinear edges contribute their
+/// endpoints, so a walk along a boundary also has explicit intervals.
+fn crossings(region: &crate::geo2d::Region, a: Point2, b: Point2, cuts: &mut Vec<f64>) {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    for l in region.loops() {
+        let pts = l.points();
+        for i in 0..pts.len() {
+            let (c, d) = (pts[i], pts[(i + 1) % pts.len()]);
+            let (ex, ey) = (d.x - c.x, d.y - c.y);
+            let det = dx * ey - dy * ex;
+            let (cx, cy) = (c.x - a.x, c.y - a.y);
+            if det != 0.0 {
+                let t = (cx * ey - cy * ex) / det;
+                let u = (cx * dy - cy * dx) / det;
+                if t.is_finite() && t > 0.0 && t < 1.0 && (0.0..=1.0).contains(&u) {
+                    cuts.push(t);
+                }
+            } else if cx * dy - cy * dx == 0.0 {
+                for q in [c, d] {
+                    let t = if dx.abs() >= dy.abs() {
+                        (q.x - a.x) / dx
+                    } else {
+                        (q.y - a.y) / dy
+                    };
+                    if t.is_finite() && t > 0.0 && t < 1.0 {
+                        cuts.push(t);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// How far `q` stands from the product's boundary.
