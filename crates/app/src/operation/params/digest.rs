@@ -40,6 +40,15 @@ pub(super) fn write_corner_relief(
     }
 }
 
+/// The arc-turn radius (#1759), after the blend tag: written only when
+/// set, so every earlier blended operation keeps its digest.
+pub(super) fn write_blend_radius(h: &mut std::hash::DefaultHasher, r: Option<f64>) {
+    if let Some(r) = r {
+        h.write_u8(0xB4);
+        w(h, r);
+    }
+}
+
 /// One scalar, as its bit pattern.
 pub(super) fn w(h: &mut std::hash::DefaultHasher, v: f64) {
     h.write(&v.to_bits().to_le_bytes());

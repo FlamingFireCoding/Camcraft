@@ -4,7 +4,7 @@
 //! Provenance: our own digest law over this repo's operation registry.
 
 use super::*;
-use digest::{w, write_corner_relief, wt};
+use digest::{w, write_blend_radius, write_corner_relief, wt};
 
 impl OpParams {
     /// The digest-relevant scalars, written to a hasher in a fixed
@@ -70,12 +70,7 @@ impl OpParams {
                 // (sharp) face keeps the digest it was cached under.
                 if *blend_turns {
                     h.write_u8(0xB1);
-                    // #1759: a set radius only, so every earlier
-                    // blended op keeps its digest.
-                    if let Some(r) = blend_radius {
-                        h.write_u8(0xB4);
-                        w(h, *r);
-                    }
+                    write_blend_radius(h, *blend_radius);
                 }
                 // M13.11: the hole law changes the moves only away from
                 // its default, and is written only then - every legacy
@@ -166,12 +161,7 @@ impl OpParams {
                 // legacy sharp contour keeps its cached digest.
                 if *blend_turns {
                     h.write_u8(0xB1);
-                    // #1759: a set radius only, so every earlier
-                    // blended op keeps its digest.
-                    if let Some(r) = blend_radius {
-                        h.write_u8(0xB4);
-                        w(h, *r);
-                    }
+                    write_blend_radius(h, *blend_radius);
                 }
                 if !chain_overrides.is_empty() {
                     h.write(b"chain-overrides");
