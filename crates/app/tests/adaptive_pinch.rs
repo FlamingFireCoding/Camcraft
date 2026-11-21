@@ -188,7 +188,15 @@ fn the_users_part_with_default_adaptive_keeps_the_cutter_off_it() {
         }
         let (r, at) = worst;
         assert!(r < 0.06, "turned {turned}: a cut at ({:.3}, {:.3}, {:.3}) reaches {r:.3} into the part", at.x, at.y, at.z);
-        assert_eq!(warns, 0, "turned {turned}: the op verifies clean");
+        // #3035: a fallback is advisory; every other warning still fails.
+        let areas = camcraft_app::machining2d::rings_fallbacks(&t.notes);
+        assert_eq!(warns, usize::from(areas > 0), "turned {turned}: only the fallback is reported");
+        let e = model::find_by_name(&world, "Op1").expect("op");
+        let cached = model::toolpath_of(&world, &e).expect("cached path");
+        assert!(cached.warnings.iter().all(|w| {
+            matches!(w, camcraft_app::verify::Warning::StrategyFallback { areas: n, .. } if *n == areas)
+                && !w.blocks_post()
+        }), "turned {turned}: unexpected warnings: {:?}", cached.warnings);
         if !turned {
             // The program sim reads the same job (it judges the aligned
             // stock; the turned one rests on the op law above).

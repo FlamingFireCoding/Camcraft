@@ -57,6 +57,15 @@ fn adaptive(bottom: Height) -> OpParams {
 
 const FLOOR: Height = Height { reference: HeightReference::BottomOfSelection, offset: 0.0 };
 
+fn assert_only_fallback(path: &Toolpath, warnings: &[camcraft_app::verify::Warning]) {
+    let areas = camcraft_app::machining2d::rings_fallbacks(&path.notes);
+    assert_eq!(warnings.len(), usize::from(areas > 0), "only the fallback is reported: {warnings:?}");
+    assert!(warnings.iter().all(|w| {
+        matches!(w, camcraft_app::verify::Warning::StrategyFallback { areas: n, .. } if *n == areas)
+            && !w.blocks_post()
+    }), "unexpected warnings: {warnings:?}\nnotes {:?}", path.notes);
+}
+
 #[test]
 fn a_face_selection_floor_is_the_faces_own_z() {
     let (world, name) = milling_test();
@@ -85,9 +94,9 @@ fn containment_outside_clears_past_the_edge_never_the_recess() {
     let preview = operation::region_of(&world, &op(src.clone(), adaptive(FLOOR), a.clone())).expect("the band previews");
     assert!(!preview.contains(Point2::new(c.0, c.1)), "the recess is not in the machined area");
     let t0 = std::time::Instant::now();
-    let (t, warns) = run(&world, &op(src, adaptive(FLOOR), a)).expect("generates with stock");
+    let (t, warns) = operation::generate(&world, &op(src, adaptive(FLOOR), a), "").expect("generates with stock");
     assert!(t0.elapsed().as_secs_f64() < 60.0, "the band plans in seconds, not minutes");
-    assert_eq!(warns, 0, "the plan verifies clean: {:?}", t.notes);
+    assert_only_fallback(&t, &warns);
     let part_outline = entity_outline(&world, &name);
     let first_feed = t.moves.iter().find(|m| m.kind == MoveKind::Feed).expect("first cut");
     assert!(
@@ -310,7 +319,7 @@ fn fig8_outside_containment_with_em0800_and_clearing_kinds_works() {
     h.execute(&world, camcraft_app::commands::GenerateOperation::new(&world, "Adp8").expect("generate"));
     let e = model::find_by_name(&world, "Adp8").expect("op");
     let cached = model::toolpath_of(&world, &e).expect("cached");
-    assert!(cached.warnings.is_empty(), "verifies clean: {:?}", cached.warnings);
+    assert_only_fallback(&cached.path, &cached.warnings);
     assert!(!camcraft_app::posting::post_setup_unwritten(&world).expect("posts clean").program.is_empty());
     let part_outline = entity_outline(&world, &name);
     let first_feed = cached.path.moves.iter().find(|m| m.kind == MoveKind::Feed).expect("first cut");
