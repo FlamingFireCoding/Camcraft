@@ -94,7 +94,9 @@ function trim(s) {
   return s === "-0" ? "0" : s;
 }
 function fu(v) { return trim(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3)); }
-function ff(v) { return inch ? trim((v / 25.4).toFixed(2)) : String(Math.round(v)); }
+// A feed keeps three decimals in mm/min (a whole feed stays whole) and two
+// in in/min; a positive feed that rounds to zero is refused in feedWord.
+function ff(v) { return trim(Number(inch ? v / 25.4 : v).toFixed(inch ? 2 : 3)); }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
 function block(words) {
   var a = [];
@@ -302,6 +304,10 @@ function feedWord(p) {
     return "";
   }
   var f = "F" + ff(p.FeedRate);
+  if (f === "F0") {
+    refuse("tinyfeed" + opName, who() + "a cutting move states a feed of " + p.FeedRate + " mm/min - below the program's feed resolution (F0) - refused");
+    return "";
+  }
   if (f === lastF) return "";
   lastF = f;
   return f;

@@ -161,6 +161,29 @@ fn waterjet_post_refuses_a_helical_arc_in_both_arc_modes() {
     }
 }
 
+/// A positive feed keeps its value after formatting, or the post refuses it.
+/// The stream states feed in um/min: F100 is 0.1 mm/min.
+#[test]
+fn waterjet_post_keeps_a_small_positive_feed_or_refuses_it() {
+    let stream = |f: u32| format!("WATERJET\nSECTION\nRapid X 0 Y 0 Z 0\nJET ON C0 OUTER\nFeed X 1000 Y 0 Z 0 F{f}\nJET OFF C0\nENDSECTION\n");
+    let mm = post(&jet_machine(), &stream(100), &json!({}));
+    assert!(mm.warnings.is_empty(), "{:?}", mm.warnings);
+    assert!(mm.program.contains("G1 X1 Y0 F0.1\n"), "metric keeps 0.1 mm/min:\n{}", mm.program);
+    assert!(!mm.program.contains("F0\n") && !mm.program.contains("F0 "), "{}", mm.program);
+    let tiny = post(&jet_machine(), &stream(0), &json!({}));
+    assert_refused(&tiny.warnings, "states no feed");
+    let thou = post(&jet_machine(), &stream(1), &json!({}));
+    assert!(thou.program.contains("F0.001\n"), "metric keeps 0.001 mm/min:\n{}", thou.program);
+    // 0.1 mm/min is 0.0039 in/min: below the inch format, so refused.
+    let inch = post(&jet_machine(), &stream(100), &json!({ "Units": "inch" }));
+    assert_refused(&inch.warnings, "below the program's feed resolution (F0)");
+    assert!(!inch.program.contains("F0\n") && !inch.program.contains("F0 "), "{}", inch.program);
+    // 254 mm/min is 10 in/min and posts as such.
+    let ten = post(&jet_machine(), &stream(254_000), &json!({ "Units": "inch" }));
+    assert!(ten.warnings.is_empty(), "{:?}", ten.warnings);
+    assert!(ten.program.contains("F10\n"), "{}", ten.program);
+}
+
 #[test]
 fn waterjet_rapid_cache_resets_when_the_coordinate_frame_changes() {
     // Each new frame needs a physical traverse, even when its words match
