@@ -37,25 +37,42 @@ fn a_punch_and_a_die_cannot_share_a_group() {
     assert!(!destination.exists());
 }
 
+fn group_punch(i: usize) -> AgieJob {
+    let x = (i % 3) as f64 * 70.0 - 70.0;
+    let y = (i / 3) as f64 * 40.0 - 40.0;
+    let mut job = punch();
+    for p in &mut job.contour {
+        p[0] += x;
+        p[1] += y;
+    }
+    job.start = Some([x - 30.0, y]);
+    job.stock_min = [-125.0, -80.0, -20.0];
+    job.stock_max = [125.0, 80.0, 0.0];
+    job
+}
+
+#[test]
+fn mixed_wire_conditions_refuse_the_group_before_writing_any_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let destination = temp.path().join("MIXED");
+    for fine_plus_index in [0, 1] {
+        let mut jobs = [group_punch(0), group_punch(1)];
+        jobs[fine_plus_index].quality = AgieQuality::FinePlusRa035;
+        assert_eq!(
+            export_works(&jobs, &destination, "MIXED", 1.0).unwrap_err(),
+            "All works in an Agie group must use the same qualified wire condition"
+        );
+        assert!(!destination.exists());
+        assert!(temp.path().read_dir().unwrap().next().is_none());
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn every_punch_has_its_own_geometry_and_uses_the_requested_piece_quality() {
     let temp = tempfile::tempdir().unwrap();
-    let make_job = |i: usize| {
-        let x = (i % 3) as f64 * 70.0 - 70.0;
-        let y = (i / 3) as f64 * 40.0 - 40.0;
-        let mut job = punch();
-        for p in &mut job.contour {
-            p[0] += x;
-            p[1] += y;
-        }
-        job.start = Some([x - 30.0, y]);
-        job.stock_min = [-125.0, -80.0, -20.0];
-        job.stock_max = [125.0, 80.0, 0.0];
-        job
-    };
     for count in 2..=MAX_PUNCH_WORKS {
-        let jobs: Vec<_> = (0..count).map(make_job).collect();
+        let jobs: Vec<_> = (0..count).map(group_punch).collect();
         let dir = temp.path().join(count.to_string());
         let files = export_works(&jobs, &dir, "PUNCH", 1.0).unwrap();
         assert_eq!(files.len(), count + 2);
@@ -80,7 +97,7 @@ fn every_punch_has_its_own_geometry_and_uses_the_requested_piece_quality() {
             assert!(piece[..first_reset].contains(&binding));
         }
     }
-    let jobs: Vec<_> = (0..=MAX_PUNCH_WORKS).map(make_job).collect();
+    let jobs: Vec<_> = (0..=MAX_PUNCH_WORKS).map(group_punch).collect();
     let dir = temp.path().join("TOOMANY");
     assert!(export_works(&jobs, &dir, "TOOMANY", 1.0).is_err());
     assert!(!dir.exists());

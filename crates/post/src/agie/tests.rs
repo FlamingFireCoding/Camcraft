@@ -295,8 +295,12 @@ fn fine_plus_uses_only_its_measured_height_and_single_punch_cycle() {
             .contains("single closed punch")
     );
     job.side = AgieSide::Punch;
+    let second = AgieJob {
+        quality: AgieQuality::FinePlusRa035,
+        ..punch()
+    };
     assert!(
-        export_works(&[punch(), job], &destination, "FINE20", 1.0)
+        export_works(&[job, second], &destination, "FINE20", 1.0)
             .unwrap_err()
             .contains("single closed punch")
     );

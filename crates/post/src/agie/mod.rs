@@ -151,17 +151,15 @@ pub fn export_works(
     if !valid_name(program) {
         return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
-    if jobs
-        .iter()
-        .any(|job| job.quality == AgieQuality::FinePlusRa035)
+    if jobs.iter().any(|job| job.quality != first.quality) {
+        return Err("All works in an Agie group must use the same qualified wire condition".into());
+    }
+    if first.quality == AgieQuality::FinePlusRa035
         && (jobs.len() != 1 || first.side != AgieSide::Punch)
     {
         return Err("AGIE_BERCO_RA035 requires a single closed punch in 20 mm stock".into());
     }
     if jobs.len() > 1 {
-        if jobs.iter().any(|job| job.quality != first.quality) {
-            return Err("All works in an Agie group must use the same qualified wire condition".into());
-        }
         if jobs.len() > MAX_PUNCH_WORKS
             || (first.side == AgieSide::Die && jobs.len() != 2)
             || first.side.is_open()
