@@ -21,6 +21,8 @@ use super::{AreaCtx, OpParams, SrcRef, apply_area_controls, stitch};
 #[derive(Clone, Debug)]
 pub(super) struct ResolvedSketchChain {
     pub(super) chain_id: ChainId,
+    /// The DXF profile entity that owns the chain; nesting is per profile.
+    pub(super) entity: String,
     pub(super) label: String,
     pub(super) closed: bool,
     pub(super) pts: Vec<Point2>,
@@ -171,15 +173,20 @@ fn uniform_inside(plan: &SketchContourPlan) -> Option<bool> {
 }
 
 /// True when all closed chains form an unmodified natural nesting (every Hole's parent is
-/// also present, same climb, and natural Auto sides). In that case one unified `Region::new`
-/// cuts holes Inside and outers Outside together in a single level-by-level contour pass.
+/// also present, same climb, and natural Auto sides) inside ONE DXF profile. In that case one
+/// unified `Region::new` cuts holes Inside and outers Outside together in a single
+/// level-by-level contour pass. Loops from separate profiles never group: their Auto side
+/// comes from each profile's own nesting, and an even-odd region of the union would turn a
+/// loop that lies inside another profile's loop into a hole (#1864 review). The grouped and
+/// the per-chain paths must give the same side, so a Reverse-only change never moves it.
 fn can_group_natural(closed: &[&ResolvedSketchChain], op_climb: bool) -> bool {
-    if closed.is_empty() {
+    let Some(first) = closed.first() else {
         return false;
-    }
+    };
     let ids: HashSet<ChainId> = closed.iter().map(|c| c.chain_id).collect();
     closed.iter().all(|c| {
         c.natural_auto
+            && c.entity == first.entity
             && c.eff_climb == op_climb
             && c.parent.is_none_or(|p| ids.contains(&p))
     })
@@ -211,6 +218,17 @@ pub(super) fn generate_plan(
         return Err(GenError::Invalid(
             "the Boundary settings shape an area, and these picks are open sketch chains the cutter rides - reset them, or pick closed chains".into(),
         ));
+    }
+    // Boundary controls (Exclude Stock, Include, ...) shape closed regions only. An open
+    // chain is a centerline the cutter rides, so the controls cannot keep it out of an
+    // excluded area: refuse the mix by name instead of cutting through it (#1864 review).
+    if area.is_some()
+        && let Some(open) = plan.items.iter().find(|i| !i.closed)
+    {
+        return Err(GenError::Invalid(format!(
+            "the Boundary settings shape an area, and {} is an open sketch chain the cutter rides outside those controls - reset the Boundary settings, or pick closed chains only",
+            open.label
+        )));
     }
 
     let closed_items: Vec<&ResolvedSketchChain> = plan.items.iter().filter(|i| i.closed).collect();
