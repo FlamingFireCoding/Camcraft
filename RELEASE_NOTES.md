@@ -191,9 +191,6 @@ The cut line is 2026-11-21 22:16 UTC. These `P1` and `P2` issues are open:
 - PLACEHOLDER #3236 (P1): Wire ISO post: a non-finite U word or taper angle
   posts UNaN or ANaN instead of a refusal. It is on the cut list. Remove
   this line if its fix merges before the tag.
-- PLACEHOLDER #2822 (rest machining on the 2D Pocket from the previous
-  operations) is on the cut list and is not merged. Remove this line if it
-  merges before the tag.
 
 Open defects with a workaround:
 - #1950 (P3): 3D Pocket Adaptive on a whole model. The stock ring exceeds
