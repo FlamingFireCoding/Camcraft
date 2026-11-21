@@ -97,15 +97,22 @@ fn second_checkout(root: &Path, a: &Path) -> PathBuf {
     let old = SystemTime::now() - Duration::from_secs(3600);
     std::fs::File::options().write(true).open(&lib).expect("open").set_modified(old).expect("mtime");
     // `cargo xtask` builds its own dependencies in b before the seed: b has seedbase's units already, newer.
-    for part in ["deps", ".fingerprint"] {
+    let mut copied = 0;
+    for part in ["build", "deps", ".fingerprint"] {
         let (from, to) = (a.join("target/debug").join(part), b.join("target/debug").join(part));
-        for item in std::fs::read_dir(&from).expect("units").flatten() {
+        let Ok(entries) = std::fs::read_dir(&from) else {
+            continue;
+        };
+        for item in entries {
+            let item = item.expect("unit entry");
             let name = item.file_name().to_string_lossy().into_owned();
-            if name.starts_with("seedbase-") || name.starts_with("libseedbase-") {
+            if name == "seedbase" || name.starts_with("seedbase-") || name.starts_with("libseedbase-") {
                 touched_copy(&item.path(), &to.join(name));
+                copied += 1;
             }
         }
     }
+    assert!(copied > 0, "the fixture refreshes an existing dependency in either Cargo layout");
     b
 }
 
@@ -194,10 +201,55 @@ fn local_packages_are_the_ones_without_a_source() {
 #[test]
 fn a_unit_entry_of_a_local_package_is_never_copied() {
     let local = ["camcraft-app".to_string(), "libc".to_string()];
-    for e in ["camcraft-app-0a1b", "libcamcraft_app-0a1b.rlib", "camcraft_app-0a1b.d", "liblibc-9f.rlib", "libc-9f"] {
+    for e in [
+        "camcraft-app",
+        "camcraft_app",
+        "libc",
+        "camcraft-app-0a1b",
+        "libcamcraft_app-0a1b.rlib",
+        "camcraft_app-0a1b.d",
+        "liblibc-9f.rlib",
+        "libc-9f",
+    ] {
         assert!(seed::is_local(e, &local), "{e} is local");
     }
     for e in ["serde-0a1b", "libserde-0a1b.rmeta", "solidcore-77", "libsolidcore-77.rlib"] {
         assert!(!seed::is_local(e, &local), "{e} is not local");
     }
+}
+
+#[test]
+fn both_artifact_layouts_copy_dependencies_and_exclude_local_packages() {
+    let root = scratch("layouts");
+    for nested in [false, true] {
+        let source = root.join(if nested { "nested" } else { "legacy" });
+        let dest = root.join(if nested { "nested-dest" } else { "legacy-dest" });
+        let files = if nested {
+            [
+                "build/serde/00/fingerprint/lib-serde",
+                "build/serde/00/out/libserde.rlib",
+                "build/camcraft-app/00/fingerprint/lib-camcraft_app",
+                "build/camcraft-app/00/out/libcamcraft_app.rlib",
+            ]
+        } else {
+            [
+                ".fingerprint/serde-00/lib-serde",
+                "deps/libserde-00.rlib",
+                ".fingerprint/camcraft-app-00/lib-camcraft_app",
+                "deps/libcamcraft_app-00.rlib",
+            ]
+        };
+        for file in files {
+            write(&source.join("target/debug").join(file), "unit");
+        }
+        let note = seed::seed(&dest, &[source], &["camcraft-app".into()]).expect("seed").expect("note");
+        assert!(note.contains("seeded"), "the source scan finds the layout: {note}");
+        for file in &files[..2] {
+            assert_eq!(std::fs::read_to_string(dest.join("target/debug").join(file)).expect("dependency unit"), "unit");
+        }
+        for file in &files[2..] {
+            assert!(!dest.join("target/debug").join(file).exists(), "local artifact is excluded: {file}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(root);
 }

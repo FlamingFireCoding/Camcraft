@@ -1,6 +1,6 @@
 //! Seeds a new worktree's `target/debug` from another checkout of the same repository (#2575), so cargo
 //! finds the dependency units (solidcore, the build-script crates) Fresh instead of compiling them again.
-//! Provenance: our own build tooling (#900, #2575); Cargo's documented target layout (deps/, build/, .fingerprint/).
+//! Provenance: our own build tooling (#900, #2575); Cargo's target layouts (deps/, .fingerprint/, and build/<package>/<hash>/).
 //!
 //! Why not sccache: its Rust key hashes the `OUT_DIR` value and the cwd, and both name the worktree, so a
 //! build-script crate misses in each new worktree and every crate above it misses too. Cargo's own
@@ -42,14 +42,24 @@ pub fn is_local(entry: &str, local: &[String]) -> bool {
         let snake = name.replace('-', "_");
         [name.as_str(), snake.as_str()].iter().any(|n| {
             let head = format!("{n}-");
-            entry.starts_with(&head) || bare.is_some_and(|b| b.starts_with(&head))
+            *n == entry || entry.starts_with(&head) || bare.is_some_and(|b| b.starts_with(&head))
         })
     })
 }
 
-/// The number of units in `<checkout>/target/debug/.fingerprint`; 0 when there is none.
+/// Counts legacy fingerprints and the units in `build/<package>/<hash>/fingerprint`.
 fn units(checkout: &Path) -> usize {
-    fs::read_dir(checkout.join("target").join("debug").join(".fingerprint")).map(|d| d.count()).unwrap_or(0)
+    let debug = checkout.join("target").join("debug");
+    let legacy = fs::read_dir(debug.join(".fingerprint")).map(|d| d.count()).unwrap_or(0);
+    let nested = fs::read_dir(debug.join("build"))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .flat_map(|package| fs::read_dir(package.path()).into_iter().flatten())
+        .filter_map(Result::ok)
+        .filter(|unit| unit.path().join("fingerprint").is_dir())
+        .count();
+    legacy + nested
 }
 
 /// Takes cargo's locks of `dir` without a wait. `Ok(None)` when a lock is held (a build runs there).
@@ -171,7 +181,8 @@ fn copy_units(src: &Path, dest: &Path, local: &[String]) -> Result<usize, String
     Ok(copied)
 }
 
-/// Copies one unit entry `from` into the directory `to` as `name`.
+/// Copies one entry `from` into the directory `to` as `name`. In the nested layout this is a whole
+/// package tree: its outputs and fingerprints become visible together, only after the copy completes.
 fn copy_unit(from: &Path, to: &Path, name: &str) -> Result<(), String> {
     // A copy under a temporary name, then one rename: a unit is complete or absent, never half there.
     let tmp = to.join(format!(".seed-{name}"));
