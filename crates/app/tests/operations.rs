@@ -83,6 +83,7 @@ fn contour_params() -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -1094,7 +1095,7 @@ fn stale_reason_asks_for_a_re_pick_when_the_feature_moved() {
         &world,
         "C1",
         "EM-0600-4FL",
-        sel("part", top),
+        sel("part", top.clone()),
         contour_params(),
     );
     history.execute(&world, cmd.expect("create"));
@@ -1832,7 +1833,7 @@ fn a_selected_face_bounds_facing_and_contour() {
         &world,
         "C1",
         "EM-0600-4FL",
-        sel("part", top),
+        sel("part", top.clone()),
         contour_params(),
     );
     history.execute(&world, cmd.expect("create contour on selection"));
@@ -1875,7 +1876,7 @@ fn a_vertical_or_tilted_pick_refuses_with_the_fix_in_the_message() {
     let wall = FeatureSel::Face(wall_face_of(&world, "part"));
     let op = |params: OpParams| Operation {
         tool: "EM-0600-4FL".into(),
-        src: sel("part", wall),
+        src: sel("part", wall.clone()),
         params,
         stamp: None,
         setup: None,
@@ -1911,7 +1912,7 @@ fn closed_chain_rims_bound_and_double_picks_collapse_to_one_loop() {
     let rim = FeatureSel::Chain(rim_chain_of(&world, "disc"));
     let op = Operation {
         tool: "EM-0600-4FL".into(),
-        src: sel("disc", rim),
+        src: sel("disc", rim.clone()),
         params: contour_params(),
         stamp: None,
         setup: None,
@@ -1932,11 +1933,11 @@ fn closed_chain_rims_bound_and_double_picks_collapse_to_one_loop() {
         src: SrcRef::Selection(vec![
             GeoSel {
                 entity: "disc".into(),
-                feature: rim,
+                feature: rim.clone(),
             },
             GeoSel {
                 entity: "disc".into(),
-                feature: rim,
+                feature: rim.clone(),
             },
         ]),
         ..op.clone()
@@ -1958,7 +1959,7 @@ fn closed_chain_rims_bound_and_double_picks_collapse_to_one_loop() {
             .expect("the disc is one planar face")
     });
     let sheet_op = Operation {
-        src: sel("disc", sheet),
+        src: sel("disc", sheet.clone()),
         ..op.clone()
     };
     let r3 = operation::region_of(&world, &sheet_op).expect("the face ring bounds the disc");
@@ -2519,6 +2520,7 @@ fn a_closed_chain_routes_the_boundary_path_not_a_centerline() {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     history.execute(
         &world,
@@ -3339,6 +3341,7 @@ fn selection_notes_report_stitching_and_extension() {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     let notes = operation::selection_notes(&world, None, &items, &contour);
     assert!(
@@ -3386,6 +3389,7 @@ fn contour_at(side: Side, z: f64) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -5967,54 +5971,97 @@ fn rotary_parallel_generates_radial_axes_and_verifies_clean() {
 }
 
 #[test]
-fn the_rotary_twins_refuse_each_other_stances_by_name() {
-    // The pair cannot disagree about where the boundary sits: one
-    // sine for both refusals, each naming the kind the stance wants.
-    for (mname, name, mesh, params, wants) in [
-        (
-            "lathe",
-            "RPx",
-            lathe_mesh(),
-            rotary_parallel_params(4.0, -4.0),
-            "Rotary Contour",
-        ),
-        (
-            "laid",
-            "RCx",
-            laid_mesh(),
-            rotary_contour_params(14.0, -14.0),
-            "Rotary Parallel",
-        ),
-    ] {
-        let world = new_world();
-        let mut history = History::default();
-        box_stock(&world, &mut history, 40.0, 40.0, 40.0);
-        add_tool(&world, &mut history, "BN-0600");
-        history.execute(&world, ImportModel::from_mesh(mname, mesh));
-        history.execute(
+fn a_standing_bar_refuses_rotary_parallel_by_name() {
+    // The standing bar has no axial passes: Rotary Parallel refuses it
+    // and names the kind the stance wants. The laid twin no longer
+    // refuses Rotary Contour (#3000): it cuts rings about X, pinned by
+    // `a_laid_bar_cuts_rotary_contour_rings_about_x` below.
+    let (mname, name, wants) = ("lathe", "RPx", "Rotary Contour");
+    let (mesh, params) = (lathe_mesh(), rotary_parallel_params(4.0, -4.0));
+    let world = new_world();
+    let mut history = History::default();
+    box_stock(&world, &mut history, 40.0, 40.0, 40.0);
+    add_tool(&world, &mut history, "BN-0600");
+    history.execute(&world, ImportModel::from_mesh(mname, mesh));
+    history.execute(
+        &world,
+        CreateOperation::new(
             &world,
-            CreateOperation::new(
-                &world,
-                name,
-                "BN-0600",
-                SrcRef::Entity(mname.into()),
-                params,
-            )
-            .expect("create"),
+            name,
+            "BN-0600",
+            SrcRef::Entity(mname.into()),
+            params,
+        )
+        .expect("create"),
+    );
+    let CommandError::Machining(msg) = GenerateOperation::new(&world, name)
+        .err()
+        .expect("a wrong-stance twin must refuse")
+    else {
+        panic!("expected a machining refusal");
+    };
+    assert!(msg.contains(wants), "{msg} should point at {wants}");
+    assert_eq!(
+        status(&world, name),
+        OpStatus::Never,
+        "the refusal leaves no path behind"
+    );
+}
+
+/// #3000: the laid twin that Rotary Contour refused before now cuts
+/// rings about its X axis. Top and bottom are axial ball-center
+/// stations (the fitted origin is the foot of the axis on the plane
+/// through the world origin, so the stations read as world x), and
+/// every cut poses the radial about X.
+#[test]
+fn a_laid_bar_cuts_rotary_contour_rings_about_x() {
+    let world = new_world();
+    let mut history = History::default();
+    add_tool(&world, &mut history, "BN-0600");
+    history.execute(&world, ImportModel::from_mesh("laid", laid_mesh()));
+    model_stock(&world, &mut history, "laid");
+    history.execute(
+        &world,
+        CreateOperation::new(
+            &world,
+            "RCx",
+            "BN-0600",
+            SrcRef::Entity("laid".into()),
+            rotary_contour_params(14.0, -14.0),
+        )
+        .expect("create"),
+    );
+    history.execute(
+        &world,
+        GenerateOperation::new(&world, "RCx").expect("a laid bar cuts contour rings"),
+    );
+    assert_eq!(status(&world, "RCx"), OpStatus::Ok);
+    verifies_clean(&world, "RCx");
+    let t = cache(&world, "RCx").expect("cached").path;
+    radial_pose_law("laid rotary contour", &t, 0);
+    let err = camcraft_app::stock_sim::simulate_document(&world)
+        .expect_err("a rotary program is not judged by the column verdict");
+    assert!(err.contains("RCx") && err.contains("rotary program"), "{err}");
+    // The ball center (the tip plus r along the pose) stays inside the
+    // axial station window, and the rings stand at several stations.
+    let mut stations: Vec<i64> = Vec::new();
+    for m in t.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
+        let a = m.axis.expect("a rotary cut states its pose");
+        assert!(a[0].abs() < 1e-6, "a pose leans along the bar: {m:?}");
+        let cx = m.to.x + 3.0 * a[0];
+        assert!(
+            (-14.0 - 1e-6..=14.0 + 1e-6).contains(&cx),
+            "a cut outside the station window: {m:?}"
         );
-        let CommandError::Machining(msg) = GenerateOperation::new(&world, name)
-            .err()
-            .expect("a wrong-stance twin must refuse")
-        else {
-            panic!("expected a machining refusal");
-        };
-        assert!(msg.contains(wants), "{msg} should point at {wants}");
-        assert_eq!(
-            status(&world, name),
-            OpStatus::Never,
-            "the refusal leaves no path behind"
-        );
+        let key = (cx * 1e3).round() as i64;
+        if !stations.contains(&key) {
+            stations.push(key);
+        }
     }
+    assert!(
+        stations.len() > 3,
+        "expected rings at several stations: {stations:?}"
+    );
 }
 
 #[test]

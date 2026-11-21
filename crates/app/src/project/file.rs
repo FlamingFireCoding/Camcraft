@@ -149,7 +149,12 @@ use super::*;
 /// protected faces/edges and standoff clearance. An old reader (up to v72)
 /// must refuse the file rather than ignore the protection and cut across a
 /// protected feature. A v72 file steps up unchanged with empty protection.
-pub const PROJECT_VERSION: u32 = 73;
+/// v74 (#1864): feature selections add `sketch_chain` and `sketch_layer`
+/// variants on DXF profiles, and `Contour` adds `chain_overrides`
+/// (absent is empty, so a v73 file steps up unchanged). An old reader
+/// must refuse a v74 file rather than drop per-chain side or direction
+/// overrides or reject sketch picks without explanation.
+pub const PROJECT_VERSION: u32 = 74;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -721,6 +726,25 @@ pub struct GeoSelDto {
     pub feature: FeatureSelDto,
 }
 
+/// #1864: 32-digit lowercase hex encoding of [`sketch_chains::ChainId`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChainIdDto(pub crate::geometry::sketch_chains::ChainId);
+
+impl Serialize for ChainIdDto {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChainIdDto {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        crate::geometry::sketch_chains::parse_chain_id_hex(&s)
+            .map(ChainIdDto)
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid sketch chain id '{s}' - expected 32 lowercase hex digits")))
+    }
+}
+
 /// The file mirror of `operation::FeatureSel`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -731,4 +755,8 @@ pub enum FeatureSelDto {
     /// M13.4: additive - files written before it never carry the tag,
     /// so they load unchanged.
     Vertex { id: u64 },
+    /// #1864: canonical 32-digit hex `ChainId` on a DXF sketch entity.
+    SketchChain { id: ChainIdDto },
+    /// #1864: named layer on a DXF sketch entity.
+    SketchLayer { layer: String },
 }

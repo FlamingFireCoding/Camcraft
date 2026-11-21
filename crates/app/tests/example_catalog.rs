@@ -97,6 +97,18 @@ mod catalog_multiaxis_indexed {
     }
 }
 
+mod catalog_2d_adaptive_pocket {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("2d", "adaptive-pocket", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("2d", "adaptive-pocket", "rebuilds", rebuild);
+    }
+}
+
 mod catalog_2d_contour_tabs {
     use super::*;
     #[test]
@@ -144,6 +156,9 @@ mod catalog_2d_hole_work {
         run_case("2d", "hole-work", "rebuilds", rebuild);
     }
 }
+
+// #2861: the case 2d/slots, its two case tests and its program pin.
+include!("example_catalog/case_2d_slots.rs");
 
 mod catalog_turning_bushing {
     use super::*;
