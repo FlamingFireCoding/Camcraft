@@ -22,6 +22,7 @@ use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
 use camcraft_app::stock_fit::{self, FitKind};
 use camcraft_app::tools::{self, Tool};
+use camcraft_app::verify::Warning;
 use camcraft_app::vise::{ViseSize, size as vise_size};
 use flecs_ecs::prelude::World;
 
@@ -337,6 +338,20 @@ fn indexed_guide_preserves_legacy_basis_and_path() {
         }
     }
     for warning in &expected.warnings {
-        assert!(actual.warnings.contains(warning), "documented warning lost: {warning:?}");
+        assert!(actual.warnings.iter().any(|w| same_warning(warning, w)), "documented warning lost: {warning:?}");
+    }
+}
+
+/// #3233: the saved cache predates #2991, which gives a 3+2 first-traverse
+/// warning in the user's frame (`tilted`). The guide documents both forms:
+/// the same stock or fixture top and the same raise, along the tool axis.
+/// Every other warning must come back exactly.
+fn same_warning(saved: &Warning, regenerated: &Warning) -> bool {
+    match (saved, regenerated) {
+        (
+            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: false },
+            Warning::FirstTraverseLow { at: a, height_mm: h, top_mm: t, fixture: f, tilted: true },
+        ) => at == a && fixture == f && ((top_mm - height_mm) - (t - h)).abs() <= 0.000_001,
+        _ => saved == regenerated,
     }
 }
