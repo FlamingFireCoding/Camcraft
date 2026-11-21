@@ -1,6 +1,6 @@
 //! The file editor's "Axis chain" group through the real shell (issue
-//! #2756): a blank mill gets an A on the table, the A moves up and
-//! down the chain, a refused letter changes nothing, and the saved file
+//! #2756): a blank mill gets an A on the table, a B trades places with
+//! it (never with a linear), a refused letter changes nothing, and the saved file
 //! reads back with the A. None of it touches the command queue.
 //! Provenance: our own tests, specced from issue #2756.
 //! Structural only: no golden PNG.
@@ -9,6 +9,7 @@ use super::machines_edit::{draft_at, pick_kind, press, prompt, type_into, user_d
 use super::machines_pane::{assert_no_commands, harness_with_user_dir, open_machines};
 use super::*;
 use crate::egui_app::machine_file_editor::Prompt;
+use egui_kittest::kittest::NodeT;
 
 const TABLE: &str = "/kinematics/default/parts/0/parts";
 
@@ -47,10 +48,16 @@ fn a_blank_mill_gets_an_a_on_the_table_moves_it_and_saves_it() {
     h.get_by_label("A - rotary, moves the work");
     h.get_by_label("Validation: passes");
 
-    press(&mut h, "Move A up");
-    assert_eq!(names(&h), ["X", "Y", "A", "Z"]);
-    press(&mut h, "Move A down");
-    assert_eq!(names(&h), ["X", "Y", "Z", "A"], "up then down is no change");
+    // A move trades only with an axis of its kind: Z is a linear.
+    assert!(h.get_by_label("Move A up").accesskit_node().is_disabled());
+    type_into(&mut h, "New axis", "B");
+    press(&mut h, "+Y");
+    press(&mut h, "Add axis");
+    press(&mut h, "Move B up");
+    assert_eq!(names(&h), ["X", "Y", "Z", "B", "A"]);
+    press(&mut h, "Move B down");
+    assert_eq!(names(&h), ["X", "Y", "Z", "A", "B"], "up then down is no change");
+    press(&mut h, "Remove B");
 
     // The travel field of the moved chain edits the right part.
     type_into(&mut h, "Z travel min", "-100");
@@ -154,5 +161,45 @@ fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
     assert_eq!(a.turns_part, Some(true), "on the table, A turns the work");
     assert_eq!((a.nose_to_axis, a.axis_to_table), (Some(98.08), Some(40.0)));
     assert_no_commands(&h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Q1 on #2756: an A on the table that states `offset` has no rotary to
+/// measure it from, and its row says so; the file still validates.
+#[test]
+fn an_offset_with_no_parent_rotary_shows_a_note_at_its_row() {
+    let (mut h, dir) = blank_mill("chain_offset");
+    press(&mut h, "+X");
+    press(&mut h, "Add axis");
+    let note = "Note: A states offset, but no rotary carries it: offset is measured from a parent rotary";
+    assert!(h.query_by_label(note).is_none());
+    {
+        let editor = h.state_mut().state.machines_pane.editor.as_mut().expect("the editor is open");
+        let a = editor.draft.value.pointer_mut(&format!("{TABLE}/3")).expect("A on the table");
+        a["offset"] = serde_json::json!([0.0, 0.0, -40.0]);
+    }
+    h.run();
+    h.get_by_label(note);
+    h.get_by_label("Validation: passes");
+    assert_no_commands(&h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A field keeps its focus while a refusal above or below it comes and
+/// goes: typing 1, 3, 0 into Z travel max gives 130, though the refusal
+/// under Z travel min goes away at 13. (A field drawn by its place in the
+/// frame got a new id when a row above it went, and lost the 0.)
+#[test]
+fn a_field_keeps_its_focus_when_a_refusal_goes_away() {
+    let (mut h, dir) = blank_mill("chain_focus");
+    type_into(&mut h, "Z travel min", "10");
+    type_into(&mut h, "Z travel max", "1");
+    assert_eq!(h.query_all_by_label_contains("min 10 must be below max 1").count(), 2, "under min and max");
+    for key in ["3", "0"] {
+        h.input_mut().events.push(egui::Event::Text(key.to_owned()));
+        h.run_steps(3);
+    }
+    assert_eq!(draft_at(&h, &format!("{TABLE}/2/travel/max")).and_then(|v| v.as_f64()), Some(130.0));
+    h.get_by_label("Validation: passes");
     let _ = std::fs::remove_dir_all(&dir);
 }

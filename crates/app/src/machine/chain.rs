@@ -97,8 +97,9 @@ pub enum Step {
 /// places with its neighbour row. The tree keeps its shape - which
 /// slot carries the head, which sit on the table - and each axis keeps
 /// all its own keys (`parts` stays with the slot). So a rotary that
-/// moves up gets a new `parent` and `chain_order` (#1962). Returns
-/// where the moved axis is now.
+/// moves up gets a new `parent` and `chain_order` (#1962). The neighbour
+/// must be of the same kind, rotary or linear. Returns where the moved
+/// axis is now.
 pub fn move_axis(v: &mut Value, pointer: &str, step: Step) -> Result<String, String> {
     let rows = axis_pointers(v);
     let i = rows.iter().position(|p| p == pointer).ok_or_else(|| format!("{pointer}: not an axis part"))?;
@@ -107,6 +108,15 @@ pub fn move_axis(v: &mut Value, pointer: &str, step: Step) -> Result<String, Str
         Step::Up => i.checked_sub(1).ok_or_else(|| format!("axis {name}: already first in the chain"))?,
         Step::Down => Some(i + 1).filter(|j| *j < rows.len()).ok_or_else(|| format!("axis {name}: already last in the chain"))?,
     };
+    // A rotary in a linear's slot describes another machine (an A riding
+    // on Y); a move only reorders axes of one kind (#2756, Q2).
+    let kind = |at: &str| v.pointer(at).and_then(|p| p.get("type")).and_then(Value::as_str);
+    if kind(&rows[i]) != kind(&rows[j]) {
+        let what = if kind(&rows[i]) == Some("rotary") { "rotary" } else { "linear" };
+        return Err(format!(
+            "axis {name}: a {what} trades places only with a {what}; to put it elsewhere, remove it and add it again"
+        ));
+    }
     // Depth-first, the earlier row is an ancestor or in an earlier
     // branch: write it first, so the later write lands in the new tree.
     let (first, second) = (&rows[i.min(j)], &rows[i.max(j)]);
@@ -148,6 +158,11 @@ pub struct AxisRow {
     /// A rotary's `axis` as three finite numbers; `None` on a linear or
     /// when the file states no readable axis.
     pub axis: Option<[f64; 3]>,
+    /// The rotary that carries this one (its nearest rotary above in
+    /// the tree, #1962), by letter; `None` on a linear or a first rotary.
+    pub parent: Option<String>,
+    /// The part states `offset` (#1962).
+    pub states_offset: bool,
 }
 
 impl AxisRow {
@@ -163,6 +178,16 @@ impl AxisRow {
         }
         let about = ["X", "Y", "Z"][ROTARY_NAMES.iter().position(|n| *n == want)?];
         Some(format!("{} turns about {about}: by RS-274 an axis about {about} is {want}", self.name))
+    }
+
+    /// The note a rotary row shows when it states `offset` but no rotary
+    /// carries it: `offset` is measured from a parent rotary (#1962), so
+    /// it has no reference (#2756, Q1). The validator does not refuse it.
+    #[must_use]
+    pub fn offset_note(&self) -> Option<String> {
+        (self.rotary && self.states_offset && self.parent.is_none()).then(|| {
+            format!("{} states offset, but no rotary carries it: offset is measured from a parent rotary", self.name)
+        })
     }
 }
 
@@ -225,7 +250,7 @@ fn check_direction(name: &str, axis: [f64; 3]) -> Result<(), String> {
 /// The axis parts in depth-first order, as `parse_mch` reads them.
 #[must_use]
 pub fn rows(v: &Value) -> Vec<AxisRow> {
-    axis_pointers(v)
+    let mut rows: Vec<AxisRow> = axis_pointers(v)
         .into_iter()
         .filter_map(|pointer| {
             let p = v.pointer(&pointer)?;
@@ -240,9 +265,24 @@ pub fn rows(v: &Value) -> Vec<AxisRow> {
                 .and_then(|a| a.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>())
                 .and_then(|d| <[f64; 3]>::try_from(d).ok())
                 .filter(|d| d.iter().all(|x| x.is_finite()));
-            Some(AxisRow { pointer, name, rotary, carries_head, reversed, axis })
+            let states_offset = p.get("offset").is_some_and(|o| !o.is_null());
+            Some(AxisRow { pointer, name, rotary, carries_head, reversed, axis, parent: None, states_offset })
         })
-        .collect()
+        .collect();
+    // Depth-first, a rotary's parent is the last rotary row before it
+    // whose part holds it.
+    for i in 0..rows.len() {
+        if !rows[i].rotary {
+            continue;
+        }
+        let inside = format!("{}/", rows[i].pointer);
+        rows[i].parent = rows[..i]
+            .iter()
+            .rev()
+            .find(|p| p.rotary && inside.starts_with(&format!("{}/", p.pointer)))
+            .map(|p| p.name.clone());
+    }
+    rows
 }
 
 /// Every axis part's pointer, depth-first: the editor's rows.

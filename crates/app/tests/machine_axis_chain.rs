@@ -9,44 +9,8 @@
 //!
 //! Gate map (M4.4): covers app::machine, post::machine::draft, app::machine, post::machine::chain.
 
-use std::path::PathBuf;
-
-use camcraft_app::machine::chain::{Place, Step};
-use camcraft_app::machine::draft::MachineDraft;
-use camcraft_app::machine::library::MachineSource;
-use camcraft_app::machine::validate::validate_text;
-use camcraft_app::machine::{parse_mch, AxisLimits};
-use serde_json::{json, Value};
-
-/// The shipped 3-axis grblHAL mill: Z carries Y carries X on the
-/// table, and the head sits beside Z.
-fn grblhal() -> MachineDraft {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/machines/grblhal-3axis.mch");
-    let mut m = MachineDraft::open(&MachineSource::File(p)).expect("opens");
-    // Keys the editor knows nothing about, at the top and on an axis.
-    m.value["x_vendor_block"] = json!({ "probe": "OMP40" });
-    m.value["kinematics"]["default"]["parts"][0]["parts"][0]["parts"][0]["parts"][0]["note"] = json!("gib adjusted 2026");
-    m
-}
-
-fn axes(m: &MachineDraft) -> Vec<AxisLimits> {
-    parse_mch(&m.text()).expect("parses").axes
-}
-
-fn axis(m: &MachineDraft, name: &str) -> AxisLimits {
-    axes(m).into_iter().find(|a| a.name == name).unwrap_or_else(|| panic!("no axis {name}"))
-}
-
-fn names(m: &MachineDraft) -> Vec<String> {
-    axes(m).into_iter().map(|a| a.name).collect()
-}
-
-fn unknown_keys_kept(v: &Value) {
-    assert_eq!(v.pointer("/x_vendor_block/probe"), Some(&json!("OMP40")));
-    let x = v.pointer("/kinematics/default/parts/0/parts/0/parts/0/parts/0").expect("X");
-    assert_eq!(x.get("name"), Some(&json!("X")));
-    assert_eq!(x.get("note"), Some(&json!("gib adjusted 2026")));
-}
+mod axis_chain_support;
+use axis_chain_support::*;
 
 #[test]
 fn an_a_about_minus_x_on_the_table_is_added_and_turns_the_work() {
@@ -163,43 +127,6 @@ fn a_remove_that_names_no_axis_is_refused_by_name() {
     assert_eq!(m.value, before);
 }
 
-/// A tilting head of our own: Z carries A carries B carries the head;
-/// B states every #1962 key and a key the editor does not know.
-fn tilting_head() -> MachineDraft {
-    let mut m = grblhal();
-    m.add_rotary_axis(Place::CarriesHead, "A", [1.0, 0.0, 0.0]).expect("adds A");
-    let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
-    let part = m.value.pointer_mut(&b).expect("B");
-    part["pivot"] = json!([0.0, 0.0, 150.0]);
-    part["offset"] = json!([0.0, 0.0, -40.0]);
-    part["zero_offset"] = json!(0.5);
-    part["rollover"] = json!(true);
-    part["sign_convention"] = json!("tool_rh");
-    part["note"] = json!("trunnion B, serial 42");
-    m
-}
-
-fn trunnion_keys(m: &MachineDraft, name: &str) -> Value {
-    let part = m.value.pointer(&pointer_of(m, name)).expect("part").clone();
-    let keep = ["id", "pivot", "offset", "zero_offset", "rollover", "sign_convention", "note"];
-    keep.iter().filter_map(|k| part.get(*k).map(|x| ((*k).to_owned(), x.clone()))).collect::<serde_json::Map<_, _>>().into()
-}
-
-/// The pointer of the axis part named `name`, depth-first.
-fn pointer_of(m: &MachineDraft, name: &str) -> String {
-    fn walk(v: &Value, at: &str, name: &str) -> Option<String> {
-        v.pointer(at)?.as_array()?.iter().enumerate().find_map(|(i, p)| {
-            let here = format!("{at}/{i}");
-            if p.get("name").and_then(Value::as_str) == Some(name) {
-                Some(here)
-            } else {
-                walk(v, &format!("{here}/parts"), name)
-            }
-        })
-    }
-    walk(&m.value, "/kinematics/default/parts", name).unwrap_or_else(|| panic!("no part {name}"))
-}
-
 #[test]
 fn moving_a_rotary_up_changes_its_parent_and_chain_order_and_keeps_its_keys() {
     let mut m = tilting_head();
@@ -233,17 +160,40 @@ fn a_move_down_undoes_a_move_up() {
 #[test]
 fn an_a_on_the_table_is_added_moved_and_removed_and_the_file_validates_each_time() {
     let mut m = grblhal();
-    let at = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds");
-    // Depth-first the rows read Z, Y, X, A: up puts A in X's slot.
-    let at = m.move_axis(&at, Step::Up).expect("moves");
-    assert_eq!(at, "/kinematics/default/parts/0/parts/0/parts/0/parts/0");
+    m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
+    let b = m.add_rotary_axis(Place::OnTable, "B", [0.0, 1.0, 0.0]).expect("adds B");
+    // Depth-first the rows read Z, Y, X, A, B: up trades B with A.
+    let b = m.move_axis(&b, Step::Up).expect("moves");
+    assert_eq!(b, "/kinematics/default/parts/0/parts/1");
+    assert_eq!(names(&m), ["X", "Y", "Z", "B", "A"]);
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
     unknown_keys_kept_on_x_wherever_it_is(&m);
-    assert_eq!(axis(&m, "A").turns_part, Some(true), "no head below A: it still turns the work");
-    m.remove_axis(&at).expect("removes");
+    assert_eq!(axis(&m, "B").turns_part, Some(true), "no head below B: it still turns the work");
+    m.remove_axis(&pointer_of(&m, "A")).expect("removes A");
+    m.remove_axis(&pointer_of(&m, "B")).expect("removes B");
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
     unknown_keys_kept_on_x_wherever_it_is(&m);
     assert_eq!(names(&m), ["X", "Y", "Z"]);
+}
+
+/// Q2 on #2756: a move trades only with a neighbour of the same kind.
+/// A rotary in a linear's slot describes another machine (A riding on
+/// Y); to put a rotary elsewhere the user removes it and adds it again.
+#[test]
+fn a_move_trades_only_with_an_axis_of_the_same_kind() {
+    let mut m = grblhal();
+    let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
+    m.dirty = false;
+    let before = m.value.clone();
+    let rule = "a rotary trades places only with a rotary; to put it elsewhere, remove it and add it again";
+    assert_eq!(m.move_axis(&a, Step::Up), Err(format!("axis A: {rule}")));
+    let rule = "a linear trades places only with a linear; to put it elsewhere, remove it and add it again";
+    assert_eq!(m.move_axis(&pointer_of(&m, "X"), Step::Down), Err(format!("axis X: {rule}")));
+    assert_eq!(m.value, before);
+    assert!(!m.dirty, "a refused move changes nothing");
+    // Linear with linear still trades: Y moves up past Z.
+    m.move_axis(&pointer_of(&m, "Y"), Step::Up).expect("Y up");
+    assert_eq!(validate_text(&m.text()), [], "{}", m.text());
 }
 
 fn unknown_keys_kept_on_x_wherever_it_is(m: &MachineDraft) {
@@ -276,128 +226,4 @@ fn a_linear_u_is_added_on_the_table() {
         m.add_linear_axis(Place::OnTable, "A"),
         Err("axis A: a linear axis is named X, Y, Z, U, V or W".to_owned())
     );
-}
-
-#[test]
-fn the_rows_follow_the_chain_and_say_what_carries_the_head() {
-    let mut d = grblhal();
-    d.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("A added");
-    d.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("B added");
-    let rows: Vec<(String, bool, bool)> =
-        d.axis_rows().into_iter().map(|r| (r.name, r.rotary, r.carries_head)).collect();
-    let row = |n: &str, rotary, head| (n.to_owned(), rotary, head);
-    assert_eq!(rows, [row("Z", false, false), row("Y", false, false), row("X", false, false), row("A", true, false), row("B", true, true)]);
-}
-
-#[test]
-fn a_linear_is_reversed_and_set_back_and_its_other_keys_stay() {
-    use camcraft_app::machine::AxisDirection;
-    let mut m = grblhal();
-    let x = pointer_of(&m, "X");
-    m.set_axis_reversed(&x, true).expect("X reversed");
-    assert_eq!(m.value.pointer(&format!("{x}/direction")), Some(&json!(-1)));
-    assert_eq!(axis(&m, "X").direction, AxisDirection::Inverted);
-    assert!(m.axis_rows().iter().any(|r| r.name == "X" && r.reversed));
-    assert_eq!(validate_text(&m.text()), [], "{}", m.text());
-
-    // Back to standard: unstated is the file's way of saying standard.
-    m.set_axis_reversed(&x, false).expect("X standard");
-    assert_eq!(m.value.pointer(&format!("{x}/direction")), None);
-    assert_eq!(axis(&m, "X").direction, AxisDirection::Standard);
-    unknown_keys_kept(&m.value);
-}
-
-#[test]
-fn a_rotary_cannot_be_reversed_and_a_linear_has_no_axis() {
-    let mut m = grblhal();
-    let a = m.add_rotary_axis(Place::OnTable, "A", [1.0, 0.0, 0.0]).expect("A added");
-    m.dirty = false;
-    assert_eq!(m.set_axis_reversed(&a, true), Err("axis A: a rotary is not reversed; turn its axis instead".to_owned()));
-    let x = pointer_of(&m, "X");
-    assert_eq!(m.set_rotary_axis(&x, [0.0, 1.0, 0.0]), Err("axis X: a linear axis has no rotary axis".to_owned()));
-    assert!(!m.dirty, "a refused edit changes nothing");
-}
-
-#[test]
-fn a_rotary_turns_about_a_new_axis_and_keeps_its_trunnion_keys() {
-    let mut m = tilting_head();
-    let before = trunnion_keys(&m, "B");
-    let b = pointer_of(&m, "B");
-    m.set_rotary_axis(&b, [0.0, 0.0, -1.0]).expect("B about -Z");
-    assert_eq!(axis(&m, "B").axis, Some([0.0, 0.0, -1.0]));
-    assert_eq!(trunnion_keys(&m, "B"), before);
-    assert_eq!(
-        m.set_rotary_axis(&b, [0.0, 0.0, 0.0]),
-        Err("axis B: the axis direction is zero".to_owned())
-    );
-    assert_eq!(
-        m.set_rotary_axis(&b, [f64::NAN, 0.0, 1.0]),
-        Err("axis B: the axis direction must be three finite numbers".to_owned())
-    );
-    assert_eq!(axis(&m, "B").axis, Some([0.0, 0.0, -1.0]), "a refused axis changes nothing");
-}
-
-#[test]
-fn the_letter_follows_the_axis_by_rs274() {
-    use camcraft_app::machine::chain::suggested_letter;
-    assert_eq!(suggested_letter([1.0, 0.0, 0.0]), Some("A"));
-    assert_eq!(suggested_letter([-1.0, 0.0, 0.0]), Some("A"));
-    assert_eq!(suggested_letter([0.0, -2.0, 0.0]), Some("B"));
-    assert_eq!(suggested_letter([0.0, 0.0, 1.0]), Some("C"));
-    assert_eq!(suggested_letter([1.0, 1.0, 0.0]), None, "no letter for a tilted axis");
-    assert_eq!(suggested_letter([0.0, 0.0, 0.0]), None);
-}
-
-#[test]
-fn a_row_whose_letter_and_axis_disagree_says_so() {
-    let mut m = grblhal();
-    m.add_rotary_axis(Place::OnTable, "A", [0.0, 1.0, 0.0]).expect("an A about Y is allowed");
-    let a = m.axis_rows().into_iter().find(|r| r.name == "A").expect("A row");
-    assert_eq!(a.axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(a.letter_note().as_deref(), Some("A turns about Y: by RS-274 an axis about Y is B"));
-    let a_ptr = a.pointer.clone();
-    m.set_rotary_axis(&a_ptr, [-1.0, 0.0, 0.0]).expect("A about -X");
-    let a = m.axis_rows().into_iter().find(|r| r.name == "A").expect("A row");
-    assert_eq!(a.letter_note(), None);
-    let x = m.axis_rows().into_iter().find(|r| r.name == "X").expect("X row");
-    assert_eq!((x.axis, x.letter_note()), (None, None));
-}
-
-fn field(m: &MachineDraft, label: &str) -> camcraft_app::machine::fields::Field {
-    let f = m.groups().into_iter().flat_map(|g| g.fields).find(|f| f.label == label);
-    f.unwrap_or_else(|| panic!("no field {label}"))
-}
-
-/// #804, #1107: a rotary that turns the work states its two work lengths
-/// in "Rotaries and limits"; one that carries the head has neither row.
-#[test]
-fn a_table_rotary_states_its_work_lengths_and_a_head_rotary_has_none() {
-    let mut m = grblhal();
-    m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
-    m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
-    let labels: Vec<String> = m.groups().into_iter().flat_map(|g| g.fields).map(|f| f.label).collect();
-    assert!(!labels.iter().any(|x| x.starts_with("B nose") || x.starts_with("B axis to")), "{labels:?}");
-    for (label, text) in [("A nose to axis", "98.08"), ("A axis to table", "40")] {
-        let f = field(&m, label);
-        m.set(&f.pointer, f.kind, text).expect("the edit applies");
-    }
-    assert_eq!(validate_text(&m.text()), [], "{}", m.text());
-    let a = axis(&m, "A");
-    assert_eq!((a.nose_to_axis, a.axis_to_table), (Some(98.08), Some(40.0)));
-    unknown_keys_kept(&m.value);
-}
-
-/// A work length is above zero and only on a rotary that turns the work;
-/// each refusal sits at its row, and a stated key shows its row to clear.
-#[test]
-fn a_bad_work_length_is_refused_at_its_row() {
-    let mut m = grblhal();
-    let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
-    let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
-    m.value.pointer_mut(&a).expect("A")["nose_to_axis"] = json!(-1.0);
-    m.value.pointer_mut(&b).expect("B")["axis_to_table"] = json!(5.0);
-    let r = m.refusals();
-    let on = |label: &str| -> Vec<String> { field(&m, label).refusals(&r).iter().map(|r| r.key.clone()).collect() };
-    assert_eq!(on("A nose to axis"), ["A nose_to_axis"]);
-    assert_eq!(on("B axis to table"), ["B axis_to_table"]);
 }

@@ -250,8 +250,11 @@ pub(crate) fn draw(ui: &mut Ui, ed: &mut MachineFileEditor, dir: Option<&Path>, 
                     let tip = format!("Key: {}", f.key);
                     let l = ui.label(&f.label).on_hover_text(&tip);
                     let buf = ed.buffers.entry(f.pointer.clone()).or_insert_with(|| f.value.clone());
+                    // The id comes from the key, not the field's place in the
+                    // frame: a refusal row that comes or goes above the field
+                    // must not take its focus mid-word.
                     let r = ui
-                        .add(TextEdit::singleline(buf).desired_width(140.0).hint_text("not stated"))
+                        .add(TextEdit::singleline(buf).id_salt(("machine-field", &f.pointer)).desired_width(140.0).hint_text("not stated"))
                         .labelled_by(l.id)
                         .on_hover_text(&tip);
                     if r.changed() {

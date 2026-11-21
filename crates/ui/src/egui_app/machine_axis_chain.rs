@@ -59,6 +59,10 @@ pub fn row_keys(name: &str) -> [String; 2] {
     [name.to_owned(), format!("{name} axis")]
 }
 
+const TRADE_ABOVE: &str = "Trade places with the axis above";
+const TRADE_BELOW: &str = "Trade places with the axis below";
+const TRADE_KIND: &str = "An axis trades places only with one of its kind; to put it elsewhere, remove it and add it again";
+
 fn row_words(r: &AxisRow) -> String {
     let kind = if r.rotary { "rotary" } else { "linear" };
     let moves = if r.carries_head { "moves the tool" } else { "moves the work" };
@@ -84,12 +88,14 @@ pub(crate) fn draw(
         for (i, r) in rows.iter().enumerate() {
             ui.horizontal_wrapped(|ui| {
                 ui.add(Label::new(row_words(r)).wrap()).on_hover_text(format!("Part: {}", r.pointer));
-                let up = ui.add_enabled(i > 0, egui::Button::new(format!("Move {} up", r.name)));
-                if up.on_hover_text("Trade places with the axis above").clicked() {
+                // A move trades only with a neighbour of the same kind.
+                let same = |j: Option<usize>| j.and_then(|j| rows.get(j)).is_some_and(|n| n.rotary == r.rotary);
+                let up = ui.add_enabled(same(i.checked_sub(1)), egui::Button::new(format!("Move {} up", r.name)));
+                if up.on_hover_text(TRADE_ABOVE).on_disabled_hover_text(TRADE_KIND).clicked() {
                     edit = Some(Edit::Move(r.pointer.clone(), Step::Up));
                 }
-                let down = ui.add_enabled(i + 1 < rows.len(), egui::Button::new(format!("Move {} down", r.name)));
-                if down.on_hover_text("Trade places with the axis below").clicked() {
+                let down = ui.add_enabled(same(Some(i + 1)), egui::Button::new(format!("Move {} down", r.name)));
+                if down.on_hover_text(TRADE_BELOW).on_disabled_hover_text(TRADE_KIND).clicked() {
                     edit = Some(Edit::Move(r.pointer.clone(), Step::Down));
                 }
                 let remove = ui.button(format!("Remove {}", r.name));
@@ -100,7 +106,7 @@ pub(crate) fn draw(
             if let Some(e) = row_fields(ui, r) {
                 edit = Some(e);
             }
-            if let Some(note) = r.letter_note() {
+            for note in r.letter_note().into_iter().chain(r.offset_note()) {
                 ui.add(Label::new(RichText::new(format!("Note: {note}")).color(pal.text_dim)).wrap());
             }
             let keys = row_keys(&r.name);
@@ -112,7 +118,7 @@ pub(crate) fn draw(
         ui.horizontal_wrapped(|ui| {
             let l = ui.label("New axis");
             let hint = DIRECTIONS.get(form.direction).and_then(|d| suggested_letter(d.1)).unwrap_or("A");
-            ui.add(TextEdit::singleline(&mut form.name).desired_width(40.0).hint_text(hint))
+            ui.add(TextEdit::singleline(&mut form.name).id_salt("machine-axis-new").desired_width(40.0).hint_text(hint))
                 .labelled_by(l.id)
                 .on_hover_text("X, Y, Z, U, V or W for a linear; A, B or C for a rotary");
             ui.selectable_value(&mut form.place, Place::OnTable, "On the table")
@@ -158,7 +164,10 @@ fn row_fields(ui: &mut Ui, r: &AxisRow) -> Option<Edit> {
         let mut a = r.axis.unwrap_or([0.0; 3]);
         let mut changed = false;
         for (c, word) in a.iter_mut().zip(["x", "y", "z"]) {
-            let d = ui.add(DragValue::new(c).speed(0.01).max_decimals(4));
+            // Keyed by the part and component, so a note or refusal row
+            // that comes or goes above does not take the focus mid-edit.
+            let id = ("machine-axis-dir", &r.pointer, word);
+            let d = ui.push_id(id, |ui| ui.add(DragValue::new(c).speed(0.01).max_decimals(4))).inner;
             changed |= d.on_hover_text(format!("{} axis {word}: any direction, not only ±X, ±Y, ±Z", r.name)).changed();
         }
         if changed {
