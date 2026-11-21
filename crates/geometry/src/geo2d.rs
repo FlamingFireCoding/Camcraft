@@ -15,6 +15,7 @@
 
 use thiserror::Error;
 
+mod slivers;
 mod sweep;
 
 use clipper2_rust::{

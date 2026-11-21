@@ -43,10 +43,14 @@ mod debug_info;
 // #1696: the Report door - the window that fills GitHub's new-issue form
 // in, and the screenshot it puts on the clipboard.
 mod report;
+// #2744: the shared report names each path by its last component only.
+mod report_scrub;
 mod status_alert;
 
 mod stock_info;
 mod donate;
+// #2384: the Home button and the recent projects start page.
+pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
@@ -101,6 +105,8 @@ mod pages;
 // #739: the WCS page, split out of pages.rs.
 mod wcs_page;
 mod step_budget_row;
+// #1339: the model page's "Vouch for this mesh" row.
+mod vouch_row;
 // #1094: the stock page's raw-stock-only checkbox.
 mod raw_stock_row;
 mod stock_material_row;
@@ -117,6 +123,8 @@ mod tool_thread_mill_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
+// #2014: the tool Properties' label-left property grid and its groups.
+mod tool_settings_grid;
 mod tool_library;
 mod tool_preview;
 // #890: the tool editor's per-material cutting data.
@@ -155,6 +163,8 @@ mod wcs_pick_row;
 // #316: the setup page's "relative to the previous setup" control.
 mod setup_relative_pick;
 mod setup_workholding_row;
+// #3070: the guided sheet job checklist on the setup's Settings page.
+mod setup_sheet_job_row;
 // The operation dialog, split out of `pages` with the property grid
 // (user review 2026-11-06): the frame, the Geometry pick block, the
 // params dispatcher and its kind-family pages, the shared widgets.
@@ -241,10 +251,12 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod display_menu;
 pub(crate) mod move_handles;
 pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
+mod world_verts;
 
 #[cfg(test)]
 mod tests;

@@ -21,6 +21,10 @@
 //! never kept here - they live in the OS keychain or the environment
 //! (`app::ai::secret`), and this file has no field that could hold one.
 //!
+//! #1873 adds the optional path of the external `cadmpeg` program that
+//! converts native CAD files to STEP: where a program is installed is a
+//! fact of this machine, not of the part (written only when set).
+//!
 //! Provenance: our own design, specced from issue #877; the folder and
 //! the atomic write are `app::recent`'s (#662).
 
@@ -45,6 +49,9 @@ pub struct ViewPrefs {
     pub skip_tool_holders: bool,
     /// #1945: the AI Chat reaches loopback model runtimes only.
     pub ai_offline_only: bool,
+    /// #1873: where the `cadmpeg` program is, when it is not on `PATH`.
+    /// `None` searches `PATH`.
+    pub cadmpeg_path: Option<String>,
 }
 
 /// The theme as the file spells it: a built-in name or a path, never one
@@ -72,6 +79,9 @@ struct OnDisk {
     /// #1945: written only when true (offline-only AI chat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ai_offline_only: Option<bool>,
+    /// #1873: written only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cadmpeg_path: Option<String>,
 }
 
 fn vision_word(c: ColorVision) -> &'static str {
@@ -96,7 +106,9 @@ impl ViewPrefs {
             (self.color_vision != ColorVision::Off).then(|| vision_word(self.color_vision).to_owned());
         let import_tool_holders = self.skip_tool_holders.then_some(false);
         let ai_offline_only = self.ai_offline_only.then_some(true);
-        let disk = OnDisk { format: FORMAT.to_owned(), theme, color_vision, import_tool_holders, ai_offline_only };
+        let cadmpeg_path = self.cadmpeg_path.clone();
+        let disk =
+            OnDisk { format: FORMAT.to_owned(), theme, color_vision, import_tool_holders, ai_offline_only, cadmpeg_path };
         serde_json::to_string_pretty(&disk).unwrap_or_else(|e| {
             tracing::warn!("preferences not serialised: {e}");
             String::new()
@@ -136,7 +148,9 @@ impl ViewPrefs {
         };
         let skip_tool_holders = disk.import_tool_holders == Some(false);
         let ai_offline_only = disk.ai_offline_only == Some(true);
-        Ok((Self { theme, color_vision, skip_tool_holders, ai_offline_only }, notes))
+        // #1873: a blank path is "not set", never a program named "".
+        let cadmpeg_path = disk.cadmpeg_path.filter(|p| !p.trim().is_empty());
+        Ok((Self { theme, color_vision, skip_tool_holders, ai_offline_only, cadmpeg_path }, notes))
     }
 }
 

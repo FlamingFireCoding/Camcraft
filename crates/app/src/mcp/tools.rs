@@ -24,7 +24,7 @@ pub(super) struct Tool {
 const TOOLS: &[Tool] = &[
     Tool { name: "open_project", description: "Open a .camproj project file, replacing the current document and clearing undo history.", schema: s_path, run: open_project },
     Tool { name: "save_project", description: "Save the document as a .camproj file. Without a path, saves over the file last opened or saved.", schema: s_opt_path, run: save_project },
-    Tool { name: "import_model", description: "Import a mesh model (STL, STEP or OBJ) through the app's importers. A name already used by a model updates that model. A STEP model too large to import at full detail answers with reduced_fidelity: how closely its surfaces are approximated, in mm - gouge checks against it are stricter, and its operations are refused at the post when it is too coarse to check; import it again with a larger facet_budget to clear that. A STEP closed shell that meshes open imports incomplete: reduced_fidelity then says incomplete and names the hole, and every operation on the model is refused at the post. notes lists what the importer changed, e.g. a STEP face wound against its neighbours that was flipped, by name, or a closed STEP solid wound inward that was turned outward.", schema: s_import, run: import_model },
+    Tool { name: "import_model", description: "Import a mesh model (STL, STEP or OBJ) through the app's importers. A name already used by a model updates that model. A STEP model too large to import at full detail, or one whose file's edges lie off their surfaces, answers with reduced_fidelity: how closely its surfaces are approximated, in mm - gouge checks against it are stricter, and its operations are refused at the post when it is too coarse to check; import it again with a larger facet_budget, or export the file again with a tighter tolerance, to clear that. A STEP closed shell that meshes open imports incomplete: reduced_fidelity then says incomplete and names the hole, and every operation on the model is refused at the post. notes lists what the importer changed, e.g. a STEP face wound against its neighbours that was flipped, by name, or a closed STEP solid wound inward that was turned outward.", schema: s_import, run: import_model },
     Tool { name: "get_job", description: "The whole document as JSON: setups (each with model_reference: a solid part, or the virtual reference of its placed DXF profiles), stock, work offsets, models (one imported at reduced fidelity carries reduced_fidelity), DXF profiles, tools, and operations with their parameters and status (one on a DXF profile says what it checks against).", schema: s_empty, run: job::get_job },
     Tool { name: "get_selection", description: "Read currently selected entities, active setup, active operation, viewport pick mode (model, face, edge, vertex), and active geometry picks.", schema: s_empty, run: super::selection::get_selection },
     Tool { name: "list_operation_types", description: "Every operation kind with its parameter fields, JSON types and default values, and the tool kinds it accepts.", schema: s_empty, run: job::list_operation_types },
@@ -43,9 +43,9 @@ const TOOLS: &[Tool] = &[
     Tool { name: "detect_pockets", description: "A model's recognised pockets and slots (closed or open pockets, straight slots with open, round or square ends): boundary, floor and top Z, depth, tightest inside corner, slot width and open sides. With create, adds the operation that machines one of them (a Pocket over its floor, or a Slot along its centreline). One undo step.", schema: pockets::s_detect_pockets, run: pockets::detect_pockets },
     Tool { name: "delete_operation", description: "Delete an operation and its cached toolpath.", schema: s_name, run: edit::delete_operation },
     Tool { name: "set_tool", description: "Assign a document tool to an operation (the tool must suit the operation's kind).", schema: s_set_tool, run: edit::set_tool },
-    Tool { name: "list_features", description: "A model's (or a fixture's) pickable features with stable ids: faces (each boundary loop with the edge chains that run it), edge chains, welded smooth faces and vertices, in world coordinates.", schema: pick::s_list_features, run: features::list_features },
-    Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, or picked features), its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
-    Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
+    Tool { name: "list_features", description: "A model's, fixture's, or DXF profile's pickable features with stable ids: faces, edge chains, welded smooth faces and vertices on models, or sketch chains and layers on DXF profiles, in world coordinates.", schema: pick::s_list_features, run: features::list_features },
+    Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, a DXF profile, or picked features), per-chain overrides, its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
+    Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops, or DXF sketch chains and layers with optional per-chain side and direction overrides) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
     Tool { name: "set_operation_area", description: "Replace an operation's area controls (containment, offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step.", schema: area::s_set_area, run: area::set_operation_area },
     Tool { name: "get_operation_do_not_touch", description: "Read an operation's 'Do not touch' protected faces/edges and standoff clearance (mm).", schema: pick::s_op, run: do_not_touch::get_operation_do_not_touch },
     Tool { name: "set_operation_do_not_touch", description: "Set protected faces or edge chains (plus standoff clearance, mm) that 2D Offset and 3D Pocket paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step.", schema: do_not_touch::s_set_do_not_touch, run: do_not_touch::set_operation_do_not_touch },
@@ -59,7 +59,7 @@ const TOOLS: &[Tool] = &[
 
 /// Every row: this table, then the setup furniture's (#181), then the
 /// part placement (#716), ..., then operation names and order (#45), then the DXF profiles (#1862).
-fn all() -> impl Iterator<Item = &'static Tool> {
+pub(super) fn all() -> impl Iterator<Item = &'static Tool> {
     TOOLS
         .iter()
         .chain(super::setup_tools::TOOLS)
@@ -73,6 +73,7 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::wcs_flip_tools::TOOLS)
         .chain(super::model_tools::TOOLS)
         .chain(super::model_link_tools::TOOLS)
+        .chain(super::vouch_tools::TOOLS)
         .chain(super::vise_tools::TOOLS)
         .chain(super::accessory_tools::TOOLS)
         .chain(super::cutter_tools::TOOLS)
@@ -84,7 +85,9 @@ fn all() -> impl Iterator<Item = &'static Tool> {
         .chain(super::stock_fit_tools::TOOLS)
         .chain(super::box_pick::TOOLS)
         .chain(super::rotary_tools::TOOLS)
+        .chain(super::thread_infeed_tools::TOOLS)
         .chain(super::workholding_tools::TOOLS)
+        .chain(super::sheet_job_tools::TOOLS)
         .chain(super::order_tools::TOOLS)
         .chain(super::sinker_tools::TOOLS)
         .chain(super::machine_tools::TOOLS)
@@ -383,10 +386,13 @@ fn s_set_tool() -> Value {
 }
 
 fn s_post() -> Value {
+    // #2374: every registry post, so an agent learns each name from the list.
+    let names: Vec<&str> = crate::posting::BUILTINS.iter().map(|(n, _)| *n).collect();
+    let post_doc = format!("A built-in post name ({}) or a .cps path.", names.join(", "));
     obj(
         json!({
             "output": { "type": "string", "description": "The .nc file to write." },
-            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak, Tormach PathPilot Plasma) or a .cps path." },
+            "post": { "type": "string", "description": post_doc },
             "between_setups": {
                 "type": "string",
                 "enum": ["pause", "optional-stop", "continue", "file-per-setup"],

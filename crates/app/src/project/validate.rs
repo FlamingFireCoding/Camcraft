@@ -45,9 +45,20 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
             return Err(corrupt(format!("'{}' records a chord error and an unknown fidelity at once", dto.name)));
         }
     }
-    // #1610: a hole is said of a model of unknown fidelity only.
-    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && matches!(kind, EntityKind::Model)) {
-        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown", dto.name)));
+    // #1610: a hole is said of a mesh of unknown fidelity only - a model,
+    // or (#1700) a stock copied from one, which carries its source's hole.
+    let copy = matches!(kind, EntityKind::Stock)
+        && dto.stock.as_ref().is_some_and(|s| matches!(s.to_shape(), StockShape::FromModel { .. }));
+    if dto.mesh_open.is_some() && !(dto.fidelity_unknown && (matches!(kind, EntityKind::Model) || copy)) {
+        return Err(corrupt(format!("'{}' names a mesh hole but is not a model marked fidelity unknown, or a stock copied from one", dto.name)));
+    }
+    if dto.file_tolerance && (dto.coarse_mm.is_none() || dto.fidelity_unknown || !(matches!(kind, EntityKind::Model) || copy)) {
+        return Err(corrupt(format!("'{}' records a file tolerance without a known model chord", dto.name)));
+    }
+    // #1339: a vouch is a model's, and never rides beside a flag.
+    if let Some(vouch) = &dto.fidelity_vouched {
+        let flagged = dto.fidelity_unknown || dto.coarse_mm.is_some();
+        vouch.check(&dto.name, matches!(kind, EntityKind::Model), flagged).map_err(corrupt)?;
     }
     match kind {
         EntityKind::Entry | EntityKind::Sketch => {}
@@ -269,7 +280,11 @@ pub(super) fn validate_kind(dto: &EntityDto, kind: EntityKind) -> Result<(), Pro
                 }
             }
             if let SrcDto::Selection { items } = &op.src
-                && (items.is_empty() || items.iter().any(|g| g.entity.is_empty()))
+                && (items.is_empty()
+                    || items.iter().any(|g| {
+                        g.entity.is_empty()
+                            || matches!(&g.feature, FeatureSelDto::SketchLayer { layer } if layer.is_empty())
+                    }))
             {
                 return Err(corrupt(format!(
                     "'{}' has an empty or half-named geometry selection",

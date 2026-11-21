@@ -63,6 +63,9 @@ impl State {
             color_vision: color_vision_of(&self.world),
             skip_tool_holders: !self.import_tool_holders,
             ai_offline_only: self.ai_chat.offline_only,
+            // #1873: no control sets this path yet (#1876), so a save keeps
+            // the path that the file states.
+            cadmpeg_path: prefs::load(path).0.cadmpeg_path,
         };
         // The refusal is logged where it happens (app::prefs::save); the
         // choice in force stays right for this session either way.

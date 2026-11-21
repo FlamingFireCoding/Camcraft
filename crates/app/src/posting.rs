@@ -131,37 +131,9 @@ pub fn post_name(post: &PostRef) -> Option<&str> {
     }
 }
 
-/// A post the Setup pane may offer instead of the document's (M13.5
-/// B): when the mounted machine's kind is not served by the current
-/// registry post, this is the word for what the current one serves
-/// ("mill" / "lathe") and the registry's default for the mount. The
-/// pane offers; the user chooses - a mount never re-points the post
-/// by itself, and a `File` post is never second-guessed.
-#[must_use]
-pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
-    let kind = crate::machine::kind_of(world);
-    let current = post_of(world);
-    let name = post_name(&current)?;
-    if post_serves(name, kind) {
-        return None;
-    }
-    let serves = if LATHE_POSTS.contains(&name) {
-        "lathe"
-    } else if PLASMA_POSTS.contains(&name) {
-        "plasma"
-    } else if WIRE_POSTS.contains(&name) {
-        "wire EDM"
-    } else if SINKER_POSTS.contains(&name) {
-        "sinker EDM"
-    } else {
-        "mill"
-    };
-    // #669: an offer that would not serve the mount either (a plasma
-    // table before any plasma post ships) is no offer.
-    let offer = default_post_for(kind);
-    post_name(&offer).is_some_and(|n| post_serves(n, kind)).then_some((serves, offer))
-}
-
+#[path = "posting_offer.rs"]
+mod offer;
+pub use offer::{post_offer, post_offer_for, OfferWhy, PostOffer};
 
 /// The mount path a built-in library entry records (stage C): the
 /// pane's combo and the `LoadMachine::builtin` command say the same
@@ -959,6 +931,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     // #1031/#1174: the work spindle over a setup's workholding maximum,
     // by name - judged for the post dialect each op runs through.
     problems.extend(crate::setup_workholding::program_problems_by(world, voice));
+    // #3070: a sheet job's allowance floor and clamp plane, by name.
+    problems.extend(crate::sheet_job::program_problems(world));
     // The carried-stock clause (#319): a feed move into carried material
     // outside a setup's declared stock is engagement nothing verified.
     problems.extend(crate::operation::carried_problems(world));
@@ -1154,10 +1128,11 @@ pub fn op_streams(world: &World) -> Result<Vec<(String, Vec<cnc::Record>)>, Stri
 pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String, Vec<cnc::Record>)>, String> {
     let ops = program_ops(world)?;
 
-    // The T../H.. law (#221): a tool's own number when it has one, else
-    // its 1-based position among the named tools in document order - and
-    // two tools of one machine posting the same number refuse by name.
-    let tool_numbers = crate::tool_numbers::numbers(world);
+    // The T../H.. law (#221): a tool's own number (#2442: every file and
+    // command gives one; a fixture without one takes the lowest free number,
+    // and none free refuses by name, #2517) - and two tools of one machine
+    // posting the same number refuse by name.
+    let tool_numbers = crate::tool_numbers::numbers(world)?;
     // Judged per machine (#438): two machines are two tool tables.
     if let Some(msg) = crate::tool_numbers::clash_per_machine(world, &ops) {
         return Err(msg);

@@ -26,6 +26,8 @@ const AXIS_NAMES: [&str; 3] = ["X", "Y", "Z"];
 /// Ephemeral view state for the Move / Rotate strip of the bottom bar.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HandleBarState {
+    /// Choose the typed angle editor without hiding either handle set.
+    pub turn_value: bool,
     /// Active axis for typed entry (0 = X, 1 = Y, 2 = Z); updated when a
     /// handle is grabbed or an axis button is clicked.
     pub axis: usize,
@@ -44,6 +46,7 @@ pub struct HandleBarState {
 impl Default for HandleBarState {
     fn default() -> Self {
         Self {
+            turn_value: false,
             axis: 0,
             move_draft: String::new(),
             rotate_draft: String::new(),
@@ -72,12 +75,14 @@ pub(crate) fn snap_step(raw: f64, step: f64) -> f64 {
 
 /// Mirror a live Move drag's axis and signed distance into the bar.
 pub(crate) fn sync_move_drag(state: &mut State, axis: usize, delta_mm: f64) {
+    state.handle_bar.turn_value = false;
     state.handle_bar.axis = axis.min(2);
     state.handle_bar.move_draft = units::len_signed(delta_mm, state.units(), 3);
 }
 
 /// Mirror a live Rotate drag's axis and signed angle into the bar.
 pub(crate) fn sync_turn_drag(state: &mut State, axis: usize, angle_rad: f64) {
+    state.handle_bar.turn_value = true;
     state.handle_bar.axis = axis.min(2);
     state.handle_bar.rotate_draft = format!("{:+.1}", angle_rad.to_degrees());
 }
@@ -176,74 +181,85 @@ pub(crate) fn draw(ui: &mut egui::Ui, state: &mut State, rect: egui::Rect) {
     if !state.move_handles && !state.rotate_handles {
         return;
     }
-    let move_mode = state.move_handles;
+    let mut move_mode = state.move_handles;
     let u = state.units();
     let mut submit = false;
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         let h = ui.spacing().interact_size.y;
-        ui.horizontal_centered(|ui| {
-            for (i, letter) in AXIS_NAMES.iter().enumerate() {
-                let tip = if move_mode {
-                    format!("Move along {letter} axis")
-                } else {
-                    format!("Turn about {letter} axis")
-                };
-                let btn = crate::egui_app::fields::named(
-                    ui.selectable_label(state.handle_bar.axis == i, *letter),
-                    &format!("Axis {letter}"),
-                )
-                .on_hover_text(tip);
-                if btn.clicked() {
-                    state.handle_bar.axis = i;
+        ui.vertical(|ui| {
+            if state.move_handles && state.rotate_handles {
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut state.handle_bar.turn_value, false, "Move value")
+                        .on_hover_text("Enter a distance; arrows and rings stay visible");
+                    ui.selectable_value(&mut state.handle_bar.turn_value, true, "Rotate value")
+                        .on_hover_text("Enter an angle; arrows and rings stay visible");
+                });
+            }
+            move_mode = state.move_handles && (!state.rotate_handles || !state.handle_bar.turn_value);
+            ui.horizontal_centered(|ui| {
+                for (i, letter) in AXIS_NAMES.iter().enumerate() {
+                    let tip = if move_mode {
+                        format!("Move along {letter} axis")
+                    } else {
+                        format!("Turn about {letter} axis")
+                    };
+                    let btn = crate::egui_app::fields::named(
+                        ui.selectable_label(state.handle_bar.axis == i, *letter),
+                        &format!("Axis {letter}"),
+                    )
+                    .on_hover_text(tip);
+                    if btn.clicked() {
+                        state.handle_bar.axis = i;
+                    }
                 }
-            }
-            ui.separator();
-            let (draft, hint, field_name, suffix, field_tip, set_tip) = if move_mode {
-                (
-                    &mut state.handle_bar.move_draft,
-                    "0.000",
-                    "Move distance",
-                    u.suffix(),
-                    "Signed distance to move along the chosen axis",
-                    "Move the selected part along the chosen axis",
+                ui.separator();
+                let (draft, hint, field_name, suffix, field_tip, set_tip) = if move_mode {
+                    (
+                        &mut state.handle_bar.move_draft,
+                        "0.000",
+                        "Move distance",
+                        u.suffix(),
+                        "Signed distance to move along the chosen axis",
+                        "Move the selected part along the chosen axis",
+                    )
+                } else {
+                    (
+                        &mut state.handle_bar.rotate_draft,
+                        "0.0",
+                        "Rotate angle",
+                        "\u{b0}",
+                        "Signed angle in degrees to turn about the chosen axis",
+                        "Turn the selected part about the chosen axis",
+                    )
+                };
+                let edit = crate::egui_app::fields::named(
+                    ui.add_sized([58.0, h], egui::TextEdit::singleline(draft).hint_text(hint)),
+                    field_name,
                 )
-            } else {
-                (
-                    &mut state.handle_bar.rotate_draft,
-                    "0.0",
-                    "Rotate angle",
-                    "\u{b0}",
-                    "Signed angle in degrees to turn about the chosen axis",
-                    "Turn the selected part about the chosen axis",
-                )
-            };
-            let edit = crate::egui_app::fields::named(
-                ui.add_sized([58.0, h], egui::TextEdit::singleline(draft).hint_text(hint)),
-                field_name,
-            )
-            .on_hover_text(field_tip);
-            ui.label(suffix);
-            let set = ui.button("Set").on_hover_text(set_tip);
-            let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            submit = set.clicked() || enter;
-            ui.separator();
-            ui.label("Snap").on_hover_text("Step size when holding Shift while dragging");
-            if move_mode {
-                draw_move_snap(ui, state, u, h);
-            } else {
-                let dv = ui.add_sized(
-                    [56.0, h],
-                    egui::DragValue::new(&mut state.handle_bar.rotate_snap_deg)
-                        .speed(1.0)
-                        .range(MIN_SNAP_DEG..=MAX_SNAP_DEG)
-                        .suffix("\u{b0}"),
-                );
-                crate::egui_app::fields::named(dv, "Rotate snap step")
-                    .on_hover_text("Angle step in degrees while holding Shift");
-            }
-            ui.label(egui::RichText::new("(Shift)").small().weak())
-                .on_hover_text("Hold Shift while dragging a handle to snap");
+                .on_hover_text(field_tip);
+                ui.label(suffix);
+                let set = ui.button("Set").on_hover_text(set_tip);
+                let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                submit = set.clicked() || enter;
+                ui.separator();
+                ui.label("Snap").on_hover_text("Step size when holding Shift while dragging");
+                if move_mode {
+                    draw_move_snap(ui, state, u, h);
+                } else {
+                    let dv = ui.add_sized(
+                        [56.0, h],
+                        egui::DragValue::new(&mut state.handle_bar.rotate_snap_deg)
+                            .speed(1.0)
+                            .range(MIN_SNAP_DEG..=MAX_SNAP_DEG)
+                            .suffix("\u{b0}"),
+                    );
+                    crate::egui_app::fields::named(dv, "Rotate snap step")
+                        .on_hover_text("Angle step in degrees while holding Shift");
+                }
+                ui.label(egui::RichText::new("(Shift)").small().weak())
+                    .on_hover_text("Hold Shift while dragging a handle to snap");
+            });
         });
     });
     if submit {

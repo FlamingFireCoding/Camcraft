@@ -25,6 +25,7 @@ coolantModes = true; // reads PARAM Coolant (#112/#150)
 afterModes = true;   // reads PARAM AfterOperation (#110)
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
+explains = "paren"; // #1389: trailing RS-274 comments; shared helper guards their text
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -148,6 +149,8 @@ function block(words) {  // join the non-empty words onto one line
   }
   var line = prefix + body;
   if (line.length > LINE_CAP) { msg("a program line of " + line.length + " bytes is over TinyG's " + LINE_CAP + "-byte line limit"); return; }
+  var c = explain(a);
+  if (c && line.length + 1 + c.length <= 80) line += " " + c;
   writeln(line);
 }
 function writeHeaderExtras() {
@@ -274,6 +277,8 @@ function joinDash(parts) {  // the non-empty parts, " - " between
 // led by "- ", so user text stays a note.
 var ACTIVE = /^\s*msg/i;
 function note(s) { block(["(" + (ACTIVE.test(s) ? "- " + s : s) + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);

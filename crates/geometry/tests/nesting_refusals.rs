@@ -380,3 +380,50 @@ fn refuses_requested_quantity_sum_overflow() {
         "{msg}"
     );
 }
+
+#[test]
+fn refuses_micron_hole_escape_by_name() {
+    let sheet = SheetInput {
+        width: 10.0,
+        height: 10.0,
+        edge_margin: 0.0,
+        cut_width: 0.0,
+        part_gap: 0.0,
+        allow_parts_in_holes: true,
+        clearance_mode: ClearanceMode::SeparateCuts,
+    };
+    let part = PartInput::closed(
+        "micron_escape",
+        1,
+        rect_loop(0.0, 0.0, 1.0, 1.0),
+        vec![rect_loop(0.5, 0.2, 1.000001, 0.8)],
+    );
+    let err = nest(&sheet, &[part]).expect_err("a non-empty escape must be refused");
+    assert!(matches!(err, NestError::InvalidPart { part_id, reason }
+            if part_id == "micron_escape" && reason == "hole loop 0 lies outside or intersects outer loop"));
+}
+
+#[test]
+fn refuses_sub_epsilon_hole_overlap_by_name() {
+    let sheet = SheetInput {
+        width: 10.0,
+        height: 10.0,
+        edge_margin: 0.0,
+        cut_width: 0.0,
+        part_gap: 0.0,
+        allow_parts_in_holes: true,
+        clearance_mode: ClearanceMode::SeparateCuts,
+    };
+    let part = PartInput::closed(
+        "micron_overlap",
+        1,
+        rect_loop(0.0, 0.0, 1.0, 1.0),
+        vec![
+            rect_loop(0.1, 0.2, 0.5, 0.8),
+            rect_loop(0.499999, 0.2, 0.9, 0.8),
+        ],
+    );
+    let err = nest(&sheet, &[part]).expect_err("a non-empty hole overlap must be refused");
+    assert!(matches!(err, NestError::InvalidPart { part_id, reason }
+            if part_id == "micron_overlap" && reason == "hole loop 1 overlaps hole loop 0"));
+}

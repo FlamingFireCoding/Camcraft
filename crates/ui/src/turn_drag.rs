@@ -183,6 +183,20 @@ pub(crate) fn hold_radius(state: &State, center: [f64; 3]) -> Option<f64> {
     r.is_finite().then_some(r)
 }
 
+/// A ring seen within three degrees of its plane cannot give a stable turn.
+pub(crate) fn ring_enabled(state: &State, center: [f64; 3], axis: usize) -> bool {
+    let Some(normal) = AXES.get(axis) else { return false };
+    let Some(aspect) = aspect(state) else { return false };
+    let Some(uv) = project_uv(&state.cam.mvp(aspect), center) else { return false };
+    let Some((_, direction)) = ray_at(state, to_px(state, uv)) else { return false };
+    let (dn, dd) = (dot(direction, *normal), dot(direction, direction));
+    dd > 1e-24 && dn * dn >= move_drag::END_ON_SIN2 * dd
+}
+
+pub(crate) fn edge_on_hint(axis: usize) -> String {
+    format!("Orbit the view to turn about {}", ["X", "Y", "Z"].get(axis).copied().unwrap_or("the axis"))
+}
+
 /// Snap `raw_rad` to the nearest multiple of `step_deg` degrees.
 #[must_use]
 pub(crate) fn snap_angle_rad(raw_rad: f64, step_deg: f64) -> f64 {
@@ -198,8 +212,12 @@ pub(crate) fn snap_angle_rad(raw_rad: f64, step_deg: f64) -> f64 {
 pub(crate) fn press(state: &mut State, p: [f32; 2]) -> bool {
     let Some((axis, ring_phi)) = ring_hit(&rings_px(state), p) else { return false };
     let Some(r) = rings(state) else { return false };
-    // The plane hit when the ring faces the eye; the ring point under the
-    // cursor when it stands edge-on (always defined).
+    if !ring_enabled(state, r.center, axis) {
+        state.status = edge_on_hint(axis);
+        return true;
+    }
+    // A usable plane supplies the angle; the nearest ring point handles
+    // a press within the hit tolerance of the pivot.
     let min_r = hold_radius(state, r.center).unwrap_or(f64::INFINITY);
     let last = plane_angle(state, p, r.center, axis, min_r).unwrap_or(ring_phi);
     state.body_turn = Some(TurnDrag { name: r.name, axis, center: r.center, last, raw_angle: 0.0, angle: 0.0 });

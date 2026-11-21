@@ -188,15 +188,15 @@ pub(crate) fn validate_closed_loops(part: &PartInput) -> Result<(Region, Vec<Reg
                 format!("hole loop {idx} encloses no area"),
             ));
         }
-        let outside = hr.difference(&outer_reg)?.area().abs();
-        if outside > 1e-6 || hr.area().abs() >= outer_reg.area().abs() - MIN_AREA {
+        let outside = hr.difference(&outer_reg)?;
+        if !outside.is_empty() || hr.area().abs() >= outer_reg.area().abs() - MIN_AREA {
             return Err(part_err(
                 &part.id,
                 format!("hole loop {idx} lies outside or intersects outer loop"),
             ));
         }
         for (prev_idx, prev) in hole_regs.iter().enumerate() {
-            if hr.intersect(prev)?.area().abs() > 1e-6 {
+            if !hr.intersect(prev)?.is_empty() {
                 return Err(part_err(
                     &part.id,
                     format!("hole loop {idx} overlaps hole loop {prev_idx}"),
