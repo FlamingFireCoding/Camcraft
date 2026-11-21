@@ -150,10 +150,11 @@ enum TableRead {
     Counts(FixtureBox),
     /// No move along the tool axis to the plane goes under the table top.
     Clear,
-    /// The tool axis points down toward the table and the move to the
-    /// plane can go under its top: the verdict cannot name a height to
-    /// raise to, so a note names the table as not judged.
-    Unjudged,
+    /// The tool axis points down toward the table (#3081) and the move to
+    /// the plane can go under its top. A higher plane along that axis
+    /// stands lower in the world, so the repair is a plane at `limit` (a
+    /// local height) or under it.
+    Under { limit: f64 },
 }
 
 /// The table on a 3+2 plane (#2987), decision premise (b): the control
@@ -185,8 +186,16 @@ fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64, stroke: f64) -> Tab
         let p = Point3::new(o.x + clear * a[0], o.y + clear * a[1], o.z + clear * a[2]);
         TableRead::Counts(FixtureBox { min: p, max: p })
     } else {
+        // Down-pointing axis (#3081): the worst start is the LOWEST along
+        // the axis, and the move from it to the plane drops the most. The
+        // highest plane that every move reaches over the table top:
+        // `(limit - low) * -up = stroke`. A horizontal axis (up = 0)
+        // never drops, so it is clear.
         let low = -verify::box_top(&starts, |p| -f.z_local(p));
-        if (start_h - low) * -up - stroke > Z_TOL { TableRead::Unjudged } else { TableRead::Clear }
+        if (start_h - low) * -up - stroke <= Z_TOL {
+            return TableRead::Clear;
+        }
+        TableRead::Under { limit: low + stroke / -up }
     }
 }
 
@@ -198,7 +207,9 @@ fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64, stroke: f64) -> Tab
 /// the table with the part). It reads the machine table's top face over
 /// the stated travel when the head tilts (#2987), only where the move
 /// along the tool axis from the tool-change height can carry the tool
-/// under the table top (`table_read`). When only the work tilts, the table stays
+/// under the table top (`table_read`). Past a 90-degree head tilt the axis
+/// points down toward the table, and that case gets its own verdict that
+/// names the plane to lower to (#3081). When only the work tilts, the table stays
 /// under the work (`work_tilts`). A mounted machine that states no travel
 /// gives no table box, and the note names that. Upright, the table's top
 /// is under the stock and never the higher top.
@@ -235,6 +246,7 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
     };
     let tip_judged = over.turned.is_none() || !tilting(true);
     let mut note = None;
+    let mut under = None;
     let w = match frame {
         _ if swept.is_some() => swept,
         _ if !tip_judged => None,
@@ -249,12 +261,12 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
                     steel.push(*b);
                     continue;
                 }
-                match start_h.filter(|_| !work_turns).map(|h| table_read(b, f, h, stroke)) {
-                    Some(TableRead::Counts(face)) => steel.push(face),
-                    Some(TableRead::Unjudged) => {
-                        note = Some(format!("{TABLE_UNJUDGED_NOTE}: the tool axis points down toward the table, so the move along it from the tool-change height (the Z travel top) to the clearance plane can go under the table top"));
+                match start_h.filter(|_| !work_turns).map(|h| (h, table_read(b, f, h, stroke))) {
+                    Some((_, TableRead::Counts(face))) => steel.push(face),
+                    Some((height_mm, TableRead::Under { limit })) => {
+                        under = Some(Warning::FirstTraverseUnderTable { at: 0, height_mm, limit_mm: limit });
                     }
-                    Some(TableRead::Clear) | None => {}
+                    Some((_, TableRead::Clear)) | None => {}
                 }
             }
             let has_table = (0..over.fixtures.len()).any(is_table);
@@ -265,10 +277,12 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
         }
         None => verify::first_traverse_low(path, over.stock_top, over.fixtures, |p| p.z, Z_TOL),
     };
-    if let Some(w) = w
-        && !warns.contains(&w)
-    {
-        warns.push(w);
+    // #3081: the table verdict of a down-pointing axis stands beside the
+    // stock and fixture verdict; their repairs differ (lower, raise).
+    for w in [w, under].into_iter().flatten() {
+        if !warns.contains(&w) {
+            warns.push(w);
+        }
     }
     note
 }

@@ -50,6 +50,12 @@ pub fn current_stamp(
     if super::first_traverse::newly_judged(params) {
         h.write(b"first-traverse-2965");
     }
+    // #3081: a 3+2 plane whose tool axis points down toward the table
+    // now gets a verdict (it had a note). Only tilted caches read Stale
+    // once; the salt above stays, so no other kind's stamp moves.
+    if params.tilt().is_some() {
+        h.write(b"first-traverse-table-3081");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
