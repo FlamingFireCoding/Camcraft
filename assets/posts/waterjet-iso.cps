@@ -315,7 +315,8 @@ function cutOk(p) {
     refuse("dry" + opName, who() + "a cutting move with the jet off - every waterjet feed rides a JET ON span");
     return false;
   }
-  if (has(p.StartZ) && has(p.Z) && Math.abs(p.Z - p.StartZ) > 0.0005) {
+  var dz = has(p.OriginalZChange) ? p.OriginalZChange : 0;
+  if (Math.abs(dz) > 0.0005 || has(p.StartZ) && has(p.Z) && Math.abs(p.Z - p.StartZ) > 0.0005) {
     refuse("z" + opName, who() + "a cutting move changes Z - a waterjet program cuts in X and Y only");
     return false;
   }

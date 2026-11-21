@@ -141,6 +141,27 @@ fn waterjet_post_refuses_a_z_cut_and_a_cycle() {
 }
 
 #[test]
+fn waterjet_post_refuses_a_helical_arc_in_both_arc_modes() {
+    let machine = json!({
+        "name": "Large jet", "kind": "waterjet",
+        "kinematics": { "static": { "axes": [
+            { "letter": "X", "direction": [1, 0, 0], "travel": [-2000.0, 2000.0] },
+            { "letter": "Y", "direction": [0, 1, 0], "travel": [-2000.0, 2000.0] }
+        ], "rotaries": [] } }
+    });
+    let stream = "PARAM StartX 1000\nWATERJET ABRASIVE\nSECTION\nRapid X 1000000 Y 0 Z 0\nJET ON C0 OUTER\nArc CCW X -1000000 Y 0 Z 100 F300000 I 0 J 0\nJET OFF C0\nENDSECTION\n";
+    for mode in ["circular", "linear"] {
+        let out = post(&machine, stream, &json!({ "arcs": mode }));
+        assert_refused(&out.warnings, "a cutting move changes Z - a waterjet program cuts in X and Y only");
+        assert!(
+            !out.program.lines().any(|line| ["G1 ", "G2 ", "G3 "].iter().any(|word| line.starts_with(word))),
+            "{mode}: the refused arc must not write a cut:\n{}",
+            out.program
+        );
+    }
+}
+
+#[test]
 fn waterjet_rapid_cache_resets_when_the_coordinate_frame_changes() {
     // Each new frame needs a physical traverse, even when its words match
     // the last rapid. Exercise offset and each origin independently.

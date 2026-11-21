@@ -92,6 +92,7 @@ behavior only):
 |---|---|
 | `StartX` `StartY` `StartZ` | current point before the record (mm) |
 | `X` `Y` `Z` | record end point (mm; cycles: center XY, bottom Z) |
+| `OriginalZChange` | signed Z change of the original motion record (mm), retained on every generated chord |
 | `A` `B` `C` | commanded tool angles, degrees — ABSENT unless the record carries the words above |
 | `IJKIncrement` | absolute arc center, mm, keyed by the plane's center letters: `{I, J}` (XY), `{I, K}` (XZ), `{J, K}` (YZ) |
 | `CircularPlane` | `XY` / `XZ` / `YZ` (arcs; M11.2 A) - a post states G17/G18/G19 modally from it |

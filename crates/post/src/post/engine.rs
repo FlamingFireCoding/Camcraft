@@ -352,7 +352,10 @@ pub fn run_program_with(
                 };
                 let mut at = pos;
                 for (k, piece) in pieces.iter().enumerate() {
-                    let p = piece.props();
+                    let mut p = piece.props();
+                    // A chord must retain the complete move's Z change for
+                    // posts that refuse a non-planar cut before writing XY.
+                    p.insert("OriginalZChange".into(), json!(m.z - pos.2));
                     s.set_properties(&merged(&base, &p, at))?;
                     s.set_current(at.0, at.1, at.2)?;
                     let cmd = p.get("command").cloned().unwrap_or(Value::Null);
