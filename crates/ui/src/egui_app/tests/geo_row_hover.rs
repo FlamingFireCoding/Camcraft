@@ -123,7 +123,7 @@ fn every_rows_remove_button_is_in_reach_at_the_default_window_size() {
     // any width.
     harness.get_all_by_label("×").min_by(|a, b| a.rect().min.y.total_cmp(&b.rect().min.y)).expect("a remove button").click();
     harness.run_steps(2);
-    let left: Vec<_> = harness.state().state.op_ui.geo.iter().map(|g| g.feature).collect();
+    let left: Vec<_> = harness.state().state.op_ui.geo.iter().map(|g| g.feature.clone()).collect();
     assert_eq!(left.len(), 2, "one pick removed: {left:?}");
     assert!(!left.contains(&chips[0].sel.feature), "the face row's pick is the one removed");
 }
@@ -147,7 +147,7 @@ fn viewport_hover_over_a_picked_face_marks_its_row() {
     set_pos(&mut harness, egui::pos2(x0 + uv[0] * w, y0 + uv[1] * h));
     harness.run_steps(2);
     let hit = harness.state().state.hover.clone().expect("the face lights under the pointer");
-    assert_eq!(hit.feature, Some(face.feature), "the pointer is over the picked face");
+    assert_eq!(hit.feature, Some(face.feature.clone()), "the pointer is over the picked face");
     assert_eq!(harness.state().state.geo_row_marked, vec![face], "only the face's row is marked");
     assert!(harness.state().state.pending.is_empty(), "marking files no command");
 

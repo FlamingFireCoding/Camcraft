@@ -118,18 +118,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     SrcRef::Stock => SrcDto::Stock,
                     SrcRef::Entity(name) => SrcDto::Entity { name: name.clone() },
                     SrcRef::Selection(items) => SrcDto::Selection {
-                        items: items
-                            .iter()
-                            .map(|g| GeoSelDto {
-                                entity: g.entity.clone(),
-                                feature: match g.feature {
-                                    FeatureSel::Face(id) => FeatureSelDto::Face { id },
-                                    FeatureSel::Chain(id) => FeatureSelDto::Chain { id },
-                                    FeatureSel::Patch(id) => FeatureSelDto::Patch { id },
-                                    FeatureSel::Vertex(id) => FeatureSelDto::Vertex { id },
-                                },
-                            })
-                            .collect(),
+                        items: items.iter().map(geo_sel_dto).collect(),
                     },
                 },
                 params: ParamsDto::from_params(&op.params),

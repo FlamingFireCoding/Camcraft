@@ -239,6 +239,14 @@ pub(super) fn named_material(world: &World, setup: Option<&str>, name: &str, gon
     let Some(entity) = model::find_by_name(world, name) else {
         return Err(GenError::Invalid(gone.to_string()));
     };
+    if crate::sketch::is_sketch(world, &entity) {
+        let Some(pose) = crate::sketch::world_pose(world, &entity) else {
+            return Err(GenError::Invalid(format!(
+                "DXF profile '{name}' has no stock to lie on - set up stock first"
+            )));
+        };
+        return Ok(Material { facets: Vec::new(), top: pose.pos.z, bodies: Vec::new(), excess: 0.0, file_tolerance: false });
+    }
     let facets = crate::setup_align::facets_in(world, &entity, setup).unwrap_or_default();
     let top = crate::setup_align::entity_aabb_in(world, &entity, setup)
         .map(|b| b.max.z)
