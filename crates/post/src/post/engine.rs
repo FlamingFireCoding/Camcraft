@@ -110,7 +110,11 @@ pub fn run_program_with(
     id: &ProgramId,
 ) -> Result<PostOutput, PostError> {
     let records = super::normalize_program_order(cnc::parse(stream)?);
-    let mut s = Script::load(cps)?;
+    let operation = records.iter().find_map(|record| match record {
+        Record::Param { name, value } if name == "OperationName" => value.as_str(),
+        _ => None,
+    }).unwrap_or("unnamed operation");
+    let mut s = Script::load_for_program(cps, records.len(), operation)?;
     let mut tool_macros = super::tool_change::Macros::read(&mut s)?;
     // #902: an inch document on a script that cannot write inch.
     if let Some(why) = super::units::refusal(&mut s, options)? {
@@ -152,6 +156,11 @@ pub fn run_program_with(
         s.arm_explain(f)?;
     }
     s.call("onOpen", "")?;
+    // #2996: the header notes (a model checked at reduced accuracy) are
+    // part of the header, in the script's own comment form.
+    for note in &id.notes {
+        s.call("onComment", &json!(note).to_string())?;
+    }
     // #1882: chords for a control without G2/G3, read after `onOpen` so
     // a declared option may choose them.
     let chord_tol = super::program_bounds::linearize_tolerance(&mut s)?;
@@ -402,6 +411,12 @@ pub fn run_program_with(
                         _ => None,
                     }).collect();
                 let mut props = c.props();
+                if c.kind == crate::cl::CycleKind::FineBore {
+                    // #1445: refused for a script without `fineBoring`;
+                    // the shift is read from the chain itself.
+                    let op = base.get("OperationName").and_then(Value::as_str).unwrap_or("");
+                    super::fine_bore::voice(s.voices_fine_boring(), c, &records[i + 1..], op, &mut props, &mut warnings);
+                }
                 props.insert("ChainFeedRate".into(), json!(chain.first().and_then(|m| m.feed)));
                 props.insert("ChainBottomZ".into(), json!(chain.iter().map(|m| m.z).reduce(f64::min)));
                 s.set_properties(&merged(&base, &props, pos))?;

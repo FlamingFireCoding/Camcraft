@@ -183,6 +183,24 @@ fn touching_solids(
         }
     }
     let at = |v: u32| welder.pts.get(v as usize).map(|v| Point3::new(v[0], v[1], v[2]));
+    let mut contacts: Vec<_> = on.iter().collect();
+    contacts.sort_by_key(|(key, _)| **key);
+    for (key, uses) in contacts {
+        let _ = (|| {
+            let eu: Option<Vec<_>> = uses.iter().map(|&(i, forward, r)| {
+                Some(shared_edge::EdgeUse { body: root(parent, i) as usize, forward, apex: at(r)? })
+            }).collect();
+            let eu = eu?;
+            if !shared_edge::solids_touch(at(key.0)?, at(key.1)?, &eu)
+                && let Some(pairs) = shared_edge::fragment_pairs(at(key.0)?, at(key.1)?, &eu)
+            {
+                for (i, j) in pairs {
+                    union(parent, uses[i].0, uses[j].0);
+                }
+            }
+            Some(())
+        })();
+    }
     let mut shared = HashSet::new();
     let mut faults = Vec::new();
     for (key, uses) in on {

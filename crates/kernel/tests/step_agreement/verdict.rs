@@ -73,8 +73,20 @@ pub fn import_verdict(row_unit: f64, sc: &Result<StepRead, KernelError>, tr: &Tr
     };
     match (sc_whole, tr) {
         (Err(a), Truck::Refused(_)) => format!("both refuse (solidcore: {})", first_words(&a)),
-        (Err(a), Truck::Read { .. }) => format!("solidcore refuses: {}", first_words(&a)),
+        (Err(a), Truck::Read { .. } | Truck::NotRecorded) => format!("solidcore refuses: {}", first_words(&a)),
         (Ok(_), Truck::Refused(b)) => format!("truck refuses: {}", first_words(b)),
+        (Ok((r, _)), Truck::NotRecorded) => {
+            let unit = match r.length_units_mm.as_slice() {
+                [] => 1.0,
+                [one] => *one,
+                _ => f64::NAN,
+            };
+            if unit.is_nan() || rel(unit, row_unit) > 1e-12 {
+                "no truck reading; off: unit".into()
+            } else {
+                "no truck reading; unit agrees".into()
+            }
+        }
         (
             Ok((r, w)),
             Truck::Read {

@@ -241,6 +241,7 @@ pub fn cycle_name(kind: CycleKind) -> &'static str {
         CycleKind::Bore => "BORE",
         CycleKind::BackBore => "BACKBORE",
         CycleKind::Ream => "REAM",
+        CycleKind::FineBore => "FINEBORE",
     }
 }
 
@@ -1051,6 +1052,7 @@ fn cycle_kind(name: &str) -> Option<CycleKind> {
         "BORE" => CycleKind::Bore,
         "BACKBORE" => CycleKind::BackBore,
         "REAM" => CycleKind::Ream,
+        "FINEBORE" => CycleKind::FineBore,
         _ => return None,
     })
 }

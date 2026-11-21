@@ -1618,6 +1618,8 @@ pub enum TreeMenuTarget {
     /// clicked row's index, so the menu anchors on the row clicked even
     /// when the name stands in the tree twice.
     Model { name: String, row: usize },
+    /// A tool row, anchored on the clicked occurrence.
+    Tool { name: String, row: usize },
     /// A setup's Fixtures node (`""` - the implicit setup): "Import
     /// fixture…".
     Fixtures(String),
@@ -1736,6 +1738,14 @@ pub struct State {
     /// depend on it - only the names (`World`, each offset's entity
     /// name) do.
     pub show_gizmo_names: bool,
+    /// #2958: the viewport overlay line width and multisample
+    /// anti-aliasing, kept in the same per-user view file.
+    pub line_width: camcraft_app::view::LineWidth,
+    pub antialias: camcraft_app::view::Antialias,
+    /// #2958: the sample counts the graphics device offers for the 3D
+    /// targets, set by the windowed shell at bring-up. Headless and the
+    /// browser keep WebGPU's guaranteed pair, 1 and 4.
+    pub samples_offered: Vec<u32>,
     /// Show cached toolpaths beyond the selected operation's: with this on,
     /// every generated path draws (dimmed where unselected) instead of only
     /// the one the tree highlights. View state like the camera - not
@@ -1750,6 +1760,15 @@ pub struct State {
     /// "Look at a face" waits for one click in the viewport (#2818).
     /// Ephemeral view state, never a command.
     pub look_at_armed: bool,
+    /// "Look at a work plane" waits for one click on an origin axis
+    /// (#2834). Ephemeral view state, never a command.
+    pub look_at_plane_armed: bool,
+    /// Draw the soft shadow of the model on the floor (#2834). View state
+    /// and a kept preference (`state_view`).
+    pub ground_shadow: bool,
+    /// Darken the model faces in their corners (#2834). View state and a
+    /// kept preference (`state_view`).
+    pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
     /// the grid also needs `show_world_axes`.
     pub show_grid: bool,
@@ -2290,10 +2309,16 @@ impl State {
             body_turn: None,
             handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
+            line_width: camcraft_app::view::LineWidth::default(),
+            antialias: camcraft_app::view::Antialias::default(),
+            samples_offered: crate::viewport::GUARANTEED_SAMPLES.to_vec(),
             show_all_paths: false,
             display: DisplayMode::default(),
             display_menu_open: false,
             look_at_armed: false,
+            look_at_plane_armed: false,
+            ground_shadow: false,
+            ambient_occlusion: false,
             show_grid: true,
             sim: None,
             post_view: None,
@@ -4389,7 +4414,7 @@ impl State {
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
                     let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_file_tolerance(command.file_tolerance).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);

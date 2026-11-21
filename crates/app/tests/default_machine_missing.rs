@@ -122,6 +122,7 @@ fn post_with(root: &Path, doc: Doc) -> (i32, String, Vec<String>) {
     let o = Command::new(exe)
         .env("RUST_LOG", "info")
         .args(["process", proj.to_str().expect("utf8"), "-o", nc.to_str().expect("utf8")])
+        .env("CAMCRAFT_LOG", "info")
         .output()
         .expect("the CLI runs");
     let code = o.status.code().unwrap_or(-1);
@@ -164,6 +165,7 @@ fn a_missing_default_machine_file_refuses_the_post_per_operation() {
     // Generation logs name both operations; check only the CLI refusal.
     let err = err.lines().find(|line| line.starts_with("camcraft-cli: post:")).expect("CLI post refusal");
     assert!(err.contains("Setup2"), "the refusal names the unmounted setup: {err}");
+    assert!(err.contains("Face2"), "the refusal names the operation of the unmounted setup: {err}");
     assert!(!err.contains("Face1"), "the mounted operation has its own machine: {err}");
 }
 

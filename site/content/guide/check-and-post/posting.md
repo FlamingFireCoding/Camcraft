@@ -24,6 +24,11 @@ A post is a `.cps` script, so you can load your own with
 The Post dialog opens where this document last posted, or beside the saved
 project with the project's name and the `.nc` extension.
 
+The scope label at the top right of the Post dialog names the selected
+post and, when applicable, its setup. **Hover** over that label to see
+the full built-in post script path. A custom post already shows its file
+path in the label. Check this path when two scripts have similar names.
+
 ### Controller details
 
 - **Tormach milling:** consecutive sections that use the same loaded tool
