@@ -539,6 +539,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // v72 -> v73 (#2055): absent `do_not_touch` protection defaults to
         // empty picks and zero clearance. v72 readers must refuse v73
         // rather than discard protected selections as unknown area fields.
+        // v73 -> v74 (#1864): sketch chain/layer picks and per-chain contour
+        // overrides arrive; a v73 file has none and steps up unchanged.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
@@ -857,18 +859,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     SrcDto::Stock => SrcRef::Stock,
                     SrcDto::Entity { name } => SrcRef::Entity(name.clone()),
                     SrcDto::Selection { items } => SrcRef::Selection(
-                        items
-                            .iter()
-                            .map(|g| GeoSel {
-                                entity: g.entity.clone(),
-                                feature: match g.feature {
-                                    FeatureSelDto::Face { id } => FeatureSel::Face(id),
-                                    FeatureSelDto::Chain { id } => FeatureSel::Chain(id),
-                                    FeatureSelDto::Patch { id } => FeatureSel::Patch(id),
-                                    FeatureSelDto::Vertex { id } => FeatureSel::Vertex(id),
-                                },
-                            })
-                            .collect(),
+                        items.iter().map(geo_sel_of).collect(),
                     ),
                 };
                 entity.entity_view(world).set(Operation {
