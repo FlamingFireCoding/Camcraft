@@ -87,13 +87,26 @@ fn still_accept_a_healed_box_whose_gap_meets_the_limit() {
         &CancelToken::new(),
     )
     .expect("the healed box already met the limit");
-    assert_eq!(imported.solids.len(), 1);
-    assert!(imported.solids[0].vertex_gap <= 0.001);
+    let [solid] = imported.solids.as_slice() else {
+        panic!("expected one solid");
+    };
+    assert_eq!(solid.brep.edge_list().len(), 12, "retain the healed body");
+    assert!(solid.vertex_gap <= 0.001);
+    assert!(
+        !solid
+            .notes
+            .iter()
+            .any(|note| note.starts_with("Kept the original STEP edges")),
+        "unexpected source recovery: {:?}",
+        solid.notes
+    );
 }
 
 #[test]
 fn refuse_short_edge_model_when_its_source_gap_exceeds_the_limit() {
-    let bytes = split_box(0.0012, SPLIT_X);
+    // Only the start of the long spline (STEP edge #169, input record edge 3)
+    // has both the 0.0012 mm X gap and the 0.0005 mm Y offset: 0.0013 mm.
+    let bytes = split_box(0.0005, SPLIT_X + 0.0012);
     let reason = import_step(
         &mut SolidcoreKernel::default(),
         bytes.as_bytes(),
@@ -101,9 +114,20 @@ fn refuse_short_edge_model_when_its_source_gap_exceeds_the_limit() {
     )
     .expect_err("the source gap exceeds the existing 0.001 mm limit")
     .to_string();
-    assert!(reason.contains("1.200e-3"), "name the source gap: {reason}");
-    assert!(reason.contains("1.389e-3"), "name the healed gap: {reason}");
-    assert!(reason.contains("1e-3"), "name the limit: {reason}");
+    assert!(
+        reason.contains("The source endpoint gap is 0.001300 mm, above the 0.001 mm limit."),
+        "name the check that refused the source: {reason}"
+    );
+    assert!(
+        reason.contains(
+            "Input-record edge index 3 (zero-based), vertex (0.000700, -0.000500, 0.000000) mm"
+        ),
+        "locate the source edge and the affected vertex: {reason}"
+    );
+    assert!(
+        reason.contains("after healing: 12 edges, maximum gap 0.001965 mm"),
+        "name the healed gap: {reason}"
+    );
 }
 
 #[test]
