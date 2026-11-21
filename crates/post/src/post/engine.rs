@@ -153,6 +153,11 @@ pub fn run_program_with(
         s.arm_explain(f)?;
     }
     s.call("onOpen", "")?;
+    // #2996: the header notes (a model checked at reduced accuracy) are
+    // part of the header, in the script's own comment form.
+    for note in &id.notes {
+        s.call("onComment", &json!(note).to_string())?;
+    }
     let head = s.out_len()?;
 
     let mut warnings = Vec::new();

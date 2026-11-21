@@ -296,6 +296,10 @@ fn a_rotary_contour_on_a_reduced_model_is_judged_and_past_the_bound_refused_by_n
     let low = rotary(Some(TIGHT), 10.0);
     assert!(blocking(&low, "OP").iter().any(|w| matches!(w, Warning::RapidInStock { .. })), "{:?}", blocking(&low, "OP"));
     assert_eq!(fidelity_lines(&rotary(Some(TOO_COARSE), 25.0)), vec![refusal("OP", "0.030")]);
+    // #2996: the rotary field's allowance also guards the shank, so the
+    // kind never takes the widening: a 0.019 mm model, which a mill kind
+    // posts against, still refuses it by name.
+    assert_eq!(fidelity_lines(&rotary(Some(0.019), 25.0)), vec![refusal("OP", "0.019")]);
 }
 
 // ---- the registry ----------------------------------------------------------
