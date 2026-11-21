@@ -254,7 +254,8 @@ pub const ROWS: &[Row] = &[
         mesh: "no mesh: solid #16 not read: pcurves failed",
     },
     // #2919: the model reader expands unit aliases; the raw tessellator
-    // still assumes millimetres, and truck cannot read the short geometry names.
+    // still assumes millimetres. The geometry is in long form. These two
+    // truck readings are from the live bench at 72ab66fc1, not 4b694c7c7.
     Row {
         file: "short_units_inch.step",
         mm_per_unit: 25.4,
