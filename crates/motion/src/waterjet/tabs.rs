@@ -11,7 +11,8 @@
 use crate::geo2d::Point2;
 use crate::machining2d::GenError;
 use crate::sheet::arclen::ArcRing;
-use crate::sheet::ring::{dist, nearest};
+use crate::sheet::laws::pt_seg;
+use crate::sheet::ring::{dist, nearest, unit};
 use crate::sheet::Voice;
 
 use super::{JetTabs, MAX_TABS};
@@ -136,4 +137,39 @@ pub(super) fn stretches(ring: &[Point2], gaps: &[Gap], ccw: bool) -> Vec<Vec<Poi
 /// Is `q` (a point of the part edge) under one of the gaps' bridges?
 pub(super) fn bridged(gaps: &[Gap], q: Point2) -> bool {
     gaps.iter().any(|g| dist(g.mid, q) <= g.half)
+}
+
+/// How far (mm) from the part edge the bridge law walks out: past the
+/// far kerf of the longest lead, straight or a quarter arc (whose far
+/// point stands 4 / pi of its length off the ring), with slack.
+pub(super) fn bridge_reach(kerf: f64, lead_in: f64, lead_out: f64) -> f64 {
+    2.0 * kerf + lead_in.max(lead_out) * 4.0 / std::f64::consts::PI + 0.1
+}
+
+/// The bridge law: each tab must join the part to the sheet. From the
+/// part edge under the gap's middle, a line runs out along the waste
+/// normal for `reach` mm; no lit chord may come within the kerf radius
+/// `r` of it. Such a line is a strip of uncut material from the part to
+/// beyond every lead, so the tab holds. `edge` is the contour's part
+/// edge, `chords` every lit move as chords. Returns the first tab whose
+/// bridge is cut, with the point where the kerf crosses it.
+pub(super) fn bridge_law(gaps: &[Gap], edge: &[Point2], chords: &[(Point2, Point2)], r: f64, reach: f64) -> Result<(), (usize, Point2)> {
+    if edge.len() < 3 || !(reach.is_finite() && reach > 0.0) {
+        return Ok(());
+    }
+    let step = (r * 0.25).clamp(1e-3, 0.05);
+    let n_steps = (reach / step).ceil().min(1e6) as u32;
+    for g in gaps {
+        let (_, foot) = nearest(edge, g.mid);
+        let n = unit(foot, g.mid);
+        for k in 0..=n_steps {
+            let v = f64::from(k) * step;
+            let q = Point2::new(foot.x + n.x * v, foot.y + n.y * v);
+            let d = chords.iter().map(|(a, b)| pt_seg(q, *a, *b)).fold(f64::INFINITY, f64::min);
+            if d <= r {
+                return Err((g.no, q));
+            }
+        }
+    }
+    Ok(())
 }

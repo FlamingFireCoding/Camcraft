@@ -129,9 +129,22 @@ fn tight_hole(ring: &[Point2], (ccw, _t_out): (bool, Point2), p: &WaterjetParams
 }
 
 /// Plan the stretches of a tabbed contour, each led in and out.
+///
+/// Every stretch end stands next to a tab gap, so its leads are always
+/// straight along the waste normal. An arc lead-in comes from behind
+/// its start and an arc lead-out runs on past its end - into the gap -
+/// and the two kerfs under one tab can meet and cut the tab free of the
+/// sheet. Straight leads leave the tab's full width between them.
 pub(super) fn tabbed(c: &Contour, stretches: &[Vec<Point2>], p: &WaterjetParams, forbidden: Option<&Region>, notes: &mut Vec<String>, label: &str) -> Result<Vec<Plan>, GenError> {
     let inner = c.role == ContourRole::Inner;
     let ccw = ccw_of(c.role, p);
+    if p.lead_shape == LeadShape::Arc && (p.lead_in > 0.0 || p.lead_out > 0.0) {
+        notes.push(format!(
+            "waterjet: {label} (tabbed) is led in and out straight - an arc lead beside a tab would cut into the tab's bridge"
+        ));
+    }
+    let straight = WaterjetParams { lead_shape: LeadShape::Straight, ..p.clone() };
+    let p = &straight;
     let mut out = Vec::with_capacity(stretches.len());
     for (j, run) in stretches.iter().enumerate() {
         let n = run.len();

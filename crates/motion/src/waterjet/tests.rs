@@ -131,6 +131,90 @@ fn tabs_leave_uncut_gaps_and_each_stretch_is_pierced_and_led_in() {
     assert!(path.notes.iter().any(|n| n.contains("2 tab(s)), 2 pierce(s)")), "{:?}", path.notes);
 }
 
+/// Does the material under a tab join the part to the sheet beyond the
+/// leads? The kerf of every lit chord is rastered in a window around the
+/// tab (u along the edge, v out along the waste normal `n` from the edge
+/// point `foot`), and the uncut cells are flood-filled from inside the
+/// part. The tab holds when the fill reaches the window's far side.
+fn tab_joins_sheet(path: &Toolpath, foot: Point2, n: Point2, r: f64) -> bool {
+    use crate::sheet::laws::pt_seg;
+    let chords: Vec<(Point2, Point2)> =
+        path.moves.iter().filter(|m| m.kind == MoveKind::Feed).flat_map(|m| m.chords(0.005)).collect();
+    let (h, u0, v0, nu, nv) = (0.025, -6.0, -2.0, 481usize, 441usize);
+    let t = Point2::new(-n.y, n.x);
+    let at = |i: usize, j: usize| {
+        let (u, v) = (u0 + h * i as f64, v0 + h * j as f64);
+        Point2::new(foot.x + t.x * u + n.x * v, foot.y + t.y * u + n.y * v)
+    };
+    let open: Vec<bool> = (0..nu * nv)
+        .map(|c| {
+            let q = at(c % nu, c / nu);
+            chords.iter().map(|(a, b)| pt_seg(q, *a, *b)).fold(f64::INFINITY, f64::min) > r
+        })
+        .collect();
+    let start = (nu / 2) + nu * ((-1.0 - v0) / h) as usize;
+    let mut seen = vec![false; nu * nv];
+    let mut stack = vec![start];
+    while let Some(c) = stack.pop() {
+        if seen[c] || !open[c] {
+            continue;
+        }
+        seen[c] = true;
+        let (i, j) = (c % nu, c / nu);
+        if j == nv - 1 {
+            return true;
+        }
+        if i > 0 {
+            stack.push(c - 1);
+        }
+        if i + 1 < nu {
+            stack.push(c + 1);
+        }
+        if j > 0 {
+            stack.push(c - nu);
+        }
+        stack.push(c + nu);
+    }
+    false
+}
+
+#[test]
+fn arc_leads_beside_a_tab_leave_the_tab_joined_to_the_sheet() {
+    // 2 mm tabs with 3 mm / 2 mm arc leads: an arc lead-in from behind
+    // a stretch start and an arc lead-out past a stretch end both reach
+    // under the gap, and their kerfs would cut the tab free. The leads
+    // beside a tab are laid straight, so each tab still holds.
+    let loops = vec![rect(0.0, 0.0, 100.0, 60.0)];
+    let part = Region::new(loops.clone()).unwrap();
+    let at = vec![Point2::new(50.0, 0.0), Point2::new(50.0, 60.0)];
+    let p = WaterjetParams { tabs: Some(JetTabs { count: 2, width: 2.0, at }), ..params() };
+    let path = waterjet_profile(&loops, &[], &part, &p).unwrap();
+    let r = p.kerf * 0.5;
+    for (foot, n) in [(Point2::new(50.0, 0.0), Point2::new(0.0, -1.0)), (Point2::new(50.0, 60.0), Point2::new(0.0, 1.0))] {
+        assert!(tab_joins_sheet(&path, foot, n, r), "the tab at {foot:?} is cut free of the sheet");
+    }
+    assert!(path.notes.iter().any(|n| n.contains("(tabbed) is led in and out straight")), "{:?}", path.notes);
+}
+
+#[test]
+fn the_bridge_law_refuses_a_kerf_across_a_tab() {
+    // A tab at X50 on the bottom edge of a 100 x 60 plate, kerf 1 mm.
+    let edge = [Point2::new(0.0, 0.0), Point2::new(100.0, 0.0), Point2::new(100.0, 60.0), Point2::new(0.0, 60.0)];
+    let gap = tabs::Gap { no: 1, lo: 0.0, hi: 3.0, mid: Point2::new(50.0, -0.5), half: 1.5 };
+    let reach = tabs::bridge_reach(1.0, 3.0, 2.0);
+    // Two straight leads beside the gap leave the bridge whole.
+    let ok = [
+        (Point2::new(48.5, -3.5), Point2::new(48.5, -0.5)),
+        (Point2::new(51.5, -0.5), Point2::new(51.5, -2.5)),
+    ];
+    assert!(tabs::bridge_law(&[gap], &edge, &ok, 0.5, reach).is_ok());
+    // A lead that crosses under the gap cuts the bridge: refused.
+    let cut = [ok[0], (Point2::new(51.5, -0.5), Point2::new(49.8, -1.8))];
+    let (no, q) = tabs::bridge_law(&[gap], &edge, &cut, 0.5, reach).unwrap_err();
+    assert_eq!(no, 1);
+    assert!((q.x - 50.0).abs() < 1e-9 && q.y < 0.0, "{q:?}");
+}
+
 #[test]
 fn a_tight_hole_is_pierced_at_its_centre() {
     // A Ø4 hole: the 3 mm arc lead-in has no room even halved four

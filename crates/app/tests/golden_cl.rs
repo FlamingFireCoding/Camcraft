@@ -1060,7 +1060,8 @@ fn plasma_plate_with_holes_matches_golden() {
 /// its long edges, with a Ø30 hole, a Ø4 hole and a 30x10 slot - cut
 /// with a 0.8 mm kerf in the computer: every hole before the outline,
 /// arc leads with the pierce in the scrap (shortened in the Ø4 hole),
-/// the outline as two led-in stretches between its tab gaps.
+/// the outline as two stretches between its tab gaps, each led in and
+/// out straight so that no lead cuts into a tab's bridge.
 #[test]
 fn waterjet_tabbed_plate_with_holes_matches_golden() {
     use camcraft_app::waterjet::{waterjet_profile, JetTabs, LeadShape, OpenSide, WaterjetParams};

@@ -100,6 +100,20 @@ pub(super) fn cut(cs: &[Contour], order: &[usize], part: &Region, p: &WaterjetPa
     let mut path = b.finish();
     let bridged = |pos: usize, q| order.get(pos).and_then(|k| gaps.get(*k)).is_some_and(|g| tabs::bridged(g, q));
     cover_law(&path, &lit, cs, order, (p.kerf, tol), Voice::WATERJET, &bridged).map_err(|e| e.with_ghost(&path))?;
+    if gaps.iter().any(|g| !g.is_empty()) {
+        let chords: Vec<_> = path.moves.iter().filter(|m| m.kind == MoveKind::Feed).flat_map(|m| m.chords(tol)).collect();
+        let reach = tabs::bridge_reach(p.kerf, p.lead_in, p.lead_out);
+        for (pos, &k) in order.iter().enumerate() {
+            let (Some(c), Some(g)) = (cs.get(k), gaps.get(k)) else { continue };
+            if let Err((no, q)) = tabs::bridge_law(g, &c.pts, &chords, r, reach) {
+                return Err(invalid(format!(
+                    "contour C{pos}: tab {no} holds nothing - a lit move cuts through its bridge near X{:.3} Y{:.3}, so the part falls free; move the tab or shorten the leads",
+                    q.x, q.y
+                ))
+                .with_ghost(&path));
+            }
+        }
+    }
     if let Some(f) = &forbidden {
         kerf_law(&path, &lit, f, Voice::WATERJET).map_err(|e| e.with_ghost(&path))?;
     } else {
