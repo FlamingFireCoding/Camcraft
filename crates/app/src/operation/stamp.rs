@@ -67,6 +67,10 @@ pub fn current_stamp(
     if super::first_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
         h.write(b"first-traverse-mill-turn-3083");
     }
+    // #3096: a rotary kind on a lathe or a mill-turn setup, likewise.
+    if super::rotary_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
+        h.write(b"live-traverse-rotary-3096");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
