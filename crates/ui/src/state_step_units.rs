@@ -43,11 +43,10 @@ impl State {
         self.import_path(ask.path);
     }
 
-    /// The unit chosen for the import of `path`, taken once.
+    /// The unit chosen for the import of `path`, taken once. Every import
+    /// start clears the choice: a unit chosen for one import never waits
+    /// for a later import of the same file (#3166 review).
     pub(super) fn take_step_units(&mut self, path: &Path) -> Option<Unit> {
-        match &self.step_units_next {
-            Some((p, _)) if p == path => self.step_units_next.take().map(|(_, unit)| unit),
-            _ => None,
-        }
+        self.step_units_next.take().and_then(|(p, unit)| (p == path).then_some(unit))
     }
 }

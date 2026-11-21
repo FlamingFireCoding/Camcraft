@@ -1969,7 +1969,7 @@ pub struct State {
     /// shows while it is set). View state, never on the history.
     pub step_units_ask: Option<StepUnitsAsk>,
     /// #1874: the unit chosen for the next import of that file.
-    step_units_next: Option<(PathBuf, camcraft_app::units::Unit)>,
+    pub(crate) step_units_next: Option<(PathBuf, camcraft_app::units::Unit)>,
     /// #1054: the STEP facet budget the next import runs under (an import
     /// setting, not on the history; the import that uses it is).
     pub step_budget: StepBudgetUi,

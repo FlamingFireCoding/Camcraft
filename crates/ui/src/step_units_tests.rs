@@ -103,6 +103,25 @@ fn a_cancel_imports_nothing_and_says_why() {
 }
 
 #[test]
+fn a_chosen_unit_never_waits_for_a_later_import_of_the_same_file() {
+    // #3166 review: the answer queues the import of the asked file; when
+    // another import starts first, the choice is dropped, so a later
+    // import of the asked file asks again.
+    let path = unitless_file("stale");
+    let mut state = State::new();
+    state.pending.push_back(CommandKind::ImportFile(path.clone()));
+    settle(&mut state);
+    state.step_units_next = Some((path.clone(), Unit::Inches));
+    state.step_units_ask = None;
+    state.pending.push_back(CommandKind::ImportFile(testdata("box.step")));
+    settle(&mut state);
+    state.pending.push_back(CommandKind::ImportFile(path.clone()));
+    settle(&mut state);
+    assert!(model::find_by_name(&state.world, "plate").is_none(), "the stale inch is not used");
+    assert_eq!(state.step_units_ask.as_ref().map(|a| a.path.clone()), Some(path), "the file asks again");
+}
+
+#[test]
 fn a_file_that_states_its_unit_imports_without_a_question() {
     let mut state = State::new();
     state.pending.push_back(CommandKind::ImportFile(testdata("box.step")));

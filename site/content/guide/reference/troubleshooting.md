@@ -365,7 +365,9 @@ makes the part 25.4 times too large or too small.
 **Fix.** In the desktop app, choose the unit in the **Length unit**
 question that the import shows. A script or an MCP client imports the file
 again with `units` set to `"mm"` or `"in"`. For a tool holder or a fixture,
-export the file again with its unit stated.
+export the file again with its unit stated. CamCraft does not keep the
+answer: the next import of the file, including the import that follows a
+change to a linked file, asks again.
 
 ### `the file states two length units (<a> mm and <b> mm per unit)`
 
