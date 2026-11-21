@@ -3255,7 +3255,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // stays on it as a second net.
     let parts_crossed = super::keep_law::is_cross_drill(&params);
     // #1595: what a mark may take off the part's surface under the cutter.
-    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| super::mark_law::budget(t, b, tool.diameter * 0.5));
+    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| {
+        super::mark_law::budget(t, b, super::mark_law::cutter_depth_limit(&params, &tool))
+    });
     // #1057: the containment kinds' declared rims, read untightened.
     let rims = if depth_law == DepthLaw::Contain { super::material_source::rims_of(&params) } else { Vec::new() };
     match &frame {

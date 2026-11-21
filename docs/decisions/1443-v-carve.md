@@ -81,3 +81,15 @@
   time can put the crossing law back on.
 - The `VCarve` arms in `OpParams` and `ParamsDto` are stored in project
   files. A removed or renamed field is a breaking change.
+
+**Review correction: V-bit depth budget**
+
+- Use the cone height, limited by `Top Z - Bottom Z`, for the V-Carve
+  mark budget in generation and stock simulation. A V-bit below 90
+  degrees can cut deeper than its radius while its cone stays inside
+  the region.
+- Keep the radius limit for other mark operations. Their depth laws
+  did not change.
+- Drop the radius limit for V-Carve: it refuses legal deep cuts.
+  Do not remove the budget: a start depth below the real surface must
+  still block the post.
