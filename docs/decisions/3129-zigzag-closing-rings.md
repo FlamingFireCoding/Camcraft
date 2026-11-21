@@ -33,7 +33,7 @@ island, and each keep-out edge.
 
 **Dropped.**
 - Rings on the rotary wrap levels in this PR. They need a ring that
-  skips the seam edges. A follow-up issue tracks them.
+  skips the seam edges. Issue #3168 tracks them.
 - A change inside `plan_passes`. It has more callers (the 2D Adaptive
   fallback, the 3D rest pass and shells), and #3130 changes its caller in
   `pocket.rs`. A change at the two call sites is smaller and does not
