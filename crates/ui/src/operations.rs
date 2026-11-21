@@ -215,9 +215,7 @@ pub(crate) fn unresolved_note(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Option<String> {
-    operation::resolve_params(world, setup, src, params)
-        .err()
-        .map(|why| format!("{why}; set the source up or switch the reference"))
+    crate::height_memo::unresolved_note(world, setup, src, params)
 }
 
 /// Swap the draft's parameter variant, carrying over every shared number
@@ -299,9 +297,11 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             Warning::ProbeSearch { .. } => (214, false),
             // A sinker finish out of order (#543): advisory, its own line.
             Warning::SinkerFinishOrder { .. } => (215, false),
+            // An undercut cutter's Z move under material (#1444): its own line,
+            // clear of the avoid range (216..=220) and of 221.
+            Warning::UndercutLift { .. } => (222, false),
             // A hole wider than its drill (#2496): advisory, its own line,
             // clear of the avoid range (216..=220) and of 221 (#3040).
-            // 222 is kept for UndercutLift (PR #2836).
             Warning::DrillUndersize { .. } => (223, false),
             // Adaptive's fallback to Offset rings (#3035): advisory, its
             // own line, clear of the keys above (224 is the table's).
@@ -320,6 +320,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::HolderHit { at, .. }
             | Warning::SweepHit { at, .. }
             | Warning::RapidInStock { at }
+            | Warning::UndercutLift { at }
             | Warning::FirstTraverseLow { at, .. }
             | Warning::FirstTraverseUnderTable { at, .. }
             | Warning::FixtureHit { at, .. }
@@ -524,6 +525,7 @@ mod height_row_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         }
     }
 
@@ -639,6 +641,29 @@ mod warning_fold_tests {
         assert_eq!(folded.len(), 1 + parts.len(), "{folded:?}");
         assert!(folded[0].contains("move 3"), "{folded:?}");
         for (i, line) in folded[1..].iter().enumerate() {
+            assert!(line.contains(&format!("move {}", 10 + i)) && !line.contains("repeated"), "{folded:?}");
+        }
+    }
+
+    /// Refresh against main (#3108): `UndercutLift` (222) and
+    /// `StrategyFallback` (225) keep separate display groups from each
+    /// other, from `DrillUndersize` (223), and from every `AvoidHit` part.
+    #[test]
+    fn undercut_lift_and_strategy_fallback_keep_separate_display_groups() {
+        use camcraft_app::verify::FixturePart;
+        let parts = [FixturePart::Shank, FixturePart::Holder, FixturePart::Spindle, FixturePart::Rapid, FixturePart::Flute];
+        let mut w = vec![
+            Warning::UndercutLift { at: 2 },
+            Warning::DrillUndersize { at: 3, hole_mm: 6.0, drill_mm: 5.0 },
+            Warning::StrategyFallback { at: 4, areas: 1 },
+        ];
+        w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
+        let folded = fold_warnings(&w);
+        assert_eq!(folded.len(), 3 + parts.len(), "{folded:?}");
+        assert!(folded[0].contains("move 2") && !folded[0].contains("repeated"), "{folded:?}");
+        assert!(folded[1].contains("move 3") && !folded[1].contains("repeated"), "{folded:?}");
+        assert!(folded[2].contains("move 4") && !folded[2].contains("repeated"), "{folded:?}");
+        for (i, line) in folded[3..].iter().enumerate() {
             assert!(line.contains(&format!("move {}", 10 + i)) && !line.contains("repeated"), "{folded:?}");
         }
     }
