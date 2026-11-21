@@ -159,6 +159,7 @@ fn region_turn_core(
         Some(f) => {
             let local = Material {
                 excess: material.excess,
+        file_tolerance: material.file_tolerance,
                 facets: f.local_facets(&material.facets),
                 top: material.top - f.origin.z,
                 bodies: material.bodies.clone(),
