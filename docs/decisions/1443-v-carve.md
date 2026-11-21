@@ -38,6 +38,11 @@
 10. The project file gets a new `VCarve` arm, appended, with no version
     step. The kind tag is 44, appended.
 
+11. The branch is not stacked on PR #3058 (Waterjet Profile). That PR
+    also appends kind tag 44 and `ALL[44]`. The two rows are appends to
+    the same table, not one shared logic. The PR that merges second
+    takes tag 45 and the next `ALL` row when it refreshes.
+
 **Why**
 
 - The inscribed-circle walk needs no new dependency and no robust
@@ -47,6 +52,10 @@
   without trust in the sampling: a bad link is not cut.
 - One tool keeps the first version small. The cone already clears a
   floor correctly, only slowly.
+
+- A stack on #3058 would make the V-carve wait for an unrelated
+  feature that has `needs-rework`. A renumber of one appended tag at
+  merge time costs less.
 
 **Considered and dropped**
 
