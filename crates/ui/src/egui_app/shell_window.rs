@@ -47,6 +47,8 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     // #2462: a file named on the command line goes through the same
     // import / open command as the dialogs, on the first frame.
     crate::launch_file::queue(&mut shell.state, files);
+    // #2384: with no file named, the start page lists the recent projects.
+    super::home::at_start(&mut shell.state, files);
     // #1946: wake the Wait event loop whenever the AI chat worker queues
     // an event or dispatches an in-process MCP request.
     let ai_proxy = event_loop.create_proxy();
@@ -254,11 +256,15 @@ impl Shell {
         let gpu_line = gpu::describe(&adapter).log_line();
         diag_info!("{gpu_line}");
         self.state.gpu_line = Some(gpu_line);
+        // #2958: the anti-aliasing the Display menu offers on this device.
+        self.state.samples_offered = crate::viewport::offered_samples(&adapter, device.features(), VIEW3D_FORMAT);
+        diag_info!("viewport: sample counts offered {:?}", self.state.samples_offered);
 
         let mut renderer = Renderer::new(&device, config.format, RendererOptions::default());
         let scene = world::collect(&self.state);
         self.scene_digest = scene.digest();
         view.set_document(&device, &queue, &scene.parts);
+        view.set_shade(&device, &queue, &scene.shade);
         view.set_overlay(&device, &queue, &scene.overlay);
         let stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
             Ok(e) => Some(e),

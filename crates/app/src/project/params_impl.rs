@@ -1,5 +1,69 @@
 use super::*;
 
+fn cr_to_dto(cr: &crate::machining2d::CornerRelief) -> CornerReliefDto {
+    use crate::machining2d::{CornerReliefChoice as C, CornerReliefKind as K, TBoneDirection as D};
+    CornerReliefDto {
+        kind: match cr.kind {
+            K::None => CornerReliefKindDto::None,
+            K::Dogbone => CornerReliefKindDto::Dogbone,
+            K::TBone => CornerReliefKindDto::TBone,
+        },
+        tbone_direction: match cr.tbone_direction {
+            D::LongEdge => TBoneDirectionDto::LongEdge,
+            D::ShortEdge => TBoneDirectionDto::ShortEdge,
+            D::Horizontal => TBoneDirectionDto::Horizontal,
+            D::Vertical => TBoneDirectionDto::Vertical,
+        },
+        overrides: cr
+            .overrides
+            .iter()
+            .map(|ov| CornerReliefOverrideDto {
+                at: [ov.at.x, ov.at.y],
+                choice: match ov.choice {
+                    C::None => CornerReliefChoiceDto::None,
+                    C::Dogbone => CornerReliefChoiceDto::Dogbone,
+                    C::TBoneFirst => CornerReliefChoiceDto::TBoneFirst,
+                    C::TBoneSecond => CornerReliefChoiceDto::TBoneSecond,
+                    C::TBoneX => CornerReliefChoiceDto::TBoneX,
+                    C::TBoneY => CornerReliefChoiceDto::TBoneY,
+                },
+            })
+            .collect(),
+    }
+}
+
+fn cr_from_dto(dto: &CornerReliefDto) -> crate::machining2d::CornerRelief {
+    use crate::machining2d::{CornerRelief, CornerReliefChoice as C, CornerReliefKind as K, CornerReliefOverride, TBoneDirection as D};
+    CornerRelief {
+        kind: match dto.kind {
+            CornerReliefKindDto::None => K::None,
+            CornerReliefKindDto::Dogbone => K::Dogbone,
+            CornerReliefKindDto::TBone => K::TBone,
+        },
+        tbone_direction: match dto.tbone_direction {
+            TBoneDirectionDto::LongEdge => D::LongEdge,
+            TBoneDirectionDto::ShortEdge => D::ShortEdge,
+            TBoneDirectionDto::Horizontal => D::Horizontal,
+            TBoneDirectionDto::Vertical => D::Vertical,
+        },
+        overrides: dto
+            .overrides
+            .iter()
+            .map(|ov| CornerReliefOverride {
+                at: Point2::new(ov.at[0], ov.at[1]),
+                choice: match ov.choice {
+                    CornerReliefChoiceDto::None => C::None,
+                    CornerReliefChoiceDto::Dogbone => C::Dogbone,
+                    CornerReliefChoiceDto::TBoneFirst => C::TBoneFirst,
+                    CornerReliefChoiceDto::TBoneSecond => C::TBoneSecond,
+                    CornerReliefChoiceDto::TBoneX => C::TBoneX,
+                    CornerReliefChoiceDto::TBoneY => C::TBoneY,
+                },
+            })
+            .collect(),
+    }
+}
+
 impl ParamsDto {
     pub(super) fn from_params(p: &OpParams) -> Self {
         match p {
@@ -114,6 +178,7 @@ impl ParamsDto {
                 blend_turns,
                 blend_radius,
                 rest,
+                corner_relief,
                 tilt,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
@@ -148,6 +213,7 @@ impl ParamsDto {
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
                 rest: (*rest).map(Into::into),
+                corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
             },
             // The twins drop the strategy tag - the variant itself
@@ -171,6 +237,7 @@ impl ParamsDto {
                 troch,
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 tilt,
             } => {
                 let (troch_return, lift) = match troch.ret {
@@ -211,6 +278,7 @@ impl ParamsDto {
                     lift,
                     return_feed: troch.return_feed,
                     loop_width: troch.loop_width,
+                    corner_relief: cr_to_dto(corner_relief),
                     tilt: (*tilt).map(Into::into),
                 }
             }
@@ -230,6 +298,7 @@ impl ParamsDto {
                 helix_radius,
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 tilt,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
@@ -252,6 +321,7 @@ impl ParamsDto {
                 helix_radius: *helix_radius,
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
@@ -1209,6 +1279,10 @@ impl ParamsDto {
                     CycleChoice::Bore => CycleChoiceDto::Bore,
                     CycleChoice::BackBore => CycleChoiceDto::BackBore,
                     CycleChoice::Ream => CycleChoiceDto::Ream,
+                    CycleChoice::FineBore { shift_x_um, shift_y_um } => CycleChoiceDto::FineBore {
+                        shift_x: f64::from(*shift_x_um) / 1000.0,
+                        shift_y: f64::from(*shift_y_um) / 1000.0,
+                    },
                 },
                 peck: *peck,
                 dwell: *dwell,
@@ -1404,6 +1478,7 @@ impl ParamsDto {
                 blend_turns,
                 blend_radius,
                 rest,
+                corner_relief,
                 tilt,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1437,6 +1512,7 @@ impl ParamsDto {
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
                 rest: (*rest).map(Into::into),
+                corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Adaptive2D {
@@ -1462,6 +1538,7 @@ impl ParamsDto {
                 loop_width,
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 tilt,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1505,6 +1582,7 @@ impl ParamsDto {
                 },
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
             },
             ParamsDto::Offset2D {
@@ -1523,6 +1601,7 @@ impl ParamsDto {
                 helix_radius,
                 blend_turns,
                 blend_radius,
+                corner_relief,
                 tilt,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
@@ -1545,6 +1624,7 @@ impl ParamsDto {
                 helix_radius: *helix_radius,
                 blend_turns: *blend_turns,
                 blend_radius: *blend_radius,
+                corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
             },
             // The M2.4 B trio back out of the wire, same shapes.
@@ -2480,6 +2560,15 @@ impl ParamsDto {
                     CycleChoiceDto::Bore => CycleChoice::Bore,
                     CycleChoiceDto::BackBore => CycleChoice::BackBore,
                     CycleChoiceDto::Ream => CycleChoice::Ream,
+                    // #1445: whole micrometres, as the command stored them.
+                    // A number that is not a usable shift (a hand-edited
+                    // file) keeps its nearest value and is refused by name
+                    // at the command and at generation; a float cast
+                    // saturates and reads NaN as 0, which is refused too.
+                    CycleChoiceDto::FineBore { shift_x, shift_y } => CycleChoice::FineBore {
+                        shift_x_um: (shift_x * 1000.0).round() as i32,
+                        shift_y_um: (shift_y * 1000.0).round() as i32,
+                    },
                 },
                 peck: *peck,
                 dwell: *dwell,
@@ -2572,6 +2661,7 @@ pub(super) fn settle_drill_break_through(entities: &mut [EntityDto]) {
 #[cfg(test)]
 mod face_holes_law {
     use super::*;
+
     use crate::machining2d::FaceHoles;
     use crate::operation::Height;
 

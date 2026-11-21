@@ -181,6 +181,8 @@ pub fn collect(world: &World) -> ProjectFile {
                 fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
                     .is_some_and(crate::model_fidelity::is_unknown),
                 mesh_open: crate::mesh_open::hole_of(world, &entity),
+                solids: kind.is_none().then(|| crate::mesh_solids::to_wire(&crate::mesh_solids::of(world, &entity))).flatten(),
+                fidelity_vouched: kind.is_none().then(|| super::VouchDto::of(world, &entity)).flatten(),
                 facet_budget: crate::model_fidelity::budget_of(world, &entity),
                 step_source: kind.is_none().then(|| crate::step_source::of(world, &entity)).flatten(),
                 source: kind
