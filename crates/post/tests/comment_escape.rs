@@ -212,6 +212,48 @@ fn every_bundled_machine_name_posts_a_single_header_comment() {
     assert!(seen >= 10, "the Tormach library posts: {seen}");
 }
 
+/// Keep each executable and comment body. A cycle parameter continues the preceding numbered block.
+fn klartext_blocks(nc: &str) -> Vec<&str> {
+    let mut blocks = Vec::new();
+    let mut number = 0;
+    for line in nc.lines() {
+        if line.starts_with(' ') {
+            assert!(blocks.last().is_some_and(|previous: &&str| previous.ends_with('~')), "{line}");
+            assert_eq!(line.trim(), "Q339=+2", "the sample's preset cycle continuation");
+            blocks.push(line);
+            continue;
+        }
+        let (label, body) = line.split_once(' ').expect("numbered Klartext block");
+        assert_eq!(label, number.to_string(), "{line}");
+        number += 1;
+        if let Some(text) = body.strip_prefix("; ") {
+            assert!(text.is_ascii() && !text.contains(['(', ')', ';', '*', '~']), "{line}");
+        }
+        blocks.push(body);
+    }
+    blocks
+}
+
+fn assert_klartext_header_notes(script: &str, id: &ProgramId, note: &str) {
+    let mch = machine::mirror(&parse_mch(include_str!("../../../assets/machines/fehlmann-picomax55.mch")).unwrap());
+    let stream = include_str!("klartext/contour.cnc");
+    let run = |id: &ProgramId| {
+        let out = engine::run_program_with(script, &mch, stream, &json!(null), id).unwrap();
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        out.program
+    };
+    let baseline = run(&ProgramId::default());
+    let with_notes = run(id);
+    let baseline = klartext_blocks(&baseline);
+    let with_notes = klartext_blocks(&with_notes);
+    let header: Vec<_> = with_notes[1..].iter().map_while(|line| line.strip_prefix("; ")).collect();
+    assert!(header.len() > id.notes.len(), "the long note spans several blocks");
+    assert_eq!(header.join(" "), format!("{note} Reduced accuracy: model bad G0 X999 M3 checked to 0.024 mm"));
+    // The only difference allowed is the numbered header comments immediately after BEGIN PGM.
+    assert_eq!(with_notes[0], baseline[0]);
+    assert_eq!(with_notes[1 + header.len()..], baseline[1..]);
+}
+
 #[test]
 fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
     let note = "Reduced accuracy: model brick was checked to 0.024 mm, not 0.010 mm";
@@ -223,6 +265,11 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         let p = entry.path();
         if p.extension().and_then(|s| s.to_str()) != Some("cps") { continue; }
         let stem = p.file_stem().and_then(|s| s.to_str()).expect("post name");
+        if stem == "heidenhain-klartext" {
+            assert_klartext_header_notes(&std::fs::read_to_string(&p).unwrap(), &id, note);
+            seen += 1;
+            continue;
+        }
         let mut mch = mill("Test mill");
         if stem.contains("lathe") { mch["kind"] = json!("lathe"); }
         if stem.contains("wire") { mch["kind"] = json!("wire-edm"); }
@@ -258,5 +305,5 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         }
         seen += 1;
     }
-    assert_eq!(seen, 19, "every shipped post is checked");
+    assert_eq!(seen, 20, "every shipped post is checked");
 }
