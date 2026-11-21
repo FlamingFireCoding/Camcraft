@@ -2869,6 +2869,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.kind
                 )));
             }
+            // #3023: a helical thread is refused by name BEFORE the
+            // slice, which can call a STEP helix "open" instead.
+            if let Some(e) = crate::turning::helical_refusal(&material.facets) {
+                return Err(e);
+            }
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
