@@ -233,6 +233,7 @@ fn sketch_highlight_disappears_without_stock_and_returns_on_undo() {
     st.history.redo(&st.world);
     assert!(resolved_row_hover(&st).polylines.is_empty());
     assert_eq!(row_hover_builds(&st), 4);
+}
 
 /// #1864 review: a placed DXF sketch rides the stock top. The hover and
 /// selected highlights and the violet pick lines all key on the sketch's
