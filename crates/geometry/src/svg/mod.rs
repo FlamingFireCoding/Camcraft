@@ -92,6 +92,7 @@ pub fn parse_with_limits(data: &[u8], unit: Option<Unit>, limits: Limits) -> Res
         summary: Default::default(),
         max_entities: limits.max_entities,
         max_cmds: limits.max_vertices,
+        visits: 0,
     };
     walk.root(view.map)?;
     walk.summary.vertices = walk.sink.out.len();

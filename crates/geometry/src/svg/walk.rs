@@ -29,6 +29,7 @@ pub(super) struct Walk<'a> {
     pub summary: ImportSummary,
     pub max_entities: usize,
     pub max_cmds: usize,
+    pub visits: usize,
 }
 
 fn hidden(node: &Node) -> bool {
@@ -78,6 +79,13 @@ impl<'a> Walk<'a> {
 
     /// Draw element `index` whose parent maps user space through `parent`.
     fn element(&mut self, index: usize, parent: Affine, uses: usize) -> Result<(), SvgError> {
+        if self.visits >= self.max_entities {
+            return Err(invalid(format!(
+                "traversal visits more than {} elements: reference expansion exceeds the import budget",
+                self.max_entities
+            )));
+        }
+        self.visits += 1;
         let Some(node) = self.node(index) else { return Ok(()) };
         let name = node.name.clone();
         if SILENT.contains(&name.as_str()) {
@@ -137,13 +145,8 @@ impl<'a> Walk<'a> {
         );
         let map = map.then(at);
         match self.node(target) {
-            // A symbol's content is drawn in place of the symbol.
-            Some(sym) if sym.name == "symbol" => {
-                for child in sym.children.clone() {
-                    self.element(child, map, uses + 1)?;
-                }
-                Ok(())
-            }
+            // A symbol needs its own viewport, including the dimensions of this use.
+            Some(sym) if sym.name == "symbol" => Err(invalid("<symbol> viewport references are not supported")),
             _ => self.element(target, map, uses + 1),
         }
     }

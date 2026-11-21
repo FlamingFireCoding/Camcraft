@@ -79,6 +79,64 @@ fn svg_import_budget_is_enforced() {
 }
 
 #[test]
+fn svg_short_curve_vertices_cannot_silently_break_the_chord_bound() {
+    // Removing the inner vertices makes the midpoint 0.01 mm from the emitted chord.
+    // This exceeds the 0.005 mm bound, although the endpoints can form an open chain.
+    let text = r#"<svg width="1mm" height="1mm" viewBox="0 0 1 1"><path d="M0 0 Q0 0.02 0.02 0"/></svg>"#;
+    refuses(text, "curve");
+    refuses(text, "chord");
+}
+
+#[test]
+fn svg_beziers_above_the_segment_cap_refuse_the_import_budget() {
+    for path in [
+        "M0 0 Q0 100000000 100000000 0",
+        "M0 0 C0 100000000 100000000 100000000 100000000 0",
+    ] {
+        let text = format!(
+            r#"<svg width="100000000mm" height="100000000mm" viewBox="0 0 100000000 100000000"><path d="{path}"/></svg>"#
+        );
+        refuses(&text, "import budget");
+    }
+}
+
+#[test]
+fn svg_ellipses_above_the_segment_cap_refuse_the_import_budget() {
+    let text = r#"<svg width="100000000mm" height="100000000mm" viewBox="0 0 100000000 100000000"><ellipse cx="50000000" cy="50000000" rx="40000000" ry="20000000"/></svg>"#;
+    refuses(text, "import budget");
+}
+
+#[test]
+fn svg_symbol_viewport_cannot_silently_ignore_the_use_size() {
+    // The symbol is 10 units wide, but its referenced viewport must be 50 mm wide.
+    let text = r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100mm" height="100mm" viewBox="0 0 100 100">
+      <defs><symbol id="s" viewBox="0 0 10 10"><rect width="10" height="10"/></symbol></defs>
+      <use xlink:href="#s" width="50" height="50"/>
+    </svg>"##;
+    refuses(text, "symbol");
+    refuses(text, "viewport");
+}
+
+#[test]
+fn svg_acyclic_shared_references_refuse_excess_traversal_work() {
+    let mut body = String::from(r#"<defs><g id="g0"/>"#);
+    for level in 1..=6 {
+        body.push_str(&format!(r#"<g id="g{level}">"#));
+        for _ in 0..10 {
+            body.push_str(&format!(r##"<use href="#g{}"/>"##, level - 1));
+        }
+        body.push_str("</g>");
+    }
+    body.push_str(r##"</defs><use href="#g6"/><rect width="1" height="1"/>"##);
+    let text = page(&body);
+    // Fewer than 100 XML elements expand to over a million empty group visits.
+    assert!(text.matches('<').count() < 100);
+    let limits = Limits { max_bytes: 1 << 20, max_entities: 100, max_vertices: 10 };
+    let error = svg::parse_with_limits(text.as_bytes(), None, limits).expect_err("traversal budget").to_string();
+    assert!(error.contains("import budget") && error.contains("traversal"), "{error}");
+}
+
+#[test]
 fn svg_deterministic_smoke_fuzz_never_panics() {
     let seed = page(
         r#"<g transform="translate(5 5) rotate(30)"><path d="M0 0 C10 0 10 10 0 10 S-10 20 0 20 Q5 25 10 20 T20 20 A5 3 20 1 0 30 30 Z"/>

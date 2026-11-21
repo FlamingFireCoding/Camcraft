@@ -51,34 +51,63 @@ impl Sink {
         self.push(Primitive::Line { start, end })
     }
 
-    /// A polyline through output-space points from `from` to `to` exactly. An inner vertex is
-    /// kept only when it lies at least the shortest segment from the last kept vertex and from
-    /// `to`, so no flattened piece is shorter than that unless the whole curve is.
-    fn polyline(&mut self, from: Point2, inner: impl Iterator<Item = Point2>, to: Point2) -> Result<(), SvgError> {
+    /// Merge short pieces only when the omitted vertices lie on the replacement segment.
+    /// Otherwise refuse the curve: a second approximation would consume the chord budget.
+    fn polyline(&mut self, curve: &str, from: Point2, inner: impl Iterator<Item = Point2>, to: Point2) -> Result<(), SvgError> {
         let mut last = from;
+        let mut omitted = Vec::new();
         for p in inner {
             if dist(last, p) >= self.min_len && dist(p, to) >= self.min_len {
+                Self::check_merge(curve, last, p, &omitted)?;
                 self.push(Primitive::Line { start: last, end: p })?;
                 last = p;
+                omitted.clear();
+            } else {
+                omitted.push(p);
             }
         }
+        Self::check_merge(curve, last, to, &omitted)?;
         if dist(last, to) > 0.0 {
             self.push(Primitive::Line { start: last, end: to })?;
         }
         Ok(())
     }
 
+    fn check_merge(curve: &str, from: Point2, to: Point2, omitted: &[Point2]) -> Result<(), SvgError> {
+        if omitted.iter().any(|&p| !Self::on_segment(from, to, p)) {
+            return Err(invalid(format!("{curve} cannot keep the chord bound when short segments merge")));
+        }
+        Ok(())
+    }
+
+    fn on_segment(from: Point2, to: Point2, p: Point2) -> bool {
+        let cross = (p.x - from.x) * (to.y - from.y) - (p.y - from.y) * (to.x - from.x);
+        cross == 0.0 && p.x >= from.x.min(to.x) && p.x <= from.x.max(to.x)
+            && p.y >= from.y.min(to.y) && p.y <= from.y.max(to.y)
+    }
+
+    fn segment_budget(curve: &str, required: f64, minimum: usize) -> Result<usize, SvgError> {
+        if !required.is_finite() || required > MAX_CURVE_SEGMENTS as f64 {
+            return Err(invalid(format!("{curve} requires more than {MAX_CURVE_SEGMENTS} segments: the curve exceeds the import budget")));
+        }
+        Ok((required as usize).max(minimum))
+    }
+
     /// Segment count for a curve whose largest second difference of control points is `m`
     /// (output units) and whose degree is `degree`.
-    fn segments(&self, degree: f64, m: f64) -> usize {
+    fn segments(&self, curve: &str, degree: f64, m: f64) -> Result<usize, SvgError> {
         let n = (degree * (degree - 1.0) / 8.0 * m / self.chord).sqrt().ceil();
-        if n.is_finite() { (n as usize).clamp(1, MAX_CURVE_SEGMENTS) } else { MAX_CURVE_SEGMENTS }
+        Self::segment_budget(curve, n, 1)
     }
 
     pub fn cubic(&mut self, p0: Point2, c1: Point2, c2: Point2, p3: Point2) -> Result<(), SvgError> {
         let [p0, p1, p2, p3] = [p0, c1, c2, p3].map(|p| self.map.apply(p));
+        // The convex hull is the endpoint segment: avoid roundoff from sampling a straight curve.
+        if [p1, p2].into_iter().all(|p| Self::on_segment(p0, p3, p)) {
+            return self.polyline("cubic curve", p0, std::iter::empty(), p3);
+        }
         let second = |a: Point2, b: Point2, c: Point2| (a.x - 2.0 * b.x + c.x).hypot(a.y - 2.0 * b.y + c.y);
-        let n = self.segments(3.0, second(p0, p1, p2).max(second(p1, p2, p3)));
+        let n = self.segments("cubic curve", 3.0, second(p0, p1, p2).max(second(p1, p2, p3)))?;
         let at = |t: f64| {
             let u = 1.0 - t;
             let (w0, w1, w2, w3) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
@@ -87,18 +116,21 @@ impl Sink {
                 w0 * p0.y + w1 * p1.y + w2 * p2.y + w3 * p3.y,
             )
         };
-        self.polyline(p0, (1..n).map(|i| at(i as f64 / n as f64)), p3)
+        self.polyline("cubic curve", p0, (1..n).map(|i| at(i as f64 / n as f64)), p3)
     }
 
     pub fn quad(&mut self, p0: Point2, c: Point2, p2: Point2) -> Result<(), SvgError> {
         let [p0, p1, p2] = [p0, c, p2].map(|p| self.map.apply(p));
-        let n = self.segments(2.0, (p0.x - 2.0 * p1.x + p2.x).hypot(p0.y - 2.0 * p1.y + p2.y));
+        if Self::on_segment(p0, p2, p1) {
+            return self.polyline("quadratic curve", p0, std::iter::empty(), p2);
+        }
+        let n = self.segments("quadratic curve", 2.0, (p0.x - 2.0 * p1.x + p2.x).hypot(p0.y - 2.0 * p1.y + p2.y))?;
         let at = |t: f64| {
             let u = 1.0 - t;
             let (w0, w1, w2) = (u * u, 2.0 * u * t, t * t);
             Point2::new(w0 * p0.x + w1 * p1.x + w2 * p2.x, w0 * p0.y + w1 * p1.y + w2 * p2.y)
         };
-        self.polyline(p0, (1..n).map(|i| at(i as f64 / n as f64)), p2)
+        self.polyline("quadratic curve", p0, (1..n).map(|i| at(i as f64 / n as f64)), p2)
     }
 
     /// The ellipse `centre + R(phi) diag(rx, ry) (cos t, sin t)` for `t` from `t0` over `dt`
@@ -130,9 +162,9 @@ impl Sink {
         let largest = ((p + r) / 2.0 + (((p - r) / 2.0).powi(2) + q * q).sqrt()).sqrt();
         let step = if self.chord < largest { 2.0 * (1.0 - self.chord / largest).acos() } else { dt.abs() };
         let n = (dt.abs() / step).ceil();
-        let n = if n.is_finite() { (n as usize).clamp(4, MAX_CURVE_SEGMENTS) } else { MAX_CURVE_SEGMENTS };
+        let n = Self::segment_budget("ellipse", n, 4)?;
         let (from, to) = (on(t0), if whole { on(t0) } else { on(t0 + dt) });
-        self.polyline(from, (1..n).map(|i| on(t0 + dt * i as f64 / n as f64)), to)
+        self.polyline("ellipse", from, (1..n).map(|i| on(t0 + dt * i as f64 / n as f64)), to)
     }
 
     /// The SVG arc from `p0` to `p1` (endpoint form, user space). Equal ends draw nothing; a zero
