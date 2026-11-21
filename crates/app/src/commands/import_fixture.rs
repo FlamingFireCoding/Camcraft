@@ -21,7 +21,7 @@ use crate::setup;
 
 /// The landing half: a spawn or an update of the named model.
 enum Landing {
-    Fresh(ImportModel),
+    Fresh(Box<ImportModel>),
     /// Boxed: an update also holds the facets and solids it replaced (#917).
     Update(Box<UpdateModel>),
 }
@@ -70,7 +70,7 @@ impl ImportFixture {
                     .with_step_source(import.step_source.clone())
                     .with_source(import.source.clone()),
             )),
-            None => Landing::Fresh(import),
+            None => Landing::Fresh(Box::new(import)),
         };
         Ok(ImportFixture {
             name,

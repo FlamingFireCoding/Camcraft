@@ -92,7 +92,10 @@ pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>,
 }
 
 /// The complete import result, including the recorded reason for its chord.
-pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>, Option<String>, bool), ImportError> {
+pub type GradedStep = (Mesh, f64, Vec<String>, Option<String>, bool);
+
+/// Parse the mesh together with its chord, notes, hole and recorded cause.
+pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<GradedStep, ImportError> {
     // The file's own syntax is checked before the kernel reads it, so the
     // refusals keep their wording: a nesting depth past the cap (#1075),
     // the bad entity by `#id` and line, a string or comment that never

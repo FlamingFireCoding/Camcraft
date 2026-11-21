@@ -178,3 +178,16 @@ fn changing_only_the_import_cause_invalidates_the_cached_verdict() {
     model_fidelity::set(&world, &stock, Some(UNDER));
     assert_eq!(camcraft_app::operation::status_of(&world, &e), camcraft_app::operation::OpStatus::Stale);
 }
+
+#[test]
+fn fractional_surface_bounds_are_rounded_up_in_each_document_unit() {
+    let world = new_world();
+    let exact = fidelity_note::surface_bound(0.0192);
+    assert!((exact - 0.0242).abs() < 1e-12, "the numeric bound keeps its precision");
+    let mm = fidelity_note::clause(&world, 0.0192, true).expect("widened");
+    assert!(mm.contains("allow 0.025 mm"), "the warning never rounds down: {mm}");
+    let mut h = History::default();
+    h.execute(&world, camcraft_app::commands::SetUnits::new(&world, camcraft_app::units::Unit::Inches).expect("inch units"));
+    let inches = fidelity_note::clause(&world, 0.0192, true).expect("widened");
+    assert!(inches.contains("allow 0.00096 in"), "the inch warning never rounds down: {inches}");
+}

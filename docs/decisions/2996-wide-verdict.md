@@ -17,7 +17,9 @@ tolerance required the coarse mesh and the facet budget did not coarsen
 it further. Missing records, budget coarsening and mixed causes keep the
 strict law. A selection can widen only when every reduced source has the
 permitted cause. Import, project save/load, copies and undo preserve the
-record. This prevents one eligible part from widening another part.
+record. Update undo restores each copy's own record, including a cause
+that differs from the source. This prevents one eligible part from
+widening another part.
 
 For an eligible model:
 
@@ -25,12 +27,22 @@ For an eligible model:
 |---|---|---|
 | up to 0.005 mm | `t` | at most 0.015 mm |
 | 0.005 to 0.010 mm | `t - e` (#864) | 0.015 mm |
-| over 0.010 to 0.020 mm (`WIDE_CHORD_LIMIT`) | `t - 0.005` | `c + 0.005`, at most 0.025 mm |
-| over 0.020 mm | `t - e` (#864), no tolerance left: refused by name | - |
+| over 0.010 to 0.020 mm (`WIDE_CHORD_LIMIT`) | `min(t - 0.005, 0.005)` | `c + 0.005`, at most 0.025 mm |
+| over 0.020 mm | `t - e` (#864) | no allowance at `DEV_TOL`: refused by name |
 
 An ineligible model uses `t - e` at every reduced chord. At `c = 0.012`
 mm, `DEV_TOL = 0.010` mm gives a mesh tolerance of 0.003 mm. At or above
 `c = 0.015` mm, that law has no tolerance left and refuses the operation.
+Missing cause records, budget models and chords up to 0.010 mm keep their
+old law.
+
+The eligible widened mesh allowance is capped at `PROMISED_CHORD` =
+0.005 mm even when the base law has a larger tolerance. For a plasma law
+with `t = 0.025` mm and `c = 0.012` mm, an eligible file-tolerance model
+uses a mesh allowance of 0.005 mm and a true-surface bound of 0.017 mm.
+A budget model at the same chord keeps its old mesh allowance of
+0.018 mm. This cap makes the stated widened bound valid for every
+eligible gouge law.
 
 - The mesh tolerance and the true-surface bound are different quantities.
   At `c = 0.019` mm, an eligible model has a mesh tolerance of 0.005 mm
@@ -40,9 +52,9 @@ mm, `DEV_TOL = 0.010` mm gives a mesh tolerance of 0.003 mm. At or above
   is still refused by name in the widened range.
 - `WIDE_CHORD_LIMIT` is a constant in `camcraft_sim::verify`. No file,
   facet budget or vouch can raise it.
-- The widened arithmetic remains in `verify::excess_floor`. The cause
-  record selects whether a reader may use it or must use
-  `verify::strict_floor`.
+- `verify::excess_floor` keeps the strict default. The explicit
+  `verify::excess_floor_for` selects the widened arithmetic from the
+  cause record. `verify::strict_floor` remains strict.
 
 ### Safety, for each direction
 
@@ -83,7 +95,10 @@ mm, `DEV_TOL = 0.010` mm gives a mesh tolerance of 0.003 mm. At or above
 
 - Each widened model adds a program header comment. For `c = 0.019` mm,
   it states a true-surface bound of 0.024 mm. It does not state that the
-  model was checked to its chord alone.
+  model was checked to its chord alone. Bound display rounds upward to
+  0.001 mm or 0.00001 inch, rather than to the nearest value. For
+  `c = 0.0192` mm, the numerical bound is 0.0242 mm and the displayed
+  bound is 0.025 mm. This formatting does not change `surface_bound`.
 - The engine emits the note after `onOpen` through `onComment`. Each
   shipped dialect uses its own valid comment delimiters and preserves
   the complete bound. A custom post may omit the note, as the maintainer
@@ -106,9 +121,11 @@ coarsened by the budget lose no protection from #864.
   establish that cause and therefore keep the strict law.
 - **Report the chord as the check bound.** Dropped. It excludes the
   additional mesh allowance and understates the possible real gouge.
+- **Round the displayed bound to the nearest unit.** Dropped. That can
+  display a value below the numerical bound. Round upward instead.
 - **Spend the full accepted 0.030 mm bound.** Dropped. Keeping the
   existing 0.005 mm mesh allowance gives a smaller bound, at most
-  0.025 mm, and preserves the existing widened arithmetic.
+  0.025 mm. The same cap also protects laws with larger base tolerances.
 - **Widen only where #864 has no allowance left.** Dropped. A coarser
   model could then receive a looser verdict than a finer model.
 - **Use `max(t, c)` as each law's tolerance.** Dropped. It can loosen a

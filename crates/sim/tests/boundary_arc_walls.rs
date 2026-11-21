@@ -172,20 +172,19 @@ fn the_whole_arc_reading_answers_to_a_coarse_models_tightened_floor() {
         c.model_excess = excess;
         verify(t, &c)
     };
-    // 7 um of excess (a 12 um chord, past DEV_TOL) leaves 5 um of
-    // tolerance (#2996 takes only the promised 5 um): the floor rises from
-    // 3.990 to 3.995 mm. The whole-arc reading pads the arc's radius by
+    // 7 um of excess leaves 3 um of tolerance: the floor rises from
+    // 3.990 to 3.997 mm. The whole-arc reading pads the arc's radius by
     // the centre's 1 um lattice (it never reads farther than the truth),
     // so the clearances below stand 3 um or more off whichever floor they
     // must read clear of.
     let excess = 0.007;
-    let tight = R - (TOL - 0.005);
+    let tight = R - (TOL - excess);
     assert!(floor() < tight && tight < R);
     for outward in [true, false] {
         for ccw in [true, false] {
             let t = arc(ccw);
             // Between the two floors.
-            for d in [3.9935, 3.9945] {
+            for d in [3.994, 3.995, 3.996] {
                 assert!(d >= floor() + 0.003 && d < tight);
                 let (region, v) = region_at(d, outward);
                 // No joint comes near: only the whole-arc reading sees it.

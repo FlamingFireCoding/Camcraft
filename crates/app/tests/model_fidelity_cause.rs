@@ -196,3 +196,47 @@ fn mixed_file_and_budget_models_keep_the_strict_law() {
             .any(|s| s.contains("budget"))
     );
 }
+
+#[test]
+fn update_undo_restores_each_copy_cause_without_widening_a_legacy_copy() {
+    let world = new_world();
+    let mut h = History::default();
+    import(&world, &mut h);
+    h.execute(
+        &world,
+        SetStock::new(
+            &world,
+            StockShape::FromModel {
+                source: "file".into(),
+            },
+            Default::default(),
+        )
+        .expect("stock"),
+    );
+    h.execute(
+        &world,
+        CreateSetup::new(&world, None, None).expect("first setup"),
+    );
+    let first = camcraft_app::setup::active(&world).expect("active");
+    let first_stock = camcraft_app::setup::stock_entity_name(&world, Some(&first));
+    h.execute(
+        &world,
+        CreateSetup::new(&world, Some("S2"), Some(&first)).expect("copy setup"),
+    );
+    let legacy = model::find_by_name(&world, "S2/Stock").expect("copy");
+    model_fidelity::set(&world, &legacy, Some(0.019));
+    cause(&world, &first_stock, true);
+    cause(&world, "S2/Stock", false);
+    h.execute(
+        &world,
+        UpdateModel::new(&world, "file", brick())
+            .expect("update")
+            .with_fidelity(Some(0.012))
+            .with_file_tolerance(true),
+    );
+    cause(&world, &first_stock, true);
+    cause(&world, "S2/Stock", true);
+    h.undo(&world);
+    cause(&world, &first_stock, true);
+    cause(&world, "S2/Stock", false);
+}

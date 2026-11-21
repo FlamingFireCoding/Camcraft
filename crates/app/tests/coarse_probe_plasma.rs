@@ -192,7 +192,8 @@ fn torch(model_excess: f64) -> PlasmaParams {
         cut_height: None,
         pierce_delay: None,
         model_excess,
-        file_tolerance: false,    }
+        file_tolerance: false,
+    }
 }
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {
@@ -212,18 +213,18 @@ fn cut(grow: f64, excess: f64) -> Result<Toolpath, String> {
 #[test]
 fn the_kerf_tolerance_gives_the_excess_back_and_reads_plain_past_the_bound() {
     assert_eq!(torch(0.0).kerf_tol(), KERF_TOL);
-    // #2996: only the promised 0.005 mm of a chord past DEV_TOL.
-    assert!((torch(EXCESS).kerf_tol() - (KERF_TOL - 0.005)).abs() < 1e-12);
+    // An absent file-tolerance cause keeps the original strict law.
+    assert!((torch(EXCESS).kerf_tol() - (KERF_TOL - EXCESS)).abs() < 1e-12);
     assert_eq!(torch(0.03).kerf_tol(), KERF_TOL, "past the bound the law reads plain");
 }
 
 #[test]
 fn a_kerf_between_the_tolerances_is_refused_only_on_the_coarse_model() {
     assert!(cut(0.0, 0.0).is_ok() && cut(0.0, EXCESS).is_ok(), "the drawn plate cuts on either model");
-    // The part 0.022 mm past the outline: inside the plain 0.025 mm,
-    // past the tightened 0.020 mm (#2996).
-    assert!(cut(0.022, 0.0).is_ok(), "silent at full fidelity: {:?}", cut(0.022, 0.0).err());
-    let why = cut(0.022, EXCESS).expect_err("refused on the coarse model");
+    // The part 0.02 mm past the outline: inside the plain 0.025 mm,
+    // past the tightened 0.018 mm.
+    assert!(cut(0.02, 0.0).is_ok(), "silent at full fidelity: {:?}", cut(0.02, 0.0).err());
+    let why = cut(0.02, EXCESS).expect_err("refused on the coarse model");
     assert!(why.contains("would carry the kerf into the part"), "refused by the kerf law, by name: {why}");
     // A real reach into the part (0.1 mm) is refused either way.
     assert!(cut(0.1, 0.0).is_err() && cut(0.1, EXCESS).is_err());
@@ -268,4 +269,14 @@ fn probe_and_plasma_are_judged_while_a_tolerance_is_left_and_refused_by_name_pas
     assert_eq!(gate(probe(), p(), Some(TIGHT)), None, "judged while the slack is left");
     let why = gate(probe(), p(), Some(0.03)).expect("refused past the bound");
     assert!(why.starts_with("OP: model 'bar' was imported too coarsely to verify"), "{why}");
+}
+
+#[test]
+fn a_file_tolerance_plasma_check_keeps_the_stated_true_surface_bound() {
+    let mut eligible = torch(EXCESS);
+    eligible.file_tolerance = true;
+    let mesh = eligible.kerf_tol();
+    assert!((mesh - 0.005).abs() < 1e-12, "the larger kerf tolerance cannot widen this allowance: {mesh}");
+    assert!((TIGHT + mesh - 0.017).abs() < 1e-12, "the header's true-surface bound");
+    assert!((torch(EXCESS).kerf_tol() - 0.018).abs() < 1e-12, "budget models keep their old law");
 }

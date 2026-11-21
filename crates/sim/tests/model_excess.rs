@@ -135,9 +135,8 @@ fn an_exactly_finished_flat_face_is_never_a_gouge_on_a_coarse_model() {
 #[test]
 fn past_the_tolerance_the_law_reads_untightened_and_leaves_the_refusal_to_the_gate() {
     let wall = coarse_boss();
-    // An excess past the #2996 limit (a chord over 0.02 mm) uses the
-    // whole tolerance: nothing honest is left.
-    for excess in [0.016, 0.02, 0.5] {
+    // An excess that uses the whole tolerance: nothing honest is left.
+    for excess in [TOL, 0.02, 0.5] {
         assert_eq!(excess_floor(TOL, excess), None, "excess {excess}");
         // Every path reads exactly as it does at full fidelity.
         for into in [0.0, 0.006, 0.05] {
@@ -157,7 +156,7 @@ fn the_excess_floor_only_ever_tightens() {
     assert_eq!(excess_floor(TOL, f64::INFINITY), Some(TOL), "an infinite excess is none");
     let t = excess_floor(TOL, 0.004).expect("positive");
     assert!((t - 0.006).abs() < 1e-12 && t < TOL);
-    assert_eq!(excess_floor(CAP, CAP), None, "zero left is a refusal, not a tolerance");
+    assert_eq!(excess_floor(TOL, TOL), None, "zero left is a refusal, not a tolerance");
     // #2996: an excess past the limit (a chord over 0.02 mm) leaves none.
     assert_eq!(excess_floor(TOL, 0.016), None, "past the limit: a refusal");
     // The default context carries no excess: every law reads as before.
@@ -348,4 +347,22 @@ fn absent_or_budget_cause_keeps_the_original_mesh_tolerance() {
     let mesh = excess_floor_for(TOL, 0.019 - CAP, true).expect("file tolerance");
     assert!((mesh - 0.005).abs() < 1e-12, "mesh allowance");
     assert!((0.019 + mesh - 0.024).abs() < 1e-12, "true-surface bound");
+}
+
+#[test]
+fn an_eligible_file_caps_larger_law_tolerances_at_the_header_allowance() {
+    for tolerance in [TOL, 0.025, 0.1] {
+        for chord in [0.012, 0.019, 0.020] {
+            let excess = chord - CAP;
+            let mesh = excess_floor_for(tolerance, excess, true).expect("file tolerance");
+            assert!((mesh - CAP).abs() < 1e-12, "mesh allowance at {tolerance}");
+            assert!(chord + mesh <= 0.025, "true-surface bound");
+            let context = VerifyContext { gouge_tol: tolerance, model_excess: excess, file_tolerance: true, ..Default::default() };
+            assert!((context.band_growth() - excess).abs() < 1e-12, "the collision band keeps the whole excess");
+        }
+    }
+    assert!((excess_floor_for(0.025, 0.004, true).expect("mild") - 0.021).abs() < 1e-12);
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(excess_floor_for(invalid, 0.014, true), None, "invalid tolerance");
+    }
 }

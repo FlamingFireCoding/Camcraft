@@ -30,7 +30,7 @@ pub fn widened(chord_mm: f64, file_tolerance: bool) -> bool {
 /// chord, in the document's unit; `None` for any other chord.
 #[must_use]
 pub fn clause(world: &World, chord_mm: f64, file_tolerance: bool) -> Option<String> {
-    widened(chord_mm, file_tolerance).then(|| format!("checks on this model allow {}, not {}", len(world, surface_bound(chord_mm)), len(world, DEV_TOL)))
+    widened(chord_mm, file_tolerance).then(|| format!("checks on this model allow {}, not {}", len_bound(world, surface_bound(chord_mm)), len(world, DEV_TOL)))
 }
 
 /// One header line for each widened part of the document: a model, or
@@ -50,7 +50,7 @@ pub fn program_notes(world: &World) -> Vec<String> {
             };
             Some(format!(
                 "Reduced accuracy: model {shown} was checked to {}, not {}",
-                len(world, surface_bound(chord)),
+                len_bound(world, surface_bound(chord)),
                 len(world, DEV_TOL)
             ))
         })
@@ -64,6 +64,17 @@ pub fn program_notes(world: &World) -> Vec<String> {
 #[must_use]
 pub fn surface_bound(chord_mm: f64) -> f64 {
     chord_mm + crate::verify::excess_floor_for(DEV_TOL, crate::model_fidelity::excess(chord_mm), true).unwrap_or(0.0)
+}
+
+/// Round a safety bound upward at the document's existing display precision.
+fn len_bound(world: &World, mm: f64) -> String {
+    let unit = crate::units::of(world);
+    let (precision, scale) = match unit {
+        crate::units::Unit::Millimeters => (3, 1_000.0),
+        crate::units::Unit::Inches => (5, 100_000.0),
+    };
+    let bound = (crate::units::to_display(mm, unit) * scale).ceil() / scale;
+    format!("{bound:.precision$} {}", unit.suffix())
 }
 
 /// "0.019 mm" in the document's unit.

@@ -29,6 +29,9 @@ impl VerifyContext<'_> {
     /// stand that much nearer than its facets show.
     #[must_use]
     pub fn band_growth(&self) -> f64 {
+        if !self.file_tolerance && strict_floor(self.gouge_tol, self.model_excess).is_none() {
+            return 0.0;
+        }
         band_growth(self.gouge_tol, self.model_excess)
     }
 
@@ -80,7 +83,8 @@ const WIDE_EXCESS_LIMIT: f64 = WIDE_CHORD_LIMIT - PROMISED_CHORD + 1e-9;
 /// - a larger excess, up to a chord of [`WIDE_CHORD_LIMIT`]: only
 ///   [`PROMISED_CHORD`]. The tolerance is widened by how far the chord
 ///   passes `DEV_TOL`: the true-surface bound is the mesh allowance
-///   plus the chord. Never wider than `tol` against the mesh itself;
+///   plus the chord. The mesh allowance is capped at `PROMISED_CHORD`
+///   even when a law (such as plasma) has a larger normal tolerance;
 /// - past the limit: all of it again (#864), which leaves no gouge
 ///   tolerance, so the operation is refused by name.
 ///
@@ -91,9 +95,13 @@ pub fn excess_floor_for(tol: f64, excess: f64, file_tolerance: bool) -> Option<f
     if !(excess.is_finite() && excess > 0.0) {
         return Some(tol);
     }
-    let taken = if file_tolerance && excess <= WIDE_EXCESS_LIMIT { excess.min(PROMISED_CHORD) } else { excess };
+    let widened = file_tolerance && excess > PROMISED_CHORD && excess <= WIDE_EXCESS_LIMIT;
+    let taken = if widened { PROMISED_CHORD } else { excess };
     let left = tol - taken;
-    (left.is_finite() && left > 0.0).then_some(left)
+    if !(left.is_finite() && left > 0.0) {
+        return None;
+    }
+    Some(if widened { left.min(PROMISED_CHORD) } else { left })
 }
 
 /// Unrecorded and budget-coarsened models keep the original strict law.

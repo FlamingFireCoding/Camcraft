@@ -64,7 +64,7 @@ pub struct UpdateModel {
     coarse_mm: Option<f64>,
     file_tolerance: bool,
     prev_file_tolerance: bool,
-    prev_stock_file_tolerance: bool,
+    prev_stock_causes: Vec<(String, bool)>,
     prev_coarse_mm: Option<f64>,
     /// #1610: the hole of an incomplete mesh, traded the same way.
     hole: Option<String>,
@@ -129,7 +129,9 @@ impl UpdateModel {
             coarse_mm: None,
             file_tolerance: false,
             prev_file_tolerance: crate::model_fidelity::file_tolerance_of(world, &entity),
-            prev_stock_file_tolerance: copies.first().is_some_and(|s| crate::model_fidelity::file_tolerance_of(world, s)),
+            prev_stock_causes: copies.iter().filter_map(|s| {
+                model::name_of(world, s).map(|name| (name, crate::model_fidelity::file_tolerance_of(world, s)))
+            }).collect(),
             prev_coarse_mm: crate::model_fidelity::chord_of(world, &entity),
             hole: None,
             prev_hole: crate::mesh_open::hole_of(world, &entity),
@@ -291,7 +293,10 @@ impl Command for UpdateModel {
         if let Some(tris) = &self.prev_stock {
             for stock in stock_copies(world, &self.name) {
                 model::set_facets(world, &stock, tris.clone());
-                crate::model_fidelity::set_with_cause(world, &stock, self.prev_stock_coarse_mm, self.prev_stock_file_tolerance);
+                let file_tolerance = model::name_of(world, &stock).and_then(|name| {
+                    self.prev_stock_causes.iter().find(|(saved, _)| saved == &name).map(|(_, cause)| *cause)
+                }).unwrap_or(false);
+                crate::model_fidelity::set_with_cause(world, &stock, self.prev_stock_coarse_mm, file_tolerance);
                 crate::mesh_open::set(world, &stock, self.prev_stock_hole.as_deref());
             }
         }
