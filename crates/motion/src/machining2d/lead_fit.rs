@@ -148,18 +148,56 @@ fn no_leads(p: &ContourParams) -> bool {
     p.lead == Lead::None && p.lead_out_shape() == Lead::None
 }
 
+/// A walk end this close to its start (mm) closes a ring at a seam.
+const SEAM_CLOSED: f64 = 1e-6;
+
+/// `t` mirrored across the unit direction `axis`.
+fn mirror(t: Point2, axis: Point2) -> Point2 {
+    let k = 2.0 * (t.x * axis.x + t.y * axis.y);
+    Point2::new(k * axis.x - t.x, k * axis.y - t.y)
+}
+
+/// The lead-in and lead-out tangents of `walk` (#3019). On a closed ring
+/// the lead-in runs onto the seam along the walk's first move and the
+/// lead-out leaves it along the walk's last move. Where the ring bends to
+/// the air side at the seam (a fitted arc's end tangent a hair off the
+/// first chord), a straight lead along that tangent passes back over the
+/// ring's other side of the seam and crosses the cut of its own level. A
+/// tangent that points to the material side of the other end's tangent is
+/// mirrored across it, so each lead leaves the seam on the air side of
+/// the whole ring. A smooth seam, a seam that bends away from the air and
+/// an open walk keep their tangents unchanged.
+fn seam_tangents(walk: &[Seg], poly: &[Point2], climb: bool) -> (Point2, Point2) {
+    let t0 = walk_tangent(walk, poly, true);
+    let t1 = walk_tangent(walk, poly, false);
+    let closed = match (poly.first(), poly.last()) {
+        (Some(&s), Some(&e)) => poly.len() > 2 && dist(s, e) <= SEAM_CLOSED,
+        _ => false,
+    };
+    if !closed {
+        return (t0, t1);
+    }
+    let dot = |a: Point2, b: Point2| a.x * b.x + a.y * b.y;
+    // The lead-out leaves along t1 past the ring's start, which runs on
+    // along t0: t1 must not turn from t0 into the material.
+    let out = if dot(t1, air_side(t0, climb)) < 0.0 { mirror(t1, t0) } else { t1 };
+    // The lead-in arrives along t0 from behind the ring's end, which came
+    // in along t1: the same law with time reversed.
+    let inn = if dot(t0, air_side(t1, climb)) > 0.0 { mirror(t0, t1) } else { t0 };
+    (inn, out)
+}
+
 /// Does the lead `p` asks for, scaled by `f`, fit both ends of `walk`?
 fn both_fit(walk: &[Seg], poly: &[Point2], p: &ContourParams, f: f64, legal: &Legal) -> bool {
     let n = poly.len();
     if n < 2 {
         return true;
     }
-    let t0 = walk_tangent(walk, poly, true);
+    let (t0, t1) = seam_tangents(walk, poly, p.climb);
     let (e, segs) = lead_in(poly[0], t0, air_side(t0, p.climb), scaled(p.lead, f));
     if !segs_hold(legal, e, &segs, slack(p)) {
         return false;
     }
-    let t1 = walk_tangent(walk, poly, false);
     let out = lead_out(poly[n - 1], t1, air_side(t1, p.climb), scaled(p.lead_out_shape(), f));
     segs_hold(legal, poly[n - 1], &out, slack(p))
 }
@@ -285,8 +323,7 @@ pub(super) fn plan_leads(
     if no_leads(p) || n < 2 {
         return (s, Vec::new(), Vec::new());
     }
-    let t0 = walk_tangent(walk, poly, true);
-    let t1 = walk_tangent(walk, poly, false);
+    let (t0, t1) = seam_tangents(walk, poly, p.climb);
     let out_shape = p.lead_out_shape();
     let mut lin = None;
     let mut lout = None;
