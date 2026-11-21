@@ -43,3 +43,24 @@ already draws it. Only the page could not set it.
 **Cost to change later.** Low. The axis choice is a view of
 `Location.rot`. When the simulation cuts a laid stock, the note goes
 away by itself, because it asks the simulation's law.
+
+### Fit to Models on a turned stock (review of PR #2773)
+
+**Chosen.** "Fit to models" (the Stock page button and MCP `fit_stock`)
+measures the parts in the stock's own frame: each part vertex is turned
+back by the stock's turn, the fit is made there, and its base point is
+turned onto the setup's frame (`stock_fit::fitted_turned`). A stock laid
+along X or Y wraps the parts along its own length. An upright stock uses
+the old path unchanged.
+
+**Why.** The review found that the fit put a world-frame size into a
+laid stock, and the result did not hold the parts, with no message.
+A fit in the stock's frame is exact for each turn, so the button stays
+useful for a laid bar.
+
+**Dropped.** A refusal of the fit for each turn that is not about Z: it
+is safe, but it takes the button away from the case that the axis choice
+was made for.
+
+**Note.** A stock turned about Z only now fits on its own axes too. Before,
+it took the world-frame size and could miss the parts at the corners.

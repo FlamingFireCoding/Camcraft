@@ -26,6 +26,12 @@ const TURNED_HINT: &str = "Height runs along the chosen axis. \
 
 /// The custom angles, in the order of `StockUi::angles_deg`.
 const ANGLE_LABELS: [&str; 3] = ["Turn about Z (yaw)", "Tilt about Y (pitch)", "Tilt about X (roll)"];
+/// The hover text of each custom angle, in the same order.
+const ANGLE_HINTS: [&str; 3] = [
+    "Degrees to turn the stock about the machine's Z axis. Applied last.",
+    "Degrees to tilt the stock about the Y axis. Applied after the roll.",
+    "Degrees to tilt the stock about the X axis. Applied first.",
+];
 
 pub(super) fn axis_rows(ui: &mut Ui, s: &mut StockUi) {
     ui.horizontal_wrapped(|ui| {
@@ -36,9 +42,9 @@ pub(super) fn axis_rows(ui: &mut Ui, s: &mut StockUi) {
     });
     if s.axis == StockAxis::Custom {
         prop_grid(ui, "stock_axis_grid", |ui| {
-            for (label, v) in ANGLE_LABELS.iter().zip(s.angles_deg.iter_mut()) {
-                ui.label(*label);
-                num_plain_named(ui, v, &format!("{label} in degrees"));
+            for ((label, hint), v) in ANGLE_LABELS.iter().zip(ANGLE_HINTS).zip(s.angles_deg.iter_mut()) {
+                ui.label(*label).on_hover_text(hint);
+                ui.scope(|ui| num_plain_named(ui, v, &format!("{label} in degrees"))).response.on_hover_text(hint);
                 ui.end_row();
             }
         });

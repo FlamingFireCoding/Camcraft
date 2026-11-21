@@ -6,19 +6,21 @@
 //!
 //! Gate map: covers app::mcp (set_stock, undo, save_project), app::commands
 //! (SetStock + History, ImportDxf), app::project (save_text, open),
-//! app::sketch (stock_face), app::stock_follow (sim_frame).
+//! app::sketch (stock_face), app::stock_follow (sim_frame), app::stock_fit
+//! (fit_command, fitted_turned).
 //!
 //! Provenance: our own command, file and placement laws; standard
 //! rigid-body math. No vendor material.
 
 use serde_json::{json, Value};
 
-use camcraft_app::commands::{History, SetStock};
+use camcraft_app::commands::{History, ImportModel, SetStock};
 use camcraft_app::geometry::stock_axis::{StockAxis, stock_axis_of, stock_axis_rot};
-use camcraft_app::geometry::{Point3, quat_rotate_point};
+use camcraft_app::geometry::{Point3, cube, quat_rotate_point, transform_inverse_point};
 use camcraft_app::mcp::Server;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
+use camcraft_app::stock_fit::{self, FitKind};
 use camcraft_app::world::new_world;
 use camcraft_app::{model, project, sketch};
 
@@ -47,6 +49,57 @@ fn set_stock_lays_a_cylinder_along_x_and_undo_restores_the_old_turn() {
     assert_eq!(stock_axis_of(stock_rot(&world)).0, StockAxis::X);
     assert!(h.undo(&world));
     assert!(same_turn(stock_rot(&world), [0.0, 0.0, 0.0, 1.0]), "undo restores the upright turn");
+    assert!(h.redo(&world));
+    assert_eq!(stock_axis_of(stock_rot(&world)).0, StockAxis::X, "redo lays it along X again");
+}
+
+/// "Fit to models" on a laid stock fits in the stock's own frame: a box
+/// along X wraps the part plus the margin on every side, and a cylinder
+/// along Y is snug about the part on its own axis (review of PR #2773).
+#[test]
+fn fit_to_models_wraps_the_part_in_a_laid_stocks_frame() {
+    const M: f64 = 2.0;
+    let (lo, hi) = ([0.0, 0.0, 0.0], [80.0, 30.0, 20.0]);
+    let corners: Vec<Point3> = (0..8)
+        .map(|i| {
+            let c = |k: usize| if i >> k & 1 == 0 { lo[k] } else { hi[k] };
+            Point3::new(c(0), c(1), c(2))
+        })
+        .collect();
+    let laid_world = |axis: StockAxis, shape: StockShape| {
+        let world = new_world();
+        let mut h = History::default();
+        h.execute(&world, ImportModel::from_mesh("part", cube(Point3::new(lo[0], lo[1], lo[2]), Point3::new(hi[0], hi[1], hi[2]))));
+        let laid = Location { rot: rot_of(axis, [0.0; 3]), ..Default::default() };
+        h.execute(&world, SetStock::new(&world, shape, laid).expect("laid"));
+        (world, h)
+    };
+
+    let (world, mut h) = laid_world(StockAxis::X, StockShape::Box { dx: 10.0, dy: 10.0, dz: 10.0 });
+    let (cmd, shape) = stock_fit::fit_command(&world, FitKind::Box(M)).expect("fits");
+    h.execute(&world, cmd);
+    assert_eq!(stock_axis_of(stock_rot(&world)).0, StockAxis::X, "the fit keeps the X turn");
+    let StockShape::Box { dz, .. } = shape else { panic!("a box: {shape:?}") };
+    assert!((dz - (hi[0] + 2.0 * M)).abs() < 1e-9, "the stock's own Z runs along world X: dz {dz}");
+    let b = model::stock_world_aabb(&world).expect("stock box");
+    let got = [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z];
+    let want = [lo[0] - M, lo[1] - M, lo[2] - M, hi[0] + M, hi[1] + M, hi[2] + M];
+    assert!(got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-9), "laid box {got:?}, want {want:?}");
+
+    let (world, mut h) = laid_world(StockAxis::Y, StockShape::Cylinder { diameter: 10.0, height: 10.0 });
+    let (cmd, shape) = stock_fit::fit_command(&world, FitKind::Cylinder(M)).expect("fits");
+    h.execute(&world, cmd);
+    let StockShape::Cylinder { diameter, height } = shape else { panic!("a cylinder: {shape:?}") };
+    let want_d = 2.0 * (40f64.hypot(10.0) + M);
+    assert!((diameter - want_d).abs() < 1e-9 && (height - (hi[1] + 2.0 * M)).abs() < 1e-9, "d {diameter} h {height}");
+    let stock = camcraft_app::setup::stock_entity(&world, None).expect("a stock");
+    let at = model::transform_of(&world, &stock).expect("a stock pose");
+    assert_eq!(stock_axis_of(at.rot).0, StockAxis::Y, "the fit keeps the Y turn");
+    for p in &corners {
+        let l = transform_inverse_point(*p, at.pos, at.rot);
+        assert!(l.x.hypot(l.y) <= 0.5 * diameter - M + 1e-9, "corner {p:?} is inside the radius less the margin: {l:?}");
+        assert!(l.z >= M - 1e-9 && l.z <= height - M + 1e-9, "corner {p:?} is inside the length less the margin: {l:?}");
+    }
 }
 
 /// A custom turn survives a save and an open, angle for angle.
