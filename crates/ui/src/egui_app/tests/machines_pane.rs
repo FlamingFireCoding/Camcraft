@@ -121,6 +121,7 @@ fn the_sheet_states_rigid_tapping_in_words() {
         .expect("the library lists the 770M");
     // #3233: the list can push the row past the pane's clip edge, where a
     // click lands on nothing. Scroll it into view first.
+    assert!(h.query_by_label(&row_label(&m)).is_some(), "the pane shows the 770M row");
     h.get_by_label(&row_label(&m)).scroll_to_me();
     h.run();
     h.get_by_label(&row_label(&m)).click();

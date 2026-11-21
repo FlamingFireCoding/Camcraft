@@ -355,3 +355,15 @@ fn same_warning(saved: &Warning, regenerated: &Warning) -> bool {
         _ => saved == regenerated,
     }
 }
+
+#[test]
+fn a_legacy_first_traverse_warning_matches_only_the_same_raise() {
+    let low = |height_mm, top_mm, fixture, tilted| Warning::FirstTraverseLow { at: 0, height_mm, top_mm, fixture, tilted };
+    let saved = low(10.0, 11.113_929, false, false);
+    assert!(same_warning(&saved, &low(30.0, 31.113_929, false, true)), "the same raise in the user's frame");
+    assert!(!same_warning(&saved, &low(30.0, 32.0, false, true)), "a different raise is lost");
+    assert!(!same_warning(&saved, &low(30.0, 31.113_929, true, true)), "a fixture top is not the stock top");
+    assert!(!same_warning(&saved, &low(30.0, 31.113_929, false, false)), "an upright warning matches only exactly");
+    assert!(!same_warning(&saved, &Warning::FirstTraverseLow { at: 1, height_mm: 30.0, top_mm: 31.113_929, fixture: false, tilted: true }));
+    assert!(same_warning(&saved, &saved.clone()), "an unchanged warning still matches");
+}
