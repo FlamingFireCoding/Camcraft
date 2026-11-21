@@ -209,18 +209,24 @@ const DRAFT_TAN: f64 = 0.267_949_192_431_122_7;
 /// #2929: the piece whose midpoint `m` stands off `wall` is a drafted
 /// wall - one straight face from the top plane down to the corner
 /// plane, at no more than a draft's slope. Measured along the frame's
-/// `lean`, the piece stands `d` off the wall, at most `depth *
-/// DRAFT_TAN`, and the section half way down stands half of `d` off
-/// it within the section grid slack. A modelled chamfer that ends
-/// before the corner plane does not keep this straight slope.
+/// `lean`, the piece stands `d` off its foot `w` on the wall, at most
+/// `depth * DRAFT_TAN`. The straight face from `m` down to `w` crosses
+/// the plane half way down at the point half way between them, and the
+/// section there must pass through that point within the section grid
+/// slack. A modelled chamfer that ends before the corner plane, or a
+/// side whose slope turns back half way down, misses that point.
 fn drafted(m: Point2, wall: &[Point2], mid: &Region, depth: f64, lean: Point2) -> bool {
     if !(depth.is_finite() && depth > 0.0) {
         return false;
     }
-    let d = near(Point2::new(m.x - lean.x, m.y - lean.y), wall);
-    let half = Point2::new(m.x - lean.x * 0.5, m.y - lean.y * 0.5);
+    let low = Point2::new(m.x - lean.x, m.y - lean.y);
+    let Some(w) = foot(low, wall) else {
+        return false;
+    };
+    let d = (w.x - low.x).hypot(w.y - low.y);
+    let half = Point2::new((m.x + w.x) * 0.5, (m.y + w.y) * 0.5);
     let dm = mid.loops().iter().map(|l| near(half, l.points())).fold(f64::INFINITY, f64::min);
-    d > SAME_EDGE && d <= depth * DRAFT_TAN && (dm - d * 0.5).abs() <= LEAN_SLACK
+    d > SAME_EDGE && d <= depth * DRAFT_TAN && dm <= LEAN_SLACK
 }
 
 /// #2944: the segment `a`-`b` cut at the foot of each vertex of `wall`
@@ -310,11 +316,24 @@ fn near(p: Point2, ring: &[Point2]) -> f64 {
 }
 
 fn seg(p: Point2, a: Point2, b: Point2) -> f64 {
+    let q = seg_foot(p, a, b);
+    (q.x - p.x).hypot(q.y - p.y)
+}
+
+/// The point of `ring` nearest `p`; `None` for an empty ring.
+fn foot(p: Point2, ring: &[Point2]) -> Option<Point2> {
+    let n = ring.len();
+    (0..n)
+        .map(|i| seg_foot(p, ring[i], ring[(i + 1) % n]))
+        .min_by(|a, b| (a.x - p.x).hypot(a.y - p.y).total_cmp(&(b.x - p.x).hypot(b.y - p.y)))
+}
+
+/// The point of the segment `a`-`b` nearest `p`.
+fn seg_foot(p: Point2, a: Point2, b: Point2) -> Point2 {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let l2 = dx * dx + dy * dy;
     let t = if l2 > 1e-24 { (((p.x - a.x) * dx + (p.y - a.y) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
-    let (qx, qy) = (a.x + t * dx - p.x, a.y + t * dy - p.y);
-    (qx * qx + qy * qy).sqrt()
+    Point2::new(a.x + t * dx, a.y + t * dy)
 }
 
 #[cfg(test)]

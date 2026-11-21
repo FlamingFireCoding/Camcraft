@@ -50,3 +50,12 @@ Use the existing `LEAN_SLACK` for the half-depth residual. A 0.25 mm bevel
 that ends at 0.7 mm depth passed the former 25% allowance for a 1 mm ride.
 The tighter check refuses this partly bevelled loop. The relative allowance
 was dropped because it can classify a bevel as a straight drafted wall.
+
+## Second review correction
+
+Check the half-depth section against a point, not a distance. The point is
+half way between the top edge and its foot on the wall. A side at X0.2,
+X0.3 and X0 (top, half depth, corner) passed the distance check: its slope
+turns back, but the unsigned distances agree. The point check refuses this
+side. The unsigned distance check was dropped because it ignores the
+direction of the slope.

@@ -226,6 +226,15 @@ fn a_bevel_ending_below_half_depth_is_no_draft() {
 }
 
 #[test]
+fn a_side_whose_slope_turns_back_is_no_draft() {
+    // The side stands at X0.2, X0.3 and X0 at Z10, Z9.5 and Z9: it
+    // bends back half way down, so it is no one straight drafted wall.
+    let (top, mid, corner) = x0_side_off(0.2, 0.3);
+    let err = ride_loops(&top, &mid, &corner, 1.0, 1.0, 9.0, UPRIGHT).expect_err("a partly bevelled loop").to_string();
+    assert!(err.contains("only part of its length"), "{err}");
+}
+
+#[test]
 fn a_straight_face_steeper_than_a_draft_is_a_chamfer() {
     // #2929: a 1 mm 45 degree bevel deeper than the ride is one
     // straight face too; its slope is no draft's, and #2887 holds.
