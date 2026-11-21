@@ -159,7 +159,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let mut verify_prior = super::drill_prior::PriorCell::new(verify_prior);
     // #339: the mesh law reads the tool as an upright rotating stack -
     // a mill's cutter. A lathe's insert, blade or gauge keeps the box
-    // verdict (its body is not that stack).
+    // verdict (its body is not that stack). A mill-turn keeps the box
+    // verdict too (#3083): the mesh only acquits a box hit, so the box
+    // verdict is the stricter one.
     use crate::tools::ToolKind as K;
     let lathe_tool = matches!(tool.kind, K::Turning | K::Groove | K::Thread | K::Form);
     let mesh_steel: &[crate::fixture::MeshedFixture] = if is_mill && !lathe_tool { &fixture_meshes } else { &[] };
@@ -3209,13 +3211,19 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // wall. An internal thread keeps its full cutter.
     let cutter = super::thread_op::root_cutter(cutter, &tool, &params);
     let fixture_boxes = fixtures;
+    // #3083: a mill-turn posts a milling tool's first traverse in the
+    // mill order, so its mill kinds answer to the same laws as a mill's.
+    let mill_order = super::first_traverse::mill_order(machine_kind, lathe_tool, &params);
     // #2965: a rotary kind's first traverse reads its work swept about its axis.
-    let turned_axis = super::first_traverse::turned_axis(&params, is_mill && !lathe_tool, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
+    let turned_axis = super::first_traverse::turned_axis(&params, mill_order, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
     let rides = turned_axis.map_or_else(Vec::new, |_| super::first_traverse::rides_of(stock_facets.as_deref(), stock_aabb, &material.facets));
     let turned = turned_axis.map(|axis| super::first_traverse::Turned { axis, rides: &rides, turning: &workholding.0, fixed: &workholding.1 });
     // #339 slice 5: an upright mill's links are planned over the steel -
     // a struck link rises over it, an unclearable one refuses by name.
-    // Posed and rotary paths keep the report-only verdict below.
+    // Posed and rotary paths keep the report-only verdict below. So does
+    // a mill-turn (#3083): the post gate judges each of its links against
+    // the steel (`fixture_struck::op_hits`) and refuses a struck one, so
+    // no link posts unjudged; routing them would change its program.
     let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
         let named: Vec<_> = fixture_names.iter().cloned().zip(fixture_boxes.iter().copied()).collect();
         let stack = verify::steel_stack(&geom, &holder, spindle);
@@ -3384,8 +3392,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3077: a mill-turn's cross drill also answers to the upright
             // law - its default post is the mill's (Z, then X/Y, then the
             // rotary words), so its X/Y traverse comes from an unknown X/Y.
-            let mill_post_cross = machine_kind == crate::machine::Kind::MillTurn && matches!(&params, OpParams::Drill { cross, .. } if !cross.is_empty());
-            super::first_traverse::judge(&path, &params, (is_mill || mill_post_cross) && !lathe_tool, None, &over, &mut warns);
+            // #3083: `mill_order` holds that drill too; the flag stays for
+            // #3077's reading.
+            let mill_post_cross = machine_kind == crate::machine::Kind::MillTurn && !lathe_tool && matches!(&params, OpParams::Drill { cross, .. } if !cross.is_empty());
+            super::first_traverse::judge(&path, &params, mill_order || mill_post_cross, None, &over, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
             // less what the program ahead faced and this path cut.
@@ -3740,7 +3750,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2901: the first traverse, read along the plane's tool axis.
             // #2987: the table read where the tool can meet it.
             let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
-            let table_note = super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, Some(f), &over, &mut warns);
+            let table_note = super::first_traverse::judge(&path, &params, mill_order, Some(f), &over, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
             // along every move against the part solid. The Section kinds
