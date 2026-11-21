@@ -148,8 +148,7 @@ fn changing_controller_or_tool_procedure_keeps_the_previous_nc_file() {
             SetSetupMachine::new(&world, "Setup1", mount).unwrap(),
         );
         let why = posting::post_setup(&world, &destination)
-            .err()
-            .expect("unsupported installation");
+            .expect_err("unsupported installation");
         assert!(why.contains(diagnostic), "{why}");
         assert_eq!(std::fs::read_to_string(&destination).unwrap(), accepted);
     }
