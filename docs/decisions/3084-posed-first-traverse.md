@@ -24,7 +24,7 @@
   - The setup law of item 3: a work offset that is not on the rotary lines is read as if it were. The index-swing clause has the same premise.
   - The Z word is read as a machine height in the frame of the rotaries at zero, as #2965 reads it. Under a TCP mode that turns the program frame with the table, the post's Z is a height in the turned frame; that reading is not made.
   - A rotary that never stated `turns_part` (a project saved before #804, or a machine built in code) is not read as work-turning. The load names such a machine (#813), and each parsed file states it.
-  - A 3+2 operation (`Tilt`) and a cross drill on a work-tilting machine are not read by this law. Their first traverse has the same unknown pose. Follow-up issue filed.
+  - A 3+2 operation (`Tilt`) and a cross drill on a work-tilting machine are not read by this law. Their first traverse has the same unknown pose: follow-up #3100.
   - The tool radius is not added (the law reads the tip, as #2901 and #2965 do).
 - **What was considered and dropped**:
   - The exact top over the stated turning ranges (branch and bound over the inner angle, with the closed form over the outer one): it needs the order of the rotaries and the position of each line, which no file states. The sphere is exact for a trunnion whose ranges reach 90 degrees, which is the common case.
