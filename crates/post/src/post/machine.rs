@@ -149,6 +149,12 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
     {
         o.insert("kind".to_owned(), json!("plasma"));
     }
+    // #1882: a vendor-tree waterjet keeps its kind through the CLI mirror.
+    if crate::machine::kind(Some(m)) == crate::machine::Kind::Waterjet
+        && let Some(o) = out.as_object_mut()
+    {
+        o.insert("kind".to_owned(), json!("waterjet"));
+    }
     // #533: a wire or sinker EDM says its kind and its `edm` words (the
     // control's codes, D5, and whether it threads by itself) for the
     // EDM posts' machine check; every other mirror is unchanged. #542:

@@ -207,11 +207,15 @@ function workOffsetName(n) {  // offset n -> this control's word; "" when it has
 function onParameter(name, value) {
   if (name === "WorkOffset" && value) {
     var w = workOffsetName(Number(value));
-    if (w) wcsWord = w;
+    if (w) { if (w !== wcsWord) lastXY = ""; wcsWord = w; }
     else msg("work offset " + value + " - this post expresses work offsets 1-" + workOffsetMax + " only");
-  } else if (name === "OriginX" && has(value)) orgX = Number(value);
-  else if (name === "OriginY" && has(value)) orgY = Number(value);
-  else if (name === "OperationName") opName = clean(value);
+  } else if (name === "OriginX" && has(value)) {
+    if (orgX !== Number(value)) lastXY = "";
+    orgX = Number(value);
+  } else if (name === "OriginY" && has(value)) {
+    if (orgY !== Number(value)) lastXY = "";
+    orgY = Number(value);
+  } else if (name === "OperationName") opName = clean(value);
   else if (name === "OperationKind") opKind = clean(value);
   else if (name === "SetupName") setupName = clean(value);
   else if (name === "SpindleSpeed" && has(value) && Number(value) > 0) {

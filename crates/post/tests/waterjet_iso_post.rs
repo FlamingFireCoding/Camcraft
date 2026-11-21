@@ -139,3 +139,37 @@ fn waterjet_post_refuses_a_z_cut_and_a_cycle() {
     let cycle = plate().replace("Rapid X 0 Y 0 Z 0\n", "Rapid X 0 Y 0 Z 0\nCYCLE DRILL X 0 Y 0 Z -5000 R 2000\n");
     assert_refused(&refusals(&jet_machine(), &cycle), "a canned cycle - a waterjet has no drilling cycle");
 }
+
+#[test]
+fn waterjet_rapid_cache_resets_when_the_coordinate_frame_changes() {
+    // Each new frame needs a physical traverse, even when its words match
+    // the last rapid. Exercise offset and each origin independently.
+    for (parameter, value, x, y, word) in [
+        ("WorkOffset", 2, 0, 0, "G55"),
+        ("OriginX", 100, 100000, 0, "G54"),
+        ("OriginY", 100, 0, 100000, "G54"),
+    ] {
+        let stream = format!(
+            "PARAM WorkOffset 1\nWATERJET\nSECTION\nRapid X 0 Y 0 Z 0\nENDSECTION\nPARAM {parameter} {value}\nWATERJET\nSECTION\nRapid X {x} Y {y} Z 0\nJET ON C0 OUTER\nFeed X {} Y {y} Z 0 F300000\nJET OFF C0\nENDSECTION\n",
+            x + 10000
+        );
+        let out = post(&jet_machine(), &stream, &json!({}));
+        assert!(out.warnings.is_empty(), "{parameter}: {:?}", out.warnings);
+        let frame = out
+            .program
+            .rfind(&format!("{word}\n"))
+            .expect("second frame");
+        let tail = &out.program[frame..];
+        let rapid = tail
+            .find("G0 X0 Y0\n")
+            .expect("the new frame must rapid before opening the jet");
+        let jet = tail.find("M10\n").expect("water on");
+        assert!(rapid < jet, "{parameter}: {tail}");
+        assert_eq!(
+            out.program.matches("G0 X0 Y0\n").count(),
+            2,
+            "{parameter}: {}",
+            out.program
+        );
+    }
+}

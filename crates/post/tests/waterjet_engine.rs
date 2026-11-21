@@ -249,3 +249,65 @@ fn waterjet_section_under_a_flipped_wcs_is_refused_by_name() {
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
+
+#[test]
+fn linearize_full_circles_keeps_both_directions() {
+    let cps = format!("linearizeArcs = true;\nchordTolerance = 0.01;\n{ECHO}");
+    for direction in ["CW", "CCW"] {
+        let stream = format!("PARAM StartX 10\nArc {direction} X 10000 Y 0 Z 0 F 300000 I 0 J 0\n");
+        let out = run(&cps, &Value::Null, &stream).expect("full circle posts");
+        let points: Vec<(f64, f64)> = out
+            .program
+            .lines()
+            .filter_map(|line| {
+                let mut words = line.strip_prefix("G1 ")?.split_whitespace();
+                Some((
+                    words.next()?.parse().expect("X"),
+                    words.next()?.parse().expect("Y"),
+                ))
+            })
+            .collect();
+        assert!(points.len() > 20, "{direction}: {points:?}");
+        assert_eq!(points.last(), Some(&(10.0, 0.0)));
+        let mut previous = (10.0, 0.0);
+        let mut length = 0.0;
+        for &(x, y) in &points {
+            assert!((x.hypot(y) - 10.0).abs() < 1e-9);
+            let cross = previous.0 * y - previous.1 * x;
+            assert!(
+                if direction == "CCW" {
+                    cross > 0.0
+                } else {
+                    cross < 0.0
+                },
+                "{direction}: {previous:?} -> ({x}, {y})"
+            );
+            let chord = (x - previous.0).hypot(y - previous.1);
+            assert!(10.0 - (100.0 - chord * chord * 0.25).sqrt() <= 0.01);
+            length += chord;
+            previous = (x, y);
+        }
+        assert!(
+            length > 62.0 && length < std::f64::consts::TAU * 10.0,
+            "{direction}: {length}"
+        );
+    }
+}
+
+#[test]
+fn linearize_arcs_refuses_a_tolerance_below_the_chord_cap() {
+    for direction in ["CW", "CCW"] {
+        let cps = format!("linearizeArcs = true;\nchordTolerance = 0.0001;\n{ECHO}");
+        let stream =
+            format!("PARAM StartX 1000\nArc {direction} X -1000000 Y 0 Z 0 F 300000 I 0 J 0\n");
+        match run(&cps, &Value::Null, &stream) {
+            Err(PostError::Refused(why)) => {
+                assert!(
+                    why.contains("arc subdivision limit") && why.contains("chordTolerance 0.0001"),
+                    "{why}"
+                );
+            }
+            other => panic!("{direction}: expected a named cap refusal, got {other:?}"),
+        }
+    }
+}

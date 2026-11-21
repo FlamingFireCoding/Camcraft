@@ -96,17 +96,60 @@ pub const DEFAULT_CHORD_TOL: f64 = 0.01;
 /// The straight pieces of an arc record from `from`, at sagitta `tol`:
 /// each piece is a feed record with the arc's feed and angles, the
 /// last ending exactly on the arc's end point.
-#[must_use]
-pub fn arc_pieces(from: (f64, f64, f64), m: &MoveRec, tol: f64) -> Vec<MoveRec> {
-    let mut out: Vec<MoveRec> = as_move(from, m)
-        .segments3(tol)
-        .into_iter()
-        .map(|(_, b)| MoveRec { x: b.x, y: b.y, z: b.z, center: None, ..m.clone() })
-        .collect();
+pub fn arc_pieces(from: (f64, f64, f64), m: &MoveRec, tol: f64) -> Result<Vec<MoveRec>, PostError> {
+    let mv = as_move(from, m);
+    let mut arcs = vec![mv];
+    if let Some(arc) = mv.arc {
+        let (au, av, aw) = arc.plane.uvw(mv.from);
+        let (bu, bv, bw) = arc.plane.uvw(mv.to);
+        let (cu, cv) = arc.plane.center_uv(arc.center);
+        // Equal in-plane endpoints denote a full circle in a posted stream.
+        // segments3 treats them as zero sweep, so tessellate two half arcs.
+        if au == bu && av == bv {
+            let mid = arc
+                .plane
+                .point(2.0 * cu - au, 2.0 * cv - av, aw * 0.5 + bw * 0.5);
+            arcs = vec![Move { to: mid, ..mv }, Move { from: mid, ..mv }];
+        }
+    }
+    let mut out = Vec::new();
+    for arc_move in arcs {
+        let segments = arc_move.segments3(tol);
+        if let Some(arc) = arc_move.arc {
+            let (au, av, _) = arc.plane.uvw(arc_move.from);
+            let (bu, bv, _) = arc.plane.uvw(arc_move.to);
+            let (cu, cv) = arc.plane.center_uv(arc.center);
+            let ra = (au - cu).hypot(av - cv);
+            let rb = (bu - cu).hypot(bv - cv);
+            let start = (av - cv).atan2(au - cu);
+            let end = (bv - cv).atan2(bu - cu);
+            let sweep =
+                if arc.ccw { end - start } else { start - end }.rem_euclid(std::f64::consts::TAU);
+            // segments3 has a hard cap. Check its original curvature before
+            // posting: more straight subdivisions cannot recover a lost arc.
+            let half_step_sin = (sweep / (4.0 * segments.len().max(1) as f64)).sin();
+            let error = ra.max(rb) * 2.0 * half_step_sin * half_step_sin + (ra - rb).abs();
+            if !error.is_finite() || error > tol {
+                return Err(PostError::Refused(format!(
+                    "arc subdivision limit cannot meet chordTolerance {tol} mm"
+                )));
+            }
+        }
+        out.extend(segments.into_iter().map(|(_, b)| MoveRec {
+            x: b.x,
+            y: b.y,
+            z: b.z,
+            center: None,
+            ..m.clone()
+        }));
+    }
     // The record's own end point closes the arc, bit for bit.
     match out.last_mut() {
         Some(last) => (last.x, last.y, last.z) = (m.x, m.y, m.z),
-        None => out.push(MoveRec { center: None, ..m.clone() }),
+        None => out.push(MoveRec {
+            center: None,
+            ..m.clone()
+        }),
     }
-    out
+    Ok(out)
 }

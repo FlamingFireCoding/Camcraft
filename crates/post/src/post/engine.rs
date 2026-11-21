@@ -347,7 +347,7 @@ pub fn run_program_with(
                 }
                 // #1882: under `linearizeArcs` an arc posts as its chords.
                 let pieces = match (chord_tol, m.center) {
-                    (Some(t), Some(_)) => super::program_bounds::arc_pieces(pos, m, t),
+                    (Some(t), Some(_)) => super::program_bounds::arc_pieces(pos, m, t)?,
                     _ => vec![m.clone()],
                 };
                 let mut at = pos;
