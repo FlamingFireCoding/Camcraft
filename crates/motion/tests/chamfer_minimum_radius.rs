@@ -146,7 +146,7 @@ fn an_open_chain_offsets_on_its_named_air_side_and_keeps_its_break() {
         Ok(Some(blocked.clone()))
     }));
     assert!(
-        blocked.contains("air side") && blocked.contains("smaller radius"),
+        blocked.contains("air side") && blocked.contains("smaller offset"),
         "{blocked}"
     );
 
@@ -235,7 +235,7 @@ fn minimum_radius_refuses_invalid_and_collapsed_offsets_by_name() {
             &params(value, Side::Outside),
         ));
         assert!(
-            why.contains("minimum cone radius") && why.contains(word),
+            why.contains("cone radial offset") && why.contains(word),
             "{why}"
         );
     }
@@ -244,7 +244,7 @@ fn minimum_radius_refuses_invalid_and_collapsed_offsets_by_name() {
         &params(3.0, Side::Inside),
     ));
     assert!(
-        why.contains("disappears") && why.contains("minimum cone radius"),
+        why.contains("disappears") && why.contains("cone radial offset"),
         "{why}"
     );
 }

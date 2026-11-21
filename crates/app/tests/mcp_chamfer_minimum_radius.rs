@@ -1,4 +1,4 @@
-//! #3153 MCP and project pins for the 2D Chamfer minimum cone radius.
+//! #3153 MCP and project pins for the 2D Chamfer cone radial offset.
 //!
 //! Gate map (#3153): covers app::mcp (list_operation_types, add_operation,
 //! edit_operation, get_job, project tools) and app::project::ParamsDto.

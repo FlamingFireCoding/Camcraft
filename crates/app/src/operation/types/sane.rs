@@ -102,7 +102,7 @@ impl OpParams {
                 minimum_cone_radius,
                 ..
             } if !(minimum_cone_radius.is_finite() && *minimum_cone_radius >= 0.0) => {
-                Some("minimum cone radius must be finite and non-negative".into())
+                Some("cone radial offset must be finite and non-negative".into())
             }
             _ => None,
         }

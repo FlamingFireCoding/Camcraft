@@ -166,7 +166,7 @@ fn tool_radius_and_flute_reach_refuse_the_missing_dimension() {
             Err(error) => error,
         };
         let error = error.to_string();
-        assert!(error.contains("minimum cone radius"), "{error}");
+        assert!(error.contains("cone radial offset"), "{error}");
     }
 }
 

@@ -2233,7 +2233,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     )));
                 }
                 return Err(GenError::Invalid(format!(
-                    "a {width} mm chamfer with a {minimum_cone_radius} mm minimum cone radius reaches \
+                    "a {width} mm chamfer with a {minimum_cone_radius} mm cone radial offset reaches \
                      {outer_radius} mm from the cone axis; '{}' has only {} mm of tool radius",
                     tool_name,
                     tool.diameter * 0.5
@@ -2254,7 +2254,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 return Err(GenError::Invalid(format!(
                     "the cone of '{}' is {} mm of flute, short of the {:.1} mm cone reach \
-                     for a {minimum_cone_radius} mm minimum radius plus a {width} mm chamfer",
+                     for a {minimum_cone_radius} mm cone radial offset plus a {width} mm chamfer",
                     tool_name, tool.flute_len, reach
                 )));
             }

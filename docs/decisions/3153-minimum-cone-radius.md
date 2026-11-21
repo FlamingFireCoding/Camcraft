@@ -1,7 +1,7 @@
 ## #3153 - Select a 2D Chamfer cone band
 
 **What was decided:** The operation keeps the authored chamfer width and
-angle as the edge-break promise. A positive minimum cone radius offsets
+angle as the edge-break promise. A positive cone radial offset moves
 the centerline toward the selected air side and lowers the virtual CL
 tip to `top_z - (minimum_cone_radius + width) * tan(angle)`.
 
@@ -17,6 +17,10 @@ operation therefore keeps the former point order, move positions and
 staleness bytes. Project v74 omits a zero `minimum_cone_radius` and
 requires a newer reader only because a positive value changes a posted
 path.
+
+The user-facing label is "Cone radial offset". The existing
+`minimum_cone_radius` key remains internal and persisted for the
+operation's typed and project parameter surfaces.
 
 **Why:** The selected edge-break and the cone contact band answer
 different geometry questions. The EdgeBreak must remain on the original

@@ -188,10 +188,10 @@ pub(crate) fn corner_note(
 ) -> String {
     match resolve_all(world, setup, src, tilt, [top]) {
         Ok([tz]) if (tz - drop).is_finite() => format!(
-            "the virtual cone tip stands at {} - derived: (minimum cone radius + width) x tan(angle) below the top plane",
+            "the virtual cone tip stands at {} - derived: (cone radial offset + width) x tan(angle) below the top plane",
             units::len(tz - drop, units::of(world), 3)
         ),
-        Ok(_) => "the cone tip is unresolved: (minimum cone radius + width) x tan(angle) is not finite".to_owned(),
+        Ok(_) => "the cone tip is unresolved: (cone radial offset + width) x tan(angle) is not finite".to_owned(),
         Err(why) => format!("the cone tip is unresolved: {why}"),
     }
 }
