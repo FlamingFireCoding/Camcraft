@@ -6,9 +6,10 @@
 //! with joined corners: every boundary piece of the profile says a
 //! radius its distance-d neighbors must stand outside -
 //!
-//! - a segment of slope b, at every station of its window: the
-//!   parallel line raised by d*sqrt(1 + b^2) (offset along the
-//!   normal),
+//! - a segment of slope b, at every station where the ball's
+//!   tangent point lies on the segment (its window shifted by
+//!   d*b/sqrt(1 + b^2), #2881): the parallel line raised by
+//!   d*sqrt(1 + b^2) (offset along the normal),
 //! - every vertex: the circle of radius d about it, within d of its
 //!   station,
 //!
@@ -76,13 +77,9 @@ pub fn profile_offset(
     }
     // The claims. Circles ride sorted by station for the range
     // scan; segment windows partition the stations (the silhouette
-    // is a function there), so a bounded probe of neighbors finds
-    // every window containing s.
-    let segs: Vec<(f64, f64, f64, f64)> = pts
-        .windows(2)
-        .filter(|w| w[0].0 < w[1].0)
-        .map(|w| (w[0].0, w[1].0, w[0].1, (w[1].1 - w[0].1) / (w[1].0 - w[0].0)))
-        .collect();
+    // is a function there) and each claim window sits within d of
+    // its segment's, so a range probe finds every claim at s.
+    let segs = seg_claims(pts, d, 1.0);
     let d2 = d * d;
     let val = |s: f64| -> f64 {
         let mut r: f64 = 0.0;
@@ -94,10 +91,9 @@ pub fn profile_offset(
                 r = r.max(rv + q.sqrt());
             }
         }
-        let i = segs.partition_point(|&(s0, _, _, _)| s0 <= s);
-        for &(s0, s1, a, b) in &segs[i.saturating_sub(1)..(i + 2).min(segs.len())] {
-            if s0 <= s && s <= s1 {
-                r = r.max(a + b * (s - s0) + d * (1.0 + b * b).sqrt());
+        for g in seg_range(&segs, s, d) {
+            if g.w0 <= s && s <= g.w1 {
+                r = r.max(g.claim(s));
             }
         }
         r
@@ -105,7 +101,8 @@ pub fn profile_offset(
 
     // Candidate stations: the window's ends and every vertex's
     // s - d / s / s + d: the arcs' peaks, ends and the verticals
-    // they leave behind.
+    // they leave behind. A claim window's end needs no candidate:
+    // there the line meets its end circle at the tangent, smoothly.
     let mut cs: Vec<f64> = vec![s_lo, s_hi];
     for &(sv, _) in pts {
         for c in [sv - d, sv, sv + d] {
@@ -174,11 +171,7 @@ pub fn profile_offset_in(
             "the hole's wall does not span the window".into(),
         ));
     }
-    let segs: Vec<(f64, f64, f64, f64)> = pts
-        .windows(2)
-        .filter(|w| w[0].0 < w[1].0)
-        .map(|w| (w[0].0, w[1].0, w[0].1, (w[1].1 - w[0].1) / (w[1].0 - w[0].0)))
-        .collect();
+    let segs = seg_claims(pts, d, -1.0);
     let d2 = d * d;
     let val = |s: f64| -> f64 {
         let mut r: f64 = f64::INFINITY;
@@ -190,14 +183,15 @@ pub fn profile_offset_in(
                 r = r.min(rv - q.sqrt());
             }
         }
-        let i = segs.partition_point(|&(s0, _, _, _)| s0 <= s);
-        for &(s0, s1, a, b) in &segs[i.saturating_sub(1)..(i + 2).min(segs.len())] {
-            if s0 <= s && s <= s1 {
-                r = r.min(a + b * (s - s0) - d * (1.0 + b * b).sqrt());
+        for g in seg_range(&segs, s, d) {
+            if g.w0 <= s && s <= g.w1 {
+                r = r.min(g.claim(s));
             }
         }
         // A station no piece claims would have to lie off the wall
-        // polyline, which the spanning door above rules out.
+        // polyline, which the spanning door above rules out: a
+        // station of a segment outside its claim window is within
+        // d of an end point, whose circle claims it.
         debug_assert!(r.is_finite());
         r
     };
@@ -225,6 +219,59 @@ pub fn profile_offset_in(
     }
     out.dedup();
     Ok(out)
+}
+
+/// The line claim of one profile segment: the segment's parallel at
+/// distance d, held only over the stations [w0, w1] where the ball's
+/// tangent point lies ON the segment (#2881). The normal tilts the
+/// tangent point by d*b/sqrt(1 + b^2) in station, so the claim
+/// window is the segment's own window shifted by that much. Outside
+/// it the nearest point of the segment is an end point, and that
+/// vertex's circle makes the claim. Held over the segment's own
+/// window instead, a steep short chord claims its infinite line far
+/// above the bar, and a sloped face misses the stations before its
+/// inside corner, where it is the nearest piece.
+#[derive(Clone, Copy)]
+struct SegClaim {
+    s0: f64,
+    s1: f64,
+    a: f64,
+    b: f64,
+    /// d * sqrt(1 + b^2), signed: + rides outside, - inside.
+    lift: f64,
+    w0: f64,
+    w1: f64,
+}
+
+impl SegClaim {
+    fn claim(&self, s: f64) -> f64 {
+        self.a + self.b * (s - self.s0) + self.lift
+    }
+}
+
+/// The segment claims of `pts` for a ball of radius `d` on the
+/// outside (`side` +1) or the inside (`side` -1) of the wall.
+/// Verticals drop out: their end circles say all they claim.
+fn seg_claims(pts: &[SR], d: f64, side: f64) -> Vec<SegClaim> {
+    pts.windows(2)
+        .filter(|w| w[0].0 < w[1].0)
+        .map(|w| {
+            let (s0, s1, a) = (w[0].0, w[1].0, w[0].1);
+            let b = (w[1].1 - a) / (s1 - s0);
+            let n = (1.0 + b * b).sqrt();
+            let shift = -side * d * b / n;
+            SegClaim { s0, s1, a, b, lift: side * d * n, w0: s0 + shift, w1: s1 + shift }
+        })
+        .collect()
+}
+
+/// The segments whose claim window can hold station `s`: the claim
+/// window is within `d` of the segment's own window, and the own
+/// windows ascend without overlap.
+fn seg_range(segs: &[SegClaim], s: f64, d: f64) -> &[SegClaim] {
+    let lo = segs.partition_point(|g| g.s1 < s - d);
+    let hi = segs.partition_point(|g| g.s0 <= s + d);
+    &segs[lo..hi.max(lo)]
 }
 
 /// Bisect a candidate gap until its chord stands within `tol` of
