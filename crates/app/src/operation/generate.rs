@@ -134,7 +134,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             picks,
             || region_for_job(&mut picked_region, &mut section_z, &src, &params, &material, None),
             // #1053: the kerf law gives a coarse model's excess back.
-            (&material.facets, material.excess),
+            (&material.facets, material.excess, material.file_tolerance),
         );
     }
     // The wire cut (#532) is its own law too: one closed profile at
@@ -261,6 +261,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         top: material.top - oz,
         bodies: material.bodies.clone(),
         excess: material.excess,
+        file_tolerance: material.file_tolerance,
     });
     let (region, path, relief_zones, turn_note, thread_round, mut broke, lk) = match (|| -> Result<_, GenError> {
     let stock_region = &stock_region_gen;
@@ -3358,6 +3359,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 spindle: None,
                 // #864: a source imported coarser than promised.
                 model_excess: material.excess,
+                file_tolerance: material.file_tolerance,
                 // #1057: the containment kinds' declared rims, read untightened.
                 rims: &rims,
                 // #1408: a turning nose path's verdict turns the work
@@ -3413,7 +3415,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 // #904: tightened by a coarse model's excess, like the
                 // gouge laws - every reading the margin excuses shrinks.
-                margin: super::fidelity_law::tightened(GOUGE_TOL, material.excess),
+                margin: super::fidelity_law::tightened_strict(GOUGE_TOL, material.excess),
                 z_tol: Z_TOL,
                 drills: &drills_ahead,
                 ahead: &turned_ahead,
@@ -3541,7 +3543,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // own recognized bore - width, floor and existence, by
             // name at the cycle's first move.
             if lathe_axial {
-                let tol = super::fidelity_law::tightened(GOUGE_TOL, material.excess);
+                let tol = super::fidelity_law::tightened_strict(GOUGE_TOL, material.excess);
                 warns.extend(drilling::axial_warnings(
                     &material.facets,
                     &path,
@@ -3555,32 +3557,32 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // along every move against the part solid. The Section kinds
             // answer the same law inside `verify` (b2), real tip (M13.7).
             if depth_law == DepthLaw::Contain {
-                contain_into(&mut warns, &path, &material.facets, &cutter, depth_law, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, &material.facets, &cutter, depth_law, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1603: the pocket family keeps the part - its own mesh
             // for a whole-model source, the setup's parts for a stock one
             // (#1607: every stock-kept kind but the marks and the holes).
             if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&material.facets).or((!keep_parts.is_empty() && !parts_marked && !parts_holed && !parts_crossed).then_some(&keep_parts)) {
                 let start = warns.len();
-                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
             }
             // #1631: a hole kind off the stock - the setup's parts by the
             // containment law, its declared holes' modelled walls excused.
             if parts_holed {
-                contain_into(&mut warns, &path, &keep_parts, &cutter, DepthLaw::Contain, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, &keep_parts, &cutter, DepthLaw::Contain, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1595: an Engrave or Trace on the part may lower its
             // surface by the mark budget and no more (`mark_law`);
             // #1607: on a stock source, the setup's parts the same way.
             let marked = match (depth_law == DepthLaw::Mark).then_some(&material.facets).or(parts_marked.then_some(&keep_parts)) {
-                Some(part) => super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess),
+                Some(part) => super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess, material.file_tolerance),
                 None => super::mark_law::Marked::default(),
             };
             // #1621: the setup's other parts, beside a part source - the
             // plain solid law, no budget (a mark is on its own part).
             if !neighbour_parts.is_empty() {
-                contain_into(&mut warns, &path, &neighbour_parts, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, &neighbour_parts, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
             }
             // #985: an external thread's crest ring against every wall
             // that is not the boss it threads, with no thread allowance.
@@ -3595,16 +3597,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 let c = verify::Cutter::of(core).with_body(&g, &crate::tool_body::stack(&g, body.as_ref()).with_neck(holder.neck.clone()));
                 let mut w = verify::verify_bodies(&path, &VerifyContext { tool: &g, cutter: Some(c), ..ctx.clone() }, &material.bodies);
                 if depth_law == DepthLaw::Contain {
-                    contain_into(&mut w, &path, &material.facets, &c, depth_law, stl, material.excess, &params, &[]);
+                    contain_into(&mut w, &path, &material.facets, &c, depth_law, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 // #1631: the core re-reads every part law the full tap
                 // answered to - the parts off the stock, and #1621's
                 // neighbours - or their gouges would be acquitted unread.
                 if parts_holed {
-                    contain_into(&mut w, &path, &keep_parts, &c, DepthLaw::Contain, stl, material.excess, &params, &[]);
+                    contain_into(&mut w, &path, &keep_parts, &c, DepthLaw::Contain, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 if !neighbour_parts.is_empty() {
-                    contain_into(&mut w, &path, &neighbour_parts, &c, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                    contain_into(&mut w, &path, &neighbour_parts, &c, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 w
             });
@@ -3733,6 +3735,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     spindle: None,
                     // #864: a source imported coarser than promised.
                     model_excess: material.excess,
+                    file_tolerance: material.file_tolerance,
                     rims: &rims,
                     // No envelope runs in a plane's frame (finish_tol None).
                     lathe_axis: None,
@@ -3756,18 +3759,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // along every move against the part solid. The Section kinds
             // answer the same law inside `verify` (b2), real tip (M13.7).
             if depth_law == DepthLaw::Contain {
-                contain_into(&mut warns, &path, &m_gen.facets, &cutter, depth_law, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, &m_gen.facets, &cutter, depth_law, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1603: the keep law in the plane's frame.
             let keep_local = (!keep_parts.is_empty()).then(|| f.local_facets(&keep_parts));
             if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| !parts_marked && !parts_holed && !parts_crossed)) {
                 let start = warns.len();
-                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
             }
             // #1631: a hole kind off the stock, in the plane's frame.
             if let Some(kept) = keep_local.as_ref().filter(|_| parts_holed) {
-                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Contain, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Contain, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1595: the mark law in the plane's frame - local path,
             // local part, the budget measured along the tool (#1607:
@@ -3777,12 +3780,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             path_world.notes.extend(table_note);
             let mark_part = (depth_law == DepthLaw::Mark).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| parts_marked));
             if let Some(part) = mark_part {
-                let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess);
+                let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess, material.file_tolerance);
                 path_world.notes.extend(super::mark_law::notes(params.kind().info().label, marked, mark_budget, unit));
             }
             // #1621: the setup's other parts, in the plane's frame.
             if !neighbour_parts.is_empty() {
-                contain_into(&mut warns, &path, &f.local_facets(&neighbour_parts), &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, &f.local_facets(&neighbour_parts), &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
             }
             warns.extend(workholding_warnings(
                 &path_world,
@@ -3990,13 +3993,14 @@ pub(super) fn contain_into(
     law: DepthLaw,
     stl: f64,
     excess: f64,
+    file_tolerance: bool,
     params: &OpParams,
     bores: &[verify::ThreadBore],
 ) {
     let law = verify::SolidLaw {
         step: CONTAIN_STEP,
         // #864: less a coarse model's excess, while that is honest.
-        allow: verify::excess_floor(GOUGE_TOL, excess).unwrap_or(GOUGE_TOL) + (-stl).max(0.0),
+        allow: verify::excess_floor_for(GOUGE_TOL, excess, file_tolerance).unwrap_or(GOUGE_TOL) + (-stl).max(0.0),
         hole_walls: law == DepthLaw::Contain,
     };
     let holes = match params {

@@ -222,7 +222,7 @@ mod corner_relief;
 pub use corner_relief::CornerReliefZone;
 
 pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
-pub use excess::excess_floor;
+pub use excess::{band_growth, excess_floor, excess_floor_for, strict_floor, PROMISED_CHORD, WIDE_CHORD_LIMIT};
 pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
 pub use live_traverse::{live_first_traverse, LiveHit, LiveSolids, LiveStart, LiveUnjudged};
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
