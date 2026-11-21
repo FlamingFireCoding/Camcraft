@@ -241,7 +241,9 @@ the rule. The merging
 session bumps the number once per merge batch (`cargo xtask process-bump`)
 and comments on the pinned issue #681 (Process changes):
 `PROCESS_VERSION <n>` · PR #M · what changed · what a fork must do (usually
-"pull the process files", the command in the issue body). That comment is
+"pull the process files", the command in the issue body) · reload: each
+running session reloads `AGENTS.md`, `.claude/agents/` and
+`.claude/skills/`, and a fork runs `fork-sync`. That comment is
 how fork maintainers subscribed to #681 hear about it.
 
 ## 3. Report

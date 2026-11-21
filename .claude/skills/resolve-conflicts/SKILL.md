@@ -14,9 +14,10 @@ and reports when the two sides really clash.
 
 Since 2026-11-12 a conflicting PR is refreshed **only at merge time**
 (AGENTS.md "Refresh only at merge time", issue #1221): it carries
-`conflicts` and is otherwise left alone, by its author's agents, by
-maintenance and by reviewers. Nobody refreshes all of them at session
-start. The merging session (or the author, when asked for one named PR)
+`conflicts` and is otherwise left alone by maintenance and by reviewers.
+Its author's agents refresh it only under AGENTS.md "Own blocked PRs
+first" (before they claim a new issue). Nobody refreshes all of them at
+session start. The merging session (or the author, when asked for one named PR)
 runs this skill on the PR the merge batch is about to merge, in the order
 `cargo xtask merge-plan` gives. Its delta check after a refresh is
 `cargo xtask merge-plan --delta <PR> --reviewed <sha>`.
