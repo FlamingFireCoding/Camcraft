@@ -205,24 +205,62 @@ fn a_head_tilt_machine_with_no_travel_names_the_table_unjudged() {
     assert!(note.contains("judged against the stock and the fixtures only"), "{note}");
 }
 
+fn under(warns: &[Warning]) -> Option<(f64, f64)> {
+    warns.iter().find_map(|w| match *w {
+        Warning::FirstTraverseUnderTable { height_mm, limit_mm, .. } => Some((height_mm, limit_mm)),
+        _ => None,
+    })
+}
+
+/// The highest plane over the tilt origin, along a B `b_deg` axis past
+/// 90 deg (it points down toward the table), that a move from every
+/// tool-change start (x +-`x_half`, Z 300) reaches over the table top
+/// (Z 0): the worst start (x -`x_half`, Z 300) reads `-x_half` sin B +
+/// 280 cos B, and the move from it drops (h - that) * -cos B. B 120 on
+/// the wide machine: -486.41 + 300 / 0.5 = 113.59.
+fn table_limit(x_half: f64, b_deg: f64) -> f64 {
+    let b = b_deg.to_radians();
+    -x_half * b.sin() + (300.0 - ORIGIN_Z) * b.cos() + 300.0 / -b.cos()
+}
+
 #[test]
-fn a_head_tilt_past_90_names_the_table_unjudged() {
+fn a_head_tilt_past_90_under_the_table_is_refused_with_lower() {
     // B 120: the axis (sin 120, 0, cos 120) points down toward the table,
-    // so a HIGHER plane along it stands LOWER in the world, and the
-    // verdict can only say "raise", which is wrong here. X +-400: the
-    // worst start (-400, y, 300) reads -346.41 - 140 = -486.41 along the
-    // axis; the move from it to the plane drops (h + 486.41) * 0.5 mm,
-    // which reaches the 300 mm stroke at h = 113.59. At 100 the move
-    // stays over the table: no note. At 150 it can go under: the note
-    // names the table as not judged, and no verdict is given.
-    let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + 100.0);
+    // so a HIGHER plane along it stands LOWER in the world. At 150 (over
+    // the 113.59 limit) the move from the tool-change height can go under
+    // the table top: a verdict refuses the post and says "lower", never
+    // "raise" (#3081). The stock top along the axis (35.98) stays under
+    // the plane, so no FirstTraverseLow verdict comes with it.
+    let want = table_limit(WIDE, 120.0);
+    assert!((want - 113.590).abs() < 1e-3, "{want}");
+    let (world, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + 150.0);
     assert_eq!(low(&warns), None, "{warns:?}");
-    assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
-    let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + 150.0);
-    assert_eq!(low(&warns), None, "no table verdict past 90 deg: {warns:?}");
-    let note = notes.iter().find(|n| n.contains("machine table is not judged")).unwrap_or_else(|| panic!("no note: {notes:?}"));
-    for text in ["points down toward the table", "from the tool-change height"] {
-        assert!(note.contains(text), "{text}: {note}");
+    let (h_mm, limit_mm) = under(&warns).unwrap_or_else(|| panic!("no table verdict past 90 deg: {warns:?}"));
+    assert!((h_mm - 150.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
+    assert!((limit_mm - want).abs() < 1e-6, "the plane to lower to: {limit_mm}, want {want}");
+    let verdict = Warning::FirstTraverseUnderTable { at: 0, height_mm: h_mm, limit_mm };
+    assert!(verdict.blocks_post(), "the table verdict must hold the post");
+    assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "a verdict, not a note: {notes:?}");
+    // The message names the repair: lower, never raise.
+    let text = verdict.to_string();
+    for want_text in ["first rapid (move 0)", "points down toward the machine table", &format!("lower the clearance plane to Z{want:.3}")] {
+        assert!(text.contains(want_text), "{want_text}: {text}");
+    }
+    assert!(!text.contains("raise"), "a down-pointing axis must not say raise: {text}");
+    // This rig's B 120 face also cuts under the Z stroke, so the machine
+    // limit law refuses the post first; the post must not pass either way.
+    posting::post_setup_unwritten(&world).expect_err("the program must not post");
+}
+
+#[test]
+fn a_head_tilt_past_90_plane_under_the_limit_passes() {
+    // B 120, X +-400: planes at 100 and 113 (under the 113.59 limit) keep
+    // the move from the tool-change height over the table top.
+    for h in [100.0, 113.0] {
+        let (_, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + h);
+        assert_eq!(low(&warns), None, "{h}: {warns:?}");
+        assert_eq!(under(&warns), None, "{h}: {warns:?}");
+        assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{h}: {notes:?}");
     }
 }
 
