@@ -192,7 +192,7 @@ fn torch(model_excess: f64) -> PlasmaParams {
         cut_height: None,
         pierce_delay: None,
         model_excess,
-    }
+        file_tolerance: false,    }
 }
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {

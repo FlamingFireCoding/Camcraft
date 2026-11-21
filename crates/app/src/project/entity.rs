@@ -610,6 +610,9 @@ pub struct EntityDto {
     /// and loads as full fidelity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coarse_mm: Option<f64>,
+    /// Only file tolerance caused the recorded chord. Missing means strict.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub file_tolerance: bool,
     /// #1056 (v59): this mesh's fidelity is not known - a model or stock
     /// copy from a file saved before CamCraft recorded it. Its operations
     /// are refused at the post until the model is re-imported. Absent is

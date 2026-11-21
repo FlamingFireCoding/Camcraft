@@ -64,6 +64,7 @@ impl ImportFixture {
             Some(_) => Landing::Update(Box::new(
                 UpdateModel::new(world, &name, import.mesh)?
                     .with_fidelity(import.coarse_mm)
+                    .with_file_tolerance(import.file_tolerance)
                     .with_hole(import.hole.clone())
                     .with_budget(import.facet_budget)
                     .with_step_source(import.step_source.clone())

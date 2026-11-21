@@ -15,10 +15,10 @@ impl VerifyContext<'_> {
     /// that stays positive. At or below zero it would convict every
     /// exactly finished flat face - a misleading verdict - so `tol` comes
     /// back unchanged and the program gate refuses the operation by name
-    /// ([`excess_floor`] is the one test both sides read).
+    /// ([`excess_floor_for`] selects the recorded cause).
     #[must_use]
     pub fn tightened(&self, tol: f64) -> f64 {
-        excess_floor(tol, self.model_excess).unwrap_or(tol)
+        excess_floor_for(tol, self.model_excess, self.file_tolerance).unwrap_or(tol)
     }
 
     /// How far the collision laws grow a shank or holder band on a model
@@ -73,27 +73,33 @@ const WIDE_EXCESS_LIMIT: f64 = WIDE_CHORD_LIMIT - PROMISED_CHORD + 1e-9;
 /// excess, `None` once nothing positive is left - where the caller must
 /// refuse rather than judge. A non-finite or negative excess is no excess.
 ///
-/// What it takes (#864, widened by #2996):
+/// What it takes (#864, widened by #2996 only when `file_tolerance` is true):
 /// - an excess up to [`PROMISED_CHORD`] (a chord up to `DEV_TOL`): all
 ///   of it, so the real surface is held to the same bound as at full
 ///   fidelity - #864's law, unchanged;
 /// - a larger excess, up to a chord of [`WIDE_CHORD_LIMIT`]: only
 ///   [`PROMISED_CHORD`]. The tolerance is widened by how far the chord
-///   passes `DEV_TOL`: the program verdict is then read at the model's
-///   own chord error, not at `DEV_TOL`. Never wider than `tol` itself;
+///   passes `DEV_TOL`: the true-surface bound is the mesh allowance
+///   plus the chord. Never wider than `tol` against the mesh itself;
 /// - past the limit: all of it again (#864), which leaves no gouge
 ///   tolerance, so the operation is refused by name.
 ///
 /// Collision bands never read this widening: they grow by the whole
 /// excess ([`band_growth`]).
 #[must_use]
-pub fn excess_floor(tol: f64, excess: f64) -> Option<f64> {
+pub fn excess_floor_for(tol: f64, excess: f64, file_tolerance: bool) -> Option<f64> {
     if !(excess.is_finite() && excess > 0.0) {
         return Some(tol);
     }
-    let taken = if excess <= WIDE_EXCESS_LIMIT { excess.min(PROMISED_CHORD) } else { excess };
+    let taken = if file_tolerance && excess <= WIDE_EXCESS_LIMIT { excess.min(PROMISED_CHORD) } else { excess };
     let left = tol - taken;
     (left.is_finite() && left > 0.0).then_some(left)
+}
+
+/// Unrecorded and budget-coarsened models keep the original strict law.
+#[must_use]
+pub fn excess_floor(tol: f64, excess: f64) -> Option<f64> {
+    strict_floor(tol, excess)
 }
 
 /// #864's law without the #2996 widening: `tol` less the WHOLE `excess`
@@ -119,7 +125,7 @@ pub fn strict_floor(tol: f64, excess: f64) -> Option<f64> {
 /// widening of the gouge tolerance is never given to a band.
 #[must_use]
 pub fn band_growth(tol: f64, excess: f64) -> f64 {
-    if excess.is_finite() && excess > 0.0 && excess_floor(tol, excess).is_some() { excess } else { 0.0 }
+    if excess.is_finite() && excess > 0.0 && excess_floor_for(tol, excess, true).is_some() { excess } else { 0.0 }
 }
 
 /// Whether every vertex of `l` (eight at least, as every rim has) stands

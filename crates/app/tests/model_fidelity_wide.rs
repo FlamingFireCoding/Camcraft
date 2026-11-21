@@ -33,7 +33,7 @@ fn faced_brick(coarse_mm: Option<f64>) -> World {
     let world = new_world();
     let mut h = History::default();
     let brick = cube(Point3::new(-20.0, -10.0, 0.0), Point3::new(20.0, 10.0, 10.0));
-    h.execute(&world, ImportModel::from_mesh("brick", brick).with_fidelity(coarse_mm));
+    h.execute(&world, ImportModel::from_mesh("brick", brick).with_fidelity(coarse_mm).with_file_tolerance(true));
     h.execute(&world, SetStock::new(&world, StockShape::FromModel { source: "brick".into() }, Default::default()).expect("stock"));
     let tool = catalog().into_iter().find(|(n, _)| *n == MILL).map(|(_, t)| t).expect("catalog mill");
     h.execute(&world, AddTool::new(&world, MILL, tool).expect("tool"));
@@ -90,15 +90,17 @@ fn a_model_just_under_the_limit_posts_an_exact_finish_with_a_header_note() {
         .lines()
         .find(|l| l.to_ascii_lowercase().contains("reduced accuracy"))
         .unwrap_or_else(|| panic!("the header names the reduced accuracy:\n{program}"));
+    assert!(line.starts_with('(') && line.ends_with(')'), "valid Fanuc header comment: {line}");
+    assert!((fidelity_note::surface_bound(UNDER) - 0.024).abs() < 1e-12);
     let low = line.to_ascii_lowercase();
-    assert!(low.contains("brick") && low.contains("0.019") && low.contains("0.010"), "{line}");
+    assert!(low.contains("brick") && low.contains("0.024") && low.contains("0.010"), "{line}");
     let first_move = program.lines().position(|l| l.contains("G1") || l.contains("G0")).unwrap_or(usize::MAX);
     let at = program.lines().position(|l| l == line).unwrap_or(usize::MAX);
     assert!(at < first_move, "the note is in the header, before any motion:\n{program}");
     // The model page and MCP say the same fact in plain words.
-    let said = model_fidelity::summary(&world, UNDER);
-    assert!(said.ends_with("checks on this model allow 0.019 mm, not 0.010 mm"), "{said}");
-    let note = model_fidelity::facts(&world, UNDER)["note"].as_str().expect("note").to_string();
+    let said = model_fidelity::summary_with_cause(&world, UNDER, true);
+    assert!(said.ends_with("checks on this model allow 0.024 mm, not 0.010 mm"), "{said}");
+    let note = model_fidelity::facts_with_cause(&world, UNDER, true)["note"].as_str().expect("note").to_string();
     assert!(!note.contains("stricter") && note.contains("header"), "{note}");
 }
 
@@ -133,6 +135,7 @@ fn the_edge_gap_step_file_opened_at_reduced_accuracy_posts_a_face_with_the_note(
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/edge_gap/edge_gap_018_stated_010.step");
     let cmd = ImportModel::new(&path).expect("imports at reduced accuracy");
     assert!(cmd.coarse_mm.is_some_and(|c| (c - WIDE).abs() < 1e-12), "{:?}", cmd.coarse_mm);
+    assert!(cmd.file_tolerance, "the file tolerance, not the budget, set this chord");
     let world = new_world();
     let mut h = History::default();
     h.execute(&world, cmd.renamed("gap"));
@@ -143,7 +146,7 @@ fn the_edge_gap_step_file_opened_at_reduced_accuracy_posts_a_face_with_the_note(
     h.execute(&world, GenerateOperation::new(&world, "OP").expect("generate"));
     let program = post(&world, "edge-gap").unwrap_or_else(|e| panic!("the post goes out: {e}"));
     let low = program.to_ascii_lowercase();
-    assert!(low.contains("reduced accuracy") && low.contains("gap") && low.contains("0.020"), "{program}");
+    assert!(low.contains("reduced accuracy") && low.contains("gap") && low.contains("0.025"), "{program}");
 }
 
 #[test]
@@ -158,5 +161,20 @@ fn a_full_fidelity_model_and_a_mild_one_say_nothing_new() {
     let tol = model_fidelity::verdict_tol(&mild).expect("tol");
     assert!((tol - (DEV_TOL - (0.009 - verify::PROMISED_CHORD))).abs() < 1e-12, "{tol}");
     assert!(fidelity_note::program_notes(&mild).is_empty());
-    assert_eq!(fidelity_note::clause(&mild, 0.009), None);
+    assert_eq!(fidelity_note::clause(&mild, 0.009, true), None);
+}
+
+#[test]
+fn changing_only_the_import_cause_invalidates_the_cached_verdict() {
+    let world = faced_brick(Some(UNDER));
+    let e = model::find_by_name(&world, "OP").expect("op");
+    assert_eq!(camcraft_app::operation::status_of(&world, &e), camcraft_app::operation::OpStatus::Ok);
+    let model = model::find_by_name(&world, "brick").expect("model");
+    model_fidelity::set(&world, &model, Some(UNDER));
+    assert_eq!(camcraft_app::operation::status_of(&world, &e), camcraft_app::operation::OpStatus::Stale);
+    model_fidelity::set_with_cause(&world, &model, Some(UNDER), true);
+    assert_eq!(camcraft_app::operation::status_of(&world, &e), camcraft_app::operation::OpStatus::Ok);
+    let stock = model::find_by_name(&world, "Stock").expect("stock");
+    model_fidelity::set(&world, &stock, Some(UNDER));
+    assert_eq!(camcraft_app::operation::status_of(&world, &e), camcraft_app::operation::OpStatus::Stale);
 }

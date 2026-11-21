@@ -94,6 +94,13 @@ function formatFeed(v) {
   return String(Math.round(v));
 }
 function onComment(s) { writeln(s); }
+// Full program notes retain their bound; name cleaners may truncate it.
+// Remove the delimiter and control characters used by the shipped dialects.
+function commentText(s) {
+  return String(s === null || s === undefined ? "" : s)
+    .replace(/[()%;*\/!~{}$]/g, " ").replace(/[^\x20-\x7E]/g, "?")
+    .replace(/\s+/g, " ").trim();
+}
 // Bar-feeder lifecycle defaults (M5.2 G.2): the events carry no
 // motion and no post may invent an M-code, so the default voices
 // the intent as a comment - visible to the operator, harmless to

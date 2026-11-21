@@ -236,8 +236,8 @@ fn faced(coarse_mm: Option<f64>) -> World {
 #[test]
 fn the_eyes_colours_are_gated_at_the_tightened_verdict_tolerance() {
     let world = faced(Some(TIGHT));
-    // #2996: TIGHT passes DEV_TOL, so only the promised 0.005 mm is taken.
-    let want = DEV_TOL - 0.005;
+    // No file-tolerance cause was recorded: the copy keeps the strict law.
+    let want = DEV_TOL - (TIGHT - 0.005);
     assert_eq!(model_fidelity::program_tol(&world), model_fidelity::verdict_tol(&world));
     let fv = stock_view::field_view_with(&world, 2_000.0).expect("view");
     assert!((fv.tol - want).abs() < 1e-12, "the colours read {} not {want}", fv.tol);

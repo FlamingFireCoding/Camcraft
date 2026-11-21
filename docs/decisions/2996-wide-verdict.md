@@ -1,125 +1,125 @@
-## #2996 - A model at reduced accuracy is judged at its own chord error, up to 0.02 mm
+## #2996 - Widen verdicts only for models limited by the file tolerance
 
-The maintainer decided on 2026-11-20 to widen the verdict tolerance for a
-model that opens at reduced accuracy (#2976, PR #2994). This entry records
-how the agent built that decision.
+The maintainer decided on 2026-11-20 to accept a true-surface bound up to
+0.030 mm for a model made coarse by the file's stated tolerance. The
+program header must state that bound. A model made coarse by the facet
+budget keeps the strict law of #864.
 
 ### The rule
 
-A model's chord error `c` is the deviation that its kept mesh has from the
+A model's chord error `c` bounds the deviation of its kept mesh from the
 true surface. The importer promises `PROMISED_CHORD` = 0.005 mm. The
-excess is `e = c - 0.005`. Each gouge law holds a tolerance `t`. The law
-judges against the mesh at `t'`:
+excess is `e = c - 0.005`. Each gouge law holds a tolerance `t` and judges
+against the mesh at `t'`.
 
-| Chord `c` | `t'` | Real surface bound for `t = DEV_TOL` |
+The persisted `file_tolerance` record permits widening only when the file
+tolerance required the coarse mesh and the facet budget did not coarsen
+it further. Missing records, budget coarsening and mixed causes keep the
+strict law. A selection can widen only when every reduced source has the
+permitted cause. Import, project save/load, copies and undo preserve the
+record. This prevents one eligible part from widening another part.
+
+For an eligible model:
+
+| Chord `c` | Mesh tolerance `t'` | True-surface bound for `t = DEV_TOL` |
 |---|---|---|
-| up to 0.005 mm (full fidelity) | `t` | 0.015 mm (today) |
-| 0.005 to 0.010 mm | `t - e` (#864, no change) | 0.015 mm (today) |
-| 0.010 to 0.020 mm (`WIDE_CHORD_LIMIT`) | `t - 0.005` | `c + 0.005`, at most 0.025 mm |
+| up to 0.005 mm | `t` | at most 0.015 mm |
+| 0.005 to 0.010 mm | `t - e` (#864) | 0.015 mm |
+| over 0.010 to 0.020 mm (`WIDE_CHORD_LIMIT`) | `t - 0.005` | `c + 0.005`, at most 0.025 mm |
 | over 0.020 mm | `t - e` (#864), no tolerance left: refused by name | - |
 
-- For the program verdict (`t = DEV_TOL`), the tolerance in the scale of
-  `DEV_TOL` is the chord error itself: `max(DEV_TOL, c)`. The header
-  note and the model note give that number.
-- `t'` is never larger than `t`. A law whose own tolerance is 0.005 mm or
-  less (a tight finish tolerance) is still refused by name on such a
-  model.
+An ineligible model uses `t - e` at every reduced chord. At `c = 0.012`
+mm, `DEV_TOL = 0.010` mm gives a mesh tolerance of 0.003 mm. At or above
+`c = 0.015` mm, that law has no tolerance left and refuses the operation.
+
+- The mesh tolerance and the true-surface bound are different quantities.
+  At `c = 0.019` mm, an eligible model has a mesh tolerance of 0.005 mm
+  and a true-surface bound of 0.024 mm. The header and model note state
+  0.024 mm, rather than the chord or the mesh tolerance.
+- `t'` never exceeds `t`. A law whose own tolerance is 0.005 mm or less
+  is still refused by name in the widened range.
 - `WIDE_CHORD_LIMIT` is a constant in `camcraft_sim::verify`. No file,
   facet budget or vouch can raise it.
-- The rule is in one function, `verify::excess_floor`. Each gouge reader
-  reads it, so the readers cannot disagree.
+- The widened arithmetic remains in `verify::excess_floor`. The cause
+  record selects whether a reader may use it or must use
+  `verify::strict_floor`.
 
 ### Safety, for each direction
 
-- **A cut into the part.** On a convex wall, a facet stands inside the
-  true surface by up to `c`. A tool that touches the mesh can cut up to
-  `c` into the real part. The law does not count that in favour of the
-  tool. It takes `0.005` from `t` and states that the real surface is
-  judged to `max(DEV_TOL, c)`, in the same scale as at full fidelity.
-  A real gouge deeper than `c + t'` is always convicted, and the post is
-  blocked. Pins: `a_real_gouge_deeper_than_the_verdict_tolerance_still_blocks_a_widened_model`,
+- **A cut into the part.** On a convex wall, a facet can stand inside
+  the true surface by `c`. The mesh allowance adds `t'`, so the stated
+  true-surface bound is `c + t'`. A deeper gouge is convicted and blocks
+  the post. Pins:
+  `a_real_gouge_deeper_than_the_verdict_tolerance_still_blocks_a_widened_model`,
   `a_cut_deeper_than_the_widened_tolerance_into_a_convex_wall_is_still_convicted`.
-- **Material left on the part.** On a concave wall, a facet stands in the
-  air by up to `c`. The mesh shows a gouge that the real part does not
-  have. That is the safe side: a false gouge blocks the post. The rule
-  does not change it.
+- **Material left on the part.** On a concave wall, a facet can stand in
+  the air by `c`. A false gouge can block the post. The rule keeps that
+  conservative result.
 
 ### Each reader of the verdict tolerance
 
-- **Gouge laws** (`VerifyContext::tightened`, `loop_tol`, `finish.rs`
-  gate, `rapids.rs`, `rapids_posed.rs`, `section.rs`, the plasma kerf
-  law, `mark_law`, `cross_part`, the `generate.rs` containment
-  allowance): they read the widened `t'`.
-- **Laws that also guard a body other than the cutting edge** read
-  #864's strict law (`verify::strict_floor`, `fidelity_law::tightened_strict`):
-  - the turning meridian margin (it also guards the holder and the bar),
-    the lathe axial-hole tolerance, and `revolve::gouge_tol_on`;
-  - the rotary field allowances (one allowance for the ball and the
-    shank);
-  - the probe stylus slack (it guards the stylus).
-
-  The cutting-edge laws of these kinds in `VerifyContext` (law (f) on
-  the nose or the ball) still read the widened tolerance: they judge
-  the cutter, and the bodies are guarded by the strict readers above.
-  The program gate reads the strict law for these kinds
-  (`fidelity_law::widens`). On a model whose excess uses their floor,
-  they are refused by name, as before. Pin: the rotary line in
-  `a_rotary_contour_on_a_reduced_model_is_judged_and_past_the_bound_refused_by_name`.
-- **Collision bands** (`band_growth` in sim and in `fidelity_law`: the
-  reach law, `rapids_radial`, `cross_stock`, `drill_reach`,
-  `drill_station`): they grow by the WHOLE excess, also in the widened
-  range. A wall can stand the whole excess nearer than its facets show.
-  Before this change, the band growth was "what `tightened` takes out",
-  which was the excess. That reading would now give only 0.005 mm, so
-  `band_growth` is now its own function.
-- **`stock_top`**: it grows by `model_excess` directly. No change.
-- **Stock simulation** (`model_fidelity::verdict_tol`, `program_tol`):
-  it judges at `t'` for `DEV_TOL`.
-- **Program gate** (`op_problem`): it refuses an operation when
-  `excess_floor(floor_of(op), e)` is `None`. Under the limit, an
-  operation whose floor is above 0.005 mm now posts.
-- **Keep law, rest material**: they do not read the excess. No change.
-- **Fixtures**: they are judged by a box grown by the chord. No change.
+- **Gouge laws** use the widened mesh allowance only for eligible source
+  models. Other source models use #864's strict allowance.
+- **Laws that also guard a body other than the cutting edge** keep
+  `verify::strict_floor` and `fidelity_law::tightened_strict`. These are
+  the turning meridian margin, lathe axial-hole tolerance,
+  `revolve::gouge_tol_on`, rotary field allowances and probe stylus slack.
+  The cutting-edge laws in `VerifyContext` can use the eligible widened
+  allowance. The program gate still uses the strict law for turning,
+  rotary and probe operations. These operations are refused when the
+  excess uses their floor.
+- **Collision bands** grow by the whole excess, including the widened
+  range. This applies to the reach law, `rapids_radial`, `cross_stock`,
+  `drill_reach` and `drill_station`. Their growth does not come from the
+  smaller deduction made by the widened mesh law.
+- **`stock_top`** grows by `model_excess` directly.
+- **Stock simulation and the program gate** use the same cause record
+  and tolerance law as the operation. The gate refuses an operation
+  when the selected law has no positive allowance.
+- **Keep law and rest material** do not read the excess.
+- **Fixtures** are judged by a box grown by the chord.
 
 ### What the user sees
 
-- The posted program has a header comment for each widened model:
-  `Reduced accuracy: model <name> was checked to 0.019 mm, not 0.010 mm`.
-  The engine writes each note through the script's own `onComment`,
-  after `onOpen` (`ProgramId::notes`).
-- The model page and the MCP `facts` note add the same fact in plain
-  words. The import note of #2994 (`step::loosened_consequence`) no
-  longer says that a program cannot be posted under the limit.
+- Each widened model adds a program header comment. For `c = 0.019` mm,
+  it states a true-surface bound of 0.024 mm. It does not state that the
+  model was checked to its chord alone.
+- The engine emits the note after `onOpen` through `onComment`. Each
+  shipped dialect uses its own valid comment delimiters and preserves
+  the complete bound. A custom post may omit the note, as the maintainer
+  permitted.
+- The model page and MCP facts state the same true-surface bound. The
+  import consequence describes the permission only for the eligible
+  file-tolerance cause.
 
 ### What the user loses
 
-- On a widened model, a gouge of the real surface up to about `c + 0.005`
-  mm (at most 0.025 mm) is not found. At full fidelity, the bound is
-  0.015 mm.
-- A model already flagged with a chord between 0.010 and 0.020 mm (a
-  small facet budget) is now judged looser than before (a tolerance of
-  0.005 mm against the mesh instead of `0.015 - c`). It also gets the
-  header note. The previous pin of `TIGHT` (0.012 mm) is updated for that.
+For an eligible widened model, the checks can miss a true-surface gouge
+up to `c + 0.005` mm, at most 0.025 mm. This stays below the accepted
+0.030 mm bound. The full-fidelity bound is at most 0.015 mm. Models
+coarsened by the budget lose no protection from #864.
 
 ### Considered and dropped
 
-- **Widen only where #864 has no tolerance left.** A coarser model would
-  get a looser verdict than a finer one (non-monotone). Dropped.
-- **Read `max(t, c)` as the tolerance for each law.** That makes a tight
-  finish tolerance looser than the user asked. Dropped: `t'` is never
-  larger than `t`.
-- **Use `VouchModelFidelity`.** The issue excludes it: the chord is a
-  measured value.
-- **Widen every reader.** The first version did this. The quick gate
-  showed that the rotary allowance and the turning margin also guard a
-  shank, a holder or a bar. A widened tolerance there lets a body touch
-  the real part. Dropped: those kinds keep the strict law.
-- **Turning, rotary and probe on a widened model.** They are still
-  refused when the excess uses their floor. To judge them needs a
-  separate collision allowance in those laws. Not done here.
+- **Widen all coarse models from the chord alone.** Dropped. The
+  maintainer permits only the file-tolerance cause. Old records cannot
+  establish that cause and therefore keep the strict law.
+- **Report the chord as the check bound.** Dropped. It excludes the
+  additional mesh allowance and understates the possible real gouge.
+- **Spend the full accepted 0.030 mm bound.** Dropped. Keeping the
+  existing 0.005 mm mesh allowance gives a smaller bound, at most
+  0.025 mm, and preserves the existing widened arithmetic.
+- **Widen only where #864 has no allowance left.** Dropped. A coarser
+  model could then receive a looser verdict than a finer model.
+- **Use `max(t, c)` as each law's tolerance.** Dropped. It can loosen a
+  finish tolerance beyond the user's request.
+- **Use `VouchModelFidelity`.** Dropped. The chord is a measured value.
+- **Widen every body guard.** Dropped. Turning, rotary and probe guards
+  must still protect the shank, holder, bar and stylus.
 
 ### Cost to change later
 
-- The limit is one constant. The rule is one function, with its pins in
-  `crates/sim/tests/model_excess.rs` and
-  `crates/app/tests/model_fidelity_wide.rs`.
+The limit and widened arithmetic stay in the simulation crate. A change
+to eligible causes must update import, persistence, copies and undo, with
+their lifecycle pins. A numerical change must also update the separate
+mesh-allowance and true-surface-bound pins and the warning text.

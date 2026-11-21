@@ -15,7 +15,7 @@
 use camcraft_sim::cl::{Move, MoveKind, Toolpath};
 use camcraft_sim::geo2d::{Loop, Point2, Region};
 use camcraft_sim::geometry::{Point3, Triangle};
-use camcraft_sim::verify::{excess_floor, verify, Mode, ToolGeom, VerifyContext, Warning};
+use camcraft_sim::verify::{excess_floor, excess_floor_for, verify, Mode, ToolGeom, VerifyContext, Warning};
 
 /// The importer's promise and the verdict tolerance, mm.
 const CAP: f64 = 0.005;
@@ -75,6 +75,10 @@ fn feeds(pts: &[Point2], z: f64) -> Toolpath {
 
 /// The gouge verdicts of `path` round `wall` with a model `excess`.
 fn gouges(path: &Toolpath, wall: &Region, excess: f64) -> usize {
+    gouges_with_cause(path, wall, excess, false)
+}
+
+fn gouges_with_cause(path: &Toolpath, wall: &Region, excess: f64, file_tolerance: bool) -> usize {
     let tool = tool();
     let cx = VerifyContext {
         region: wall,
@@ -85,6 +89,7 @@ fn gouges(path: &Toolpath, wall: &Region, excess: f64) -> usize {
         gouge_tol: TOL,
         z_tol: 1e-6,
         model_excess: excess,
+        file_tolerance,
         ..Default::default()
     };
     verify(path, &cx).iter().filter(|w| matches!(w, Warning::Gouge { .. })).count()
@@ -276,10 +281,8 @@ fn a_declared_rim_is_read_untightened_and_no_other_loop_is() {
     // Just under the bound: 0.0001 mm left of the tightened tolerance.
     let near = TOL - 1e-4;
     assert_eq!(judge(&rim, &drill, &plunge, 0.0, &[]), 0, "full fidelity: clean");
-    // #2996: past a chord of DEV_TOL the excess takes only the promised
-    // 0.005 mm, which leaves more than the rim's 0.0043 mm sagitta. Before
-    // #2996 the undeclared rim was convicted here.
-    assert_eq!(judge(&rim, &drill, &plunge, near, &[]), 0, "undeclared, the widened tolerance covers the rim's sagitta");
+    // With no file-tolerance cause, the original strict law convicts this rim.
+    assert!(judge(&rim, &drill, &plunge, near, &[]) > 0, "undeclared, the strict tolerance is below the rim's sagitta");
     assert_eq!(judge(&rim, &drill, &plunge, near, &declared), 0, "declared, the rim reads untightened");
     // An oversize drill against the declared rim still convicts.
     let fat = ToolGeom { radius: 2.01, ..drill };
@@ -301,22 +304,22 @@ fn past_dev_tol_up_to_the_limit_only_the_promised_chord_is_taken() {
     assert_eq!(WIDE_CHORD_LIMIT, 0.02, "a constant no file can raise");
     // Up to a chord of DEV_TOL: #864's law, the whole excess is taken.
     for excess in [0.001, 0.004, CAP] {
-        let t = excess_floor(TOL, excess).expect("positive");
+        let t = excess_floor_for(TOL, excess, true).expect("positive");
         assert!((t - (TOL - excess)).abs() < 1e-12, "excess {excess}: {t}");
     }
     // Past it, up to a chord of 0.02 mm: only the promised chord.
     for chord in [0.0101, 0.012, 0.019, WIDE_CHORD_LIMIT] {
-        let t = excess_floor(TOL, chord - CAP).expect("judged under the limit");
+        let t = excess_floor_for(TOL, chord - CAP, true).expect("judged under the limit");
         assert!((t - (TOL - CAP)).abs() < 1e-12, "chord {chord}: {t}");
         // Never wider than the law's own tolerance: a tolerance smaller
         // than the promised chord is still refused.
-        assert!(excess_floor(0.003, chord - CAP).is_none(), "chord {chord}");
+        assert!(excess_floor_for(0.003, chord - CAP, true).is_none(), "chord {chord}");
         // A collision band grows by the whole excess, never less.
         assert!((band_growth(TOL, chord - CAP) - (chord - CAP)).abs() < 1e-12, "chord {chord}");
     }
     // Past the limit: the whole excess again, so nothing is left.
     for chord in [0.0201, 0.021, 0.5] {
-        assert_eq!(excess_floor(TOL, chord - CAP), None, "chord {chord}");
+        assert_eq!(excess_floor_for(TOL, chord - CAP, true), None, "chord {chord}");
         assert_eq!(band_growth(TOL, chord - CAP), 0.0, "refused, not grown: chord {chord}");
     }
     assert_eq!(band_growth(TOL, 0.0), 0.0, "full fidelity grows nothing");
@@ -328,7 +331,21 @@ fn a_cut_deeper_than_the_widened_tolerance_into_a_convex_wall_is_still_convicted
     // the widened tolerance, a cut that deep into the real wall is caught.
     let (c, wall) = (chord(), coarse_boss());
     let excess = c - CAP;
-    assert!(excess_floor(TOL, excess).is_some());
-    assert!(gouges(&ring_cut(c + TOL), &wall, excess) > 0, "a real gouge past the widened tolerance");
-    assert_eq!(gouges(&ring_cut(0.0), &wall, excess), 0, "the nominal ring stays clean");
+    assert!(excess_floor_for(TOL, excess, true).is_some());
+    assert!(gouges_with_cause(&ring_cut(c + TOL), &wall, excess, true) > 0, "a real gouge past the widened tolerance");
+    assert_eq!(gouges_with_cause(&ring_cut(0.0), &wall, excess, true), 0, "the nominal ring stays clean");
+}
+
+#[test]
+fn absent_or_budget_cause_keeps_the_original_mesh_tolerance() {
+    for file_tolerance in [false, true] {
+        let mesh = excess_floor_for(TOL, 0.012 - CAP, file_tolerance).expect("positive");
+        let want = if file_tolerance { 0.005 } else { 0.003 };
+        assert!((mesh - want).abs() < 1e-12, "file cause {file_tolerance}: {mesh}");
+    }
+    assert_eq!(excess_floor_for(TOL, 0.019 - CAP, false), None);
+    assert_eq!(excess_floor(TOL, 0.019 - CAP), None, "missing cause is strict");
+    let mesh = excess_floor_for(TOL, 0.019 - CAP, true).expect("file tolerance");
+    assert!((mesh - 0.005).abs() < 1e-12, "mesh allowance");
+    assert!((0.019 + mesh - 0.024).abs() < 1e-12, "true-surface bound");
 }

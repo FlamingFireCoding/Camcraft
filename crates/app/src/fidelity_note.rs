@@ -7,8 +7,9 @@
 //! it did. No vendor material consulted.
 //!
 //! A model is WIDENED when its kept chord error passes `DEV_TOL` and stays
-//! inside `verify::WIDE_CHORD_LIMIT`: its gouge checks then allow its own
-//! chord error, not `DEV_TOL`. A model of unknown fidelity, or one past
+//! inside `verify::WIDE_CHORD_LIMIT`, and only the file tolerance caused
+//! it: its true-surface bound is the chord plus the mesh allowance.
+//! A model of unknown fidelity, or one past
 //! the limit, is refused by name instead and says nothing here.
 
 use flecs_ecs::prelude::World;
@@ -21,15 +22,15 @@ use crate::verify::WIDE_CHORD_LIMIT;
 
 /// Whether a recorded chord error widens the verdict tolerance.
 #[must_use]
-pub fn widened(chord_mm: f64) -> bool {
-    chord_mm.is_finite() && !is_unknown(chord_mm) && chord_mm > DEV_TOL + 1e-12 && chord_mm <= WIDE_CHORD_LIMIT + 1e-9
+pub fn widened(chord_mm: f64, file_tolerance: bool) -> bool {
+    file_tolerance && chord_mm.is_finite() && !is_unknown(chord_mm) && chord_mm > DEV_TOL + 1e-12 && chord_mm <= WIDE_CHORD_LIMIT + 1e-9
 }
 
-/// "checks on this model allow 0.019 mm, not 0.010 mm" for a widened
+/// "checks on this model allow 0.024 mm, not 0.010 mm" for a widened
 /// chord, in the document's unit; `None` for any other chord.
 #[must_use]
-pub fn clause(world: &World, chord_mm: f64) -> Option<String> {
-    widened(chord_mm).then(|| format!("checks on this model allow {}, not {}", len(world, chord_mm), len(world, DEV_TOL)))
+pub fn clause(world: &World, chord_mm: f64, file_tolerance: bool) -> Option<String> {
+    widened(chord_mm, file_tolerance).then(|| format!("checks on this model allow {}, not {}", len(world, surface_bound(chord_mm)), len(world, DEV_TOL)))
 }
 
 /// One header line for each widened part of the document: a model, or
@@ -42,14 +43,14 @@ pub fn program_notes(world: &World) -> Vec<String> {
         .into_iter()
         .filter(|(_, e)| !model::is_fixture(world, e))
         .filter_map(|(name, e)| {
-            let chord = chord_of(world, &e).filter(|c| widened(*c))?;
+            let chord = chord_of(world, &e).filter(|c| widened(*c, crate::model_fidelity::file_tolerance_of(world, &e)))?;
             let shown = match model::stock_def_of(world, &e) {
                 Some(StockShape::FromModel { source }) => source,
                 _ => name,
             };
             Some(format!(
                 "Reduced accuracy: model {shown} was checked to {}, not {}",
-                len(world, chord),
+                len(world, surface_bound(chord)),
                 len(world, DEV_TOL)
             ))
         })
@@ -57,6 +58,12 @@ pub fn program_notes(world: &World) -> Vec<String> {
     lines.sort();
     lines.dedup();
     lines
+}
+
+/// The largest cut into the true surface that can pass the mesh check.
+#[must_use]
+pub fn surface_bound(chord_mm: f64) -> f64 {
+    chord_mm + crate::verify::excess_floor_for(DEV_TOL, crate::model_fidelity::excess(chord_mm), true).unwrap_or(0.0)
 }
 
 /// "0.019 mm" in the document's unit.
