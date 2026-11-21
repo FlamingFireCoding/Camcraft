@@ -2869,6 +2869,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     tool_name, tool.kind
                 )));
             }
+            // #3023: a helical thread is refused by name BEFORE the
+            // slice, which can call a STEP helix "open" instead.
+            if let Some(e) = crate::turning::helical_refusal(&material.facets) {
+                return Err(e);
+            }
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -3643,14 +3648,18 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // measured.
             let path_world = f.world_path(&path, machining2d::ARC_FIT_TOL);
             let m_gen = material_local.as_ref().unwrap_or(&material);
-            let mut st_local = stock_top_z - oz;
+            // #3004: the cap is the corners' own max in this frame, and
+            // nothing else. The world top (`stock_top_z`) is a world-Z
+            // height; kept as a floor it held a side plane's cap at the
+            // blank's Z (70 for a cap of 30) and named clear shanks hits.
+            // The model box is always projected, so the cap is set.
+            let mut st_local = f64::NEG_INFINITY;
             let mut boxes: Vec<(crate::geometry::Point3, crate::geometry::Point3)> = Vec::new();
             if let Some(b) = stock_aabb {
                 boxes.push(b);
             }
-            // The model's own corners too: `stock_top_z` already holds
-            // its top, but the tilted slab rides over its XY span, and
-            // the affine local-z map takes its max at a corner.
+            // The model's own corners too: the tilted slab rides over its
+            // XY span, and the affine local-z map takes its max at a corner.
             let mut lo = crate::geometry::Point3::new(f64::MAX, f64::MAX, f64::MAX);
             let mut hi = crate::geometry::Point3::new(f64::MIN, f64::MIN, f64::MIN);
             for t in &material.facets {
