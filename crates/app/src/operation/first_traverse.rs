@@ -60,7 +60,7 @@ pub(super) fn rides_of(stock: Option<&[crate::geometry::Triangle]>, aabb: Option
 }
 
 /// The axis a rotary kind (`Mode::Rotary`) turns its work about, on a
-/// mill: the job's (`fixture::rotary_axis_of`), else the same fit of
+/// machine that posts the mill order ([`mill_order`]): the job's (`fixture::rotary_axis_of`), else the same fit of
 /// the same facets that the generator ran. `Ok(None)` for every other
 /// kind. No axis: refused by name, as the law cannot judge the work.
 pub(super) fn turned_axis(params: &OpParams, mill: bool, job: Option<verify::RotaryAxis>, facets: &[crate::geometry::Triangle]) -> Result<Option<verify::RotaryAxis>, String> {
@@ -82,7 +82,7 @@ pub(super) fn rotaries_of(m: Option<&(String, Vec<AxisLimits>)>) -> Option<&[Axi
 const TABLE_UNJUDGED_NOTE: &str = "First traverse: the machine table is not judged on this tilted plane";
 
 /// Whether the operation's first traverse comes from an unknown X/Y on
-/// a mill: the planar and 3-D milling kinds, the hole kinds (the cross
+/// a machine that posts the mill order (`mill`, [`mill_order`]): the planar and 3-D milling kinds, the hole kinds (the cross
 /// drill included, #2965) and the multi-axis kinds (#2965). The post
 /// sends Z, then X/Y at that height, then the rotary words, for each of
 /// them. Turning, plasma and EDM read their clearance on other surfaces
@@ -90,6 +90,38 @@ const TABLE_UNJUDGED_NOTE: &str = "First traverse: the machine table is not judg
 /// live-tool cross drill is not a mill's: decision #2965.
 fn answers(params: &OpParams, mill: bool) -> bool {
     mill && matches!(params.kind().info().section, Section::Mill2D | Section::Mill3D | Section::Drilling | Section::MultiAxis)
+}
+
+/// #3083: whether the machine posts a milling tool's first traverse
+/// in the mill order that [`answers`] reads (Z to the clearance, then
+/// X/Y at that height, then the rotary words). A mill does. A mill-turn
+/// does too: its default post for each kind is the mill post
+/// (`posting::default_post_for`), which sends that order (`traverseZ`,
+/// `xyFirst`). A lathe's insert, blade or gauge (`lathe_tool`) is no
+/// milling tool; the turning laws judge its moves. The premise of the
+/// laws stays the mill's: the tool starts at the tool-change height
+/// (decision #3083).
+///
+/// NOT on a mill-turn: a rotary kind (`Mode::Rotary`). There it turns
+/// the bar on the spindle C under a radial live tool, whose first rapid
+/// comes from the turret's index position, not from an upright tool over
+/// an unknown X/Y; the mill premise refuses every such program. That law
+/// is #3077's live-tool reading; #3096 owns it (decision #3083).
+pub(super) fn mill_order(kind: crate::machine::Kind, lathe_tool: bool, params: &OpParams) -> bool {
+    use crate::machine::Kind;
+    !lathe_tool
+        && match kind {
+            Kind::Mill => true,
+            Kind::MillTurn => params.kind().info().mode != verify::Mode::Rotary,
+            _ => false,
+        }
+}
+
+/// #3083: the mill kinds that a mill-turn brought under the law. Their
+/// op stamp takes one more word on a mill-turn setup, so a cache judged
+/// without the law reads Stale once; no mill's stamp moves.
+pub(super) fn newly_judged_on(kind: crate::machine::Kind, params: &OpParams) -> bool {
+    kind == crate::machine::Kind::MillTurn && answers(params, mill_order(kind, false, params))
 }
 
 /// The kinds that #2965 brought under the law: the multi-axis and
@@ -290,6 +322,56 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::machine::Kind;
+    use crate::operation::Height;
+
+    fn face() -> OpParams {
+        OpParams::Face {
+            holes: Default::default(),
+            tilt: None,
+            blend_turns: false,
+            stepover: 3.0,
+            clearance_z: Height::fixed(30.0),
+            cut_z: Height::fixed(9.0),
+            top_z: None,
+            stepdown: None,
+            feed: 1200.0,
+            plunge_feed: 300.0,
+            climb: true,
+        }
+    }
+
+    fn rotary_contour() -> OpParams {
+        OpParams::RotaryContour {
+            tolerance: 0.05,
+            clearance_z: Height::fixed(25.0),
+            retract_z: None,
+            top_z: Height::fixed(6.0),
+            bottom_z: Height::fixed(-8.0),
+            feed: 500.0,
+            plunge_feed: 100.0,
+            climb: true,
+            lead_deg: 0.0,
+            lag_deg: 0.0,
+            max_tilt_deg: 60.0,
+        }
+    }
+
+    /// #3083: a mill-turn posts a milling tool's first traverse in the
+    /// mill order, so its mill kinds answer as a mill's do; a lathe tool,
+    /// a lathe and the radial rotary kinds of a mill-turn do not.
+    #[test]
+    fn a_mill_turn_judges_its_milling_kinds_in_the_mill_order() {
+        let (f, r) = (face(), rotary_contour());
+        assert!(mill_order(Kind::Mill, false, &f) && mill_order(Kind::Mill, false, &r));
+        assert!(mill_order(Kind::MillTurn, false, &f));
+        assert!(!mill_order(Kind::MillTurn, true, &f), "a lathe tool");
+        assert!(!mill_order(Kind::MillTurn, false, &r), "the radial live tool of a mill-turn's C");
+        assert!(!mill_order(Kind::Lathe, false, &f));
+        assert!(newly_judged_on(Kind::MillTurn, &f));
+        assert!(!newly_judged_on(Kind::Mill, &f), "no mill's stamp moves");
+        assert!(!newly_judged_on(Kind::MillTurn, &r), "an unjudged kind's stamp stays");
+    }
 
     /// The `multiaxis/indexed` catalog case's Tilted pocket (#2987): A30
     /// B30 on `tilthead.mch` (X +-600, Y +-500, Z -500..500: the table

@@ -56,6 +56,12 @@ pub fn current_stamp(
     if params.tilt().is_some() {
         h.write(b"first-traverse-table-3081");
     }
+    // #3083: a mill kind on a mill-turn setup answers to the first-
+    // traverse laws now. Only those caches read Stale once; the salt
+    // above stays, so no mill's stamp moves.
+    if super::first_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
+        h.write(b"first-traverse-mill-turn-3083");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
