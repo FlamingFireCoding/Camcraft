@@ -165,7 +165,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 prop_row(ui, "Chamfer width", |ui| num(ui, u, width));
                 prop_row(ui, "Chamfer angle", |ui| num_unit(ui, angle_deg, "°"));
                 hint(ui, "the face's slope off the top plane; the depth follows as width x tan(angle) - authored here, never second-guessed by a depth field");
-                prop_row(ui, "Cone radial offset", |ui| num(ui, u, minimum_cone_radius));
+                prop_row(ui, "Tip offset", |ui| num(ui, u, minimum_cone_radius));
                 hint(ui, "moves the tool away from the selected edge and lowers it to keep the requested chamfer width; the cone uses the band from this radius to this radius plus the chamfer width; 0 makes the virtual tip follow the edge");
                 let mut s_idx = match side {
                     Side::Auto => 0,

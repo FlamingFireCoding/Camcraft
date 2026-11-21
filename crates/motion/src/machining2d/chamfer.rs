@@ -11,9 +11,9 @@
 //! catalog law). Written clean-room from that geometry, no vendor
 //! material; the CL convention (moves carry TIP positions) is this
 //! codebase's own, so the posted Z is the corner depth.
-//! A positive `minimum_cone_radius` moves the cone axis toward air and
-//! lowers the virtual tip so the selected band remains tangent to that
-//! same face.
+//! A positive tip offset (`minimum_cone_radius`) moves the cone axis
+//! toward air and lowers the virtual tip so the selected band remains
+//! tangent to that same face.
 //!
 //! The path is one closed circuit per picked loop at one constant Z -
 //! `top_z - (minimum_cone_radius + width) * tan(angle_deg)`, the virtual
@@ -90,12 +90,12 @@ impl ChamferParams {
         }
         if !self.minimum_cone_radius.is_finite() {
             return Err(GenError::Invalid(
-                "cone radial offset must be finite".into(),
+                "tip offset must be finite".into(),
             ));
         }
         if self.minimum_cone_radius < 0.0 {
             return Err(GenError::Invalid(
-                "cone radial offset must be non-negative".into(),
+                "tip offset must be non-negative".into(),
             ));
         }
         if !(0.0..90.0).contains(&self.angle_deg) {
@@ -172,13 +172,13 @@ pub fn chamfer(region: &crate::geo2d::Region, p: &ChamferParams) -> Result<Toolp
         };
         let offset = region.offset(distance).map_err(|e| {
             GenError::Invalid(format!(
-                "the cone radial offset of {} mm failed: {e}",
+                "the tip offset of {} mm failed: {e}",
                 p.minimum_cone_radius
             ))
         })?;
         if offset.is_empty() || offset.loops().len() != loops.len() {
             return Err(GenError::Invalid(format!(
-                "the cone radial offset of {} mm folds, disappears, or changes the selected loop count; pick a smaller offset or a gentler boundary",
+                "the tip offset of {} mm folds, disappears, or changes the selected loop count; pick a smaller offset or a gentler boundary",
                 p.minimum_cone_radius
             )));
         }
@@ -292,20 +292,20 @@ pub fn chamfer_open_runs(
             let air_left = !material_left;
             let Some(inside) = boundary_inside(&run, &levels, air_left)? else {
                 return Err(GenError::Invalid(
-                    "the selected open model wall cannot classify Side for the cone radial offset; re-pick a boundary edge".into(),
+                    "the selected open model wall cannot classify Side for the tip offset; re-pick a boundary edge".into(),
                 ));
             };
             if inside != p.inside {
                 let side = if p.inside { "Inside" } else { "Outside" };
                 return Err(GenError::Invalid(format!(
-                    "Side {side} names the wrong class of selected model wall for the cone radial offset; use Side Auto or the other side"
+                    "Side {side} names the wrong class of selected model wall for the tip offset; use Side Auto or the other side"
                 )));
             }
             let offset_left = air_left;
             let offset = offset_run_side(&run, p.minimum_cone_radius, offset_left)?
                 .ok_or_else(|| {
                     GenError::Invalid(format!(
-                        "the cone radial offset of {} mm folds onto itself or disappears; pick a gentler run or a smaller offset",
+                        "the tip offset of {} mm folds onto itself or disappears; pick a gentler run or a smaller offset",
                         p.minimum_cone_radius
                     ))
                 })?;
@@ -343,7 +343,7 @@ pub fn chamfer_open_runs(
                 {
                     return Err(GenError::invalid_at(
                         format!(
-                            "the cone radial offset reaches selected-model material on the air side at Z {z:.3} near ({:.3}, {:.3}); pick a smaller offset or a different Side",
+                            "the tip offset reaches selected-model material on the air side at Z {z:.3} near ({:.3}, {:.3}); pick a smaller offset or a different Side",
                             q.x, q.y
                         ),
                         Point3::new(q.x, q.y, *z),

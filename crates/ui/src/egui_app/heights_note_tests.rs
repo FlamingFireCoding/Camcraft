@@ -61,12 +61,12 @@ fn tilted_corner_note_uses_the_same_local_frame_as_its_top_row() {
     let mut harness = heights_tab(state);
     harness.run();
     assert!(harness.query_by_label("(= 11.000 along tool axis)").is_some());
-    assert!(harness.query_by_label("the virtual cone tip stands at 8.000 - derived: (cone radial offset + width) x tan(angle) below the top plane").is_some(),
+    assert!(harness.query_by_label("the virtual cone tip stands at 8.000 - derived: (tip offset + width) x tan(angle) below the top plane").is_some(),
         "the tip is radius plus width below the local top, not below setup Z");
 }
 
 #[test]
-fn chamfer_geometry_exposes_the_cone_radial_offset() {
+fn chamfer_geometry_exposes_tip_offset() {
     let mut state = asymmetric_tilted_pocket();
     state.op_ui.params = OpParams::Chamfer2D {
         width: 1.0,
@@ -96,10 +96,10 @@ fn chamfer_geometry_exposes_the_cone_radial_offset() {
         );
     harness.run();
     assert!(
-        harness.query_by_label("Cone radial offset").is_some(),
+        harness.query_by_label("Tip offset").is_some(),
         "the Geometry page exposes the cone-band offset"
     );
-    harness.get_by_label("Cone radial offset").hover();
+    harness.get_by_label("Tip offset").hover();
     harness.run_steps(8);
     assert!(
         harness.query_by_label_contains("moves the tool away from the selected edge and lowers it").is_some(),
