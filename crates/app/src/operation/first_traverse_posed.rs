@@ -106,11 +106,72 @@ pub(super) fn turn_of(params: &OpParams, mill: bool, rotaries: Option<&[AxisLimi
 /// too (#3096, `rotary_traverse::mill_post_rotary`). So it reads each mill
 /// and mill-turn setup as the mill order: a word too many only reads a
 /// cache Stale once, a word too few would keep an unjudged cache fresh.
+///
+/// #3100: a post that declares `rotariesBeforeTraverse` takes the word
+/// away ([`post_order`]): the law then does not read the operation, so
+/// a change of the setup's post, or of its declaration, moves the stamp.
 pub(super) fn newly_judged(world: &flecs_ecs::prelude::World, setup: Option<&str>, params: &OpParams) -> bool {
+    reads(world, setup, params) && !post_order(world, setup, params).first
+}
+
+/// [`turn_of`] on the setup's machine, as the stamp reads it (above).
+fn reads(world: &flecs_ecs::prelude::World, setup: Option<&str>, params: &OpParams) -> bool {
     use crate::machine::Kind;
     let mill = matches!(crate::machine::kind_of_setup(world, setup), Kind::Mill | Kind::MillTurn);
     let rotaries: Vec<AxisLimits> = crate::machine::of_setup(world, setup).1.map(|m| m.axes).unwrap_or_default();
     !matches!(turn_of(params, mill, Some(&rotaries), [0.0; 3]), Ok(None))
+}
+
+/// #3100: what the setup's post declares about its first traverse.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct PostOrder {
+    /// The script declares `rotariesBeforeTraverse = true`: it turns the
+    /// rotaries to the section's pose at the safe Z, then traverses X/Y
+    /// (`post::dialect::turns_rotaries_first`). The X/Y traverse then runs
+    /// at the operation's own pose, which the #2987 law reads.
+    pub first: bool,
+    /// The declaring script is the user's own (`PostRef::File`): taken at
+    /// its word, never silently ([`declared_note`]). Each shipped post
+    /// that declares it has a posting test of the real order.
+    pub custom: bool,
+}
+
+/// The note on the path of an operation that a user's own post script
+/// takes out of the posed law by its declaration.
+pub(super) const DECLARED_NOTE: &str = "First traverse: judged at the operation's own pose, because the post script declares rotariesBeforeTraverse (it turns the rotaries at the safe Z before the first X/Y traverse) - this script's order is taken at its word";
+
+/// #3100: the setup's post's declaration, read only for an operation
+/// that the posed law would read ([`reads`]). An unknown post, a script
+/// that does not load, or one that declares nothing reads the strict
+/// way: `first == false`, never looser.
+pub(super) fn post_order(world: &flecs_ecs::prelude::World, setup: Option<&str>, params: &OpParams) -> PostOrder {
+    if !reads(world, setup, params) {
+        return PostOrder::default();
+    }
+    let post = crate::setup_mount::post_of(world, setup);
+    let first = crate::posting::script_of(&post).ok().is_some_and(|(_, text)| declares_first(&text));
+    PostOrder { first, custom: first && matches!(post, crate::schema::PostRef::File(_)) }
+}
+
+/// The declaration of one script text, loaded once per text: the stamp
+/// asks for it on every read, and a script load runs the whole script.
+fn declares_first(text: &str) -> bool {
+    use std::collections::HashMap;
+    use std::hash::{Hash, Hasher};
+    use std::sync::{Mutex, OnceLock};
+    static SEEN: OnceLock<Mutex<HashMap<u64, bool>>> = OnceLock::new();
+    let mut h = std::hash::DefaultHasher::new();
+    text.hash(&mut h);
+    let key = h.finish();
+    let seen = SEEN.get_or_init(Mutex::default);
+    if let Some(v) = seen.lock().ok().and_then(|m| m.get(&key).copied()) {
+        return v;
+    }
+    let v = crate::post::dialect::turns_rotaries_first(text).unwrap_or(false);
+    if let Ok(mut m) = seen.lock() {
+        m.insert(key, v);
+    }
+    v
 }
 
 /// The height the post traverses X/Y at, in the path's frame: the higher

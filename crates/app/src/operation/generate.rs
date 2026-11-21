@@ -72,6 +72,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         unit,
         wcs_yaw,
         spindle_note: _,
+        post_order,
         carried_overhang: _,
         op_name: _,
         wire,
@@ -3231,7 +3232,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let turned_axis = super::first_traverse::turned_axis(&params, mill_order, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
     // #3084: the work that the machine's own work-turning rotaries can
     // leave at any pose before the rotary words; an unbounded one refuses.
-    let posed_turn = super::first_traverse_posed::turn_of(&params, mill_order, super::first_traverse::rotaries_of(machine_rotaries.as_ref()), wcs_origin).map_err(GenError::Invalid)?;
+    // #3100: unless the setup's post declares that it turns the rotaries
+    // at the safe Z before that traverse (`rotariesBeforeTraverse`).
+    let posed_turn = if post_order.first { None } else { super::first_traverse_posed::turn_of(&params, mill_order, super::first_traverse::rotaries_of(machine_rotaries.as_ref()), wcs_origin).map_err(GenError::Invalid)? };
     let rides = if turned_axis.is_some() || posed_turn.is_some() { super::first_traverse::rides_of(stock_facets.as_deref(), stock_aabb, &material.facets) } else { Vec::new() };
     let turned = turned_axis.map(|axis| super::first_traverse::Turned { axis, rides: &rides, turning: &workholding.0, fixed: &workholding.1 });
     // #339 slice 5: an upright mill's links are planned over the steel -

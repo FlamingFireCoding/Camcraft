@@ -12,19 +12,23 @@
 //!   A clearance 16 over the origin is held by name; 20 passes.
 //! - A and B on the table (a trunnion): a B 30 face plane reads the block
 //!   on its sphere about the WCS origin; 30 over the origin passes.
+//! - A post that declares `rotariesBeforeTraverse` (Tormach PathPilot:
+//!   A turns at the safe Z before the X/Y traverse) is read at the
+//!   plane's own pose; a user's own script with the declaration is taken
+//!   at its word with a note, and without it is held by name.
 //!
 //! Provenance: our own machine files and fixtures; the shop rule "never
 //! traverse through uncut stock or steel" (machine-tool handbooks) and
 //! plain rotation geometry. No vendor material.
 //!
-//! Gate map (#3100): covers app::operation (first_traverse_posed,
+//! Gate map (#3100): covers post::dialect (turns_rotaries_first), app::operation (first_traverse_posed,
 //! generate), sim::verify (first_traverse_posed).
 
-use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, LoadMachine, SetStock, SetWcsOrigin};
+use camcraft_app::commands::{AddTool, CreateOperation, GenerateOperation, History, LoadMachine, SelectPost, SetStock, SetWcsOrigin};
 use camcraft_app::geometry::{Point3, IDENTITY_Q};
 use camcraft_app::machine::parse_mch;
 use camcraft_app::operation::{Height, OpParams, OpStatus, SrcRef, Tilt};
-use camcraft_app::schema::Location;
+use camcraft_app::schema::{Location, PostRef};
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
 use camcraft_app::verify::Warning;
@@ -76,12 +80,22 @@ fn machine_text(rig: Rig) -> String {
 
 /// A face plane at A `a_deg` / B `b_deg` through the top centre of a
 /// 60 x 60 x 20 block (x, y +-30, z 0..20), its clearance `over` the
-/// plane origin; the WCS origin on the rotary lines.
+/// plane origin; the WCS origin on the rotary lines; the default post.
 fn face_on(rig: Rig, a_deg: f64, b_deg: f64, over: f64) -> (World, OpStatus, Vec<Warning>) {
+    let (world, status, warns, _) = face_posted(rig, a_deg, b_deg, over, None);
+    (world, status, warns)
+}
+
+/// [`face_on`] with the setup's post `post` (`None`: the default), and
+/// the path's notes.
+fn face_posted(rig: Rig, a_deg: f64, b_deg: f64, over: f64, post: Option<PostRef>) -> (World, OpStatus, Vec<Warning>, Vec<String>) {
     let world = camcraft_app::world::new_world();
     let mut h = History::default();
     let m = parse_mch(&machine_text(rig)).unwrap_or_else(|e| panic!("test machine: {e}"));
     h.execute(&world, LoadMachine::new(&world, "test-table-tilt.mch".into(), Some(m)).expect("machine"));
+    if let Some(p) = post {
+        h.execute(&world, SelectPost::new(&world, p).expect("post"));
+    }
     h.execute(&world, SetWcsOrigin::new(&world, Location { pos: Point3::ZERO, rot: IDENTITY_Q }).expect("G54 on the lines"));
     let at = Location { pos: Point3::ZERO, rot: IDENTITY_Q };
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 60.0, dy: 60.0, dz: 20.0 }, at).expect("stock"));
@@ -104,8 +118,9 @@ fn face_on(rig: Rig, a_deg: f64, b_deg: f64, over: f64) -> (World, OpStatus, Vec
     h.execute(&world, GenerateOperation::new(&world, "Face1").expect("generate"));
     let e = model::find_by_name(&world, "Face1").expect("op");
     let status = camcraft_app::operation::status_of(&world, &e);
-    let warns = model::toolpath_of(&world, &e).expect("cached path").warnings.clone();
-    (world, status, warns)
+    let cached = model::toolpath_of(&world, &e).expect("cached path");
+    let (warns, notes) = (cached.warnings.clone(), cached.path.notes.clone());
+    (world, status, warns, notes)
 }
 
 fn low(warns: &[Warning]) -> Option<(f64, f64, bool)> {
@@ -146,4 +161,40 @@ fn a_3_2_plane_over_every_pose_of_a_turning_table_passes() {
     let (_, status, warns) = face_on(Rig::Trunnion, 0.0, 30.0, 30.0);
     assert_eq!(status, OpStatus::Ok);
     assert_eq!(low(&warns), None, "clearance 30 stands over the sphere: {warns:?}");
+}
+
+#[test]
+fn a_post_that_turns_the_table_first_reads_the_plane_at_its_own_pose() {
+    // Tormach PathPilot declares rotariesBeforeTraverse: it turns A at the
+    // safe Z before the X/Y traverse (posting_rotaries_first.rs). The
+    // same plane, 16 over the origin, is judged at its own pose (top 15)
+    // and has no first-traverse verdict; a shipped post gives no note.
+    let tormach = Some(PostRef::Named("Tormach PathPilot".into()));
+    let (_, status, warns, notes) = face_posted(Rig::TableA, 30.0, 0.0, 16.0, tormach);
+    assert_eq!(status, OpStatus::Ok);
+    assert_eq!(low(&warns), None, "{warns:?}");
+    assert!(!notes.iter().any(|n| n.contains("rotariesBeforeTraverse")), "{notes:?}");
+}
+
+#[test]
+fn a_users_own_post_is_taken_at_its_declared_order_with_a_note() {
+    // A user's script with the declaration: taken at its word, said on the
+    // path. The same script without it reads every pose: held by name.
+    let text = posting::builtin_post_text("Tormach PathPilot").expect("tormach.cps");
+    let dir = std::env::temp_dir().join(format!("camcraft_3100_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let declared = dir.join("declared.cps");
+    std::fs::write(&declared, text).expect("write the declared script");
+    let plain = dir.join("plain.cps");
+    std::fs::write(&plain, text.replace("rotariesBeforeTraverse = true;", "")).expect("write the plain script");
+    let file = |p: &std::path::Path| Some(PostRef::File(p.to_string_lossy().into_owned()));
+    let (_, status, warns, notes) = face_posted(Rig::TableA, 30.0, 0.0, 16.0, file(&declared));
+    assert_eq!(status, OpStatus::Ok);
+    assert_eq!(low(&warns), None, "{warns:?}");
+    assert!(notes.iter().any(|n| n.contains("declares rotariesBeforeTraverse") && n.contains("taken at its word")), "{notes:?}");
+    let (_, _, warns, notes) = face_posted(Rig::TableA, 30.0, 0.0, 16.0, file(&plain));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (_, top, _) = low(&warns).unwrap_or_else(|| panic!("the plain script reads every pose: {warns:?}"));
+    assert!((top - (1300f64.sqrt() - ORIGIN_Z * 30f64.to_radians().cos())).abs() < 1e-6, "{top}");
+    assert!(!notes.iter().any(|n| n.contains("rotariesBeforeTraverse")), "{notes:?}");
 }

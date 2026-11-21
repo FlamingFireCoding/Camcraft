@@ -136,6 +136,9 @@ pub struct GenJob {
     /// share of the turned surface the axis fit set aside, which the
     /// op does not turn. Carried onto the path's notes by `run_job`.
     pub(super) spindle_note: Option<String>,
+    /// #3100: what the setup's post declares about its first traverse
+    /// (`first_traverse_posed::post_order`), read with the world here.
+    pub(super) post_order: super::first_traverse_posed::PostOrder,
     /// #319: carried material outside the declared stock, said by name on
     /// the path once it exists (`carried_stock::Overhang::note`) - the post
     /// gate refuses when a feed move reaches it.
@@ -468,6 +471,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         avoid,
         wcs_origin,
         spindle_note,
+        post_order: super::first_traverse_posed::post_order(world, setup, &op.params),
         carried_overhang,
         wire,
         wire_ruled,
