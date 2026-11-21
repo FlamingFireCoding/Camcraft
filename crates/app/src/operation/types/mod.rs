@@ -15,6 +15,7 @@
 mod area;
 mod avoid;
 mod dwell;
+mod fine_bore;
 mod height;
 mod links;
 mod params;

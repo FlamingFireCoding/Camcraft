@@ -38,8 +38,15 @@ fn two_broken_cases_report_both_names_and_times() {
             format!("catalog_2d_first_part::{action}"),
             format!("catalog_2d_contour_tabs::{action}"),
         ];
+        // One test thread (#3043): the two cases run in order, so the panic
+        // message of one case cannot fall into the timing line of the other.
         let output = Command::new(std::env::current_exe().expect("test executable"))
-            .args([names[0].as_str(), names[1].as_str(), "--nocapture"])
+            .args([
+                names[0].as_str(),
+                names[1].as_str(),
+                "--nocapture",
+                "--test-threads=1",
+            ])
             .env("CAMCRAFT_TEST_CATALOG_ROOT", &scratch)
             .output()
             .expect("run two broken cases");

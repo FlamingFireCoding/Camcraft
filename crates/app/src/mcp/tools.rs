@@ -59,7 +59,7 @@ const TOOLS: &[Tool] = &[
 
 /// Every row: this table, then the setup furniture's (#181), then the
 /// part placement (#716), ..., then operation names and order (#45), then the DXF profiles (#1862).
-fn all() -> impl Iterator<Item = &'static Tool> {
+pub(super) fn all() -> impl Iterator<Item = &'static Tool> {
     TOOLS
         .iter()
         .chain(super::setup_tools::TOOLS)
@@ -385,10 +385,13 @@ fn s_set_tool() -> Value {
 }
 
 fn s_post() -> Value {
+    // #2374: every registry post, so an agent learns each name from the list.
+    let names: Vec<&str> = crate::posting::BUILTINS.iter().map(|(n, _)| *n).collect();
+    let post_doc = format!("A built-in post name ({}) or a .cps path.", names.join(", "));
     obj(
         json!({
             "output": { "type": "string", "description": "The .nc file to write." },
-            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak, Tormach PathPilot Plasma) or a .cps path." },
+            "post": { "type": "string", "description": post_doc },
             "between_setups": {
                 "type": "string",
                 "enum": ["pause", "optional-stop", "continue", "file-per-setup"],

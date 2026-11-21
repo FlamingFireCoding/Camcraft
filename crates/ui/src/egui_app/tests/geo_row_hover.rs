@@ -156,3 +156,59 @@ fn viewport_hover_over_a_picked_face_marks_its_row() {
     harness.run_steps(2);
     assert!(harness.state().state.geo_row_marked.is_empty(), "leaving the face clears the mark");
 }
+
+/// #2982: the header must name the saved selection after a face or edge pick.
+#[test]
+fn source_dropdown_shows_selection_for_face_and_edge_picks() {
+    let mut harness = shell_harness();
+    harness.run_steps(2);
+    let face = harness.state().state.op_ui.geo[0].clone();
+    let chain = {
+        let st = &harness.state().state;
+        let block = model::find_by_name(&st.world, "Block").expect("seed has Block");
+        let features = model::features_of(&st.world, &block).expect("Block has features");
+        camcraft_app::geometry::feature::chains(&features).into_iter().next().expect("an edge").id
+    };
+    for pick in [face, camcraft_app::operation::GeoSel { entity: "Block".into(), feature: FeatureSel::Chain(chain) }] {
+        harness.state_mut().state.pending.push_back(CommandKind::SetOperationGeometry {
+            name: "Contour1".into(), items: vec![pick.clone()],
+        });
+        harness.run_steps(3);
+        assert_eq!(harness.state().state.op_ui.src(), SrcRef::Selection(vec![pick]));
+        assert!(harness.query_by(|n| n.role() == egui::accesskit::Role::ComboBox
+            && n.value().as_deref() == Some("Selection")).is_some(), "the source dropdown must display Selection");
+        assert!(harness.state().state.pending.is_empty(), "displaying the source queues no edit");
+    }
+
+    // Explicit source changes still use history, including a return to the picks.
+    for (from, to, source) in [
+        ("Selection", "Stock", SrcRef::Stock),
+        ("Stock", "Block", SrcRef::Entity("Block".into())),
+    ] {
+        let before = harness.state().state.op_ui.src();
+        harness.state_mut().state.pending.push_back(CommandKind::EditOperationLinks {
+            name: "Contour1".into(), tool: None, src: Some(source.clone()),
+        });
+        harness.run_steps(3);
+        assert_eq!(harness.state().state.op_ui.src(), source);
+        assert_saved_source(&harness, &source);
+        harness.state_mut().state.pending.push_back(CommandKind::Undo);
+        harness.run_steps(3);
+        assert_eq!(harness.state().state.op_ui.src(), before);
+        assert_saved_source(&harness, &before);
+        assert!(harness.query_by(|n| n.role() == egui::accesskit::Role::ComboBox
+            && n.value().as_deref() == Some(from)).is_some(), "undo restores the source label");
+        harness.state_mut().state.pending.push_back(CommandKind::Redo);
+        harness.run_steps(3);
+        assert_eq!(harness.state().state.op_ui.src(), source);
+        assert_saved_source(&harness, &source);
+        assert!(harness.query_by(|n| n.role() == egui::accesskit::Role::ComboBox
+            && n.value().as_deref() == Some(to)).is_some(), "redo restores the source label");
+    }
+}
+
+fn assert_saved_source(harness: &Harness<'static, ShellUi>, source: &SrcRef) {
+    let st = &harness.state().state;
+    let operation = model::find_by_name(&st.world, "Contour1").expect("seed has Contour1");
+    assert_eq!(&model::operation_of(&st.world, &operation).expect("an operation").src, source);
+}
