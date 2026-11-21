@@ -43,7 +43,7 @@ use camcraft_app::{machine, model, posting, project, world::new_world};
 mod per_op;
 #[path = "state_stock_pose.rs"]
 mod stock_pose;
-pub use stock_pose::{SIM_NOTE_LAID, SIM_NOTE_TILTED};
+pub use stock_pose::SIM_NOTE_TILTED;
 #[path = "state_browser.rs"]
 mod browser;
 #[path = "state_picked.rs"]

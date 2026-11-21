@@ -15,11 +15,11 @@ preset, any other turn shows Custom with its angles.
 - The MCP `set_stock` tool takes an optional `axis` ("z", "x", "y") or
   `angles_deg` ({yaw, pitch, roll}), not both. It calls the same
   `SetStock`.
-- The simulation laws do not change. `OBLIQUE_STOCK` and `LAID_CYLINDER`
-  still refuse a stock that the simulation cannot cut. The page shows a
-  plain note before any simulation, from the same law
-  (`stock_follow::sim_frame`), so the note and the refusal cannot differ.
-  A box laid along X or Y is a square turn: the simulation cuts it, and
+- The simulation laws do not change here. `OBLIQUE_STOCK` still refuses
+  a stock that the simulation cannot cut. The page shows a plain note
+  before any simulation, from the same law (`stock_follow::sim_frame`),
+  so the note and the refusal cannot differ. A box or a cylinder laid
+  along X or Y is cut (the cylinder since #2758, merged from main), and
   no note shows.
 - A DXF profile lies on the stock's top face. That face was read in the
   stock's own frame and ignored a tilt. Now an upright stock (any turn

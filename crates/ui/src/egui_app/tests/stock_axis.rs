@@ -7,7 +7,7 @@
 use super::*;
 use camcraft_app::geometry::stock_axis::{StockAxis, stock_axis_rot};
 use camcraft_app::stock::StockShape;
-use crate::state::{SIM_NOTE_LAID, SIM_NOTE_TILTED};
+use crate::state::SIM_NOTE_TILTED;
 
 type H = Harness<'static, ShellUi>;
 
@@ -91,16 +91,20 @@ fn a_custom_turn_reads_back_with_its_angles() {
     assert!(h.query_by_label(SIM_NOTE_TILTED).is_some(), "a tilted stock gets the plain note");
 }
 
-/// A cylinder laid along Y gets the plain note before any simulation; a
-/// box laid along Y does not, since the simulation cuts it.
+/// A cylinder or a box laid along Y gets no note, since the simulation
+/// cuts both (#2758); a tilted draft gets the plain note.
 #[test]
-fn a_laid_cylinder_shows_the_simulation_note_and_a_laid_box_does_not() {
+fn a_laid_stock_shows_no_simulation_note_and_a_tilted_one_does() {
     let mut h = stock_page_with_cylinder();
-    assert!(h.query_by_label(SIM_NOTE_LAID).is_none(), "an upright cylinder has no note");
+    assert!(h.query_by_label(SIM_NOTE_TILTED).is_none(), "an upright cylinder has no note");
     h.get_by_label("Along Y").click();
     h.run_steps(2);
-    assert!(h.query_by_label(SIM_NOTE_LAID).is_some(), "the drafted laid cylinder has the note");
+    assert!(h.query_by_label(SIM_NOTE_TILTED).is_none(), "a cylinder along Y is cut");
     h.state_mut().state.stock_ui.shape = 0;
     h.run_steps(2);
-    assert!(h.query_by_label(SIM_NOTE_LAID).is_none() && h.query_by_label(SIM_NOTE_TILTED).is_none(), "a box along Y is cut");
+    assert!(h.query_by_label(SIM_NOTE_TILTED).is_none(), "a box along Y is cut");
+    h.state_mut().state.stock_ui.axis = StockAxis::Custom;
+    h.state_mut().state.stock_ui.angles_deg = [0.0, 20.0, 0.0];
+    h.run_steps(2);
+    assert!(h.query_by_label(SIM_NOTE_TILTED).is_some(), "a tilted draft has the note");
 }

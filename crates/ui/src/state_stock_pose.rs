@@ -10,13 +10,10 @@ use camcraft_app::geometry::Point3;
 use camcraft_app::geometry::stock_axis::stock_axis_rot;
 use camcraft_app::schema::Location;
 use camcraft_app::stock::StockShape;
-use camcraft_app::stock_follow::{LAID_CYLINDER, sim_frame};
+use camcraft_app::stock_follow::sim_frame;
 
 use super::{ErrorScope, State, StockUi};
 
-/// The note for a cylinder the simulation refuses as laid on its side.
-pub const SIM_NOTE_LAID: &str = "The simulation cannot cut a cylinder that lies along X or Y yet. \
-     The viewport shows it, but the simulation stops with a message.";
 /// The note for a stock the simulation refuses as tilted.
 pub const SIM_NOTE_TILTED: &str = "The simulation cannot cut a stock that is tilted off the X, Y and Z axes yet. \
      The viewport shows it, but the simulation stops with a message.";
@@ -39,16 +36,14 @@ impl StockUi {
     }
 
     /// The note the page shows when the simulation cannot cut the
-    /// drafted stock as it is turned; `None` when it can.
+    /// drafted stock as it is turned; `None` when it can. Since #2758 the
+    /// simulation cuts a box or a cylinder laid along X or Y, so only a
+    /// stock tilted off the axes (`OBLIQUE_STOCK`) gets the note.
     #[must_use]
     pub fn sim_note(&self) -> Option<&'static str> {
         let rot = self.draft_rot()?;
         let loc = Location { pos: Point3::new(self.x, self.y, self.z), rot };
-        match sim_frame(&self.draft_shape(), loc) {
-            Ok(_) => None,
-            Err(e) if e == LAID_CYLINDER => Some(SIM_NOTE_LAID),
-            Err(_) => Some(SIM_NOTE_TILTED),
-        }
+        sim_frame(&self.draft_shape(), loc).err().map(|_| SIM_NOTE_TILTED)
     }
 }
 
