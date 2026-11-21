@@ -48,6 +48,12 @@ Blue shows the operation travel; dashed orange shows approach and retract; gray 
 
 ## 3D Pocket
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-pocket3d" /> }} ![View of roughing passes at successive levels around a 3D model.](../../../operation-paths.svg#Pocket3D)
 
 **For:** roughing a 3D part level by level, from Top Z down to Bottom Z.
@@ -117,6 +123,12 @@ so a deep job can refuse even where there appears to be side clearance.
 ![CamCraft 3D pocket roughing waterline levels clearing stock above a curved dome surface](../../../images/guide/op-3d-pocket-roughing.png)
 
 ## 3D Finish
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-finish3d" /> }} ![View of parallel finishing passes following a curved surface.](../../../operation-paths.svg#Finish3D)
 
@@ -192,6 +204,12 @@ inside the programmed depths"; "pencil reference diameter ... does not
 exceed the op's ball".
 
 ## Deburr
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+- [2d/edge-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/edge-work)
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-deburr" /> }} ![View of a toolpath following exposed edges of a 3D model.](../../../operation-paths.svg#Deburr)
 
