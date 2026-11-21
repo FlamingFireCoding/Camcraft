@@ -96,9 +96,10 @@ pub(super) fn post(
         .get("separationLengthMm")
         .and_then(|v| v.as_f64())
         .ok_or("The Agie post must declare its separation cut length in millimetres")?;
-    let bundle_files = camcraft_post::agie::export(&job, dest, name, separation)?;
+    let bundle = camcraft_post::agie::export_with_review(&job, dest, name, separation)?;
     Ok(Posted {
-        bundle_files,
+        bundle_files: bundle.files,
+        controller_review: Some(bundle.controller_review.into()),
         ops: 1,
         lines: 0,
         program: String::new(),

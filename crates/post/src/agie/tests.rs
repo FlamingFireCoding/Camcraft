@@ -32,10 +32,11 @@ fn native_punch_links_its_three_files_and_uses_the_uncompensated_contour() {
         "ID_DIAMETER,\"2.0\"",
         "ID_POSX,\"-30.000\"",
         "0.30,1.50,1.00,F,F,F",
-        "ASAGIE",
+        "ASDELETE",
     ] {
         assert!(script.contains(field), "{field}");
     }
+    assert!(!script.contains("ASAGIE"));
     assert!(export(&punch(), &out, "PUNCH40", 1.0).is_err());
     assert_eq!(
         std::fs::read_to_string(out.join("PUNCH40.ISO")).unwrap(),
@@ -60,17 +61,17 @@ fn final_rename_cannot_replace_an_empty_directory() {
 fn stock_hole_and_entry_are_validated_before_output() {
     let mut job = punch();
     job.start = [0., 0.];
-    assert!(contour::prepare(&job).is_err());
+    assert!(contour::prepare(&job, "PUNCH40").is_err());
     job.start = [-20.5, 0.];
-    assert!(contour::prepare(&job).is_err());
+    assert!(contour::prepare(&job, "PUNCH40").is_err());
     job.start = [-39.5, 0.];
-    assert!(contour::prepare(&job).is_err());
+    assert!(contour::prepare(&job, "PUNCH40").is_err());
     job = punch();
     job.contour.swap(0, 1);
-    assert!(contour::prepare(&job).is_err());
+    assert!(contour::prepare(&job, "PUNCH40").is_err());
     job = punch();
     job.stock_min[2] = -12.;
-    assert!(contour::prepare(&job).is_err());
+    assert!(contour::prepare(&job, "PUNCH40").is_err());
     assert!(!valid_name("A/B"));
     assert!(!valid_name("NUL"));
 }
@@ -80,17 +81,41 @@ fn the_native_pass_envelope_requires_a_rectangle_and_straight_face_for_separatio
     let mut job = punch();
     job.contour[2][0] = 18.0;
     assert!(
-        contour::prepare(&job)
+        contour::prepare(&job, "PUNCH40")
             .unwrap_err()
             .contains("axis-aligned rectangular")
     );
     let mut job = punch();
     job.start = [-30., 9.5];
     assert!(
-        contour::prepare(&job)
+        contour::prepare(&job, "PUNCH40")
             .unwrap_err()
             .contains("straight face on both sides")
     );
     job.start = [-30., 7.];
-    assert!(contour::prepare(&job).is_ok());
+    assert!(contour::prepare(&job, "PUNCH40").is_ok());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn stock_origin_and_fractional_setup_coordinates_are_refused_before_publication() {
+    let temp = tempfile::tempdir().unwrap();
+    let out = temp.path().join("REFUSED");
+    let mut displaced = punch();
+    for vertex in &mut displaced.contour {
+        vertex[0] += 340.0;
+    }
+    displaced.start[0] += 340.0;
+    displaced.stock_min[0] += 340.0;
+    displaced.stock_max[0] += 340.0;
+    let mut fractional = punch();
+    fractional.start[1] = 0.0004;
+    for (job, why) in [
+        (displaced, "stock and work origin"),
+        (fractional, "0.001 mm"),
+    ] {
+        let error = export_with_review(&job, &out, "REFUSED", 1.0).unwrap_err();
+        assert!(error.contains(why), "{error}");
+        assert!(!out.exists());
+    }
 }

@@ -80,6 +80,8 @@ pub(crate) fn posted_view(
     {
         out["format"] = json!("Agie native wire EDM");
         out["files"] = json!(file.posted.bundle_files);
+        out["working_steps_generated"] = json!(false);
+        out["controller_review"] = json!(file.posted.controller_review);
         if let Some(fields) = out.as_object_mut() { fields.remove("lines"); }
         return out;
     }

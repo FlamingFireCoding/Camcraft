@@ -1,5 +1,6 @@
 //! Quantize the nominal polygon and find an exterior perpendicular Agie punch entry (planar geometry).
 use super::AgieJob;
+use crate::agie_setup::PunchSetup20;
 
 type Point = [i64; 2];
 const UNITS: f64 = 100_000.0; // Five decimal places in the native ISO geometry file.
@@ -38,15 +39,20 @@ fn intersects(a: Point, b: Point, c: Point, d: Point) -> bool {
         || (z == 0 && between(c, d, b))
 }
 
-fn check_stock(job: &AgieJob) -> Result<(), String> {
-    for &v in job.stock_min.iter().chain(&job.stock_max).chain(&job.start) {
-        quantize(v)?;
-        if (v - (v * 1000.0).round() / 1000.0).abs() > 1e-9 {
-            return Err(
-                "Agie stock and start-hole coordinates must be representable to 0.001 mm".into(),
-            );
-        }
+fn micrometres(value: f64) -> Result<i32, String> {
+    // quantize rejects nonfinite or out-of-range geometry before conversion.
+    let hundredth_microns = quantize(value)?;
+    let microns = i32::try_from(hundredth_microns / 100)
+        .map_err(|_| "Agie setup coordinate exceeds the micrometre range")?;
+    if (value - f64::from(microns) / 1000.0).abs() > 1e-9 {
+        return Err(
+            "Agie stock and start-hole coordinates must be representable to 0.001 mm".into(),
+        );
     }
+    Ok(microns)
+}
+
+fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, String> {
     let [width, depth, height] = std::array::from_fn(|i| job.stock_max[i] - job.stock_min[i]);
     if !(width > 0.0 && width <= 350.0 && depth > 0.0 && depth <= 250.0) {
         return Err("Agie stock must fit the stated 350 × 250 mm working span".into());
@@ -61,11 +67,25 @@ fn check_stock(job: &AgieJob) -> Result<(), String> {
     {
         return Err("The complete 2 mm Agie start hole must lie inside the stock".into());
     }
-    Ok(())
+    Ok(PunchSetup20 {
+        stem: program,
+        stock_min_um: [
+            micrometres(job.stock_min[0])?,
+            micrometres(job.stock_min[1])?,
+        ],
+        stock_max_um: [
+            micrometres(job.stock_max[0])?,
+            micrometres(job.stock_max[1])?,
+        ],
+        start_hole_um: [micrometres(job.start[0])?, micrometres(job.start[1])?],
+    })
 }
 
-pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
-    check_stock(job)?;
+pub(super) fn prepare<'a>(
+    job: &AgieJob,
+    program: &'a str,
+) -> Result<(Vec<[f64; 2]>, PunchSetup20<'a>), String> {
+    let setup = punch_setup(job, program)?;
     let input = &job.contour;
     if input.len() < 3 || input.len() > MAX_VERTICES + 1 {
         return Err(format!(
@@ -154,10 +174,11 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     outline.rotate_left((edge + 1) % n);
     let mut vertices = vec![foot];
     vertices.extend(outline);
-    Ok(vertices
+    let vertices = vertices
         .into_iter()
         .map(|p| [p[0] as f64 / UNITS, p[1] as f64 / UNITS])
-        .collect())
+        .collect();
+    Ok((vertices, setup))
 }
 
 fn entry_face(ring: &[Point], hole: Point) -> Option<(usize, Point)> {

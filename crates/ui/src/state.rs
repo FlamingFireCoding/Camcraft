@@ -4728,7 +4728,13 @@ impl State {
                 self.post_refusal = None;
                 if !posted.bundle_files.is_empty() {
                     self.post_view = None;
-                    self.status = format!("Agie job posted to {} ({} controller files)", path.display(), posted.bundle_files.len());
+                    self.status = format!(
+                        "Agie job prepared in {} ({} controller files, zero working steps)",
+                        path.display(), posted.bundle_files.len()
+                    );
+                    if let Some(review) = posted.controller_review {
+                        self.status.push_str(&format!(" — {review}"));
+                    }
                     if let Some(note) = posted.not_judged {
                         self.status.push_str(&format!(" — {note}"));
                     }

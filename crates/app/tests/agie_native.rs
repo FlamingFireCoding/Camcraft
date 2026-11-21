@@ -124,6 +124,9 @@ fn the_mounted_agie_post_writes_nominal_geometry_and_preserves_existing_jobs() {
     );
     let files = posting::post_mounts(&world, &dest).expect("native post");
     assert_eq!(files[0].posted.bundle_files.len(), 3);
+    let review = files[0].posted.controller_review.as_ref().unwrap();
+    assert!(review.contains("Confirm zero steps"));
+    assert!(review.contains("CCB030") && review.contains("245, 155, 140 and 134"));
     let iso = fs::read_to_string(dest.join("PUNCH40.ISO")).unwrap();
     // Translated nominal X limits. A wire radius or gap would change both.
     assert!(
@@ -140,6 +143,7 @@ fn the_mounted_agie_post_writes_nominal_geometry_and_preserves_existing_jobs() {
         "{sbl}"
     );
     assert!(sbl.contains("ID_PUNCH,c_punch") && sbl.contains("ID_MATERIAL,\"0001\""));
+    assert!(sbl.contains("ASDELETE") && !sbl.contains("ASAGIE"));
     assert!(sbl.contains("ID_POSPOSZ,\"-20.000\""));
     assert!(sbl.contains("ID_SEPCUT,\"1.0\",je_dim)"));
     let sbr = fs::read_to_string(dest.join("PUNCH40.SBR")).unwrap();
@@ -304,4 +308,42 @@ fn qn2_requires_the_rough_wire_size_in_the_mounted_condition() {
         assert!(why.contains("AGIE_QN2 machine condition"), "{why}");
         assert!(!dest.exists());
     }
+}
+
+#[test]
+fn script_post_reports_the_required_control_review_and_zero_working_steps() {
+    let temp = tempfile::tempdir().unwrap();
+    let example = temp.path().join("examples/agie");
+    fs::create_dir_all(&example).unwrap();
+    fs::write(
+        example.join("punch.obj"),
+        include_bytes!("../../../examples/agie/punch.obj"),
+    )
+    .unwrap();
+    let mut script = include_str!("../../../examples/agie/punch.camscript")
+        .replace("cam.post(", "const receipt = cam.post(");
+    script.push_str(
+        r#"if (receipt.working_steps_generated !== false ||
+              !receipt.controller_review.includes("CCB030") ||
+              !receipt.controller_review.includes("245, 155, 140 and 134") ||
+              receipt.files.length !== 3) {
+            throw new Error("Expected a setup-only job and the effective work checks");
+        }"#,
+    );
+    fs::write(example.join("punch.camscript"), script).unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_camcraft-cli"))
+        .current_dir(temp.path())
+        .args(["script", "examples/agie/punch.camscript"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let sbl = fs::read_to_string(temp.path().join("PUNCH40/PUNCH40.SBL")).unwrap();
+    assert_eq!(
+        sbl,
+        include_str!("golden/nc/agie-native/CCSEP20.SBL").replace("CCSEP20", "PUNCH40")
+    );
 }

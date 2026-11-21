@@ -318,6 +318,8 @@ pub fn script_of(post: &PostRef) -> Result<(String, String), String> {
 pub struct Posted {
     /// The controller files published together for a native multi-file post.
     pub bundle_files: Vec<std::path::PathBuf>,
+    /// Required checks on the posted native job before the controller generates its steps.
+    pub controller_review: Option<String>,
     pub ops: usize,
     pub lines: usize,
     /// The exact program that was written - the M1.7d viewer shows the
@@ -721,6 +723,7 @@ fn post_script_body_with(
     let line_pos = viewer_map(&records, &out);
     Ok(Posted {
         bundle_files: Vec::new(),
+        controller_review: None,
         ops,
         lines,
         program: out.program,
