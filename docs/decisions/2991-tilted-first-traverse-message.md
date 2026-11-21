@@ -21,6 +21,11 @@
   the stock top at 31.114 mm (both measured along the tilted tool axis) -
   raise the clearance height by at least 1.114 mm".
 - The text of an upright verdict does not change.
+- The posed law (#3084, #3100) reads a 3+2 plane along the frame's axis
+  from its origin, so its verdict is local too. It takes the same shift
+  and `tilted` before it replaces the lower first-traverse verdicts. The
+  tops then compare in one frame, and one verdict names the highest top.
+  `FirstTraverseUnderTable` stays as it is (#3138).
 - The troubleshooting page gets an entry for the new text. The indexed
   guide page says what the warning gives after a regenerate.
 

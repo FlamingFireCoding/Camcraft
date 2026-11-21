@@ -329,7 +329,7 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
 /// The law's local verdict in the user's heights frame (#2991): both
 /// heights shifted back by the frame's `origin.z`, `tilted` set when the
 /// frame is not upright. Other warnings pass unchanged.
-fn in_user_frame(w: Warning, f: &TiltedFrame) -> Warning {
+pub(super) fn in_user_frame(w: Warning, f: &TiltedFrame) -> Warning {
     match w {
         Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, .. } => Warning::FirstTraverseLow {
             at,

@@ -209,8 +209,10 @@ fn a_work_turning_rotary_keeps_the_table_under_the_work() {
     let (_, status, warns, notes) = generate_on(Rig::Work, WIDE, B_DEG, 40.0);
     assert_eq!(status, OpStatus::Ok);
     let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict: {warns:?}"));
-    assert!((h_mm - 20.0).abs() < 1e-6, "{h_mm}");
-    assert!((top_mm - want).abs() < 1e-6 && !fixture, "the block on its sphere: {top_mm}, want {want}");
+    // #2991: the heights in the user's frame (local + origin Z 20).
+    assert!((h_mm - 40.0).abs() < 1e-6, "the clearance the user set: {h_mm}");
+    assert!((top_mm - (want + ORIGIN_Z)).abs() < 1e-6 && !fixture, "the block on its sphere: {top_mm}, want {}", want + ORIGIN_Z);
+    assert!(warns.iter().any(|w| matches!(w, Warning::FirstTraverseLow { tilted: true, .. })), "a 3+2 verdict is tilted: {warns:?}");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
     let (_, status, warns, _) = generate_on(Rig::Work, WIDE, B_DEG, ORIGIN_Z + 30.0);
     assert_eq!(status, OpStatus::Ok);
