@@ -89,12 +89,11 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     // Opt-in fields are omitted at their false/zero default, but a
     // literal patch of that default is still a known field.
     for (k, v) in patch {
-        if (*v == Value::Bool(false) || v.as_f64() == Some(0.0))
-            && !back.contains_key(k)
-            && opt_in_kept(&key, &fields_of(base), k, v.is_boolean())
-        {
-            back.insert(k.clone(), v.clone());
-        } else if k == "corner_relief" && !back.contains_key(k) && corner_relief_kept(&key, &fields_of(base)) {
+        let opt_in = (*v == Value::Bool(false) || v.as_f64() == Some(0.0))
+            && opt_in_kept(&key, &fields_of(base), k, v.is_boolean());
+        let corner_relief =
+            k == "corner_relief" && corner_relief_kept(&key, &fields_of(base));
+        if !back.contains_key(k) && (opt_in || corner_relief) {
             back.insert(k.clone(), v.clone());
         }
     }

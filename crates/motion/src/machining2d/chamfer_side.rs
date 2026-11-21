@@ -40,7 +40,7 @@ pub(super) fn boundary_inside(
                 if single.contains(air) != single.contains(material) {
                     if crossed.is_some() {
                         return Err(GenError::invalid_at(
-                            "the selected open chamfer edge touches more than one model boundary; re-pick a single wall".into(),
+                            "the selected open chamfer edge touches more than one model boundary; re-pick a single wall",
                             Point3::new(m.x, m.y, *z),
                         ));
                     }
@@ -52,7 +52,7 @@ pub(super) fn boundary_inside(
             };
             if found.is_some_and(|old| old != here) {
                 return Err(GenError::invalid_at(
-                    "the selected open chamfer run crosses both an Inside and an Outside wall; split the selection at the side change".into(),
+                    "the selected open chamfer run crosses both an Inside and an Outside wall; split the selection at the side change",
                     Point3::new(m.x, m.y, *z),
                 ));
             }

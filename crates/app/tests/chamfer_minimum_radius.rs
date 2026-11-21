@@ -172,11 +172,11 @@ fn tool_radius_and_flute_reach_refuse_the_missing_dimension() {
 
 #[test]
 fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
-    let (world, mut history) = world(taper(6.0, 3.0));
-    generate(&world, &mut history, "ZERO", params(0.0));
+    let (work, mut history) = world(taper(6.0, 3.0));
+    generate(&work, &mut history, "ZERO", params(0.0));
     let zero = model::operation_of(
-        &world,
-        &model::find_by_name(&world, "ZERO").expect("zero operation"),
+        &work,
+        &model::find_by_name(&work, "ZERO").expect("zero operation"),
     )
     .expect("zero params");
     let zero_json = project::params_to_json(&zero.params);
@@ -185,7 +185,7 @@ fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
         "zero keeps the legacy key shape: {zero_json}"
     );
     let stamp0 = camcraft_app::operation::current_stamp(
-        &world,
+        &work,
         TOOL,
         &SrcRef::Stock,
         &zero.params,
@@ -195,7 +195,7 @@ fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
     .expect("zero stamp");
     let mut minus_zero = params(-0.0);
     let stamp_minus = camcraft_app::operation::current_stamp(
-        &world,
+        &work,
         TOOL,
         &SrcRef::Stock,
         &minus_zero,
@@ -224,7 +224,7 @@ fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
         *minimum_cone_radius = 2.0;
     }
     let stamp_two = camcraft_app::operation::current_stamp(
-        &world,
+        &work,
         TOOL,
         &SrcRef::Stock,
         &minus_zero,
@@ -256,8 +256,8 @@ fn seed_stamp_json_and_project_keep_zero_compatible_and_positive_exact() {
     );
 
     let file = std::env::temp_dir().join(format!("camcraft-3153-{}.camproj", std::process::id()));
-    generate(&world, &mut history, "POS", minus_zero.clone());
-    project::save(&world, &file).expect("save positive radius");
+    generate(&work, &mut history, "POS", minus_zero.clone());
+    project::save(&work, &file).expect("save positive radius");
     let loaded = new_world();
     project::load(&loaded, &file).expect("load positive radius");
     let actual = model::operation_of(

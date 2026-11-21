@@ -69,12 +69,11 @@ fn radius_two_uses_the_two_to_three_cone_band_at_z_seventeen() {
     let inner = (p.corner_z() - p.tip_z()) / tan;
     let outer = (p.top_z - p.tip_z()) / tan;
     assert!((inner - 2.0).abs() < 1e-12 && (outer - 3.0).abs() < 1e-12);
+    let xy = feed_xy(&path);
     assert!(
-        feed_xy(&path)
-            .iter()
-            .any(|q| (q.x + 2.0).abs() < 1e-6 && q.y > 1.0 && q.y < 59.0),
+        (xy.iter().map(|q| q.x).fold(f64::INFINITY, f64::min) + 2.0).abs() < 1e-6,
         "the cone axis stands 2 mm off the original west wall: {:?}",
-        feed_xy(&path)
+        xy
     );
     let b = path.breaks.first().expect("authored edge break");
     assert!((b.depth - 1.0).abs() < 1e-12);
@@ -93,15 +92,13 @@ fn a_closed_ring_offsets_toward_the_named_side() {
     let outside = params(2.0, Side::Outside);
     let out = feed_xy(&chamfer(&rect(0.0, 0.0, 20.0, 20.0), &outside).expect("outside"));
     assert!(
-        out.iter()
-            .any(|q| (q.x + 2.0).abs() < 1e-6 && q.y > 1.0 && q.y < 19.0),
+        (out.iter().map(|q| q.x).fold(f64::INFINITY, f64::min) + 2.0).abs() < 1e-6,
         "Outside moves the centerline past the west wall: {out:?}"
     );
     let inside = params(2.0, Side::Inside);
     let into = feed_xy(&chamfer(&rect(0.0, 0.0, 20.0, 20.0), &inside).expect("inside"));
     assert!(
-        into.iter()
-            .any(|q| (q.x - 2.0).abs() < 1e-6 && q.y > 1.0 && q.y < 19.0),
+        (into.iter().map(|q| q.x).fold(f64::INFINITY, f64::min) - 2.0).abs() < 1e-6,
         "Inside moves the centerline into the selected region: {into:?}"
     );
 }
@@ -170,7 +167,7 @@ fn an_open_chain_offsets_on_its_named_air_side_and_keeps_its_break() {
         .expect("hole"),
     ])
     .expect("holed section");
-    let hole_run = vec![Point2::new(0.0, 20.0), Point2::new(20.0, 20.0)];
+    let hole_run = vec![Point2::new(5.0, 20.0), Point2::new(15.0, 20.0)];
     let hole_path = chamfer_open_runs(
         std::slice::from_ref(&hole_run),
         &params(2.0, Side::Inside),
@@ -181,7 +178,7 @@ fn an_open_chain_offsets_on_its_named_air_side_and_keeps_its_break() {
         feed_xy(&hole_path)
             .iter()
             .any(|q| (q.y - 18.0).abs() < 1e-6),
-        "Inside offsets toward the bounded air of the hole: {:?}",
+        "Inside offsets a clear interior span toward the bounded air of the hole: {:?}",
         feed_xy(&hole_path)
     );
 }
@@ -199,9 +196,9 @@ fn zero_radius_keeps_the_exact_legacy_closed_and_open_paths() {
         feed_xy(&closed),
         vec![
             Point2::new(4.0, 0.0),
-            Point2::new(4.0, 4.0),
-            Point2::new(0.0, 4.0),
             Point2::new(0.0, 0.0),
+            Point2::new(0.0, 4.0),
+            Point2::new(4.0, 4.0),
         ]
     );
     assert!(

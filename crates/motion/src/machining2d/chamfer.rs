@@ -25,7 +25,7 @@
 //! approximated.
 
 use crate::cl::{EdgeBreak, MoveKind, PathBuilder, Toolpath};
-use crate::geo2d::{Loop, Point2};
+use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Point3;
 
 use super::contour::air_side;
@@ -281,7 +281,7 @@ pub fn chamfer_open_runs(
                     .into(),
             )
         })?;
-        let mut pass = if p.minimum_cone_radius == 0.0 {
+        let pass = if p.minimum_cone_radius == 0.0 {
             let mut pass = run.clone();
             // Keep the legacy zero-radius route byte-for-byte.
             if p.climb == material_left {
@@ -335,8 +335,12 @@ pub fn chamfer_open_runs(
             last.y + exit_air.y * p.width,
         ));
         if p.minimum_cone_radius > 0.0 {
+            let swept = Region::sweep(&[ride.clone()], 1e-3).map_err(GenError::Geo)?;
             for (z, region) in &levels {
-                if let Some(q) = ride.iter().find(|q| region.contains(**q)) {
+                let hit = swept.intersect(region).map_err(GenError::Geo)?;
+                if !hit.is_empty()
+                    && let Some(q) = hit.loops().first().and_then(|l| l.points().first())
+                {
                     return Err(GenError::invalid_at(
                         format!(
                             "the minimum cone radius offset reaches selected-model material on the air side at Z {z:.3} near ({:.3}, {:.3}); pick a smaller radius or a different Side",
