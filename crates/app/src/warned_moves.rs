@@ -30,6 +30,7 @@ pub fn moves_named(w: &Warning) -> [Option<usize>; 2] {
         | Warning::RapidInStock { at }
         | Warning::UndercutLift { at }
         | Warning::FirstTraverseLow { at, .. }
+        | Warning::FirstTraverseUnderTable { at, .. }
         | Warning::FixtureHit { at, .. }
         | Warning::AvoidHit { at, .. }
         | Warning::HolderHit { at, .. }
