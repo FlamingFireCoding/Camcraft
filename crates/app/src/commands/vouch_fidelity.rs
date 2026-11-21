@@ -59,7 +59,7 @@ impl VouchModelFidelity {
         };
         if !is_unknown(chord) {
             return Err(CommandError::Invalid(format!(
-                "'{name}' has a recorded fidelity ({}); only a mesh of unknown fidelity can be vouched for - re-import it with a larger STEP facet budget",
+                "'{name}' has a recorded fidelity ({}); only a mesh of unknown fidelity can be vouched for - re-import it with a larger STEP facet budget, or export the file again with a tighter tolerance",
                 model_fidelity::summary(world, chord)
             )));
         }

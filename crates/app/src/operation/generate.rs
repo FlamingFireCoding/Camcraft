@@ -45,6 +45,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         mut contour_sel,
         mut drive_chains,
         mut slot_bound,
+        mut rotary_picks,
         mut prior,
         verify_prior,
         mut drills_ahead,
@@ -57,6 +58,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         fixture_names,
         unread_steel,
         z_ceiling,
+        z_stroke,
         workholding,
         fixture_meshes,
         rotary_axis,
@@ -1643,10 +1645,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 lag_deg: *lag_deg,
                 max_tilt_deg: Some(*max_tilt_deg),
             };
+            // #2848: picked faces. Rotary Parallel keeps its cut over
+            // them (the axis still reads the whole model); a selection
+            // the kind cannot use refuses here, by name.
+            let picked = super::rotary_picks::usable(rotary_picks.take(), &material.facets)?;
             let run = |q: &Finish3DParams| if is_contour {
                 crate::multiaxis::rotary_contour(&material.facets, q, &axis)
             } else {
-                crate::multiaxis::rotary_parallel_in(&material.facets, stock_facets.as_deref(), q, &axis)
+                crate::multiaxis::rotary_parallel_over(&material.facets, stock_facets.as_deref(), picked.as_deref(), q, &axis)
             };
             let kind = if is_contour { "Rotary Contour" } else { "Rotary Parallel" };
             // M13.5 B: the letter is the machine's. The fitted line
@@ -1729,6 +1735,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // stated here so the field's double life is on record:
             // the kernel chords by its own arc-fit tolerance.
             let _ = tolerance;
+            // #2848: the ladder cannot keep to picked faces yet - a
+            // face selection refuses by name, never cut as the model.
+            if let Some(picks) = rotary_picks.take() {
+                picks?;
+            }
             // M13.5 B: the machine's letter for the line the ladder
             // wraps about, or the refusal by name.
             let spindle_c = rotary_letter_gate(machine_rotaries.as_ref(), &material.facets, "Rotary Offset")?;
@@ -3106,15 +3117,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         Ok(ok) => ok,
         Err(e) => return Err(match yaw_ctx { Some((yw, _)) => yw.exit_err(e), None => e }),
     };
-    // #2382: the approach starts over the setup's WCS origin, never the
-    // frame's zero the generators seed at. Before the yaw exit (a turn
-    // about that same origin) and before every law below, so the routed
-    // links and the verdicts judge the rapid the viewport draws.
-    // A 3+2 path is local to its plane: the origin is read there too.
+    // #2901: the approach starts over its own entry point on the
+    // clearance plane - never the frame's zero the generators seed at,
+    // and never the WCS origin (#2382's seat, reversed): the machine
+    // does not know its X/Y after a tool change and goes Z first, then
+    // to the entry. Before the yaw exit and before every law below, so
+    // the routed links and the verdicts judge the rapid the viewport
+    // draws. The seed is in the path's own (3+2 or yaw) frame.
     let mut path = path;
-    let o = Point3::new(wcs_origin[0], wcs_origin[1], wcs_origin[2]);
-    let o = frame.as_ref().map_or(o, |f| f.to_local(o));
-    path.seat_approach(Point3::new(0.0, 0.0, hl.clearance), [o.x, o.y]);
+    path.seat_approach(Point3::new(0.0, 0.0, hl.clearance));
     let (region, path, relief_zones) = if let Some((yw, saved)) = yaw_ctx {
         material.facets = saved.material_facets;
         stock_facets = saved.stock_facets;
@@ -3185,11 +3196,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // wall. An internal thread keeps its full cutter.
     let cutter = super::thread_op::root_cutter(cutter, &tool, &params);
     let fixture_boxes = fixtures;
+    // #2965: a rotary kind's first traverse reads its work swept about its axis.
+    let turned_axis = super::first_traverse::turned_axis(&params, is_mill && !lathe_tool, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
+    let rides = turned_axis.map_or_else(Vec::new, |_| super::first_traverse::rides_of(stock_facets.as_deref(), stock_aabb, &material.facets));
+    let turned = turned_axis.map(|axis| super::first_traverse::Turned { axis, rides: &rides, turning: &workholding.0, fixed: &workholding.1 });
     // #339 slice 5: an upright mill's links are planned over the steel -
     // a struck link rises over it, an unclearable one refuses by name.
     // Posed and rotary paths keep the report-only verdict below.
-    let path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
-        let named: Vec<_> = fixture_names.into_iter().zip(fixture_boxes.iter().copied()).collect();
+    let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
+        let named: Vec<_> = fixture_names.iter().cloned().zip(fixture_boxes.iter().copied()).collect();
         let stack = verify::steel_stack(&geom, &holder, spindle);
         let steel = super::fixture_route::LinkSteel { boxes: &named, stack: &stack, ceiling: z_ceiling };
         // The re-judge is the post gate's own per-op law over the same
@@ -3351,6 +3366,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let reread = super::clearance_stock::Reread { stock: judged_stock, part: &material.facets, fidelity_known: stock_fidelity_known, tool: &geom, clearance: hl.clearance, excess: material.excess };
             super::clearance_stock::acquit(&path, mode, &reread, Some(&mut verify_prior), &mut warns);
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, stock_top_z, false, &warns);
+            // #2901: the first traverse comes from an unknown X/Y.
+            let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
+            super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, None, &over, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
             // less what the program ahead faced and this path cut.
@@ -3396,6 +3414,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }),
             };
             super::turning_rapids::judge_axial_rapids(&params, &path, &meridian, &mut verify_prior, &mut warns);
+            // #2878: a Fanuc-type G76 moves to each pass's depth at rapid
+            // traverse, so record whether the start band stands in free air
+            // (in front of the end face or in a relief groove wider than
+            // the insert) against the part, stock and prior cuts.
+            super::g76_start::judge(&params, &mut path, &meridian, &mut verify_prior);
             // ...and a boring bar's head and shank on its FEEDS (#146),
             // against the same revolved material at each instant.
             super::turning_feeds::judge_bar_feeds(&params, &path, &meridian, &mut verify_prior, &mut warns);
@@ -3693,6 +3716,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let reread = super::clearance_stock::Reread { stock: stock_local.as_deref(), part: &m_gen.facets, fidelity_known: stock_fidelity_known, tool: &geom, clearance: hl.clearance, excess: m_gen.excess };
             super::clearance_stock::acquit(&path, mode, &reread, None, &mut warns);
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, st_local, true, &warns);
+            // #2901: the first traverse, read along the plane's tool axis.
+            // #2987: the table read where the tool can meet it.
+            let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
+            let table_note = super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, Some(f), &over, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
             // along every move against the part solid. The Section kinds
@@ -3716,6 +3743,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // the setup's parts on a stock source).
             let mut path_world = path_world;
             path_world.notes.extend(clearance_note);
+            path_world.notes.extend(table_note);
             let mark_part = (depth_law == DepthLaw::Mark).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| parts_marked));
             if let Some(part) = mark_part {
                 let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess);

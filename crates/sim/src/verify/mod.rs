@@ -172,7 +172,9 @@ mod crossing;
 mod cut_index;
 mod engine;
 mod excess;
+mod fine_bore;
 mod finish;
+mod first_traverse;
 mod hidden;
 mod hidden_span;
 mod hole_wall;
@@ -220,6 +222,7 @@ pub use corner_relief::CornerReliefZone;
 
 pub use avoid::{AVOID_PAD, AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, avoid_hits, avoid_hits_named};
 pub use excess::excess_floor;
+pub use first_traverse::{box_top, first_traverse_low, first_traverse_low_swept, swept_top, SweptSteel};
 pub use types::{FixturePart, Mode, VerifyContext, Warning};
 #[doc(hidden)]
 pub use crossing::{crossed_pairs, crossed_pairs_all};
