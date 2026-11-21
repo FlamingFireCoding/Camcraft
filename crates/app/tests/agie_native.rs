@@ -3,7 +3,7 @@
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SelectPost,
-    SetPostScriptOptions, SetStock, SetWcsOrigin,
+    SetPostOptions, SetPostScriptOptions, SetStock, SetWcsOrigin,
 };
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::operation::{
@@ -11,7 +11,7 @@ use camcraft_app::operation::{
 };
 use camcraft_app::post::options::OptionValue;
 use camcraft_app::posting::{self, agie};
-use camcraft_app::schema::{Location, PostRef};
+use camcraft_app::schema::{Location, PostOptions, PostRef};
 use camcraft_app::stock::StockShape;
 use flecs_ecs::prelude::World;
 use std::{collections::BTreeMap, fs};
@@ -259,6 +259,18 @@ fn the_work_must_fit_between_each_stated_guide() {
         assert!(why.contains("guide"), "{why}");
         assert!(!dest.exists());
     }
+}
+
+#[test]
+fn smoothing_blocks_the_native_agie_job_before_publication() {
+    let world = punch(20.0, [0., 0., 20.], [-30., 0.]);
+    let options = PostOptions { smoothing: true, ..PostOptions::default() };
+    History::default().execute(&world, SetPostOptions::new(&world, options).unwrap());
+    let temp = tempfile::tempdir().unwrap();
+    let dest = temp.path().join("SMOOTH");
+    let error = posting::post_mounts_with_script_options(&world, &dest, Some(&separation(1.0))).unwrap_err();
+    assert_eq!(error, "Agie jobs require default post options and One program output");
+    assert!(!dest.exists());
 }
 
 #[test]
