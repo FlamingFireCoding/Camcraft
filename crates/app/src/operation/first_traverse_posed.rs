@@ -153,6 +153,9 @@ pub(super) fn post_order(world: &flecs_ecs::prelude::World, setup: Option<&str>,
     PostOrder { first, custom: first && matches!(post, crate::schema::PostRef::File(_)) }
 }
 
+/// The most script texts [`declares_first`] keeps.
+const SEEN_MAX: usize = 32;
+
 /// The declaration of one script text, loaded once per text: the stamp
 /// asks for it on every read, and a script load runs the whole script.
 fn declares_first(text: &str) -> bool {
@@ -169,6 +172,11 @@ fn declares_first(text: &str) -> bool {
     }
     let v = crate::post::dialect::turns_rotaries_first(text).unwrap_or(false);
     if let Ok(mut m) = seen.lock() {
+        // Bounded: each edited user script is one more text, so the map
+        // starts again past a handful (a re-read only loads the script).
+        if m.len() >= SEEN_MAX {
+            m.clear();
+        }
         m.insert(key, v);
     }
     v

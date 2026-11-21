@@ -198,3 +198,28 @@ fn a_users_own_post_is_taken_at_its_declared_order_with_a_note() {
     assert!((top - (1300f64.sqrt() - ORIGIN_Z * 30f64.to_radians().cos())).abs() < 1e-6, "{top}");
     assert!(!notes.iter().any(|n| n.contains("rotariesBeforeTraverse")), "{notes:?}");
 }
+
+#[test]
+fn a_switch_to_a_users_declaring_post_reads_stale_and_regenerates_with_the_note() {
+    // Generated under Tormach PathPilot (no note), then the setup takes a
+    // user's copy of the same script: the cache must not stay fresh, or
+    // the post would run without the note that says the order was taken
+    // at its word.
+    let tormach = Some(PostRef::Named("Tormach PathPilot".into()));
+    let (world, status, _, notes) = face_posted(Rig::TableA, 30.0, 0.0, 16.0, tormach);
+    assert_eq!(status, OpStatus::Ok);
+    assert!(!notes.iter().any(|n| n.contains("rotariesBeforeTraverse")), "{notes:?}");
+    let text = posting::builtin_post_text("Tormach PathPilot").expect("tormach.cps");
+    let path = std::env::temp_dir().join(format!("camcraft_3100_switch_{}.cps", std::process::id()));
+    std::fs::write(&path, text).expect("write the user's script");
+    let mut h = History::default();
+    h.execute(&world, SelectPost::new(&world, PostRef::File(path.to_string_lossy().into_owned())).expect("post"));
+    let e = model::find_by_name(&world, "Face1").expect("op");
+    assert_eq!(camcraft_app::operation::status_of(&world, &e), OpStatus::Stale, "the cache judged under another post");
+    h.execute(&world, GenerateOperation::new(&world, "Face1").expect("generate"));
+    let status = camcraft_app::operation::status_of(&world, &e);
+    let notes = model::toolpath_of(&world, &e).expect("cached path").path.notes.clone();
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(status, OpStatus::Ok);
+    assert!(notes.iter().any(|n| n.contains("declares rotariesBeforeTraverse")), "{notes:?}");
+}
