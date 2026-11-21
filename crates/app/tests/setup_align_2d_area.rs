@@ -119,6 +119,7 @@ fn contour_params() -> OpParams {
         blend_turns: false, blend_radius: None,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 

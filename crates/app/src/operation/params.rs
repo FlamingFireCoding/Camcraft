@@ -107,6 +107,7 @@ impl OpParams {
                 blend_turns, blend_radius,
                 links: _,
                 tilt,
+                chain_overrides,
             } => {
                 w(h, *stock_to_leave);
                 wh(h, *clearance_z);
@@ -170,6 +171,23 @@ impl OpParams {
                     if let Some(r) = blend_radius {
                         h.write_u8(0xB4);
                         w(h, *r);
+                    }
+                }
+                if !chain_overrides.is_empty() {
+                    h.write(b"chain-overrides");
+                    let mut sorted: Vec<_> = chain_overrides.iter().collect();
+                    sorted.sort_by(|a, b| a.entity.cmp(&b.entity).then(a.chain.cmp(&b.chain)));
+                    h.write_usize(sorted.len());
+                    for o in sorted {
+                        h.write_usize(o.entity.len());
+                        h.write(o.entity.as_bytes());
+                        h.write(&o.chain.0.to_le_bytes());
+                        h.write_u8(match o.side {
+                            None => 0,
+                            Some(ChainSide::Inside) => 1,
+                            Some(ChainSide::Outside) => 2,
+                        });
+                        h.write_u8(u8::from(o.reverse));
                     }
                 }
                 // The level links ride the shared tail below (M11.2).
@@ -366,6 +384,7 @@ impl OpParams {
             OpParams::WireContour { .. }
             | OpParams::SinkerBurn { .. }
             | OpParams::SinkerSideBurn { .. }
+            | OpParams::SlotUndercut { .. }
             | OpParams::PlasmaProfile { .. } => self.stamp_cutting(world, setup, src, h),
         }
         self.stamp_links(h);

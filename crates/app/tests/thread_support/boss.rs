@@ -108,6 +108,7 @@ pub fn clearing(bottom: f64, leave: f64) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 

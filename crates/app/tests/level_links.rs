@@ -50,6 +50,7 @@ fn contour_op(links: Links) -> OpParams {
         blend_turns: true, blend_radius: None,
         tilt: None,
         links,
+        chain_overrides: Vec::new(),
     }
 }
 

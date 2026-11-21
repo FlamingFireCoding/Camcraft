@@ -260,6 +260,7 @@ fn generation_refuses_a_radius_past_the_tool_radius_by_name_on_each_kind() {
 
 fn contour_params(blend: bool, radius: Option<f64>) -> OpParams {
     OpParams::Contour {
+        chain_overrides: Vec::new(),
         tilt: None,
         stock_to_leave: 0.0,
         clearance_z: Height::fixed(25.0),

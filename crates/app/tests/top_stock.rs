@@ -86,6 +86,7 @@ fn scene(stock_top: f64, face: Option<f64>) -> World {
         helix_radius: 1.0,
         blend_turns: false, blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     history.execute(
         &world,
