@@ -36,7 +36,7 @@
    `V-Carve`. `list_operation_types` lists the kind and its fields. No
    new MCP tool was necessary.
 10. The project file gets a new `VCarve` arm, appended, with no version
-    step. The kind tag is 44, appended.
+    step. The kind tag is 45, appended after Slot Undercut at 44.
 
 11. The branch is not stacked on PR #3058 (Waterjet Profile). That PR
     also appends kind tag 44 and `ALL[44]`. The two rows are appends to
@@ -93,3 +93,15 @@
 - Drop the radius limit for V-Carve: it refuses legal deep cuts.
   Do not remove the budget: a start depth below the real surface must
   still block the post.
+
+**Review correction: live posting check and branch refresh**
+
+- Use `cutter_depth_limit` in the live mark check before posting. This
+  gives stock-source V-Carve the same depth budget as generation and
+  stock simulation. Keep both the part-source and stock-source cases.
+- Drop the separate radius limit in the live check. It refuses an
+  unchanged legal cut deeper than the bit radius.
+- Keep main's Slot Undercut declaration, row and tag at 44. Append
+  V-Carve at 45. Keep both operations' verification exemptions.
+- A later append uses the next free row and tag. Moving Slot Undercut
+  would change a stored kind id, so that option is dropped.

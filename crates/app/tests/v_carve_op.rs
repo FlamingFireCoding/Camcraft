@@ -10,7 +10,7 @@
 //! Gate map: covers app::operation::vcarve_op, app::operation::kinds
 //! (the V-Carve row), app::operation::generate (the V-Carve arm,
 //! depth_law_of), app::operation::mark_law, app::project (the VCarve
-//! arm), app::stock_sim, app::posting, app::mcp (list_operation_types,
+//! arm), app::operation::kept_rejudge, app::stock_sim, app::posting, app::mcp (list_operation_types,
 //! add_operation, generate, verify).
 
 mod common;
@@ -98,7 +98,11 @@ fn whole() -> SrcRef {
 
 /// Create and generate "V1"; its cached path and warnings.
 fn generated(world: &World, h: &mut History, params: OpParams) -> camcraft_app::schema::Toolpath {
-    h.execute(world, CreateOperation::new(world, "V1", VBIT, whole(), params).expect("create"));
+    generated_from(world, h, whole(), params)
+}
+
+fn generated_from(world: &World, h: &mut History, source: SrcRef, params: OpParams) -> camcraft_app::schema::Toolpath {
+    h.execute(world, CreateOperation::new(world, "V1", VBIT, source, params).expect("create"));
     h.execute(world, GenerateOperation::new(world, "V1").expect("generate"));
     let e = model::find_by_name(world, "V1").expect("op");
     model::toolpath_of(world, &e).expect("cached path").clone()
@@ -110,6 +114,15 @@ fn nc(tag: &str) -> std::path::PathBuf {
 
 #[test]
 fn a_sixty_degree_carve_deeper_than_the_bit_radius_is_legal() {
+    deep_carve_posts(whole(), "sixty-degree-part");
+}
+
+#[test]
+fn a_sixty_degree_stock_carve_deeper_than_the_bit_radius_posts() {
+    deep_carve_posts(SrcRef::Stock, "sixty-degree-stock");
+}
+
+fn deep_carve_posts(source: SrcRef, tag: &str) {
     let world = new_world();
     let mut h = History::default();
     let mut tool = catalog().into_iter().find(|(n, _)| *n == VBIT).map(|(_, t)| t).expect("V-bit");
@@ -120,7 +133,7 @@ fn a_sixty_degree_carve_deeper_than_the_bit_radius_is_legal() {
     h.execute(&world, ImportModel::from_mesh("part", part));
     let at = Location { pos: Point3::new(0.0, 0.0, 0.0), ..Location::default() };
     h.execute(&world, SetStock::new(&world, StockShape::Box { dx: 20.0, dy: 20.0, dz: TOP }, at).expect("stock"));
-    let tp = generated(&world, &mut h, carve(TOP, 6.0, false));
+    let tp = generated_from(&world, &mut h, source, carve(TOP, 6.0, false));
     // Six millimetres is deeper than the 5 mm radius, but less than
     // the cone's 8.66 mm height. The remaining part is 2 mm thick.
     let floor = tp.path.moves.iter().filter(|m| m.kind != MoveKind::Rapid).map(|m| m.to.z).fold(f64::INFINITY, f64::min);
@@ -129,7 +142,7 @@ fn a_sixty_degree_carve_deeper_than_the_bit_radius_is_legal() {
     assert!(blocking.is_empty(), "{blocking:?}");
     let dev = stock_sim::simulate_document(&world).expect("the deep carve is judged").dev;
     assert_eq!(dev.gouge_cells, 0, "worst {} at {:?}", dev.max_gouge, dev.max_gouge_at);
-    let out = nc("sixty-degree");
+    let out = nc(tag);
     let _ = std::fs::remove_file(&out);
     posting::post_setup(&world, &out).unwrap_or_else(|e| panic!("a deep legal V-carve posts: {e}"));
     assert!(out.exists(), "the legal program is written");
