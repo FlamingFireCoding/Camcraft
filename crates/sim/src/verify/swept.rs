@@ -159,7 +159,32 @@ pub(super) fn rho_expanded(atom: &super::probe::Atom, w: f64, m: f64) -> f64 {
                 cone
             }
         }
+        // #1444 x #2055: the undercut heads. The caller (`avoid_poly`)
+        // stretches an atom over a move's Z travel, which this function
+        // cannot see, so each arm is an upper bound that holds for any
+        // stretch. A dovetail is never wider than r: its cylinder.
+        Prof::Dove { r, .. } => cylinder(atom, r, w, m),
+        // A lollipop ball (r about z0 + r) stretched up to z1 is the
+        // capsule of balls with centres on [z0 + r, z1 - r]. An atom
+        // shorter than the whole ball falls back to the cylinder.
+        Prof::Ball(r) => {
+            if atom.z1 - atom.z0 < 2.0 * r {
+                return cylinder(atom, r, w, m);
+            }
+            let c = w.clamp(atom.z0 + r, atom.z1 - r);
+            ((r + m).powi(2) - (w - c).powi(2)).max(0.0).sqrt()
+        }
     }
+}
+
+#[cfg(test)]
+#[path = "swept_tests.rs"]
+mod tests;
+
+/// The cylinder of radius `r` over `[z0, z1]`, grown by `m`, at height `w`.
+fn cylinder(atom: &super::probe::Atom, r: f64, w: f64, m: f64) -> f64 {
+    let gap = (atom.z0 - w).max(w - atom.z1).max(0.0);
+    r + (m * m - gap * gap).max(0.0).sqrt()
 }
 
 /// Exact 3D Euclidean penetration of swept `b` inside `atom` inflated by 3D
