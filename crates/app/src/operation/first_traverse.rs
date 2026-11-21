@@ -106,7 +106,7 @@ fn answers(params: &OpParams, mill: bool) -> bool {
 /// the bar on the spindle C under a radial live tool, whose first rapid
 /// comes from the turret's index position, not from an upright tool over
 /// an unknown X/Y; the mill premise refuses every such program. That law
-/// is #3077's live-tool reading; #3096 owns it (decision #3083).
+/// is #3077's live-tool reading, in `rotary_traverse` (#3096).
 pub(super) fn mill_order(kind: crate::machine::Kind, lathe_tool: bool, params: &OpParams) -> bool {
     use crate::machine::Kind;
     !lathe_tool

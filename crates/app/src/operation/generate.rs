@@ -1667,6 +1667,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             // Issue #33: on the spindle's C the path states its angle.
             let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), is_contour), *tolerance, kind)?;
+            // #3096: the first rapid from the turret's index position onto the station.
+            if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
+                let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                super::rotary_traverse::judge_about(&path, kind, &ax, &tool, &work)?;
+            }
             (region, path)
         }
         // M5.1 stage E2: the rotary rough. The pocket ladder runs in
@@ -1758,6 +1763,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // split to the verify budget so the machine's C-linear
             // motion is the chord the laws judge.
             let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), false), *tolerance, "Rotary Offset")?;
+            // #3096: the first rapid from the turret's index position onto the station.
+            if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
+                let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                super::rotary_traverse::judge_about(&path, "Rotary Offset", &ax, &tool, &work)?;
+            }
             // M11.3 owed (2): the wrap-space entry guard judged the
             // ladder before the wrap posed it; the law judges the FINAL
             // posed path. Solid is the true bar (#16): the stock
@@ -3213,7 +3223,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let fixture_boxes = fixtures;
     // #3083: a mill-turn posts a milling tool's first traverse in the
     // mill order, so its mill kinds answer to the same laws as a mill's.
-    let mill_order = super::first_traverse::mill_order(machine_kind, lathe_tool, &params);
+    // #3096: so does a rotary kind there whose path states no C (the
+    // mill post writes it); a stamped one was judged in its arm.
+    let mill_order = super::first_traverse::mill_order(machine_kind, lathe_tool, &params) || super::rotary_traverse::mill_post_rotary(machine_kind, lathe_tool, &params, &path);
     // #2965: a rotary kind's first traverse reads its work swept about its axis.
     let turned_axis = super::first_traverse::turned_axis(&params, mill_order, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
     // #3084: the work that the machine's own work-turning rotaries can
