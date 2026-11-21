@@ -290,13 +290,20 @@ fn layout_window_display_menu() {
             "Shaded, with hidden edges",
             "Look at",
             "Look at a face",
+            "Look at a work plane",
             "Graphics",
             "Grid",
             "Origin axes",
             "Perspective view",
             "Orthographic view",
+            "Line width",
+            "Anti-aliasing",
+            "Performance",
+            "Quality",
+            "Ground shadow",
+            "Ambient occlusion",
         ],
     );
-    let last = h.get_by_label("Orthographic view").rect();
+    let last = h.get_by_label("Ambient occlusion").rect();
     assert!(last.bottom() <= button.top(), "the menu stands above the Display button");
 }

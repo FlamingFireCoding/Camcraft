@@ -267,6 +267,13 @@ pub enum Warning {
     /// first traverse comes from an X/Y the machine does not know, so it
     /// can cross that top anywhere ([`super::first_traverse_low`]).
     FirstTraverseLow { at: usize, height_mm: f64, top_mm: f64, fixture: bool },
+    /// #3081: a 3+2 plane whose tool axis points down toward the machine
+    /// table (a head tilt past 90 degrees). The path starts at `height_mm`
+    /// along that axis; the move to it from the tool-change height (the Z
+    /// travel top) can end under the table top. A HIGHER plane along the
+    /// axis stands LOWER in the world, so the repair is a plane at
+    /// `limit_mm` or under it - never a raise.
+    FirstTraverseUnderTable { at: usize, height_mm: f64, limit_mm: f64 },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
     /// it, `short_mm` the clearance shortfall - the radial depth the
@@ -414,6 +421,12 @@ impl core::fmt::Display for Warning {
                 "the first rapid (move {at}) comes from an unknown X/Y at the clearance height Z{height_mm:.3}, under the {} \
                  top at Z{top_mm:.3} - raise the clearance height above Z{top_mm:.3}",
                 if *fixture { "fixture" } else { "stock" }
+            ),
+            Warning::FirstTraverseUnderTable { at, height_mm, limit_mm } => write!(
+                f,
+                "the first rapid (move {at}) runs from the tool-change height along a tool axis that points down toward the \
+                 machine table; to the clearance plane at Z{height_mm:.3} it can go under the table top - lower the clearance \
+                 plane to Z{limit_mm:.3} or under it"
             ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,

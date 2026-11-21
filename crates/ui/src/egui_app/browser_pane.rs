@@ -95,6 +95,7 @@ pub fn browser(ui: &mut Ui, state: &mut State, pal: &Tokens, icons: Option<&Icon
             }
             // #339 slice 4: the fixture verbs.
             Some(Leaf::Model(name)) => Some(TreeMenuTarget::Model { name: name.clone(), row: ix }),
+            Some(Leaf::Tool(name)) => Some(TreeMenuTarget::Tool { name: name.clone(), row: ix }),
             Some(Leaf::Page(setup, SetupPage::Fixtures)) => {
                 focus(state, setup);
                 Some(TreeMenuTarget::Fixtures(setup.clone()))
