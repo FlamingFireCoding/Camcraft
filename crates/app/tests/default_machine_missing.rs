@@ -155,7 +155,9 @@ fn a_missing_default_machine_file_refuses_the_post_per_mount() {
 #[test]
 fn a_missing_default_machine_file_refuses_the_post_per_operation() {
     let err = assert_refused("per-op", Doc::PerOp, |_| {});
+    assert!(err.contains("Setup2"), "the refusal names the unmounted setup: {err}");
     assert!(err.contains("Face2"), "the refusal names the operation of the unmounted setup: {err}");
+    assert!(!err.contains("Face1"), "the mounted operation has its own machine: {err}");
 }
 
 #[test]

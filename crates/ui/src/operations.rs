@@ -54,7 +54,10 @@ pub fn side_names() -> &'static [&'static str] {
 /// for a tap, a boring cycle for a bore, depth-vs-diameter otherwise),
 /// so the note next to the combo reads from the op's tool, not a guess.
 pub fn cycle_names() -> &'static [&'static str] {
-    &["Auto", "Spot", "Drill", "Peck", "Tap (rigid)", "Bore", "Back bore", "Tap (floating holder)", "Ream (feed in, feed out)"]
+    &[
+        "Auto", "Spot", "Drill", "Peck", "Tap (rigid)", "Bore", "Back bore", "Tap (floating holder)",
+        "Ream (feed in, feed out)", "Fine bore (oriented stop, shift)",
+    ]
 }
 
 /// Combo index for a cycle choice - the inverse of what picking names.
@@ -70,6 +73,7 @@ pub(crate) fn cycle_index(c: &camcraft_app::drilling::CycleChoice) -> usize {
         C::Bore => 5,
         C::BackBore => 6,
         C::Ream => 8,
+        C::FineBore { .. } => 9,
     }
 }
 
@@ -86,6 +90,10 @@ pub(crate) fn cycle_from_index(i: usize) -> camcraft_app::drilling::CycleChoice 
         6 => C::BackBore,
         7 => C::FloatingTap,
         8 => C::Ream,
+        // #1445: a fine bore has no default shift. The pick states none
+        // (zero); the page's two shift fields state it, and Apply refuses
+        // the cycle by name while it is zero.
+        9 => C::FineBore { shift_x_um: 0, shift_y_um: 0 },
         _ => C::Auto,
     }
 }
@@ -268,6 +276,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #2901: the first traverse under a top - its own fix (raise
             // the clearance height), clear of the avoid range (216..=220).
             Warning::FirstTraverseLow { .. } => (221, false),
+            // #3081: a down-pointing tool axis under the table top - the
+            // opposite fix (lower the clearance plane), so its own line.
+            Warning::FirstTraverseUnderTable { .. } => (224, false),
             Warning::NonFinite { .. } => (4, false),
             Warning::Envelope { .. } => (5, false),
             // Fixture hits group by the part that hit (M3.2 stage B): a
@@ -307,6 +318,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::SweepHit { at, .. }
             | Warning::RapidInStock { at }
             | Warning::FirstTraverseLow { at, .. }
+            | Warning::FirstTraverseUnderTable { at, .. }
             | Warning::FixtureHit { at, .. }
             | Warning::AvoidHit { at, .. }
             | Warning::NonFinite { at }

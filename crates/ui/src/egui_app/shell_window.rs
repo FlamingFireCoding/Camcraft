@@ -264,6 +264,7 @@ impl Shell {
         let scene = world::collect(&self.state);
         self.scene_digest = scene.digest();
         view.set_document(&device, &queue, &scene.parts);
+        view.set_shade(&device, &queue, &scene.shade);
         view.set_overlay(&device, &queue, &scene.overlay);
         let stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
             Ok(e) => Some(e),

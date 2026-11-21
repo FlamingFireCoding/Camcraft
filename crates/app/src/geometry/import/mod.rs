@@ -6,7 +6,10 @@
 //! their parsers wanting the whole text in hand. STEP is read by the
 //! solidcore kernel (#917, `camcraft_geometry::step`).
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cadmpeg;
 mod mesh_outward;
+pub mod native;
 pub mod obj;
 pub mod step;
 pub mod step_budget;
