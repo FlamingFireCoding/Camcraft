@@ -117,7 +117,13 @@ pub fn stock_face(world: &World, declared: Option<&str>) -> Result<Option<Locati
     let (shape, at) = if matches!(shape, StockShape::FromModel { .. }) || up.z >= 1.0 - 1e-9 {
         (shape, at)
     } else {
-        crate::stock_follow::sim_frame(&shape, at).map_err(|_| NO_TOP_FACE)?
+        // Since #2758 the simulation keeps a laid cylinder's turn; its ends
+        // stand vertical, so it still has no flat face on top.
+        let (shape, at) = crate::stock_follow::sim_frame(&shape, at).map_err(|_| NO_TOP_FACE)?;
+        if crate::geometry::quat_rotate_point(at.rot, Point3::new(0.0, 0.0, 1.0)).z < 1.0 - 1e-9 {
+            return Err(NO_TOP_FACE);
+        }
+        (shape, at)
     };
     Ok(stock_top(world, &stock, &shape).map(|top| compose(at, Location { pos: Point3::new(0.0, 0.0, top), rot: IDENTITY_Q })))
 }
