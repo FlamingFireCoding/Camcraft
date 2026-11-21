@@ -155,6 +155,9 @@ pub struct VerifyContext<'a> {
     /// which is also the budget moves are read into chords at and must
     /// not shrink with the model.
     pub model_excess: f64,
+    /// Every reduced source was made coarse only by its file tolerance.
+    /// False, including an absent record, keeps the strict law.
+    pub file_tolerance: bool,
     /// The declared circles `(centre, radius)` a containment kind's
     /// region draws as rim loops (#1057): our own polygons of a hole the
     /// operation names, not a model's facets, so law (b) reads a loop
@@ -205,6 +208,7 @@ impl Default for VerifyContext<'_> {
             fixtures: &[],
             spindle: None,
             model_excess: 0.0,
+            file_tolerance: false,
             rims: &[],
             lathe_axis: None,
             corner_reliefs: &[],

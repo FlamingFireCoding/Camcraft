@@ -171,7 +171,11 @@ behavior only):
 - `getProperty(k)` / `setProperty(k, v)` — the `properties` object
 - `message(s)` — counted warning, not text
 - format helpers `formatUnit` / `formatMotion` / `formatFeed`
-- `onComment(s)` — default: `writeln(s)`
+- `onComment(s)` — default: `writeln(s)`; override it to write a valid
+  comment for the controller (see the model-warning example below)
+- `commentText(s)` — cleans comment text without truncation. It replaces
+  comment delimiters with spaces, replaces non-ASCII or control characters
+  with `?`, and collapses whitespace. It does not add comment delimiters.
 - `onPartLoading()` / `onPartUnloading()` / `onPartTransfer()` —
   defaults write the intent as a comment (`(PART LOAD [ADVANCE <mm>])`,
   `(PART UNLOAD)`, `(PART TRANSFER <from>-><to>)`); a script with a
@@ -180,7 +184,42 @@ behavior only):
 - `setLanguageVersion(_v)` — accepted and ignored (the engine decides
   semantics, not the script; a reference-era pragma kept harmless)
 
-The engine calls, in order, if the script defines them: `onOpen`,
+### Model warnings in custom posts
+
+The engine calls `onOpen` first. It then calls `onComment(s)` once for
+each model warning in the program header, before it processes the records.
+The default `onComment` writes bare text. A custom post must select the
+controller's comment form if it outputs these warnings.
+
+For a controller that accepts RS-274 parenthesis comments, use:
+
+```javascript
+function onComment(s) {
+  writeComment(commentText(s));
+}
+```
+
+For example, this hook preserves the complete true-surface bound:
+
+```text
+(Reduced accuracy: model Part was checked to 0.024 mm, not 0.010 mm)
+```
+
+`commentText` preserves the full warning length and its numeric bound.
+Do not use a name cleaner that truncates the warning. Keep both bounds
+and their units. Select delimiters and escaping for the target controller;
+the helper alone does not make every controller's comment form valid.
+
+A custom post can suppress the warning without refusal:
+
+```javascript
+function onComment(s) {}
+```
+
+This suppresses all text sent through `onComment`, including model warnings.
+It does not change the model checks or their bound.
+
+The engine then calls, in order, if the script defines them:
 `onParameter(name, value)` (once per PARAM; `onSpindleSpeed` follows
 the `SpindleSpeed` PARAM), `onToolChange(number, name)` (once per
 `TOOL`), `onSection` / `onSectionEnd` (one per span), then per
