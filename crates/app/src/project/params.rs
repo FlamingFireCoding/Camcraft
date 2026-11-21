@@ -39,6 +39,17 @@ impl From<TiltDto> for Tilt {
     }
 }
 
+/// #1864: per-chain side and direction override row inside `ParamsDto::Contour`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ChainOverrideDto {
+    pub entity: String,
+    pub chain: ChainIdDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<ChainSideDto>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub reverse: bool,
+}
+
 /// Which point of a twist drill `break_through` is measured from (#2441).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -195,6 +206,10 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #1864: optional per-chain side and direction overrides for DXF
+        /// sketch contours; absent on every pre-v73 file.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        chain_overrides: Vec<ChainOverrideDto>,
     },
     Pocket {
         /// M11.2 level transitions and links: absent is the kind's earlier shape.
@@ -1225,6 +1240,8 @@ pub enum ParamsDto {
     SinkerBurn(SinkerDto),
     /// The sinker side burn (#545): appended the same way.
     SinkerSideBurn(SinkerSideDto),
+    /// The slot undercut (#1444): appended the same way.
+    SlotUndercut(SlotUndercutDto),
 }
 
 /// The angle an absent `ramp_angle` means: 45°, the ground the
@@ -1568,7 +1585,7 @@ impl CrossHoleDto {
 /// `drilling::CycleChoice`. `Auto` resolves at generate time (tool kind
 /// first, then the depth-vs-diameter law), so the file stores only the
 /// user's ask, like `StrategyDto::Auto` and `SideDto::Auto`.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CycleChoiceDto {
     #[default]
@@ -1583,6 +1600,10 @@ pub enum CycleChoiceDto {
     FloatingTap,
     /// #1445: feed in, feed out (G85). Older files never carry it.
     Ream,
+    /// #1445: fine boring (G76) with its required shift, mm along X and Y
+    /// of the hole list: `{"fine_bore": {"shift_x": 0.3, "shift_y": 0.0}}`.
+    /// There is no default shift. Older files never carry it.
+    FineBore { shift_x: f64, shift_y: f64 },
 }
 
 /// The reference part of a stored height. Serialized as a plain string;
