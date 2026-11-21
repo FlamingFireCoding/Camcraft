@@ -6,7 +6,7 @@
 //! it reads. The control dialect lives in the script, never here.
 
 use super::cnc::{self, Record};
-use super::js::{is_false, ProgramId, Script};
+use super::js::{is_false, is_true, ProgramId, Script};
 use super::machine;
 use super::PostError;
 use crate::cl::MoveKind;
@@ -117,6 +117,7 @@ pub fn run_program_with(
         _ => None,
     }).unwrap_or("unnamed operation");
     let mut s = Script::load_for_program(cps, records.len(), operation)?;
+    let fail_on_warning = is_true(&s.eval_src("typeof failOnWarning !== 'undefined' && failOnWarning === true")?);
     let mut tool_macros = super::tool_change::Macros::read(&mut s)?;
     // #902: an inch document on a script that cannot write inch.
     if let Some(why) = super::units::refusal(&mut s, options)? {
@@ -592,6 +593,9 @@ pub fn run_program_with(
 
     let (out, msgs) = s.drain()?;
     warnings.extend(msgs);
+    if fail_on_warning && !warnings.is_empty() {
+        return Err(PostError::Refused(warnings.join("; ")));
+    }
     let mut program = String::new();
     for l in &out {
         program.push_str(l);
