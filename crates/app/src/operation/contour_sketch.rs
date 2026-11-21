@@ -20,6 +20,7 @@ use super::{AreaCtx, OpParams, SrcRef, apply_area_controls, stitch};
 
 #[derive(Clone, Debug)]
 pub(super) struct ResolvedSketchChain {
+    pub(super) entity: String,
     pub(super) chain_id: ChainId,
     pub(super) label: String,
     pub(super) closed: bool,
@@ -171,17 +172,24 @@ fn uniform_inside(plan: &SketchContourPlan) -> Option<bool> {
 }
 
 /// True when all closed chains form an unmodified natural nesting (every Hole's parent is
-/// also present, same climb, and natural Auto sides). In that case one unified `Region::new`
+/// also present in the same profile, same climb, and natural Auto sides). Different profiles
+/// retain their resolved sides independently: one profile inside another is not its hole.
+/// In the single-profile case one unified `Region::new`
 /// cuts holes Inside and outers Outside together in a single level-by-level contour pass.
 fn can_group_natural(closed: &[&ResolvedSketchChain], op_climb: bool) -> bool {
     if closed.is_empty() {
         return false;
     }
-    let ids: HashSet<ChainId> = closed.iter().map(|c| c.chain_id).collect();
+    let entity = &closed[0].entity;
+    let ids: HashSet<(&str, ChainId)> = closed
+        .iter()
+        .map(|c| (c.entity.as_str(), c.chain_id))
+        .collect();
     closed.iter().all(|c| {
-        c.natural_auto
+        &c.entity == entity
+            && c.natural_auto
             && c.eff_climb == op_climb
-            && c.parent.is_none_or(|p| ids.contains(&p))
+            && c.parent.is_none_or(|p| ids.contains(&(c.entity.as_str(), p)))
     })
 }
 

@@ -69,3 +69,30 @@
 - The messages of a judged sketch outline say "the picked face" (the text
   of the face room). A separate room name is a small change in
   `slot_room.rs`, which is near the 400-line limit.
+
+## Review corrections
+
+**What was decided**
+
+- Group natural contour chains only within one profile entity. Parent
+  checks use both the entity and the chain ID.
+- Key sketch highlights by the placed world pose. Keep `None` in the key
+  when the sketch has no stock.
+
+**Why**
+
+- Independent profiles can nest in world space while both resolve to an
+  outside cut. A combined region can turn the inner profile into a hole
+  and reverse its cut side. Separate generation keeps the resolved sides.
+- A chain ID belongs to one profile. An equal ID in another profile is
+  not its parent.
+- A profile rides its stock. The highlight position changes when the
+  stock moves or its height changes. Without stock, the profile has no
+  placement and draws no highlight.
+
+**Considered and dropped**
+
+- Grouping chains from separate profiles by chain ID alone. This loses
+  entity identity and can change the resolved cut sides.
+- Using a sketch's local `Location` as the highlight key. That value
+  does not change when the stock moves, changes height, or is removed.
