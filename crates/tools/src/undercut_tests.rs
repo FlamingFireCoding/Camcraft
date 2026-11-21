@@ -87,3 +87,20 @@ fn each_outline_passes_the_drawn_cutter_law() {
         assert!((s.max_radius() - t.diameter * 0.5).abs() < 1e-9, "{:?}", t.kind);
     }
 }
+
+#[test]
+fn the_fixture_stack_carries_the_whole_ball_and_keeps_the_neck_top() {
+    // The 10 mm ball's neck leaves it at 5 mm; its pole is at 10 mm.
+    let g = fixture_geom(&lollipop());
+    let plain = lollipop().geom();
+    assert_eq!(g.radius, 5.0);
+    assert_eq!(g.flute_len, 10.0, "the head band reaches the ball's pole");
+    assert_eq!(g.flute_len + g.shank_len, plain.flute_len + plain.shank_len, "the neck top and the holder stay");
+    assert_eq!(g.shank_radius, plain.shank_radius);
+    // A neck shorter than the cap keeps no shank band, never a negative one.
+    let short = Tool { shank_len: 2.0, ..lollipop() };
+    assert_eq!(fixture_geom(&short).shank_len, 0.0);
+    // The disc and frustum heads end at the neck start: unchanged.
+    assert_eq!(fixture_geom(&tslot()), tslot().geom());
+    assert_eq!(fixture_geom(&dovetail()), dovetail().geom());
+}

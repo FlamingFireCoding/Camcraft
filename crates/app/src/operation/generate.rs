@@ -103,6 +103,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // #368: what the fixture laws sweep above the shank.
     // #852: and a necked tool's drawn shank beside it.
     let holder = crate::tool_body::stack(&geom, body.as_ref()).with_neck(neck);
+    // #1444: the steel laws sweep the head's whole envelope (a
+    // lollipop's ball runs on above its neck start); the holder above
+    // stays where the real tool puts it.
+    let steel_geom = crate::undercut::fixture_geom(&tool);
     // #835: the cutter every stack law reads - its tip (M13.7) and,
     // with a body, the same bands above the shank, never the cylinder
     // enclosing them (#842: drill reach and the cross drill too).
@@ -3262,14 +3266,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // no link posts unjudged; routing them would change its program.
     let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
         let named: Vec<_> = fixture_names.iter().cloned().zip(fixture_boxes.iter().copied()).collect();
-        let stack = verify::steel_stack(&geom, &holder, spindle);
+        let stack = verify::steel_stack(&steel_geom, &holder, spindle);
         let steel = super::fixture_route::LinkSteel { boxes: &named, stack: &stack, ceiling: z_ceiling };
         // The re-judge is the post gate's own per-op law over the same
         // per-setup inputs (#482's `fixture_struck`), so a routed link
         // posts exactly when the gate would pass it.
         let wh = verify::Workholding { turning: &workholding.0, fixed: &workholding.1, axis: rotary_axis };
         super::fixture_route::plan_links(path, &steel, |p| {
-            !crate::fixture_struck::path_hits(p, (&geom, &holder), &wh, spindle, mesh_steel).is_empty()
+            !crate::fixture_struck::path_hits(p, (&steel_geom, &holder), &wh, spindle, mesh_steel).is_empty()
         })?
     } else {
         path
@@ -3425,7 +3429,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // earlier for the neck, a pocket cut earlier for the entry.
             if mode == crate::verify::Mode::Undercut {
                 if part_solid {
-                    contain_into(&mut warns, &path, &material.facets, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                    contain_into(&mut warns, &path, &material.facets, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 if let Some(dex) = verify_prior.get() {
                     let prior = crate::stock_sim::Columns::of_grid(dex);
@@ -3507,7 +3511,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // the revolved stock standing at each instant.
             super::turning_holder::judge(&params, &path, &meridian, lathe_body.as_deref(), &tool, &mut verify_prior, &mut warns)
                 .map_err(GenError::Invalid)?;
-            warns.extend(workholding_warnings(&path, (&geom, &holder), &fixture_boxes, &workholding, rotary_axis, spindle, mesh_steel));
+            warns.extend(workholding_warnings(&path, (&steel_geom, &holder), &fixture_boxes, &workholding, rotary_axis, spindle, mesh_steel));
             // ...and the lathe holder against that steel (#1037): the chuck
             // revolved, the tailstock standing.
             if let Some(b) = lathe_body.as_deref() {
@@ -3843,7 +3847,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             }
             warns.extend(workholding_warnings(
                 &path_world,
-                (&geom, &holder),
+                (&steel_geom, &holder),
                 &fixture_boxes,
                 &workholding,
                 rotary_axis,

@@ -6,7 +6,7 @@
 //! `neck_r`. The solid is the head over `[0, head_top]` united with the
 //! neck cylinder from `height` up.
 
-use crate::tools::{Tool, ToolKind, add_pt, dome_radius};
+use crate::tools::{Tool, ToolGeom, ToolKind, add_pt, dome_radius};
 
 /// The head's shape above the tip.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -180,6 +180,27 @@ pub fn cutter(kind: ToolKind, d: f64, head_h: f64, neck_d: f64, neck_len: f64, a
         outline: Vec::new(),
         turning: None,
     }
+}
+
+/// The tool's coaxial stack for the fixture laws: [`Tool::geom`], with
+/// the flute band raised to the head's top. A lollipop's `flute_len` is
+/// where the neck leaves the ball, but the ball goes on to its pole at
+/// `2r`; the plain stack sweeps only the neck there and misses the
+/// upper hemisphere. The raised band encloses the whole ball (and the
+/// neck below the pole, which is narrower). The shank band shrinks by
+/// the same amount, so the neck top and the holder stay where they
+/// are; a neck too short for that keeps no shank band. Every other
+/// tool, and a refused head, reads [`Tool::geom`] unchanged.
+#[must_use]
+pub fn fixture_geom(tool: &Tool) -> ToolGeom {
+    let g = tool.geom();
+    let Some(u) = Undercut::of(tool) else { return g };
+    let top = u.head_top();
+    if top.partial_cmp(&g.flute_len) != Some(std::cmp::Ordering::Greater) {
+        return g;
+    }
+    let neck_top = g.flute_len + g.shank_len;
+    ToolGeom { flute_len: top, shank_len: (neck_top - top).max(0.0), ..g }
 }
 
 /// The head's side view for [`Tool::profile`], from the tip rim to the

@@ -50,6 +50,9 @@ fn a_dovetail_rim_keeps_its_clearance_from_a_protected_item() {
     // 1 mm below the tip plane the clearance ball of the rim reaches 1.118 mm out.
     assert_eq!(hits(&dovetail(), 1.5, 11.05, -1.0).len(), 1, "below the rim");
     assert!(hits(&dovetail(), 1.5, 11.2, -1.0).is_empty(), "clear below the rim");
+    // The head's top face (Z 5, radius 7.11) 0.3 mm under a protected
+    // item, 2 mm outside the neck: the cutting top gets no allowance here.
+    assert_eq!(hits(&dovetail(), 0.5, 6.0, 5.3).len(), 1, "over the head's top face");
 }
 
 #[test]
@@ -58,6 +61,10 @@ fn a_lollipop_ball_keeps_its_clearance_from_a_protected_item() {
     assert!(matches!(eq[..], [Warning::AvoidHit { part: FixturePart::Flute, .. }]), "equator: {eq:?}");
     assert!(hits(&lollipop(), 1.0, 6.1, 5.0).is_empty(), "clear of the equator and the clearance");
     assert_eq!(hits(&lollipop(), 1.0, 0.0, -0.5).len(), 1, "under the pole");
+    // The upper cap, above the neck start (Z 5) and outside the 2 mm neck.
+    assert_eq!(hits(&lollipop(), 0.0, 3.5, 6.5).len(), 1, "the upper cap");
+    // The top of the ball touches a protected item: no cap allowance.
+    assert_eq!(hits(&lollipop(), 0.5, 0.0, 10.2).len(), 1, "over the pole");
 }
 
 /// The generator keep-out covers the rim at each tip height of the Z

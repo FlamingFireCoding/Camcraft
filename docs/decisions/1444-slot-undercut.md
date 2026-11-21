@@ -191,3 +191,25 @@ Limits of this search and the retained design:
   are part of the verify contract and of cached findings.
 - Moving to a generic drawn form cutter (issue 896) can keep these four
   kinds as presets: `Undercut::of` is the one place that reads them.
+
+### The lollipop head in the fixture laws (review of `b95c27b2`)
+
+**Chosen:** the fixture laws (c2)/(d2) read
+`camcraft_tools::undercut::fixture_geom`. It is `Tool::geom` with the
+head band raised to the head's top (the ball's pole at `2r` for a
+lollipop). The shank band shrinks by the same amount, so the neck top
+and the holder stay at their real heights. The post gate
+(`fixture_struck::op_hits`) and the generation steel laws (link routing
+and the workholding warnings) use it. The holder stack is still built
+from the real `Tool::geom`.
+
+**Why:** a lollipop's `flute_len` is the neck start, below the pole.
+The plain stack swept the ball only up to the neck start and the neck
+above it, so steel beside the upper hemisphere passed. The band is a
+cylinder of the ball's radius, so it encloses the ball and can only
+over-report.
+
+**Dropped:** a change of `Tool::geom` itself. Every stack law reads it,
+and `Cutter::judged` matches the undercut head to `flute_len`; a change
+there moves the gouge and stock laws too. The fixture laws alone had
+the gap.
