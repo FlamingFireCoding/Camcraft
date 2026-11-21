@@ -218,10 +218,11 @@ fn dir_link(to: &Path, link: &Path) -> bool {
     }
     #[cfg(windows)]
     {
+        let win = |p: &Path| p.to_string_lossy().replace('/', "\\");
         std::process::Command::new("cmd")
             .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(to)
+            .arg(win(link))
+            .arg(win(to))
             .output()
             .is_ok_and(|o| o.status.success())
     }
@@ -233,13 +234,12 @@ fn the_sweep_never_reads_or_deletes_through_a_link() {
     let root = base.join("tree");
     let outside = base.join("outside");
     let start = SystemTime::now();
-    // A real package with a newer variant, and a linked package whose old variant lies outside target/.
+    // A real newer variant, and an old variant of the same target that is a link to a unit outside target/:
+    // if the sweep followed the link, it would remove the far unit.
     unit(&root, "debug", "camcraft-app", "bbbb", T, start + Duration::from_secs(5));
-    let far = unit(&outside, "debug", "pkg", "aaaa", T, start - Duration::from_secs(3600));
-    let linked = root.join("target/debug/build/camcraft-linked");
-    unit(&root, "debug", "camcraft-linked", "bbbb", T, start + Duration::from_secs(5));
-    assert!(fs::remove_dir_all(&linked).is_ok());
-    assert!(dir_link(&outside.join("target/debug/build/pkg"), &linked), "the test makes a directory link");
+    let far = unit(&outside, "debug", "camcraft-app", "aaaa", T, start - Duration::from_secs(3600));
+    let linked = root.join("target").join("debug").join("build").join("camcraft-app").join("aaaa");
+    assert!(dir_link(&far, &linked), "the test makes a directory link");
     assert!(!plain_dir(&linked), "a link is not a plain directory");
     assert!(scan(&root.join("target")).iter().all(|u| !u.dir.starts_with(&linked)), "the scan does not enter a link");
     let r = sweep(&root, start, none);
