@@ -81,6 +81,9 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
     if let Some(s) = m.spindle_max {
         head.insert("spindle".to_owned(), json!({"max": s}));
     }
+    if let Some(s) = m.spindle_min {
+        head.entry("spindle").or_insert_with(|| json!({}))["min"] = json!(s);
+    }
     if !m.spindle_ranges.is_empty() {
         // #170: the hand-changed speed ranges, [[low, high], ...] rpm.
         let rs: Vec<Value> = m.spindle_ranges.iter().map(|(lo, hi)| json!([lo, hi])).collect();
@@ -198,6 +201,7 @@ pub fn mirror(m: &crate::machine::Machine) -> Value {
     }
     if let Some(o) = out.as_object_mut() {
         super::machine_rotary::mirror_controller(m, o);
+        super::machine_installation::mirror(m, o);
     }
     out
 }
@@ -218,6 +222,14 @@ fn f64_or(v: Option<&Value>, default: f64) -> f64 {
 /// The flattened object the script's `machine` global sees, per the
 /// format doc: name, rate maxima, spindle bound, coolant names.
 pub fn script_props(m: &Value) -> Value {
+    match super::machine_installation::checked_input(m) {
+        Ok(input) => flatten(&input),
+        Err(reason) => json!({ "error": reason }),
+    }
+}
+
+/// Project the machine prepared by the engine into the JavaScript host's properties.
+pub(super) fn flatten(m: &Value) -> Value {
     // An axes-array form contributes the max rapid across axes (the
     // post uses rapidRate as a ceiling, so the max is the permissive
     // bound).
@@ -269,12 +281,13 @@ pub fn script_props(m: &Value) -> Value {
             let n = spindle_heads(get(m, &["kinematics", "default", "parts"]));
             (n > 0).then_some(n as u64)
         });
-    json!({
+    let mut props = json!({
         "name": get(m, &["name"]).and_then(Value::as_str).unwrap_or(""),
         "capabilities": get(m, &["capabilities"]).cloned().unwrap_or_else(|| json!({})),
         "rapidRate": f64::max(rapid, axes_rapid),
         "feedRateMax": feed,
         "spindleMax": spindle,
+        "spindleMin": f64_or(m.pointer("/kinematics/static/head/spindle/min").or(m.get("spindleMin")), 0.0),
         "coolants": coolants,
         "rotaries": rotaries,
         "rtcp": rtcp,
@@ -334,7 +347,9 @@ pub fn script_props(m: &Value) -> Value {
         // length), so the raw door needs no unit scaling here.
         "edm": get(m, &["edm"]).filter(|e| e.is_object()).cloned().unwrap_or(Value::Null),
         "invertedAxes": super::invert::stated(m).map(|(_, l)| l).unwrap_or_default(),
-    })
+    });
+    super::machine_installation::script_props(m, &mut props);
+    props
 }
 
 /// The stated safe Z retract (#495), mm: the mirror's `safeRetractZ`,

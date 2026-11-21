@@ -285,6 +285,17 @@ unstated capability into existence.
   posts like `fanuc.cps` and `doosan-dnm.cps` refuse `G43.4` while
   CAM-side IK posts receive the full rotary chain). Absent infers
   controller RTCP geometrically from rotary tilt vectors.
+- `controller.identity` (#3181, optional object) records the installed
+  control model and its exact NC software identifier. For example:
+  `{"model":"iTNC 530","nc_software":"340490-03"}`. Both are strings.
+  Optional `installed_options` lists distinct option identifiers as
+  strings. An absent list means unknown; `[]` means none installed.
+  The file states facts only. Each post decides which documented
+  releases and operations it serves.
+- `tooling.tool_change` (#3181, optional string) is `manual`,
+  `manual-retract-top`, or `changer`. The middle value requires the
+  physical upper change position before manual tool release. A post
+  must verify whether its proposed procedure serves the installation.
 - `controller.post` (#2374, optional string): the name of the built-in
   post (`posting::BUILTINS`) that writes this machine's programs. The
   Setup page offers it when the machine is mounted and the setup posts
