@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use camcraft_app::mcp::provider::{
-    FallbackMode, Provider, ToolSet, is_read_only_tool, prompt_context, qa_context, tools_in,
+    CORE_TOOLS, FallbackMode, Provider, ToolSet, is_read_only_tool, prompt_context, qa_context, tools_in,
 };
 use camcraft_app::mcp::requires_approval;
 use serde_json::{Value, json};
@@ -210,7 +210,13 @@ pub(crate) fn requires_confirmation(
 pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, set: ToolSet, project: &Value) -> Value {
     match mode {
         FallbackMode::Native => json!({ "tools": tools_in(provider, set) }),
-        FallbackMode::PromptJson => prompt_context(project),
+        FallbackMode::PromptJson => {
+            let mut context = prompt_context(project);
+            if set == ToolSet::Core && let Some(tools) = context["tools"].as_array_mut() {
+                tools.retain(|tool| tool["name"].as_str().is_some_and(|name| CORE_TOOLS.contains(&name)));
+            }
+            context
+        }
         FallbackMode::ReadOnly => qa_context(project),
     }
 }

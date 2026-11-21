@@ -5,6 +5,7 @@
 
 use std::sync::atomic::Ordering;
 
+use camcraft_app::mcp::provider::CORE_TOOLS;
 use serde_json::{Value, json};
 
 use super::super::super::ai_chat::{TransportOutput, TurnStatus, budget};
@@ -57,21 +58,45 @@ fn a_local_model_gets_the_core_tool_set_and_a_cloud_model_the_full_table() {
     let mut h = blank_harness();
     h.run();
     toggle_ai_chat_via_view_door(&mut h);
-    let transport = ScriptedTransport::new(vec![final_text("Cloud."), final_text("Local.")]);
+    let transport = ScriptedTransport::new(vec![final_text("Cloud."), final_text("Local."), final_text("Prompt JSON.")]);
     h.state_mut().state.ai_chat.set_transport(transport.clone());
     submit_prompt(&mut h, "Hello cloud");
     pump_until_idle(&mut h);
     select_provider(&mut h, "Offline local (Ollama)");
     submit_prompt(&mut h, "Hello local");
     pump_until_idle(&mut h);
+    select_provider(&mut h, "Local Prompt-JSON");
+    submit_prompt(&mut h, "Hello Prompt-JSON");
+    pump_until_idle(&mut h);
 
     let reqs = transport.requests.lock().expect("lock");
-    assert_eq!(reqs.len(), 2);
+    assert_eq!(reqs.len(), 3);
     let count = |v: &Value| v["tools"].as_array().map_or(0, Vec::len);
     let cloud = count(&reqs[0].tools_payload);
     let local = count(&reqs[1].tools_payload);
     assert!(cloud > 40, "cloud has the full table: {cloud}");
-    assert!((20..=25).contains(&local), "local has the core set: {local}");
+    assert_eq!(local, CORE_TOOLS.len(), "native local has the core set");
+    let mut expected = CORE_TOOLS.to_vec();
+    expected.sort_unstable();
+    for (request, native) in [(&reqs[1], true), (&reqs[2], false)] {
+        let tools = request.tools_payload["tools"].as_array().expect("tools");
+        let mut names: Vec<_> = tools.iter().map(|tool| {
+            let name = if native { &tool["function"]["name"] } else { &tool["name"] };
+            name.as_str().expect("tool name")
+        }).collect();
+        names.sort_unstable();
+        assert_eq!(names, expected, "both local payloads contain exactly the core tools");
+    }
+    let fallback = &reqs[2].tools_payload;
+    assert!(fallback["project"].is_object(), "fallback retains the project context");
+    assert!(fallback["instructions"].as_str().expect("instructions")
+        .contains("Mutating edits require user confirmation before execution."));
+    assert!(fallback["tools"].as_array().expect("tools").iter()
+        .all(|tool| tool["inputSchema"].is_object()), "fallback retains the raw MCP schemas");
+    let (wire_tools, system_prompt) = camcraft_app::ai::wire::split_payload(fallback);
+    assert!(wire_tools.is_empty(), "Prompt-JSON sends its tools in the system prompt");
+    assert!(system_prompt.expect("fallback system prompt")
+        .contains("Mutating edits require user confirmation before execution."));
 }
 
 #[test]
