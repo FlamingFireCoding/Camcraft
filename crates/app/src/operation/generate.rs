@@ -135,7 +135,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             picks,
             || region_for_job(&mut picked_region, &mut section_z, &src, &params, &material, None),
             // #1053: the kerf law gives a coarse model's excess back.
-            (&material.facets, material.excess),
+            (&material.facets, material.excess, material.file_tolerance),
         );
     }
     // The wire cut (#532) is its own law too: one closed profile at
@@ -160,7 +160,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let mut verify_prior = super::drill_prior::PriorCell::new(verify_prior);
     // #339: the mesh law reads the tool as an upright rotating stack -
     // a mill's cutter. A lathe's insert, blade or gauge keeps the box
-    // verdict (its body is not that stack).
+    // verdict (its body is not that stack). A mill-turn keeps the box
+    // verdict too (#3083): the mesh only acquits a box hit, so the box
+    // verdict is the stricter one.
     use crate::tools::ToolKind as K;
     let lathe_tool = matches!(tool.kind, K::Turning | K::Groove | K::Thread | K::Form);
     let mesh_steel: &[crate::fixture::MeshedFixture] = if is_mill && !lathe_tool { &fixture_meshes } else { &[] };
@@ -261,6 +263,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         top: material.top - oz,
         bodies: material.bodies.clone(),
         excess: material.excess,
+        file_tolerance: material.file_tolerance,
     });
     let (region, path, relief_zones, turn_note, thread_round, mut broke, lk) = match (|| -> Result<_, GenError> {
     let stock_region = &stock_region_gen;
@@ -1691,6 +1694,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             // Issue #33: on the spindle's C the path states its angle.
             let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), is_contour), *tolerance, kind)?;
+            // #3096: the first rapid from the turret's index position onto the station.
+            if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
+                let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                super::rotary_traverse::judge_about(&path, kind, &ax, &tool, &work)?;
+            }
             (region, path)
         }
         // M5.1 stage E2: the rotary rough. The pocket ladder runs in
@@ -1782,6 +1790,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // split to the verify budget so the machine's C-linear
             // motion is the chord the laws judge.
             let path = super::rotary_gate::stamp_spindle_c(path, spindle_c, (machine_rotaries.as_ref(), false), *tolerance, "Rotary Offset")?;
+            // #3096: the first rapid from the turret's index position onto the station.
+            if let Some(ax) = spindle_c.filter(|_| super::rotary_traverse::answers(machine_kind, lathe_tool, &params, true)) {
+                let work = super::rotary_traverse::Work { part: &material.facets, part_solid, kept: &keep_parts, neighbours: &neighbour_parts, stock: stock_facets.as_deref(), stock_aabb, turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                super::rotary_traverse::judge_about(&path, "Rotary Offset", &ax, &tool, &work)?;
+            }
             // M11.3 owed (2): the wrap-space entry guard judged the
             // ladder before the wrap posed it; the law judges the FINAL
             // posed path. Solid is the true bar (#16): the stock
@@ -2448,7 +2461,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     } else {
                         super::cross_spindle::Solids { source: &keep_parts, stock: Some(&material.facets), kept: &keep_parts, neighbours: &[] }
                     };
-                    super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?
+                    let t = super::cross_spindle::cross_drill(radial, solids, wcs_origin, &cutter, &tool_name, unit, material.excess)?;
+                    // #3077: the first rapid from the turret's index position.
+                    let own = if part_solid { "the part" } else { "the stock" };
+                    let stock = stock_facets.as_deref().filter(|s| !s.is_empty());
+                    let mut named: Vec<(&str, &[crate::geometry::Triangle])> = vec![(own, &material.facets[..]), ("a kept part", &keep_parts[..]), ("a neighbour part", &neighbour_parts[..])];
+                    named.extend(stock.map(|s| ("the stock", s)));
+                    let work = super::cross_traverse::LiveWork { solids: &named, stock_box: stock_aabb.filter(|_| stock.is_none()), turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
+                    super::cross_traverse::judge(&t, wcs_origin, &tool, &work)?;
+                    t
                 }
             } else {
                 // M13.5 A: on a plain lathe the Drill kind is the
@@ -3227,13 +3248,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // wall. An internal thread keeps its full cutter.
     let cutter = super::thread_op::root_cutter(cutter, &tool, &params);
     let fixture_boxes = fixtures;
+    // #3083: a mill-turn posts a milling tool's first traverse in the
+    // mill order, so its mill kinds answer to the same laws as a mill's.
+    // #3096: so does a rotary kind there whose path states no C (the
+    // mill post writes it); a stamped one was judged in its arm.
+    let mill_order = super::first_traverse::mill_order(machine_kind, lathe_tool, &params) || super::rotary_traverse::mill_post_rotary(machine_kind, lathe_tool, &params, &path);
     // #2965: a rotary kind's first traverse reads its work swept about its axis.
-    let turned_axis = super::first_traverse::turned_axis(&params, is_mill && !lathe_tool, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
-    let rides = turned_axis.map_or_else(Vec::new, |_| super::first_traverse::rides_of(stock_facets.as_deref(), stock_aabb, &material.facets));
+    let turned_axis = super::first_traverse::turned_axis(&params, mill_order, rotary_axis, &material.facets).map_err(GenError::Invalid)?;
+    // #3084: the work that the machine's own work-turning rotaries can
+    // leave at any pose before the rotary words; an unbounded one refuses.
+    let posed_turn = super::first_traverse_posed::turn_of(&params, mill_order, super::first_traverse::rotaries_of(machine_rotaries.as_ref()), wcs_origin).map_err(GenError::Invalid)?;
+    let rides = if turned_axis.is_some() || posed_turn.is_some() { super::first_traverse::rides_of(stock_facets.as_deref(), stock_aabb, &material.facets) } else { Vec::new() };
     let turned = turned_axis.map(|axis| super::first_traverse::Turned { axis, rides: &rides, turning: &workholding.0, fixed: &workholding.1 });
     // #339 slice 5: an upright mill's links are planned over the steel -
     // a struck link rises over it, an unclearable one refuses by name.
-    // Posed and rotary paths keep the report-only verdict below.
+    // Posed and rotary paths keep the report-only verdict below. So does
+    // a mill-turn (#3083): the post gate judges each of its links against
+    // the steel (`fixture_struck::op_hits`) and refuses a struck one, so
+    // no link posts unjudged; routing them would change its program.
     let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
         let named: Vec<_> = fixture_names.iter().cloned().zip(fixture_boxes.iter().copied()).collect();
         let stack = verify::steel_stack(&geom, &holder, spindle);
@@ -3368,6 +3400,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 spindle: None,
                 // #864: a source imported coarser than promised.
                 model_excess: material.excess,
+                file_tolerance: material.file_tolerance,
                 // #1057: the containment kinds' declared rims, read untightened.
                 rims: &rims,
                 // #1408: a turning nose path's verdict turns the work
@@ -3399,7 +3432,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let clearance_note = super::clearance_stock::note(&path, hl.clearance, stock_top_z, false, &warns);
             // #2901: the first traverse comes from an unknown X/Y.
             let over = super::first_traverse::Over { stock_top: stock_top_z, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
-            super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, None, &over, &mut warns);
+            // #3077: a mill-turn's cross drill also answers to the upright
+            // law - its default post is the mill's (Z, then X/Y, then the
+            // rotary words), so its X/Y traverse comes from an unknown X/Y.
+            // #3083: `mill_order` holds that drill too; the flag stays for
+            // #3077's reading.
+            let mill_post_cross = machine_kind == crate::machine::Kind::MillTurn && !lathe_tool && matches!(&params, OpParams::Drill { cross, .. } if !cross.is_empty());
+            super::first_traverse::judge(&path, &params, mill_order || mill_post_cross, None, &over, &mut warns);
+            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance };
+            super::first_traverse_posed::judge(&path, &params, None, &posed, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
             // less what the program ahead faced and this path cut.
@@ -3417,7 +3458,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 // #904: tightened by a coarse model's excess, like the
                 // gouge laws - every reading the margin excuses shrinks.
-                margin: super::fidelity_law::tightened(GOUGE_TOL, material.excess),
+                margin: super::fidelity_law::tightened_strict(GOUGE_TOL, material.excess),
                 z_tol: Z_TOL,
                 drills: &drills_ahead,
                 ahead: &turned_ahead,
@@ -3545,7 +3586,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // own recognized bore - width, floor and existence, by
             // name at the cycle's first move.
             if lathe_axial {
-                let tol = super::fidelity_law::tightened(GOUGE_TOL, material.excess);
+                let tol = super::fidelity_law::tightened_strict(GOUGE_TOL, material.excess);
                 warns.extend(drilling::axial_warnings(
                     &material.facets,
                     &path,
@@ -3559,32 +3600,32 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // along every move against the part solid. The Section kinds
             // answer the same law inside `verify` (b2), real tip (M13.7).
             if depth_law == DepthLaw::Contain {
-                contain_into(&mut warns, &path, &material.facets, &cutter, depth_law, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, &material.facets, &cutter, depth_law, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1603: the pocket family keeps the part - its own mesh
             // for a whole-model source, the setup's parts for a stock one
             // (#1607: every stock-kept kind but the marks and the holes).
             if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&material.facets).or((!keep_parts.is_empty() && !parts_marked && !parts_holed && !parts_crossed).then_some(&keep_parts)) {
                 let start = warns.len();
-                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
             }
             // #1631: a hole kind off the stock - the setup's parts by the
             // containment law, its declared holes' modelled walls excused.
             if parts_holed {
-                contain_into(&mut warns, &path, &keep_parts, &cutter, DepthLaw::Contain, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, &keep_parts, &cutter, DepthLaw::Contain, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1595: an Engrave or Trace on the part may lower its
             // surface by the mark budget and no more (`mark_law`);
             // #1607: on a stock source, the setup's parts the same way.
             let marked = match (depth_law == DepthLaw::Mark).then_some(&material.facets).or(parts_marked.then_some(&keep_parts)) {
-                Some(part) => super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess),
+                Some(part) => super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess, material.file_tolerance),
                 None => super::mark_law::Marked::default(),
             };
             // #1621: the setup's other parts, beside a part source - the
             // plain solid law, no budget (a mark is on its own part).
             if !neighbour_parts.is_empty() {
-                contain_into(&mut warns, &path, &neighbour_parts, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, &neighbour_parts, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
             }
             // #985: an external thread's crest ring against every wall
             // that is not the boss it threads, with no thread allowance.
@@ -3599,16 +3640,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 let c = verify::Cutter::of(core).with_body(&g, &crate::tool_body::stack(&g, body.as_ref()).with_neck(holder.neck.clone()));
                 let mut w = verify::verify_bodies(&path, &VerifyContext { tool: &g, cutter: Some(c), ..ctx.clone() }, &material.bodies);
                 if depth_law == DepthLaw::Contain {
-                    contain_into(&mut w, &path, &material.facets, &c, depth_law, stl, material.excess, &params, &[]);
+                    contain_into(&mut w, &path, &material.facets, &c, depth_law, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 // #1631: the core re-reads every part law the full tap
                 // answered to - the parts off the stock, and #1621's
                 // neighbours - or their gouges would be acquitted unread.
                 if parts_holed {
-                    contain_into(&mut w, &path, &keep_parts, &c, DepthLaw::Contain, stl, material.excess, &params, &[]);
+                    contain_into(&mut w, &path, &keep_parts, &c, DepthLaw::Contain, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 if !neighbour_parts.is_empty() {
-                    contain_into(&mut w, &path, &neighbour_parts, &c, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                    contain_into(&mut w, &path, &neighbour_parts, &c, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 }
                 w
             });
@@ -3737,6 +3778,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     spindle: None,
                     // #864: a source imported coarser than promised.
                     model_excess: material.excess,
+                    file_tolerance: material.file_tolerance,
                     rims: &rims,
                     // No envelope runs in a plane's frame (finish_tol None).
                     lathe_axis: None,
@@ -3754,24 +3796,26 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2901: the first traverse, read along the plane's tool axis.
             // #2987: the table read where the tool can meet it.
             let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
-            let table_note = super::first_traverse::judge(&path, &params, is_mill && !lathe_tool, Some(f), &over, &mut warns);
+            let table_note = super::first_traverse::judge(&path, &params, mill_order, Some(f), &over, &mut warns);
+            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance };
+            super::first_traverse_posed::judge(&path, &params, Some(f), &posed, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
             // along every move against the part solid. The Section kinds
             // answer the same law inside `verify` (b2), real tip (M13.7).
             if depth_law == DepthLaw::Contain {
-                contain_into(&mut warns, &path, &m_gen.facets, &cutter, depth_law, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, &m_gen.facets, &cutter, depth_law, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1603: the keep law in the plane's frame.
             let keep_local = (!keep_parts.is_empty()).then(|| f.local_facets(&keep_parts));
             if let Some(kept) = (depth_law == DepthLaw::Keep).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| !parts_marked && !parts_holed && !parts_crossed)) {
                 let start = warns.len();
-                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
                 super::keep_law::note_stock_chamfer_gouges(&params, part_solid, &mut warns[start..]);
             }
             // #1631: a hole kind off the stock, in the plane's frame.
             if let Some(kept) = keep_local.as_ref().filter(|_| parts_holed) {
-                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Contain, stl, material.excess, &params, &thread_bores);
+                contain_into(&mut warns, &path, kept, &cutter, DepthLaw::Contain, stl, material.excess, material.file_tolerance, &params, &thread_bores);
             }
             // #1595: the mark law in the plane's frame - local path,
             // local part, the budget measured along the tool (#1607:
@@ -3781,12 +3825,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             path_world.notes.extend(table_note);
             let mark_part = (depth_law == DepthLaw::Mark).then_some(&m_gen.facets).or(keep_local.as_ref().filter(|_| parts_marked));
             if let Some(part) = mark_part {
-                let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess);
+                let marked = super::mark_law::mark_into(&mut warns, &path, part, &cutter, mark_budget, material.excess, material.file_tolerance);
                 path_world.notes.extend(super::mark_law::notes(params.kind().info().label, marked, mark_budget, unit));
             }
             // #1621: the setup's other parts, in the plane's frame.
             if !neighbour_parts.is_empty() {
-                contain_into(&mut warns, &path, &f.local_facets(&neighbour_parts), &cutter, DepthLaw::Keep, stl, material.excess, &params, &[]);
+                contain_into(&mut warns, &path, &f.local_facets(&neighbour_parts), &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
             }
             warns.extend(workholding_warnings(
                 &path_world,
@@ -3994,13 +4038,14 @@ pub(super) fn contain_into(
     law: DepthLaw,
     stl: f64,
     excess: f64,
+    file_tolerance: bool,
     params: &OpParams,
     bores: &[verify::ThreadBore],
 ) {
     let law = verify::SolidLaw {
         step: CONTAIN_STEP,
         // #864: less a coarse model's excess, while that is honest.
-        allow: verify::excess_floor(GOUGE_TOL, excess).unwrap_or(GOUGE_TOL) + (-stl).max(0.0),
+        allow: verify::excess_floor_for(GOUGE_TOL, excess, file_tolerance).unwrap_or(GOUGE_TOL) + (-stl).max(0.0),
         hole_walls: law == DepthLaw::Contain,
     };
     let holes = match params {

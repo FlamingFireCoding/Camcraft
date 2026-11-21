@@ -50,11 +50,31 @@ pub fn current_stamp(
     if super::first_traverse::newly_judged(params) {
         h.write(b"first-traverse-2965");
     }
+    // #3077: the cross drill's first rapid from the turret's index
+    // position is judged now; only its caches read Stale once.
+    if matches!(params, OpParams::Drill { cross, .. } if !cross.is_empty()) {
+        h.write(b"live-traverse-3077");
+    }
     // #3081: a 3+2 plane whose tool axis points down toward the table
     // now gets a verdict (it had a note). Only tilted caches read Stale
     // once; the salt above stays, so no other kind's stamp moves.
     if params.tilt().is_some() {
         h.write(b"first-traverse-table-3081");
+    }
+    // #3083: a mill kind on a mill-turn setup answers to the first-
+    // traverse laws now. Only those caches read Stale once; the salt
+    // above stays, so no mill's stamp moves.
+    if super::first_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
+        h.write(b"first-traverse-mill-turn-3083");
+    }
+    // #3096: a rotary kind on a lathe or a mill-turn setup, likewise.
+    if super::rotary_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
+        h.write(b"live-traverse-rotary-3096");
+    }
+    // #3084: a multi-axis or rotary kind read through every pose of its
+    // machine's work-turning rotaries; only those caches read Stale once.
+    if super::first_traverse_posed::newly_judged(world, setup, params) {
+        h.write(b"first-traverse-posed-3084");
     }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
@@ -184,6 +204,7 @@ pub fn current_stamp(
                 // faces must not. Face ids are local-frame content hashes, so
                 // the transform hashed above carries all the placement.
                 h.write_u64(model::geometry_signature(world, &entity)?);
+                crate::model_fidelity::write_stamp(world, &entity, &mut h);
             }
         }
         SrcRef::Selection(items) => {
@@ -242,6 +263,7 @@ pub fn current_stamp(
                             w(&mut h, v);
                         }
                         h.write_u64(model::geometry_signature(world, &entity)?);
+                        crate::model_fidelity::write_stamp(world, &entity, &mut h);
                     }
                 }
             }
