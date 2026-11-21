@@ -27,9 +27,10 @@
 //! wherever a chord of the (piecewise flat-or-circular, always
 //! C0-continuous) curve stands off the true value by more than the
 //! caller's share of the tolerance. Chords of circular pieces sit
-//! INSIDE the arc by at most that share - the nose bites no deeper
-//! than the budget says, which is the whole promise of a
-//! tolerance-driven profile pass.
+//! INSIDE the arc by at most that share, and the final thinning (no
+//! two samples closer than half the share, issue #2882) adds at most
+//! one share again - the nose bites no deeper than the budget says,
+//! which is the whole promise of a tolerance-driven profile pass.
 //!
 //! Provenance: tool-radius compensation on a revolved profile -
 //! the offset-curve/Minkowski-sum construction as any CAM theory
@@ -43,6 +44,11 @@ type SR = (f64, f64);
 
 /// The hard sample budget for one offset curve.
 const MAX_OFFSET_PTS: usize = 1 << 16;
+
+/// The least gap between two ride samples, as a share of the chord
+/// tolerance (issue #2882). Half the share: the thinned chord stays
+/// within twice the caller's share of the true curve.
+const MIN_GAP_SHARE: f64 = 0.5;
 
 /// The ride of a ball of radius `d` on the silhouette `pts`
 /// (ascending stations, verticals allowed), over the station window
@@ -128,7 +134,7 @@ pub fn profile_offset(
         prev = here;
     }
     out.dedup();
-    Ok(out)
+    Ok(thin(out, tol * MIN_GAP_SHARE))
 }
 
 /// The ride of a ball of radius `d` INSIDE a hole whose wall is
@@ -224,7 +230,7 @@ pub fn profile_offset_in(
         prev = here;
     }
     out.dedup();
-    Ok(out)
+    Ok(thin(out, tol * MIN_GAP_SHARE))
 }
 
 /// Bisect a candidate gap until its chord stands within `tol` of
@@ -257,4 +263,37 @@ fn settle<F: Fn(f64) -> f64 + Copy>(
         settle(val, (m, fm), p1, tol, out, budget)?;
     }
     Ok(())
+}
+
+/// Drop every sample that stands closer than `min_gap` to the last
+/// kept one (issue #2882): the bisection toward a vertical tangent
+/// leaves runs of samples far below any output resolution. The first
+/// and the last sample always survive (the window's ends); a kept
+/// sample within `min_gap` of the last one gives way to it. Every
+/// dropped sample stands within `min_gap` of a kept one (within
+/// `2 * min_gap` of the last, after a give-way), so no chord moves by
+/// more than `2 * min_gap`: the ride keeps its chord bound plus that.
+fn thin(pts: Vec<SR>, min_gap: f64) -> Vec<SR> {
+    if pts.len() <= 2 {
+        return pts;
+    }
+    let gap = |a: SR, b: SR| (a.0 - b.0).hypot(a.1 - b.1);
+    let last_idx = pts.len() - 1;
+    let mut out: Vec<SR> = vec![pts[0]];
+    for &p in &pts[1..last_idx] {
+        if out.last().is_some_and(|&l| gap(l, p) >= min_gap) {
+            out.push(p);
+        }
+    }
+    let e = pts[last_idx];
+    while out.len() > 1 {
+        match out.last() {
+            Some(&l) if gap(l, e) < min_gap => {
+                out.pop();
+            }
+            _ => break,
+        }
+    }
+    out.push(e);
+    out
 }
