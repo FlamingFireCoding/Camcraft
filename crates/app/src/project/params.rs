@@ -1568,7 +1568,7 @@ impl CrossHoleDto {
 /// `drilling::CycleChoice`. `Auto` resolves at generate time (tool kind
 /// first, then the depth-vs-diameter law), so the file stores only the
 /// user's ask, like `StrategyDto::Auto` and `SideDto::Auto`.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CycleChoiceDto {
     #[default]
@@ -1583,6 +1583,10 @@ pub enum CycleChoiceDto {
     FloatingTap,
     /// #1445: feed in, feed out (G85). Older files never carry it.
     Ream,
+    /// #1445: fine boring (G76) with its required shift, mm along X and Y
+    /// of the hole list: `{"fine_bore": {"shift_x": 0.3, "shift_y": 0.0}}`.
+    /// There is no default shift. Older files never carry it.
+    FineBore { shift_x: f64, shift_y: f64 },
 }
 
 /// The reference part of a stored height. Serialized as a plain string;

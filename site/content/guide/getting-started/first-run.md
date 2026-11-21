@@ -31,7 +31,7 @@ Shortcuts on this page are written with Ctrl. On macOS, press Cmd in their place
     (Ctrl+P).
   - **Setup:** {{ <icon name="tree-setup" /> }} **Setups**, {{ <icon name="tree-stock" /> }} **Stock**, {{ <icon name="tree-wcs" /> }} **Origin** (the work offset), {{ <icon name="tools" /> }} **Tools** and the
     machine button, which switches the workspace between Milling, Turning
-    and Mill-turning.
+    and Mill-turning (a lathe with live tooling).
   - **Operation groups** for the machine you are on: Milling 2D, Milling
     3D, Drilling and Multi-axis on a mill; Turning on a lathe. Each group
     opens a list of its operations. Right-click (Control-click or a two-finger
@@ -86,8 +86,8 @@ if you have unsaved changes, as any project open does.
 Opening a document frames the camera on the opened part and stock, so
 orbiting turns about the part and not about the old view's target. Press F
 to frame again at any time. On a lathe, the viewport lays the spindle axis
-from left to right with the cross-slide up (a mill-turn keeps the milling
-view). This changes only the view,
+from left to right with the cross-slide up (a mill-turn, which is a lathe with live tooling, keeps
+the milling view). This changes only the view,
 not the work offset or the posted program.
 
 ### Themes and screen readers
@@ -97,6 +97,21 @@ take their sizes and colours from the theme, so text and glyphs read
 clearly in both Horizon Day and Teal Night. Browser rows, their eye
 toggles and context-menu rows carry accessibility labels, so a screen
 reader or an automated test can name them.
+
+### Line width and anti-aliasing
+
+The viewport's **Display** button opens a menu whose **Graphics** group
+sets how the viewport draws:
+
+- **Line width** (1, 1.5, 2 or 3 pt; 1.5 is the default) sets the width of
+  toolpaths, height planes, outlines and axes. These lines always have
+  smooth edges.
+- **Anti-aliasing** (Off, 2x or 4x; 4x is the default) smooths the edges
+  of models and stock. 4x uses the most graphics memory; turn it down on
+  a slow integrated graphics chip. A count that the graphics device does
+  not offer is shown, but cannot be chosen.
+
+Both choices are kept for the next start.
 
 ## A first toolpath
 

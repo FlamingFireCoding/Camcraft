@@ -90,6 +90,9 @@ pub struct GenJob {
     pub(super) unread_steel: Vec<String>,
     /// The highest world Z the tip reaches (WCS origin + stated Z top).
     pub(super) z_ceiling: Option<f64>,
+    /// The mounted machine's Z stroke, mm (#2987): the tool-change height
+    /// over the table top for the 3+2 first-traverse law.
+    pub(super) z_stroke: Option<f64>,
     /// `fixtures` split by whether the steel turns with the part
     /// (M13.8 (2)): `.0` rides the rotary, `.1` stands still (the
     /// declared-fixed models, then the machine table) - the post gate's
@@ -393,6 +396,12 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         .and_then(|m| m.axis(2))
         .and_then(crate::machine::AxisLimits::program_travel)
         .map(|(lo, hi)| wcs_origin[2] + lo.max(hi));
+    let z_stroke = mounted
+        .as_ref()
+        .and_then(|m| m.axis(2))
+        .and_then(crate::machine::AxisLimits::program_travel)
+        .map(|(lo, hi)| (hi - lo).abs())
+        .filter(|s| s.is_finite());
     let sinker_gap = match &op.params {
         OpParams::SinkerBurn(p) => Some(super::sinker_op::burn_gap(world, setup, p)),
         // #545: the side burn's gap, once its allowance holds under it.
@@ -447,6 +456,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         fixture_names,
         unread_steel,
         z_ceiling,
+        z_stroke,
         workholding,
         fixture_meshes,
         rotary_axis,

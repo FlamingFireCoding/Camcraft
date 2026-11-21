@@ -21,6 +21,28 @@ use support::*;
 #[path = "example_catalog/contract.rs"]
 mod contract;
 
+/// #2865: three original parts demonstrate the five additional turning kinds.
+#[test]
+fn turning_cases_cover_five_additional_kinds() {
+    for (case, kinds) in [
+        ("bushing", &["BORING", "FORM TURNING"][..]),
+        ("contour-finishes", &["CHAMFERING", "MULTI-PASS TURNING"][..]),
+        ("taper-finish", &["TAPER TURNING"][..]),
+    ] {
+        let dir = repo(&format!("examples/catalog/turning/{case}"));
+        assert!(dir.is_dir(), "catalog case turning/{case} is missing");
+        let program = fs::read_to_string(dir.join(format!("{case}.nc"))).expect("read case NC");
+        let actual: Vec<&str> = program
+            .lines()
+            .filter(|line| line.starts_with("(OPERATION: "))
+            .filter_map(|line| line.split(" - ").nth(1))
+            .collect();
+        assert_eq!(actual, kinds, "turning/{case} operation kinds");
+        assert!(program.contains("G18"), "turning/{case} states the ZX plane");
+        assert!(!program.lines().any(|line| word(line, 'Y').is_some()));
+    }
+}
+
 /// #2971: keep both named results for the groove and part-off case.
 #[test]
 fn groove_part_off_case_has_two_named_test_results() {
@@ -34,6 +56,56 @@ fn groove_part_off_case_has_two_named_test_results() {
     for action in ["regenerates", "rebuilds"] {
         let name = format!("catalog_turning_groove_part_off::{action}: test");
         assert!(listing.lines().any(|line| line == name), "missing case test {name}");
+    }
+}
+
+mod catalog_multiaxis_indexed {
+    use super::*;
+    #[test]
+    fn posts_two_single_axis_indexes_and_one_tilted_pocket() {
+        use camcraft_app::operation::{self, OpParams};
+        use camcraft_app::{model, project, setup, world};
+        let dir = repo("examples/catalog/multiaxis/indexed");
+        let program = fs::read_to_string(dir.join("indexed.nc")).expect("indexed NC case");
+        let w = world::new_world();
+        let notes = project::load_noted(&w, &dir.join("indexed.camproj")).expect("indexed project");
+        assert!(notes.is_empty(), "load notes: {notes:?}");
+        let ops = setup::operation_order(&w);
+        assert_eq!(ops.len(), 3, "two indexed faces and one tilted face");
+        for ((name, entity), (a, b)) in ops.iter().zip([(90.0, 0.0), (-90.0, 0.0), (30.0, 30.0)]) {
+            assert_eq!(operation::status_of(&w, entity), operation::OpStatus::Ok, "{name} saved cache");
+            let op = model::operation_of(&w, entity).expect("pocket operation");
+            let OpParams::Pocket { tilt: Some(tilt), .. } = op.params else {
+                panic!("{name} must be an indexed pocket");
+            };
+            assert_eq!((tilt.a_deg, tilt.b_deg), (a, b), "{name} orientation");
+            let blocks = section(&program, name);
+            assert!(blocks.iter().any(|l| word(l, 'A') == Some(a)), "{name} posts A{a}");
+            assert!(blocks.iter().any(|l| word(l, 'B') == Some(b)), "{name} posts B{b}");
+            assert!(blocks.iter().any(|l| l.starts_with("G01 ")), "{name} cuts");
+        }
+        let part = model::find_by_name(&w, "indexed").expect("embedded model");
+        assert!(camcraft_app::model_source::of(&w, &part).is_none(), "portable model");
+    }
+    #[test]
+    fn regenerates() {
+        run_case("multiaxis", "indexed", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("multiaxis", "indexed", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_2d_adaptive_pocket {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("2d", "adaptive-pocket", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("2d", "adaptive-pocket", "rebuilds", rebuild);
     }
 }
 
@@ -82,6 +154,45 @@ mod catalog_2d_hole_work {
     #[test]
     fn rebuilds() {
         run_case("2d", "hole-work", "rebuilds", rebuild);
+    }
+}
+
+// #2861: the case 2d/slots, its two case tests and its program pin.
+include!("example_catalog/case_2d_slots.rs");
+
+mod catalog_turning_bushing {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "bushing", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "bushing", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_contour_finishes {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "contour-finishes", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "contour-finishes", "rebuilds", rebuild);
+    }
+}
+
+mod catalog_turning_taper_finish {
+    use super::*;
+    #[test]
+    fn regenerates() {
+        run_case("turning", "taper-finish", "regenerates", regenerate);
+    }
+    #[test]
+    fn rebuilds() {
+        run_case("turning", "taper-finish", "rebuilds", rebuild);
     }
 }
 
