@@ -365,7 +365,7 @@ fn playback_removes_undercut_head_and_neck_and_matches_field_view() {
 
     let p = progress(&sim::script([("Undercut1", &tp)], &sim::Traverse::from_machine(&camcraft_app::posting::machine_value(&world))), 0.0)
         .expect("timeline");
-    // #2901: a zero-length opening rapid is done at t = 0 and cuts nothing.
+    // #2901: a zero-length opening rapid takes no time and is done at t = 0.
     let m0 = tp.moves[0];
     let opening_is_free = m0.kind == camcraft_app::cl::MoveKind::Rapid && m0.from == m0.to;
     assert_eq!(play.index_at(&p), Some(usize::from(opening_is_free)));

@@ -61,6 +61,7 @@ pub(super) struct StockSnap {
     /// The stock's own reduced-fidelity flag (#1056): a clone of a coarse
     /// copy is as coarse as the copy, and an undone delete restores it.
     pub(super) coarse_mm: Option<f64>,
+    pub(super) file_tolerance: bool,
     /// #1700: the copy's hole when its model was imported incomplete,
     /// carried with the flag.
     pub(super) hole: Option<String>,
@@ -140,6 +141,7 @@ impl CreateSetup {
                 post_properties: None,
                 nose_to_axis: None,
                 workholding_max_rpm: None,
+                sheet_job: None,
             }
         } else {
             SetupDef {
@@ -172,6 +174,9 @@ impl CreateSetup {
                 // #1031: the same clamping system keeps its chuck's rating -
                 // dropping a limit would silently lift a safety ceiling.
                 workholding_max_rpm: datum_from.and_then(|f| setup::def_of(world, f)).and_then(|d| d.workholding_max_rpm),
+                // #3070: a new setup holds other stock - the sheet job's
+                // numbers do not describe it.
+                sheet_job: None,
             }
         };
         let mut stock = None;
@@ -189,6 +194,7 @@ impl CreateSetup {
                     location: model::transform_of(world, &entity).unwrap_or_default(),
                     facets: model::facets_of(world, &entity).unwrap_or_default(),
                     coarse_mm: crate::model_fidelity::chord_of(world, &entity),
+                    file_tolerance: crate::model_fidelity::file_tolerance_of(world, &entity),
                     hole: crate::mesh_open::hole_of(world, &entity),
                     material: crate::stock_material::of_entity(world, &entity),
                 });
@@ -227,7 +233,7 @@ impl Command for CreateSetup {
             };
             model::set_transform(world, &e, s.location);
             model::set_facets(world, &e, s.facets.clone());
-            crate::model_fidelity::set(world, &e, s.coarse_mm);
+            crate::model_fidelity::set_with_cause(world, &e, s.coarse_mm, s.file_tolerance);
             crate::mesh_open::set(world, &e, s.hole.as_deref());
             e.entity_view(world).set(StockDef {
                 shape: s.shape.clone(),

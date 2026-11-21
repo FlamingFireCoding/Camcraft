@@ -89,6 +89,7 @@ mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_axis;
 mod stock_material;
 mod setup_settings_page;
 mod machine_page;
@@ -253,6 +254,8 @@ mod edm_tool_visibility;
 mod highlight_perf;
 // #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
 mod pocket_no_adaptive;
+// #1864: 2D Contour on DXF sketches layer picker & per-chain overrides UI test.
+mod contour_dxf_sketch;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.

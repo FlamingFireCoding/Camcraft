@@ -117,7 +117,7 @@ fn geometry(ui: &mut Ui, state: &mut State) {
     super::tool_orientation_row::orientation_row(ui, state);
     // #894: a thread mill's pitch (range) and form angle.
     super::tool_thread_mill_row::thread_mill_rows(ui, state);
-    // #1444: the dovetail cutter's flank angle.
+    // #1444: a dovetail cutter's flank angle.
     super::tool_undercut_row::dovetail_row(ui, state);
     if state.tool_ui.tool_kind() == tools::ToolKind::BallNose {
         // #263: a ball's corner IS its ball, half the diameter - shown,

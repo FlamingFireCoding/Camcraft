@@ -54,6 +54,7 @@ pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
 pub mod colorvision;
@@ -165,6 +166,8 @@ mod wcs_pick_row;
 // #316: the setup page's "relative to the previous setup" control.
 mod setup_relative_pick;
 mod setup_workholding_row;
+// #3070: the guided sheet job checklist on the setup's Settings page.
+mod setup_sheet_job_row;
 // The operation dialog, split out of `pages` with the property grid
 // (user review 2026-11-06): the frame, the Geometry pick block, the
 // params dispatcher and its kind-family pages, the shared widgets.
