@@ -469,13 +469,19 @@ fn zigzag_links_round_inside_the_cleared_floor() {
     // stepover long (the band's last row snaps closer), so each fillet
     // is a quarter circle of at most stepover/2 - and the full rows get
     // exactly that.
-    let radii: Vec<f64> = blended
+    // #3021: the closing ring on the [4, 26] center square turns at its
+    // corners; those fillets take the blend cap (the tool radius, 4).
+    let fillets: Vec<(f64, Point2)> = blended
         .moves
         .iter()
         .filter(|m| is_new_arc(m, &sharp))
-        .filter_map(|m| m.arc.map(|a| (m.from.x - a.center.x).hypot(m.from.y - a.center.y)))
+        .filter_map(|m| m.arc.map(|a| ((m.from.x - a.center.x).hypot(m.from.y - a.center.y), a.center)))
         .collect();
-    assert!(radii.iter().all(|r| *r <= 1.5 + 1e-6), "{radii:?}");
+    let ring_corner = |c: Point2| ((c.x - 15.0).abs() - 7.0).abs() < 1e-3 && ((c.y - 15.0).abs() - 7.0).abs() < 1e-3;
+    let (corners, rows): (Vec<_>, Vec<_>) = fillets.iter().partition(|(r, _)| *r > 1.5 + 1e-6);
+    assert!(corners.iter().all(|(r, c)| (*r - 4.0).abs() < 1e-6 && ring_corner(*c)), "{corners:?}");
+    assert!(!corners.is_empty(), "the closing ring's corners are blended");
+    let radii: Vec<f64> = rows.iter().map(|(r, _)| *r).collect();
     assert!(radii.iter().filter(|r| (**r - 1.5).abs() < 1e-6).count() >= radii.len() / 2, "{radii:?}");
     // Lifts, plunges and pass starts never moved.
     let plunges = |t: &Toolpath| t.moves.iter().filter(|m| m.kind == MoveKind::Plunge).map(|m| m.to).collect::<Vec<_>>();
