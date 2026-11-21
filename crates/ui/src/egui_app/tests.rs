@@ -89,6 +89,7 @@ mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod stock_axis;
 mod stock_material;
 mod setup_settings_page;
 mod machine_page;
@@ -196,6 +197,8 @@ mod tool_library_import;
 mod tool_cutter;
 // #93 slice 3: the drawn cutter edited by its parameters.
 mod tool_cutter_params;
+// #1444: undercut tool editor seeding/angle/corner filter and Slot Undercut page.
+mod tool_undercut;
 // #2397: the new-tool flow in Properties and the shape window it opens.
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.

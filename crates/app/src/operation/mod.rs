@@ -97,6 +97,8 @@ pub(crate) use material_region::selection_drives_region;
 mod circle_fit;
 // #1504: the plain Slot's room read off two picked edges or a face.
 mod slot_pick;
+// #1868: the same room read off DXF sketch chains.
+mod slot_sketch;
 pub use slot_pick::{slot_bound_of, slot_fit_of, slot_from_picks};
 pub use circle_fit::{CIRCLE_FIT_TOL, circle_of_region, circular_fit_of};
 mod material_source;
@@ -117,6 +119,7 @@ mod thread_r_plane;
 mod thread_boss;
 pub mod wire_op;
 mod wire_ruled;
+pub(crate) mod wire_sketch;
 // #534: the wire laws' inputs, read live at the post.
 pub mod wire_verify;
 // #541: the sinker EDM burn to depth.
@@ -129,6 +132,8 @@ pub mod sinker_faces;
 pub mod sinker_wear_op;
 // #545: the Sinker Side Burn's seed, laws and generation.
 pub mod sinker_side_op;
+// #1444: the Slot Undercut's seed and generation glue.
+pub mod slot_undercut_op;
 // #171: the Probe op seeded from one picked face, edge, vertex or round wall.
 mod probe_pick;
 mod probe_pick_round;
