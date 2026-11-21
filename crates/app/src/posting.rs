@@ -1186,7 +1186,7 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
         // streams for installations without controller identity and never infer a bottom.
         let (_, machine) = crate::machine::of_setup(world, setup);
         let stock_bottom_z = machine.as_ref().and_then(|m| m.controller_identity.as_ref())
-            .and_then(|_| boxz.as_ref()).map(|a| a.min.z);
+            .and(boxz.as_ref()).map(|a| a.min.z);
         // #1666: only turning machines state the swept stock radius.
         let stock_turn_radius = matches!(
             crate::machine::kind(machine.as_ref()),
