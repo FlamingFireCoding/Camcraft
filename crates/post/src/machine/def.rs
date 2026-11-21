@@ -259,6 +259,10 @@ pub struct Machine {
     /// Machine-level rotary sign convention (`tool_rh` vs `table_rh`, #1962).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_convention: Option<RotarySignConvention>,
+    /// `controller.post` (#2374): the registry post the file names, which
+    /// the Setup page offers; it never changes a setup's post by itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post: Option<String>,
 }
 
 /// The words a control needs around C-axis live-tool work (issue

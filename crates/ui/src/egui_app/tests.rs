@@ -146,6 +146,9 @@ mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
 mod display_menu;
+// #2834 and #2958: the Display menu's quality, line width and
+// anti-aliasing entries.
+mod display_quality;
 mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
@@ -167,6 +170,8 @@ mod setup_tree;
 mod mcp_live;
 // #389: per-setup post options and the tool-list export.
 mod setup_post_options;
+// #2374: the machine's own post offered on the Post page.
+mod machine_named_post;
 // #821: the raised-rotary rows of a setup's Machine page.
 mod setup_rotary;
 // #1494: the setup eye (display only).
@@ -195,13 +200,12 @@ mod tool_cutter_params;
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
-// #2958: the Display menu's line width and anti-aliasing entries.
-mod display_quality;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
+mod browser_delete;
 // #1450: a model file dropped on the window.
 mod file_drop;
 // #645: the browser's "Show origin names" switch and the per-user view file.
@@ -247,6 +251,8 @@ mod edm_tool_visibility;
 mod highlight_perf;
 // #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
 mod pocket_no_adaptive;
+// #1864: 2D Contour on DXF sketches layer picker & per-chain overrides UI test.
+mod contour_dxf_sketch;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
