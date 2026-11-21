@@ -3413,7 +3413,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #3077's reading.
             let mill_post_cross = machine_kind == crate::machine::Kind::MillTurn && !lathe_tool && matches!(&params, OpParams::Drill { cross, .. } if !cross.is_empty());
             super::first_traverse::judge(&path, &params, mill_order || mill_post_cross, None, &over, &mut warns);
-            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance };
+            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()) };
             super::first_traverse_posed::judge(&path, &params, None, &posed, &mut warns);
             // A turned path's axial rapids are judged in the meridian
             // plane, not by the column (#96, #103): the revolved stock
@@ -3771,7 +3771,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2987: the table read where the tool can meet it.
             let over = super::first_traverse::Over { stock_top: st_local, fixtures: &fixture_boxes, names: &fixture_names, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()), turned, clearance: hl.clearance, z_stroke };
             let table_note = super::first_traverse::judge(&path, &params, mill_order, Some(f), &over, &mut warns);
-            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance };
+            let posed = super::first_traverse_posed::Posed { turn: posed_turn, rides: &rides, fixtures: &fixture_boxes, names: &fixture_names, clearance: hl.clearance, rotaries: super::first_traverse::rotaries_of(machine_rotaries.as_ref()) };
             super::first_traverse_posed::judge(&path, &params, Some(f), &posed, &mut warns);
             // The containment kinds' solid law (their verify runs without
             // the model - exact rims): the tool's own tip and stack swept
