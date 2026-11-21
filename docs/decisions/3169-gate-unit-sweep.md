@@ -32,10 +32,19 @@ these are true:
   written in this run, and this variant was written before the run started;
 - cargo's locks of each profile directory are free (the sweep holds them while
   it deletes), and no other process names `<root>/target` in its command line
-  (another gate's xtask, a cargo or rustc there, a test executable).
+  (another gate's xtask, a cargo or rustc there, a test executable);
+- no level of the path (`target`, the profile, `build`, the package, the unit,
+  `fingerprint`) is a symlink, a junction or another reparse point. A linked
+  profile directory or `target/` stops the whole sweep; a linked package or
+  unit is skipped. The unit is checked again just before its delete.
 
-A failed delete is a warning line, never a gate failure. A process list that
-cannot be read counts as a live process: nothing is removed. The summary
+The process check matches each form of `<root>/target`: the path as given,
+its absolute and clean form, and the canonical form (a subst drive, a
+junction, `/var` and `/private/var` on macOS). On Windows the match ignores
+case. A root form that cannot be resolved, a process list that cannot be read,
+or a cargo lock that cannot be probed counts as "unsure": nothing is removed.
+
+A failed delete is a warning line, never a gate failure. The summary
 prints the number of directories and the GB removed, or why the sweep did not
 run. `CAMCRAFT_GATE_SWEEP=off` (or `0`) turns it off.
 
@@ -44,6 +53,13 @@ one that this tree uses. The superseded variant is used again only when the
 worktree goes back to a tree with the earlier resolution; then cargo builds
 those targets again (minutes) instead of keeping 60 GB. A red test does not
 make the new units wrong, so the outcome does not change the choice.
+
+**The lock of `cargo xtask` itself.** `cargo xtask` is `cargo run -p xtask`.
+Cargo holds the build lock of `target/debug` only while it compiles, and frees
+it before it starts the binary. The proof by reading: each gate step starts a
+cargo build into the same `target/debug` while `cargo xtask` is alive; if the
+outer cargo held the lock, every gate would wait for it without end. So the
+lock probe at the end of a run sees only other builds.
 
 **Why only test-harness units.** A test executable is built only when its
 own package is selected, and the gate selects one package for each step, so a

@@ -5,7 +5,7 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::unit_sweep::{first_live, lines, opted_out, scan, superseded, sweep, Report};
+use crate::unit_sweep::{after_run_with, first_live, judge, lines, norm, opted_out, plain_dir, scan, superseded, sweep, target_forms, Report, OPT_OUT};
 
 fn tmp(tag: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!("xtask-unit-sweep-{tag}-{}", std::process::id()));
@@ -139,11 +139,122 @@ fn superseded_never_lists_the_newest_variant() {
 #[test]
 fn the_process_check_finds_another_process_of_this_tree_only() {
     let target = if cfg!(windows) { r"C:\W\Tree\target" } else { "/w/tree/target" };
+    let needles = [norm(target)];
     let other = if cfg!(windows) { r"c:\w\tree\target\debug\xtask.exe gate quick" } else { "/w/tree/target/debug/xtask gate quick" };
     let listing = format!("  1 /usr/bin/cargo xtask gate quick\n 77 {other}\n 99 {other}\n");
-    assert_eq!(first_live(&listing, target, 77), Some("pid 99".into()), "own pid is skipped");
-    assert_eq!(first_live(&listing, target, 99), Some("pid 77".into()));
-    assert_eq!(first_live(" 1 cargo build\n", target, 5), None);
+    assert_eq!(first_live(&listing, &needles, 77), Some("pid 99".into()), "own pid is skipped");
+    assert_eq!(first_live(&listing, &needles, 99), Some("pid 77".into()));
+    assert_eq!(first_live(" 1 cargo build\n", &needles, 5), None);
+    let verbatim = if cfg!(windows) { r"\\?\C:\W\Tree\target\" } else { "/w/tree/target/" };
+    assert_eq!(norm(verbatim), norm(target), "a verbatim prefix and a trailing separator are one form");
+}
+
+#[test]
+fn the_process_check_knows_every_form_of_the_root() {
+    let base = tmp("forms");
+    let real = base.join("tree");
+    assert!(fs::create_dir_all(real.join("sub")).is_ok());
+    let dotted = real.join("sub").join("..");
+    let forms = target_forms(&dotted).expect("the forms resolve");
+    let clean = norm(&real.join("target").to_string_lossy());
+    let canon = norm(&fs::canonicalize(&real).expect("canonical").join("target").to_string_lossy());
+    assert!(forms.contains(&clean), "the clean form is a needle: {forms:?}");
+    assert!(forms.contains(&canon), "the canonical form is a needle: {forms:?}");
+    assert!(forms.contains(&norm(&dotted.join("target").to_string_lossy())), "the raw form is a needle");
+    let listing = format!("5 {} --test x", real.join("target").join("debug").join("x").display());
+    assert_eq!(judge(Some(&listing), Ok(forms.clone()), 1), Some("pid 5".into()));
+    assert!(target_forms(&base.join("missing")).is_err(), "a root that cannot be resolved is an error");
+    let _ = fs::remove_dir_all(&base);
+}
+
+#[test]
+#[allow(clippy::permissions_set_readonly_false)] // the test undoes its own read-only flag
+fn when_unsure_the_sweep_removes_nothing() {
+    let root = tmp("unsure");
+    let start = SystemTime::now();
+    let old = unit(&root, "debug", "camcraft-app", "aaaa", T, start - Duration::from_secs(3600));
+    unit(&root, "debug", "camcraft-app", "bbbb", T, start + Duration::from_secs(5));
+    // An unreadable process list, and a root whose forms cannot be resolved, count as live.
+    assert!(judge(None, Ok(vec!["x".into()]), 1).is_some_and(|w| w.contains("could not be read")));
+    assert!(judge(Some(""), Err("no".into()), 1).is_some_and(|w| w.contains("cannot be resolved")));
+    let r = sweep(&root, start, || judge(None, Ok(vec![]), 1));
+    assert!(r.skipped.is_some() && old.exists(), "an unreadable process list removes nothing: {r:?}");
+    // A lock that cannot be probed (here a read-only lock file: it cannot be opened for writing).
+    let lock = root.join("target/debug/.cargo-lock");
+    assert!(fs::write(&lock, b"").is_ok());
+    let mut perm = fs::metadata(&lock).expect("lock metadata").permissions();
+    perm.set_readonly(true);
+    assert!(fs::set_permissions(&lock, perm.clone()).is_ok());
+    if File::options().write(true).open(&lock).is_err() {
+        // (a root user on Unix can still open it; then this case cannot be made here)
+        let r = sweep(&root, start, none);
+        assert!(r.skipped.as_deref().is_some_and(|w| w.contains("cannot be probed")) && old.exists(), "{r:?}");
+    }
+    perm.set_readonly(false);
+    assert!(fs::set_permissions(&lock, perm).is_ok());
+    assert!(fs::remove_file(&lock).is_ok());
+    // The env turns it off, or moves the target directory.
+    let elapsed = SystemTime::now().duration_since(start).unwrap_or_default();
+    let live = || None;
+    for (k, v) in [(OPT_OUT, "off"), (OPT_OUT, "0"), ("CARGO_TARGET_DIR", "x"), ("CARGO_BUILD_TARGET_DIR", "x"), ("CARGO_BUILD_BUILD_DIR", "x")] {
+        let env = |name: &str| (name == k).then(|| v.to_string());
+        let r = after_run_with(&root, elapsed, &env, &live);
+        assert!(r.skipped.as_deref().is_some_and(|w| w.contains(k)) && old.exists(), "{k}={v}: {r:?}");
+    }
+    // A start time that cannot be computed is the epoch: every unit is from "this run".
+    let r = after_run_with(&root, Duration::MAX, &|_| None, &live);
+    assert!(r.skipped.is_none() && r.removed == 0 && old.exists(), "{r:?}");
+    // With no doubt left, the same tree is swept.
+    let r = after_run_with(&root, elapsed + Duration::from_secs(1), &|_| None, &live);
+    assert_eq!(r.removed, 1, "{r:?}");
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// A directory link at `link` to `to`: a symlink on Unix, a junction on Windows (no privilege needed).
+fn dir_link(to: &Path, link: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(to, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(to)
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+}
+
+#[test]
+fn the_sweep_never_reads_or_deletes_through_a_link() {
+    let base = tmp("links");
+    let root = base.join("tree");
+    let outside = base.join("outside");
+    let start = SystemTime::now();
+    // A real package with a newer variant, and a linked package whose old variant lies outside target/.
+    unit(&root, "debug", "camcraft-app", "bbbb", T, start + Duration::from_secs(5));
+    let far = unit(&outside, "debug", "pkg", "aaaa", T, start - Duration::from_secs(3600));
+    let linked = root.join("target/debug/build/camcraft-linked");
+    unit(&root, "debug", "camcraft-linked", "bbbb", T, start + Duration::from_secs(5));
+    assert!(fs::remove_dir_all(&linked).is_ok());
+    assert!(dir_link(&outside.join("target/debug/build/pkg"), &linked), "the test makes a directory link");
+    assert!(!plain_dir(&linked), "a link is not a plain directory");
+    assert!(scan(&root.join("target")).iter().all(|u| !u.dir.starts_with(&linked)), "the scan does not enter a link");
+    let r = sweep(&root, start, none);
+    assert_eq!(r.removed, 0, "{r:?}");
+    assert!(far.exists(), "nothing outside target/ is removed");
+    // A linked profile directory stops the whole sweep.
+    let root2 = base.join("tree2");
+    assert!(fs::create_dir_all(root2.join("target")).is_ok());
+    assert!(dir_link(&root.join("target/debug"), &root2.join("target/debug")));
+    let r = sweep(&root2, start, none);
+    assert!(r.skipped.as_deref().is_some_and(|w| w.contains("link")), "{r:?}");
+    for l in [linked, root2.join("target/debug")] {
+        let _ = fs::remove_file(&l).or_else(|_| fs::remove_dir(&l)); // the link only, never its target
+    }
+    let _ = fs::remove_dir_all(&base);
 }
 
 #[test]
