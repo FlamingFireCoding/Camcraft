@@ -293,6 +293,7 @@ impl Run {
         }
         println!("  wall {mins:.1} min, {} step(s), {bad} failed", self.done.len());
         if !self.dry {
+            crate::unit_sweep::lines(&crate::unit_sweep::after_run(&self.root, self.clock.elapsed())).iter().for_each(|l| println!("{l}"));
             println!("{}", crate::unit_env::added_line(self.units, crate::unit_env::units(&self.root)));
         }
         if self.label == "light" {

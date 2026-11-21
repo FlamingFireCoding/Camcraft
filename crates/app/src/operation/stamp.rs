@@ -76,6 +76,12 @@ pub fn current_stamp(
     if super::first_traverse_posed::newly_judged(world, setup, params) {
         h.write(b"first-traverse-posed-3084");
     }
+    // #3100: a user's own post script that declares its rotary order is
+    // taken at its word with a note on the path; a cache made under
+    // another post has no note, so it must read Stale once.
+    if super::first_traverse_posed::post_order(world, setup, params).custom {
+        h.write(b"first-traverse-declared-3100");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {

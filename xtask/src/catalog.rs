@@ -15,6 +15,9 @@ use crate::catalog_media::{self, MediaArgs};
 use crate::catalog_pdf;
 use crate::exec;
 
+#[path = "catalog_links.rs"]
+pub(crate) mod links;
+
 const USAGE: &str = "\
 usage:
   cargo xtask catalog [--case <family/case>] [--check]
@@ -97,6 +100,11 @@ pub fn run(root: &Path, raw: &[String]) -> Result<i32, String> {
     let args = parse(raw)?;
     let cases = select_cases(root, args.case.as_deref())?;
     let do_rebuild = args.rebuild || (!args.check && !args.media.screenshots && !args.media.pdf);
+
+    // Validate the whole catalog even with --case: guide links cross case boundaries.
+    if args.check || do_rebuild {
+        links::sync(root, &discover_cases(root)?, args.check)?;
+    }
 
     if args.check {
         check_cases(root, &cases)?;
