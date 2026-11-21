@@ -949,6 +949,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 if let Some(why) = sdto.workholding_max_rpm.and_then(crate::setup_workholding::invalid) {
                     return Err(corrupt(format!("setup '{}': {why}", dto.name)));
                 }
+                // #3070: likewise a sheet job no command would accept.
+                if let Some(why) = sdto.sheet_job.as_ref().and_then(crate::sheet_job::invalid) {
+                    return Err(corrupt(format!("setup '{}': {why}", dto.name)));
+                }
                 entity.entity_view(world).set(SetupDef {
                     stock: sdto.stock,
                     // `wcs_one` left exactly one name on every setup.
@@ -970,6 +974,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     // #821: absent in every earlier file - states none.
                     nose_to_axis: sdto.nose_to_axis,
                     workholding_max_rpm: sdto.workholding_max_rpm,
+                    sheet_job: sdto.sheet_job,
                 });
             }
         }

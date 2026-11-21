@@ -89,6 +89,7 @@ pub fn collect(world: &World) -> ProjectFile {
                         post_properties: d.post_properties.as_ref().map(|p| p.by_post.clone()),
                         nose_to_axis: d.nose_to_axis.filter(|v| v.is_finite()),
                         workholding_max_rpm: d.workholding_max_rpm,
+                        sheet_job: d.sheet_job,
                     })
             } else {
                 None

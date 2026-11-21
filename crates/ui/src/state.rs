@@ -62,6 +62,8 @@ pub use pockets::PocketScan;
 mod setup_post_options;
 #[path = "state_setup_workholding.rs"]
 mod setup_workholding;
+#[path = "state_sheet_job.rs"]
+mod sheet_job;
 #[path = "state_fixture.rs"]
 mod fixture_view;
 #[path = "state_locate.rs"]
@@ -255,6 +257,8 @@ pub enum CommandKind {
     /// #1031: state (`Some`) or clear a setup's workholding maximum rpm
     /// (`SetSetupWorkholdingRpm`).
     SetSetupWorkholdingRpm { setup: String, max_rpm: Option<f64> },
+    /// #3070: set up (`Some`) or clear the setup's sheet job (`SetSheetJob`).
+    SetSheetJob { setup: String, job: Option<camcraft_app::sheet_job::SheetJob> },
     /// The post's user options (issue #34): the undoable
     /// `SetPostOptions` with the picked value.
     SetPostOptions(camcraft_app::schema::PostOptions),
@@ -3503,6 +3507,7 @@ impl State {
             CommandKind::SetupOwnPostOptions { setup, own } => self.own_post_options(&setup, own),
             CommandKind::SetupNoseToAxis { setup, value } => self.set_setup_nose(&setup, value),
             CommandKind::SetSetupWorkholdingRpm { setup, max_rpm } => self.set_workholding_rpm(&setup, max_rpm),
+            CommandKind::SetSheetJob { setup, job } => self.set_sheet_job(&setup, job),
             CommandKind::EditMachineDialog => {
                 let (path, m) = machine::of(&self.world);
                 match m {
