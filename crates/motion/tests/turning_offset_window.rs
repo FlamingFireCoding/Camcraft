@@ -2,6 +2,8 @@
 //! the stations where the ball's tangent point lies on the segment.
 //! Fixtures are hand-made (station, radius) polylines, so each
 //! expected ride follows from plane geometry alone.
+//!
+//! Gate map (M4.4): covers camcraft_motion::turning::offset.
 
 use camcraft_motion::turning::offset::{profile_offset, profile_offset_in};
 
