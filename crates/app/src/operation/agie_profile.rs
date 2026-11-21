@@ -35,7 +35,7 @@ pub(crate) fn agie_job(world: &World, op: &Operation, name: &str) -> Result<agie
         || (condition.wire_diameter - 0.25).abs() > 1e-9
         || (condition.gap - agie::PREVIEW_GAP).abs() > 1e-9
     {
-        return Err("Select AGIE_QN2 for cold die steel 0001, Berco Cut 0.25 mm, Fine Ra 0.30, and its unmodified preview gap".into());
+        return Err("Select AGIE_QN2 with its unmodified preview gap to request Fine Ra 0.30 µm for cold die steel 0001 and Berco Cut 0.25 mm".into());
     }
     if crate::stock_material::in_force(world, setup).is_some() {
         return Err("The stated stock material conflicts with AGIE_QN2 cold die steel 0001".into());
