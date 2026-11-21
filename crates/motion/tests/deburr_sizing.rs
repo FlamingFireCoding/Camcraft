@@ -1,8 +1,7 @@
-//! #1890 deburr sizing law tests: `width` is the chamfer's chord
-//! `w = 2 s sin(theta / 2)` on every wedge angle `theta`, Constant
-//! Depth holds `d = s cos(theta / 2)`, the passes step from the outer
-//! break in to the final one and stay inside the run's declared
-//! `EdgeBreak`, and a Round profile on the sharp cone refuses by name.
+//! #1890 deburr sizing tests measure the chord and its perpendicular
+//! depth from actual cutter intersections with the two fixture faces.
+//! Passes stay inside the tip window and the final declared EdgeBreak.
+//! A Round profile on the sharp cone refuses by name.
 //!
 //! Gate map (#1890): covers camcraft_motion::finishing3d (deburr,
 //! deburr_size). Lane shape: every law here runs in seconds.
@@ -72,34 +71,77 @@ fn break_on(t: &Toolpath, y: f64) -> &EdgeBreak {
         .unwrap_or_else(|| panic!("no break on y = {y}: {:?}", t.breaks))
 }
 
+/// Intersect the actual emitted cone floor z=-drop+abs(y) with the
+/// fixture faces. These equations use neither the size law nor setback().
+fn contact_chord_and_depth(t: &Toolpath, edge_y: f64) -> (f64, f64) {
+    let m = t
+        .moves
+        .iter()
+        .find(|m| {
+            m.kind == MoveKind::Feed
+                && (m.from.y - edge_y).abs() < 1e-9
+                && (m.to.y - edge_y).abs() < 1e-9
+                && (m.to.x - m.from.x).abs() > 29.0
+        })
+        .expect("a cut along the fixture edge");
+    let drop = -m.to.z;
+    assert!(drop > 0.0);
+    let a = (drop, 0.0);
+    let b = if edge_y == 5.0 {
+        let y = -drop / (1.0 + 3f64.sqrt());
+        (y, 3f64.sqrt() * y)
+    } else {
+        (0.0, -drop)
+    };
+    let chord = (a.0 - b.0).hypot(a.1 - b.1);
+    let depth = (a.0 * b.1 - a.1 * b.0).abs() / chord;
+    (chord, depth)
+}
+
 #[test]
-fn constant_width_holds_the_chord_on_a_120_and_a_90_degree_wedge() {
+fn constant_width_measures_actual_cone_contacts_on_120_and_90_degree_wedges() {
     let t = deburr(&wedge_block(), &params(DeburrBreak::default())).expect("the top edges ride");
-    // s = w / (2 sin(theta / 2)); the 90-deg cone's drop is s.
-    let at120 = break_on(&t, 5.0).depth;
-    let at90 = break_on(&t, 20.0).depth;
-    assert!((at120 - 1.0 / 3f64.sqrt()).abs() < 1e-9, "120-deg wedge: {at120}");
-    assert!((at90 - 1.0 / 2f64.sqrt()).abs() < 1e-9, "90-deg wedge: {at90}");
-    // The chord back from each setback is the authored width.
-    for (s, theta) in [(at120, 120f64), (at90, 90.0)] {
-        let w = 2.0 * s * (0.5 * theta.to_radians()).sin();
-        assert!((w - 1.0).abs() < 1e-9, "chord {w} at {theta} deg");
+    for edge_y in [5.0, 20.0] {
+        let (chord, _) = contact_chord_and_depth(&t, edge_y);
+        assert!(
+            (chord - 1.0).abs() < 1e-9,
+            "actual cone contact chord {chord}, requested 1 at y={edge_y}"
+        );
     }
 }
 
 #[test]
-fn constant_depth_holds_the_depth_on_a_120_and_a_90_degree_wedge() {
-    let sizing = DeburrBreak { mode: BreakMode::ConstantDepth, depth: 0.5, ..DeburrBreak::default() };
+fn constant_depth_measures_actual_cone_contacts_on_120_and_90_degree_wedges() {
+    let sizing = DeburrBreak {
+        mode: BreakMode::ConstantDepth,
+        depth: 0.5,
+        ..DeburrBreak::default()
+    };
     let t = deburr(&wedge_block(), &params(sizing)).expect("the top edges ride");
-    // s = d / cos(theta / 2).
-    let at120 = break_on(&t, 5.0).depth;
-    let at90 = break_on(&t, 20.0).depth;
-    assert!((at120 - 1.0).abs() < 1e-9, "120-deg wedge: {at120}");
-    assert!((at90 - 0.5 * 2f64.sqrt()).abs() < 1e-9, "90-deg wedge: {at90}");
-    // The plunge onto each edge stands its own drop under it.
-    let plunges: Vec<f64> = t.moves.iter().filter(|m| m.kind == MoveKind::Plunge).map(|m| m.to.z).collect();
-    assert!(plunges.iter().any(|z| (z + 1.0).abs() < 1e-9), "{plunges:?}");
-    assert!(plunges.iter().any(|z| (z + 0.5 * 2f64.sqrt()).abs() < 1e-9), "{plunges:?}");
+    for edge_y in [5.0, 20.0] {
+        let (_, depth) = contact_chord_and_depth(&t, edge_y);
+        assert!(
+            (depth - 0.5).abs() < 1e-9,
+            "actual perpendicular chord depth {depth}, requested 0.5 at y={edge_y}"
+        );
+    }
+}
+
+#[test]
+fn multiple_passes_refuse_a_window_that_only_contains_the_final_tip() {
+    let mut p = params(DeburrBreak {
+        passes: 3,
+        ..DeburrBreak::default()
+    });
+    // Keep the final tip inside despite independent contact rounding.
+    p.top_z = -p.drop() + 1e-8;
+    p.bottom_z = -p.drop() - 1e-8;
+    p.clearance_z = p.top_z;
+    let error = deburr(&wedge_block(), &p).expect_err("the outer pass leaves the tip window");
+    assert!(
+        error.to_string().contains("a pass leaves the tip window"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -109,7 +151,7 @@ fn passes_step_from_the_outer_break_to_the_final_one_inside_the_declared_break()
     let count = |t: &Toolpath| t.moves.iter().filter(|m| m.kind == MoveKind::Plunge).count();
     assert_eq!(count(&three), 3 * count(&one), "each run rides three times");
     assert_eq!(three.breaks, one.breaks, "the passes declare the final break only");
-    // The 120-deg run: plunges at s/3, 2s/3, s, outer to final.
+    // The 120-deg run: plunges at drop/3, 2drop/3, drop, outer to final.
     let s = break_on(&three, 5.0).depth;
     // (Its plunges are the ones whose next feed stays on y = 5; the
     // 90-deg run starts at the same corner and turns to y = 20.)

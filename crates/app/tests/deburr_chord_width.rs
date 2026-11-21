@@ -1,17 +1,17 @@
 //! #1890 through the operation layer, the project file and MCP: a 3D
-//! Deburr `width` is the chamfer chord `w = 2 s sin(theta / 2)`, a file
-//! from before v75 steps its width up by sqrt(2) (the 90-degree chord of
+//! Deburr `width` is the actual chamfer chord, and a file
+//! from before v76 steps its width up by sqrt(2) (the 90-degree chord of
 //! the setback it stated), and the break mode, profile and passes ride
 //! the command history, the file and MCP.
 //!
 //! Provenance: our own tests of our own parameter model; the sizing law
 //! is plane chamfer geometry (`finishing3d::deburr_size`).
 //!
-//! Gate map (#1890): covers app::project (params, apply - the v75
+//! Gate map (#1890): covers app::project (params, apply - the v76
 //! step), app::operation (generate, sane), app::mcp (edit).
 
 use camcraft_app::commands::{
-    AddTool, CommandError, CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel, SetStock,
+    AddTool, CommandError, CreateOperation, EditOperationParams, GenerateOperation, History, ImportModel, LoadMachine, SetStock,
 };
 use camcraft_app::finishing3d::{BreakMode, BreakProfile, DeburrBreak};
 use camcraft_app::geometry::{Point3, cube};
@@ -89,22 +89,71 @@ fn sizing_of(world: &World) -> DeburrBreak {
 }
 
 #[test]
-fn a_v74_deburr_width_steps_up_by_sqrt_2_and_a_current_file_does_not() {
-    // A v74 width was the setback at the edge's level; on the 90-degree
-    // edge it was measured on, the chord is sqrt(2) times that.
-    let (world, _h) = brick_world(deburr(1.0));
-    let saved = project::save_text(&world).expect("save");
-    let now = format!("\"version\": {}", project::PROJECT_VERSION);
-    assert!(saved.contains(&now) && saved.contains("\"width\": 1.0"), "{saved}");
-    let old = saved.replace(&now, "\"version\": 74");
-    let back = new_world();
-    project::open(&back, &old).expect("a v74 file opens");
-    let w = width_of(&back);
-    assert!((w - std::f64::consts::SQRT_2).abs() < 1e-12, "a v74 width of 1 is the chord sqrt(2), got {w}");
-    // A file at the current version states the chord already.
+fn main_v75_deburr_migrates_once_and_preserves_the_machine_controller() {
+    let (world, mut h) = brick_world(deburr(1.0));
+    h.execute(
+        &world,
+        LoadMachine::builtin(&world, "Fehlmann Picomax 55 (iTNC 530)").expect("machine"),
+    );
+    let saved: Value =
+        serde_json::from_str(&project::save_text(&world).expect("save")).expect("JSON");
+    assert_eq!(
+        saved["version"], 76,
+        "v75 readers must refuse the new width meaning"
+    );
+    let machine = &saved["machine"]["machine"];
+    assert_eq!(
+        machine["controller_identity"],
+        json!({"model":"iTNC 530","nc_software":"340490-03"})
+    );
+    assert_eq!(machine["tool_change"], "manual-retract-top");
+    for version in [74, 75] {
+        let mut old = saved.clone();
+        old["version"] = json!(version);
+        // Main's v75 writer has the old width and no sizing keys.
+        let mut removed = false;
+        for entity in old["entities"].as_array_mut().expect("entities") {
+            if let Some(params) = entity
+                .pointer_mut("/operation/params/deburr")
+                .and_then(Value::as_object_mut)
+            {
+                removed = true;
+                for key in ["break_mode", "break_depth", "break_profile", "passes"] {
+                    params.remove(key);
+                }
+            }
+        }
+        assert!(
+            removed,
+            "the legacy fixture must remove the new sizing keys"
+        );
+        let back = new_world();
+        project::open(&back, &old.to_string()).expect("a main-written file opens");
+        assert!(
+            (width_of(&back) - std::f64::consts::SQRT_2).abs() < 1e-12,
+            "v{version} width must migrate"
+        );
+        let resaved: Value =
+            serde_json::from_str(&project::save_text(&back).expect("resave")).expect("JSON");
+        assert_eq!(
+            &resaved["machine"]["machine"], machine,
+            "migration preserves the controller"
+        );
+        let again = new_world();
+        project::open(&again, &resaved.to_string()).expect("v76 reopens");
+        assert_eq!(
+            width_of(&again),
+            width_of(&back),
+            "migration runs only once"
+        );
+    }
     let same = new_world();
-    project::open(&same, &saved).expect("a current file opens");
-    assert_eq!(width_of(&same), 1.0, "a current file is not stepped up twice");
+    project::open(&same, &saved.to_string()).expect("a current file opens");
+    assert_eq!(
+        width_of(&same),
+        1.0,
+        "a current file already states the chord"
+    );
 }
 
 #[test]
