@@ -742,6 +742,7 @@ fn seed_contour(c: &Carried) -> OpParams {
         // posted; staying down is the user's pick on Lead in / Lead out.
         links: crate::links::Links::PLANAR,
         tilt: c.tilt,
+        chain_overrides: Vec::new(),
     }
 }
 
