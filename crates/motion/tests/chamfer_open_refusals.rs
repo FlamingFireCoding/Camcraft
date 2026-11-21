@@ -1,5 +1,7 @@
 //! Refusal doors for open chamfer runs (M2.4 B / #3086).
 //!
+//! Gate map: covers camcraft_motion::machining2d (chamfer, open-run refusals).
+//!
 //! Pinning tests for open 2D chamfer refusal conditions:
 //! 1. A chain that collapses to one point (e.g. single vertex) refuses by name
 //!    without mentioning "centerline".
