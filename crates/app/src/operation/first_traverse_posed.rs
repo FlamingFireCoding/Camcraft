@@ -89,10 +89,14 @@ pub(super) fn turn_of(params: &OpParams, mill: bool, rotaries: Option<&[AxisLimi
 /// #3084: whether the posed law reads this operation on its setup's
 /// machine (a refusal counts: the law reads it too). Its op stamp then
 /// takes one more word, so a cache judged without the law reads Stale
-/// once; no other stamp moves. A lathe tool is no milling tool, but the
-/// stamp does not know the tool: it reads a milling one, as #3083's does.
+/// once; no other stamp moves. The stamp knows neither the tool nor the
+/// path, and a mill-turn posts an unstamped rotary kind in the mill order
+/// too (#3096, `rotary_traverse::mill_post_rotary`). So it reads each mill
+/// and mill-turn setup as the mill order: a word too many only reads a
+/// cache Stale once, a word too few would keep an unjudged cache fresh.
 pub(super) fn newly_judged(world: &flecs_ecs::prelude::World, setup: Option<&str>, params: &OpParams) -> bool {
-    let mill = super::first_traverse::mill_order(crate::machine::kind_of_setup(world, setup), false, params);
+    use crate::machine::Kind;
+    let mill = matches!(crate::machine::kind_of_setup(world, setup), Kind::Mill | Kind::MillTurn);
     let rotaries: Vec<AxisLimits> = crate::machine::of_setup(world, setup).1.map(|m| m.axes).unwrap_or_default();
     !matches!(turn_of(params, mill, Some(&rotaries), [0.0; 3]), Ok(None))
 }
