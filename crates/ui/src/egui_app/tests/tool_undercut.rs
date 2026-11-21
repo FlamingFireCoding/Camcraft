@@ -119,6 +119,11 @@ fn dovetail_properties_and_editor_edit_flank_angle_without_corner_radius() {
     // parameters show the dovetail's flank angle too.
     crate::actions::open_tool_shape_editor(&mut h.state_mut().state, "DT-20-60");
     h.run_steps(3);
+    // The cutter parameters stand on the Profile tab's drawn cutter.
+    h.get_by_label("Profile").click();
+    h.run_steps(2);
+    h.get_by_label("Draw cutter").click();
+    h.run_steps(3);
     assert!(h.query_by_label("flank angle °").is_some(), "shape window shows the flank angle");
 }
 
