@@ -70,6 +70,8 @@ mod sinker_tools;
 mod units_tools;
 // #1538: Fit to Models over the parts, never the fixtures.
 mod stock_fit_tools;
+// #2576: set_stock, upright or turned.
+mod stock_tools;
 mod tool_number_tools;
 mod wcs_tools;
 // #1720: a setup's WCS flipped axes.
@@ -81,6 +83,8 @@ mod vouch_tools;
 mod rotary_tools;
 mod thread_infeed_tools;
 mod workholding_tools;
+// #3070: the guided sheet job.
+mod sheet_job_tools;
 
 // #183: the same tool table served live from inside the GUI, over a
 // loopback socket, against the app's own document and History.

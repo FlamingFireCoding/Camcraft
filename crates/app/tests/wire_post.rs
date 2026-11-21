@@ -276,6 +276,12 @@ fn a_mill_machine_and_a_cutting_post_are_refused_by_name() {
     let w = warnings(cps(WIRE), &mill, &stream);
     assert!(w.iter().any(|m| m.contains("is not declared kind wire_edm")), "{w:?}");
     for (n, s) in camcraft_app::posting::shipped_posts().expect("the shipped posts read").iter().filter(|(n, _)| !WIRE_POSTS.contains(n)) {
+        if *n == "Heidenhain Klartext" {
+            let machine = post::machine::mirror(&parse_mch(FIXTURE).expect("wire machine"));
+            let why = post::engine::run(s, &machine, &stream).expect_err("a Klartext controller is required");
+            assert!(why.to_string().contains("controller profile"), "{why}");
+            continue;
+        }
         let w = warnings(s, FIXTURE, &stream);
         assert!(w.iter().any(|m| m.contains("Punch1") && m.contains("does not declare wireEdm")), "{n}: {w:?}");
     }

@@ -141,6 +141,7 @@ impl CreateSetup {
                 post_properties: None,
                 nose_to_axis: None,
                 workholding_max_rpm: None,
+                sheet_job: None,
             }
         } else {
             SetupDef {
@@ -173,6 +174,9 @@ impl CreateSetup {
                 // #1031: the same clamping system keeps its chuck's rating -
                 // dropping a limit would silently lift a safety ceiling.
                 workholding_max_rpm: datum_from.and_then(|f| setup::def_of(world, f)).and_then(|d| d.workholding_max_rpm),
+                // #3070: a new setup holds other stock - the sheet job's
+                // numbers do not describe it.
+                sheet_job: None,
             }
         };
         let mut stock = None;
