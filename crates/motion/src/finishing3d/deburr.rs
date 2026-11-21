@@ -20,10 +20,10 @@
 //!   breaks a convex edge lies OVER it, and the corner's material -
 //!   the only material there is - lies under.
 //! - **The size (#1890).** `width` is the chamfer's chord `w`; the
-//!   setback on each edge follows from its wedge angle `theta`
-//!   (`deburr_size`): `s = w / (2 sin(theta / 2))`, or `d / cos(theta
-//!   / 2)` under Constant Depth. A rim has one face and is sized as a
-//!   90-degree edge. Runs chain only edges of one setback, so each
+//!   tip drop comes from the actual cone contacts on both faces
+//!   (`deburr_contact`). Constant Depth holds the perpendicular
+//!   edge-to-chord distance. A rim assumes a vertical second face.
+//!   Runs chain only edges of one drop, so each
 //!   run keeps one depth and one declared break.
 //! - **The loci are pencil's mirror.** An exposed edge is either a
 //!   rim (a facet edge of an open mesh - one face, nothing beside
@@ -58,6 +58,7 @@ use crate::geometry::{Point3, Triangle};
 use crate::machining2d::GenError;
 
 use super::crease::{chain, cmp_pt, scale3, sub3, third, vkey, vkey_scale, Seg};
+use super::deburr_contact::contact_drop;
 use super::deburr_filter::{DeburrEdges, EdgeFilter};
 use super::deburr_size::{clip, emit_runs, steep, BreakProfile, DeburrBreak, MAX_PASSES, RIM_WEDGE_DEG};
 
@@ -249,15 +250,16 @@ pub fn deburr_edges(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'
         let list = &edges[&(lo, hi)];
         let (e0, e1) = (verts[lo], verts[hi]);
         if list.len() == 1 {
-            // A rim: an open mesh's own edge. Nothing tilts here, so
-            // nothing but the window can refuse it.
-            if filter.keeps(e0, e1, None)
-                && let Some((q0, q1)) = clip(e0, e1, p, drop)
-            {
-                if steep(q0, q1, slope) {
-                    steeps += 1;
-                } else {
-                    segs.push((drop, seg(q0, q1, s)));
+            if !filter.keeps(e0, e1, None) || e0.z.max(e1.z) < p.bottom_z {
+                continue;
+            }
+            if steep(e0, e1, slope) {
+                steeps += usize::from(clip(e0, e1, p, drop).is_some());
+            } else {
+                let face = third(facets[list[0].0], e0, e1);
+                let dr = contact_drop(e0, e1, face, None, p)?;
+                if let Some((q0, q1)) = clip(e0, e1, p, dr) {
+                    segs.push((dr, seg(q0, q1, s)));
                 }
             }
             continue;
@@ -305,10 +307,14 @@ pub fn deburr_edges(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'
             out_of_size += 1;
             continue;
         };
-        if let Some((q0, q1)) = clip(e0, e1, p, dr) {
-            if steep(q0, q1, slope) {
-                steeps += 1;
-            } else {
+        if e0.z.max(e1.z) < p.bottom_z {
+            continue;
+        }
+        if steep(e0, e1, slope) {
+            steeps += usize::from(clip(e0, e1, p, dr).is_some());
+        } else {
+            let dr = contact_drop(e0, e1, qa, Some(qb), p)?;
+            if let Some((q0, q1)) = clip(e0, e1, p, dr) {
                 segs.push((dr, seg(q0, q1, s)));
             }
         }
@@ -361,7 +367,7 @@ pub fn deburr_edges(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'
             "deburr: {out_of_size} edges have a wedge angle outside the break size's range and were skipped - Constant Width sizes wedges from 30 deg, Constant Depth up to 150 deg"
         ));
     }
-    emit_runs(&mut b, &runs, p);
+    emit_runs(&mut b, &runs, p)?;
     let mut path = b.finish();
     if !path.all_finite() {
         return Err(GenError::Invalid("deburr path left the finite horizon".into()));

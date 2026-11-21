@@ -541,14 +541,16 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // rather than discard protected selections as unknown area fields.
         // v73 -> v74 (#1864): sketch chain/layer picks and per-chain contour
         // overrides arrive; a v73 file has none and steps up unchanged.
-        // v74 -> v75 (#1890): a Deburr width becomes the chamfer chord; the
-        // v74 setback steps up by sqrt(2), its chord on a 90-degree edge.
+        // v74 -> v75 (#3181): a machine's controller identity and tool-change
+        // procedure are optional. An older machine keeps both unstated.
+        // v75 -> v76 (#1890): a Deburr width becomes the chamfer chord; the
+        // old setback steps up by sqrt(2), its chord on a 90-degree edge.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
             super::params_impl::settle_drill_break_through(&mut file.entities);
         }
-        if from < 75 {
+        if from < 76 {
             super::deburr_break_dto::settle_chord_width(&mut file.entities);
         }
         notes.extend(super::pocket_adaptive_migrate::settle(&mut file.entities, from));
@@ -945,6 +947,10 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                 if let Some(why) = sdto.workholding_max_rpm.and_then(crate::setup_workholding::invalid) {
                     return Err(corrupt(format!("setup '{}': {why}", dto.name)));
                 }
+                // #3070: likewise a sheet job no command would accept.
+                if let Some(why) = sdto.sheet_job.as_ref().and_then(crate::sheet_job::invalid) {
+                    return Err(corrupt(format!("setup '{}': {why}", dto.name)));
+                }
                 entity.entity_view(world).set(SetupDef {
                     stock: sdto.stock,
                     // `wcs_one` left exactly one name on every setup.
@@ -966,6 +972,7 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     // #821: absent in every earlier file - states none.
                     nose_to_axis: sdto.nose_to_axis,
                     workholding_max_rpm: sdto.workholding_max_rpm,
+                    sheet_job: sdto.sheet_job,
                 });
             }
         }

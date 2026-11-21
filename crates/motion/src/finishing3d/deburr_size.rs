@@ -8,6 +8,7 @@
 //! vendor material consulted.
 
 use crate::cl::{MoveKind, PathBuilder};
+use crate::machining2d::GenError;
 use crate::geometry::Point3;
 
 use super::crease::{add3, scale3, sub3};
@@ -118,7 +119,18 @@ impl DeburrBreak {
 /// pass, outer to final: pass `k` of `n` stands the tip `drop * k / n`
 /// under the edge, so each pass lies above the final break and inside
 /// the `EdgeBreak` that the run declares.
-pub(super) fn emit_runs(b: &mut PathBuilder, runs: &[(Vec<Point3>, f64)], p: &DeburrParams) {
+pub(super) fn emit_runs(b: &mut PathBuilder, runs: &[(Vec<Point3>, f64)], p: &DeburrParams) -> Result<(), GenError> {
+    // Validate every pass before emitting any travel. Final-drop clipping
+    // alone does not keep the earlier, shallower passes below the ceiling.
+    for (run, drop) in runs {
+        for dk in p.sizing.pass_setbacks(*drop) {
+            if run.iter().any(|q| q.z - dk < p.bottom_z - 1e-9 || q.z - dk > p.top_z + 1e-9) {
+                return Err(GenError::Invalid(
+                    "deburr: a pass leaves the tip window - widen Window Top Z and Window Bottom Z or use fewer passes".into(),
+                ));
+            }
+        }
+    }
     for (run, drop) in runs {
         let Some(&first) = run.first() else { continue };
         for dk in p.sizing.pass_setbacks(*drop) {
@@ -136,6 +148,7 @@ pub(super) fn emit_runs(b: &mut PathBuilder, runs: &[(Vec<Point3>, f64)], p: &De
         }
     }
     retract(b, p.clearance_z);
+    Ok(())
 }
 
 /// A vertical rapid from where the path stands up to the clearance

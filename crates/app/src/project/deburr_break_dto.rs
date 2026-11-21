@@ -1,5 +1,5 @@
 //! The project-file words of the Deburr break sizing (#1890), and the
-//! v75 step that turns each older 3D Deburr `width` into a chord.
+//! v76 step that turns each older 3D Deburr `width` into a chord.
 //!
 //! Provenance: our own file mirror of `finishing3d::DeburrBreak` (the
 //! project file is this module's concern); the sqrt(2) factor is the
@@ -11,7 +11,7 @@ use super::entity::EntityDto;
 use super::params::ParamsDto;
 use crate::finishing3d::{BreakMode, BreakProfile, DeburrBreak};
 
-/// `constant_width` (the default, and each file before v75) or
+/// `constant_width` (the default, and each file before v76) or
 /// `constant_depth`. Another word is refused at load.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -21,7 +21,7 @@ pub enum BreakModeDto {
     ConstantDepth,
 }
 
-/// `chamfer` (the default, and each file before v75) or `round`.
+/// `chamfer` (the default, and each file before v76) or `round`.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BreakProfileDto {
@@ -36,7 +36,7 @@ pub fn default_break_depth() -> f64 {
     DeburrBreak::default().depth
 }
 
-/// The absent `passes` key: one pass, as each file before v75 cut.
+/// The absent `passes` key: one pass, as each file before v76 cut.
 #[must_use]
 pub fn default_passes() -> u32 {
     DeburrBreak::default().passes
@@ -73,7 +73,7 @@ pub fn break_of(mode: BreakModeDto, depth: f64, profile: BreakProfileDto, passes
     }
 }
 
-/// v74 -> v75 (#1890): a 3D Deburr `width` was the cone's setback at the
+/// v75 -> v76 (#1890): a 3D Deburr `width` was the cone's setback at the
 /// edge's level; it is now the chamfer chord. On the 90-degree edge each
 /// earlier width was measured on, the chord is `sqrt(2)` times the
 /// setback, so the step multiplies it and the cut depth stays the same.

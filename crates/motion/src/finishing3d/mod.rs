@@ -88,6 +88,7 @@ mod crease;
 mod deburr;
 mod deburr_filter;
 mod deburr_size;
+mod deburr_contact;
 mod drape;
 mod edge;
 mod fill;

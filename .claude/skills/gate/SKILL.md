@@ -227,6 +227,12 @@ those compilations cache hits.
   of unit directories that the run added: a second run on the same tree
   adds none. For a plain `cargo test` in a shared build worktree, use the
   same env.
+- At the end of each run (not `--dry-run`), the gate removes superseded
+  test-harness units (#3169). A unit goes only when this run wrote a newer
+  variant of the same test target. Libraries and binaries stay. The sweep
+  does nothing while a cargo lock is held or another process uses the
+  tree's `target/`. The summary gives the directories and GB removed.
+  `CAMCRAFT_GATE_SWEEP=off` turns the sweep off.
 
 ## Local batch gate when the post-merge runner is down
 
