@@ -166,7 +166,7 @@ pub(super) fn stamp(
     world: &World,
     setup: Option<&str>,
     name: &str,
-    data: &SketchData,
+    sketch: &crate::schema::Sketch,
     h: &mut impl std::hash::Hasher,
 ) {
     use std::hash::Hash;
@@ -177,32 +177,11 @@ pub(super) fn stamp(
         .and_then(|e| model::transform_of(world, &e))
         .unwrap_or_default();
     wcs.rot.map(f64::to_bits).hash(h);
+    sketch.setup.hash(h);
+    let data = &sketch.data;
     data.skipped_total().hash(h);
-    data.primitives().len().hash(h);
-    for item in data.primitives() {
-        item.layer.hash(h);
-        match item.primitive {
-            Primitive::Line { start, end } => {
-                h.write_u8(0);
-                [start.x, start.y, end.x, end.y].map(f64::to_bits).hash(h);
-            }
-            Primitive::Arc {
-                center,
-                radius,
-                start_angle,
-                sweep_angle,
-            } => {
-                h.write_u8(1);
-                [center.x, center.y, radius, start_angle, sweep_angle]
-                    .map(f64::to_bits)
-                    .hash(h);
-            }
-            Primitive::Circle { center, radius } => {
-                h.write_u8(2);
-                [center.x, center.y, radius].map(f64::to_bits).hash(h);
-            }
-        }
-    }
+    data.join_tolerance().to_bits().hash(h);
+    h.write_u64(data.primitive_signature());
 }
 
 impl SelectedWireChain {
