@@ -44,6 +44,18 @@ fn hidden(node: &Node) -> bool {
     style_none || node.attr("display").is_some_and(|d| d.trim() == "none")
 }
 
+/// Recognize unsupported effects in presentation attributes and inline declarations.
+fn has_property(node: &Node, name: &str) -> bool {
+    node.attr(name).is_some()
+        || node.attr("style").is_some_and(|style| {
+            style.split(';').any(|declaration| {
+                declaration
+                    .split_once(':')
+                    .is_some_and(|(property, _)| property.trim().eq_ignore_ascii_case(name))
+            })
+        })
+}
+
 impl<'a> Walk<'a> {
     fn note(&mut self, kind: &str) -> Result<(), SvgError> {
         self.count()?;
@@ -73,7 +85,7 @@ impl<'a> Walk<'a> {
                 return self.note("hidden");
             }
             for attr in ["clip-path", "mask"] {
-                if root.attr(attr).is_some() {
+                if has_property(root, attr) {
                     self.note(attr)?;
                 }
             }
@@ -116,7 +128,7 @@ impl<'a> Walk<'a> {
             None => parent,
         };
         for attr in ["clip-path", "mask"] {
-            if node.attr(attr).is_some() {
+            if has_property(node, attr) {
                 self.note(attr)?;
             }
         }

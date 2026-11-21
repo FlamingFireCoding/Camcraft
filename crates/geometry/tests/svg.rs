@@ -214,6 +214,62 @@ fn svg_root_clipping_and_masking_are_reported_as_unsupported() {
     }
 }
 
+fn assert_inline_effects_are_reported(element: &str) {
+    for property in ["clip-path", "mask"] {
+        for style in [
+            format!("{property}:url(#c)"),
+            format!(
+                "fill: black; {} : url(#c) !important; stroke: none",
+                property.to_ascii_uppercase()
+            ),
+        ] {
+            let effect = format!(r#"style="{style}""#);
+            let rect = r#"<rect width="20" height="20"/>"#;
+            let (root_effect, content) = match element {
+                "svg" => (effect, rect.to_owned()),
+                "g" => (String::new(), format!("<g {effect}>{rect}</g>")),
+                "rect" => (
+                    String::new(),
+                    format!(r#"<rect width="20" height="20" {effect}/>"#),
+                ),
+                _ => unreachable!(),
+            };
+            let text = format!(
+                r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" {root_effect}>{content}</svg>"#
+            );
+            let doc = svg::parse(text.as_bytes(), None).expect("unsupported inline effect reads");
+            assert_eq!(doc.primitives.len(), 4, "{element}: {style}");
+            assert_eq!(
+                doc.summary.skipped.get(property),
+                Some(&1),
+                "{element}: {style}: {:?}",
+                doc.summary.skipped
+            );
+            assert_eq!(
+                doc.summary.skipped.len(),
+                1,
+                "{element}: {style}: {:?}",
+                doc.summary.skipped
+            );
+        }
+    }
+}
+
+#[test]
+fn svg_root_inline_clipping_and_masking_are_reported_as_unsupported() {
+    assert_inline_effects_are_reported("svg");
+}
+
+#[test]
+fn svg_group_inline_clipping_and_masking_are_reported_as_unsupported() {
+    assert_inline_effects_are_reported("g");
+}
+
+#[test]
+fn svg_shape_inline_clipping_and_masking_are_reported_as_unsupported() {
+    assert_inline_effects_are_reported("rect");
+}
+
 #[test]
 fn svg_bunched_curve_vertices_merge_so_no_piece_is_shorter_than_the_join_tolerance() {
     // A cubic with both control points on its start runs as x = 10 t^3: evenly spaced t gives
