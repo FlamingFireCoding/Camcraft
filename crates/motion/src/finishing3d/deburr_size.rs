@@ -151,14 +151,13 @@ pub(super) fn emit_runs(b: &mut PathBuilder, runs: &[(Vec<Point3>, f64)], p: &De
     Ok(())
 }
 
-/// A vertical rapid from where the path stands up to the clearance
-/// plane, or nothing when it is already there (the path's start).
-/// Vertical because the cone ends a run touching the edge it broke:
-/// straight up is the one direction that leaves the break without
-/// crossing more of the part.
+/// Leave the cut vertically to the clearance plane before any traverse.
+/// The window admits a numerical skin: normalize even an ulp above the
+/// plane vertically, so the following XY rapid never descends across the
+/// part. Meaningful overshoot is refused before emission.
 fn retract(b: &mut PathBuilder, clearance_z: f64) {
     let cur = b.at();
-    if cur.z < clearance_z {
+    if cur.z != clearance_z {
         b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, clearance_z), None);
     }
 }
