@@ -94,10 +94,8 @@ fn dovetail_properties_and_editor_edit_flank_angle_without_corner_radius() {
     assert!(h.query_by_label("Flank angle (deg)").is_some(), "Properties shows Flank angle (deg)");
     assert!(h.query_by_label("Corner radius").is_none(), "Properties hides Corner radius for dovetail");
 
-    crate::actions::open_tool_editor(&mut h.state_mut().state, "DT-20-60");
-    h.run_steps(3);
-    assert!(h.query_by_label("Flank angle (deg)").is_some(), "editor window shows Flank angle (deg)");
-    assert!(h.query_by_label("Corner radius").is_none(), "editor window hides Corner radius for dovetail");
+    // #2397: the settings stay in Properties (the shape window holds the
+    // body, profile and holder), so the flank angle is edited there.
 
     let angle_drag = h
         .query_all_by_role(Role::SpinButton)
