@@ -326,6 +326,10 @@ pub struct SetupDto {
     /// additive (no version step). Absent - every older file - states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workholding_max_rpm: Option<f64>,
+    /// #3070: the guided sheet job's answers, additive (no version
+    /// step). Absent - every older file - states none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet_job: Option<crate::sheet_job::SheetJob>,
 }
 
 /// A setup's WCS as files hold it. v54 (#342) writes one entity name
