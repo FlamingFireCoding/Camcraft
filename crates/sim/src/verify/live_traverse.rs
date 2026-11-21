@@ -1,52 +1,61 @@
 //! #3077: the first traverse of a live-tool cross drill on a lathe or a mill-turn, from the turret's index position at the top of the X and Z travel, must pass outside the work and the steel - our own reading of the RS-274 / ISO 6983 lathe rapid (G00: each axis at its own rate, so the path stays in the box of its two ends) and of the shop rule "never traverse through uncut stock or steel"; no vendor material consulted.
 //!
 //! The lathe post positions C first (with the tool at the index
-//! position), then sends X and Z in one G00 to the start: the tip at
-//! radius `r` about the spindle, at height `z`. Each axis runs at its
+//! position), then sends X and Z in one G00 to the first point: the tip
+//! at radius `r` about the spindle, at height `z`. Each axis runs at its
 //! own rate, so the tip can pass any point of the box between the index
-//! position (X and Z at the top of their travel) and the start: every
-//! radius from `r` out, at every height from `z` up, in the station's
-//! half-plane. The tool body stands outward from the tip, `tool_radius`
-//! wide on each side, so the swept solid is the slab of the part frame
-//! `u >= r`, `|v| <= tool_radius`, `z >= z - tool_radius` (`u` the
-//! start's radial direction, `v` across it).
+//! position (X and Z at the top of their travel) and the first point:
+//! every radius from `r` out, at every height from `z` up, in the
+//! station's half-plane. The tool lies along the station's radius, its
+//! tip inward: at a distance `s` behind the tip its body is the band of
+//! the tool stack there (flute, shank, holder; `ToolGeom`). Over every
+//! tip position the swept solid is, in the part frame (`u` the first
+//! point's radial direction, `v` across it, `s = u - r`):
+//! `u >= r`, `|v| <= W(s)`, `z >= z - W(s)`, with `W(s)` the widest band
+//! of the stack within `s` of the tip. Past the stack's end the widest
+//! band runs on (the turret is not modelled; reading it wide is stricter).
 //!
 //! C stands at its angle before X and Z move, so the work and the steel
 //! that turns with it (a chuck) stand in the part frame as modelled: the
-//! slab is read against them exactly (each facet clipped by the slab's
-//! four planes). The fixed steel (a tailstock, a table) stands in the
+//! swept solid is read against them exactly (each facet clipped by each
+//! band's planes). The fixed steel (a tailstock, a table) stands in the
 //! machine frame at an angle the part frame does not state: it is read
-//! revolved about the spindle, its largest radius at the band's heights.
+//! revolved about the spindle. A face that only touches the swept solid
+//! (within `tol`) passes, as in the other traverse laws; the work's
+//! model excess (a coarse model, #842) grows the swept solid.
 //! NOT covered: a program that starts with the turret low near the work
 //! (after a manual jog, for example) - decision #3077.
 
 use crate::fixture::FixtureBox;
 use crate::geometry::{Point3, Triangle};
+use crate::tools::ToolGeom;
 
-/// The start of a live-tool cross drill as the law reads it: the tip
-/// `start` in the part frame, the spindle line through `spindle` (X, Y)
-/// along Z, and the radius of the tool.
+/// The first point of a live-tool cross drill as the law reads it: the
+/// tip `start` in the part frame, the spindle line through `spindle`
+/// (X, Y) along Z, and the tool stack (`ToolGeom`: flute, shank, holder).
 #[derive(Clone, Copy, Debug)]
 pub struct LiveStart {
     pub start: Point3,
     pub spindle: [f64; 2],
-    pub tool_radius: f64,
+    pub tool: ToolGeom,
 }
 
-/// What stands in the way of the first traverse.
+/// What stands in the way of the first traverse. `along_mm` is the
+/// farthest the solid reaches out from the spindle along the station's
+/// line inside the swept solid, `z_mm` the height of that point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LiveHit {
     /// The stock or a part (`index` into the work list, then the work
-    /// boxes) meets the slab; `radius_mm` is its largest radius there.
-    Work { index: usize, radius_mm: f64 },
-    /// Tagged steel: `turning` (a chuck, read in the slab) or fixed (a
+    /// boxes) meets the swept solid.
+    Work { index: usize, along_mm: f64, z_mm: f64 },
+    /// Tagged steel: `turning` (a chuck, read at its angle) or fixed (a
     /// tailstock, a table, read revolved), `index` into its list.
-    Steel { index: usize, turning: bool, radius_mm: f64 },
+    Steel { index: usize, turning: bool, along_mm: f64, z_mm: f64 },
 }
 
-/// The start, the spindle or the tool radius of a live-tool first
-/// traverse is not finite, or the start stands on the spindle line: the
-/// traverse cannot be judged.
+/// The start, the spindle, the tool stack or the tolerances of a
+/// live-tool first traverse are not finite (or negative), or the start
+/// stands on the spindle line: the traverse cannot be judged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LiveUnjudged;
 
@@ -62,21 +71,53 @@ pub struct LiveSolids<'a> {
     pub fixed: &'a [FixtureBox],
 }
 
-/// The slab the first traverse can sweep, in the part frame.
-struct Slab {
+/// One band of the swept solid: `s` from `s0` to `s1` behind the first
+/// point's radius, `w` wide on each side and under the tip's height.
+#[derive(Clone, Copy, Debug)]
+struct Band {
+    s0: f64,
+    s1: f64,
+    w: f64,
+}
+
+/// The swept solid in the part frame: the union of its bands.
+struct Swept {
     o: [f64; 2],
     u: [f64; 2],
     r: f64,
-    w: f64,
-    z_lo: f64,
+    z: f64,
+    bands: Vec<Band>,
+    /// Added to every band's width and taken off the first band's inner
+    /// radius: the work's excess less the touch tolerance.
+    grow: f64,
 }
 
-impl Slab {
-    /// `None` when the start cannot be read: the caller refuses by name.
-    fn of(s: &LiveStart, tol: f64) -> Option<Slab> {
-        let LiveStart { start, spindle, tool_radius } = *s;
-        let finite = [start.x, start.y, start.z, spindle[0], spindle[1], tool_radius, tol].iter().all(|v| v.is_finite());
-        if !finite || tool_radius < 0.0 {
+/// The widest-so-far bands of the tool stack from the tip; `None` when a
+/// field cannot be read.
+fn bands_of(g: &ToolGeom) -> Option<Vec<Band>> {
+    let stack = [(g.flute_len, g.radius), (g.shank_len, g.shank_radius), (g.holder_len, g.holder_radius)];
+    if stack.iter().any(|(l, w)| !(l.is_finite() && w.is_finite()) || *l < 0.0 || *w < 0.0) {
+        return None;
+    }
+    let (mut s, mut w, mut out) = (0.0_f64, 0.0_f64, Vec::new());
+    for (len, half) in stack {
+        if len <= 0.0 {
+            continue;
+        }
+        w = w.max(half);
+        out.push(Band { s0: s, s1: s + len, w });
+        s += len;
+    }
+    // Past the stack: the widest band runs on (the turret is unmodelled).
+    out.push(Band { s0: s, s1: f64::INFINITY, w: w.max(g.radius) });
+    Some(out)
+}
+
+impl Swept {
+    fn of(s: &LiveStart, tol: f64, excess: f64) -> Option<Swept> {
+        let LiveStart { start, spindle, tool } = *s;
+        let finite = [start.x, start.y, start.z, spindle[0], spindle[1], tol, excess].iter().all(|v| v.is_finite());
+        if !finite || tol < 0.0 || excess < 0.0 {
             return None;
         }
         let (dx, dy) = (start.x - spindle[0], start.y - spindle[1]);
@@ -84,85 +125,105 @@ impl Slab {
         if r <= 1e-9 {
             return None;
         }
-        Some(Slab { o: spindle, u: [dx / r, dy / r], r: r - tol.max(0.0), w: tool_radius, z_lo: start.z - tool_radius })
+        let bands = bands_of(&tool)?;
+        Some(Swept { o: spindle, u: [dx / r, dy / r], r, z: start.z, bands, grow: excess - tol })
     }
 
-    fn radius(&self, p: Point3) -> f64 {
-        (p.x - self.o[0]).hypot(p.y - self.o[1])
-    }
-
-    /// The four half-spaces of the slab, each as `plane(k, p) >= 0`:
-    /// along the station's radius, its two sides, and the band's floor.
-    fn plane(&self, k: usize, p: Point3) -> f64 {
+    /// `(along, across)` of `p` about the spindle line.
+    fn frame(&self, p: Point3) -> (f64, f64) {
         let (dx, dy) = (p.x - self.o[0], p.y - self.o[1]);
-        let across = -dx * self.u[1] + dy * self.u[0];
+        (dx * self.u[0] + dy * self.u[1], -dx * self.u[1] + dy * self.u[0])
+    }
+
+    /// The half-spaces of band `b`, each as `plane(k, p) >= 0`.
+    fn plane(&self, b: &Band, first: bool, k: usize, p: Point3) -> f64 {
+        let (along, across) = self.frame(p);
+        let w = b.w + self.grow;
         match k {
-            0 => dx * self.u[0] + dy * self.u[1] - self.r,
-            1 => self.w - across,
-            2 => self.w + across,
-            _ => p.z - self.z_lo,
+            0 => along - (self.r + b.s0 - if first { self.grow } else { 0.0 }),
+            1 => self.r + b.s1 - along,
+            2 => w - across,
+            3 => w + across,
+            _ => p.z - (self.z - w),
         }
     }
 
-    /// The largest radius of the part of `t` inside the slab, or `None`
-    /// when no part of it is there (each plane clips the polygon in turn).
-    fn meets(&self, t: &Triangle) -> Option<f64> {
+    /// The farthest-out point (along, z) of the part of `t` inside the
+    /// swept solid, or `None` when no part of it is there.
+    fn meets(&self, t: &Triangle) -> Option<(f64, f64)> {
         let pts = [t.a, t.b, t.c];
         if pts.iter().any(|p| !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite())) {
             // A facet the law cannot read is never passed.
-            return Some(f64::INFINITY);
+            return Some((f64::INFINITY, f64::NAN));
         }
-        let mut poly: Vec<Point3> = pts.to_vec();
-        for k in 0..4 {
-            let mut out = Vec::with_capacity(poly.len() + 1);
-            for i in 0..poly.len() {
-                let (p, q) = (poly[i], poly[(i + 1) % poly.len()]);
-                let (fp, fq) = (self.plane(k, p), self.plane(k, q));
-                if fp >= 0.0 {
-                    out.push(p);
-                }
-                if (fp >= 0.0) != (fq >= 0.0) {
-                    let s = (fp / (fp - fq)).clamp(0.0, 1.0);
-                    out.push(Point3::new(p.x + s * (q.x - p.x), p.y + s * (q.y - p.y), p.z + s * (q.z - p.z)));
+        let mut best: Option<(f64, f64)> = None;
+        for (i, b) in self.bands.iter().enumerate() {
+            let planes = if b.s1.is_finite() { 5 } else { 4 };
+            let mut poly: Vec<Point3> = pts.to_vec();
+            for k in (0..5).filter(|&k| k != 1 || planes == 5) {
+                poly = clip(&poly, |p| self.plane(b, i == 0, k, p));
+                if poly.is_empty() {
+                    break;
                 }
             }
-            poly = out;
-            if poly.is_empty() {
-                return None;
+            for p in &poly {
+                let along = self.frame(*p).0;
+                if best.is_none_or(|(a, _)| along > a) {
+                    best = Some((along, p.z));
+                }
             }
         }
-        poly.iter().map(|p| self.radius(*p)).reduce(f64::max)
+        best
     }
 
-    /// The largest radius where `facets` meet the slab.
-    fn meets_all(&self, facets: &[Triangle]) -> Option<f64> {
-        facets.iter().filter_map(|t| self.meets(t)).reduce(f64::max)
+    fn meets_all(&self, facets: &[Triangle]) -> Option<(f64, f64)> {
+        facets.iter().filter_map(|t| self.meets(t)).reduce(|a, b| if b.0 > a.0 { b } else { a })
     }
 
-    /// A box read revolved: its largest radius (its four X/Y corners)
-    /// when its top reaches the band's heights, and when that radius
-    /// reaches the start's.
-    fn reaches_revolved(&self, b: &FixtureBox) -> Option<f64> {
+    /// A box read revolved about the spindle: it meets a band when its
+    /// radii (nearest and farthest X/Y point) overlap the band's and its
+    /// top reaches the band's floor.
+    fn reaches_revolved(&self, b: &FixtureBox) -> Option<(f64, f64)> {
         if !box_finite(b) {
-            return Some(f64::INFINITY);
+            return Some((f64::INFINITY, f64::NAN));
         }
-        if b.max.z < self.z_lo {
-            return None;
+        let corners = [b.min.x, b.max.x].map(|x| [b.min.y, b.max.y].map(|y| (x - self.o[0]).hypot(y - self.o[1])));
+        let outer = corners.iter().flatten().fold(f64::NEG_INFINITY, |a, &c| a.max(c));
+        let near = |lo: f64, hi: f64, c: f64| c.clamp(lo, hi) - c;
+        let inner = near(b.min.x, b.max.x, self.o[0]).hypot(near(b.min.y, b.max.y, self.o[1]));
+        for (i, band) in self.bands.iter().enumerate() {
+            let lo = self.r + band.s0 - if i == 0 { self.grow } else { 0.0 };
+            let floor = self.z - (band.w + self.grow);
+            if outer > lo && inner < self.r + band.s1 && b.max.z > floor {
+                return Some((outer, b.max.z));
+            }
         }
-        let reach = [b.min.x, b.max.x]
-            .iter()
-            .flat_map(|&x| [b.min.y, b.max.y].map(|y| (x - self.o[0]).hypot(y - self.o[1])))
-            .fold(f64::NEG_INFINITY, f64::max);
-        (reach >= self.r).then_some(reach)
+        None
     }
+}
+
+/// One Sutherland-Hodgman step: the part of `poly` where `f >= 0`.
+fn clip(poly: &[Point3], f: impl Fn(Point3) -> f64) -> Vec<Point3> {
+    let mut out = Vec::with_capacity(poly.len() + 1);
+    for i in 0..poly.len() {
+        let (p, q) = (poly[i], poly[(i + 1) % poly.len()]);
+        let (fp, fq) = (f(p), f(q));
+        if fp >= 0.0 {
+            out.push(p);
+        }
+        if (fp >= 0.0) != (fq >= 0.0) {
+            let s = (fp / (fp - fq)).clamp(0.0, 1.0);
+            out.push(Point3::new(p.x + s * (q.x - p.x), p.y + s * (q.y - p.y), p.z + s * (q.z - p.z)));
+        }
+    }
+    out
 }
 
 fn box_finite(b: &FixtureBox) -> bool {
     [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z].iter().all(|v| v.is_finite())
 }
 
-/// The twelve facets of `b`. The slab runs out to infinity, so it meets
-/// a bounded box only through its faces.
+/// The twelve facets of `b`.
 fn box_facets(b: &FixtureBox) -> Vec<Triangle> {
     let c = |i: usize| {
         Point3::new(if i & 1 == 0 { b.min.x } else { b.max.x }, if i & 2 == 0 { b.min.y } else { b.max.y }, if i & 4 == 0 { b.min.z } else { b.max.z })
@@ -172,143 +233,41 @@ fn box_facets(b: &FixtureBox) -> Vec<Triangle> {
 }
 
 /// The live-tool first-traverse law (#3077). `Ok(Some(hit))` names the
-/// first solid in the way: the work or the turning steel that meets the
-/// slab (less `tol` on the start's radius), or the fixed steel that
-/// reaches the start's radius at the band's heights. `Ok(None)` when the
+/// first solid in the way: the work (grown by `excess`) or the turning
+/// steel that meets the swept solid, or the fixed steel that reaches it
+/// read revolved. A face within `tol` of it passes. `Ok(None)` when the
 /// traverse is clear.
 ///
 /// # Errors
 /// [`LiveUnjudged`] when the start cannot be read: the caller refuses by
 /// name.
-pub fn live_first_traverse(s: &LiveStart, solids: &LiveSolids<'_>, tol: f64) -> Result<Option<LiveHit>, LiveUnjudged> {
-    let slab = Slab::of(s, tol).ok_or(LiveUnjudged)?;
+pub fn live_first_traverse(s: &LiveStart, solids: &LiveSolids<'_>, tol: f64, excess: f64) -> Result<Option<LiveHit>, LiveUnjudged> {
+    let work = Swept::of(s, tol, excess).ok_or(LiveUnjudged)?;
+    let steel = Swept::of(s, tol, 0.0).ok_or(LiveUnjudged)?;
     for (index, facets) in solids.work.iter().enumerate() {
-        if let Some(radius_mm) = slab.meets_all(facets) {
-            return Ok(Some(LiveHit::Work { index, radius_mm }));
+        if let Some((along_mm, z_mm)) = work.meets_all(facets) {
+            return Ok(Some(LiveHit::Work { index, along_mm, z_mm }));
         }
     }
-    let boxed = |b: &FixtureBox| if box_finite(b) { slab.meets_all(&box_facets(b)) } else { Some(f64::INFINITY) };
+    let boxed = |sw: &Swept, b: &FixtureBox| if box_finite(b) { sw.meets_all(&box_facets(b)) } else { Some((f64::INFINITY, f64::NAN)) };
     for (i, b) in solids.work_boxes.iter().enumerate() {
-        if let Some(radius_mm) = boxed(b) {
-            return Ok(Some(LiveHit::Work { index: solids.work.len() + i, radius_mm }));
+        if let Some((along_mm, z_mm)) = boxed(&work, b) {
+            return Ok(Some(LiveHit::Work { index: solids.work.len() + i, along_mm, z_mm }));
         }
     }
     for (index, b) in solids.turning.iter().enumerate() {
-        if let Some(radius_mm) = boxed(b) {
-            return Ok(Some(LiveHit::Steel { index, turning: true, radius_mm }));
+        if let Some((along_mm, z_mm)) = boxed(&steel, b) {
+            return Ok(Some(LiveHit::Steel { index, turning: true, along_mm, z_mm }));
         }
     }
     for (index, b) in solids.fixed.iter().enumerate() {
-        if let Some(radius_mm) = slab.reaches_revolved(b) {
-            return Ok(Some(LiveHit::Steel { index, turning: false, radius_mm }));
+        if let Some((along_mm, z_mm)) = steel.reaches_revolved(b) {
+            return Ok(Some(LiveHit::Steel { index, turning: false, along_mm, z_mm }));
         }
     }
     Ok(None)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const TOL: f64 = 1e-6;
-
-    fn b(lo: [f64; 3], hi: [f64; 3]) -> FixtureBox {
-        FixtureBox { min: Point3::new(lo[0], lo[1], lo[2]), max: Point3::new(hi[0], hi[1], hi[2]) }
-    }
-
-    /// A start at radius 15 on +X, Z 10, a 4 mm drill: the slab is X 15
-    /// and out, Y -2..2, Z 8 and up.
-    fn start() -> LiveStart {
-        LiveStart { start: Point3::new(15.0, 0.0, 10.0), spindle: [0.0, 0.0], tool_radius: 2.0 }
-    }
-
-    fn steel(s: &LiveStart, turning: &[FixtureBox], fixed: &[FixtureBox]) -> Result<Option<LiveHit>, LiveUnjudged> {
-        live_first_traverse(s, &LiveSolids { turning, fixed, ..LiveSolids::default() }, TOL)
-    }
-
-    #[test]
-    fn a_tailstock_over_the_hole_is_in_the_way_and_a_chuck_under_it_is_not() {
-        let chuck = b([-40.0, -40.0, -110.0], [40.0, 40.0, -80.0]);
-        let tail = b([-30.0, -30.0, 25.0], [30.0, 30.0, 60.0]);
-        assert_eq!(steel(&start(), &[chuck], &[]), Ok(None));
-        let hit = steel(&start(), &[chuck], &[tail]);
-        let Ok(Some(LiveHit::Steel { index: 0, turning: false, radius_mm })) = hit else { panic!("{hit:?}") };
-        assert!((radius_mm - 30.0 * 2f64.sqrt()).abs() < 1e-9, "{radius_mm}");
-        // A thin tailstock centre inside the start's radius is passed.
-        let centre = b([-5.0, -5.0, 25.0], [5.0, 5.0, 60.0]);
-        assert_eq!(steel(&start(), &[], &[centre]), Ok(None));
-        // Fixed steel is read revolved: a block on the far side counts.
-        let far = b([-30.0, -10.0, 20.0], [-20.0, 10.0, 30.0]);
-        assert!(matches!(steel(&start(), &[], &[far]), Ok(Some(LiveHit::Steel { turning: false, .. }))));
-    }
-
-    #[test]
-    fn steel_that_turns_is_read_in_the_station_slab() {
-        let jaw = |top: f64| b([-30.0, -30.0, -40.0], [30.0, 30.0, top]);
-        // The slab starts at Z 8 (the tip at Z 10, less the tool radius).
-        assert_eq!(steel(&start(), &[jaw(7.9)], &[]), Ok(None));
-        assert!(matches!(steel(&start(), &[jaw(8.1)], &[]), Ok(Some(LiveHit::Steel { turning: true, .. }))));
-        // A jaw on the far side of the spindle stands out of the station's
-        // half-plane: C turned it there before X and Z move.
-        let far = b([-30.0, -10.0, -40.0], [-20.0, 10.0, 30.0]);
-        assert_eq!(steel(&start(), &[far], &[]), Ok(None));
-        // A jaw 3 mm beside the station's line (the tool is 2 mm wide).
-        let beside = b([20.0, 3.0, -40.0], [30.0, 10.0, 30.0]);
-        assert_eq!(steel(&start(), &[beside], &[]), Ok(None));
-        let touching = b([20.0, 1.9, -40.0], [30.0, 10.0, 30.0]);
-        assert!(matches!(steel(&start(), &[touching], &[]), Ok(Some(LiveHit::Steel { .. }))));
-    }
-
-    #[test]
-    fn the_spindle_line_off_the_origin_moves_the_slab() {
-        // The start at radius 15 about X 100: the slab is X 115 and out.
-        let off = LiveStart { start: Point3::new(115.0, 0.0, 10.0), spindle: [100.0, 0.0], ..start() };
-        let near = b([110.0, -5.0, 0.0], [120.0, 5.0, 30.0]);
-        assert!(matches!(steel(&off, &[near], &[]), Ok(Some(LiveHit::Steel { turning: true, .. }))));
-        let world_origin = b([10.0, -5.0, 0.0], [20.0, 5.0, 30.0]);
-        assert_eq!(steel(&off, &[world_origin], &[]), Ok(None));
-    }
-
-    #[test]
-    fn a_square_bar_is_read_at_the_face_the_station_looks_at() {
-        // A 44 square bar (corner radius 31.1): a station on its face's
-        // normal at radius 27 clears it; one on its diagonal at 27 does
-        // not, as its corner stands at 31.1 there.
-        let bar = b([-22.0, -22.0, -40.0], [22.0, 22.0, 20.0]);
-        let solids = LiveSolids { work_boxes: &[bar], ..LiveSolids::default() };
-        assert_eq!(live_first_traverse(&LiveStart { start: Point3::new(27.0, 0.0, 10.0), ..start() }, &solids, TOL), Ok(None));
-        let d = 27.0 / 2f64.sqrt();
-        let hit = live_first_traverse(&LiveStart { start: Point3::new(d, d, 10.0), ..start() }, &solids, TOL);
-        assert!(matches!(hit, Ok(Some(LiveHit::Work { index: 0, .. }))), "{hit:?}");
-    }
-
-    #[test]
-    fn a_flange_over_the_hole_is_read_where_its_facet_crosses_the_slab() {
-        // One facet from (40, 0, 0) to (0, 0, 20) and (0, 1, 20): its
-        // vertices in the band are inside the start's radius, but where
-        // it crosses Z 8 it reaches X 24.
-        let t = Triangle::new(Point3::new(40.0, 0.0, 0.0), Point3::new(0.0, 0.0, 20.0), Point3::new(0.0, 1.0, 20.0));
-        let work: &[&[Triangle]] = &[&[t]];
-        let hit = live_first_traverse(&start(), &LiveSolids { work, ..LiveSolids::default() }, TOL);
-        let Ok(Some(LiveHit::Work { index: 0, radius_mm })) = hit else { panic!("{hit:?}") };
-        // The edge to (0, 1, 20) crosses Z 8 at (24, 0.4): the largest.
-        assert!((radius_mm - 24f64.hypot(0.4)).abs() < 1e-9, "{radius_mm}");
-        // A plain bar face of radius 10 is inside the start's radius.
-        let bar = Triangle::new(Point3::new(10.0, 0.0, -80.0), Point3::new(10.0, 0.0, 20.0), Point3::new(0.0, 10.0, 20.0));
-        let work: &[&[Triangle]] = &[&[bar]];
-        assert_eq!(live_first_traverse(&start(), &LiveSolids { work, ..LiveSolids::default() }, TOL), Ok(None));
-    }
-
-    #[test]
-    fn a_start_that_cannot_be_read_is_not_judged() {
-        let mut s = start();
-        s.start.z = f64::NAN;
-        assert_eq!(steel(&s, &[], &[]), Err(LiveUnjudged));
-        let mut s = start();
-        s.tool_radius = f64::INFINITY;
-        assert_eq!(steel(&s, &[], &[]), Err(LiveUnjudged));
-        // A start on the spindle line has no station direction.
-        let on_axis = LiveStart { start: Point3::new(0.0, 0.0, 10.0), ..start() };
-        assert_eq!(steel(&on_axis, &[], &[]), Err(LiveUnjudged));
-    }
-}
+#[path = "live_traverse_tests.rs"]
+mod tests;

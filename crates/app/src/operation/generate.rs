@@ -2428,7 +2428,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     let stock = stock_facets.as_deref().filter(|s| !s.is_empty());
                     let mut named: Vec<(&str, &[crate::geometry::Triangle])> = vec![(own, &material.facets[..]), ("a kept part", &keep_parts[..]), ("a neighbour part", &neighbour_parts[..])];
                     named.extend(stock.map(|s| ("the stock", s)));
-                    let work = super::cross_traverse::LiveWork { solids: &named, stock_box: stock_aabb.filter(|_| stock.is_none()), turning: &workholding.0, fixed: &workholding.1 };
+                    let work = super::cross_traverse::LiveWork { solids: &named, stock_box: stock_aabb.filter(|_| stock.is_none()), turning: &workholding.0, fixed: &workholding.1, excess: material.excess };
                     super::cross_traverse::judge(&t, wcs_origin, &tool, &work)?;
                     t
                 }

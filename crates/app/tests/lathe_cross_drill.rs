@@ -300,3 +300,24 @@ fn a_thin_tailstock_centre_is_clear_on_a_lathe_and_convicts_a_mill_turn() {
         }
     }
 }
+
+/// #3077: the lathe post's first G00 X Z goes to the first move's END,
+/// the R-plane point (radius 15 at Z 10 here), not to the kernel's
+/// standoff. A collar that turns with the part over the bar's end,
+/// flush with that radius, only touches the band the rapid can pass: it
+/// is clear. One 1 mm proud of it stands in the band: refused by name.
+#[test]
+fn a_turning_collar_flush_with_the_first_point_is_clear_and_one_proud_of_it_is_refused() {
+    let (world, mut history) = lathe(None);
+    steel(&world, &mut history, "collar", [-15.0, -15.0, 22.0], [15.0, 15.0, 30.0], false);
+    let (_, warns) = operation::generate(&world, &op(params(vec![], cross(6.0))), "")
+        .unwrap_or_else(|e| panic!("a flush collar is only touched by the first rapid: {e}"));
+    assert!(blocking(&warns).is_empty(), "a flush collar convicts: {warns:?}");
+    let (world, mut history) = lathe(None);
+    steel(&world, &mut history, "collar", [-16.0, -16.0, 22.0], [16.0, 16.0, 30.0], false);
+    let e = match operation::generate(&world, &op(params(vec![], cross(6.0))), "") {
+        Ok((_, w)) => panic!("a collar proud of the first point generated: {w:?}"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("first rapid") && e.contains("turns with the part") && e.contains("16.000"), "{e}");
+}
