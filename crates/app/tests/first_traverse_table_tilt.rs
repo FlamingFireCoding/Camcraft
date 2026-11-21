@@ -129,10 +129,11 @@ fn a_3_2_plane_under_the_work_a_turning_table_can_leave_turned_up_is_refused_by_
     assert!((top - want).abs() < 1e-6 && !fixture, "the stock edge turned up: {top}, want {want}");
     let n = warns.iter().filter(|w| matches!(w, Warning::FirstTraverseLow { .. })).count();
     assert_eq!(n, 1, "one verdict names the highest top: {warns:?}");
+    // The verdict blocks the post. (This rig states no nose_to_axis, so
+    // the index-swing clause refuses the post first, by its own name.)
+    assert!(warns.iter().any(|w| matches!(w, Warning::FirstTraverseLow { .. }) && w.blocks_post()), "{warns:?}");
     let err = posting::post_setup_unwritten(&world).expect_err("the program must not post");
-    for text in ["Face1", "first rapid (move 0)"] {
-        assert!(err.contains(text), "{text}: {err}");
-    }
+    assert!(err.contains("Face1"), "{err}");
 }
 
 #[test]
