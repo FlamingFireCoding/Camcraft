@@ -1152,7 +1152,8 @@ pub fn ribbon(
         egui::Pos2::new(rect.right(), rect.top() + pal.ribbon_tab_h),
     );
     ribbon_tabs(ui, state, pal, rect, band);
-    super::donate::draw(ui, state, pal, icons, band);
+    let donate_left = super::donate::draw(ui, state, pal, icons, band);
+    super::home::button(ui, state, pal, icons, band, donate_left - pal.item_spacing_x);
     let body = Rect::from_min_max(egui::Pos2::new(rect.left(), band.bottom()), rect.max);
     // The plan is read fresh every frame from the two facts it is a
     // function of - the document's machine and its pins (M6.2). No

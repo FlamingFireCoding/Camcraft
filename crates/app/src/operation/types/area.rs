@@ -63,7 +63,7 @@ pub struct ExtraBoundary {
 /// Which side of an open (or closed) boundary is machined. Inside is the
 /// side that holds more of the operation's own area (what the selection
 /// or source encloses) - the part's side; Outside the other one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChainSide {
     Inside,
     Outside,

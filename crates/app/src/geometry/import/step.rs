@@ -69,7 +69,8 @@ pub fn parse_with_chord(data: &[u8]) -> Result<(Mesh, f64), ImportError> {
 
 /// [`parse`], and the chord tolerance the kept mesh was made at, in
 /// millimetres (#864): [`CHORD_CAP`], or coarser when the model did not
-/// fit `budget` facets there (#1054). Never NaN, infinite or negative.
+/// fit `budget` facets there (#1054) or its edges lie off their surfaces
+/// past it (#2976). Never NaN, infinite or negative.
 pub fn parse_with_chord_budget(data: &[u8], budget: usize) -> Result<(Mesh, f64), ImportError> {
     parse_noted(data, budget).map(|(mesh, chord, _)| (mesh, chord))
 }
@@ -87,6 +88,14 @@ pub fn parse_noted(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>
 /// its hole named (#1610): every left-out face with the mesher's reason.
 /// For the model import, which lands it incomplete; never a whole model.
 pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>, Option<String>), ImportError> {
+    parse_with_cause(data, budget).map(|(mesh, chord, notes, open, _)| (mesh, chord, notes, open))
+}
+
+/// The complete import result, including the recorded reason for its chord.
+pub type GradedStep = (Mesh, f64, Vec<String>, Option<String>, bool);
+
+/// Parse the mesh together with its chord, notes, hole and recorded cause.
+pub fn parse_with_cause(data: &[u8], budget: usize) -> Result<GradedStep, ImportError> {
     // The file's own syntax is checked before the kernel reads it, so the
     // refusals keep their wording: a nesting depth past the cap (#1075),
     // the bad entity by `#id` and line, a string or comment that never
@@ -110,5 +119,38 @@ pub fn parse_open(data: &[u8], budget: usize) -> Result<(Mesh, f64, Vec<String>,
     if read.mesh.facets.is_empty() {
         return Err(ImportError::Empty);
     }
-    Ok((read.mesh, chord, read.notes, read.open))
+    let mut notes = read.notes;
+    // The geometry note of a model meshed coarser for its edge gaps says
+    // the facts; what the checks then do is the fidelity law's (#2976).
+    if read.loosened
+        && let Some(first) = notes.first_mut()
+    {
+        first.push(' ');
+        first.push_str(consequence(chord, read.file_tolerance));
+    }
+    Ok((read.mesh, chord, notes, read.open, read.file_tolerance))
+}
+
+/// What the fidelity law (#864) does with a model kept at `chord_mm`, in
+/// plain words, for the note of a model meshed coarser for its edge gaps
+/// (#2976): read from the same law the checks use
+/// (`model_fidelity::verdict_tol`), never a second rule.
+#[must_use]
+pub fn loosened_consequence(chord_mm: f64) -> &'static str {
+    consequence(chord_mm, true)
+}
+
+fn consequence(chord_mm: f64, file_tolerance: bool) -> &'static str {
+    let excess = crate::model_fidelity::excess(chord_mm);
+    if crate::fidelity_note::widened(chord_mm, file_tolerance) {
+        // #2996: judged at its own accuracy, and the program says so.
+        "Gouge checks against this model use a wider true-surface bound than the normal 0.010 mm. \
+         Each posted program states this bound and names this model in its header. \
+         An operation that they cannot check is refused at the post."
+    } else if crate::verify::excess_floor_for(crate::stock_sim::DEV_TOL, excess, file_tolerance).is_none() {
+        "A program cannot be posted while this model is in the document. \
+         Export the file again with a tighter tolerance to post one."
+    } else {
+        "Gouge checks against this model are stricter, and an operation that they cannot check is refused at the post."
+    }
 }

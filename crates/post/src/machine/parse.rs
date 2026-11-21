@@ -185,10 +185,13 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
         return Err("machine file: expected a machine object".to_owned());
     }
 
+    super::installation::check_input_form(&v)?;
     let general = v.pointer("/general");
     let mut m = Machine {
         model: text_of(general.and_then(|g| g.get("model"))),
         vendor: text_of(general.and_then(|g| g.get("vendor"))),
+        controller_identity: super::installation::identity(&v)?,
+        tool_change: super::installation::tool_change(&v)?,
         ..Default::default()
     };
 
@@ -211,6 +214,8 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
             ));
         }
     };
+
+    m.post = super::post_name::parse_post_name(&v).map_err(|e| format!("machine file: controller.post: {e}"))?;
 
     let kine = v.pointer("/kinematics/default/parts");
     let f = mm_factor(v.pointer("/kinematics/default/units")).unwrap_or(1.0);
@@ -243,6 +248,7 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
                 Some(serde_json::Value::Bool(b)) => Some(*b),
                 Some(x) => return Err(format!("machine file: spindle.rigid_tapping must be true or false, not {x}")),
             };
+            m.spindle_orientation = super::judge::stated_orientation(sp)?; // #1445
             let ts = head.get("tool_station");
             m.max_tool_length = scale(rate(ts.and_then(|t| t.get("max_tool_length"))), f);
             m.max_tool_diameter = scale(rate(ts.and_then(|t| t.get("max_tool_diameter"))), f);

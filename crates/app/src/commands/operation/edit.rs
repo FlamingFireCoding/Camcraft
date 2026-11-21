@@ -114,8 +114,9 @@ impl EditOperationParams {
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
         }
-        // #1445: a dwell that is not a time from 0 to the bound, by name.
-        if let Some(why) = params.dwell_refusal() {
+        // #1445: a dwell that is not a time from 0 to the bound, or a fine
+        // bore with no usable shift, by name.
+        if let Some(why) = params.dwell_refusal().or_else(|| params.fine_bore_refusal()) {
             return Err(CommandError::Invalid(why));
         }
         sinker_gate(world, prev.setup.as_deref(), &params)?;
@@ -130,7 +131,7 @@ impl EditOperationParams {
         super::gates::thread_gate(world, &params, &prev.tool)?;
         // #1489: the rest group's previous tool against the mounted one.
         super::gates::rest_gate(world, &params, &prev.tool)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
+        if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
         // #532 / #2011: an edited wire cut still agrees with its wire tool
@@ -234,7 +235,7 @@ impl ChangeOperationKind {
             )));
         }
         heights_gate(world, prev.setup.as_deref(), &prev.src, &params)?;
-        if let Some(msg) = crate::operation::side_sane(&params, &prev.src) {
+        if let Some(msg) = crate::operation::side_sane(world, &params, &prev.src) {
             return Err(CommandError::Invalid(msg));
         }
         // The retype is a creation of the new kind against the op's
@@ -327,7 +328,7 @@ impl EditOperationLinks {
             // Retargeting onto a whole-model source under Inside would
             // arm the mirror law; refused here, and backstopped at
             // generate for commands that arrive via file load.
-            if let Some(msg) = crate::operation::side_sane(&next.params, &src) {
+            if let Some(msg) = crate::operation::side_sane(world, &next.params, &src) {
                 return Err(CommandError::Invalid(msg));
             }
             // From: Selection heights re-resolve against the NEW source

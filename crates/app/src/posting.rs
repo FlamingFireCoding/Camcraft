@@ -131,37 +131,9 @@ pub fn post_name(post: &PostRef) -> Option<&str> {
     }
 }
 
-/// A post the Setup pane may offer instead of the document's (M13.5
-/// B): when the mounted machine's kind is not served by the current
-/// registry post, this is the word for what the current one serves
-/// ("mill" / "lathe") and the registry's default for the mount. The
-/// pane offers; the user chooses - a mount never re-points the post
-/// by itself, and a `File` post is never second-guessed.
-#[must_use]
-pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
-    let kind = crate::machine::kind_of(world);
-    let current = post_of(world);
-    let name = post_name(&current)?;
-    if post_serves(name, kind) {
-        return None;
-    }
-    let serves = if LATHE_POSTS.contains(&name) {
-        "lathe"
-    } else if PLASMA_POSTS.contains(&name) {
-        "plasma"
-    } else if WIRE_POSTS.contains(&name) {
-        "wire EDM"
-    } else if SINKER_POSTS.contains(&name) {
-        "sinker EDM"
-    } else {
-        "mill"
-    };
-    // #669: an offer that would not serve the mount either (a plasma
-    // table before any plasma post ships) is no offer.
-    let offer = default_post_for(kind);
-    post_name(&offer).is_some_and(|n| post_serves(n, kind)).then_some((serves, offer))
-}
-
+#[path = "posting_offer.rs"]
+mod offer;
+pub use offer::{post_offer, post_offer_for, OfferWhy, PostOffer};
 
 /// The mount path a built-in library entry records (stage C): the
 /// pane's combo and the `LoadMachine::builtin` command say the same
@@ -959,6 +931,8 @@ pub fn verification_report_by(world: &World, voice: &dyn Fn(Option<&str>) -> pos
     // #1031/#1174: the work spindle over a setup's workholding maximum,
     // by name - judged for the post dialect each op runs through.
     problems.extend(crate::setup_workholding::program_problems_by(world, voice));
+    // #3070: a sheet job's allowance floor and clamp plane, by name.
+    problems.extend(crate::sheet_job::program_problems(world));
     // The carried-stock clause (#319): a feed move into carried material
     // outside a setup's declared stock is engagement nothing verified.
     problems.extend(crate::operation::carried_problems(world));

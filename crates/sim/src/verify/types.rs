@@ -155,6 +155,9 @@ pub struct VerifyContext<'a> {
     /// which is also the budget moves are read into chords at and must
     /// not shrink with the model.
     pub model_excess: f64,
+    /// Every reduced source was made coarse only by its file tolerance.
+    /// False, including an absent record, keeps the strict law.
+    pub file_tolerance: bool,
     /// The declared circles `(centre, radius)` a containment kind's
     /// region draws as rim loops (#1057): our own polygons of a hole the
     /// operation names, not a model's facets, so law (b) reads a loop
@@ -205,6 +208,7 @@ impl Default for VerifyContext<'_> {
             fixtures: &[],
             spindle: None,
             model_excess: 0.0,
+            file_tolerance: false,
             rims: &[],
             lathe_axis: None,
             corner_reliefs: &[],
@@ -262,6 +266,30 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
+    /// #2901: the path starts at `height_mm`, under the `top_mm` of the
+    /// start stock or of a fixture (`fixture`). The first traverse comes
+    /// from an X/Y the machine does not know, so it can cross that top
+    /// anywhere ([`super::first_traverse_low`]). The law gives the two
+    /// heights in the path's frame; the operation layer gives them in
+    /// the frame the user sets the heights in (#2991). `tilted`: a 3+2
+    /// plane, whose heights are measured along its tool axis - the text
+    /// then says so and names the raise, not a Z value. Absent in a
+    /// cache saved before #2991: read as upright.
+    FirstTraverseLow {
+        at: usize,
+        height_mm: f64,
+        top_mm: f64,
+        fixture: bool,
+        #[serde(default)]
+        tilted: bool,
+    },
+    /// #3081: a 3+2 plane whose tool axis points down toward the machine
+    /// table (a head tilt past 90 degrees). The path starts at `height_mm`
+    /// along that axis; the move to it from the tool-change height (the Z
+    /// travel top) can end under the table top. A HIGHER plane along the
+    /// axis stands LOWER in the world, so the repair is a plane at
+    /// `limit_mm` or under it - never a raise.
+    FirstTraverseUnderTable { at: usize, height_mm: f64, limit_mm: f64 },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
     /// it, `short_mm` the clearance shortfall - the radial depth the
@@ -404,6 +432,29 @@ impl core::fmt::Display for Warning {
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
+            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: false } => write!(
+                f,
+                "the first rapid (move {at}) comes from an unknown X/Y at the clearance height Z{height_mm:.3}, under the {} \
+                 top at Z{top_mm:.3} - raise the clearance height above Z{top_mm:.3}",
+                if *fixture { "fixture" } else { "stock" }
+            ),
+            // #2991: a 3+2 plane measures its heights along the tilted
+            // tool axis, so a Z value would not be one the user can find.
+            // The raise is the same in each frame.
+            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: true } => write!(
+                f,
+                "the first rapid (move {at}) comes from an unknown position at the clearance height {height_mm:.3} mm, \
+                 under the {} top at {top_mm:.3} mm (both measured along the tilted tool axis) - raise the clearance \
+                 height by at least {:.3} mm",
+                if *fixture { "fixture" } else { "stock" },
+                top_mm - height_mm
+            ),
+            Warning::FirstTraverseUnderTable { at, height_mm, limit_mm } => write!(
+                f,
+                "the first rapid (move {at}) runs from the tool-change height along a tool axis that points down toward the \
+                 machine table; to the clearance plane at Z{height_mm:.3} it can go under the table top - lower the clearance \
+                 plane to Z{limit_mm:.3} or under it"
+            ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
                 "{} at move {at} strikes a fixture",

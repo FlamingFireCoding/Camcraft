@@ -49,9 +49,12 @@ mod status_alert;
 
 mod stock_info;
 mod donate;
+// #2384: the Home button and the recent projects start page.
+pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
 pub mod colorvision;
@@ -161,6 +164,8 @@ mod wcs_pick_row;
 // #316: the setup page's "relative to the previous setup" control.
 mod setup_relative_pick;
 mod setup_workholding_row;
+// #3070: the guided sheet job checklist on the setup's Settings page.
+mod setup_sheet_job_row;
 // The operation dialog, split out of `pages` with the property grid
 // (user review 2026-11-06): the frame, the Geometry pick block, the
 // params dispatcher and its kind-family pages, the shared widgets.
@@ -247,10 +252,12 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod display_menu;
 pub(crate) mod move_handles;
 pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
+mod world_verts;
 
 #[cfg(test)]
 mod tests;

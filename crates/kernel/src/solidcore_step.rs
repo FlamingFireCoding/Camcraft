@@ -17,12 +17,13 @@ use solidcore::kernel::CancelToken;
 use solidcore::mass::integrator::properties::brep_area;
 use solidcore::topology::Brep;
 use solidcore_convert::brep::to_kernel_body;
-use solidcore_step::p21::{self, Exchange, Progress};
-use solidcore_step::{topology, units};
+use solidcore_step::p21::{self, Progress};
+use solidcore_step::topology;
 
 use crate::solidcore_impl::{SolidcoreKernel, VOLUME_ACCURACY, checked, failed};
 use crate::solidcore_import::{HEAL_GAP_LIMIT, vertex_gaps};
 use crate::solidcore_trims::KernelTrims;
+use crate::step_edge_gap::{EdgeGap, EdgeGapCap, raised_edge_gap};
 use crate::{Kernel, KernelError, Measure};
 
 pub use crate::solidcore_step_import::{StepImport, StepModel, StepSheet, import_step, import_step_model};
@@ -91,6 +92,8 @@ pub struct StepRead {
     pub notes: Vec<String>,
     /// The surface models (open shells only): read, not built as solids.
     pub sheets: Vec<StepSheet>,
+    /// The file's edge-gap cap and the widest gap kept (#2976).
+    pub edge_gap: EdgeGap,
 }
 
 /// The time bound's watcher of the Part 21 parse.
@@ -177,13 +180,17 @@ fn read_guarded(
     text: &str,
     stop: &CancelToken,
 ) -> Result<StepRead, KernelError> {
-    let ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
+    let mut ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
         p21::Error::Cancelled => timed_out("parsing"),
         other => refused_input(other.to_string()),
     })?;
+    // Validation and topology must read the same canonical unit records.
+    crate::step_units_guard::expand_short_names(&mut ex);
+    crate::step_units_guard::check_angle_units(&ex).map_err(refused_input)?;
     crate::step_curve_guard::check(&ex).map_err(refused_input)?;
+    let units = crate::step_length_units::read(&ex).map_err(refused_input)?;
     let mut out = StepRead {
-        length_units_mm: length_units(&ex).map_err(refused_input)?,
+        length_units_mm: units.mm.clone(),
         ..StepRead::default()
     };
     if !ex.duplicates.is_empty() {
@@ -201,16 +208,47 @@ fn read_guarded(
     }
     out.notes.extend(crate::step_face_winding::notes(&ex, stop).map_err(|_| timed_out("checking face winding"))?);
     // The pcurves with no closed form (a free-form edge on a spline face)
-    // are made by the kernel, each checked by its lift (#917).
-    let read = topology::read_solids_with(&ex, &KernelTrims::new(&mut k.k));
+    // are made by the kernel, each checked by its lift (#917), each edge
+    // held to the cap that the file's stated tolerance sets (#2976).
+    let cap = EdgeGapCap::read(&ex);
+    let (read, measured) = {
+        let trims = KernelTrims::with_cap(&mut k.k, cap);
+        let read = topology::read_solids_with(&ex, &trims);
+        (read, trims.widest_gap_mm())
+    };
     if stop.is_cancelled() {
         return Err(timed_out("reading topology"));
     }
+    // Never a silent widening: an edge kept over the cap of a file that
+    // states no tolerance is noted with its gap and the file's tolerance.
+    if measured > crate::step_edge_gap::MAX_EDGE_GAP_MM {
+        out.notes.push(format!(
+            "an edge lies {measured:.4} mm off its face's surface; the file states a tolerance of {:.4} mm, so the reader accepts up to {:.4} mm",
+            cap.stated_mm.unwrap_or(0.0),
+            cap.cap_mm
+        ));
+    }
+    let raised = read.solids.iter().map(|s| raised_edge_gap(&s.brep)).fold(0.0, f64::max);
+    out.edge_gap = EdgeGap {
+        cap,
+        widest_mm: measured.max(raised),
+    };
+    // An item with no unit context reads its angles in radians (#3079).
+    let unlisted = crate::step_units_guard::UnlistedAngles::new(&ex);
+    let mut read = read;
+    read.solids.retain(|s| match unlisted.refusal(s.item) {
+        Some(reason) => {
+            out.refused.push(StepRefusal { item: s.item, stage: "read", reason });
+            false
+        }
+        None => true,
+    });
     for f in read.failures {
         out.refused.push(StepRefusal {
             item: f.item,
             stage: "read",
-            reason: f.message,
+            // The wrong angle unit is the first cause of what then failed.
+            reason: unlisted.refusal(f.item).unwrap_or(f.message),
         });
     }
     for s in read.solids {
@@ -218,6 +256,14 @@ fn read_guarded(
             return Err(timed_out("building solids"));
         }
         let item = s.item;
+        if let Some(reason) = units.unstated(item) {
+            out.refused.push(StepRefusal {
+                item,
+                stage: "read",
+                reason,
+            });
+            continue;
+        }
         if s.sheet {
             out.sheets.push(StepSheet { item, name: s.name, record: s.brep, notes: s.notes });
             continue;
@@ -234,54 +280,6 @@ fn read_guarded(
     }
     out.refused.sort_by_key(|r| r.item);
     Ok(out)
-}
-
-/// The distinct length units the file's representation contexts state, in
-/// millimetres per unit. A context whose unit list names no length unit
-/// states none. `Err` names a length unit the reader cannot convert: it
-/// would read such a unit as millimetres without a word (its units module
-/// says so), and a guessed scale is the silent wrong answer, so the seam
-/// refuses the file as `camcraft_geometry::step_units` does (#306).
-fn length_units(ex: &Exchange) -> Result<Vec<f64>, String> {
-    let mut found: Vec<f64> = Vec::new();
-    for (id, e) in &ex.entities {
-        let Some(list) = e
-            .record("GLOBAL_UNIT_ASSIGNED_CONTEXT")
-            .and_then(|r| r.first())
-            .and_then(p21::Param::as_list)
-        else {
-            continue;
-        };
-        let mut states_length = false;
-        for u in list.iter().filter_map(p21::Param::as_ref_id) {
-            let Some(unit) = ex.get(u).filter(|x| x.has("LENGTH_UNIT")) else {
-                continue;
-            };
-            states_length = true;
-            // An SI length is a (prefixed) metre; anything else must be a
-            // conversion the reader can follow to one.
-            let si_metre = unit
-                .record("SI_UNIT")
-                .map(|si| si.get(1).and_then(p21::Param::as_enum) == Some("METRE"));
-            let sized = match (si_metre, units::unit_factor(ex, u)) {
-                (Some(false), _) => None,
-                (None, _) if unit.record("CONVERSION_BASED_UNIT").is_none() => None,
-                (_, Some((units::UnitKind::Length, f))) if f.is_finite() && f > 0.0 => Some(f),
-                _ => None,
-            };
-            if sized.is_none() {
-                return Err(format!("length unit #{u} cannot be converted to millimetres"));
-            }
-        }
-        if !states_length {
-            continue;
-        }
-        let len = units::context(ex, *id).units.len;
-        if !found.iter().any(|f| f.to_bits() == len.to_bits()) {
-            found.push(len);
-        }
-    }
-    Ok(found)
 }
 
 /// One B-rep record (mm) from a file as a checked kernel solid: built,

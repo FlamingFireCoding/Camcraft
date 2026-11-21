@@ -119,6 +119,7 @@ impl ParamsDto {
                 blend_turns,
                 links,
                 tilt,
+                chain_overrides,
             } => ParamsDto::Contour {
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -158,6 +159,15 @@ impl ParamsDto {
                 ramp_angle: contour_links_dto(links).1,
                 links: contour_links_dto(links).2,
                 tilt: (*tilt).map(Into::into),
+                chain_overrides: chain_overrides
+                    .iter()
+                    .map(|o| ChainOverrideDto {
+                        entity: o.entity.clone(),
+                        chain: ChainIdDto(o.chain),
+                        side: o.side.map(chain_side_dto),
+                        reverse: o.reverse,
+                    })
+                    .collect(),
             },
             OpParams::Pocket {
                 links,
@@ -1255,6 +1265,10 @@ impl ParamsDto {
                     CycleChoice::Bore => CycleChoiceDto::Bore,
                     CycleChoice::BackBore => CycleChoiceDto::BackBore,
                     CycleChoice::Ream => CycleChoiceDto::Ream,
+                    CycleChoice::FineBore { shift_x_um, shift_y_um } => CycleChoiceDto::FineBore {
+                        shift_x: f64::from(*shift_x_um) / 1000.0,
+                        shift_y: f64::from(*shift_y_um) / 1000.0,
+                    },
                 },
                 peck: *peck,
                 dwell: *dwell,
@@ -1388,6 +1402,7 @@ impl ParamsDto {
                 ramp_angle,
                 links,
                 tilt,
+                chain_overrides,
             } => OpParams::Contour {
                 stock_to_leave: *stock_to_leave,
                 clearance_z: (*clearance_z).into(),
@@ -1429,6 +1444,15 @@ impl ParamsDto {
                 // over them.
                 links: contour_links(*level_link, *ramp_angle, links.as_ref()),
                 tilt: (*tilt).map(Into::into),
+                chain_overrides: chain_overrides
+                    .iter()
+                    .map(|o| crate::operation::ChainOverride {
+                        entity: o.entity.clone(),
+                        chain: o.chain.0,
+                        side: o.side.map(chain_side_of),
+                        reverse: o.reverse,
+                    })
+                    .collect(),
             },
             ParamsDto::Pocket {
                 links,
@@ -2508,6 +2532,15 @@ impl ParamsDto {
                     CycleChoiceDto::Bore => CycleChoice::Bore,
                     CycleChoiceDto::BackBore => CycleChoice::BackBore,
                     CycleChoiceDto::Ream => CycleChoice::Ream,
+                    // #1445: whole micrometres, as the command stored them.
+                    // A number that is not a usable shift (a hand-edited
+                    // file) keeps its nearest value and is refused by name
+                    // at the command and at generation; a float cast
+                    // saturates and reads NaN as 0, which is refused too.
+                    CycleChoiceDto::FineBore { shift_x, shift_y } => CycleChoice::FineBore {
+                        shift_x_um: (shift_x * 1000.0).round() as i32,
+                        shift_y_um: (shift_y * 1000.0).round() as i32,
+                    },
                 },
                 peck: *peck,
                 dwell: *dwell,
