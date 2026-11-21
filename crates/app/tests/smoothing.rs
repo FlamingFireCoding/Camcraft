@@ -40,6 +40,7 @@ fn program(name: &str, ask: Option<Smoothing>) -> String {
         ..Dump::default()
     };
     let machine = if name == "Heidenhain Klartext" {
+        d.tool_kind = "Flat end mill";
         d.stock = [-10.0, 30.0, -10.0, 10.0];
         d.stock_bottom_z = Some(-2.0);
         let mch = camcraft_app::posting::builtin_machine_text("Fehlmann Picomax 55 (iTNC 530)").unwrap();
