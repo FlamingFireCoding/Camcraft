@@ -71,6 +71,11 @@ pub fn current_stamp(
     if super::rotary_traverse::newly_judged_on(crate::machine::kind_of_setup(world, setup), params) {
         h.write(b"live-traverse-rotary-3096");
     }
+    // #3084: a multi-axis or rotary kind read through every pose of its
+    // machine's work-turning rotaries; only those caches read Stale once.
+    if super::first_traverse_posed::newly_judged(world, setup, params) {
+        h.write(b"first-traverse-posed-3084");
+    }
     let w = |h: &mut std::hash::DefaultHasher, v: f64| h.write(&v.to_bits().to_le_bytes());
     super::stamp_tool::write(world, tool_name, params, &mut h)?;
     if let OpParams::WireContour(op) = params {
