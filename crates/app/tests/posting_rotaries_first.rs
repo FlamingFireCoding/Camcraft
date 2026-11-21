@@ -88,7 +88,8 @@ fn the_tormach_post_turns_a_at_safe_z_before_each_first_xy_traverse() {
     let sections: Vec<&str> = posted.program.split("(OPERATION: ").skip(1).collect();
     assert_eq!(sections.len(), 3, "{}", posted.program);
     for section in sections {
-        let lines: Vec<&str> = section.lines().collect();
+        // The motion blocks only: a comment can name an axis ("G54 Y0 Z0").
+        let lines: Vec<&str> = section.lines().filter(|l| !l.starts_with('(')).collect();
         let turn = lines.iter().position(|l| l.starts_with("G0 A")).unwrap_or_else(|| panic!("each section turns A:\n{section}"));
         let xy = lines.iter().position(|l| l.split_whitespace().any(|w| w.starts_with('X') || w.starts_with('Y'))).unwrap_or_else(|| panic!("no X/Y move:\n{section}"));
         assert!(turn < xy, "A turns before the first X/Y traverse:\n{section}");
