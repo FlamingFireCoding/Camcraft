@@ -148,9 +148,8 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
     let ds = band(-h, h, 0.0, p.stepover)?;
     let mut pass: Vec<Point2> = Vec::with_capacity(2 * ds.len());
     for (i, &d) in ds.iter().enumerate() {
-        let q = (h * h - d * d).max(0.0).sqrt();
-        let s = Point2::new(a.x - u.x * q + n.x * d, a.y - u.y * q + n.y * d);
-        let e = Point2::new(b.x + u.x * q + n.x * d, b.y + u.y * q + n.y * d);
+        let s = super::slot_lap::cap_point(a, u, n, h, d, false);
+        let e = super::slot_lap::cap_point(b, u, n, h, d, true);
         // Even rows run a -> b under climb; odd rows return. The join is
         // then a short lateral step at the far end, never a diagonal.
         let (s, e) = if p.climb == (i % 2 == 0) { (s, e) } else { (e, s) };
@@ -162,7 +161,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
     let runs = match (h > 0.0, pass.split_first()) {
         (true, Some((_, rest))) => {
             let at_b = p.climb == (ds.len().saturating_sub(1) % 2 == 0);
-            let (lap, pts) = super::slot_lap::wall_lap(a, b, u, n, h, at_b, p.climb);
+            let (lap, pts) = super::slot_lap::wall_lap(a, b, u, n, h, &ds, at_b, p.climb);
             let mut walk = vec![super::arcs::Seg::Line(rest.to_vec())];
             walk.extend(lap);
             pass.extend(pts);

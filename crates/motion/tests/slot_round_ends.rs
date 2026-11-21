@@ -10,6 +10,7 @@ use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::Point2;
 use camcraft_motion::links::Links;
 use camcraft_motion::machining2d::{SlotParams, slot};
+use camcraft_motion::verify::crossed_pairs;
 
 /// The issue's case: tool 6 mm, slot 10 mm wide, two levels of 3 mm.
 fn params(climb: bool) -> SlotParams {
@@ -68,10 +69,13 @@ fn wall_points(a: Point2, b: Point2, w: f64) -> Vec<Point2> {
     pts
 }
 
-fn check(climb: bool) {
+fn check(climb: bool, width: f64, stepover: f64) {
     let (a, b) = (Point2::new(-25.0, 15.0), Point2::new(25.0, 15.0));
-    let p = params(climb);
+    let p = SlotParams { width, stepover, ..params(climb) };
     let Ok(path) = slot(a, b, &p) else { panic!("slot path") };
+    // The verifier's crossing law (a): the lap meets each row join only
+    // at the join's own end points, never across a flattened arc chord.
+    assert_eq!(crossed_pairs(&path, 0.01), Vec::<[usize; 2]>::new(), "climb={climb} width={width}");
     let r = p.tool_diameter * 0.5;
     let h = p.width * 0.5 - r;
     for z in [9.0, 6.0] {
@@ -104,10 +108,17 @@ fn check(climb: bool) {
 
 #[test]
 fn wide_slot_cuts_its_round_ends_climb() {
-    check(true);
+    check(true, 10.0, 2.0);
 }
 
 #[test]
 fn wide_slot_cuts_its_round_ends_conventional() {
-    check(false);
+    check(false, 10.0, 2.0);
+}
+
+/// Rows at -7, -3, 1, 5, 7: no row end sits on a cap's tip.
+#[test]
+fn wide_slot_with_rows_off_the_tips_cuts_its_round_ends() {
+    check(true, 20.0, 4.0);
+    check(false, 20.0, 4.0);
 }

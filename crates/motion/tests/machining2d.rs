@@ -1741,14 +1741,15 @@ fn slot_offsets_rows_across_a_wide_channel() {
     ];
     let (pts, _) = polyline_at(&t, 0.0);
     assert_eq!(pts[..want.len()], want[..], "serpentine rows, each reaching its round end by sqrt(h^2 - d^2)");
-    // #2906: then one lap of the stadium - two straights and four quarter
-    // arcs - so the round ends are cut between the row ends too.
+    // #2906: then one lap of the stadium - two straights and each cap
+    // split at its five row ends and its tip (five arcs) - so the round
+    // ends are cut between the row ends too.
     assert_eq!(
         t.moves.iter().filter(|m| m.kind == MoveKind::Feed).count(),
-        want.len() - 1 + 6,
+        want.len() - 1 + 12,
         "joins are feeds: the center area is convex"
     );
-    assert_eq!(t.moves.iter().filter(|m| m.arc.is_some()).count(), 4, "two quarter arcs for each cap");
+    assert_eq!(t.moves.iter().filter(|m| m.arc.is_some()).count(), 10, "five arcs for each cap");
     assert_eq!(pts.last().copied(), Some((40.0, 7.0)), "the lap closes where the rows end");
     assert_eq!(plunge_xy(&t).len(), 1);
     for q in &pts {
@@ -1789,7 +1790,7 @@ fn conventional_slot_starts_at_the_far_end() {
     assert_eq!(ys, vec![-7.0, -3.0, 1.0, 5.0, 7.0], "same rows, reversed travel");
     // Conventional walks the lap clockwise: from (0, 7) it turns round `a`.
     let lap_arcs: Vec<_> = t.moves.iter().filter_map(|m| m.arc).collect();
-    assert_eq!(lap_arcs.len(), 4);
+    assert_eq!(lap_arcs.len(), 10);
     assert!(lap_arcs.iter().all(|a| !a.ccw), "conventional lap is clockwise");
 }
 
