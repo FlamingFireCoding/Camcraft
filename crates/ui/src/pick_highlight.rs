@@ -80,9 +80,10 @@ impl Body {
                 .and_then(|e| model::features_of(&state.world, &e))
                 .map(|f| Feats(Arc::downgrade(&f))),
             sketch,
-            pose: entity
-                .and_then(|e| camcraft_app::setup_align::view_pose(&state.world, &e))
-                .or(sketch_pose),
+            // A sketch's build reads `sketch::world_pose` (it rides the
+            // stock top), not its local `view_pose`: key on what the build
+            // reads, so a stock move or height change rebuilds (#1864 review).
+            pose: sketch_pose.or_else(|| entity.and_then(|e| camcraft_app::setup_align::view_pose(&state.world, &e))),
         }
     }
 }
