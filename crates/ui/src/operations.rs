@@ -303,6 +303,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // clear of the avoid range (216..=220) and of 221 (#3040).
             // 222 is kept for UndercutLift (PR #2836).
             Warning::DrillUndersize { .. } => (223, false),
+            // Adaptive's fallback to Offset rings (#3035): advisory, its
+            // own line, clear of the keys above (224 is the table's).
+            Warning::StrategyFallback { .. } => (225, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -327,7 +330,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::Scallop { at, .. }
             | Warning::ProbeSearch { at, .. }
             | Warning::SinkerFinishOrder { at, .. }
-            | Warning::DrillUndersize { at, .. } => *at,
+            | Warning::DrillUndersize { at, .. }
+            | Warning::StrategyFallback { at, .. } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();

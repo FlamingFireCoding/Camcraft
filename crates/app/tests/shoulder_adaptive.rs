@@ -144,7 +144,9 @@ fn containment_outside_without_stock_clears_with_extension_never_the_recess() {
     let t0 = std::time::Instant::now();
     let (t, warns) = run(&world, &op(src, adaptive(FLOOR), a)).expect("generates");
     assert!(t0.elapsed().as_secs_f64() < 60.0, "the band plans in seconds, not minutes");
-    assert_eq!(warns, 0, "the plan verifies clean: {:?}", t.notes);
+    // #3035: the one warning is the advisory fallback to the rings (pinned
+    // by `strategy_fallback`); the plan verifies clean otherwise.
+    assert_eq!(warns, 1, "the plan verifies clean: {:?}", t.notes);
     assert!(
         t.notes.iter().any(|n| n.contains("channel") && n.contains("Offset rings cut")),
         "the refusal is named: {:?}",
