@@ -225,7 +225,8 @@ fn source_region(
             let corner_z = z - width * angle_deg.to_radians().tan();
             let top = section(&material.facets, &material.bodies, z)?;
             let wall = section(&material.facets, &material.bodies, corner_z)?;
-            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z)
+            let lean = crate::machining2d::chamfer_wall_lean(frame, z - corner_z);
+            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z, lean)
         }
         // #1731: the Slot's machine area is the stadium of its EXTENDED
         // ends - the channel the pass is asked to cut. Where the

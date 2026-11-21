@@ -43,9 +43,9 @@ const TOOLS: &[Tool] = &[
     Tool { name: "detect_pockets", description: "A model's recognised pockets and slots (closed or open pockets, straight slots with open, round or square ends): boundary, floor and top Z, depth, tightest inside corner, slot width and open sides. With create, adds the operation that machines one of them (a Pocket over its floor, or a Slot along its centreline). One undo step.", schema: pockets::s_detect_pockets, run: pockets::detect_pockets },
     Tool { name: "delete_operation", description: "Delete an operation and its cached toolpath.", schema: s_name, run: edit::delete_operation },
     Tool { name: "set_tool", description: "Assign a document tool to an operation (the tool must suit the operation's kind).", schema: s_set_tool, run: edit::set_tool },
-    Tool { name: "list_features", description: "A model's (or a fixture's) pickable features with stable ids: faces (each boundary loop with the edge chains that run it), edge chains, welded smooth faces and vertices, in world coordinates.", schema: pick::s_list_features, run: features::list_features },
-    Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, or picked features), its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
-    Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
+    Tool { name: "list_features", description: "A model's, fixture's, or DXF profile's pickable features with stable ids: faces, edge chains, welded smooth faces and vertices on models, or sketch chains and layers on DXF profiles, in world coordinates.", schema: pick::s_list_features, run: features::list_features },
+    Tool { name: "get_operation_geometry", description: "What an operation machines: its source (stock, a model, a DXF profile, or picked features), per-chain overrides, its area controls, and what the picks resolve to.", schema: pick::s_op, run: pick::get_operation_geometry },
+    Tool { name: "set_operation_geometry", description: "Set the features an operation machines (faces, edge chains, loops, or DXF sketch chains and layers with optional per-chain side and direction overrides) by list_features ids. One undo step; undo restores the previous source.", schema: pick::s_set_geometry, run: pick::set_operation_geometry },
     Tool { name: "set_operation_area", description: "Replace an operation's area controls (containment, offset, corner, extension, extra include/exclude boundaries, open boundary). One undo step.", schema: area::s_set_area, run: area::set_operation_area },
     Tool { name: "get_operation_do_not_touch", description: "Read an operation's 'Do not touch' protected faces/edges and standoff clearance (mm).", schema: pick::s_op, run: do_not_touch::get_operation_do_not_touch },
     Tool { name: "set_operation_do_not_touch", description: "Set protected faces or edge chains (plus standoff clearance, mm) that 2D Offset and 3D Pocket paths must stay clear of across flutes, shank, and holder. Refuses unsupported operation kinds, vertex picks, and overlap with the machining selection. One undo step.", schema: do_not_touch::s_set_do_not_touch, run: do_not_touch::set_operation_do_not_touch },
@@ -59,7 +59,7 @@ const TOOLS: &[Tool] = &[
 
 /// Every row: this table, then the setup furniture's (#181), then the
 /// part placement (#716), ..., then operation names and order (#45), then the DXF profiles (#1862).
-fn all() -> impl Iterator<Item = &'static Tool> {
+pub(super) fn all() -> impl Iterator<Item = &'static Tool> {
     TOOLS
         .iter()
         .chain(super::setup_tools::TOOLS)
@@ -385,10 +385,13 @@ fn s_set_tool() -> Value {
 }
 
 fn s_post() -> Value {
+    // #2374: every registry post, so an agent learns each name from the list.
+    let names: Vec<&str> = crate::posting::BUILTINS.iter().map(|(n, _)| *n).collect();
+    let post_doc = format!("A built-in post name ({}) or a .cps path.", names.join(", "));
     obj(
         json!({
             "output": { "type": "string", "description": "The .nc file to write." },
-            "post": { "type": "string", "description": "A built-in post name (Fanuc, Haas, Siemens 840D, Heidenhain, Mazak, Tormach PathPilot Plasma) or a .cps path." },
+            "post": { "type": "string", "description": post_doc },
             "between_setups": {
                 "type": "string",
                 "enum": ["pause", "optional-stop", "continue", "file-per-setup"],

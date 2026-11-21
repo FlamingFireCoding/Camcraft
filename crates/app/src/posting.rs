@@ -131,37 +131,9 @@ pub fn post_name(post: &PostRef) -> Option<&str> {
     }
 }
 
-/// A post the Setup pane may offer instead of the document's (M13.5
-/// B): when the mounted machine's kind is not served by the current
-/// registry post, this is the word for what the current one serves
-/// ("mill" / "lathe") and the registry's default for the mount. The
-/// pane offers; the user chooses - a mount never re-points the post
-/// by itself, and a `File` post is never second-guessed.
-#[must_use]
-pub fn post_offer(world: &World) -> Option<(&'static str, PostRef)> {
-    let kind = crate::machine::kind_of(world);
-    let current = post_of(world);
-    let name = post_name(&current)?;
-    if post_serves(name, kind) {
-        return None;
-    }
-    let serves = if LATHE_POSTS.contains(&name) {
-        "lathe"
-    } else if PLASMA_POSTS.contains(&name) {
-        "plasma"
-    } else if WIRE_POSTS.contains(&name) {
-        "wire EDM"
-    } else if SINKER_POSTS.contains(&name) {
-        "sinker EDM"
-    } else {
-        "mill"
-    };
-    // #669: an offer that would not serve the mount either (a plasma
-    // table before any plasma post ships) is no offer.
-    let offer = default_post_for(kind);
-    post_name(&offer).is_some_and(|n| post_serves(n, kind)).then_some((serves, offer))
-}
-
+#[path = "posting_offer.rs"]
+mod offer;
+pub use offer::{post_offer, post_offer_for, OfferWhy, PostOffer};
 
 /// The mount path a built-in library entry records (stage C): the
 /// pane's combo and the `LoadMachine::builtin` command say the same

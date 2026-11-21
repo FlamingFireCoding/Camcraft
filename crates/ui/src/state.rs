@@ -1618,6 +1618,8 @@ pub enum TreeMenuTarget {
     /// clicked row's index, so the menu anchors on the row clicked even
     /// when the name stands in the tree twice.
     Model { name: String, row: usize },
+    /// A tool row, anchored on the clicked occurrence.
+    Tool { name: String, row: usize },
     /// A setup's Fixtures node (`""` - the implicit setup): "Import
     /// fixture…".
     Fixtures(String),
@@ -1736,6 +1738,14 @@ pub struct State {
     /// depend on it - only the names (`World`, each offset's entity
     /// name) do.
     pub show_gizmo_names: bool,
+    /// #2958: the viewport overlay line width and multisample
+    /// anti-aliasing, kept in the same per-user view file.
+    pub line_width: camcraft_app::view::LineWidth,
+    pub antialias: camcraft_app::view::Antialias,
+    /// #2958: the sample counts the graphics device offers for the 3D
+    /// targets, set by the windowed shell at bring-up. Headless and the
+    /// browser keep WebGPU's guaranteed pair, 1 and 4.
+    pub samples_offered: Vec<u32>,
     /// Show cached toolpaths beyond the selected operation's: with this on,
     /// every generated path draws (dimmed where unselected) instead of only
     /// the one the tree highlights. View state like the camera - not
@@ -1750,6 +1760,15 @@ pub struct State {
     /// "Look at a face" waits for one click in the viewport (#2818).
     /// Ephemeral view state, never a command.
     pub look_at_armed: bool,
+    /// "Look at a work plane" waits for one click on an origin axis
+    /// (#2834). Ephemeral view state, never a command.
+    pub look_at_plane_armed: bool,
+    /// Draw the soft shadow of the model on the floor (#2834). View state
+    /// and a kept preference (`state_view`).
+    pub ground_shadow: bool,
+    /// Darken the model faces in their corners (#2834). View state and a
+    /// kept preference (`state_view`).
+    pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
     /// the grid also needs `show_world_axes`.
     pub show_grid: bool,
@@ -2290,10 +2309,16 @@ impl State {
             body_turn: None,
             handle_bar: crate::egui_app::viewport_bar::HandleBarState::default(),
             show_gizmo_names: true,
+            line_width: camcraft_app::view::LineWidth::default(),
+            antialias: camcraft_app::view::Antialias::default(),
+            samples_offered: crate::viewport::GUARANTEED_SAMPLES.to_vec(),
             show_all_paths: false,
             display: DisplayMode::default(),
             display_menu_open: false,
             look_at_armed: false,
+            look_at_plane_armed: false,
+            ground_shadow: false,
+            ambient_occlusion: false,
             show_grid: true,
             sim: None,
             post_view: None,
@@ -2753,11 +2778,11 @@ impl State {
             .enumerate()
             .map(|(gi, g)| {
                 let pick_name = camcraft_app::pick::geo_label(&self.world, g);
-                let (mut label, missing) = match g.feature {
+                let (mut label, missing) = match &g.feature {
                     FeatureSel::Face(id) => {
                         let face = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
-                            .and_then(|f| f.faces.iter().find(|fa| fa.id == id).cloned());
+                            .and_then(|f| f.faces.iter().find(|fa| fa.id == *id).cloned());
                         match face {
                             Some(f) => {
                                 // Which axis the face sits at, on the
@@ -2791,7 +2816,7 @@ impl State {
                         let found = model::find_by_name(&self.world, &g.entity)
                             .and_then(|e| model::features_of(&self.world, &e))
                             .map(|f| {
-                                let c = camcraft_app::model::resolve_chain(&f, id)?;
+                                let c = camcraft_app::model::resolve_chain(&f, *id)?;
                                 let pts = feature::chain_points(&f, &c);
                                 Some((c, pts))
                             })
@@ -2854,11 +2879,11 @@ impl State {
                             .and_then(|e| model::features_of(&self.world, &e))
                             .and_then(|f| {
                                 // #2247: both memoized per feature set.
-                                let strips = model::patches(&f).iter().find(|p| p.id == id)?.faces.len();
+                                let strips = model::patches(&f).iter().find(|p| p.id == *id)?.faces.len();
                                 let mut seen: Vec<Vec<(i64, i64)>> = Vec::new();
                                 let mut closed: Vec<Vec<[f64; 3]>> = Vec::new();
                                 let mut open = false;
-                                for r in model::patch_rings(&f, id)?.iter() {
+                                for r in model::patch_rings(&f, *id)?.iter() {
                                     let pts: Vec<[f64; 3]> = r
                                         .verts
                                         .iter()
@@ -2922,7 +2947,7 @@ impl State {
                         }
                     }
                     FeatureSel::Vertex(id) => {
-                        match crate::vertex_pick::vertex_world(self, &g.entity, id) {
+                        match crate::vertex_pick::vertex_world(self, &g.entity, *id) {
                             Some(p) => (
                                 format!(
                                     "{pick_name} · ({}, {}, {}) {}",
@@ -2933,6 +2958,14 @@ impl State {
                                 ),
                                 false,
                             ),
+                            None => (format!("{pick_name} · missing"), true),
+                        }
+                    }
+                    // #2238 frame cost: the sketch chip text is cached by
+                    // drawing, entity, pick and display unit.
+                    FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                        match crate::sketch_chip_memo::sketch_chip(&self.world, &g.entity, &g.feature, unit) {
+                            Some((tail, missing)) => (format!("{pick_name} · {tail}"), missing),
                             None => (format!("{pick_name} · missing"), true),
                         }
                     }
@@ -4389,7 +4422,7 @@ impl State {
                 }
                 if model::find_by_name(&self.world, &name).is_some() {
                     let (coarse, budget, hole) = (command.coarse_mm, command.facet_budget, command.hole);
-                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
+                    match UpdateModel::new(&self.world, &name, command.mesh).map(|u| u.with_fidelity(coarse).with_file_tolerance(command.file_tolerance).with_hole(hole).with_budget(budget).with_step_source(command.step_source).with_source(command.source)) {
                         Ok(upd) => {
                             let summary = upd.changes().describe();
                             self.history.execute(&self.world, upd);

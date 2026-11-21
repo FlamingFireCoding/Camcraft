@@ -41,7 +41,7 @@ committed golden is a legal post input.
 | `TORCH ON C<id> OUTER\|INNER\|OPEN [PARENT<id>] [SMALL<f×1000>]` / `TORCH OFF C<id>` | the torch struck before the next motion record / put out after the previous one (#671): the `.cl` v5 `; TORCH` records without their `; ` |
 | `START X <i> Y <i> Z <i>` / `END` | legacy `.cl` position lines: consumed silently (END ends the record span) |
 
-`CYCLE` TYPE ∈ SPOT DRILL PECK DEEP TAP FLOATINGTAP BORE BACKBORE REAM. Word meanings
+`CYCLE` TYPE ∈ SPOT DRILL PECK DEEP TAP FLOATINGTAP BORE BACKBORE REAM FINEBORE. Word meanings
 match the `.cl` v3 `; CYCLE` marker the M1.6 goldens use, and one
 parser reads both: X Y center, Z (or `BZ`) bottom, R (or `RZ`)
 retract/feed plane, `ENTRY` entry plane, Q (or `PECK`) peck, P (or
@@ -117,7 +117,8 @@ behavior only):
 | `SetWorkOffset` | on a probing result (`onProbeResult`, #108): the work offset the measured deviation is written into, **0-based** (0 is the first offset, `G54`; -1 sets none). Not the same count as `WorkOffset`, which is 1-based: work offset n of a section is `SetWorkOffset` n-1 of a probe. A probe can only set offsets 1-6 (`0..=5`) |
 | `Tolerance` | the `PROBE` ask's deviation budget in mm (present only on probe events; the µm lattice word `PROBE <µm>` is its stream spelling) |
 | `CircularDirection` | `CW` / `CCW` (arcs) |
-| `CycleType` | cycle intent delivered to hooks: `SPOT` `DRILL` `PECK` `DEEP` `TAP` `BORE` `BACKBORE` `REAM` (feed in, feed out at the same feed, no dwell: G85); `FLOATINGTAP` is normalized to `TAP` here and distinguished by `TappingMode` |
+| `CycleType` | cycle intent delivered to hooks: `SPOT` `DRILL` `PECK` `DEEP` `TAP` `BORE` `BACKBORE` `REAM` (feed in, feed out at the same feed, no dwell: G85) `FINEBORE` (feed in, dwell, oriented spindle stop, shift, rapid out: G76 on a mill; #1445); `FLOATINGTAP` is normalized to `TAP` here and distinguished by `TappingMode` |
+| `ShiftX` `ShiftY` | on a `FINEBORE` cycle only (#1445): the shift off the wall, mm along X and Y, read by the engine from the cycle's own chain (the lateral rapid at the bottom). `null` when the chain carries none, which the engine also refuses. A script writes the cycle only when it declares `fineBoring = true`; without the flag the engine refuses the cycle by name |
 | `TappingMode` | `rigid` for legacy `TAP`; `floating` only for the explicit `FLOATINGTAP` stream kind |
 | `EntryZ` `Q` `P` `FeedRate` | cycle entry plane, peck mm, dwell s, cutting feed mm/min (`null` for legacy markers) |
 | `ChainFeedRate` | optional-valued engine property: feed on the first subsequent non-rapid move in the expanded cycle chain, mm/min; `null` if absent; legacy posts may use it when cycle `FeedRate` is `null` |
@@ -125,7 +126,7 @@ behavior only):
 | `LinearMovementIncludeOpts` | `{L:[1]}` on plunges (the skip-the-rapid convention) |
 | `PlasmaKerf` `PlasmaCompensation` `PierceHeight` `CutHeight` `PierceDelay` `PlasmaFeed` `PlasmaReversed` | the `PLASMA` header (#671), for the section: kerf mm; `control` (G41/G42 spans follow) / `computer`; pierce and cut height mm and pierce delay s - each ABSENT when unstated (the controller's AutoFS decides); `auto` (the lit moves carry no feed) / `stated`; the reversed cut direction. Cleared at `ENDSECTION` |
 | `EdmCondition` `WireSide` | a wire EDM section (#533): the machine's condition id the cut burns with, and `die` / `punch` (commentary). The moves are the wire-centre path (kerf in them, no feed). A script without `wireEdm = true` is refused the section by name |
-| `SinkerCondition` `ElectrodePickup` `EdmOrbit` `EdmOrbitRadius` | a Sinker Burn or Sinker Side Burn (#542, #545), before its section: the machine condition id the op names (absent when it names none), the electrode's pickup offset mm (the tool's `shank_len`), and for an orbit (#544) its geometry (`circular` / `vector` / `planetary`) and radius mm. The sinker post writes the condition and pickup through the machine's `edm.codes` (#290 D5), refuses a condition the machine's `edm.conditions` does not list, and refuses an orbit and a side burn by name (their explicit moves are not a straight burn). A script whose manifest `serves` does not name `sinker_edm` is refused the section by name |
+| `SinkerCondition` `ElectrodePickup` `EdmOrbit` `EdmOrbitRadius` | a Sinker Burn or Sinker Side Burn (#542, #545), before its section: the machine condition id the op names (absent when it names none), the electrode's pickup offset mm (the tool's `shank_len`), and for an orbit (#544) its geometry (`circular` / `vector` / `planetary`) and radius mm. The sinker post writes the condition and pickup through the machine's `edm.codes` (#290 D5). It refuses a condition absent from `edm.conditions` and any orbit. A Side Burn uses `edm.codes.depth` for its downward plunge and requires `edm.codes.side` for each lateral feed. The `side` template must contain `{x}` `{y}` `{z}` `{f}`. These values state the absolute endpoint in the work offset and the feed, in the document's units. Lateral feeds must follow one X or Y axis at constant Z. A script whose manifest `serves` does not name `sinker_edm` is refused the section by name |
 | `WireTaper` `WireU` `WireV` | a tapered wire section (#536): the stated taper in degrees (before the section), then before each leaning move the upper guide's offset from the lower one, mm; that move's X Y are the lower guide's. Both are computed from the move's pose and the machine's `edm` guide planes |
 | `WireFourAxis` | a 4-axis wire section (#537): the pairing rule in words (`arc length` or `sync points`), before the section; its leaning moves carry `WireU` `WireV` exactly as a tapered section's do, and no `WireTaper` |
 | `WireTaperDialect` `WireCorner` `WirePlane` `WireAngle` | a tapered section on an angle-word machine (#1164, `edm.taper_angle`): `angle`, the control's corner rule (`mitre` or `cone`) and the programmed plane's Z (the work's top), before the section; then before each written move the angle word (the stated taper signed by the machine's `positive` side rule, 0 for the move that stands the wire upright) - that move's X Y are the wire's point on the programmed plane, and no `WireU` `WireV` are sent. The cone rule's turning moves are the control's and are not sent |
@@ -170,7 +171,11 @@ behavior only):
 - `getProperty(k)` / `setProperty(k, v)` — the `properties` object
 - `message(s)` — counted warning, not text
 - format helpers `formatUnit` / `formatMotion` / `formatFeed`
-- `onComment(s)` — default: `writeln(s)`
+- `onComment(s)` — default: `writeln(s)`; override it to write a valid
+  comment for the controller (see the model-warning example below)
+- `commentText(s)` — cleans comment text without truncation. It replaces
+  comment delimiters with spaces, replaces non-ASCII or control characters
+  with `?`, and collapses whitespace. It does not add comment delimiters.
 - `onPartLoading()` / `onPartUnloading()` / `onPartTransfer()` —
   defaults write the intent as a comment (`(PART LOAD [ADVANCE <mm>])`,
   `(PART UNLOAD)`, `(PART TRANSFER <from>-><to>)`); a script with a
@@ -179,7 +184,42 @@ behavior only):
 - `setLanguageVersion(_v)` — accepted and ignored (the engine decides
   semantics, not the script; a reference-era pragma kept harmless)
 
-The engine calls, in order, if the script defines them: `onOpen`,
+### Model warnings in custom posts
+
+The engine calls `onOpen` first. It then calls `onComment(s)` once for
+each model warning in the program header, before it processes the records.
+The default `onComment` writes bare text. A custom post must select the
+controller's comment form if it outputs these warnings.
+
+For a controller that accepts RS-274 parenthesis comments, use:
+
+```javascript
+function onComment(s) {
+  writeComment(commentText(s));
+}
+```
+
+For example, this hook preserves the complete true-surface bound:
+
+```text
+(Reduced accuracy: model Part was checked to 0.024 mm, not 0.010 mm)
+```
+
+`commentText` preserves the full warning length and its numeric bound.
+Do not use a name cleaner that truncates the warning. Keep both bounds
+and their units. Select delimiters and escaping for the target controller;
+the helper alone does not make every controller's comment form valid.
+
+A custom post can suppress the warning without refusal:
+
+```javascript
+function onComment(s) {}
+```
+
+This suppresses all text sent through `onComment`, including model warnings.
+It does not change the model checks or their bound.
+
+The engine then calls, in order, if the script defines them:
 `onParameter(name, value)` (once per PARAM; `onSpindleSpeed` follows
 the `SpindleSpeed` PARAM), `onToolChange(number, name)` (once per
 `TOOL`), `onSection` / `onSectionEnd` (one per span), then per

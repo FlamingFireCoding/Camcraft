@@ -118,18 +118,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     SrcRef::Stock => SrcDto::Stock,
                     SrcRef::Entity(name) => SrcDto::Entity { name: name.clone() },
                     SrcRef::Selection(items) => SrcDto::Selection {
-                        items: items
-                            .iter()
-                            .map(|g| GeoSelDto {
-                                entity: g.entity.clone(),
-                                feature: match g.feature {
-                                    FeatureSel::Face(id) => FeatureSelDto::Face { id },
-                                    FeatureSel::Chain(id) => FeatureSelDto::Chain { id },
-                                    FeatureSel::Patch(id) => FeatureSelDto::Patch { id },
-                                    FeatureSel::Vertex(id) => FeatureSelDto::Vertex { id },
-                                },
-                            })
-                            .collect(),
+                        items: items.iter().map(geo_sel_dto).collect(),
                     },
                 },
                 params: ParamsDto::from_params(&op.params),
@@ -180,6 +169,7 @@ pub fn collect(world: &World) -> ProjectFile {
                     .filter(|c| !crate::model_fidelity::is_unknown(*c)),
                 fidelity_unknown: crate::model_fidelity::chord_of(world, &entity)
                     .is_some_and(crate::model_fidelity::is_unknown),
+                file_tolerance: crate::model_fidelity::file_tolerance_of(world, &entity),
                 mesh_open: crate::mesh_open::hole_of(world, &entity),
                 solids: kind.is_none().then(|| crate::mesh_solids::to_wire(&crate::mesh_solids::of(world, &entity))).flatten(),
                 fidelity_vouched: kind.is_none().then(|| super::VouchDto::of(world, &entity)).flatten(),

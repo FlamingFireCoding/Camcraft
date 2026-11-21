@@ -17,8 +17,14 @@
 #[macro_use]
 pub mod diag;
 pub mod display_mode;
+pub mod display_quality;
 pub mod draw_list;
+pub mod ground_shadow;
 pub(crate) mod look_at;
+pub(crate) mod look_at_plane;
+pub mod occlusion;
+pub(crate) mod shade_cache;
+pub mod shade_pass;
 
 pub mod cli_options;
 #[cfg(test)]
@@ -69,6 +75,8 @@ pub mod move_drag;
 pub mod turn_drag;
 pub mod machined;
 mod setup_display;
+mod sketch_chip_memo;
+mod sketch_memo;
 mod floor;
 mod work_envelope;
 pub mod view_frame;
