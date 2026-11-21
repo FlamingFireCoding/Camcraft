@@ -318,3 +318,81 @@ fn more_than_32_visible_profiles_build_nothing_on_a_still_frame() {
         "the next unchanged frame builds nothing"
     );
 }
+
+#[test]
+fn operation_page_source_filters_profiles_to_admitted_kinds_and_keeps_selection() {
+    use camcraft_app::commands::ImportModel;
+    use camcraft_app::geometry::{Point3, cube};
+    use camcraft_app::operation::{FeatureSel, GeoSel, OpType};
+
+    let mut h = stock_only();
+    place(&mut h, bytes("plate.dxf", Some(4)), None);
+    rack(&mut h.state_mut().state, &["EM-0400-2FL"]);
+    {
+        let st = &mut h.state_mut().state;
+        st.history.execute(
+            &st.world,
+            ImportModel::from_mesh("part", cube(Point3::new(0.0, 0.0, 0.0), Point3::new(30.0, 30.0, 15.0))),
+        );
+        let contour = camcraft_app::operation::seed_params(OpType::Contour.ordinal());
+        let pocket3d = camcraft_app::operation::seed_params(OpType::Pocket3D.ordinal());
+        assert_eq!(
+            super::super::op_source::source_items(&st.world, None, &contour),
+            vec!["Stock".to_owned(), "part".to_owned(), "plate".to_owned()],
+            "2D admitted kind lists parts and placed profiles once"
+        );
+        assert_eq!(
+            super::super::op_source::source_items(&st.world, None, &pocket3d),
+            vec!["Stock".to_owned(), "part".to_owned()],
+            "3D kind omits DXF profiles from the Source list"
+        );
+        let tool = model::named_entities(&st.world)
+            .into_iter()
+            .find(|(_, e)| model::is_tool(&st.world, e))
+            .map(|(n, _)| n)
+            .expect("a tool");
+        for (name, params) in [("Pocket3d1", pocket3d), ("Contour1", contour)] {
+            st.pending.push_back(CommandKind::CreateOperation {
+                name: name.into(),
+                tool: tool.clone(),
+                src: SrcRef::Entity("part".into()),
+                params,
+            });
+            st.drain_actions();
+            assert!(model::find_by_name(&st.world, name).is_some(), "created {name}: {}", st.status);
+        }
+        st.ui_target = UiTarget::Operation("Pocket3d1".into());
+    }
+    h.run_steps(2);
+
+    let plate_nodes = |h: &Harness<'static, ShellUi>| h.query_all_by(|n| n.label().as_deref() == Some("plate")).count();
+    let baseline = plate_nodes(&h);
+    let click_combo = |h: &mut Harness<'static, ShellUi>| {
+        h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("part")).click();
+        h.run_steps(2);
+    };
+    click_combo(&mut h);
+    assert_eq!(plate_nodes(&h), baseline, "3D Pocket Source dropdown must not offer DXF profile 'plate'");
+    // Close the Source popup before switching operations (they share the "op_src" salt).
+    click_combo(&mut h);
+    h.state_mut().state.ui_target = UiTarget::Operation("Contour1".into());
+    h.run_steps(2);
+    assert_eq!(plate_nodes(&h), baseline);
+    click_combo(&mut h);
+    assert_eq!(plate_nodes(&h), baseline + 1, "2D Contour Source dropdown offers DXF profile 'plate' once");
+    click_combo(&mut h);
+    let face_id = {
+        let st = &h.state().state;
+        let part = model::find_by_name(&st.world, "part").expect("part");
+        model::features_of(&st.world, &part).expect("part features").faces[0].id
+    };
+    h.state_mut().state.pending.push_back(CommandKind::SetOperationGeometry {
+        name: "Contour1".into(),
+        items: vec![GeoSel { entity: "part".into(), feature: FeatureSel::Face(face_id) }],
+    });
+    h.run_steps(3);
+    assert!(
+        h.query_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Selection")).is_some(),
+        "Selection stays shown in the merged header"
+    );
+}
