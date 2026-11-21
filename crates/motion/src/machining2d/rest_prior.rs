@@ -254,5 +254,5 @@ pub fn rest_pocket_previous_with_relief(
 }
 
 #[cfg(test)]
-#[path = "rest_prior_tests.rs"]
+#[path = "tests/rest_prior.rs"]
 mod tests;
