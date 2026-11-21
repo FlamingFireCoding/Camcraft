@@ -1173,8 +1173,14 @@ pub(crate) fn shown_regions(state: &State) -> Vec<(f64, Option<Region>)> {
         let Some(op) = model::operation_of(&state.world, &entity) else {
             continue;
         };
-        let region = crate::frame_memo::region_of(&state.world, &name, &op);
-        if let Some(z) = operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params)
+        // A per-frame display read: a sketch Z span may come from the frame memo.
+        let (region, z) = operation::display_heights(|| {
+            (
+                crate::frame_memo::region_of(&state.world, &name, &op),
+                operation::region_z(&state.world, op.setup.as_deref(), Some(&op.src), &op.params),
+            )
+        });
+        if let Some(z) = z
             && (region.is_some() || !operation::chains_of(&state.world, &op).is_empty())
         {
             out.push((z, region));

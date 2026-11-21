@@ -150,7 +150,7 @@ pub(crate) fn unresolved_note(
         return note;
     }
     UNRESOLVED_BUILDS.with(|n| n.set(n.get().saturating_add(1)));
-    let note = operation::resolve_params(world, setup, src, params)
+    let note = operation::display_heights(|| operation::resolve_params(world, setup, src, params))
         .err()
         .map(|why| format!("{why}; set the source up or switch the reference"));
     UNRESOLVED.with(|memo| {
@@ -258,7 +258,7 @@ pub(crate) fn height(
         {
             return *value;
         }
-        let value = build(|| {
+        let value = build(|| operation::display_heights(|| {
             let frame = operation::OpFrame::new(setup.map(str::to_owned), tilt)
                 .checked_frame()
                 .map_err(|_| "the 3+2 index commands no direction - its angles are not finite")?;
@@ -266,7 +266,7 @@ pub(crate) fn height(
                 operation::missing_source(world, setup, src, h.reference)
                     .unwrap_or("source missing")
             })
-        });
+        }));
         // Bound memory during long spinbox drags without losing a frame's rows.
         if entry.heights.len() >= 32 {
             let _ = entry.heights.remove(0);
