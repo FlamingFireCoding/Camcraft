@@ -22,7 +22,7 @@
 //! - **The size (#1890).** `width` is the chamfer's chord `w`; the
 //!   tip drop comes from the actual cone contacts on both faces
 //!   (`deburr_contact`). Constant Depth holds the perpendicular
-//!   edge-to-chord distance. A rim assumes a vertical second face.
+//!   edge-to-chord distance. A rim assumes a perpendicular second face.
 //!   Runs chain only edges of one drop, so each
 //!   run keeps one depth and one declared break.
 //! - **The loci are pencil's mirror.** An exposed edge is either a
@@ -111,15 +111,16 @@ pub struct DeburrParams {
 }
 
 impl DeburrParams {
-    /// How far below a 90-degree edge (and a rim) the virtual tip
-    /// stands. Stated once so the door, the pane and the path cannot
-    /// disagree; NaN when the size is not sane.
+    /// Nominal symmetric 90-degree reference drop for range checks.
+    /// Actual path drops use both face contacts (`deburr_contact`).
+    /// NaN when the size is not sane.
     #[must_use]
     pub fn drop(&self) -> f64 {
         self.drop_at(RIM_WEDGE_DEG).unwrap_or(f64::NAN)
     }
 
-    /// The tip's drop under an edge of wedge `wedge_deg` degrees, or
+    /// Nominal symmetric wedge drop, used to check the size range and
+    /// count steep edges. Actual path drops use both face contacts.
     /// `None` when the size law does not reach that wedge (#1890).
     #[must_use]
     pub fn drop_at(&self, wedge_deg: f64) -> Option<f64> {

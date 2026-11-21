@@ -178,7 +178,7 @@ pub(super) fn clip(p0: Point3, p1: Point3, p: &DeburrParams, drop: f64) -> Optio
     let (lo, hi) = (p.bottom_z + drop, p.top_z + drop);
     let dz = p1.z - p0.z;
     if dz.abs() < 1e-15 * (p0.z.abs() + p1.z.abs() + 1.0) {
-        return (p0.z >= lo && p0.z <= hi).then_some((p0, p1));
+        return (p0.z >= lo - 1e-9 && p0.z <= hi + 1e-9).then_some((p0, p1));
     }
     let (mut t0, mut t1) = ((lo - p0.z) / dz, (hi - p0.z) / dz);
     if t0 > t1 {

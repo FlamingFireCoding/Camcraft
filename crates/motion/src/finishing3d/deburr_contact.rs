@@ -35,11 +35,27 @@ pub(super) fn contact_drop(
         (denominator.is_finite() && denominator > 1e-12)
             .then(|| scale3(direction, 1.0 / denominator))
     };
-    let a = contact(ray(sub3(face_a, e0)));
-    // A rim has no second face. Its stated convention is a vertical
-    // wall below the edge, rather than an invented second mesh face.
-    let second = face_b.map_or(Point3::new(0.0, 0.0, -1.0), |q| sub3(q, e0));
-    let b = contact(ray(second));
+    let first = ray(sub3(face_a, e0));
+    let a = contact(first);
+    // An open rim supplies one face. Complete its stated right-angle
+    // convention with a ray perpendicular to both the edge and that face.
+    // Select the lower ray, so a vertical real face gets a horizontal
+    // virtual face, and a horizontal real face gets a downward wall.
+    let second = face_b.map_or_else(
+        || {
+            let perpendicular = Point3::new(
+                tangent.y * first.z - tangent.z * first.y,
+                tangent.z * first.x - tangent.x * first.z,
+                tangent.x * first.y - tangent.y * first.x,
+            );
+            scale3(
+                perpendicular,
+                if perpendicular.z > 0.0 { -1.0 } else { 1.0 },
+            )
+        },
+        |q| ray(sub3(q, e0)),
+    );
+    let b = contact(second);
     let unsupported = || {
         GenError::Invalid(
         "deburr: unsupported face orientation for cone contact - select edges whose two faces meet the cutter".into(),
