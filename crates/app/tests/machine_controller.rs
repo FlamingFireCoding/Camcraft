@@ -59,6 +59,11 @@ fn mounting_saving_and_reopening_the_picomax_preserves_its_installation() {
         (Some(50.0), Some(9000.0), Some(1))
     );
     let saved = serde_json::to_value(project::collect(&world)).unwrap();
+    assert_eq!(saved["version"], project::PROJECT_VERSION);
+    assert!(
+        saved["version"].as_u64().unwrap() >= 75,
+        "a v74 reader must refuse this save"
+    );
     let record = &saved["machine"]["machine"];
     assert_eq!(
         record["controller_identity"],
@@ -72,4 +77,42 @@ fn mounting_saving_and_reopening_the_picomax_preserves_its_installation() {
     malformed["machine"]["machine"]["controller_identity"]["installed_options"] = json!(["a", "a"]);
     assert!(project::open_noted(&reopened, &malformed.to_string()).is_err());
     assert_eq!(machine::of(&reopened), loaded);
+}
+
+#[test]
+fn a_v74_machine_opens_with_unstated_installation_facts_and_a_future_file_preserves_it() {
+    let legacy = json!({
+        "version": 74, "entities": [], "machine": {
+            "path": "legacy.mch", "machine": {
+                "model": "Legacy mill", "spindle_max": 6000.0,
+                "axes": [{"name": "X", "travel": [-40.0, 40.0]}]
+            }
+        }
+    });
+    let world = new_world();
+    project::open_noted(&world, &legacy.to_string()).expect("existing v74 machine");
+    let loaded = machine::of(&world);
+    assert_eq!(loaded.0, "legacy.mch");
+    let mill = loaded.1.as_ref().unwrap();
+    assert_eq!(mill.model, "Legacy mill");
+    assert_eq!(mill.spindle_max, Some(6000.0));
+    assert_eq!(mill.axes[0].travel, Some((-40.0, 40.0)));
+    assert!(mill.controller_identity.is_none());
+    assert!(mill.tool_change.is_none());
+
+    let mut saved = serde_json::to_value(project::collect(&world)).unwrap();
+    assert_eq!(saved["version"], project::PROJECT_VERSION);
+    let record = &saved["machine"]["machine"];
+    assert!(record.get("controller_identity").is_none());
+    assert!(record.get("tool_change").is_none());
+
+    let future = project::PROJECT_VERSION + 1;
+    saved["version"] = json!(future);
+    let error =
+        project::open_noted(&world, &saved.to_string()).expect_err("too new for this reader");
+    assert!(
+        matches!(error, project::ProjectError::UnsupportedVersion(v) if v == future),
+        "{error}"
+    );
+    assert_eq!(machine::of(&world), loaded);
 }

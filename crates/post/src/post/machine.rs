@@ -5,6 +5,7 @@
 //! published post-processor documentation (behavior only, per the
 //! Clean-Room Protocol). The grammar and every key name are ours.
 
+use super::machine_rotary::is_rotary_letter;
 use serde_json::{json, Value};
 
 /// Parse the file text (syntax only; absent fields default at read
@@ -219,8 +220,9 @@ fn f64_or(v: Option<&Value>, default: f64) -> f64 {
     v.and_then(|x| x.as_f64()).unwrap_or(default)
 }
 
-/// The flattened object the script's `machine` global sees, per the
-/// format doc: name, rate maxima, spindle bound, coolant names.
+/// Return the properties of the script's `machine` global. Direct callers
+/// receive `{"error": reason}` if the installation facts fail validation.
+/// The post engine returns that error before it runs any script hooks.
 pub fn script_props(m: &Value) -> Value {
     match super::machine_installation::checked_input(m) {
         Ok(input) => flatten(&input),
@@ -391,12 +393,4 @@ fn spindle_heads(parts: Option<&Value>) -> usize {
             ) + spindle_heads(p.get("parts"))
         })
         .sum()
-}
-
-/// The RS-274 rotary addresses: A turns about X, B about Y, C about Z.
-/// Everything else in an axes list is linear by our grammar (a Q
-/// slide is a slide - stage C's stated law, re-echoed at the raw
-/// door, where letters are all a bare file says).
-fn is_rotary_letter(letter: Option<&str>) -> bool {
-    matches!(letter, Some("A") | Some("B") | Some("C"))
 }
