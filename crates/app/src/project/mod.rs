@@ -115,6 +115,9 @@ mod entity;
 // #2463: a linked model's source file and its digest.
 mod source_dto;
 pub use source_dto::SourceDto;
+// #1339: who vouched for a mesh of unknown fidelity.
+mod vouch_dto;
+pub use vouch_dto::VouchDto;
 mod vise_dto;
 mod fixture_keys;
 mod plate_dto;
