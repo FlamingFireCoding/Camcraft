@@ -1,7 +1,6 @@
-//! The corner minimum over a MESHED round (#3208): a fillet drawn in
-//! coarse facets (22.5° turns, as a model's mesh gives a small round)
-//! at or over the minimum inside radius is cut; one under it, and a
-//! sharp corner, stay refused.
+//! The corner minimum over polygonal profiles (#3208): coordinates
+//! alone do not prove that a profile came from an arc or a mesh.
+//! Coarse facets and authored corners keep the strict cover tolerance.
 //!
 //! The wire and gap below are SYNTHETIC: the issue's 0.25 mm wire and a
 //! plausible gap, from no machine's manual.
@@ -43,15 +42,27 @@ fn cut(r: f64, n: u32) -> Result<Toolpath, GenError> {
     wire_contour(&[square(10.0, r, n)], &[], &params())
 }
 
-/// Done means: an r0.25 fillet in four facets per quarter (the issue's
-/// part) passes with the 0.25 wire; the minimum is 0.1620 mm.
+/// A fine polygonal fillet fits within the existing cover tolerance.
 #[test]
-fn a_meshed_fillet_over_the_minimum_is_cut() {
+fn a_fine_fillet_within_the_cover_tolerance_is_cut() {
     assert!((params().kerf_offset() - 0.162).abs() < 1e-12);
-    for (r, n) in [(0.25, 4), (0.5, 4), (0.25, 3), (0.165, 4), (0.25, 30)] {
-        if let Err(e) = cut(r, n) {
-            panic!("r{r} in {n} facets per quarter is refused: {e}");
-        }
+    if let Err(e) = cut(0.25, 30) {
+        panic!("r0.25 in 30 facets per quarter is refused: {e}");
+    }
+}
+
+/// A radius above the wire minimum does not prove arc provenance.
+/// Each coarse profile leaves more than the strict cover tolerance.
+#[test]
+fn coarse_fillets_without_arc_provenance_stay_refused() {
+    for (r, n) in [(0.25, 4), (0.5, 4), (0.25, 3), (0.165, 4)] {
+        let why = cut(r, n)
+            .expect_err("unproven facets keep the strict cover tolerance")
+            .to_string();
+        assert!(
+            why.contains("inside corner") && why.contains("0.1620"),
+            "r{r} in {n}: {why}"
+        );
     }
 }
 
@@ -102,6 +113,23 @@ fn a_drawn_polygon_with_facet_sized_turns_stays_refused() {
     assert!(why.contains("inside corner") && why.contains("0.0032 mm standing"), "{why}");
 }
 
+/// The same drawn polygon at R0.5 passes the former radius and sag
+/// guards. Its sharp corners still leave 3.2 µm, above COVER_TOL.
+#[test]
+fn a_small_drawn_polygon_with_facet_sized_turns_stays_refused() {
+    let pts = (0..16).map(|s| {
+        let t = (22.5 * f64::from(s)).to_radians();
+        Point2::new(0.5 * t.cos(), 0.5 * t.sin())
+    });
+    let why = wire_contour(&[Loop::new(pts.collect()).unwrap()], &[], &params())
+        .expect_err("refused")
+        .to_string();
+    assert!(
+        why.contains("inside corner") && why.contains("0.0032 mm standing"),
+        "{why}"
+    );
+}
+
 /// A short V notch is not a run of facets: its tip turns 22.5° on a
 /// small circle, but its neighbours turn the other way - refused.
 #[test]
@@ -116,9 +144,8 @@ fn a_short_notch_with_one_facet_sized_turn_stays_refused() {
     assert!(why.contains("inside corner") && why.contains("near X0.000 Y-5.040"), "{why}");
 }
 
-/// Facets that turn past 30° are too coarse to be read as a round: an
-/// r0.25 hole in eight 45° facets (each chord 0.019 mm off its circle,
-/// all on one circle) stays refused - its rest is 13.3 µm.
+/// An r0.25 hole in eight 45° facets (each chord 0.019 mm off its
+/// circle) stays refused: its rest is 13.3 µm, above COVER_TOL.
 #[test]
 fn a_round_in_facets_past_the_turn_cap_stays_refused() {
     let pts = (0..8).map(|s| {

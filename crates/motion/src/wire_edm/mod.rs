@@ -45,7 +45,6 @@ mod pairing;
 mod preimage;
 mod open;
 mod ring;
-mod rounds;
 mod ruled;
 mod ruled_laws;
 mod ruled_widen;

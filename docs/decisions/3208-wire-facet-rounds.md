@@ -1,41 +1,40 @@
-## #3208 - Wire corner check accepts the facet mitre of a meshed round
+## #3208 - Keep strict wire cover checks without arc provenance
 
 **Decided.** The wire cover law (`crates/motion/src/wire_edm/laws.rs`)
-gives an allowance at each vertex that is a facet of a meshed round. The
-allowance is the exact mitre excess of the polygon offset at that vertex,
-`k (1 / cos(θ/2) - 1)`, where `k` is the kerf offset and `θ` the turn.
-The allowance fades linearly along each chord. `rounds.rs` finds the
-facets. A vertex is a facet when all of these are true:
+restores the upstream strict `COVER_TOL` of 0.002 mm for all current
+polygon profiles. Remove
+the allowance that inferred meshed rounds from vertex coordinates.
+An allowance requires reliable arc or mesh provenance. The current
+`Loop` and wire generator inputs contain points, without that provenance.
 
-- it turns 30° or less;
-- the circle through it and its two neighbours has a radius of `k` or
-  more, and the chord stands 0.02 mm or less off that circle;
-- a neighbour vertex is a facet of the same circle (2 % of the radius
-  plus 1 µm), with a turn of the same sign.
+**Why.** The review of PR #3224 found a sharp 16-sided R0.5 polygon
+that passes every geometric guard of the inferred-round classifier.
+Each corner turns 22.5 degrees, and its chord sag is about 0.0096 mm.
+With a 0.162 mm kerf offset, the path leaves about 0.0032 mm at each
+corner. This exceeds the 0.002 mm cover tolerance. The same points can
+represent an authored polygon or a tessellated arc. Their coordinates
+cannot establish which profile the user intended.
 
-**Why.** A model's mesh draws an r0.25 fillet in four 22.5° chords. The
-path is the polygon offset of the chords, so it stands 3.2 µm too far at
-each facet vertex for a 0.162 mm offset. `COVER_TOL` (2 µm) absorbs only
-15° facets. The true round is legal, so the refusal was wrong. The test
-reads only the mesh, so it must recognise a round from its vertices. The
-linear fade is safe: the excess along a chord is convex and falls to
-zero within `k tan(θ/2)` of the vertex, which is shorter than the chord
-for each radius of `k` or more.
+The original coarse-fillet acceptance remains deferred. A coarse mesh
+without provenance must receive the same strict check as an authored
+polygon. Fine facets that meet the existing cover tolerance can pass.
 
 **Dropped.**
 
-- A larger `COVER_TOL`. It also lets a sharp kink or a radius a little
-  under the minimum pass. The tolerance stays 2 µm.
-- Finer tessellation of the profile in the app. The silhouette comes
-  from the model's mesh, and the true arc is not available there.
-- Rebuilding the arcs and offsetting them as true arcs (an arc-fit
-  offset). It is new geometry for each wire path, at a much larger cost.
+- Infer arc provenance from turn, radius, sag, or matching neighbours.
+  The small drawn polygon satisfies these tests and remains unsafe.
+- Increase `COVER_TOL`. This also accepts sharp corners with excessive
+  material left standing.
+- Add a caller-controlled allowance flag. A flag alone does not prove
+  that the input came from a true arc or a model mesh.
+- Add an end-to-end provenance API in this repair. The requested repair
+  is limited to the review findings. Reliable provenance needs separate
+  design and validation through the profile extraction path.
 
-**Not changed.** The path is still the offset of the chords. Against the
-true arc it leaves the chord sag (about 5 µm for r0.25 in 22.5° chords)
-standing at mid-chord. This was already true for every meshed round. The
-mesh resolution sets it, not this law.
+**Not changed.** The path remains the offset of the polygon chords.
+The generator refuses a path that exceeds the existing cover tolerance.
+No fixture, golden file, importer, or post processor changes are needed.
 
-**Cost to change later.** The two limits (30°, 0.02 mm) are constants in
-`rounds.rs`. A finer arc-fit offset can replace the allowance without a
-change to the callers.
+**Cost to change later.** A future allowance must carry reliable source
+information through profile extraction to the cover check. Its tests
+must distinguish authored polygons from supported source arcs or meshes.
