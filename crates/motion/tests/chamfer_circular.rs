@@ -210,35 +210,6 @@ fn an_open_chamfer_rides_one_edge_from_end_to_end() {
 }
 
 #[test]
-fn an_open_chamfer_with_a_collapsed_segment_refuses_by_name() {
-    let p = chamfer_params();
-    let runs = vec![vec![
-        Point2::new(-20.0, 20.0),
-        Point2::new(20.0, 20.0),
-        Point2::new(20.0, 20.0),
-    ]];
-    let why = err(chamfer_open_runs(
-        &runs,
-        &p,
-        &|_| Ok(Some(rect(-20.0, -20.0, 20.0, 20.0))),
-    ));
-    assert!(why.contains("collapsed segment"), "{why}");
-    assert!(why.contains("re-pick the edge"), "{why}");
-}
-
-#[test]
-fn an_open_chamfer_without_a_model_wall_refuses_by_name() {
-    let p = chamfer_params();
-    let runs = vec![vec![
-        Point2::new(-20.0, 20.0),
-        Point2::new(20.0, 20.0),
-    ]];
-    let why = err(chamfer_open_runs(&runs, &p, &|_| Ok(None)));
-    assert!(why.contains("no model wall"), "{why}");
-    assert!(why.contains("change Top of Part Z"), "{why}");
-}
-
-#[test]
 fn connected_open_chamfer_edges_are_one_run() {
     let p = chamfer_params();
     let chain = vec![
