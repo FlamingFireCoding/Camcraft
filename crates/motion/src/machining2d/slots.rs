@@ -7,7 +7,7 @@ use crate::geometry::Point3;
 use crate::links::Links;
 
 use super::face::{GenError, band};
-use super::levels::{Cert, Motion, run_levels};
+use super::levels::{Cert, Motion, run_level_walks, run_levels};
 /// Slotting: a straight channel between two XY points, cleared in rows
 /// parallel to its axis. The channel is the stadium swept by a disc of
 /// radius `width / 2` along `a` -> `b`; shrinking a stadium is narrowing
@@ -22,7 +22,8 @@ use super::levels::{Cert, Motion, run_levels};
 /// `b + q u + d n` with `q = sqrt(h^2 - d^2)`, so each row reaches the
 /// round ends exactly as far as it can. The center area is convex, so
 /// the serpentine joins with lateral feeds and no in-cut rapids are
-/// even possible.
+/// even possible. A row touches a round end only at its end point, so
+/// for `h > 0` one lap of the stadium follows (`slot_lap`, #2906).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SlotParams {
     pub tool_diameter: f64,
@@ -156,6 +157,19 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         pass.push(s);
         pass.push(e);
     }
+    // #2906: the last row (d = h, q = 0) ends on a tangent point of the
+    // +n side; the lap rides the whole wall from there, caps included.
+    let runs = match (h > 0.0, pass.split_first()) {
+        (true, Some((_, rest))) => {
+            let at_b = p.climb == (ds.len().saturating_sub(1) % 2 == 0);
+            let (lap, pts) = super::slot_lap::wall_lap(a, b, u, n, h, at_b, p.climb);
+            let mut walk = vec![super::arcs::Seg::Line(rest.to_vec())];
+            walk.extend(lap);
+            pass.extend(pts);
+            Some(vec![walk])
+        }
+        _ => None,
+    };
 
     let zs = super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)?;
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
@@ -198,7 +212,7 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         (Some(t), _) | (None, Some(t)) => Some(Cert::Stadium { a, b, h, tess: t }),
         (None, None) => None,
     };
-    run_levels(&mut bld, &[pass], &zs, &motion, None, center.as_ref(), link_cert.as_ref());
+    run_level_walks(&mut bld, &[pass], &zs, &motion, runs.as_deref(), center.as_ref(), link_cert.as_ref());
     let cur = bld.at();
     bld.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
 
