@@ -136,7 +136,7 @@ fn build(world: &World, op: &Operation, tool_r: f64, material: &Material, part_s
                 let t = fold_height(world, setup, Some(&op.src), frame.as_ref(), *top_z)?;
                 let b = fold_height(world, setup, Some(&op.src), frame.as_ref(), *bottom_z)?;
                 let mt = super::area::stock_top(world, setup, parts, init_top, frame.as_ref());
-                Some(super::area::ladder_planes(t - oz, mt, b - oz, *stepdown))
+                Some(super::area::ladder_planes(t - oz, mt, b - oz, op.params.ladder_stepdown(t, b, *stepdown)))
             };
             match &op.src {
                 SrcRef::Selection(items) => match pocket_ladder(world, setup, items, &op.params)? {

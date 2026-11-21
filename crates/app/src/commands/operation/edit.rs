@@ -114,8 +114,9 @@ impl EditOperationParams {
         if let Some(why) = params.named_refusal() {
             return Err(CommandError::Invalid(why));
         }
-        // #1445: a dwell that is not a time from 0 to the bound, by name.
-        if let Some(why) = params.dwell_refusal() {
+        // #1445: a dwell that is not a time from 0 to the bound, or a fine
+        // bore with no usable shift, by name.
+        if let Some(why) = params.dwell_refusal().or_else(|| params.fine_bore_refusal()) {
             return Err(CommandError::Invalid(why));
         }
         sinker_gate(world, prev.setup.as_deref(), &params)?;
@@ -309,7 +310,12 @@ impl EditOperationLinks {
                 // seeds the op's milling feed; #2598: a Drill or Thread
                 // op takes the new tool's stated feed (same undo step).
                 if let Some(t) = model::find_by_name(world, tool).and_then(|e| model::tool_of(world, &e))
-                    && let Some(p) = crate::cutting_rows::retargeted_params(&next.params, &t, crate::stock_material::in_force(world, prev.setup.as_deref()))
+                    && let Some(p) = crate::cutting_rows::retargeted_params(
+                        &next.params,
+                        &t,
+                        crate::stock_material::in_force(world, prev.setup.as_deref()),
+                        crate::cutting::material_of(world),
+                    )
                 {
                     next.params = p;
                 }

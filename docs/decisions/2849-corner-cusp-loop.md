@@ -29,6 +29,12 @@ choice, `axis_reseat`, the ring order) and that this fix does not change
 them. Their `known-fail #2849` markers are on the unpushed PR B of #917.
 This PR therefore ends with `Refs #2849`, not `Fixes #2849`.
 
+**Merge with main.** `main` got the same code fix in `bc5daa32d`
+(`outer_fills`, pinned by a hand-made bow-tie loop). The refresh takes
+main's code. This PR now adds only the chord-bore pin: it reads the real
+path (a bore less its swept area) through `unreached_corners` and
+`unreached_corner_note`, where main's pin reads `outer_fills` alone.
+
 **Considered and dropped.**
 - Relax `Region::new` itself. Dropped: the refusal protects sketch input
   (Prime Directive), and many callers rely on it.
@@ -41,6 +47,10 @@ This PR therefore ends with `Refs #2849`, not `Fixes #2849`.
 - Change the planners for tests 1 to 3 (start choice, reseat tolerance,
   ring order). Dropped here: they cannot fail on `main`, and other pins and
   goldens read that behaviour.
+
+- Close this PR as superseded. Dropped for now: the chord-bore pin covers
+  the full corner check, not only the fill constructor. The re-review
+  decides if that coverage is worth the test.
 
 **Cost to change later.** One line. The pin
 `a_chord_cusp_that_crosses_itself_does_not_stop_the_corner_check` fails if
