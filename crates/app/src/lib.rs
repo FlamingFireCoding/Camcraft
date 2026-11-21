@@ -52,7 +52,11 @@ pub mod ai;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
+// #2996: what a model checked at reduced accuracy says.
+pub mod fidelity_note;
 pub mod mesh_open;
+pub mod mesh_solids;
+pub mod model_vouch;
 pub mod operation;
 pub mod pick;
 pub use camcraft_post::post;

@@ -75,7 +75,8 @@ pub fn rest_adaptive(region: &Region, p: &PocketParams, stock: &RestStock) -> Re
 /// builds the [`RestStock`] reads it at these depths (#1446).
 pub fn rest_levels(p: &PocketParams) -> Result<Vec<f64>, GenError> {
     let stock_top = p.links.approach.stock_top.or(Some(f64::INFINITY));
-    cut_levels_under(p.top_z, stock_top, p.bottom_z, p.stepdown)
+    let step = crate::machining2d::ladder_stepdown(&p.links.approach, p.top_z, p.bottom_z, p.stepdown);
+    cut_levels_under(p.top_z, stock_top, p.bottom_z, step)
 }
 
 /// [`rest_adaptive`] under `guards` (all on outside the unit tests).

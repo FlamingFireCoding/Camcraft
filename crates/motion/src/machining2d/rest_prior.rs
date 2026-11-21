@@ -27,6 +27,7 @@ use crate::geo2d::{Loop, Point2, Region};
 use crate::stock_sim::Columns;
 
 use super::adaptive::{RestStock, StockFloor};
+use super::corner_relief::CornerRelief;
 use super::face::GenError;
 use super::levels::cut_levels_under;
 use super::pocket::PocketParams;
@@ -196,7 +197,20 @@ pub fn rest_pocket_previous(
     rest: &RestParams,
     prior: Option<&Columns<'_>>,
 ) -> Result<Toolpath, GenError> {
+    rest_pocket_previous_with_relief(region, p, rest, prior, &CornerRelief::default())
+}
+
+/// [`rest_pocket_previous`] with optional inside-corner reliefs (#2400)
+/// in the corners that the earlier operations left.
+pub fn rest_pocket_previous_with_relief(
+    region: &Region,
+    p: &PocketParams,
+    rest: &RestParams,
+    prior: Option<&Columns<'_>>,
+    relief: &CornerRelief,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
+    relief.validate()?;
     if rest.source != RestSource::PreviousOperations {
         return Err(GenError::Invalid(
             "this rest group reads the entered previous tool: it is not planned from the previous operations".into(),
@@ -236,9 +250,9 @@ pub fn rest_pocket_previous(
     if !plan.previous_fits {
         notes.push("the previous operations cleared nothing of this pocket at its cut depths: the whole pocket is cut".into());
     }
-    emit_rest(region, p, &plan, notes)
+    emit_rest(region, p, &plan, notes, relief)
 }
 
 #[cfg(test)]
-#[path = "rest_prior_tests.rs"]
+#[path = "tests/rest_prior.rs"]
 mod tests;

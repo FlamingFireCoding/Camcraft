@@ -146,6 +146,7 @@ fn region_turn_core(
         Some(f) => {
             let local = Material {
                 excess: material.excess,
+        file_tolerance: material.file_tolerance,
                 facets: f.local_facets(&material.facets),
                 top: material.top - f.origin.z,
                 bodies: material.bodies.clone(),
@@ -249,7 +250,9 @@ pub(crate) fn selection_drives_region(params: &OpParams) -> bool {
             | OpParams::Swarf { .. }
             | OpParams::AdvancedSwarf { .. }
             // The rotary twins ride the fitted axis, not a pick: the
-            // turn's own geometry authors the path (M5.1 E).
+            // turn's own geometry authors the path (M5.1 E). #2848:
+            // picked FACES still bound Rotary Parallel's cut, through
+            // `rotary_picks`, not through this region.
             | OpParams::RotaryContour { .. }
             | OpParams::RotaryParallel { .. }
             // The rough ladder wraps the same axis - its islands come

@@ -34,6 +34,8 @@ Flags:
 - `--failed gate-logs/<run>` (each tier but `test`): run only the steps
   that failed in that run (#1702).
 - `--dry-run` with `--only` or `--failed` shows the selected steps.
+- `--lane N/M` (batch only): run lane N of M of the batch plan (#2908). See
+  "Batch lanes for separate runners".
 
 A fix for one red step then costs one step, not a full run.
 
@@ -55,6 +57,42 @@ A fix for one red step then costs one step, not a full run.
   `CAMCRAFT_GATE_JOBS=<cores>` sets the job budget that the lanes share.
 - Each step starts cargo, about 0.5 s on Windows. A batch plan has about 700 steps.
 
+## Batch lanes for separate runners (#2908)
+
+`cargo xtask gate batch --lane N/M` runs one part of the batch plan. M jobs,
+one for each lane, run the full batch tier. The lanes can run on M runners at
+the same time, or one after the other on one runner. The result is the same.
+
+- The split reads only the plan. It reads no timing file. Thus each machine
+  computes the same lanes for the same commit.
+- Each test step and clippy is in exactly one lane. The steps are dealt in
+  plan order, one lane after the other: first the steps that share the
+  machine, then the steps that run alone (`lanes::ISOLATED`, ui, clippy).
+- A lane builds only the crates that it tests (`debug build: <crate>`).
+- `--lane 1/1` is the full batch plan. M is 16 at most.
+- `--lane` on a different tier, a lane out of range, or a lane with no step
+  is an error with a message. It is not a green run.
+- `--dry-run`, `--only` and `--failed` apply to the steps of the lane.
+- A lane run writes `lane-result.tsv` into its `gate-logs/batch-<stamp>/`,
+  with the step logs. The file has the lane, the runner name
+  (`RUNNER_NAME`), the result (`green`, `red`, `void`), the wall time, the
+  planned step count, and one row for each step that ran.
+
+`cargo xtask gate-verdict <dir>...` reads each `lane-result.tsv` below the
+directories (the `gate-logs/` of one machine, or the downloaded artifacts of
+all lanes). It prints one Markdown verdict: a row for each lane with its
+runner, time, result and record path, then the red steps by name.
+
+- The exit code is 0 for green and 1 for red.
+- The verdict is red when a step is red, and also when a lane has no record,
+  has two records, is void, ran fewer steps than its plan, or has a record
+  that cannot be read. A lane that did not report is never green.
+- The failure of a red step is in the log of that step, in the artifact of
+  its lane. No second run is necessary to read it.
+
+`post-merge.yml` does not use the lanes yet. That workflow change is a
+different PR (#2908).
+
 ## What quick selects
 
 Quick prints its selection before it runs:
@@ -70,16 +108,21 @@ Quick prints its selection before it runs:
 
 ## Job budget (#2057)
 
-- One budget sets the jobs of the whole gate: 6 by default.
-  `CAMCRAFT_GATE_JOBS=<n>` (1 or more) changes it.
+- One budget sets the jobs of the whole gate. The default is the available
+  CPU count from `std::thread::available_parallelism()`, with a floor of 2
+  and a cap of 64. If CPU detection fails, the default is 2.
+- `CAMCRAFT_GATE_JOBS=<n>` overrides it with any positive whole number.
+  The override has no floor or cap. An empty value uses the default.
+  A bad value uses the default and prints a diagnostic that names the value.
 - A step that runs alone gets `-j <budget>` and `--test-threads=<budget>`.
-- The lanes of a release wave share the budget. N lanes get
+  Builds, `ISOLATED` tests, UI steps and clippy still run alone.
+- Batch and release queues share the budget. N lanes get
   `-j <budget / N>` each, minimum 1.
-- A wave has at most `budget / 2` lanes. A budget of 6 gives 3 lanes of 2
-  jobs.
-- The gate prints the budget, the lane limit and the jobs of each lane at
-  the start, and `-- wave K: N lane(s) x -j M` before each wave. The
-  `--dry-run` output shows the same lines.
+- A queue has at most `max(1, budget / 2)` lanes. A budget of 6 gives 3
+  lanes of 2 jobs. A budget of 32 allows 16 lanes of 2 jobs.
+- The gate prints the chosen budget and its source: available CPUs, the
+  fallback, or `CAMCRAFT_GATE_JOBS`. It also prints the lane limit and the
+  jobs of each lane. The `--dry-run` output shows the same information.
 - **The sum of `-j` of all builds on one machine stays at or below its core
   count.** This includes gates, reviews, worker builds and plain `cargo`
   calls. When other builds run, lower the budget of each one (for example

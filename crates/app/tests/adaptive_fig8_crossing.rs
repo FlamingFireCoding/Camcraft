@@ -52,6 +52,7 @@ fn fig8_params() -> OpParams {
         blend_turns: false,
         blend_radius: None,
         links: Links::PLANAR,
+        corner_relief: Default::default(),
     }
 }
 

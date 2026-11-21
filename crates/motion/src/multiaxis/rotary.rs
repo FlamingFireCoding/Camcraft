@@ -10,8 +10,8 @@
 //! `rotary_contour` is the waterline rung ladder about the axis -
 //! the same rings `contour5d` cuts, posed radially: on a cylinder
 //! the tool stands square to the wall and its axis MEETS the
-//! rotation axis, the defining posture of rotary work. Heights read
-//! as axial stations: a world height H maps to the station
+//! rotation axis, the defining posture of rotary work. Away from the
+//! horizontal stance, a world height H maps to the axial station
 //! `(H - o.z) / u.z` along the axis, the exact stage-B identity when
 //! the part stands on its axis (the lathe case) and the honest
 //! station reading when it leans.
@@ -24,9 +24,9 @@
 //! generatrices the kind is named for. No new pattern kernel; the
 //! same two ladders of stages A-D, composed. A bar standing nearly
 //! on end refuses (its parallel passes are the contour's rings) and
-//! a bar lying nearly flat refuses the contour's height law (its
-//! rings are the parallel passes) - each kind says so by name
-//! rather than invent a frame the parameters cannot speak in.
+//! a bar lying nearly flat reads contour top/bottom as axial ball-center
+//! stations, and clearance/retract as radii about the fitted axis.
+//! Its rings use radial links through [`flat`], without dividing by Z.
 //! The raster's links do not survive the laying-down: its Z lifts are
 //! rebuilt RADIAL - out along the radius to the retract cylinder,
 //! index, back in - by [`super::rotary_links`], and both kinds open on
@@ -56,12 +56,13 @@ use crate::machining2d::{GenError, ARC_FIT_TOL};
 
 use super::axis::{self, Axis};
 use super::retip::{along, radial_at, tip_of};
-use super::{rotary_ends, rotary_links};
+use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
 
-/// The axis' tilt below which "standing" and "laid" trade places:
-/// one sine for both refusals, so the pair cannot disagree about
-/// where the boundary sits (sin 1 degree).
+mod flat;
+
+/// The stance boundary (sin 1 degree): near horizontal, contour
+/// uses explicit stations; near vertical, parallel refuses its raster.
 const LEAN_MIN: f64 = 0.0175;
 /// World up, spelled once (Point3::new is not a const fn, so the
 /// literal stands in for it).
@@ -81,9 +82,11 @@ pub fn rotary_contour(
     let ax = axis::fit(facets)?;
     let lean = ax.dir.dot(UP).abs();
     if lean < LEAN_MIN {
-        return Err(GenError::Invalid(
-            "the work's axis lies flat on the table - a laid bar is finished with passes along it: Rotary Parallel".into(),
-        ));
+        let f = frame(&ax)?;
+        let r = p.tool_diameter * 0.5;
+        let base = flat::plan(&f.local_facets(facets), p)
+            .map_err(|e| to_world(e, &f, &ax, c, r))?;
+        return posed(&f, &base, &ax, c, r);
     }
     let f = frame(&ax)?;
     let local = f.local_facets(facets);
@@ -113,6 +116,21 @@ pub fn rotary_parallel(
 pub fn rotary_parallel_in(
     facets: &[Triangle],
     stock: Option<&[Triangle]>,
+    p: &Finish3DParams,
+    c: &AxisControl,
+) -> Result<Toolpath, GenError> {
+    rotary_parallel_over(facets, stock, None, p, c)
+}
+
+/// [`rotary_parallel_in`] kept to `picked` faces of the model (#2848):
+/// the axis and the raster still read every facet of `facets`, and the
+/// cut keeps only where the radial through the ball's center meets a
+/// picked facet ([`rotary_pick`]). None is the whole model. Picked
+/// faces that no pass stands over are refused by name.
+pub fn rotary_parallel_over(
+    facets: &[Triangle],
+    stock: Option<&[Triangle]>,
+    picked: Option<&[Triangle]>,
     p: &Finish3DParams,
     c: &AxisControl,
 ) -> Result<Toolpath, GenError> {
@@ -161,6 +179,22 @@ pub fn rotary_parallel_in(
     let base = match &window {
         Some(w) => rotary_ends::clip(&base, w),
         None => base,
+    };
+    // #2848: picked faces keep the cut to their radial shadow, before
+    // the links are built - the relink then links the kept pieces.
+    let base = match picked {
+        None => base,
+        Some(faces) => {
+            let kept = rotary_pick::Shadow::of(&f.local_facets(faces)).map(|sh| rotary_pick::clip(&base, r, &sh));
+            match kept {
+                Some(k) if k.moves.iter().any(|m| m.kind == MoveKind::Feed) => k,
+                _ => {
+                    return Err(GenError::Empty(
+                        "Rotary Parallel: no pass lies over the picked faces - the tool stands on the radial through each cut point, so it reaches only faces of the turned surface; pick those, or set the geometry to the whole model".into(),
+                    ))
+                }
+            }
+        }
     };
     let span = window.as_ref().map_or((f64::NEG_INFINITY, f64::INFINITY), |w| (w.lo, w.hi));
     // M13.8: the raster's Z lifts become radial links - out along the

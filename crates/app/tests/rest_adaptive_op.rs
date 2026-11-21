@@ -113,6 +113,7 @@ fn adaptive_with(rest: Option<RestParams>, method: AdaptiveMethod, blend_turns: 
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         method,
         troch: AdaptiveTrochParams::default(),
+        corner_relief: Default::default(),
         tilt,
     }
 }

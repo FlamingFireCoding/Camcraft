@@ -37,7 +37,7 @@ use crate::cl::{MoveKind, PathBuilder, Toolpath};
 use crate::entry::Entry3D;
 use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Point3;
-use crate::links::Links;
+use crate::links::{Link, Links};
 use crate::ring_zig::MIN_ARC_CHORD;
 
 use super::arcs::{ARC_FIT_TOL, Seg};
@@ -248,7 +248,21 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
             .with_entry(p.entry, p.helix_radius)
             .with_arc_radius(p.tool_diameter);
     }
-    let motion = motion.with_arc_radius(p.tool_diameter).with_links(p.links, p.helix_radius).with_top(p.links.approach.entry_top(p.top_z)).with_ring_zig();
+    let mut links = p.links;
+    if p.entry == Entry3D::Ramp {
+        // #1807: start just above the remaining material, including stock
+        // carried over Top Z; retain a smaller configured entry gap.
+        links.approach.plunge_height = links.approach.plunge_height.min(0.1);
+        if links.level == Link::Clearance
+            && links.arm(p.entry) == Entry3D::Ramp
+            && !links.approach.ramp_to_depth
+        {
+            // A closed ring ends at its next ramp start. Reuse the proved
+            // keep-down link; each new ring still enters from clearance.
+            links.level = Link::KeepDown;
+        }
+    }
+    let motion = motion.with_arc_radius(p.tool_diameter).with_links(links, p.helix_radius).with_top(links.approach.entry_top(p.top_z)).with_ring_zig();
     let cert = center_region.as_ref().map(Cert::Region);
 
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
@@ -277,17 +291,17 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
             if k == 0 {
                 // The rim ring: Top Z is the material top, never a
                 // level of its own (#2004), unless stock stands over it.
-                super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, floor, p.stepdown)
+                super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,floor, p.stepdown)
             } else {
                 // An inner ring: the previous ring's floor is a real
                 // cut for this one - the strip inside the previous
                 // ring's band still stands at the stock top, and it
                 // opens at that plane. Keep it as the first level.
                 let prev = p.bowl_z((rho + p.stepover + r).min(p.radius));
-                levels_from(prev, floor, p.stepdown)
+                levels_from(prev, floor, super::equal_steps::ladder_stepdown(&p.links.approach, prev, floor, p.stepdown))
             }
         } else {
-            super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)
+            super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,p.bottom_z, p.stepdown)
         }
         // #871: a part-way refusal hands back the rings cut so far.
         .map_err(|e| e.with_ghost_moves(b.moves()))?;

@@ -30,6 +30,7 @@ fn pocket(rest: Option<RestParams>) -> OpParams {
         helix_radius: 1.0,
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
+        corner_relief: Default::default(),
     }
 }
 
@@ -82,6 +83,7 @@ fn adaptive(rest: Option<RestParams>) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
+        corner_relief: Default::default(),
     }
 }
 

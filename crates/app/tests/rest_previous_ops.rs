@@ -83,6 +83,7 @@ fn pocket(stepover: f64, bottom: f64, rest: Option<RestParams>, tilt: Option<Til
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         tilt,
+        corner_relief: Default::default(),
     }
 }
 
