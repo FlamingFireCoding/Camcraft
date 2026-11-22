@@ -97,6 +97,8 @@ pub(crate) use material_region::selection_drives_region;
 mod circle_fit;
 // #1504: the plain Slot's room read off two picked edges or a face.
 mod slot_pick;
+// #1868: the same room read off DXF sketch chains.
+mod slot_sketch;
 pub use slot_pick::{slot_bound_of, slot_fit_of, slot_from_picks};
 pub use circle_fit::{CIRCLE_FIT_TOL, circle_of_region, circular_fit_of};
 mod material_source;
@@ -132,6 +134,8 @@ pub mod sinker_wear_op;
 pub mod sinker_side_op;
 // #1444: the Slot Undercut's seed and generation glue.
 pub mod slot_undercut_op;
+/// #1443: the V-Carve operation's seed and tool doors.
+pub mod vcarve_op;
 // #171: the Probe op seeded from one picked face, edge, vertex or round wall.
 mod probe_pick;
 mod probe_pick_round;
