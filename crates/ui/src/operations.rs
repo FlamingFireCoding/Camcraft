@@ -658,12 +658,31 @@ mod warning_fold_tests {
             Warning::StrategyFallback { at: 4, areas: 1 },
         ];
         w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
+        assert!(w[0].blocks_post(), "an undercut lift must still block posting");
+        assert!(!w[2].blocks_post(), "a fallback must remain advisory");
         let folded = fold_warnings(&w);
         assert_eq!(folded.len(), 3 + parts.len(), "{folded:?}");
         assert!(folded[0].contains("move 2") && !folded[0].contains("repeated"), "{folded:?}");
         assert!(folded[1].contains("move 3") && !folded[1].contains("repeated"), "{folded:?}");
         assert!(folded[2].contains("move 4") && !folded[2].contains("repeated"), "{folded:?}");
         for (i, line) in folded[3..].iter().enumerate() {
+            assert!(line.contains(&format!("move {}", 10 + i)) && !line.contains("repeated"), "{folded:?}");
+        }
+    }
+
+    /// #3040: `UndercutLift` (#1444) came with the key 217, the key of an
+    /// `AvoidHit` on part 1. It now has 222, so an undercut lift never
+    /// hides a blocking "Do not touch" hit either.
+    #[test]
+    fn an_undercut_lift_never_hides_an_avoid_hit() {
+        use camcraft_app::verify::FixturePart;
+        let parts = [FixturePart::Shank, FixturePart::Holder, FixturePart::Spindle, FixturePart::Rapid, FixturePart::Flute];
+        let mut w = vec![Warning::UndercutLift { at: 3 }, Warning::DrillUndersize { at: 4, hole_mm: 6.0, drill_mm: 5.0 }];
+        w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
+        let folded = fold_warnings(&w);
+        assert_eq!(folded.len(), 2 + parts.len(), "{folded:?}");
+        assert!(folded[0].contains("move 3") && folded[1].contains("move 4"), "{folded:?}");
+        for (i, line) in folded[2..].iter().enumerate() {
             assert!(line.contains(&format!("move {}", 10 + i)) && !line.contains("repeated"), "{folded:?}");
         }
     }
