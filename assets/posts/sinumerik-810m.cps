@@ -449,7 +449,6 @@ function startPreamble() {
     spindleOn = true;
   }
   spindleWait = false;
-  spinRev = false;
   coolant = touchProbe ? "" : coolantFor(coolantAsk);
   if (coolant) block([coolant]);
   noteSmoothing();
@@ -479,6 +478,7 @@ function endPreamble() {
   coolantAsk = "flood";
   block(["M5"]);
   spindleOn = false;
+  spinRev = false;
   probeSection = false;
   kindProbe = false;
   afterOp();
@@ -759,16 +759,16 @@ function onCycle() {
         msg(coolantWho() + "canned cycle L84 requires positive spindle RPM and feed rate to derive pitch R09");
         return;
       }
-      block([rRef, rDep, "R06=0", "R08=-3", "R09=" + f4(pitch), rRet]);
+      block([rRef, rDep, "R06=0", "R08=-3", "R09=" + f4(pitch), rRet, "R11=3"]);
     } else {
-      block([rRef, rDep, "R04=" + fu(dwell), "R06=" + (spinRev ? "3" : "4"), "R07=" + (spinRev ? "4" : "3"), "R08=-4", rRet, fw(feed)]);
+      block([rRef, rDep, "R04=" + fu(dwell), "R06=" + (spinRev ? "3" : "4"), "R07=" + (spinRev ? "4" : "3"), "R08=-4", rRet, "R11=3", fw(feed)]);
     }
     block(["L84", "P1"]);
   } else if (lCode === "L85") {
-    block([rRef, rDep, "R04=" + fu(dwell), rRet, fw(feed)]);
+    block([rRef, rDep, "R04=" + fu(dwell), rRet, "R16=" + ff(feed), "R17=" + ff(feed), fw(feed)]);
     block(["L85", "P1"]);
   } else if (lCode === "L86") {
-    block([rRef, rDep, "R04=" + fu(dwell), "R07=" + (spinRev ? "4" : "3"), rRet, fw(feed)]);
+    block([rRef, rDep, "R04=" + fu(dwell), "R07=" + (spinRev ? "4" : "3"), rRet, "R12=0", "R13=0", fw(feed)]);
     block(["L86", "P1"]);
   } else if (lCode === "L89") {
     block([rRef, rDep, "R04=" + fu(dwell), rRet, fw(feed)]);

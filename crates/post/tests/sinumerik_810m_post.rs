@@ -283,10 +283,10 @@ fn canned_cycles_emit_l81_to_l89_with_r_parameters_and_safe_hops() {
         (CycleKind::Spot, 0.0, 0.5, "L82 P1", &["R02=1", "R03=-10", "R04=0.5", "R10=4"]),
         (CycleKind::Peck, 3.0, 0.25, "L83 P1", &["R00=0", "R01=3", "R02=1", "R03=-10", "R04=0.25", "R05=0", "R10=4", "R11=0"]),
         (CycleKind::Deep, 4.0, 0.0, "L83 P1", &["R01=4", "R11=1"]),
-        (CycleKind::Tap, 0.0, 0.0, "L84 P1", &["R02=1", "R03=-10", "R06=0", "R08=-3", "R09=1.5", "R10=4"]),
-        (CycleKind::FloatingTap, 0.0, 0.2, "L84 P1", &["R04=0.2", "R06=4", "R07=3", "R08=-4"]),
-        (CycleKind::Ream, 0.0, 0.0, "L85 P1", &["R02=1", "R03=-10", "R04=0", "R10=4"]),
-        (CycleKind::Bore, 0.0, 0.5, "L86 P1", &["R02=1", "R03=-10", "R04=0.5", "R07=3", "R10=4"]),
+        (CycleKind::Tap, 0.0, 0.0, "L84 P1", &["R02=1", "R03=-10", "R06=0", "R08=-3", "R09=1.5", "R10=4", "R11=3"]),
+        (CycleKind::FloatingTap, 0.0, 0.2, "L84 P1", &["R04=0.2", "R06=4", "R07=3", "R08=-4", "R10=4", "R11=3"]),
+        (CycleKind::Ream, 0.0, 0.0, "L85 P1", &["R02=1", "R03=-10", "R04=0", "R10=4", "R16=150", "R17=150"]),
+        (CycleKind::Bore, 0.0, 0.5, "L86 P1", &["R02=1", "R03=-10", "R04=0.5", "R07=3", "R10=4", "R12=0", "R13=0"]),
         (CycleKind::BackBore, 0.0, 0.5, "L89 P1", &["R02=1", "R03=-10", "R04=0.5", "R10=4"]),
     ];
     for (kind, peck, dwell, call, expect_words) in cases {
@@ -353,5 +353,243 @@ fn emco_vmc_200_specs_and_explain_mode() {
     assert!(explained.program.contains("MM GEOMETRY INPUT"), "{}", explained.program);
     for l in explained.program.lines() {
         assert!(l.len() <= 120, "810M block limit with Explain: {l}");
+    }
+}
+
+fn single_cycle_records(
+    op_name: &str,
+    kind: CycleKind,
+    peck: f64,
+    dwell: f64,
+    feed: f64,
+    reverse: bool,
+) -> Vec<cnc::Record> {
+    let mut b = PathBuilder::new(Point3::new(10.0, 10.0, 12.0));
+    b.push(MoveKind::Rapid, Point3::new(10.0, 10.0, 1.0), None);
+    let fm = b.moves_len();
+    b.push(MoveKind::Plunge, Point3::new(10.0, 10.0, -10.0), Some(feed));
+    b.push(MoveKind::Rapid, Point3::new(10.0, 10.0, 1.0), None);
+    b.push_cycle(Cycle {
+        kind,
+        xy: Point2::new(10.0, 10.0),
+        r_z: 1.0,
+        bottom_z: -10.0,
+        entry_z: 0.0,
+        peck,
+        dwell,
+        first_move: fm,
+    });
+    b.push(MoveKind::Rapid, Point3::new(10.0, 10.0, 4.0), None);
+    let d = Dump {
+        op_name,
+        tool_number: 3,
+        tool_name: "TOOL3",
+        rpm: 100.0,
+        clearance_z: 12.0,
+        retract_z: 4.0,
+        top_z: 0.0,
+        ..Dump::default()
+    };
+    let mut recs = dump(&b.finish(), &d);
+    if reverse {
+        camcraft_post::post::ask_reverse_spindle(&mut recs);
+    }
+    recs
+}
+
+fn line_before_call<'a>(program: &'a str, call: &str) -> Vec<&'a str> {
+    let lines: Vec<&str> = program.lines().collect();
+    lines
+        .windows(2)
+        .filter_map(|w| if w[1] == call { Some(w[0]) } else { None })
+        .collect()
+}
+
+#[test]
+fn cycles_preserve_forward_and_reverse_spindle_direction() {
+    let mch = emco_vmc200_mirror();
+
+    // Reverse FLOATINGTAP: S100 M4, retract CW (R06=3), resume CCW (R07=4).
+    let rev_tap = single_cycle_records("RevTap", CycleKind::FloatingTap, 0.0, 0.2, 150.0, true);
+    let rev_tap_out = run(&mch, &cnc::serialize(&rev_tap), &json!({}));
+    assert!(rev_tap_out.warnings.is_empty(), "{:?}", rev_tap_out.warnings);
+    assert!(rev_tap_out.program.contains("S100 M4\n"), "{}", rev_tap_out.program);
+    let rev_tap_params = line_before_call(&rev_tap_out.program, "L84 P1");
+    assert_eq!(rev_tap_params.len(), 1, "{}", rev_tap_out.program);
+    assert!(
+        rev_tap_params[0].contains("R06=3") && rev_tap_params[0].contains("R07=4") && rev_tap_params[0].contains("R08=-4"),
+        "reverse floating tap must retract CW (R06=3) and resume CCW (R07=4):\n{}",
+        rev_tap_out.program
+    );
+
+    // Forward FLOATINGTAP: S100 M3, retract CCW (R06=4), resume CW (R07=3).
+    let fwd_tap = single_cycle_records("FwdTap", CycleKind::FloatingTap, 0.0, 0.2, 150.0, false);
+    let fwd_tap_out = run(&mch, &cnc::serialize(&fwd_tap), &json!({}));
+    assert!(fwd_tap_out.warnings.is_empty(), "{:?}", fwd_tap_out.warnings);
+    assert!(fwd_tap_out.program.contains("S100 M3\n"), "{}", fwd_tap_out.program);
+    let fwd_tap_params = line_before_call(&fwd_tap_out.program, "L84 P1");
+    assert_eq!(fwd_tap_params.len(), 1, "{}", fwd_tap_out.program);
+    assert!(
+        fwd_tap_params[0].contains("R06=4") && fwd_tap_params[0].contains("R07=3") && fwd_tap_params[0].contains("R08=-4"),
+        "forward floating tap must retract CCW (R06=4) and resume CW (R07=3):\n{}",
+        fwd_tap_out.program
+    );
+
+    // Reverse BORE (L86): S100 M4, R07=4.
+    let rev_bore = single_cycle_records("RevBore", CycleKind::Bore, 0.0, 0.5, 150.0, true);
+    let rev_bore_out = run(&mch, &cnc::serialize(&rev_bore), &json!({}));
+    assert!(rev_bore_out.warnings.is_empty(), "{:?}", rev_bore_out.warnings);
+    assert!(rev_bore_out.program.contains("S100 M4\n"), "{}", rev_bore_out.program);
+    let rev_bore_params = line_before_call(&rev_bore_out.program, "L86 P1");
+    assert_eq!(rev_bore_params.len(), 1, "{}", rev_bore_out.program);
+    assert!(
+        rev_bore_params[0].contains("R07=4"),
+        "reverse bore must keep R07=4:\n{}",
+        rev_bore_out.program
+    );
+
+    // Forward BORE (L86) after a reverse section must not inherit spinRev.
+    let moved = rev_tap.iter().filter(|r| matches!(r, cnc::Record::Move(_))).count();
+    let mut fwd_bore = single_cycle_records("FwdBore", CycleKind::Bore, 0.0, 0.5, 150.0, false);
+    for r in &mut fwd_bore {
+        if let cnc::Record::Cycle(c) = r {
+            c.first_move += moved;
+        }
+    }
+    let mut combined = rev_tap;
+    combined.extend(fwd_bore);
+    let combined_out = run(&mch, &cnc::serialize(&combined), &json!({}));
+    assert!(combined_out.warnings.is_empty(), "{:?}", combined_out.warnings);
+    assert!(combined_out.program.contains("S100 M4\n"), "{}", combined_out.program);
+    assert!(combined_out.program.contains("S100 M3\n"), "{}", combined_out.program);
+    let bore_params = line_before_call(&combined_out.program, "L86 P1");
+    assert_eq!(bore_params.len(), 1, "{}", combined_out.program);
+    assert!(
+        bore_params[0].contains("R07=3"),
+        "subsequent forward section must reset spindle direction to R07=3:\n{}",
+        combined_out.program
+    );
+}
+
+#[test]
+fn deep_to_tap_initializes_z_axis_before_every_l84() {
+    let mch = emco_vmc200_mirror();
+    let mut b = PathBuilder::new(Point3::new(10.0, 10.0, 12.0));
+
+    // Hole 1: DEEP (L83) writes R11=1.
+    b.push(MoveKind::Rapid, Point3::new(10.0, 10.0, 1.0), None);
+    let fm1 = b.moves_len();
+    b.push(MoveKind::Plunge, Point3::new(10.0, 10.0, -20.0), Some(120.0));
+    b.push(MoveKind::Rapid, Point3::new(10.0, 10.0, 1.0), None);
+    b.push_cycle(Cycle {
+        kind: CycleKind::Deep,
+        xy: Point2::new(10.0, 10.0),
+        r_z: 1.0,
+        bottom_z: -20.0,
+        entry_z: 0.0,
+        peck: 4.0,
+        dwell: 0.0,
+        first_move: fm1,
+    });
+    b.push(MoveKind::Rapid, Point3::new(10.0, 10.0, 4.0), None);
+
+    // Hole 2: rigid TAP (L84 R08=-3).
+    b.push(MoveKind::Rapid, Point3::new(30.0, 10.0, 4.0), None);
+    b.push(MoveKind::Rapid, Point3::new(30.0, 10.0, 1.0), None);
+    let fm2 = b.moves_len();
+    b.push(MoveKind::Plunge, Point3::new(30.0, 10.0, -12.0), Some(150.0));
+    b.push(MoveKind::Rapid, Point3::new(30.0, 10.0, 1.0), None);
+    b.push_cycle(Cycle {
+        kind: CycleKind::Tap,
+        xy: Point2::new(30.0, 10.0),
+        r_z: 1.0,
+        bottom_z: -12.0,
+        entry_z: 0.0,
+        peck: 0.0,
+        dwell: 0.0,
+        first_move: fm2,
+    });
+    b.push(MoveKind::Rapid, Point3::new(30.0, 10.0, 4.0), None);
+
+    // Hole 3: floating TAP (L84 R08=-4).
+    b.push(MoveKind::Rapid, Point3::new(50.0, 10.0, 4.0), None);
+    b.push(MoveKind::Rapid, Point3::new(50.0, 10.0, 1.0), None);
+    let fm3 = b.moves_len();
+    b.push(MoveKind::Plunge, Point3::new(50.0, 10.0, -12.0), Some(150.0));
+    b.push(MoveKind::Rapid, Point3::new(50.0, 10.0, 1.0), None);
+    b.push_cycle(Cycle {
+        kind: CycleKind::FloatingTap,
+        xy: Point2::new(50.0, 10.0),
+        r_z: 1.0,
+        bottom_z: -12.0,
+        entry_z: 0.0,
+        peck: 0.0,
+        dwell: 0.2,
+        first_move: fm3,
+    });
+    b.push(MoveKind::Rapid, Point3::new(50.0, 10.0, 4.0), None);
+
+    let d = Dump {
+        op_name: "DeepThenTap",
+        tool_number: 4,
+        tool_name: "TAP4",
+        rpm: 100.0,
+        clearance_z: 12.0,
+        retract_z: 4.0,
+        top_z: 0.0,
+        ..Dump::default()
+    };
+    let out = run(&mch, &cnc::serialize(&dump(&b.finish(), &d)), &json!({}));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+
+    let l83_params = line_before_call(&out.program, "L83 P1");
+    assert_eq!(l83_params.len(), 1, "{}", out.program);
+    assert!(l83_params[0].contains("R11=1"), "DEEP sets R11=1:\n{}", out.program);
+
+    let l84_params = line_before_call(&out.program, "L84 P1");
+    assert_eq!(l84_params.len(), 2, "two L84 calls expected:\n{}", out.program);
+    assert!(
+        l84_params[0].contains("R08=-3") && l84_params[0].contains("R11=3"),
+        "rigid L84 after L83 DEEP must reset R11=3 (Z axis):\n{}",
+        out.program
+    );
+    assert!(
+        l84_params[1].contains("R08=-4") && l84_params[1].contains("R11=3"),
+        "floating L84 must initialize R11=3 (Z axis):\n{}",
+        out.program
+    );
+}
+
+#[test]
+fn ream_initializes_cutting_and_retraction_feeds() {
+    let mch = emco_vmc200_mirror();
+    for (feed, dwell, want) in [(150.0, 0.0, "R16=150 R17=150"), (240.0, 0.25, "R16=240 R17=240")] {
+        let recs = single_cycle_records("ReamOp", CycleKind::Ream, 0.0, dwell, feed, false);
+        let out = run(&mch, &cnc::serialize(&recs), &json!({}));
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        let params = line_before_call(&out.program, "L85 P1");
+        assert_eq!(params.len(), 1, "{}", out.program);
+        assert!(
+            params[0].contains(want),
+            "L85 must initialize cutting feed R16 and retraction feed R17 ({want}):\n{}",
+            out.program
+        );
+    }
+}
+
+#[test]
+fn bore_initializes_lateral_retraction_offsets() {
+    let mch = emco_vmc200_mirror();
+    for reverse in [false, true] {
+        let recs = single_cycle_records("BoreOp", CycleKind::Bore, 0.0, 0.5, 150.0, reverse);
+        let out = run(&mch, &cnc::serialize(&recs), &json!({}));
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        let params = line_before_call(&out.program, "L86 P1");
+        assert_eq!(params.len(), 1, "{}", out.program);
+        assert!(
+            params[0].contains("R12=0") && params[0].contains("R13=0"),
+            "L86 must initialize lateral retraction offsets R12=0 and R13=0:\n{}",
+            out.program
+        );
     }
 }
