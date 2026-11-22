@@ -2,9 +2,8 @@
 # Linux packages TAR.GZ, DEB, RPM, AppImage, Snap, and Flatpak; macOS packages
 # a universal app as ZIP and DMG; Windows assembles
 # its zip (cargo xtask package) and installer.
-# Signing is optional and secret-gated (scripts/sign.ps1): with no
-# CAMCRAFT_SIGN_* secret the binaries ship unsigned, as every release so
-# far has. The decision is logged in RECOMMENDED.md ("M13.3").
+# Windows signing (scripts/sign.ps1) and macOS Developer ID signing and
+# notarization (scripts/package-macos.sh) are optional and secret-gated.
 # Only MAJOR and MINOR tags build (vX.Y.0): a patch tag (vX.Y.Z, Z > 0) is
 # pushed as a marker and builds nothing - the Actions budget is spent on
 # releases that carry features (AGENTS.md "Versioning is semantic").
@@ -124,6 +123,12 @@ jobs:
           cargo build --locked --release --target aarch64-apple-darwin -p camcraft-ui -p camcraft-app -p camcraft-post
           cargo build --locked --release --target x86_64-apple-darwin -p camcraft-ui -p camcraft-app -p camcraft-post
       - name: Assemble macOS app and disk image
+        env:
+          CAMCRAFT_MACOS_CERT_P12_BASE64: ${{ secrets.CAMCRAFT_MACOS_CERT_P12_BASE64 }}
+          CAMCRAFT_MACOS_CERT_PASSWORD: ${{ secrets.CAMCRAFT_MACOS_CERT_PASSWORD }}
+          CAMCRAFT_MACOS_NOTARY_KEY_BASE64: ${{ secrets.CAMCRAFT_MACOS_NOTARY_KEY_BASE64 }}
+          CAMCRAFT_MACOS_NOTARY_KEY_ID: ${{ secrets.CAMCRAFT_MACOS_NOTARY_KEY_ID }}
+          CAMCRAFT_MACOS_NOTARY_ISSUER_ID: ${{ secrets.CAMCRAFT_MACOS_NOTARY_ISSUER_ID }}
         run: scripts/package-macos.sh
       - name: Check macOS package contents
         run: |
