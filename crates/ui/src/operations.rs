@@ -215,9 +215,7 @@ pub(crate) fn unresolved_note(
     src: Option<&SrcRef>,
     params: &OpParams,
 ) -> Option<String> {
-    operation::resolve_params(world, setup, src, params)
-        .err()
-        .map(|why| format!("{why}; set the source up or switch the reference"))
+    crate::height_memo::unresolved_note(world, setup, src, params)
 }
 
 /// Swap the draft's parameter variant, carrying over every shared number
@@ -299,8 +297,12 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             Warning::ProbeSearch { .. } => (214, false),
             // A sinker finish out of order (#543): advisory, its own line.
             Warning::SinkerFinishOrder { .. } => (215, false),
-            // A hole wider than its drill (#2496): advisory, its own line.
-            Warning::DrillUndersize { .. } => (216, false),
+            // A hole wider than its drill (#2496): advisory, its own line,
+            // clear of the avoid range (216..=220) and of 221 (#3040).
+            Warning::DrillUndersize { .. } => (223, false),
+            // An undercut cutter's Z move under material (#1444): its own line,
+            // clear of the avoid range (216..=220) as well (#3040).
+            Warning::UndercutLift { .. } => (222, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -315,6 +317,7 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::HolderHit { at, .. }
             | Warning::SweepHit { at, .. }
             | Warning::RapidInStock { at }
+            | Warning::UndercutLift { at }
             | Warning::FirstTraverseLow { at, .. }
             | Warning::FirstTraverseUnderTable { at, .. }
             | Warning::FixtureHit { at, .. }
@@ -518,6 +521,7 @@ mod height_row_tests {
             helix_radius: 1.0,
             blend_turns: false,
             links: camcraft_app::links::Links::PLANAR,
+            chain_overrides: Vec::new(),
         }
     }
 
@@ -618,6 +622,40 @@ mod warning_fold_tests {
             "warning: shank/holder at move 4 collides with the uncut stock \
              - repeated on 1 more move (to 5)"
         );
+    }
+
+    /// #3040: `DrillUndersize` had the key of the shank `AvoidHit`
+    /// (216), so the advisory line hid a blocking "Do not touch" hit.
+    /// Each avoid part keeps its own line beside the undersize hole.
+    #[test]
+    fn a_drill_undersize_never_hides_an_avoid_hit() {
+        use camcraft_app::verify::FixturePart;
+        let parts = [FixturePart::Shank, FixturePart::Holder, FixturePart::Spindle, FixturePart::Rapid, FixturePart::Flute];
+        let mut w = vec![Warning::DrillUndersize { at: 3, hole_mm: 6.0, drill_mm: 5.0 }];
+        w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
+        let folded = fold_warnings(&w);
+        assert_eq!(folded.len(), 1 + parts.len(), "{folded:?}");
+        assert!(folded[0].contains("move 3"), "{folded:?}");
+        for (i, line) in folded[1..].iter().enumerate() {
+            assert!(line.contains(&format!("move {}", 10 + i)) && !line.contains("repeated"), "{folded:?}");
+        }
+    }
+
+    /// #3040: `UndercutLift` (#1444) came with the key 217, the key of an
+    /// `AvoidHit` on part 1. It now has 222, so an undercut lift never
+    /// hides a blocking "Do not touch" hit either.
+    #[test]
+    fn an_undercut_lift_never_hides_an_avoid_hit() {
+        use camcraft_app::verify::FixturePart;
+        let parts = [FixturePart::Shank, FixturePart::Holder, FixturePart::Spindle, FixturePart::Rapid, FixturePart::Flute];
+        let mut w = vec![Warning::UndercutLift { at: 3 }, Warning::DrillUndersize { at: 4, hole_mm: 6.0, drill_mm: 5.0 }];
+        w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
+        let folded = fold_warnings(&w);
+        assert_eq!(folded.len(), 2 + parts.len(), "{folded:?}");
+        assert!(folded[0].contains("move 3") && folded[1].contains("move 4"), "{folded:?}");
+        for (i, line) in folded[2..].iter().enumerate() {
+            assert!(line.contains(&format!("move {}", 10 + i)) && !line.contains("repeated"), "{folded:?}");
+        }
     }
 
     #[test]

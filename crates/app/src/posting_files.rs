@@ -51,6 +51,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     ("Doosan DNM", AssetFile("doosan-dnm.cps")),
     ("Makera Carvera", AssetFile("carvera.cps")),
     ("Mach4", AssetFile("mach4.cps")),
+    ("Heidenhain Klartext", AssetFile("heidenhain-klartext.cps")),
     ("Fanuc Lathe", AssetFile("fanuc-lathe.cps")),
     ("Tormach PathPilot Lathe", AssetFile("tormach-lathe.cps")),
     // #671: the plasma dialect, from UM10720 §6-7 and the PathPilot
@@ -79,6 +80,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
 /// label and an install-time default, never a file's identity.
 pub const MACHINES: &[(&str, AssetFile)] = &[
     ("VMC 3-axis", AssetFile("vmc.mch")),
+    ("Fehlmann Picomax 55 (iTNC 530)", AssetFile("fehlmann-picomax55.mch")),
     ("Tilt-head 5-axis", AssetFile("tilthead.mch")),
     ("Mill-turn", AssetFile("millturn.mch")),
     ("Lathe", AssetFile("lathe.mch")),
@@ -333,6 +335,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "haas.cps") => Some(include_str!("../../../assets/posts/haas.cps")),
         ("posts", "sinumerik.cps") => Some(include_str!("../../../assets/posts/sinumerik.cps")),
         ("posts", "heidenhain.cps") => Some(include_str!("../../../assets/posts/heidenhain.cps")),
+        ("posts", "heidenhain-klartext.cps") => Some(include_str!("../../../assets/posts/heidenhain-klartext.cps")),
         ("posts", "mazak.cps") => Some(include_str!("../../../assets/posts/mazak.cps")),
         ("posts", "tormach.cps") => Some(include_str!("../../../assets/posts/tormach.cps")),
         ("posts", "grblhal.cps") => Some(include_str!("../../../assets/posts/grblhal.cps")),
@@ -350,6 +353,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "sodick-wire.cps") => Some(include_str!("../../../assets/posts/sodick-wire.cps")),
         ("posts", "sinker-iso.cps") => Some(include_str!("../../../assets/posts/sinker-iso.cps")),
         ("machines", "vmc.mch") => Some(include_str!("../../../assets/machines/vmc.mch")),
+        ("machines", "fehlmann-picomax55.mch") => Some(include_str!("../../../assets/machines/fehlmann-picomax55.mch")),
         ("machines", "tilthead.mch") => Some(include_str!("../../../assets/machines/tilthead.mch")),
         ("machines", "millturn.mch") => Some(include_str!("../../../assets/machines/millturn.mch")),
         ("machines", "lathe.mch") => Some(include_str!("../../../assets/machines/lathe.mch")),

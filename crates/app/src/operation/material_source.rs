@@ -52,6 +52,7 @@ pub(super) fn section_z_of(
         // along (M2.4 B).
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
+        | OpParams::VCarve { top_z, .. }
         | OpParams::Engrave { top_z, .. }
         | OpParams::Chamfer2D { top_z, .. }
         | OpParams::Trace { top_z, .. } => *top_z,
@@ -207,6 +208,7 @@ fn source_region(
         | OpParams::Pocket { .. }
         | OpParams::Adaptive2D { .. }
         | OpParams::Offset2D { .. }
+        | OpParams::VCarve { .. }
         | OpParams::Engrave { .. }
         | OpParams::Trace { .. } => {
             let z = z?;
@@ -238,6 +240,8 @@ fn source_region(
             stadium(ea, eb, width * 0.5)
         }
         OpParams::TrochoidalSlot { a, b, width, .. } => stadium(*a, *b, width * 0.5),
+        // #1444: the undercut's authored band about its centreline.
+        OpParams::SlotUndercut(op) => super::slot_undercut_op::footprint(op),
         // The circular ladder's machine area is the AUTHORED disk -
         // the slot's authored-geometry law with a circle for a
         // stadium; the generator refuses a disk that meets no
