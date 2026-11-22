@@ -98,7 +98,8 @@ pub enum Step {
 /// slot carries the head, which sit on the table - and each axis keeps
 /// all its own keys (`parts` stays with the slot). So a rotary that
 /// moves up gets a new `parent` and `chain_order` (#1962). The neighbour
-/// must be of the same kind, rotary or linear. Returns where the moved
+/// must be of the same kind, rotary or linear, and move the same thing,
+/// the work or the tool. Returns where the moved
 /// axis is now.
 pub fn move_axis(v: &mut Value, pointer: &str, step: Step) -> Result<String, String> {
     let rows = axis_pointers(v);
@@ -115,6 +116,15 @@ pub fn move_axis(v: &mut Value, pointer: &str, step: Step) -> Result<String, Str
         let what = if kind(&rows[i]) == Some("rotary") { "rotary" } else { "linear" };
         return Err(format!(
             "axis {name}: a {what} trades places only with a {what}; to put it elsewhere, remove it and add it again"
+        ));
+    }
+    // The slot that carries the head keeps it, so a trade across it would
+    // turn a table rotary into one that tilts the tool.
+    let tool = |at: &str| first_of_type(v, &format!("{at}/parts"), "head").is_some();
+    if tool(&rows[i]) != tool(&rows[j]) {
+        let what = if tool(&rows[i]) { "tool" } else { "work" };
+        return Err(format!(
+            "axis {name}: an axis that moves the {what} trades places only with one that moves the {what}; to put it elsewhere, remove it and add it again"
         ));
     }
     // Depth-first, the earlier row is an ancestor or in an earlier

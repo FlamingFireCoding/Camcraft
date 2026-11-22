@@ -196,6 +196,23 @@ fn a_move_trades_only_with_an_axis_of_the_same_kind() {
     assert_eq!(validate_text(&m.text()), [], "{}", m.text());
 }
 
+/// An A on the table and a B that carries the head are both rotaries,
+/// but a trade would put the head on A: A would tilt the tool.
+#[test]
+fn a_rotary_that_turns_the_work_never_trades_with_one_that_tilts_the_tool() {
+    let mut m = grblhal();
+    let a = m.add_rotary_axis(Place::OnTable, "A", [-1.0, 0.0, 0.0]).expect("adds A");
+    let b = m.add_rotary_axis(Place::CarriesHead, "B", [0.0, 1.0, 0.0]).expect("adds B");
+    m.dirty = false;
+    let before = m.value.clone();
+    let tail = "trades places only with one that moves the";
+    let again = "to put it elsewhere, remove it and add it again";
+    assert_eq!(m.move_axis(&a, Step::Down), Err(format!("axis A: an axis that moves the work {tail} work; {again}")));
+    assert_eq!(m.move_axis(&b, Step::Up), Err(format!("axis B: an axis that moves the tool {tail} tool; {again}")));
+    assert_eq!(m.value, before);
+    assert!(!m.dirty, "a refused move changes nothing");
+}
+
 fn unknown_keys_kept_on_x_wherever_it_is(m: &MachineDraft) {
     assert_eq!(m.value.pointer("/x_vendor_block/probe"), Some(&json!("OMP40")));
     let x = m.value.pointer(&pointer_of(m, "X")).expect("X");
