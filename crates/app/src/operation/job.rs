@@ -140,6 +140,10 @@ pub struct GenJob {
     /// share of the turned surface the axis fit set aside, which the
     /// op does not turn. Carried onto the path's notes by `run_job`.
     pub(super) spindle_note: Option<String>,
+    /// #3452: why this setup cannot say which end of the part is free
+    /// (it holds the part end for end, or the part is modelled lying
+    /// down) - the Part arm refuses with it where the side rule decides.
+    pub(super) part_off_side: Option<String>,
     /// #3100: what the setup's post declares about its first traverse
     /// (`first_traverse_posed::post_order`), read with the world here.
     pub(super) post_order: super::first_traverse_posed::PostOrder,
@@ -195,19 +199,6 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     if let Some(why) = crate::setup_align::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
-    // #3452: a part-off keeps the piece at the free end and cuts on the
-    // chuck side. A setup that holds the part end for end puts the
-    // finished part in the chuck, so that rule would cut into it: the
-    // side cannot be chosen yet, so the part-off is refused by name.
-    if matches!(op.params, OpParams::Part { .. }) && crate::setup_align::reverses_axis(crate::setup_align::alignment(world, setup)) {
-        return Err(GenError::Invalid(
-            "a part-off cannot run in this setup: the setup holds the part end for end, so the chuck holds \
-             the finished part and the free end is the piece the blade would cut off as the part. The side \
-             to keep cannot be chosen yet - part off in a setup that holds the bar as modelled, or face the \
-             free end to length instead"
-                .into(),
-        ));
-    }
     // #1510: a milling WCS whose Z is tilted off the machine's would
     // cut the part as it lies, not as the WCS shows - refused by name.
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {
@@ -225,6 +216,11 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     // the job's error-order law.
     let opframe = OpFrame::of(op);
     let material = opframe.material_of(world, &op.src)?;
+    // #3452: whether this setup can say which end of the part is free.
+    // The Part arm refuses with it where the side rule would decide.
+    let part_off_side = matches!(op.params, OpParams::Part { .. })
+        .then(|| crate::setup_align::part_off_problem(&material.facets, crate::setup_align::alignment(world, setup)))
+        .flatten();
     let part_solid = part_solid_of(world, setup, &op.src, &material);
     // Setup stock, when it is not the source itself: the swarf column
     // around a smaller model (the head read at `generate` - same call).
@@ -523,6 +519,7 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
         avoid,
         wcs_origin,
         spindle_note,
+        part_off_side,
         post_order: super::first_traverse_posed::post_order(world, setup, &op.params),
         carried_overhang,
         wire,

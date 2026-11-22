@@ -73,6 +73,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         unit,
         wcs_yaw,
         spindle_note: _,
+        part_off_side,
         post_order,
         carried_overhang: _,
         op_name: _,
@@ -2939,6 +2940,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #3452: where the model goes on past the plane on both sides,
+            // the chuck-side rule decides which piece is the part; a setup
+            // that cannot say which end is free is refused there.
+            let plane = req_z(hl.bottom, "Parting Plane Z")?;
+            if let Some(why) = &part_off_side
+                && crate::turning::plane_inside_model(&material.facets, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why.clone()));
+            }
             let path = crate::turning::part_in(
                 &material.facets,
                 &crate::turning::PartParams {
@@ -2958,7 +2968,6 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // the finished part. The part-off law judges the kerf
             // against the part's end face: a blade band that takes
             // part material is a gouge, refused and never posted.
-            let plane = req_z(hl.bottom, "Parting Plane Z")?;
             if let Some(why) =
                 crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance)
             {
