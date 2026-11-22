@@ -64,7 +64,7 @@ fn gpu_error(err: wgpu::Error) -> String {
 
 fn params_bytes(boxes: &PaddedBoxes, p: &Plan) -> [u8; 32] {
     let mut v = [0; 32];
-    for (chunk, w) in v[..16].chunks_exact_mut(4).zip([boxes.nx, boxes.ny, p.n, p.words]) {
+    for (chunk, w) in v[..16].as_chunks_mut::<4>().0.iter_mut().zip([boxes.nx, boxes.ny, p.n, p.words]) {
         chunk.copy_from_slice(&w.to_le_bytes());
     }
     v[16..20].copy_from_slice(&boxes.s.to_le_bytes());
