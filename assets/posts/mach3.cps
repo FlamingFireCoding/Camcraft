@@ -17,6 +17,7 @@ minimumRevision = 1;
 extension = "nc";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+axisInversion = true; // verified on the engine's mirrored stream for a flipped WCS X/Y and an inverted machine X/Y (#2475): trace equivalence test + golden
 workOffsetIndex = true; // reads the 1-based WorkOffset number (#1385)
 workOffsetMax = 6;      // G54..G59 (the post writes no G59 P extension)
 coolantModes = true; // reads PARAM Coolant (#112/#150)
@@ -67,6 +68,7 @@ var afterAsk = "";         // the section's PARAM AfterOperation (#110), none wh
 var setupNext = null;      // #1647: null means no marker; a cleaned name may be empty
 var coolantOp = "";        // the section's OperationName, for refusals (#150)
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
+var wcsFlip = "";          // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
 var inch = false;          // the document's unit is inch (onOpen, #902: postOptions.Units)
 var smoothTol = 0;         // #616: the section's PARAM Smoothing, mm (0: none asked)
@@ -317,8 +319,20 @@ function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions && postOptions.Units === "inch"; // #902: the document's unit, never the machine file's
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
   note(clean(nm) || "CAMCRAFT");
+  invertedNotes();
   writeHeaderExtras();
   block([inch ? "G20" : "G21", "G17", "G90", "G91.1", "G94", "G40", "G49", "G80"]);
+}
+// The machine's inverted linear axes (#375): the engine has mirrored the
+// stream into the controller's frame, and the header says so, one note
+// for each axis. A standard machine lists none.
+function invertedNotes() {
+  var a = (typeof machine !== "undefined" && machine && machine.invertedAxes) || [];
+  var where = { X: "LEFT", Y: "TOWARD THE FRONT", Z: "DOWN" };
+  for (var i = 0; i < a.length; i++) {
+    var l = String(a[i]);
+    note("MACHINE " + l + "+ MOVES " + (where[l] || "THE OTHER WAY") + " - INVERTED AXIS");
+  }
 }
 
 // #495 / #710: where "straight up" is. On Mach3 machine Z0 is only a
@@ -383,6 +397,7 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsFlip") wcsFlip = String(value || "");
   else if (name === "ClearancePlane") { seeZ(value); clearZ = has(value) ? Number(value) : null; }  // #1616
   else if (name === "RetractPlane") hopZ = has(value) ? Number(value) : null;  // #1616
   else if (name === "StockZTop" && has(value)) stockTop = Number(value);
@@ -429,6 +444,8 @@ function startPreamble() {
   secStarted += 1;
   if (optStr("showSequenceNumbers", "off") === "op-start") seqNextForce = true;
   opNotes();
+  // #1649: the operator reads why every sign on a flipped axis is the other one.
+  if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   block(["G17", "G90", wcsWord, "G40", "G80"]);
   planeG = 17;              // the preamble states the plane
   if (toolWait) {
@@ -493,7 +510,7 @@ function endPreamble() {
 }
 
 function onSection() { startPreamble(); }
-function onSectionEnd() { endPreamble(); clearZ = null; hopZ = null; }  // #1616: the next section states its own planes
+function onSectionEnd() { endPreamble(); wcsFlip = ""; clearZ = null; hopZ = null; }  // #1616: the next section states its own planes
 
 // ------------------------------------------------------------- motions
 // X and Y are unknown at the program's start and after every tool change
