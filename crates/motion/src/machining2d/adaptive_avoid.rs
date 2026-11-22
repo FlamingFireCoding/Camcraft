@@ -21,7 +21,8 @@ use crate::geo2d::Region;
 use super::adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal_with, trochoidal_inside};
 use super::corner_relief::{CornerRelief, capsule_region, plan_corner_reliefs};
 use super::gen_error::GenError;
-use super::pocket::{PocketParams, non_sliver_center, pocket_entered_with_relief, pocket_over_with_relief};
+use super::pass_start::StartSide;
+use super::pocket::{PocketParams, non_sliver_center, pocket_over_with_relief, pocket_started_on};
 
 /// The keep-out of `avoid` over the full height of the path, or `None`
 /// when it does not reach the cutter-centre area of `region`: then the
@@ -62,8 +63,21 @@ pub fn adaptive_spiral_avoid(
     avoid: &AvoidSpec,
     relief: &CornerRelief,
 ) -> Result<Toolpath, GenError> {
+    adaptive_spiral_avoid_on(region, p, avoid, relief, &StartSide::default())
+}
+
+/// [`adaptive_spiral_avoid`] with the side each level starts on (#3355):
+/// the plan reads `side` over the area that the keep-out leaves, as
+/// [`pocket_started_on`] reads it over the full area.
+pub fn adaptive_spiral_avoid_on(
+    region: &Region,
+    p: &PocketParams,
+    avoid: &AvoidSpec,
+    relief: &CornerRelief,
+    side: &StartSide,
+) -> Result<Toolpath, GenError> {
     let Some(ko) = keepout_for(region, p, avoid)? else {
-        return pocket_entered_with_relief(region, p, &[], relief);
+        return pocket_started_on(region, p, &[], relief, side);
     };
     p.validate()?;
     relief.validate()?;
@@ -91,7 +105,7 @@ pub fn adaptive_spiral_avoid(
             "cannot cut clear of protected 'Do not touch' {names}: no safe cutting room remains"
         )));
     }
-    let path = pocket_over_with_relief(region, &center, p, Vec::new(), false, &[], &plan.reliefs)
+    let path = pocket_over_with_relief(region, &center, p, Vec::new(), false, &[], &plan.reliefs, side)
         .map_err(|e| e.map_msg(|m| format!("{m} - the 'Do not touch' keep-out of {names} takes part of the region")))?;
     finish(path, avoid, "the passes")
 }

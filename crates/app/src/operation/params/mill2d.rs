@@ -39,6 +39,7 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -66,6 +67,7 @@ impl OpParams {
                     }
                 }
                 digest::write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Slot {
                 links: _,
