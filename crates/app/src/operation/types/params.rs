@@ -220,6 +220,10 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's rings start (#3354, the shared #3316
+        /// parameter); read by the ring strategies. `Auto` is every
+        /// earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// 2D Adaptive roughing (M2.4 A): the pocket's constant-engagement
     /// ladder as its own catalog name. The rings are the `Adaptive`
@@ -269,6 +273,10 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's passes start (#3355): the shared
+        /// pass-order parameter of #3316. `Auto` is every earlier file,
+        /// byte for byte; the Trochoidal method refuses the other two.
+        pass_start: crate::machining2d::PassStart,
     },
     /// 2D Offset pocket roughing, style A (M2.4 A): concentric rings
     /// from the boundary inward at the roughing stepover - the pocket's
@@ -1282,6 +1290,9 @@ pub enum OpParams {
         /// before the option posted; checked at generation against the
         /// stock bottom, refused by name below it.
         break_through: Option<f64>,
+        /// Where each level's rings start (#3360): the shared pass-order
+        /// parameter. `Auto` is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Helical thread milling (M2.4 C, reworked by #894): internal
     /// threads in the listed holes - or, `external`, on the listed
