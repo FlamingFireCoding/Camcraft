@@ -8,8 +8,16 @@
   use `project::save`, so one change covers them.
 - `project::save` keeps two refusals of the plain write. A folder that
   does not exist is refused by name, because the shared writer creates
-  missing folders. A read-only project file is refused by name, because
-  on Linux and macOS a rename replaces a read-only file.
+  missing folders. A project file that this process cannot write is refused
+  by name, because on Linux and macOS a rename replaces any file that the
+  folder allows.
+- The write test of the project file is a write-open of the target, not
+  only its mode (review of PR #3510). On Unix a file that another user
+  owns can have a write bit (mode 0644) and still refuse a write; a rename
+  would replace it, because the rename needs write permission on the
+  folder only. The probe opens the target for writing, with no truncate
+  and no create, and refuses on error. A file that the process cannot
+  write is kept.
 - `machine::store::temp_path_for` gives the temp path. `write_atomic`
   uses it, and the tests use it to make a save fail. A path that names
   no file is now refused by name before a folder is made. Before, the
@@ -53,6 +61,9 @@ settings already used `write_atomic`.
   folder, not those of the old file. Machine files and preferences act
   the same way.
 - A project path that is a symbolic link becomes a plain file.
+- A project file that this process can write, in a folder where it cannot
+  write, is now refused: the temp file cannot be made. The plain write
+  succeeded. The old project stays whole.
 - The folder is not flushed after the rename. Power loss directly after a
   save can keep the old file. It cannot leave a part-written file.
 - On Windows, the rename fails when a program holds the old file open

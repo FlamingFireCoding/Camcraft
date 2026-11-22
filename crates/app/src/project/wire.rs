@@ -295,8 +295,9 @@ pub fn save_text(world: &World) -> Result<String, ProjectError> {
 
 /// Write the project to `path` through a temp file in the same folder and
 /// a rename, so a save that fails keeps the old file whole and no other
-/// program reads half a project. A missing folder and a read-only file
-/// are refused, as the plain write that this replaces refused them.
+/// program reads half a project. A missing folder and a project file that
+/// this process cannot write are refused, as the plain write that this
+/// replaces refused them.
 pub fn save(world: &World, path: &Path) -> Result<(), ProjectError> {
     let text = save_text(world)?;
     if let Err(e) = write_project(path, &text) {
@@ -308,8 +309,9 @@ pub fn save(world: &World, path: &Path) -> Result<(), ProjectError> {
 }
 
 /// The checks and the atomic write of [`save`]. The shared writer creates
-/// a missing folder and, on Linux and macOS, its rename replaces a
-/// read-only file: a project save does neither, so both are checked first.
+/// a missing folder and, on Linux and macOS, its rename replaces any file
+/// that the folder allows, a read-only one included: a project save does
+/// neither, so both are checked first.
 fn write_project(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::{Error, ErrorKind};
     let folder = match path.parent() {
@@ -320,6 +322,20 @@ fn write_project(path: &Path, text: &str) -> std::io::Result<()> {
         return Err(Error::new(ErrorKind::NotFound, format!("folder {} does not exist", folder.display())));
     }
     if std::fs::metadata(path).is_ok_and(|m| m.permissions().readonly()) {
+        return Err(Error::new(ErrorKind::PermissionDenied, format!("{} is read-only", path.display())));
+    }
+    // The mode alone does not say that this process may write the file.
+    // On Unix a file that another user owns can have mode 0644 and still
+    // refuse a write with EACCES; `rename(2)` would replace it, because
+    // the rename needs write permission on the folder only. Open the file
+    // for writing, as the plain write that this save replaces did, with
+    // no truncate and no create. A path that does not exist is made by
+    // the temp file and the rename.
+    let unwritable = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .is_err_and(|e| e.kind() != ErrorKind::NotFound);
+    if unwritable {
         return Err(Error::new(ErrorKind::PermissionDenied, format!("{} is read-only", path.display())));
     }
     crate::machine::store::write_atomic(path, text).map_err(|e| match e {

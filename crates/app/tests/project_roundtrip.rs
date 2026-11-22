@@ -5572,3 +5572,49 @@ fn a_read_only_project_file_is_refused_and_kept() {
     assert_eq!(after, before, "the read-only project is whole");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_project_save_over_a_unix_socket_is_refused_and_kept() {
+    use std::os::unix::fs::FileTypeExt;
+    let d = atomic_dir("socket");
+    let path = d.join("job.camproj");
+    // A node that cannot be opened for writing, with a write bit in its
+    // mode: `readonly()` is false, so only the write probe refuses it.
+    let _socket = std::os::unix::net::UnixListener::bind(&path).expect("bind the socket");
+    let before = std::fs::metadata(&path).expect("metadata").len();
+    let err = project::save(&populated_world(), &path).expect_err("a socket is not a writable project");
+    let after = std::fs::metadata(&path).expect("the socket stays");
+    let _ = std::fs::remove_dir_all(&d);
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert!(after.file_type().is_socket(), "the socket is kept, not replaced by the project");
+    assert_eq!(after.len(), before, "the socket node is unchanged");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_save_into_a_folder_without_write_access_is_refused_and_kept() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = atomic_dir("nowritefolder");
+    let path = d.join("job.camproj");
+    project::save(&populated_world(), &path).expect("first save");
+    let before = std::fs::read(&path).expect("read");
+    let original = std::fs::metadata(&d).expect("metadata").permissions();
+    let mut locked = original.clone();
+    locked.set_mode(0o555);
+    std::fs::set_permissions(&d, locked).expect("lock the folder");
+    // A process with CAP_DAC_OVERRIDE (root) ignores the folder mode.
+    let bypass = std::fs::write(d.join("probe"), b"x").is_ok();
+    let result = if bypass { Ok(()) } else { project::save(&new_world(), &path) };
+    let _ = std::fs::remove_file(d.join("probe"));
+    std::fs::set_permissions(&d, original).expect("unlock the folder");
+    let after = std::fs::read(&path).expect("read");
+    if bypass {
+        let _ = std::fs::remove_dir_all(&d);
+        return;
+    }
+    let err = result.expect_err("a folder without write access is refused");
+    assert!(matches!(err, ProjectError::Io(_)), "{err}");
+    assert_eq!(after, before, "the old project is whole");
+    let _ = std::fs::remove_dir_all(&d);
+}
