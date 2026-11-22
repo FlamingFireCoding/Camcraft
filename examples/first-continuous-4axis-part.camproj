@@ -86,7 +86,13 @@
       "safe_retract_z": 0.0,
       "spindle_mount": "BT30",
       "default_holder": "BT30 ER20",
-      "post": "Tormach PathPilot"
+      "post": "Tormach PathPilot",
+      "reserved_tools": [
+        {
+          "number": 99,
+          "use": "probe"
+        }
+      ]
     }
   },
   "post": {

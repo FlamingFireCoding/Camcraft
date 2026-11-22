@@ -25,6 +25,6 @@
     "Y": { "coordinate": 1, "max_normal_speed": 90.0, "max_rapid_speed": 90.0 },
     "Z": { "coordinate": 2, "max_normal_speed": 65.0, "max_rapid_speed": 65.0 }
   } } },
-  "tooling": { "spindle_mount": "TTS", "default_holder": "TTS ER20",
+  "tooling": { "reserved": [{ "number": 99, "use": "probe" }], "spindle_mount": "TTS", "default_holder": "TTS ER20",
     "mount_source": "https://www.tormach.com/tormach_mills/ - PCNC and M machines have an R8 collet in the spindle and use TTS tool holders" }
 }

@@ -150,6 +150,7 @@ pub mod tool_list;
 pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.
 pub mod tool_numbers;
+mod tool_reservations;
 pub use camcraft_tools::tools;
 // #894: the thread mills' form constants, sanity law and pitch door.
 pub use camcraft_tools::thread_mill;
