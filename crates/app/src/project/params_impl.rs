@@ -1333,8 +1333,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => ParamsDto::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_to_dto(links, &p.default_links()),
                 clearance_z: (*clearance_z).into(),
                 retract_z: (*retract_z).map(Into::into),
@@ -2641,8 +2643,10 @@ impl ParamsDto {
                 tolerance,
                 holes,
                 break_through,
+                pass_start,
             } => OpParams::Bore {
                 break_through: *break_through,
+                pass_start: (*pass_start).into(),
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 clearance_z: (*clearance_z).into(),
                 retract_z: retract_z.map(Into::into),

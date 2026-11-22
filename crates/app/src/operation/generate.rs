@@ -2671,6 +2671,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             tolerance,
             holes,
             break_through,
+            pass_start,
             ..
         } => {
             // #1557: the stated break-through, the drill's own by default.
@@ -2687,7 +2688,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let path = machining2d::bore(&machining2d::BoreParams {
+            // #3360: the shared ring order; Auto is the old ladder.
+            let path = machining2d::bore_started(&machining2d::BoreParams {
                 links: lk,
                 holes: holes
                     .iter()
@@ -2715,7 +2717,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 tolerance: *tolerance,
                 entry: Entry3D::Plunge,
                 helix_radius: 1.0,
-            })?;
+            }, *pass_start)?;
             (region, path)
         }
         // M2.4 C, #894: helical thread milling with a thread mill
