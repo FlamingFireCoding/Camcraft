@@ -301,6 +301,8 @@ mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
 #[cfg(test)]
+mod boundary_offset_tests;
+#[cfg(test)]
 mod field_focus_tests;
 #[cfg(test)]
 mod coolant_tests;
@@ -318,6 +320,8 @@ mod after_op_tests;
 mod program_info_tests;
 #[cfg(test)]
 mod post_dialog_tests;
+#[cfg(test)]
+mod setup_post_gap_tests;
 #[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]
