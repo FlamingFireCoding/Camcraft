@@ -6,11 +6,14 @@ use super::*;
 use camcraft_app::commands::ImportModel;
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::stock::StockShape;
+use egui::accesskit::Role;
 
 /// Imports `names` as small boxes, opens the Stock page, picks From model
 /// and clicks Apply with no change to Source.
 fn apply_from_model(names: &[&str]) -> Harness<'static, ShellUi> {
-    let mut h = shell_harness();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1280.0, 720.0))
+        .build_ui_state(frame, ShellUi::blank());
     {
         let st = &mut h.state_mut().state;
         for (i, name) in names.iter().enumerate() {
@@ -20,10 +23,21 @@ fn apply_from_model(names: &[&str]) -> Harness<'static, ShellUi> {
         }
         st.doc_version += 1;
         st.ui_target = UiTarget::Stock;
+        assert_eq!(model::model_entities(&st.world).len(), names.len(), "only the imported parts exist");
+        let active = camcraft_app::setup::active(&st.world);
+        let stock_name = camcraft_app::setup::stock_entity_name(&st.world, active.as_deref());
+        assert!(model::find_by_name(&st.world, &stock_name).is_none(), "no prior stock");
     }
     h.run_steps(2);
     h.get_by_label("From model").click();
     h.run_steps(2);
+    let shown = names.last().expect("the fixture has a part");
+    assert!(
+        h.query_all_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some(*shown))
+            .next()
+            .is_some(),
+        "the Source picker renders the part name before Apply"
+    );
     h.get_by_label("Apply").click();
     h.run_steps(2);
     h
@@ -43,6 +57,7 @@ fn applied_source(h: &Harness<'static, ShellUi>) -> Option<String> {
 #[test]
 fn from_model_apply_takes_the_only_part_shown() {
     let h = apply_from_model(&["box"]);
+    assert_eq!(model::model_entities(&h.state().state.world).len(), 1, "exactly one model");
     assert_eq!(applied_source(&h).as_deref(), Some("box"), "the stock comes from the one part");
     assert_eq!(h.state().state.stock_ui.source, "box", "the draft holds the shown part");
 }
