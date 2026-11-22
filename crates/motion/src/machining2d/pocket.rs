@@ -13,11 +13,13 @@ use super::corner_relief::{CornerRelief, ResolvedRelief, plan_corner_reliefs};
 use super::face::GenError;
 use super::arcs::ARC_FIT_TOL;
 use super::fillet_tally::corner_arc_radius;
-use super::pass_start::PassStart;
+use super::level_rings::ring_plan;
+use super::pass_start::{PassStart, StartSide};
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::adaptive_passes;
 use super::pocket_zigzag::rest_passes;
-pub(crate) use super::pocket_plan::{plan_passes, plan_passes_from};
+pub(crate) use super::pocket_plan::plan_passes;
+pub(super) use super::pocket_plan::non_sliver_center;
 use super::predrilled::PreHole;
 pub use super::pocket_strategy::PocketStrategy;
 
@@ -235,6 +237,18 @@ pub fn pocket_started(
     relief: &CornerRelief,
     start: PassStart,
 ) -> Result<Toolpath, GenError> {
+    pocket_started_on(region, p, holes, relief, &StartSide::from(start))
+}
+
+/// [`pocket_started`] with the stock known: Inside and Outside walk the
+/// level curves of one side (`level_rings`), each full-width cut named.
+pub fn pocket_started_on(
+    region: &Region,
+    p: &PocketParams,
+    holes: &[PreHole],
+    relief: &CornerRelief,
+    side: &StartSide,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
     relief.validate()?;
     if region.is_empty() {
@@ -247,38 +261,7 @@ pub fn pocket_started(
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     let plan = plan_corner_reliefs(region, &center, off, relief)?;
-    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, start)
-}
-
-/// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
-/// slivers (`<= 0.01 mm^2` area and `<= 0.008 mm` half-width) that hold
-/// no cuttable pass and would spin on empty bores (#2232).
-pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, GenError> {
-    let center = region.offset(-erode)?;
-    if center.is_empty() {
-        return Ok(center);
-    }
-    let outers = center.loops().iter().filter(|l| l.is_ccw()).count();
-    if outers <= 1 && center.area().abs() > 1e-2 {
-        return Ok(center);
-    }
-    let clean = Region::from_slices(center.loops().to_vec())?;
-    let mut kept = Vec::new();
-    let mut dropped = false;
-    for c in super::pocket_hsm::components(&clean)? {
-        if c.area().abs() > 1e-2 || crate::entry::dive_room(&c, 0.008).is_some() {
-            kept.extend(c.loops().iter().cloned());
-        } else {
-            dropped = true;
-        }
-    }
-    // Nothing dropped: keep the eroded area exactly as offset gave it. The
-    // rebuild through `from_slices` re-starts each loop at another vertex,
-    // which moved a multi-piece pocket's pass starts (#2426).
-    if !dropped {
-        return Ok(center);
-    }
-    Ok(Region::from_slices(kept)?)
+    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, side)
 }
 
 /// The pocket passes over a given cutter-center area: [`pocket`]'s body
@@ -299,7 +282,7 @@ pub(super) fn pocket_over_with_relief(
     hold_crossings: bool,
     holes: &[PreHole],
     corner_reliefs: &[ResolvedRelief],
-    start: PassStart,
+    side: &StartSide,
 ) -> Result<Toolpath, GenError> {
     // Auto commits to a shape here, from the region's own outline - the
     // outermost loop (largest area; holes and islands never decide the
@@ -326,7 +309,11 @@ pub(super) fn pocket_over_with_relief(
             notes.into_iter().for_each(|n| b.note(n));
             (passes, s, room, joins)
         }
-        s => (plan_passes_from(center, p.tiling_step(), p.climb, s, start)?, s, None, Vec::new()),
+        s => {
+            let (passes, notes) = ring_plan(region, center, p, s, side)?;
+            notes.into_iter().for_each(|n| b.note(n));
+            (passes, s, None, Vec::new())
+        }
     };
     // #3021: rows alone leave a cusp between row ends on every wall and
     // island; each Zigzag pocket closes with the area's boundary rings.
@@ -336,7 +323,7 @@ pub(super) fn pocket_over_with_relief(
     if zigzag {
         passes = rest_passes(center, p.tiling_step(), p.climb)?;
         // #3354: rows have no inside or outside; say so by name.
-        if start != PassStart::Auto {
+        if side.start != PassStart::Auto {
             b.note(super::pass_start::PASS_START_ZIGZAG_NOTE.to_owned());
         }
     }
@@ -354,34 +341,7 @@ pub(super) fn pocket_over_with_relief(
             hold_crossings,
             holes,
             corner_reliefs,
+            cleared_links: side.start != PassStart::Auto,
         },
     )
-}
-
-#[cfg(test)]
-mod non_sliver_tests {
-    use super::non_sliver_center;
-    use crate::geo2d::{Loop, Point2, Region};
-
-    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {
-        let pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-        let Ok(l) = Loop::new(pts.iter().map(|&(x, y)| Point2::new(x, y)).collect()) else {
-            panic!("fixture loop")
-        };
-        l
-    }
-
-    /// #2426: a two-piece area with no sliver comes back exactly as the
-    /// offset gave it - same loops, same start vertices - so the pass
-    /// starts of a multi-piece pocket do not move.
-    #[test]
-    fn a_multi_piece_center_without_slivers_is_the_plain_offset() {
-        let Ok(reg) = Region::new(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 61.0, 11.0)]) else {
-            panic!("fixture region")
-        };
-        let Ok(plain) = reg.offset(-5.0) else { panic!("offset") };
-        let Ok(kept) = non_sliver_center(&reg, 5.0) else { panic!("non_sliver_center") };
-        assert_eq!(plain.loops().iter().filter(|l| l.is_ccw()).count(), 2, "fixture must have two pieces");
-        assert_eq!(kept, plain);
-    }
 }

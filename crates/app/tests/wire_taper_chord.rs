@@ -103,6 +103,7 @@ fn punch(taper_deg: f64) -> World {
         clearance: camcraft_app::operation::DEFAULT_CLEARANCE,
         four_axis: None,
         skims: Vec::new(),
+        sharp_corners: false,
     };
     let c = CreateOperation::new(&world, "Punch1", "EDM-W025", src, OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
@@ -124,6 +125,9 @@ fn post(world: &World, tag: &str) -> Result<String, String> {
 #[test]
 fn a_meshed_cone_posts_at_its_true_angle_under_the_chord_tolerance() {
     let world = punch(ANGLE);
+    let e = model::find_by_name(&world, "Punch1").expect("op");
+    let OpParams::WireContour(op) = model::operation_of(&world, &e).expect("op").params else { panic!("wire") };
+    assert!(!op.sharp_corners, "the chord fixture keeps sharp corners off");
     let clause = posting::wire_clause(&world);
     assert!(clause.problems.is_empty(), "{:?}", clause.problems);
     let line = clause.line.expect("the report line");

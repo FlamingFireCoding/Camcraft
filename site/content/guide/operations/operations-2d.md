@@ -37,6 +37,15 @@ can hold separate chains that keep the area between them. Crossing,
 touching or ambiguous chains are refused; Contour still rides one open
 boundary chain. Include and Exclude boundaries must remain closed.
 
+On **Geometry > Boundary > Tool**, **Inside boundary offset** moves the
+picked edge or face loop before tool containment: a positive value grows
+the area outward and a negative value shrinks it. **Outside boundary
+offset** moves only the stock-side limit of an open boundary; the picked
+edge stays put. For example, Outside boundary offset -2 mm pulls the air
+passes 2 mm inward without moving the part-side edge. A closed area has
+no outer side, so that setting has no effect there. Crossing or ambiguous
+boundaries still refuse; correct the picks rather than adding an offset.
+
 Blue shows the operation travel; dashed orange shows approach and retract; gray shows the workpiece. These schematics are not generated NC paths and have no scale.
 
 ## DXF profiles
@@ -241,6 +250,26 @@ radius. The path notes report corner material left by the rounding.
 Adaptive's Trochoidal method refuses this option because its loops
 already supply the arc motion.
 
+**Rest machining** on **Passes** lets a smaller tool cut what earlier
+roughing left. Enable it, choose **Rest stock from > Previous operations**,
+then **Apply**. CamCraft reads the stock left by earlier operations of this
+setup at every cut depth; it hides the entered previous-tool dimensions.
+**Rest allowance** grows the rest area to overlap the earlier cut.
+For example, rough a pocket with a 12 mm cutter, then place a 6 mm Pocket
+after it to clear the remaining corners. Generate the program in order.
+If earlier operations cleared nothing at those depths, the whole pocket
+is cut; if nothing remains, generation reports "no rest material".
+
+Rest supports Waterline, Offset rings and Zigzag; Auto uses Waterline.
+The old Pocket Adaptive strategy is refused. Missing or stale earlier
+toolpaths are refused by name: "generate the program in order" or
+"regenerate the program in order". An earlier suppressed operation with
+a recorded cut also refuses; unsuppress it or choose **Entered tool**,
+which trusts the dimensions you type instead of reading previous cuts.
+Previous-operations rest is refused on a tilted Pocket; clear the tilt or
+use Entered tool. Pre-drilled entry and rest cannot be combined; turn
+off one of them.
+
 ## 2D Adaptive
 
 <!-- catalog:examples:start -->
@@ -306,11 +335,30 @@ wanted rather than a constant load.
 
 - **Auto** cuts the rings from the middle of the area outward. This is
   the order that 2D Offset always cut.
-- **Outside** starts at the outer edge of the area and works in. With an
-  Outside containment, the outer edge is the stock edge: the tool starts
-  outside the stock, cuts one stepover at a time and ends on the part
-  wall. Use it to stop full-width slots in the stock.
-- **Inside** starts at the part or island wall and works out.
+- **Outside** starts at the outer edge of the area and works in. Each
+  ring follows the outer edge, one stepover in from the ring before, and
+  ends where it meets the part. The part wall comes last. With an
+  Outside containment, the outer edge is the stock edge: each level
+  starts outside the stock and ends on the part wall. Use it to stop
+  full-width slots in the stock.
+- **Inside** starts at the part or island wall and works out. Each ring
+  follows the walls, and the outer edge comes last.
+- Some cuts still take the full tool width. The toolpath then shows a
+  **Pass start** warning that names the case:
+  - **Outside** on a closed pocket: the first ring runs along the pocket
+    wall.
+  - **Inside** on an Outside containment: the first ring runs along the
+    part wall.
+  - **Inside** round an island: the first ring runs along the island wall.
+  - A place narrower than the tool plus one stepover, or stock that the
+    start edge does not reach.
+- Material inside a hole (the bore of a hollow boss, the stock inside a
+  ring-shaped part) starts from its own edge. With **Inside** it has no
+  hole to start from, so it is cut from the middle outward, as **Auto**
+  cuts it, and a note says so.
+- If the rings from the start side would leave material standing, that
+  area is cut in the **Auto** order instead, and a **Pass start** warning
+  says how much area the rings would have left.
 
 **Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
 to protect from every cut, plunge, ramp, helix, keep-down and rapid link
@@ -515,6 +563,17 @@ deep as the shape is wide at that place, so the cone touches the two walls
 together. Choose it over Engrave when the shape has width, not only a
 stroke.
 
+The centre line is the **medial axis**: centres of circles that fit inside
+the outline and touch its walls. Their local radius and the V-bit's
+included angle set the tip depth below Top Z. For example, a 90-degree
+V-bit in a straight 2 mm wide stroke needs about 1 mm depth (the path
+keeps a small wall allowance); a narrower stroke rises toward the
+surface. **Bottom Z** on **Heights** caps that depth.
+If Bottom Z is only 0.5 mm below Top Z, this stroke keeps an uncleared
+floor unless **Flat clearing** on **Passes** is enabled. Pick closed
+outlines and a V-bit; the tool and missing-height refusals below name what
+must be corrected.
+
 **Tool:** a chamfer mill (V-bit). Its tip angle sets the cone, and its
 flute must cover the deepest cut.
 
@@ -592,6 +651,14 @@ when the circle is a dimension, not a model face.
 | Passes | Stepover / Stock to leave | 3 / 0 |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
+
+Between its rings, Circular climbs vertically to the **Clearance** plane
+set on **Heights**, crosses there, and enters the next ring. It does not
+make a diagonal link through the uncut core. This applies to flat and
+**Vault** floors. For example, with Top Z 0 and Clearance Z 10 mm, the
+transfer between rings crosses at Z 10 even when the rings cut below
+Z 0. A "clearance plane below the first cut level" is refused; raise
+Clearance before generating.
 
 **Common refusals:** "circle radius must be positive"; "stepover must stay
 within the cutter radius - the last ring could leave an uncut core".

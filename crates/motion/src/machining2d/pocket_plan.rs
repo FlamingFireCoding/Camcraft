@@ -5,38 +5,23 @@
 //! consulted.
 
 use crate::geo2d::{Point2, Region};
+use crate::entry::dive_room;
 
 use super::face::GenError;
-use super::pass_start::PassStart;
 use super::pocket_strategy::PocketStrategy;
 use super::pocket_zigzag::zigzag_passes;
 use super::waterscan::waterline_passes;
 
-/// Concentric rings marching inward: ring k is the cutter-center area
-/// eroded by `k * stepover`, travelled closed. Offsets are taken from
-/// `center` at absolute distances (never buffer-of-buffer), so micron
-/// quantization cannot compound across rings.
 /// The cutter-center passes for one planar area: the shape law both the
 /// 2-D pocket and the 3-D pocket's per-level plan share (the strategies
 /// band/erode `center` identically; only the numbers come from the
-/// operation's params either way).
+/// operation's params either way). The start side of #3316 is
+/// `level_rings::ring_plan`'s, over this plan.
 pub(crate) fn plan_passes(
     center: &Region,
     stepover: f64,
     climb: bool,
     strategy: PocketStrategy,
-) -> Result<Vec<Vec<Point2>>, GenError> {
-    plan_passes_from(center, stepover, climb, strategy, PassStart::Auto)
-}
-
-/// [`plan_passes`] with the side each level starts on (#3316): read by
-/// the ring tilings only; zigzag rows have no ring order.
-pub(crate) fn plan_passes_from(
-    center: &Region,
-    stepover: f64,
-    climb: bool,
-    strategy: PocketStrategy,
-    start: PassStart,
 ) -> Result<Vec<Vec<Point2>>, GenError> {
     match strategy {
         PocketStrategy::Zigzag | PocketStrategy::Auto => zigzag_passes(center, stepover, climb),
@@ -45,7 +30,66 @@ pub(crate) fn plan_passes_from(
         // 3-D ladder's per level through `machining3d::hsm`), which
         // hands a refused area back here as rings.
         PocketStrategy::Waterline | PocketStrategy::Adaptive | PocketStrategy::OffsetRings => {
-            waterline_passes(center, stepover, climb, start)
+            waterline_passes(center, stepover, climb)
         }
+    }
+}
+
+/// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
+/// slivers (`<= 0.01 mm^2` area and `<= 0.008 mm` half-width) that hold
+/// no cuttable pass and would spin on empty bores (#2232).
+pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, GenError> {
+    let center = region.offset(-erode)?;
+    if center.is_empty() {
+        return Ok(center);
+    }
+    let outers = center.loops().iter().filter(|l| l.is_ccw()).count();
+    if outers <= 1 && center.area().abs() > 1e-2 {
+        return Ok(center);
+    }
+    let clean = Region::from_slices(center.loops().to_vec())?;
+    let mut kept = Vec::new();
+    let mut dropped = false;
+    for c in super::pocket_hsm::components(&clean)? {
+        if c.area().abs() > 1e-2 || dive_room(&c, 0.008).is_some() {
+            kept.extend(c.loops().iter().cloned());
+        } else {
+            dropped = true;
+        }
+    }
+    // Nothing dropped: keep the eroded area exactly as offset gave it. The
+    // rebuild through `from_slices` re-starts each loop at another vertex,
+    // which moved a multi-piece pocket's pass starts (#2426).
+    if !dropped {
+        return Ok(center);
+    }
+    Ok(Region::from_slices(kept)?)
+}
+
+#[cfg(test)]
+mod non_sliver_tests {
+    use super::non_sliver_center;
+    use crate::geo2d::{Loop, Point2, Region};
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {
+        let pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+        let Ok(l) = Loop::new(pts.iter().map(|&(x, y)| Point2::new(x, y)).collect()) else {
+            panic!("fixture loop")
+        };
+        l
+    }
+
+    /// #2426: a two-piece area with no sliver comes back exactly as the
+    /// offset gave it - same loops, same start vertices - so the pass
+    /// starts of a multi-piece pocket do not move.
+    #[test]
+    fn a_multi_piece_center_without_slivers_is_the_plain_offset() {
+        let Ok(reg) = Region::new(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 61.0, 11.0)]) else {
+            panic!("fixture region")
+        };
+        let Ok(plain) = reg.offset(-5.0) else { panic!("offset") };
+        let Ok(kept) = non_sliver_center(&reg, 5.0) else { panic!("non_sliver_center") };
+        assert_eq!(plain.loops().iter().filter(|l| l.is_ccw()).count(), 2, "fixture must have two pieces");
+        assert_eq!(kept, plain);
     }
 }

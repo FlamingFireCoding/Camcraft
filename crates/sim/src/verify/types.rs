@@ -395,6 +395,12 @@ pub enum Warning {
     /// head into the roof of its own undercut, a dive drives it into
     /// uncut stock it cannot plunge. Blocking like `Gouge`.
     UndercutLift { at: usize },
+    /// An Adaptive op whose planner gave `areas` areas (a pocket, a 3-D
+    /// level) to the Offset rings (#3035), from the first cut at `at`.
+    /// The notes name each one. Advisory: the rings are verified like any
+    /// path, so the post is not held - but the strategy the user asked for
+    /// did not cut those areas, and the op says so.
+    StrategyFallback { at: usize, areas: usize },
 }
 
 impl Warning {
@@ -405,7 +411,8 @@ impl Warning {
         !matches!(self, Warning::Scallop { .. }
                 | Warning::ProbeSearch { .. }
                 | Warning::SinkerFinishOrder { .. }
-                | Warning::DrillUndersize { .. })
+                | Warning::DrillUndersize { .. }
+                | Warning::StrategyFallback { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -539,6 +546,11 @@ impl core::fmt::Display for Warning {
             Warning::DrillUndersize { at, hole_mm, drill_mm } => write!(
                 f,
                 "undersize hole at move {at}: the hole is {hole_mm:.3} mm, and the {drill_mm:.3} mm drill makes it {drill_mm:.3} mm - use a {hole_mm:.3} mm drill, or follow with a Bore or a reamer (the post is not held: a pilot drill is a valid plan)"
+            ),
+            Warning::StrategyFallback { at, areas } => write!(
+                f,
+                "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
+                if *areas == 1 { "" } else { "s" }
             ),
         }
     }
