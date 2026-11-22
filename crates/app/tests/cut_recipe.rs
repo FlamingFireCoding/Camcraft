@@ -8,6 +8,8 @@
 //! Provenance: our own command and MCP contract.
 
 mod common;
+#[path = "cut_recipe/picks.rs"]
+mod picks;
 #[path = "cut_recipe/safety.rs"]
 mod safety;
 
