@@ -149,6 +149,55 @@ pub(super) fn band_trim(
             }
         }
     };
+    // A band that covers the path's whole reach trims nothing: the trim
+    // hands the base path on unchanged. The per-span solve below would
+    // still chop runs where the retip read dips past the axis - the read
+    // is a flank convention, and a radius is a distance, so a point it
+    // reads negative stands at the axis - and the relink would turn each
+    // chop into a retract, index and plunge (#2774). The read clamped at
+    // 0 stays convex, so one ternary search reads the chord's low point.
+    let radius = |p: &Point3| rho(p.x, p.y, p.z).max(0.0);
+    let chord_covered = |a: &Point3, b: &Point3| -> bool {
+        let r = |t: f64| {
+            let p = chord(a, b, t);
+            radius(&p)
+        };
+        let (mut u, mut v) = (0.0f64, 1.0f64);
+        for _ in 0..64 {
+            let (m1, m2) = (u + (v - u) / 3.0, v - (v - u) / 3.0);
+            if r(m1) <= r(m2) {
+                v = m2;
+            } else {
+                u = m1;
+            }
+            if v - u < 1e-12 {
+                break;
+            }
+        }
+        // A convex read tops out at the chord's ends; its low point is
+        // the search's. The edges are inclusive, as in the span solve.
+        r((u + v) * 0.5) >= lo && r(0.0) <= hi && r(1.0) <= hi
+    };
+    let mut whole = true;
+    for (i, mv) in ms.iter().enumerate() {
+        if link(i) {
+            continue;
+        }
+        for (a, b) in mv.segments3(ARC_FIT_TOL) {
+            if !chord_covered(&a, &b) {
+                whole = false;
+                break;
+            }
+        }
+        if !whole {
+            break;
+        }
+    }
+    if whole {
+        let mut path = Toolpath::new(ms.clone());
+        path.notes = base.notes.clone();
+        return Ok(path);
+    }
     let mut out: Vec<Move> = Vec::with_capacity(ms.len());
     let (mut min_r, mut max_r) = (f64::MAX, f64::MIN);
     let mut open = false;
