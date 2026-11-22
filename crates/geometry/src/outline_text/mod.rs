@@ -35,7 +35,7 @@ pub const JOIN_TOLERANCE: f64 = 0.0005;
 /// A flattened point closer than this to the point before it is dropped, mm.
 const MIN_SEGMENT: f64 = 2.0 * JOIN_TOLERANCE;
 /// The most lines that one quadratic piece becomes.
-const MAX_PIECES: usize = 64;
+const MAX_PIECES: usize = 4096;
 
 /// A font that cannot be used, by name.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -137,7 +137,7 @@ pub fn outlines(spec: &OutlineSpec) -> Result<Vec<Vec<Point2>>, OutlineTextError
             None => return Err(OutlineTextError::NoGlyph { ch, position: index + 1 }),
         };
         for contour in font.outline(gid)? {
-            if let Some(line) = flatten(&contour, pen, scale) {
+            if let Some(line) = flatten(&contour, pen, scale)? {
                 out.push(line);
             }
         }
@@ -152,7 +152,10 @@ pub fn outlines(spec: &OutlineSpec) -> Result<Vec<Vec<Point2>>, OutlineTextError
 /// One TrueType contour (on-curve points and quadratic control points, closed) as a closed
 /// polyline in mm, moved right by `pen`. A contour that flattens to fewer than three distinct
 /// points encloses nothing and is dropped.
-fn flatten(contour: &[OutlinePoint], pen: f64, scale: f64) -> Option<Vec<Point2>> {
+fn flatten(contour: &[OutlinePoint], pen: f64, scale: f64) -> Result<Option<Vec<Point2>>, OutlineTextError> {
+    if contour.is_empty() {
+        return Ok(None);
+    }
     let at = |p: &OutlinePoint| Point2::new(pen + p.x * scale, p.y * scale);
     let mid = |a: Point2, b: Point2| Point2::new(0.5 * (a.x + b.x), 0.5 * (a.y + b.y));
     let n = contour.len();
@@ -160,7 +163,7 @@ fn flatten(contour: &[OutlinePoint], pen: f64, scale: f64) -> Option<Vec<Point2>
     let first_on = contour.iter().position(|p| p.on);
     let (start, offset) = match first_on {
         Some(i) => (at(&contour[i]), i),
-        None => (mid(at(contour.first()?), at(contour.last()?)), 0),
+        None => (mid(at(&contour[0]), at(&contour[n - 1])), 0),
     };
     let mut line = vec![start];
     // With no on point, the first control point follows the start; the last one closes.
@@ -179,21 +182,21 @@ fn flatten(contour: &[OutlinePoint], pen: f64, scale: f64) -> Option<Vec<Point2>
             (false, Some(c)) => (mid(c, q), Some(q)),
         };
         match control {
-            Some(c) => quadratic(&mut line, last, c, end),
+            Some(c) => quadratic(&mut line, last, c, end)?,
             None => push(&mut line, end),
         }
         last = end;
         control = next_control;
     }
     if let Some(c) = control {
-        quadratic(&mut line, last, c, start);
+        quadratic(&mut line, last, c, start)?;
     }
     // Close exactly on the start point.
     while line.len() > 1 && line.last().is_some_and(|p| dist(*p, start) < MIN_SEGMENT) {
         line.pop();
     }
     line.push(start);
-    (line.len() >= 4).then_some(line)
+    Ok((line.len() >= 4).then_some(line))
 }
 
 fn dist(a: Point2, b: Point2) -> f64 {
@@ -208,15 +211,20 @@ fn push(line: &mut Vec<Point2>, p: Point2) {
 
 /// The quadratic Bezier curve `a`, `c`, `b` as lines whose chord error is at most
 /// [`CHORD_TOLERANCE`]: the error of `n` even steps is |a - 2c + b| / (4 n^2).
-fn quadratic(line: &mut Vec<Point2>, a: Point2, c: Point2, b: Point2) {
+fn quadratic(line: &mut Vec<Point2>, a: Point2, c: Point2, b: Point2) -> Result<(), OutlineTextError> {
     let bend = (a.x - 2.0 * c.x + b.x).hypot(a.y - 2.0 * c.y + b.y);
-    let pieces = (bend / (4.0 * CHORD_TOLERANCE)).sqrt().ceil();
-    let pieces = if pieces.is_finite() { (pieces as usize).clamp(1, MAX_PIECES) } else { 1 };
+    // Leave room for the displacement from dropping a point within MIN_SEGMENT.
+    let pieces = (bend / (4.0 * (CHORD_TOLERANCE - MIN_SEGMENT))).sqrt().ceil();
+    if !pieces.is_finite() || pieces > MAX_PIECES as f64 {
+        return Err(FontError::Corrupt("a curve needs too many segments for the chord tolerance").into());
+    }
+    let pieces = (pieces as usize).max(1);
     for i in 1..=pieces {
         let t = i as f64 / pieces as f64;
         let s = 1.0 - t;
         push(line, Point2::new(s * s * a.x + 2.0 * s * t * c.x + t * t * b.x, s * s * a.y + 2.0 * s * t * c.y + t * t * b.y));
     }
+    Ok(())
 }
 
 /// The outlines of `spec` as sketch data: line primitives in millimetres on the layer

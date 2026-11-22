@@ -109,3 +109,160 @@ fn bad_text_and_overlapping_outlines_are_refused_by_name() {
     // X's two bars cross: a pocket of them is not clear.
     assert!(err(spec(&font, "X")).contains("the text outlines cross or touch"), "{}", err(spec(&font, "X")));
 }
+
+#[test]
+fn large_curves_measure_inside_the_chord_tolerance() {
+    let font = sample_font();
+    for height in [7.0, 1000.0] {
+        let scale = height / 700.0;
+        let lines = outlines(&OutlineSpec {
+            height,
+            ..spec(&font, "D")
+        })
+        .expect("large D");
+        let mut chords = 0;
+        for pair in lines[0].windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            if a.x < 300.0 * scale || b.x < 300.0 * scale {
+                continue;
+            }
+            // Recover each endpoint's parameter on either of D's two quadratic pieces.
+            let upper = a.y >= 350.0 * scale && b.y >= 350.0 * scale;
+            let lower = a.y <= 350.0 * scale && b.y <= 350.0 * scale;
+            if !(upper || lower) {
+                continue;
+            }
+            let parameter = |y: f64| {
+                if upper {
+                    ((height - y) / (350.0 * scale)).max(0.0).sqrt()
+                } else {
+                    1.0 - (y / (350.0 * scale)).max(0.0).sqrt()
+                }
+            };
+            let (ta, tb) = (parameter(a.y), parameter(b.y));
+            for i in 1..16 {
+                let t = ta + (tb - ta) * f64::from(i) / 16.0;
+                let (x, y) = if upper {
+                    (300.0 + 300.0 * (2.0 * t - t * t), 700.0 - 350.0 * t * t)
+                } else {
+                    (600.0 - 300.0 * t * t, 350.0 * (1.0 - t).powi(2))
+                };
+                let (x, y) = (x * scale, y * scale);
+                let (dx, dy) = (b.x - a.x, b.y - a.y);
+                let u = (((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
+                let error = (x - a.x - u * dx).hypot(y - a.y - u * dy);
+                assert!(
+                    error <= CHORD_TOLERANCE,
+                    "height {height}, chord {a:?}..{b:?}, error {error}"
+                );
+            }
+            chords += 1;
+        }
+        assert!(chords > 8);
+    }
+}
+
+fn table_record(font: &[u8], tag: &[u8; 4]) -> usize {
+    (12..12 + 16 * usize::from(u16::from_be_bytes(font[4..6].try_into().unwrap())))
+        .step_by(16)
+        .find(|&at| &font[at..at + 4] == tag)
+        .expect("table")
+}
+
+fn table_offset(font: &[u8], tag: &[u8; 4]) -> usize {
+    let rec = table_record(font, tag);
+    u32::from_be_bytes(font[rec + 8..rec + 12].try_into().unwrap()) as usize
+}
+
+#[test]
+fn composite_offsets_use_the_component_transform() {
+    let mut font = sample_font();
+    let loca = table_offset(&font, b"loca");
+    let glyph = u32::from_be_bytes(font[loca + 28..loca + 32].try_into().unwrap()) as usize;
+    let at = table_offset(&font, b"glyf") + glyph + 10;
+    font[at..at + 2].copy_from_slice(&0x080b_u16.to_be_bytes());
+    font[at + 4..at + 6].copy_from_slice(&100_i16.to_be_bytes());
+    font[at + 6..at + 8].copy_from_slice(&360_i16.to_be_bytes());
+    let lines = outlines(&spec(&font, "8")).expect("scaled offset");
+    let min_x = lines
+        .iter()
+        .flatten()
+        .map(|p| p.x)
+        .fold(f64::INFINITY, f64::min);
+    let min_y = lines
+        .iter()
+        .flatten()
+        .map(|p| p.y)
+        .fold(f64::INFINITY, f64::min);
+    assert_eq!((min_x, min_y), (0.5, 1.8));
+    assert_eq!(roles(&font, "8"), (1, 1));
+    font[at..at + 2].copy_from_slice(&0x180b_u16.to_be_bytes());
+    assert!(
+        outlines(&spec(&font, "8"))
+            .unwrap_err()
+            .to_string()
+            .contains("conflicting offset flags")
+    );
+}
+
+#[test]
+fn declared_table_lengths_bound_reads_with_trailing_bytes() {
+    let font = sample_font();
+    for (tag, lengths) in [
+        (b"head", &[0_u32, 19, 51][..]),
+        (b"maxp", &[0, 5][..]),
+        (b"hhea", &[0, 35][..]),
+        (b"hmtx", &[0, 19][..]),
+        (b"loca", &[0, 23][..]),
+        (b"cmap", &[0, 11, 27][..]),
+    ] {
+        for &length in lengths {
+            let mut bad = font.clone();
+            let rec = table_record(&bad, tag);
+            bad[rec + 12..rec + 16].copy_from_slice(&length.to_be_bytes());
+            assert!(
+                matches!(sketch(&spec(&bad, "HO")), Err(OutlineTextError::Font(_))),
+                "{tag:?} length {length} was accepted"
+            );
+        }
+    }
+}
+
+#[test]
+fn declared_cmap_subtable_lengths_bound_reads() {
+    let mut font = sample_font();
+    let cmap = table_offset(&font, b"cmap");
+    let sub = cmap + 12;
+    font[sub + 2..sub + 4].copy_from_slice(&16_u16.to_be_bytes());
+    assert!(matches!(
+        sketch(&spec(&font, "HO")),
+        Err(OutlineTextError::Font(_))
+    ));
+    // Point the directory at a new format 12 cmap. The bytes after its short declared
+    // subtable length remain in the file, including the complete group for H.
+    let mut font = sample_font();
+    let rec = table_record(&font, b"cmap");
+    let offset = u32::try_from(font.len()).unwrap();
+    let mut cmap = vec![0, 0, 0, 1, 0, 3, 0, 10, 0, 0, 0, 12];
+    cmap.extend_from_slice(&12_u16.to_be_bytes());
+    cmap.extend_from_slice(&0_u16.to_be_bytes());
+    cmap.extend_from_slice(&28_u32.to_be_bytes());
+    cmap.extend_from_slice(&0_u32.to_be_bytes());
+    cmap.extend_from_slice(&1_u32.to_be_bytes());
+    cmap.extend_from_slice(&u32::from('H').to_be_bytes());
+    cmap.extend_from_slice(&u32::from('H').to_be_bytes());
+    cmap.extend_from_slice(&2_u32.to_be_bytes());
+    font[rec + 8..rec + 12].copy_from_slice(&offset.to_be_bytes());
+    font[rec + 12..rec + 16].copy_from_slice(&u32::try_from(cmap.len()).unwrap().to_be_bytes());
+    font.extend_from_slice(&cmap);
+    assert!(
+        sketch(&spec(&font, "H")).is_ok(),
+        "complete format 12 group"
+    );
+    let length_at = offset as usize + 12 + 4;
+    font[length_at..length_at + 4].copy_from_slice(&16_u32.to_be_bytes());
+    assert!(matches!(
+        sketch(&spec(&font, "H")),
+        Err(OutlineTextError::Font(_))
+    ));
+}
