@@ -265,6 +265,9 @@ fn new_blank_disabled(h: &Harness<'static, ShellUi>) -> bool {
 /// Open a dropdown (a ComboBox showing `now`) and pick `to`, the kind
 /// dropdown or the editor's Post field (#2374), with real pointer events like a user.
 pub(super) fn pick_kind(h: &mut Harness<'static, ShellUi>, now: &str, to: &str) {
+    // A dropdown below the pane's fold is scrolled into view first.
+    h.get_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some(now)).scroll_to_me();
+    h.run_steps(6);
     let at = h
         .get_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some(now))
         .rect()
