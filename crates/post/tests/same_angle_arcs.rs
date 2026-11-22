@@ -205,7 +205,9 @@ fn every_post_writes_a_same_angle_arc_as_its_straight_move() {
 /// The rule itself: the written ends differ, but the written end is on the
 /// written start's ray from the written centre (or on the centre). A short
 /// record is a straight move; a long record (a turn of more than half a
-/// circle) stays the arc, and so does a normal short arc.
+/// circle) stays the arc, and so does a normal short arc. A record whose
+/// own ends (in the stream) are on one ray states a full turn and stays
+/// the arc (the 359.99 degree record of `radius_arcs.rs` arrives so).
 #[test]
 fn arc_fate_reads_a_same_angle_short_arc_as_a_straight_move() {
     let cps = r#"
@@ -221,11 +223,12 @@ fn arc_fate_reads_a_same_angle_short_arc_as_a_straight_move() {
           writeln("end-on-centre " + fate([10.0006, 5], [10.00044, 5.00041], [10, 5], true));
           writeln("opposite " + fate([10.0006, 5], [9.9994, 5.0000001], [10, 5], true));
           writeln("normal " + fate([11, 5], [10, 6], [10, 5], true));
+          writeln("stream-ray-is-full " + fate([11.235, 20], [11.234, 20], [10, 20], true));
         }
     "#;
     let out = engine::run(cps, &Value::Null, "").expect("the rule script runs");
     assert_eq!(
         out.program,
-        "same-angle linear\nsame-angle-cw-is-long arc\nend-on-centre linear\nopposite arc\nnormal arc\n"
+        "same-angle linear\nsame-angle-cw-is-long arc\nend-on-centre linear\nopposite arc\nnormal arc\nstream-ray-is-full arc\n"
     );
 }

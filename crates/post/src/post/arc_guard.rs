@@ -70,7 +70,10 @@ function sameAngleShort(a, u, v, word) {
   if (!isFinite(su) || !isFinite(sv) || !isFinite(eu) || !isFinite(ev)) return false;
   var scale = Math.sqrt((su * su + sv * sv) * (eu * eu + ev * ev));
   var onRay = scale === 0 || (Math.abs(su * ev - sv * eu) <= 1e-9 * scale && su * eu + sv * ev > 0);
-  return onRay && _arcSweep(a, u, v) <= Math.PI;
+  // A record whose own ends are on one ray (a zero sweep in the stream)
+  // states a full turn, as emitArcWithRadius reads it: the arc stays.
+  var sweep = _arcSweep(a, u, v);
+  return onRay && sweep > 1e-9 && sweep <= Math.PI;
 }
 function arcFateOf(a, word) {
   // The right-handed in-plane frame (u, v), u x v = +normal: CCW (seen
