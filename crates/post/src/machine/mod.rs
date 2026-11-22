@@ -16,6 +16,8 @@ pub mod envelope;
 mod operator_side;
 pub use operator_side::OperatorSide;
 mod kind;
+pub(crate) mod installation;
+pub use installation::{ControllerIdentity, ToolChangeMode};
 mod no_spindle;
 mod parse;
 mod plasma;

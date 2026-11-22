@@ -52,6 +52,8 @@ pub mod ai;
 pub mod model;
 // #864: models imported coarser than the importer promises.
 pub mod model_fidelity;
+// #2996: what a model checked at reduced accuracy says.
+pub mod fidelity_note;
 pub mod mesh_open;
 pub mod mesh_solids;
 pub mod model_vouch;
@@ -97,6 +99,8 @@ pub mod schema;
 pub mod script;
 // #1862: DXF profiles placed on a setup's stock, and the virtual model reference.
 pub use camcraft_geometry::sketch_data;
+// #1863: the DXF primitives a sketch's data holds, for the viewport's drawing.
+pub use camcraft_geometry::dxf;
 pub mod sketch;
 pub mod sketch_model;
 pub mod setup;
@@ -105,6 +109,8 @@ pub mod setup_offsets;
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
+// #2410: the router options that a machine kind offers (UI and MCP).
+pub mod router_offer;
 // #870: the WCS origin said in words ("top of stock, front-left corner").
 pub mod setup_origin;
 // #316: transforms between setups and the setup-relative link.
@@ -116,6 +122,8 @@ pub mod setup_wcs_flip;
 pub mod setup_post_options;
 // #1031: a setup's workholding (chuck/collet) rpm limit.
 pub mod setup_workholding;
+// #3070: the guided sheet job - stock, Z zero, allowance, clamp plane.
+pub mod sheet_job;
 pub mod setup_sheet;
 // #320: a setup's stock source - its own, or what the setup before leaves.
 pub mod setup_stock;
@@ -154,6 +162,8 @@ mod tool_reservations;
 pub use camcraft_tools::tools;
 // #894: the thread mills' form constants, sanity law and pitch door.
 pub use camcraft_tools::thread_mill;
+// #1444: the undercut cutters' record law and profile.
+pub use camcraft_tools::undercut;
 // #630: the lathe tool orientation code (LinuxCNC 1-9) and its control point.
 pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;

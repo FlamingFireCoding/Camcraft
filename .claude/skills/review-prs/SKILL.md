@@ -130,9 +130,9 @@ closed or gets `needs-rework`.
 
 After posting the review, read `gh pr view <N> --json mergeable`
 (re-read once if it says `UNKNOWN`):
-- clean review + `MERGEABLE` -> add `merge-ready`, remove `needs-rework`, `conflicts` and `needs-maintainer`;
+- clean review + `MERGEABLE` -> add `merge-ready`, remove `needs-rework`, `conflicts` and `needs-maintainer` in the same `gh pr edit` call;
 - clean review + `CONFLICTING` -> add `conflicts`, remove `merge-ready` and `needs-maintainer` (never green while it conflicts);
-- blocking review -> add `needs-rework`, remove `merge-ready` and `needs-maintainer`; also add `conflicts` if it conflicts;
+- blocking review -> add `needs-rework`, remove `merge-ready` and `needs-maintainer` in the same `gh pr edit` call; also add `conflicts` if it conflicts;
 - "Not built - needs a maintainer look" with no blockers -> add `needs-maintainer`, remove `merge-ready` and `needs-rework`; also add `conflicts` if it conflicts. With blockers it is `needs-rework` as above, and the comment still names the owner's decision.
 
 A PR that changes `crates/ui/tests/snapshots/*.png` is a blocking review
@@ -148,7 +148,8 @@ That applies to our own PRs; a fork contributor's PR is left as they set
 it, and the review comment says what to fix.
 
 A conflicting PR of ours that waits for the merge batch therefore stays a
-draft until merge time. The merging session refreshes it, and then flags it
+draft until its author's agents fix it (AGENTS.md "Own blocked PRs
+first") or until merge time. The merging session refreshes it, and then flags it
 ready (`gh pr ready <N>`) right before the merge, with one PR comment naming
 the `--delta` class (SAME, MECHANICAL or DELTA) - AGENTS.md "Every PR opens
 as a draft", decided in #1221 ("Refresh only at merge time"). The review
@@ -165,10 +166,17 @@ Merging a PR can turn others `CONFLICTING`, so each run also re-checks
 every open PR labelled `merge-ready` and swaps any that now conflict to
 `conflicts`.
 
-A requested change that is still open on the current head, or `merge-ready`
-beside a collaborator review that requests changes, is a disagreement
-(AGENTS.md "Only collaborators' reviews count"): no agent removes either
-label.
+`merge-ready` and `needs-rework` are never on the same PR (AGENTS.md
+"Only collaborators' reviews count", #3382). The person or agent that sets
+one of them removes the other in the same `gh pr edit` call
+(`--add-label needs-rework --remove-label merge-ready`, or the reverse),
+then posts one comment that says why. If two collaborators disagree on the
+same head, `needs-rework` stays and `merge-ready` is removed: an open change
+request wins, and the comment goes to the collaborator who set `merge-ready`.
+`conflicts` is not part of this rule: it stays an add-alongside label.
+A requested change that is still open on the current head, with `merge-ready`
+beside it, is the disagreement case above: remove `merge-ready`, keep
+`needs-rework`, and comment.
 
 Only collaborators set the review labels and the markers that count
 (AGENTS.md "Only collaborators' reviews count"; the collaborator list is
@@ -241,7 +249,9 @@ the rule. The merging
 session bumps the number once per merge batch (`cargo xtask process-bump`)
 and comments on the pinned issue #681 (Process changes):
 `PROCESS_VERSION <n>` · PR #M · what changed · what a fork must do (usually
-"pull the process files", the command in the issue body). That comment is
+"pull the process files", the command in the issue body) · reload: each
+running session reloads `AGENTS.md`, `.claude/agents/` and
+`.claude/skills/`, and a fork runs `fork-sync`. That comment is
 how fork maintainers subscribed to #681 hear about it.
 
 ## 3. Report
