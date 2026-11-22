@@ -7,6 +7,10 @@
 //! (ApplyCutRecipe), app::mcp.
 //! Provenance: our own command and MCP contract.
 
+mod common;
+#[path = "cut_recipe/safety.rs"]
+mod safety;
+
 use camcraft_app::commands::{
     AddTool, ApplyCutRecipe, CreateOperation, GenerateOperation, History, SetStock, SetStockMaterial,
 };

@@ -13,7 +13,7 @@ use flecs_ecs::prelude::World;
 use crate::commands::{Command, CommandError};
 use crate::cut_recipe::CutRecipe;
 use crate::model;
-use crate::operation::SrcRef;
+use crate::operation::{OpParams, SrcRef};
 
 use super::CreateOperation;
 
@@ -35,14 +35,20 @@ impl ApplyCutRecipe {
         }
         let wanted = recipe.material().map_err(CommandError::Needs)?;
         let setup = crate::setup::active(world);
-        if let (Some(wanted), Some(here)) = (wanted, crate::stock_material::in_force(world, setup.as_deref()))
-            && wanted != here
-        {
+        if let Some(wanted) = wanted {
+            let here = crate::stock_material::in_force(world, setup.as_deref());
+            if here != Some(wanted) {
+                return Err(CommandError::Needs(format!(
+                    "cut recipe '{r}' is for {} ('{}'), but this setup has {} - set a matching material before applying it",
+                    wanted.label(),
+                    wanted.word(),
+                    here.map_or("no material", |m| m.label())
+                )));
+            }
+        }
+        if has_saved_geometry(&recipe.params) {
             return Err(CommandError::Needs(format!(
-                "cut recipe '{r}' is for {} ('{}'), but this setup cuts {} - its feeds and steps do not fit",
-                wanted.label(),
-                wanted.word(),
-                here.label()
+                "cut recipe '{r}' contains saved geometry - supply geometry for the new source in a new operation"
             )));
         }
         CreateOperation::new(world, name, &recipe.tool, src, recipe.params.clone()).map(Self)
@@ -56,5 +62,60 @@ impl Command for ApplyCutRecipe {
 
     fn invert(&self, world: &World) {
         self.0.invert(world);
+    }
+}
+
+/// Coordinates and entity picks belong to the source operation, not the
+/// destination. The recipe API has no replacement geometry input yet.
+fn has_saved_geometry(params: &OpParams) -> bool {
+    if params.tilt().is_some() {
+        return true;
+    }
+    match params {
+        OpParams::Drill { holes, cross, .. } => !holes.is_empty() || !cross.is_empty(),
+        OpParams::Bore { holes, .. } | OpParams::Thread { holes, .. } => !holes.is_empty(),
+        OpParams::Contour { chain_overrides, .. } => !chain_overrides.is_empty(),
+        OpParams::Deburr { exclude_edges, .. } => !exclude_edges.is_empty(),
+        OpParams::Circular { .. }
+        | OpParams::Slot { .. }
+        | OpParams::TrochoidalSlot { .. }
+        | OpParams::Probe { .. }
+        | OpParams::SlotUndercut(_)
+        | OpParams::WireContour(_)
+        | OpParams::SinkerBurn(_)
+        | OpParams::SinkerSideBurn(_) => true,
+        OpParams::Face { .. }
+        | OpParams::Pocket { .. }
+        | OpParams::Adaptive2D { .. }
+        | OpParams::Offset2D { .. }
+        | OpParams::Engrave { .. }
+        | OpParams::VCarve { .. }
+        | OpParams::Chamfer2D { .. }
+        | OpParams::Trace { .. }
+        | OpParams::Pocket3D { .. }
+        | OpParams::Finish3D { .. }
+        | OpParams::Contour5D { .. }
+        | OpParams::Parallel5D { .. }
+        | OpParams::Swarf { .. }
+        | OpParams::AdvancedSwarf { .. }
+        | OpParams::RotaryContour { .. }
+        | OpParams::RotaryParallel { .. }
+        | OpParams::RotaryOffset { .. }
+        | OpParams::MultiAxisRough { .. }
+        | OpParams::Flow5D { .. }
+        | OpParams::MultiAxisContour { .. }
+        | OpParams::Facing { .. }
+        | OpParams::ProfileRough { .. }
+        | OpParams::ProfileFinish { .. }
+        | OpParams::GrooveRough { .. }
+        | OpParams::GrooveFinish { .. }
+        | OpParams::Part { .. }
+        | OpParams::Threading { .. }
+        | OpParams::Chamfering { .. }
+        | OpParams::TaperTurning { .. }
+        | OpParams::MultiPassTurning { .. }
+        | OpParams::FormTurning { .. }
+        | OpParams::BoringTurning { .. }
+        | OpParams::PlasmaProfile(_) => false,
     }
 }
