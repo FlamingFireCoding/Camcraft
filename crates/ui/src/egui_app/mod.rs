@@ -49,9 +49,12 @@ mod status_alert;
 
 mod stock_info;
 mod donate;
+// #2384: the Home button and the recent projects start page.
+pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
 pub mod colorvision;
@@ -118,6 +121,8 @@ mod tool_orientation_row;
 mod thread_page;
 // #894: the thread mills' pitch and form rows.
 mod tool_thread_mill_row;
+// #1444: the undercut cutters' seeding and dovetail flank angle row.
+mod tool_undercut_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
@@ -161,6 +166,8 @@ mod wcs_pick_row;
 // #316: the setup page's "relative to the previous setup" control.
 mod setup_relative_pick;
 mod setup_workholding_row;
+// #3070: the guided sheet job checklist on the setup's Settings page.
+mod setup_sheet_job_row;
 // The operation dialog, split out of `pages` with the property grid
 // (user review 2026-11-06): the frame, the Geometry pick block, the
 // params dispatcher and its kind-family pages, the shared widgets.
@@ -182,6 +189,8 @@ mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
 mod trochoid_page;
+// #1444: the Slot Undercut kind's fields.
+mod undercut_page;
 mod kind_editors;
 mod deburr_page;
 mod mill2d_more_page;
@@ -247,10 +256,12 @@ pub mod theme_files;
 // the view cube's pick law straight.
 pub(crate) mod viewcube;
 pub(crate) mod viewport_bar;
+pub(crate) mod display_menu;
 pub(crate) mod move_handles;
 pub(crate) mod turn_handles;
 pub(crate) mod viewport_layout;
 pub(crate) mod world;
+mod world_verts;
 
 #[cfg(test)]
 mod tests;

@@ -212,6 +212,8 @@ pub enum CycleKindDto {
     BackBore,
     FloatingTap,
     Ream,
+    /// #1445: fine boring (G76). Older files never carry it.
+    FineBore,
 }
 
 impl CycleDto {
@@ -227,6 +229,7 @@ impl CycleDto {
                 CycleKind::Bore => CycleKindDto::Bore,
                 CycleKind::BackBore => CycleKindDto::BackBore,
                 CycleKind::Ream => CycleKindDto::Ream,
+                CycleKind::FineBore => CycleKindDto::FineBore,
             },
             xy: [lattice(c.xy.x), lattice(c.xy.y)],
             r_z: lattice(c.r_z),
@@ -250,6 +253,7 @@ impl CycleDto {
                 CycleKindDto::Bore => CycleKind::Bore,
                 CycleKindDto::BackBore => CycleKind::BackBore,
                 CycleKindDto::Ream => CycleKind::Ream,
+                CycleKindDto::FineBore => CycleKind::FineBore,
             },
             xy: Point2::new(self.xy[0], self.xy[1]),
             r_z: self.r_z,
@@ -322,6 +326,10 @@ pub struct SetupDto {
     /// additive (no version step). Absent - every older file - states none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workholding_max_rpm: Option<f64>,
+    /// #3070: the guided sheet job's answers, additive (no version
+    /// step). Absent - every older file - states none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet_job: Option<crate::sheet_job::SheetJob>,
 }
 
 /// A setup's WCS as files hold it. v54 (#342) writes one entity name
@@ -606,6 +614,9 @@ pub struct EntityDto {
     /// and loads as full fidelity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coarse_mm: Option<f64>,
+    /// Only file tolerance caused the recorded chord. Missing means strict.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub file_tolerance: bool,
     /// #1056 (v59): this mesh's fidelity is not known - a model or stock
     /// copy from a file saved before CamCraft recorded it. Its operations
     /// are refused at the post until the model is re-imported. Absent is
