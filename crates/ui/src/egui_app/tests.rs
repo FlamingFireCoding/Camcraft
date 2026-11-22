@@ -105,10 +105,14 @@ mod machines_edit;
 mod machine_wire_edm;
 mod unsaved;
 mod post_refusal;
+#[cfg(not(target_arch = "wasm32"))]
+mod agie_post;
 mod program_units;
 mod gcode_viewer;
 mod first_setup;
 mod work_envelope;
+// #2632: the operator-side arrow and text of the work envelope.
+mod operator_side;
 mod lathe_gizmo;
 // #2172: the bodies stand on the floor of the work envelope.
 mod floor;
@@ -184,6 +188,8 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3335: real viewport clicks into the "Do not touch" group.
+mod do_not_touch_click;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;
@@ -214,6 +220,8 @@ mod browser_files;
 mod browser_delete;
 // #1450: a model file dropped on the window.
 mod file_drop;
+// #2950: the browser loads .mch and .cps files from a pick, a folder or a drop.
+mod browser_setup_files;
 // #645: the browser's "Show origin names" switch and the per-user view file.
 mod view_names;
 mod prefs_door;
