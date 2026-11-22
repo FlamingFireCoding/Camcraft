@@ -76,6 +76,13 @@ var taperOk = true;
 var dialect = "";          // "angle": the machine tapers by angle word (#1164)
 var corner = "", plane = null;
 var angleNext = null;      // the next move's angle word (WireAngle)
+// A wire number the stream states but that is no finite number (#3236):
+// the param's name, "" for none. A non-finite f64 reaches the stream as
+// "null" (or "nan" / "inf" in a hand-written one); skipped, it would turn
+// a leaning move into a plain G1. Refused, and no cut of the section is
+// written.
+var WIRE_NUMBERS = ["WireTaper", "WirePlane", "WireAngle", "WireU", "WireV"];
+var notFinite = "";
 var codesOk = false;
 var refused = {};
 
@@ -183,6 +190,11 @@ function onOpen() {
 }
 
 function onParameter(name, value) {
+  if (WIRE_NUMBERS.indexOf(name) >= 0 && !has(value)) {
+    notFinite = name;
+    refuse("nf" + name + opName, who() + "PARAM " + name + " is not a finite number (" + (value === null || value === undefined ? "null" : clean(value)) + ") - refused, the wire post writes no cut from it");
+    return;
+  }
   if (name === "WorkOffset" && value) wcsWord = String(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
@@ -320,6 +332,7 @@ function cutOk(p) {
     refuse("tilt" + opName, who() + "a posed move - this post writes a 2-axis (vertical wire) cut only");
     return false;
   }
+  if (notFinite !== "") return false; // refused by name in onParameter (#3236)
   if (!startCut(p)) return false;
   if (has(p.Z) && cutZ !== null && Math.abs(p.Z - cutZ) > 0.0005) {
     refuse("z" + opName, who() + "a move changes Z - a 2-axis wire cut rides one programmed plane");
@@ -438,6 +451,7 @@ function onSectionEnd() {
   corner = "";
   plane = null;
   angleNext = null;
+  notFinite = "";
 }
 
 // ------------------------------------------------------------ footer
