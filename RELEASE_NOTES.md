@@ -37,7 +37,7 @@ Contour, Slot, Trochoidal Slot, Wire Contour, typed engraving text),
 iTNC 530 Klartext, Grbl 1.1, LinuxCNC 3-axis), **a Slot Undercut
 operation**, **fine boring (G76)**, **dogbone and T-bone corner relief**,
 **AI chat with provider clients and context budgets**, and **a Home page**.
-258 pull requests merged since 0.24.0 (50 features, 161 fixes, 3
+259 pull requests merged since 0.24.0 (50 features, 162 fixes, 3
 performance changes, 1 refactor, docs, tests and process).
 
 ## Upgrade notes
@@ -83,7 +83,8 @@ went through before.
   program (#2475), also with a Z rotation (#2476). A flipped Z refusal names
   the reason (#2474).
 - **Wire and sinker EDM:** the generic ISO wire post writes each dimension
-  word with a decimal point (#3206). Sodick skims post on their own LN
+  word with a decimal point (#3206), and refuses by name a wire number (U,
+  V, taper angle, taper, plane) that is not finite (#3236, PR #3263). Sodick skims post on their own LN
   condition words and state their flushing (#2649, #2686), and Sodick
   comments drop unsupported characters (#3213). Work outside the stated
   guide heights is refused (#2923). Sinker Side Burn posts explicit lateral
@@ -188,9 +189,9 @@ before you cut.
 
 ## Known issues
 The cut line is 2026-11-21 22:16 UTC. These `P1` and `P2` issues are open:
-- PLACEHOLDER #3236 (P1): Wire ISO post: a non-finite U word or taper angle
-  posts UNaN or ANaN instead of a refusal. It is on the cut list. Remove
-  this line if its fix merges before the tag.
+- #3264 (P1): Wire ISO post: a non-finite OriginX or OriginY is ignored
+  without a warning, so the program is shifted. It was filed after the cut
+  line. Its fix ships in the next minor.
 
 Open defects with a workaround:
 - #1950 (P3): 3D Pocket Adaptive on a whole model. The stock ring exceeds

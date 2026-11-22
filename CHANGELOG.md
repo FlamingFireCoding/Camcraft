@@ -10,6 +10,7 @@ v0.8.1).
 
 | Commit | Date | Change | Version |
 |---|---|---|---|
+| 6e1805bfd | 2026-11-22 | The generic ISO wire post refuses a wire number (U, V, taper angle, taper, plane) that is not finite by name. Before, it posted a leaning move as a plain G1 (#3236, PR #3263) | 0.25.0 |
 | 69c9fd7af | 2026-11-22 | Slot and Trochoidal Slot read a picked DXF sketch chain: a closed line-arc slot outline gives the ends and the width, an open straight chain gives the centerline; other picks are refused by name (#1868, #3050, PR #2920) | 0.25.0 |
 | 2d98d87be | 2026-11-21 | A 2D Contour with both lead shapes set to None no longer keeps a straight entry at the seam: the Arc entry's wall arc stands down and the level dives at the ring's start (#3132, PR #3140) | 0.25.0 |
 | ced4dc34e | 2026-11-21 | AI chat keeps large jobs inside the model's context: compact MCP read modes (`get_job` summary, `list_operation_types` kind/section filter, `list_features` compact), a core tool set for local models, and caps on tool reply size, images, rounds and history (#1944, PR #3033) | 0.25.0 |
