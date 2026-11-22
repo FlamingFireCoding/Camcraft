@@ -849,12 +849,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_turns,
             blend_radius,
             corner_relief,
+            pass_start,
             ..
         } => {
             if *method == machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
                 return Err(GenError::Invalid(
                     "corner relief is not supported with the Trochoidal adaptive method".into(),
                 ));
+            }
+            if let Some(why) = machining2d::trochoidal_pass_start_refusal(*method, *pass_start) {
+                return Err(GenError::Invalid(why));
             }
             let region = region_for_job(
                     &mut picked_region,
@@ -908,11 +912,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     neighbour_parts: &neighbour_parts,
                 },
             )?;
+            // #3355: Outside cuts an open side from the air past the
+            // stock outline, read in the area's own frame the way the
+            // Offset's pass start reads it (#3316). A tilted op takes
+            // the projected footprint, or none (its plan says so and
+            // rides the rings).
+            let side = machining2d::StartSide {
+                start: *pass_start,
+                stock: (*pass_start != machining2d::PassStart::Auto)
+                    .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
+                    .flatten(),
+                around_part: around_band,
+            };
             // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let adaptive = |pp: &PocketParams| match method {
                 machining2d::AdaptiveMethod::Spiral => {
-                    machining2d::pocket_entered_with_relief(&region, pp, &[], corner_relief)
+                    machining2d::pocket_started_on(&region, pp, &[], corner_relief, &side)
                 }
                 // #1733: the loops are arcs already; the option is
                 // refused by name, never ignored (`sane` says it first).
