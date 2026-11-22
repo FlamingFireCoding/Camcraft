@@ -25,7 +25,7 @@ refuse a file that 0.25.0 saves.
   - v72: a model can be linked to its source file and is imported again
     when the file changes (#2463, PR #2563).
   - v73: "Do not touch" face and edge protection on clearing operations
-    (#2055, PR #2704).
+    (#2055, PR #2149, merged through PR #2704).
 - A stock copy of an incomplete model keeps the name of its source model's
   hole after the source is deleted (#1700, PR #2024). Such a project file
   does not open in 0.21.0 to 0.24.0.
@@ -84,9 +84,10 @@ went through before.
   the reason (#2474).
 - **Wire and sinker EDM:** the generic ISO wire post writes each dimension
   word with a decimal point (#3206), and refuses by name a wire number (U,
-  V, taper angle, taper, plane) that is not finite (#3236, PR #3263). Sodick skims post on their own LN
-  condition words and state their flushing (#2649, #2686), and Sodick
-  comments drop unsupported characters (#3213). Work outside the stated
+  V, taper angle, taper, plane) that is not finite (#3236, PR #3263).
+  Sodick skims post on their own LN condition words and state their
+  flushing (#2649, #2686), and Sodick comments drop unsupported characters
+  (#3213). Work outside the stated
   guide heights is refused (#2923). Sinker Side Burn posts explicit lateral
   feeds (#3001).
 - **Probing:** LinuxCNC and Tormach probe programs stop when a work offset
@@ -208,7 +209,9 @@ Open defects with a workaround:
 - 103-105: MCP skill rows for `import_dxf`, `move_dxf_profile`,
   `break_through` and `set_model_link`.
 - 106: known-fail markers in the test source.
-- 107: `cargo xtask gate heavy`; the rule "Heavy lanes at review".
+- 107: `cargo xtask gate heavy`; the rule "Heavy lanes at review"; the
+  quick gate selects the tests of a changed library fixture (PR #2775); an
+  MCP skill row (PR #2704).
 - 108: the batch tier builds each crate alone and runs parallel lanes.
 - 109: the gate job budget follows the CPU count.
 - 110: batch steps start the test executables directly.

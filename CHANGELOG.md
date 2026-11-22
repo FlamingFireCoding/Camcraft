@@ -136,6 +136,7 @@ v0.8.1).
 | c4ac3ce6d | 2026-11-19 | The solidcore kernel now makes the 2D trims of STEP faces that the file does not give, and refuses an edge that is more than 0.01 mm off its face (#2781, PR #2797) | 0.25.0 |
 | a860d4fea | 2026-11-19 | The batch gate builds each crate alone and runs its test steps in parallel lanes (#2727, PR #2788) | 0.25.0 |
 | 4558496df | 2026-11-19 | Wire EDM XYUV keeps fan rulings aligned when an offset removes an input span (#2694, PR #2805) | 0.25.0 |
+| f7c36049f | 2026-11-19 | 2D Offset and 3D Pocket take "Do not touch" faces and edges: the toolpath stays clear of them, and a hit is named. Breaking: project v73 (#2055, PR #2149, PR #2704) | 0.25.0 |
 | 3970d3d03 | 2026-11-19 | Posts can emit validated pre- and post-tool-change macros with preview trace attribution (#2407, PR #2798) | 0.25.0 |
 | e048b103c | 2026-11-19 | Add Explain comments for eight remaining post dialects and pin named refusals for Heidenhain and Sodick (#1389, PR #2793) | 0.25.0 |
 | 0957b20aa | 2026-11-19 | The part movement gizmo now shows rotate rings with its move arrows, supports typed turns and snapping, and explains unavailable rings (#2624, PR #2791) | 0.25.0 |
