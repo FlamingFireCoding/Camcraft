@@ -85,18 +85,15 @@ fn stale_selection_and_invalid_stepdown_do_not_generate_a_sketch_mark() {
         assert!(why.contains("missing-layer") && why.contains(PROFILE), "{why}");
 
         let src = SrcRef::Entity(PROFILE.into());
-        let create = CreateOperation::new(&world, "Bad depth", TOOL, src, params(kind, true, 0.5, 0.0));
-        let why = match create {
-            Ok(cmd) => {
-                history.execute(&world, cmd);
-                GenerateOperation::new(&world, "Bad depth")
-                    .err()
-                    .expect("zero stepdown must refuse")
-                    .to_string()
-            }
-            Err(e) => e.to_string(),
-        };
-        assert!(why.contains("stepdown"), "{why}");
+        let why = CreateOperation::new(&world, "Bad depth", TOOL, src, params(kind, true, 0.5, 0.0))
+            .err()
+            .expect("zero stepdown must refuse when the command is built")
+            .to_string();
+        assert!(
+            why.contains("operation parameters are not usable") && why.contains(kind.info().label),
+            "{why}"
+        );
+        assert!(model::find_by_name(&world, "Bad depth").is_none());
     }
 }
 
