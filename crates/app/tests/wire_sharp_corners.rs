@@ -25,6 +25,8 @@ use camcraft_app::stock::StockShape;
 use camcraft_app::world::new_world;
 
 const WIRE: &str = include_str!("edm/wire-edm.mch");
+/// A wire machine whose guides lean (synthetic, #536): for the taper.
+const TAPER_WIRE: &str = include_str!("edm/wire-iso-fixture.mch");
 /// Synthetic: wire 0.25, gap 0.04 - a kerf offset of 0.165.
 const TABLE: &str = r#"[{ "id": "C110", "name": "rough", "gap": 0.04, "wire_diameter": 0.25, "role": "rough" }]"#;
 const K: f64 = 0.165;
@@ -45,9 +47,13 @@ fn square_prism(h: f64) -> Mesh {
 }
 
 fn doc() -> (World, History) {
+    doc_on(WIRE)
+}
+
+fn doc_on(machine: &str) -> (World, History) {
     let world = new_world();
     let mut h = History::default();
-    let mut v: serde_json::Value = serde_json::from_str(WIRE).expect("template json");
+    let mut v: serde_json::Value = serde_json::from_str(machine).expect("template json");
     v["edm"]["conditions"] = serde_json::from_str(TABLE).expect("conditions json");
     let m = parse_mch(&v.to_string()).expect("parses");
     h.execute(&world, LoadMachine::new(&world, "wire.mch".into(), Some(m)).expect("mount"));
@@ -111,4 +117,24 @@ fn a_sharp_square_die_is_cut_and_verified_with_its_corner_rest_as_a_note() {
     assert!(h.undo(&world) && h.undo(&world));
     let OpParams::WireContour(back) = model::operation_of(&world, &e).expect("op").params else { panic!("wire") };
     assert!(!back.sharp_corners, "undoing the edit restores the default");
+}
+
+/// A tapered sharp die (#3232 review): the corner rest rides the tapered
+/// path and the verify line, as for the vertical cut.
+#[test]
+fn a_tapered_sharp_square_die_says_its_corner_rest_on_the_verify_line() {
+    let (world, mut h) = doc_on(TAPER_WIRE);
+    // The opening is a straight prism: a die that narrows downward stays
+    // inside it, where one that widens downward burns the part below.
+    let op = WireContourOp { taper_deg: -1.0, ..die(true) };
+    let c = CreateOperation::new(&world, "Die1", "EDM-W025", SrcRef::Entity("opening".into()), OpParams::WireContour(op)).expect("op");
+    h.execute(&world, c);
+    h.execute(&world, GenerateOperation::new(&world, "Die1").expect("a tapered sharp die is cut"));
+    let e = model::find_by_name(&world, "Die1").expect("op");
+    let notes = model::toolpath_of(&world, &e).expect("generated").path.notes;
+    assert!(notes.iter().any(|n| n.contains("sharp inside corners stated") && n.contains("worst uncut rest")), "{notes:?}");
+    let clause = posting::wire_clause(&world);
+    assert!(clause.problems.is_empty(), "{:?}", clause.problems);
+    let line = clause.line.expect("the judged line");
+    assert!(line.contains("Die1") && line.contains("sharp inside corners stated") && line.contains("worst uncut rest"), "{line}");
 }

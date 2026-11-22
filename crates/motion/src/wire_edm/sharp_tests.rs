@@ -50,6 +50,32 @@ fn a_sharp_square_die_is_cut_when_sharp_inside_corners_are_stated() {
     assert!(!punch.notes.iter().any(|n| n.contains("sharp inside corners")), "{:?}", punch.notes);
 }
 
+/// A tapered cut keeps the corner-rest note (#3232 review): the cover
+/// law runs on the top-plane path, and the taper writes its own notes,
+/// so the rest must be carried over or the verify line loses it.
+#[test]
+fn a_tapered_sharp_square_die_keeps_its_corner_rest_note() {
+    for corner in [WireCorner::Mitre, WireCorner::Cone] {
+        let t = WireTaper { angle_deg: 1.0, top_z: 12.0, max_deg: Some(15.0), machine: "M".into(), corner };
+        let p = params(WireSide::Die, (0.0, 0.0), true);
+        let path = match wire_contour_tapered(&[square(5.0)], &[], &p, &t) {
+            Ok(path) => path,
+            // The cone rule may refuse a lead-in that meets a corner;
+            // the mitre rule is the case that must cut.
+            Err(e) if corner == WireCorner::Cone => {
+                assert!(!e.to_string().contains("sharp inside corners"), "{e}");
+                continue;
+            }
+            Err(e) => panic!("a tapered sharp die is cut: {e}"),
+        };
+        let note = path.notes.iter().find(|n| n.starts_with(SHARP_NOTE)).unwrap_or_else(|| panic!("{:?}", path.notes));
+        assert!(note.contains("worst uncut rest") && note.contains("top plane Z12.000"), "{note}");
+        // The kerf on the top plane is measured across the leaning wire.
+        let k = K / 1.0_f64.to_radians().cos();
+        assert!(note.contains(&format!("{k:.4}")), "{note}");
+    }
+}
+
 /// A corner so acute that the rest stands past the wire's own radius
 /// is still refused with the option set: a 30-degree inside corner
 /// leaves K / sin(15 deg) - K, about 2.9 K.
