@@ -5498,3 +5498,40 @@ fn finish3d_file_without_gap_link_reads_jump() {
     project::open(&world, &finish3d_text("")).expect("a pre-gap-link finish3d file must read");
     assert_eq!(gap_link_of(&world), camcraft_app::finishing3d::GapLink::Jump, "absent means jump");
 }
+
+fn waterlines_of(world: &flecs_ecs::prelude::World) -> bool {
+    let e = model::find_by_name(world, "F1").expect("op");
+    let o = model::operation_of(world, &e).expect("operation");
+    let OpParams::Finish3D { waterlines, .. } = &o.params else {
+        panic!("finish3d params expected, got {:?}", o.params);
+    };
+    *waterlines
+}
+
+#[test]
+fn finish3d_waterlines_round_trips_through_save_and_load() {
+    for flag in [false, true] {
+        let world = new_world();
+        let extra = format!(", \"waterlines\": {flag}");
+        project::open(&world, &finish3d_text(&extra)).expect("the waterlines key must read");
+        assert_eq!(waterlines_of(&world), flag);
+        let path = tmp_path(&format!("waterlines_{flag}_rt"));
+        project::save(&world, &path).expect("save");
+        let first = std::fs::read_to_string(&path).expect("read");
+        let world2 = new_world();
+        project::load(&world2, &path).expect("reload");
+        project::save(&world2, &path).expect("resave");
+        let second = std::fs::read_to_string(&path).expect("reread");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(waterlines_of(&world2), flag, "{flag} saves and loads as {flag}");
+        assert!(first.contains(&format!("\"waterlines\": {flag}")), "{first}");
+        assert_eq!(first, second, "waterlines={flag} round-trips byte-identically");
+    }
+}
+
+#[test]
+fn finish3d_file_without_waterlines_reads_true() {
+    let world = new_world();
+    project::open(&world, &finish3d_text("")).expect("an older finish3d file must read");
+    assert!(waterlines_of(&world), "absent waterlines key defaults to true");
+}

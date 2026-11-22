@@ -673,6 +673,11 @@ pub enum OpParams {
         /// own diagonal certifies the break.
         /// See [`crate::finishing3d::GapLink`].
         gap_link: finishing3d::GapLink,
+        /// Run the waterline ring pass on steep flanks after the
+        /// shallow pass (#2811). `true` (default) preserves every
+        /// older operation; `false` cuts the shallow pass only and
+        /// notes any steep flanks left uncut.
+        waterlines: bool,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
     /// authored number is `width` - the chamfer's chord across the

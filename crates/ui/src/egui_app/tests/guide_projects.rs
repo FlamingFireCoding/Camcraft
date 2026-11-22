@@ -228,6 +228,7 @@ pub(super) fn build_3d_world() -> World {
         // #1713: the guide walkthrough posts without gap links - the
         // Jump link is the pre-gap-link behaviour, as the text states.
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
+        waterlines: true,
     });
     world
 }

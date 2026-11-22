@@ -151,6 +151,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             pencil_reference,
             fill_openings,
             gap_link,
+            waterlines,
         } => {
             if tab == SEC_HEIGHTS {
                 height_editor(
@@ -258,8 +259,10 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                             prop_row(ui, "Ramp angle", |ui| num_plain(ui, ramp_angle));
                             hint(ui, "the steepest descent a chain may carry; past it a link is a plunge in a diagonal coat, and the hop holds the line");
                         }
-                        check_row(ui, "Ramp ring entries", entry_ramp);
-                        hint(ui, "on flanks steeper than the split, a ring's first contact slides in along its contact normal instead of dropping; where the normal cannot certify the way in, the plunge stands and the path says why");
+                        if *waterlines {
+                            check_row(ui, "Ramp ring entries", entry_ramp);
+                            hint(ui, "on flanks steeper than the split, a ring's first contact slides in along its contact normal instead of dropping; where the normal cannot certify the way in, the plunge stands and the path says why");
+                        }
                         let mut link_idx = match gap_link {
                             camcraft_app::finishing3d::GapLink::Jump => 0,
                             camcraft_app::finishing3d::GapLink::Straight => 1,
@@ -283,10 +286,33 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     } else {
                         hint(ui, "geodesic rings ride the surface, not the ladder: each run enters by its own certified plunge, and the sloped-entry laws keep their hands off");
                     }
+                    let has_waterlines = matches!(
+                        pattern,
+                        camcraft_app::finishing3d::FinishPattern::Parallel
+                            | camcraft_app::finishing3d::FinishPattern::ParallelMulti
+                            | camcraft_app::finishing3d::FinishPattern::Scallop
+                            | camcraft_app::finishing3d::FinishPattern::Radial
+                            | camcraft_app::finishing3d::FinishPattern::Spiral
+                            | camcraft_app::finishing3d::FinishPattern::Contour
+                            | camcraft_app::finishing3d::FinishPattern::Project
+                            | camcraft_app::finishing3d::FinishPattern::SteepShallow
+                            | camcraft_app::finishing3d::FinishPattern::Ramp
+                            | camcraft_app::finishing3d::FinishPattern::MorphSpiral
+                            | camcraft_app::finishing3d::FinishPattern::Flow
+                    );
+                    if has_waterlines {
+                        prop_row(ui, "Steep flanks", |ui| {
+                            radio_pair(ui, waterlines, (false, "Leave uncut"), (true, "Waterlines"));
+                        });
+                        hint(ui, "Waterlines: Z-level rings cut flanks steeper than 45 degrees after the shallow pass. Leave uncut: shallow pass only; steep flanks stay for another operation");
+                        if !*waterlines {
+                            consequence(ui, "Steep flanks (>45 deg) stay uncut - only the shallow pass cuts. Check rest material downstream.");
+                        }
+                    }
                     if matches!(
                         pattern,
                         camcraft_app::finishing3d::FinishPattern::SteepShallow
-                    ) {
+                    ) && *waterlines {
                         // The scallop law's own figure on the reference
                         // R3 ball - 2 x sqrt(r tol) - as a starting
                         // value. The envelope verdict, not the number,

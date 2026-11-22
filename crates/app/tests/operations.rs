@@ -4090,6 +4090,7 @@ fn finish_params(top_z: f64, bottom_z: f64, tolerance: f64) -> OpParams {
         steep_stepover: None,
         pencil_reference: None,
         fill_openings: None,
+        waterlines: true,
     }
 }
 
@@ -7919,4 +7920,148 @@ fn finish3d_fill_openings_refuses_pencil_and_corner_by_name() {
         assert!(msg.contains(word) && msg.contains("cannot fill them") && msg.contains("Fill openings"), "{msg}");
         assert_eq!(status(&world, name), OpStatus::Never, "a refusal cuts nothing");
     }
+}
+
+#[test]
+fn finish3d_waterlines_off_stamps_digest_skips_rings_notes_steep_flanks_and_leaves_rest() {
+    let world = new_world();
+    let mut history = History::default();
+    box_stock(&world, &mut history, 40.0, 40.0, 12.0);
+    add_tool(&world, &mut history, "BN-0600");
+    let prism = cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+    history.execute(&world, ImportModel::from_mesh("prism", prism));
+
+    let mut base = finish_params(10.0, 0.0, 0.1);
+    if let OpParams::Finish3D { pattern, .. } = &mut base {
+        *pattern = camcraft_app::finishing3d::FinishPattern::Parallel;
+    }
+    history.execute(
+        &world,
+        CreateOperation::new(&world, "F1", "BN-0600", SrcRef::Entity("prism".into()), base.clone()).expect("create F1"),
+    );
+    // Downstream operation so `rest::prior_state` evaluates carried stock after F1.
+    history.execute(
+        &world,
+        CreateOperation::new(&world, "F2", "BN-0600", SrcRef::Entity("prism".into()), base.clone()).expect("create F2"),
+    );
+    history.execute(&world, GenerateOperation::new(&world, "F1").expect("generate F1 on"));
+    assert_eq!(status(&world, "F1"), OpStatus::Ok);
+
+    let tp_on = cache(&world, "F1").expect("cached F1 on");
+    assert!(
+        tp_on.path.moves.iter().any(|m| m.kind == camcraft_app::cl::MoveKind::Feed && m.to.z < 5.0),
+        "waterlines on cuts ring levels down the steep walls"
+    );
+    assert!(
+        !tp_on.path.notes.iter().any(|n| n.starts_with(camcraft_app::finishing3d::WATERLINES_OFF_NOTE)),
+        "waterlines on emits no steep-flank warning: {:?}",
+        tp_on.path.notes
+    );
+
+    let flank_min_top = |w: &World| -> f64 {
+        let prior = camcraft_app::rest::prior_state(w, "F2", None, 3.0).expect("prior state");
+        let grid = prior.grid.expect("dexel grid after F1");
+        let cols = camcraft_app::stock_sim::Columns::of_grid(&grid);
+        let mut min_top = f64::INFINITY;
+        for iy in 0..cols.ny() {
+            for ix in 0..cols.nx() {
+                let c = cols.center(ix, iy);
+                if (11.5..=13.5).contains(&c.x) && (-2.0..=2.0).contains(&c.y) {
+                    min_top = min_top.min(cols.top_at(ix, iy));
+                }
+            }
+        }
+        min_top
+    };
+    let top_with_rings = flank_min_top(&world);
+    assert!(top_with_rings < 3.0, "waterlines on must cut steep wall flank down, got min top {top_with_rings}");
+
+    let mut off = base.clone();
+    if let OpParams::Finish3D { waterlines, .. } = &mut off {
+        *waterlines = false;
+    }
+    history.execute(&world, EditOperationParams::new(&world, "F1", off).expect("edit F1 off"));
+    assert_eq!(status(&world, "F1"), OpStatus::Stale, "waterlines flip must stamp the digest");
+
+    history.execute(&world, GenerateOperation::new(&world, "F1").expect("generate F1 off"));
+    assert_eq!(status(&world, "F1"), OpStatus::Ok);
+    let tp_off = cache(&world, "F1").expect("cached F1 off");
+    assert!(
+        tp_off.path.moves.iter().filter(|m| m.kind == camcraft_app::cl::MoveKind::Feed).all(|m| m.from.z >= 9.5 && m.to.z >= 9.5),
+        "waterlines off must cut only the top surface, no wall rings"
+    );
+    assert!(
+        tp_off.path.notes.iter().any(|n| n.starts_with(camcraft_app::finishing3d::WATERLINES_OFF_NOTE) && n.contains("8 steep flank")),
+        "waterlines off must report 8 steep flank facets on prism: {:?}",
+        tp_off.path.notes
+    );
+    let top_without_rings = flank_min_top(&world);
+    assert!(top_without_rings >= 10.0, "waterlines off must leave steep wall stock uncut for downstream rest, got {top_without_rings}");
+
+    history.undo(&world);
+    assert_eq!(status(&world, "F1"), OpStatus::Stale);
+    history.undo(&world);
+    assert_eq!(status(&world, "F1"), OpStatus::Ok);
+    assert_eq!(cache(&world, "F1").expect("restored").path.moves, tp_on.path.moves);
+}
+
+#[test]
+fn finish3d_waterlines_off_refuses_all_steep_and_ring_only_patterns_in_app() {
+    use camcraft_app::finishing3d::FinishPattern;
+    use camcraft_app::geometry::Triangle;
+
+    let world = new_world();
+    let mut history = History::default();
+    box_stock(&world, &mut history, 40.0, 40.0, 12.0);
+    add_tool(&world, &mut history, "BN-0600");
+    let wall = vec![
+        Triangle::new(Point3::new(-5.0, 0.0, 0.0), Point3::new(5.0, 0.0, 5.0), Point3::new(5.0, 0.0, 0.0)),
+        Triangle::new(Point3::new(-5.0, 0.0, 0.0), Point3::new(-5.0, 0.0, 5.0), Point3::new(5.0, 0.0, 5.0)),
+    ];
+    history.execute(&world, ImportModel::from_mesh("wall", Mesh::from_facets(wall)));
+    let prism = cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+    history.execute(&world, ImportModel::from_mesh("prism", prism));
+
+    let make_off = |pat: FinishPattern, top: f64| {
+        let mut p = finish_params(top, 0.0, 0.1);
+        if let OpParams::Finish3D { pattern, waterlines, .. } = &mut p {
+            *pattern = pat;
+            *waterlines = false;
+        }
+        p
+    };
+    history.execute(
+        &world,
+        CreateOperation::new(&world, "SteepOnly", "BN-0600", SrcRef::Entity("wall".into()), make_off(FinishPattern::Parallel, 5.0))
+            .expect("create steep"),
+    );
+    let err = GenerateOperation::new(&world, "SteepOnly").err().expect("all-steep off must refuse");
+    assert!(matches!(err, CommandError::Machining(_)), "{err:?}");
+    assert_eq!(status(&world, "SteepOnly"), OpStatus::Never);
+
+    for (name, pat) in [
+        ("WOff", FinishPattern::Waterline),
+        ("BOff", FinishPattern::Blend),
+        ("MOff", FinishPattern::Morph),
+    ] {
+        history.execute(
+            &world,
+            CreateOperation::new(&world, name, "BN-0600", SrcRef::Entity("prism".into()), make_off(pat, 10.0))
+                .expect("create ring pattern"),
+        );
+        let err = GenerateOperation::new(&world, name).err().expect("ring pattern off must refuse");
+        assert!(matches!(err, CommandError::Machining(_)), "{name}: {err:?}");
+        assert_eq!(status(&world, name), OpStatus::Never);
+    }
+
+    history.execute(
+        &world,
+        CreateOperation::new(&world, "ROff", "BN-0600", SrcRef::Entity("prism".into()), make_off(FinishPattern::Ramp, 10.0))
+            .expect("create ramp off"),
+    );
+    history.execute(&world, GenerateOperation::new(&world, "ROff").expect("generate ramp off"));
+    assert_eq!(status(&world, "ROff"), OpStatus::Ok);
+    let tp = cache(&world, "ROff").expect("cached ramp off");
+    assert!(tp.path.moves.iter().filter(|m| m.kind == camcraft_app::cl::MoveKind::Feed).all(|m| m.from.z >= 9.5 && m.to.z >= 9.5));
+    assert!(tp.path.notes.iter().any(|n| n.starts_with(camcraft_app::finishing3d::WATERLINES_OFF_NOTE)));
 }

@@ -1310,6 +1310,7 @@ fn every_field_lives_on_exactly_one_section() {
                     "Stepover",
                     "Minimum step",
                     "Ramp between lines",
+                    "Steep flanks",
                     "Tolerance",
                 ]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
@@ -3888,6 +3889,107 @@ fn finish3d_pattern_and_stepover_apply_through_commands() {
             _ => panic!("kind drift"),
         });
     assert_eq!(back, Some(None), "undo restores the march's own floor");
+}
+
+#[test]
+fn finish3d_waterlines_radio_consequence_apply_undo_and_status_note() {
+    use camcraft_app::commands::{GenerateOperation, ImportModel, SetStock};
+    use camcraft_app::geometry::{Point3, cube};
+    use camcraft_app::stock::StockShape;
+    use camcraft_app::schema::Location;
+
+    let mut harness = shell_harness();
+    {
+        let st = &mut harness.state_mut().state;
+        rack(st, &["BN-0600"]);
+        let prism = cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        st.history.execute(&st.world, ImportModel::from_mesh("Prism", prism));
+        st.history.execute(
+            &st.world,
+            SetStock::new(&st.world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 12.0 }, Location::default())
+                .expect("stock"),
+        );
+        crate::actions::add_operation(st, camcraft_app::operation::OpType::Finish3D as usize);
+        if let OpParams::Finish3D { top_z, bottom_z, tolerance, .. } = &mut st.op_ui.params {
+            *top_z = Height::fixed(10.0);
+            *bottom_z = Height::fixed(0.0);
+            *tolerance = 0.1;
+        }
+        st.op_tab = 2; // Passes
+    }
+    harness.run_steps(2);
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+
+    harness.get_by_label("Steep flanks").scroll_to_me();
+    harness.run();
+    assert!(harness.query_by_label("Waterlines").is_some());
+    assert!(harness.query_by_label("Leave uncut").is_some());
+    assert!(harness.query_by_label_contains("Steep flanks (>45 deg) stay uncut").is_none());
+
+    harness.get_by_label("Leave uncut").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains("Steep flanks (>45 deg) stay uncut").is_some(),
+        "consequence caption must appear when Leave uncut is chosen"
+    );
+    assert!(
+        !harness.state().state.pending.iter().any(|c| matches!(c, CommandKind::EditOperationParams { .. })),
+        "radio click stages draft only; Apply commits"
+    );
+
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+
+    let live_wl = model::find_by_name(&harness.state().state.world, "3D Finish1")
+        .and_then(|e| model::operation_of(&harness.state().state.world, &e))
+        .map(|o| matches!(o.params, OpParams::Finish3D { waterlines: false, .. }));
+    assert_eq!(live_wl, Some(true), "Apply commits waterlines: false");
+
+    // Generate and check the UI status banner surfaces the steep-flank warning.
+    {
+        let st = &mut harness.state_mut().state;
+        let cmd = GenerateOperation::new(&st.world, "3D Finish1").expect("generate");
+        st.history.execute(&st.world, cmd);
+        st.doc_version += 1;
+    }
+    harness.run();
+    let (line, tone, details) = super::op_page::status_text(&harness.state().state, "3D Finish1");
+    assert_eq!(tone, super::layout::Tone::Warn, "status banner tone: {line}");
+    assert!(line.contains("warning"), "status banner line: {line}");
+    assert!(
+        details.iter().any(|d| d.starts_with("warning: ") && d.contains(camcraft_app::finishing3d::WATERLINES_OFF_NOTE)),
+        "status details must expose uncut steep flanks: {details:?}"
+    );
+    harness.get_by_label_contains("OK ·").scroll_to_me();
+    harness.run();
+    harness.get_by_label_contains("OK ·").click();
+    harness.run();
+    assert!(
+        harness.query_by_label_contains(camcraft_app::finishing3d::WATERLINES_OFF_NOTE).is_some(),
+        "expanded status banner must render the steep-flank warning"
+    );
+
+    // Undo GenerateOperation, then undo EditOperationParams -> waterlines returns to true.
+    for _ in 0..2 {
+        harness.input_mut().events.push(Event::ModifiersChanged(Modifiers::COMMAND));
+        harness.input_mut().events.push(Event::Key {
+            key: Key::Z,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        });
+        harness.run_steps(2);
+    }
+    let back_wl = model::find_by_name(&harness.state().state.world, "3D Finish1")
+        .and_then(|e| model::operation_of(&harness.state().state.world, &e))
+        .map(|o| matches!(o.params, OpParams::Finish3D { waterlines: true, .. }));
+    assert_eq!(back_wl, Some(true), "Ctrl+Z undo restores waterlines: true");
 }
 
 #[test]

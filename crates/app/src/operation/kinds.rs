@@ -1148,6 +1148,8 @@ fn seed_finish3d(c: &Carried) -> OpParams {
         // Fresh finishes hop to clearance like every older file;
         // straight links are the machinist's opt-in (the linking menu).
         gap_link: crate::finishing3d::GapLink::Jump,
+        // Steep flanks ride the waterline ring pass by default (#2811).
+        waterlines: true,
     }
 }
 
