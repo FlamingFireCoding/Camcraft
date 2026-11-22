@@ -177,3 +177,21 @@ fn a_spliced_diagonal_link_between_rings_is_still_convicted() {
     let convicted = rapids_in_stock(&judge(&bad));
     assert!(convicted.contains(&lift), "the diagonal link at move {lift} must be convicted: {convicted:?}");
 }
+
+/// #2898 + #3109: after merging helix descent tracking with the ring lift,
+/// a flat multi-ring helix climbs to clearance with zero warnings (neither
+/// `RapidInStock` nor `Crossing`), and an un-staggerable helix is still
+/// refused by name.
+#[test]
+fn a_multi_ring_helix_keeps_both_the_clearance_lift_and_descent_tracking() {
+    let t = circular(&disk(10.0), &params(Entry3D::Helix, Links::PLANAR, false)).expect("a legal helix hole");
+    assert!(low_traverses(&t).is_empty(), "every inter-ring traverse must ride at clearance");
+    let warns = judge(&t);
+    assert!(warns.is_empty(), "multi-ring helix must verify clean (no RapidInStock or Crossing): {warns:?}");
+
+    let mut tight = params(Entry3D::Helix, Links::PLANAR, false);
+    tight.stepover = 3.0;
+    tight.helix_radius = 3.0;
+    let err = circular(&disk(10.0), &tight).expect_err("crossing helix orbits must still be refused");
+    assert!(format!("{err:?}").contains("helix entry: the descent"), "unexpected refusal: {err:?}");
+}
