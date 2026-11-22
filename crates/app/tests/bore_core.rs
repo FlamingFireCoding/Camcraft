@@ -129,16 +129,23 @@ fn write_stl(tag: &str, radii: &[f64]) -> PathBuf {
 
 #[test]
 fn bore_fixtures_preserve_existing_pid_paths_and_isolate_repeated_tags() {
-    let tag = "temp-isolation";
-    let stale = std::env::temp_dir().join(format!("camcraft-bore-core-{tag}-{}", std::process::id()));
-    std::fs::create_dir_all(&stale).expect("seed a stale PID directory");
+    let mut attempt = 0_u64;
+    let (tag, stale) = loop {
+        let tag = format!("temp-isolation-{attempt}");
+        let stale = std::env::temp_dir().join(format!("camcraft-bore-core-{tag}-{}", std::process::id()));
+        match std::fs::create_dir(&stale) {
+            Ok(()) => break (tag, stale),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => attempt += 1,
+            Err(error) => panic!("reserve seeded PID directory {}: {error}", stale.display()),
+        }
+    };
     let marker = stale.join("previous-owner.txt");
     std::fs::write(&marker, "previous owner's fixture").expect("seed prior owner's data");
 
-    let first = write_stl(tag, &[SMALL_R]);
-    assert!(marker.exists(), "fixture creation must leave existing PID paths untouched");
+    let first = write_stl(&tag, &[SMALL_R]);
+    assert_eq!(std::fs::read_to_string(&marker).expect("prior owner's data survives"), "previous owner's fixture");
     let before = std::fs::read(&first).expect("first fixture");
-    let second = write_stl(tag, &[BIG_R]);
+    let second = write_stl(&tag, &[BIG_R]);
     assert_ne!(first, second, "each fixture must reserve its own directory");
     assert_eq!(std::fs::read(&first).expect("first fixture survives"), before);
 
