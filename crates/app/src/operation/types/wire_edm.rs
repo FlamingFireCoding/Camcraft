@@ -95,6 +95,11 @@ pub struct WireContourOp {
     /// `false` - the default - refuses it by name. A 4-axis cut reads
     /// its heal tolerance instead.
     pub sharp_corners: bool,
+    /// The closing overlap, mm (#3216): how far past the seam the ride
+    /// continues before the lead-out back to the start hole. 0 is the
+    /// plain lap. Unread for an open run or with tabs - the generator
+    /// refuses it stated there.
+    pub overlap: f64,
 }
 
 /// How the two profiles of a 4-axis cut are paired (#537) - stated,
@@ -211,6 +216,8 @@ impl WireContourOp {
             && self.burnout.is_none_or(|c| c.is_finite() && c > 0.0 && c < 1e6)
             && self.clearance.is_finite()
             && (0.0..=crate::wire_edm::CLEARANCE_MAX).contains(&self.clearance)
+            && self.overlap.is_finite()
+            && (0.0..=1e6).contains(&self.overlap)
             && sane_id(&self.condition)
             && self.skims.len() <= SKIMS_MAX
             && self.skims.iter().all(|s| sane_id(&s.condition))

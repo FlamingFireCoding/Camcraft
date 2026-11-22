@@ -27,6 +27,7 @@ fn params(side: WireSide, start: Option<(f64, f64)>) -> WireParams {
         stock: None,
         clearance: 1.0,
         sharp_corners: false,
+        overlap: 0.0,
     }
 }
 
@@ -274,11 +275,10 @@ fn skim_laws_refuse_by_name() {
     assert!(err(&[thin]).contains("one threading cuts every pass with one wire"));
     assert!(err(&[pass("S", f64::NAN, false)]).contains("spark gap"));
     assert!(check_passes(&p, &[pass("S1", 0.02, false), pass("S2", 0.02, true)]).is_ok(), "equal offsets are allowed");
-    // An open run (#1109) is cut once: skims are refused at the door.
+    // An open run (#1109, #3216) takes skims: the offset laws judge it
+    // like a closed profile; the walk itself is the open generator's.
     let open = params(WireSide::Left, None);
-    let e = check_passes(&open, &[pass("S1", 0.02, false)]).unwrap_err().to_string();
-    assert!(e.contains("an open run is cut once"), "{e}");
-    assert!(check_passes(&open, &[]).is_ok(), "an open run alone is not refused here");
+    assert!(check_passes(&open, &[pass("S1", 0.02, false)]).is_ok(), "an open run's skims are not refused here");
     // Tabs (#539) are cut on the rough pass alone: skims beside them are
     // refused by name.
     let tabs = TabParams { count: Some(1), width: Some(1.0), at: Vec::new(), cutoff: None };
@@ -334,4 +334,56 @@ fn the_cone_rule_holds_the_lean_and_refuses_a_lead_into_a_corner() {
     assert_eq!(path.moves.len(), 4 * 45 + 7);
     let err = wire_contour_tapered(&loops, &[], &params(WireSide::Punch, Some((-30.0, -20.0))), &t).unwrap_err().to_string();
     assert!(err.contains("lead-in meets the corner") && err.contains("cone corner rule"), "{err}");
+}
+
+/// #3216: the closing overlap rides past the seam by the stated arc
+/// length before the lead-out, a skim inherits it, and it is refused
+/// where there is no seam to close past - with tabs, on an open run,
+/// or at a negative length.
+#[test]
+fn the_closing_overlap_rides_past_the_seam_and_is_refused_without_a_seam() {
+    let sq = [rect(-20.0, -10.0, 20.0, 10.0)];
+    let p = params(WireSide::Die, Some((0.0, 0.0)));
+    let mut q = p.clone();
+    q.overlap = 1.0;
+    // The rect's inside corners are tighter than the wire; the sharp
+    // law (#3207) cuts them and says the leftover, so the ride past the
+    // seam is what the test pins.
+    q.sharp_corners = true;
+    let over = wire_contour(&sq, &[], &q).unwrap();
+    assert!(over.notes.iter().any(|n| n.contains("rides 1.000 mm past its seam")), "{:?}", over.notes);
+    // The seam is where the plain lap closed: the foot on the top
+    // side at x = 0 (the start hole's nearest point), the die walk
+    // arriving clockwise. The ride goes on 1.0 mm in that same
+    // direction before the lead-out.
+    let pts = ride(&over);
+    let last = pts[pts.len() - 1];
+    assert!((last.x + 1.0).abs() < 1e-6 && (last.y - (10.0 - K)).abs() < 1e-6, "{last:?}");
+    assert_eq!(*pts.last().unwrap(), last, "the ride ends past the seam, not at it");
+    // The lead-out still returns to the threading point.
+    assert_eq!(over.end().unwrap(), Point3::new(0.0, 0.0, -12.0));
+    // A skim inherits the overlap: its ride ends 1.0 mm past its own
+    // seam, at its own offset.
+    let two = wire_passes(&sq, &[], &q, &[pass("S21", 0.02, false)]).unwrap();
+    let home = Point3::new(0.0, 0.0, -12.0);
+    let rets: Vec<usize> = two.moves.iter().enumerate().filter(|(_, m)| m.to == home).map(|(i, _)| i).collect();
+    assert_eq!(rets.len(), 2, "one return per pass");
+    let end = two.moves[rets[1] - 1].to;
+    assert!((end.x + 1.0).abs() < 1e-6 && (end.y - (10.0 - 0.145)).abs() < 1e-6, "{end:?}");
+    // Refused with tabs: tabs pin the seam.
+    let mut t = q.clone();
+    t.tabs = Some(TabParams { count: Some(1), width: Some(1.0), at: Vec::new(), cutoff: None });
+    let why = refusal(&sq, &[], &t);
+    assert!(why.contains("tabs pin the seam"), "{why}");
+    // Refused on an open run: no seam to close past.
+    let line = [vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]];
+    let mut o = params(WireSide::Left, None);
+    o.overlap = 1.0;
+    let why = refusal(&[], &line, &o);
+    assert!(why.contains("no seam to close past"), "{why}");
+    // Refused at a negative length, by the door.
+    let mut n = p.clone();
+    n.overlap = -0.5;
+    let why = refusal(&sq, &[], &n);
+    assert!(why.contains("closing overlap must be zero or more"), "{why}");
 }

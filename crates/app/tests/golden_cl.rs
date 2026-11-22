@@ -1215,6 +1215,7 @@ fn wire_contour_die_and_punch_match_golden() {
             stock: None,
             clearance: 1.0,
             sharp_corners: false,
+            overlap: 0.0,
         };
         let path = wire_contour(std::slice::from_ref(&profile), &[], &p).unwrap();
         assert!(path.is_prismatic() && path.moves.iter().all(|m| m.kind == MoveKind::Feed && m.feed.is_none()));
@@ -1245,7 +1246,8 @@ fn wire_open_cutoff_matches_golden() {
         stock: Some(Region::new(vec![Loop::new(plate).unwrap()]).unwrap()),
         clearance: 1.0,
         tabs: None,
-        sharp_corners: false,
+            sharp_corners: false,
+            overlap: 0.0,
     };
     let line = vec![Point2::new(60.0, 0.0), Point2::new(60.0, 50.0)];
     let path = wire_contour(&[], &[line], &p).unwrap();

@@ -54,6 +54,7 @@ fn prism(pts: &[(f64, f64)]) -> Mesh {
 
 fn wire_op(side: WireSide, start: Option<[f64; 2]>) -> WireContourOp {
     WireContourOp {
+        overlap: 0.0,
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),

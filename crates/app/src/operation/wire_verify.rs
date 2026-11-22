@@ -106,6 +106,9 @@ pub fn wire_verdict(world: &World, e: &Entity) -> Option<Result<WireVerdict, Str
             WireSide::Die => CutSide::Die,
             WireSide::Punch => CutSide::Punch,
             WireSide::Left | WireSide::Right => CutSide::Open,
+            // #3216: the centre slit is judged as an open run whose
+            // kerf burns both sides - the verify's centre reading.
+            WireSide::Centre => CutSide::Centre,
         };
         let start = w.start.map(|[x, y]| Point2::new(x, y));
         let cutoff_from = cutoff_from(w, &cache.path)?;

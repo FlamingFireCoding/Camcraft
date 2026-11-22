@@ -106,6 +106,10 @@ pub const SLUG_AREA_TOL: f64 = 1e-3;
 /// on the report line, never silent.
 pub const OPEN_SKIP: &str = "start-hole and slug laws not applied (an open run is threaded in the air outside the stock and closes no slug)";
 
+/// Why a centre slit's kerf law holds nothing to judge (#3216): said
+/// on the report line, never silent.
+pub const CENTRE_SKIP: &str = "kerf law not applied (a centre slit burns both sides of the run by statement); the ends' clearance is judged";
+
 /// Which side of the cut is kept - stated by the operation, never read
 /// from the geometry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,6 +121,9 @@ pub enum CutSide {
     /// An open run (#1109): the kerf on the stated left or right of
     /// travel, the model is the product, nothing is enclosed.
     Open,
+    /// A centre-line slit (#3216): the wire rides the run itself and
+    /// the kerf burns both sides - nothing is kept, nothing enclosed.
+    Centre,
 }
 
 impl CutSide {
@@ -126,6 +133,7 @@ impl CutSide {
             CutSide::Die => "die",
             CutSide::Punch => "punch",
             CutSide::Open => "open",
+            CutSide::Centre => "centre",
         }
     }
 }
@@ -249,10 +257,10 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
             return v;
         }
     };
-    if job.side == CutSide::Open {
+    if matches!(job.side, CutSide::Open | CutSide::Centre) {
         if !job.skim_offsets.is_empty() {
             v.findings.push(WireFinding::Unreadable(
-                "an open run states skim passes - an open run is cut once, from the air to its run-out".into(),
+                "an open run states skim passes - the wire verify reads one open pass from the air to its run-out; the skims are generated but not verified here yet".into(),
             ));
             return v;
         }
@@ -317,14 +325,19 @@ pub fn judge(job: &WireJob<'_>) -> WireVerdict {
 
 /// An open run (#1109, module head): the kerf law against the part at
 /// every height, both ends clear of the stock; no threading, no slug.
+/// A centre slit (#3216) burns both sides by statement, so its kerf
+/// law is not applied - said, never silent; the ends are still judged.
 fn open(job: &WireJob<'_>, wire: &Wire, k: f64, v: &mut WireVerdict) {
-    v.skipped = Some(OPEN_SKIP);
+    let centre = job.side == CutSide::Centre;
+    v.skipped = Some(if centre { CENTRE_SKIP } else { OPEN_SKIP });
     let mut worst: Option<(f64, f64, Point2)> = None;
     let mut gouge: Option<WireFinding> = None;
     for s in &job.sections {
-        let (found, under) = gouge_at(&Product::Part(&s.part), wire, k, s.z, job.verify_tol);
-        gouge = WireFinding::first_gouge(gouge, found);
-        v.under = WireUnder::deeper(v.under, under);
+        if !centre {
+            let (found, under) = gouge_at(&Product::Part(&s.part), wire, k, s.z, job.verify_tol);
+            gouge = WireFinding::first_gouge(gouge, found);
+            v.under = WireUnder::deeper(v.under, under);
+        }
         let Some(stock) = s.stock.as_ref() else { continue };
         // The ends where the wire stands at this height (a leaning
         // wire's ends move with the plane).

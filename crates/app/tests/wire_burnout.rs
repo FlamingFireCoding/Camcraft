@@ -52,6 +52,7 @@ fn pocket() -> Mesh {
 
 fn burnout(clearance: Option<f64>) -> WireContourOp {
     WireContourOp {
+        overlap: 0.0,
         top_z: Height::fixed(12.0),
         bottom_z: Height::fixed(0.0),
         condition: "C110".into(),

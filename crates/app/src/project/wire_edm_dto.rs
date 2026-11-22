@@ -23,6 +23,8 @@ pub enum WireSideDto {
     Left,
     /// An open run's kerf, right of travel (#1109).
     Right,
+    /// An open run cut as a centre-line slit (#3216).
+    Centre,
 }
 
 fn default_clearance() -> f64 {
@@ -77,6 +79,10 @@ pub struct WireContourDto {
     /// off, so every file written before it reads unchanged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sharp_corners: bool,
+    /// The closing overlap, mm (#3216); absent is the plain lap, so
+    /// every file written before it reads unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub overlap: f64,
 }
 
 /// One skim: its condition id (stated - no default) and whether it
@@ -167,6 +173,7 @@ impl WireContourDto {
                 WireSide::Punch => WireSideDto::Punch,
                 WireSide::Left => WireSideDto::Left,
                 WireSide::Right => WireSideDto::Right,
+                WireSide::Centre => WireSideDto::Centre,
             },
             start: p.start,
             tabs: p.tabs.as_ref().map(|t| WireTabsDto {
@@ -194,6 +201,7 @@ impl WireContourDto {
             clearance: p.clearance,
             skims: p.skims.iter().map(|s| WireSkimDto { condition: s.condition.clone(), reverse: s.reverse }).collect(),
             sharp_corners: p.sharp_corners,
+            overlap: p.overlap,
         }
     }
 
@@ -207,6 +215,7 @@ impl WireContourDto {
                 WireSideDto::Punch => WireSide::Punch,
                 WireSideDto::Left => WireSide::Left,
                 WireSideDto::Right => WireSide::Right,
+                WireSideDto::Centre => WireSide::Centre,
             },
             start: self.start,
             tabs: self.tabs.as_ref().map(|t| WireTabs {
@@ -234,6 +243,7 @@ impl WireContourDto {
             clearance: self.clearance,
             skims: self.skims.iter().map(|s| WireSkim { condition: s.condition.clone(), reverse: s.reverse }).collect(),
             sharp_corners: self.sharp_corners,
+            overlap: self.overlap,
         })
     }
 }
@@ -258,6 +268,7 @@ mod tests {
             clearance: crate::operation::DEFAULT_CLEARANCE,
             skims: Vec::new(),
             sharp_corners: false,
+            overlap: 0.0,
         }
     }
 

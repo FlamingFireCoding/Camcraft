@@ -49,20 +49,16 @@ impl WirePass {
 /// command door's (the numbers are all the machine's).
 ///
 /// # Errors
-/// Skims on an open run or with tabs, a skim naming no condition, a skim whose wire is not the rough
+/// Skims with tabs, a skim naming no condition, a skim whose wire is not the rough
 /// pass's, a pass nearer the profile than the finishing pass, or a
-/// skim farther out than the pass before it.
+/// skim farther out than the pass before it. An open run takes skims
+/// too (#3216): each is entered from the air at the run's start end
+/// and walked in the run's own direction - a reversed one is refused
+/// by the open-run generator.
 pub fn check_passes(rough: &WireParams, skims: &[WirePass]) -> Result<(), GenError> {
     let Some(last) = skims.last() else {
         return Ok(());
     };
-    if rough.side.is_open_side() {
-        return Err(invalid(format!(
-            "the side is {} of travel, an open run, and {} skim pass(es) are stated - an open run is cut once, from the air to its run-out; skims walk a closed profile from its start hole",
-            rough.side.word(),
-            skims.len()
-        )));
-    }
     if rough.tabs.is_some() {
         return Err(invalid(format!(
             "tabs are stated with {} skim pass(es) - skims are cut on an untabbed profile only (#538 x #539); remove the tabs or the skims",
@@ -113,7 +109,11 @@ pub fn check_passes(rough: &WireParams, skims: &[WirePass]) -> Result<(), GenErr
 /// The rough pass, then every skim, each from the threading point and
 /// back to it at its own offset; every pass judged by the single-pass
 /// laws at its offset. With no skims this is [`super::wire_contour`]
-/// exactly.
+/// exactly. An open run (#3216) takes its skims through the open-run
+/// generator: each re-enters from the air at the run's start end, at
+/// its own run-in point, and is walked in the run's own direction -
+/// the wire is threaded anew for every pass, so no move joins one
+/// pass's run-out to the next pass's run-in.
 ///
 /// # Errors
 /// [`check_passes`]'s refusals, then any pass's own.
@@ -124,14 +124,20 @@ pub fn wire_passes(loops: &[Loop], chains: &[Vec<Point2>], rough: &WireParams, s
         let p = s.params(rough);
         let pass = cut_pass(loops, chains, &p, s.reverse)?;
         path.moves.extend(pass.moves);
+        let how = if rough.side.is_open_side() {
+            "in the run's own direction".to_owned()
+        } else if s.reverse {
+            "clockwise (reversed)".to_owned()
+        } else {
+            "counter-clockwise".to_owned()
+        };
         path.notes.push(format!(
-            "wire EDM: skim {} - condition {} at {:.4} mm (wire radius {:.4} + spark gap {:.4}), cut {}",
+            "wire EDM: skim {} - condition {} at {:.4} mm (wire radius {:.4} + spark gap {:.4}), cut {how}",
             i + 1,
             s.condition,
             p.kerf_offset(),
             p.wire_diameter * 0.5,
             p.gap,
-            if s.reverse { "clockwise (reversed)" } else { "counter-clockwise" }
         ));
     }
     Ok(path)
