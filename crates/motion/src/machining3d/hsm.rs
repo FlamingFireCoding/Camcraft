@@ -35,6 +35,7 @@ use crate::entry::Entry3D;
 use crate::machining2d::{
     ARC_FIT_TOL, GenError, PocketParams, PocketStrategy, ProofTally, Return, Seg, adaptive_passes, choose_entry,
     crossing_free, in_air, fit_proved, microlift_link, plan_passes, push_segs, zigzag_ringed_passes,
+    SeamWrap,
 };
 
 /// Said once per path where the rest pass runs under Adaptive.
@@ -138,13 +139,15 @@ pub(super) fn plan_level(
     if matches!(p.strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
         // #3129: the level's rows close with a ring on each boundary loop,
         // so no cusp stands between row ends on a wall or an island.
-        // #3168: on the rotary wrap a loop that spans a whole period
-        // wraps the seam - its cover-end edges are the seam's two copies
-        // at one azimuth - so that ring drops the seam edges and keeps
-        // one period per arc: the rows cut the seam columns, and no
-        // azimuth is cut twice.
-        let seam_period = seam.map(|s| s.period);
-        return Ok(LevelPlan::rings(zigzag_ringed_passes(center, step, p.climb, seam_period)?, p.helix_radius));
+        // #3168: on the rotary wrap a loop that REACHES a cover end
+        // within the seam's reach wraps the seam - its cover-end edges
+        // are the seam's two copies at one azimuth - so that ring drops
+        // the seam edges and keeps one period per arc: the rows cut the
+        // seam columns, and no azimuth is cut twice. A loop that spans
+        // a period mid-cover touches no cover end and closes as the
+        // no-seam case does.
+        let seam_wrap = seam.map(|s| SeamWrap { lo: s.lo, hi: s.hi, period: s.period, reach: s.reach });
+        return Ok(LevelPlan::rings(zigzag_ringed_passes(center, step, p.climb, seam_wrap)?, p.helix_radius));
     }
     if p.strategy != PocketStrategy::Adaptive {
         return Ok(LevelPlan::rings(plan_passes(center, step, p.climb, p.strategy)?, p.helix_radius));

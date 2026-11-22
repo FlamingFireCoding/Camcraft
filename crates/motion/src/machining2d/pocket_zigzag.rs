@@ -20,19 +20,28 @@ pub(crate) fn rest_passes(center: &Region, step: f64, climb: bool) -> Result<Vec
     ringed_passes(center, step, climb, None)
 }
 
-/// #3168: the same rows and rings under the rotary wrap's seam law
-/// (`seam_period`: the developed cover's repeat distance). A boundary
-/// loop that spans a whole period wraps the seam: its two cover-end
-/// edges are the seam's two copies at ONE azimuth, so its ring drops
-/// both edges and keeps one period per leftover arc - the rows cut the
-/// seam columns, and no azimuth is cut twice by one ring. A shorter
-/// loop closes as always: it wraps no azimuth, so its ring cuts every
-/// wall of the work once.
+/// The rotary wrap's seam law on the developed plane (#3168): the cover
+/// runs from `lo` to `hi` in s and repeats every `period`. A boundary
+/// loop that reaches a cover end within `reach` wraps the seam - its
+/// cover-end edges are the seam's copies at ONE azimuth - so its ring
+/// drops those edges and keeps one period per leftover arc. A loop that
+/// spans a period mid-cover touches no cover end: it wraps an azimuth
+/// it never stands on, and closes as the no-seam case does.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SeamWrap {
+    pub lo: f64,
+    pub hi: f64,
+    pub period: f64,
+    pub reach: f64,
+}
+
+/// #3168: the same rows and rings under the wrap's seam law (`seam`:
+/// the developed cover's ends, period and seam reach). See `SeamWrap`.
 pub(crate) fn ringed_passes(
     center: &Region,
     step: f64,
     climb: bool,
-    seam_period: Option<f64>,
+    seam: Option<SeamWrap>,
 ) -> Result<Vec<Vec<Point2>>, GenError> {
     let rows = center.offset(-0.01_f64.min(step * 0.25))?;
     let mut passes = if rows.is_empty() { Vec::new() } else { zigzag_passes(&rows, step, climb)? };
@@ -40,13 +49,13 @@ pub(crate) fn ringed_passes(
         *p = Point2::new(lattice(p.x), lattice(p.y));
     }
     for ring in center.loops() {
-        passes.extend(boundary_rings(ring.points(), climb, seam_period));
+        passes.extend(boundary_rings(ring.points(), climb, seam));
     }
     Ok(passes)
 }
 
 /// One loop's ring passes (see `ringed_passes`).
-fn boundary_rings(points: &[Point2], climb: bool, seam_period: Option<f64>) -> Vec<Vec<Point2>> {
+fn boundary_rings(points: &[Point2], climb: bool, seam: Option<SeamWrap>) -> Vec<Vec<Point2>> {
     if points.len() < 2 {
         return Vec::new();
     }
@@ -54,7 +63,7 @@ fn boundary_rings(points: &[Point2], climb: bool, seam_period: Option<f64>) -> V
     if !climb {
         pts.reverse();
     }
-    let Some(period) = seam_period.filter(|p| p.is_finite() && *p > 0.0) else {
+    let Some(sm) = seam else {
         return closed_ring(pts);
     };
     let mut min = f64::INFINITY;
@@ -63,8 +72,16 @@ fn boundary_rings(points: &[Point2], climb: bool, seam_period: Option<f64>) -> V
         min = min.min(p.x);
         max = max.max(p.x);
     }
-    let tol = 1e-6 * period.abs().max(1.0);
-    if max - min < period - tol {
+    // The gate is seam CONTACT, not mere span (#3168): a loop that
+    // reaches a cover end within the seam's reach wraps the seam - its
+    // cover-end edges are the seam's copies at ONE azimuth - and its
+    // arcs arrive open. A loop that spans a period mid-cover touches no
+    // cover end: it wraps an azimuth it never stands on, and closes as
+    // the no-seam case does, or a period-spanning loop off the seam
+    // would be trimmed by the wrong rule.
+    let tol = 1e-6 * sm.period.abs().max(1.0) + 0.05 * sm.reach.abs();
+    let at_end = min <= sm.lo + sm.reach + tol || max >= sm.hi - sm.reach - tol;
+    if !at_end {
         return closed_ring(pts);
     }
     // The loop wraps the seam: its arcs arrive open. An arc ends on the
@@ -72,12 +89,13 @@ fn boundary_rings(points: &[Point2], climb: bool, seam_period: Option<f64>) -> V
     // cover's two laps carry the same wall - and a closing chord there
     // would run one full period across the cover.
     let edge_tol = 1e-6 * (max - min).abs().max(1.0);
+    let span_tol = 1e-6 * sm.period.abs().max(1.0);
     let mut out = Vec::new();
-    for arc in seam_open_arcs(&pts, min, max, edge_tol) {
+    for arc in seam_open_arcs(&pts, sm.lo, sm.hi, edge_tol) {
         let lo = arc.iter().fold(f64::INFINITY, |m, p| m.min(p.x));
         let hi = arc.iter().fold(f64::NEG_INFINITY, |m, p| m.max(p.x));
-        if hi - lo >= period - tol {
-            if let Some(trimmed) = one_period(&arc, period) {
+        if hi - lo >= sm.period - span_tol {
+            if let Some(trimmed) = one_period(&arc, sm.period) {
                 out.push(trimmed);
             }
         } else {
