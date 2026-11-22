@@ -67,3 +67,36 @@ its own bore (`choose_entry`).
 
 **Cost to change later.** Low. The law is one dispatch function. A
 wider Outside band would let the air plan cut fig8 with no change here.
+
+**Merge resolution, 2026-11-22 (class DELTA).** The parent #3353 merged
+first (`e313aa663`) and changed the same functions. Its `StartSide`
+already carries `{ start, stock, around_part }`, and its
+`pocket_started_on` and `level_rings::ring_plan` replaced the branch's
+`pocket_started_in` and `plan_passes_from`.
+
+- Main's API wins. `pocket_started_in` is dropped and every caller uses
+  `pocket_started_on` with a `StartSide`.
+- `adaptive_passes_from` takes the region and the `StartSide`. Every
+  ring fallback is `ring_plan`, so it keeps #3316's order and its
+  completeness guard; the older `plan_passes_from` had no guard.
+- `adaptive_ordered` takes the region and `around_part`, so the fallback
+  rings name the same start wall as the Offset path.
+- The 2D Adaptive generator builds one stock source,
+  `pass_start_stock::footprint`, and one API. The branch's `air_stock`
+  (world XY only) is dropped.
+- Auto is unchanged: it reads no stock and plans with `plan_passes`.
+- One pin changed. `fig8_inside_adaptive_starts_on_the_part_wall_and_
+  ends_in_air` becomes `..._and_cuts_out_to_the_edge`. Main's ring law
+  cuts each connected piece of the area on its own, with that piece's
+  walls last. On the fig8 band the level therefore ends on the last
+  piece's last cut, not always on the stock edge. The new pin asserts
+  what the feature gives: the first cut is on the part wall, and the
+  level cuts the stock edge in air on both sides (no material left).
+
+Considered and dropped: restoring `plan_passes_from` and the
+`waterline_passes(start)` order beside main's planner. It would keep the
+old pin, but it is the design that #3316 replaced with `level_rings`, and
+it would fork the ring law for one path.
+
+**Cost to change later.** Low. One dispatch function and one stock
+source; a later change touches `pocket_hsm_start.rs` only.

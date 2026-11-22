@@ -9,11 +9,12 @@ use crate::geo2d::Region;
 
 use super::face::GenError;
 use super::adaptive_method::AdaptiveMethod;
-use super::pass_start::PassStart;
-use super::pocket::{PocketParams, PocketStrategy, plan_passes_from};
+use super::level_rings::ring_plan;
+use super::pass_start::{PassStart, StartSide};
+use super::pocket::{PocketParams, PocketStrategy};
 use super::pocket_hsm::{Planned, RINGS_FALLBACK, adaptive_ordered};
 
-/// The Adaptive pocket's passes under `start`. `stock` is the stock
+/// The Adaptive pocket's passes under `side`. `side.stock` is the stock
 /// outline in the area's own frame (`None`: not known here).
 ///
 /// - Auto: [`super::pocket_hsm::adaptive_passes`] with no stock, the plan
@@ -27,19 +28,38 @@ use super::pocket_hsm::{Planned, RINGS_FALLBACK, adaptive_ordered};
 ///   area with holes cannot start on a hole wall without a full-width
 ///   slot, so the Offset rings cut it from its holes out, said.
 ///
-/// The trochoid fallback is tried only under Auto: its loops follow the
-/// medial line and have no ring order.
-pub(crate) fn adaptive_passes_from(center: &Region, p: &PocketParams, what: &str, stock: Option<&Region>, start: PassStart) -> Result<Planned, GenError> {
-    match start {
-        PassStart::Auto => adaptive_ordered(center, p, what, true, None, start),
-        PassStart::Outside => match stock.filter(|s| !s.is_empty()) {
-            Some(st) => adaptive_ordered(center, p, what, false, Some(st), start),
-            None => rings(center, p, what, start, "has no stock outline to start from in the air"),
+/// Every ring fallback is `level_rings::ring_plan`'s (#3316), so it
+/// takes that planner's order and its completeness guard. The trochoid
+/// fallback is tried only under Auto: its loops follow the medial line
+/// and have no ring order.
+pub(crate) fn adaptive_passes_from(
+    region: &Region,
+    center: &Region,
+    p: &PocketParams,
+    what: &str,
+    side: &StartSide,
+) -> Result<Planned, GenError> {
+    match side.start {
+        PassStart::Auto => adaptive_ordered(None, center, p, what, true, None, side.start, side.around_part),
+        PassStart::Outside => match side.stock.as_ref().filter(|s| !s.is_empty()) {
+            Some(st) => adaptive_ordered(
+                Some(region),
+                center,
+                p,
+                what,
+                false,
+                Some(st),
+                side.start,
+                side.around_part,
+            ),
+            None => rings(region, center, p, what, side, "has no stock outline to start from in the air"),
         },
         PassStart::Inside if center.loops().iter().any(|l| l.area() < 0.0) => {
-            rings(center, p, what, start, "cannot start on a hole wall without a full-width slot")
+            rings(region, center, p, what, side, "cannot start on a hole wall without a full-width slot")
         }
-        PassStart::Inside => adaptive_ordered(center, p, what, false, None, start),
+        PassStart::Inside => {
+            adaptive_ordered(Some(region), center, p, what, false, None, side.start, side.around_part)
+        }
     }
 }
 
@@ -56,16 +76,25 @@ pub fn trochoidal_pass_start_refusal(method: AdaptiveMethod, start: PassStart) -
     })
 }
 
-/// The Offset rings in the order `start` asks, with the note that names
+/// The Offset rings in the order `side` asks, with the note that names
 /// the switch (an order is never changed in silence).
-fn rings(center: &Region, p: &PocketParams, what: &str, start: PassStart, why: &str) -> Result<Planned, GenError> {
+fn rings(
+    region: &Region,
+    center: &Region,
+    p: &PocketParams,
+    what: &str,
+    side: &StartSide,
+    why: &str,
+) -> Result<Planned, GenError> {
     let s = PocketStrategy::OffsetRings;
-    let step = crate::load::load_step(p.tool_diameter, p.optimal_load);
     let note = format!(
         "adaptive: Pass starts at {} - the HSM plan {why}{RINGS_FALLBACK}{what} in that order instead",
-        start.label()
+        side.start.label()
     );
-    Ok((plan_passes_from(center, step, p.climb, s, start)?, vec![note], s, None, Vec::new()))
+    let (passes, ring_notes) = ring_plan(region, center, p, s, side)?;
+    let mut notes = vec![note];
+    notes.extend(ring_notes);
+    Ok((passes, notes, s, None, Vec::new()))
 }
 
 #[cfg(test)]

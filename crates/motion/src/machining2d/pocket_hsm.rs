@@ -16,8 +16,9 @@ use crate::geo2d::{Loop, Point2, Region};
 
 use super::adaptive::{AdaptiveSpec, Return, Travel, boundary_dist, central_point, corner_radius, first_crossing, plan, preferred_seed};
 use super::face::GenError;
-use super::pass_start::PassStart;
-use super::pocket::{PocketParams, PocketStrategy, plan_passes_from};
+use super::level_rings::ring_plan;
+use super::pass_start::{PassStart, StartSide};
+use super::pocket::{PocketParams, PocketStrategy, plan_passes};
 
 /// Where the plan put the entry: the spot, the radius of the disc
 /// about it that is inside the center area, the helix radius the
@@ -45,15 +46,19 @@ pub(crate) struct EntryRoom {
 /// piece of `center` that reaches past it is cut from the air
 /// (`adaptive::plan_from_air`) on the material clipped to the stock.
 pub(crate) fn adaptive_passes(center: &Region, p: &PocketParams, what: &str, trochoid: bool, stock: Option<&Region>) -> Result<Planned, GenError> {
-    adaptive_ordered(center, p, what, trochoid, stock, PassStart::Auto)
+    adaptive_ordered(None, center, p, what, trochoid, stock, PassStart::Auto, false)
 }
 
 /// [`adaptive_passes`] under a pass start (#3355). `Auto` is that
 /// function, byte for byte. `Outside` plans every piece from the air
 /// (`air_plan`) or refuses the HSM plan; the fallback rings take
 /// `start`, so the forced order holds on every path
-/// (`pocket_hsm_start`).
-pub(super) fn adaptive_ordered(center: &Region, p: &PocketParams, what: &str, trochoid: bool, stock: Option<&Region>, start: PassStart) -> Result<Planned, GenError> {
+/// (`pocket_hsm_start`). `region` is the material area: the fallback
+/// rings read it for [`ring_plan`]'s order and completeness guard, and
+/// the Auto callers pass `None`. `around_part` says the area surrounds
+/// the part (an Outside band), which names the start wall.
+#[allow(clippy::too_many_arguments)] // the HSM plan, its stock, and the #3316/#3355 start drawn from both
+pub(super) fn adaptive_ordered(region: Option<&Region>, center: &Region, p: &PocketParams, what: &str, trochoid: bool, stock: Option<&Region>, start: PassStart, around_part: bool) -> Result<Planned, GenError> {
     let (passes, notes, rest, room, joins, travel, refused) = hsm_passes(center, p, stock, start == PassStart::Outside)?;
     // A plan that would cross itself is never posted (the verifier's
     // crossing law, asked of the plan first); one refused past its
@@ -84,8 +89,19 @@ pub(super) fn adaptive_ordered(center: &Region, p: &PocketParams, what: &str, tr
             start.label()
         ),
     };
-    let step = crate::load::load_step(p.tool_diameter, p.optimal_load);
-    Ok((plan_passes_from(center, step, p.climb, s, start)?, vec![note], s, None, Vec::new()))
+    let (passes, ring_notes) = match (region, start != PassStart::Auto) {
+        (Some(reg), true) => {
+            let side = StartSide { start, stock: stock.cloned(), around_part };
+            ring_plan(reg, center, p, s, &side)?
+        }
+        _ => {
+            let step = crate::load::load_step(p.tool_diameter, p.optimal_load);
+            (plan_passes(center, step, p.climb, s)?, Vec::new())
+        }
+    };
+    let mut notes = vec![note];
+    notes.extend(ring_notes);
+    Ok((passes, notes, s, None, Vec::new()))
 }
 
 /// The words of each note that says the Offset rings cut an area in

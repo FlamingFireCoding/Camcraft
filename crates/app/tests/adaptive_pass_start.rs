@@ -2,7 +2,9 @@
 //! shared parameter of #3316. With an Outside containment on `fig8.step`
 //! and EM-0800-4FL (the #2849 pin 3 case), Outside starts each level
 //! with the tool in air past the stock edge and ends it on the part
-//! wall. Inside starts at the part wall and ends at the stock edge. (The
+//! wall. Inside starts at the part wall and cuts outward to the stock
+//! edge (the #3316 ring law cuts each connected piece on its own, so the
+//! last vertex is one piece's last cut, not always the edge). (The
 //! air plan path is pinned in `motion::machining2d::pocket_hsm_start`.) The
 //! Trochoidal method refuses both by name. The option rides the undoable
 //! EditOperationParams through MCP `edit_operation` and the project
@@ -147,23 +149,36 @@ fn fig8_outside_adaptive_starts_in_air_and_ends_on_the_part_wall() {
     assert!((d - R8).abs() < 0.05, "the level ends {d:.3} mm from the part, not on its wall");
 }
 
-/// #3355 pin: Inside starts at the part wall and ends at the stock edge.
-/// The band's hole walls give no full-width slot, so the Offset rings
-/// cut it from the part out, and the switch raises the #3035
-/// StrategyFallback warning like every other rings fallback.
+/// #3355 pin: Inside starts each level on the part wall and cuts outward
+/// to the stock edge. The band's hole walls give no full-width slot, so
+/// the Offset rings cut it from the part out, and the switch raises the
+/// #3035 StrategyFallback warning like every other rings fallback.
+/// The #3316 ring law cuts each connected piece of the area on its own
+/// ("the walls last" per piece), so the level's last vertex is one
+/// piece's last cut, not always the stock edge. The whole stock edge is
+/// still cut - checked on both sides of the band.
 #[test]
-fn fig8_inside_adaptive_starts_on_the_part_wall_and_ends_in_air() {
+fn fig8_inside_adaptive_starts_on_the_part_wall_and_cuts_out_to_the_edge() {
     let (world, _h, name, stock) = fig8_world();
     let (path, warnings) = adaptive_op(&world, &name, stock, PassStart::Inside, AdaptiveMethod::Spiral).expect("generates");
     let fallback: Vec<&String> = warnings.iter().filter(|w| w.contains("StrategyFallback")).collect();
     assert_eq!(fallback.len(), 1, "the rings fallback warns (#3035): {warnings:?}");
     assert_eq!(warnings.len(), 1, "no other warning: {warnings:?}");
     assert!(path.notes.iter().any(|n| n.starts_with("adaptive: Pass starts at Inside")), "the switch is said: {:?}", path.notes);
-    let (first, last) = first_last(&path);
+    let (first, _last) = first_last(&path);
     let d = to_part(&world, &name, first);
     assert!((d - R8).abs() < 0.05, "the first pass starts {d:.3} mm from the part, not on its wall");
-    let out = outside_box(last, stock);
-    assert!(out >= R8 - 0.05, "the level ends {out:.3} mm outside the stock, not at its edge: {last:?}");
+    // The walk goes from the part out, so the level cuts the stock edge
+    // in air on both sides of the fig8 band. A stock edge left standing
+    // is a short path, and the Prime Directive never posts one.
+    let edges: Vec<Point3> = path
+        .moves
+        .iter()
+        .filter(|m| m.kind == MoveKind::Feed && outside_box(m.to, stock) >= R8 - 0.05)
+        .map(|m| m.to)
+        .collect();
+    assert!(edges.iter().any(|p| p.x < 0.0), "no stock-edge cut on the left ({} edge cut(s))", edges.len());
+    assert!(edges.iter().any(|p| p.x > 0.0), "no stock-edge cut on the right ({} edge cut(s))", edges.len());
 }
 
 /// The Trochoidal method has no ring order: it refuses Inside and

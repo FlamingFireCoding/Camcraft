@@ -9,7 +9,7 @@ use crate::entry::Entry3D;
 use crate::geo2d::{Loop, Point2};
 use crate::geometry::Point3;
 use crate::load::DEFAULT_OPTIMAL_LOAD;
-use crate::machining2d::{CornerRelief, pocket_started, pocket_started_in};
+use crate::machining2d::{CornerRelief, StartSide, pocket_started, pocket_started_on};
 
 const R: f64 = 5.0;
 
@@ -60,7 +60,8 @@ fn stock() -> Region {
 }
 
 fn cut(region: &Region, start: PassStart, stock: Option<&Region>) -> Toolpath {
-    match pocket_started_in(region, &params(), &[], &CornerRelief::default(), start, stock) {
+    let side = StartSide { start, stock: stock.cloned(), around_part: false };
+    match pocket_started_on(region, &params(), &[], &CornerRelief::default(), &side) {
         Ok(t) => t,
         Err(e) => panic!("{start:?}: {e}"),
     }
