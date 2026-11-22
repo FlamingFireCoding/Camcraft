@@ -19,6 +19,10 @@ const PASS_START_HINT: &str = "Auto: the order this operation always cut. Inside
 pub(crate) const FACE_NO_PASS_ORDER: &str =
     "Not used on Face: its rows run edge to edge across the face, so there is no inside or outside order";
 
+/// Why Slot has no pass order (#3357): the line under its disabled row.
+pub(crate) const SLOT_NO_PASS_ORDER: &str =
+    "Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows.";
+
 /// The names of the combo, in its order (`PassStart::ALL`).
 pub(crate) fn pass_start_names() -> Vec<&'static str> {
     PassStart::ALL.iter().map(|s| s.label()).collect()

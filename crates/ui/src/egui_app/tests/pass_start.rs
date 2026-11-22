@@ -67,6 +67,24 @@ fn the_face_passes_tab_says_it_has_no_pass_order() {
 }
 
 #[test]
+fn the_slot_passes_tab_locks_auto_and_names_the_continuous_pass() {
+    let harness = passes_of(OpType::Slot);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let locked = harness
+        .query_all_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some("Auto") && n.is_disabled())
+        .count();
+    assert_eq!(locked, 1, "Slot shows Auto and cannot pick an order");
+    let reason = "Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows.";
+    assert_eq!(
+        harness
+            .query_all_by(|n| [n.label(), n.value()].into_iter().flatten().any(|text| text.contains(reason)))
+            .count(),
+        1,
+        "the reason is visible without hovering"
+    );
+}
+
+#[test]
 fn the_adaptive_twin_has_no_pass_start_row_yet() {
     let harness = passes_of(OpType::Adaptive2D);
     assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 0, "2D Adaptive gets the row in its own issue");
