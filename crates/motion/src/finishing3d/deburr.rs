@@ -251,7 +251,7 @@ pub fn deburr_edges(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'
         let list = &edges[&(lo, hi)];
         let (e0, e1) = (verts[lo], verts[hi]);
         if list.len() == 1 {
-            if !filter.keeps(e0, e1, None) || e0.z.max(e1.z) < p.bottom_z {
+            if !filter.keeps(e0, e1, None) || e0.z.max(e1.z) <= p.bottom_z {
                 continue;
             }
             if steep(e0, e1, slope) {
@@ -308,7 +308,7 @@ pub fn deburr_edges(facets: &[Triangle], p: &DeburrParams, edges: &DeburrEdges<'
             out_of_size += 1;
             continue;
         };
-        if e0.z.max(e1.z) < p.bottom_z {
+        if e0.z.max(e1.z) <= p.bottom_z {
             continue;
         }
         if steep(e0, e1, slope) {
