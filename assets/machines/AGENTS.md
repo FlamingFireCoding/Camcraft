@@ -40,6 +40,14 @@ unstated capability into existence.
   — the same tilt test the RTCP judgment and `can_tilt` read, one law
   at three sites): an XYZ machine with A/B trunnions or a tilt head is
   a MILL whose axes can lean, not a mill-turn.
+- `general.operator_side` (#2632, optional) ∈ `"-X"` | `"+X"` | `"-Y"` |
+  `"+Y"`: the side of the work envelope from which the operator looks
+  into it, named by the world axis that points from the envelope to the
+  operator. The viewport draws an arrow and the text "Operator side"
+  there. Unstated takes the default of the kind: `"+Y"` for a lathe (the
+  lathe view shows the turning plane from there), `"-Y"` (the front) for
+  each other kind. Any other word REFUSES the file by name. Display
+  only: no check and no post reads it.
 - `wire_edm` / `sinker_edm` (#530, part of #290) are DECLARED only: no
   axis inventory infers an EDM. A wire machine needs X and Y (U and V,
   the upper guide, add taper); a sinker needs Z. Neither has a spindle
@@ -54,6 +62,7 @@ unstated capability into existence.
         "wire_diameters": [0.25, 0.20],                // wire, length unit
         "awt": true,                                   // wire, automatic threading
         "tank": "submerged", "flushing": "high",       // wire (#1499): submerged|non-submerged, high|low; unstated = set at the control
+        "skim_flushing": "low",                        // wire (#2686): high|low, the flushing of each skim pass; needs "flushing"
         "orbits": [ { "kind": "circular", "word": "..." } ],  // sinker: circular|vector|planetary + the control's word
         "max_orbit_radius": 2.0,                       // sinker, length unit
         "pickup": "...",                               // sinker, the holder system's name
@@ -68,8 +77,12 @@ unstated capability into existence.
   with no `(` `)`, or the file is refused by the name. A sinker post
   reads `metric` / `inch` (the unit word), `pickup` (`{tool}`),
   `reference` (`{offset}`, the electrode's pickup offset), `condition`
-  (`{id}`), `depth` (the servo burn, `{z}` and optionally `{f}`) and
-  `end` (`SINKER_CODES`); the wire post (#533) reads its own names. A
+  (`{id}`), `depth` (the servo burn, `{z}` and optionally `{f}`),
+  `side` (the lateral servo burn, all of `{x}` `{y}` `{z}` `{f}` required),
+  and `end` (`SINKER_CODES`); the wire post (#533) reads its own names.
+  The `side` coordinates are absolute endpoints in the work offset.
+  The post converts coordinates and feed to the document's units.
+  A Side Burn needs `side`; a straight burn does not. A
   code the post needs and the file does not state refuses the post by
   name. No vendor codes ship - fill them from the control's manual.
 
@@ -280,6 +293,25 @@ unstated capability into existence.
   posts like `fanuc.cps` and `doosan-dnm.cps` refuse `G43.4` while
   CAM-side IK posts receive the full rotary chain). Absent infers
   controller RTCP geometrically from rotary tilt vectors.
+- `controller.identity` (#3181, optional object) records the installed
+  control model and its exact NC software identifier. For example:
+  `{"model":"iTNC 530","nc_software":"340490-03"}`. Both are strings.
+  Optional `installed_options` lists distinct option identifiers as
+  strings. An absent list means unknown; `[]` means none installed.
+  The file states facts only. Each post decides which documented
+  releases and operations it serves.
+- `tooling.tool_change` (#3181, optional string) is `manual`,
+  `manual-retract-top`, or `changer`. The middle value requires the
+  physical upper change position before manual tool release. A post
+  must verify whether its proposed procedure serves the installation.
+- `controller.post` (#2374, optional string): the name of the built-in
+  post (`posting::BUILTINS`) that writes this machine's programs. The
+  Setup page offers it when the machine is mounted and the setup posts
+  with another registry post; it never changes a setup's post by itself
+  and never offers over a `.cps` file post. The validator refuses, at
+  this key, a name that is not a built-in post or a post that does not
+  serve the machine's kind; the reader refuses anything but a non-empty
+  string. A shipped file states it only where its pairing is known.
 - `tooling.number_of_tools`: DISTINCT tool positions the program may
   call (a double-tier of the same 40 stations is 40, not 80); a
   program asking for a tool number above it is a checker refusal.
@@ -309,6 +341,14 @@ direction, travel[min,max] }` (geometry only — no speeds), and
 stated LINEAR rates — absent everywhere → 0 → silence, never a fake
 ceiling), `spindleMax` rpm, `coolants[]`, `rotaries[]
 {name, direction, travel}`, and `rtcp`.
+
+- `spindleMin` gives the minimum spindle speed in rpm, or zero when unstated.
+- `controllerIdentity`, when stated, has `model`, `nc_software` and an
+  optional `installed_options` list. An absent list means unknown. An empty
+  list means the installation has no options.
+- `linearAxes` lists the linear axis letters when the machine states a
+  controller identity. It includes additional linear axes, such as W.
+- `toolChangeMode`, when stated, is `manual`, `manual-retract-top` or `changer`.
 
 `rtcp` defaults to GEOMETRIC derivation: true iff some rotary states a
 direction that is not the Z column (z² < 0.99·(x²+y²+z²)) AND

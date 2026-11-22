@@ -117,7 +117,7 @@ fn drill(tip: f64, radius: f64) -> OpParams {
 }
 
 fn pocket(predrilled: bool) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         stepover: 1.6,
         stock_to_leave: 0.0,
@@ -136,6 +136,7 @@ fn pocket(predrilled: bool) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: Links { approach: Approach { predrilled, ..Approach::DEFAULT }, ..Links::PLANAR },
+        corner_relief: Default::default(),
     }
 }
 

@@ -50,7 +50,10 @@ fn assert_page_layout(h: &H, page: &str, anchors: &[&str]) {
         let node = if *a == "Delete" {
             h.get_by_role_and_label(egui::accesskit::Role::Pane, "Properties").query_by_label(a)
         } else {
-            h.query_by_label(a)
+            // A property row names its control by the row's label (#1119),
+            // so one row can match both the label and the control; either
+            // copy reports the row's place.
+            h.query_all_by_label(a).next()
         };
         let Some(node) = node else {
             panic!("{page} page: no widget labelled {a:?}");
@@ -157,7 +160,7 @@ fn layout_shell_light() {
 fn layout_page_stock() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Stock);
-    assert_page_layout(&h, "Stock", &["Shape", "Size", "Position and rotation", "Fit to models", "Apply"]);
+    assert_page_layout(&h, "Stock", &["Shape", "Size", "Position and rotation", "Stock axis", "Fit to models", "Apply"]);
 }
 
 #[test]
@@ -195,50 +198,18 @@ fn layout_page_tool_library() {
 fn layout_page_tool() {
     let _g = snapshot_guard();
     let h = page(UiTarget::Tool("EM-0600-4FL".into()));
-    // The selected tool edits its fields directly in Properties; catalog
-    // actions belong to the separate Tool library tab.
+    // #2014: the selected tool's settings are a label-left property grid
+    // in collapsible groups; the rows below the Geometry header follow it.
     assert_page_layout(
         &h,
         "Tool",
-        &["Tool: EM-0600-4FL", "Delete", "Type", "Diameter", "Corner radius", "Flute length"],
+        &["Tool: EM-0600-4FL", "Delete", "Edit tool shape", "Geometry", "Type", "Diameter", "Corner radius", "Flute length"],
     );
 }
 
-/// #2007: the tool page's Profile tab. In a tall window the tab and the
-/// holder rows stand in the leaf in order, and the file buttons stay in
-/// the leaf across. In the default window the points table sits low on
-/// the scrolled page: it keeps all its rows, so the line under it starts
-/// under the last row (before #2007 the table shrank to about two rows).
-#[test]
-fn layout_page_tool_profile() {
-    let _g = snapshot_guard();
-    let tool = || UiTarget::Tool("EM-0600-4FL".into());
-    let profile = |h: &mut H| {
-        h.state_mut().state.tool_profile_ui.column = crate::state::ToolColumn::Profile;
-        h.run_steps(3);
-    };
-    let tall = Harness::builder().with_size(Vec2::new(1280.0, 2400.0)).build_ui_state(frame, ShellUi::seeded());
-    let mut h = page_in(tall, tool());
-    profile(&mut h);
-    assert_page_layout(&h, "Tool profile", &["Tool: EM-0600-4FL", "Profile", "Holder profile", "Parametric", "Apply profile", "Import DXF…"]);
-    let Some(leaf) = super::layout::leaf_rect(&h.state().dock, &Tab::Properties) else {
-        panic!("Tool profile page: the Properties leaf is not laid out");
-    };
-    // The tab row, each remove button of the table and the file buttons.
-    for a in ["Draw holder", "Draw cutter", "×", "Import DXF…", "Export DXF…", "Import STEP…"] {
-        for r in h.query_all_by_label(a).map(|n| n.rect()) {
-            assert!(r.left() >= leaf.left() - 1.0 && r.right() <= leaf.right() + 1.0, "Tool profile page: {a:?} {r:?} leaves the leaf {leaf:?}");
-        }
-    }
-    let mut h = page(tool());
-    profile(&mut h);
-    let below = h.get_by_label("Parametric").rect().bottom();
-    let rows: Vec<egui::Rect> = h.query_all_by_label("×").map(|n| n.rect()).filter(|r| r.top() > below).collect();
-    assert_eq!(rows.len(), h.state().state.tool_profile_ui.points.len(), "one remove button for each point");
-    let last = rows.iter().fold(f32::MIN, |m, r| m.max(r.bottom()));
-    let under = h.query_all_by_label_contains("holder Ø").next().expect("the holder line under the table").rect();
-    assert!(under.top() >= last - 1.0, "Tool profile page: the table hides rows - its last row ends at {last}, the line under it starts at {}", under.top());
-}
+/// #2007 / #2397: the tool page's Profile tab moved into the tool shape
+/// window; its layout test is `layout_window_tool_shape` in
+/// `page_layout_windows.rs` (a rename, not a removal).
 
 #[test]
 fn layout_page_operation() {
@@ -307,6 +278,32 @@ fn layout_page_setup_tools() {
 
 /// The Debug info panel (a dock tab since #2262): inside the screen, its
 /// Copy button inside its tab's leaf.
+/// #2384: the start page stands where the dock stands, below the
+/// ribbon and above the status strip; its heading, the list and the
+/// actions stack top to bottom from the left.
+#[test]
+fn layout_page_home() {
+    use super::super::home::{OPEN, TITLE};
+    let mut h = shell_harness();
+    h.state_mut().state.recent = Default::default();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, super::super::home::HOME).click();
+    h.run_steps(2);
+    let band = h.get_by_role_and_label(egui::accesskit::Role::Button, "Donate").rect();
+    let screen = h.ctx.content_rect();
+    let mut last: Option<(&str, f32)> = None;
+    for a in [TITLE, super::super::home::NO_RECENT, OPEN] {
+        let r = h.query_all_by_label(a).next().unwrap_or_else(|| panic!("home page: no widget labelled {a:?}")).rect();
+        assert!(r.top() > band.bottom(), "home page: {a:?} {r:?} is below the top band");
+        assert!(r.bottom() < screen.bottom(), "home page: {a:?} {r:?} is on the screen");
+        assert!(r.left() < screen.center().x, "home page: {a:?} {r:?} starts in the left half");
+        if let Some((prev, y)) = last {
+            assert!(r.top() >= y, "home page: {a:?} is not below {prev:?}");
+        }
+        last = Some((a, r.bottom()));
+    }
+}
+
 #[test]
 fn layout_window_debug_info() {
     let _g = snapshot_guard();

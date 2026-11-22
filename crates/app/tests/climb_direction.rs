@@ -101,7 +101,9 @@ fn generate(world: &World, src: SrcRef, params: OpParams) -> Toolpath {
     };
     match operation::generate(world, &op, "") {
         Ok((t, w)) => {
-            assert!(w.is_empty(), "verify flagged the path: {w:?}");
+            // #3035: the advisory fallback to the rings is not a verify flag.
+            let flagged = w.iter().any(|w| !matches!(w, camcraft_app::verify::Warning::StrategyFallback { .. }));
+            assert!(!flagged, "verify flagged the path: {w:?}");
             t
         }
         Err(e) => panic!("generation refused: {e}"),
@@ -113,7 +115,7 @@ fn hole(world: &World) -> SrcRef {
 }
 
 fn pocket(strategy: PocketStrategy, climb: bool) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
@@ -135,6 +137,7 @@ fn pocket(strategy: PocketStrategy, climb: bool) -> OpParams {
         optimal_load: 0.4,
         blend_turns: false,
         tilt: None,
+        corner_relief: Default::default(),
     }
 }
 
@@ -160,6 +163,7 @@ fn contour(side: Side, climb: bool, lead: Lead, bottom: f64) -> OpParams {
         blend_turns: false,
         tilt: None,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -224,6 +228,8 @@ fn adaptive2d(climb: bool) -> OpParams {
         troch: camcraft_app::machining2d::AdaptiveTrochParams::default(),
         blend_turns: false,
         tilt: None,
+        corner_relief: Default::default(),
+        pass_start: Default::default(),
     }
 }
 

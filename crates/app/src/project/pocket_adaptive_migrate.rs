@@ -9,7 +9,7 @@
 
 use super::{
     AdaptiveMethodDto, AdaptiveTrochReturnDto, ApproachDto, EntityDto, EntityKind, LinksDto,
-    ParamsDto, StrategyDto,
+    ParamsDto, PassStartDto, StrategyDto,
 };
 
 /// Convert every pre-v69 `Pocket { strategy: Adaptive }` operation into
@@ -46,7 +46,11 @@ pub(super) fn settle(entities: &mut [EntityDto], from: u32) -> Vec<String> {
             blend_turns,
             blend_radius,
             rest,
+            corner_relief,
             tilt,
+            // #3354: no retired Adaptive file carries the key; 2D
+            // Adaptive takes it in its own issue.
+            pass_start: _,
         } = op.params.clone()
         else {
             continue;
@@ -102,7 +106,9 @@ pub(super) fn settle(entities: &mut [EntityDto], from: u32) -> Vec<String> {
             loop_width: None,
             blend_turns,
             blend_radius,
+            corner_relief,
             tilt,
+            pass_start: PassStartDto::Auto,
         };
         // Adaptive2D uses its own kind tag in the generation stamp digest.
         op.stamp = None;

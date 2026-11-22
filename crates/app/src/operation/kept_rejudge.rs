@@ -90,7 +90,7 @@ fn part_problem(world: &World, name: &str, op: &Operation, path: &Toolpath, know
     } else {
         Law::Keep
     };
-    let budget = job.hs.top.zip(job.hs.bottom).map_or(0.0, |(t, b)| mark_law::budget(t, b, job.tool.diameter * 0.5));
+    let budget = job.hs.top.zip(job.hs.bottom).map_or(0.0, |(t, b)| mark_law::budget(t, b, mark_law::cutter_depth_limit(&job.params, &job.tool)));
     // The thread grant generation gave (#1071 x #1205): only over round walls.
     let thread_bores = if law == Law::Hole { super::thread_op::bores(&job.tool, &job.params, thread_round(&job)) } else { Vec::new() };
     // The laws run in the frame generation judged in: a 3+2 op's local one.
@@ -105,11 +105,11 @@ fn part_problem(world: &World, name: &str, op: &Operation, path: &Toolpath, know
                     let mut w = Vec::new();
                     match law {
                         Law::Mark => {
-                            mark_law::mark_into(&mut w, judged, &facets, c, budget, excess);
+                            mark_law::mark_into(&mut w, judged, &facets, c, budget, excess, job.material.file_tolerance);
                         }
-                        Law::Hole => contain_into(&mut w, judged, &facets, c, DepthLaw::Contain, stl, excess, &job.params, bores),
+                        Law::Hole => contain_into(&mut w, judged, &facets, c, DepthLaw::Contain, stl, excess, job.material.file_tolerance, &job.params, bores),
                         _ => {
-                            contain_into(&mut w, judged, &facets, c, DepthLaw::Keep, stl, excess, &job.params, &[]);
+                            contain_into(&mut w, judged, &facets, c, DepthLaw::Keep, stl, excess, job.material.file_tolerance, &job.params, &[]);
                             super::keep_law::note_stock_chamfer_gouges(&job.params, job.part_solid, &mut w);
                         }
                     }

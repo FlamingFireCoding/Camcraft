@@ -286,6 +286,7 @@ fn render_all_guide_images() {
             stock_to_leave, clearance_z, retract_z, top_z, bottom_z, stepdown,
             feed, plunge_feed, climb, side, lead, tolerance, tab_count, tab_width,
             tab_height, entry, helix_radius, blend_turns, links, tilt,
+            chain_overrides: Vec::new(),
         };
         edit_and_generate(&mut h, "2D Contour1", contour_with_lead(Lead::Arc { radius: 6.0 }));
         let lead_target = first_arc_cut_target(&h, "2D Contour1", false)
@@ -381,10 +382,10 @@ fn pocket_variant(base: &OpParams, strategy: PocketStrategy, stepover: f64,
     entry: Entry3D, helix_radius: f64, links: Links) -> OpParams {
     let OpParams::Pocket { stock_to_leave, clearance_z, retract_z, top_z, bottom_z,
         stepdown, feed, plunge_feed, climb, optimal_load, blend_turns,
-        blend_radius, tilt, rest, .. } = *base else { panic!("expected guide pocket"); };
-    OpParams::Pocket { stock_to_leave, clearance_z, retract_z, top_z, bottom_z,
+        blend_radius, tilt, rest, ref corner_relief, .. } = *base else { panic!("expected guide pocket"); };
+    OpParams::Pocket { pass_start: Default::default(), stock_to_leave, clearance_z, retract_z, top_z, bottom_z,
         stepdown, feed, plunge_feed, climb, optimal_load, blend_turns,
-        blend_radius, tilt, rest, strategy, stepover, entry, helix_radius, links }
+        blend_radius, tilt, rest, corner_relief: corner_relief.clone(), strategy, stepover, entry, helix_radius, links }
 }
 
 #[test]
@@ -394,7 +395,7 @@ fn guide_pocket_variants_preserve_rest_parameters() {
     camcraft_app::project::load_noted(&world, &workspace_root().join("examples/first-part.camproj")).unwrap();
     let entity = model::find_by_name(&world, "2D Pocket1").unwrap();
     let mut base = model::operation_of(&world, &entity).unwrap().params;
-    for expected in [None, Some(RestParams { previous_tool_diameter: 12.0,
+    for expected in [None, Some(RestParams { source: Default::default(), previous_tool_diameter: 12.0,
         previous_corner_radius: 1.0, previous_stock_to_leave: 0.2, allowance: 0.1 })] {
         let OpParams::Pocket { rest, .. } = &mut base else { panic!("guide pocket"); };
         *rest = expected;

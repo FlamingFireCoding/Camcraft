@@ -16,13 +16,13 @@ pub const SLOW_BINARIES: &[&str] = &[
 ];
 /// Crate dirs in dependency order. kernel builds a C chain (truck dev-dep) and its debug suites take
 /// about 3 min: batch runs them since #1702, so the post-merge gate finds a kernel failure before a cut.
-pub const BATCH_CRATES: &[&str] = &["geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app"];
+pub const BATCH_CRATES: &[&str] = &["geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app", "gpu"];
 pub const ALL_CRATES: &[&str] = &[
-    "geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app", "ui",
+    "geometry", "kernel", "cl", "tools", "post", "sim", "motion", "app", "gpu", "ui",
 ];
 /// A touch to a shared crate (or the workspace manifest) makes quick a batch.
 pub const SHARED: &[&str] = &["geometry", "cl"];
-pub const CLIPPY: &[&str] = &["geometry", "cl", "tools", "post", "sim", "motion", "app", "ui"];
+pub const CLIPPY: &[&str] = &["geometry", "cl", "tools", "post", "sim", "motion", "app", "gpu", "ui"];
 pub const J: &str = "6";
 pub const T: &str = "--test-threads=6";
 
@@ -148,11 +148,12 @@ pub fn debug_build(dirs: &[&str]) -> Step {
 }
 
 /// One debug `--no-run` prebuild step for a single crate `d`, keeping its own feature resolution and
-/// CWD (`crates/ui` for `ui`) so later suite steps reuse the compiled artifacts (#2727).
+/// CWD (`crates/ui` for `ui`) so later suite steps reuse the compiled artifacts (#2727). Its JSON
+/// messages name the test executables, and the suite steps of `d` then start those without cargo (#1951).
 pub fn debug_build_crate(d: &str) -> Step {
     Step::new(
         format!("debug build: {d} (--no-run)"),
-        &["test", "-j", J, "-p", &pkg(d), "--no-run"],
+        &["test", "-j", J, "-p", &pkg(d), "--no-run", crate::direct::JSON],
         d,
     )
 }

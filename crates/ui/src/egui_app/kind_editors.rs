@@ -40,7 +40,9 @@ pub(super) fn roughing2d_pane(
     mut troch: Option<(&mut camcraft_app::machining2d::AdaptiveMethod, &mut camcraft_app::machining2d::AdaptiveTrochParams)>,
     links: &mut camcraft_app::links::Links,
     arc: (&mut bool, &mut Option<f64>),
+    corner_relief: &mut camcraft_app::machining2d::CornerRelief,
     tilt: &mut Option<Tilt>,
+    pass_start: Option<&mut camcraft_app::machining2d::PassStart>,
 ) {
     if tab == SEC_HEIGHTS {
         orientation_editor(ui, u, tilt);
@@ -64,10 +66,22 @@ pub(super) fn roughing2d_pane(
         if optimal_load.is_none() {
             prop_row(ui, "Stepover", |ui| num(ui, u, stepover));
         }
+        // #3316: the shared pass-order row; the kinds that own it pass it.
+        if let Some(s) = pass_start {
+            super::pass_start_row::pass_start_row(ui, tag, s);
+            // #3355: the Trochoidal loops have no ring order; said by name.
+            if trochoidal && *s != camcraft_app::machining2d::PassStart::Auto {
+                consequence(ui, super::pass_start_row::TROCH_PASS_START_REFUSED);
+            }
+        }
         prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
         arc_turn_rows(ui, u, "Arc turns at corners", arc.0, arc.1);
         if trochoidal && *arc.0 {
             consequence(ui, "arc turns are not available with the Trochoidal method: the operation is refused");
+        }
+        corner_relief_rows(ui, world, op_ctx, tag, corner_relief);
+        if trochoidal && !corner_relief.is_off() {
+            consequence(ui, "corner relief is not available with the Trochoidal method: the operation is refused");
         }
         match optimal_load {
             Some(m) => super::load_field::optimal_load_field(ui, m),
@@ -81,7 +95,7 @@ pub(super) fn roughing2d_pane(
             adaptive_troch_passes(ui, u, t);
         }
     } else if tab == SEC_LEADS {
-        lead_page::leads_tab(ui, u, tag, Some((entry, helix_radius)), links);
+        lead_page::leads_tab_with_retract(ui, u, tag, Some((entry, helix_radius)), links, retract_z.is_some());
     } else if tab == SEC_FEEDS {
         prop_row(ui, "Feed", |ui| num_feed(ui, u, feed));
         if let Some((m, t)) = troch
@@ -146,6 +160,63 @@ pub(super) fn arc_turn_rows(ui: &mut Ui, u: Unit, label: &str, on: &mut bool, ra
 /// The radius `arc_turn_rows` seeds when the user leaves `Tool radius`,
 /// mm: small enough for the common end mills.
 const ARC_RADIUS_SEED: f64 = 0.5;
+
+const RELIEF_KINDS: [&str; 3] = ["None", "Dogbone", "T-bone"];
+const TBONE_DIRS: [&str; 4] = ["Long edge", "Short edge", "Horizontal", "Vertical"];
+
+/// Corner relief controls (#2400) shared by Pocket, 2D Adaptive, and 2D Offset.
+/// A router option (#2410): drawn when the operation's machine offers it,
+/// and always when the operation already states a relief (never hidden).
+pub(super) fn corner_relief_rows(
+    ui: &mut Ui,
+    world: &flecs_ecs::prelude::World,
+    op_ctx: Option<&str>,
+    tag: &str,
+    relief: &mut camcraft_app::machining2d::CornerRelief,
+) {
+    use camcraft_app::machining2d::{CornerReliefKind, TBoneDirection};
+    use camcraft_app::router_offer::{offers, RouterOption};
+    if relief.is_off() && !offers(world, op_ctx, RouterOption::CornerRelief) {
+        return;
+    }
+    let before = match relief.kind {
+        CornerReliefKind::None => 0,
+        CornerReliefKind::Dogbone => 1,
+        CornerReliefKind::TBone => 2,
+    };
+    let mut idx = before;
+    let id_kind = format!("{tag}_corner_relief");
+    prop_row(ui, "Corner relief", |ui| combo(ui, &id_kind, &mut idx, &RELIEF_KINDS));
+    if idx != before {
+        relief.kind = match idx {
+            1 => CornerReliefKind::Dogbone,
+            2 => CornerReliefKind::TBone,
+            _ => CornerReliefKind::None,
+        };
+    }
+    if relief.kind == CornerReliefKind::TBone {
+        let d_before = match relief.tbone_direction {
+            TBoneDirection::LongEdge => 0,
+            TBoneDirection::ShortEdge => 1,
+            TBoneDirection::Horizontal => 2,
+            TBoneDirection::Vertical => 3,
+        };
+        let mut d_idx = d_before;
+        let id_dir = format!("{tag}_tbone_dir");
+        prop_row(ui, "T-bone direction", |ui| combo(ui, &id_dir, &mut d_idx, &TBONE_DIRS));
+        if d_idx != d_before {
+            relief.tbone_direction = match d_idx {
+                1 => TBoneDirection::ShortEdge,
+                2 => TBoneDirection::Horizontal,
+                3 => TBoneDirection::Vertical,
+                _ => TBoneDirection::LongEdge,
+            };
+        }
+    }
+    if !relief.overrides.is_empty() {
+        hint(ui, &format!("{} per-corner overrides active", relief.overrides.len()));
+    }
+}
 
 /// The names of 2D Adaptive's Method combo, in the combo's order
 /// (`AdaptiveMethod::ALL`).

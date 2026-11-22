@@ -111,7 +111,7 @@ fn batch_prebuild_leaves_suite_steps_fresh_with_truck_dev_dep() {
     write("crates/kernel/src/lib.rs", "pub fn k() -> bool { cfg!(feature = \"truck\") }\n");
     write("crates/geometry/Cargo.toml", "[package]\nname = \"camcraft-geometry\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[dependencies]\ncamcraft-kernel = { path = \"../kernel\" }\n");
     write("crates/geometry/src/lib.rs", "pub fn g() -> bool { camcraft_kernel::k() }\n");
-    for d in ["cl", "tools", "post", "sim", "motion"] {
+    for d in ["cl", "tools", "post", "sim", "motion", "gpu"] {
         write(&format!("crates/{d}/Cargo.toml"), &format!("[package]\nname = \"camcraft-{d}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"));
         write(&format!("crates/{d}/src/lib.rs"), "");
     }
@@ -128,6 +128,7 @@ fn batch_prebuild_leaves_suite_steps_fresh_with_truck_dev_dep() {
             .args(&build.args)
             .current_dir(&dir)
             .env_remove("CARGO_TARGET_DIR")
+            .stdout(std::process::Stdio::null()) // the JSON messages of the build (#1951)
             .status()
             .expect("run batch prebuild");
         assert!(st.success(), "prebuild {} failed", build.name);

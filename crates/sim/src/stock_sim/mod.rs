@@ -77,6 +77,7 @@ mod carry_side;
 mod columns;
 mod cut;
 mod dexel;
+mod laid_cylinder;
 mod dexel_ball;
 mod dexel_arc;
 // #541: the sinker electrode's box atom.
@@ -86,6 +87,7 @@ mod dexel_bull;
 mod dexel_outline;
 mod deviate;
 mod edge_break;
+mod corner_relief;
 mod wall_anchor;
 // #1595: the mark an Engrave or Trace declared.
 mod mark;
@@ -113,6 +115,8 @@ mod field_shell;
 mod field_solid;
 mod field_sweep;
 mod field_turn;
+// #1444: the undercut cutter's head and neck solids.
+mod field_undercut;
 mod gouge;
 mod hermite;
 mod kernel;
@@ -148,12 +152,15 @@ pub use dexel::{reach, Dexel};
 pub use dexel_box::{simulate_box, BOX_ARC_REFUSAL};
 pub use dexel_outline::{simulate_outline, OUTLINE_ARC_REFUSAL};
 pub use edge_break::credit_breaks;
+pub use corner_relief::credit_corner_reliefs;
 pub use wall_anchor::{models_a_bevel, on_walls};
 pub use mark::{credit_marks, Mark};
 // The floor a mark must leave on the part's underside (#1595).
 pub use crate::verify::MARK_FLOOR;
 pub use cut_twin::{cell_cut, from_ordered_bits, ordered_bits, TileChord, TwinChord, TwinTool, TWIN_ULPS};
-pub use cut_twin_work::{run_twin, twin_cut, twin_work, TwinWork, WorkItem, TWIN_MAX_CELLS_PER_CHORD};
+pub use cut_twin_work::{
+    run_twin, twin_cut, twin_items, twin_work, TwinItem, TwinWork, WorkItem, TWIN_MAX_CELLS_PER_CHORD,
+};
 pub use field::SdfField;
 pub use field_body::Lattice;
 pub use field_carry::{box_signed, CarriedField, Clip, ClipRefusal};

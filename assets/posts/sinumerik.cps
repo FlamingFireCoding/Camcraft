@@ -101,6 +101,7 @@ function block(words) {  // one numbered line per block - the DIN law
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("; " + s);
 }
@@ -248,6 +249,8 @@ function joinDash(parts) {  // the non-empty parts, " - " between
   return a.join(" - ");
 }
 function note(s) { writeln("; " + s); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
@@ -666,6 +669,9 @@ function onLinear() {
 function onCircular() {
   startPreamble();
   compRefuse("an arc");
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord);
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (!tiltOk(properties) || chainCut()) return;
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;
   var p = properties;
@@ -791,7 +797,10 @@ function onCycle() {
   // Manual (SINUMERIK ONE / 840D sl / 828D, 07/2021), section 6.3, lists
   // no P in its G73 and G83 formats; an unverified G73 dwell is refused
   // above (#2354). G84 and G85 dwells are refused above (#2357).
-  if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
+  // #1480: Siemens ISO dialects Function Manual (07/2021), table 6-1,
+  // page 95, gives G89 dwell in milliseconds. Section 6.3.1 says cycle
+  // parameters are modal: write P0 when a Back bore has no dwell.
+  if ((ms > 0 && g !== "G73" && g !== "G84") || g === "G89") words.push("P" + ms);
   words.push(fw(p.FeedRate));
   block(words);
   cycX = p.X; cycY = p.Y; cycR = p.R;
