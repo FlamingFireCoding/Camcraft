@@ -1,5 +1,5 @@
 {
-  "version": 76,
+  "version": 77,
   "units": "in",
   "machine": {
     "path": "built-in: Tormach 770MX + microARC 4",
@@ -86,13 +86,7 @@
       "safe_retract_z": 0.0,
       "spindle_mount": "BT30",
       "default_holder": "BT30 ER20",
-      "post": "Tormach PathPilot",
-      "reserved_tools": [
-        {
-          "number": 99,
-          "use": "probe"
-        }
-      ]
+      "post": "Tormach PathPilot"
     }
   },
   "post": {

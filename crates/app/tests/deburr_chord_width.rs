@@ -97,8 +97,8 @@ fn main_v75_deburr_migrates_once_and_preserves_the_machine_controller() {
     );
     let saved: Value =
         serde_json::from_str(&project::save_text(&world).expect("save")).expect("JSON");
-    assert_eq!(
-        saved["version"], 76,
+    assert!(
+        saved["version"].as_u64().is_some_and(|v| v >= 76),
         "v75 readers must refuse the new width meaning"
     );
     let machine = &saved["machine"]["machine"];

@@ -19,5 +19,5 @@
     "Y": { "coordinate": 1 },
     "Z": { "coordinate": 2 }
   } } },
-  "tooling": { "reserved": [{ "number": 99, "use": "probe" }], "number_of_tools": 4 }
+  "tooling": { "number_of_tools": 4 }
 }

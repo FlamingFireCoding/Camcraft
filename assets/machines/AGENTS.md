@@ -328,6 +328,19 @@ unstated capability into existence.
   change, and a holder that cannot take the tool's shank is left off
   with a named note. `tooling.mount_source` is free text the reader
   never reads: the public page the mount was taken from.
+- `tooling.reserved` (#2604, optional list): controller tool selectors
+  that a cutting tool must not take. Each entry is
+  `{ "number": n, "name": "...", "use": "probe" | "tool_setter" }`.
+  State `number`, `name`, or both. `number` is a whole number in
+  1-99999 (T0 clears the spindle). `name` is printable ASCII with no
+  surrounding spaces, and compares without ASCII case. The reader refuses
+  BY NAME (`tooling.reserved[i]...`): an unknown key, a missing selector,
+  another `use`, a number out of range, and a number or name stated two
+  times. Absent reserves nothing. A cutting tool on a reserved number or
+  name refuses at each tool command, at verify and at post; a probe can
+  take a `probe` entry. A shipped file states an entry only where a
+  public manual of the maker names the pocket: name that document in the
+  file.
 
 ## What the script sees
 

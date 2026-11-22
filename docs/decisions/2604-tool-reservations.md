@@ -9,8 +9,10 @@ New tools use the active machine's reservations. Edits check the machines
 that use the tool. Existing tools keep their numbers. A probe takes its
 declared pocket; an occupied probe pocket refuses. There is no tool-setter
 tool kind, so neither cutters nor probes can take a setter reservation.
-The 18 shipped Tormach mill and router files reserve T99. Generic, lathe
-and plasma machines reserve nothing unless their file states a reservation.
+No shipped machine file reserves a pocket yet. A machine reserves only
+what its file states. A shipped file states a reservation only where a
+public manual of the maker names the pocket, and the file names that
+document.
 
 Existing commands and their MCP tools share the guard. Verification and
 posting refuse unsafe assignments, including old documents. The standalone
@@ -22,17 +24,22 @@ built once, so these checks do not repeat full scans.
 
 **Why:** A tool call must not select a probe or setter for cutting. Machine
 data states those identities; a guessed convention cannot establish them.
-The stored machine field remains in the public project fixture. Its exact
-round-trip assertion stays intact. This branch stacks on #3157 because both
-changes edit `parse_mch_with`.
 
 **Dropped:** Silent renumbering could change an existing machine assignment.
 Inferring T1 for other manufacturers could reserve a real cutting tool.
+T99 in the 18 Tormach mill and router files was dropped at review: no
+public Tormach document that names T99 as the probe pocket was cited,
+and the earlier #362 research calls it a convention of the probing
+screens only. A follow-up adds it with the cited document.
 A new command would duplicate the existing edit path. A reserved name does
 not select a controller dialect; this change does not alter emitted syntax
 or infer name-based tool calls.
 
 **Cost to change later:** More reservation uses need explicit tool-kind
 rules and tests. Controller name-based calls need a separate post change.
-Changing the stored shape needs project compatibility handling. Existing
+Project version 77 marks the stored `reserved_tools` field. An older
+reader refuses the file. It does not drop the reservation and post a
+cutting tool at a reserved pocket. A v76 file steps up unchanged.
+PR #3485 also asks for a version step; the PR that merges second takes
+the next number. Changing the stored shape needs a new version step. Existing
 machine assignments must remain explicit during either change.

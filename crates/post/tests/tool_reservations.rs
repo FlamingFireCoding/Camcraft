@@ -82,20 +82,22 @@ fn invalid_stored_reservations_make_machine_insane() {
 }
 
 #[test]
-fn shipped_tormach_mills_reserve_t99_for_the_probe() {
+fn shipped_machines_reserve_no_pocket_without_a_cited_manual() {
+    // No public maker manual is cited for a reserved pocket yet (#2604
+    // review). A shipped reservation needs that source, and this pin then
+    // names the file and its document.
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/machines");
-    for stem in [
-        "tormach-770m", "tormach-770m-plus", "tormach-770mx", "tormach-770mx-ml",
-        "tormach-770mx-microarc4", "tormach-1100m", "tormach-1100m-plus", "tormach-1100mx",
-        "tormach-1500mx", "tormach-pcnc440", "tormach-pcnc770", "tormach-pcnc770-s3",
-        "tormach-pcnc1100-s1", "tormach-pcnc1100-s2", "tormach-pcnc1100-s3",
-        "tormach-24r", "tormach-xstech", "tormach-xstech-pro",
-    ] {
-        let text = std::fs::read_to_string(directory.join(format!("{stem}.mch"))).expect("shipped machine");
-        let machine = parse_mch(&text).expect("valid shipped machine");
-        let stored = serde_json::to_value(machine).expect("stored machine");
-        let reserved = stored.get("reserved_tools").and_then(Value::as_array);
-        assert!(reserved.is_some_and(|entries| entries.contains(&json!({"number": 99, "use": "probe"}))),
-            "{stem} must reserve T99 for the probe");
+    let mut read = 0;
+    for entry in std::fs::read_dir(&directory).expect("shipped machines") {
+        let path = entry.expect("machine entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("mch") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("shipped machine");
+        let value: Value = serde_json::from_str(&text).expect("machine JSON");
+        assert!(value.pointer("/tooling/reserved").is_none(),
+            "{} reserves a pocket with no cited public manual", path.display());
+        read += 1;
     }
+    assert!(read > 18, "read only {read} machine files");
 }
