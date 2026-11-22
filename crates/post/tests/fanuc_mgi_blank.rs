@@ -106,8 +106,39 @@ fn a_z_bar_on_the_origin_posts_g1900() {
         .replace("PARAM StockXYRight 50\n", "PARAM StockXYRight 30\n");
     let (p, w) = post(&s, ON);
     assert!(w.is_empty(), "{w:?}");
-    assert!(p.lines().any(|l| l == "G1900 D60. L30. K30."), "{p}");
+    assert!(p.lines().any(|l| l == "G1900 D60. L30. K0."), "{p}");
     assert!(line_of(&p, "G1900") < line_of(&p, "G90"), "{p}");
+}
+
+#[test]
+fn a_z_bar_with_the_origin_below_its_top_posts_the_end_face_distance() {
+    // Top face Z12, origin Z5: K is 7, independent of the lower end Z-18.
+    let s = stream(
+        "PARAM StockShape cylinder-z\nPARAM StockShapeBottom -18\nPARAM StockShapeDiameter 60\n",
+    )
+    .replace("PARAM StockXYLeft -50\n", "PARAM StockXYLeft -30\n")
+    .replace("PARAM StockXYRight 50\n", "PARAM StockXYRight 30\n")
+    .replace("PARAM StockZTop 0\n", "PARAM StockZTop 12\n")
+    .replace("PARAM OriginZ 0\n", "PARAM OriginZ 5\n");
+    let (p, w) = post(&s, ON);
+    assert!(w.is_empty(), "{w:?}");
+    assert!(p.lines().any(|l| l == "G1900 D60. L30. K7."), "{p}");
+}
+
+#[test]
+fn a_z_bar_requiring_negative_k_posts_a_comment() {
+    let s = stream(
+        "PARAM StockShape cylinder-z\nPARAM StockShapeBottom -30\nPARAM StockShapeDiameter 60\n",
+    )
+    .replace("PARAM StockXYLeft -50\n", "PARAM StockXYLeft -30\n")
+    .replace("PARAM StockXYRight 50\n", "PARAM StockXYRight 30\n")
+    .replace("PARAM OriginZ 0\n", "PARAM OriginZ 5\n");
+    let (p, w) = post(&s, ON);
+    assert!(w.is_empty(), "{w:?}");
+    assert!(!p.contains("G1900"), "{p}");
+    let at = line_of(&p, "(NO BLANK BLOCK - BAR END FACE BELOW THE WORK ORIGIN)")
+        .unwrap_or_else(|| panic!("a refusal comment: {p}"));
+    assert!(Some(at) < line_of(&p, "G90"), "{p}");
 }
 
 #[test]

@@ -576,7 +576,7 @@ function unitBlock() {
 // (B-63874EN), behaviour only: G1902 B D H is the block's X / Y / Z size
 // and I J K the work origin's X / Y / Z distance from the block's minimum
 // corner; G1900 D L K is a round bar along Z (diameter, length, the work
-// origin's Z distance from the bar's lower end) with its axis on the work
+// positive-Z end face's distance from the work origin) with its axis on the work
 // origin. Written once, after G20 / G21 and before the first operation's
 // G90 / G54 and tool change. A stock no block describes (PARAM StockShape)
 // gets a comment that says why, never a block that draws another blank.
@@ -602,6 +602,7 @@ function manualGuideBlank() {
   if (!why && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6) why = "WCS ROTATED ABOUT Z";
   if (!why && shape === "cylinder-z") {
     if (!(dia > 0)) why = "BAR DIAMETER NOT STATED";
+    else if (!(hi[2] - orgZ >= 0)) why = "BAR END FACE BELOW THE WORK ORIGIN";
     else if (Math.abs((lo[0] + hi[0]) / 2 - orgX) > 0.001 || Math.abs((lo[1] + hi[1]) / 2 - orgY) > 0.001) {
       why = "BAR AXIS NOT ON THE WORK ORIGIN";
     }
@@ -611,7 +612,7 @@ function manualGuideBlank() {
     block(["G1902", "B" + fu(hi[0] - lo[0]), "D" + fu(hi[1] - lo[1]), "H" + fu(hi[2] - lo[2]),
       "I" + fu(orgX - lo[0]), "J" + fu(orgY - lo[1]), "K" + fu(orgZ - lo[2])]);
   } else {
-    block(["G1900", "D" + fu(dia), "L" + fu(hi[2] - lo[2]), "K" + fu(orgZ - lo[2])]);
+    block(["G1900", "D" + fu(dia), "L" + fu(hi[2] - lo[2]), "K" + fu(hi[2] - orgZ)]);
   }
 }
 
