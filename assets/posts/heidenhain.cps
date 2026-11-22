@@ -563,6 +563,9 @@ function verticalArc(p) {
   var ccw = p.CircularDirection !== "CW";
   var d = ccw ? a1 - a0 : a0 - a1;
   d = ((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  // #3442: ends within 1e-5 mm are a full turn stated as one record (the
+  // band of arcFateOf), never a sweep of float noise.
+  if (Math.abs(u1 - u0) < 1e-5 && Math.abs(v1 - v0) < 1e-5) d = 2 * Math.PI;
   var n = 1;
   if (has(r) && has(d) && r > 1e-12 && d > 0) {
     var step = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - Math.min(ARC_CHORD_TOL / r, 1))));

@@ -13,8 +13,12 @@ function and obeys the answer:
 
 - `"arc"` - the written in-plane ends differ: the arc posts as before.
   Also when the ends coincide on a record that turns more than half a
-  circle, or whose ends are equal in the stream: the full circle is that
-  arc within the output resolution, and the dialect writes it as before.
+  circle, or whose ends are within 1e-5 mm in the stream (the band
+  `emitArcWithRadius` uses, so float noise on a one-record full helical
+  turn never makes it a straight move): the full circle is that arc
+  within the output resolution, and the dialect writes it as before.
+  Also when the record states no centre: the script's own refusal by
+  name (sodick-wire, heidenhain DIN, tinyg) still runs.
 - `"linear"` - the ends coincide on a short arc, and the plane's normal
   axis (a helix) or a rotary still moves as written: the record posts
   as the script's own straight feed move (`onLinear`) to the end point.
