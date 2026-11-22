@@ -76,6 +76,9 @@ pub fn parse_gate(args: &[String]) -> Result<GateArgs, String> {
     if !g.covers.is_empty() && g.tier != "heavy" {
         return Err(format!("--covers applies to the heavy tier only, not '{}'\n{USAGE}", g.tier));
     }
+    if !g.covers.is_empty() && (!g.only.is_empty() || g.failed.is_some()) {
+        return Err(format!("--covers records a full heavy run: it does not take --only or --failed\n{USAGE}"));
+    }
     if g.tier == "test" && (!g.only.is_empty() || g.failed.is_some()) {
         return Err("--only and --failed select steps of quick, heavy, batch, light or release, not of 'gate test'".into());
     }

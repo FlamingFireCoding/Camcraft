@@ -168,18 +168,26 @@ Quick prints its selection before it runs:
   `cargo xtask gate heavy --base origin/main --covers <PR>:<head sha>
   [--covers ...]` in the trial tree of a merge wave. The `merge-ready`
   skill makes the tree and posts the record.
-  - The flag is repeatable and applies to the heavy tier only. A bad value
-    is refused with the usage text.
+  - The flag is repeatable and applies to the heavy tier only. A bad value,
+    and `--covers` with `--only` or `--failed`, is refused with the usage
+    text.
   - The tool refuses a sha that is not a commit, a head that is not an
     ancestor of `HEAD`, and a working tree with changes.
   - The plan header and the summary print `covers: #<PR> <sha>` for each
-    head and `tree: <HEAD^{tree}>`.
+    head, `tree: <HEAD^{tree}>` and `base: <ref> <merge-base sha>`.
   - A real run writes `covers.txt` to the log directory: the header, each
-    step with its result and note, the counts, the wall time and the
-    verdict. `--dry-run` prints the header and runs nothing.
+    step with its result and note, the counts (planned, ran, ok, failed),
+    the wall time and the verdict. The verdict is `PASS`, `FAIL`,
+    `INCOMPLETE` (a planned step did not run), `VOID` or `NO LANE` ("the
+    wave reaches no heavy lane"). Only `PASS` covers the heads.
+    `--dry-run` prints the header and runs nothing.
   - A wave record covers a PR only for the head that it names. A
     safety-floor PR is covered only if the trial tree contains its final
     head. "Not run" is never a pass.
+  - **Owed heavy result** (#3467): a review of a `P3` or lower PR can set
+    `merge-ready` with "not run - owed to the wave run before merge". The
+    merge waits for a green record that names the final head. A `P1` or
+    `P2` PR needs its heavy result before `merge-ready`.
 - When you move a test to a lane, the `#[test]` count before and after must
   be the same, and the ignored set keeps its golden asserts.
 

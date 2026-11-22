@@ -42,13 +42,23 @@ check makes the tree hash the tree that the run tested.
 - The rule text says "does not merge while not run on its final head"
   in place of "not ready while not run", because the wave run comes at
   merge time. The PR form keeps "before the PR is flagged ready".
-- The reviewer keeps its duty of #2568 (PR-reviewer step 5, pinned by
-  `runner_review_requires_heavy_lanes_without_author_results`): with no
-  author result and no wave record on the head, it runs the lanes, or
-  reports "heavy lanes not run" as a blocker. A wave record that names
-  the current head takes the place of the author result. A change that
-  lets a review defer the lanes to the wave run is a new rule for the
-  maintainer; it is not in this PR (follow-up #3467).
+- The reviewer keeps its duty of #2568 for a `P1` or `P2` PR
+  (PR-reviewer step 5, pinned by
+  `runner_review_requires_heavy_lanes_without_author_results`). A wave
+  record that names the current head takes the place of the author
+  result. The maintainer decided the `P3` and lower case in #3467 (the
+  entry below).
+- `--covers` refuses `--only` and `--failed`, and the record has the
+  planned step count beside the run count. A planned step that did not
+  run gives `INCOMPLETE`, and a plan with no step gives `NO LANE` ("the
+  wave reaches no heavy lane"). Only `PASS` covers a head. Reason: "not
+  run" is never a pass, also for one lane of a wave.
+- The record names the base (the merge base of `HEAD` and `--base`). If
+  `main` moves before the merges, the planner runs again, and a PR whose
+  trial merge is no longer clean leaves the wave.
+- A wave-2 PR keeps its heavy result through a `SAME` or `MECHANICAL`
+  refresh, as its review does ("A clean merge of main keeps its
+  review"). A `DELTA` or `NEW CODE` refresh needs a new result.
 - The attribution of a red step: the PR whose diff the red test reads;
   when that is not clear, the last such PR in the planner's order.
 - The tool does not make the trial tree and does not post the record.
@@ -69,3 +79,38 @@ check makes the tree hash the tree that the run tested.
 
 **Cost to change later.** Small. The flag is additive; without it,
 `gate heavy` works as before. The comment form is a skill text.
+
+## #3467 - A review can owe the heavy result to the wave run (P3 and lower)
+
+**The maintainer's words** (issue #3467, 2026-11-22, given in the
+question dialog):
+
+> Maintainer decision, 2026-11-22, given in the question dialog: **allowed for P3 and lower only.**
+>
+> - A review of a P3 or lower PR may set `merge-ready` while the heavy result says "not run - owed to the wave run before merge". The comment names the owed lanes.
+> - The merge (not the review) waits for a green run that covers the final head, with the `--covers <PR>:<sha>` record of #3460.
+> - A P1 or P2 PR keeps the strict rule: the heavy result on the head comes before the label `merge-ready`.
+> - The coordinator refuses to merge a PR with an owed heavy result until the covering record names the head.
+
+**Decided.** AGENTS.md "Heavy lanes at review" gets the stable rule
+**Owed heavy result**. PR-reviewer step 5 has one bullet for each
+priority. A `P3` or lower PR can get `merge-ready` with the fixed text
+"not run - owed to the wave run before merge" and the list of owed
+lanes. A `P1` or `P2` PR, or a PR with no priority label, keeps the
+strict rule. The `merge-ready` skill (step 4a, item 11) does not merge an
+owed PR until a green record names its final head. The `review-prs`
+skill (2e) says the same. The test
+`an_owed_heavy_result_is_allowed_for_p3_and_lower_only` pins both halves
+in PR-reviewer step 5, AGENTS.md and the `merge-ready` skill.
+
+**Why.** The review comes before the planner makes a wave. Without this
+rule each reviewer runs the lanes, and the wave run of #3460 saves time
+only for heads that change at merge time.
+
+**Taken unattended.** A PR with no priority label is read as strict
+(like `P1`/`P2`): an untriaged PR does not get the lenient rule.
+
+**Dropped.** The lenient rule for each priority: the maintainer kept the
+strict rule for `P1` and `P2`.
+
+**Cost to change later.** Small: rule text and one wording test.

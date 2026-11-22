@@ -232,7 +232,7 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
     let plan = match g.tier.as_str() {
         "heavy" => {
             if !g.covers.is_empty() {
-                let t = heavy_covers::check(root, &g.covers)?;
+                let t = heavy_covers::check(root, &g.covers, &g.base)?;
                 heavy_covers::header(&t).iter().for_each(|l| println!("{l}"));
                 trial = Some(t);
             }
@@ -303,7 +303,7 @@ fn gate(root: &Path, g: &GateArgs) -> Result<i32, String> {
         verdict::record(&run, lane, planned);
     }
     let covers = match &trial {
-        Some(t) => heavy_covers::write(&run, t)?,
+        Some(t) => heavy_covers::write(&run, t, plan.steps.len())?,
         None => Vec::new(),
     };
     let code = run.summary();

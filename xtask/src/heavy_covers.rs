@@ -42,17 +42,20 @@ fn git_status(root: &Path, args: &[&str]) -> Result<(i32, String), String> {
     Ok((out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).trim().to_string()))
 }
 
-/// The trial tree that a heavy run covers: each named head (full sha) and the hash of `HEAD^{tree}`.
+/// The trial tree that a heavy run covers: each named head (full sha), the hash of `HEAD^{tree}`, and
+/// the `--base` ref with the merge base of `HEAD` and that ref (the main that the tree was built on).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trial {
     pub covers: Vec<Cover>,
     pub tree: String,
+    pub base: String,
+    pub base_sha: String,
 }
 
 /// Checks the trial tree before the run. Refuses a sha that is not a commit, a head that is not an
 /// ancestor of `HEAD` (the tree lacks that PR's final head, so the run cannot cover it), and a working
 /// tree with changes (then `HEAD^{tree}` is not the tree that the run tests).
-pub fn check(root: &Path, covers: &[Cover]) -> Result<Trial, String> {
+pub fn check(root: &Path, covers: &[Cover], base: &str) -> Result<Trial, String> {
     let mut full = Vec::new();
     for c in covers {
         let (code, sha) = git_status(root, &["rev-parse", "--verify", "--quiet", &format!("{}^{{commit}}", c.sha)])?;
@@ -79,40 +82,81 @@ pub fn check(root: &Path, covers: &[Cover]) -> Result<Trial, String> {
     if code != 0 || tree.is_empty() {
         return Err("git rev-parse HEAD^{tree} failed: no tree hash for the record".into());
     }
-    Ok(Trial { covers: full, tree })
+    let (code, base_sha) = git_status(root, &["merge-base", base, "HEAD"])?;
+    if code != 0 || base_sha.is_empty() {
+        return Err(format!("no merge base of HEAD with '{base}': the trial tree must be built on {base}"));
+    }
+    Ok(Trial { covers: full, tree, base: base.to_string(), base_sha })
 }
 
-/// The header lines: one `covers: #<PR> <sha>` for each head, then `tree: <hash>`.
+/// The header lines: one `covers: #<PR> <sha>` for each head, `tree: <hash>`, then `base: <ref> <sha>`.
 pub fn header(t: &Trial) -> Vec<String> {
     let mut l: Vec<String> = t.covers.iter().map(|c| format!("covers: #{} {}", c.pr, c.sha)).collect();
     l.push(format!("tree: {}", t.tree));
+    l.push(format!("base: {} {}", t.base, t.base_sha));
     l
 }
 
-/// The text of `covers.txt`: the header, one line for each step (`lanes:`) and the counts.
-pub fn record(t: &Trial, steps: &[(String, bool, u64, String)], wall_min: f64, void: bool) -> String {
+/// The line for a plan with no step: the record says so, never `PASS` with 0 steps.
+pub const NO_LANE: &str = "the wave reaches no heavy lane";
+
+/// The verdict of a covered run. Not run is never a pass: a planned step that did not run (a stopped
+/// run, or a build failure that skipped the rest) gives `INCOMPLETE`.
+pub fn verdict(planned: usize, ran: usize, failed: usize, void: bool) -> &'static str {
+    if void {
+        "VOID"
+    } else if planned == 0 {
+        "NO LANE"
+    } else if failed > 0 {
+        "FAIL"
+    } else if ran < planned {
+        "INCOMPLETE"
+    } else {
+        "PASS"
+    }
+}
+
+/// One step of a covered run: name, ok, seconds, note.
+pub type StepResult = (String, bool, u64, String);
+
+/// The text of `covers.txt`: the header, one line for each step (`lanes:`), the counts and the verdict.
+pub fn record(t: &Trial, planned: usize, steps: &[StepResult], wall_min: f64, void: bool) -> String {
     let mut s = header(t).join("\n");
     s.push_str("\nlanes:\n");
+    if planned == 0 {
+        s.push_str(&format!("  {NO_LANE}\n"));
+    }
     for (name, ok, secs, note) in steps {
         let note = if note.is_empty() { String::new() } else { format!("  {note}") };
         s.push_str(&format!("  {:<4} {secs:>5}s  {name}{note}\n", if *ok { "ok" } else { "FAIL" }));
     }
     let bad = steps.iter().filter(|s| !s.1).count();
-    s.push_str(&format!("counts: {} step(s), {} ok, {bad} failed\n", steps.len(), steps.len() - bad));
+    let ok = steps.len() - bad;
+    s.push_str(&format!("counts: {planned} planned, {} ran, {ok} ok, {bad} failed\n", steps.len()));
     s.push_str(&format!("wall: {wall_min:.1} min\n"));
-    s.push_str(if void { "verdict: VOID\n" } else if bad > 0 { "verdict: FAIL\n" } else { "verdict: PASS\n" });
+    s.push_str(&format!("verdict: {}\n", verdict(planned, steps.len(), bad, void)));
     s
 }
 
-/// Writes `covers.txt` into the run's log directory (not for a dry run) and returns the header lines,
-/// so that the caller prints them again under the summary.
-pub fn write(run: &Run, t: &Trial) -> Result<Vec<String>, String> {
-    if !run.dry {
-        let steps: Vec<(String, bool, u64, String)> =
-            run.done.iter().map(|d| (d.name.clone(), d.ok, d.secs, d.note.clone())).collect();
-        let text = record(t, &steps, run.clock.elapsed().as_secs_f64() / 60.0, run.void.is_some());
-        let path = run.log_dir.join("covers.txt");
-        std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))?;
+/// The lines printed under the summary: the header, the counts and the verdict. A real run also writes
+/// `covers.txt` into the run's log directory; a dry run writes nothing and says that nothing ran.
+pub fn write(run: &Run, t: &Trial, planned: usize) -> Result<Vec<String>, String> {
+    let mut lines = header(t);
+    if run.dry {
+        lines.push(format!("planned: {planned} step(s), dry run: nothing ran"));
+        if planned == 0 {
+            lines.push(NO_LANE.to_string());
+        }
+        return Ok(lines);
     }
-    Ok(header(t))
+    let steps: Vec<StepResult> = run.done.iter().map(|d| (d.name.clone(), d.ok, d.secs, d.note.clone())).collect();
+    let text = record(t, planned, &steps, run.clock.elapsed().as_secs_f64() / 60.0, run.void.is_some());
+    let path = run.log_dir.join("covers.txt");
+    std::fs::write(&path, &text).map_err(|e| format!("write {}: {e}", path.display()))?;
+    lines.extend(text.lines().filter(|l| l.starts_with("counts:") || l.starts_with("verdict:")).map(String::from));
+    if planned == 0 {
+        lines.push(NO_LANE.to_string());
+    }
+    lines.push(format!("record: {}", path.display()));
+    Ok(lines)
 }
