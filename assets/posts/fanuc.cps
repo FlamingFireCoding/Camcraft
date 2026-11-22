@@ -60,6 +60,9 @@ declaredOptions = {
     default: "G28",
   },
   useRadiusArcs: { type: "boolean", title: "Use radius (R) arcs", group: "Cycles & arcs", description: "Write R word instead of I/J/K arc centers", default: false },
+  // #2603: per-operation AI contour control, as a 31i-A5 owner writes it.
+  aiContourControl: { type: "boolean", title: "AI contour control (G05.1)", group: "Smoothing", description: "Write G05.1 Q1 R<level> at each operation start and G05.1 Q0 at its end - needs the control's AI contour control option", default: false },
+  aiContourLevel: { type: "integer", title: "AI contour control level", group: "Smoothing", description: "The R word of G05.1 Q1 (machining condition level 1-10)", min: 1, max: 10, default: 5 },
 };
 
 // #1388: optional explanations; conservative house budgets, not control maxima.
@@ -659,14 +662,37 @@ function onToolChange(number, name) {
 // form is stated per control (#614's Doosan DNM).
 var smoothNamed = false;
 function smoothOn() {
+  if (optBool("aiContourControl", false)) return;  // #2603: aiccOn() writes the words
   if (!(smoothTol > 0) || smoothNamed) return;
   note("SMOOTHING NOT WRITTEN - G5.1 STATES NO TOLERANCE");
   smoothNamed = true;
 }
 function smoothOff() {
-  smoothActive = false;
+  aiccOff();
   smoothTol = 0;
   smoothMode = "";
+}
+// #2603: AI contour control on the user's ask (aiContourControl), per
+// operation: G05.1 Q1 R<level> after the preamble (the R level is the
+// control's machining condition, 1-10, not a tolerance), G05.1 Q0 at the
+// operation's end or before a canned cycle (the Doosan DNM manual cited
+// in doosan-dnm.cps requires Q0 before G73-G89). A section with the
+// spindle stopped (a touch probe, G31 skip) never arms it.
+var aiccRefused = false;
+function aiccOn() {
+  if (!optBool("aiContourControl", false) || !spindleOn || probeSection || smoothActive) return;
+  var lvl = optInt("aiContourLevel", 5);
+  if (!(lvl >= 1 && lvl <= 10)) {
+    if (!aiccRefused) msg("AI contour control level " + lvl + " - G05.1 Q1 takes R1 to R10; not written");
+    aiccRefused = true;
+    return;
+  }
+  block(["G05.1", "Q1", "R" + lvl]);
+  smoothActive = true;
+}
+function aiccOff() {
+  if (smoothActive) block(["G05.1", "Q0"]);
+  smoothActive = false;
 }
 
 // #2769: Manual Guide i draws its simulation's blank from one blank block
@@ -756,6 +782,7 @@ function startPreamble() {
     block(["G68", "X0.", "Y0.", "R" + fa(wcsYaw)]);
     wcsRotActive = true;
   }
+  aiccOn();                  // #2603: after G68, so G68 / G69 stay outside AICC
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -794,9 +821,9 @@ function endPreamble() {
   if (!sectionOpen) return;
   restorePlane();            // M11.2 A: the plane never leaks past its section
   sectionOpen = false;
-  smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  smoothOff();               // #2603: G05.1 Q0 after G80, before G69 and M9/M5
   if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
   wcsYaw = 0;
   wcsRotMode = "";
@@ -1164,6 +1191,7 @@ function onCycle() {
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
+  aiccOff();                 // #2603: no canned cycle under AI contour control
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
   // #2360 (as #2350 for Haas): P is modal in the dwell cycles, so a
   // changed dwell reopens the cycle and each hole posts its own P.
