@@ -1237,6 +1237,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 Some((forbidden, _)) => Some(super::finish_clip::centre_area(&region, &forbidden, d * 0.5)?),
                 None => None,
             };
+            let clip = super::avoid::finish_centre_area(
+                clip, &region, avoid_spec.as_ref(), &fp, yaw_ctx.as_ref().map(|(yaw, _)| *yaw),
+            )?;
             // The land model (#1196): the path is PLANNED on the model
             // plus lids over its closed openings narrower than the
             // stated width - only ever added facets, so the path can
@@ -1345,11 +1348,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // solid's top (infinite for a centre-cutting tool, so
                 // its re-entry stays the plunge it may make).
                 match &clip {
-                    Some(c) => super::finish_clip::clip_path(whole, c, fp, solid_top),
+                    Some(c) => super::finish_clip::clip_path(whole, c, fp, solid_top).map_err(|e| {
+                        match avoid_spec.as_ref() {
+                            Some(spec) => GenError::Invalid(format!(
+                                "3D Finish cannot keep clear of 'Do not touch' {}: {e}", spec.names_list()
+                            )),
+                            None => e,
+                        }
+                    }),
                     None => Ok(whole),
                 }
             };
             let mut path = finishing3d::center_cut_guard(tool.center_cutting, &solid, &fp, run)?;
+            if clip.is_some() && let Some(spec) = &avoid_spec {
+                path.notes.push(format!(
+                    "3D Finish keeps clear of 'Do not touch' {}; material beside these items may remain unfinished",
+                    spec.names_list()
+                ));
+            }
             if let Some((f, w)) = &land {
                 path.notes.push(f.note(*w));
             }
@@ -3345,10 +3361,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     } else {
         path
     };
-    // Judge the final Trace after fixture routing, in the same frame as
+    // Judge the final Trace or Finish3D after fixture routing, in the same frame as
     // the protected geometry. All following laws see any elevated links.
-    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. })) {
-        super::avoid::protect_trace(&mut path, &spec, frame.is_none(), z_ceiling)?;
+    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. } | OpParams::Finish3D { .. })) {
+        super::avoid::protect_path(&mut path, &spec, frame.is_none(), z_ceiling, params.kind())?;
     }
     let stl = stock_to_leave_of(&params);
     // The 2D kinds' depth-aware verify (the silent-gouge fix): a flat

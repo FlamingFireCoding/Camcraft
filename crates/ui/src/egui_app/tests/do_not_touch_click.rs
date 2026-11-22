@@ -1,5 +1,5 @@
 //! #3335: real viewport clicks fill the Boundaries "Do not touch" group of
-//! 2D Offset and Trace operations. The click goes through the shell's own pointer route
+//! 2D Offset, Trace and Finish3D operations. The click goes through the shell's own pointer route
 //! (`interact::pick_at` -> `feature_click::click` -> `take_pick`), not a
 //! direct `take_pick` call: a face click and an edge click each add one row,
 //! the status line names the pick, and the row's remove button takes it
@@ -9,7 +9,7 @@
 //! material consulted.
 //! Gate map (M4.4): covers ui::interact, ui::feature_click, ui::boundary_draft, ui::egui_app::boundary.
 
-use camcraft_app::commands::ImportModel;
+use camcraft_app::commands::{AddTool, ImportModel};
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::operation::{self, FeatureSel, GeoSel, OpType};
 
@@ -45,19 +45,33 @@ fn dnt(h: &Harness<'static, ShellUi>) -> Vec<GeoSel> {
 /// the Top view in orthographic framing the block.
 fn armed_operation(kind: OpType) -> Harness<'static, ShellUi> {
     let mut h = shell_harness();
-    h.set_size(egui::vec2(1440.0, 1100.0));
+    // Finish3D has more geometry controls above the protected rows.
+    // Keep both rows and their remove buttons inside the test viewport.
+    let height = if kind == OpType::Finish3D { 1400.0 } else { 1100.0 };
+    h.set_size(egui::vec2(1440.0, height));
     {
         let st = &mut h.state_mut().state;
         let block = cube(Point3::new(X0, 0.0, 0.0), Point3::new(X0 + 30.0, 30.0, TOP));
         st.history.execute(&st.world, ImportModel::from_mesh("guard", block));
         let seed = model::find_by_name(&st.world, "Contour1").and_then(|e| model::operation_of(&st.world, &e)).expect("seed op");
+        let tool = if kind == OpType::Finish3D {
+            let ball = camcraft_app::tools::catalog().into_iter()
+                .find(|(name, _)| *name == "BN-0600").expect("catalog ball tool").1;
+            st.history.execute(&st.world, AddTool::new(&st.world, "ProtectedBall", ball).expect("add ball tool"));
+            "ProtectedBall".to_owned()
+        } else {
+            seed.tool.clone()
+        };
         st.pending.push_back(CommandKind::CreateOperation {
             name: "Protected1".into(),
-            tool: seed.tool.clone(),
+            tool,
             src: SrcRef::Stock,
             params: operation::retype_params(&seed.params, kind.ordinal()),
         });
         st.drain_actions();
+        let saved = model::find_by_name(&st.world, "Protected1")
+            .and_then(|e| model::operation_of(&st.world, &e)).expect("created protected operation");
+        assert_eq!(saved.params.kind(), kind, "the fixture creates the requested operation kind");
         crate::actions::target(st, UiTarget::Operation("Protected1".into()));
     }
     h.run_steps(3);
@@ -113,4 +127,9 @@ fn do_not_touch_takes_viewport_clicks_in_models_mode() {
 #[test]
 fn trace_takes_a_protected_face_and_edge_by_viewport_click() {
     face_then_edge(armed_operation(OpType::Trace));
+}
+
+#[test]
+fn finish3d_takes_a_protected_face_and_edge_by_viewport_click() {
+    face_then_edge(armed_operation(OpType::Finish3D));
 }
