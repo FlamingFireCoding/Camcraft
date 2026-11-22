@@ -25,8 +25,8 @@ pub(crate) fn op_icon(kind: OpType) -> Icon {
         OpType::VCarve => Icon::VCarve,
         OpType::Chamfer2D => Icon::Chamfer2D,
         OpType::Deburr => Icon::Deburr,
-        // #1894: the same break, the axis tilted onto it.
-        OpType::MultiAxisDeburr => Icon::Deburr,
+        // #1894: the break with the axis tilted onto it - its own glyph.
+        OpType::MultiAxisDeburr => Icon::MultiAxisDeburr,
         OpType::Circular => Icon::Circular,
         OpType::PlasmaProfile => Icon::PlasmaProfile,
         OpType::WireContour => Icon::WireContour,
