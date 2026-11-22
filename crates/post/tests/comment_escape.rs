@@ -305,5 +305,5 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         }
         seen += 1;
     }
-    assert_eq!(seen, 20, "every shipped post is checked");
+    assert_eq!(seen, 21, "every shipped post is checked");
 }
