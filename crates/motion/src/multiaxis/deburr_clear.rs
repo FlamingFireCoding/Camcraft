@@ -154,12 +154,11 @@ fn sweep_clear(
         let support = (z * na).max((z + length) * na) + radius * (dot(n, n) - na * na).max(0.0).sqrt();
         band.push(Plane { n, d: dot(n, sweep.0) + support + dot(n, sub(sweep.1, sweep.0)).max(0.0) });
         facets.iter().all(|f| {
-            let safe = intersection(f, &band).is_some_and(|poly| {
+            intersection(f, &band).is_some_and(|poly| {
                 // The flute continuation cuts the same requested wedge.
                 // True shank/holder bands never receive this exemption.
                 poly.is_empty() || (cutting && allow_break && poly.into_iter().all(|q| in_break(q, cr, setback, edge)))
-            });
-            safe
+            })
         })
     })
 }
