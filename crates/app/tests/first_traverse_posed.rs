@@ -117,21 +117,13 @@ fn world_on(rig: Rig) -> (World, History) {
     (world, h)
 }
 
-/// Generate "OP" from `src` and read its status and verdicts.
-fn generate(world: &World, h: &mut History, src: &str, p: OpParams) -> (OpStatus, Vec<Warning>) {
-    h.execute(world, CreateOperation::new(world, "OP", BALL, SrcRef::Entity(src.into()), p).expect("create"));
-    h.execute(world, GenerateOperation::new(world, "OP").expect("generate"));
-    let e = model::find_by_name(world, "OP").expect("op");
-    let cached = model::toolpath_of(world, &e).expect("cached path");
-    (camcraft_app::operation::status_of(world, &e), cached.warnings.clone())
-}
-
 fn first_low(warns: &[Warning]) -> Option<(f64, f64, bool)> {
     warns.iter().find_map(|w| match *w {
         Warning::FirstTraverseLow { height_mm, top_mm, fixture, .. } => Some((height_mm, top_mm, fixture)),
         _ => None,
     })
 }
+
 
 /// The rotary suite's turned bar laid along X in a 32 x 14 x 14 square
 /// bar of stock (x +-16, y +-7, z +-7), on `rig`'s two-rotary table.
