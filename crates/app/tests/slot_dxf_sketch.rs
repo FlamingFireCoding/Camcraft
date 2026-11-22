@@ -156,6 +156,29 @@ fn a_slot_outline_seeds_the_slot_and_cuts_it_to_size() {
     let (x0, x1, y0, y1) = cut_box(&path, 10.0);
     assert!((x0 - 42.0).abs() < 0.02 && (x1 - 78.0).abs() < 0.02, "length to size: {x0}..{x1}");
     assert!((y0 - 22.0).abs() < 0.02 && (y1 - 28.0).abs() < 0.02, "width to size: {y0}..{y1}");
+    // #2906 / #3278: the 10 mm ends are wider than the 4 mm tool, so a wall lap rides
+    // each round end on the 3 mm cutter-centre arc about its arc centre.
+    for (cx, cy) in [(45.0, 25.0), (75.0, 25.0)] {
+        let on_end = path.moves.iter().any(|m| {
+            m.arc.is_some_and(|c| near(c.center, cx, cy))
+                && [m.from, m.to].iter().all(|p| ((p.x - cx).hypot(p.y - cy) - 3.0).abs() < 1e-3)
+        });
+        assert!(on_end, "the round end about ({cx}, {cy}) is cut on its wall arc");
+    }
+    // No cutting move leaves the outline at the tool radius: each end point lies in the
+    // cutter-centre stadium (3 mm about the axis (45, 25) -> (75, 25)), which is convex, so
+    // each line stays in it; each arc turns on a 3 mm circle about an axis end.
+    for m in path.moves.iter().filter(|m| m.kind != MoveKind::Rapid && m.to.z < 10.0 - 1e-6 && m.from.z < 10.0 - 1e-6) {
+        for p in [m.from, m.to] {
+            let off = (p.x.clamp(45.0, 75.0) - p.x).hypot(p.y - 25.0);
+            assert!(off < 3.0 + 1e-3, "{m:?} leaves the outline: {off} mm off the axis");
+        }
+        if let Some(c) = m.arc {
+            let r = (m.from.x - c.center.x).hypot(m.from.y - c.center.y);
+            assert!(near(c.center, 45.0, 25.0) || near(c.center, 75.0, 25.0), "{m:?}: an arc off the round ends");
+            assert!(r < 3.0 + 1e-3, "{m:?}: an arc of radius {r} leaves the outline");
+        }
+    }
     write_golden("slot_dxf_outline.cl", &gen_to_cltext(&path));
 
     let sim = simulate_document(&world).expect("simulate on the stock, with no solid model");
