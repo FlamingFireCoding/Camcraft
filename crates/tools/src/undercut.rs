@@ -139,6 +139,14 @@ pub fn refusal(tool: &Tool) -> Option<String> {
                     "a lollipop cutter's flute length {fl} mm must be from {r} mm (the ball's centre) to {meet:.3} mm (where the {sd} mm neck leaves the ball)"
                 ));
             }
+            // The stated cutter ends at flute + shank. It must contain
+            // the whole ball, including the cap above the neck junction.
+            if tool.shank_len < d - fl {
+                return Some(format!(
+                    "a lollipop cutter's neck length (shank length) {} mm must be at least {} mm so flute + shank reaches the {d} mm ball top",
+                    tool.shank_len, d - fl
+                ));
+            }
             None
         }
         _ => None,
@@ -189,7 +197,7 @@ pub fn cutter(kind: ToolKind, d: f64, head_h: f64, neck_d: f64, neck_len: f64, a
 /// upper hemisphere. The raised band encloses the whole ball (and the
 /// neck below the pole, which is narrower). The shank band shrinks by
 /// the same amount, so the neck top and the holder stay where they
-/// are; a neck too short for that keeps no shank band. Every other
+/// are; an accepted stack reaches at least the ball's pole. Every other
 /// tool, and a refused head, reads [`Tool::geom`] unchanged.
 #[must_use]
 pub fn fixture_geom(tool: &Tool) -> ToolGeom {

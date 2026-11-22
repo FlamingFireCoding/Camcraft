@@ -45,3 +45,17 @@
 - Draw the upper ball only in the preview and not in the cutter law. Then the stored cutter outline would refuse the shape that the laws read.
 
 **Cost to change later:** Low. Each choice is one function with its own pins.
+
+## #1810 review fix: a lollipop stack must contain the whole ball
+
+**Decided:** Refuse a lollipop when flute length plus neck length is less than the ball diameter. Name the neck length and ball top in the diagnostic. Keep the drawn-cutter length law at flute plus neck length. The exact ball-top boundary remains valid.
+
+**Why:** A 10 mm ball with a 5 mm flute length and a 2 mm neck ends at Z 7. Its analytic head reaches Z 10. A stack that reaches only the ball/neck junction still omits the upper cap. The record must contain the whole analytic head before use. Accepted stacks then draw the full ball united with the neck, with nondecreasing Z.
+
+**Considered and dropped:**
+
+- Require only the ball/neck junction. A stack that ends between the junction and the ball top still omits part of the head.
+- Extend the drawing beyond the stated stack. That changes the length law and moves the holder beyond its recorded position.
+- Clip the analytic head to the short stack. That silently changes the stated ball geometry.
+
+**Cost to change later:** Low. One record guard and its regression tests enforce the bound.
