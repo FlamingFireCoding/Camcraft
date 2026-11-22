@@ -11,6 +11,8 @@
 
 mod common;
 mod mcp_open;
+#[path = "mcp/trochoid_pass_start.rs"]
+mod trochoid_pass_start;
 
 use camcraft_app::mcp::{self, Server};
 

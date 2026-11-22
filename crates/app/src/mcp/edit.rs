@@ -66,6 +66,7 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
         let reason = match base {
             OpParams::Face { .. } => Some("Face has no pass order: its rows run edge to edge across the face, so there is no inside or outside to start from"),
             OpParams::Slot { .. } => Some("Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows."),
+            OpParams::TrochoidalSlot { .. } => Some(operation::TROCHOIDAL_SLOT_NO_PASS_ORDER),
             _ => None,
         };
         if let Some(reason) = reason {
