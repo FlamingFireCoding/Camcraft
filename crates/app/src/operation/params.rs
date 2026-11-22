@@ -338,13 +338,7 @@ impl OpParams {
                     }
                 }
                 write_corner_relief(corner_relief, h);
-                // #3355: written only off Auto, so every earlier op keeps
-                // the digest it had.
-                match pass_start {
-                    crate::machining2d::PassStart::Auto => {}
-                    crate::machining2d::PassStart::Inside => h.write_u8(0xC1),
-                    crate::machining2d::PassStart::Outside => h.write_u8(0xC2),
-                }
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Offset2D { .. }
             | OpParams::Slot { .. }

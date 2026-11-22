@@ -70,7 +70,7 @@ fn cut(region: &Region, start: PassStart, stock: Option<&Region>) -> Toolpath {
 fn first_last(t: &Toolpath) -> (Point3, Point3) {
     let mut planar = t.moves.iter().filter(|m| m.kind == MoveKind::Feed && (m.from.z - m.to.z).abs() < 1e-9);
     let Some(first) = planar.next().map(|m| m.to) else { panic!("no planar feed") };
-    (first, planar.last().map_or(first, |m| m.to))
+    (first, planar.next_back().map_or(first, |m| m.to))
 }
 
 /// How far `p` stands outside the axis square of half-width `s`.

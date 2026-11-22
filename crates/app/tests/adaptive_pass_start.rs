@@ -96,7 +96,7 @@ fn adaptive_op(world: &World, name: &str, (lo, hi): (Point3, Point3), start: Pas
 fn first_last(t: &Toolpath) -> (Point3, Point3) {
     let mut planar = t.moves.iter().filter(|m| m.kind == MoveKind::Feed && (m.from.z - m.to.z).abs() < 1e-9);
     let first = planar.next().expect("a planar feed").to;
-    let last = planar.last().map_or(first, |m| m.to);
+    let last = planar.next_back().map_or(first, |m| m.to);
     (first, last)
 }
 
