@@ -20,7 +20,11 @@
 //! - they coincide on a short arc: the tool moves less than the output
 //!   resolution in the plane, so the record posts as a straight move
 //!   when the plane's normal axis (a helix) or a rotary still moves, and
-//!   as no block at all when nothing changes as written.
+//!   as no block at all when nothing changes as written;
+//! - the written ends differ, but on one ray from the written centre
+//!   (issue #3474, `docs/decisions/3474-same-angle-arc.md`): a short
+//!   record posts as a straight move, because a control that reads the
+//!   sweep from the end angles sees none or a full turn.
 
 /// Appended to [`super::js::PRELUDE`]: plain JS, no host calls.
 pub const ARC_GUARD_JS: &str = r#"
