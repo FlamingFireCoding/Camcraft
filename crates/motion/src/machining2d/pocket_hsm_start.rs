@@ -11,7 +11,7 @@ use super::face::GenError;
 use super::adaptive_method::AdaptiveMethod;
 use super::pass_start::PassStart;
 use super::pocket::{PocketParams, PocketStrategy, plan_passes_from};
-use super::pocket_hsm::{Planned, adaptive_ordered};
+use super::pocket_hsm::{Planned, RINGS_FALLBACK, adaptive_ordered};
 
 /// The Adaptive pocket's passes under `start`. `stock` is the stock
 /// outline in the area's own frame (`None`: not known here).
@@ -62,7 +62,7 @@ fn rings(center: &Region, p: &PocketParams, what: &str, start: PassStart, why: &
     let s = PocketStrategy::OffsetRings;
     let step = crate::load::load_step(p.tool_diameter, p.optimal_load);
     let note = format!(
-        "adaptive: Pass starts at {} - the HSM plan {why}; Offset rings cut {what} in that order instead",
+        "adaptive: Pass starts at {} - the HSM plan {why}{RINGS_FALLBACK}{what} in that order instead",
         start.label()
     );
     Ok((plan_passes_from(center, step, p.climb, s, start)?, vec![note], s, None, Vec::new()))

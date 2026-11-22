@@ -128,14 +128,17 @@ fn to_part(world: &World, name: &str, pt: Point3) -> f64 {
 
 /// #3355 pin: Outside starts the level with the tool's disc outside the
 /// stock box (in air, never a slot) and ends it on the part wall. The
-/// path verifies clean. The Outside band stops where the disc touches
-/// the stock, so the air plan has no room for its entry gap here: the
-/// Offset rings cut the band in the Outside order, and the note says so.
+/// Outside band stops where the disc touches the stock, so the air plan
+/// has no room for its entry gap here: the Offset rings cut the band in
+/// the Outside order, the note says so, and the switch raises the
+/// #3035 StrategyFallback warning like every other rings fallback.
 #[test]
 fn fig8_outside_adaptive_starts_in_air_and_ends_on_the_part_wall() {
     let (world, _h, name, stock) = fig8_world();
     let (path, warnings) = adaptive_op(&world, &name, stock, PassStart::Outside, AdaptiveMethod::Spiral).expect("generates");
-    assert!(warnings.is_empty(), "verifies clean: {warnings:?}");
+    let fallback: Vec<&String> = warnings.iter().filter(|w| w.contains("StrategyFallback")).collect();
+    assert_eq!(fallback.len(), 1, "the rings fallback warns (#3035): {warnings:?}");
+    assert_eq!(warnings.len(), 1, "no other warning: {warnings:?}");
     assert!(path.notes.iter().any(|n| n.starts_with("adaptive: Pass starts at Outside")), "the switch is said: {:?}", path.notes);
     let (first, last) = first_last(&path);
     let out = outside_box(first, stock);
@@ -145,11 +148,17 @@ fn fig8_outside_adaptive_starts_in_air_and_ends_on_the_part_wall() {
 }
 
 /// #3355 pin: Inside starts at the part wall and ends at the stock edge.
+/// The band's hole walls give no full-width slot, so the Offset rings
+/// cut it from the part out, and the switch raises the #3035
+/// StrategyFallback warning like every other rings fallback.
 #[test]
 fn fig8_inside_adaptive_starts_on_the_part_wall_and_ends_in_air() {
     let (world, _h, name, stock) = fig8_world();
     let (path, warnings) = adaptive_op(&world, &name, stock, PassStart::Inside, AdaptiveMethod::Spiral).expect("generates");
-    assert!(warnings.is_empty(), "verifies clean: {warnings:?}");
+    let fallback: Vec<&String> = warnings.iter().filter(|w| w.contains("StrategyFallback")).collect();
+    assert_eq!(fallback.len(), 1, "the rings fallback warns (#3035): {warnings:?}");
+    assert_eq!(warnings.len(), 1, "no other warning: {warnings:?}");
+    assert!(path.notes.iter().any(|n| n.starts_with("adaptive: Pass starts at Inside")), "the switch is said: {:?}", path.notes);
     let (first, last) = first_last(&path);
     let d = to_part(&world, &name, first);
     assert!((d - R8).abs() < 0.05, "the first pass starts {d:.3} mm from the part, not on its wall");
