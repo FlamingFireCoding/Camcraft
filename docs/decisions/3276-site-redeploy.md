@@ -4,7 +4,8 @@
 on its existing `workflow_dispatch`. With `site_only: true`, only the `site`
 and `pages` jobs run, from the dispatched ref. The `linux`, `macos`,
 `windows` and `wasm` jobs are skipped by their own condition; `aur`, `snap`
-and `flatpak` follow `linux`. `publish` stays tag-only and is not changed.
+and `flatpak` follow `linux`. `publish` stays tag-only, and its condition also has `!inputs.site_only`,
+so a `site_only` run never publishes, whatever its ref.
 `pages` deploys on that path only when the ref is a `site/*` branch. The
 site version comes from the `[workspace.package]` version of the
 dispatched tree's `Cargo.toml`, as on a tag run. With `wasm` skipped, the
@@ -15,6 +16,12 @@ v0.25.0 plus only the site and docs part of PR #3274 that applies to that
 tree (the V-Carve section, its icon, its diagram and its reference entry
 are left out, because V-Carve (#3151) merged after the tag). The dispatch
 is `gh workflow run release.yml --ref site/v0.25.0 -f site_only=true`.
+
+GitHub runs a dispatch with the workflow file of the dispatched ref, not
+the one on `main`. Thus the same `release.yml` change goes on
+`site/v0.25.0` before the dispatch, as one commit with the file
+byte-identical to the one on `main`. Without it, the tag's `release.yml`
+has no `site_only` input, and the dispatch builds every platform.
 
 **Why:** the `site` job of the v0.25.0 tag run failed on site tests that
 had drifted from the shipped app (#3271), so `pages` did not deploy. A
@@ -41,5 +48,6 @@ the 0.25.0 site content ships with the v0.26.0 deploy.
 - A separate site workflow: a second copy of the site and pages jobs that
   can drift from the release copy.
 
-**Cost to change later:** remove the input and the four `if:` lines; the
+**Cost to change later:** remove the input, the four `if:` lines and the
+`!inputs.site_only` term of `publish` and `pages`; the
 tag path does not depend on them.

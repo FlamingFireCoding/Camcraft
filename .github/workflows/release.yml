@@ -13,7 +13,7 @@
 # Site redeploy (#3276): workflow_dispatch with `site_only: true` runs only
 # `site` and `pages`, from the dispatched ref. `pages` deploys it only when
 # that ref is a `site/*` branch (a past release's tree plus its site fixes,
-# docs/decisions/3271-site-redeploy.md). No platform, wasm or publish job
+# docs/decisions/3276-site-redeploy.md). No platform, wasm or publish job
 # runs; the site goes out with app/ as its "not part of this copy" page.
 # Graph (#125): windows, linux and macos start at once; AUR, snap
 # and flatpak follow Linux; publish waits for all six with !cancelled(),
@@ -272,9 +272,10 @@ jobs:
   publish:
     # Runs after every build job whatever their result (but not on a
     # cancelled run), and only for a tag: a workflow_dispatch run builds
-    # everything and publishes nothing.
+    # everything and publishes nothing. A `site_only` run (#3276) never
+    # publishes, whatever its ref.
     needs: [windows, linux, macos, aur, snap, flatpak]
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !cancelled() && !inputs.site_only && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -68,8 +68,13 @@ fn site_only_dispatch_runs_only_site_and_pages() {
         assert_eq!(condition(name), None, "{name} has no condition of its own");
     }
 
-    // publish stays tag-only; the site still builds without the wasm job.
-    assert_eq!(condition("publish").as_deref(), Some("${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}"));
+    // publish stays tag-only and never runs on site_only; the site still
+    // builds without the wasm job.
+    assert_eq!(
+        condition("publish").as_deref(),
+        Some("${{ !cancelled() && !inputs.site_only && startsWith(github.ref, 'refs/tags/') }}"),
+        "publish is tag-only and skips on site_only"
+    );
     assert_eq!(condition("site").as_deref(), Some("${{ !cancelled() }}"));
 
     // pages: the tag path as before, or a site_only dispatch from a site/* branch.
