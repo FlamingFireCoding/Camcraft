@@ -2,7 +2,8 @@
 //! the real page code: both groups sit on the Lead in / Lead out tab off
 //! by default, the header switch seeds or clears the draft, a typed X
 //! edits the draft only, and Apply commits through the command history -
-//! undo and redo included. Other kinds draw neither group.
+//! undo and redo included. Other kinds say by name that they take no
+//! pick (#3324).
 //! Provenance: our own page law; no vendor material consulted.
 
 use egui::accesskit::{Role, Toggled};
@@ -138,15 +139,26 @@ fn switching_the_exit_point_off_clears_it() {
 }
 
 #[test]
-fn kinds_without_a_picked_start_draw_neither_group() {
-    for label in ["2D Pocket", "Face"] {
+fn kinds_without_a_picked_start_say_so_by_name() {
+    // #3324: the maintainer's 2D Offset, a lead-tab kind (2D Pocket) and
+    // a Geometry-only kind (Face): each draws both groups, no switch and
+    // no X / Y row, and a line that says why the pick is not taken.
+    for label in ["2D Offset", "2D Pocket", "Face"] {
         let mut state = opened(crate::operations::retype(&face(), kind(label)));
         state.op_tab = SEC_LEADS;
         let mut harness = page(state);
         harness.run();
         for g in [START_GROUP, EXIT_GROUP] {
-            assert!(harness.query_by_label(g).is_none(), "{label} has no {g} group");
+            assert!(harness.query_by_label(g).is_some(), "{label} has the {g} group");
         }
+        for r in ["Start X", "Start Y", "Exit X", "Exit Y", "Pick start", "Pick exit"] {
+            assert!(harness.query_by_label(r).is_none(), "{label} has no {r} row");
+        }
+        let said = harness.query_all_by_label_contains(super::NOT_TAKEN).count();
+        assert_eq!(said, 2, "{label}: the start and the exit say they are not taken");
+        let why = harness.query_all_by_label_contains(camcraft_app::operation::PICK_OWED).count();
+        assert_eq!(why, 2, "{label}: each says why, by name");
+        assert_eq!(draft(&harness), (None, None), "drawing the tab writes no point");
     }
 }
 
