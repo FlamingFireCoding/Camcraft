@@ -45,7 +45,10 @@ pub fn crash_name(code: i32) -> Option<&'static str> {
     match code as u32 {
         0xC000_0005 => Some("access violation"),
         0xC000_001D => Some("illegal instruction"),
+        0xC000_0094 => Some("integer division by zero"),
         0xC000_00FD => Some("stack overflow"),
+        0xC000_0135 => Some("a DLL was not found"),
+        0xC000_0374 => Some("heap corruption"),
         0xC000_0409 => Some("fast fail: an abort or a stack buffer overrun"),
         0xC000_013A => Some("stopped by Ctrl+C"),
         0xC000_0142 => Some("a DLL did not initialize"),
@@ -85,6 +88,8 @@ mod tests {
         let (code, how) = read(ExitStatus::from_raw(0xC000_0005));
         assert_eq!(code, 0xC000_0005_u32 as i32);
         assert_eq!(how.as_deref(), Some("status 0xC0000005 (access violation)"));
+        let (_, how) = read(ExitStatus::from_raw(0xC000_0374));
+        assert_eq!(how.as_deref(), Some("status 0xC0000374 (heap corruption)"));
     }
 
     #[test]
@@ -100,8 +105,17 @@ mod tests {
     fn a_crashed_step_executable_says_how_it_stopped_in_its_log_and_note() {
         use crate::artifacts::TestExe;
         use crate::direct::{run, Direct};
-        let dir = std::env::temp_dir().join(format!("camcraft-xtask-3258-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        // Reserve a fresh directory with an atomic create_dir: a shared /tmp can hold an old one of
+        // the same PID that another runner account owns (#3290).
+        let base = std::env::temp_dir();
+        let dir = (0..1000)
+            .map(|n| base.join(format!("camcraft-xtask-3258-{}-{n}", std::process::id())))
+            .find(|d| match std::fs::create_dir(d) {
+                Ok(()) => true,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+                Err(e) => panic!("temp dir {}: {e}", d.display()),
+            })
+            .expect("a free temp dir");
         let (exe, args, want) = if cfg!(windows) {
             ("cmd", vec!["/c".to_string(), "exit -1073741819".to_string()], "(status 0xC0000005 (access violation))")
         } else {

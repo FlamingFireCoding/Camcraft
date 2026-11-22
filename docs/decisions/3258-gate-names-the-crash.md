@@ -15,7 +15,8 @@ runs on one host.
 - The kernel logs of skull and egg show a segfault in `libvulkan.so` at the failure time. The
   runners then pinned Mesa's software Vulkan (about 22:40 UTC, 2026-11-21). Since then, about 30
   post-merge runs, many of them at the same time on one host, show no UI `exit -1`.
-- The wopr run (22:16-22:38) ended before that pin.
+- The wopr run (22:16-22:38) ended before that pin. mkinney found no kernel segfault and no OOM on
+  wopr. So the wopr abort is attributed to the driver only by its time, not by a log line.
 - The uma `bore_core` failure is a different cause: `PermissionDenied` on a PID-named directory in a
   shared `/tmp` that another runner account owned. #3290 fixed it.
 
