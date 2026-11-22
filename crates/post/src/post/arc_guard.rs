@@ -41,6 +41,37 @@ function arcShapeOf(p) {
     rotary: _arcNum(p.A) || _arcNum(p.B) || _arcNum(p.C)
   };
 }
+// The record's own sweep (radians, 0..2pi) in the frame (u, v).
+function _arcSweep(a, u, v) {
+  var s = a.start, e = a.end, c = a.center;
+  var a0 = Math.atan2(s[v] - c[v], s[u] - c[u]), a1 = Math.atan2(e[v] - c[v], e[u] - c[u]);
+  var sweep = a.ccw ? a1 - a0 : a0 - a1;
+  if (sweep < 0) sweep += 2 * Math.PI;
+  return sweep;
+}
+// The number of a written word ("X10.011", "X+10.011", "10.") or NaN.
+function _arcWordNum(t) {
+  var m = /[-+]?(\d+\.?\d*|\.\d+)/.exec(String(t));
+  return m ? parseFloat(m[0]) : NaN;
+}
+// #3474: the written ends differ, but the written end is on the written
+// start's ray from the written centre (the same angle), or one of them is
+// on the written centre. A control that reads the sweep from the angles
+// sees none, or a full turn. On a short record (half a circle or less)
+// the tool moves under the output step across the radius only: a straight
+// move. The test uses the cross product's zero and the dot product's sign
+// only, so a mirrored or scaled word (a lathe diameter) reads the same.
+function sameAngleShort(a, u, v, word) {
+  var s = a.start, e = a.end, c = a.center;
+  if (!_arcNum(c[u]) || !_arcNum(c[v])) return false;
+  var cu = _arcWordNum(word(u, c[u])), cv = _arcWordNum(word(v, c[v]));
+  var su = _arcWordNum(word(u, s[u])) - cu, sv = _arcWordNum(word(v, s[v])) - cv;
+  var eu = _arcWordNum(word(u, e[u])) - cu, ev = _arcWordNum(word(v, e[v])) - cv;
+  if (!isFinite(su) || !isFinite(sv) || !isFinite(eu) || !isFinite(ev)) return false;
+  var scale = Math.sqrt((su * su + sv * sv) * (eu * eu + ev * ev));
+  var onRay = scale === 0 || (Math.abs(su * ev - sv * eu) <= 1e-9 * scale && su * eu + sv * ev > 0);
+  return onRay && _arcSweep(a, u, v) <= Math.PI;
+}
 function arcFateOf(a, word) {
   // The right-handed in-plane frame (u, v), u x v = +normal: CCW (seen
   // from the positive normal) is the ordinary atan2 sense in each plane.
@@ -48,7 +79,7 @@ function arcFateOf(a, word) {
   var u = ax[0], v = ax[1], h = ax[2], s = a.start, e = a.end, c = a.center;
   if (!_arcNum(s[u]) || !_arcNum(s[v]) || !_arcNum(e[u]) || !_arcNum(e[v])) return "arc";
   function same(k, p, q) { return String(word(k, p)) === String(word(k, q)); }
-  if (!same(u, s[u], e[u]) || !same(v, s[v], e[v])) return "arc";
+  if (!same(u, s[u], e[u]) || !same(v, s[v], e[v])) return sameAngleShort(a, u, v, word) ? "linear" : "arc";
   // The written ends coincide. With no centre the record is not an arc
   // this rule can read: the script's own code refuses it by name.
   if (!_arcNum(c[u]) || !_arcNum(c[v])) return "arc";
@@ -59,12 +90,7 @@ function arcFateOf(a, word) {
   var round = !(same(u, c[u], s[u]) && same(v, c[v], s[v]));
   if (round) {
     var full = Math.abs(e[u] - s[u]) < 1e-5 && Math.abs(e[v] - s[v]) < 1e-5;
-    if (!full) {
-      var a0 = Math.atan2(s[v] - c[v], s[u] - c[u]), a1 = Math.atan2(e[v] - c[v], e[u] - c[u]);
-      var sweep = a.ccw ? a1 - a0 : a0 - a1;
-      if (sweep < 0) sweep += 2 * Math.PI;
-      full = sweep > Math.PI;
-    }
+    if (!full) full = _arcSweep(a, u, v) > Math.PI;
     if (full) return "arc";
   }
   // A short arc under the output resolution: no arc block.
