@@ -319,6 +319,8 @@ mod program_info_tests;
 #[cfg(test)]
 mod post_dialog_tests;
 #[cfg(test)]
+mod setup_post_gap_tests;
+#[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]
 mod viewport_ground_tests;
