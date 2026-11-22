@@ -69,6 +69,7 @@ pub(super) fn roughing2d_pane(
         // #3316: the shared pass-order row; the kinds that own it pass it.
         if let Some(s) = pass_start {
             super::pass_start_row::pass_start_row(ui, tag, s);
+            hint(ui, super::pass_start_row::PASS_START_HINT);
         }
         prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
         arc_turn_rows(ui, u, "Arc turns at corners", arc.0, arc.1);

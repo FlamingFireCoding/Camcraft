@@ -177,6 +177,13 @@ fn plan_helix(
             why = "the helix pitch asks too many turns";
             continue;
         };
+        if let Cert::RingDisk { center, radius, .. } = l.cen {
+            if let Some(c) = super::circular_helix::vault_center(*center, *radius, e, r) {
+                return Ok(Hel { start: e, center: c, turns: t, r, from });
+            }
+            why = "no helix fits inside this vault ring with a chord long enough to post";
+            continue;
+        }
         // On the pass start, else on the first pass a little along it
         // (linked back to the start at depth on the pass's own line).
         let starts = std::iter::once(e).chain(along_pass(l, m).into_iter().filter(|&q| links_to(l, q, e)));

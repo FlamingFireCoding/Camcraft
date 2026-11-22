@@ -148,7 +148,6 @@ fn ok(server: &mut Server, name: &str, arguments: Value) -> Value {
 }
 
 #[test]
-#[ignore = "known-fail #3359 | circular_ring_links | mcp_circular_pass_start_is_an_undoable_project_setting | Circular pass_start edit failed"]
 fn mcp_circular_pass_start_is_an_undoable_project_setting() {
     let mut server = Server::new();
     ok(&mut server, "set_stock", json!({ "box": { "dx": 40.0, "dy": 40.0, "dz": TOP } }));
@@ -164,7 +163,6 @@ fn mcp_circular_pass_start_is_an_undoable_project_setting() {
         "name": "C1", "params": { "pass_start": start }
     }));
     let inside = edit(&mut server, "inside");
-    // known-fail-assert
     assert!(inside["isError"] == json!(false), "Circular pass_start edit failed: {inside}");
     assert_eq!(inside["structuredContent"]["params"]["circular"]["pass_start"], json!("inside"));
     let outside = edit(&mut server, "outside");

@@ -280,6 +280,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             center,
             radius,
             vault,
+            pass_start,
             stepover,
             stock_to_leave,
             clearance_z,
@@ -332,6 +333,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 });
             }
             if tab == SEC_PASSES {
+                super::pass_start_row::pass_start_row(ui, "circ", pass_start);
+                hint(ui, "Inside starts at the innermost ring. Auto and Outside start at the outermost ring. The first ring can cut the full tool width in solid stock.");
                 prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
                 prop_row(ui, "Stepover", |ui| num(ui, u, stepover));
             }
