@@ -136,9 +136,9 @@ fn shown(p: &Path, root: &Path) -> String {
 /// them run (the step has `--no-fail-fast`). The exit code of the first one that failed, else 0. An
 /// executable that cannot start is an `error:` line in the log and code -1: a red step, never a pass.
 /// One that a signal kills, or that stops on a crash status, gets an `exit_status::STOPPED` line (#3258).
-/// One whose tree writes nothing for `limit` is killed by the watchdog (#3303): code -1, and no later
-/// executable of the step runs.
-pub fn run(d: &Direct, root: &Path, mut log: File, limit: Duration) -> Result<i32, String> {
+/// One whose tree writes nothing for `limit` is killed by the watchdog (#3303): code -1, `true` (stalled),
+/// and no later executable of the step runs.
+pub fn run(d: &Direct, root: &Path, mut log: File, limit: Duration) -> Result<(i32, bool), String> {
     let io = |e: std::io::Error| format!("gate log: {e}");
     let mut code = 0;
     for t in &d.exes {
@@ -152,7 +152,7 @@ pub fn run(d: &Direct, root: &Path, mut log: File, limit: Duration) -> Result<i3
             .stderr(log.try_clone().map_err(io)?)
             .spawn();
         let one = match child.and_then(|mut c| watchdog::wait(&mut c, &log, &|| 0, limit)) {
-            Ok(End::Stalled) => return Ok(-1),
+            Ok(End::Stalled) => return Ok((-1, true)),
             Ok(End::Exited(st)) => match crate::exit_status::read(st) {
                 (c, Some(how)) => {
                     writeln!(log, "{} {how}", crate::exit_status::STOPPED).map_err(io)?;
@@ -169,13 +169,14 @@ pub fn run(d: &Direct, root: &Path, mut log: File, limit: Duration) -> Result<i3
             code = one;
         }
     }
-    Ok(code)
+    Ok((code, false))
 }
 
 /// Runs `cargo <args>` in `dir` with its output in `log`, under the watchdog (`limit`, #3303). With
 /// `capture`, stdout (the JSON messages of a recording build) comes back as text and only stderr (the
-/// build's readable output) goes to the log; the JSON bytes count as output too.
-pub fn cargo(cargo: &str, env: Vec<(&'static str, String)>, args: &[String], dir: &Path, log: File, capture: bool, limit: Duration) -> Result<(i32, Option<String>), String> {
+/// build's readable output) goes to the log; the JSON bytes count as output too. The `bool` is true when
+/// the watchdog killed the step.
+pub fn cargo(cargo: &str, env: Vec<(&'static str, String)>, args: &[String], dir: &Path, log: File, capture: bool, limit: Duration) -> Result<(i32, Option<String>, bool), String> {
     let fail = |e: std::io::Error| format!("cargo {}: {e}", args.join(" "));
     let mut cmd = Command::new(cargo);
     crate::unit_env::apply(&mut cmd);
@@ -200,17 +201,19 @@ pub fn cargo(cargo: &str, env: Vec<(&'static str, String)>, args: &[String], dir
             let end = watchdog::wait(&mut child, &log, &|| bytes.load(Ordering::Relaxed), limit);
             (end, reader.join().unwrap_or_default())
         });
-        return Ok((code_of(end.map_err(fail)?), Some(String::from_utf8_lossy(&text).into_owned())));
+        let (code, stalled) = code_of(end.map_err(fail)?);
+        return Ok((code, Some(String::from_utf8_lossy(&text).into_owned()), stalled));
     }
     let mut child = cmd.stdout(log.try_clone().map_err(fail)?).stderr(err).spawn().map_err(fail)?;
-    Ok((code_of(watchdog::wait(&mut child, &log, &|| 0, limit).map_err(fail)?), None))
+    let (code, stalled) = code_of(watchdog::wait(&mut child, &log, &|| 0, limit).map_err(fail)?);
+    Ok((code, None, stalled))
 }
 
-/// The step code of a watched cargo process: its exit code, -1 for a signal or a stall.
-fn code_of(end: End) -> i32 {
+/// The step code of a watched cargo process (its exit code, -1 for a signal or a stall) and whether it stalled.
+fn code_of(end: End) -> (i32, bool) {
     match end {
-        End::Exited(st) => st.code().unwrap_or(-1),
-        End::Stalled => -1,
+        End::Exited(st) => (st.code().unwrap_or(-1), false),
+        End::Stalled => (-1, true),
     }
 }
 

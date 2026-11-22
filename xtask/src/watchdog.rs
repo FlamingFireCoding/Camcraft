@@ -137,19 +137,20 @@ fn kill_tree(child: &mut Child, tree: &[(u32, String)]) {
     let _ = child.kill();
 }
 
-/// When the step log `text` has the watchdog's line: prints `STALL <minutes>min <step>`, the last lines
-/// the step wrote and the processes that were alive, and gives the step note.
-pub fn report(step: &str, text: &str) -> Option<String> {
+/// For a step that the watchdog killed (`End::Stalled`; never decided from the log text): prints
+/// `STALL <minutes>min <step>`, the last lines the step wrote and the processes that were alive, from the
+/// watchdog's last line in the log `text`, and gives the step note.
+pub fn report(step: &str, text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
-    let at = lines.iter().position(|l| l.starts_with(LINE))?;
-    let rest = lines[at].strip_prefix(LINE).unwrap_or_default();
+    let at = lines.iter().rposition(|l| l.starts_with(LINE)).unwrap_or(lines.len());
+    let rest = lines.get(at).and_then(|l| l.strip_prefix(LINE)).unwrap_or("?min: no watchdog line in the log");
     let (mins, alive) = rest.split_once(':').unwrap_or((rest, ""));
     println!("STALL {mins} {step}");
     println!("     last lines of the step:");
     lines[at.saturating_sub(20)..at].iter().for_each(|l| println!("     | {l}"));
     let alive = alive.split_once("alive: ").map(|(_, a)| a).unwrap_or("");
     println!("     processes alive at the kill: {alive}");
-    Some(format!("stall: no output for {mins}; process tree killed (alive: {alive})"))
+    format!("stall: no output for {mins}; process tree killed (alive: {alive})")
 }
 
 /// The gate's exit code: 1 for a void run or any FAIL row, `EXIT` for STALL rows only, else 0.

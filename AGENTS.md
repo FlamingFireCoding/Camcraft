@@ -800,6 +800,9 @@ The step "Batch gate tier" stops at 45 minutes. Such a run opens no
 `main is red` issue.
 - A post-merge run with a `STALL` row or a step timeout, and no `FAIL`
   row: log it on #3303 (run, commit, runner, step) and re-run it one time.
+- A second `STALL` of the same step at the same commit is a red main, not
+  a runner stop: a commit that deadlocks a test stalls on each run. File it
+  as a red main. Do not re-run it again.
 - A gate job with no output at 50 minutes is a runner stop: cancel only
   that run and log it on #3303.
 - A run that fails with no `FAIL` row and no `STALL` row is re-run one

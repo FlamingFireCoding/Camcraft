@@ -84,6 +84,34 @@ mod script {
     }
 
     #[test]
+    fn a_step_that_ended_red_before_a_timeout_stays_a_red_main() {
+        // Step 5 failed, a later step hung, and the step timeout stopped the gate before its summary.
+        let text = "[05] post suites: red
+     FAIL in 3s failed: tests/red.rs [tests: red_fails]
+[30] ui suites: lib
+gate step TIMEOUT after 45 min; last started step: [30] ui suites: lib
+";
+        let (out, log) = report("progress", text);
+        assert!(!out.contains("runner stall"), "{out}");
+        assert!(log.contains("issue create") && log.contains("FAIL in 3s failed: tests/red.rs"), "the issue lists the FAIL line: {log}");
+    }
+
+    #[test]
+    fn a_large_summary_with_fail_and_stall_rows_stays_a_red_main() {
+        // Over the 64 KiB of a pipe: a grep -q in a pipe under pipefail would read this as no FAIL row.
+        let mut text = String::from("== gate summary (batch) - logs in gate-logs/x
+  FAIL     3s  post suites: red  failed: tests/red.rs
+");
+        (0..3000).for_each(|i| text.push_str(&format!("  ok       1s  step {i} with a long name to fill the pipe buffer
+")));
+        text.push_str("  STALL   901s  post suites: lib  stall
+");
+        let (out, log) = report("large", &text);
+        assert!(!out.contains("runner stall"), "{out}");
+        assert!(log.contains("issue create"), "a FAIL row opens the red issue");
+    }
+
+    #[test]
     fn a_red_run_with_no_summary_and_no_timeout_stays_red() {
         let (_, log) = report("nosummary", "error: could not compile `xtask`\n");
         assert!(log.contains("issue create"), "an xtask that did not build is a red main: {log}");

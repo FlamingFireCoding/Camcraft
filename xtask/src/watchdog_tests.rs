@@ -91,7 +91,7 @@ fn a_silent_step_is_killed_as_a_tree_and_named() {
         !watchdog::processes().iter().any(|p| p.0 == pid)
     });
     assert!(gone, "the grandchild {pid} must die with the tree");
-    let note = watchdog::report("post suites: lib", &text).expect("a STALL note");
+    let note = watchdog::report("post suites: lib", &text);
     assert!(note.starts_with("stall: no output for 1min"), "{note}");
 }
 
@@ -136,6 +136,13 @@ fn a_stall_has_its_own_row_and_exit_code() {
     assert_eq!(watchdog::exit_code(false, 1, 2), 1, "a FAIL row wins: main is red");
     assert_eq!(watchdog::exit_code(true, 0, 1), 1, "a void run stays 1");
     assert_ne!(watchdog::EXIT, 1);
+}
+
+#[test]
+fn a_stall_report_without_the_watchdog_line_still_names_the_step() {
+    let note = watchdog::report("post suites: lib", "running 1 test
+");
+    assert!(note.starts_with("stall: no output for ?min"), "{note}");
 }
 
 #[test]

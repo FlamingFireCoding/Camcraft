@@ -32,19 +32,23 @@ title="main is red (post-merge gate)"
 short="${sha:0:10}"
 
 if [ "${STATUS:-}" != success ]; then
-  summary=$(sed -n '/^== gate summary/,$p' "${OUTPUT:-/dev/null}" 2>/dev/null || true)
-  if ! printf '%s
-' "$summary" | grep -qE '^ +FAIL '; then
-    stalls=$(printf '%s
-' "$summary" | grep -E '^ +STALL ' | head -10 || true)
-    [ -n "$stalls" ] || stalls=$(grep -E '^gate step TIMEOUT ' "${OUTPUT:-/dev/null}" 2>/dev/null | tail -n 1 || true)
+  gate_out="${OUTPUT:-/dev/null}"
+  summary=$(sed -n '/^== gate summary/,$p' "$gate_out" 2>/dev/null || true)
+  # A FAIL anywhere is a red main: a FAIL row of the summary, or a "FAIL in"
+  # line that the gate prints as each step ends. A later hang can stop the
+  # gate before its summary, so the progress lines count too (#3303). No
+  # grep -q in a pipe here: under pipefail its early exit can give the writer
+  # SIGPIPE, and a match then reads as a miss.
+  red_rows=$(grep -E '^ +FAIL ' <<<"$summary" || true)
+  red_progress=$(grep -E '^ +FAIL in ' "$gate_out" 2>/dev/null || true)
+  if [ -z "$red_rows" ] && [ -z "$red_progress" ]; then
+    stalls=$(grep -E '^ +STALL ' <<<"$summary" || true)
+    [ -n "$stalls" ] || stalls=$(grep -E '^gate step TIMEOUT ' "$gate_out" 2>/dev/null || true)
     if [ -n "$stalls" ]; then
-      step=$(printf '%s
-' "$stalls" | sed -E -e 's/^ +STALL +[0-9]+s +//' -e 's/^gate step TIMEOUT .*last started step: //' -e 's/  .*//' | paste -sd ';' -)
+      stalls=$(head -n 10 <<<"$stalls")
+      step=$(sed -E -e 's/^ +STALL +[0-9]+s +//' -e 's/^gate step TIMEOUT .*last started step: //' -e 's/  .*//' <<<"$stalls" | paste -sd ';' -)
       echo "::warning title=runner stall::runner stall: $step on ${RUNNER:-unknown runner} at $short (${RUN_URL:-no run url}); not a red main, no issue opened"
-      printf 'runner stall: %s on %s
-%s
-' "$step" "${RUNNER:-unknown runner}" "$stalls"
+      printf 'runner stall: %s on %s\n%s\n' "$step" "${RUNNER:-unknown runner}" "$stalls"
       exit 0
     fi
   fi
@@ -114,7 +118,9 @@ if [ "${STATUS:-}" = success ]; then
 fi
 
 # Failing steps: the gate summary's "  FAIL  <secs>s  <step>  <note>" rows.
-fails=$(sed -n '/^== gate summary/,$p' "${OUTPUT:-/dev/null}" 2>/dev/null | grep -E '^ +FAIL ' | head -40 || true)
+# Without a summary, the "FAIL in" lines of the steps that ended red.
+fails=$(head -n 40 <<<"$red_rows")
+[ -n "$fails" ] || fails=$(head -n 40 <<<"$red_progress")
 [ -n "$fails" ] || fails="(no FAIL row in the gate summary: the gate did not finish or failed to build; see the run)"
 # The FAIL rows' notes read "failed: tests/<name>.rs, ..." (xtask exec.rs read_log,
 # which prints cargo's "Running <path>"); a directory suite reads tests/<name>/main.rs.

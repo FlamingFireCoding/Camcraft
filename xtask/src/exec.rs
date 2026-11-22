@@ -259,8 +259,11 @@ impl Run {
         let file = File::create(&log).map_err(|e| format!("create {}: {e}", log.display()))?;
         let records = crate::direct::records(s);
         let limit = crate::watchdog::limit_for(&args, crate::watchdog::from_env().0);
-        let (code, json) = match &direct {
-            Some(d) => (crate::direct::run(d, root, file, limit)?, None),
+        let (code, json, stalled) = match &direct {
+            Some(d) => {
+                let (code, stalled) = crate::direct::run(d, root, file, limit)?;
+                (code, None, stalled)
+            }
             None => crate::direct::cargo(&cargo(), cache, &args, &dir, file, records.is_some(), limit)?,
         };
         let mut recorded = None;
@@ -276,7 +279,7 @@ impl Run {
         let secs = t0.elapsed().as_secs();
         let text = std::fs::read_to_string(&log).unwrap_or_default();
         let mut note = read_log(&text, code)?;
-        let stall = crate::watchdog::report(&s.name, &text);
+        let stall = stalled.then(|| crate::watchdog::report(&s.name, &text));
         let ok = match &s.expect_fail {
             Some(k) => expect_fail_note(code, &mut note, &text, k),
             None => code == 0,

@@ -108,8 +108,9 @@ Safety:
 - A red run with no `FAIL` row, but with a `STALL` row or the line `gate
   step TIMEOUT`, is a runner stall. The report opens and comments on no
   issue. It writes one warning: `runner stall: <step> on <runner>`.
-- A red run with a `FAIL` row is a red main, also when it has a `STALL`
-  row. A red run with no summary and no timeout line (xtask did not build)
+- A red run with a `FAIL` row, or with a `FAIL in` line of a step that
+  ended before the gate stopped, is a red main. This is true also when it
+  has a `STALL` row or the timeout line. A red run with no summary and no timeout line (xtask did not build)
   is a red main too.
 - AGENTS.md **Runner stops** says what the coordinator does with a stall.
 

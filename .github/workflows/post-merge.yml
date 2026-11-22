@@ -108,12 +108,16 @@ jobs:
           # A gate that the step timeout stopped prints no summary (#3303). Say
           # so in its output, with the last step it started, so the report
           # tells a runner stall from a red main. A gate that ended early with
-          # no summary (xtask did not build) stays red.
-          if [ "$GATE_OUTCOME" != success ] && ! grep -q '^== gate summary' gate-output.txt 2>/dev/null; then
+          # no summary (xtask did not build) stays red, and so does a gate
+          # with a step that ended red ("FAIL in") before the hang.
+          # GitHub runs this with bash -eo pipefail: each grep reads a file,
+          # and a grep that finds nothing must not end the step.
+          if [ "$GATE_OUTCOME" != success ] && ! grep -q '^== gate summary' gate-output.txt 2>/dev/null &&
+            ! grep -qE '^ +FAIL in ' gate-output.txt 2>/dev/null; then
             start=$(cat gate-start.txt 2>/dev/null || echo 0)
             mins=$(( ($(date +%s) - start) / 60 ))
             if [ "$start" -gt 0 ] && [ "$mins" -ge 44 ]; then
-              last=$(grep -E '^\[[0-9]+\] ' gate-output.txt 2>/dev/null | tail -n 1)
+              last=$(grep -E '^\[[0-9]+\] ' gate-output.txt 2>/dev/null | tail -n 1 || true)
               echo "gate step TIMEOUT after ${mins} min; last started step: ${last:-none}" | tee -a gate-output.txt
             fi
           fi
