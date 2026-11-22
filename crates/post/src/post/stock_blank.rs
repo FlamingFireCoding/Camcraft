@@ -60,17 +60,13 @@ impl StockBlank {
     }
 }
 
-/// Drop the blank PARAMs for a script that does not declare
-/// `stockBlank = true`: a script that lists the PARAMs it accepts (Klartext)
-/// would refuse them, and any other script would ignore them. Its program
-/// stays byte-identical to a stream that never carried them.
-pub(super) fn filter(records: Vec<Record>, s: &mut Script) -> Result<Vec<Record>, PostError> {
+/// Read the manifest once, before dispatching the blank PARAMs. Keep the
+/// records in the stream so line maps and traces retain their record indices.
+pub(super) fn reads_params(s: &mut Script) -> Result<bool, PostError> {
     let reads = s.eval_src("typeof stockBlank !== \"undefined\" && stockBlank === true")?;
-    if reads.as_boolean().unwrap_or(false) {
-        return Ok(records);
-    }
-    Ok(records
-        .into_iter()
-        .filter(|r| !matches!(r, Record::Param { name, .. } if name == SHAPE || name == BOTTOM))
-        .collect())
+    Ok(reads.as_boolean().unwrap_or(false))
+}
+
+pub(super) fn is_param(record: &Record) -> bool {
+    matches!(record, Record::Param { name, .. } if name == SHAPE || name == BOTTOM)
 }

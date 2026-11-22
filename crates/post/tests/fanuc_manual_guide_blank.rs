@@ -220,3 +220,86 @@ fn a_script_without_the_manifest_flag_never_sees_the_blank_params() {
     );
     assert_eq!(a, b);
 }
+
+#[test]
+fn a_cylinder_with_the_origin_above_its_top_refuses_the_blank() {
+    let s = stream(
+        [0.0, 0.0, 5.0],
+        [-25.0, 25.0, -25.0, 25.0],
+        0.0,
+        &[
+            ("StockBlank", json!("cylinder-z")),
+            ("StockBlankZBottom", json!(-40.0)),
+        ],
+    );
+    let nc = fanuc(&s, &on());
+    assert!(
+        !nc.contains("G1900"),
+        "negative K must not reach the control:\n{nc}"
+    );
+    assert!(
+        nc.contains("(NO MANUAL GUIDE BLANK - ORIGIN ABOVE THE BAR TOP)"),
+        "{nc}"
+    );
+}
+
+#[test]
+fn suppressing_blank_params_keeps_original_line_and_trace_record_indices() {
+    let source = box_stream();
+    let records = cnc::parse(&source).expect("records");
+    let feed = records
+        .iter()
+        .position(|r| matches!(r, Record::Move(m) if m.kind == MoveKind::Feed))
+        .expect("feed");
+    let declared = read("assets/posts/fanuc.cps");
+    for cps in [declared.clone(), declared.replace("stockBlank = true;", "stockBlank = false;")] {
+        let mch: Value =
+            serde_json::from_str(&read("assets/machines/3axis-vmc.mch")).expect("machine json");
+        let out = engine::run_with(&cps, &mch, &source, &Value::Null).expect("posts");
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        let line = out
+            .program
+            .lines()
+            .position(|l| l.starts_with("G01"))
+            .expect("feed line");
+        assert_eq!(
+            out.line_map
+                .iter()
+                .find(|m| m.line == line)
+                .expect("mapped line")
+                .record,
+            Some(feed)
+        );
+        let block = out
+            .blocks
+            .iter()
+            .find(|b| b.first <= line && line < b.last)
+            .expect("feed block");
+        assert_eq!(block.record, Some(feed));
+    }
+}
+
+#[test]
+fn the_blank_option_explains_the_series_30i_simulation_unit_limit() {
+    let options = camcraft_post::post::options::declared_options(&read("assets/posts/fanuc.cps"))
+        .expect("options");
+    let option = options
+        .iter()
+        .find(|o| o.key == "manualGuideBlank")
+        .expect("blank option");
+    assert!(
+        option.description.contains("Series 30i"),
+        "{}",
+        option.description
+    );
+    assert!(
+        option.description.contains("ignores G20/G21"),
+        "{}",
+        option.description
+    );
+    assert!(
+        option.description.contains("control unit setting"),
+        "{}",
+        option.description
+    );
+}

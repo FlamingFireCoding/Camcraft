@@ -127,3 +127,47 @@ fn the_fanuc_option_posts_the_documents_box_as_g1902() {
     );
     assert!(out.program.lines().any(|l| l == want), "want {want}:\n{}", out.program);
 }
+
+#[test]
+fn a_post_without_blank_params_keeps_the_viewer_on_the_original_moves() {
+    let world = world_with(
+        StockShape::Box {
+            dx: 60.0,
+            dy: 40.0,
+            dz: 20.0,
+        },
+        Location::default(),
+    );
+    let original = records(&world);
+    assert!(
+        param(&original, "StockBlank").is_some(),
+        "the source includes blank params"
+    );
+    let expected: Vec<[f64; 3]> = original
+        .iter()
+        .filter_map(|r| match r {
+            cnc::Record::Move(m) if m.kind != camcraft_app::cl::MoveKind::Rapid => {
+                Some([m.x, m.y, m.z])
+            }
+            _ => None,
+        })
+        .collect();
+    let cps = read("assets/posts/fanuc.cps").replace("stockBlank = true;", "stockBlank = false;");
+    let path =
+        std::env::temp_dir().join(format!("camcraft-blank-viewer-{}.nc", std::process::id()));
+    let result = camcraft_app::posting::post_script(&world, &path, &cps);
+    let _ = std::fs::remove_file(&path);
+    let posted = result.expect("posts");
+    let actual: Vec<_> = posted
+        .program
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.starts_with("G01"))
+        .map(|(line, _)| posted.line_pos[line].expect("the feed line has a viewer position"))
+        .collect();
+    assert!(!expected.is_empty(), "the fixture has feed moves");
+    assert_eq!(
+        actual, expected,
+        "the viewer uses the original stream's world positions"
+    );
+}

@@ -46,7 +46,7 @@ declaredOptions = {
   writeMachine: { type: "boolean", title: "Write machine header", group: "Header & comments", description: "Emit a comment naming the machine in the header", default: false },
   writeToolList: { type: "boolean", title: "Write tool list", group: "Header & comments", description: "Emit a summary comment per tool at program start", default: false },
   writeVersion: { type: "boolean", title: "Write post version", group: "Header & comments", description: "Emit post version metadata comment in the header", default: false },
-  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank", group: "Header & comments", description: "Write the first setup's stock as a Manual Guide i blank block (G1902 box, G1900 bar along Z) for its simulation. Only for a control with Manual Guide i: others can alarm on it", default: false },
+  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank", group: "Header & comments", description: "Write the first setup's stock as a Manual Guide i blank block (G1902 box, G1900 bar along Z) for its simulation. Only for a control with Manual Guide i: others can alarm on it. Series 30i background simulation ignores G20/G21; confirm the control unit setting", default: false },
   optionalStop: { type: "boolean", title: "Optional stop (M1)", group: "Behavior", description: "Write M1 before tool changes after the first operation", default: false },
   safeRetract: {
     type: "enum",
@@ -724,6 +724,7 @@ function blankRefusal() {  // "" when the stock has a blank form, else why not
   if (blankShape === "cylinder-z") {
     var tol = 0.001;
     if (Math.abs((stockR - stockL) - (stockB - stockF)) > tol) return "BAR NOT ROUND";
+    if (stockTop - orgZ < 0) return "ORIGIN ABOVE THE BAR TOP";
     if (Math.abs(orgX - (stockL + stockR) / 2) > tol || Math.abs(orgY - (stockF + stockB) / 2) > tol) {
       return "ORIGIN OFF THE BAR AXIS";
     }
