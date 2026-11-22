@@ -308,7 +308,8 @@ fn turning_cone_thread_case_posts_the_taper_and_the_thread() {
 
     // The neck and the part-off: the 3 mm blade, to X8 and to the axis.
     assert!(section(&program, "Neck").contains(&"G01 X8. Z60. F0.02"), "the neck is 8 mm at Z60");
-    assert!(section(&program, "Part off").iter().any(|l| l.starts_with("G01 X0. Z13.5")), "the part-off reaches the axis");
+    // #3452: the whole kerf stays behind the end face, so the posted blade corner moves to Z12.
+    assert!(section(&program, "Part off").iter().any(|l| l.starts_with("G01 X0. Z12.")), "the part-off reaches the axis");
 }
 
 /// The G word and the Z word of each motion block of a posted program.

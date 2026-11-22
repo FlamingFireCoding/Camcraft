@@ -3481,6 +3481,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 file_tolerance: material.file_tolerance,
                 // #1057: the containment kinds' declared rims, read untightened.
                 rims: &rims,
+                // #3451: stock above the part is not a finished bore wall.
+                rim_top_z: matches!(&params, OpParams::Drill { .. }).then_some(material.top),
                 // #1408: a turning nose path's verdict turns the work
                 // about the spindle its kernel fitted.
                 lathe_axis: super::turning_axis::lathe_axis_of(&params, &geom, &material.facets),
@@ -3880,6 +3882,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     model_excess: material.excess,
                     file_tolerance: material.file_tolerance,
                     rims: &rims,
+                    rim_top_z: None,
                     // No envelope runs in a plane's frame (finish_tol None).
                     lathe_axis: None,
                     corner_reliefs: &relief_zones,
