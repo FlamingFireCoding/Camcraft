@@ -86,10 +86,12 @@ fn the_stamp_poses_every_cut_move_at_the_exact_lead() {
         None,
     )
     .unwrap();
-    assert_eq!(out.moves.len(), 4);
+    // #3414: the first lean swings at a standstill first - a
+    // zero-travel rapid ahead of the four cut moves.
+    assert_eq!(out.moves.len(), 5);
     // The pivot law: the posed tip backed up r along its pose is the
     // planned ball centre (the input tip r up Z), to float dust.
-    for (mv, want) in out.moves.iter().zip(&centers[1..]) {
+    for (mv, want) in out.moves.iter().filter(|mv| mv.from != mv.to).zip(&centers[1..]) {
         let a = axis_of(mv.axis.expect("posed"));
         let c = p(mv.to.x + r * a.x, mv.to.y + r * a.y, mv.to.z + r * a.z);
         assert!(len(c - p(want.x, want.y, want.z + r)) < 1e-9, "ball moved: {c:?} vs {want:?}");

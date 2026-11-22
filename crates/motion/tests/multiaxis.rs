@@ -144,6 +144,12 @@ fn balls_are_the_plan(plan: &camcraft_motion::cl::Toolpath, got: &camcraft_motio
         if let Some(a) = m.axis {
             held = a;
         }
+        // #3414: a zero-travel rapid is the rotary index - the machine
+        // swings at a standstill in air and cuts nothing, so its ball
+        // stands off the ladder by construction.
+        if m.from == m.to {
+            continue;
+        }
         let c = centre_of(m.to, held);
         let d = off_ladder(plan, c);
         assert!(d < 2e-3, "a posted ball stands {d} mm off the plan at {c:?} ({m:?})");
@@ -169,14 +175,17 @@ fn contour5d_balls_are_the_waterlines_balls() {
 
 #[test]
 fn rapids_hold_the_pose_they_inherit() {
-    // The post keeps the tilt modal: a rapid travels under the pose
-    // it inherits (none before the first lean), never a new one - the
-    // ball lifts off its last contact along the axis it cut with.
+    // The post keeps the tilt modal: a rapid that TRAVELS goes under
+    // the pose it inherits (none before the first lean), never a new
+    // one - the ball lifts off its last contact along the axis it cut
+    // with. The exception is the zero-travel rotary index (#3414): the
+    // machine swings at a standstill, in air, to the pose the next
+    // descend cuts under.
     let facets = dome(15.0, 0.9, 8, 16);
     let got = contour5d(&facets, &finish(12.0, 9.8), &control(30.0, 0.0, None), None).unwrap();
     let mut held: Option<[f64; 3]> = None;
     for m in &got.moves {
-        if m.kind == MoveKind::Rapid {
+        if m.kind == MoveKind::Rapid && m.from != m.to {
             assert_eq!(m.axis, held, "a rapid changed the pose it inherited: {m:?}");
         }
         held = m.axis.or(held);

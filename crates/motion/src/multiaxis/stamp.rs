@@ -215,6 +215,12 @@ fn stamp_inner(
     }
     let mut b = PathBuilder::new(path.start().unwrap_or(Point3::ZERO));
     let mut k = 0usize;
+    // #3414: the pose the last pushed move carried, and whether the
+    // machine is in air (after a rapid, or before any move). A lean
+    // that arrives from air swings at a standstill first; a lean that
+    // arrives while cutting keeps the modal law.
+    let mut held_pose: Option<[f64; 3]> = None;
+    let mut in_air = true;
     for (i, mv) in path.moves.iter().enumerate() {
         let k0 = k;
         while k < st.len() && st[k].mv == i {
@@ -229,16 +235,37 @@ fn stamp_inner(
             (Some(a), true, Some(pose)) => {
                 b.set_axis(*pose);
                 b.push_arc_in(mv.kind, mv.to, mv.feed, a.center, a.ccw, a.plane);
+                held_pose = *pose;
+                in_air = mv.kind == MoveKind::Rapid;
             }
             (None, true, Some(pose)) => {
                 b.set_axis(*pose);
                 b.push(mv.kind, mv.to, mv.feed);
+                held_pose = *pose;
+                in_air = mv.kind == MoveKind::Rapid;
             }
             _ => {
                 for ((s, pose), kind) in st[k0..k].iter().zip(group).zip(&kinds[k0..k]) {
                     b.set_axis(*pose);
+                    // #3414: a lean never rides the move that reaches
+                    // the part: out of air, the rotaries swing at a
+                    // standstill, at the tip the machine already
+                    // holds, as a zero-travel rapid whose pose is the
+                    // only change - then the cut descends under the
+                    // pose already held. The builder keeps a
+                    // zero-travel move whose pose changed, and the
+                    // post solves it as a pure rotary reorientation.
+                    // When the pose already matches, the swing drops
+                    // and nothing changes. A lean while already
+                    // cutting keeps the modal law below.
+                    if in_air && *kind != MoveKind::Rapid && *pose != held_pose {
+                        let here = b.at();
+                        b.push(MoveKind::Rapid, here, None);
+                    }
                     let feed = if *kind == MoveKind::Rapid { None } else { s.feed };
                     b.push(*kind, tip_of(s.to, *pose, r), feed);
+                    held_pose = *pose;
+                    in_air = *kind == MoveKind::Rapid;
                 }
             }
         }
