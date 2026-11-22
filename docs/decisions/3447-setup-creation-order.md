@@ -4,8 +4,8 @@
 `CreateSetup` writes one past the highest stored order (0 for the first
 setup). `setup::setups` sorts by this field. Setups without the field
 (every earlier file) sort first, by name, as before. The project file
-saves the field as an additive `order` key on the setup row, with no
-version step. `get_job`, `add_setup`, the operation order and the post
+saves the field as an `order` key on the setup row, and the project
+version steps from 76 to 77. `get_job`, `add_setup`, the operation order and the post
 all read `setup::setups`, so they all follow the new order.
 
 **Why.** The issue asks that a setup added second never posts first. A
@@ -29,9 +29,17 @@ created `B_Middle` last and expected it in the middle by name. The
 fixture now creates the setups in A, B, C order. The test still pins
 that undo of `DeleteSetup` gives the setup back its old place.
 
+**Project version 77 (second review).** The `order` key changes the
+posted program order. An older build that ignored the key would post a
+setup before its datum source with no message. That is the rule of v50:
+an old reader must refuse the file rather than post in name order. So
+this PR steps the version to 77. The step is pure: a v76 file has no
+`order` key, opens unchanged and keeps name order. A v76 build refuses a
+v77 file. Dropped: an additive key with no version step, because an old
+reader then posts the wrong order with no warning.
+
 **Cost to change later.** Low. The field is optional; a reorder command
-writes it. A file that a newer build saves opens in an older build; the
-older build ignores the key and uses name order.
+writes it.
 
 **Review boundary decision.** Refuse `CreateSetup` when the highest stored
 order is `u32::MAX`. The last representable order remains usable. Checked

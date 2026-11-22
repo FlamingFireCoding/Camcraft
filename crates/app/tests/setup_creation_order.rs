@@ -128,6 +128,44 @@ fn the_creation_order_survives_save_and_load_and_reaches_the_post() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A v76 file has no setup `order`. It opens unchanged and keeps the name
+/// order it posted with; the saved order key needs v77, so a reader that
+/// does not know the key refuses the newer file.
+#[test]
+fn a_v76_file_keeps_name_order_and_a_newer_file_is_refused() {
+    const { assert!(camcraft_app::project::PROJECT_VERSION >= 77, "setup order needs project v77") };
+    let world = new_world();
+    let mut h = History::default();
+    two_setups(&world, &mut h);
+    let saved: Value = serde_json::from_str(&camcraft_app::project::save_text(&world).expect("save")).expect("json");
+    assert_eq!(saved["version"], json!(camcraft_app::project::PROJECT_VERSION), "{saved}");
+
+    let mut v76 = saved.clone();
+    v76["version"] = json!(76);
+    for row in v76["entities"].as_array_mut().expect("entities") {
+        if let Some(def) = row.get_mut("setup").and_then(Value::as_object_mut) {
+            assert!(def.remove("order").is_some(), "a new setup states its order: {def:?}");
+        }
+    }
+    let old = new_world();
+    camcraft_app::project::open(&old, &v76.to_string()).expect("a v76 file opens");
+    assert_eq!(setup::names(&old), ["Front_A90", "Setup1"], "v76 files post setups in name order");
+    assert_eq!(op_names(&old), ["FaceSecond", "FaceFirst"]);
+    assert!(setup::names(&old).iter().all(|n| setup::def_of(&old, n).expect("setup").order.is_none()));
+    let resaved: Value = serde_json::from_str(&camcraft_app::project::save_text(&old).expect("resave")).expect("json");
+    let mut expected = v76.clone();
+    expected["version"] = json!(camcraft_app::project::PROJECT_VERSION);
+    assert_eq!(resaved, expected, "a v76 file steps up with no other change");
+
+    let mut newer = saved;
+    let future = camcraft_app::project::PROJECT_VERSION + 1;
+    newer["version"] = json!(future);
+    match camcraft_app::project::open(&new_world(), &newer.to_string()) {
+        Err(camcraft_app::project::ProjectError::UnsupportedVersion(v)) if v == future => {}
+        other => panic!("a newer file must be refused, got {other:?}"),
+    }
+}
+
 #[test]
 fn exhausted_setup_order_refuses_creation_without_changing_the_program() {
     let world = new_world();

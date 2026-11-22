@@ -19,9 +19,10 @@
 //!   setup" in program order ([`setups`]), which collapses to that same
 //!   legacy behavior.
 //! - **One order law, shared by call.** [`operation_order`] is THE
-//!   program sequence: setup rank first, explicit operation position
-//!   within a setup (name order for legacy operations without a position)
-//!   (a setup created earlier before one created later, #3447). The post, re-machining, the
+//!   program sequence: setup rank first (a setup created earlier before
+//!   one created later, #3447), then the explicit operation position
+//!   within a setup (name order for legacy operations without a
+//!   position). The post, re-machining, the
 //!   document sim and batch regenerate all call this one function,
 //!   upgrading M3.1 D's "shared by reference" to "shared by call" -
 //!   re-machining and the machine can still not disagree, now including
