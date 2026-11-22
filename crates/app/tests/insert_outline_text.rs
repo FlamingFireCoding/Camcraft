@@ -12,7 +12,7 @@
 //! (outline_text_tools insert_outline_text), app::project (sketch_dto),
 //! app::sketch.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use flecs_ecs::prelude::World;
 use serde_json::{json, Value};
@@ -39,9 +39,9 @@ fn font_file(tag: &str) -> PathBuf {
     path
 }
 
-fn options(font: &PathBuf, text: &str) -> OutlineTextOptions {
+fn options(font: &Path, text: &str) -> OutlineTextOptions {
     OutlineTextOptions {
-        font: font.clone(),
+        font: font.to_path_buf(),
         text: text.into(),
         height: 7.0,
         letter_spacing: 0.0,
