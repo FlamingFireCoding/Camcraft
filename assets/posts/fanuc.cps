@@ -729,6 +729,26 @@ function aiccOff() {
   smoothActive = false;
 }
 
+// #3466: a section that follows a tilted one starts upright. The angle
+// words are modal and a tilted section's exit keeps its lean, so a
+// section whose moves state no angle would cut under the old one. Each
+// rotary the control holds (rotAt) away from zero is commanded back to
+// zero - after G49 (the preamble's line), at the reference height, before
+// the tool change and the first X/Y traverse, which states its height again.
+function uprightAfterTilt() {
+  var words = [], held = [], ls = ["A", "B", "C"];
+  for (var i = 0; i < ls.length; i++) {
+    var v = rotAt[ls[i]];
+    if (has(v) && Math.abs(v) > 1e-9 && statesRotary(ls[i])) { words.push(angleWord(ls[i], 0)); held.push(ls[i]); }
+  }
+  if (!words.length) return;
+  retractHome(false);
+  if (optStr("safeRetract", "G28") !== "G53") block(["G90"]);
+  block(["G00"].concat(words));
+  for (var j = 0; j < held.length; j++) rotAt[held[j]] = 0;
+  xyUnknown = true;
+}
+
 function startPreamble() {
   if (sectionOpen) return;
   sectionOpen = true;
@@ -740,6 +760,7 @@ function startPreamble() {
   // #1649: the operator reads why every sign on a flipped axis is the other one.
   if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   block(["G90", wcsWord, "G40", "G49", "G80"]);
+  uprightAfterTilt();
   if (toolWait) {
     if (secStarted > 0 && optBool("optionalStop", false)) block(["M1"]);
     toolNote();
