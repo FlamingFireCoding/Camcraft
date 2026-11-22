@@ -38,15 +38,19 @@ impl UpdateWatcher {
         current_version: &'static str,
         wake: WakeFn,
     ) {
-        if cfg!(test) || self.rx.is_some() {
+        #[cfg(test)]
+        {
             let _ = (check_for_updates, last_check_utc, current_version, wake);
-            return;
         }
         #[cfg(not(test))]
         {
             use camcraft_app::update_check::{
                 current_unix_secs, fetch_latest_release, should_check_now,
             };
+
+            if self.rx.is_some() {
+                return;
+            }
 
             let Some(now_utc) = current_unix_secs() else {
                 return;
