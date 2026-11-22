@@ -227,6 +227,16 @@ pub const ROWS: &[Row] = &[
         import: "agree",
         mesh: "watertight, within tolerance",
     },
+    // #3034: the recorded QA part (a mould base with an ellipsoid boss
+    // whose spline face ends in a pole). Added after #2790, so truck has
+    // no recorded reading.
+    Row {
+        file: "q02_3d_mold.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "watertight, within tolerance",
+    },
     Row {
         file: "sample_ap214.step",
         mm_per_unit: 1000.0,

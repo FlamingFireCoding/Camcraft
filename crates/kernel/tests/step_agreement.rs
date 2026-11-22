@@ -166,6 +166,7 @@ per_file! {
     step_lathe_holder_offset => "lathe_holder_offset.step",
     step_modular_clamp_unit => "modular_clamp_unit.step",
     step_modular_lathe_head => "modular_lathe_head.step",
+    step_q02_3d_mold => "q02_3d_mold.step",
     step_sample_ap214 => "sample_ap214.step",
     step_short_units_degree_cone => "short_units_degree_cone.step",
     step_short_units_inch => "short_units_inch.step",
