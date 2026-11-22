@@ -38,7 +38,7 @@ use crate::links::Links;
 use super::bore_core::{CORE_TOL, MAX_BORE_RINGS, bore_ring_count, max_bore_diameter};
 use super::face::GenError;
 use super::levels::{Cert, Motion, run_levels};
-use super::pass_start::PassStart;
+use super::pass_start::{PassStart, StartSide};
 
 /// One finished round hole the ride is paid to. `xy`/`radius` are the
 /// model's wall; `floor_z` is where the rim's bottom edge stops.
@@ -272,6 +272,14 @@ pub fn bore_started(p: &BoreParams, pass_start: PassStart) -> Result<Toolpath, G
         .with_links(p.links, p.helix_radius)
         .with_ring_zig();
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
+    // #3360/#3402: Outside cuts each level's wall ring first, a full tool
+    // width along the hole wall in uncut stock. The family warning law
+    // names that cut in the path notes, never silently.
+    if pass_start == PassStart::Outside
+        && let Some(note) = StartSide::from(pass_start).wall_first_note()
+    {
+        b.note(note);
+    }
 
     for h in &p.holes {
         let rc = h.radius - (r + p.stock_to_leave);
@@ -302,14 +310,15 @@ pub fn bore_started(p: &BoreParams, pass_start: PassStart) -> Result<Toolpath, G
             .ok_or_else(|| GenError::Invalid("bore radial plan exceeds its floor reach or ring budget".into()))?;
         let mut passes = Vec::with_capacity(count * 2);
         let mut prev = h.xy;
-        // #3360: the shared ring law orders the ladder. Ring `k` sits
-        // `count - k` offsets in from the wall, in the outer family (the
-        // disk has no hole). Auto and Inside keep the centre-out walk;
-        // Outside cuts the wall ring first and walks in. Each level still
-        // dives at the centre, so the entry law does not change.
-        let kmax = u32::try_from(count.saturating_sub(1)).unwrap_or(u32::MAX);
+        // #3360: ring `k` (1 the innermost, `count` the wall ring) sits
+        // `count - k` offsets in from the wall; the disk has no hole of
+        // its own. Auto and Inside keep the centre-out walk; Outside cuts
+        // the wall ring first and walks in. Each level still dives at the
+        // centre, so the entry law does not change.
         let mut order: Vec<usize> = (1..=count).collect();
-        order.sort_by_key(|&k| pass_start.rank(kmax.saturating_sub(u32::try_from(k - 1).unwrap_or(u32::MAX)), kmax, true));
+        if pass_start == PassStart::Outside {
+            order.reverse();
+        }
         for k in order {
             let rho = rc * (k as f64 / count as f64);
             let ring = ring_loop(h.xy, rho, p.climb);

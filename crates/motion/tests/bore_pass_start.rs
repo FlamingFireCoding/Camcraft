@@ -13,7 +13,7 @@ use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::entry::Entry3D;
 use camcraft_motion::geo2d::Point2;
 use camcraft_motion::links::Links;
-use camcraft_motion::machining2d::{BoreHole, BoreParams, PassStart, bore, bore_started};
+use camcraft_motion::machining2d::{BoreHole, BoreParams, PASS_START_NOTE, PassStart, bore, bore_started};
 
 /// One blind Ø20 hole at (5, 5), top 0, floor -4, a Ø6 square end mill,
 /// 2 mm stepdown, plunge entry: the wall ring rides at 10 - 3 = 7 mm.
@@ -100,4 +100,29 @@ fn bore_inside_is_the_centre_out_order() {
     let auto = bore_started(&p, PassStart::Auto).expect("a legal bore");
     let inside = bore_started(&p, PassStart::Inside).expect("a legal bore");
     assert_eq!(auto.moves, inside.moves);
+}
+
+/// #3360/#3402: Outside cuts the wall ring first, a full tool width along
+/// the hole wall in uncut stock. The family warning law names that cut on
+/// the path notes; Auto and Inside start at the centre in open air, so
+/// they post no such note.
+#[test]
+fn bore_outside_names_the_full_width_wall_cut() {
+    let p = params();
+    let outside = bore_started(&p, PassStart::Outside).expect("a legal bore");
+    let named: Vec<&String> = outside.notes.iter().filter(|n| n.starts_with(PASS_START_NOTE)).collect();
+    assert_eq!(named.len(), 1, "Outside names the full-width wall cut: {:?}", outside.notes);
+    assert!(
+        named[0].contains("full tool width") && named[0].contains("wall"),
+        "the note names the wall cut: {:?}",
+        outside.notes
+    );
+    for start in [PassStart::Auto, PassStart::Inside] {
+        let t = bore_started(&p, start).expect("a legal bore");
+        assert!(
+            t.notes.iter().all(|n| !n.starts_with(PASS_START_NOTE)),
+            "{start:?} starts at the centre in open air, so it posts no wall-first note: {:?}",
+            t.notes
+        );
+    }
 }

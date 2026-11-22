@@ -8,17 +8,21 @@
   `edit_operation`, and the shared Passes-tab row `Pass starts at`. No new
   type. This PR is stacked on #3353 (#3316), which adds these parts.
 - Bore has a pass order: the concentric rings of each level. The motion
-  entry point `bore_started(p, start)` orders them with
-  `PassStart::rank`. The old `bore(p)` calls it with Auto.
+  entry point `bore_started(p, start)` orders them from the shared
+  `PassStart` value. The old `bore(p)` calls it with Auto.
 - Ring `k` (1 is the innermost, `count` is the wall ring) is the offset
-  index `count - k` from the wall, in the outer family. The cutter-center
-  disk of a hole has no hole of its own, so there is no inner family.
-  - Auto: rank `kmax - (count - k)`, so the centre-out walk. This is the
-    old loop order, so Auto output is byte-identical.
+  index `count - k` from the wall. The cutter-center disk of a hole has no
+  hole of its own, so there is no inner family.
+  - Auto: the centre-out walk. This is the old loop order, so Auto output
+    is byte-identical.
   - Outside: the wall ring first, then each ring in to the centre.
-  - Inside: the disk has no inner wall, so the rank law gives the
-    centre-out order. Inside is the same path as Auto. The UI shows a
-    Bore hint that says so.
+  - Inside: the disk has no inner wall, so the centre-out order. Inside is
+    the same path as Auto. The UI shows a Bore hint that says so.
+- Outside cuts the wall ring first, a full tool width along the hole wall
+  in uncut stock. The family law of #3402 (#3316) names that cut in the
+  path notes through `StartSide::wall_first_note`, so the op page shows
+  the warning. Auto and Inside start at the centre in open air and post no
+  such note. The note does not change the moves.
 - Each level still dives at the centre and sweeps to the first ring
   start. The entry law (plunge, ramp along the radial sweep, the
   centre-cutting law) does not change. Under Outside the radial sweep
