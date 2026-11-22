@@ -104,6 +104,7 @@ mod tab_bridge;
 mod tab_clear;
 mod tab_kerf;
 mod slots;
+mod trace_avoid;
 mod slot_ends;
 mod slot_lap;
 mod slot_room;
@@ -172,6 +173,7 @@ pub use rest_prior::{
 };
 pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
+pub use trace_avoid::trace_avoid;
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use undercut::{undercut, undercut_band, undercut_station, UndercutParams, MAX_BULGE as UNDERCUT_MAX_BULGE};
