@@ -55,6 +55,11 @@ pub(crate) fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: O
     shell.state.set_ai_wake(std::sync::Arc::new(move || {
         let _ = ai_proxy.send_event(());
     }));
+    // #2428: check GitHub for a newer release once per day on native startup.
+    let update_proxy = event_loop.create_proxy();
+    shell.state.start_update_check(std::sync::Arc::new(move || {
+        let _ = update_proxy.send_event(());
+    }));
     // #183: the opt-in live MCP server. Its waker posts an empty user
     // event, which wakes the idle loop for a frame that answers the call.
     if let Some(port) = mcp_port {
@@ -342,6 +347,7 @@ impl Shell {
         // #183: the MCP listener stops (and its thread is joined) first,
         // so no wake-up reaches a closing loop.
         self.state.ai_chat.shutdown();
+        self.state.update_watcher.clear();
         self.state.ai_mcp_inbox = None;
         self.state.mcp = None;
         self.renderer = None;

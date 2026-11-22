@@ -48,9 +48,13 @@ mod report_scrub;
 mod status_alert;
 
 mod stock_info;
+mod browser_open;
 mod donate;
 // #2384: the Home button and the recent projects start page.
 pub(crate) mod home;
+// #2428: top-band Settings dropdown and startup update-available notice.
+mod settings_drop;
+mod update_notice;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
