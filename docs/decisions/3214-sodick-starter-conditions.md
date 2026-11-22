@@ -34,5 +34,23 @@ words that it already writes for a machine with a threader.
 - Picking a default condition for a new Wire Contour: that is a command
   change, and #3183 covers conditions from the machine's own table.
 
+**Review fix (second safety read).** The Wire Contour offset is the wire
+radius plus the condition gap, and the Sodick post writes no G41 / G42.
+An example gap must not post silently. So:
+
+- The wire machine mirror now carries `edm.conditions` when the file
+  states a table (a wire file with no table mirrors as before).
+- The Sodick post writes a note after each posted condition (the cut and
+  each skim): `(CONDITION Cnnn KERF GAP 0.040 MM - COMPARE WITH THE
+  CONTROL ROW)`. When the row's `notes` start with `EXAMPLE`, the note is
+  `(WARNING CONDITION Cnnn IS AN EXAMPLE ROW - THE KERF USES AN EXAMPLE
+  GAP OF 0.040 MM - REPLACE IT BEFORE CUTTING)`.
+- Dropped: a post `message()` warning. In `posting::post_script` any post
+  message blocks the post, so it would refuse the first Wire Contour that
+  the issue asks for. The program note is the visible diagnostic at the
+  control.
+- Goldens moved: the four `tests/golden/nc/sodick-wire/*.nc` programs
+  gain the gap note lines only. No motion line changes.
+
 **Cost to change.** Edit the `.mch` file and the pins in
 `crates/app/tests/sodick_alc400g.rs`.

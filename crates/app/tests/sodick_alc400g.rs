@@ -150,6 +150,12 @@ fn a_first_wire_contour_generates_and_posts_on_the_shipped_file() {
     assert!(has("G21") && has("C110") && has("M02"), "{text}");
     // The file states AWT, so the post threads and cuts the wire.
     assert!(has("T91") && has("T90"), "{text}");
+    // The kerf offset used the example row's gap: the program says so,
+    // so a user who did not edit the file cannot cut it unwarned.
+    assert!(
+        has("(WARNING CONDITION C110 IS AN EXAMPLE ROW - THE KERF USES AN EXAMPLE GAP OF 0.040 MM - REPLACE IT BEFORE CUTTING)"),
+        "{text}"
+    );
 }
 
 /// The guide's procedure: the user replaces the example table with the
@@ -165,6 +171,10 @@ fn a_punch_posts_through_the_sodick_post_on_it() {
     let text = post_sodick(&world, "own").expect("the punch posts");
     let has = |w: &str| text.lines().any(|l| l == w);
     assert!(has("G21") && has("C210") && has("M02"), "{text}");
+    // The user's own row: its gap is stated to compare with the control,
+    // and no example warning is written.
+    assert!(has("(CONDITION C210 KERF GAP 0.040 MM - COMPARE WITH THE CONTROL ROW)"), "{text}");
+    assert!(!text.contains("EXAMPLE"), "{text}");
     let e = punch_world(&raw.to_string(), "C110", 0.0).expect_err("the example row was replaced");
     assert!(e.contains("C110"), "{e}");
 }
