@@ -13,10 +13,20 @@ use egui_wgpu::{Renderer, ScreenDescriptor};
 
 use super::super::shell::*;
 use super::super::{icons, view_pass, world};
-use super::{resize_frame_deadline, Shell};
+use super::{eye_boot, resize_frame_deadline, Shell};
 
 
 impl Shell {
+    /// The eye that `eye_boot` built, once: taken into the shell, or refused by name.
+    fn take_eye(&mut self) {
+        match eye_boot::take(&mut self.eye_rx) {
+            Some(Ok(eye)) => self.stock_eye = Some(eye),
+            Some(Err(err)) => diag_warn!("stock eye: {err} - the deviate sheet stands in"),
+            None => {}
+        }
+    }
+
+
     fn draw(&mut self) {
         if self.failed || self.occluded {
             return;
@@ -30,6 +40,7 @@ impl Shell {
         }
         // Commands the panels queued last frame land before the scene is
         // collected, so this frame draws what the user's click did.
+        self.take_eye();
         self.state.drain_actions();
         let title = self.state.window_title();
         if title != self.window_title {
