@@ -1,5 +1,5 @@
 //! #3335: real viewport clicks fill the Boundaries "Do not touch" group of
-//! a 2D Offset. The click goes through the shell's own pointer route
+//! 2D Offset and Trace operations. The click goes through the shell's own pointer route
 //! (`interact::pick_at` -> `feature_click::click` -> `take_pick`), not a
 //! direct `take_pick` call: a face click and an edge click each add one row,
 //! the status line names the pick, and the row's remove button takes it
@@ -40,10 +40,10 @@ fn dnt(h: &Harness<'static, ShellUi>) -> Vec<GeoSel> {
     h.state().state.op_ui.area.do_not_touch.picks.clone()
 }
 
-/// A block beside the seed's part, a 2D Offset on the stock open on its
+/// A block beside the seed's part, an operation on the stock open on its
 /// Geometry tab, the Boundary group expanded and "Pick protected" armed,
 /// the Top view in orthographic framing the block.
-fn armed_offset() -> Harness<'static, ShellUi> {
+fn armed_operation(kind: OpType) -> Harness<'static, ShellUi> {
     let mut h = shell_harness();
     h.set_size(egui::vec2(1440.0, 1100.0));
     {
@@ -52,13 +52,13 @@ fn armed_offset() -> Harness<'static, ShellUi> {
         st.history.execute(&st.world, ImportModel::from_mesh("guard", block));
         let seed = model::find_by_name(&st.world, "Contour1").and_then(|e| model::operation_of(&st.world, &e)).expect("seed op");
         st.pending.push_back(CommandKind::CreateOperation {
-            name: "Offset1".into(),
+            name: "Protected1".into(),
             tool: seed.tool.clone(),
             src: SrcRef::Stock,
-            params: operation::retype_params(&seed.params, OpType::Offset2D.ordinal()),
+            params: operation::retype_params(&seed.params, kind.ordinal()),
         });
         st.drain_actions();
-        crate::actions::target(st, UiTarget::Operation("Offset1".into()));
+        crate::actions::target(st, UiTarget::Operation("Protected1".into()));
     }
     h.run_steps(3);
     let boundary = h.get_by_label("Boundary").rect();
@@ -96,16 +96,21 @@ fn face_then_edge(mut h: Harness<'static, ShellUi>) {
 
 #[test]
 fn do_not_touch_takes_a_face_and_an_edge_by_viewport_click() {
-    face_then_edge(armed_offset());
+    face_then_edge(armed_operation(OpType::Offset2D));
 }
 
 /// The toolbar's "Click selects" set to Models while the group shows
 /// "Picking…": the click still fills the group, not the model selection.
 #[test]
 fn do_not_touch_takes_viewport_clicks_in_models_mode() {
-    let mut h = armed_offset();
+    let mut h = armed_operation(OpType::Offset2D);
     h.state_mut().state.geo_pick = GeoPick::Model;
     h.run_steps(2);
     assert_eq!(h.state().state.boundary_pick, Some(crate::state::BoundaryPick::DoNotTouch), "the group stays armed");
     face_then_edge(h);
+}
+
+#[test]
+fn trace_takes_a_protected_face_and_edge_by_viewport_click() {
+    face_then_edge(armed_operation(OpType::Trace));
 }

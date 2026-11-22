@@ -114,7 +114,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // with a body, the same bands above the shank, never the cylinder
     // enclosing them (#842: drill reach and the cross drill too).
     let cutter = verify::Cutter::of(&tool).with_body(&geom, &holder);
-    let avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
+    let mut avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
     // The probe (#108) cuts nothing: its own protected-move law judges
     // the stylus against the model, and no cutting law or region applies.
     if matches!(params, OpParams::Probe { .. }) {
@@ -3345,6 +3345,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     } else {
         path
     };
+    // Judge the final Trace after fixture routing, in the same frame as
+    // the protected geometry. All following laws see any elevated links.
+    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. })) {
+        super::avoid::protect_trace(&mut path, &spec, frame.is_none(), z_ceiling)?;
+    }
     let stl = stock_to_leave_of(&params);
     // The 2D kinds' depth-aware verify (the silent-gouge fix): a flat
     // region says where the walls stand at ONE plane, and a path walked
