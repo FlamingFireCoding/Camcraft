@@ -5,8 +5,29 @@ use camcraft_geometry::profile_derive::derive_extruded_from_facets;
 
 use crate::geo2d::{Loop, Point2, Region};
 use crate::geometry::Triangle;
+use std::ops::Range;
+
+use super::Ladder;
 
 const BOUND_LIMIT: f64 = 1e9;
+
+/// [`super::ladder`] of rings the user PICKED (#3443): a ring clear of the
+/// model's XY hull keeps every level without a section. Whole-model
+/// rings never take this: their unread planes must still refuse.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::machining2d) fn ladder_picked(
+    rings: &[Vec<Point2>],
+    facets: &[Triangle],
+    bodies: &[Range<usize>],
+    zs: &[f64],
+    top: f64,
+    r: f64,
+    leave: f64,
+    notes: &mut Vec<String>,
+) -> Ladder {
+    let hull = bound(facets);
+    super::ladder_in(rings, facets, bodies, zs, top, r, leave, notes, hull)
+}
 
 /// The XY hull contains every triangle at every height. An unavailable
 /// bound leaves the existing per-plane checks in charge.

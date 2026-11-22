@@ -11,6 +11,15 @@ passes this proof keeps every requested depth. If the hull is unavailable
 or the proof fails, use the existing section and overhang checks. Add no
 dependency.
 
+Use the hull proof only for rings that the user picked
+(`contour_on_picked`, through `ladder_picked`). The whole-model contour and
+the unpicked region contour keep the plain `ladder`. A whole-model contour
+cuts the model's own outline. Its refusal of an unreadable section is the
+signal that the mesh is broken (`contour_whole_step::whole_model_contour_that_cannot_reach_bottom_is_refused_with_the_stopped_level`).
+The hull proof skips each section, so it hid that refusal and gave a clean
+partial path. The premise of that test is correct: a broken mesh must
+refuse by name.
+
 Reject a picked contour when a required section is unreadable, even when
 earlier levels are clear. Name the section error and the skipped levels.
 
@@ -21,7 +30,7 @@ every triangle at every height. Clearance from that bound proves exterior
 clearance without repeated interior slices. It does not treat an unreadable
 section as empty material.
 
-**Considered and dropped:** Do not ignore section errors, weaken wall
+**Considered and dropped:** Do not apply the hull proof in the shared ladder for each contour kind. That hides the unreadable-section refusal of a whole-model contour. Do not ignore section errors, weaken wall
 clearance, increase slice retry offsets, or give every Outside contour its
 full depth. These choices do not prove the cutter clear. A general rewrite
 of slicing is larger than this repair and changes checks used by other

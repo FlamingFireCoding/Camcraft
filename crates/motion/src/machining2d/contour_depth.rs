@@ -22,6 +22,7 @@ use crate::geometry::slice::{material_above_of, shadow_above};
 
 #[path = "contour_exterior.rs"]
 mod exterior;
+pub(super) use exterior::ladder_picked;
 
 /// Radial slack of the ring-legality test, mm: the offset ring's round
 /// joins sit a chord sag inside the exact offset (`geo2d`'s 5 um arc
@@ -240,9 +241,23 @@ pub(super) fn ladder(
     leave: f64,
     notes: &mut Vec<String>,
 ) -> Ladder {
+    ladder_in(rings, facets, bodies, zs, top, r, leave, notes, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ladder_in(
+    rings: &[Vec<Point2>],
+    facets: &[Triangle],
+    bodies: &[Range<usize>],
+    zs: &[f64],
+    top: f64,
+    r: f64,
+    leave: f64,
+    notes: &mut Vec<String>,
+    hull: Option<Region>,
+) -> Ladder {
     let need = r + leave - LEGAL_SLACK;
     let heights = vertex_heights(facets);
-    let hull = exterior::bound(facets);
     let mut sec = Sections { facets, bodies, cache: HashMap::new() };
     let mut per_ring: Vec<Vec<f64>> = Vec::with_capacity(rings.len());
     let mut unread: Vec<Option<String>> = Vec::with_capacity(rings.len());
