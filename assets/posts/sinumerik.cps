@@ -21,6 +21,12 @@ workOffsetMax = 6;      // G54..G57, G505, G506 (#934); more G505+ frames need t
 wcsRotation = true;        // #760: writes ROT RPL=.. / ROT in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G710 / G700
 endUnits = "G700 G710";   // #2189: switches end units before M2 when asked
+// #1389: 840D Fundamentals, section 3.2.4: semicolon to block end.
+explains = "semi";
+explainWords = {
+  G700: "INCH LENGTHS AND FEEDS", G710: "MM LENGTHS AND FEEDS",
+  G505: "WORK OFFSET 5", G506: "WORK OFFSET 6", G58: "", G59: ""
+};
 
 // Determinism law: no timestamps, no randomness - the same stream
 // always posts to the same text (golden files depend on it).
@@ -88,7 +94,9 @@ function block(words) {  // one numbered line per block - the DIN law
   }
   if (a.length > 0) {
     nLine += 10;
-    writeln("N" + nLine + " " + a.join(" "));
+    var line = "N" + nLine + " " + a.join(" "), c = explain(a);
+    if (c && line.length + 1 + c.length <= 80) line += " " + c;
+    writeln(line);
   }
 }
 function xyz(p) { return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)]; }
@@ -240,6 +248,8 @@ function joinDash(parts) {  // the non-empty parts, " - " between
   return a.join(" - ");
 }
 function note(s) { writeln("; " + s); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
@@ -783,7 +793,10 @@ function onCycle() {
   // Manual (SINUMERIK ONE / 840D sl / 828D, 07/2021), section 6.3, lists
   // no P in its G73 and G83 formats; an unverified G73 dwell is refused
   // above (#2354). G84 and G85 dwells are refused above (#2357).
-  if (ms > 0 && g !== "G73" && g !== "G84") words.push("P" + ms);
+  // #1480: Siemens ISO dialects Function Manual (07/2021), table 6-1,
+  // page 95, gives G89 dwell in milliseconds. Section 6.3.1 says cycle
+  // parameters are modal: write P0 when a Back bore has no dwell.
+  if ((ms > 0 && g !== "G73" && g !== "G84") || g === "G89") words.push("P" + ms);
   words.push(fw(p.FeedRate));
   block(words);
   cycX = p.X; cycY = p.Y; cycR = p.R;

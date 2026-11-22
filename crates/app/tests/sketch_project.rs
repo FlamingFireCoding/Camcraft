@@ -95,7 +95,12 @@ fn a_stock_and_profile_setup_saves_and_loads_with_its_2d_operation() {
     let world = sheet_job();
     let text = saved(&world);
     let (file, row) = file_and_row(&text);
-    const { assert!(PROJECT_VERSION >= 71, "the DXF profile row arrives at v71, after main's v70") };
+    const {
+        assert!(
+            PROJECT_VERSION >= 71,
+            "DXF profile rows require project v71 or later"
+        );
+    }
     assert_eq!(file["version"], json!(PROJECT_VERSION));
     let dto = &file["entities"][row];
     assert_eq!(dto["name"], json!("plate"));
@@ -135,6 +140,7 @@ fn rest_parameters_and_profile_rows_share_the_v71_project_file() {
     let mut history = History::default();
     let mut pocket = operation::seed_params(OpType::Pocket.ordinal());
     let previous = camcraft_app::machining2d::RestParams {
+        source: Default::default(),
         previous_tool_diameter: 12.0,
         previous_corner_radius: 1.0,
         previous_stock_to_leave: 0.2,

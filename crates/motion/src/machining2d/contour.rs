@@ -119,8 +119,12 @@ pub(super) fn emit_band(
     // and the next ring's, cut paths too (#1555: climb's leads cross it).
     let mut last_leads: Vec<Vec<Point2>> = Vec::new();
     let is_tabbed = |z: f64| p.tab_count > 0 && z < p.bottom_z + p.tab_height;
-    // #2480: each ring's tab windows, fitted once (tab_bridge).
-    let mut fits = std::collections::HashMap::new();
+    // #2480 / #2561: each ring's tab windows, fitted once (tab_bridge) and
+    // held against every other cut of the tabbed levels (tab_clear).
+    // Only a level that a ring is cut at holds its tabs against it.
+    let tab_levels: Vec<Vec<u64>> =
+        (0..band.loops.len()).map(|li| lad.ring(li).iter().filter(|&&z| is_tabbed(z)).map(|z| z.to_bits()).collect()).collect();
+    let mut fits = super::tab_clear::fit_loops(&band.loops, &tab_levels, pick, p, &legal);
     // The cut order, and where the stay-down link joins it (contour_link).
     let (sched, stay) = plan_links(p, lad, &band.plan, lead_notes);
     for (si, &(z, li)) in sched.iter().enumerate() {
@@ -252,7 +256,10 @@ pub(super) fn emit_band(
                 b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
             }
             let mut arced = false;
-            if wall_arc_on && !tabbed {
+            // #3132: a None lead-in adds no XY travel at the seam - the
+            // wall arc runs back along the seam's tangent like a lead.
+            let no_lead_in = p.lead == Lead::None;
+            if wall_arc_on && !tabbed && !no_lead_in {
                 let z_top = wall_arc_top(p, rz, rzi, hop_z);
                 let first = lead.first().or(walk.first());
                 match wall_arc(b, &eng, e2, z, z_top, hop_z, first) {
@@ -266,6 +273,8 @@ pub(super) fn emit_band(
                         ),
                     ),
                 }
+            } else if wall_arc_on && !tabbed {
+                say(lead_notes, "entry: the arc stands down with no lead-in - its descent would run along the seam like a lead; grazing dive at the ring's start".into());
             } else if wall_arc_on {
                 say(
                     lead_notes,

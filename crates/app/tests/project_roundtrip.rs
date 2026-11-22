@@ -492,6 +492,7 @@ fn arc_move_round_trips() {
                 helix_radius: 1.0,
                 blend_turns: false,
                 links: camcraft_app::links::Links::PLANAR,
+                chain_overrides: Vec::new(),
             },
         )
         .expect("create"),
@@ -983,6 +984,7 @@ fn v5_roundtrips_retract_and_auto() {
                 helix_radius: 1.0,
                 optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
                 blend_turns: false,
+                corner_relief: Default::default(),
             },
         )
         .expect("pocket"),
@@ -1168,6 +1170,7 @@ fn a_selection_round_trips_and_stays_ok() {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     history.execute(
         &world,
@@ -2680,6 +2683,7 @@ fn level_link_choice_round_trips_and_the_default_writes_no_key() {
             helix_radius: 1.0,
             blend_turns: false,
             links,
+            chain_overrides: Vec::new(),
         };
         history.execute(
             &world,
@@ -2768,6 +2772,7 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 helix_radius: 1.0,
                 blend_turns: false,
                 links: camcraft_app::links::Links::PLANAR,
+                chain_overrides: Vec::new(),
             },
         )
         .expect("create"),
@@ -2842,6 +2847,7 @@ fn side_choice_round_trips_and_a_hand_edited_inside_refuses_at_generate() {
                 helix_radius: 1.0,
                 blend_turns: false,
                 links: camcraft_app::links::Links::PLANAR,
+                chain_overrides: Vec::new(),
             },
         )
         .expect("create C2"),
