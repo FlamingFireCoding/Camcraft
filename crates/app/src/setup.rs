@@ -70,14 +70,14 @@ pub fn setups(world: &World) -> Vec<(String, flecs_ecs::prelude::Entity)> {
 }
 
 /// The `order` a new setup takes (#3447): one past the highest stored,
-/// 0 when none is stored. Saturates, so a corrupt maximum cannot wrap.
+/// 0 when none is stored. Returns `None` when the stored order is exhausted.
 #[must_use]
-pub fn next_order(world: &World) -> u32 {
+pub fn next_order(world: &World) -> Option<u32> {
     setups(world)
         .into_iter()
         .filter_map(|(n, _)| def_of(world, &n).and_then(|d| d.order))
         .max()
-        .map_or(0, |o| o.saturating_add(1))
+        .map_or(Some(0), |o| o.checked_add(1))
 }
 
 /// The setup names in order.

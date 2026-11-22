@@ -14,11 +14,12 @@ use camcraft_app::commands::{AddTool, CreateOperation, CreateSetup, DeleteSetup,
 use camcraft_app::geometry::Point3;
 use camcraft_app::mcp::Server;
 use camcraft_app::operation::{Height, OpParams, SrcRef};
-use camcraft_app::schema::Location;
+use camcraft_app::schema::{Location, SetupDef};
 use camcraft_app::setup;
 use camcraft_app::stock::StockShape;
 use camcraft_app::tools::catalog;
 use camcraft_app::world::new_world;
+use flecs_ecs::core::EntityViewGet;
 use flecs_ecs::prelude::World;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -125,4 +126,28 @@ fn the_creation_order_survives_save_and_load_and_reaches_the_post() {
     let second = text.find("FaceSecond").expect("Front_A90's operation is posted");
     assert!(first < second, "Setup1 posts before Front_A90:\n{text}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn exhausted_setup_order_refuses_creation_without_changing_the_program() {
+    let world = new_world();
+    let mut h = History::default();
+    two_setups(&world, &mut h);
+    let source = camcraft_app::model::find_by_name(&world, "Front_A90").expect("source");
+    source.entity_view(&world).get::<&mut SetupDef>(|d| d.order = Some(u32::MAX - 1));
+    h.execute(&world, CreateSetup::new(&world, Some("Last"), Some("Front_A90")).expect("last order fits"));
+    assert_eq!(setup::def_of(&world, "Last").expect("last").order, Some(u32::MAX));
+    let before = camcraft_app::project::save_text(&world).expect("snapshot");
+    // A project can carry this boundary value; loading it must keep the refusal.
+    let world = new_world();
+    camcraft_app::project::open(&world, &before).expect("load maximum order");
+    let before = camcraft_app::project::save_text(&world).expect("loaded snapshot");
+    let error = match CreateSetup::new(&world, Some("A_Overflow"), Some("Last")) {
+        Ok(_) => panic!("exhausted order must refuse creation"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("setup order is exhausted"), "{error}");
+    assert_eq!(camcraft_app::project::save_text(&world).expect("snapshot"), before);
+    assert_eq!(setup::names(&world), ["Setup1", "Front_A90", "Last"]);
+    assert_eq!(op_names(&world), ["FaceFirst", "FaceSecond"]);
 }

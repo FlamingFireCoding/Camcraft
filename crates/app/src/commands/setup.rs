@@ -126,6 +126,9 @@ impl CreateSetup {
                 "there is nothing to transfer a datum from yet".into(),
             ));
         }
+        let order = setup::next_order(world).ok_or_else(|| {
+            CommandError::Invalid("cannot create setup: setup order is exhausted".into())
+        })?;
         let def = if materializing {
             SetupDef {
                 stock: STOCK_NAME.to_string(),
@@ -143,7 +146,7 @@ impl CreateSetup {
                 workholding_max_rpm: None,
                 sheet_job: None,
                 // #3447: the program order is the creation order.
-                order: Some(setup::next_order(world)),
+                order: Some(order),
             }
         } else {
             SetupDef {
@@ -180,7 +183,7 @@ impl CreateSetup {
                 // numbers do not describe it.
                 sheet_job: None,
                 // #3447: a setup added later posts later, whatever its name.
-                order: Some(setup::next_order(world)),
+                order: Some(order),
             }
         };
         let mut stock = None;

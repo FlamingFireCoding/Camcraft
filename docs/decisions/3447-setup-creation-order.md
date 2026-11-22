@@ -32,3 +32,10 @@ that undo of `DeleteSetup` gives the setup back its old place.
 **Cost to change later.** Low. The field is optional; a reorder command
 writes it. A file that a newer build saves opens in an older build; the
 older build ignores the key and uses name order.
+
+**Review boundary decision.** Refuse `CreateSetup` when the highest stored
+order is `u32::MAX`. The last representable order remains usable. Checked
+addition prevents a tied order that could sort a new setup before its datum
+source. Renumbering existing setups was dropped because creation should not
+rewrite their stored order. The boundary pin also loads the maximum order
+from a project and checks that refusal leaves the document unchanged.
