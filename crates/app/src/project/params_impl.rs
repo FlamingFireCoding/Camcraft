@@ -250,6 +250,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => {
                 let (troch_return, lift) = match troch.ret {
                     None => (AdaptiveTrochReturnDto::Auto, None),
@@ -291,6 +292,7 @@ impl ParamsDto {
                     loop_width: troch.loop_width,
                     corner_relief: cr_to_dto(corner_relief),
                     tilt: (*tilt).map(Into::into),
+                    pass_start: (*pass_start).into(),
                 }
             }
             OpParams::Offset2D {
@@ -1572,6 +1574,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Adaptive2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1616,6 +1619,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Offset2D {
                 links,

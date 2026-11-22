@@ -229,6 +229,7 @@ fn adaptive2d(climb: bool) -> OpParams {
         blend_turns: false,
         tilt: None,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     }
 }
 

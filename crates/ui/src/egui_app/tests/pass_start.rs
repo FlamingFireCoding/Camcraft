@@ -1,6 +1,6 @@
-//! #3316: 2D Offset's Passes tab carries the shared "Pass starts at"
-//! row (Auto / Inside / Outside, Auto by default); 2D Adaptive, which
-//! shares the pane, does not have it yet (its own sub-issue). Provenance:
+//! #3316 / #3355: the Passes tabs of 2D Offset and 2D Adaptive carry the
+//! shared "Pass starts at" row (Auto / Inside / Outside, Auto by
+//! default). Provenance:
 //! our own page law; asserted structurally (labels, the combo's value;
 //! no pixels).
 
@@ -9,7 +9,9 @@ use camcraft_app::machining2d::PassStart;
 use camcraft_app::operation::{KindInfo, OpType};
 use egui::accesskit::Role;
 
-use super::super::pass_start_row::{FACE_NO_PASS_ORDER, PASS_START_LABEL, pass_start_names};
+use super::super::pass_start_row::{
+    FACE_NO_PASS_ORDER, PASS_START_LABEL, TROCH_PASS_START_REFUSED, pass_start_names,
+};
 
 fn kind(ty: OpType) -> usize {
     KindInfo::ALL.iter().position(|k| k.ty == ty).unwrap_or(usize::MAX)
@@ -66,10 +68,27 @@ fn the_face_passes_tab_says_it_has_no_pass_order() {
     );
 }
 
+/// #3355: 2D Adaptive has the same row; under the Trochoidal method a
+/// forced order is said refused by name, never dropped in silence.
 #[test]
-fn the_adaptive_twin_has_no_pass_start_row_yet() {
-    let harness = passes_of(OpType::Adaptive2D);
-    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 0, "2D Adaptive gets the row in its own issue");
+fn the_adaptive_twin_offers_pass_start_and_says_the_trochoidal_refusal() {
+    let mut harness = passes_of(OpType::Adaptive2D);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let inside_before = combos_showing(&harness, "Inside");
+    if let OpParams::Adaptive2D { pass_start, .. } = &mut harness.state_mut().state.op_ui.params {
+        assert_eq!(*pass_start, PassStart::Auto, "a new 2D Adaptive starts Auto");
+        *pass_start = PassStart::Inside;
+    } else {
+        panic!("the draft is not a 2D Adaptive");
+    }
+    harness.run();
+    assert_eq!(combos_showing(&harness, "Inside"), inside_before + 1, "the combo shows the draft's value");
+    assert_eq!(harness.query_all_by_label(TROCH_PASS_START_REFUSED).count(), 0, "Spiral takes the order");
+    if let OpParams::Adaptive2D { method, .. } = &mut harness.state_mut().state.op_ui.params {
+        *method = camcraft_app::machining2d::AdaptiveMethod::Trochoidal;
+    }
+    harness.run();
+    assert_eq!(harness.query_all_by_label(TROCH_PASS_START_REFUSED).count(), 1, "Trochoidal says the refusal");
 }
 
 /// #3316: a pass-start warning on the toolpath is a warning line of the
