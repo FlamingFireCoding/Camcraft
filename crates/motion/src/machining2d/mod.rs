@@ -162,7 +162,7 @@ pub use corner_relief::{
     InsideCorner, ResolvedRelief, TBoneDirection, capsule_region, inside_corners, plan_corner_reliefs,
 };
 pub use corner_relief_spur::pocket_relief_plan;
-pub use pass_start::PassStart;
+pub use pass_start::{PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart};
 pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, pocket_started, PocketParams, PocketStrategy};
 pub use pocket_avoid::{pocket_avoid, pocket_avoid_started, pocket_avoid_with_relief};
 pub use predrilled::PreHole;

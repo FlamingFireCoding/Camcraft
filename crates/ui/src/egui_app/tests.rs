@@ -1071,7 +1071,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Levels", "Top Z", "Bottom Z", "Stepdown"]),
-                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Rest machining"]),
+                ("Passes", vec!["Stepover", "Stock to leave", "Strategy", "Pass starts at", "Rest machining"]),
                 ("Lead in / Lead out", vec!["Entry", "Level to level", "Between levels", "Between passes", "Plunge", "Ramp / helix / arc feed", "Entry plunge feed", "Lead-in feed", "Engagement", "Minimum radius", "Helix pitch"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],

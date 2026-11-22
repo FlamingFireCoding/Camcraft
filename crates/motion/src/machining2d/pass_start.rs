@@ -19,6 +19,17 @@ pub enum PassStart {
     Outside,
 }
 
+/// The note of a Zigzag plan with Inside or Outside (#3354): rows sweep
+/// across the area and have no inside or outside, so the choice is not
+/// used - said by name, never dropped silently.
+pub const PASS_START_ZIGZAG_NOTE: &str =
+    "Pass starts at: Zigzag rows have no inside or outside order; the choice is used only by the ring strategies (Waterline, Offset rings)";
+
+/// The note of a rest pocket with Inside or Outside (#3354): rest
+/// machining walks its own rest areas, not the pocket's rings.
+pub const PASS_START_REST_NOTE: &str =
+    "Pass starts at: rest machining keeps its own order of the rest areas; the choice is not used";
+
 impl PassStart {
     /// Every value, in the order the page lists them.
     pub const ALL: [PassStart; 3] = [PassStart::Auto, PassStart::Inside, PassStart::Outside];

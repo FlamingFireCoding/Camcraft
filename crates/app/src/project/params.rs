@@ -272,6 +272,10 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3354 where each level's rings start (the 2D Offset key of
+        /// #3316): absent is `auto` on every earlier file - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// 2D Adaptive (M2.4 A): the pocket arm without the strategy tag -
     /// the kind fixes the ladder; every default the pocket needs, this

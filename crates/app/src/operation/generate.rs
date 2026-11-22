@@ -712,6 +712,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_radius,
             rest,
             corner_relief,
+            pass_start,
             ..
         } => {
             if *strategy == PocketStrategy::Adaptive {
@@ -797,7 +798,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     machining2d::rest_pocket_previous_with_relief(&region, pp, r, ahead_cols.as_ref(), corner_relief)
                 }
                 Some(r) => machining2d::rest_pocket_with_relief(&region, pp, r, corner_relief),
-                None => machining2d::pocket_entered_with_relief(&region, pp, &holes, corner_relief),
+                None => machining2d::pocket_started(&region, pp, &holes, corner_relief, *pass_start),
             };
             let mut path = pocket(&pp)?;
             if let Some(m) = carry_need!(&relieved_region, &path) {
@@ -806,6 +807,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 path = pocket(&pp)?;
             }
             super::predrilled_entry::say(&mut path, hole_notes);
+            // #3354: rest machining walks its own rest areas, not the
+            // pocket's rings; it says so by name, never drops the choice
+            // silently (the Zigzag rows say it in the planner).
+            if rest.is_some() && *pass_start != machining2d::PassStart::Auto {
+                super::predrilled_entry::say(&mut path, vec![machining2d::PASS_START_REST_NOTE.to_owned()]);
+            }
             relief_zones = zones;
             (relieved_region, path)
         }
