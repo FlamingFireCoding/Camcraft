@@ -163,6 +163,60 @@ fn doosan_states_upright_after_a_tilted_section_with_a_tool_change() {
     assert_upright_return("doosan-dnm", 2);
 }
 
+/// Two tilted sections in a row. The second opens while `rotAt` still
+/// holds the lean of the first. The return is kept on purpose (the
+/// review decision of #3466): each section that follows a tilted
+/// section starts upright at the reference height, even when it then
+/// leans again. Skipping it would save one move and add a look-ahead
+/// case to the scripts.
+fn two_tilted_program(stem: &str) -> engine::PostOutput {
+    let mut r = dump_of(&tilted_path(), "Lean1", 1);
+    r.extend(dump_of(&tilted_path(), "Lean2", 1));
+    run(stem, &r)
+}
+
+/// From the second section on: a retract, then the zero word with no
+/// X/Y, then the first X/Y traverse; the zero precedes the section's
+/// own lean word, and the section states its lean again before it cuts.
+fn assert_return_between_two_tilted(stem: &str) {
+    let out = two_tilted_program(stem);
+    assert!(out.warnings.is_empty(), "{stem}: no refusal: {:?}\n{}", out.warnings, out.program);
+    let prog = &out.program;
+    let lines: Vec<&str> = prog.lines().collect();
+    let start = lines.iter().position(|l| l.contains("Lean2")).unwrap_or_else(|| panic!("{stem}: the second section opens:\n{prog}"));
+    let rest = &lines[start..];
+    let cut = rest.iter().position(|l| l.split_whitespace().any(|w| w == "G01" || w == "G1")).unwrap_or_else(|| panic!("{stem}: the second section cuts:\n{prog}"));
+    let zero = rest[..cut]
+        .iter()
+        .position(|l| word(l, 'B').is_some_and(|v| v.abs() < 1e-9))
+        .unwrap_or_else(|| panic!("{stem}: the second section commands B0 before its first cut:\n{prog}"));
+    let traverse = rest[..cut]
+        .iter()
+        .position(|l| is_motion(l) && (word(l, 'X').is_some() || word(l, 'Y').is_some()))
+        .unwrap_or_else(|| panic!("{stem}: the second section traverses X/Y:\n{prog}"));
+    assert!(zero < traverse, "{stem}: the rotaries return before the first X/Y traverse:\n{prog}");
+    let zl = rest[zero];
+    assert!(word(zl, 'X').is_none() && word(zl, 'Y').is_none(), "{stem}: the return moves no X/Y: {zl}\n{prog}");
+    assert!(
+        rest[..zero].iter().any(|l| l.contains("G28") || l.contains("G53")),
+        "{stem}: the tool retracts to a safe height before the rotaries turn:\n{prog}"
+    );
+    assert!(
+        rest.iter().any(|l| is_motion(l) && word(l, 'B').is_some_and(|v| (v - 20.0).abs() < 1e-9)),
+        "{stem}: the second tilted section states its lean again:\n{prog}"
+    );
+}
+
+#[test]
+fn fanuc_returns_to_zero_between_two_tilted_sections() {
+    assert_return_between_two_tilted("fanuc");
+}
+
+#[test]
+fn doosan_returns_to_zero_between_two_tilted_sections() {
+    assert_return_between_two_tilted("doosan-dnm");
+}
+
 /// Tormach PathPilot indexes an A about X (3+2): the whole first section
 /// stands at one A angle. By the read in #3466 it already writes
 /// `G53 G0 Z` and `G0 A0` at the next upright section; this pins it.

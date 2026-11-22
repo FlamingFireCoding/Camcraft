@@ -31,7 +31,14 @@ byte for byte as before, and no golden moved.
 - *The return only when the next section is upright.* The issue asks that
   each section after a tilted section states the rotary position. A return
   at the reference height before a tilted section is also safe: that
-  section then arms G43.4 and turns from a known zero.
+  section then arms G43.4 and turns from a known zero. The review of
+  PR #3478 asked for this choice on purpose; it is kept, and now pinned
+  by `fanuc_returns_to_zero_between_two_tilted_sections` and
+  `doosan_returns_to_zero_between_two_tilted_sections` in
+  `crates/post/tests/upright_after_tilt.rs`. The catalog case
+  `examples/catalog/multiaxis/indexed` has two tilted sections in a row
+  (Back A-90 after Front A90, Tilted A30 B30 after that); its `.nc`
+  gained the return blocks and moved in this PR.
 - *A return at the end of the tilted section.* A program that ends after
   the tilted section is then also upright, but the end of a section has no
   reference to the next section's clearance, and `onClose` already homes.
