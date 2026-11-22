@@ -66,6 +66,12 @@ fn part_problem(world: &World, name: &str, op: &Operation, path: &Toolpath, know
         return None;
     }
     let parts = keep_law::kept_parts_named(world, op.setup.as_deref(), &op.params, &op.src, job.part_solid);
+    // A cached posed deburr has no verdict for other parts imported or
+    // moved after generation. The upright solid judge cannot supply it.
+    if matches!(op.params, super::OpParams::MultiAxisDeburr { .. }) {
+        let part = parts.first().map_or("other kept parts", |(name, _)| name.as_str());
+        return Some(format!("{name}: Multi-Axis Deburr cannot judge the posed cutter against '{part}'; use a document with only the source part"));
+    }
     let geom = job.tool.geom();
     let holder = crate::tool_body::stack(&geom, job.body.as_ref()).with_neck(job.neck.clone());
     let cutter = verify::Cutter::of(&job.tool).with_body(&geom, &holder);

@@ -8,6 +8,7 @@
 //! app::project (the MultiAxisDeburr params DTO), app::operation (the
 //! kind row, the seed, the generate arm), app::commands
 //! (CreateOperation, EditOperationParams, SetOperationGeometry).
+//! Also covers app::operation::keep_law and app::operation::kept_rejudge.
 
 use camcraft_app::geometry::{cube, Point3};
 use camcraft_app::mcp::Server;
@@ -124,6 +125,69 @@ fn multiaxis_deburr_generates_tilted_breaks_on_the_vertical_corners() {
     let turns = |w: &str| w.starts_with('A') && w.trim_start_matches('A').parse::<f64>().is_ok_and(|v| v.abs() > 1e-6);
     let tilted = nc.lines().filter(|l| l.split_whitespace().any(turns)).count();
     assert!(tilted > 0, "the posted program turns the A axis: {nc}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The review's 0.1 mm cube lies outside the source brick, inside a
+/// formerly admitted tilted cone. It must receive no chamfer exemption.
+fn import_neighbour(c: &mut Client, dir: &std::path::Path) {
+    let center = Point3::new(-19.5449504775, 20.6014961319, 2.7993502387);
+    let mut stl = String::from("solid other\n");
+    let mesh = cube(
+        Point3::new(center.x - 0.05, center.y - 0.05, center.z - 0.05),
+        Point3::new(center.x + 0.05, center.y + 0.05, center.z + 0.05),
+    );
+    for t in mesh.facets.iter() {
+        stl.push_str(" facet normal 0 0 0\n  outer loop\n");
+        for p in [t.a, t.b, t.c] {
+            stl.push_str(&format!("   vertex {} {} {}\n", p.x, p.y, p.z));
+        }
+        stl.push_str("  endloop\n endfacet\n");
+    }
+    stl.push_str("endsolid other\n");
+    let path = dir.join("other.stl");
+    std::fs::write(&path, stl).expect("write neighboring part");
+    c.ok("import_model", json!({ "path": path.display().to_string() }));
+}
+
+fn generated_source(tag: &str) -> (Client, PathBuf) {
+    let (mut c, dir) = job(tag);
+    c.ok("set_stock", json!({ "from_model": "part" }));
+    c.ok("edit_operation", json!({ "name": "M1", "params": {
+        "clearance_z": 35.0, "top_z": 10.0, "bottom_z": 1.0, "max_tilt_deg": 45.0,
+    } }));
+    c.ok("load_machine", json!({ "builtin": "Tilt-head 5-axis" }));
+    c.ok("generate", json!({ "name": "M1" }));
+    let clear_out = dir.join("clear.nc");
+    let posted = c.ok("post", json!({ "output": clear_out.display().to_string() }));
+    assert_eq!(posted["ops"], json!(1), "the source alone still posts: {posted}");
+    assert!(clear_out.is_file(), "the clear control writes its NC file");
+    (c, dir)
+}
+
+#[test]
+fn multiaxis_deburr_refuses_regeneration_with_a_separate_kept_part() {
+    let (mut c, dir) = generated_source("neighbour-generate");
+    import_neighbour(&mut c, &dir);
+    let why = c.refused("generate", json!({ "name": "M1" }));
+    assert!(why.contains("Multi-Axis Deburr") && why.contains("other kept parts"), "{why}");
+    let out = dir.join("unsafe.nc");
+    c.refused("post", json!({ "output": out.display().to_string() }));
+    assert!(!out.exists(), "a refused generation must not post an NC file");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn multiaxis_deburr_rechecks_a_separate_part_before_posting_the_cached_path() {
+    let (mut c, dir) = generated_source("neighbour-post");
+    import_neighbour(&mut c, &dir);
+    // Do not regenerate: posting must read the newly imported part live.
+    let out = dir.join("unsafe.nc");
+    let why = c.refused("post", json!({ "output": out.display().to_string() }));
+    for want in ["M1", "Multi-Axis Deburr", "other"] {
+        assert!(why.contains(want), "the live refusal names {want}: {why}");
+    }
+    assert!(!out.exists(), "the cached path must not write an NC file");
     let _ = std::fs::remove_dir_all(dir);
 }
 

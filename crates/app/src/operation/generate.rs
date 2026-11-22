@@ -1425,6 +1425,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         // #1894: the Deburr's edges and size with the axis tilted onto
         // each break; the kernel poses, dodges the holder and refuses.
         OpParams::MultiAxisDeburr { .. } => {
+            // The posed cone guard reads only its source mesh. Other
+            // kept parts have no chamfer grant and must not pass unjudged.
+            if !keep_parts.is_empty() || !neighbour_parts.is_empty() {
+                return Err(GenError::Invalid("Multi-Axis Deburr cannot judge the posed cutter against other kept parts; use a document with only the source part".into()));
+            }
             let cone_d = super::multiaxis_deburr_op::cone_diameter(&tool, &tool_name)?;
             let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
             let chains = drive_chains.take().ok_or_else(|| unreached("deburr chains"))??;

@@ -246,7 +246,7 @@ pub(super) fn is_part_kept_kind(params: &OpParams, src: &SrcRef) -> bool {
         || is_cross_drill(params)
         || matches!(
             params,
-            OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. } | OpParams::SlotUndercut(_)
+            OpParams::Pocket3D { .. } | OpParams::MultiAxisRough { .. } | OpParams::MultiAxisDeburr { .. } | OpParams::SlotUndercut(_)
         )
 }
 

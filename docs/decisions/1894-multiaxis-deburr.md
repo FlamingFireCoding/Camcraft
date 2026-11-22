@@ -84,3 +84,20 @@ are file contract. The pose law and the link moves are kernel-only.
 says so by name (`not_judged`). `Axis4` was not posted on a rotary
 machine. A tool with the axis pointing up (`a_z <= 0`) is not admitted,
 so bottom edges are skipped with a note.
+
+## Separate kept parts (PR #3283 safety review)
+
+**Chosen.** Multi-Axis Deburr refuses generation when the setup has another
+kept part. The live posting check applies the same refusal to a cached path
+if a kept part was added or moved after generation. The refusal names the
+operation kind, and the live check also names the operation and the part.
+The source still supplies the edges. Other parts receive no chamfer grant.
+A document with only the source part retains its existing clear-path behavior.
+
+**Why.** The posed cone and entry sweep guards currently read only the source
+mesh. The column stock simulation does not judge posed moves. A conservative
+refusal closes the separate-part gap without an unproved clearance verdict.
+
+**Dropped.** The upright containment check cannot prove clearance for a tilted
+cone. Adding another posed sweep API is beyond this review fix. Until that
+support exists, even a distant kept part causes a named refusal.
