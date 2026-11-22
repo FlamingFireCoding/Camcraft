@@ -193,6 +193,9 @@ mod prior;
 mod prior_traverse;
 mod body_bands;
 mod probe;
+// #3367: the tool meridian's atoms against `Cutter::atoms`.
+#[cfg(test)]
+mod probe_meridian_tests;
 mod rapids;
 mod rapids_posed;
 mod rapids_radial;
