@@ -317,6 +317,35 @@ wanted rather than a constant load.
 **Picks:** as Pocket. **Settings:** Stepover 3, Stepdown 5, Stock to leave
 0, Entry Helix radius 1.
 
+**Pass starts at** (Passes tab) sets where each level starts:
+
+- **Auto** cuts the rings from the middle of the area outward. This is
+  the order that 2D Offset always cut.
+- **Outside** starts at the outer edge of the area and works in. Each
+  ring follows the outer edge, one stepover in from the ring before, and
+  ends where it meets the part. The part wall comes last. With an
+  Outside containment, the outer edge is the stock edge: each level
+  starts outside the stock and ends on the part wall. Use it to stop
+  full-width slots in the stock.
+- **Inside** starts at the part or island wall and works out. Each ring
+  follows the walls, and the outer edge comes last.
+- Some cuts still take the full tool width. The toolpath then shows a
+  **Pass start** warning that names the case:
+  - **Outside** on a closed pocket: the first ring runs along the pocket
+    wall.
+  - **Inside** on an Outside containment: the first ring runs along the
+    part wall.
+  - **Inside** round an island: the first ring runs along the island wall.
+  - A place narrower than the tool plus one stepover, or stock that the
+    start edge does not reach.
+- Material inside a hole (the bore of a hollow boss, the stock inside a
+  ring-shaped part) starts from its own edge. With **Inside** it has no
+  hole to start from, so it is cut from the middle outward, as **Auto**
+  cuts it, and a note says so.
+- If the rings from the start side would leave material standing, that
+  area is cut in the **Auto** order instead, and a **Pass start** warning
+  says how much area the rings would have left.
+
 **Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
 to protect from every cut, plunge, ramp, helix, keep-down and rapid link
 across the full tool assembly (flutes, shank and holder). **Clearance**

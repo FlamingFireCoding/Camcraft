@@ -168,7 +168,7 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
     }
     h.run_steps(3);
     expand_boundary(&mut h);
-    assert!(h.query_by_label_contains("2D Offset, 3D Pocket, and Engrave").is_some());
+    assert!(h.query_by_label_contains("2D Offset, 3D Pocket, Face and Engrave").is_some());
     assert!(h.query_by_label("Pick protected").is_none());
 }
 
@@ -214,6 +214,23 @@ fn engrave_boundaries_shows_do_not_touch_controls_and_takes_picks() {
         .and_then(|e| camcraft_app::model::operation_of(&h.state().state.world, &e))
         .expect("saved engrave op");
     assert_eq!(saved.area.do_not_touch.picks, vec![face_other, edge]);
+}
+
+#[test]
+fn face_op_shows_pick_protected_button() {
+    let _g = snapshot_guard();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1400.0, 1200.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    h.run_steps(2);
+    {
+        let st = &mut h.state_mut().state;
+        seed_part_and_offset(st, OpType::Face);
+    }
+    h.run_steps(3);
+    expand_boundary(&mut h);
+    assert!(h.query_by_label("Pick protected").is_some());
+    assert!(h.query_by_label_contains("only so far").is_none());
 }
 
 #[test]
