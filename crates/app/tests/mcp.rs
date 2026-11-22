@@ -242,6 +242,33 @@ fn bad_input_is_a_tool_error_never_a_panic() {
 }
 
 #[test]
+fn slot_refuses_a_pass_start_with_its_reason_without_editing_the_job() {
+    const REASON: &str = "Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows.";
+    let mut c = Client::new();
+    c.ok("set_stock", json!({ "box": { "dx": 50.0, "dy": 50.0, "dz": 10.0 } }));
+    c.ok("add_tool", json!({ "catalog": "EM-0400-2FL" }));
+    c.ok("add_operation", json!({ "kind": "Slot", "tool": "EM-0400-2FL", "name": "Slot1" }));
+    let before = c.ok("get_job", json!({}));
+    let params = &before["operations"][0]["params"]["slot"];
+    assert!(params.is_object() && params.get("pass_start").is_none(), "{before}");
+
+    for value in [json!("inside"), json!("outside"), json!("auto"), Value::Null] {
+        let message = c.refused("edit_operation", json!({
+            "name": "Slot1", "params": { "pass_start": value, "width": 10.0 }
+        }));
+        assert!(message.contains(REASON), "{value}: {message}");
+        let message = c.refused("add_operation", json!({
+            "kind": "Slot", "tool": "EM-0400-2FL", "name": "Slot2", "params": { "pass_start": value }
+        }));
+        assert!(message.contains(REASON), "{value}: {message}");
+    }
+    assert_eq!(c.ok("get_job", json!({})), before);
+    c.ok("undo", json!({}));
+    let after_undo = c.ok("get_job", json!({}));
+    assert_eq!(after_undo["operations"], json!([]), "no rejected patch entered the history");
+}
+
+#[test]
 fn the_stdio_loop_answers_line_for_line() {
     let input = concat!(
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}"#, "\n",

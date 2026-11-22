@@ -417,8 +417,13 @@ typed in or seeded from suitable picked slot geometry;
 | Geometry | Slot width | 4 |
 | Geometry | Extend past A / Extend past B | 0 / 0 |
 | Passes | Stepover / Stock to leave | 3 / 0 |
+| Passes | Pass starts at | Auto (fixed) |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Plunge, helix radius 1 |
+
+Slot cuts one continuous pass at each depth. It follows the centreline
+when the cutting width equals the tool diameter. A wider cut joins the
+rows and finishes with a lap along the walls.
 
 The A and B fields sit in their own **Manual** section on the Geometry tab;
 Slot width and the extension rows stay outside it. While the Geometry tab
