@@ -37,9 +37,26 @@ z = 19.6875, the height of the reported refusal.
 a NURBS hemisphere, and the quarter-sphere solid end to end at the
 kernel), `crates/app/tests/import_step_spline_pole.rs` (import, volume and
 slices of `testdata/models/sphere_quarter_pole.step`), and the
-`mesh_pole` unit tests. The STEP bench (`step_agreement`) has a row for the
-new fixture, with `Truck::NotRecorded`. The q02 STEP itself is not in the tree: it is on
-the QA host, and this session could not copy it.
+`mesh_pole` unit tests. The recorded QA file is now committed as
+`testdata/models/q02_3d_mold.step`, byte for byte. Its SHA-256 is
+`111862a3c03262db764d92e63c5c32f384541b14840d494f6bf3bf4fc5bb9567`.
+`crates/app/tests/import_step_q02_mold.rs` pins its volume and five closed
+slices, including z = 19.6875. Both fixtures have a STEP bench
+(`step_agreement`) row with `Truck::NotRecorded`.
+
+The recorded-file test also generates a 3D Flat finish through the app
+commands. It uses the whole imported mesh and a 6 mm ball-nose tool. The
+programmed band is z = 18 to 30, with a 2 mm stepover. The pin requires a
+finite path and more than 10 mm of horizontal cutting at the actual
+z = 18 base floor. This checks a generated operation on the recorded part,
+in addition to the closed slice at the reported height. It runs in the
+release heavy lane because the recorded mesh is large.
+
+Flat was chosen to finish the real floor around the boss without the
+Waterline level ladder. The earlier wide Waterline and Parallel attempts
+did not complete. This pin does not establish their performance or claim
+that every finishing pattern completes on q02. A runtime generator change
+is outside this import fix.
 
 **Cost to change later.** Small. The change is one call in
 `mesh_deviation::face` and one module of about 60 lines. If solidcore
