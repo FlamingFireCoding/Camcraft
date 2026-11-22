@@ -628,9 +628,8 @@ tests are in `crates/ui/tests/`; they start the real app through
   next to its full test, on a smaller fixture or a reduced set. The full
   test keeps its golden asserts and its pinned readings. A red light run is
   a note on the PR. It does not block the PR by itself ("Heavy lanes at
-  review"). The full heavy steps of the red twins run at the cut, and they
-  must pass before the cut gate starts again. A local run never replaces
-  the cut gate.
+  review"). The full heavy steps of the red twins run at the cut, in the
+  cut gate. A local run never replaces the cut gate.
   - A twin has the ignore reason `light lane: ...` and the name
     `<full test>_light`. The gate refuses a twin whose file has no
     `#[ignore]`d full test.
@@ -647,8 +646,8 @@ tests are in `crates/ui/tests/`; they start the real app through
     - the light lane (`cargo xtask gate light`, **The light lane**).
   - No PR gets the full heavy lanes. A diff that reaches a heavy lane is
     not "not ready" for that reason. No PR is "owed heavy".
-  - The full heavy lanes run only at the cut (the release tier on the cut
-    runner) and on the post-merge and cut runners.
+  - The full heavy lanes run only at the cut, in the cut gate on the cut
+    runner.
   - A `P1` PR under the safety floor (wrong output) gets one targeted heavy
     step: the named heavy tests of the changed code. Run the step of the
     binary that holds them: `cargo xtask gate heavy --only "<crate> heavy:

@@ -261,8 +261,8 @@ the pinning tests, the touched test binaries (the quick plan), the example
 catalog suites by name where a post or a toolpath changed, and the light
 lane. The `PR-reviewer` agent does this in steps 4 and 5.
 
-- No PR gets the full heavy lanes. They run at the cut and on the
-  post-merge and cut runners.
+- No PR gets the full heavy lanes. They run at the cut, in the cut gate on
+  the cut runner.
 - A diff that reaches a heavy lane is not "not ready" for that reason. No
   PR is "owed heavy" (**Owed heavy result** is retired).
 - A `P1` PR under the safety floor gets one targeted heavy step: the

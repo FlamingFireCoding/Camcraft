@@ -128,14 +128,21 @@ fn an_unreadable_manifest_is_an_error_not_a_smaller_plan() {
 }
 
 #[test]
-fn runner_review_requires_heavy_lanes_without_author_results() {
+fn review_requires_targeted_heavy_tests_on_both_paths() {
     // #3556: a review runs only targeted tests, not the full heavy lanes. The
-    // old demand must not come back, and "not run" stays a blocker.
+    // old demand must not come back, and "not run" stays a blocker. A runner
+    // verdict still feeds step 5, where a `P1` targeted step runs.
     let p = heavy_plan(&["crates/motion/src/finish3d.rs"]);
     for lane in ["motion heavy: finish3d", "app heavy: pocket3d_hsm"] {
         assert!(names(&p).contains(&lane), "{lane} must stay in the reach map");
     }
     let policy = include_str!("../../.claude/agents/PR-reviewer.md");
+    let runner = policy.split("3. **Worktree + trial merge**").next().expect("runner path");
+    assert!(
+        runner.contains("and 4, then continue at step 5.")
+            && runner.contains("The step 5 check is required on both paths."),
+        "a runner verdict must still reach the common heavy check"
+    );
     let common = policy
         .split("5. **Heavy check on both paths**")
         .nth(1)

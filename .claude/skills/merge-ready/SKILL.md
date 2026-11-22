@@ -233,8 +233,8 @@ approved set before merging: the plan changes.
 ### 4a. Optional: one heavy run for wave 1 (#3460)
 
 AGENTS.md "Heavy lanes at review": no merge waits for a heavy lane result
-(#3556). The full heavy lanes run at the cut and on the post-merge and cut
-runners. This step is an optional tool. Skip it by default. Run it only
+(#3556). The full heavy lanes run at the cut, in the cut gate on the cut
+runner. This step is an optional tool. Skip it by default. Run it only
 when a session chooses to check a wave before the merges. A missing
 `heavy-wave` record never holds a merge. A PR is never "owed heavy"
 (**Owed heavy result** is retired).

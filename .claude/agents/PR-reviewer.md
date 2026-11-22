@@ -145,8 +145,8 @@ merge.
    waiting on a run that had already died. Time box ~40 min of build+test.
 5. **Heavy check on both paths** (AGENTS.md "Heavy lanes at review").
    This step is required after runner results and after local tests. Do not
-   run the full heavy lanes for a PR (#3556): they run at the cut and on the
-   post-merge and cut runners. A diff that reaches a heavy lane is not a
+   run the full heavy lanes for a PR (#3556): they run at the cut, in the
+   cut gate on the cut runner. A diff that reaches a heavy lane is not a
    finding for that reason, and no PR is "owed heavy" (AGENTS.md
    **Owed heavy result** is retired).
    If no local worktree exists, create it and trial-merge as in step 3, then

@@ -158,8 +158,8 @@ Quick prints its selection before it runs:
   or gets a smaller fixture. The ignore reason names the lane.
 - Heavy lane tests are `#[ignore]`d. They measure geometry (envelope scans,
   full-precision projections) or generate over the large fixtures. Run them
-  with `cargo test --release -p camcraft-app -- --ignored`, at a cut and
-  on the post-merge and cut runners. Do not run them for each edit or for
+  with `cargo test --release -p camcraft-app -- --ignored`, at a cut, in
+  the cut gate on the cut runner. Do not run them for each edit or for
   each PR (AGENTS.md "Heavy lanes at review", #3556).
 - In the release tier, the heavy lanes of motion and app are one release
   build (`--no-run`). Then there is one step for each test target that can
