@@ -19,6 +19,7 @@ mod emit;
 mod number;
 mod path;
 mod shapes;
+mod style;
 mod transform;
 mod viewport;
 mod walk;

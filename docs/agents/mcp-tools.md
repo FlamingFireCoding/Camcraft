@@ -1,7 +1,7 @@
 <!-- Generated from crates/app/src/mcp/tools.rs. Do not edit by hand. Write it again with: cargo run -p camcraft-app --bin camcraft-cli -- mcp reference > docs/agents/mcp-tools.md -->
 # CamCraft MCP tool reference
 
-The server lists 117 tools. The live `tools/list` reply is the authority; this file is generated from the same table. An argument with `?` is optional.
+The server lists 118 tools. The live `tools/list` reply is the authority; this file is generated from the same table. An argument with `?` is optional.
 
 | Tool | Arguments | What it does |
 |---|---|---|

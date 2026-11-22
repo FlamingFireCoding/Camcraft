@@ -23,6 +23,17 @@ const VISIBILITY_DECLARATIONS: &[&str] = &[
     r#"visibility="hidden" display="none""#,
     r#"style="display:none; visibility:hidden""#,
 ];
+const COMMENT_AND_ESCAPE_CASES: &[(&str, &str)] = &[
+    ("display:/* hidden */none", "hidden"),
+    ("/* hidden */display:none", "hidden"),
+    (r"display:n\6f ne", "hidden"),
+    (r"displ\61 y:none", "hidden"),
+    (r"display:/* c */n\00006fne !/* c */imp\6f rtant", "hidden"),
+    (r"font-family:'a;b';/* ; */di\splay:no\ne", "hidden"),
+    ("/* hidden */visibility:hidden", "visibility"),
+    (r"visib\69 lity:hidden", "visibility"),
+    ("/* ; */visibility/* c */:/* c */visible", "visibility"),
+];
 
 fn page(body: &str) -> String {
     format!(r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100">{body}</svg>"#)
@@ -111,5 +122,54 @@ fn svg_shape_visibility_is_reported_without_importing_its_contour() {
     for declaration in VISIBILITY_DECLARATIONS {
         let text = page(&format!(r#"<rect width="20" height="20" {declaration}/>{VISIBLE_RECT}"#));
         assert_only_visible_sibling(&text, "visibility");
+    }
+}
+
+#[test]
+fn svg_root_inline_css_comments_and_escapes_skip_hidden_and_visibility_subtrees() {
+    for &(style, skipped) in COMMENT_AND_ESCAPE_CASES {
+        let text = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" style="{style}"><rect width="20" height="20"/>{VISIBLE_RECT}</svg>"#
+        );
+        let doc = svg::parse(text.as_bytes(), None).expect("the root with CSS comments/escapes reads");
+        assert!(doc.primitives.is_empty(), "root emits no geometry: {style}");
+        assert_eq!(doc.summary.skipped.get(skipped), Some(&1), "{style}");
+        assert_eq!(doc.summary.skipped.len(), 1, "{style}");
+    }
+}
+
+#[test]
+fn svg_group_inline_css_comments_and_escapes_skip_hidden_and_visibility_subtrees() {
+    for &(style, skipped) in COMMENT_AND_ESCAPE_CASES {
+        let text = page(&format!(
+            r#"<g style="{style}"><rect width="20" height="20"/><g style="visibility:visible"><rect x="30" width="20" height="20"/></g></g>{VISIBLE_RECT}"#
+        ));
+        assert_only_visible_sibling(&text, skipped);
+    }
+}
+
+#[test]
+fn svg_shape_inline_css_comments_and_escapes_skip_hidden_and_visibility_contours() {
+    for &(style, skipped) in COMMENT_AND_ESCAPE_CASES {
+        let text = page(&format!(r#"<rect width="20" height="20" style="{style}"/>{VISIBLE_RECT}"#));
+        assert_only_visible_sibling(&text, skipped);
+    }
+}
+
+#[test]
+fn svg_benign_css_comments_strings_and_non_matching_escapes_keep_visible_geometry() {
+    for style in [
+        "/* display:none; visibility:hidden */ fill:black",
+        "font-family:'display:none;visibility:hidden'; stroke:black",
+        r"display:\20none",
+        r"display:n\6f  ne",
+        "di/* c */splay:none",
+    ] {
+        let text = page(&format!(r#"<rect x="70" y="70" width="10" height="10" style="{style}"/>"#));
+        let doc = svg::parse(text.as_bytes(), None).expect("the SVG reads");
+        assert!(doc.summary.skipped.is_empty(), "{style}: {:?}", doc.summary.skipped);
+        assert_eq!(doc.primitives.len(), 4, "{style}");
+        let data = SketchData::from_dxf(doc, None, None).expect("the visible rectangle chains");
+        assert_eq!(data.chains().closed.len(), 1, "{style}");
     }
 }

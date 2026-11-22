@@ -216,8 +216,11 @@ fn svg_root_clipping_and_masking_are_reported_as_unsupported() {
 
 fn assert_inline_effects_are_reported(element: &str) {
     for property in ["clip-path", "mask"] {
+        let escaped = if property == "clip-path" { r"clip-\70 ath" } else { r"m\61 sk" };
         for style in [
             format!("{property}:url(#c)"),
+            format!("/* effect */{property}:/* ref */url(#c)"),
+            format!("{escaped}:url(#c)"),
             format!(
                 "fill: black; {} : url(#c) !important; stroke: none",
                 property.to_ascii_uppercase()

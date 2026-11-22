@@ -7,6 +7,7 @@
 
 use super::emit::Sink;
 use super::shapes::{self, Drawn};
+use super::style::{StyleDecl, inline_declarations};
 use super::transform::{self, Affine};
 use super::xml::{Node, Tree};
 use super::{SvgError, invalid};
@@ -35,36 +36,53 @@ pub(super) struct Walk<'a> {
     pub visits: usize,
 }
 
-fn hidden(node: &Node) -> bool {
-    let style_none = node.attr("style").is_some_and(|s| {
-        s.split(';').any(|decl| {
-            decl.split_once(':').is_some_and(|(property, value)| {
-                // CSS property names and keywords are case-insensitive. An importance
-                // suffix must never make a hidden contour eligible for cutting.
-                property.trim().eq_ignore_ascii_case("display")
-                    && value.split('!').next().is_some_and(|keyword| keyword.trim().eq_ignore_ascii_case("none"))
-            })
-        })
+fn parse_node_style(node: &Node) -> Vec<StyleDecl> {
+    node.attr("style").map(inline_declarations).unwrap_or_default()
+}
+
+fn hidden(node: &Node, style: &[StyleDecl]) -> bool {
+    let style_none = style.iter().any(|decl| {
+        // CSS property names and keywords are case-insensitive. An importance
+        // suffix must never make a hidden contour eligible for cutting.
+        decl.property.eq_ignore_ascii_case("display")
+            && decl.value.eq_ignore_ascii_case("none")
+            && (!decl.has_bang || decl.importance.eq_ignore_ascii_case("important"))
     });
-    style_none || node.attr("display").is_some_and(|d| d.trim() == "none")
+    style_none || node.attr("display").is_some_and(|d| d.trim().eq_ignore_ascii_case("none"))
 }
 
 /// Recognize unsupported effects in presentation attributes and inline declarations.
-fn has_property(node: &Node, name: &str) -> bool {
-    node.attr(name).is_some()
-        || node.attr("style").is_some_and(|style| {
-            style.split(';').any(|declaration| {
-                declaration
-                    .split_once(':')
-                    .is_some_and(|(property, _)| property.trim().eq_ignore_ascii_case(name))
-            })
-        })
+fn has_property(node: &Node, style: &[StyleDecl], name: &str) -> bool {
+    node.attr(name).is_some() || style.iter().any(|decl| decl.property.eq_ignore_ascii_case(name))
 }
 
 impl<'a> Walk<'a> {
     fn note(&mut self, kind: &str) -> Result<(), SvgError> {
         self.count()?;
         *self.summary.skipped.entry(kind.to_owned()).or_default() += 1;
+        Ok(())
+    }
+
+    fn skip_visibility_or_hidden(&mut self, node: &Node, style: &[StyleDecl]) -> Result<bool, SvgError> {
+        // Visibility is inherited and permits child overrides. Refuse the whole
+        // subtree until those rules can be evaluated without adding hidden cuts.
+        if has_property(node, style, "visibility") {
+            self.note("visibility")?;
+            return Ok(true);
+        }
+        if hidden(node, style) {
+            self.note("hidden")?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn note_unsupported_effects(&mut self, node: &Node, style: &[StyleDecl]) -> Result<(), SvgError> {
+        for attr in ["clip-path", "mask"] {
+            if has_property(node, style, attr) {
+                self.note(attr)?;
+            }
+        }
         Ok(())
     }
 
@@ -86,19 +104,11 @@ impl<'a> Walk<'a> {
     /// Walk the children of the root element under the root transform.
     pub fn root(&mut self, root_map: Affine) -> Result<(), SvgError> {
         if let Some(root) = self.node(0) {
-            // Visibility is inherited and permits child overrides. Refuse the whole
-            // subtree until those rules can be evaluated without adding hidden cuts.
-            if has_property(root, "visibility") {
-                return self.note("visibility");
+            let style = parse_node_style(root);
+            if self.skip_visibility_or_hidden(root, &style)? {
+                return Ok(());
             }
-            if hidden(root) {
-                return self.note("hidden");
-            }
-            for attr in ["clip-path", "mask"] {
-                if has_property(root, attr) {
-                    self.note(attr)?;
-                }
-            }
+            self.note_unsupported_effects(root, &style)?;
         }
         let children = self.node(0).map(|n| n.children.clone()).unwrap_or_default();
         for child in children {
@@ -130,21 +140,15 @@ impl<'a> Walk<'a> {
         if SILENT.contains(&name.as_str()) {
             return Ok(());
         }
-        if has_property(node, "visibility") {
-            return self.note("visibility");
-        }
-        if hidden(node) {
-            return self.note("hidden");
+        let style = parse_node_style(node);
+        if self.skip_visibility_or_hidden(node, &style)? {
+            return Ok(());
         }
         let map = match node.attr("transform") {
             Some(t) => parent.then(transform::parse(t)?),
             None => parent,
         };
-        for attr in ["clip-path", "mask"] {
-            if has_property(node, attr) {
-                self.note(attr)?;
-            }
-        }
+        self.note_unsupported_effects(node, &style)?;
         match name.as_str() {
             "g" | "a" => {
                 for child in node.children.clone() {
