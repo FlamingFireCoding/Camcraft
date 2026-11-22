@@ -124,6 +124,9 @@ mod plate_dto;
 mod modvise_dto;
 pub use vise_dto::ViseDto;
 mod thread_dto;
+// #3469: the part-off's kept piece and back stock.
+mod part_kerf_dto;
+pub use part_kerf_dto::PartKeptDto;
 mod break_dto;
 mod unreachable_dto;
 use unreachable_dto::UnreachableDto;

@@ -1101,6 +1101,14 @@ pub enum ParamsDto {
         bar_transfer: bool,
         #[serde(default)]
         inspect_tol: f64,
+        /// #3469: the piece kept. Absent is the cut-off piece - the
+        /// #3452 kerf every earlier file cut; written only when not.
+        #[serde(default, skip_serializing_if = "PartKeptDto::is_default")]
+        kept: PartKeptDto,
+        /// #3469: the back stock (mm) the kerf stands off the plane.
+        /// Absent is 0; written only when not 0.
+        #[serde(default, skip_serializing_if = "super::part_kerf_dto::no_back_stock")]
+        back_stock: f64,
     },
     /// Declared at v36 with the threading kind (M5.2 stage D): the
     /// window of turns' three heights and the wave's own numbers -

@@ -211,7 +211,7 @@ fn lathe_groove_part_thread_taper_multipass_and_form_match_baked() {
             ("PT1", "GT-0300", OpParams::Part {
                 tolerance: 0.05, clearance_z: Height::fixed(32.0),
                 top_z: Height::fixed(28.0), bottom_z: Height::fixed(-10.0), stepdown: 0.5, feed: 150.0, plunge_feed: 60.0,
-                bar_load: true, bar_advance: 30.0, bar_unload: true, bar_transfer: false, inspect_tol: 0.0,
+                bar_load: true, bar_advance: 30.0, bar_unload: true, bar_transfer: false, inspect_tol: 0.0, kerf: Default::default(),
             }),
         ],
         true,

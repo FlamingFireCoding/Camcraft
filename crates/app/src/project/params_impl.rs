@@ -1063,20 +1063,26 @@ impl ParamsDto {
                 bar_unload,
                 bar_transfer,
                 inspect_tol,
-            } => ParamsDto::Part {
-                tolerance: *tolerance,
-                clearance_z: (*clearance_z).into(),
-                top_z: (*top_z).into(),
-                bottom_z: (*bottom_z).into(),
-                stepdown: *stepdown,
-                feed: *feed,
-                plunge_feed: *plunge_feed,
-                bar_load: *bar_load,
-                bar_advance: *bar_advance,
-                bar_unload: *bar_unload,
-                bar_transfer: *bar_transfer,
-                inspect_tol: *inspect_tol,
-            },
+                kerf,
+            } => {
+                let (kept, back_stock) = super::part_kerf_dto::kerf_dto(*kerf);
+                ParamsDto::Part {
+                    tolerance: *tolerance,
+                    clearance_z: (*clearance_z).into(),
+                    top_z: (*top_z).into(),
+                    bottom_z: (*bottom_z).into(),
+                    stepdown: *stepdown,
+                    feed: *feed,
+                    plunge_feed: *plunge_feed,
+                    bar_load: *bar_load,
+                    bar_advance: *bar_advance,
+                    bar_unload: *bar_unload,
+                    bar_transfer: *bar_transfer,
+                    inspect_tol: *inspect_tol,
+                    kept,
+                    back_stock,
+                }
+            }
             // The threading kind (M5.2 stage D): the wave's own three
             // numbers beside the blade trio of heights - and the
             // insert's V deliberately NOT here, because width and
@@ -2356,6 +2362,8 @@ impl ParamsDto {
                 bar_unload,
                 bar_transfer,
                 inspect_tol,
+                kept,
+                back_stock,
             } => OpParams::Part {
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -2369,6 +2377,7 @@ impl ParamsDto {
                 bar_unload: *bar_unload,
                 bar_transfer: *bar_transfer,
                 inspect_tol: *inspect_tol,
+                kerf: super::part_kerf_dto::kerf_of(*kept, *back_stock),
             },
             // Read back whole, the threading kind's way too - sane or
             // nothing, `validate_kind`'s door again first (M5.2 D).
