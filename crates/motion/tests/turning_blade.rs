@@ -517,7 +517,9 @@ fn every_refusal_names_itself() {
         },
     )
     .expect_err("nothing stands at z 50");
-    assert!(format!("{err:?}").contains("does not meet the bar"), "{err:?}");
+    // #3452: the whole wall stands below z 50, on the chuck side - no
+    // part stands past the plane.
+    assert!(format!("{err:?}").contains("stands wholly on the chuck side"), "{err:?}");
 
     // The center sweep's own cap: a hair-wide blade in a long run.
     let err = groove_rough(

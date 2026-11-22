@@ -2,11 +2,16 @@
 //! parting plane, which is the finished part's END FACE. The issue's
 //! case: a Ø30 part Z-70..0 with a 1 x 45° back chamfer, the bar run on
 //! to Z-84, a 3 mm blade - the kerf is Z-73..-70 and the part keeps its
-//! 70 mm and its chamfer. The mirrored setup (the bar on the +Z side)
-//! parts to Z70..73. The kernel refuses a kerf that meets no bar, and
-//! names its numbers; the generation verdict refuses a hand-built
-//! part-off whose kerf enters the part (the pre-fix output: the blade
-//! centred on the plane).
+//! 70 mm and its chamfer. The scrap side is the CHUCK side (ISO 841:
+//! -Z), never a guess from the stock: a model that carries its grip
+//! stub (Z-84..0, plane Z-70) under a stock with a front facing
+//! allowance still parts Z-73..-70. A model held from the +Z side
+//! cannot be stated by any setup yet (#3469), so a plane with the whole
+//! model on the chuck side is refused by name. The kernel refuses a
+//! kerf that meets no bar, and names its numbers; the generation
+//! verdict refuses a hand-built part-off whose kerf enters the part
+//! (the pre-fix output: the blade centred on the plane; and a kerf put
+//! on the part side of the plane).
 //!
 //! Gate map (M4.4): covers camcraft_motion::turning (parting kernel,
 //! parting_law waste side and kerf verdict).
@@ -17,7 +22,7 @@ use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::machining2d::GenError;
 use camcraft_motion::turning::profile::Frame;
 use camcraft_motion::turning::{
-    blade_warnings, part_in, part_kerf_refusal, waste_side, PartParams, StockEnv, WasteSide, KERF_TOL,
+    blade_warnings, chuck_side, part_in, part_kerf_refusal, PartParams, StockEnv, WasteSide, CHUCK_NOTE, KERF_TOL,
 };
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -52,6 +57,12 @@ fn revolve(n_circ: usize, meridian: &[(f64, f64)]) -> Vec<Triangle> {
 /// The issue's pin: Ø30, Z-70..0, a 1 x 45° chamfer at the back face.
 fn pin() -> Vec<Triangle> {
     revolve(32, &[(0.0, -70.0), (14.0, -70.0), (15.0, -69.0), (15.0, 0.0), (0.0, 0.0)])
+}
+
+/// The pin with its grip stub in the model: Z-84..0, the finished
+/// part Z-70..0 (the reader's case of the second read of #3472).
+fn stubbed_pin() -> Vec<Triangle> {
+    revolve(32, &[(0.0, -84.0), (15.0, -84.0), (15.0, 0.0), (0.0, 0.0)])
 }
 
 /// The pin mirrored: Z0..70, its chamfered end face at Z70.
@@ -106,24 +117,47 @@ fn the_issue_case_kerf_stands_behind_the_end_face() {
     assert!((kept - 70.0).abs() < KERF_TOL, "the part keeps {kept} mm, wanted the model's 70");
     let last_feed = t.moves.iter().rev().find(|m| m.kind != MoveKind::Rapid).expect("a feed");
     assert!(f.sr(last_feed.to).1.abs() < 1e-9, "the last rung severs on the axis");
-    assert_eq!(part_kerf_refusal(&part, &t, W, -70.0, TOL, bar(&part, -84.0, 0.0)), None, "the verdict passes it");
+    assert_eq!(part_kerf_refusal(&part, &t, W, -70.0, TOL), None, "the verdict passes it");
+    assert!(t.notes.iter().any(|n| n == CHUCK_NOTE), "the path says where it reads the chuck: {:?}", t.notes);
     assert!(blade_warnings(&part, &t, W, TOL, 0.0).is_empty(), "the meridian scan stays silent");
 }
 
 #[test]
-fn the_mirrored_setup_parts_on_the_other_side() {
+fn a_front_facing_allowance_never_turns_the_kerf_into_the_part() {
+    // The model carries its grip stub, the plane is inside it, and the
+    // stock stands flush at the back with a facing allowance at the
+    // front: the kerf stays on the chuck side, Z-73..-70.
+    let part = stubbed_pin();
+    let f = Frame::about(&part).expect("upright");
+    assert_eq!(chuck_side(), WasteSide::Below);
+    for front in [0.0, 0.1, 1.0, 5.0] {
+        let stock = bar(&part, -84.0, front);
+        let t = part_in(&part, &params(-70.0, 10.0, 0.0), stock).expect("the bar parts");
+        let spans = kerf_spans(&f, &t);
+        assert!(!spans.is_empty(), "allowance {front}: the part-off cuts");
+        for &(lo, hi) in &spans {
+            assert!(
+                hi <= -70.0 + KERF_TOL && (lo + 73.0).abs() < KERF_TOL,
+                "allowance {front}: kerf Z{lo}..Z{hi}, wanted Z-73..-70"
+            );
+        }
+        assert_eq!(part_kerf_refusal(&part, &t, W, -70.0, TOL), None, "allowance {front}");
+    }
+}
+
+#[test]
+fn a_model_wholly_on_the_chuck_side_is_refused_by_name() {
+    // The mirrored pin (Z0..70) parted at its +Z end: no setup states a
+    // bar held from +Z yet, so the part would be the empty side.
     let part = mirrored_pin();
     let f = Frame::about(&part).expect("upright");
-    let stock = bar(&part, 0.0, 84.0);
-    assert_eq!(waste_side((f.station_of(0.0), f.station_of(70.0)), f.station_of(70.0), TOL, stock), WasteSide::Above);
-    let t = part_in(&part, &params(70.0, 100.0, 84.0), stock).expect("the bar parts");
-    let spans = kerf_spans(&f, &t);
-    assert!(!spans.is_empty(), "the part-off cuts");
-    for &(lo, hi) in &spans {
-        assert!(lo >= 70.0 - KERF_TOL, "the blade's -Z flank at Z{lo} enters the part (end face Z70)");
-        assert!((hi - 73.0).abs() < KERF_TOL, "the kerf's +Z flank at Z{hi}, wanted Z73");
+    let err = part_in(&part, &params(70.0, 100.0, 84.0), bar(&part, 0.0, 84.0)).expect_err("no part past the plane");
+    let msg = format!("{err:?}");
+    for want in ["stands wholly on the chuck side (-Z)", "Z0.000 to Z70.000", "parting plane Z70.000"] {
+        assert!(msg.contains(want), "the refusal names {want:?}: {msg}");
     }
-    assert_eq!(part_kerf_refusal(&part, &t, W, 70.0, TOL, stock), None);
+    let why = part_kerf_refusal(&part, &plunge_at(&f, 68.5), W, 70.0, TOL).expect("refused");
+    assert!(why.contains("wholly on the chuck side"), "{why}");
 }
 
 #[test]
@@ -167,17 +201,24 @@ fn plunge_at(f: &Frame, z_cl: f64) -> Toolpath {
 fn the_verdict_refuses_a_kerf_into_the_part() {
     let part = pin();
     let f = Frame::about(&part).expect("upright");
-    let stock = bar(&part, -84.0, 0.0);
     // The pre-fix output: the blade centred on the end face.
-    let why = part_kerf_refusal(&part, &plunge_at(&f, -70.0), W, -70.0, TOL, stock).expect("a gouge");
+    let why = part_kerf_refusal(&part, &plunge_at(&f, -70.0), W, -70.0, TOL).expect("a gouge");
     for want in ["cuts into the finished part", "1.500 mm past", "Z-71.500 to Z-68.500", "Z-70.000"] {
         assert!(why.contains(want), "the refusal names {want:?}: {why}");
     }
     // Two micrometres in is a gouge; the blade on the face is not.
-    assert!(part_kerf_refusal(&part, &plunge_at(&f, -71.5 + 2e-6), W, -70.0, TOL, stock).is_some());
-    assert_eq!(part_kerf_refusal(&part, &plunge_at(&f, -71.5), W, -70.0, TOL, stock), None);
-    assert_eq!(part_kerf_refusal(&part, &plunge_at(&f, -75.0), W, -70.0, TOL, stock), None);
+    assert!(part_kerf_refusal(&part, &plunge_at(&f, -71.5 + 2e-6), W, -70.0, TOL).is_some());
+    assert_eq!(part_kerf_refusal(&part, &plunge_at(&f, -71.5), W, -70.0, TOL), None);
+    assert_eq!(part_kerf_refusal(&part, &plunge_at(&f, -75.0), W, -70.0, TOL), None);
+    // A kerf put wholly on the part side (the second read's wrong-side
+    // output, CL Z-68.5 on the stubbed model) is refused by its numbers.
+    let stub = stubbed_pin();
+    let fs = Frame::about(&stub).expect("upright");
+    let why = part_kerf_refusal(&stub, &plunge_at(&fs, -68.5), W, -70.0, TOL).expect("a gouge");
+    for want in ["cuts into the finished part", "Z-70.000 to Z-67.000", "3.000 mm past"] {
+        assert!(why.contains(want), "the refusal names {want:?}: {why}");
+    }
     // A judge that cannot measure never reports silence.
-    assert!(part_kerf_refusal(&part, &plunge_at(&f, -71.5), 0.0, -70.0, TOL, stock).is_some());
-    assert!(part_kerf_refusal(&[], &plunge_at(&f, -71.5), W, -70.0, TOL, stock).is_some());
+    assert!(part_kerf_refusal(&part, &plunge_at(&f, -71.5), 0.0, -70.0, TOL).is_some());
+    assert!(part_kerf_refusal(&[], &plunge_at(&f, -71.5), W, -70.0, TOL).is_some());
 }

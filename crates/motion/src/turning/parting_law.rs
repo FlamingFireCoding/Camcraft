@@ -1,23 +1,38 @@
-//! #3452: the part-off kerf's side and its gouge law - the parting plane is the finished part's end face, the whole kerf of the blade stands on the waste side (the bar that stays in the chuck), and a parting move whose band enters the finished part is refused by name. Machine-tool handbook cutoff practice (the part keeps its length, the kerf comes out of the bar) and ISO 841's lathe Z (positive away from the workholding) for a plane that the model runs on past; our own reading, no vendor material consulted.
+//! #3452: the part-off kerf's side and its gouge law - the parting plane is the finished part's end face, the whole kerf of the blade stands on the CHUCK side (the bar that stays held), and a parting move whose band enters the finished part is refused by name. Machine-tool handbook cutoff practice (the part keeps its length, the kerf comes out of the bar) and ISO 841's lathe Z (positive away from the workholding); our own reading, no vendor material consulted.
 
 use crate::cl::{MoveKind, Toolpath};
 use crate::geometry::Triangle;
 
 use super::profile;
 use super::revolve;
-use super::stock::StockEnv;
 
 /// How far a kerf may stand past the end face and still be "beside"
 /// it (mm): one micrometre. A float hair, never a real cut.
 pub const KERF_TOL: f64 = 1e-6;
 
-/// Which side of the parting plane the scrap is on, along the part's
-/// axis: `Below` is toward the lower stations (the lathe's chuck at
-/// -Z), `Above` toward the higher ones.
+/// Which side of the parting plane the chuck (and the scrap bar it
+/// holds) is on, along the part's axis: `Below` is toward the lower
+/// stations (world -Z), `Above` toward the higher ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WasteSide {
     Below,
     Above,
+}
+
+/// The note every part-off path carries while no setup names the
+/// spindle that holds the bar (#3452).
+pub const CHUCK_NOTE: &str = "part-off: the chuck is read on the -Z side of the parting plane (ISO 841 lathe Z, \
+     +Z away from the workholding) - the setup does not name the spindle that holds the bar; the whole kerf \
+     stands on that side and the part keeps everything above the plane";
+
+/// The chuck side of a part-off. The scrap side is the side where the
+/// bar is HELD, never a guess from the model or the stock overhang (a
+/// facing allowance would turn such a guess). No setup or machine
+/// states which spindle holds the bar yet, so this is ISO 841's lathe
+/// Z: +Z points away from the workholding, the chuck is at -Z. A kerf
+/// position parameter (#3469) is where another side would come from.
+pub fn chuck_side() -> WasteSide {
+    WasteSide::Below
 }
 
 impl WasteSide {
@@ -41,49 +56,40 @@ impl WasteSide {
     }
 
     /// The part of a band `(lo, hi)` that stands on the finished
-    /// part's side of the plane at `s`.
+    /// part's side of the plane at `s` (the side away from the chuck).
     fn into_part(self, s: f64, lo: f64, hi: f64) -> (f64, f64) {
         match self {
             WasteSide::Below => (lo.max(s), hi),
             WasteSide::Above => (lo, hi.min(s)),
         }
     }
-}
 
-/// The scrap side for a parting plane at station `s` on a model whose
-/// silhouette spans the stations `d`:
-/// - a plane at the model's low end (within `tol`) keeps the model
-///   above it - the scrap is below;
-/// - a plane at the model's high end keeps the model below it - the
-///   scrap is above;
-/// - a plane the model runs on past on both sides (a model that
-///   carries its own bar) parts toward the side the setup's bar runs
-///   on further past the model, and with no bar to read, toward the
-///   lathe's chuck (ISO 841: +Z points away from the workholding).
-pub fn waste_side(d: (f64, f64), s: f64, tol: f64, stock: Option<StockEnv>) -> WasteSide {
-    let tol = tol.max(KERF_TOL);
-    let at_lo = s <= d.0 + tol;
-    let at_hi = s >= d.1 - tol;
-    match (at_lo, at_hi) {
-        (true, false) => WasteSide::Below,
-        (false, true) => WasteSide::Above,
-        _ => {
-            let runs = stock.map(|e| {
-                let lo = if e.s_bot.is_finite() { (d.0 - e.s_bot).max(0.0) } else { 0.0 };
-                let hi = if e.s_top.is_finite() { (e.s_top - d.1).max(0.0) } else { 0.0 };
-                (lo, hi)
-            });
-            match runs {
-                Some((lo, hi)) if hi > lo + tol => WasteSide::Above,
-                _ => WasteSide::Below,
-            }
+    /// How much of the model's station span `d` stands on the part's
+    /// side of the plane at `s`.
+    pub fn part_length(self, d: (f64, f64), s: f64) -> f64 {
+        match self {
+            WasteSide::Below => d.1 - s,
+            WasteSide::Above => s - d.0,
         }
     }
 }
 
+/// The refusal for a plane with no part beyond it: the model stands
+/// wholly on the chuck side, so the cut would part nothing the model
+/// keeps - or would cut into the model itself (a part held from the
+/// other side, which no setup can state yet).
+pub fn no_part_past_plane(f: &profile::Frame, d: (f64, f64), plane_z: f64) -> String {
+    format!(
+        "nothing to part - the model (Z{:.3} to Z{:.3}) stands wholly on the chuck side (-Z) of the \
+         parting plane Z{plane_z:.3}; the part is what stands above the plane, away from the chuck",
+        f.height_of(d.0),
+        f.height_of(d.1),
+    )
+}
+
 /// The stations the bar spans: the model's own, widened by the setup
 /// stock's ends where they read.
-pub fn bar_span(d: (f64, f64), stock: Option<StockEnv>) -> (f64, f64) {
+pub fn bar_span(d: (f64, f64), stock: Option<super::stock::StockEnv>) -> (f64, f64) {
     let (mut lo, mut hi) = d;
     if let Some(e) = stock {
         if e.s_bot.is_finite() {
@@ -98,18 +104,13 @@ pub fn bar_span(d: (f64, f64), stock: Option<StockEnv>) -> (f64, f64) {
 
 /// The generation verdict for a part-off path (#3452): `Some(reason)`
 /// when a cutting move's blade band takes material of the finished
-/// part - the model on the part's side of the parting plane at
-/// `parting_z` - or when the path cannot be judged at all (a judge
-/// that cannot measure never reports silence). The band is the
-/// blade's own width, never wider.
-pub fn part_kerf_refusal(
-    facets: &[Triangle],
-    path: &Toolpath,
-    width: f64,
-    parting_z: f64,
-    tol: f64,
-    stock: Option<StockEnv>,
-) -> Option<String> {
+/// part - the model on the side of the parting plane at `parting_z`
+/// away from the chuck ([`chuck_side`]) - when no part stands past the
+/// plane, or when the path cannot be judged at all (a judge that cannot
+/// measure never reports silence). The band is the blade's own width,
+/// never wider. The side is read from the chuck alone, never from the
+/// path, so a kerf put on the wrong side by any cause is caught here.
+pub fn part_kerf_refusal(facets: &[Triangle], path: &Toolpath, width: f64, parting_z: f64, tol: f64) -> Option<String> {
     if facets.is_empty() || !width.is_finite() || width <= 0.0 || !parting_z.is_finite() || !tol.is_finite() || tol <= 0.0 {
         return Some("the part-off kerf cannot be judged: no model, or a blade width, plane or tolerance that is not a size".into());
     }
@@ -125,7 +126,10 @@ pub fn part_kerf_refusal(
     let sg = revolve::segs(&pts);
     let d = (pts[0].0, pts[pts.len() - 1].0);
     let s_p = f.station_of(parting_z);
-    let side = waste_side(d, s_p, tol, stock);
+    let side = chuck_side();
+    if side.part_length(d, s_p) <= tol.max(KERF_TOL) {
+        return Some(no_part_past_plane(&f, d, parting_z));
+    }
     let half = width * 0.5;
     for (i, m) in path.moves.iter().enumerate() {
         if m.kind == MoveKind::Rapid {
@@ -143,7 +147,7 @@ pub fn part_kerf_refusal(
             return Some(format!(
                 "the part-off cuts into the finished part: move {i} puts the {width:.3} mm blade at \
                  Z{:.3} to Z{:.3}, {:.3} mm past the part's end face at Z{parting_z:.3} - the whole \
-                 kerf must stand on the bar's side of that face",
+                 kerf must stand on the chuck side (-Z) of that face",
                 f.height_of(lo),
                 f.height_of(hi),
                 ohi - olo,

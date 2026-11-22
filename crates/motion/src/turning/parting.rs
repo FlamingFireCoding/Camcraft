@@ -7,7 +7,7 @@ use crate::machining2d::GenError;
 use super::blade::{plunge, rung, PartParams, MAX_RUNGS};
 use super::profile;
 use super::revolve;
-use super::parting_law::{bar_span, waste_side};
+use super::parting_law::{bar_span, chuck_side, no_part_past_plane, CHUCK_NOTE};
 use super::stock::StockEnv;
 
 /// Parting: one center beside the parting plane (#3452: the plane is
@@ -68,10 +68,14 @@ pub fn part_in(facets: &[Triangle], p: &PartParams, stock: Option<StockEnv>) -> 
     let sg = revolve::segs(&pts);
     let (d_lo, d_hi) = (pts[0].0, pts[pts.len() - 1].0);
     // #3452: the plane is the finished part's END FACE, and the whole
-    // kerf stands beside it on the scrap side - never centred on it,
-    // which took half a blade out of the part.
+    // kerf stands beside it on the chuck side - never centred on it,
+    // which took half a blade out of the part. The side is the chuck's
+    // (ISO 841: -Z), never a guess from the model or the stock.
     let s_p = f.station_of(p.parting_z);
-    let side = waste_side((d_lo, d_hi), s_p, p.tolerance, stock);
+    let side = chuck_side();
+    if side.part_length((d_lo, d_hi), s_p) <= p.tolerance {
+        return Err(GenError::Empty(no_part_past_plane(&f, (d_lo, d_hi), p.parting_z)));
+    }
     let (k_lo, k_hi) = side.kerf(s_p, p.blade_width);
     let s_c = side.centre(s_p, p.blade_width);
     let (b_lo, b_hi) = bar_span((d_lo, d_hi), stock);
@@ -130,5 +134,7 @@ pub fn part_in(facets: &[Triangle], p: &PartParams, stock: Option<StockEnv>) -> 
         f.point(rho_clear, f.station_of(p.clearance_z)),
         None,
     );
-    Ok(b.finish())
+    let mut path = b.finish();
+    path.notes.push(CHUCK_NOTE.into());
+    Ok(path)
 }

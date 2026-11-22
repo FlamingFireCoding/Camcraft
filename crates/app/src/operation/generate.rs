@@ -2960,7 +2960,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // part material is a gouge, refused and never posted.
             let plane = req_z(hl.bottom, "Parting Plane Z")?;
             if let Some(why) =
-                crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance, turn_stock)
+                crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance)
             {
                 return Err(GenError::Invalid(why));
             }

@@ -1261,6 +1261,7 @@
           ],
           "warnings": [],
           "notes": [
+            "part-off: the chuck is read on the -Z side of the parting plane (ISO 841 lathe Z, +Z away from the workholding) - the setup does not name the spindle that holds the bar; the whole kerf stands on that side and the part keeps everything above the plane",
             "holder not judged - the turning tool carries no modelled body, so only its cutting footprint was judged against the stock"
           ]
         },
