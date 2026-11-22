@@ -304,6 +304,7 @@ pub(super) fn run_levels(
 /// came out degenerate still crosses in over new material.
 /// Mutable ladder cursor shared between `run_level_walks` and
 /// per-level keep-out walks (#2055).
+#[derive(Clone)]
 pub(super) struct WalkState {
     first: bool,
     pub(super) last_cut_z: Option<f64>,

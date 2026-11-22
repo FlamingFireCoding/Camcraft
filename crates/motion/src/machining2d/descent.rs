@@ -289,6 +289,13 @@ pub(super) fn start(d: &Descent, l: &Lvl, leg: Point2, m: &Motion) -> Point2 {
     }
 }
 
+pub(super) fn helix_parts(d: &Descent) -> Option<(Point2, Point2, f64, f64, f64)> {
+    match d { Descent::Helix(h) => Some((h.start, h.center, h.from, h.turns, h.r)), _ => None }
+}
+pub(super) fn make_helix(start: Point2, center: Point2, from: f64, turns: f64, r: f64) -> Descent {
+    Descent::Helix(Hel { start, center, turns, r, from })
+}
+
 /// Post a planned descent. `tz` is the plane the tool traverses at to
 /// reach the descent's start (clearance, the retract plane, or - after a
 /// keep-down link - the level above itself); each planned arm carries the
@@ -339,19 +346,36 @@ pub(super) fn push(b: &mut PathBuilder, d: &Descent, l: &Lvl, z: f64, tz: f64, m
             Vec::new()
         }
         Descent::Helix(h) => {
-            let cur = b.at();
-            if cur.x != h.start.x || cur.y != h.start.y {
-                b.push(MoveKind::Rapid, Point3::new(h.start.x, h.start.y, tz), None);
+            let mut chosen = (h.start, h.center, h.turns, h.r);
+            if m.solid_restart && !super::descent_dive::helix_clears_prior(b.moves(), l, h.start, h.center, h.from, z, h.turns, m) {
+                let zig = m.links.transition == Some(Entry3D::Helix)
+                    && crate::links::helix_turns(h.from - z, h.r, m.links.helix_pitch)
+                        .is_some_and(|t| (t - h.turns).abs() < 1e-9);
+                match super::descent_dive::find_clear_helix_raw(b.moves(), l, h.from, z, zig, m, !a.center_cutting) {
+                    Some(found) => chosen = found,
+                    None => return super::descent_dive::helix_cross_fallback(b, l, e, z, h.from, tz, m),
+                }
             }
-            if h.r < m.helix_radius {
+            let (start, center, turns, r) = chosen;
+            let cur = b.at();
+            if cur.x != start.x || cur.y != start.y {
+                let hop = if tz < m.hop_z - 1e-9 {
+                    b.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, m.hop_z), None);
+                    m.hop_z
+                } else {
+                    tz
+                };
+                b.push(MoveKind::Rapid, Point3::new(start.x, start.y, hop), None);
+            }
+            if r < m.helix_radius {
                 b.note_once(&format!(
                     "entry: the helix fits only under its radius - flown at {:.3} mm, within the minimum radius",
-                    h.r
+                    r
                 ));
             }
-            b.push(MoveKind::Rapid, Point3::new(h.start.x, h.start.y, h.from), None);
-            helix_about(b, h.start, h.center, h.from, z, h.turns, fd, !a.helix_cw);
-            link(dive_link(b, l, h.start, e, z, m))
+            b.push(MoveKind::Rapid, Point3::new(start.x, start.y, h.from), None);
+            helix_about(b, start, center, h.from, z, turns, fd, !a.helix_cw);
+            link(dive_link(b, l, start, e, z, m))
         }
         Descent::Arc(lead, zf) => {
             push_arc_lead(b, lead, tz, *zf, fd, a.plunge(m.plunge_feed));

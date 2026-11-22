@@ -116,6 +116,7 @@ mod vcarve_axis;
 mod vcarve_walk;
 mod waterscan;
 mod pocket_avoid;
+mod pocket_avoid_level;
 mod corner_relief;
 mod corner_relief_spur;
 
@@ -164,14 +165,17 @@ pub use corner_relief::{
 pub use corner_relief_spur::pocket_relief_plan;
 pub use pass_start::PassStart;
 pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, pocket_started, PocketParams, PocketStrategy};
-pub use pocket_avoid::{pocket_avoid, pocket_avoid_started, pocket_avoid_with_relief};
+pub use pocket_avoid::{
+    pocket_avoid, pocket_avoid_entered_with_relief, pocket_avoid_started, pocket_avoid_with_relief,
+};
 pub use predrilled::PreHole;
 pub use rest2d::{
-    rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, RestSource, REST_FILM,
-    REST_MARGIN, REST_NEEDS_STOCK, REST_REACH,
+    rest_plan, rest_pocket, rest_pocket_avoid_with_relief, rest_pocket_with_relief, rest_strategy, RestParams,
+    RestPlan, RestSource, REST_FILM, REST_MARGIN, REST_NEEDS_STOCK, REST_REACH,
 };
 pub use rest_prior::{
-    rest_plan_stock, rest_pocket_previous, rest_pocket_previous_with_relief, rest_stock_from_columns, PRIOR_Z_TOL,
+    rest_plan_stock, rest_pocket_previous, rest_pocket_previous_avoid_with_relief, rest_pocket_previous_with_relief,
+    rest_stock_from_columns, PRIOR_Z_TOL,
 };
 pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};

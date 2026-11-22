@@ -138,7 +138,7 @@ impl Links {
 
 /// Why a keep-down link lifted, tallied per ladder so a pocket with a
 /// hundred passes says it once, with the first place it happened.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct LinkTally {
     lifted: Vec<(&'static str, usize, Point2, f64)>,
 }
