@@ -327,7 +327,7 @@ pub(super) fn emit_rest(
             holes: &[],
             corner_reliefs: &corner_reliefs,
             cleared_links: false,
-            dead_end_ramp: false,
+            ramp_starts: Vec::new(),
         },
     )
 }
