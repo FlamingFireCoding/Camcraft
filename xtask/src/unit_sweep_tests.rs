@@ -271,7 +271,7 @@ fn a_link_at_the_package_level_is_skipped() {
     // real package names the same directory; Windows refuses to create it. macOS allows the
     // case-variant name, which is the fold of #3173; Windows links another package name instead.
     let linked_pkg = if cfg!(windows) { build.join("other-app") } else { build.join("CamCraft-App") };
-    assert!(dir_link(&real_pkg.parent().expect("the package dir"), &linked_pkg), "the test makes the package link");
+    assert!(dir_link(real_pkg.parent().expect("the package dir"), &linked_pkg), "the test makes the package link");
     assert!(!plain_dir(&linked_pkg), "a package link is not a plain directory");
     let units = scan(&root.join("target"));
     assert!(units.iter().all(|u| !u.dir.starts_with(&linked_pkg)), "the scan does not enter a package link: {units:?}");
