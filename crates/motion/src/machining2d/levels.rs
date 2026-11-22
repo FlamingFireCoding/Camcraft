@@ -30,7 +30,7 @@ use super::slots::chord_clears;
 /// never bless a gouge.
 pub(super) enum Cert<'a> {
     Region(&'a Region),
-    /// Cutter centers that keep the tool above this Circular vault band.
+    /// Cutter-center disk of a Circular vault band or the authored rim.
     RingDisk { center: Point2, radius: f64, tess: &'a Region },
     Stadium { a: Point2, b: Point2, h: f64, tess: &'a Region },
 }

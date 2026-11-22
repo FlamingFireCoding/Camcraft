@@ -254,7 +254,7 @@ pub(super) fn links_to(l: &Lvl, q: Point2, e: Point2) -> bool {
 /// (the M8.1 dive, its link proved or the second dive named).
 pub(super) fn dive_point(l: &Lvl, e: Point2, m: &Motion) -> Option<Point2> {
     // The band boundary is a cutting circle. Landing on its start keeps
-    // the descent in the same column on each level of the vault.
+    // the descent in the same column on each level of the ring.
     if matches!(l.cen, Cert::RingDisk { .. }) && l.cen.chord_ok(e, e) {
         return Some(e);
     }

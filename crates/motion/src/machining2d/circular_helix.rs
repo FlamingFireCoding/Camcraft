@@ -151,9 +151,9 @@ impl Descents {
     }
 }
 
-/// An internally tangent orbit in a vault band's disk. Test the actual
+/// An internally tangent orbit in a Circular ring's disk. Test the actual
 /// near and far points of the two posted half-turns after lattice rounding.
-pub(super) fn vault_center(axis: Point2, radius: f64, q: Point2, r: f64) -> Option<Point2> {
+pub(super) fn tangent_center(axis: Point2, radius: f64, q: Point2, r: f64) -> Option<Point2> {
     let dx = q.x - axis.x;
     let dy = q.y - axis.y;
     let d = dx.hypot(dy);
@@ -178,7 +178,7 @@ pub(super) fn vault_center(axis: Point2, radius: f64, q: Point2, r: f64) -> Opti
 /// when no offset fits - the descent then looks elsewhere.
 fn predicted_center(cert: &Cert, q: Point2, r: f64) -> Option<Point2> {
     if let Cert::RingDisk { center, radius, .. } = cert {
-        return vault_center(*center, *radius, q, r);
+        return tangent_center(*center, *radius, q, r);
     }
     let room = cert.room();
     (0..8).find_map(|k| {

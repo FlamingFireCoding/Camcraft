@@ -294,11 +294,22 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
         if zs.is_empty() {
             continue;
         }
-        let band = if forced && p.vault { disk(p.center, rho) } else { None };
-        let cert = if forced && p.vault {
-            let tess = band.as_ref().ok_or_else(|| GenError::Invalid(
-                format!("cannot certify the vault ring at radius {rho:.6}")
-            ).with_ghost_moves(b.moves()))?;
+        // The last Inside helix on a flat floor starts on the rim. A polygon
+        // with a wall margin cannot locate its internally tangent orbit.
+        // Use the same analytic disk for choosing the phase and flying it.
+        let rim_helix = k == 0 && p.pass_start == PassStart::Inside && helix;
+        let band;
+        let cert = if (forced && p.vault) || rim_helix {
+            let room = if k == 0 {
+                &center_region
+            } else {
+                band = disk(p.center, rho);
+                &band
+            };
+            let tess = room.as_ref().ok_or_else(|| {
+                let site = if p.vault { "vault ring" } else { "rim helix" };
+                GenError::Invalid(format!("cannot certify the {site} at radius {rho:.6}")).with_ghost_moves(b.moves())
+            })?;
             Some(Cert::RingDisk { center: p.center, radius: rho, tess })
         } else {
             center_region.as_ref().map(Cert::Region)

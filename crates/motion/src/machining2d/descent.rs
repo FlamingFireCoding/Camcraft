@@ -178,10 +178,10 @@ fn plan_helix(
             continue;
         };
         if let Cert::RingDisk { center, radius, .. } = l.cen {
-            if let Some(c) = super::circular_helix::vault_center(*center, *radius, e, r) {
+            if let Some(c) = super::circular_helix::tangent_center(*center, *radius, e, r) {
                 return Ok(Hel { start: e, center: c, turns: t, r, from });
             }
-            why = "no helix fits inside this vault ring with a chord long enough to post";
+            why = "no helix fits inside this ring with a chord long enough to post";
             continue;
         }
         // On the pass start, else on the first pass a little along it
