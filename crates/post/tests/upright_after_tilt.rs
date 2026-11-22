@@ -19,7 +19,7 @@
 
 mod ac_trunnion_support;
 
-use camcraft_post::cl::{Move, MoveKind, Toolpath};
+use camcraft_post::cl::{CycleKind, Move, MoveKind, Toolpath};
 use camcraft_post::geometry::Point3;
 use camcraft_post::post::{self, cnc, engine, Dump};
 use serde_json::json;
@@ -323,5 +323,68 @@ fn a_script_without_upright_after_tilt_posts_a_program_with_no_return_to_state()
     ] {
         let out = run_undeclared("fanuc", &r);
         assert!(!out.warnings.iter().any(|w| w.contains("uprightReturn")), "{case}: {:?}", out.warnings);
+    }
+}
+
+/// The upright section of `dump_of(&upright_path(), ..)` with its moves
+/// replaced by a drill cycle (it states no rotary angle) and then `rest`.
+/// `at` is the stream-global move index the cycle anchors at (the
+/// engine seats each cycle in the section that owns that index).
+fn cycle_section(op: &str, at: usize, rest: Vec<cnc::Record>) -> Vec<cnc::Record> {
+    let cycle = cnc::Record::Cycle(cnc::CycleRec {
+        kind: CycleKind::Drill,
+        x: 10.0,
+        y: 10.0,
+        r_z: 2.0,
+        bottom_z: -5.0,
+        entry_z: 0.0,
+        peck: 0.0,
+        dwell: 0.0,
+        first_move: at,
+        feed: Some(100.0),
+    });
+    let mut out = Vec::new();
+    let mut placed = false;
+    for r in dump_of(&upright_path(), op, 1) {
+        if matches!(r, cnc::Record::Move(_)) {
+            if !placed {
+                out.push(cycle.clone());
+                out.extend(rest.iter().cloned());
+                placed = true;
+            }
+            continue;
+        }
+        out.push(r);
+    }
+    assert!(placed, "the upright section has moves to replace");
+    out
+}
+
+/// #3501 review: a canned cycle is motion. A cycle-only section after a
+/// tilt, and a cycle before a later move that states zero angles, both
+/// open at the old lean.
+#[test]
+fn a_cycle_that_opens_an_upright_section_after_a_tilt_is_refused_by_name() {
+    let zero = cnc::Record::Move(cnc::MoveRec {
+        kind: MoveKind::Rapid,
+        x: 10.0,
+        y: 10.0,
+        z: 20.0,
+        feed: None,
+        center: None,
+        ccw: false,
+        plane: Default::default(),
+        abc: Some([0.0; 3]),
+    });
+    for (case, rest) in [("cycle only", vec![]), ("cycle, then a stated zero", vec![zero])] {
+        let lean = dump_of(&tilted_path(), "Lean1", 1);
+        let at = lean.iter().filter(|r| matches!(r, cnc::Record::Move(_))).count();
+        let r = [lean, cycle_section("FlatDrill", at, rest)].concat();
+        let out = run_undeclared("fanuc", &r);
+        assert!(
+            out.warnings.iter().any(|w| w.contains("uprightReturn") && w.contains("\"FlatDrill\"") && w.contains("\"Lean1\"")),
+            "{case}: the engine refuses the cycle section by name: {:?}",
+            out.warnings
+        );
     }
 }

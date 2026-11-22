@@ -47,8 +47,12 @@ fn first_unstated_return(records: &[Record]) -> Option<String> {
     let mut tilted_by: Option<String> = None;
     for chunk in super::wcs_rotate::chunk_bounds(records).into_iter().filter_map(|(a, b)| records.get(a..b)) {
         let name = operation_name(chunk);
+        // The first record that commands motion. A canned cycle states no
+        // rotary angle, so a cycle before any `Move` opens the section at
+        // the modal (old) lean, the same as an unstated move.
         let first = chunk.iter().find_map(|r| match r {
             Record::Move(m) => Some(m.abc),
+            Record::Cycle(_) => Some(None),
             _ => None,
         });
         let Some(first_abc) = first else { continue };
@@ -99,8 +103,8 @@ fn text(op: &str, prev: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cl::MoveKind;
-    use crate::post::cnc::MoveRec;
+    use crate::cl::{CycleKind, MoveKind};
+    use crate::post::cnc::{CycleRec, MoveRec};
     use serde_json::json;
 
     fn op(name: &str) -> Record {
@@ -133,6 +137,34 @@ mod tests {
         let r = [section("Lean", vec![mv(Some([0.0, 20.0, 0.0]))]), section("Flat", vec![mv(None)])].concat();
         let why = first_unstated_return(&r).expect("refused");
         assert!(why.contains("\"Flat\"") && why.contains("\"Lean\"") && why.contains("uprightReturn"), "{why}");
+    }
+
+    fn cycle() -> Record {
+        Record::Cycle(CycleRec {
+            kind: CycleKind::Drill,
+            x: 10.0,
+            y: 10.0,
+            r_z: 2.0,
+            bottom_z: -5.0,
+            entry_z: 20.0,
+            peck: 0.0,
+            dwell: 0.0,
+            first_move: 0,
+            feed: Some(100.0),
+        })
+    }
+
+    #[test]
+    fn a_cycle_only_section_after_a_lean_is_refused_by_name() {
+        let r = [section("Lean", vec![mv(Some([0.0, 20.0, 0.0]))]), section("FlatDrill", vec![cycle()])].concat();
+        let why = first_unstated_return(&r).expect("refused");
+        assert!(why.contains("\"FlatDrill\"") && why.contains("\"Lean\""), "{why}");
+    }
+
+    #[test]
+    fn a_cycle_before_a_later_stated_zero_is_refused() {
+        let r = [section("Lean", vec![mv(Some([0.0, 20.0, 0.0]))]), section("FlatDrill", vec![cycle(), mv(Some([0.0; 3]))])].concat();
+        assert!(first_unstated_return(&r).is_some());
     }
 
     #[test]
