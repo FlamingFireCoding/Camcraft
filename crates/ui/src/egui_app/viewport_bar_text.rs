@@ -55,20 +55,25 @@ pub(crate) fn nav_tool_label(tool: DragMode) -> &'static str {
 /// The status line when a nav tool latches off.
 pub(crate) const NAV_TOOL_CLEAR: &str = "nav tool: off";
 
-/// The base plain-English label for each of the viewport controls.
+/// The base plain-English label (the accessible name) for each of the
+/// viewport controls. Each name is unique in the whole window: a script or
+/// a screen reader must tell the bar's button from the View menu's
+/// "Show all toolpaths" check box and "Projection" row, and from the
+/// Display menu's "Display mode" group and "Wireframe" entry (#2914).
+/// The state and the longer text go in the tooltip, not in the name.
 #[must_use]
 pub(crate) fn label(kind: Nav) -> &'static str {
     match kind {
         Nav::Frame => "Frame all",
         Nav::Iso => "Isometric view",
-        Nav::Wire => "Display mode",
+        Nav::Wire => "Switch wireframe",
         Nav::Display => "Display menu",
-        Nav::Paths => "Show all toolpaths",
+        Nav::Paths => "Show or hide toolpaths",
         Nav::Axes => "World axes",
         Nav::PickThrough => "Pick through",
         Nav::Move => "Move mode",
         Nav::Rotate => "Rotate mode",
-        Nav::Projection => "Projection",
+        Nav::Projection => "Switch projection",
         Nav::Orbit => "Orbit tool",
         Nav::Pan => "Pan tool",
         Nav::Zoom => "Zoom tool",

@@ -10,9 +10,16 @@ use crate::viewport::ProjectionMode;
 fn nav_buttons_have_distinct_labels_and_descriptive_tooltips() {
     let mut state = State::new();
     assert_eq!(NAVS.len(), NAV_COUNT);
+    let mut seen = std::collections::HashSet::new();
     for &kind in &NAVS {
         let lab = label(kind);
         assert!(!lab.is_empty(), "label for {:?} must not be empty", kind);
+        assert!(seen.insert(lab), "label {lab:?} of {kind:?} is used by two buttons");
+        // The names of other controls in the window: a bar button must not
+        // take one of them, or a query by name finds two nodes (#2914).
+        for taken in ["Show all toolpaths", "Projection", "Wireframe", crate::egui_app::display_menu::GROUP_MODE] {
+            assert_ne!(lab, taken, "the {kind:?} button takes the name of another control");
+        }
         let tip = tooltip(kind, &state);
         assert!(!tip.is_empty(), "tooltip for {:?} must not be empty", kind);
     }
