@@ -306,6 +306,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         None
     };
     let mut face_band: Option<(Vec<(&'static str, Region)>, f64)> = None;
+    // #3316: an Outside band's holes are the part (the pass start names them).
+    let around_band = area.as_ref().and_then(|c| c.outside_clearing_stock()) == Some(true);
     if !contour_sel_arm && !contour_open && let Some(ctx) = area.take() {
         let base = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
         let applied = apply_area_full(base, Some(&ctx))?;
@@ -977,16 +979,25 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     neighbour_parts: &neighbour_parts,
                 },
             )?;
+            // #3316: the stock footprint in the area's frame tells a start
+            // ring in open air from one on a wall.
+            let side = machining2d::StartSide {
+                start: *pass_start,
+                stock: (*pass_start != machining2d::PassStart::Auto)
+                    .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
+                    .flatten(),
+                around_part: around_band,
+            };
             let mut path = match &avoid_spec {
-                Some(spec) => machining2d::pocket_avoid_started(&region, &pp, spec, corner_relief, *pass_start)?,
-                None => machining2d::pocket_started(&region, &pp, &[], corner_relief, *pass_start)?,
+                Some(spec) => machining2d::pocket_avoid_started_on(&region, &pp, spec, corner_relief, &side)?,
+                None => machining2d::pocket_started_on(&region, &pp, &[], corner_relief, &side)?,
             };
             if let Some(m) = carry_need!(&relieved_region, &path) {
                 pp.links.approach.material_top = Some(m);
                 lk = pp.links;
                 path = match &avoid_spec {
-                    Some(spec) => machining2d::pocket_avoid_started(&region, &pp, spec, corner_relief, *pass_start)?,
-                    None => machining2d::pocket_started(&region, &pp, &[], corner_relief, *pass_start)?,
+                    Some(spec) => machining2d::pocket_avoid_started_on(&region, &pp, spec, corner_relief, &side)?,
+                    None => machining2d::pocket_started_on(&region, &pp, &[], corner_relief, &side)?,
                 };
             }
             relief_zones = zones;

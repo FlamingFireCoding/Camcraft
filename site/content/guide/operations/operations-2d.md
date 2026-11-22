@@ -292,11 +292,23 @@ wanted rather than a constant load.
 
 - **Auto** cuts the rings from the middle of the area outward. This is
   the order that 2D Offset always cut.
-- **Outside** starts at the outer edge of the area and works in. With an
-  Outside containment, the outer edge is the stock edge: the tool starts
-  outside the stock, cuts one stepover at a time and ends on the part
-  wall. Use it to stop full-width slots in the stock.
-- **Inside** starts at the part or island wall and works out.
+- **Outside** starts at the outer edge of the area and works in. Each
+  ring follows the outer edge, one stepover in from the ring before, and
+  ends where it meets the part. The part wall comes last. With an
+  Outside containment, the outer edge is the stock edge: each level
+  starts outside the stock and ends on the part wall. Use it to stop
+  full-width slots in the stock.
+- **Inside** starts at the part or island wall and works out. Each ring
+  follows the walls, and the outer edge comes last.
+- Some cuts still take the full tool width. The toolpath then shows a
+  **Pass start** warning that names the case:
+  - **Outside** on a closed pocket: the first ring runs along the pocket
+    wall.
+  - **Inside** on an Outside containment: the first ring runs along the
+    part wall.
+  - **Inside** round an island: the first ring runs along the island wall.
+  - A place narrower than the tool plus one stepover, or stock that the
+    start edge does not reach (for example inside a ring-shaped part).
 
 **Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
 to protect from every cut, plunge, ramp, helix, keep-down and rapid link
