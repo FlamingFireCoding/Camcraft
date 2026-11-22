@@ -104,6 +104,7 @@ mod tab_clear;
 mod tab_kerf;
 mod slots;
 mod slot_ends;
+mod slot_lap;
 mod slot_room;
 mod undercut;
 mod unreached;
