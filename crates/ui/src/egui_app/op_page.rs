@@ -162,6 +162,12 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
             ui.ctx().request_repaint();
         }
         drop(fields);
+        // #3324: a kind that does not take a start or exit pick says so
+        // by name, on the tab where the contour's rows sit (else Geometry).
+        let picks_tab = if super::op_tabs::has_section(kind, SEC_LEADS) { SEC_LEADS } else { SEC_GEO };
+        if tab == picks_tab {
+            super::start_exit_rows::not_taken_groups(ui, kind);
+        }
         if tab == SEC_FEEDS {
             // M13.2: material, edge, flutes and the suggestion.
             super::feeds_page::cutting_group(ui, state, &target);
