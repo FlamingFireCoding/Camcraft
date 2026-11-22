@@ -543,7 +543,10 @@ impl ParamsDto {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
-            } => ParamsDto::Deburr {
+                sizing,
+            } => {
+                let (break_mode, break_depth, break_profile, passes) = break_dto(sizing);
+                ParamsDto::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
                 top_z: (*top_z).into(),
@@ -556,7 +559,12 @@ impl ParamsDto {
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
                 unreachable: (*unreachable).into(),
-            },
+                break_mode,
+                break_depth,
+                break_profile,
+                passes,
+                }
+            }
             // The 5-axis twins (M5.1 stage C): one shape, mirrored.
             // The contour arm has no stepover to name, so the pattern
             // reads it back (the or-pattern law again).
@@ -1829,6 +1837,10 @@ impl ParamsDto {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
+                break_mode,
+                break_depth,
+                break_profile,
+                passes,
             } => OpParams::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -1842,6 +1854,7 @@ impl ParamsDto {
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
                 unreachable: (*unreachable).into(),
+                sizing: break_of(*break_mode, *break_depth, *break_profile, *passes),
             },
             // The 5-axis twins (M5.1 stage C): the same shape read
             // back - the contour has no stepover key to lose, and the
