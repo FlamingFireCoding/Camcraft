@@ -105,6 +105,8 @@ mod machines_edit;
 mod machine_wire_edm;
 mod unsaved;
 mod post_refusal;
+#[cfg(not(target_arch = "wasm32"))]
+mod agie_post;
 mod program_units;
 mod gcode_viewer;
 mod first_setup;
@@ -183,6 +185,8 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3335: real viewport clicks into the "Do not touch" group.
+mod do_not_touch_click;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;

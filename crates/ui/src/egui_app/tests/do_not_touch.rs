@@ -61,8 +61,10 @@ fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
 #[test]
 fn geometry_boundaries_shows_do_not_touch_controls_rows_and_viewport_marks() {
     let _g = snapshot_guard();
+    // #3338: taller by the Outside boundary offset row, so the last ×
+    // stays on the screen.
     let mut h = Harness::builder()
-        .with_size(Vec2::new(1400.0, 1100.0))
+        .with_size(Vec2::new(1400.0, 1200.0))
         .build_ui_state(frame, ShellUi::seeded());
     h.run_steps(2);
     let (face_top, face_other, edge) = {
