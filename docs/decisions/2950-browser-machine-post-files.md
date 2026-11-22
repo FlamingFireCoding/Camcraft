@@ -2,7 +2,7 @@
 
 **What was decided.**
 
-- A session store in `crates/app/src/session_files.rs` keeps the text of each `.mch` and `.cps` that the browser read, keyed by the bare file name, for this run of the app only.
+- A session store in `crates/post/src/session_files.rs`, re-exported by app, keeps the text of each `.mch` and `.cps` that the browser read, keyed by the bare file name, for this run of the app only.
 - The store is thread-local. The browser runs the app on one thread. A process-global store leaked the session machines of one test into the machine-pane tests on other threads (quick gate, ui lib red). A reader on another thread does not find a session name, so the disk read fails and the caller refuses that name.
 - A file enters the store only when it passes the checks of a file from disk. A machine must validate and parse. A post must compile and run on an empty stream (the `SelectPost` check).
 - The readers that read a machine or post file by path consult the store first, then the disk: `posting::script_of`, `posting::resolve_cps`, `SelectPost` validation, `LoadMachine::from_file`, `SetupMount::from_file`, and the machine catalogue reads. So the existing commands (`LoadMachineFile`, `SelectPostFile`, the MCP tools) run unchanged on a session name. Undo works as before.
@@ -23,5 +23,13 @@
   1. No persistence (this PR). The user picks the folder again in each session.
   2. IndexedDB copy of each kept file, restored at startup and listed as session entries. A "Forget" button would remove them. About one module in `crates/ui` (wasm only) and a startup hook.
   3. A project-embedded copy of the post or machine text. This changes the project file and is a larger design.
+
+**Review decisions.**
+
+- Refuse different post text under an existing session name. Accept identical text again. This keeps a selected `PostRef` stable without a history entry. A new file name permits a different post. An undoable replacement command was dropped because replacement is not required for loading files.
+- Limit one browser batch to 32 MiB of raw file bytes. Reserve each file size before its read starts. Refuse excess input by file name. A per-file limit alone was dropped because individually valid files can exhaust the wasm32 heap together.
+- Limit the session store to 32 MiB for all retained machine and post names and text. Check the combined count before allocating stored strings. Unlimited retained text was dropped because repeated batches can exhaust the heap.
+- Put pure storage and file readers in `camcraft-post`. App passes its holder-aware machine validation as a callback. Keeping the module in app was dropped because it owns no document state. A new dependency edge was dropped because the callback preserves the checks without one.
+- Invalidate the machine catalogue after each successful machine import. A populated catalogue must show the new file without a manual refresh. Checking only the unchanged mount path was dropped because a folder import does not change that path.
 
 **Cost to change later.** Low. The store is one module with a small API. A persistence layer can fill it at startup without other changes.

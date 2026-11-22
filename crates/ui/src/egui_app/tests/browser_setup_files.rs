@@ -190,3 +190,84 @@ fn the_machine_and_post_load_buttons_are_live_in_the_browser() {
     h.run_steps(3);
     assert!(h.query_by_label(crate::egui_app::machine_page::LOAD_FOLDER).is_none());
 }
+
+#[test]
+fn same_name_folder_and_picker_leave_the_selected_post_and_history_stable() {
+    let mut h = with_setup();
+    let st = &mut h.state_mut().state;
+    let before = posting::post_of(&st.world);
+    let original = asset("posts/grbl.cps");
+    st.run(picked(
+        PickFor::Post,
+        "stable-3160.cps",
+        Ok(original.clone()),
+    ));
+    let selected = posting::post_of(&st.world);
+    let mut changed = original.clone();
+    changed.extend_from_slice(b"\n// a different post file\n");
+    for purpose in [PickFor::Folder, PickFor::Post] {
+        st.run(picked(purpose, "stable-3160.cps", Ok(changed.clone())));
+        assert!(
+            st.status.contains("stable-3160.cps") && st.status.contains("different post text"),
+            "{}",
+            st.status
+        );
+        assert_eq!(posting::post_of(&st.world), selected);
+        assert_eq!(
+            posting::script_source(&st.world)
+                .expect("original selected post")
+                .1
+                .as_bytes(),
+            original
+        );
+    }
+    st.history.undo(&st.world);
+    assert_eq!(
+        posting::post_of(&st.world),
+        before,
+        "the refused folder and picker add no history step"
+    );
+}
+
+#[test]
+fn a_folder_machine_import_invalidates_the_populated_catalogue() {
+    let mut h = with_setup();
+    let st = &mut h.state_mut().state;
+    crate::egui_app::machines_pane::refresh(st);
+    let before_mount = camcraft_app::machine::of(&st.world).0;
+    assert!(
+        st.machines_pane
+            .list
+            .as_ref()
+            .expect("populated list")
+            .iter()
+            .all(|entry| entry.source.mount_path() != "catalogue-3160.mch")
+    );
+    st.run(picked(
+        PickFor::Folder,
+        "catalogue-3160.mch",
+        Ok(asset("machines/tormach-770mx.mch")),
+    ));
+    assert_eq!(camcraft_app::machine::of(&st.world).0, before_mount);
+    crate::egui_app::machines_pane::refresh(st);
+    assert!(
+        st.machines_pane
+            .list
+            .as_ref()
+            .expect("refreshed list")
+            .iter()
+            .any(|entry| entry.source.mount_path() == "catalogue-3160.mch" && entry.is_valid()),
+        "{}",
+        st.status
+    );
+}
+
+#[test]
+fn an_unloaded_session_post_is_refused_by_name_at_post_time() {
+    let post = PostRef::File("unit-3160-never.cps".to_owned());
+    assert!(
+        posting::script_of(&post)
+            .expect_err("not loaded")
+            .contains("unit-3160-never.cps")
+    );
+}

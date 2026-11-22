@@ -110,7 +110,10 @@ impl State {
             // #2950: kept for the session by name, then mounted or chosen
             // through the same commands a file from disk runs.
             PickFor::Machine => match add_setup_file(&name, &data, &["mch"]) {
-                Ok(()) => self.load_machine_path(PathBuf::from(&name)),
+                Ok(()) => {
+                    self.machines_pane.list = None;
+                    self.load_machine_path(PathBuf::from(&name));
+                },
                 Err(why) => self.status = format!("machine not loaded: {why}"),
             },
             PickFor::Post | PickFor::Folder => match add_setup_file(&name, &data, &["cps"]) {
@@ -175,7 +178,12 @@ impl State {
                 .map_err(|why| format!("{name} could not be read: {why}"))
                 .and_then(|data| add_setup_file(&name, &data, SETUP_EXTENSIONS));
             match landed {
-                Ok(()) => added += 1,
+                Ok(()) => {
+                    added += 1;
+                    if Path::new(&name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("mch")) {
+                        self.machines_pane.list = None;
+                    }
+                },
                 Err(why) => refused.push(why),
             }
         }
@@ -244,7 +252,12 @@ fn add_setup_file(name: &str, data: &[u8], allowed: &[&str]) -> Result<(), Strin
         return Err(format!("{name} is not {what}"));
     }
     let text = std::str::from_utf8(data).map_err(|_| format!("{name} is not text"))?;
-    if ext == "mch" { session_files::add_machine(name, text).map(drop) } else { session_files::add_post(name, text) }
+    if ext == "mch" { session_files::add_machine(name, text, |text| {
+        if let Some(first) = camcraft_app::machine::validate::validate_text(text).first() {
+            return Err(format!("fails validation - {first}"));
+        }
+        camcraft_app::machine::parse_mch(text).map_err(|e| format!("is not a machine file: {e}"))
+    }).map(drop) } else { session_files::add_post(name, text) }
 }
 
 #[cfg(target_arch = "wasm32")]

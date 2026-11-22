@@ -19,6 +19,10 @@ use std::collections::VecDeque;
 
 use crate::file_dialog::FileDialog;
 
+#[path = "file_pick_budget.rs"]
+mod budget;
+pub(crate) use budget::ReadBudget;
+
 /// The largest file the browser build reads into memory, in bytes. A wasm32
 /// module has at most 4 GiB of memory and an import needs several times
 /// its file, so a bigger file is refused by name before it is read - an
@@ -142,7 +146,7 @@ pub fn is_setup_file(name: &str) -> bool {
 pub fn too_big(name: &str, size: f64) -> Option<String> {
     // 256 MiB is exact in an f64.
     let limit = BROWSER_READ_LIMIT as f64;
-    (!size.is_finite() || size > limit).then(|| {
+    (!size.is_finite() || size < 0.0 || size > limit).then(|| {
         format!(
             "{name} is {:.0} MiB, over the browser build's {} MiB read limit - open it in the desktop app",
             size / 1_048_576.0,
@@ -162,7 +166,7 @@ mod web {
     use wasm_bindgen::closure::Closure;
     use wasm_bindgen::{JsCast as _, JsValue};
 
-    use super::{PickFor, PickedFile, accept_attr, deliver, is_setup_file, too_big};
+    use super::{PickFor, PickedFile, ReadBudget, accept_attr, deliver, is_setup_file, too_big};
     use crate::file_dialog::FileDialog;
 
     /// The open picker: its input and the change handler the input calls.
@@ -285,9 +289,19 @@ mod web {
             let why = "it holds no .mch or .cps file".to_string();
             deliver(PickedFile { purpose: PickFor::Folder, name: "the folder".to_string(), bytes: Err(why) });
         }
-        let mut done = Vec::with_capacity(files.len());
-        for file in files {
-            done.push(read_one(file, PickFor::Folder).await);
+        // Plan every size before starting any read. Rejected files keep
+        // their names and never allocate an ArrayBuffer.
+        let mut budget = ReadBudget::default();
+        let plan: Vec<_> = files.into_iter().map(|file| {
+            let allowed = budget.reserve(&file.name(), file.size());
+            (file, allowed)
+        }).collect();
+        let mut done = Vec::with_capacity(plan.len());
+        for (file, allowed) in plan {
+            done.push(match allowed {
+                Ok(()) => read_one(file, PickFor::Folder).await,
+                Err(why) => PickedFile { purpose: PickFor::Folder, name: file.name(), bytes: Err(why) },
+            });
         }
         for file in done {
             deliver(file);

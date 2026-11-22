@@ -59,9 +59,13 @@ pub(super) fn take(ui: &Ui, state: &mut State) -> bool {
     state.status = format!("reading {} dropped file{}…", files.len(), if files.len() == 1 { "" } else { "s" });
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let mut budget = file_pick::ReadBudget::default();
         for file in &files {
             let name = name_of(file.path());
-            let bytes = within_limit(&name, file.bytes());
+            let bytes = within_limit(&name, file.bytes()).and_then(|data| {
+                budget.reserve(&name, data.len() as f64)?;
+                Ok(data)
+            });
             file_pick::deliver(PickedFile { purpose, name, bytes });
         }
         ui.ctx().request_repaint();
@@ -71,13 +75,19 @@ pub(super) fn take(ui: &Ui, state: &mut State) -> bool {
         let ctx = ui.ctx().clone();
         wasm_bindgen_futures::spawn_local(async move {
             // Read in turn, hand over together: one frame lands them all.
-            let mut read = Vec::with_capacity(files.len());
-            for file in &files {
+            let mut budget = file_pick::ReadBudget::default();
+            let plan: Vec<_> = files.iter().map(|file| {
                 let name = name_of(file.path());
-                let size = file.web_file().map(|wf| wf.size());
-                let bytes = match size.and_then(|s| file_pick::too_big(&name, s)) {
-                    Some(why) => Err(why),
-                    None => within_limit(&name, file.bytes_async().await),
+                let allowed = file.web_file()
+                    .ok_or_else(|| format!("{name}: the browser did not supply a file size"))
+                    .and_then(|wf| budget.reserve(&name, wf.size()));
+                (file, name, allowed)
+            }).collect();
+            let mut read = Vec::with_capacity(plan.len());
+            for (file, name, allowed) in plan {
+                let bytes = match allowed {
+                    Err(why) => Err(why),
+                    Ok(()) => within_limit(&name, file.bytes_async().await),
                 };
                 if let Err(why) = &bytes {
                     diag_warn!("file drop: {name}: {why}");

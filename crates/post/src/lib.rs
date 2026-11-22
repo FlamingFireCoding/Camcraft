@@ -23,6 +23,7 @@ pub mod data_scan;
 pub mod kinematics;
 pub mod machine;
 pub mod post;
+pub mod session_files;
 
 pub use camcraft_cl::cl;
 pub use camcraft_geometry::{geo2d, geometry};
