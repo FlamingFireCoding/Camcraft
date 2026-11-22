@@ -262,13 +262,15 @@ fn a_link_at_the_package_level_is_skipped() {
     let base = tmp("pkglink");
     let root = base.join("tree");
     let start = SystemTime::now();
-    // A real package with one old unit, and a linked package whose target name differs only by case:
-    // on a case-insensitive volume both names are one directory, and the sweep must touch neither
-    // through the link (#3173).
+    // A real package with one old unit, and a second package that is a link to it: the scan must not
+    // enter the link, the sweep must remove nothing through it, and the link itself must stay (#3173).
     let real_pkg = unit(&root, "debug", "camcraft-app", "aaaa", T, start - Duration::from_secs(3600));
     unit(&root, "debug", "camcraft-app", "bbbb", T, start + Duration::from_secs(5));
     let build = root.join("target").join("debug").join("build");
-    let linked_pkg = build.join("CamCraft-App");
+    // On a case-insensitive volume (Windows, macOS) a link whose name differs only by case from the
+    // real package names the same directory; Windows refuses to create it. macOS allows the
+    // case-variant name, which is the fold of #3173; Windows links another package name instead.
+    let linked_pkg = if cfg!(windows) { build.join("other-app") } else { build.join("CamCraft-App") };
     assert!(dir_link(&real_pkg.parent().expect("the package dir"), &linked_pkg), "the test makes the package link");
     assert!(!plain_dir(&linked_pkg), "a package link is not a plain directory");
     let units = scan(&root.join("target"));
@@ -276,7 +278,7 @@ fn a_link_at_the_package_level_is_skipped() {
     let r = sweep(&root, start, none);
     assert!(r.skipped.is_none(), "{r:?}");
     assert_eq!(r.removed, 1, "only the real old variant is removed: {r:?}");
-    assert!(fs::read_dir(&build).is_ok_and(|mut d| d.count() == 2), "the package link itself stays");
+    assert!(fs::read_dir(&build).is_ok_and(|d| d.count() == 2), "the package link itself stays");
     let _ = fs::remove_file(&linked_pkg).or_else(|_| fs::remove_dir(&linked_pkg)); // the link only
     let _ = fs::remove_dir_all(&base);
 }
