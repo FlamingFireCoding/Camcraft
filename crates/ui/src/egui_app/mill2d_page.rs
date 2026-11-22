@@ -245,6 +245,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             rest,
             corner_relief,
             tilt,
+            pass_start,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "p", Some((&mut *entry, helix_radius)), links);
@@ -306,6 +307,9 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if strategy.steps_by_load() {
                     super::load_field::optimal_load_field(ui, optimal_load);
                 }
+                // #3354: the shared pass-order row; the ring strategies
+                // read it, Zigzag rows say by name that they do not.
+                super::pass_start_row::pass_start_row(ui, "pocket", pass_start);
                 if let Some(note) = &auto_note {
                     consequence(ui, note);
                 }
@@ -338,6 +342,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             optimal_load, method, troch, blend_turns, blend_radius,
             corner_relief,
             tilt,
+            pass_start,
         } => roughing2d_pane(
             ui,
             world,
@@ -361,7 +366,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             links, (blend_turns, blend_radius),
             corner_relief,
             tilt,
-            None,
+            Some(pass_start),
         ),
         OpParams::Offset2D {
             links,

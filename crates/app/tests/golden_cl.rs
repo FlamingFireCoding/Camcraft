@@ -1264,6 +1264,7 @@ fn circular_ring_arcs_matches_golden() {
     // shows up here as a diff.
     let c = Point2::new(-35.0, 2.9);
     let p = camcraft_app::machining2d::CircularParams {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::PLANAR,
         center: c,
         radius: 3.0,
