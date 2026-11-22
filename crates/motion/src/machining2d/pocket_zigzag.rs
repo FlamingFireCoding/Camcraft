@@ -1,5 +1,7 @@
 //! Provenance: Held's published zigzag pocketing model and our scan-row implementation (#1490).
 //! Rest rows end inside the center boundary; closing rings remove wall cusps.
+//! On the rotary wrap (#3168) a ring that wraps the seam skips the seam's
+//! two cover copies - one azimuth - and keeps one period per arc.
 
 use crate::cl::lattice;
 use crate::geo2d::{Point2, Region};
@@ -15,22 +17,160 @@ use super::waterscan::scan_row;
 /// its turns there, and an off-lattice start made two levels' helices
 /// at one start read as crossing chords (#3021).
 pub(crate) fn rest_passes(center: &Region, step: f64, climb: bool) -> Result<Vec<Vec<Point2>>, GenError> {
+    ringed_passes(center, step, climb, None)
+}
+
+/// #3168: the same rows and rings under the rotary wrap's seam law
+/// (`seam_period`: the developed cover's repeat distance). A boundary
+/// loop that spans a whole period wraps the seam: its two cover-end
+/// edges are the seam's two copies at ONE azimuth, so its ring drops
+/// both edges and keeps one period per leftover arc - the rows cut the
+/// seam columns, and no azimuth is cut twice by one ring. A shorter
+/// loop closes as always: it wraps no azimuth, so its ring cuts every
+/// wall of the work once.
+pub(crate) fn ringed_passes(
+    center: &Region,
+    step: f64,
+    climb: bool,
+    seam_period: Option<f64>,
+) -> Result<Vec<Vec<Point2>>, GenError> {
     let rows = center.offset(-0.01_f64.min(step * 0.25))?;
     let mut passes = if rows.is_empty() { Vec::new() } else { zigzag_passes(&rows, step, climb)? };
     for p in passes.iter_mut().flatten() {
         *p = Point2::new(lattice(p.x), lattice(p.y));
     }
     for ring in center.loops() {
-        let mut points = ring.points().to_vec();
-        if !climb {
-            points.reverse();
-        }
-        if let Some(&first) = points.first() {
-            points.push(first);
-        }
-        passes.push(points);
+        passes.extend(boundary_rings(ring.points(), climb, seam_period));
     }
     Ok(passes)
+}
+
+/// One loop's ring passes (see `ringed_passes`).
+fn boundary_rings(points: &[Point2], climb: bool, seam_period: Option<f64>) -> Vec<Vec<Point2>> {
+    if points.len() < 2 {
+        return Vec::new();
+    }
+    let mut pts = points.to_vec();
+    if !climb {
+        pts.reverse();
+    }
+    let Some(period) = seam_period.filter(|p| p.is_finite() && *p > 0.0) else {
+        return closed_ring(pts);
+    };
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for p in &pts {
+        min = min.min(p.x);
+        max = max.max(p.x);
+    }
+    let tol = 1e-6 * period.abs().max(1.0);
+    if max - min < period - tol {
+        return closed_ring(pts);
+    }
+    // The loop wraps the seam: its arcs arrive open. An arc ends on the
+    // seam's copy of its start azimuth - closed on the work, for the
+    // cover's two laps carry the same wall - and a closing chord there
+    // would run one full period across the cover.
+    let edge_tol = 1e-6 * (max - min).abs().max(1.0);
+    let mut out = Vec::new();
+    for arc in seam_open_arcs(&pts, min, max, edge_tol) {
+        let lo = arc.iter().fold(f64::INFINITY, |m, p| m.min(p.x));
+        let hi = arc.iter().fold(f64::NEG_INFINITY, |m, p| m.max(p.x));
+        if hi - lo >= period - tol {
+            if let Some(trimmed) = one_period(&arc, period) {
+                out.push(trimmed);
+            }
+        } else {
+            out.push(arc);
+        }
+    }
+    out
+}
+
+/// The ring's closing point: the walk lands each closed ring back on its
+/// own start (`level_ctx::walk_pass`).
+fn closed_ring(mut pts: Vec<Point2>) -> Vec<Vec<Point2>> {
+    if let Some(&first) = pts.first() {
+        pts.push(first);
+    }
+    vec![pts]
+}
+
+/// The loop with its cover-end edge runs (points within `tol` of the
+/// ends `a`/`b`) removed: each maximal run of seam points is dropped and
+/// the leftover non-seam arcs come back open. A loop with no seam point
+/// comes back whole and open - it wraps an azimuth it never touches, and
+/// an open pass cuts every edge once where a closed one would repeat the
+/// closure.
+fn seam_open_arcs(pts: &[Point2], a: f64, b: f64, tol: f64) -> Vec<Vec<Point2>> {
+    let flags: Vec<bool> = pts.iter().map(|p| (p.x - a).abs() <= tol || (p.x - b).abs() <= tol).collect();
+    if !flags.iter().any(|&f| f) {
+        return vec![pts.to_vec()];
+    }
+    if flags.iter().all(|&f| f) {
+        return Vec::new();
+    }
+    let n = pts.len();
+    // Walk one lap from the head of a non-seam run and flush at each
+    // seam run.
+    let Some(start) = (0..n).find(|&i| !flags[i] && flags[(i + n - 1) % n]) else {
+        return vec![pts.to_vec()];
+    };
+    let mut arcs: Vec<Vec<Point2>> = Vec::new();
+    let mut cur: Vec<Point2> = Vec::new();
+    for k in 0..n {
+        let i = (start + k) % n;
+        if flags[i] {
+            if cur.len() >= 2 {
+                arcs.push(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+        } else {
+            cur.push(pts[i]);
+        }
+    }
+    if cur.len() >= 2 {
+        arcs.push(cur);
+    }
+    arcs
+}
+
+/// The arc's first period of x from its own start: a contiguous window
+/// of width `period` the arc covers, with the far end's crossing
+/// interpolated, so the arc ends on the azimuth it started from - the
+/// second lap is the cover's duplicate of the first and adds no azimuth.
+/// `None` when the window keeps fewer than two points.
+fn one_period(arc: &[Point2], period: f64) -> Option<Vec<Point2>> {
+    let first = *arc.first()?;
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for p in arc {
+        min = min.min(p.x);
+        max = max.max(p.x);
+    }
+    if !min.is_finite() || !max.is_finite() {
+        return None;
+    }
+    // Saturating window head: no unchecked bound math.
+    let lo = first.x.max(min).min((max - period).max(min));
+    let hi = lo + period;
+    let inside = |x: f64| x >= lo && x <= hi;
+    let mut out = vec![first];
+    for w in arc.windows(2) {
+        let (p, q) = (w[0], w[1]);
+        if inside(q.x) {
+            out.push(q);
+            continue;
+        }
+        if inside(p.x) && q.x != p.x {
+            let bound = if q.x > hi { hi } else { lo };
+            let t = ((bound - p.x) / (q.x - p.x)).clamp(0.0, 1.0);
+            out.push(Point2::new(bound, p.y + t * (q.y - p.y)));
+        }
+        break;
+    }
+    (out.len() >= 2).then_some(out)
 }
 
 /// Serpentine rows across the cutter-center area, each scanline split

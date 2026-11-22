@@ -135,12 +135,16 @@ pub(super) fn plan_level(
     stock: Option<&Region>,
 ) -> Result<LevelPlan, GenError> {
     let step = p.tiling_step();
-    if seam.is_none() && matches!(p.strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
+    if matches!(p.strategy, PocketStrategy::Zigzag | PocketStrategy::Auto) {
         // #3129: the level's rows close with a ring on each boundary loop,
-        // so no cusp stands between row ends on a wall or an island. The
-        // rotary wrap keeps its rows: its developed area ends at the seam,
-        // and a ring there would cut one seam line twice.
-        return Ok(LevelPlan::rings(zigzag_ringed_passes(center, step, p.climb)?, p.helix_radius));
+        // so no cusp stands between row ends on a wall or an island.
+        // #3168: on the rotary wrap a loop that spans a whole period
+        // wraps the seam - its cover-end edges are the seam's two copies
+        // at one azimuth - so that ring drops the seam edges and keeps
+        // one period per arc: the rows cut the seam columns, and no
+        // azimuth is cut twice.
+        let seam_period = seam.map(|s| s.period);
+        return Ok(LevelPlan::rings(zigzag_ringed_passes(center, step, p.climb, seam_period)?, p.helix_radius));
     }
     if p.strategy != PocketStrategy::Adaptive {
         return Ok(LevelPlan::rings(plan_passes(center, step, p.climb, p.strategy)?, p.helix_radius));
