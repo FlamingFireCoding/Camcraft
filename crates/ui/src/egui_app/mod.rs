@@ -301,6 +301,8 @@ mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
 #[cfg(test)]
+mod boundary_offset_tests;
+#[cfg(test)]
 mod field_focus_tests;
 #[cfg(test)]
 mod coolant_tests;
