@@ -191,6 +191,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Pocket {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -226,6 +227,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The twins drop the strategy tag - the variant itself
             // says which ladder runs (M2.4 A).
@@ -1516,6 +1518,7 @@ impl ParamsDto {
                 rest,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Pocket {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1550,6 +1553,7 @@ impl ParamsDto {
                 rest: (*rest).map(Into::into),
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Adaptive2D {
                 links,

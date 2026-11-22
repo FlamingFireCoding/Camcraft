@@ -1,6 +1,6 @@
-//! #3316 / #3355: the Passes tabs of 2D Offset and 2D Adaptive carry the
-//! shared "Pass starts at" row (Auto / Inside / Outside, Auto by
-//! default). Provenance:
+//! #3316 / #3354 / #3355: the Passes tabs of 2D Offset, 2D Pocket and
+//! 2D Adaptive carry the shared "Pass starts at" row (Auto / Inside /
+//! Outside, Auto by default). Provenance:
 //! our own page law; asserted structurally (labels, the combo's value;
 //! no pixels).
 
@@ -46,6 +46,22 @@ fn the_offset_passes_tab_offers_pass_start_and_shows_the_draft() {
     }
     harness.run();
     assert_eq!(combos_showing(&harness, "Outside"), outside_before + 1, "the combo shows the draft's value");
+}
+
+/// #3354: 2D Pocket's Passes tab carries the same row, Auto by default.
+#[test]
+fn the_pocket_passes_tab_offers_pass_start_and_shows_the_draft() {
+    let mut harness = passes_of(OpType::Pocket);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let inside_before = combos_showing(&harness, "Inside");
+    if let OpParams::Pocket { pass_start, .. } = &mut harness.state_mut().state.op_ui.params {
+        assert_eq!(*pass_start, PassStart::Auto, "a new 2D Pocket starts Auto");
+        *pass_start = PassStart::Inside;
+    } else {
+        panic!("the draft is not a 2D Pocket");
+    }
+    harness.run();
+    assert_eq!(combos_showing(&harness, "Inside"), inside_before + 1, "the combo shows the draft's value");
 }
 
 /// #3360: Bore's Passes tab has the same row, Auto by default, and the

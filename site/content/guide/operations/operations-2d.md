@@ -187,6 +187,7 @@ for an include or exclude boundary.
 | Passes | Stepover | 3 |
 | Passes | Stock to leave | 0 |
 | Passes | Optimal load (% of D) | about 14.6 (used by Adaptive and Offset rings) |
+| Passes | Pass starts at | Auto (Inside, Outside); used by Waterline and Offset rings |
 | Heights | Stepdown | 5 |
 | Lead in / Lead out | Entry | Helix, radius 1 (Plunge, Ramp, Arc) |
 
@@ -211,6 +212,19 @@ for an include or exclude boundary.
 *After: Helix entry spirals down along the programmed radius.*
 
 </div>
+
+**Pass starts at** (Passes tab) sets where each level of rings starts.
+It is the same option as on 2D Offset:
+
+- **Auto** cuts the rings from the middle of the area outward. This is
+  the order that 2D Pocket always cut.
+- **Outside** starts at the outer edge of the area and works in. With an
+  Outside containment, the outer edge is the stock edge.
+- **Inside** starts at the island or part wall and works out.
+
+Only the ring strategies (Waterline, Offset rings) have a ring order.
+Zigzag rows and rest machining keep their own order. When you set Inside
+or Outside on them, the path notes say that the option is not used.
 
 **Common refusals:** "pocket is narrower than the tool"; "stepover leaves
 bands the tool cannot reach"; a pick that "projects to a line from above

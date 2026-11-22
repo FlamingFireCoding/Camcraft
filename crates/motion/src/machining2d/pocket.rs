@@ -324,6 +324,10 @@ pub(super) fn pocket_over_with_relief(
     let zigzag = strategy == PocketStrategy::Zigzag;
     if zigzag {
         passes = rest_passes(center, p.tiling_step(), p.climb)?;
+        // #3354: rows have no inside or outside; say so by name.
+        if side.start != PassStart::Auto {
+            b.note(super::pass_start::PASS_START_ZIGZAG_NOTE.to_owned());
+        }
     }
     let hold_crossings = hold_crossings || zigzag;
     emit_pocket_passes(
