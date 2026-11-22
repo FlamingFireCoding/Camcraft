@@ -18,6 +18,8 @@ use std::fs;
 mod support;
 use support::*;
 
+include!("example_catalog/case_probe_face.rs");
+
 #[path = "example_catalog/contract.rs"]
 mod contract;
 
