@@ -56,7 +56,8 @@ the corner, not a chamfer.
   `OpParams::Deburr { .. }` sites take a plain or-pattern.
 - A rotary axis from the machine: `Axis4` uses an A axis about X. A
   machine whose rotary is about Y needs a follow-up.
-- A new icon: the kind uses the Deburr icon.
+- A shared icon: the icon table needs one glyph for each kind, so the
+  kind has its own original glyph (`op-multiaxis-deburr`).
 - Overlap with PR #3058 (Waterjet): it adds a kind at a stale ordinal 44.
   Whichever PR merges second takes the next free ordinal.
 
