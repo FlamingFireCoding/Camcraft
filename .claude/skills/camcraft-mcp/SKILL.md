@@ -224,6 +224,41 @@ The following capabilities exist in the GUI or app command layer but do not yet 
 Per `AGENTS.md` ("Everything Is a Command"):
 > A PR that adds a user-facing command also adds its MCP tool (and script verb where it fits) in `crates/app/src/mcp/`, or files a `source:agent` follow-up issue `MCP: <command>` (labels `P5`, `area:mcp`) and names it in the PR body.
 
+## Waterjet Profile workflow (#1883)
+
+This workflow requires the Waterjet Profile implementation in #1883 (PR #3058).
+That implementation is not yet on `main`.
+There is no built-in waterjet. Mount a `.mch` file whose machine `kind` is
+`"waterjet"` with `load_machine { "path": "waterjet.mch" }`.
+Add a nozzle with `kind: "waterjet"` and `rpm: 0`. Its diameter is the kerf width.
+
+For a plate model spanning Z = 0 to 5 mm, call these MCP tools in order.
+Use the actual machine file and plate model. Adapt the heights, leads, tab
+positions and cutting parameters to the part and machine.
+
+```text
+load_machine { "path": "waterjet.mch" }
+add_tool { "name": "Nozzle", "definition": { "kind": "waterjet", "diameter": 0.8, "corner_r": 0, "tip_angle": 0, "pitch": 0, "nose_radius": 0, "width": 0, "flute_len": 10, "shank_d": 30, "shank_len": 100, "holder_d": 0, "holder_len": 0, "material_group": "mild steel", "rpm": 0, "feed": 2500, "center_cutting": false } }
+import_model { "path": "plate.stl", "name": "plate" }
+add_operation { "kind": "Waterjet Profile", "name": "Jet1", "tool": "Nozzle", "source": "plate", "params": { "clearance_z": 25, "top_z": 5, "bottom_z": 0, "kerf": null, "control_comp": false, "reversed": false, "lead": "arc", "lead_in": 4, "lead_out": 3, "open_side": "center", "tabs": { "count": 1, "width": 2, "at": [[20, 0]] }, "feed": 250, "pierce_time": 2.5, "abrasive_delay": 0.5, "linearize": 0.01 } }
+generate { "name": "Jet1" }
+```
+
+Use `list_operation_types` for the complete parameter fields and defaults.
+`kerf: null` uses the nozzle diameter. `control_comp` selects controller
+compensation; `false` uses computer compensation. `reversed` reverses the cut.
+`lead` accepts `arc` or `straight`; `lead_in` and `lead_out` set their lengths.
+`open_side` accepts `center`, `left` or `right` for an open chain.
+`tabs` supplies `count`, `width` and explicit XY positions in `at`.
+Lengths and the optional `linearize` tolerance are in mm; `feed` is in mm/min.
+`linearize: null` keeps arcs.
+
+`pierce_time` and `abrasive_delay` are in seconds. They appear in path notes
+only until #1882 adds post support. Inspect the notes returned by `generate`.
+No post serves a waterjet yet. Do not use a milling or plasma post for this path.
+The implementation in #1883 pins this workflow in
+`crates/app/tests/mcp_waterjet.rs`. Those tests run headlessly, not on a machine.
+
 ## Plasma Profile workflow (#1871)
 
 The built-in `Tormach 1300PL` uses a `Torch` tool and the `Tormach PathPilot Plasma` post. The catalog tool `PT-KERF-150` has a 1.5 mm kerf and zero rpm. For a plate model spanning Z = 0 to 5 mm, call these MCP tools in order (arguments shown below):
