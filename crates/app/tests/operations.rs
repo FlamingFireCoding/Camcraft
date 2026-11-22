@@ -6538,10 +6538,6 @@ fn multiaxis_rough_peels_the_same_ladder_and_poses_its_walls() {
     // #3414: skip the posed ladder's zero-travel rotary indices (the
     // swings - zero-travel RAPIDS only), so the two ladders pair move
     // for move as before.
-    eprintln!("DBG plain head:");
-    for (i, m) in plain.moves.iter().take(6).enumerate() { eprintln!("  {i} {:?} -> {:?} axis {:?}", m.kind, m.to, m.axis); }
-    eprintln!("DBG rough head:");
-    for (i, m) in rough.moves.iter().take(9).enumerate() { eprintln!("  {i} {:?} from {:?} -> {:?} axis {:?}", m.kind, m.from, m.to, m.axis); }
     for (a, b) in plain.moves.iter().zip(no_swings(&rough)) {
         assert!(a.axis.is_none(), "the plain ladder speaks an angle");
         if b.kind == MoveKind::Rapid {
