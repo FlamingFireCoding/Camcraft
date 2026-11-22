@@ -258,6 +258,7 @@ pub(crate) mod fidelity_law;
 mod clearance_stock;
 mod first_traverse;
 mod first_traverse_posed;
+mod first_traverse_table;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.
