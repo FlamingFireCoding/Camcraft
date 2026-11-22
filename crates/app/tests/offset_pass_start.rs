@@ -210,9 +210,26 @@ fn fig8_outside_offset_cuts_no_move_at_full_width() {
 #[test]
 fn fig8_inside_offset_names_its_part_wall_start() {
     let (world, mut h, name, stock) = fig8_world();
-    let (path, _) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Inside);
+    let (path, warnings) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Inside);
     let named: Vec<&String> = path.notes.iter().filter(|n| n.starts_with(PASS_START_NOTE)).collect();
     assert!(named.iter().any(|n| n.contains("the part wall")), "{named:?}");
+    // #3035: this band plans complete, so no fallback warning is posted.
+    assert!(!warnings.iter().any(|w| w.starts_with("StrategyFallback")), "no fallback expected: {warnings:?}");
+}
+
+/// #3316/#3035: the completeness guard's fallback note is an Offset-rings
+/// fallback, so `rings_fallbacks` counts one area and the op posts the
+/// advisory `Warning::StrategyFallback` (the posting law is pinned by
+/// `strategy_fallback`). The other "Pass start" notes count none.
+#[test]
+fn the_offset_guard_fallback_is_a_strategy_fallback() {
+    use camcraft_app::machining2d::{StartSide, rings_fallbacks};
+    let side = StartSide::from(PassStart::Outside);
+    let note = side.fallback_note(12.3);
+    assert!(note.starts_with(PASS_START_NOTE), "{note}");
+    assert_eq!(rings_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+    let wall = side.wall_first_note().unwrap_or_default();
+    assert_eq!(rings_fallbacks(std::slice::from_ref(&wall)), 0, "{wall}");
 }
 
 /// #3319 guard on Auto, the maintainer's own setting: the order is the

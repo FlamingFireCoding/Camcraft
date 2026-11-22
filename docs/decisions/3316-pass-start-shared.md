@@ -57,11 +57,16 @@
     stays unswept (read after a 50 um erosion, so arc flats and ring-end
     slivers do not count), the plan is not posted: the level takes the
     Auto plan, and the toolpath says "Pass start <side>: the rings from
-    the start side would leave A mm2 of this area uncut, so this area is
-    cut in the Auto order instead". Chosen over marking the operation
-    incomplete: Auto is a complete, proved plan, and the warning names
-    why the order changed. Dropped: a refusal, which would leave the user
-    with no path for a case the planner can still cut.
+    the start side would leave A mm2 of this area uncut - Offset rings
+    cut this area in the Auto order instead". Chosen over marking the
+    operation incomplete: Auto is a complete, proved plan, and the
+    warning names why the order changed. Dropped: a refusal, which would
+    leave the user with no path for a case the planner can still cut.
+    The note carries `machining2d::RINGS_FALLBACK`, so `rings_fallbacks`
+    counts it and the op posts the advisory `Warning::StrategyFallback`
+    (#3035) for the area. The maintainer decided this WARN behaviour
+    for the whole pass-start family: every fallback from the requested
+    ring order raises that warning, not only a note.
   - A piece joins the pass before it only by a chord that stays in the
     area, crosses no planned cut and runs through cut material all along
     (each sample inside the swath of a walk already cut, 0.9 tool radii

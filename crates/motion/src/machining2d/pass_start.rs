@@ -6,6 +6,8 @@
 
 use crate::geo2d::Region;
 
+use super::pocket_hsm::RINGS_FALLBACK;
+
 /// The first words of every note the start-side planner writes: the op
 /// page shows each one as a warning line.
 pub const PASS_START_NOTE: &str = "Pass start";
@@ -96,11 +98,14 @@ impl StartSide {
 
     /// The warning when the rings from the start side would leave
     /// `area` mm2 uncut: the level is cut in the Auto order instead, so
-    /// nothing is left standing (the completeness guard, #3316).
+    /// nothing is left standing (the completeness guard, #3316). The
+    /// note carries [`RINGS_FALLBACK`], so the op raises the advisory
+    /// `Warning::StrategyFallback` for it (#3035), as every other
+    /// fallback to the Offset rings does.
     #[must_use]
     pub fn fallback_note(&self, area: f64) -> String {
         format!(
-            "{PASS_START_NOTE} {}: the rings from the start side would leave {area:.1} mm2 of this area uncut, so this area is cut in the Auto order instead",
+            "{PASS_START_NOTE} {}: the rings from the start side would leave {area:.1} mm2 of this area uncut{RINGS_FALLBACK}this area in the Auto order instead",
             self.start.label()
         )
     }
@@ -120,6 +125,25 @@ impl StartSide {
 #[cfg(test)]
 mod tests {
     use super::{PASS_START_NOTE, PassStart, StartSide};
+    use crate::machining2d::rings_fallbacks;
+
+    /// #3316/#3035: the completeness guard's note is an Offset-rings
+    /// fallback, so `rings_fallbacks` sees it and the op posts the
+    /// advisory `Warning::StrategyFallback` for the area. The other
+    /// "Pass start" notes are not fallbacks and count none.
+    #[test]
+    fn the_guard_fallback_is_an_offset_rings_fallback() {
+        let side = StartSide::from(PassStart::Outside);
+        let note = side.fallback_note(12.3);
+        assert!(note.starts_with(PASS_START_NOTE), "{note}");
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+        let wall = side.wall_first_note().unwrap_or_default();
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&wall)), 0, "{wall}");
+        let narrow = side.narrow_note(1, 0.0, 0.0);
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&narrow)), 0, "{narrow}");
+        let core = StartSide::from(PassStart::Inside).core_note(1);
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&core)), 0, "{core}");
+    }
 
     #[test]
     fn auto_says_nothing_and_each_wall_case_is_named() {
