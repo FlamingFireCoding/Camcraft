@@ -72,6 +72,8 @@ mod heights_sel;
 pub use heights_sel::*;
 mod kinds;
 pub use kinds::*;
+mod pick_kinds;
+pub use pick_kinds::*;
 mod seed;
 pub use seed::seed_params;
 pub mod tool_law;
@@ -118,6 +120,8 @@ mod thread_r_plane;
 // #985: external threads - the boss door, the crest region, the neighbour law.
 mod thread_boss;
 pub mod wire_op;
+mod agie_profile;
+pub(crate) use agie_profile::agie_job;
 mod wire_ruled;
 pub(crate) mod wire_sketch;
 // #534: the wire laws' inputs, read live at the post.

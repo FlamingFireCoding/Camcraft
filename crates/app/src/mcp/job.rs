@@ -232,6 +232,7 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
                 "tool_kinds": k.tool_kinds.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>(),
                 "mounts_tool": k.mounts_tool(),
                 "fields": fields,
+                "start_exit": start_exit(k),
             });
             if !k.mounts_tool() {
                 kind["note"] = json!("mounts no library tool: add_operation takes no \"tool\" for this kind");
@@ -245,6 +246,19 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
         "kinds": kinds,
         "note": "Fields absent from the defaults are optional and off; set them in a params patch to turn them on.",
     }))
+}
+
+/// #3324: does the kind take a start / exit pick, and where; or why not.
+fn start_exit(k: &KindInfo) -> Value {
+    use crate::path_picks::PickRole;
+    let cap = k.pick();
+    let mut out = json!({ "start": cap.takes(PickRole::Start), "exit": cap.takes(PickRole::Exit) });
+    match cap {
+        operation::PickCapability::NotTaken(why) => out["why_not"] = json!(why),
+        operation::PickCapability::Threading => out["field"] = json!("start"),
+        _ => out["field"] = json!("links.approach.start_point / exit_point"),
+    }
+    out
 }
 
 pub(super) fn list_tool_catalog(_env: &mut Env, _a: &Map<String, Value>) -> Result<Value, String> {
