@@ -973,6 +973,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
                     nose_to_axis: sdto.nose_to_axis,
                     workholding_max_rpm: sdto.workholding_max_rpm,
                     sheet_job: sdto.sheet_job,
+                    // #3447: absent in every earlier file - name order.
+                    order: sdto.order,
                 });
             }
         }

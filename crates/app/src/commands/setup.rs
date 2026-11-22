@@ -142,6 +142,8 @@ impl CreateSetup {
                 nose_to_axis: None,
                 workholding_max_rpm: None,
                 sheet_job: None,
+                // #3447: the program order is the creation order.
+                order: Some(setup::next_order(world)),
             }
         } else {
             SetupDef {
@@ -177,6 +179,8 @@ impl CreateSetup {
                 // #3070: a new setup holds other stock - the sheet job's
                 // numbers do not describe it.
                 sheet_job: None,
+                // #3447: a setup added later posts later, whatever its name.
+                order: Some(setup::next_order(world)),
             }
         };
         let mut stock = None;

@@ -394,6 +394,11 @@ impl ToolBody {
 /// through-cut allowance, XY zero, clamp clearance); `None`, the default
 /// and every earlier file, states none. Read through [`crate::sheet_job`];
 /// written only by `SetSheetJob` and the project loader.
+/// `order` (#3447) is the setup's place in the program: `CreateSetup`
+/// writes the next number, so a setup added later posts later whatever
+/// its name. `None`, every earlier file, sorts first and by name
+/// ([`crate::setup::setups`]). Written only by `CreateSetup` and the
+/// project loader.
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct SetupDef {
     pub stock: String,
@@ -410,6 +415,7 @@ pub struct SetupDef {
     pub nose_to_axis: Option<f64>,
     pub workholding_max_rpm: Option<f64>,
     pub sheet_job: Option<crate::sheet_job::SheetJob>,
+    pub order: Option<u32>,
 }
 
 /// The M3.2 stage B marker turning a model entity into a FIXTURE: the
