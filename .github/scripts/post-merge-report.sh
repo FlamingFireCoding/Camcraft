@@ -17,6 +17,12 @@
 # not the same commit, reports nothing: an older green run never closes the
 # issue of a newer red run. This needs the full history (fetch-depth: 0).
 # When git cannot decide (an unknown sha), the run reports as before.
+# Runner stall (#3303): a red run with no FAIL row, but with a STALL row (the
+# xtask watchdog killed a silent step) or the "gate step TIMEOUT" line (the
+# workflow's step timeout stopped the gate), is a runner stop, not a red main.
+# It opens and comments on no issue: it writes one warning that names the step
+# and the runner (env RUNNER), and exits 0. The coordinator logs it on the
+# runner-stop issue and re-runs the run one time (AGENTS.md "Runner stops").
 # Provenance: our own AGENTS.md "Issue Law"; GitHub's public gh CLI docs.
 set -uo pipefail
 gh_bin="${GH:-gh}"
@@ -24,6 +30,25 @@ repo="${REPO:?REPO is required}"
 sha="${SHA:?SHA is required}"
 title="main is red (post-merge gate)"
 short="${sha:0:10}"
+
+if [ "${STATUS:-}" != success ]; then
+  summary=$(sed -n '/^== gate summary/,$p' "${OUTPUT:-/dev/null}" 2>/dev/null || true)
+  if ! printf '%s
+' "$summary" | grep -qE '^ +FAIL '; then
+    stalls=$(printf '%s
+' "$summary" | grep -E '^ +STALL ' | head -10 || true)
+    [ -n "$stalls" ] || stalls=$(grep -E '^gate step TIMEOUT ' "${OUTPUT:-/dev/null}" 2>/dev/null | tail -n 1 || true)
+    if [ -n "$stalls" ]; then
+      step=$(printf '%s
+' "$stalls" | sed -E -e 's/^ +STALL +[0-9]+s +//' -e 's/^gate step TIMEOUT .*last started step: //' -e 's/  .*//' | paste -sd ';' -)
+      echo "::warning title=runner stall::runner stall: $step on ${RUNNER:-unknown runner} at $short (${RUN_URL:-no run url}); not a red main, no issue opened"
+      printf 'runner stall: %s on %s
+%s
+' "$step" "${RUNNER:-unknown runner}" "$stalls"
+      exit 0
+    fi
+  fi
+fi
 
 # Whole test-binary names (the stem of tests/<name>.rs), matched anchored,
 # never as substrings: "compost" or a "post suites" step note does not match.
