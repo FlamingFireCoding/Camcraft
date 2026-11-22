@@ -45,6 +45,8 @@ declaredOptions = {
   writeMachine: { type: "boolean", title: "Write machine header", group: "Header & comments", description: "Emit a comment naming the machine in the header", default: false },
   writeToolList: { type: "boolean", title: "Write tool list", group: "Header & comments", description: "Emit a summary comment per tool at program start", default: false },
   writeVersion: { type: "boolean", title: "Write post version", group: "Header & comments", description: "Emit post version metadata comment in the header", default: false },
+  // #2769: off by default - a control without Manual Guide i can alarm on G1902.
+  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank (G1902 / G1900)", group: "Header & comments", description: "Write the setup's stock as a Manual Guide i blank block before the first operation - only for a control with Manual Guide i. Series 30i background simulation ignores G20/G21; confirm the control unit setting", default: false },
   optionalStop: { type: "boolean", title: "Optional stop (M1)", group: "Behavior", description: "Write M1 before tool changes after the first operation", default: false },
   safeRetract: {
     type: "enum",
@@ -58,6 +60,8 @@ declaredOptions = {
     default: "G28",
   },
   useRadiusArcs: { type: "boolean", title: "Use radius (R) arcs", group: "Cycles & arcs", description: "Write R word instead of I/J/K arc centers", default: false },
+  // #2603: off by default - a control with parameter 5200 bit 0 set taps rigid on G84 alone.
+  rigidTapM29: { type: "boolean", title: "Rigid tap M29 before G84", group: "Cycles & arcs", description: "Write M29 S<rpm> before each G84 cycle group - for a control that taps rigid only after M29", default: false },
   // #2603: per-operation AI contour control, as a 31i-A5 owner writes it.
   aiContourControl: { type: "boolean", title: "AI contour control (G05.1)", group: "Smoothing", description: "Write G05.1 Q1 R<level> at each operation start and G05.1 Q0 at its end - needs the control's AI contour control option", default: false },
   aiContourLevel: { type: "integer", title: "AI contour control level", group: "Smoothing", description: "The R word of G05.1 Q1 (machining condition level 1-10)", min: 1, max: 10, default: 5 },
@@ -572,6 +576,51 @@ function unitBlock() {
   block([inch ? "G20" : "G21"]);
 }
 
+// #2769: the setup's stock as a Manual Guide i blank block, on the user's
+// ask (manualGuideBlank). Fanuc's public MANUAL GUIDE i operator's manual
+// (B-63874EN), behaviour only: G1902 B D H is the block's X / Y / Z size
+// and I J K the work origin's X / Y / Z distance from the block's minimum
+// corner; G1900 D L K is a round bar along Z (diameter, length, the work
+// positive-Z end face's distance from the work origin) with its axis on the work
+// origin. Written once, after G20 / G21 and before the first operation's
+// G90 / G54 and tool change. A stock no block describes (PARAM StockShape)
+// gets a comment that says why, never a block that draws another blank.
+// An inverted Z never reaches here: the engine refuses it.
+var mgiDone = false;
+function mgiNum(v) { return has(v) ? Number(v) : NaN; }
+function manualGuideBlank() {
+  if (mgiDone || !optBool("manualGuideBlank", false)) return;
+  mgiDone = true;
+  var p = typeof properties !== "undefined" ? properties : {};
+  var shape = String(p.StockShape || "");
+  var lo = [mgiNum(p.StockXYLeft), mgiNum(p.StockXYFront), mgiNum(p.StockShapeBottom)];
+  var hi = [mgiNum(p.StockXYRight), mgiNum(p.StockXYBack), mgiNum(p.StockZTop)];
+  var dia = mgiNum(p.StockShapeDiameter);
+  var why = { "": "NO STOCK SHAPE STATED", "from-model": "STOCK FROM A MODEL",
+    "from-previous": "STOCK FROM THE SETUP BEFORE", rotated: "STOCK OFF THE MACHINE AXES",
+    "cylinder-x": "BAR ALONG X - NOT SUPPORTED YET", "cylinder-y": "BAR ALONG Y" }[shape] || "";
+  if (!why && shape !== "box" && shape !== "cylinder-z") why = "UNKNOWN STOCK SHAPE " + clean(shape).toUpperCase();
+  for (var i = 0; i < 3 && !why; i++) {
+    if (!(isFinite(lo[i]) && isFinite(hi[i]))) why = "STOCK BOUNDS NOT STATED";
+    else if (!(hi[i] - lo[i] > 0)) why = "STOCK HAS NO SIZE";
+  }
+  if (!why && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6) why = "WCS ROTATED ABOUT Z";
+  if (!why && shape === "cylinder-z") {
+    if (!(dia > 0)) why = "BAR DIAMETER NOT STATED";
+    else if (!(hi[2] - orgZ >= 0)) why = "BAR END FACE BELOW THE WORK ORIGIN";
+    else if (Math.abs((lo[0] + hi[0]) / 2 - orgX) > 0.001 || Math.abs((lo[1] + hi[1]) / 2 - orgY) > 0.001) {
+      why = "BAR AXIS NOT ON THE WORK ORIGIN";
+    }
+  }
+  if (why) { note("NO BLANK BLOCK - " + why); return; }
+  if (shape === "box") {
+    block(["G1902", "B" + fu(hi[0] - lo[0]), "D" + fu(hi[1] - lo[1]), "H" + fu(hi[2] - lo[2]),
+      "I" + fu(orgX - lo[0]), "J" + fu(orgY - lo[1]), "K" + fu(orgZ - lo[2])]);
+  } else {
+    block(["G1900", "D" + fu(dia), "L" + fu(hi[2] - lo[2]), "K" + fu(hi[2] - orgZ)]);
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
@@ -786,7 +835,7 @@ function endPreamble() {
   lastA = 0; lastB = 0; lastC = 0;
 }
 
-function onSection() { seatKnown = false; startPreamble(); }
+function onSection() { seatKnown = false; manualGuideBlank(); startPreamble(); }
 function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions
@@ -1127,6 +1176,10 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (g === "G84" && optBool("rigidTapM29", false) && !(sRpm > 0)) {
+    msg("rigid tap M29 needs the section's spindle speed - G84 is refused, not posted without M29 S");
+    return;
+  }
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   aiccOff();                 // #2603: no canned cycle under AI contour control
@@ -1139,6 +1192,9 @@ function onCycle() {
   } else {
     if (inCycle) block(["G80"]);
     block(["G99"]);            // #994: each hole returns to R
+    // #2603: rigid mode (M29 S, B-64604EN-2 rigid tapping) ends at G80, so
+    // each G84 group states it again, with no axis move before the G84.
+    if (g === "G84" && optBool("rigidTapM29", false)) block(["M29", "S" + ni(sRpm)]);
     // Q is an increment (peck depth), not a position: no origin shift.
     var words = [g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), wo("R", p.R, orgZ)];
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {

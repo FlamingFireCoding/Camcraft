@@ -1813,7 +1813,7 @@ pub struct State {
     /// kept preference (`state_view`).
     pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
-    /// the grid also needs `show_world_axes`.
+    /// the grid does not depend on `show_world_axes` (#3322).
     pub show_grid: bool,
     /// M1.7c move simulation: None while off, [`Sim`] while the
     /// transport bar is up. View state like the camera - what it holds
@@ -4773,6 +4773,20 @@ impl State {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
+                if !posted.bundle_files.is_empty() {
+                    self.post_view = None;
+                    self.status = format!(
+                        "Agie job prepared in {} ({} controller files, zero working steps)",
+                        path.display(), posted.bundle_files.len()
+                    );
+                    if let Some(review) = posted.controller_review {
+                        self.status.push_str(&format!(" — {review}"));
+                    }
+                    if let Some(note) = posted.not_judged {
+                        self.status.push_str(&format!(" — {note}"));
+                    }
+                    return;
+                }
                 self.status = format!(
                     "posted {} op(s), {} lines in {} to {}",
                     posted.ops,
