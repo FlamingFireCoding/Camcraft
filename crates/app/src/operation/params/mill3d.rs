@@ -38,6 +38,7 @@ impl OpParams {
                 optimal_load,
                 feed_opt,
                 shell,
+                method,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -80,6 +81,11 @@ impl OpParams {
                 // (the shell flag is the generator's switch, like
                 // `rest_rough` before it).
                 h.write_u8(u8::from(*shell));
+                // #1591: written only where the method is read and off
+                // its default, so every earlier op keeps its digest.
+                if *strategy == PocketStrategy::Adaptive && *method == crate::machining2d::AdaptiveMethod::Trochoidal {
+                    h.write_u8(0xA5);
+                }
             }
             OpParams::Finish3D {
                 pattern,
@@ -208,6 +214,7 @@ impl OpParams {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
+                sizing,
             } => {
                 wh(h, *clearance_z);
                 wh(h, *top_z);
@@ -235,6 +242,15 @@ impl OpParams {
                 // each earlier Deburr (skip with a note) does not move.
                 if *unreachable == crate::finishing3d::UnreachableEdges::Refuse {
                     h.write_u8(0x52);
+                }
+                // #1890: the break sizing writes only off one Constant
+                // Width chamfer pass, the ride of each earlier Deburr.
+                if *sizing != crate::finishing3d::DeburrBreak::default() {
+                    h.write_u8(0x53);
+                    h.write_u8(u8::from(sizing.mode == crate::finishing3d::BreakMode::ConstantDepth));
+                    w(h, sizing.depth);
+                    h.write_u8(u8::from(sizing.profile == crate::finishing3d::BreakProfile::Round));
+                    h.write_u32(sizing.passes);
                 }
             }
             _ => {}

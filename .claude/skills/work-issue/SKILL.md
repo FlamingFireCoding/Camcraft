@@ -20,6 +20,12 @@ order of the steps. Load the `gh-issues` skill for the `gh` mechanics.
     the safety floor) with a one-line comment why, and stop if it is
     above your tier.
 - A release cut in progress (an open `release/*` PR): stop.
+- **Own blocked PRs first** (AGENTS.md): run
+  `gh pr list --state open --author @me --label conflicts` and
+  `gh pr list --state open --author @me --label needs-rework`. Skip a PR
+  whose issue has `claimed` (in work) and the PR that your brief names.
+  If one is left, do not claim N: report the PR numbers to the caller and
+  stop, so that it sends a worker to fix them first.
 
 ## 1. Claim and branch
 - `gh issue edit N --add-label claimed --add-assignee @me` and
@@ -75,6 +81,12 @@ reads. This keeps the worker's context for the change.
   Paths in commands use `/`; never assume a `.exe` suffix or a drive.
   UI suites with CWD `crates/ui`. Run test executables only from cargo's
   JSON artifact list - never glob `*.exe` (it launches the GUI).
+
+- Heavy lanes (AGENTS.md "Heavy lanes at review"): `cargo xtask gate heavy
+  --dry-run` lists the release `--ignored` lanes that the diff reaches. If
+  it lists a lane, run `cargo xtask gate heavy` on the final head and name
+  the lanes and their results in the PR body. A red reached heavy test is a
+  gate failure.
 
 ## 4. Escalate instead of flailing
 Stop and escalate when the quick gate fails **twice** after your fixes, or

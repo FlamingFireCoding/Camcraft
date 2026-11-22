@@ -18,6 +18,7 @@ minimumRevision = 1;
 extension = "ngc";
 setCodePage = "utf-8";
 capabilities = 1; // reference contract: integer feature mask (bit 1 = milling)
+axisInversion = true; // verified on the engine's mirrored stream for a flipped WCS X/Y and an inverted machine X/Y (#2475): trace equivalence test + golden
 workOffsetIndex = true; // reads PARAM WorkOffset as the 1-based offset number (#931)
 workOffsetMax = 9;      // LinuxCNC G-code reference: G54-G59.3 select coordinate systems 1-9
 coolantModes = true;    // reads PARAM Coolant (#112/#150)
@@ -117,6 +118,7 @@ var setupNext = "";        // the section's PARAM SetupChange: the setup the pro
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var sectionOpen = false;   // preamble written (a legacy .cl carries no SECTION)
+var wcsFlip = "";          // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var smoothTol = 0;         // #616: the section's PARAM Smoothing, mm (0: none asked)
 var smoothActive = false;  // #616: this section wrote its smoothing words
 var orgX = 0, orgY = 0, orgZ = 0; // the WCS slot origin (OriginX/Y/Z PARAMs)
@@ -338,6 +340,8 @@ function joinDash(parts) {  // the non-empty parts, " - " between
 // is led by "- ", so user text stays inert.
 var ACTIVE = /^\s*(MSG|DEBUG|PRINT|LOG|LOGOPEN|LOGAPPEND|LOGCLOSE|PROBEOPEN|PROBECLOSE|ABORT|AXIS|PY|PYRUN)\b/i;
 function note(s) { block(["(" + (ACTIVE.test(s) ? "- " + s : s) + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function commentParam(name, value) {
   if (name === "SetupName") setupName = clean(value);
   else if (name === "OperationName") opName = clean(value);
@@ -373,11 +377,24 @@ function pathWords() {
   if (optStr("pathControl", "blend") === "exact") return ["G61"];
   return ["G64", "P" + fu(optNum("blendTolerance", 0.025))];
 }
+// The machine's inverted linear axes (#375): the engine has mirrored the
+// stream into the controller's frame, and the header says so, one note
+// for each axis. A standard machine lists none.
+function invertedNotes() {
+  var a = (typeof machine !== "undefined" && machine && machine.invertedAxes) || [];
+  var where = { X: "LEFT", Y: "TOWARD THE FRONT", Z: "DOWN" };
+  for (var i = 0; i < a.length; i++) {
+    var l = String(a[i]);
+    note("MACHINE " + l + "+ MOVES " + (where[l] || "THE OTHER WAY") + " - INVERTED AXIS");
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   if (optBool("percentDelimiters", false)) writeln("%");
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
   note(headTitle(nm));
+  invertedNotes();
   writeHeaderExtras();
   block([inch ? "G20" : "G21", "G17", "G90", "G91.1", "G94", "G40", "G49", "G80"]);
   block(pathWords());
@@ -473,6 +490,7 @@ function onParameter(name, value) {
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
   else if (name === "OriginZ" && has(value)) orgZ = Number(value);
+  else if (name === "WcsFlip") wcsFlip = String(value || "");
 }
 
 function onSpindleSpeed() {
@@ -529,6 +547,8 @@ function startPreamble() {
   // stopped before its first move, whatever the tool change did.
   var probeStop = spindleWait && !(sRpm > 0);
   opNotes();
+  // #1649: the operator reads why every sign on a flipped axis is the other one.
+  if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   block(["G17", "G90", wcsWord, "G40", tlo ? "G49" : "", "G80"]);
   planeG = 17;              // the preamble states the plane
   if (toolWait) {
@@ -603,7 +623,7 @@ function afterOp() {
 }
 
 function onSection() { seatKnown = false; startPreamble(); }
-function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028: the next section states its own hop
+function onSectionEnd() { endPreamble(); wcsFlip = ""; hopZ = null; clearZ = null; }  // #1028: the next section states its own hop
 
 // ------------------------------------------------------------ 3 axes only
 // A tilted record (an A, B or C word) has no axis to go to on this

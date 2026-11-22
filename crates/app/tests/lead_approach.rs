@@ -50,6 +50,7 @@ fn contour_op(lead: Lead, links: Links) -> OpParams {
         blend_turns: true,
         tilt: None,
         links,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -76,6 +77,7 @@ fn pocket_op(links: Links) -> OpParams {
         blend_turns: false,
         tilt: None,
         links,
+        corner_relief: Default::default(),
     }
 }
 
@@ -245,6 +247,30 @@ fn the_horizontal_arc_entry_on_the_users_pocket_verifies_silent() {
         let first = t.moves.iter().find(|m| m.kind == MoveKind::Feed && m.from.z == m.to.z).expect("a cut");
         assert!(first.arc.is_some_and(|a| a.plane.is_xy()), "{entry:?}: the first cut is the G17 arc: {first:?} / {:?}", t.notes);
         assert!(!t.notes.iter().any(|n| n.contains("horizontal arc entry does not fit")), "{entry:?}: {:?}", t.notes);
+    }
+}
+
+#[test]
+fn the_users_pocket_names_its_seven_sharp_corners_and_the_corner_check_runs() {
+    // #2849: on the fine solidcore mesh the leftover of the bore kept a
+    // micron-wide cusp that crossed itself, and the corner check stopped
+    // with "did not run". It runs again and names the same seven corners
+    // as on the coarse mesh: the four stock corners and three wall boxes.
+    let mut op = pocket_op(with(Approach { arc_xy: true, ..Approach::DEFAULT }));
+    if let OpParams::Pocket { entry, .. } = &mut op {
+        *entry = Entry3D::Helix;
+    }
+    let (_w, t, _) = user_job("EM-0600-4FL", false, op);
+    assert!(!t.notes.iter().any(|n| n.contains("did not run")), "{:?}", t.notes);
+    let note = t.notes.iter().find(|n| n.contains("uncut corner material")).expect("the corner note");
+    assert_eq!(note.matches(", Y ").count(), 7, "{note}");
+    for corner in [
+        "X -35.000 mm to -32.000 mm, Y 32.000 mm to 35.000 mm",
+        "X 32.000 mm to 35.000 mm, Y 32.000 mm to 35.000 mm",
+        "X -35.000 mm to -32.000 mm, Y -35.000 mm to -32.000 mm",
+        "X 32.000 mm to 35.000 mm, Y -35.000 mm to -32.000 mm",
+    ] {
+        assert!(note.contains(corner), "{corner}: {note}");
     }
 }
 
