@@ -176,7 +176,7 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
 fn engrave_boundaries_shows_do_not_touch_controls_and_takes_picks() {
     let _g = snapshot_guard();
     let mut h = Harness::builder()
-        .with_size(Vec2::new(1400.0, 1100.0))
+        .with_size(Vec2::new(1400.0, 1200.0))
         .build_ui_state(frame, ShellUi::seeded());
     h.run_steps(2);
     let (_face_top, face_other, edge) = {
@@ -188,10 +188,7 @@ fn engrave_boundaries_shows_do_not_touch_controls_and_takes_picks() {
 
     assert!(h.query_by_label_contains("Do not touch").is_some());
     assert!(h.query_by_label("Pick protected").is_some(), "Engrave must expose Pick protected");
-    assert!(
-        h.query_by_label_contains("operations only so far").is_none(),
-        "Engrave must not show unsupported Do not touch note"
-    );
+    assert!(h.query_by_label_contains("operations only so far").is_none());
 
     h.get_by_label("Pick protected").click();
     h.run_steps(2);
@@ -199,18 +196,10 @@ fn engrave_boundaries_shows_do_not_touch_controls_and_takes_picks() {
 
     {
         let st = &mut h.state_mut().state;
-        crate::boundary_draft::take_pick(
-            st,
-            crate::state::BoundaryPick::DoNotTouch,
-            face_other.clone(),
-            crate::boundary_draft::PickMods::default(),
-        );
-        crate::boundary_draft::take_pick(
-            st,
-            crate::state::BoundaryPick::DoNotTouch,
-            edge.clone(),
-            crate::boundary_draft::PickMods::default(),
-        );
+        let pick = crate::state::BoundaryPick::DoNotTouch;
+        let mods = crate::boundary_draft::PickMods::default();
+        crate::boundary_draft::take_pick(st, pick, face_other.clone(), mods);
+        crate::boundary_draft::take_pick(st, pick, edge.clone(), mods);
         let marks = crate::avoid_viz::avoid_marks(st, 1.4);
         assert!(!marks.faces.is_empty(), "protected face must highlight for Engrave");
         assert!(!marks.edges.is_empty(), "protected edge must highlight for Engrave");

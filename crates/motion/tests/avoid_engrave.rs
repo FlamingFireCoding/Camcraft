@@ -125,27 +125,38 @@ fn trace_avoid_keeps_flutes_shank_holder_and_links_clear() {
 
 #[test]
 fn trace_avoid_rotates_closed_loop_seam_around_overhead_plunge_blocker() {
-    // Closed square [-20..20] x [-20..20], loop vertex 0 is (-20, -20).
-    // Place an overhead obstacle ONLY at z=32..36 directly above (-20, -20):
-    // at cut depth z=-2, tool top is -2 + 8 + 10 + 20 = 36 (wait: at z=-2 top is 36, so place at 38..42!):
-    // at z=-2 tool top is 36 < 38 (passes underneath cleanly!), while at clearance_z=20 tool spans 20..58 (hits 38..42!).
+    // Closed square [-20..20] x [-20..20]; Clipper2 normalizes the start vertex `seam`.
+    // At cut depth z=-2, tool top is -2 + 8 + 10 + 20 = 36 < 38 (passes under cleanly),
+    // while at clearance_z=20 tool spans 20..58 (hits z=38..42 at `seam`).
     let reg = Region::new(vec![rect_loop(-20.0, -20.0, 20.0, 20.0)]).unwrap();
+    let seam = reg.loops()[0].points()[0];
     let spec = AvoidSpec {
         items: vec![AvoidItem {
             label: "overhead bridge".into(),
-            tris: box_facets([-25.0, -25.0, 38.0], [-10.0, -10.0, 42.0]),
+            tris: box_facets([seam.x - 5.0, seam.y - 5.0, 38.0], [seam.x + 5.0, seam.y + 5.0, 42.0]),
             edges: vec![],
         }],
         cutter: stepped_cutter(),
         clearance: 1.0,
     };
 
+    let plain = trace(&reg, &base_trace()).expect("plain trace");
+    let plain_hits = avoid_hits(&plain, &spec, AVOID_VERIFY_TOL).expect("verify plain");
+    assert!(!plain_hits.is_empty(), "overhead bridge at normalized seam must hit plain trace");
+
     let path = trace_avoid(&reg, &base_trace(), &spec).expect("rotates seam outside bridge");
     assert!(path.is_chained());
     let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify");
     assert!(hits.is_empty(), "seam rotation must keep plunges/retracts clear: {hits:?}");
-    // All 4 corners of the square are still visited because the bridge only blocks plunging, not cutting at z=-2.
-    assert!(path.moves.iter().any(|m| m.kind == MoveKind::Feed && (m.to.x + 20.0).abs() < 1e-6 && (m.to.y + 20.0).abs() < 1e-6));
+    let plunge = path.moves.iter().find(|m| m.kind == MoveKind::Plunge).expect("plunge");
+    assert!(
+        (plunge.from.x - seam.x).abs() > 1.0 || (plunge.from.y - seam.y).abs() > 1.0,
+        "seam must rotate away from {seam:?}, got plunge at {:?}",
+        plunge.from
+    );
+    assert!(path.moves.iter().any(|m| {
+        m.kind == MoveKind::Feed && (m.to.x - seam.x).abs() < 1e-6 && (m.to.y - seam.y).abs() < 1e-6
+    }));
 }
 
 #[test]
