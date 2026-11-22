@@ -90,6 +90,7 @@ mod predrilled;
 mod adaptive;
 mod adaptive_method;
 mod adaptive_troch;
+mod adaptive_avoid;
 mod adaptive_troch_clean;
 mod adaptive_troch_lanes;
 mod adaptive_troch_level;
@@ -180,6 +181,7 @@ pub use unreached::{unreached_corner_note, unreached_corners, unreached_note, un
 pub use adaptive::{rest_adaptive, RestStock, StockFloor, REST_STOCK_FILM};
 pub use adaptive_method::AdaptiveMethod;
 pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
+pub use adaptive_avoid::{adaptive_spiral_avoid, adaptive_trochoidal_avoid};
 pub use trochoid_air::lifted_cut;
 pub use trochoid_slot::{
     plan_trochoidal_slot, trochoidal_slot, TrochoidParams, TrochoidPlan, TrochoidReturn, DEFAULT_MAX_ENGAGEMENT,

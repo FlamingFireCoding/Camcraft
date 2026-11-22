@@ -890,16 +890,27 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
-            let adaptive = |pp: &PocketParams| match method {
-                machining2d::AdaptiveMethod::Spiral => {
+            // #3346: with "Do not touch" items each planner cuts its area
+            // back by the full-tool keep-out; without them the plain
+            // planner runs, so the path is the one it always was.
+            let adaptive = |pp: &PocketParams| match (method, avoid_spec.as_ref()) {
+                (machining2d::AdaptiveMethod::Spiral, Some(spec)) => {
+                    machining2d::adaptive_spiral_avoid(&region, pp, spec, corner_relief)
+                }
+                (machining2d::AdaptiveMethod::Spiral, None) => {
                     machining2d::pocket_entered_with_relief(&region, pp, &[], corner_relief)
                 }
                 // #1733: the loops are arcs already; the option is
                 // refused by name, never ignored (`sane` says it first).
-                machining2d::AdaptiveMethod::Trochoidal if *blend_turns => Err(GenError::Invalid(
+                (machining2d::AdaptiveMethod::Trochoidal, _) if *blend_turns => Err(GenError::Invalid(
                     "arc turns at corners are not available with the Trochoidal method".into(),
                 )),
-                machining2d::AdaptiveMethod::Trochoidal => machining2d::adaptive_trochoidal_with(&region, pp, troch),
+                (machining2d::AdaptiveMethod::Trochoidal, Some(spec)) => {
+                    machining2d::adaptive_trochoidal_avoid(&region, pp, troch, spec)
+                }
+                (machining2d::AdaptiveMethod::Trochoidal, None) => {
+                    machining2d::adaptive_trochoidal_with(&region, pp, troch)
+                }
             };
             let mut path = adaptive(&pp)?;
             if let Some(m) = carry_need!(&relieved_region, &path) {

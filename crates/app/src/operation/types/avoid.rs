@@ -47,10 +47,11 @@ impl DoNotTouch {
     }
 }
 
-/// First-slice operations that honor "Do not touch" across all generators.
+/// Operations whose generators honor "Do not touch": 2D Offset and 3D Pocket
+/// (#2055), 2D Adaptive with both methods (#3346).
 #[must_use]
 pub fn do_not_touch_applies(kind: OpType) -> bool {
-    matches!(kind, OpType::Offset2D | OpType::Pocket3D)
+    matches!(kind, OpType::Offset2D | OpType::Adaptive2D | OpType::Pocket3D)
 }
 
 /// User-facing refusal when "Do not touch" is set on an unsupported operation kind.
@@ -60,7 +61,7 @@ pub fn do_not_touch_unsupported(kind: OpType) -> Option<String> {
         None
     } else {
         Some(format!(
-            "'Do not touch' is supported on 2D Offset and 3D Pocket operations only so far - clear it on {kind}"
+            "'Do not touch' is supported on 2D Offset, 2D Adaptive and 3D Pocket operations only so far - clear it on {kind}"
         ))
     }
 }
