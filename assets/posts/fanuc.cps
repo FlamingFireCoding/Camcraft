@@ -60,6 +60,8 @@ declaredOptions = {
     default: "G28",
   },
   useRadiusArcs: { type: "boolean", title: "Use radius (R) arcs", group: "Cycles & arcs", description: "Write R word instead of I/J/K arc centers", default: false },
+  // #2603: off by default - a control with parameter 5200 bit 0 set taps rigid on G84 alone.
+  rigidTapM29: { type: "boolean", title: "Rigid tap M29 before G84", group: "Cycles & arcs", description: "Write M29 S<rpm> before each G84 cycle group - for a control that taps rigid only after M29", default: false },
   // #2603: per-operation AI contour control, as a 31i-A5 owner writes it.
   aiContourControl: { type: "boolean", title: "AI contour control (G05.1)", group: "Smoothing", description: "Write G05.1 Q1 R<level> at each operation start and G05.1 Q0 at its end - needs the control's AI contour control option", default: false },
   aiContourLevel: { type: "integer", title: "AI contour control level", group: "Smoothing", description: "The R word of G05.1 Q1 (machining condition level 1-10)", min: 1, max: 10, default: 5 },
@@ -1174,6 +1176,10 @@ function onCycle() {
     return;
   }
   if (spindleStopped("canned cycle " + g)) return;
+  if (g === "G84" && optBool("rigidTapM29", false) && !(sRpm > 0)) {
+    msg("rigid tap M29 needs the section's spindle speed - G84 is refused, not posted without M29 S");
+    return;
+  }
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
   aiccOff();                 // #2603: no canned cycle under AI contour control
@@ -1186,6 +1192,9 @@ function onCycle() {
   } else {
     if (inCycle) block(["G80"]);
     block(["G99"]);            // #994: each hole returns to R
+    // #2603: rigid mode (M29 S, B-64604EN-2 rigid tapping) ends at G80, so
+    // each G84 group states it again, with no axis move before the G84.
+    if (g === "G84" && optBool("rigidTapM29", false)) block(["M29", "S" + ni(sRpm)]);
     // Q is an increment (peck depth), not a position: no origin shift.
     var words = [g, wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ), wo("R", p.R, orgZ)];
     if ((p.CycleType === "PECK" || p.CycleType === "DEEP") && has(p.Q) && p.Q > 0) {
