@@ -8,7 +8,8 @@
 //! app::project (the MultiAxisDeburr params DTO), app::operation (the
 //! kind row, the seed, the generate arm), app::commands
 //! (CreateOperation, EditOperationParams, SetOperationGeometry).
-//! Also covers app::operation::keep_law and app::operation::kept_rejudge.
+//! Also covers app::operation::keep_law, app::operation::kept_rejudge,
+//! and app::operation::multiaxis_deburr_op (the posed stock guard).
 
 use camcraft_app::geometry::{cube, Point3};
 use camcraft_app::mcp::Server;
@@ -188,6 +189,69 @@ fn multiaxis_deburr_rechecks_a_separate_part_before_posting_the_cached_path() {
         assert!(why.contains(want), "the live refusal names {want}: {why}");
     }
     assert!(!out.exists(), "the cached path must not write an NC file");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The brick's vertical edges are at x/y = +/-20. The 60 mm stock
+/// leaves 10 mm of material beside them, where the tilted entry travels.
+fn stock_beside_vertical_edges(c: &mut Client) {
+    c.ok("set_stock", json!({ "box": { "dx": 60.0, "dy": 60.0, "dz": 10.0 } }));
+}
+
+#[test]
+fn multiaxis_deburr_refuses_stock_beside_the_vertical_edge() {
+    let (mut c, dir) = generated_source("stock-generate");
+    // Centre cutting can permit axial entry. It cannot permit a holder in stock.
+    c.ok("edit_tool", json!({ "name": "CM-0600-90", "patch": { "center_cutting": true } }));
+    stock_beside_vertical_edges(&mut c);
+    let why = c.refused("generate", json!({ "name": "M1" }));
+    for want in ["Multi-Axis Deburr", "stock"] {
+        assert!(why.contains(want), "the generation refusal names {want}: {why}");
+    }
+    let out = dir.join("unsafe.nc");
+    c.refused("post", json!({ "output": out.display().to_string() }));
+    assert!(!out.exists(), "the refused stock cannot produce an NC file");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn multiaxis_deburr_rechecks_stock_before_posting_the_cached_path() {
+    let (mut c, dir) = generated_source("stock-post");
+    stock_beside_vertical_edges(&mut c);
+    // Do not regenerate. The cached posed path has no verdict for this stock.
+    let out = dir.join("unsafe.nc");
+    let why = c.refused("post", json!({ "output": out.display().to_string() }));
+    for want in ["M1", "inputs moved since generation", "regenerate"] {
+        assert!(why.contains(want), "the cached-path refusal names {want}: {why}");
+    }
+    assert!(!out.exists(), "the cached path must not write an NC file through stock");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn multiaxis_deburr_live_stock_judge_refuses_an_unjudged_cached_path() {
+    use camcraft_app::{commands, model, operation, project, stock, world};
+    let (mut c, dir) = generated_source("stock-live-judge");
+    let saved = dir.join("clear.camcraft");
+    c.ok("save_project", json!({ "path": saved.display().to_string() }));
+    let world = world::new_world();
+    project::load(&world, &saved).expect("load the clear source job");
+    let mut history = commands::History::default();
+    history.execute(&world, commands::GenerateOperation::new(&world, "M1").expect("regenerate the clear source"));
+    let e = model::find_by_name(&world, "M1").expect("the operation");
+    let op = model::operation_of(&world, &e).expect("the operation parameters");
+    let cached = model::toolpath_of(&world, &e).expect("the clear posed path");
+    assert!(operation::kept_rejudge::moved_part_problem(&world, "M1", &op, &cached.path).is_none());
+    history.execute(&world, commands::SetStock::new(
+        &world, stock::StockShape::Box { dx: 60.0, dy: 60.0, dz: 10.0 }, Default::default(),
+    ).expect("stock beside the vertical edges"));
+    // Exercise the live judge directly. The ordinary post door also refuses
+    // this stock edit as stale before it reaches the live collision judge.
+    let why = operation::kept_rejudge::moved_part_problem(&world, "M1", &op, &cached.path)
+        .expect("the live judge must not accept the old posed path against unjudged stock");
+    for want in ["M1", "Multi-Axis Deburr", "stock"] {
+        assert!(why.contains(want), "the live refusal names {want}: {why}");
+    }
     let _ = std::fs::remove_dir_all(dir);
 }
 

@@ -101,3 +101,27 @@ refusal closes the separate-part gap without an unproved clearance verdict.
 **Dropped.** The upright containment check cannot prove clearance for a tilted
 cone. Adding another posed sweep API is beyond this review fix. Until that
 support exists, even a distant kept part causes a named refusal.
+
+## Stock proof (PR #3283 safety review)
+
+**Chosen.** Multi-Axis Deburr requires the complete stock boundary to match
+its source mesh. Generation and the live posting check apply this rule.
+The comparison sorts triangle vertices and triangles. It ignores ordering,
+normals and winding. It refuses missing, empty, non-finite or different
+stock by name. The generation path also runs `plunge_solid::audit_posed`.
+
+**Why.** The column simulator does not judge posed moves. When the stock
+boundary matches the source, the source guard also protects the stock.
+That guard checks the complete cone, flute, shank and holder through each
+cut, entry and exit. A different boundary has no proved complete-tool
+stock verdict, so posting must refuse it.
+
+**Dropped.** Equal bounds cannot prove that a pocket or a skin is clear.
+The shared plunge audit alone does not judge every holder or rapid sweep.
+A new posed stock-removal model is outside this review fix. The refusal
+also applies to a safe different tessellation or stock removed by earlier
+operations. These cases need a complete stock proof before admission.
+
+**Cost to change.** The restriction can be relaxed when a continuous posed
+stock check covers the complete tool and all moves. The file format and
+operation parameters do not change.

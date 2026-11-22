@@ -62,6 +62,13 @@ fn part_problem(world: &World, name: &str, op: &Operation, path: &Toolpath, know
         Ok(job) => job,
         Err(e) => return Some(format!("{name}: the parts beside its source cannot be read again ({e}); regenerate it")),
     };
+    if matches!(op.params, super::OpParams::MultiAxisDeburr { .. }) {
+        // Posed moves have no column-stock verdict. Re-read the stock
+        // before accepting a cache, including stock changed after generation.
+        if let Err(e) = super::multiaxis_deburr_op::audit_stock(job.stock_facets.as_deref(), &job.material, job.frame.as_ref()) {
+            return Some(format!("{name}: {e}"));
+        }
+    }
     if job.keep_parts.is_empty() && job.neighbour_parts.is_empty() {
         return None;
     }

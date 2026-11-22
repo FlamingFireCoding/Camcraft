@@ -115,3 +115,47 @@ pub fn kernel_params(
         shank: Some(shank),
     })
 }
+
+/// The source guards judge the complete posed tool against the source
+/// facets. They also judge stock only when its complete boundary is the
+/// same mesh. Bounds alone cannot prove this for a pocket or a skin.
+/// Refuse every other stock, including missing or unreadable stock: the
+/// column simulator cannot supply a second verdict for posed moves.
+pub(super) fn audit_stock(
+    stock: Option<&[crate::geometry::Triangle]>,
+    material: &super::Material,
+    frame: Option<&crate::cl::TiltedFrame>,
+) -> Result<(), GenError> {
+    fn boundary(facets: &[crate::geometry::Triangle]) -> Option<Vec<[[u64; 3]; 3]>> {
+        if facets.is_empty() {
+            return None;
+        }
+        let mut keys = Vec::with_capacity(facets.len());
+        for t in facets {
+            let mut vertices = [[0; 3]; 3];
+            for (vertex, p) in vertices.iter_mut().zip([t.a, t.b, t.c]) {
+                for (key, value) in vertex.iter_mut().zip([p.x, p.y, p.z]) {
+                    if !value.is_finite() {
+                        return None;
+                    }
+                    // Signed zero is the same geometric coordinate.
+                    *key = if value == 0.0 { 0 } else { value.to_bits() };
+                }
+            }
+            vertices.sort_unstable();
+            keys.push(vertices);
+        }
+        keys.sort_unstable();
+        Some(keys)
+    }
+    let local = stock.map(|facets| frame.map_or_else(|| facets.to_vec(), |f| f.local_facets(facets)));
+    let same = local.as_deref().and_then(boundary)
+        .zip(boundary(&material.facets))
+        .is_some_and(|(stock, part)| stock == part);
+    if !same {
+        return Err(GenError::Invalid(
+            "Multi-Axis Deburr cannot judge the posed tool against stock outside the source part; use stock from the source model without extra material".into(),
+        ));
+    }
+    Ok(())
+}

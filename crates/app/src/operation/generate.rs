@@ -1443,6 +1443,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             if !keep_parts.is_empty() || !neighbour_parts.is_empty() {
                 return Err(GenError::Invalid("Multi-Axis Deburr cannot judge the posed cutter against other kept parts; use a document with only the source part".into()));
             }
+            super::multiaxis_deburr_op::audit_stock(stock_facets.as_deref(), m_gen, frame.as_ref())?;
             let cone_d = super::multiaxis_deburr_op::cone_diameter(&tool, &tool_name)?;
             let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
             let chains = drive_chains.take().ok_or_else(|| unreached("deburr chains"))??;
@@ -1451,6 +1452,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             let kp = super::multiaxis_deburr_op::kernel_params(&params, window, tool.tip_angle, cone_d, shank_of(&tool))
                 .ok_or_else(|| unreached("multi-axis deburr params"))?;
             let path = crate::multiaxis::multiaxis_deburr(&material.facets, &kp, &finishing3d::DeburrEdges { include, exclude })?;
+            super::plunge_solid::audit_posed(
+                "Multi-Axis Deburr", tool.center_cutting, stock_facets.as_deref(), m_gen, frame.as_ref(), &path, d * 0.5,
+            )?;
             (region, path)
         }
         // The simultaneous-axis kinds (M5.1 stage C). The ball-center
