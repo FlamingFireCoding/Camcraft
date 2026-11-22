@@ -39,6 +39,12 @@ use super::stamp_link::LINK_TURN_DEG;
 pub const MAX_TILT_CAP_DEG: f64 = 85.0;
 /// The most posed stretches one edge segment is cut into.
 const MAX_STRETCHES: usize = 256;
+/// The most the chamfer plane may turn between two stretches of one
+/// run, degrees; a sharper corner ends the run.
+const CORNER_DEG: f64 = 10.0;
+/// How far above the window top the tool leaves the cut at the plunge
+/// feed before it rapids, mm.
+const LIFT_MM: f64 = 1.0;
 
 /// One multi-axis Deburr ride's numbers.
 #[derive(Clone, Copy, Debug)]
@@ -174,6 +180,7 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
     for run in &runs {
         let mut cur: Vec<Station> = Vec::new();
         let mut prev: Option<[f64; 3]> = None;
+        let mut plane: Option<Point3> = None;
         for (probe, t) in stretches(run, &book, w, p.tool_diameter, &lean) {
             let cands = lean.candidates(&probe.cr, t, probe.cr.chord(probe.s));
             let pick = match cands.first() {
@@ -192,12 +199,18 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
             let Some(pose) = pick else {
                 pieces.extend((!cur.is_empty()).then(|| std::mem::take(&mut cur)));
                 prev = None;
+                plane = None;
                 continue;
             };
-            if prev.is_some_and(|pa| ang(pa, pose.a) > LINK_TURN_DEG) {
+            // A turn at the contact stays on one chamfer plane (or near
+            // one, on a faceted curve): where the plane turns at a
+            // corner, the tip between two planes would cut the corner.
+            let turns = plane.is_some_and(|n| dot(n, probe.cr.n).clamp(-1.0, 1.0).acos().to_degrees() > CORNER_DEG);
+            if turns || prev.is_some_and(|pa| ang(pa, pose.a) > LINK_TURN_DEG) {
                 pieces.push(std::mem::take(&mut cur));
             }
             prev = Some(pose.a);
+            plane = Some(probe.cr.n);
             cur.push(Station { pose, ..probe });
         }
         pieces.extend((!cur.is_empty()).then_some(cur));
@@ -273,8 +286,19 @@ fn emit(b: &mut PathBuilder, piece: &[Station], lean: &Lean, p: &DeburrParams) -
     let (Some(first), Some(last)) = (piece.first(), piece.last()) else { return Ok(()) };
     for sk in p.sizing.pass_setbacks(first.s) {
         let t0 = lean.tip(&first.cr, &first.pose, first.p, sk);
+        // In along the axis. The rapid at the clearance height states
+        // the new pose, so the post knows the rotary angles before any
+        // feed. The mid-turn law reads a turn on the first cut move
+        // after it: the plunge-feed descent to just over the window
+        // top, where the whole tool stands above the stock. The last
+        // plunge into the cut holds the pose.
+        let lift = p.clearance_z.min(p.top_z + LIFT_MM);
         b.set_axis(Some(first.pose.a));
         b.push(MoveKind::Rapid, above(t0, first.pose.a, p.clearance_z)?, None);
+        let low = above(t0, first.pose.a, lift)?;
+        if dot(sub(low, b.at()), sub(low, b.at())) > 1e-18 {
+            b.push(MoveKind::Plunge, low, Some(p.plunge_feed));
+        }
         b.push(MoveKind::Plunge, t0, Some(p.plunge_feed));
         for st in piece {
             b.set_axis(Some(st.pose.a));
@@ -285,7 +309,13 @@ fn emit(b: &mut PathBuilder, piece: &[Station], lean: &Lean, p: &DeburrParams) -
             }
             b.push(MoveKind::Feed, lean.tip(&st.cr, &st.pose, st.q, sk), Some(p.feed));
         }
+        // Out along the axis the same way: the plunge feed to just
+        // over the window top, then a rapid to the clearance height.
         let end = b.at();
+        let low = above(end, last.pose.a, lift)?;
+        if dot(sub(low, end), sub(low, end)) > 1e-18 {
+            b.push(MoveKind::Feed, low, Some(p.plunge_feed));
+        }
         b.push(MoveKind::Rapid, above(end, last.pose.a, p.clearance_z)?, None);
     }
     Ok(())

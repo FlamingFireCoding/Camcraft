@@ -73,6 +73,52 @@ impl ParamsDto {
             OpParams::SinkerBurn(op) => ParamsDto::SinkerBurn(SinkerDto::from_op(op)),
             OpParams::SinkerSideBurn(op) => ParamsDto::SinkerSideBurn(SinkerSideDto::from_op(op)),
             OpParams::SlotUndercut(op) => ParamsDto::SlotUndercut(SlotUndercutDto::from_op(op)),
+            // #1894: the Deburr's keys and the axis keys.
+            OpParams::MultiAxisDeburr {
+                width,
+                clearance_z,
+                top_z,
+                bottom_z,
+                feed,
+                plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
+                unreachable,
+                sizing,
+                axis_mode,
+                lead_deg,
+                lag_deg,
+                max_tilt_deg,
+                shank_avoid,
+            } => {
+                let (break_mode, break_depth, break_profile, passes) = break_dto(sizing);
+                ParamsDto::MultiAxisDeburr(MultiAxisDeburrDto {
+                    width: *width,
+                    clearance_z: (*clearance_z).into(),
+                    top_z: (*top_z).into(),
+                    bottom_z: (*bottom_z).into(),
+                    feed: *feed,
+                    plunge_feed: *plunge_feed,
+                    exclude_edges: super::area::sel_dto(exclude_edges),
+                    min_edge_angle_deg: *min_edge_angle_deg,
+                    exclude_holes: *exclude_holes,
+                    hole_min_diameter: *hole_min_diameter,
+                    hole_max_diameter: *hole_max_diameter,
+                    unreachable: (*unreachable).into(),
+                    break_mode,
+                    break_depth,
+                    break_profile,
+                    passes,
+                    axis_mode: (*axis_mode).into(),
+                    lead_deg: *lead_deg,
+                    lag_deg: *lag_deg,
+                    max_tilt_deg: *max_tilt_deg,
+                    shank_avoid: *shank_avoid,
+                })
+            }
             OpParams::TrochoidalSlot { .. } => ParamsDto::TrochoidalSlot(TrochoidDto::from_params(p)),
             OpParams::Face {
                 stepover,
@@ -1384,6 +1430,7 @@ impl ParamsDto {
             ParamsDto::SinkerBurn(d) => d.to_params(),
             ParamsDto::SinkerSideBurn(d) => d.to_params(),
             ParamsDto::SlotUndercut(d) => d.to_params(),
+            ParamsDto::MultiAxisDeburr(d) => d.to_params(),
             ParamsDto::TrochoidalSlot(d) => d.to_params(),
             // Absent v5 keys decode (via serde defaults) to the legacy
             // single-level face, byte-exact; present ones land on the

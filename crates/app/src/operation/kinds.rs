@@ -94,7 +94,7 @@ fn feed_of(p: &OpParams) -> f64 {
         | OpParams::Finish3D { feed, .. }
         // The deburr ride feeds along the edge at the cone's flank -
         // the same distance-per-minute the chamfer rides state (M2.5 E B).
-        | OpParams::Deburr { feed, .. }
+        | OpParams::Deburr { feed, .. } | OpParams::MultiAxisDeburr { feed, .. }
         | OpParams::Contour5D { feed, .. }
         | OpParams::Parallel5D { feed, .. }
         | OpParams::Swarf { feed, .. }
@@ -174,7 +174,7 @@ fn plunge_of(p: &OpParams) -> f64 {
         | OpParams::Finish3D { plunge_feed, .. }
         // Deburr's plunge stands the tip on the edge from the
         // clearance plane - the chamfer's number, one dihedral over (M2.5 E B).
-        | OpParams::Deburr { plunge_feed, .. }
+        | OpParams::Deburr { plunge_feed, .. } | OpParams::MultiAxisDeburr { plunge_feed, .. }
         | OpParams::Contour5D { plunge_feed, .. }
         | OpParams::Parallel5D { plunge_feed, .. }
         | OpParams::Swarf { plunge_feed, .. }
@@ -295,7 +295,7 @@ fn climb_of(p: &OpParams) -> bool {
         // chain's welded direction says which way the run goes -
         // which flank breaks the burr is the edge's own geometry,
         // not a number an author could flip (M2.5 E B).
-        | OpParams::Deburr { .. } => true,
+        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => true,
         // The wall ride and the helix choose their flank: the climb
         // number says which way the circle runs (M2.4 C).
         OpParams::Bore { climb, .. } | OpParams::Thread { climb, .. } => *climb,
@@ -385,7 +385,7 @@ fn stepover_of(p: &OpParams) -> Option<f64> {
         | OpParams::Thread { .. }
         // One ride per exposed edge is the deburr answer: the model's
         // own edges are the pattern, nothing tiles (M2.5 E B).
-        | OpParams::Deburr { .. } => None,
+        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
         OpParams::SlotUndercut(p) => Some(p.stepover),
     }
@@ -464,7 +464,7 @@ fn stepdown_of(p: &OpParams) -> Option<f64> {
         // depth is derived from width and the tool's cone, and
         // between the clearance plane and the edge there is no
         // infeed ladder to step (M2.5 E B).
-        OpParams::Deburr { .. } => None,
+        OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
         // One depth: the undercut is cut at its floor (#1444).
         OpParams::SlotUndercut(_) => None,
@@ -531,7 +531,7 @@ pub fn top_of(p: &OpParams) -> Option<Height> {
         | OpParams::Thread { top_z, .. }
         // The window's tip ceiling: rides whose TIP stands above it
         // are clipped there (M2.5 E B).
-        | OpParams::Deburr { top_z, .. } => Some(*top_z),
+        | OpParams::Deburr { top_z, .. } | OpParams::MultiAxisDeburr { top_z, .. } => Some(*top_z),
         OpParams::Face { .. } => None,
         OpParams::Probe { .. } => None,
         // The plasma cut rides the plate's top (#670).
@@ -602,7 +602,7 @@ pub fn bottom_of(p: &OpParams) -> Option<Height> {
         | OpParams::BoringTurning { bottom_z, .. }
         // The window's tip floor: an edge running below it is clipped
         // by the edge's own line, and the ride stops there (M2.5 E B).
-        | OpParams::Deburr { bottom_z, .. } => Some(*bottom_z),
+        | OpParams::Deburr { bottom_z, .. } | OpParams::MultiAxisDeburr { bottom_z, .. } => Some(*bottom_z),
         // A drill's floor is normally the hole's own, from the model;
         // only an explicit Depth override is a plane to carry over.
         // Bore and Thread keep the drill's law: the floors come from
@@ -699,7 +699,7 @@ fn retract_of(p: &OpParams) -> Option<Height> {
         | OpParams::BoringTurning { .. }
         // The deburr ride hops every run to the clearance plane -
         // the kernel's own word, no between-run plane authored (M2.5 E B).
-        | OpParams::Deburr { .. } => None,
+        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
         OpParams::SlotUndercut(p) => p.retract_z,
     }
@@ -2498,6 +2498,21 @@ impl KindInfo {
             seed: super::vcarve_op::seed_vcarve,
             tool_kinds: tk::CONE,
         },
+        KindInfo {
+            ty: OpType::MultiAxisDeburr,
+            label: "Multi-Axis Deburr",
+            caption: "Multi-Axis Deburr",
+            tag: 46,
+            // #1894: the Deburr's cone law with the axis tilted onto
+            // the break - one flank lies on the chamfer plane and the
+            // tip stands beside the corner by construction. Law (b)
+            // stands down as it does for the Deburr; the shank band
+            // keeps its voice.
+            mode: Mode::Cone,
+            section: Section::MultiAxis,
+            seed: super::multiaxis_deburr_op::seed_multiaxis_deburr,
+            tool_kinds: tk::CONE,
+        },
     ];
 
     /// Whose machine this kind drives - read off the row's section
@@ -2577,6 +2592,7 @@ pub const ALL_LABELS: [&str; KIND_COUNT] = [
     KindInfo::ALL[43].label,
     KindInfo::ALL[44].label,
     KindInfo::ALL[45].label,
+    KindInfo::ALL[46].label,
 ];
 
 impl OpType {
@@ -2651,6 +2667,10 @@ impl OpType {
             // #1443: the V-carve appends (stored ids never move); the
             // menu lists it in the 2D section by its row.
             OpType::VCarve => 45,
+            // #1894: the multi-axis deburr appends (stored ids never
+            // move); the menu lists it in the multi-axis section by
+            // its row.
+            OpType::MultiAxisDeburr => 46,
         }
     }
 

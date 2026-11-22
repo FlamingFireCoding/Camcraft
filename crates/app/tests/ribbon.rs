@@ -319,7 +319,9 @@ fn the_probe_appends_its_id_and_lists_in_drilling() {
     // #1444 appended the slot undercut behind it (44).
     assert_eq!(KindInfo::ALL[44].ty, operation::OpType::SlotUndercut);
     // #1443 appended the V-carve behind it (45).
-    assert_eq!(KindInfo::ALL[KIND_COUNT - 1].ty, operation::OpType::VCarve);
+    assert_eq!(KindInfo::ALL[45].ty, operation::OpType::VCarve);
+    // #1894 appended the multi-axis deburr behind it (46).
+    assert_eq!(KindInfo::ALL[KIND_COUNT - 1].ty, operation::OpType::MultiAxisDeburr);
     assert_eq!(KindInfo::ALL[13].ty, operation::OpType::Pocket3D, "Pocket3D keeps id 13");
     assert_eq!(KindInfo::ALL[37].ty, operation::OpType::BoringTurning, "the turning tail keeps 37");
     let drilling: Vec<operation::OpType> = Section::Drilling.kinds().into_iter().map(|i| KindInfo::ALL[i].ty).collect();
@@ -364,4 +366,18 @@ fn a_pin_is_a_command_undo_restores_the_previous_pins() {
 
     // The same list again (after cleaning) is refused, not pushed.
     assert!(SetRibbonPins::new(&world, &[3, 7, 3]).is_err(), "a no-op pin is refused");
+}
+
+#[test]
+fn the_multiaxis_deburr_appends_its_id_and_lists_in_multiaxis() {
+    // #1894: stored kind ids never move - the multi-axis deburr takes the
+    // next id behind the V-carve, and the menu shows it in the
+    // multi-axis section, behind the drive-curve contour.
+    assert_eq!(KindInfo::ALL[46].ty, operation::OpType::MultiAxisDeburr);
+    assert_eq!(operation::OpType::MultiAxisDeburr.ordinal(), 46);
+    assert_eq!(KindInfo::ALL[46].section, Section::MultiAxis);
+    assert_eq!(KindInfo::ALL[15].ty, operation::OpType::Deburr, "the 3D Deburr keeps id 15");
+    let multi: Vec<operation::OpType> = Section::MultiAxis.kinds().into_iter().map(|i| KindInfo::ALL[i].ty).collect();
+    assert_eq!(multi.last(), Some(&operation::OpType::MultiAxisDeburr), "{multi:?}");
+    assert!(multi.contains(&operation::OpType::MultiAxisContour));
 }

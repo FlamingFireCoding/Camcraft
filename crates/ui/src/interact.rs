@@ -1366,7 +1366,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // The deburr ride says it too: every run starts and ends at
         // the clearance plane by the kernel's own word - no hop
         // height exists to author or draw (M2.5 E B).
-        | operation::OpParams::Deburr { .. }
+        | operation::OpParams::Deburr { .. } | operation::OpParams::MultiAxisDeburr { .. }
         // The probe travels at its clearance plane only (#108), and
         // so does the torch between contours (#670).
         | operation::OpParams::Probe { .. }
@@ -1519,7 +1519,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         })
         // #1444: the material top and the undercut's floor.
         | operation::OpParams::SlotUndercut(operation::SlotUndercutOp { top_z, bottom_z, .. })
-        | operation::OpParams::Deburr { top_z, bottom_z, .. } => {
+        | operation::OpParams::Deburr { top_z, bottom_z, .. } | operation::OpParams::MultiAxisDeburr { top_z, bottom_z, .. } => {
             if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {
                     z,

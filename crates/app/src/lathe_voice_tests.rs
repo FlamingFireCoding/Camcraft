@@ -137,7 +137,9 @@ fn want(ty: OpType) -> Want {
         | OpType::SinkerBurn
         | OpType::SinkerSideBurn
         // #1444: a mill kind, like the Slot.
-        | OpType::SlotUndercut => Want::Refused,
+        | OpType::SlotUndercut
+        // #1894: a multi-axis mill kind.
+        | OpType::MultiAxisDeburr => Want::Refused,
     }
 }
 

@@ -177,7 +177,7 @@ pub fn region_z(
         | OpParams::Thread { top_z, .. }
         // The deburr window's ceiling names the same high station:
         // the ride's tips stand at or below it (M2.5 E B).
-        | OpParams::Deburr { top_z, .. } => resolve(*top_z),
+        | OpParams::Deburr { top_z, .. } | OpParams::MultiAxisDeburr { top_z, .. } => resolve(*top_z),
         // The probe's station is its expected contact (#108).
         OpParams::Probe { target, .. } => Some(target[2]),
         // The plasma cut rides the plate's top (#670).
@@ -370,7 +370,7 @@ pub fn resolve_params_with(
         // and floor, since the kernel stands the tip `drop` below
         // each edge it breaks (M2.5 E B). The rapids plane hops every
         // run itself; no hop height exists to resolve.
-        OpParams::Deburr { clearance_z, top_z, bottom_z, .. } => (
+        OpParams::Deburr { clearance_z, top_z, bottom_z, .. } | OpParams::MultiAxisDeburr { clearance_z, top_z, bottom_z, .. } => (
             req("Clearance Z", *clearance_z)?,
             Some(req("Window Top Z", *top_z)?),
             Some(req("Window Bottom Z", *bottom_z)?),

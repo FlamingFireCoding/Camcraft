@@ -136,6 +136,8 @@ pub mod sinker_side_op;
 pub mod slot_undercut_op;
 /// #1443: the V-Carve operation's seed and tool doors.
 pub mod vcarve_op;
+/// #1894: the Multi-Axis Deburr operation's seed, tool doors and kernel numbers.
+pub mod multiaxis_deburr_op;
 // #171: the Probe op seeded from one picked face, edge, vertex or round wall.
 mod probe_pick;
 mod probe_pick_round;

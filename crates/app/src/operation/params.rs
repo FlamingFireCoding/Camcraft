@@ -343,7 +343,7 @@ impl OpParams {
             | OpParams::Circular { .. } => self.stamp_mill2d(world, setup, src, h),
             OpParams::Pocket3D { .. }
             | OpParams::Finish3D { .. }
-            | OpParams::Deburr { .. } => self.stamp_mill3d(world, setup, src, h),
+            | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => self.stamp_mill3d(world, setup, src, h),
             OpParams::Contour5D { .. }
             | OpParams::Parallel5D { .. }
             | OpParams::Swarf { .. }

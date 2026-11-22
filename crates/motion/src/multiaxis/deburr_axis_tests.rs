@@ -160,3 +160,4 @@ fn the_holder_tilts_clear_of_the_post_inside_the_cap() {
     }
     assert!(front.iter().any(|(q, a)| (q.x - 20.0).abs() < 4.0 && a[2] < 0.99), "the axis leans at the post");
 }
+

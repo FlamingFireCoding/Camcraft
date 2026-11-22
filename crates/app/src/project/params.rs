@@ -1270,6 +1270,8 @@ pub enum ParamsDto {
     SinkerSideBurn(SinkerSideDto),
     /// The slot undercut (#1444): appended the same way.
     SlotUndercut(SlotUndercutDto),
+    /// The multi-axis deburr (#1894): appended the same way.
+    MultiAxisDeburr(MultiAxisDeburrDto),
 }
 
 /// The angle an absent `ramp_angle` means: 45°, the ground the

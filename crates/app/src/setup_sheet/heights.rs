@@ -250,6 +250,12 @@ pub(super) fn height_fields(params: &OpParams) -> [(&'static str, &'static str, 
             top_z,
             bottom_z,
             ..
+        }
+        | OpParams::MultiAxisDeburr {
+            clearance_z,
+            top_z,
+            bottom_z,
+            ..
         } => [
             ("CLR", "Clearance Z", Some(*clearance_z)),
             ("RET", "Retract Z", None),

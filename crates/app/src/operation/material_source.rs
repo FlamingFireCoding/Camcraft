@@ -153,7 +153,7 @@ fn source_region(
         // The deburr ride's machine area is the model's own shadow:
         // its loci are welded edges in the material, and the region
         // only says where the model stands (M2.5 E B).
-        | OpParams::Deburr { .. }
+        | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. }
         | OpParams::Contour5D { .. }
         | OpParams::Parallel5D { .. }
         | OpParams::Swarf { .. }
