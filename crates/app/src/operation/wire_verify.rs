@@ -199,3 +199,19 @@ pub fn cutoff_from(w: &super::types::WireContourOp, path: &crate::cl::Toolpath) 
         format!("the path does not hold the tab cut-off its {n} tab(s) state - regenerate it")
     })
 }
+
+/// The leftover a stated sharp inside corner keeps (#3207), as the
+/// generator said it on the op's cached path: a note on the verify
+/// line, never a refusal. `None` when the op states no sharp corners
+/// or its path keeps no rest.
+#[must_use]
+pub fn sharp_corner_said(world: &World, e: &Entity) -> Option<String> {
+    let op = model::operation_of(world, e)?;
+    let OpParams::WireContour(w) = &op.params else { return None };
+    if !w.sharp_corners {
+        return None;
+    }
+    let cache = model::toolpath_of(world, e)?;
+    let note = cache.path.notes.iter().find(|n| n.starts_with(crate::wire_edm::SHARP_NOTE))?;
+    Some(note.trim_start_matches("wire EDM: ").to_owned())
+}

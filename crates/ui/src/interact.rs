@@ -141,9 +141,14 @@ pub(crate) fn pick_at(state: &mut State, p: [f32; 2], mods: Mods) {
 /// keeps the toolbar's mode on purpose (it takes faces, edges and points
 /// alike), so in the default Model mode its clicks must still reach
 /// `feature_click`, or the draft never receives a pick. Disarmed or
-/// paused, the mode's own click behaviour is back.
+/// paused, the mode's own click behaviour is back. #3335: an armed
+/// Boundary row ("Do not touch" included) is the same: it takes faces and
+/// edges whatever the toolbar's mode (`feature_click::ask`), so with
+/// "Click selects" on Models its clicks must still reach the row, not
+/// select the whole model. The page clears the row when the group closes.
 pub(crate) fn feature_routed(state: &State) -> bool {
     state.geo_pick != GeoPick::Model
+        || state.boundary_pick.is_some()
         || crate::wcs_pick::collecting(state)
         || crate::start_exit_pick::collecting(state)
 }
@@ -849,12 +854,12 @@ const GRID_MAJOR_EVERY: i64 = 5;
 /// at any zoom. World-space geometry in the overlay buffer, not a
 /// screen-space overlay, so the part occludes it like a real table.
 ///
-/// The same switch as the triads (`show_world_axes`): the grid is
-/// reference furniture, and hiding the axes hides it too. The Display
-/// menu's "Grid" box (`show_grid`, #2818) hides the grid alone. It fades
+/// Its own switch: the Display menu's "Grid" box (`show_grid`, #2818)
+/// hides the grid alone. The axes switch (`show_world_axes`) hides the axes
+/// alone and does not change the grid (#3322). It fades
 /// toward the viewport ground at the rim rather than stopping on a rectangle.
 pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
-    if !state.show_world_axes || !state.show_grid {
+    if !state.show_grid {
         return Vec::new();
     }
     let step = nice_step(state.cam.dist / 10.0);
