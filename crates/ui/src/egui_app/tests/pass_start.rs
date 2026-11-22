@@ -9,7 +9,7 @@ use camcraft_app::machining2d::PassStart;
 use camcraft_app::operation::{KindInfo, OpType};
 use egui::accesskit::Role;
 
-use super::super::pass_start_row::{PASS_START_LABEL, pass_start_names};
+use super::super::pass_start_row::{FACE_NO_PASS_ORDER, PASS_START_LABEL, pass_start_names};
 
 fn kind(ty: OpType) -> usize {
     KindInfo::ALL.iter().position(|k| k.ty == ty).unwrap_or(usize::MAX)
@@ -44,6 +44,26 @@ fn the_offset_passes_tab_offers_pass_start_and_shows_the_draft() {
     }
     harness.run();
     assert_eq!(combos_showing(&harness, "Outside"), outside_before + 1, "the combo shows the draft's value");
+}
+
+/// #3356: Face has no pass order (its rows run edge to edge). Its row is
+/// there, disabled, and says why by name.
+#[test]
+fn the_face_passes_tab_says_it_has_no_pass_order() {
+    let harness = passes_of(OpType::Face);
+    let rows: Vec<_> = harness.query_all_by_label(PASS_START_LABEL).collect();
+    assert_eq!(rows.len(), 1, "the Pass starts at row on Face");
+    let locked = harness
+        .query_all_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some("Auto") && n.is_disabled())
+        .count();
+    assert_eq!(locked, 1, "the combo shows Auto and Face cannot pick an order");
+    assert_eq!(
+        harness
+            .query_all_by(|n| [n.label(), n.value()].into_iter().flatten().any(|l| l.contains(FACE_NO_PASS_ORDER)))
+            .count(),
+        1,
+        "the row names why Face has no order, in view (not only on hover)"
+    );
 }
 
 #[test]

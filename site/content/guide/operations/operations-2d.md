@@ -81,6 +81,7 @@ bound it to a smaller area.
 | Heights | Stage down to Cut Z (Top Z, Stepdown) | off: one level |
 | Passes | Stepover (Y spacing) | 3 |
 | Passes | Holes | Lift over (or Cut across air, lift over islands; Cut straight through) |
+| Passes | Pass starts at | Auto, not used: the rows run edge to edge, so there is no inside or outside order |
 
 **Common refusals:** "staged facing needs a positive stepdown";
 "staged top below the finished height"; "clearance plane not above the
