@@ -70,7 +70,7 @@ pub(super) fn roughing2d_pane(
         if trochoidal && *arc.0 {
             consequence(ui, "arc turns are not available with the Trochoidal method: the operation is refused");
         }
-        corner_relief_rows(ui, tag, corner_relief);
+        corner_relief_rows(ui, world, op_ctx, tag, corner_relief);
         if trochoidal && !corner_relief.is_off() {
             consequence(ui, "corner relief is not available with the Trochoidal method: the operation is refused");
         }
@@ -156,12 +156,20 @@ const RELIEF_KINDS: [&str; 3] = ["None", "Dogbone", "T-bone"];
 const TBONE_DIRS: [&str; 4] = ["Long edge", "Short edge", "Horizontal", "Vertical"];
 
 /// Corner relief controls (#2400) shared by Pocket, 2D Adaptive, and 2D Offset.
+/// A router option (#2410): drawn when the operation's machine offers it,
+/// and always when the operation already states a relief (never hidden).
 pub(super) fn corner_relief_rows(
     ui: &mut Ui,
+    world: &flecs_ecs::prelude::World,
+    op_ctx: Option<&str>,
     tag: &str,
     relief: &mut camcraft_app::machining2d::CornerRelief,
 ) {
     use camcraft_app::machining2d::{CornerReliefKind, TBoneDirection};
+    use camcraft_app::router_offer::{offers, RouterOption};
+    if relief.is_off() && !offers(world, op_ctx, RouterOption::CornerRelief) {
+        return;
+    }
     let before = match relief.kind {
         CornerReliefKind::None => 0,
         CornerReliefKind::Dogbone => 1,

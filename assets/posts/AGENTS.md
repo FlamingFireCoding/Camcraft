@@ -19,7 +19,7 @@ the property table there is the vocabulary, this file is the grammar.
 
 Manifest: top-level assignments only — `description`, `vendor`, `legal`,
 `certificationLevel`, `minimumRevision`, `extension`, `setCodePage`,
-`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`, `stockBlank`. `stockBlank = true` (#2769) says the script reads `PARAM StockBlank` / `StockBlankZBottom`; the engine removes both from the stream of any other script. All but `serves` and the last twelve are
+`capabilities`, `serves`, `coolantModes`, `programUnits`, `endUnits`, `liveTooling`, `afterModes`, `axisInversion`, `probeAxisInversion`, `threadHands`, `workOffsetIndex`, `workOffsetMax`, `continuousThreading`, `rotariesBeforeTraverse`. All but `serves` and the last eleven are
 text the engine reads none of; `serves = ["plasma"];` (#1266; one word or a list of kind words: mill, lathe, mill-turn, plasma, wire_edm, sinker_edm) names the machine kinds a script of the user's own posts to - the app refuses it by name on any other kind, and a script that states none is accepted only on a mill (non-turning dialect), a lathe (turning) or a mill-turn, never on a plasma table or an EDM; shipped posts are judged by registry name and need no `serves`; `programUnits = "mm inch"` (#902) says
 the script writes the program in the document's unit -
 `postOptions.Units`, `"mm"` or `"inch"`, absent = mm: the dialect's

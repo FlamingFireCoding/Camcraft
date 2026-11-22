@@ -54,6 +54,7 @@ profile has no model top or bottom: use stock or fixed height references.
 **Example cases**
 
 - [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
+- [probing/probe-face](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/probing/probe-face)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-face" /> }} ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)

@@ -24,7 +24,6 @@ millSpindleReverse = true; // reads PARAM MillSpindle (#988): M4 for a left-hand
 wcsRotation = true;        // #760: writes G68 X0. Y0. R / G69 in Control mode from PARAM WcsYaw & WcsRotationMode
 programUnits = "mm inch"; // #902: writes the document's unit (postOptions.Units), G21 / G20
 endUnits = "G20 G21";     // #2189: switches end units before M30 when asked
-stockBlank = true;        // #2769: reads PARAM StockBlank / StockBlankZBottom (the Manual Guide i blank option)
 
 declaredOptions = {
   showSequenceNumbers: {
@@ -46,7 +45,8 @@ declaredOptions = {
   writeMachine: { type: "boolean", title: "Write machine header", group: "Header & comments", description: "Emit a comment naming the machine in the header", default: false },
   writeToolList: { type: "boolean", title: "Write tool list", group: "Header & comments", description: "Emit a summary comment per tool at program start", default: false },
   writeVersion: { type: "boolean", title: "Write post version", group: "Header & comments", description: "Emit post version metadata comment in the header", default: false },
-  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank", group: "Header & comments", description: "Write the first setup's stock as a Manual Guide i blank block (G1902 box, G1900 bar along Z) for its simulation. Only for a control with Manual Guide i: others can alarm on it. Series 30i background simulation ignores G20/G21; confirm the control unit setting", default: false },
+  // #2769: off by default - a control without Manual Guide i can alarm on G1902.
+  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank (G1902 / G1900)", group: "Header & comments", description: "Write the setup's stock as a Manual Guide i blank block before the first operation - only for a control with Manual Guide i. Series 30i background simulation ignores G20/G21; confirm the control unit setting", default: false },
   optionalStop: { type: "boolean", title: "Optional stop (M1)", group: "Behavior", description: "Write M1 before tool changes after the first operation", default: false },
   safeRetract: {
     type: "enum",
@@ -111,10 +111,6 @@ var wcsYaw = 0;            // #760: Z rotation (deg) for Control mode (G68)
 var wcsRotMode = "";       // #760: "control" | "bake" | ""
 var wcsFlip = "";          // #1649: the flipped WCS axes ("X", "Y", "XY") - the engine mirrored the section
 var wcsRotActive = false;  // #760: G68 is currently engaged in this section
-var blankShape = "";       // #2769: PARAM StockBlank - "box", "cylinder-z", ... or why no form fits
-var blankBottom = null;    // #2769: PARAM StockBlankZBottom, world mm
-var stockL = null, stockR = null, stockF = null, stockB = null, stockTop = null; // the stock box PARAMs
-var blankDone = false;     // #2769: the blank is the program's, written once (the first section's setup)
 
 // ------------------------------------------------------------ helpers
 function has(v) { return v !== null && v !== undefined && isFinite(v); }
@@ -578,6 +574,51 @@ function unitBlock() {
   block([inch ? "G20" : "G21"]);
 }
 
+// #2769: the setup's stock as a Manual Guide i blank block, on the user's
+// ask (manualGuideBlank). Fanuc's public MANUAL GUIDE i operator's manual
+// (B-63874EN), behaviour only: G1902 B D H is the block's X / Y / Z size
+// and I J K the work origin's X / Y / Z distance from the block's minimum
+// corner; G1900 D L K is a round bar along Z (diameter, length, the work
+// positive-Z end face's distance from the work origin) with its axis on the work
+// origin. Written once, after G20 / G21 and before the first operation's
+// G90 / G54 and tool change. A stock no block describes (PARAM StockShape)
+// gets a comment that says why, never a block that draws another blank.
+// An inverted Z never reaches here: the engine refuses it.
+var mgiDone = false;
+function mgiNum(v) { return has(v) ? Number(v) : NaN; }
+function manualGuideBlank() {
+  if (mgiDone || !optBool("manualGuideBlank", false)) return;
+  mgiDone = true;
+  var p = typeof properties !== "undefined" ? properties : {};
+  var shape = String(p.StockShape || "");
+  var lo = [mgiNum(p.StockXYLeft), mgiNum(p.StockXYFront), mgiNum(p.StockShapeBottom)];
+  var hi = [mgiNum(p.StockXYRight), mgiNum(p.StockXYBack), mgiNum(p.StockZTop)];
+  var dia = mgiNum(p.StockShapeDiameter);
+  var why = { "": "NO STOCK SHAPE STATED", "from-model": "STOCK FROM A MODEL",
+    "from-previous": "STOCK FROM THE SETUP BEFORE", rotated: "STOCK OFF THE MACHINE AXES",
+    "cylinder-x": "BAR ALONG X - NOT SUPPORTED YET", "cylinder-y": "BAR ALONG Y" }[shape] || "";
+  if (!why && shape !== "box" && shape !== "cylinder-z") why = "UNKNOWN STOCK SHAPE " + clean(shape).toUpperCase();
+  for (var i = 0; i < 3 && !why; i++) {
+    if (!(isFinite(lo[i]) && isFinite(hi[i]))) why = "STOCK BOUNDS NOT STATED";
+    else if (!(hi[i] - lo[i] > 0)) why = "STOCK HAS NO SIZE";
+  }
+  if (!why && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6) why = "WCS ROTATED ABOUT Z";
+  if (!why && shape === "cylinder-z") {
+    if (!(dia > 0)) why = "BAR DIAMETER NOT STATED";
+    else if (!(hi[2] - orgZ >= 0)) why = "BAR END FACE BELOW THE WORK ORIGIN";
+    else if (Math.abs((lo[0] + hi[0]) / 2 - orgX) > 0.001 || Math.abs((lo[1] + hi[1]) / 2 - orgY) > 0.001) {
+      why = "BAR AXIS NOT ON THE WORK ORIGIN";
+    }
+  }
+  if (why) { note("NO BLANK BLOCK - " + why); return; }
+  if (shape === "box") {
+    block(["G1902", "B" + fu(hi[0] - lo[0]), "D" + fu(hi[1] - lo[1]), "H" + fu(hi[2] - lo[2]),
+      "I" + fu(orgX - lo[0]), "J" + fu(orgY - lo[1]), "K" + fu(orgZ - lo[2])]);
+  } else {
+    block(["G1900", "D" + fu(dia), "L" + fu(hi[2] - lo[2]), "K" + fu(hi[2] - orgZ)]);
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
@@ -613,13 +654,6 @@ function onParameter(name, value) {
   if (name === "Coolant") { coolantAsk = String(value || "flood"); return; }
   if (name === "AfterOperation") { afterAsk = String(value || ""); return; }
   if (name === "SetupChange") { setupNext = clean(value); return; }
-  if (name === "StockBlank") { blankShape = String(value || ""); return; }
-  if (name === "StockBlankZBottom") { blankBottom = has(value) ? Number(value) : null; return; }
-  if (name === "StockXYLeft") stockL = has(value) ? Number(value) : null;
-  else if (name === "StockXYRight") stockR = has(value) ? Number(value) : null;
-  else if (name === "StockXYFront") stockF = has(value) ? Number(value) : null;
-  else if (name === "StockXYBack") stockB = has(value) ? Number(value) : null;
-  else if (name === "StockZTop") stockTop = has(value) ? Number(value) : null;
   if (name === "WorkOffset" && value) wcsWord = offsetWord(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
@@ -695,59 +729,9 @@ function aiccOff() {
   smoothActive = false;
 }
 
-// #2769: Manual Guide i draws its simulation's blank from one blank block
-// (FANUC MANUAL GUIDE i operator's manual B-63874EN, blank figure; behaviour
-// only): G1902 B D H is the box's X Y Z size and I J K the distance from its
-// lowest corner to the work origin; G1900 D L is a bar along Z (diameter,
-// length), its axis on the work origin, K the front face's height above the
-// origin. Off by default: a control without Manual Guide i can alarm on
-// G1902. A stock no block describes gets a comment, never a wrong block.
-var blankWhyWords = {
-  "": "NO STOCK SHAPE", none: "NO STOCK", "from-model": "STOCK FROM MODEL",
-  "from-previous": "STOCK FROM PREVIOUS SETUP", "rotated-stock": "ROTATED STOCK",
-  "rotated-wcs": "ROTATED WCS", "flipped-wcs": "FLIPPED WCS",
-  "cylinder-x": "CYLINDER ALONG X", "cylinder-y": "CYLINDER ALONG Y",
-  "non-finite": "STOCK SIZE NOT FINITE",
-};
-function blankRefusal() {  // "" when the stock has a blank form, else why not
-  if (blankShape !== "box" && blankShape !== "cylinder-z") {
-    return blankWhyWords[blankShape] || "STOCK " + clean(blankShape).toUpperCase();
-  }
-  var inv = (typeof machine !== "undefined" && machine.invertedAxes) || [];
-  if (inv.length) return "INVERTED MACHINE AXIS";
-  if (wcsFlip) return "FLIPPED WCS";
-  if (has(wcsYaw) && Math.abs(wcsYaw) > 1e-6) return "ROTATED WCS";
-  if (!has(stockL) || !has(stockR) || !has(stockF) || !has(stockB) || !has(stockTop) || !has(blankBottom)
-      || !(stockR - stockL > 0) || !(stockB - stockF > 0) || !(stockTop - blankBottom > 0)) {
-    return "STOCK SIZE NOT STATED";
-  }
-  if (blankShape === "cylinder-z") {
-    var tol = 0.001;
-    if (Math.abs((stockR - stockL) - (stockB - stockF)) > tol) return "BAR NOT ROUND";
-    if (stockTop - orgZ < 0) return "ORIGIN ABOVE THE BAR TOP";
-    if (Math.abs(orgX - (stockL + stockR) / 2) > tol || Math.abs(orgY - (stockF + stockB) / 2) > tol) {
-      return "ORIGIN OFF THE BAR AXIS";
-    }
-  }
-  return "";
-}
-function manualGuideBlank() {
-  if (blankDone || !optBool("manualGuideBlank", false)) return;
-  blankDone = true;
-  var why = blankRefusal();
-  if (why) { note("NO MANUAL GUIDE BLANK - " + why); return; }
-  if (blankShape === "box") {
-    block(["G1902", "B" + fu(stockR - stockL), "D" + fu(stockB - stockF), "H" + fu(stockTop - blankBottom),
-      "I" + fu(orgX - stockL), "J" + fu(orgY - stockF), "K" + fu(orgZ - blankBottom)]);
-  } else {
-    block(["G1900", "D" + fu(stockR - stockL), "L" + fu(stockTop - blankBottom), "K" + fu(stockTop - orgZ)]);
-  }
-}
-
 function startPreamble() {
   if (sectionOpen) return;
   sectionOpen = true;
-  manualGuideBlank();
   if (optStr("showSequenceNumbers", "off") === "op-start") seqNextForce = true;
   // #574: a touch probe (a stated speed of 0) states its spindle
   // stopped before its first move, whatever the tool change did.
@@ -849,7 +833,7 @@ function endPreamble() {
   lastA = 0; lastB = 0; lastC = 0;
 }
 
-function onSection() { seatKnown = false; startPreamble(); }
+function onSection() { seatKnown = false; manualGuideBlank(); startPreamble(); }
 function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions

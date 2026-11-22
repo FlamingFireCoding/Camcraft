@@ -52,7 +52,6 @@ mod program;
 mod tool_change;
 pub mod rotary_cap;
 pub mod section_mode;
-pub mod stock_blank;
 pub mod work_offset;
 pub mod units;
 pub mod wcs_flip;
@@ -137,10 +136,6 @@ pub struct Dump<'a> {
     pub stock_top_z: f64,
     /// Lower face of the stock envelope in world mm, when provided for a Klartext blank.
     pub stock_bottom_z: Option<f64>,
-    /// #2769: the stock as a controller blank. None writes no PARAM, so a
-    /// recorded stream stays as it was; the engine passes the PARAMs only
-    /// to a script that declares `stockBlank = true`.
-    pub stock_blank: Option<stock_blank::StockBlank>,
     /// #1666: the radius the stock sweeps about the spindle axis (the
     /// world Z line through `origin`), in mm - a round bar's radius, a
     /// square bar's half-diagonal. Stated for turning machines only;
@@ -244,7 +239,6 @@ impl<'a> Default for Dump<'a> {
             stock: [0.0; 4],
             stock_top_z: 0.0,
             stock_bottom_z: None,
-            stock_blank: None,
             stock_turn_radius: None,
             warnings: Vec::new(),
             part_load: None,
@@ -318,9 +312,6 @@ pub fn dump(t: &Toolpath, d: &Dump) -> Vec<Record> {
     out.push(Record::Param { name: "StockZTop".into(), value: json!(d.stock_top_z) });
     if let Some(z) = d.stock_bottom_z {
         out.push(Record::Param { name: "StockZBottom".into(), value: json!(z) });
-    }
-    if let Some(blank) = d.stock_blank {
-        out.extend(blank.params());
     }
     if let Some(r) = d.stock_turn_radius.filter(|r| r.is_finite() && *r > 0.0) {
         out.push(Record::Param { name: "StockTurnRadius".into(), value: json!(r) });

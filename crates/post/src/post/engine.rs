@@ -127,8 +127,6 @@ pub fn run_program_with(
     if let Some(why) = super::end_units::refusal(&mut s, options)? {
         return Err(PostError::Refused(why));
     }
-    // #2769: the stock-blank PARAMs reach only a script that declares them.
-    let reads_blank = super::stock_blank::reads_params(&mut s)?;
     let wo = super::work_offset::Manifest::read(&mut s);
     // #1386: Explain G-code on a script that states no comment form is
     // refused by name here, before any hook runs.
@@ -182,10 +180,6 @@ pub fn run_program_with(
     let mut torch = super::cnc_torch::TorchLaw::default();
 
     for (i, r) in records.iter().enumerate() {
-        // Suppress delivery without removing records: maps index the input stream.
-        if !reads_blank && super::stock_blank::is_param(r) {
-            continue;
-        }
         let before = s.out_len()?;
         let mut swallow = false;
         match r {
