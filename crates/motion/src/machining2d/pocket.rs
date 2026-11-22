@@ -16,7 +16,7 @@ use super::fillet_tally::corner_arc_radius;
 use super::level_rings::ring_plan;
 use super::pass_start::{PassStart, StartSide};
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
-use super::pocket_hsm::adaptive_passes;
+use super::pocket_hsm_start::adaptive_passes_from;
 use super::pocket_zigzag::rest_passes;
 pub(crate) use super::pocket_plan::plan_passes;
 pub(super) use super::pocket_plan::non_sliver_center;
@@ -242,6 +242,8 @@ pub fn pocket_started(
 
 /// [`pocket_started`] with the stock known: Inside and Outside walk the
 /// level curves of one side (`level_rings`), each full-width cut named.
+/// The Adaptive plan reads `side.stock` and `side.start` through
+/// `pocket_hsm_start::adaptive_passes_from` (#3355).
 pub fn pocket_started_on(
     region: &Region,
     p: &PocketParams,
@@ -273,7 +275,7 @@ pub fn pocket_started_on(
 /// posted path (`arc_cross`): rest areas have thin horns where two
 /// fitted arcs can cross within tolerance. `holes` are the proved
 /// pre-drilled entries (#1449; rest machining passes none).
-#[allow(clippy::too_many_arguments)] // the body of every planar pocket: area, plan inputs and the #3316 pass start, threaded once
+#[allow(clippy::too_many_arguments)] // the body of every planar pocket: area, plan inputs and the #3316 pass start, with its #3355 stock outline, threaded once
 pub(super) fn pocket_over_with_relief(
     region: &Region,
     center: &Region,
@@ -305,7 +307,7 @@ pub(super) fn pocket_over_with_relief(
     // The HSM plan may choose where its entry stands (`pocket_hsm`).
     let (mut passes, strategy, room, joins) = match strategy {
         PocketStrategy::Adaptive => {
-            let (passes, notes, s, room, joins) = adaptive_passes(center, p, "this pocket", true, None)?;
+            let (passes, notes, s, room, joins) = adaptive_passes_from(region, center, p, "this pocket", side)?;
             notes.into_iter().for_each(|n| b.note(n));
             (passes, s, room, joins)
         }

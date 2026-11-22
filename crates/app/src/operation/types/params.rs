@@ -273,6 +273,10 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's passes start (#3355): the shared
+        /// pass-order parameter of #3316. `Auto` is every earlier file,
+        /// byte for byte; the Trochoidal method refuses the other two.
+        pass_start: crate::machining2d::PassStart,
     },
     /// 2D Offset pocket roughing, style A (M2.4 A): concentric rings
     /// from the boundary inward at the roughing stepover - the pocket's

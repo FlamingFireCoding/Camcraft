@@ -67,8 +67,6 @@ impl OpParams {
                     }
                 }
                 digest::write_corner_relief(corner_relief, h);
-                // #3316: written only off Auto, so every earlier op keeps
-                // the digest it had.
                 digest::write_pass_start(*pass_start, h);
             }
             OpParams::Slot {

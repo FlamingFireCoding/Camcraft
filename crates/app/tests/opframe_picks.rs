@@ -186,6 +186,7 @@ fn adaptive_params(top: Height, bottom: Height, stepdown: f64) -> OpParams {
         method: AdaptiveMethod::Spiral,
         troch: Default::default(),
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     }
 }
 

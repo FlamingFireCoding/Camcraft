@@ -340,6 +340,10 @@ pub enum ParamsDto {
         corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3355 where each level's passes start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// 2D Offset (M2.4 A): the same arm minus the engagement door -
     /// style-A rings are spaced by the stepover alone.
