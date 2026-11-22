@@ -164,6 +164,45 @@ fn svg_near_circular_large_ellipse_cannot_exceed_the_absolute_chord_bound() {
 }
 
 #[test]
+fn svg_root_transform_attribute_is_refused_by_name() {
+    for attr in [r#"transform="scale(2)""#, r#"transform="translate(10, 20)""#] {
+        let text = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" {attr}><rect width="20" height="20"/></svg>"#
+        );
+        refuses(&text, "root <svg>");
+        refuses(&text, "transform");
+    }
+}
+
+#[test]
+fn svg_inline_css_transform_is_refused_by_name() {
+    for style in [
+        "transform: scale(2)",
+        "/* move */transform:scale(2)",
+        r"tr\61 nsform:scale(2)",
+        "fill: black; TRANSFORM: translate(10px, 20px) !important",
+    ] {
+        let on_root = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" style="{style}"><rect width="20" height="20"/></svg>"#
+        );
+        let on_group = page(&format!(r#"<g style="{style}"><rect width="20" height="20"/></g>"#));
+        let on_use = page(&format!(
+            r##"<defs><rect id="r" width="20" height="20"/></defs><use href="#r" style="{style}"/>"##
+        ));
+        let on_shape = page(&format!(r#"<rect width="20" height="20" style="{style}"/>"#));
+        for text in [on_root, on_group, on_use, on_shape] {
+            refuses(&text, "inline CSS transform");
+        }
+    }
+    // Comments or strings that only mention `transform` must not trigger a false refusal.
+    let benign = page(
+        r#"<rect width="20" height="20" style="/* transform: scale(2) */ font-family: 'transform: scale(2)'; fill: black"/>"#,
+    );
+    let doc = svg::parse(benign.as_bytes(), None).expect("benign comment/string reads");
+    assert_eq!(doc.primitives.len(), 4);
+}
+
+#[test]
 fn svg_deterministic_smoke_fuzz_never_panics() {
     let seed = page(
         r#"<g transform="translate(5 5) rotate(30)"><path d="M0 0 C10 0 10 10 0 10 S-10 20 0 20 Q5 25 10 20 T20 20 A5 3 20 1 0 30 30 Z"/>

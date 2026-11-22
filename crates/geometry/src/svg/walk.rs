@@ -19,9 +19,10 @@ const MAX_USE_DEPTH: usize = 16;
 const MAX_ACTIVE_DEPTH: usize = 256;
 
 /// Never drawn and never noted: definitions and document furniture.
+/// Stylesheets are counted once across the entire tree in `Walk::root`.
 const SILENT: &[&str] = &[
-    "defs", "symbol", "metadata", "title", "desc", "namedview", "linearGradient", "radialGradient",
-    "filter", "RDF", "perspective", "font", "font-face", "cursor",
+    "defs", "symbol", "style", "metadata", "title", "desc", "namedview", "linearGradient",
+    "radialGradient", "filter", "RDF", "perspective", "font", "font-face", "cursor",
 ];
 
 /// The layer of elements outside any top-level group.
@@ -51,9 +52,20 @@ fn hidden(node: &Node, style: &[StyleDecl]) -> bool {
     style_none || node.attr("display").is_some_and(|d| d.trim().eq_ignore_ascii_case("none"))
 }
 
+fn has_inline_property(style: &[StyleDecl], name: &str) -> bool {
+    style.iter().any(|decl| decl.property.eq_ignore_ascii_case(name))
+}
+
 /// Recognize unsupported effects in presentation attributes and inline declarations.
 fn has_property(node: &Node, style: &[StyleDecl], name: &str) -> bool {
-    node.attr(name).is_some() || style.iter().any(|decl| decl.property.eq_ignore_ascii_case(name))
+    node.attr(name).is_some() || has_inline_property(style, name)
+}
+
+fn check_inline_transform(style: &[StyleDecl]) -> Result<(), SvgError> {
+    if has_inline_property(style, "transform") {
+        return Err(invalid("inline CSS transform is not supported"));
+    }
+    Ok(())
 }
 
 impl<'a> Walk<'a> {
@@ -108,7 +120,14 @@ impl<'a> Walk<'a> {
             if self.skip_visibility_or_hidden(root, &style)? {
                 return Ok(());
             }
+            check_inline_transform(&style)?;
             self.note_unsupported_effects(root, &style)?;
+        }
+        // Stylesheets inside <defs> or other silent elements still govern the file,
+        // so count every <style> element once across the whole tree.
+        let style_count = self.tree.nodes.iter().filter(|n| n.name == "style").count();
+        for _ in 0..style_count {
+            self.note("style")?;
         }
         let children = self.node(0).map(|n| n.children.clone()).unwrap_or_default();
         for child in children {
@@ -144,6 +163,7 @@ impl<'a> Walk<'a> {
         if self.skip_visibility_or_hidden(node, &style)? {
             return Ok(());
         }
+        check_inline_transform(&style)?;
         let map = match node.attr("transform") {
             Some(t) => parent.then(transform::parse(t)?),
             None => parent,

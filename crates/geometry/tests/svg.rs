@@ -274,6 +274,31 @@ fn svg_shape_inline_clipping_and_masking_are_reported_as_unsupported() {
 }
 
 #[test]
+fn svg_stylesheets_inside_defs_and_tree_are_counted_as_skipped() {
+    let in_defs = r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100">
+      <defs><style>.h{display:none}</style></defs>
+      <rect class="h" width="20" height="20"/>
+    </svg>"#;
+    let doc = svg::parse(in_defs.as_bytes(), None).expect("stylesheet in defs reads");
+    assert_eq!(doc.summary.skipped.get("style"), Some(&1), "{:?}", doc.summary.skipped);
+    assert_eq!(doc.summary.skipped.len(), 1, "{:?}", doc.summary.skipped);
+
+    let nested_and_used = r##"<svg width="100mm" height="100mm" viewBox="0 0 100 100">
+      <style>.a{fill:none}</style>
+      <defs>
+        <g><style>.c{opacity:0}</style></g>
+        <g id="part"><style>.b{stroke:black}</style><rect width="10" height="10"/></g>
+      </defs>
+      <use href="#part"/>
+      <use href="#part" x="20"/>
+    </svg>"##;
+    let doc = svg::parse(nested_and_used.as_bytes(), None).expect("nested stylesheets read");
+    assert_eq!(doc.primitives.len(), 8);
+    assert_eq!(doc.summary.skipped.get("style"), Some(&3), "{:?}", doc.summary.skipped);
+    assert_eq!(doc.summary.skipped.len(), 1, "{:?}", doc.summary.skipped);
+}
+
+#[test]
 fn svg_bunched_curve_vertices_merge_so_no_piece_is_shorter_than_the_join_tolerance() {
     // A cubic with both control points on its start runs as x = 10 t^3: evenly spaced t gives
     // pieces far shorter than the 0.01 mm join tolerance near the start. They must merge.

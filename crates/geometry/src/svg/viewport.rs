@@ -55,6 +55,10 @@ fn fit(node: &Node, [vx, vy, vw, vh]: [f64; 4], w: f64, h: f64) -> Affine {
 
 /// Read the root element's size and viewBox.
 pub(super) fn read(root: &Node) -> Result<Viewport, SvgError> {
+    // SVG 2 permits `transform` on the root `<svg>`; refuse it rather than drop it silently.
+    if root.attr("transform").is_some() {
+        return Err(invalid("transform attribute on the root <svg> is not supported"));
+    }
     let view_box = match root.attr("viewBox") {
         None => None,
         Some(text) => {
