@@ -1,6 +1,7 @@
 //! camcraft-gpu: the headless GPU compute seam (#2620). One windowless
 //! device for each process, a capability probe, the off switch and the
-//! CPU fallback rule, and the first kernel (conservative facet binning).
+//! CPU fallback rule, and the kernels: conservative facet binning, and
+//! the stock removal cut (#2627, display only).
 //! Provenance: our own seam over wgpu's public API; the binning law is
 //! uniform-grid partitioning from C. Ericson, "Real-Time Collision
 //! Detection" (2005), ch. 7.
@@ -15,6 +16,12 @@ mod adapter;
 pub mod binning;
 #[cfg(not(target_arch = "wasm32"))]
 mod binning_gpu;
+// #2627: the stock removal kernel (ball and flat, linear moves).
+pub mod cut;
+#[cfg(not(target_arch = "wasm32"))]
+mod cut_gpu;
+#[cfg(not(target_arch = "wasm32"))]
+mod cut_run;
 pub mod probe;
 #[cfg(not(target_arch = "wasm32"))]
 mod shared;
@@ -26,6 +33,11 @@ pub use adapter::{device, device_for_test};
 pub use binning::{bin_twin, pad_boxes, plan, CellLists, GridSpec, PaddedBoxes, Plan};
 #[cfg(not(target_arch = "wasm32"))]
 pub use binning_gpu::{bin_facets, bin_on};
+pub use cut::{cut_cpu, CutGrid, CutInput, CutItem, CUT_BRICK, MAX_CUT_TEXELS};
+#[cfg(not(target_arch = "wasm32"))]
+pub use cut_gpu::{CutKernel, CUT_WAIT, ITEMS_PER_DISPATCH};
+#[cfg(not(target_arch = "wasm32"))]
+pub use cut_run::{cut_or_cpu, cut_or_cpu_on, spot_check, CutOutput, CutPath, SPOT_MARGIN_FRACTION, SPOT_TEXELS};
 pub use probe::{probe, Compute};
 #[cfg(not(target_arch = "wasm32"))]
 pub use shared::shared_device;
