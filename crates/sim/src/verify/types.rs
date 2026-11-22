@@ -13,6 +13,15 @@ pub enum Mode {
     /// Trace: the cutter center runs on the boundary itself; laws that
     /// assume tangency do not apply.
     Engrave,
+    /// V-carve (#1443): a cone's tip rides the medial axis of the
+    /// region, and each branch of the axis is ridden two times, one
+    /// time from each wall. Engrave's stand-downs apply (the cut is a
+    /// mark inside the region, proved by the generator), and the
+    /// crossing law (a) stands down too: the second ride of a branch
+    /// lies on the first within the chord tolerance, so their chords
+    /// cross at a shared depth by design. That is the pattern, not a
+    /// path defect.
+    Carve,
     /// The cone rides (M2.5 E B): a chamfer mill whose GENERATRIX lies
     /// on the wall - the axis runs exactly on the edge's own XY, and
     /// on a convex crease the virtual tip stands deliberately INSIDE
@@ -76,6 +85,19 @@ pub enum Mode {
     /// which reads rest material in the frame the work turns in. The
     /// fixture laws stay: boxes, no height field.
     Rotary,
+    /// The undercut cutters (#1444): a head wider than its neck cuts
+    /// SIDEWAYS under a roof, so it clears no column - the stock above
+    /// the head still stands. The column laws would read every pass as
+    /// a cleared kerf (and acquit a lift straight through the roof), so
+    /// the rest model takes no cut from this path; the crossing law (a)
+    /// and the region tangency (b) stand down (passes retrace by design,
+    /// and a 2-D region cannot say an undercut); the solid law (b2)
+    /// judges head and neck against the mesh with the cutter's real
+    /// profile; and the band law (c) hands over to the undercut law
+    /// ([`super::undercut`]): no Z move with the head in or under
+    /// material, no neck or holder band through material above the
+    /// head. Rapids (d) and the fixture laws stay.
+    Undercut,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -155,6 +177,9 @@ pub struct VerifyContext<'a> {
     /// which is also the budget moves are read into chords at and must
     /// not shrink with the model.
     pub model_excess: f64,
+    /// Every reduced source was made coarse only by its file tolerance.
+    /// False, including an absent record, keeps the strict law.
+    pub file_tolerance: bool,
     /// The declared circles `(centre, radius)` a containment kind's
     /// region draws as rim loops (#1057): our own polygons of a hole the
     /// operation names, not a model's facets, so law (b) reads a loop
@@ -205,6 +230,7 @@ impl Default for VerifyContext<'_> {
             fixtures: &[],
             spindle: None,
             model_excess: 0.0,
+            file_tolerance: false,
             rims: &[],
             lathe_axis: None,
             corner_reliefs: &[],
@@ -262,6 +288,31 @@ pub enum Warning {
     /// Rapid `move` travels through stock: under the clearance plane,
     /// or (#2121) at it under the stock top.
     RapidInStock { at: usize },
+    /// #2901: the path starts at `height_mm`, under the `top_mm` of the
+    /// start stock or of a fixture (`fixture`). The first traverse comes
+    /// from an X/Y the machine does not know, so it can cross that top
+    /// anywhere ([`super::first_traverse_low`]). The law gives the two
+    /// heights in the path's frame; the operation layer gives them in
+    /// the frame the user sets the heights in (#2991). `tilted`: a 3+2
+    /// plane, whose heights are measured along its tool axis - the text
+    /// then says so and names the raise, not a Z value. Absent in a
+    /// cache saved before #2991: read as upright.
+    FirstTraverseLow {
+        at: usize,
+        height_mm: f64,
+        top_mm: f64,
+        fixture: bool,
+        #[serde(default)]
+        tilted: bool,
+    },
+    /// #3081: a 3+2 plane whose tool axis points down toward the machine
+    /// table (a head tilt past 90 degrees). The path starts at `height_mm`
+    /// along that axis; the move to it from the tool-change height (the Z
+    /// travel top) can end under the table top. A HIGHER plane along the
+    /// axis stands LOWER in the world, so the repair is a plane at
+    /// `limit_mm` or under it - never a raise. The operation layer gives
+    /// the two heights in the frame the user sets them in (#3148).
+    FirstTraverseUnderTable { at: usize, height_mm: f64, limit_mm: f64 },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
     /// it, `short_mm` the clearance shortfall - the radial depth the
@@ -339,6 +390,17 @@ pub enum Warning {
     /// pilot drill is a valid plan, so the post is not held, but each such
     /// hole is named.
     DrillUndersize { at: usize, hole_mm: f64, drill_mm: f64 },
+    /// An undercut cutter moves in Z at move `at` while material stands
+    /// in or over its head's footprint (#1444): a lift there drives the
+    /// head into the roof of its own undercut, a dive drives it into
+    /// uncut stock it cannot plunge. Blocking like `Gouge`.
+    UndercutLift { at: usize },
+    /// An Adaptive op whose planner gave `areas` areas (a pocket, a 3-D
+    /// level) to the Offset rings (#3035), from the first cut at `at`.
+    /// The notes name each one. Advisory: the rings are verified like any
+    /// path, so the post is not held - but the strategy the user asked for
+    /// did not cut those areas, and the op says so.
+    StrategyFallback { at: usize, areas: usize },
 }
 
 impl Warning {
@@ -349,7 +411,8 @@ impl Warning {
         !matches!(self, Warning::Scallop { .. }
                 | Warning::ProbeSearch { .. }
                 | Warning::SinkerFinishOrder { .. }
-                | Warning::DrillUndersize { .. })
+                | Warning::DrillUndersize { .. }
+                | Warning::StrategyFallback { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -404,6 +467,31 @@ impl core::fmt::Display for Warning {
             Warning::RapidInStock { at } => {
                 write!(f, "rapid move {at} travels through stock (below the clearance plane, or at it below the stock top)")
             }
+            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: false } => write!(
+                f,
+                "the first rapid (move {at}) comes from an unknown X/Y at the clearance height Z{height_mm:.3}, under the {} \
+                 top at Z{top_mm:.3} - raise the clearance height above Z{top_mm:.3}",
+                if *fixture { "fixture" } else { "stock" }
+            ),
+            // #2991: a 3+2 plane measures its heights along the tilted
+            // tool axis, so a Z value would not be one the user can find.
+            // The raise is the same in each frame.
+            Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, tilted: true } => write!(
+                f,
+                "the first rapid (move {at}) comes from an unknown position at the clearance height {height_mm:.3} mm, \
+                 under the {} top at {top_mm:.3} mm (both measured along the tilted tool axis) - raise the clearance \
+                 height by at least {:.3} mm",
+                if *fixture { "fixture" } else { "stock" },
+                top_mm - height_mm
+            ),
+            // #3148: the axis is always tilted here, so the heights are
+            // the user's values along it, never a Z value.
+            Warning::FirstTraverseUnderTable { at, height_mm, limit_mm } => write!(
+                f,
+                "the first rapid (move {at}) runs from the tool-change height along a tool axis that points down toward the \
+                 machine table; to the clearance plane at {height_mm:.3} mm it can go under the table top - lower the \
+                 clearance plane to {limit_mm:.3} mm or under it (both measured along the tilted tool axis)"
+            ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
                 "{} at move {at} strikes a fixture",
@@ -440,6 +528,10 @@ impl core::fmt::Display for Warning {
                 f,
                 "sinker finish at move {at}: its electrode's undersize {finish_mm:.3} mm per side is not smaller than the rough's {rough_mm:.3} mm - the finish electrode is no larger than the rough and takes nothing off its walls (the post is not held)"
             ),
+            Warning::UndercutLift { at } => write!(
+                f,
+                "move {at} moves the undercut cutter in Z with material in or over its head (it must enter and leave sideways, clear of the stock)"
+            ),
             Warning::AvoidHit { at, item, part, short_mm } => write!(
                 f,
                 "{} at move {at} violates protected 'Do not touch' item #{item} ({short_mm:.3} mm short of clearance)",
@@ -454,6 +546,11 @@ impl core::fmt::Display for Warning {
             Warning::DrillUndersize { at, hole_mm, drill_mm } => write!(
                 f,
                 "undersize hole at move {at}: the hole is {hole_mm:.3} mm, and the {drill_mm:.3} mm drill makes it {drill_mm:.3} mm - use a {hole_mm:.3} mm drill, or follow with a Bore or a reamer (the post is not held: a pilot drill is a valid plan)"
+            ),
+            Warning::StrategyFallback { at, areas } => write!(
+                f,
+                "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
+                if *areas == 1 { "" } else { "s" }
             ),
         }
     }

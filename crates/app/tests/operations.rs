@@ -83,6 +83,7 @@ fn contour_params() -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -736,14 +737,18 @@ fn an_entry_edit_marks_the_contour_stale_and_the_wall_regen_moves_nothing() {
     assert_eq!(status(&world, "Contour1"), OpStatus::Ok, "and exact");
 }
 
-/// The slot fixture's notes: its Top (Z 0) and its clearance plane (Z 5)
-/// both stand inside the 20 mm block, so the two independent height
-/// warnings (#104, #2121) ride the path - and nothing else.
-fn height_notes_only(notes: &[String]) -> bool {
-    use camcraft_app::operation::{CLEARANCE_STOCK_WARNING, TOP_STOCK_WARNING};
-    notes.len() == 2
-        && notes.iter().filter(|n| n.starts_with(TOP_STOCK_WARNING)).count() == 1
-        && notes.iter().filter(|n| n.starts_with(CLEARANCE_STOCK_WARNING)).count() == 1
+/// The slot fixture's height words: its Top (Z 0) and its clearance
+/// plane (Z 5) both stand inside the 20 mm block, so the two independent
+/// height readings ride the path - and nothing else. The Top is #104's
+/// note; the plane is #2901's first-traverse verdict (the opening rapid
+/// has no X/Y travel now, so no traverse at the plane earns #2121's
+/// "Clearance in stock" note).
+fn height_notes_only(world: &World) -> bool {
+    use camcraft_app::operation::TOP_STOCK_WARNING;
+    use camcraft_app::verify::Warning;
+    let tp = cache(world, "Slot1").expect("cached");
+    let first_low = tp.warnings.iter().filter(|w| matches!(w, Warning::FirstTraverseLow { at: 0, fixture: false, .. })).count();
+    tp.path.notes.len() == 1 && tp.path.notes.iter().filter(|n| n.starts_with(TOP_STOCK_WARNING)).count() == 1 && first_low == 1
 }
 
 #[test]
@@ -773,12 +778,10 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     );
     assert_eq!(status(&world, "Slot1"), OpStatus::Ok);
     let before = cache(&world, "Slot1").expect("cached").path;
-    assert!(height_notes_only(&before.notes), "no entry fallback, only the independent height warnings: {:?}", before.notes);
-    assert_eq!(
-        before.moves.iter().filter(|m| m.arc.is_some()).count(),
-        0,
-        "Plunge means no orbit in the file"
-    );
+    assert!(height_notes_only(&world), "no entry fallback, only the independent height warnings: {:?}", before.notes);
+    // An orbit descends; the planar arcs are the slot's wall lap (#2906).
+    let orbits = |p: &camcraft_app::cl::Toolpath| p.moves.iter().filter(|m| m.arc.is_some() && m.from.z != m.to.z).count();
+    assert_eq!(orbits(&before), 0, "Plunge means no orbit in the file");
 
     let mut edited = slot_params();
     let OpParams::Slot {
@@ -807,10 +810,10 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     assert_eq!(status(&world, "Slot1"), OpStatus::Ok);
     let after = cache(&world, "Slot1").expect("cached").path;
     assert!(
-        after.moves.iter().any(|m| m.arc.is_some()),
+        orbits(&after) > 0,
         "a channel this wide certifies the orbit - it must land"
     );
-    assert!(height_notes_only(&after.notes), "a certified orbit adds no entry note; only the height warnings remain: {:?}", after.notes);
+    assert!(height_notes_only(&world), "a certified orbit adds no entry note; only the height warnings remain: {:?}", after.notes);
     assert_ne!(
         before.moves, after.moves,
         "the entry edit changed the path, not just the stamp"
@@ -1090,7 +1093,7 @@ fn stale_reason_asks_for_a_re_pick_when_the_feature_moved() {
         &world,
         "C1",
         "EM-0600-4FL",
-        sel("part", top),
+        sel("part", top.clone()),
         contour_params(),
     );
     history.execute(&world, cmd.expect("create"));
@@ -1828,7 +1831,7 @@ fn a_selected_face_bounds_facing_and_contour() {
         &world,
         "C1",
         "EM-0600-4FL",
-        sel("part", top),
+        sel("part", top.clone()),
         contour_params(),
     );
     history.execute(&world, cmd.expect("create contour on selection"));
@@ -1871,7 +1874,7 @@ fn a_vertical_or_tilted_pick_refuses_with_the_fix_in_the_message() {
     let wall = FeatureSel::Face(wall_face_of(&world, "part"));
     let op = |params: OpParams| Operation {
         tool: "EM-0600-4FL".into(),
-        src: sel("part", wall),
+        src: sel("part", wall.clone()),
         params,
         stamp: None,
         setup: None,
@@ -1907,7 +1910,7 @@ fn closed_chain_rims_bound_and_double_picks_collapse_to_one_loop() {
     let rim = FeatureSel::Chain(rim_chain_of(&world, "disc"));
     let op = Operation {
         tool: "EM-0600-4FL".into(),
-        src: sel("disc", rim),
+        src: sel("disc", rim.clone()),
         params: contour_params(),
         stamp: None,
         setup: None,
@@ -1928,11 +1931,11 @@ fn closed_chain_rims_bound_and_double_picks_collapse_to_one_loop() {
         src: SrcRef::Selection(vec![
             GeoSel {
                 entity: "disc".into(),
-                feature: rim,
+                feature: rim.clone(),
             },
             GeoSel {
                 entity: "disc".into(),
-                feature: rim,
+                feature: rim.clone(),
             },
         ]),
         ..op.clone()
@@ -1954,7 +1957,7 @@ fn closed_chain_rims_bound_and_double_picks_collapse_to_one_loop() {
             .expect("the disc is one planar face")
     });
     let sheet_op = Operation {
-        src: sel("disc", sheet),
+        src: sel("disc", sheet.clone()),
         ..op.clone()
     };
     let r3 = operation::region_of(&world, &sheet_op).expect("the face ring bounds the disc");
@@ -2515,6 +2518,7 @@ fn a_closed_chain_routes_the_boundary_path_not_a_centerline() {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     history.execute(
         &world,
@@ -3335,6 +3339,7 @@ fn selection_notes_report_stitching_and_extension() {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     let notes = operation::selection_notes(&world, None, &items, &contour);
     assert!(
@@ -3382,6 +3387,7 @@ fn contour_at(side: Side, z: f64) -> OpParams {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     }
 }
 
@@ -5963,54 +5969,97 @@ fn rotary_parallel_generates_radial_axes_and_verifies_clean() {
 }
 
 #[test]
-fn the_rotary_twins_refuse_each_other_stances_by_name() {
-    // The pair cannot disagree about where the boundary sits: one
-    // sine for both refusals, each naming the kind the stance wants.
-    for (mname, name, mesh, params, wants) in [
-        (
-            "lathe",
-            "RPx",
-            lathe_mesh(),
-            rotary_parallel_params(4.0, -4.0),
-            "Rotary Contour",
-        ),
-        (
-            "laid",
-            "RCx",
-            laid_mesh(),
-            rotary_contour_params(14.0, -14.0),
-            "Rotary Parallel",
-        ),
-    ] {
-        let world = new_world();
-        let mut history = History::default();
-        box_stock(&world, &mut history, 40.0, 40.0, 40.0);
-        add_tool(&world, &mut history, "BN-0600");
-        history.execute(&world, ImportModel::from_mesh(mname, mesh));
-        history.execute(
+fn a_standing_bar_refuses_rotary_parallel_by_name() {
+    // The standing bar has no axial passes: Rotary Parallel refuses it
+    // and names the kind the stance wants. The laid twin no longer
+    // refuses Rotary Contour (#3000): it cuts rings about X, pinned by
+    // `a_laid_bar_cuts_rotary_contour_rings_about_x` below.
+    let (mname, name, wants) = ("lathe", "RPx", "Rotary Contour");
+    let (mesh, params) = (lathe_mesh(), rotary_parallel_params(4.0, -4.0));
+    let world = new_world();
+    let mut history = History::default();
+    box_stock(&world, &mut history, 40.0, 40.0, 40.0);
+    add_tool(&world, &mut history, "BN-0600");
+    history.execute(&world, ImportModel::from_mesh(mname, mesh));
+    history.execute(
+        &world,
+        CreateOperation::new(
             &world,
-            CreateOperation::new(
-                &world,
-                name,
-                "BN-0600",
-                SrcRef::Entity(mname.into()),
-                params,
-            )
-            .expect("create"),
+            name,
+            "BN-0600",
+            SrcRef::Entity(mname.into()),
+            params,
+        )
+        .expect("create"),
+    );
+    let CommandError::Machining(msg) = GenerateOperation::new(&world, name)
+        .err()
+        .expect("a wrong-stance twin must refuse")
+    else {
+        panic!("expected a machining refusal");
+    };
+    assert!(msg.contains(wants), "{msg} should point at {wants}");
+    assert_eq!(
+        status(&world, name),
+        OpStatus::Never,
+        "the refusal leaves no path behind"
+    );
+}
+
+/// #3000: the laid twin that Rotary Contour refused before now cuts
+/// rings about its X axis. Top and bottom are axial ball-center
+/// stations (the fitted origin is the foot of the axis on the plane
+/// through the world origin, so the stations read as world x), and
+/// every cut poses the radial about X.
+#[test]
+fn a_laid_bar_cuts_rotary_contour_rings_about_x() {
+    let world = new_world();
+    let mut history = History::default();
+    add_tool(&world, &mut history, "BN-0600");
+    history.execute(&world, ImportModel::from_mesh("laid", laid_mesh()));
+    model_stock(&world, &mut history, "laid");
+    history.execute(
+        &world,
+        CreateOperation::new(
+            &world,
+            "RCx",
+            "BN-0600",
+            SrcRef::Entity("laid".into()),
+            rotary_contour_params(14.0, -14.0),
+        )
+        .expect("create"),
+    );
+    history.execute(
+        &world,
+        GenerateOperation::new(&world, "RCx").expect("a laid bar cuts contour rings"),
+    );
+    assert_eq!(status(&world, "RCx"), OpStatus::Ok);
+    verifies_clean(&world, "RCx");
+    let t = cache(&world, "RCx").expect("cached").path;
+    radial_pose_law("laid rotary contour", &t, 0);
+    let err = camcraft_app::stock_sim::simulate_document(&world)
+        .expect_err("a rotary program is not judged by the column verdict");
+    assert!(err.contains("RCx") && err.contains("rotary program"), "{err}");
+    // The ball center (the tip plus r along the pose) stays inside the
+    // axial station window, and the rings stand at several stations.
+    let mut stations: Vec<i64> = Vec::new();
+    for m in t.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
+        let a = m.axis.expect("a rotary cut states its pose");
+        assert!(a[0].abs() < 1e-6, "a pose leans along the bar: {m:?}");
+        let cx = m.to.x + 3.0 * a[0];
+        assert!(
+            (-14.0 - 1e-6..=14.0 + 1e-6).contains(&cx),
+            "a cut outside the station window: {m:?}"
         );
-        let CommandError::Machining(msg) = GenerateOperation::new(&world, name)
-            .err()
-            .expect("a wrong-stance twin must refuse")
-        else {
-            panic!("expected a machining refusal");
-        };
-        assert!(msg.contains(wants), "{msg} should point at {wants}");
-        assert_eq!(
-            status(&world, name),
-            OpStatus::Never,
-            "the refusal leaves no path behind"
-        );
+        let key = (cx * 1e3).round() as i64;
+        if !stations.contains(&key) {
+            stations.push(key);
+        }
     }
+    assert!(
+        stations.len() > 3,
+        "expected rings at several stations: {stations:?}"
+    );
 }
 
 #[test]
@@ -6489,6 +6538,11 @@ fn multiaxis_rough_peels_the_same_ladder_and_poses_its_walls() {
             }
             Some(v) => {
                 posed += 1;
+                // #3129: the Zigzag levels close with a ring round the
+                // 10 x 10 boss, so each ring chord claims the wall. A pose
+                // stays within the ball's reach (r 3) of the boss.
+                let (dx, dy) = ((a.to.x.abs() - 5.0).max(0.0), (a.to.y.abs() - 5.0).max(0.0));
+                assert!(dx.hypot(dy) <= 3.5, "a pose leaked past the boss walls at {:?}", a.to);
                 let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
                 assert!((l - 1.0).abs() < 1e-6, "a pose of length {l}");
                 assert!(v.iter().all(|c| c.is_finite()));
@@ -6501,7 +6555,6 @@ fn multiaxis_rough_peels_the_same_ladder_and_poses_its_walls() {
         }
     }
     assert!(posed >= 4, "the boss walls posed nothing: {posed}");
-    assert!(posed <= 20, "poses leaked past the walls: {posed}");
     assert!(
         floor_air >= 1,
         "every floor-row move claimed a wall - the floors must hold their peace"
@@ -7510,9 +7563,11 @@ fn the_crease_pair_generates_through_the_operation_layer() {
 /// The deburr ride's params: the window is stated in the TIP's units
 /// (the kernel's clipping law), so a `top_z` at the model's own top
 /// minus the drop names exactly the rim that stands there.
-fn deburr_params(width: f64, top_z: f64, bottom_z: f64) -> OpParams {
+/// #1890: callers state the setback on a 90-degree edge; the width is
+/// its chord, `setback * sqrt(2)`.
+fn deburr_params(setback: f64, top_z: f64, bottom_z: f64) -> OpParams {
     OpParams::Deburr {
-        width,
+        width: setback * std::f64::consts::SQRT_2,
         clearance_z: Height::fixed(25.0),
         top_z: Height::fixed(top_z),
         bottom_z: Height::fixed(bottom_z),
@@ -7525,6 +7580,7 @@ fn deburr_params(width: f64, top_z: f64, bottom_z: f64) -> OpParams {
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
         unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
+        sizing: camcraft_app::finishing3d::DeburrBreak::default(),
     }
 }
 
@@ -7665,8 +7721,10 @@ fn deburr_refuses_a_cone_that_rules_no_chamfer() {
 
 #[test]
 fn deburr_refuses_a_flank_too_short_for_the_break() {
-    // Width 5 on the 90-degree cone reaches 5 / sin 45 = 7.1 mm up
-    // the flank - the CM-0400's 6 mm of flute stops at its shank, and
+    // A 5 mm setback (chord 5 * sqrt(2)) may reach a setback of
+    // 5 * sqrt(2) / (2 sin 15) = 13.66 mm on the sharpest wedge the
+    // size law sizes (#1890), 13.66 / sin 45 = 19.3 mm up the flank -
+    // the CM-0400's 6 mm of flute stops at its shank, and
     // the ride would dress a cylinder as a cone. The catalog's own
     // tool proves the door: no fixture invention needed.
     let world = new_world();
@@ -7692,7 +7750,7 @@ fn deburr_refuses_a_flank_too_short_for_the_break() {
         panic!("expected a machining refusal");
     };
     assert!(msg.contains("up the cone's flank"), "{msg}");
-    assert!(msg.contains("7.1"), "{msg}");
+    assert!(msg.contains("19.3"), "{msg}");
     assert_eq!(status(&world, "DB"), OpStatus::Never);
 }
 

@@ -29,6 +29,23 @@ fn every_case_has_two_named_test_results() {
 }
 
 #[test]
+fn adaptive_pocket_full_case_checks_run_in_the_heavy_lane() {
+    let output = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--ignored", "--list", "--format", "terse"])
+        .output()
+        .expect("list heavy catalog tests");
+    assert!(output.status.success());
+    let listing = String::from_utf8_lossy(&output.stdout);
+    for action in ["regenerates", "rebuilds"] {
+        let name = format!("catalog_2d_adaptive_pocket::{action}: test");
+        assert!(
+            listing.lines().any(|line| line == name),
+            "missing heavy case test {name}\n{listing}"
+        );
+    }
+}
+
+#[test]
 fn two_broken_cases_report_both_names_and_times() {
     let scratch = std::env::temp_dir().join(format!("catalog-broken-cases-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
@@ -38,8 +55,15 @@ fn two_broken_cases_report_both_names_and_times() {
             format!("catalog_2d_first_part::{action}"),
             format!("catalog_2d_contour_tabs::{action}"),
         ];
+        // One test thread (#3043): the two cases run in order, so the panic
+        // message of one case cannot fall into the timing line of the other.
         let output = Command::new(std::env::current_exe().expect("test executable"))
-            .args([names[0].as_str(), names[1].as_str(), "--nocapture"])
+            .args([
+                names[0].as_str(),
+                names[1].as_str(),
+                "--nocapture",
+                "--test-threads=1",
+            ])
             .env("CAMCRAFT_TEST_CATALOG_ROOT", &scratch)
             .output()
             .expect("run two broken cases");

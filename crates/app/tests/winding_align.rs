@@ -175,12 +175,10 @@ fn bodies_are_judged_one_by_one() {
 /// links to no plain edge of its block, so the shared-edge rule sees four
 /// bodies there and refuses (non-manifold, by name - never a wrong lay).
 #[test]
-#[ignore = "known-fail #2845 | winding_align | solids_that_touch_face_to_face_are_two_outward_bodies | assertion `left == right` failed: two outward bodies"]
 fn solids_that_touch_face_to_face_are_two_outward_bodies() {
     let upper = cube(Point3::new(0.0, 0.0, 10.0), Point3::new(20.0, 20.0, 20.0));
     let stack: Vec<Triangle> = block().facets.iter().chain(upper.facets.iter()).copied().collect();
     let wind = winding_of(&stack);
-    // known-fail-assert
     assert_eq!(wind.bodies, vec![BodyWinding::Outward; 2], "two outward bodies");
     let w = world_of(Mesh::from_facets(stack));
     lay_on_plane(&w, &[face(&w, [10.0, 10.0, 20.0])], G17).expect("the upper block's top lays");
