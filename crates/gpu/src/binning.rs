@@ -15,6 +15,8 @@ pub const MAX_AXIS: u32 = 1 << 16;
 /// Most binned entries (facet-cell pairs) for one dispatch: bounds the
 /// kernel's loop work, so one call cannot stall the device.
 pub const MAX_ENTRIES: u64 = 1 << 26;
+/// Maximum host storage for one call, including temporary lists and read-back.
+pub const MAX_HOST_BYTES: u64 = 256 * 1024 * 1024;
 /// Largest tile-relative coordinate: past it f32 loses the cell.
 const MAX_REL: f64 = 1.0e12;
 /// Relative rounding margin: 2^-18, far above the f32 cast (2^-24) and
@@ -76,22 +78,22 @@ impl CellLists {
         self.start.len().saturating_sub(1)
     }
 
-    pub(crate) fn from_lists(nx: u32, ny: u32, lists: Vec<Vec<u32>>) -> Self {
-        let mut start = Vec::with_capacity(lists.len().saturating_add(1));
-        let mut idx = Vec::new();
+    pub(crate) fn from_lists(nx: u32, ny: u32, lists: Vec<Vec<u32>>) -> Result<Self, String> {
+        let mut start = host_vec(lists.len().saturating_add(1))?;
+        let mut idx = host_vec(lists.iter().map(Vec::len).sum())?;
         start.push(0);
         for l in lists {
             idx.extend(l);
             start.push(idx.len());
         }
-        CellLists { nx, ny, start, idx }
+        Ok(CellLists { nx, ny, start, idx })
     }
 
     /// The kernel's output: `words` bit-set words for each cell.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    pub(crate) fn from_bits(p: &Plan, nx: u32, ny: u32, bits: &[u32]) -> Self {
+    pub(crate) fn from_bits(p: &Plan, nx: u32, ny: u32, bits: &[u32]) -> Result<Self, String> {
         let words = p.words as usize;
-        let mut lists = Vec::with_capacity(p.cells as usize);
+        let mut lists = host_vec(p.cells as usize)?;
         for c in 0..p.cells as usize {
             let mut l = Vec::new();
             let row = bits.get(c * words..(c + 1) * words).unwrap_or(&[]);
@@ -101,6 +103,7 @@ impl CellLists {
                     let b = m.trailing_zeros();
                     let i = (w as u64) * 32 + u64::from(b);
                     if i < u64::from(p.n) {
+                        l.try_reserve_exact(1).map_err(host_alloc_error)?;
                         l.push(i as u32);
                     }
                     m &= m - 1;
@@ -143,7 +146,8 @@ pub fn pad_boxes(boxes: &[[f64; 4]], spec: &GridSpec) -> Result<PaddedBoxes, Str
     let m = (ext + s) * MARGIN;
     let lo = |v: f64| ((v - m) as f32).next_down();
     let hi = |v: f64| ((v + m) as f32).next_up();
-    let out = boxes.iter().map(|b| [lo(b[0] - x0), lo(b[1] - y0), hi(b[2] - x0), hi(b[3] - y0)]).collect();
+    let mut out = host_vec(boxes.len())?;
+    out.extend(boxes.iter().map(|b| [lo(b[0] - x0), lo(b[1] - y0), hi(b[2] - x0), hi(b[3] - y0)]));
     Ok(PaddedBoxes { boxes: out, s: s32, nx, ny })
 }
 
@@ -165,6 +169,7 @@ fn ranges(b: &[f32; 4], p: &PaddedBoxes) -> (u32, u32, u32, u32) {
 /// a buffer past the device's storage binding or buffer size, a dispatch
 /// past the workgroup count, or more than `MAX_ENTRIES` binned entries.
 pub fn plan(p: &PaddedBoxes, c: &Compute) -> Result<Plan, String> {
+    host_layout(p)?;
     let n = u32::try_from(p.boxes.len()).map_err(|_| "binning: more facets than u32 holds".to_string())?;
     let words = n.div_ceil(32);
     let cells = p.nx.checked_mul(p.ny).ok_or("binning: the cell count overflows u32")?;
@@ -187,6 +192,27 @@ pub fn plan(p: &PaddedBoxes, c: &Compute) -> Result<Plan, String> {
             c.max_compute_workgroups_per_dimension
         ));
     }
+    Ok(Plan { n, words, cells, in_bytes, out_bytes, groups })
+}
+
+fn host_alloc_error(e: std::collections::TryReserveError) -> String {
+    format!("binning: host allocation failed: {e}")
+}
+
+pub(crate) fn host_vec<T>(len: usize) -> Result<Vec<T>, String> {
+    let bytes = len.checked_mul(std::mem::size_of::<T>()).ok_or("binning: host allocation size overflow")?;
+    if bytes as u64 > MAX_HOST_BYTES {
+        return Err("binning: host memory budget exceeded".into());
+    }
+    let mut v = Vec::new();
+    v.try_reserve_exact(len).map_err(host_alloc_error)?;
+    Ok(v)
+}
+
+/// Bound peak storage before either path allocates cell lists, even with no facets.
+fn host_layout(p: &PaddedBoxes) -> Result<usize, String> {
+    let n = u32::try_from(p.boxes.len()).map_err(|_| "binning: more facets than u32 holds")?;
+    let cells = p.nx.checked_mul(p.ny).ok_or("binning: the cell count overflows u32")?;
     let mut entries = 0u64;
     for b in &p.boxes {
         let (x0, x1, y0, y1) = ranges(b, p);
@@ -197,21 +223,32 @@ pub fn plan(p: &PaddedBoxes, c: &Compute) -> Result<Plan, String> {
     if entries > MAX_ENTRIES {
         return Err(format!("binning: {entries} facet-cell entries are past the limit {MAX_ENTRIES}"));
     }
-    Ok(Plan { n, words, cells, in_bytes, out_bytes, groups })
+    // Cell vectors, CSR offsets, entries in both representations, padded/upload
+    // boxes and two host copies of the GPU bit sets. Use u64 on 32-bit hosts too.
+    let bytes = (u64::from(cells) + 1) * (std::mem::size_of::<Vec<u32>>() + std::mem::size_of::<usize>()) as u64
+        + entries * 8
+        + u64::from(n) * 32
+        + u64::from(cells) * u64::from(n).div_ceil(32) * 8;
+    if bytes > MAX_HOST_BYTES {
+        return Err(format!("binning: host memory budget exceeded ({bytes} bytes > {MAX_HOST_BYTES})"));
+    }
+    usize::try_from(cells).map_err(|_| "binning: host cell count overflow".into())
 }
 
 /// The CPU twin of the kernel: the same f32 cell map, the same lists.
 /// The test oracle of the shader math on a machine without a GPU; never
 /// the fallback (the caller's f64 grid is the fallback).
-pub fn bin_twin(p: &PaddedBoxes) -> CellLists {
-    let cells = (p.nx as usize).saturating_mul(p.ny as usize);
-    let mut lists: Vec<Vec<u32>> = vec![Vec::new(); cells];
+pub fn bin_twin(p: &PaddedBoxes) -> Result<CellLists, String> {
+    let cells = host_layout(p)?;
+    let mut lists: Vec<Vec<u32>> = host_vec(cells)?;
+    lists.resize_with(cells, Vec::new);
     for (i, b) in p.boxes.iter().enumerate() {
         let (x0, x1, y0, y1) = ranges(b, p);
         for cy in y0..=y1 {
             for cx in x0..=x1 {
                 let c = (cy as usize).saturating_mul(p.nx as usize).saturating_add(cx as usize);
                 if let Some(l) = lists.get_mut(c) {
+                    l.try_reserve_exact(1).map_err(host_alloc_error)?;
                     l.push(i as u32);
                 }
             }

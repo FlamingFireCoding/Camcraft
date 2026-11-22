@@ -18,6 +18,14 @@
   and is logged one time for each process (`camcraft::gpu` target); the
   caller runs its CPU code. A GPU answer is only a filter (a superset of
   the f64 cells); the CPU f64 law stays the judge.
+- Both binning paths check one 256 MiB host memory budget before they
+  allocate cell lists. The budget includes empty cells, CSR offsets,
+  facet-cell entries, upload bytes and read-back copies. Host allocations
+  use fallible reservation. The CPU twin now returns `Result` too.
+- GPU error scopes capture `Validation`, `Internal` and `OutOfMemory`.
+  The scopes remain active through submission and read-back. Each scope
+  is popped before the function returns, including a failed dispatch or
+  map. The caller receives a named error and can use its CPU path.
 - The binning boxes go to the GPU as tile-relative f32, each corner moved
   outward by `(extent + s) * 2^-18` and one more f32 step. This bound is
   far above the f32 cast error (2^-24) plus WGSL's 2.5 ULP division error,
@@ -75,10 +83,16 @@ must not depend on the UI crate, and a second policy copy would drift.
   a sort for ascending indices. A per-cell bit set gives ascending, unique
   indices from one pass with `atomicOr`. Dropped for this slice; the plan
   refuses a bit set past the storage limit, and the caller falls back.
+- A compact representation for empty grids alone: it does not bound
+  memory for nonempty grids. Dropped for one budget on both paths.
+- Keep the default GPU error handler: an allocation or internal error
+  can cause a panic. Dropped for error scopes that return the failure.
 - A test that needs a GPU to pass: refused by the issue. The GPU half of
   the parity test prints a loud SKIP without an adapter, and fails only
   with `CAMCRAFT_REQUIRE_GPU=1`.
 
 **Cost to change later.** The kernel and its plan are two files. A
 pipeline cache is a `OnceLock` next to the shared device. If the egui set
-moves wgpu, the root pin moves with it in the same PR.
+moves wgpu, the root pin moves with it in the same PR. The host budget
+can change in one constant. A caller of the CPU twin must handle its
+`Result`. A new GPU error class needs a scope and a named conversion.

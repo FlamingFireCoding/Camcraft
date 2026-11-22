@@ -9,7 +9,7 @@
 use std::sync::mpsc;
 
 use crate::adapter::HeadlessGpu;
-use crate::binning::{pad_boxes, plan, CellLists, GridSpec, PaddedBoxes, Plan};
+use crate::binning::{host_vec, pad_boxes, plan, CellLists, GridSpec, PaddedBoxes, Plan};
 use crate::shared::shared_device;
 use crate::switch::{env_switch, log_fallback_once};
 
@@ -33,35 +33,52 @@ pub fn bin_on(gpu: &HeadlessGpu, boxes: &PaddedBoxes) -> Result<CellLists, Strin
     let compute = gpu.compute.as_ref().map_err(Clone::clone)?;
     let p = plan(boxes, compute)?;
     if p.n == 0 {
-        return Ok(CellLists::from_lists(boxes.nx, boxes.ny, vec![Vec::new(); p.cells as usize]));
+        return CellLists::from_bits(&p, boxes.nx, boxes.ny, &[]);
     }
-    let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
-    let read = dispatch(gpu, boxes, &p);
-    if let Some(err) = pollster::block_on(scope.pop()) {
-        return Err(format!("binning: GPU validation error: {err}"));
+    let oom = gpu.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let internal = gpu.device.push_error_scope(wgpu::ErrorFilter::Internal);
+    let validation = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let result = dispatch(gpu, boxes, &p).and_then(|read| read_back(gpu, &read, &p));
+    // Pop every scope even if dispatch or mapping failed. Keep them active
+    // through submission, device polling and read-back for asynchronous errors.
+    let mut failure = None;
+    for scope in [validation, internal, oom] {
+        if let Some(err) = pollster::block_on(scope.pop()) {
+            failure = Some(gpu_error(err));
+        }
     }
-    let bits = read_back(gpu, &read?, &p)?;
-    Ok(CellLists::from_bits(&p, boxes.nx, boxes.ny, &bits))
+    if let Some(err) = failure {
+        return Err(err);
+    }
+    CellLists::from_bits(&p, boxes.nx, boxes.ny, &result?)
 }
 
-fn params_bytes(boxes: &PaddedBoxes, p: &Plan) -> Vec<u8> {
-    let mut v = Vec::with_capacity(32);
-    for w in [boxes.nx, boxes.ny, p.n, p.words] {
-        v.extend_from_slice(&w.to_le_bytes());
+fn gpu_error(err: wgpu::Error) -> String {
+    let kind = match &err {
+        wgpu::Error::OutOfMemory { .. } => "out of memory",
+        wgpu::Error::Internal { .. } => "internal",
+        wgpu::Error::Validation { .. } => "validation",
+    };
+    format!("binning: GPU {kind} error: {err}")
+}
+
+fn params_bytes(boxes: &PaddedBoxes, p: &Plan) -> [u8; 32] {
+    let mut v = [0; 32];
+    for (chunk, w) in v[..16].chunks_exact_mut(4).zip([boxes.nx, boxes.ny, p.n, p.words]) {
+        chunk.copy_from_slice(&w.to_le_bytes());
     }
-    v.extend_from_slice(&boxes.s.to_le_bytes());
-    v.extend_from_slice(&[0u8; 12]);
+    v[16..20].copy_from_slice(&boxes.s.to_le_bytes());
     v
 }
 
-fn box_bytes(boxes: &PaddedBoxes) -> Vec<u8> {
-    let mut v = Vec::with_capacity(boxes.boxes.len().saturating_mul(16));
+fn box_bytes(boxes: &PaddedBoxes) -> Result<Vec<u8>, String> {
+    let mut v = host_vec(boxes.boxes.len().checked_mul(16).ok_or("binning: host upload size overflow")?)?;
     for b in &boxes.boxes {
         for f in b {
             v.extend_from_slice(&f.to_le_bytes());
         }
     }
-    v
+    Ok(v)
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -87,11 +104,7 @@ fn dispatch(gpu: &HeadlessGpu, boxes: &PaddedBoxes, p: &Plan) -> Result<wgpu::Bu
     let uniform = wgpu::BindGroupLayoutEntry {
         binding: 0,
         visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
+        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
         count: None,
     };
     let bgl = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -111,16 +124,15 @@ fn dispatch(gpu: &HeadlessGpu, boxes: &PaddedBoxes, p: &Plan) -> Result<wgpu::Bu
         compilation_options: Default::default(),
         cache: None,
     });
-    let buf = |label, size, usage| {
-        dev.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false })
-    };
+    let buf =
+        |label, size, usage| dev.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false });
     use wgpu::BufferUsages as U;
     let params = buf("binning params", 32, U::UNIFORM | U::COPY_DST);
     let input = buf("binning boxes", p.in_bytes, U::STORAGE | U::COPY_DST);
     let bits = buf("binning bits", p.out_bytes, U::STORAGE | U::COPY_SRC);
     let read = buf("binning read", p.out_bytes, U::MAP_READ | U::COPY_DST);
     gpu.queue.write_buffer(&params, 0, &params_bytes(boxes, p));
-    gpu.queue.write_buffer(&input, 0, &box_bytes(boxes));
+    gpu.queue.write_buffer(&input, 0, &box_bytes(boxes)?);
     let group = dev.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("camcraft-gpu binning"),
         layout: &bgl,
@@ -160,8 +172,28 @@ fn read_back(gpu: &HeadlessGpu, read: &wgpu::Buffer, p: &Plan) -> Result<Vec<u32
         if view.len() as u64 != p.out_bytes {
             return Err(format!("binning: the read-back has {} bytes, not {}", view.len(), p.out_bytes));
         }
-        view.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect()
+        let mut words = host_vec(view.len() / 4)?;
+        words.extend(view.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)));
+        words
     };
     read.unmap();
     Ok(words)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gpu_error;
+
+    #[test]
+    fn gpu_failures_name_the_error_class_for_cpu_fallback() {
+        let source = || Box::new(std::io::Error::other("injected")) as wgpu::ErrorSource;
+        for (err, kind) in [
+            (wgpu::Error::OutOfMemory { source: source() }, "out of memory"),
+            (wgpu::Error::Internal { source: source(), description: "injected".into() }, "internal"),
+            (wgpu::Error::Validation { source: source(), description: "injected".into() }, "validation"),
+        ] {
+            let message = gpu_error(err);
+            assert!(message.starts_with(&format!("binning: GPU {kind} error:")), "{message}");
+        }
+    }
 }

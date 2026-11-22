@@ -99,7 +99,7 @@ fn off_border() -> Fixture {
 fn twin_and_gpu_bins_hold_the_f64_cells_of_off_border_boxes() {
     let f = off_border();
     let padded = pad_boxes(&f.boxes, &f.spec).expect("the boxes pad");
-    assert_superset(&f, &bin_twin(&padded), "CPU twin (off border)");
+    assert_superset(&f, &bin_twin(&padded).expect("twin bins"), "CPU twin (off border)");
     match shared_device() {
         Ok(gpu) => {
             let got = bin_on(gpu, &padded).unwrap_or_else(|e| panic!("GPU binning on {}: {e}", gpu.name));
@@ -117,7 +117,7 @@ fn twin_bins_hold_every_f64_grid_entry() {
     let f = fixture();
     assert!(f.boxes.len() > 32 && f.cells.iter().any(|c| c.len() > 1), "the fixture is not trivial");
     let padded = pad_boxes(&f.boxes, &f.spec).expect("the fixture pads");
-    let (want, have) = assert_superset(&f, &bin_twin(&padded), "CPU twin");
+    let (want, have) = assert_superset(&f, &bin_twin(&padded).expect("twin bins"), "CPU twin");
     eprintln!("bin_parity: CPU twin path ran ({want} f64 entries, {have} binned)");
 }
 

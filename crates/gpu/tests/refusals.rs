@@ -22,11 +22,7 @@ fn roomy() -> Compute {
 fn non_finite_boxes_and_specs_are_refused_by_name() {
     let err = pad_boxes(&[[0.0, f64::NAN, 1.0, 1.0]], &spec()).err().unwrap_or_default();
     assert!(err.contains("facet box 0") && err.contains("not finite"), "{err}");
-    for bad in [
-        GridSpec { s: 0.0, ..spec() },
-        GridSpec { s: f64::INFINITY, ..spec() },
-        GridSpec { x0: f64::NAN, ..spec() },
-    ] {
+    for bad in [GridSpec { s: 0.0, ..spec() }, GridSpec { s: f64::INFINITY, ..spec() }, GridSpec { x0: f64::NAN, ..spec() }] {
         let err = pad_boxes(&[[0.0, 0.0, 1.0, 1.0]], &bad).err().unwrap_or_default();
         assert!(err.contains("cell size"), "{bad:?}: {err}");
     }
@@ -56,7 +52,7 @@ fn an_empty_set_plans_and_bins_to_empty_cells() {
     let p = pad_boxes(&[], &spec()).expect("pads");
     let plan = plan(&p, &roomy()).expect("plans");
     assert_eq!((plan.n, plan.words, plan.groups), (0, 0, 0));
-    let lists = bin_twin(&p);
+    let lists = bin_twin(&p).expect("twin bins");
     assert_eq!(lists.cells(), 16);
     assert!((0..16).all(|c| lists.cell(c).is_empty()) && lists.cell(99).is_empty());
 }
@@ -73,4 +69,26 @@ fn no_compute_and_the_off_switch_are_named() {
 fn wgpu_caps_without_compute() -> (wgpu::Backend, wgpu::DownlevelCapabilities, wgpu::Limits) {
     let caps = wgpu::DownlevelCapabilities { flags: wgpu::DownlevelFlags::empty(), ..Default::default() };
     (wgpu::Backend::Gl, caps, wgpu::Limits::downlevel_webgl2_defaults())
+}
+
+#[test]
+fn host_budget_refuses_large_empty_and_nonempty_grids_before_allocation() {
+    for boxes in [vec![], vec![[0.0, 0.0, 0.0, 0.0]]] {
+        let p = pad_boxes(&boxes, &GridSpec { nx: 65536, ny: 65535, ..spec() }).expect("pads");
+        let err = plan(&p, &roomy()).expect_err("host budget must refuse");
+        assert!(err.contains("host memory budget"), "{err}");
+        let err = bin_twin(&p).expect_err("twin must refuse before allocating cells");
+        assert!(err.contains("host memory budget"), "{err}");
+    }
+}
+
+#[test]
+fn twin_host_budget_counts_lists_and_offsets_together() {
+    use camcraft_gpu::binning::MAX_HOST_BYTES;
+    let bytes_per_cell = std::mem::size_of::<Vec<u32>>() + std::mem::size_of::<usize>();
+    let nx = 4096;
+    let ny = (MAX_HOST_BYTES / bytes_per_cell as u64 / u64::from(nx) + 1) as u32;
+    let p = pad_boxes(&[], &GridSpec { nx, ny, ..spec() }).expect("pads");
+    let err = bin_twin(&p).expect_err("combined host storage must refuse");
+    assert!(err.contains("host memory budget"), "{err}");
 }
