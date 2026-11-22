@@ -432,7 +432,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 machining2d::FaceHoles::Through => None,
             };
-            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn)?;
+            // #3343: the keep-out of the protected items at each level, for
+            // every tip height from the level up to the clearance plane, in
+            // the facer's turned frame.
+            let keep_at = |z: f64| -> Result<Region, GenError> {
+                match &avoid_spec {
+                    Some(spec) => {
+                        let ko = spec
+                            .keepout_region(z, fparams.clearance_z.max(z), verify::AVOID_PAD)
+                            .map_err(GenError::Invalid)?;
+                        boundary_turn::turn_region(&ko, turn)
+                    }
+                    None => Ok(Region::empty()),
+                }
+            };
+            let keep = avoid_spec
+                .as_ref()
+                .map(|spec| machining2d::FaceKeep { names: spec.names_list(), at: &keep_at });
+            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn, keep.as_ref())?;
             // M11.3 owed: the facer enters a radius off the footprint -
             // from air over the stock's edge; over the stock (an inner
             // patch) the entry runs on along its row out to air, or the
@@ -444,7 +461,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     path,
                     (stock_facets.as_deref(), m_gen, frame.as_ref()),
                     band.as_deref().unwrap_or(&[]),
-                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn),
+                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn, keep.as_ref()),
                     d * 0.5,
                 )?
             };

@@ -94,8 +94,9 @@ pub(super) fn face_over_back(
     lead: f64,
     solid: Option<&Region>,
     turn: f64,
+    keep: Option<&machining2d::FaceKeep<'_>>,
 ) -> Result<Toolpath, GenError> {
-    let path = machining2d::face_over(laid, p, lead, solid).map_err(|e| turn_refusal(e, -turn))?;
+    let path = machining2d::face_over_kept(laid, p, lead, solid, keep).map_err(|e| turn_refusal(e, -turn))?;
     turn_path(path, -turn)
 }
 
@@ -245,7 +246,7 @@ mod law {
             let Err(e) = machining2d::face_over(&laid, &facing(), 0.0, None) else { continue };
             refused += 1;
             let raw = e.location().expect("the strip names its spot");
-            let back = face_over_back(&laid, &facing(), 0.0, None, turn).expect_err("refused");
+            let back = face_over_back(&laid, &facing(), 0.0, None, turn, None).expect_err("refused");
             let at = back.location().expect("spot carried back");
             assert!(in_strip(at), "turn {turn}: {at:?} (laid frame said {raw:?})");
             assert!((at.z - 10.0).abs() < 1e-9, "{at:?}");
@@ -259,7 +260,7 @@ mod law {
         // The strip across the rows as they are: holes side by side along X.
         let laid = turn_region(&holed_plate(), std::f64::consts::FRAC_PI_2).expect("laid");
         let e = machining2d::face_over(&laid, &facing(), 0.0, None).expect_err("refused");
-        let same = face_over_back(&laid, &facing(), 0.0, None, 0.0).expect_err("refused");
+        let same = face_over_back(&laid, &facing(), 0.0, None, 0.0, None).expect_err("refused");
         assert_eq!(same.location(), e.location());
         assert!(same.location().is_some());
     }
