@@ -67,6 +67,51 @@ fn assert_superset(f: &Fixture, got: &CellLists, path: &str) -> (usize, usize) {
     (want, have)
 }
 
+/// Boxes with edges inside cells (the fixture has every edge on a cell
+/// border) on a far origin, with the f64 cells of the #2619 law: floor of
+/// `(v - origin) / s`, clamped to the grid. A cell map that shifts by one
+/// cell stays a superset on border edges, but not here.
+fn off_border() -> Fixture {
+    let spec = GridSpec { x0: 1234.567, y0: -987.654, s: 0.37, nx: 23, ny: 17 };
+    let cell = |v: f64, o: f64, n: u32| ((v - o) / spec.s).floor().clamp(0.0, f64::from(n - 1)) as usize;
+    let mut seed = 0x2620_u64;
+    let mut next = || {
+        seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        (seed >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let (w, h) = (spec.s * f64::from(spec.nx), spec.s * f64::from(spec.ny));
+    let mut boxes = Vec::new();
+    let mut cells = vec![Vec::new(); (spec.nx * spec.ny) as usize];
+    for i in 0..200u32 {
+        let (x, y) = (spec.x0 + next() * w, spec.y0 + next() * h);
+        let b = [x, y, x + next() * 1.5, y + next() * 1.5];
+        for cy in cell(b[1], spec.y0, spec.ny)..=cell(b[3], spec.y0, spec.ny) {
+            for cx in cell(b[0], spec.x0, spec.nx)..=cell(b[2], spec.x0, spec.nx) {
+                cells[cy * spec.nx as usize + cx].push(i);
+            }
+        }
+        boxes.push(b);
+    }
+    Fixture { spec, boxes, cells }
+}
+
+#[test]
+fn twin_and_gpu_bins_hold_the_f64_cells_of_off_border_boxes() {
+    let f = off_border();
+    let padded = pad_boxes(&f.boxes, &f.spec).expect("the boxes pad");
+    assert_superset(&f, &bin_twin(&padded), "CPU twin (off border)");
+    match shared_device() {
+        Ok(gpu) => {
+            let got = bin_on(gpu, &padded).unwrap_or_else(|e| panic!("GPU binning on {}: {e}", gpu.name));
+            assert_superset(&f, &got, "GPU (off border)");
+        }
+        Err(why) => {
+            assert!(!gpu_required() || why.contains("off"), "CAMCRAFT_REQUIRE_GPU=1 but {why}");
+            eprintln!("*** bin_parity: GPU path SKIPPED (off border) - NOT a pass: {why} ***");
+        }
+    }
+}
+
 #[test]
 fn twin_bins_hold_every_f64_grid_entry() {
     let f = fixture();
