@@ -254,7 +254,7 @@ pub fn bore(p: &BoreParams) -> Result<Toolpath, GenError> {
 /// [`bore`] with the shared pass order (#3360): `Auto` is [`bore`] byte
 /// for byte; `Outside` cuts each level's wall ring first and walks in;
 /// `Inside` is the centre-out order (the disk has no inner wall).
-pub fn bore_started(p: &BoreParams, start: PassStart) -> Result<Toolpath, GenError> {
+pub fn bore_started(p: &BoreParams, pass_start: PassStart) -> Result<Toolpath, GenError> {
     p.validate()?;
     let r = p.tool_diameter * 0.5;
     let mut motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed);
@@ -309,7 +309,7 @@ pub fn bore_started(p: &BoreParams, start: PassStart) -> Result<Toolpath, GenErr
         // dives at the centre, so the entry law does not change.
         let kmax = u32::try_from(count.saturating_sub(1)).unwrap_or(u32::MAX);
         let mut order: Vec<usize> = (1..=count).collect();
-        order.sort_by_key(|&k| start.rank(kmax.saturating_sub(u32::try_from(k - 1).unwrap_or(u32::MAX)), kmax, true));
+        order.sort_by_key(|&k| pass_start.rank(kmax.saturating_sub(u32::try_from(k - 1).unwrap_or(u32::MAX)), kmax, true));
         for k in order {
             let rho = rc * (k as f64 / count as f64);
             let ring = ring_loop(h.xy, rho, p.climb);
