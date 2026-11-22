@@ -85,6 +85,28 @@ fn the_slot_passes_tab_locks_auto_and_names_the_continuous_pass() {
 }
 
 #[test]
+fn the_trochoidal_slot_passes_tab_locks_auto_and_explains_the_loop_order() {
+    let harness = passes_of(OpType::TrochoidalSlot);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let locked = harness
+        .query_all_by(|n| {
+            n.role() == Role::ComboBox && n.value().as_deref() == Some("Auto") && n.is_disabled()
+        })
+        .count();
+    assert_eq!(locked, 1, "Trochoidal Slot shows Auto and cannot pick an order");
+    let reason = harness
+        .query_all_by(|n| {
+            [n.label(), n.value()].into_iter().flatten().any(|text| {
+                text.contains("entry bore")
+                    && text.contains("advances along the slot")
+                    && text.contains("clearance from the previous cut")
+            })
+        })
+        .count();
+    assert_eq!(reason, 1, "the reason is visible without hovering");
+}
+
+#[test]
 fn the_adaptive_twin_has_no_pass_start_row_yet() {
     let harness = passes_of(OpType::Adaptive2D);
     assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 0, "2D Adaptive gets the row in its own issue");

@@ -80,6 +80,7 @@ mod params;
 mod hole_digest;
 mod slot_fit;
 mod trochoid_op;
+pub use trochoid_op::TROCHOIDAL_SLOT_NO_PASS_ORDER;
 mod stamp;
 mod stamp_tool;
 pub use stamp::*;
