@@ -9,9 +9,15 @@
 //! control (G43.4 / G49) as the post scripts already implement it; our
 //! own design notes only.
 //!
+//! #3477: a script that does not declare `uprightReturn = true` gets
+//! no such program. The engine refuses it by name, because no law makes
+//! a user's own script state the return.
+//!
 //! Gate map: covers assets/posts/fanuc.cps, assets/posts/doosan-dnm.cps,
-//! assets/posts/tormach.cps (the section opening after a tilted
-//! section), post::dump.
+//! assets/posts/tormach.cps, assets/posts/mach4.cps (the section opening
+//! after a tilted section), post::dump, post::upright_after_tilt.
+
+mod ac_trunnion_support;
 
 use camcraft_post::cl::{Move, MoveKind, Toolpath};
 use camcraft_post::geometry::Point3;
@@ -187,5 +193,81 @@ fn an_upright_program_after_an_upright_section_writes_no_return() {
         let out = run(stem, &r);
         assert!(out.warnings.is_empty(), "{stem}: {:?}", out.warnings);
         assert!(!out.program.lines().any(|l| word(l, 'A').is_some() || word(l, 'B').is_some()), "{stem}:\n{}", out.program);
+    }
+}
+
+/// Mach4 indexes an AC trunnion (3+2): the first section stands at one
+/// A angle. It already retracts and writes `G00 A0 C0` at the next
+/// upright section; this pins it (#3477, item 4).
+#[test]
+fn mach4_states_upright_after_an_indexed_section() {
+    let (s, c) = (30f64.to_radians().sin(), 30f64.to_radians().cos());
+    let lean = [0.0, -s, c];
+    let tilted = Toolpath::new(upright_path().moves.iter().map(|m| m.with_axis(lean)).collect());
+    for tool in [1, 2] {
+        let mut r = dump_of(&tilted, "Lean1", 1);
+        r.extend(dump_of(&upright_path(), "Flat2", tool));
+        let out = engine::run(&read("assets/posts/mach4.cps"), &ac_trunnion_support::review_trunnion(), &cnc::serialize(&r))
+            .expect("mach4 posts");
+        assert_returns("mach4", &out, 'A', &format!("tool {tool}"));
+    }
+}
+
+/// Each shipped post that writes tilted moves declares the return.
+#[test]
+fn each_shipped_rotary_post_declares_upright_after_tilt() {
+    for stem in ["fanuc", "doosan-dnm", "mach4", "tormach"] {
+        let cps = read(&format!("assets/posts/{stem}.cps"));
+        assert!(
+            cps.lines().any(|l| l.trim_start().starts_with("uprightReturn = true;")),
+            "{stem}.cps declares uprightReturn = true"
+        );
+    }
+}
+
+/// A user's copy of a shipped post without the declaration.
+fn undeclared(stem: &str) -> String {
+    read(&format!("assets/posts/{stem}.cps"))
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("uprightReturn"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn run_undeclared(stem: &str, r: &[cnc::Record]) -> engine::PostOutput {
+    engine::run_with(&undeclared(stem), &tilthead(), &cnc::serialize(r), &json!({ "rotaryBrake": true }))
+        .unwrap_or_else(|e| panic!("{stem}: the stream posts or refuses by warning: {e}"))
+}
+
+#[test]
+fn a_script_without_upright_after_tilt_is_refused_by_name() {
+    for stem in ["fanuc", "doosan-dnm"] {
+        for tool in [1, 2] {
+            let mut r = dump_of(&tilted_path(), "Lean1", 1);
+            r.extend(dump_of(&upright_path(), "Flat2", tool));
+            let out = run_undeclared(stem, &r);
+            assert!(
+                out.warnings.iter().any(|w| w.contains("uprightReturn") && w.contains("\"Flat2\"") && w.contains("\"Lean1\"")),
+                "{stem} (tool {tool}): the engine refuses the upright section by name: {:?}",
+                out.warnings
+            );
+        }
+    }
+}
+
+#[test]
+fn a_script_without_upright_after_tilt_posts_a_program_with_no_return_to_state() {
+    // No section opens upright after a tilted section: no refusal.
+    let tilted_then_tilted = [dump_of(&tilted_path(), "Lean1", 1), dump_of(&tilted_path(), "Lean2", 1)].concat();
+    let upright_then_tilted = [dump_of(&upright_path(), "Flat1", 1), dump_of(&tilted_path(), "Lean2", 1)].concat();
+    let upright_then_upright = [dump_of(&upright_path(), "Flat1", 1), dump_of(&upright_path(), "Flat2", 2)].concat();
+    for (case, r) in [
+        ("tilted only", dump_of(&tilted_path(), "Lean1", 1)),
+        ("tilted, tilted", tilted_then_tilted),
+        ("upright, tilted", upright_then_tilted),
+        ("upright, upright", upright_then_upright),
+    ] {
+        let out = run_undeclared("fanuc", &r);
+        assert!(!out.warnings.iter().any(|w| w.contains("uprightReturn")), "{case}: {:?}", out.warnings);
     }
 }

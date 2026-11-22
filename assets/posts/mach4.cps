@@ -15,6 +15,7 @@ afterModes = true;
 workOffsetIndex = true;
 workOffsetMax = 254;
 millSpindleReverse = true;
+uprightReturn = true; // #3477: a section after a tilted section retracts and indexes A/C to zero before its first X/Y traverse; pinned by upright_after_tilt.rs
 
 declaredOptions = {
   safeRetract: {

@@ -52,6 +52,7 @@ mod program;
 mod tool_change;
 pub mod rotary_cap;
 pub mod section_mode;
+mod upright_after_tilt;
 pub mod work_offset;
 pub mod units;
 pub mod wcs_flip;
