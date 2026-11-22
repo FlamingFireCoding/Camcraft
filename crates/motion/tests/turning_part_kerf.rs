@@ -118,7 +118,7 @@ fn the_issue_case_kerf_stands_behind_the_end_face() {
     let last_feed = t.moves.iter().rev().find(|m| m.kind != MoveKind::Rapid).expect("a feed");
     assert!(f.sr(last_feed.to).1.abs() < 1e-9, "the last rung severs on the axis");
     assert_eq!(part_kerf_refusal(&part, &t, W, -70.0, TOL), None, "the verdict passes it");
-    assert!(t.notes.iter().any(|n| n == CHUCK_NOTE), "the path says where it reads the chuck: {:?}", t.notes);
+    assert!(!t.notes.iter().any(|n| n == CHUCK_NOTE), "the plane is at the model's end: the model says what is kept: {:?}", t.notes);
     assert!(blade_warnings(&part, &t, W, TOL, 0.0).is_empty(), "the meridian scan stays silent");
 }
 
@@ -142,6 +142,7 @@ fn a_front_facing_allowance_never_turns_the_kerf_into_the_part() {
             );
         }
         assert_eq!(part_kerf_refusal(&part, &t, W, -70.0, TOL), None, "allowance {front}");
+        assert!(t.notes.iter().any(|n| n == CHUCK_NOTE), "the plane is inside the model: the path states the rule: {:?}", t.notes);
     }
 }
 
@@ -153,7 +154,7 @@ fn a_model_wholly_on_the_chuck_side_is_refused_by_name() {
     let f = Frame::about(&part).expect("upright");
     let err = part_in(&part, &params(70.0, 100.0, 84.0), bar(&part, 0.0, 84.0)).expect_err("no part past the plane");
     let msg = format!("{err:?}");
-    for want in ["stands wholly on the chuck side (-Z)", "Z0.000 to Z70.000", "parting plane Z70.000"] {
+    for want in ["stands wholly on the chuck side (lower Z)", "Z0.000 to Z70.000", "parting plane Z70.000"] {
         assert!(msg.contains(want), "the refusal names {want:?}: {msg}");
     }
     let why = part_kerf_refusal(&part, &plunge_at(&f, 68.5), W, 70.0, TOL).expect("refused");

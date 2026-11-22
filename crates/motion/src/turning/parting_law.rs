@@ -19,11 +19,18 @@ pub enum WasteSide {
     Above,
 }
 
-/// The note every part-off path carries while no setup names the
-/// spindle that holds the bar (#3452).
-pub const CHUCK_NOTE: &str = "part-off: the chuck is read on the -Z side of the parting plane (ISO 841 lathe Z, \
-     +Z away from the workholding) - the setup does not name the spindle that holds the bar; the whole kerf \
-     stands on that side and the part keeps everything above the plane";
+/// The note a part-off path carries where the side rule decides what
+/// is kept (#3452): the model goes on past the plane on both sides, so
+/// the model alone cannot say which piece is the part.
+pub const CHUCK_NOTE: &str = "part-off: the model goes on past the parting plane on both sides. The bar is \
+     taken as held on the chuck side (lower Z), so the piece above the plane is cut off as the part and the \
+     whole kerf stands below the plane";
+
+/// Does the side rule decide what is kept? Only where the model has
+/// length on both sides of the plane at `s` (more than `tol` each).
+pub fn rule_decides(d: (f64, f64), s: f64, tol: f64) -> bool {
+    s - d.0 > tol && d.1 - s > tol
+}
 
 /// The chuck side of a part-off. The scrap side is the side where the
 /// bar is HELD, never a guess from the model or the stock overhang (a
@@ -80,7 +87,7 @@ impl WasteSide {
 /// other side, which no setup can state yet).
 pub fn no_part_past_plane(f: &profile::Frame, d: (f64, f64), plane_z: f64) -> String {
     format!(
-        "nothing to part - the model (Z{:.3} to Z{:.3}) stands wholly on the chuck side (-Z) of the \
+        "nothing to part - the model (Z{:.3} to Z{:.3}) stands wholly on the chuck side (lower Z) of the \
          parting plane Z{plane_z:.3}; the part is what stands above the plane, away from the chuck",
         f.height_of(d.0),
         f.height_of(d.1),
@@ -147,7 +154,7 @@ pub fn part_kerf_refusal(facets: &[Triangle], path: &Toolpath, width: f64, parti
             return Some(format!(
                 "the part-off cuts into the finished part: move {i} puts the {width:.3} mm blade at \
                  Z{:.3} to Z{:.3}, {:.3} mm past the part's end face at Z{parting_z:.3} - the whole \
-                 kerf must stand on the chuck side (-Z) of that face",
+                 kerf must stand on the chuck side (lower Z) of that face",
                 f.height_of(lo),
                 f.height_of(hi),
                 ohi - olo,

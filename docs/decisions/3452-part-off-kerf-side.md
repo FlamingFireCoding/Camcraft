@@ -18,14 +18,33 @@ The issue's case (end face Z-70, 3 mm blade, orientation 2, bar to Z-84):
 With orientation 1 the same kerf posts Z-70 (its +Z flank, on the face).
 
 **The scrap side is the chuck side** (`motion::turning::parting_law::chuck_side`).
-It is the side where the bar is held. No setup or machine field states which
-spindle holds the bar (a search for a sub-spindle, a counter-spindle or a
-chuck side in the crates found none). So the side is ISO 841's lathe Z: +Z
-points away from the workholding, and the chuck is at -Z. Each part-off path
-carries a note that says so (`CHUCK_NOTE`). A part that is held from the +Z
-side cannot be stated yet. A plane with the whole model on the chuck side
-(the part would be the empty side) is refused by name. The kerf position
-parameter of #3469 is where another side will come from.
+It is the side where the bar is held. In a normal part-off the piece that
+falls off (the free end, away from the chuck) is the part, and the bar stays
+in the chuck. No setup or machine field states which spindle holds the bar
+(a search for a sub-spindle, a counter-spindle or a chuck side in the crates
+found none). So the side is ISO 841's lathe Z: +Z points away from the
+workholding, and the chuck is at -Z (lower Z) of the setup frame. A plane
+with the whole model on the chuck side (the part would be the empty side) is
+refused by name. The kerf position parameter of #3469 is where another side
+will come from.
+
+**A setup that holds the part end for end is refused** (second re-read of
+PR #3472). The setup's `part_alignment` is baked into the facets that the
+kernel reads, so the kernel works in the setup frame. In an OP20 flip setup
+the chuck at -Z holds the FINISHED part and the free end is the scrap: the
+chuck-side rule would cut into the part. Which piece to keep is the user's
+intent and cannot be stated yet, so `collect_job` refuses a Part op when
+`setup_align::reverses_axis` holds: the alignment turns the document +Z to a
+negative setup Z. That predicate catches any alignment that reverses the
+turning axis, not only the flip preset.
+
+**Where the rule decides, the path says so.** A plane at an end of the model
+needs no rule: the model is the part. A plane with model on both sides (a
+model that carries its grip stub) relies on the chuck-side rule, and only
+then the path carries `CHUCK_NOTE` in plain words: "the bar is taken as held
+on the chuck side (lower Z), so the piece above the plane is cut off as the
+part". The generation verdict cannot prove the user's intent in that case;
+it proves only that the kerf takes nothing above the plane.
 
 **The refusal "nothing to part"** tests the kerf against the BAR (the
 model's span widened by the stock's two ends; `StockEnv` gets `s_bot` for
@@ -65,6 +84,9 @@ is the chuck's, never inferred; the verdict reads it on its own.
 - Infer the scrap side from the model ends or the stock overhang: a facing
   allowance or a grip stub in the model turns such a guess (any threshold
   fails at some size).
+- In a flipped setup, part toward +Z (keep the held piece): the setup does
+  not say whether the held piece is the part or a bar that runs on, so the
+  side would again be a guess. Refused until #3469 states it.
 - A warning in place of a refusal: a gouge of the finished part must block
   the post (Prime Directive).
 - A user parameter for the kerf position or the chuck side (a facing

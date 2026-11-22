@@ -7,7 +7,7 @@ use crate::machining2d::GenError;
 use super::blade::{plunge, rung, PartParams, MAX_RUNGS};
 use super::profile;
 use super::revolve;
-use super::parting_law::{bar_span, chuck_side, no_part_past_plane, CHUCK_NOTE};
+use super::parting_law::{bar_span, chuck_side, no_part_past_plane, rule_decides, CHUCK_NOTE};
 use super::stock::StockEnv;
 
 /// Parting: one center beside the parting plane (#3452: the plane is
@@ -135,6 +135,8 @@ pub fn part_in(facets: &[Triangle], p: &PartParams, stock: Option<StockEnv>) -> 
         None,
     );
     let mut path = b.finish();
-    path.notes.push(CHUCK_NOTE.into());
+    if rule_decides((d_lo, d_hi), s_p, p.tolerance) {
+        path.notes.push(CHUCK_NOTE.into());
+    }
     Ok(path)
 }

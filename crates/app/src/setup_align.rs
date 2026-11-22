@@ -62,6 +62,15 @@ pub fn alignment(world: &World, declared: Option<&str>) -> Option<Location> {
     crate::setup::effective(world, declared).and_then(|s| stored(world, &s))
 }
 
+/// Does the alignment turn the part end for end (#3452)? The document
+/// +Z, rotated by it, points to a negative setup Z: whatever stood at
+/// the free end now stands toward the chuck. Any alignment that
+/// reverses the turning axis counts, not only the flip preset.
+#[must_use]
+pub fn reverses_axis(a: Option<Location>) -> bool {
+    a.is_some_and(|a| quat_rotate_point(a.rot, Point3::new(0.0, 0.0, 1.0)).z < 0.0)
+}
+
 /// Does any setup of the document hold the part aligned?
 #[must_use]
 pub fn any_aligned(world: &World) -> bool {

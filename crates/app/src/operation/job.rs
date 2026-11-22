@@ -195,6 +195,19 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
     if let Some(why) = crate::setup_align::generation_problem(world, op) {
         return Err(GenError::Invalid(why));
     }
+    // #3452: a part-off keeps the piece at the free end and cuts on the
+    // chuck side. A setup that holds the part end for end puts the
+    // finished part in the chuck, so that rule would cut into it: the
+    // side cannot be chosen yet, so the part-off is refused by name.
+    if matches!(op.params, OpParams::Part { .. }) && crate::setup_align::reverses_axis(crate::setup_align::alignment(world, setup)) {
+        return Err(GenError::Invalid(
+            "a part-off cannot run in this setup: the setup holds the part end for end, so the chuck holds \
+             the finished part and the free end is the piece the blade would cut off as the part. The side \
+             to keep cannot be chosen yet - part off in a setup that holds the bar as modelled, or face the \
+             free end to length instead"
+                .into(),
+        ));
+    }
     // #1510: a milling WCS whose Z is tilted off the machine's would
     // cut the part as it lies, not as the WCS shows - refused by name.
     if let Some(why) = crate::setup_wcs_tilt::generation_problem(world, op) {

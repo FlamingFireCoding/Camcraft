@@ -15,7 +15,8 @@ use flecs_ecs::prelude::World;
 
 use camcraft_app::cl::MoveKind;
 use camcraft_app::commands::{
-    AddTool, ChangeTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SetStock,
+    AddTool, AlignPartToSetup, ChangeTool, CreateOperation, CreateSetup, GenerateOperation, History, ImportModel,
+    LoadMachine, SetStock,
 };
 use camcraft_app::geometry::{Mesh, Point3, Triangle};
 use camcraft_app::machine::{Coolant, Machine};
@@ -34,6 +35,11 @@ const W: f64 = 3.0;
 /// The issue's pin: Ø30, Z-70..0, a 1 x 45° chamfer at the back face.
 const PIN: [(f64, f64); 5] = [(0.0, -70.0), (14.0, -70.0), (15.0, -69.0), (15.0, 0.0), (0.0, 0.0)];
 const END_FACE: f64 = -70.0;
+/// The pin with its grip stub in the model: Z-84..0, the part Z-70..0.
+const STUBBED: [(f64, f64); 4] = [(0.0, -84.0), (15.0, -84.0), (15.0, 0.0), (0.0, 0.0)];
+/// The OP20 end-for-end flip preset (180 degrees about X; the angles
+/// `setup_align_lathe.rs` pins).
+const FLIP: [f64; 3] = [180.0, 0.0, 90.0];
 
 fn revolve(meridian: &[(f64, f64)], segs: usize) -> Mesh {
     let v = |j: usize, r: f64, z: f64| {
@@ -58,12 +64,13 @@ fn revolve(meridian: &[(f64, f64)], segs: usize) -> Mesh {
     Mesh::from_facets(facets)
 }
 
-fn pin_world(corner: Option<u8>) -> (World, History) {
+/// The lathe, the Ø34 bar Z-84..0, the GT-0300 blade on `corner`, the
+/// model `meridian` as "pin", and - with `flip` - one setup that holds
+/// the part end for end (the OP20 flip preset). The Part op "P1" at
+/// `plane` is created, not generated.
+fn lathe_world(meridian: &[(f64, f64)], corner: Option<u8>, flip: bool, plane: f64) -> (World, History) {
     let world = new_world();
     let mut history = History::default();
-    let at = Location { pos: Point3::new(0.0, 0.0, -84.0), ..Location::default() };
-    let cmd = SetStock::new(&world, camcraft_app::stock::StockShape::Cylinder { diameter: 34.0, height: 84.0 }, at);
-    history.execute(&world, cmd.expect("bar stock"));
     let lathe = Machine {
         model: "TestBench lathe".into(),
         kind: Some("lathe".into()),
@@ -77,12 +84,21 @@ fn pin_world(corner: Option<u8>) -> (World, History) {
     history.execute(&world, AddTool::new(&world, GT, blade.clone()).expect("blade"));
     blade.orientation = corner;
     history.execute(&world, ChangeTool::new(&world, GT, blade).expect("a sane corner"));
-    history.execute(&world, ImportModel::from_mesh("pin", revolve(&PIN, 32)));
+    history.execute(&world, ImportModel::from_mesh("pin", revolve(meridian, 32)));
+    if flip {
+        history.execute(&world, CreateSetup::new(&world, None, None).expect("Setup1"));
+        history.execute(&world, AlignPartToSetup::angles(&world, "Setup1", FLIP).expect("flip"));
+    }
+    let at = Location { pos: Point3::new(0.0, 0.0, -84.0), ..Location::default() };
+    let cmd = SetStock::new(&world, camcraft_app::stock::StockShape::Cylinder { diameter: 34.0, height: 84.0 }, at);
+    history.execute(&world, cmd.expect("bar stock"));
     let part = OpParams::Part {
         tolerance: 0.05,
         clearance_z: Height::fixed(10.0),
-        top_z: Height::fixed(0.0),
-        bottom_z: Height::fixed(END_FACE),
+        // The top only has to stand over the plane (the kernel reads it
+        // as a number only).
+        top_z: Height::fixed(if plane < 0.0 { 0.0 } else { plane + 5.0 }),
+        bottom_z: Height::fixed(plane),
         stepdown: 2.0,
         feed: 120.0,
         plunge_feed: 60.0,
@@ -94,10 +110,22 @@ fn pin_world(corner: Option<u8>) -> (World, History) {
     };
     let cmd = CreateOperation::new(&world, "P1", GT, SrcRef::Entity("pin".into()), part).expect("create");
     history.execute(&world, cmd);
+    (world, history)
+}
+
+fn pin_world(corner: Option<u8>) -> (World, History) {
+    let (world, mut history) = lathe_world(&PIN, corner, false, END_FACE);
     history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate"));
     let e = model::find_by_name(&world, "P1").expect("op");
     assert_eq!(operation::status_of(&world, &e), OpStatus::Ok, "the part-off generates");
     (world, history)
+}
+
+/// The generation refusal of "P1", or a panic if it generated.
+fn refusal(world: &World) -> String {
+    let e = model::find_by_name(world, "P1").expect("op");
+    let op = model::operation_of(world, &e).expect("operation");
+    operation::generate(world, &op, "P1").map(|_| ()).expect_err("the part-off is refused").to_string()
 }
 
 /// The posted feed moves' Z (the corner the blade was touched off on).
@@ -142,4 +170,32 @@ fn the_plus_z_corner_posts_the_end_face_itself() {
     let zs = posted_feed_z(&world);
     assert!(!zs.is_empty());
     assert!(zs.iter().all(|z| (z - END_FACE).abs() < 1e-6), "the +Z corner posts Z-70: {zs:?}");
+}
+
+#[test]
+fn a_flipped_setup_refuses_the_part_off_by_name() {
+    // The stubbed pin flipped end for end: the finished part (Z-84..-14
+    // in the setup) is in the chuck, the stub at the free end. The chuck
+    // side rule would put the kerf Z-17..-14 into the part, so the
+    // part-off is refused before a move exists.
+    let (world, _h) = lathe_world(&STUBBED, Some(2), true, -14.0);
+    let why = refusal(&world);
+    for want in ["cannot run in this setup", "holds the part end for end", "the chuck holds the finished part"] {
+        assert!(why.contains(want), "the refusal names {want:?}: {why}");
+    }
+    // A part-only model in the flipped setup is refused the same way.
+    let (world, _h) = lathe_world(&PIN, Some(2), true, 0.0);
+    assert!(refusal(&world).contains("holds the part end for end"));
+}
+
+#[test]
+fn a_setup_as_modelled_parts_the_stubbed_pin_behind_the_end_face() {
+    // The same stubbed pin, held as modelled, plane at the part's end
+    // face Z-70 inside the model: the kerf is Z-73..-70.
+    let (world, mut history) = lathe_world(&STUBBED, Some(2), false, END_FACE);
+    history.execute(&world, GenerateOperation::new(&world, "P1").expect("generate"));
+    let e = model::find_by_name(&world, "P1").expect("op");
+    assert_eq!(operation::status_of(&world, &e), OpStatus::Ok, "the part-off generates");
+    let zs = posted_feed_z(&world);
+    assert!(!zs.is_empty() && zs.iter().all(|z| (z + 73.0).abs() < 1e-6), "the -Z corner posts Z-73: {zs:?}");
 }
