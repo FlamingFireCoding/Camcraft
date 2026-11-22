@@ -8065,3 +8065,28 @@ fn finish3d_waterlines_off_refuses_all_steep_and_ring_only_patterns_in_app() {
     assert!(tp.path.moves.iter().filter(|m| m.kind == camcraft_app::cl::MoveKind::Feed).all(|m| m.from.z >= 9.5 && m.to.z >= 9.5));
     assert!(tp.path.notes.iter().any(|n| n.starts_with(camcraft_app::finishing3d::WATERLINES_OFF_NOTE)));
 }
+
+#[test]
+fn finish3d_waterlines_flag_changes_op_stamp_directly() {
+    let world = new_world();
+    let mut history = History::default();
+    box_stock(&world, &mut history, 40.0, 40.0, 12.0);
+    add_tool(&world, &mut history, "BN-0600");
+
+    let p_on = finish_params(10.0, 0.0, 0.1);
+    let mut p_off = p_on.clone();
+    if let OpParams::Finish3D { waterlines, .. } = &mut p_off {
+        *waterlines = false;
+    }
+
+    history.execute(&world, CreateOperation::new(&world, "FOn", "BN-0600", SrcRef::Stock, p_on).expect("on"));
+    history.execute(&world, CreateOperation::new(&world, "FOff", "BN-0600", SrcRef::Stock, p_off).expect("off"));
+    let op_on = model::operation_of(&world, &model::find_by_name(&world, "FOn").expect("FOn")).expect("op on");
+    let op_off = model::operation_of(&world, &model::find_by_name(&world, "FOff").expect("FOff")).expect("op off");
+
+    assert_ne!(
+        operation::op_stamp(&world, &op_on, "F3"),
+        operation::op_stamp(&world, &op_off, "F3"),
+        "waterlines: false must alter op_stamp directly"
+    );
+}

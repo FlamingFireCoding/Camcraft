@@ -4002,6 +4002,94 @@ fn finish3d_waterlines_radio_consequence_apply_undo_and_status_note() {
 }
 
 #[test]
+fn finish3d_waterlines_pattern_switch_resets_and_stays_visible_when_off() {
+    use camcraft_app::commands::{GenerateOperation, ImportModel, SetStock};
+    use camcraft_app::finishing3d::FinishPattern;
+    use camcraft_app::geometry::{Point3, cube};
+    use camcraft_app::schema::Location;
+    use camcraft_app::stock::StockShape;
+
+    let mut harness = shell_harness();
+    {
+        let st = &mut harness.state_mut().state;
+        rack(st, &["BN-0600"]);
+        let prism = cube(Point3::new(-10.0, -10.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        st.history.execute(&st.world, ImportModel::from_mesh("Prism", prism));
+        st.history.execute(
+            &st.world,
+            SetStock::new(&st.world, StockShape::Box { dx: 40.0, dy: 40.0, dz: 12.0 }, Location::default())
+                .expect("stock"),
+        );
+        crate::actions::add_operation(st, camcraft_app::operation::OpType::Finish3D as usize);
+        if let OpParams::Finish3D { top_z, bottom_z, tolerance, .. } = &mut st.op_ui.params {
+            *top_z = Height::fixed(10.0);
+            *bottom_z = Height::fixed(0.0);
+            *tolerance = 0.1;
+        }
+        st.op_tab = 2; // Passes
+    }
+    harness.run_steps(2);
+
+    for (target_pat, pat_label) in [
+        (FinishPattern::Blend, "Blend"),
+        (FinishPattern::Morph, "Morph"),
+        (FinishPattern::Waterline, "Waterline"),
+    ] {
+        // Set Parallel + Leave uncut first.
+        if let OpParams::Finish3D { pattern, waterlines, .. } = &mut harness.state_mut().state.op_ui.params {
+            *pattern = FinishPattern::Parallel;
+            *waterlines = true;
+        }
+        harness.run();
+        harness.get_by_label("Leave uncut").scroll_to_me();
+        harness.run();
+        harness.get_by_label("Leave uncut").click();
+        harness.run();
+        assert!(matches!(harness.state().state.op_ui.params, OpParams::Finish3D { waterlines: false, .. }));
+
+        harness.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Parallel")).scroll_to_me();
+        harness.run();
+        harness.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Parallel")).click();
+        harness.run_steps(2);
+        harness.get_by_label(pat_label).scroll_to_me();
+        harness.run();
+        harness.get_by_label(pat_label).click();
+        harness.run_steps(2);
+        let draft = match &harness.state().state.op_ui.params {
+            OpParams::Finish3D { pattern, waterlines, .. } => (*pattern, *waterlines),
+            _ => panic!("kind drift"),
+        };
+        assert_eq!(draft, (target_pat, true), "switching to {pat_label} resets waterlines to true");
+    }
+
+    // Apply & Generate on Waterline works without refusal.
+    harness.get_by_label("Apply").scroll_to_me();
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
+    {
+        let st = &mut harness.state_mut().state;
+        let cmd = GenerateOperation::new(&st.world, "3D Finish1").expect("generate Waterline after reset");
+        st.history.execute(&st.world, cmd);
+    }
+
+    // Even if Waterline or Blend enters with waterlines: false, Steep flanks stays visible so the user can re-enable Waterlines.
+    for pat in [FinishPattern::Waterline, FinishPattern::Blend, FinishPattern::Morph] {
+        if let OpParams::Finish3D { pattern, waterlines, .. } = &mut harness.state_mut().state.op_ui.params {
+            *pattern = pat;
+            *waterlines = false;
+        }
+        harness.run();
+        assert!(harness.query_by_label("Steep flanks").is_some(), "{pat:?} with waterlines=false must show Steep flanks");
+        harness.get_by_label("Waterlines").scroll_to_me();
+        harness.run();
+        harness.get_by_label("Waterlines").click();
+        harness.run();
+        assert!(matches!(harness.state().state.op_ui.params, OpParams::Finish3D { waterlines: true, .. }));
+    }
+}
+
+#[test]
 fn detect_holes_refuses_recognizes_and_undo_empties_again() {
     let mut harness = shell_harness();
     rack(&mut harness.state_mut().state, &["DR-0400"]);
