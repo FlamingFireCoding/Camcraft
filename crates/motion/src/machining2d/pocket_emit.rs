@@ -110,6 +110,10 @@ pub(super) fn emit_pocket_passes(
         Some(e) => Cert::Stadium { a: e.seed, b: e.seed, h: e.clear, tess: &e.tess },
         None => Cert::Region(center),
     };
+    // #3249: a relief that gets no spur is named in a note, not dropped
+    // silently. The closure may run again on a crossing-free retry, so the
+    // misses go through a RefCell and are de-duplicated by corner.
+    let relief_misses = std::cell::RefCell::new(Vec::<Point2>::new());
     let post = |b: &mut PathBuilder, runs: Option<&[Vec<Seg>]>| {
         if corner_reliefs.is_empty() {
             run_level_walks(
@@ -124,7 +128,7 @@ pub(super) fn emit_pocket_passes(
         } else {
             let mut passes_r = passes.clone();
             let mut runs_r = runs.map(<[Vec<Seg>]>::to_vec);
-            inject_relief_spurs(&mut passes_r, &mut runs_r, center, corner_reliefs);
+            inject_relief_spurs(&mut passes_r, &mut runs_r, center, corner_reliefs, &mut relief_misses.borrow_mut());
             run_level_walks(
                 b,
                 &passes_r,
@@ -181,6 +185,17 @@ pub(super) fn emit_pocket_passes(
             b.finish()
         }
     };
+    let mut seen_misses = Vec::<Point2>::new();
+    for m in relief_misses.into_inner() {
+        if seen_misses.contains(&m) {
+            continue;
+        }
+        seen_misses.push(m);
+        path.notes.push(format!(
+            "corner relief at ({:.3}, {:.3}) is not cut: no pass vertex reaches the relief spur",
+            m.x, m.y
+        ));
+    }
     if let Some(n) = proof.note() {
         path.notes.push(n);
     }

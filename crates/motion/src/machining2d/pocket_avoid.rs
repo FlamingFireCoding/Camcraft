@@ -5,7 +5,7 @@
 use camcraft_sim::verify::{AVOID_PAD, AvoidSpec};
 
 use crate::cl::{MoveKind, PathBuilder, Toolpath};
-use crate::geo2d::Region;
+use crate::geo2d::{Point2, Region};
 use crate::geometry::Point3;
 
 use super::arcs::{ARC_FIT_TOL, Seg, fit_arcs};
@@ -68,6 +68,8 @@ pub fn pocket_avoid_with_relief(
     let mut prev_center: Option<Region> = None;
     let mut blocked_levels: Vec<f64> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
+    // #3249: a relief that gets no spur is noted once, not once per level.
+    let mut noted_relief_misses: Vec<Point2> = Vec::new();
     let mut tally = FilletTally::default();
 
     for &z in &zs {
@@ -167,7 +169,18 @@ pub fn pocket_avoid_with_relief(
             fit.map(|tol| passes.iter().map(|ps| fit_arcs(ps, tol)).collect())
         };
         if !relief_plan.reliefs.is_empty() {
-            inject_relief_spurs(&mut passes, &mut runs, &level_center, &relief_plan.reliefs);
+            let mut misses = Vec::new();
+            inject_relief_spurs(&mut passes, &mut runs, &level_center, &relief_plan.reliefs, &mut misses);
+            for m in misses {
+                if noted_relief_misses.contains(&m) {
+                    continue;
+                }
+                noted_relief_misses.push(m);
+                b.note(format!(
+                    "corner relief at ({:.3}, {:.3}) is not cut: no pass vertex reaches the relief spur",
+                    m.x, m.y
+                ));
+            }
         }
         let hr = room.as_ref().map_or(p.helix_radius, |rm| p.helix_radius.min(rm.helix_r));
         let level_motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed)
