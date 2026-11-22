@@ -173,6 +173,107 @@ fn rotate_about_b_flattens_arcs_within_the_chord_tolerance() {
 }
 
 #[test]
+fn rotate_about_a_refuses_an_arc_beyond_the_chord_budget() {
+    let m = Move::new(
+        MoveKind::Feed,
+        p(1000.0, 0.0, 0.0),
+        p(-1000.0, 0.0, 0.0),
+        Some(400.0),
+    )
+    .with_arc(Point2::new(0.0, 0.0), true);
+    let src = Toolpath::new(vec![m]);
+    assert_eq!(
+        rotate_about_axis(&src, RotaryAxis::A, p(0.0, 0.0, 0.0), 90.0, 0.0001),
+        Err(TransformError::ArcChordTolerance)
+    );
+    // At a looser tolerance the capped sampler is sufficient. Measure
+    // actual chord midpoints, which lie inside the original circle.
+    let tol = 0.002;
+    let out =
+        rotate_about_axis(&src, RotaryAxis::A, p(0.0, 0.0, 0.0), 90.0, tol).expect("budget fits");
+    assert!(!out.moves.is_empty() && !out.has_arcs());
+    let mut max_error: f64 = 0.0;
+    for m in &out.moves {
+        let x = (m.from.x + m.to.x) * 0.5;
+        let z = (m.from.z + m.to.z) * 0.5;
+        max_error = max_error.max((1000.0 - x.hypot(z)).abs());
+    }
+    assert!(
+        max_error > 0.001,
+        "the pin measures sagitta, not just endpoints"
+    );
+    assert!(
+        max_error <= tol,
+        "chord midpoint error {max_error} exceeds {tol}"
+    );
+}
+
+#[test]
+fn rotate_about_b_bounds_arc_midpoints_in_each_plane() {
+    use crate::cl::ArcPlane;
+    let tol = 0.001;
+    let (s, c) = 30f64.to_radians().sin_cos();
+    let turn = |q: Point3| p(q.x * c + q.z * s, q.y, -q.x * s + q.z * c);
+    for plane in [ArcPlane::Xy, ArcPlane::Xz, ArcPlane::Yz] {
+        for (radius_end, ccw) in [(10.0, true), (12.0, true), (12.0, false)] {
+            let direction = if ccw { 1.0 } else { -1.0 };
+            let m = Move::new(
+                MoveKind::Feed,
+                plane.point(10.0, 0.0, 0.0),
+                plane.point(0.0, direction * radius_end, 2.0),
+                Some(400.0),
+            )
+            .with_arc_in(Point2::new(0.0, 0.0), ccw, plane);
+            let src = Toolpath::new(vec![m]);
+            let out = rotate_about_axis(&src, RotaryAxis::B, p(0.0, 0.0, 0.0), 30.0, tol)
+                .expect("budget fits");
+            assert!(!out.moves.is_empty() && !out.has_arcs() && out.is_chained());
+            let count = out.moves.len() as f64;
+            for (i, chord) in out.moves.iter().enumerate() {
+                let f = (i as f64 + 0.5) / count;
+                let angle = direction * std::f64::consts::FRAC_PI_2 * f;
+                let radius = 10.0 + (radius_end - 10.0) * f;
+                let exact = turn(plane.point(radius * angle.cos(), radius * angle.sin(), 2.0 * f));
+                let midpoint = p(
+                    (chord.from.x + chord.to.x) * 0.5,
+                    (chord.from.y + chord.to.y) * 0.5,
+                    (chord.from.z + chord.to.z) * 0.5,
+                );
+                let error = (midpoint.x - exact.x)
+                    .hypot(midpoint.y - exact.y)
+                    .hypot(midpoint.z - exact.z);
+                assert!(
+                    error <= tol,
+                    "{plane:?}, radius {radius_end}, ccw {ccw}: {error} > {tol}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn rotate_about_a_refuses_rounding_beyond_the_chord_tolerance() {
+    let offset = 0.00000049;
+    let m = Move::new(
+        MoveKind::Feed,
+        p(0.0001 + offset, offset, 0.0),
+        p(-0.0001 + offset, offset, 0.0),
+        Some(400.0),
+    )
+    .with_arc(Point2::new(offset, offset), true);
+    assert_eq!(
+        rotate_about_axis(
+            &Toolpath::new(vec![m]),
+            RotaryAxis::A,
+            p(0.0, 0.0, 0.0),
+            90.0,
+            0.0000001
+        ),
+        Err(TransformError::ArcChordTolerance)
+    );
+}
+
+#[test]
 fn rotate_about_an_axis_by_zero_is_the_identity() {
     let src = contour();
     let out = rotate_about_axis(&src, RotaryAxis::A, p(3.0, 3.0, 3.0), 360.0, 0.01).expect("identity");

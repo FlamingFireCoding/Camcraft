@@ -60,6 +60,8 @@ pub enum TransformError {
     VerticalArc,
     /// A canned drilling cycle turned off the Z axis.
     CannedCycleTilt,
+    /// Arc subdivision and coordinate rounding cannot meet `chord_tol`.
+    ArcChordTolerance,
     /// A mirror plane that flips Z.
     HorizontalMirrorPlane,
     /// A mirror plane that is neither vertical nor horizontal.
@@ -80,6 +82,7 @@ impl fmt::Display for TransformError {
             TransformError::PlasmaCut => "a plasma cut's kerf side and torch spans do not follow a mirror or a tilt",
             TransformError::VerticalArc => "an XZ / YZ arc does not keep its plane under this transform",
             TransformError::CannedCycleTilt => "a canned drilling cycle cannot turn off the Z axis",
+            TransformError::ArcChordTolerance => "the arc subdivision limit or coordinate rounding cannot meet the chord tolerance",
             TransformError::HorizontalMirrorPlane => {
                 "a horizontal mirror plane flips Z: the tool would stand on the wrong side of its tip"
             }

@@ -46,6 +46,14 @@ map stays on the lattice bit for bit.
   refused by name.
 - Every transform refuses thread cycles, probe touches and C-axis moves,
   and a non-finite input or result.
+- Review #3308: rotary arc transforms retain the bounded 1,024-chord
+  sampler. They sample at half the requested tolerance, then check the
+  curve error bound for the actual count and the endpoint rounding error.
+  `ArcChordTolerance` refuses a result that cannot meet `chord_tol`.
+  Circular arcs use their sagitta. Radius ramps use the sampler's second
+  derivative bound. This keeps the work bounded and includes coordinate
+  rounding in the requested tolerance. Increasing the sampler budget was
+  dropped because a named refusal meets the contract without more work.
 
 **Why.** The issue asks for a pure module shared by patterns, mirror
 folders and nesting (#2166). One matrix rule is easier to prove than four

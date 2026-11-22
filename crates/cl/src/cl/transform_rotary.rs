@@ -15,8 +15,9 @@
 
 use crate::geometry::Point3;
 
+use super::super::moves::{ArcMove, Move};
 use super::super::path::Toolpath;
-use super::{checked, map_breaks, map_path, refuse_records, sin_cos_deg, Rigid, TransformError};
+use super::{Rigid, TransformError, checked, map_breaks, map_path, refuse_records, sin_cos_deg};
 
 /// The rotary axis to turn about: A turns about X, B about Y.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,7 +29,8 @@ pub enum RotaryAxis {
 /// Turn the path by `angle_deg` about the `axis` line through `origin`.
 /// A whole turn is the identity and keeps every record; any other angle
 /// flattens the arcs at `chord_tol` (mm, positive) and states the
-/// turned tool axis on each move.
+/// turned tool axis on each move. Refuses an arc when the bounded
+/// subdivision or coordinate rounding cannot meet that tolerance.
 pub fn rotate_about_axis(
     tp: &Toolpath,
     axis: RotaryAxis,
@@ -61,11 +63,14 @@ pub fn rotate_about_axis(
     }
     let mut moves = Vec::with_capacity(tp.moves.len());
     for m in &tp.moves {
-        if m.arc.is_none() {
+        let Some(arc) = m.arc else {
             moves.push(r.straight(m, m.from, m.to)?);
             continue;
-        }
-        let chords = m.segments3(chord_tol);
+        };
+        // Leave room for coordinate rounding. The sampler caps its count,
+        // so its requested tolerance alone does not prove its actual error.
+        let chords = m.segments3(chord_tol * 0.5);
+        let curve_error = chord_error_bound(m, arc, chords.len());
         let last = chords.len().saturating_sub(1);
         for (i, (a, b)) in chords.into_iter().enumerate() {
             // The run's own endpoints, never a re-derived Z: the chain
@@ -73,6 +78,13 @@ pub fn rotate_about_axis(
             let a = if i == 0 { m.from } else { a };
             let b = if i == last { m.to } else { b };
             let chord = r.straight(m, a, b)?;
+            // Rotation preserves the curve error. Linear interpolation of
+            // rounded endpoints adds at most their largest displacement.
+            let rounding = distance(r.raw(a), chord.from).max(distance(r.raw(b), chord.to));
+            let error = curve_error + rounding;
+            if !error.is_finite() || error > chord_tol {
+                return Err(TransformError::ArcChordTolerance);
+            }
             if chord.from != chord.to {
                 moves.push(chord);
             }
@@ -89,3 +101,30 @@ pub fn rotate_about_axis(
     checked(Toolpath { moves, notes, breaks, ..Toolpath::default() })
 }
 
+fn distance(a: Point3, b: Point3) -> f64 {
+    (a.x - b.x).hypot(a.y - b.y).hypot(a.z - b.z)
+}
+
+/// The same circular/radius-ramp curve that `Move::segments3` samples.
+/// The normal coordinate is linear, so it contributes no chord error.
+fn chord_error_bound(m: &Move, arc: ArcMove, count: usize) -> f64 {
+    let (au, av, _) = arc.plane.uvw(m.from);
+    let (bu, bv, _) = arc.plane.uvw(m.to);
+    let (cu, cv) = arc.plane.center_uv(arc.center);
+    let ra = (au - cu).hypot(av - cv);
+    let rb = (bu - cu).hypot(bv - cv);
+    let start = (av - cv).atan2(au - cu);
+    let end = (bv - cv).atan2(bu - cu);
+    let sweep = if arc.ccw { end - start } else { start - end }.rem_euclid(std::f64::consts::TAU);
+    // Treat a shared ray conservatively as a full turn, including when
+    // the sampler falls back to a single chord for degenerate input.
+    let sweep = if sweep == 0.0 { std::f64::consts::TAU } else { sweep };
+    let step = sweep / count.max(1) as f64;
+    if ra == rb {
+        let s = (step * 0.25).sin();
+        ra * (2.0 * s * s)
+    } else {
+        // For radius linear in angle: |p''| <= hypot(r, 2*|dr/dtheta|).
+        ra.max(rb).hypot(2.0 * (rb - ra).abs() / sweep) * step * step / 8.0
+    }
+}
