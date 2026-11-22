@@ -155,7 +155,12 @@ fn laid_bar_on(rig: Rig, clearance: f64) -> Result<(World, OpStatus, Vec<Warning
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
     };
-    let (status, warns) = generate(&world, &mut h, "bar", p);
+    h.execute(&world, CreateOperation::new(&world, "OP", BALL, SrcRef::Entity("bar".into()), p).expect("create"));
+    let cmd = GenerateOperation::new(&world, "OP").map_err(|e| format!("{e:?}"))?;
+    h.execute(&world, cmd);
+    let e = model::find_by_name(&world, "OP").expect("op");
+    let cached = model::toolpath_of(&world, &e).ok_or_else(|| format!("no path: {:?}", camcraft_app::operation::status_of(&world, &e)))?;
+    let (status, warns) = (camcraft_app::operation::status_of(&world, &e), cached.warnings.clone());
     Ok((world, status, warns))
 }
 
