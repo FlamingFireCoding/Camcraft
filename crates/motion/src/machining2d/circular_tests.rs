@@ -1,5 +1,6 @@
-//! Unit pins of the Circular kernel (split from `circular.rs`, #2898):
-//! the vault ladder, the ring chord count and the ring walk.
+//! Tests of the Circular kernel's private ring helpers (`circular.rs`),
+//! moved out of that file by #3109 to keep it under the 400-line law.
+//! Provenance: our own fixtures; no vendor material.
 
 use super::*;
 
@@ -30,11 +31,26 @@ fn ring_chords_are_sized_by_the_tolerance() {
         assert!(sag(n) <= ARC_FIT_TOL, "rho {rho}: {n} chords sag {}", sag(n));
         assert!(n == 8 || sag(n / 2) > ARC_FIT_TOL, "rho {rho}: {n} is not the fewest");
         assert!(n.is_power_of_two() && RING_MAX_CHORDS.is_multiple_of(n));
-        let ring = ring_loop(Point2::new(0.0, 0.0), rho, true);
+        let ring = ring_loop(Point2::new(0.0, 0.0), rho, true, 0);
         assert_eq!(ring.len(), n + 1, "closed");
     }
     assert_eq!(ring_chords(1.0, ARC_FIT_TOL), 32, "R1 (the issue's ring): 32, not 512");
     assert_eq!(ring_chords(f64::NAN, ARC_FIT_TOL), RING_MAX_CHORDS);
+}
+
+/// #3109: a phase turns the polygon's start to vertex `phase` and keeps
+/// every vertex of the unturned polygon - the same ring, a new seam.
+#[test]
+fn a_phase_turns_the_ring_start_only() {
+    let c = Point2::new(1.0, 2.0);
+    let base = ring_loop(c, 3.0, false, 0);
+    let n = base.len() - 1;
+    let turned = ring_loop(c, 3.0, false, n / 4);
+    assert_eq!(turned.len(), n + 1);
+    assert_eq!(turned.first(), turned.last(), "closed");
+    let same = |a: Point2, b: Point2| (a.x - b.x).hypot(a.y - b.y) < 1e-9;
+    assert!(same(turned[0], base[n / 4]), "starts at vertex n/4");
+    assert!(turned.iter().all(|&q| base.iter().any(|&p| same(p, q))), "the same vertices");
 }
 
 /// #1558 review: ring ramps are the circular kernel's opt-in; every
@@ -53,7 +69,7 @@ fn ring_ramps_are_opt_in() {
 fn a_sub_resolution_ring_walks_its_polygon() {
     let c = Point2::new(1.0, 2.0);
     for (rho, arcs) in [(0.004, false), (0.0005, false), (0.006, true), (1.0, true)] {
-        let walk = ring_walk(c, &ring_loop(c, rho, true), true);
+        let walk = ring_walk(c, &ring_loop(c, rho, true, 0), true);
         assert_eq!(walk.iter().all(|s| matches!(s, Seg::Arc { .. })), arcs, "rho {rho}");
     }
 }

@@ -41,6 +41,7 @@ use crate::links::{Link, Links};
 use crate::ring_zig::MIN_ARC_CHORD;
 
 use super::arcs::{ARC_FIT_TOL, Seg};
+use super::circular_helix::{Descents, descents, ring_phase};
 use super::face::GenError;
 use super::levels::{Cert, Motion, cut_levels, run_level_walks};
 
@@ -175,15 +176,17 @@ pub(crate) fn ring_chords(rho: f64, tol: f64) -> usize {
 }
 
 /// The ring's closed circle as a polygon of [`ring_chords`] chords,
-/// CCW for climb, the start pushed once more so the circuit joins
+/// CCW for climb, starting at vertex `phase` (#3109: a later ring's
+/// helix starts clear of earlier ones; 0 is the +X vertex), the
+/// start pushed once more so the circuit joins
 /// (trace's closure law - an unclosed ring would leave its own width
 /// uncut at the seam). The polygon is what the descents (the ramp
 /// along the first cut, the links) walk; the cut itself rides
 /// [`ring_walk`]'s true arcs.
-fn ring_loop(center: Point2, rho: f64, climb: bool) -> Vec<Point2> {
+fn ring_loop(center: Point2, rho: f64, climb: bool, phase: usize) -> Vec<Point2> {
     let n = ring_chords(rho, ARC_FIT_TOL);
     let mut pts: Vec<Point2> = Vec::with_capacity(n + 1);
-    for k in 0..n {
+    for k in phase..phase.saturating_add(n) {
         let t = if climb {
             PI * 2.0 * k as f64 / n as f64
         } else {
@@ -264,6 +267,9 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
     }
     let motion = motion.with_arc_radius(p.tool_diameter).with_links(links, p.helix_radius).with_top(links.approach.entry_top(p.top_z)).with_ring_zig();
     let cert = center_region.as_ref().map(Cert::Region);
+    // #3109: on a flat disk every ring's helix shares each level's band.
+    let helix = !p.vault && (p.entry == Entry3D::Helix || p.links.transition == Some(Entry3D::Helix));
+    let mut flown = Descents::default();
 
     let mut b = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
     // Ring-major: each circle runs its own ladder to its own floor
@@ -276,7 +282,14 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
         if rho <= 0.0 {
             break;
         }
-        let ring = ring_loop(p.center, rho, p.climb);
+        let phase = match (&center_region, helix) {
+            (Some(room), true) => {
+                let at = |i: usize| ring_loop(p.center, rho, p.climb, i).first().copied().unwrap_or(p.center);
+                ring_phase(ring_chords(rho, ARC_FIT_TOL), at, room, p.helix_radius, &flown)
+            }
+            _ => 0,
+        };
+        let ring = ring_loop(p.center, rho, p.climb, phase);
         let runs = vec![ring_walk(p.center, &ring, p.climb)];
         let pass = vec![ring];
         // #2004 review: stock over Top Z makes the plane at Top Z a cut
@@ -291,17 +304,17 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
             if k == 0 {
                 // The rim ring: Top Z is the material top, never a
                 // level of its own (#2004), unless stock stands over it.
-                super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, floor, p.stepdown)
+                super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,floor, p.stepdown)
             } else {
                 // An inner ring: the previous ring's floor is a real
                 // cut for this one - the strip inside the previous
                 // ring's band still stands at the stock top, and it
                 // opens at that plane. Keep it as the first level.
                 let prev = p.bowl_z((rho + p.stepover + r).min(p.radius));
-                levels_from(prev, floor, p.stepdown)
+                levels_from(prev, floor, super::equal_steps::ladder_stepdown(&p.links.approach, prev, floor, p.stepdown))
             }
         } else {
-            super::levels::cut_levels_under(p.top_z, p.links.approach.stock_top, p.bottom_z, p.stepdown)
+            super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,p.bottom_z, p.stepdown)
         }
         // #871: a part-way refusal hands back the rings cut so far.
         .map_err(|e| e.with_ghost_moves(b.moves()))?;
@@ -320,7 +333,13 @@ pub fn circular(_region: &Region, p: &CircularParams) -> Result<Toolpath, GenErr
         if at.z < p.clearance_z {
             b.push(MoveKind::Rapid, Point3::new(at.x, at.y, p.clearance_z), None);
         }
+        let before = b.moves_len();
         run_level_walks(&mut b, &pass, &zs, &motion, Some(&runs), cert.as_ref(), cert.as_ref());
+        if helix
+            && let Err(why) = flown.add(descents(b.moves().get(before..).unwrap_or(&[])))
+        {
+            return Err(GenError::Invalid(why).with_ghost_moves(b.moves()));
+        }
         k += 1;
     }
     let cur = b.at();
