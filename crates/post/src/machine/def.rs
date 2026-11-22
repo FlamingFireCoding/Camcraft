@@ -11,7 +11,7 @@
 use super::direction::AxisDirection;
 // #669: the kind moved to its own seam; re-exported so `def::*` (and
 // every `machine::Kind` path) reads as before.
-pub use super::kind::{can_tilt, kind, Kind};
+pub use super::kind::{can_tilt, is_router, is_router_word, kind, Kind};
 pub use super::trunnion::RotarySignConvention;
 use serde::{Deserialize, Serialize};
 
