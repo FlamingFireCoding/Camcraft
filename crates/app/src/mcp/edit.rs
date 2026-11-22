@@ -62,6 +62,10 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
     let Some((key, Value::Object(mut fields))) = tagged.into_iter().next() else {
         return Err("the operation's parameters could not be read".into());
     };
+    if matches!(base, OpParams::Face { .. }) && patch.contains_key("pass_start") {
+        // #3356: the shared row is on Face, disabled; say why, by name.
+        return Err("bad params patch: pass_start - Face has no pass order: its rows run edge to edge across the face, so there is no inside or outside to start from".into());
+    }
     for (k, v) in patch {
         merge(fields.entry(k.clone()).or_insert(Value::Null), v);
         if v.is_null() {
