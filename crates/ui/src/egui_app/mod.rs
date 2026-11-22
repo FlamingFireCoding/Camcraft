@@ -104,6 +104,7 @@ mod lead_page;
 mod start_exit_rows;
 pub(crate) mod op_tabs;
 mod painted;
+mod sim_steps;
 mod ribbon_cell;
 mod tree_badges;
 mod tree_glyphs;
@@ -221,6 +222,8 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+// #2950: dropped .mch and .cps files go to the machine and post lists.
+mod setup_file_drop;
 mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
@@ -321,6 +324,8 @@ mod after_op_tests;
 mod program_info_tests;
 #[cfg(test)]
 mod post_dialog_tests;
+#[cfg(test)]
+mod setup_post_gap_tests;
 #[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]

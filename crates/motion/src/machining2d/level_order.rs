@@ -39,6 +39,9 @@ pub(super) struct Piece {
     pub(super) level: u32,
     pub(super) pts: Vec<Point2>,
     pub(super) closed: bool,
+    /// A ring of a part with no start side, cut core first as Auto cuts
+    /// it: its first ring bores in like Auto's, so it is not judged here.
+    pub(super) core: bool,
 }
 
 /// The passes of one level and the warnings they owe the op page.
@@ -89,6 +92,7 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
         let c = comp_of(&p.pts, &comps).min(groups.len() - 1);
         groups[c].push(p);
     }
+    let cores = groups.iter().filter(|g| g.iter().any(|p| p.core)).count();
     let seq = sequence(groups);
     let planned: Vec<&[Point2]> = seq.iter().map(|p| p.pts.as_slice()).collect();
     let reach = SWATH * tool_r;
@@ -99,7 +103,8 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
     let mut wall_first = false;
     let mut narrow: Option<(usize, Point2)> = None;
     for p in &seq {
-        if p.level == 0 {
+        if p.core {
+        } else if p.level == 0 {
             wall_first = wall_first || on_wall(&p.pts, side.stock.as_ref(), tool_r, step);
         } else if let Some(at) = full_width_at(&p.pts, &done, side.stock.as_ref(), tool_r, step) {
             narrow = Some(narrow.map_or((1, at), |(n, first)| (n + 1, first)));
@@ -140,6 +145,9 @@ pub(super) fn order(pieces: Vec<Piece>, center: &Region, tool_r: f64, side: &Sta
         passes.push(cur);
     }
     let mut notes = Vec::new();
+    if cores > 0 {
+        notes.push(side.core_note(cores));
+    }
     if wall_first && let Some(n) = side.wall_first_note() {
         notes.push(n);
     }

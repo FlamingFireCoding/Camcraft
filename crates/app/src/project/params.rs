@@ -272,6 +272,10 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3354 where each level's rings start (the 2D Offset key of
+        /// #3316): absent is `auto` on every earlier file - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// 2D Adaptive (M2.4 A): the pocket arm without the strategy tag -
     /// the kind fixes the ladder; every default the pocket needs, this
@@ -336,6 +340,10 @@ pub enum ParamsDto {
         corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3355 where each level's passes start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// 2D Offset (M2.4 A): the same arm minus the engagement door -
     /// style-A rings are spaced by the stepover alone.
@@ -1221,6 +1229,10 @@ pub enum ParamsDto {
         /// older file - is the kind's own default; written only when stated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         break_through: Option<f64>,
+        /// #3360 where each level's rings start: absent is `auto`, the
+        /// centre-out order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Helical thread milling (M2.4 C). The pitch rides no DTO -
     /// it lives on the tool, like every other tool number.

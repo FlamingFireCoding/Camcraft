@@ -49,6 +49,7 @@ mod contour_auto;
 mod contour_bore;
 mod contour_chain;
 mod contour_comp;
+mod contour_comp_pick;
 mod contour_comp_room;
 mod contour_depth;
 mod contour_entry;
@@ -69,6 +70,7 @@ mod equal_steps;
 mod face;
 mod face_entry;
 mod face_holes;
+mod face_keep;
 mod fillet;
 mod gen_error;
 mod ghost;
@@ -88,6 +90,7 @@ mod pocket_plan;
 mod pocket_emit;
 mod pocket_zigzag;
 mod pocket_hsm;
+mod pocket_hsm_start;
 mod pocket_strategy;
 mod pocket_troch;
 mod predrilled;
@@ -138,7 +141,7 @@ mod thread_pass_tests;
 
 pub use arcs::{fit_arcs, fit_arcs_sided, Seg, ARC_FIT_TOL};
 pub use blend::MIN_BLEND_RADIUS;
-pub use bore::{bore, BoreHole, BoreParams};
+pub use bore::{bore, bore_started, BoreHole, BoreParams};
 pub use bore_core::{bore_core_gap, bore_floor_reach, bore_leaves_core, cutting_radius_at, max_bore_diameter};
 pub use chamfer::{chamfer, ChamferParams};
 pub use chamfer_ride::{ride_loops as chamfer_ride_loops, wall_lean as chamfer_wall_lean};
@@ -152,7 +155,7 @@ pub use contour_run_stock::contour_open_run_sided;
 pub use contour_link::DEFAULT_LEVEL_RAMP_ANGLE;
 pub use crate::links::{Link, Links};
 pub use equal_steps::{cut_levels_for, equal_stepdown, ladder_stepdown};
-pub use face::{face, face_led, face_over, FaceParams, GenError, MAX_PASSES};
+pub use face::{face, face_led, face_over, face_over_kept, FaceKeep, FaceParams, GenError, MAX_PASSES};
 pub use face_holes::FaceHoles;
 pub use ghost::Ghost;
 pub use face_entry::{air_lead, AIR_MARGIN};
@@ -164,7 +167,7 @@ pub use corner_relief::{
     InsideCorner, ResolvedRelief, TBoneDirection, capsule_region, inside_corners, plan_corner_reliefs,
 };
 pub use corner_relief_spur::pocket_relief_plan;
-pub use pass_start::{PASS_START_NOTE, PassStart, StartSide};
+pub use pass_start::{PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide};
 pub use pocket::{
     pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
 };
@@ -186,6 +189,7 @@ pub use vcarve::{v_carve, VCarveParams};
 pub use unreached::{unreached_corner_note, unreached_corners, unreached_note, unreached_pieces};
 pub use adaptive::{rest_adaptive, RestStock, StockFloor, REST_STOCK_FILM};
 pub use adaptive_method::AdaptiveMethod;
+pub use pocket_hsm_start::trochoidal_pass_start_refusal;
 pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
 pub use trochoid_air::lifted_cut;
 pub use trochoid_slot::{

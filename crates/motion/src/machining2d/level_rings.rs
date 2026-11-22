@@ -17,7 +17,7 @@
 //! side split, the order and the proofs are ours. No vendor material
 //! consulted.
 
-use crate::geo2d::{Point2, Region, RingClip};
+use crate::geo2d::{Loop, Point2, Region, RingClip};
 
 use super::face::GenError;
 use super::level_order::{Piece, WALL, order};
@@ -38,7 +38,9 @@ const MIN_PIECE: f64 = 1e-2;
 
 /// The ring plan of one area for `side`, with the warnings it owes the
 /// op page. Auto, a row strategy, and an Inside with no hole to start
-/// from keep the planner's old plan byte for byte.
+/// from keep the planner's old plan byte for byte. The completeness
+/// guard: a start-side plan whose passes leave part of the cutter-centre
+/// area unswept is never posted; the area takes the Auto plan, named.
 pub(super) fn ring_plan(
     region: &Region,
     center: &Region,
@@ -51,16 +53,36 @@ pub(super) fn ring_plan(
         let off = p.tool_diameter * 0.5 + p.stock_to_leave;
         if let Some(pieces) = level_pieces(region, center, off, p.tiling_step(), p.climb, side.start)? {
             let plan = order(pieces, center, p.tool_diameter * 0.5, side)?;
-            return Ok((plan.passes, plan.notes));
+            let left = unswept(center, &plan.passes, p.tool_diameter * 0.5)?;
+            if left <= LEFT_TOL {
+                return Ok((plan.passes, plan.notes));
+            }
+            let auto = plan_passes(center, p.tiling_step(), p.climb, strategy)?;
+            return Ok((auto, vec![side.fallback_note(left)]));
         }
     }
     Ok((plan_passes(center, p.tiling_step(), p.climb, strategy)?, Vec::new()))
 }
 
+/// The most area (mm2) of the cutter-centre area that the passes may leave
+/// unswept before the plan counts as incomplete.
+const LEFT_TOL: f64 = 0.1;
+
+/// The area of `center` that no disc of radius `r` on `passes` reaches,
+/// read after a 50 um erosion: the arc-flat and ring-end slivers of a
+/// complete plan vanish, a standing column (any patch wider than 0.1 mm)
+/// stays. Zero for a complete plan.
+pub(super) fn unswept(center: &Region, passes: &[Vec<Point2>], r: f64) -> Result<f64, GenError> {
+    let swept = Region::sweep(passes, r * (1.0 - 1e-3))?;
+    Ok(center.difference(&swept)?.offset(-0.05)?.area().abs())
+}
+
 /// The pieces of every ring of `center` (the cutter-centre area of
 /// `region` eroded by `off`), each walked so that the uncut side is on
-/// the right for `climb` (the core-first planner's sense). `None` when
-/// the start side does not exist (Inside on an area with no hole).
+/// the right for `climb` (the core-first planner's sense). Each part of
+/// the material (an outer loop with its own holes; material inside a
+/// hole is a part of its own) starts from its own edges. `None` when no
+/// part has the start side (Inside on an area with no hole).
 pub(super) fn level_pieces(
     region: &Region,
     center: &Region,
@@ -75,15 +97,42 @@ pub(super) fn level_pieces(
     if !(step.is_finite() && step > 0.0 && off.is_finite()) {
         return Err(GenError::Invalid("the ring step must be positive and finite".into()));
     }
+    if start == PassStart::Auto {
+        return Ok(None);
+    }
     let cap = (dist(lo, hi) / step + 10.0).max(16.0) as u32;
-    let filled = Region::new(region.loops().iter().filter(|l| l.is_ccw()).cloned().collect())?;
     let mut out = Vec::new();
-    let converged = match start {
-        PassStart::Auto => return Ok(None),
-        PassStart::Outside => {
-            // The distance from the outer edge: the filled area eroded.
+    let mut started = false;
+    for part in material_parts(region)? {
+        let c = center.intersect(&part)?;
+        if c.is_empty() {
+            continue;
+        }
+        let filled = Region::new(part.loops().iter().filter(|l| l.is_ccw()).cloned().collect())?;
+        let holes = filled.difference(&part)?;
+        let ok = if start == PassStart::Inside && holes.area().abs() <= 1e-9 {
+            core_first(&c, step, climb, cap, &mut out)?
+        } else if start == PassStart::Inside {
+            started = true;
+            // The distance from the holes: the holes' centre keep-out grown.
+            let hc = holes.offset(off)?;
+            sides(&c, &hc.offset(SIDE_EPS)?, true, climb, &mut out)?;
+            let mut done = false;
+            for j in 1..=cap {
+                let g = hc.offset(f64::from(j) * step)?;
+                // `g` lies on the left of its loops and is the cut side.
+                curves(&c, &g, j, !climb, &mut out)?;
+                if c.difference(&g)?.is_empty() {
+                    done = true;
+                    break;
+                }
+            }
+            done
+        } else {
+            started = true;
+            // The distance from the outer edge: the filled part eroded.
             let fc = filled.offset(-off)?;
-            sides(center, &fc.offset(-SIDE_EPS)?, false, climb, &mut out)?;
+            sides(&c, &fc.offset(-SIDE_EPS)?, false, climb, &mut out)?;
             let mut done = false;
             for j in 1..=cap {
                 let g = fc.offset(-f64::from(j) * step)?;
@@ -92,36 +141,72 @@ pub(super) fn level_pieces(
                     break;
                 }
                 // `g` lies on the left of its loops and is the uncut side.
-                curves(center, &g, j, climb, &mut out)?;
+                curves(&c, &g, j, climb, &mut out)?;
             }
             done
+        };
+        if !ok {
+            return Err(GenError::Invalid("pass start rings did not converge; check the stepover".into()));
         }
-        PassStart::Inside => {
-            let holes = filled.difference(region)?;
-            if holes.area().abs() <= 1e-9 {
-                return Ok(None);
-            }
-            // The distance from the holes: the holes' centre keep-out grown.
-            let hc = holes.offset(off)?;
-            sides(center, &hc.offset(SIDE_EPS)?, true, climb, &mut out)?;
-            let mut done = false;
-            for j in 1..=cap {
-                let g = hc.offset(f64::from(j) * step)?;
-                // `g` lies on the left of its loops and is the cut side.
-                curves(center, &g, j, !climb, &mut out)?;
-                if center.difference(&g)?.is_empty() {
-                    done = true;
-                    break;
-                }
-            }
-            done
-        }
-    };
-    if !converged {
-        return Err(GenError::Invalid("pass start rings did not converge; check the stepover".into()));
+    }
+    if !started {
+        return Ok(None);
     }
     share_ends(&mut out);
     Ok(Some(out))
+}
+
+/// The parts of the material: each outer (counter-clockwise) loop with
+/// the holes directly inside it. Material inside a hole is a part of its
+/// own, at any depth of nesting.
+fn material_parts(region: &Region) -> Result<Vec<Region>, GenError> {
+    let loops = region.loops();
+    let inside = |outer: &Loop, p: Point2| Region::new(vec![outer.clone()]).map(|r| r.contains(p));
+    let mut parts = Vec::new();
+    for (i, o) in loops.iter().enumerate().filter(|(_, l)| l.is_ccw()) {
+        let mut own = vec![o.clone()];
+        for h in loops.iter().filter(|l| !l.is_ccw()) {
+            let Some(&p) = h.points().first() else { continue };
+            if !inside(o, p)? {
+                continue;
+            }
+            // A hole inside a nearer outer loop (itself inside `o`) is that one's.
+            let mut nearer = false;
+            for (k, o2) in loops.iter().enumerate().filter(|(_, l)| l.is_ccw()) {
+                let Some(&q) = o2.points().first() else { continue };
+                if k != i && inside(o, q)? && inside(o2, p)? {
+                    nearer = true;
+                    break;
+                }
+            }
+            if !nearer {
+                own.push(h.clone());
+            }
+        }
+        parts.push(Region::new(own)?);
+    }
+    Ok(parts)
+}
+
+/// A part with no hole to start Inside from: its rings core first, as
+/// Auto cuts them (whole rings, walked like Auto's), marked as such.
+fn core_first(c: &Region, step: f64, climb: bool, cap: u32, out: &mut Vec<Piece>) -> Result<bool, GenError> {
+    let mut rings: Vec<(u32, Vec<Point2>)> = Vec::new();
+    for k in 0..=cap {
+        let ring = if k == 0 { c.clone() } else { c.offset(-f64::from(k) * step)? };
+        if ring.is_empty() {
+            for (j, pts) in rings {
+                out.push(Piece { level: 1 + k - j, pts, closed: true, core: true });
+            }
+            return Ok(true);
+        }
+        for l in ring.loops() {
+            if l.points().len() >= 2 {
+                rings.push((k, walk(l.points(), !climb)));
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// The area's own boundary split by `start_side` (inside it for Inside,
@@ -192,15 +277,48 @@ fn walk(pts: &[Point2], reverse: bool) -> Vec<Point2> {
 
 fn push(out: &mut Vec<Piece>, level: u32, ring: &[Point2], clip: RingClip) {
     match clip {
-        RingClip::Whole if ring.len() >= 2 => out.push(Piece { level, pts: ring.to_vec(), closed: true }),
+        RingClip::Whole if ring.len() >= 2 => out.push(Piece { level, pts: ring.to_vec(), closed: true, core: false }),
         RingClip::Whole => {}
         RingClip::Pieces(ps) => {
             for pts in ps {
                 let len: f64 = pts.windows(2).map(|w| dist(w[0], w[1])).sum();
                 if pts.len() >= 2 && len >= MIN_PIECE {
-                    out.push(Piece { level, pts, closed: false });
+                    out.push(Piece { level, pts, closed: false, core: false });
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::{LEFT_TOL, unswept};
+    use crate::geo2d::{Loop, Point2, Region};
+
+    fn circle(r: f64) -> Vec<Point2> {
+        (0..128).map(|k| {
+            let a = f64::from(k) * std::f64::consts::TAU / 128.0;
+            Point2::new(r * a.cos(), r * a.sin())
+        })
+        .collect()
+    }
+
+    /// The completeness guard reads a standing column, never a sliver: a
+    /// lone ring on a disc of radius 10 leaves the core (radius 6) unswept;
+    /// rings 4 mm apart down to the middle leave nothing.
+    #[test]
+    fn the_guard_reads_a_standing_core_and_passes_a_whole_plan() {
+        let Ok(l) = Loop::new(circle(10.0)) else { panic!("loop") };
+        let Ok(disc) = Region::new(vec![l]) else { panic!("disc") };
+        let ring = |r: f64| {
+            let mut c = circle(r);
+            c.push(c[0]);
+            c
+        };
+        let Ok(lone) = unswept(&disc, &[ring(10.0)], 4.0) else { panic!("unswept") };
+        assert!(lone > 100.0 && lone < 114.0, "the core of radius 6 stands: {lone}");
+        let Ok(whole) = unswept(&disc, &[ring(10.0), ring(6.0), ring(2.0)], 4.0) else { panic!("unswept") };
+        assert!(whole <= LEFT_TOL, "a whole plan: {whole}");
+        assert!(unswept(&disc, &[vec![Point2::new(f64::NAN, 0.0)]], 4.0).is_err(), "NaN is refused");
     }
 }

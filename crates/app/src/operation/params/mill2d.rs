@@ -67,7 +67,7 @@ impl OpParams {
                     }
                 }
                 digest::write_corner_relief(corner_relief, h);
-                write_pass_start(*pass_start, h);
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Slot {
                 links: _,
@@ -280,7 +280,7 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
-                write_pass_start(*pass_start, h);
+                digest::write_pass_start(*pass_start, h);
             }
             // The V-carve (#1443) digests each number the path reads:
             // the heights, the ladder, the feeds and the floor choice.
@@ -308,15 +308,5 @@ impl OpParams {
             }
             _ => {}
         }
-    }
-}
-
-// Auto contributes no bytes to preserve the digest of existing operations.
-fn write_pass_start(start: crate::machining2d::PassStart, h: &mut impl std::hash::Hasher) {
-    use crate::machining2d::PassStart;
-    match start {
-        PassStart::Auto => {}
-        PassStart::Inside => h.write_u8(0xC1),
-        PassStart::Outside => h.write_u8(0xC2),
     }
 }
