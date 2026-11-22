@@ -112,7 +112,7 @@ The server exposes tools across three modules in `crates/app/src/mcp/` (see `cra
 - `refit_mod_vise { "adjustable": string, "fixed"?: string }`: Re-fit a mod vise pair's adjustable block to the setup's stock as it stands now, after the stock changed: the fixed block stays, the adjustable block moves to the hole nearest the stock that clears it and slides until its jaw touches the stock. `fixed` names the fixed block when its plate carries more than one. Refused by name, with nothing moved: stock out of the slots' reach, stock in the fixed jaw or beside the jaws, no stock. One undo step.
 
 ### 4. Stock & Tool Management (`tools.rs`, `edit.rs`, `body_tools.rs`, #355, #361)
-- `set_stock { "box"?: { "dx", "dy", "dz" }, "cylinder"?: { "diameter", "height" }, "from_model"?: string }`: Define setup stock as a box in mm (centred in XY, z from 0 to `dz`), a cylinder, or a copy of a model's mesh.
+- `set_stock { "box"?: { "dx", "dy", "dz" }, "cylinder"?: { "diameter", "height" }, "from_model"?: string, "axis"?: "z" | "x" | "y", "angles_deg"?: { "yaw"?, "pitch"?, "roll"? } }`: Define setup stock as a box in mm (centred in XY, z from 0 to `dz`), a cylinder, or a copy of a model's mesh. `axis` lays the cylinder axis (or the box height) along X or Y; `angles_deg` gives a custom turn instead (not both). One undo step through `SetStock`; returns `{ stock, axis, angles_deg }`. The simulation refuses a cylinder laid along X or Y and a stock tilted off the axes, by name (#2576).
 - `fit_stock { "shape"?: "box" | "cylinder", "margin"?: number, "sides"?: [number, number, number, number, number, number] }`: Fit the active setup's stock to its parts, never fixtures (including vises, accessories and plates). `shape` defaults to `"box"`; `"cylinder"` fits a Z cylinder snug about the parts. `margin` is the allowance on every side in mm (default 2). `sides` gives six allowances in mm, ordered [-X, +X, -Y, +Y, -Z, +Z], and replaces `margin` (box only). Keeps the stock's rotation. One undo step through `SetStock`; returns `{ stock }`. Refused by name: no models, only fixtures, negative or non-finite allowances, malformed parameters (including a `sides` array without six finite numbers), an unknown shape, `sides` with a cylinder, or models with no usable extent (#1538).
 - `set_raw_stock_only { "on": boolean }`: For a stock made from a model (`set_stock` `from_model`), say whether that source model is raw stock only - a casting or blank you cut into, not the finished part. Default off: the model is judged like every model. On: the gouge verdict leaves it out. One undo step. Refused by name when there is no stock yet ("set the stock first"), when the stock is not made from a model, or when the source model has no geometry. The mark holds only while the model is still the stock's source and its geometry and placement (position and rotation) are unchanged, so moving or turning the model voids it; otherwise it is ignored and the post says so by name. An operation that machines the model (as its source or in a boundary pick) puts it back in the verdict. If the mark leaves nothing to judge, the post is refused by name.
 - `list_tool_catalog {}`: List built-in tool definitions.
@@ -125,7 +125,7 @@ The server exposes tools across three modules in `crates/app/src/mcp/` (see `cra
 - `set_tool { "operation": string, "tool": string }`: Assign a document tool to an operation.
 - `get_tool_cutter_profile { "tool": string }`: Read a milling tool's cutter, neck and shank as a spun half-outline: points `[z, r, arc]` from the tip (z = 0, on the axis) up to the shank top (`arc` = 0 for a straight segment, else the signed radius of an arc to the next point). `drawn` says whether it is a hand-drawn outline or the one the tool's numbers draw. Turning tools have none.
 - `set_tool_cutter_profile { "tool": string, "points": [[z, r] | [z, r, arc], ...] | null }`: Set a milling tool's drawn cutter outline (tip-up, closed to the axis at both ends), or clear it with `null` (back to the outline its numbers draw). The outline must agree with the tool's numbers (reach exactly the stated diameter within the flute length, end at flute + shank length, not exceed the cutter or shank width above the flutes, not fold over itself), else it is refused by name. Toolpaths keep reading the numbers; the collision checks and the simulation read a drawn neck where it is narrower than the stated shank (never wider). One undoable step.
-- `set_work_material { "material": string | null }`: State the document's workpiece material (`aluminium_6061`, `mild_steel`, `stainless_304`, `grey_cast_iron`, `brass`, `plastics_pom`), or `null` to clear it. Re-stating the current one or an unknown word is refused by name. One undoable step; `get_job` shows it as `work_material`.
+- `set_work_material { "material": string | null }`: State the document's workpiece material (`aluminium_6061`, `mild_steel`, `stainless_304`, `grey_cast_iron`, `brass`, `plastics_pom`, `softwood`, `hardwood`, `mdf`, `plywood`, `acrylic`, `hdpe`), or `null` to clear it. Re-stating the current one or an unknown word is refused by name. One undoable step; `get_job` shows it as `work_material`.
 - `set_stock_material { "material": string | null }`: State the active setup stock's workpiece material (same words as `set_work_material`), or `null` to clear it. Picks each tool's cutting-data row for that setup's operations in order (stock, then document, then the tool's `Unknown` row) and re-seeds their `feed` (rows naming the material) and `stepdown` / `stepover` in one undoable step (`SetStockMaterial`); tools' running `rpm` and `feed` follow the document material only. Returns `{ stock, stock_material, operations_seeded }`. Refused by name when the active setup has no stock, the stock already states that material, or the material word is unknown.
 - `suggest_cutting_data { "operation": string }`: The feeds-and-speeds suggestion for the operation's tool on the stated material, as data (writes nothing): `material`, `tool_material`, `cutting_speed` m/min, `feed_per_tooth` mm, `thinning_factor`, `rpm`, `feed` mm/min, `machine_clamps`. Refused by name when no material is stated or the table cannot speak for the tool.
 - `apply_cutting_data { "operation": string }`: Apply that suggestion: the operation's feed and its tool's rpm, one undoable step (the Cutting data page's Apply). Refused by name with no material, a kind with no milling feed, or an op already on the suggestion. Returns what was applied.
@@ -159,9 +159,9 @@ The server exposes tools across three modules in `crates/app/src/mcp/` (see `cra
 - `rename_operation { "name": string, "new_name": string }`: Change an operation's display name (1-120 printable characters). Its stable key and its place in the program do not change; naming it back to its key clears the display name. Names are unique and cannot take another operation's key. One undo step.
 - `reorder_operation { "name": string, "target": string, "place"?: "before" | "after" }`: Move an operation before (default) or after another operation of the SAME setup, as the browser's drag and drop does. Moving between setups is refused. Answers with that setup's operations in their new order. One undo step.
 - `mark_operation_reviewed { "name": string }`: Clear a migrated operation's `needs_review` flag once inspected (#1517; un-carriable pre-v69 fields such as `rest` or `predrilled` block posting until reviewed). One undo step.
-- `list_features { "model": string }`: Query pickable faces, loops, edge chains, and vertices with stable integer IDs. A face row gives the outward `normal` and `facing`; when the shell is open or inside-out they are null and `outside_unknown` names why (#2186), as `lay_part_on_face` refuses it.
-- `get_operation_geometry { "operation": string }`: Inspect the features and area boundaries an operation machines.
-- `set_operation_geometry { "operation": string, "picks": [id1, id2, ...] }`: Bind specific geometric feature IDs to an operation.
+- `list_features { "model": string }`: Query pickable faces, loops, edge chains, and vertices with stable IDs on models/fixtures, or `sketch_chain:<hex>` chains and `sketch_layer:<layer>` layers on placed DXF profiles (#1864). A face row gives the outward `normal` and `facing`; when the shell is open or inside-out they are null and `outside_unknown` names why (#2186), as `lay_part_on_face` refuses it.
+- `get_operation_geometry { "operation": string }`: Inspect the features, per-chain overrides, and area boundaries an operation machines.
+- `set_operation_geometry { "operation": string, "picks": [{ "model", "id", "side"?, "reverse"? }, ...] }`: Bind specific geometric feature IDs to an operation. For `2D Contour` on DXF profiles, `sketch_chain` picks may also set optional `"side"` (`"inside"` | `"outside"` | `null`) and `"reverse"` (`boolean`) per-chain overrides (#1864).
 - `pick_in_box { "operation": string, "box": { "x0", "y0", "x1", "y1" }, "mode"?: "window" | "crossing", "kind"?: "chains" | "faces", "replace"?: bool, "through"?: bool }`: The viewport's box select headless (#979): seen from straight above (+Z, like the Top view), adds every feature edge chain (default) or face whose outline lies inside the world X/Y box (`window`, default) or touches it (`crossing`) to the operation's picks; `replace: true` replaces them. Without `through` (default false) the box is visible-only - hidden edges and faces under the top face stay out; `through: true` takes them too, like the Pick through toggle. Mesh triangulation edges are never taken. One undo step. Refused by name: a box with no area, a non-finite corner, a box that holds nothing new.
 - `set_operation_area { "operation": string, "area": { "containment"?, "offset"?, "corner"?, "extension"?, "extra"?, "open"? } }`: Configure the area controls (containment `"inside"` | `"outside"` | `"center"`, offset, corner, ...); omitted fields take their defaults.
 - `get_operation_do_not_touch { "operation": string }`: Read protected `"Do not touch"` faces/edges and clearance (mm).
@@ -223,6 +223,41 @@ The following capabilities exist in the GUI or app command layer but do not yet 
 
 Per `AGENTS.md` ("Everything Is a Command"):
 > A PR that adds a user-facing command also adds its MCP tool (and script verb where it fits) in `crates/app/src/mcp/`, or files a `source:agent` follow-up issue `MCP: <command>` (labels `P5`, `area:mcp`) and names it in the PR body.
+
+## Waterjet Profile workflow (#1883)
+
+This workflow requires the Waterjet Profile implementation in #1883 (PR #3058).
+That implementation is not yet on `main`.
+There is no built-in waterjet. Mount a `.mch` file whose machine `kind` is
+`"waterjet"` with `load_machine { "path": "waterjet.mch" }`.
+Add a nozzle with `kind: "waterjet"` and `rpm: 0`. Its diameter is the kerf width.
+
+For a plate model spanning Z = 0 to 5 mm, call these MCP tools in order.
+Use the actual machine file and plate model. Adapt the heights, leads, tab
+positions and cutting parameters to the part and machine.
+
+```text
+load_machine { "path": "waterjet.mch" }
+add_tool { "name": "Nozzle", "definition": { "kind": "waterjet", "diameter": 0.8, "corner_r": 0, "tip_angle": 0, "pitch": 0, "nose_radius": 0, "width": 0, "flute_len": 10, "shank_d": 30, "shank_len": 100, "holder_d": 0, "holder_len": 0, "material_group": "mild steel", "rpm": 0, "feed": 2500, "center_cutting": false } }
+import_model { "path": "plate.stl", "name": "plate" }
+add_operation { "kind": "Waterjet Profile", "name": "Jet1", "tool": "Nozzle", "source": "plate", "params": { "clearance_z": 25, "top_z": 5, "bottom_z": 0, "kerf": null, "control_comp": false, "reversed": false, "lead": "arc", "lead_in": 4, "lead_out": 3, "open_side": "center", "tabs": { "count": 1, "width": 2, "at": [[20, 0]] }, "feed": 250, "pierce_time": 2.5, "abrasive_delay": 0.5, "linearize": 0.01 } }
+generate { "name": "Jet1" }
+```
+
+Use `list_operation_types` for the complete parameter fields and defaults.
+`kerf: null` uses the nozzle diameter. `control_comp` selects controller
+compensation; `false` uses computer compensation. `reversed` reverses the cut.
+`lead` accepts `arc` or `straight`; `lead_in` and `lead_out` set their lengths.
+`open_side` accepts `center`, `left` or `right` for an open chain.
+`tabs` supplies `count`, `width` and explicit XY positions in `at`.
+Lengths and the optional `linearize` tolerance are in mm; `feed` is in mm/min.
+`linearize: null` keeps arcs.
+
+`pierce_time` and `abrasive_delay` are in seconds. They appear in path notes
+only until #1882 adds post support. Inspect the notes returned by `generate`.
+No post serves a waterjet yet. Do not use a milling or plasma post for this path.
+The implementation in #1883 pins this workflow in
+`crates/app/tests/mcp_waterjet.rs`. Those tests run headlessly, not on a machine.
 
 ## Plasma Profile workflow (#1871)
 

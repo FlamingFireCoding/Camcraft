@@ -63,7 +63,7 @@ pub struct ExtraBoundary {
 /// Which side of an open (or closed) boundary is machined. Inside is the
 /// side that holds more of the operation's own area (what the selection
 /// or source encloses) - the part's side; Outside the other one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChainSide {
     Inside,
     Outside,
@@ -192,6 +192,8 @@ pub fn area_unsupported(kind: OpType) -> Option<String> {
         // endpoints and width and bound where it may cut.
         OpType::Slot => format!("a {kind} is authored by its two endpoints and width, seeded from two picked opposite edges or a face and kept inside them - move those instead of a boundary"),
         OpType::TrochoidalSlot => format!("a {kind} is authored by its two endpoints and width - move those instead of a boundary"),
+        // #1443: the carved region is the pick itself.
+        OpType::VCarve => format!("a {kind} carves the closed region that is picked - pick the region instead of a boundary"),
         OpType::Circular => format!("a {kind} is authored by its centre and radius, typed or fitted to a picked round rim or face - set those instead of a boundary"),
         // The cone's ride is the wall itself: an offset or clipped
         // outline would be ridden where nothing was picked.
@@ -211,6 +213,7 @@ pub fn area_unsupported(kind: OpType) -> Option<String> {
         }
         OpType::Deburr => format!("{kind} breaks the model's own exposed edges - there is no area to bound"),
         OpType::SinkerBurn | OpType::SinkerSideBurn => format!("a {kind} burns its electrode's own face - there is no area to bound"),
+        OpType::SlotUndercut => format!("a {kind} cuts its authored slot at depth - there is no area to bound"),
         // Mesh-driven with a moving tool axis: the model's own shadow.
         OpType::Contour5D
         | OpType::Parallel5D

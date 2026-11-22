@@ -106,7 +106,7 @@ fn answers(params: &OpParams, mill: bool) -> bool {
 /// the bar on the spindle C under a radial live tool, whose first rapid
 /// comes from the turret's index position, not from an upright tool over
 /// an unknown X/Y; the mill premise refuses every such program. That law
-/// is #3077's live-tool reading; #3096 owns it (decision #3083).
+/// is #3077's live-tool reading, in `rotary_traverse` (#3096).
 pub(super) fn mill_order(kind: crate::machine::Kind, lathe_tool: bool, params: &OpParams) -> bool {
     use crate::machine::Kind;
     !lathe_tool
@@ -235,6 +235,13 @@ fn table_read(b: &FixtureBox, f: &TiltedFrame, start_h: f64, stroke: f64) -> Tab
 /// local heights when it is tilted) starts under the stock or any steel.
 /// The note it returns says what a 3+2 plane could not judge.
 ///
+/// #2991: the verdict names the heights in the frame the user sets them
+/// in. Generate shifts each height by `h - origin.z` into the frame, so
+/// the verdict adds `origin.z` back: a 3+2 plane at origin Z 20 with a
+/// clearance of 30 reads 30, not the local 10. A frame that is not
+/// upright marks the verdict `tilted`, and its text says that the heights
+/// are measured along the tool axis.
+///
 /// A 3+2 plane reads the tagged fixtures along its tool axis (they ride
 /// the table with the part). It reads the machine table's top face over
 /// the stated travel when the head tilts (#2987), only where the move
@@ -305,7 +312,7 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
             if over.rotaries.is_some() && !work_turns && !has_table {
                 note = Some(format!("{TABLE_UNJUDGED_NOTE}: the machine does not state all of the X, Y and Z travel, so the first traverse is judged against the stock and the fixtures only"));
             }
-            verify::first_traverse_low(path, over.stock_top, &steel, |p| f.z_local(p), Z_TOL)
+            verify::first_traverse_low(path, over.stock_top, &steel, |p| f.z_local(p), Z_TOL).map(|w| in_user_frame(w, f))
         }
         None => verify::first_traverse_low(path, over.stock_top, over.fixtures, |p| p.z, Z_TOL),
     };
@@ -317,6 +324,22 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, mill: bool, frame: Optio
         }
     }
     note
+}
+
+/// The law's local verdict in the user's heights frame (#2991): both
+/// heights shifted back by the frame's `origin.z`, `tilted` set when the
+/// frame is not upright. Other warnings pass unchanged.
+pub(super) fn in_user_frame(w: Warning, f: &TiltedFrame) -> Warning {
+    match w {
+        Warning::FirstTraverseLow { at, height_mm, top_mm, fixture, .. } => Warning::FirstTraverseLow {
+            at,
+            height_mm: height_mm + f.origin.z,
+            top_mm: top_mm + f.origin.z,
+            fixture,
+            tilted: !f.is_upright(),
+        },
+        other => other,
+    }
 }
 
 #[cfg(test)]
