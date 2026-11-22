@@ -113,10 +113,13 @@ fn source_fields(ui: &mut Ui, state: &mut State) {
     prop_grid(ui, "stock_source_grid", |ui| {
         ui.label("Source");
         let mut idx = models.iter().position(|m| *m == state.stock_ui.source).unwrap_or(models.len() - 1);
-        let before = idx;
         combo_owned(ui, "stk_src", &mut idx, &models);
-        if idx != before {
-            state.stock_ui.source = models[idx.min(models.len() - 1)].clone();
+        // #3261: the draft holds the part the picker shows, also when the
+        // user accepts the default (one model: the index never changes).
+        if let Some(shown) = models.get(idx).or(models.last())
+            && state.stock_ui.source != *shown
+        {
+            state.stock_ui.source = shown.clone();
         }
         ui.end_row();
     });

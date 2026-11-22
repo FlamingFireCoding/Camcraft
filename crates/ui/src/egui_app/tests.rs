@@ -121,6 +121,7 @@ mod page_layout;
 mod page_layout_windows;
 mod anchors;
 mod stock_fit;
+mod stock_source_default;
 mod ribbon_rows;
 mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
