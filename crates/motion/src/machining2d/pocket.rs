@@ -19,6 +19,7 @@ use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::adaptive_passes;
 use super::pocket_zigzag::rest_passes;
 pub(crate) use super::pocket_plan::plan_passes;
+pub(super) use super::pocket_plan::non_sliver_center;
 use super::predrilled::PreHole;
 pub use super::pocket_strategy::PocketStrategy;
 
@@ -263,37 +264,6 @@ pub fn pocket_started_on(
     pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, side)
 }
 
-/// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
-/// slivers (`<= 0.01 mm^2` area and `<= 0.008 mm` half-width) that hold
-/// no cuttable pass and would spin on empty bores (#2232).
-pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, GenError> {
-    let center = region.offset(-erode)?;
-    if center.is_empty() {
-        return Ok(center);
-    }
-    let outers = center.loops().iter().filter(|l| l.is_ccw()).count();
-    if outers <= 1 && center.area().abs() > 1e-2 {
-        return Ok(center);
-    }
-    let clean = Region::from_slices(center.loops().to_vec())?;
-    let mut kept = Vec::new();
-    let mut dropped = false;
-    for c in super::pocket_hsm::components(&clean)? {
-        if c.area().abs() > 1e-2 || crate::entry::dive_room(&c, 0.008).is_some() {
-            kept.extend(c.loops().iter().cloned());
-        } else {
-            dropped = true;
-        }
-    }
-    // Nothing dropped: keep the eroded area exactly as offset gave it. The
-    // rebuild through `from_slices` re-starts each loop at another vertex,
-    // which moved a multi-piece pocket's pass starts (#2426).
-    if !dropped {
-        return Ok(center);
-    }
-    Ok(Region::from_slices(kept)?)
-}
-
 /// The pocket passes over a given cutter-center area: [`pocket`]'s body
 /// once the area is known, shared with rest machining (`rest2d`, #1446),
 /// whose area is the part of the pocket's own that touches the rest
@@ -370,32 +340,4 @@ pub(super) fn pocket_over_with_relief(
             cleared_links: side.start != PassStart::Auto,
         },
     )
-}
-
-#[cfg(test)]
-mod non_sliver_tests {
-    use super::non_sliver_center;
-    use crate::geo2d::{Loop, Point2, Region};
-
-    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Loop {
-        let pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-        let Ok(l) = Loop::new(pts.iter().map(|&(x, y)| Point2::new(x, y)).collect()) else {
-            panic!("fixture loop")
-        };
-        l
-    }
-
-    /// #2426: a two-piece area with no sliver comes back exactly as the
-    /// offset gave it - same loops, same start vertices - so the pass
-    /// starts of a multi-piece pocket do not move.
-    #[test]
-    fn a_multi_piece_center_without_slivers_is_the_plain_offset() {
-        let Ok(reg) = Region::new(vec![rect(0.0, 0.0, 30.0, 30.0), rect(50.0, 0.0, 61.0, 11.0)]) else {
-            panic!("fixture region")
-        };
-        let Ok(plain) = reg.offset(-5.0) else { panic!("offset") };
-        let Ok(kept) = non_sliver_center(&reg, 5.0) else { panic!("non_sliver_center") };
-        assert_eq!(plain.loops().iter().filter(|l| l.is_ccw()).count(), 2, "fixture must have two pieces");
-        assert_eq!(kept, plain);
-    }
 }

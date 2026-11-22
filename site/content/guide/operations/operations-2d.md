@@ -308,7 +308,14 @@ wanted rather than a constant load.
     part wall.
   - **Inside** round an island: the first ring runs along the island wall.
   - A place narrower than the tool plus one stepover, or stock that the
-    start edge does not reach (for example inside a ring-shaped part).
+    start edge does not reach.
+- Material inside a hole (the bore of a hollow boss, the stock inside a
+  ring-shaped part) starts from its own edge. With **Inside** it has no
+  hole to start from, so it is cut from the middle outward, as **Auto**
+  cuts it, and a note says so.
+- If the rings from the start side would leave material standing, that
+  area is cut in the **Auto** order instead, and a **Pass start** warning
+  says how much area the rings would have left.
 
 **Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
 to protect from every cut, plunge, ramp, helix, keep-down and rapid link

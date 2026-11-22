@@ -275,4 +275,32 @@ mod tests {
         assert_eq!(Region::empty().clip_polyline(&path, false), Ok(vec![path.to_vec()]));
         assert_eq!(Region::empty().clip_ring(sq(0.0, 0.0, 1.0, 1.0).points(), false), Ok(RingClip::Whole));
     }
+
+    fn total(pieces: &[Vec<Point2>]) -> f64 {
+        pieces.iter().map(|p| length(p)).sum()
+    }
+
+    #[test]
+    fn a_vertex_on_the_boundary_a_tangent_touch_and_an_edge_overlap() {
+        let r = annulus();
+        // A vertex exactly on the outer edge: the inside stretch starts there.
+        let Ok(v) = r.clip_polyline(&[Point2::new(-5.0, 2.0), Point2::new(0.0, 2.0), Point2::new(3.0, 2.0)], true) else {
+            panic!("clip")
+        };
+        assert!(v.len() == 1 && near(v[0].first(), 0.0, 2.0) && near(v[0].last(), 3.0, 2.0), "{v:?}");
+        // A segment that only touches the corner (10, 10) from outside:
+        // nothing inside, and the outside stretch stays one piece.
+        let touch = [Point2::new(5.0, 15.0), Point2::new(15.0, 5.0)];
+        let Ok(t_in) = r.clip_polyline(&touch, true) else { panic!("clip") };
+        assert!(total(&t_in) < 1e-9, "a touch keeps no length inside: {t_in:?}");
+        let Ok(t_out) = r.clip_polyline(&touch, false) else { panic!("clip") };
+        assert!((total(&t_out) - 200f64.sqrt()).abs() < 1e-9, "{t_out:?}");
+        // A segment along the bottom edge in mid-segment: the inside and the
+        // outside stretches split it exactly, every point on the line.
+        let along = [Point2::new(-5.0, 0.0), Point2::new(15.0, 0.0)];
+        let (Ok(a_in), Ok(a_out)) = (r.clip_polyline(&along, true), r.clip_polyline(&along, false)) else { panic!("clip") };
+        assert!((total(&a_in) + total(&a_out) - 20.0).abs() < 1e-9, "{a_in:?} {a_out:?}");
+        assert!(a_in.iter().chain(&a_out).flatten().all(|p| p.y == 0.0));
+        assert!(a_out.iter().flatten().any(|p| near(Some(p), 0.0, 0.0)), "the overlap splits at its ends: {a_out:?}");
+    }
 }

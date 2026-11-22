@@ -84,6 +84,27 @@ impl StartSide {
         }
     }
 
+    /// The note for `n` parts of the area with no hole to start Inside
+    /// from (material inside a hole): cut core first, as Auto cuts them.
+    #[must_use]
+    pub fn core_note(&self, n: usize) -> String {
+        format!(
+            "{PASS_START_NOTE} {}: {n} part(s) of this area have no hole to start from, so they are cut from the middle outward, as Auto cuts them",
+            self.start.label()
+        )
+    }
+
+    /// The warning when the rings from the start side would leave
+    /// `area` mm2 uncut: the level is cut in the Auto order instead, so
+    /// nothing is left standing (the completeness guard, #3316).
+    #[must_use]
+    pub fn fallback_note(&self, area: f64) -> String {
+        format!(
+            "{PASS_START_NOTE} {}: the rings from the start side would leave {area:.1} mm2 of this area uncut, so this area is cut in the Auto order instead",
+            self.start.label()
+        )
+    }
+
     /// The warning for cuts after the first ring that still take the
     /// full tool width (#3316): `n` of them, the first at `(x, y)`.
     #[must_use]
