@@ -277,3 +277,13 @@ mod law {
         assert_eq!(turn_refusal(plain, 1.0), GenError::Invalid("p".into()));
     }
 }
+
+/// #3338: the kept side of an open boundary with its two lines offset
+/// apart - the picked line by `picked`, the outer (stock) line by
+/// `outer`. The kept side grows by the larger value, and `reach` grown
+/// by `outer` clips the outer line back; the far side, shrunk by
+/// `picked`, cuts the picked line later in the law.
+pub(super) fn grow_apart(keep: &Region, reach: &Region, picked: f64, outer: f64, corner: CornerStyle) -> Result<Region, GenError> {
+    let wide = super::boundary::grow(keep, picked.max(outer), corner)?;
+    Ok(wide.intersect(&super::boundary::grow(reach, outer, corner)?)?)
+}
