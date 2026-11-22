@@ -360,6 +360,30 @@ impl ParamsDto {
                 climb: *climb,
                 tilt: (*tilt).map(Into::into),
             },
+            // #1443: the V-carve arm.
+            OpParams::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_clear,
+                flat_stepover,
+                tilt,
+            } => ParamsDto::VCarve {
+                clearance_z: (*clearance_z).into(),
+                retract_z: (*retract_z).map(Into::into),
+                top_z: (*top_z).into(),
+                bottom_z: (*bottom_z).into(),
+                stepdown: *stepdown,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                flat_clear: *flat_clear,
+                flat_stepover: *flat_stepover,
+                tilt: (*tilt).map(Into::into),
+            },
             OpParams::Chamfer2D {
                 width,
                 angle_deg,
@@ -543,7 +567,10 @@ impl ParamsDto {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
-            } => ParamsDto::Deburr {
+                sizing,
+            } => {
+                let (break_mode, break_depth, break_profile, passes) = break_dto(sizing);
+                ParamsDto::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
                 top_z: (*top_z).into(),
@@ -556,7 +583,12 @@ impl ParamsDto {
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
                 unreachable: (*unreachable).into(),
-            },
+                break_mode,
+                break_depth,
+                break_profile,
+                passes,
+                }
+            }
             // The 5-axis twins (M5.1 stage C): one shape, mirrored.
             // The contour arm has no stepover to name, so the pattern
             // reads it back (the or-pattern law again).
@@ -1647,6 +1679,30 @@ impl ParamsDto {
                 climb: *climb,
                 tilt: (*tilt).map(Into::into),
             },
+            // #1443: the V-carve arm.
+            ParamsDto::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_clear,
+                flat_stepover,
+                tilt,
+            } => OpParams::VCarve {
+                clearance_z: (*clearance_z).into(),
+                retract_z: (*retract_z).map(Into::into),
+                top_z: (*top_z).into(),
+                bottom_z: (*bottom_z).into(),
+                stepdown: *stepdown,
+                feed: *feed,
+                plunge_feed: *plunge_feed,
+                flat_clear: *flat_clear,
+                flat_stepover: *flat_stepover,
+                tilt: (*tilt).map(Into::into),
+            },
             ParamsDto::Chamfer2D {
                 width,
                 angle_deg,
@@ -1829,6 +1885,10 @@ impl ParamsDto {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
+                break_mode,
+                break_depth,
+                break_profile,
+                passes,
             } => OpParams::Deburr {
                 width: *width,
                 clearance_z: (*clearance_z).into(),
@@ -1842,6 +1902,7 @@ impl ParamsDto {
                 hole_min_diameter: *hole_min_diameter,
                 hole_max_diameter: *hole_max_diameter,
                 unreachable: (*unreachable).into(),
+                sizing: break_of(*break_mode, *break_depth, *break_profile, *passes),
             },
             // The 5-axis twins (M5.1 stage C): the same shape read
             // back - the contour has no stepover key to lose, and the

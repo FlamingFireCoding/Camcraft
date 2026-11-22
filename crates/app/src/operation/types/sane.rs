@@ -364,6 +364,28 @@ impl OpParams {
                     && pos(*feed)
                     && pos(*plunge_feed)
             }
+            // The V-carve's door (#1443): the engrave's numbers, and a
+            // floor stepover the generator can ring with.
+            OpParams::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_stepover,
+                ..
+            } => {
+                clearance_z.is_sane()
+                    && retract_z.is_none_or(|r| r.is_sane())
+                    && top_z.is_sane()
+                    && bottom_z.is_sane()
+                    && pos(*stepdown)
+                    && pos(*feed)
+                    && pos(*plunge_feed)
+                    && pos(*flat_stepover)
+            }
             // The 2-D chamfer's door (M2.4 B): the authored promise -
             // a land wider than nothing, cut at an angle that is a
             // chamfer and not a flat (0) or a wall (90): the ride
@@ -529,8 +551,11 @@ impl OpParams {
                 hole_max_diameter,
                 // #1889: the policy is an enum; each value is legal.
                 unreachable: _,
+                sizing,
             } => {
                 pos(*width)
+                    // #1890: a positive depth and 1..=100 passes.
+                    && sizing.is_sane()
                     && clearance_z.is_sane()
                     && top_z.is_sane()
                     && bottom_z.is_sane()
