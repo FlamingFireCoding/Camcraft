@@ -116,8 +116,8 @@ fn a_loop_bevelled_on_one_side_refuses_with_an_extra_vertex_too() {
 fn a_loop_bevelled_all_round_is_not_partly_bevelled() {
     let (top, wall) = (rect(-19.0, -9.0, 19.0, 9.0), rect(-20.0, -10.0, 20.0, 10.0));
     let mid = Region::new(vec![wall.clone()]).expect("mid");
-    assert_eq!(read(top.points(), wall.points(), &mid, 1.0, UPRIGHT).partly_bevelled(1.0), None);
-    assert_eq!(read(wall.points(), wall.points(), &mid, 1.0, UPRIGHT).partly_bevelled(1.0), None);
+    assert_eq!(read(&top, &wall, &mid, 1.0, UPRIGHT).partly_bevelled(1.0), None);
+    assert_eq!(read(&wall, &wall, &mid, 1.0, UPRIGHT).partly_bevelled(1.0), None);
 }
 
 /// The lean of an upright wall over 1 mm in the frame of `leaning_box`.
@@ -241,4 +241,30 @@ fn a_straight_face_steeper_than_a_draft_is_a_chamfer() {
     let (top, mid, corner) = x0_side_off(1.0, 0.5);
     let err = ride_loops(&top, &mid, &corner, 1.0, 1.0, 9.0, UPRIGHT).expect_err("a partly bevelled loop").to_string();
     assert!(err.contains("only part of its length"), "{err}");
+}
+
+#[test]
+fn half_depth_must_match_along_the_whole_piece() {
+    let (top, _, corner) = x0_side_off(0.2, 0.1);
+    let outer = Loop::new(vec![Point2::new(0.0, 0.0), Point2::new(60.0, 0.0), Point2::new(60.0, 40.0), Point2::new(0.2, 40.0)]).expect("mid outer");
+    let mid = Region::new(vec![outer, hole(20.0, 15.0, 40.0, 25.0)]).expect("mid");
+    assert!(ride_loops(&top, &mid, &corner, 1.0, 1.0, 9.0, UPRIGHT).is_err());
+}
+
+#[test]
+fn an_unrelated_mid_depth_hole_must_not_excuse_a_bevel() {
+    let (top, mid, corner) = x0_side_off(0.2, 0.0);
+    let mut loops = mid.loops().to_vec();
+    loops.push(hole(0.1, 19.0, 1.0, 21.0));
+    let mid = Region::new(loops).expect("mid with a buried hole");
+    assert!(ride_loops(&top, &mid, &corner, 1.0, 1.0, 9.0, UPRIGHT).is_err());
+}
+
+#[test]
+fn a_drafted_side_allows_collinear_half_depth_vertices() {
+    let (top, _, corner) = x0_side_off(0.2, 0.1);
+    let outer = Loop::new(vec![Point2::new(0.1, 0.0), Point2::new(60.0, 0.0), Point2::new(60.0, 40.0), Point2::new(0.1, 40.0), Point2::new(0.1, 27.0), Point2::new(0.1, 13.0)])
+        .expect("mid outer");
+    let mid = Region::new(vec![outer, hole(20.0, 15.0, 40.0, 25.0)]).expect("mid");
+    assert_eq!(ride_loops(&top, &mid, &corner, 1.0, 1.0, 9.0, UPRIGHT).expect("a split draft"), corner);
 }

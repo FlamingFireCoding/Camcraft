@@ -84,7 +84,7 @@ pub fn ride_loops(
         // #2887: a loop bevelled on only part of its length has no whole
         // outline to ride - refused by name, whichever way its
         // tessellation would have read it.
-        let reading = wall.map(|(c, _)| read(t.points(), c.points(), mid, depth, lean));
+        let reading = wall.map(|(c, _)| read(t, c, mid, depth, lean));
         if let Some((bevel, sharp)) = reading.as_ref().and_then(|r| r.partly_bevelled(width)) {
             return Err(GenError::At {
                 msg: format!(
@@ -157,7 +157,14 @@ pub fn ride_loops(
 /// so a side that runs on along the wall past its corner (an undercut
 /// lip) reads as the sharp length plus the overhang it is. #2929: a
 /// piece off its wall that [`drafted`] reads as a draft is no bevel.
-fn read(top: &[Point2], wall: &[Point2], mid: &Region, depth: f64, lean: Option<Point2>) -> Reading {
+fn read(top: &Loop, wall: &Loop, mid: &Region, depth: f64, lean: Option<Point2>) -> Reading {
+    // Match one whole boundary with the same material side. A buried hole
+    // cannot supply a draft point for an outer wall. Tied matches refuse.
+    let mut middle: Vec<_> =
+        mid.loops().iter().filter(|l| l.is_ccw() == wall.is_ccw()).map(|l| (l.points(), gap(l.points(), wall.points()).max(gap(wall.points(), l.points())))).collect();
+    middle.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let mid = middle.first().filter(|(_, d)| middle.get(1).is_none_or(|(_, next)| next - d > LEAN_SLACK)).map(|(p, _)| *p);
+    let (top, wall) = (top.points(), wall.points());
     let mut r = Reading::default();
     if wall.is_empty() || lean.is_some_and(|l| leans(top, wall, l)) {
         return r;
@@ -169,7 +176,7 @@ fn read(top: &[Point2], wall: &[Point2], mid: &Region, depth: f64, lean: Option<
             if d <= SAME_EDGE {
                 r.sharp_len += (b.x - a.x).hypot(b.y - a.y);
                 r.sharp = r.sharp.or(Some(m));
-            } else if lean.is_some_and(|l| drafted(m, wall, mid, depth, l)) {
+            } else if lean.is_some_and(|l| drafted(a, b, wall, mid, depth, l)) {
                 r.drafted = true;
             } else if d > MATCH_SLACK {
                 r.bevel = r.bevel.or(Some(m));
@@ -206,27 +213,67 @@ impl Reading {
 /// over it: a 45 degree bevel deeper than the ride is straight too.
 const DRAFT_TAN: f64 = 0.267_949_192_431_122_7;
 
-/// #2929: the piece whose midpoint `m` stands off `wall` is a drafted
-/// wall - one straight face from the top plane down to the corner
-/// plane, at no more than a draft's slope. Measured along the frame's
-/// `lean`, the piece stands `d` off its foot `w` on the wall, at most
-/// `depth * DRAFT_TAN`. The straight face from `m` down to `w` crosses
-/// the plane half way down at the point half way between them, and the
-/// section there must pass through that point within the section grid
-/// slack. A modelled chamfer that ends before the corner plane, or a
-/// side whose slope turns back half way down, misses that point.
-fn drafted(m: Point2, wall: &[Point2], mid: &Region, depth: f64, lean: Point2) -> bool {
+/// #2929: a straight drafted face has parallel section edges. Match
+/// the entire piece to one corner-wall segment, then require its whole
+/// half-depth segment on the corresponding boundary, in the same direction.
+fn drafted(a: Point2, b: Point2, wall: &[Point2], mid: Option<&[Point2]>, depth: f64, lean: Point2) -> bool {
     if !(depth.is_finite() && depth > 0.0) {
         return false;
     }
-    let low = Point2::new(m.x - lean.x, m.y - lean.y);
-    let Some(w) = foot(low, wall) else {
+    let Some(mid) = mid else { return false };
+    let low = |p: Point2| Point2::new(p.x - lean.x, p.y - lean.y);
+    let m = low(Point2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5));
+    let Some((u, v)) = wall.iter().enumerate().map(|(i, &u)| (u, wall[(i + 1) % wall.len()])).min_by(|&(u, v), &(s, t)| seg(m, u, v).total_cmp(&seg(m, s, t))) else {
         return false;
     };
-    let d = (w.x - low.x).hypot(w.y - low.y);
-    let half = Point2::new((m.x + w.x) * 0.5, (m.y + w.y) * 0.5);
-    let dm = mid.loops().iter().map(|l| near(half, l.points())).fold(f64::INFINITY, f64::min);
-    d > SAME_EDGE && d <= depth * DRAFT_TAN && dm <= LEAN_SLACK
+    let (dx, dy) = (v.x - u.x, v.y - u.y);
+    let len = dx.hypot(dy);
+    if len <= SAME_EDGE || (b.x - a.x) * dx + (b.y - a.y) * dy <= 0.0 || ((b.x - a.x) * dy - (b.y - a.y) * dx).abs() > LEAN_SLACK * len {
+        return false;
+    }
+    let (wa, wb) = (seg_foot(low(a), u, v), seg_foot(low(b), u, v));
+    // Clamping either projection at a wall corner cannot prove this face.
+    let drift = |p: Point2, w: Point2| ((p.x - w.x) * dx + (p.y - w.y) * dy).abs() / len;
+    if drift(low(a), wa) > LEAN_SLACK || drift(low(b), wb) > LEAN_SLACK {
+        return false;
+    }
+    let d = seg(m, u, v);
+    let max_d = (wa.x - low(a).x).hypot(wa.y - low(a).y).max((wb.x - low(b).x).hypot(wb.y - low(b).y));
+    d > SAME_EDGE && max_d <= depth * DRAFT_TAN && covered(Point2::new((a.x + wa.x) * 0.5, (a.y + wa.y) * 0.5), Point2::new((b.x + wb.x) * 0.5, (b.y + wb.y) * 0.5), mid)
+}
+
+/// A complete directed segment must have contiguous boundary support.
+/// Collinear mesh vertices may split that support, but a point crossing,
+/// a reversed edge, or a gap cannot prove a straight face.
+fn covered(a: Point2, b: Point2, ring: &[Point2]) -> bool {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len = dx.hypot(dy);
+    if len <= SAME_EDGE {
+        return false;
+    }
+    let project = |p: Point2| ((p.x - a.x) * dx + (p.y - a.y) * dy) / len;
+    let on_line = |p: Point2| ((p.x - a.x) * dy - (p.y - a.y) * dx).abs() <= LEAN_SLACK * len;
+    let mut spans: Vec<_> = ring
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &u)| {
+            let v = ring[(i + 1) % ring.len()];
+            let (from, to) = (project(u), project(v));
+            (to > from && on_line(u) && on_line(v)).then_some((from, to))
+        })
+        .collect();
+    spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut end = 0.0;
+    for (from, to) in spans {
+        if from > end + LEAN_SLACK {
+            return false;
+        }
+        end = end.max(to);
+        if end >= len - LEAN_SLACK {
+            return true;
+        }
+    }
+    false
 }
 
 /// #2944: the segment `a`-`b` cut at the foot of each vertex of `wall`
@@ -318,14 +365,6 @@ fn near(p: Point2, ring: &[Point2]) -> f64 {
 fn seg(p: Point2, a: Point2, b: Point2) -> f64 {
     let q = seg_foot(p, a, b);
     (q.x - p.x).hypot(q.y - p.y)
-}
-
-/// The point of `ring` nearest `p`; `None` for an empty ring.
-fn foot(p: Point2, ring: &[Point2]) -> Option<Point2> {
-    let n = ring.len();
-    (0..n)
-        .map(|i| seg_foot(p, ring[i], ring[(i + 1) % n]))
-        .min_by(|a, b| (a.x - p.x).hypot(a.y - p.y).total_cmp(&(b.x - p.x).hypot(b.y - p.y)))
 }
 
 /// The point of the segment `a`-`b` nearest `p`.

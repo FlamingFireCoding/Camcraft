@@ -59,3 +59,23 @@ X0.3 and X0 (top, half depth, corner) passed the distance check: its slope
 turns back, but the unsigned distances agree. The point check refuses this
 side. The unsigned distance check was dropped because it ignores the
 direction of the slope.
+
+## Third review correction
+
+Match one half-depth loop to the corner wall before reading its edge pieces.
+The loop must have the same winding. Choose the closest loop by the maximum
+of the vertex gaps in both directions. This comparison uses the whole wall,
+so an unrelated hole cannot supply a matching point.
+
+For each piece, require a parallel corner-wall segment with the same direction
+that covers the piece's full projection. Derive the expected half-depth
+segment from that wall segment and the top piece. Require continuous coverage
+of this segment by parallel segments of the matched half-depth loop, with the
+same direction, within `LEAN_SLACK`. Join their projected intervals so extra
+collinear vertices from tessellation do not change the reading.
+
+Drop the midpoint-only check and the minimum distance over all half-depth
+loops. One matching point does not establish agreement along the wall. A
+slanted half-depth edge can cross that point, and an unrelated hole can pass
+through it. Full coverage on the matched wall keeps those partial bevels out
+of the drafted reading.
