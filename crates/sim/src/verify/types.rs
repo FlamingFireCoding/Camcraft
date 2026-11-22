@@ -310,7 +310,8 @@ pub enum Warning {
     /// along that axis; the move to it from the tool-change height (the Z
     /// travel top) can end under the table top. A HIGHER plane along the
     /// axis stands LOWER in the world, so the repair is a plane at
-    /// `limit_mm` or under it - never a raise.
+    /// `limit_mm` or under it - never a raise. The operation layer gives
+    /// the two heights in the frame the user sets them in (#3148).
     FirstTraverseUnderTable { at: usize, height_mm: f64, limit_mm: f64 },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
@@ -476,11 +477,13 @@ impl core::fmt::Display for Warning {
                 if *fixture { "fixture" } else { "stock" },
                 top_mm - height_mm
             ),
+            // #3148: the axis is always tilted here, so the heights are
+            // the user's values along it, never a Z value.
             Warning::FirstTraverseUnderTable { at, height_mm, limit_mm } => write!(
                 f,
                 "the first rapid (move {at}) runs from the tool-change height along a tool axis that points down toward the \
-                 machine table; to the clearance plane at Z{height_mm:.3} it can go under the table top - lower the clearance \
-                 plane to Z{limit_mm:.3} or under it"
+                 machine table; to the clearance plane at {height_mm:.3} mm it can go under the table top - lower the \
+                 clearance plane to {limit_mm:.3} mm or under it (both measured along the tilted tool axis)"
             ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,

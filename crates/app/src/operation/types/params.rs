@@ -846,7 +846,8 @@ pub enum OpParams {
     /// STATIONS, so the part may stand or lean on the table; the lean
     /// trio rotates the pose off the radial along the travel, exactly
     /// as the 5-axis kinds lean off the normal. A mesh with no axis of
-    /// revolution refuses by name and points at the 5-Axis kinds; a
+    /// revolution refuses by name, says that 4-axis work on a part that
+    /// is not turned is not supported yet, and points at the 5-Axis kinds; a
     /// part lying flat on its axis points at Rotary Parallel.
     RotaryContour {
         tolerance: f64,
