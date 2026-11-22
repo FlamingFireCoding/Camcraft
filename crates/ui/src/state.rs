@@ -240,6 +240,9 @@ pub enum CommandKind {
     SelectPostBuiltin,
     SelectPostDialog,
     SelectPostFile(PathBuf),
+    /// #2950: the browser's folder picker - every `.mch` and `.cps` of
+    /// one folder joins the session's machine and post lists (read-only).
+    LoadSetupFolderDialog,
     /// Pick a built-in from the shipped registry by NAME (M3.3 B) -
     /// the combo's index is screen furniture; what the document stores
     /// is the name, so a registry re-growth never re-points a saved
@@ -1866,6 +1869,9 @@ pub struct State {
     /// The transport's timeline, built once per `doc_version` (never
     /// per frame: it walks every op's path) - see `shell::cached_script`.
     pub sim_script_cache: Option<(u64, std::sync::Arc<camcraft_app::sim::Script>)>,
+    /// #2608: the operation starts of that timeline, with a `Weak` of the
+    /// script they belong to - see `sim_steps::cached_op_starts`.
+    pub sim_op_starts: Option<(std::sync::Weak<camcraft_app::sim::Script>, std::sync::Arc<camcraft_app::sim::OpStarts>)>,
     /// #743: the revolved mesh of the tool at the playhead, as the
     /// collision laws read it - rebuilt only when its judged outline
     /// changes, emptied when the tool, its operation or the transport
@@ -2379,6 +2385,7 @@ impl State {
             field_view: None,
             field_play: None,
             sim_script_cache: None,
+            sim_op_starts: None,
             sim_tool_cache: std::sync::Mutex::default(),
             move_center: std::sync::Mutex::default(),
             field_mode: None,
@@ -3536,12 +3543,7 @@ impl State {
                 }
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
-            CommandKind::LoadMachineDialog => {
-                let dir = crate::egui_app::machines_pane::user_dir(self);
-                if let Some(path) = pick_machine_file(dir.as_deref()) {
-                    self.load_machine_path(path);
-                }
-            }
+            CommandKind::LoadMachineDialog => self.load_machine_dialog(),
             CommandKind::LoadMachineFile(path) => self.load_machine_path(path),
             // #343: the machine verbs land on the active setup's own
             // machine when it has one (`setup_mount`).
@@ -3574,11 +3576,8 @@ impl State {
             // like every machine verb (`setup_mount`).
             CommandKind::UseCatalogueMachine(source) => self.mount_catalogue(&source),
             CommandKind::SelectPostBuiltin => self.select_post(PostRef::Builtin),
-            CommandKind::SelectPostDialog => {
-                if let Some(path) = pick_post_file() {
-                    self.select_post(PostRef::File(path.display().to_string()));
-                }
-            }
+            CommandKind::SelectPostDialog => self.select_post_dialog(),
+            CommandKind::LoadSetupFolderDialog => self.load_setup_folder_dialog(),
             CommandKind::SelectPostFile(path) => {
                 self.select_post(PostRef::File(path.display().to_string()));
             }
@@ -4780,6 +4779,20 @@ impl State {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
+                if !posted.bundle_files.is_empty() {
+                    self.post_view = None;
+                    self.status = format!(
+                        "Agie job prepared in {} ({} controller files, zero working steps)",
+                        path.display(), posted.bundle_files.len()
+                    );
+                    if let Some(review) = posted.controller_review {
+                        self.status.push_str(&format!(" — {review}"));
+                    }
+                    if let Some(note) = posted.not_judged {
+                        self.status.push_str(&format!(" — {note}"));
+                    }
+                    return;
+                }
                 self.status = format!(
                     "posted {} op(s), {} lines in {} to {}",
                     posted.ops,

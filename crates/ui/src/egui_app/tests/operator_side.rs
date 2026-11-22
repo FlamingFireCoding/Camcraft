@@ -97,15 +97,25 @@ fn a_lathe_shows_the_arrow_on_the_viewer_side_of_the_turning_plane() {
         axes: vec![ax("X", (-5.0, 60.0)), ax("Z", (-197.0, 3.0))],
         ..Machine::default()
     };
-    let st = shown(&lathe);
-    let a = arrow(&st);
-    assert_eq!(a.len(), 8);
-    // The cylinder has radius 60 about the spindle axis. The default side
-    // is +Y; the arrow starts at the low-X edge, in the middle of Z.
-    assert_eq!([a[0][0], a[0][1], a[0][2]], [-60.0, 60.0, -97.0]);
-    assert!(a[1][1] > 61.0 && a[1][0] == -60.0 && a[1][2] == -97.0, "the tip points to +Y: {:?}", a[1]);
-    let _ = interact::collect_overlay(&st);
-    assert_eq!(texts(&st), [LABEL]);
+    // Check the default +Y side and each explicit side on the cylinder.
+    for side in [None].into_iter().chain(OperatorSide::ALL.map(Some)) {
+        let lathe = Machine { operator_side: side, ..lathe.clone() };
+        let st = shown(&lathe);
+        let a = arrow(&st);
+        assert_eq!(a.len(), 8);
+        let (axis, sign) = OperatorSide::of(&lathe).outward();
+        let down = 1 - axis;
+        let (start, tip) = (a[0], a[1]);
+        assert!((start[0].hypot(start[1]) - 60.0).abs() < 1e-4, "the start is on the cylinder: {start:?}");
+        assert!(start[axis] * sign as f32 > 0.0 && start[down] < 0.0, "the start is in the lower-side quadrant: {start:?}");
+        assert_eq!(start[2], -97.0, "the start is in the middle of Z");
+        assert!((tip[axis] - start[axis]) * sign as f32 > 1.0, "the tip points outwards: {tip:?}");
+        assert_eq!(tip[down], start[down]);
+        assert_eq!(tip[2], start[2]);
+        assert!(a.iter().all(|v| v[0].hypot(v[1]) >= 60.0 - 1e-4), "all strokes are outside the cylinder");
+        assert!(interact::collect_overlay(&st).contains(&start));
+        assert_eq!(texts(&st), [LABEL]);
+    }
 }
 
 #[test]

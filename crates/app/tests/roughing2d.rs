@@ -174,6 +174,7 @@ fn offset() -> OpParams {
         helix_radius: 1.0,
         tilt: None,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     }
 }
 

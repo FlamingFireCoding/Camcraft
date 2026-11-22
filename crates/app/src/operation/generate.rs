@@ -73,6 +73,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         unit,
         wcs_yaw,
         spindle_note: _,
+        part_off_side,
         post_order,
         carried_overhang: _,
         op_name: _,
@@ -306,6 +307,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         None
     };
     let mut face_band: Option<(Vec<(&'static str, Region)>, f64)> = None;
+    // #3316: an Outside band's holes are the part (the pass start names them).
+    let around_band = area.as_ref().and_then(|c| c.outside_clearing_stock()) == Some(true);
     if !contour_sel_arm && !contour_open && let Some(ctx) = area.take() {
         let base = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
         let applied = apply_area_full(base, Some(&ctx))?;
@@ -432,7 +435,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 machining2d::FaceHoles::Through => None,
             };
-            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn)?;
+            // #3343: the keep-out of the protected items at each level, for
+            // every tip height from the level up to the clearance plane, in
+            // the facer's turned frame.
+            let keep_at = |z: f64| -> Result<Region, GenError> {
+                match &avoid_spec {
+                    Some(spec) => {
+                        let ko = spec
+                            .keepout_region(z, fparams.clearance_z.max(z), verify::AVOID_PAD)
+                            .map_err(GenError::Invalid)?;
+                        boundary_turn::turn_region(&ko, turn)
+                    }
+                    None => Ok(Region::empty()),
+                }
+            };
+            let keep = avoid_spec
+                .as_ref()
+                .map(|spec| machining2d::FaceKeep { names: spec.names_list(), at: &keep_at });
+            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn, keep.as_ref())?;
             // M11.3 owed: the facer enters a radius off the footprint -
             // from air over the stock's edge; over the stock (an inner
             // patch) the entry runs on along its row out to air, or the
@@ -444,7 +464,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     path,
                     (stock_facets.as_deref(), m_gen, frame.as_ref()),
                     band.as_deref().unwrap_or(&[]),
-                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn),
+                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn, keep.as_ref()),
                     d * 0.5,
                 )?
             };
@@ -922,6 +942,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_turns,
             blend_radius,
             corner_relief,
+            pass_start,
             ..
         } => {
             let region = region_for_job(
@@ -976,16 +997,25 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     neighbour_parts: &neighbour_parts,
                 },
             )?;
+            // #3316: the stock footprint in the area's frame tells a start
+            // ring in open air from one on a wall.
+            let side = machining2d::StartSide {
+                start: *pass_start,
+                stock: (*pass_start != machining2d::PassStart::Auto)
+                    .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
+                    .flatten(),
+                around_part: around_band,
+            };
             let mut path = match &avoid_spec {
-                Some(spec) => machining2d::pocket_avoid_with_relief(&region, &pp, spec, corner_relief)?,
-                None => machining2d::pocket_entered_with_relief(&region, &pp, &[], corner_relief)?,
+                Some(spec) => machining2d::pocket_avoid_started_on(&region, &pp, spec, corner_relief, &side)?,
+                None => machining2d::pocket_started_on(&region, &pp, &[], corner_relief, &side)?,
             };
             if let Some(m) = carry_need!(&relieved_region, &path) {
                 pp.links.approach.material_top = Some(m);
                 lk = pp.links;
                 path = match &avoid_spec {
-                    Some(spec) => machining2d::pocket_avoid_with_relief(&region, &pp, spec, corner_relief)?,
-                    None => machining2d::pocket_entered_with_relief(&region, &pp, &[], corner_relief)?,
+                    Some(spec) => machining2d::pocket_avoid_started_on(&region, &pp, spec, corner_relief, &side)?,
+                    None => machining2d::pocket_started_on(&region, &pp, &[], corner_relief, &side)?,
                 };
             }
             relief_zones = zones;
@@ -2939,6 +2969,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #3452: where the model goes on past the plane on both sides,
+            // the chuck-side rule decides which piece is the part; a setup
+            // that cannot say which end is free is refused there.
+            let plane = req_z(hl.bottom, "Parting Plane Z")?;
+            if let Some(why) = &part_off_side
+                && crate::turning::plane_inside_model(&material.facets, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why.clone()));
+            }
             let path = crate::turning::part_in(
                 &material.facets,
                 &crate::turning::PartParams {
@@ -2953,6 +2992,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 turn_stock,
             )?;
+            // #3452: the revolved-blade scan reads a cutoff's kerf as
+            // scrap BY DESIGN, so it cannot see a kerf that stands in
+            // the finished part. The part-off law judges the kerf
+            // against the part's end face: a blade band that takes
+            // part material is a gouge, refused and never posted.
+            if let Some(why) =
+                crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why));
+            }
             (region, path)
         }
         // M5.2 stage D: threading. The tool door names the V-form

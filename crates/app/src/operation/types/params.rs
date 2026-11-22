@@ -302,6 +302,9 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's rings start (#3316): the shared pass-order
+        /// parameter. `Auto` is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Engraving (M2.4 B): the trace's numbers under the catalog name -
     /// the twin law again (as `Adaptive2D` is the pocket's). The chain

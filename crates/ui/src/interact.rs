@@ -1000,7 +1000,6 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
     out.extend(time("scene/overlay.height_planes", || height_plane_lines(state)));
     // #1863: the active setup's DXF profiles on its stock top.
     out.extend(time("scene/overlay.sketches", || crate::sketch_overlay::sketch_lines(state)));
-    // #2632: the envelope with its operator-side marker.
     out.extend(time("scene/overlay.envelope", || crate::work_envelope::overlay_lines(state)));
     out.extend(time("scene/overlay.selection_features", || selection_feature_lines(state)).iter().copied());
     capped(out)

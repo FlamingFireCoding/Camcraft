@@ -39,6 +39,7 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -66,6 +67,13 @@ impl OpParams {
                     }
                 }
                 digest::write_corner_relief(corner_relief, h);
+                // #3316: written only off Auto, so every earlier op keeps
+                // the digest it had.
+                match pass_start {
+                    crate::machining2d::PassStart::Auto => {}
+                    crate::machining2d::PassStart::Inside => h.write_u8(0xC1),
+                    crate::machining2d::PassStart::Outside => h.write_u8(0xC2),
+                }
             }
             OpParams::Slot {
                 links: _,

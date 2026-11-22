@@ -100,8 +100,8 @@ pub(crate) fn builds(state: &State) -> u64 {
 }
 
 /// The arrow of one input: it starts at the middle of the lower edge of
-/// the operator-side face and points out of the envelope. `None` for an
-/// envelope whose figures are not finite.
+/// the operator-side face (the lower quadrant for a cylinder) and points
+/// out of the envelope. `None` for an envelope whose figures are not finite.
 fn build((shape, side): Input) -> Option<Marker> {
     let (axis, sign) = side.outward();
     // The bounds, and the axis whose low end is the bottom of the picture:
@@ -120,6 +120,13 @@ fn build((shape, side): Input) -> Option<Marker> {
     anchor[axis] = if sign < 0.0 { min[axis] } else { max[axis] };
     anchor[down] = min[down];
     anchor[along] = 0.5 * (min[along] + max[along]);
+    if let EnvelopeShape::Cylinder { cx, cy, radius, .. } = shape {
+        // The lower-side quadrant lies on the cylinder, unlike its box corner.
+        let center = [cx, cy];
+        let offset = radius * std::f64::consts::FRAC_1_SQRT_2;
+        anchor[axis] = center[axis] + sign * offset;
+        anchor[down] = center[down] - offset;
+    }
     let extent = (max[axis] - min[axis]).max(max[along] - min[along]);
     let len = (extent * LENGTH_PART).clamp(LENGTH_RANGE.0, LENGTH_RANGE.1);
     let at = |out: f64, across: f64| {
