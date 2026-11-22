@@ -760,8 +760,15 @@ Drill boring cycle when there is no boring bar of the right size.
 |---|---|---|
 | Heights | Stepdown | 5 |
 | Heights | Bottom Z | each hole's own floor |
+| Passes | Pass starts at | Auto |
 | Passes | Stock to leave | 0 |
 | Passes | Tolerance | 0.01 |
+
+**Pass starts at** sets the order of the rings at each level. **Auto**
+cuts from the centre out and ends on the wall. A hole has no inner wall,
+so **Inside** is the same order. **Outside** cuts the wall ring first and
+then works in to the centre. Each level still starts with the dive at the
+centre.
 
 **Common refusals:** "boring needs at least one hole"; "clearance plane
 below a hole entry".

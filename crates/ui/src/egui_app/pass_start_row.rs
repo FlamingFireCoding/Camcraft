@@ -21,6 +21,9 @@ pub(crate) const TROCH_PASS_START_REFUSED: &str =
 /// What the three values do: the row's hover text.
 const PASS_START_HINT: &str = "Auto: the order this operation always cut. Inside: start at the part or island wall and work out. Outside: start at the outer edge and work in. Each ring follows the edge it starts from, one stepover at a time. With an Outside containment the outer edge is the stock edge, so each level starts in air. Where the first ring runs along a wall, or the area is narrower than the tool plus one stepover, a cut takes the full tool width and the toolpath shows a warning";
 
+/// What the values mean on a Bore (#3360): a hole has no inner wall.
+pub(crate) const BORE_PASS_START_HINT: &str = "Bore: a hole has no inner wall, so Inside cuts from the centre out, as Auto does. Outside cuts the wall ring first and then works in to the centre";
+
 /// Why Face has no pass order (#3356): the line under its disabled row.
 pub(crate) const FACE_NO_PASS_ORDER: &str =
     "Not used on Face: its rows run edge to edge across the face, so there is no inside or outside order";
