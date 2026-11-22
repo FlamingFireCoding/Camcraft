@@ -9,6 +9,7 @@ use super::machines_edit::{draft_at, pick_kind, press, prompt, type_into, user_d
 use super::machines_pane::{assert_no_commands, harness_with_user_dir, open_machines};
 use super::*;
 use crate::egui_app::machine_file_editor::Prompt;
+use egui::accesskit::Role;
 use egui_kittest::kittest::NodeT;
 
 const TABLE: &str = "/kinematics/default/parts/0/parts";
@@ -25,6 +26,22 @@ fn status(h: &Harness<'static, ShellUi>) -> Option<String> {
     h.state().state.machines_pane.editor.as_ref().and_then(|e| e.status.as_ref().map(|s| s.1.clone()))
 }
 
+/// Pick `words` in the dropdown labelled `combo`.
+fn about(h: &mut Harness<'static, ShellUi>, combo: &str, words: &str) {
+    h.get_by_role_and_label(Role::ComboBox, combo).scroll_to_me();
+    h.run_steps(4);
+    h.get_by_role_and_label(Role::ComboBox, combo).click();
+    h.run_steps(3);
+    h.get_by_role_and_label(Role::Button, words).click();
+    h.run_steps(3);
+}
+
+/// Tick or untick the checkbox labelled `label`.
+fn tick(h: &mut Harness<'static, ShellUi>, label: &str) {
+    h.get_by_role_and_label(Role::CheckBox, label).click();
+    h.run_steps(3);
+}
+
 fn blank_mill(tag: &str) -> (Harness<'static, ShellUi>, std::path::PathBuf) {
     let dir = user_dir(tag);
     let mut h = harness_with_user_dir(Some(dir.clone()));
@@ -38,25 +55,31 @@ fn blank_mill(tag: &str) -> (Harness<'static, ShellUi>, std::path::PathBuf) {
 #[test]
 fn a_blank_mill_gets_an_a_on_the_table_moves_it_and_saves_it() {
     let (mut h, dir) = blank_mill("chain");
-    h.get_by_label("Z - linear, moves the work");
+    h.get_by_label("Z - linear");
     type_into(&mut h, "New axis", "a");
-    press(&mut h, "-X");
+    about(&mut h, "Rotary turns about", "-X");
     press(&mut h, "Add axis");
     assert_eq!(names(&h), ["X", "Y", "Z", "A"], "A goes on the table, before the head");
     let axis = draft_at(&h, &format!("{TABLE}/3/axis"));
     assert_eq!(axis, Some(serde_json::json!([-1.0, 0.0, 0.0])));
-    h.get_by_label("A - rotary, moves the work");
+    h.get_by_label("A - rotary");
     h.get_by_label("Validation: passes");
 
     // A move trades only with an axis of its kind: Z is a linear.
     assert!(h.get_by_label("Move A up").accesskit_node().is_disabled());
     type_into(&mut h, "New axis", "B");
-    press(&mut h, "+Y");
+    about(&mut h, "Rotary turns about", "+Y");
     press(&mut h, "Add axis");
     press(&mut h, "Move B up");
     assert_eq!(names(&h), ["X", "Y", "Z", "B", "A"]);
     press(&mut h, "Move B down");
     assert_eq!(names(&h), ["X", "Y", "Z", "A", "B"], "up then down is no change");
+    press(&mut h, "Remove B");
+    // Nor with one that moves the tool: a B that carries the head.
+    type_into(&mut h, "New axis", "B");
+    about(&mut h, "Place", "Carries the head");
+    press(&mut h, "Add axis");
+    assert!(h.get_by_label("Move A down").accesskit_node().is_disabled());
     press(&mut h, "Remove B");
 
     // The travel field of the moved chain edits the right part.
@@ -89,7 +112,7 @@ fn a_refused_letter_adds_nothing_and_a_removed_axis_leaves_the_rest() {
 
     press(&mut h, "Remove Y");
     assert_eq!(names(&h), ["X", "Z"]);
-    assert!(h.query_by_label("Y - linear, moves the work").is_none());
+    assert!(h.query_by_label("Y - linear").is_none());
     assert_no_commands(&h);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -97,10 +120,10 @@ fn a_refused_letter_adds_nothing_and_a_removed_axis_leaves_the_rest() {
 #[test]
 fn x_is_reversed_and_set_back_from_its_row() {
     let (mut h, dir) = blank_mill("chain_reversed");
-    press(&mut h, "X reversed");
+    tick(&mut h, "X reversed");
     assert_eq!(draft_at(&h, &format!("{TABLE}/0/direction")), Some(serde_json::json!(-1)));
     h.get_by_label("Validation: passes");
-    press(&mut h, "X reversed");
+    tick(&mut h, "X reversed");
     assert_eq!(draft_at(&h, &format!("{TABLE}/0/direction")), None, "standard is unstated");
     assert_no_commands(&h);
     let _ = std::fs::remove_dir_all(&dir);
@@ -109,7 +132,7 @@ fn x_is_reversed_and_set_back_from_its_row() {
 #[test]
 fn turning_about_y_suggests_b_and_an_a_about_y_shows_a_note_at_its_row() {
     let (mut h, dir) = blank_mill("chain_letter");
-    press(&mut h, "+Y");
+    about(&mut h, "Rotary turns about", "+Y");
     let typed = h.state().state.machines_pane.editor.as_ref().map(|e| e.axis_form.name.clone());
     assert_eq!(typed.as_deref(), Some("B"), "+Y suggests B");
 
@@ -118,7 +141,7 @@ fn turning_about_y_suggests_b_and_an_a_about_y_shows_a_note_at_its_row() {
     assert_eq!(draft_at(&h, &format!("{TABLE}/3/axis")), Some(serde_json::json!([0.0, 1.0, 0.0])));
     h.get_by_label("Note: A turns about Y: by RS-274 an axis about Y is B");
 
-    press(&mut h, "A about -X");
+    about(&mut h, "A turns about", "-X");
     assert_eq!(draft_at(&h, &format!("{TABLE}/3/axis")), Some(serde_json::json!([-1.0, 0.0, 0.0])));
     assert!(h.query_by_label("Note: A turns about Y: by RS-274 an axis about Y is B").is_none());
     h.get_by_label("Validation: passes");
@@ -138,9 +161,9 @@ fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
         type_into(&mut h, &format!("{name} travel min"), min);
         type_into(&mut h, &format!("{name} travel max"), "0");
     }
-    press(&mut h, "-X");
+    about(&mut h, "Rotary turns about", "-X");
     press(&mut h, "Add axis");
-    h.get_by_label("A - rotary, moves the work");
+    h.get_by_label("A - rotary");
     type_into(&mut h, "A nose to axis", "98.08");
     type_into(&mut h, "A axis to table", "40");
     h.get_by_label("Validation: passes");
@@ -169,7 +192,7 @@ fn the_flexihal_router_is_built_from_a_blank_mill_and_saved() {
 #[test]
 fn an_offset_with_no_parent_rotary_shows_a_note_at_its_row() {
     let (mut h, dir) = blank_mill("chain_offset");
-    press(&mut h, "+X");
+    type_into(&mut h, "New axis", "A");
     press(&mut h, "Add axis");
     let note = "Note: A states offset, but no rotary carries it: offset is measured from a parent rotary";
     assert!(h.query_by_label(note).is_none());

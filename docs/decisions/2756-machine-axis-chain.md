@@ -24,12 +24,15 @@ says what it costs to change.
    `rollover`, `sign_convention`, unknown keys); `parts` stays with the
    slot. So a rotary that moves gets the `parent` and `chain_order` (#1962)
    of its new slot.
-5. **A move trades only with an axis of the same kind** (Q2, waiting). A
-   rotary in a linear's slot describes another machine: an A that rides on
-   Y, with X no longer riding on Y. A rotary turned on the table changes its
-   `axis` and letter, not its slot. To put a rotary elsewhere, the user
-   removes it and adds it again. The refusal says so; the editor greys the
-   button.
+5. **A move trades only with an axis of the same kind that moves the same
+   thing** (Q2, waiting). A rotary in a linear's slot describes another
+   machine: an A that rides on Y, with X no longer riding on Y. In the same
+   way, an A on the table that trades with a B that carries the head gets
+   the head's slot and tilts the tool. So both must be rotary or both
+   linear, and both must move the work or both the tool. A rotary turned on
+   the table changes its `axis` and letter, not its slot. To put an axis
+   elsewhere, the user removes it and adds it again. The refusal says so;
+   the editor greys the button.
 6. **An `offset` with no parent rotary gets a note, not a refusal** (Q1,
    waiting). `offset` is measured from a parent rotary (#1962). The row
    says "states offset, but no rotary carries it"; the file still
@@ -57,13 +60,22 @@ says what it costs to change.
     `zero_offset`, `rollover` and `controller.rtcp` as fields are #1970's,
     in the same files (`fields.rs`, `sheet.rs`). This PR keeps those keys on
     every edit and does not draw them.
+11. **The group draws through the form helpers** (`layout/form.rs`,
+    `layout/controls.rs`; #1122): one setting per row, label left and
+    control right, help as a hover tooltip. Each axis has a row with its
+    letter and kind and the buttons Up, Down and ✖ (their accessible names
+    stay "Move A up", "Move A down", "Remove A"), then "A moves" (the work
+    or the tool), then its own fields. The direction and the new axis's
+    place are dropdowns. The first version wrapped the buttons and the six
+    direction choices over three lines per rotary in a narrow pane.
 
 **Why**
 
 The editor's law is that the file is the truth: an edit that drops a key
 the editor does not know loses a vendor's data. Keeping the tree's shape on
 a move means a move never changes which slot carries the head, so a move
-cannot turn a table rotary into a head rotary by accident.
+cannot turn a table rotary into a head rotary by accident; a trade across
+the head's slot is refused for the same reason (decision 5).
 
 **Considered and dropped**
 
@@ -78,7 +90,8 @@ cannot turn a table rotary into a head rotary by accident.
 **Cost to change later**
 
 - Decision 5: remove the kind check in `move_axis` and the button's guard;
-  one test changes.
+  two tests change. The work-or-tool check stays: without it a move
+  changes which axis tilts the tool.
 - Decision 6: a refusal is a rule in the validator plus a test; the note
   then goes. No shipped machine file states `offset`.
 - Decision 10: none here; #1970 adds its rows.

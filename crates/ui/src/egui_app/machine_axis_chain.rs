@@ -8,13 +8,15 @@
 //! in the app layer (`camcraft_app::machine::{chain, draft}`): this
 //! file draws the rows and calls the draft on a click.
 
-use egui::{DragValue, Label, RichText, TextEdit, Ui};
+use egui::{ComboBox, DragValue, Label, Response, RichText, TextEdit, Ui};
 
 use camcraft_app::machine::chain::{suggested_letter, AxisRow, Place, Step};
 use camcraft_app::machine::draft::MachineDraft;
 use camcraft_app::machine::validate::Refusal;
 
-use super::layout::group_open;
+use super::layout::{
+    button, check_row, group_open, hint, list_row, prop_row, row_label_id, small_button, CTRL_W, GROUP_GAP,
+};
 use super::theme::Tokens;
 
 /// The directions a new rotary can turn about.
@@ -61,12 +63,18 @@ pub fn row_keys(name: &str) -> [String; 2] {
 
 const TRADE_ABOVE: &str = "Trade places with the axis above";
 const TRADE_BELOW: &str = "Trade places with the axis below";
-const TRADE_KIND: &str = "An axis trades places only with one of its kind; to put it elsewhere, remove it and add it again";
+const TRADE_KIND: &str = "An axis trades places only with one of its kind that moves the same thing; to put it elsewhere, remove it and add it again";
 
+/// The row's label: its letter and kind.
 fn row_words(r: &AxisRow) -> String {
-    let kind = if r.rotary { "rotary" } else { "linear" };
-    let moves = if r.carries_head { "moves the tool" } else { "moves the work" };
-    format!("{} - {kind}, {moves}", r.name)
+    format!("{} - {}", r.name, if r.rotary { "rotary" } else { "linear" })
+}
+
+/// A short button keeps its full name for assistive tech and tests
+/// ("Move A up" where the button shows "Up").
+fn named(r: Response, name: String) -> Response {
+    r.ctx.accesskit_node_builder(r.id, |n| n.set_label(name));
+    r
 }
 
 /// Draw the group. Returns the edit a click asks for; the caller
@@ -83,26 +91,36 @@ pub(crate) fn draw(
     let mut edit: Option<Edit> = None;
     group_open(ui, "Axis chain", None, true, |ui| {
         if rows.is_empty() {
-            ui.label(RichText::new("no axis stated").color(pal.text_dim));
+            list_row(ui, RichText::new("no axis stated").color(pal.text_dim));
         }
         for (i, r) in rows.iter().enumerate() {
-            ui.horizontal_wrapped(|ui| {
-                ui.add(Label::new(row_words(r)).wrap()).on_hover_text(format!("Part: {}", r.pointer));
-                // A move trades only with a neighbour of the same kind.
-                let same = |j: Option<usize>| j.and_then(|j| rows.get(j)).is_some_and(|n| n.rotary == r.rotary);
-                let up = ui.add_enabled(same(i.checked_sub(1)), egui::Button::new(format!("Move {} up", r.name)));
-                if up.on_hover_text(TRADE_ABOVE).on_disabled_hover_text(TRADE_KIND).clicked() {
-                    edit = Some(Edit::Move(r.pointer.clone(), Step::Up));
-                }
-                let down = ui.add_enabled(same(Some(i + 1)), egui::Button::new(format!("Move {} down", r.name)));
-                if down.on_hover_text(TRADE_BELOW).on_disabled_hover_text(TRADE_KIND).clicked() {
-                    edit = Some(Edit::Move(r.pointer.clone(), Step::Down));
-                }
-                let remove = ui.button(format!("Remove {}", r.name));
+            if i > 0 {
+                ui.add_space(GROUP_GAP);
+            }
+            // A move trades only with a neighbour of the same kind that
+            // moves the same thing (the work or the tool).
+            let same = |j: Option<usize>| {
+                j.and_then(|j| rows.get(j)).is_some_and(|n| n.rotary == r.rotary && n.carries_head == r.carries_head)
+            };
+            // Right to left: the buttons read Up, Down, remove.
+            prop_row(ui, &row_words(r), |ui| {
+                let remove = named(small_button(ui, "\u{2716}"), format!("Remove {}", r.name));
                 if remove.on_hover_text("Remove this axis; the parts it carries stay").clicked() {
                     edit = Some(Edit::Remove(r.pointer.clone()));
                 }
+                let moves = [(Step::Down, "Down", same(Some(i + 1)), TRADE_BELOW), (Step::Up, "Up", same(i.checked_sub(1)), TRADE_ABOVE)];
+                for (step, words, enabled, tip) in moves {
+                    let b = ui.add_enabled_ui(enabled, |ui| small_button(ui, words)).inner;
+                    let b = named(b, format!("Move {} {}", r.name, words.to_lowercase()));
+                    if b.on_hover_text(tip).on_disabled_hover_text(TRADE_KIND).clicked() {
+                        edit = Some(Edit::Move(r.pointer.clone(), step));
+                    }
+                }
             });
+            hint(ui, &format!("Part: {}", r.pointer));
+            let moves = if r.carries_head { "the tool" } else { "the work" };
+            prop_row(ui, &format!("{} moves", r.name), |ui| list_row(ui, moves));
+            hint(ui, "An axis with the head below it moves the tool; any other moves the work");
             if let Some(e) = row_fields(ui, r) {
                 edit = Some(e);
             }
@@ -114,66 +132,100 @@ pub(crate) fn draw(
                 super::error_text::error_text(ui, error, &refusal.to_string());
             }
         }
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            let l = ui.label("New axis");
-            let hint = DIRECTIONS.get(form.direction).and_then(|d| suggested_letter(d.1)).unwrap_or("A");
-            ui.add(TextEdit::singleline(&mut form.name).id_salt("machine-axis-new").desired_width(40.0).hint_text(hint))
-                .labelled_by(l.id)
-                .on_hover_text("X, Y, Z, U, V or W for a linear; A, B or C for a rotary");
-            ui.selectable_value(&mut form.place, Place::OnTable, "On the table")
-                .on_hover_text("Beside the table's axes: a rotary here turns the work");
-            ui.selectable_value(&mut form.place, Place::CarriesHead, "Carries the head")
-                .on_hover_text("The head rides on the new axis: a rotary here tilts the tool");
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.label("Rotary turns about");
-            for (i, (words, axis)) in DIRECTIONS.iter().enumerate() {
-                if ui.selectable_value(&mut form.direction, i, *words).clicked() {
-                    suggest(form, *axis);
-                }
-            }
-        });
-        if ui.button("Add axis").on_hover_text("Add the axis to the chain").clicked() {
+        ui.add_space(GROUP_GAP);
+        new_axis_form(ui, form);
+        if button(ui, "Add axis").on_hover_text("Add the axis to the chain").clicked() {
             edit = Some(Edit::Add);
         }
     });
     edit
 }
 
+/// The "add axis" form: one setting per row.
+fn new_axis_form(ui: &mut Ui, form: &mut AxisForm) {
+    let letter = DIRECTIONS.get(form.direction).and_then(|d| suggested_letter(d.1)).unwrap_or("A");
+    prop_row(ui, "New axis", |ui| {
+        let field = TextEdit::singleline(&mut form.name).id_salt("machine-axis-new").desired_width(CTRL_W).hint_text(letter);
+        let r = ui.add(field);
+        if let Some(l) = row_label_id(ui) {
+            r.labelled_by(l);
+        }
+    });
+    hint(ui, "X, Y, Z, U, V or W for a linear; A, B or C for a rotary");
+    prop_row(ui, "Place", |ui| {
+        let words = |p: Place| if p == Place::OnTable { "On the table" } else { "Carries the head" };
+        let c = ComboBox::from_id_salt("machine-axis-new-place").width(CTRL_W).selected_text(words(form.place)).show_ui(ui, |ui| {
+            for p in [Place::OnTable, Place::CarriesHead] {
+                ui.selectable_value(&mut form.place, p, words(p));
+            }
+        });
+        if let Some(l) = row_label_id(ui) {
+            c.response.labelled_by(l);
+        }
+    });
+    hint(ui, "On the table, a rotary turns the work; carrying the head, it tilts the tool");
+    let before = form.direction;
+    prop_row(ui, "Rotary turns about", |ui| {
+        let words = DIRECTIONS.get(form.direction).map_or("+X", |d| d.0);
+        let c = ComboBox::from_id_salt("machine-axis-new-about").width(CTRL_W).selected_text(words).show_ui(ui, |ui| {
+            for (i, (words, _)) in DIRECTIONS.iter().enumerate() {
+                ui.selectable_value(&mut form.direction, i, *words);
+            }
+        });
+        if let Some(l) = row_label_id(ui) {
+            c.response.labelled_by(l);
+        }
+    });
+    if form.direction != before
+        && let Some(d) = DIRECTIONS.get(form.direction)
+    {
+        suggest(form, d.1);
+    }
+}
+
 /// A row's own fields: a linear's reversed box, a rotary's axis as
 /// ±X/±Y/±Z or three numbers.
 fn row_fields(ui: &mut Ui, r: &AxisRow) -> Option<Edit> {
     let mut edit = None;
-    ui.horizontal_wrapped(|ui| {
-        if !r.rotary {
-            let mut reversed = r.reversed;
-            let b = ui.checkbox(&mut reversed, format!("{} reversed", r.name));
-            if b.on_hover_text("direction -1: this slide's + moves the other way").changed() {
-                edit = Some(Edit::Reverse(r.pointer.clone(), reversed));
-            }
-            return;
+    if !r.rotary {
+        let mut reversed = r.reversed;
+        if check_row(ui, &format!("{} reversed", r.name), &mut reversed).changed() {
+            edit = Some(Edit::Reverse(r.pointer.clone(), reversed));
         }
-        ui.label(format!("{} turns about", r.name));
-        for (words, axis) in DIRECTIONS {
-            let on = r.axis.is_some_and(|a| unit(a) == Some(axis));
-            if ui.selectable_label(on, format!("{} about {words}", r.name)).clicked() && !on {
-                edit = Some(Edit::TurnAbout(r.pointer.clone(), axis));
+        hint(ui, "direction -1: this slide's + moves the other way");
+        return edit;
+    }
+    let now = r.axis.and_then(unit).and_then(|u| DIRECTIONS.iter().find(|d| d.1 == u)).map_or("other", |d| d.0);
+    prop_row(ui, &format!("{} turns about", r.name), |ui| {
+        let id = ("machine-axis-about", &r.pointer);
+        let c = ComboBox::from_id_salt(id).width(CTRL_W).selected_text(now).show_ui(ui, |ui| {
+            for (words, axis) in DIRECTIONS {
+                if ui.selectable_label(now == words, words).clicked() && now != words {
+                    edit = Some(Edit::TurnAbout(r.pointer.clone(), axis));
+                }
             }
+        });
+        if let Some(l) = row_label_id(ui) {
+            c.response.labelled_by(l);
         }
-        let mut a = r.axis.unwrap_or([0.0; 3]);
-        let mut changed = false;
-        for (c, word) in a.iter_mut().zip(["x", "y", "z"]) {
-            // Keyed by the part and component, so a note or refusal row
-            // that comes or goes above does not take the focus mid-edit.
+    });
+    hint(ui, "The direction the rotary turns about; \"other\" is a tilted axis, set by its three numbers");
+    let mut a = r.axis.unwrap_or([0.0; 3]);
+    let mut changed = false;
+    prop_row(ui, &format!("{} axis", r.name), |ui| {
+        // Right to left: z, y, x. Keyed by the part and component, so a
+        // note or refusal row that comes or goes above does not take the
+        // focus mid-edit.
+        for (c, word) in a.iter_mut().zip(["x", "y", "z"]).rev() {
             let id = ("machine-axis-dir", &r.pointer, word);
             let d = ui.push_id(id, |ui| ui.add(DragValue::new(c).speed(0.01).max_decimals(4))).inner;
             changed |= d.on_hover_text(format!("{} axis {word}: any direction, not only ±X, ±Y, ±Z", r.name)).changed();
         }
-        if changed {
-            edit = Some(Edit::TurnAbout(r.pointer.clone(), a));
-        }
     });
+    hint(ui, "The axis direction as three numbers: x, y, z");
+    if changed {
+        edit = Some(Edit::TurnAbout(r.pointer.clone(), a));
+    }
     edit
 }
 
