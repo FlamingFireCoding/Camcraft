@@ -115,6 +115,9 @@ function onParameter(name, value) {
       return;
     case "OperationKind":
     case "RetractPlane": case "TopOfStock":
+    // #2769: the stock's shape describes the box already stated; this
+    // post's BLK FORM reads StockZBottom, not these.
+    case "StockShape": case "StockShapeBottom": case "StockShapeDiameter":
       return;
     case "SectionMode":
       if (value === "3-axis") return;
