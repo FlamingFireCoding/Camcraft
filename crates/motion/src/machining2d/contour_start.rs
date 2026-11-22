@@ -64,9 +64,10 @@ fn reach(p: &ContourParams) -> f64 {
 /// pick; `Ok(None)` when no start point is set. Refused by name: a pick
 /// farther than [`reach`] from every ring. Control and wear compensation
 /// take the pick (#1473): `contour_comp_pick` proves the seam law there
-/// and refuses by name a pick it cannot hold. Tabs take the pick (#1473): [`seat`] starts the picked ring
-/// at the pick on every level, tabbed ones too, so the tab windows are
-/// measured from the picked start and the first window begins there.
+/// and refuses by name a pick it cannot hold. Tabs take the pick (#1473):
+/// [`seat`] starts the picked ring at the pick on every level, tabbed ones
+/// too, so the tab windows are measured from the picked start and the
+/// first window begins there.
 pub(super) fn pick_ring(loops: &[&Loop], p: &ContourParams) -> Result<Option<(usize, Point2)>, GenError> {
     let ap = &p.links.approach;
     let Some(q) = ap.start_point else {
