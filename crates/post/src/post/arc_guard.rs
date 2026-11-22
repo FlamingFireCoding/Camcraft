@@ -13,8 +13,8 @@
 //! The rule (decision `docs/decisions/3442-coincident-arc-blocks.md`):
 //! - the written in-plane ends differ: the arc posts as before;
 //! - they coincide and the record turns more than half a circle (or its
-//!   ends are within 1e-5 mm in the stream: a full turn stated as one
-//!   record), or it states no centre (the script refuses it by name):
+//!   ends are equal in the stream: a full turn stated as one record),
+//!   or it states no centre (the script refuses it by name):
 //!   the full circle is the arc within the output resolution, and the
 //!   arc posts as before;
 //! - they coincide on a short arc: the tool moves less than the output
@@ -53,12 +53,15 @@ function arcFateOf(a, word) {
   // this rule can read: the script's own code refuses it by name.
   if (!_arcNum(c[u]) || !_arcNum(c[v])) return "arc";
   // A centre that stands off the start as written makes the block a
-  // full circle: right for a full turn. Ends within 1e-5 mm in the
-  // stream (the band emitArcWithRadius uses) are a full turn stated as
-  // one record, whatever float noise puts between them.
+  // full circle: right for a full turn. A full turn is a record whose
+  // ends are equal in the stream (the one-record form the reader takes,
+  // and the form the writer gives a near-full turn on its lattice), or
+  // whose sweep from its direction and centre is more than half a turn.
+  // Never ends that are only close: a true short arc under any band is
+  // still short.
   var round = !(same(u, c[u], s[u]) && same(v, c[v], s[v]));
   if (round) {
-    var full = Math.abs(e[u] - s[u]) < 1e-5 && Math.abs(e[v] - s[v]) < 1e-5;
+    var full = e[u] === s[u] && e[v] === s[v];
     if (!full) {
       var a0 = Math.atan2(s[v] - c[v], s[u] - c[u]), a1 = Math.atan2(e[v] - c[v], e[u] - c[u]);
       var sweep = a.ccw ? a1 - a0 : a0 - a1;

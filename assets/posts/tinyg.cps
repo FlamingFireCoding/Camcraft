@@ -664,9 +664,6 @@ function onCircular() {
   var ccw = p.CircularDirection !== "CW", turn = 2 * Math.PI;
   var sweep = ccw ? end - angle : angle - end;
   if (sweep <= 0) sweep += turn;
-  // #3442: ends within 1e-5 mm are a full turn stated as one record (the
-  // band of arcFateOf), never a sweep of float noise.
-  if (Math.abs(to[u] - from[u]) < 1e-5 && Math.abs(to[v] - from[v]) < 1e-5) sweep = turn;
   var nativeXY = u === 0 && v === 1;
   var step = Math.PI;
   if (!nativeXY) {

@@ -28,6 +28,7 @@
 
 mod after_op;
 pub mod cnc;
+pub mod cnc_arc_lattice;
 pub mod cnc_thread;
 pub mod cnc_torch;
 mod coolant;

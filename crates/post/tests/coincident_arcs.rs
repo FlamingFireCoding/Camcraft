@@ -75,7 +75,7 @@ const POSTS: &[(&str, Kind)] = &[
 
 const ARC_FEED: &str = "F 180000";
 
-/// The mill witness: two sub-resolution XY arcs (0.02 um each - under
+/// The mill witness: two sub-resolution XY arcs (0.03 and 0.01 um - under
 /// the 1 um and 0.1 um metric steps and the 2.54 um inch step), one sub-resolution
 /// helical arc, one normal quarter arc, one full circle as two halves and
 /// one sub-resolution XZ (G18) arc. `reference` gives the same path with
@@ -85,7 +85,7 @@ fn mill_cuts(reference: bool) -> String {
     let f = ARC_FEED;
     let mut s = String::new();
     if !reference {
-        s += &format!("Arc CCW X 18123 Y 5432.02 Z 5500 {f} I 10123 J 5432\n");
+        s += &format!("Arc CCW X 18123 Y 5432.03 Z 5500 {f} I 10123 J 5432\n");
         s += &format!("Arc CCW X 18123 Y 5432.04 Z 5500 {f} I 10123 J 5432\n");
         s += &format!("Arc CW X 18123 Y 5432.02 Z 5400 {f} I 10123 J 5432\n");
     } else {
@@ -106,7 +106,7 @@ fn flat_cuts(reference: bool) -> String {
     let f = ARC_FEED;
     let mut s = String::new();
     if !reference {
-        s += &format!("Arc CCW X 18123 Y 5432.02 Z 0 {f} I 10123 J 5432\n");
+        s += &format!("Arc CCW X 18123 Y 5432.03 Z 0 {f} I 10123 J 5432\n");
         s += &format!("Arc CCW X 18123 Y 5432.04 Z 0 {f} I 10123 J 5432\n");
     }
     s += &format!("Arc CCW X 10123 Y 13432 Z 0 {f} I 10123 J 5432\n");
@@ -329,7 +329,8 @@ fn arc_fate_reads_the_written_words_and_leaves_a_centreless_arc_to_its_script() 
           writeln("short-cw-is-near-full " + fate([1, 0, 0], [1, 0.0002, 0], [0, 0, 0], false));
           writeln("helix " + fate([1, 0, 0], [1, 0.0002, -1], [0, 0, 0], true));
           writeln("rotary " + fate([1, 0, 0], [1, 0.0002, 0], [0, 0, 0], true, "XY", true));
-          writeln("noise-full " + fate([1, 0, 0], [1, 0.000001, -1], [0, 0, 0], true));
+          writeln("noise-ahead " + fate([1, 0, 0], [1, 0.000001, -1], [0, 0, 0], true));
+          writeln("noise-behind " + fate([1, 0, 0], [1, -0.000001, -1], [0, 0, 0], true));
           writeln("exact-full " + fate([1, 0, 0], [1, 0, 0], [0, 0, 0], true));
           writeln("tiny-radius " + fate([0.0001, 0, 0], [0.0001, 0, 0], [0, 0, 0], true));
           writeln("visible " + fate([1, 0, 0], [1, 0.002, 0], [0, 0, 0], true));
@@ -339,16 +340,19 @@ fn arc_fate_reads_the_written_words_and_leaves_a_centreless_arc_to_its_script() 
     "#;
     let out = engine::run(cps, &Value::Null, "").expect("the rule script runs");
     let want = "nocentre arc\nnocentre-short arc\nshort none\nshort-cw-is-near-full arc\nhelix linear\nrotary linear\n\
-                noise-full arc\nexact-full arc\ntiny-radius none\nvisible arc\nxz-short none\nxz-short-cw arc\n";
+                noise-ahead linear\nnoise-behind arc\nexact-full arc\ntiny-radius none\nvisible arc\nxz-short none\nxz-short-cw arc\n";
     assert_eq!(out.program, want);
 }
 
-/// A full helical turn stated as one record whose end is 1e-6 mm off its
-/// start (float noise) posts as the same full helical turn as the record
-/// whose ends are equal - never as a straight Z move.
+/// A helical turn stated as one record whose end is 1e-6 mm short of its
+/// start (its sweep from direction and centre is nearly a full turn)
+/// posts as the same full helical turn as the record whose ends are equal,
+/// never as a straight Z move. (A record whose end is 1e-6 mm AHEAD of
+/// its start is a true short helix by its own geometry, and posts as the
+/// straight move: the rule test pins that case.)
 #[test]
 fn a_full_helical_turn_off_by_float_noise_stays_a_helix() {
-    let noisy = mill_stream("5432", "Arc CCW X 18123 Y 5432.001 Z 5000 F 180000 I 10123 J 5432\n", "X 18123 Y 5432");
+    let noisy = mill_stream("5432", "Arc CCW X 18123 Y 5431.999 Z 5000 F 180000 I 10123 J 5432\n", "X 18123 Y 5432");
     let exact = mill_stream("5432", "Arc CCW X 18123 Y 5432 Z 5000 F 180000 I 10123 J 5432\n", "X 18123 Y 5432");
     for stem in mills() {
         for unit in units(stem) {
@@ -404,12 +408,18 @@ fn a_short_arc_with_a_rotary_word_posts_the_rotary_move() {
     let cuts = "Rapid X 18123 Y 5432 Z 18000 A 0 B 0 C 0\nFeed X 18123 Y 5432 Z 5500 F 45000 A 0 B 0 C 0\n\
                 Arc CCW X 18123 Y 5432.02 Z 5500 F 180000 A 1000 B 0 C 0 I 10123 J 5432\n";
     let s = mill_stream("5432", cuts, "X 18123 Y 5432.02");
-    let cps = read("assets/posts/fanuc.cps");
-    for unit in ["mm", "inch"] {
-        let out = engine::run_with(&cps, &mch, &s, &json!({ "Units": unit })).expect("rotary witness posts");
-        assert!(out.warnings.is_empty(), "{unit}: {:?}", out.warnings);
-        let text = format!("{}--- warnings: []\n", out.program);
-        assert!(arc_blocks(&text, false).is_empty(), "{unit}: no arc block:\n{}", out.program);
-        assert!(out.program.lines().any(|l| l.starts_with("G01 ") && l.split_whitespace().any(|w| w == "A1.")), "{unit}: the A move is posted:\n{}", out.program);
+    // Two posts that write tilted feed moves on this machine (Haas refuses
+    // a tilted move without RTCP by name); Doosan states its rotary brake.
+    for stem in ["fanuc", "doosan-dnm"] {
+        let cps = read(&format!("assets/posts/{stem}.cps"));
+        for unit in ["mm", "inch"] {
+            let opts = json!({ "Units": unit, "rotaryBrake": stem == "doosan-dnm" });
+            let out = engine::run_with(&cps, &mch, &s, &opts).expect("rotary witness posts");
+            assert!(out.warnings.is_empty(), "{stem} {unit}: {:?}", out.warnings);
+            let text = format!("{}--- warnings: []\n", out.program);
+            assert!(arc_blocks(&text, false).is_empty(), "{stem} {unit}: no arc block:\n{}", out.program);
+            let a1 = |l: &str| (l.starts_with("G01 ") || l.starts_with("G1 ")) && l.split_whitespace().any(|w| w == "A1." || w == "A1");
+            assert!(out.program.lines().any(a1), "{stem} {unit}: the A move is posted:\n{}", out.program);
+        }
     }
 }
