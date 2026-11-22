@@ -51,6 +51,7 @@ pub mod probe_rec;
 mod program;
 mod tool_change;
 pub mod rotary_cap;
+pub mod arc_guard;
 pub mod section_mode;
 pub mod work_offset;
 pub mod units;
