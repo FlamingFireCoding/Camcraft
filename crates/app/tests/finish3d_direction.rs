@@ -3,12 +3,12 @@
 //! camcraft_motion::finishing3d, camcraft_sim::verify.
 //! Provenance: analytic plane and ball tangency over an original fixture.
 
-use camcraft_app::cl::{MoveKind, Toolpath};
+use camcraft_app::cl::{Move, MoveKind, Toolpath};
 use camcraft_app::commands::{
     AddTool, CreateOperation, History, ImportModel, SetStock, SetWcsOrigin,
 };
 use camcraft_app::finishing3d::FinishPattern;
-use camcraft_app::geometry::{Mesh, Point3, Triangle, quat_from_yaw};
+use camcraft_app::geometry::{Mesh, Point3, Triangle, cube, quat_from_yaw};
 use camcraft_app::operation::{self, AreaControls, Containment, Height, OpParams, OpType, SrcRef};
 use camcraft_app::schema::{Location, Operation};
 use camcraft_app::stock::StockShape;
@@ -19,6 +19,7 @@ use flecs_ecs::prelude::World;
 const TOOL: &str = "BN-0600";
 const RADIUS: f64 = 3.0;
 const FINISH_TOL: f64 = 0.05;
+const PLATE_TOP: f64 = 6.0;
 const X_MIN: f64 = 13.0;
 const X_MAX: f64 = 37.0;
 const Y_MIN: f64 = -12.0;
@@ -57,10 +58,10 @@ fn wedge() -> Mesh {
     )
 }
 
-fn document(yaw: f64) -> (World, History) {
+fn document(part: Mesh, yaw: f64) -> (World, History) {
     let world = world::new_world();
     let mut h = History::default();
-    h.execute(&world, ImportModel::from_mesh("wedge", wedge()));
+    h.execute(&world, ImportModel::from_mesh("part", part));
     let pos = Point3::new(25.0, -5.0, 0.0);
     let stock = StockShape::Box {
         dx: 28.0,
@@ -127,7 +128,7 @@ fn operation_with(world: &World, h: &mut History, pattern: FinishPattern) -> Ope
             world,
             "Finish",
             TOOL,
-            SrcRef::Entity("wedge".into()),
+            SrcRef::Entity("part".into()),
             params(pattern, 0.0),
         )
         .unwrap(),
@@ -136,17 +137,30 @@ fn operation_with(world: &World, h: &mut History, pattern: FinishPattern) -> Ope
     model::operation_of(world, &entity).unwrap()
 }
 
-fn assert_roof_raster(path: &Toolpath, angle: f64) {
+fn inside_part(p: Point3, inset: f64) -> bool {
+    (X_MIN + inset..=X_MAX - inset).contains(&p.x) && (Y_MIN + inset..=Y_MAX - inset).contains(&p.y)
+}
+
+fn assert_raster(
+    path: &Toolpath,
+    angle: f64,
+    is_raster: impl Fn(&Move) -> bool,
+    tip_z_at: impl Fn(f64, f64) -> f64,
+) {
     let (uy, ux) = angle.to_radians().sin_cos();
     let cross = |p: Point3| p.y * ux - p.x * uy;
-    let offset = RADIUS * (1.0f64.hypot(SLOPE_X.hypot(SLOPE_Y)) - 1.0);
-    let mut first_row = None;
-    let mut last_row = None;
+    let mut rows = Vec::new();
     let mut swept = 0.0;
     for m in path.moves.iter().filter(|m| m.kind == MoveKind::Feed) {
+        for p in [m.from, m.to] {
+            assert!(
+                inside_part(p, RADIUS - 1e-3),
+                "{angle}°: the cutter extends beyond the physical boundary at {p:?}"
+            );
+        }
         let dr = m.to - m.from;
         let length = dr.x.hypot(dr.y);
-        if length <= 1e-8 {
+        if length <= 1e-8 || !is_raster(m) {
             continue;
         }
         assert!(m.arc.is_none(), "a clipped raster row is straight: {m:?}");
@@ -157,18 +171,11 @@ fn assert_roof_raster(path: &Toolpath, angle: f64) {
         );
         for p in [m.from, m.to] {
             assert!(
-                (X_MIN + RADIUS - 1e-3..=X_MAX - RADIUS + 1e-3).contains(&p.x)
-                    && (Y_MIN + RADIUS - 1e-3..=Y_MAX - RADIUS + 1e-3).contains(&p.y),
-                "{angle}°: the cutter extends beyond the physical boundary at {p:?}"
-            );
-            assert!(
-                (p.z - (roof(p.x, p.y) + offset)).abs() < 0.015,
-                "{angle}°: the ball does not follow the sloped roof at {p:?}"
+                (p.z - tip_z_at(p.x, p.y)).abs() < 0.015,
+                "{angle}°: the ball does not follow the target surface at {p:?}"
             );
         }
-        let row = cross(m.from);
-        first_row.get_or_insert(row);
-        last_row = Some(row);
+        rows.push(cross(m.from));
         swept += length;
     }
     assert!(
@@ -177,46 +184,84 @@ fn assert_roof_raster(path: &Toolpath, angle: f64) {
     );
     // Cross-feed advances along V=(-sin(angle), cos(angle)). Its order
     // distinguishes 90 from 270 and 0 from 180 even with alternating rows.
-    let span = last_row.unwrap() - first_row.unwrap();
+    let span = rows.last().unwrap() - rows.first().unwrap();
     assert!(
         span > 4.0,
         "{angle}°: rows did not advance along +V, span {span}"
     );
+    rows.sort_by(f64::total_cmp);
+    rows.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    assert!(
+        rows.len() >= 4,
+        "{angle}°: expected several separated rows: {rows:?}"
+    );
+}
+
+fn clipped_parallel(part: Mesh, angle: f64, yaw: f64) -> Toolpath {
+    let (world, mut h) = document(part, yaw);
+    let mut op = operation_with(&world, &mut h, FinishPattern::Parallel);
+    op.params = params(FinishPattern::Parallel, angle);
+    op.area = AreaControls {
+        containment: Some(Containment::Inside),
+        ..Default::default()
+    };
+    let (path, warnings) = operation::generate(&world, &op, "Finish").unwrap();
+    assert!(
+        !warnings.iter().any(|w| match w {
+            Warning::Gouge { .. } => true,
+            Warning::Envelope { gouge_mm, .. } => *gouge_mm > FINISH_TOL,
+            _ => false,
+        }),
+        "{angle}° with WCS yaw {yaw}°: {warnings:?}"
+    );
+    path
+}
+
+#[test]
+fn zero_and_ninety_degree_rasters_cut_the_flat_top() {
+    let lo = Point3::new(X_MIN, Y_MIN, 0.0);
+    let hi = Point3::new(X_MAX, Y_MAX, PLATE_TOP);
+    for angle in [0.0, 90.0] {
+        let path = clipped_parallel(cube(lo, hi), angle, 0.0);
+        // The plateau feeds cross its interior at the top plane. A
+        // level waterline on the wall falls outside those cuts.
+        assert_raster(
+            &path,
+            angle,
+            |m| {
+                let mid = Point3::new(
+                    m.from.x.midpoint(m.to.x),
+                    m.from.y.midpoint(m.to.y),
+                    PLATE_TOP,
+                );
+                (m.from.z - PLATE_TOP).abs() < 1e-6
+                    && (m.to.z - PLATE_TOP).abs() < 1e-6
+                    && inside_part(mid, RADIUS + 0.25)
+            },
+            |_, _| PLATE_TOP,
+        );
+    }
 }
 
 #[test]
 fn parallel_angles_cut_the_clipped_roof_and_pass_verification() {
-    for (angle, yaw) in [
-        (0.0, 0.0),
-        (90.0, 0.0),
-        (180.0, 0.0),
-        (270.0, 0.0),
-        (45.0, 0.0),
-        (45.0, 30.0),
-    ] {
-        let (world, mut h) = document(yaw);
-        let mut op = operation_with(&world, &mut h, FinishPattern::Parallel);
-        op.params = params(FinishPattern::Parallel, angle);
-        op.area = AreaControls {
-            containment: Some(Containment::Inside),
-            ..Default::default()
-        };
-        let (path, warnings) = operation::generate(&world, &op, "Finish").unwrap();
-        assert!(
-            !warnings.iter().any(|w| match w {
-                Warning::Gouge { .. } => true,
-                Warning::Envelope { gouge_mm, .. } => *gouge_mm > FINISH_TOL,
-                _ => false,
-            }),
-            "{angle}° with WCS yaw {yaw}°: {warnings:?}"
+    let offset = RADIUS * (1.0f64.hypot(SLOPE_X.hypot(SLOPE_Y)) - 1.0);
+    for (angle, yaw) in [(180.0, 0.0), (270.0, 0.0), (45.0, 0.0), (45.0, 30.0)] {
+        let path = clipped_parallel(wedge(), angle, yaw);
+        // The waterline feeds stay at one Z. These directions cross the
+        // slope, so their raster feeds change Z.
+        assert_raster(
+            &path,
+            angle + yaw,
+            |m| (m.to.z - m.from.z).abs() > 1e-8,
+            |x, y| roof(x, y) + offset,
         );
-        assert_roof_raster(&path, angle + yaw);
     }
 }
 
 #[test]
 fn nonparallel_patterns_keep_their_paths_and_stamp_with_a_saved_angle() {
-    let (world, mut h) = document(0.0);
+    let (world, mut h) = document(wedge(), 0.0);
     let mut op = operation_with(&world, &mut h, FinishPattern::Scallop);
     for pattern in [
         FinishPattern::ParallelMulti,
@@ -254,8 +299,8 @@ fn nonparallel_patterns_keep_their_paths_and_stamp_with_a_saved_angle() {
 
 #[test]
 fn finish_creation_refuses_invalid_typed_angles() {
-    let (world, _) = document(0.0);
-    let src = SrcRef::Entity("wedge".into());
+    let (world, _) = document(wedge(), 0.0);
+    let src = SrcRef::Entity("part".into());
     for angle in [
         f64::NAN,
         f64::INFINITY,
