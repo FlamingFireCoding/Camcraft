@@ -199,7 +199,7 @@ fn a_wrong_texel_at_a_fixed_lattice_place_fails_the_spot_check() {
     let good = cut_cpu(&input).expect("the CPU law cuts");
     spot_check(&input, &good).expect("the CPU law passes its own check");
     let [dx, dy, _] = grid.dims.map(|d| d as usize);
-    let fixed = (1 * dy + 1) * dx + 1; // the quarter place, cell [1, 1, 1]
+    let fixed = (dy + 1) * dx + 1; // the quarter place, cell [1, 1, 1]
     assert_eq!(good[fixed], -4.0 * grid.cap, "the fixed place is outside every item");
     let mut bad = good.clone();
     bad[fixed] = 0.0;
