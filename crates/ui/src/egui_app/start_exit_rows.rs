@@ -23,7 +23,7 @@ use camcraft_app::units::Unit;
 use crate::start_exit_pick::{StartExitAct, StartExitRole, act_id, armed_id};
 
 use super::fields::num;
-use super::layout::{GROUP_GAP, consequence, group, hint, prop_row};
+use super::layout::{GROUP_GAP, check_row, consequence, group, hint, prop_row};
 use super::pick_button::pick_button;
 
 /// The two group titles, as the tab's structural tests find them.
@@ -73,6 +73,22 @@ const EXIT: PointRows = PointRows {
 pub(super) fn start_exit_groups(ui: &mut Ui, u: Unit, a: &mut Approach) {
     point_group(ui, u, &START, &mut a.start_point);
     point_group(ui, u, &EXIT, &mut a.exit_point);
+}
+
+/// The wire's threading point uses the same Start point group on Geometry.
+pub(super) fn wire_start_group(ui: &mut Ui, u: Unit, start: &mut Option<[f64; 2]>) {
+    group(ui, START_GROUP, None, |ui| {
+        let mut stated = start.is_some();
+        check_row(ui, "Start hole stated", &mut stated);
+        match (stated, start.as_mut()) {
+            (true, Some(s)) => {
+                prop_row(ui, "Start hole X", |ui| num(ui, u, &mut s[0]));
+                prop_row(ui, "Start hole Y", |ui| num(ui, u, &mut s[1]));
+            }
+            (true, None) => *start = Some([0.0, 0.0]),
+            (false, _) => *start = None,
+        }
+    });
 }
 
 /// #3324: the Start point / Exit point groups of a kind that does not

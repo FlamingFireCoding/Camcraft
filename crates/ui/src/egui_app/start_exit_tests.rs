@@ -163,6 +163,41 @@ fn kinds_without_a_picked_start_say_so_by_name() {
 }
 
 #[test]
+fn the_wire_geometry_tab_groups_the_start_hole_and_says_the_exit_is_not_taken() {
+    let mut state = opened(face());
+    let machine = camcraft_app::machine::parse_mch(include_str!("../../../app/tests/edm/wire-iso-fixture.mch"))
+        .expect("wire machine fixture");
+    state.pending.push_back(crate::state::CommandKind::EditMachineApply {
+        path: "wire-test.mch".into(), machine: Box::new(machine),
+    });
+    state.pending.push_back(crate::state::CommandKind::AddTool {
+        name: "EDM-W025".into(), tool: camcraft_app::wire_tools::wire_tool(0.25),
+    });
+    state.drain_actions();
+    crate::actions::add_operation(&mut state, kind("Wire Contour"));
+    state.drain_actions();
+    state.sync_ops_ui();
+    if let OpParams::WireContour(wire) = &mut state.op_ui.params {
+        wire.start = Some([2.0, 3.0]);
+    }
+    state.op_tab = super::super::op_tabs::SEC_GEO;
+    let mut harness = page(state);
+    harness.run();
+    for label in [START_GROUP, EXIT_GROUP, "Start hole stated", "Start hole X", "Start hole Y"] {
+        assert!(harness.query_by_label(label).is_some(), "Wire Contour has {label} on Geometry");
+    }
+    assert_eq!(harness.query_all_by_label_contains(super::NOT_TAKEN).count(), 1, "only the exit is not taken");
+    harness.get_by_label(START_GROUP).click();
+    harness.run();
+    for label in ["Start hole stated", "Start hole X", "Start hole Y"] {
+        assert!(harness.query_by_label(label).is_none(), "{label} folds with the Start point group");
+    }
+    assert!(harness.query_by_label(EXIT_GROUP).is_some(), "folding the start leaves the exit group visible");
+    let OpParams::WireContour(wire) = &harness.state().op_ui.params else { panic!("wire draft") };
+    assert_eq!(wire.start, Some([2.0, 3.0]), "folding the group preserves the threading point");
+}
+
+#[test]
 fn the_contour_lead_tab_has_viewport_pick_buttons_for_start_and_exit() {
     let mut harness = contour_page();
     let pick_start = harness.get_by_label("Pick start");
