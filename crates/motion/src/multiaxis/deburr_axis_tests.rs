@@ -161,3 +161,28 @@ fn the_holder_tilts_clear_of_the_post_inside_the_cap() {
     assert!(front.iter().any(|(q, a)| (q.x - 20.0).abs() < 4.0 && a[2] < 0.99), "the axis leans at the post");
 }
 
+#[test]
+fn a_run_ends_where_the_chamfer_plane_turns_at_a_corner() {
+    // A square sheet's four rims chain into one loop (two rims meet at
+    // each corner), and each keeps the upright axis, so no axis turn
+    // ends the run at a corner: only the plane law does. A run that
+    // turned the corner at the contact would drag the tip across it.
+    let (a, b, c, d) = (
+        Point3::new(0.0, 0.0, 15.0),
+        Point3::new(40.0, 0.0, 15.0),
+        Point3::new(40.0, 40.0, 15.0),
+        Point3::new(0.0, 40.0, 15.0),
+    );
+    let sheet = [Triangle { a, b, c }, Triangle { a, b: c, c: d }];
+    let path = run(&sheet, &params(DeburrAxisMode::Axis5, 30.0)).expect("the sheet breaks");
+    assert!(!path.breaks.is_empty());
+    for b in &path.breaks {
+        let frames = &b.volume.as_ref().expect("a framed cap").frames;
+        let n0 = frames[0].outward;
+        for f in frames {
+            let d = n0[0] * f.outward[0] + n0[1] * f.outward[1] + n0[2] * f.outward[2];
+            assert!(d > 10f64.to_radians().cos() - 1e-9, "a run turns its chamfer plane: {n0:?} to {:?}", f.outward);
+        }
+    }
+}
+
