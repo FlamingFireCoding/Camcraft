@@ -284,7 +284,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 // M11.1 C: pass corners and row-to-row links round on
                 // one arc inside the cleared area where it is legal.
                 super::kind_editors::arc_turn_rows(ui, u, "Arc turns at corners and links", blend_turns, blend_radius);
-                super::kind_editors::corner_relief_rows(ui, "pocket", corner_relief);
+                super::kind_editors::corner_relief_rows(ui, world, op_ctx.as_deref(), "pocket", corner_relief);
                 // #1517: Adaptive left 2D Pocket for 2D Adaptive.
                 let mut st_idx = match strategy {
                     PocketStrategy::Zigzag => 0,

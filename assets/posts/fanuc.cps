@@ -45,6 +45,8 @@ declaredOptions = {
   writeMachine: { type: "boolean", title: "Write machine header", group: "Header & comments", description: "Emit a comment naming the machine in the header", default: false },
   writeToolList: { type: "boolean", title: "Write tool list", group: "Header & comments", description: "Emit a summary comment per tool at program start", default: false },
   writeVersion: { type: "boolean", title: "Write post version", group: "Header & comments", description: "Emit post version metadata comment in the header", default: false },
+  // #2769: off by default - a control without Manual Guide i can alarm on G1902.
+  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank (G1902 / G1900)", group: "Header & comments", description: "Write the setup's stock as a Manual Guide i blank block before the first operation - only for a control with Manual Guide i", default: false },
   optionalStop: { type: "boolean", title: "Optional stop (M1)", group: "Behavior", description: "Write M1 before tool changes after the first operation", default: false },
   safeRetract: {
     type: "enum",
@@ -58,6 +60,9 @@ declaredOptions = {
     default: "G28",
   },
   useRadiusArcs: { type: "boolean", title: "Use radius (R) arcs", group: "Cycles & arcs", description: "Write R word instead of I/J/K arc centers", default: false },
+  // #2603: per-operation AI contour control, as a 31i-A5 owner writes it.
+  aiContourControl: { type: "boolean", title: "AI contour control (G05.1)", group: "Smoothing", description: "Write G05.1 Q1 R<level> at each operation start and G05.1 Q0 at its end - needs the control's AI contour control option", default: false },
+  aiContourLevel: { type: "integer", title: "AI contour control level", group: "Smoothing", description: "The R word of G05.1 Q1 (machining condition level 1-10)", min: 1, max: 10, default: 5 },
 };
 
 // #1388: optional explanations; conservative house budgets, not control maxima.
@@ -569,6 +574,51 @@ function unitBlock() {
   block([inch ? "G20" : "G21"]);
 }
 
+// #2769: the setup's stock as a Manual Guide i blank block, on the user's
+// ask (manualGuideBlank). Fanuc's public MANUAL GUIDE i operator's manual
+// (B-63874EN), behaviour only: G1902 B D H is the block's X / Y / Z size
+// and I J K the work origin's X / Y / Z distance from the block's minimum
+// corner; G1900 D L K is a round bar along Z (diameter, length, the work
+// positive-Z end face's distance from the work origin) with its axis on the work
+// origin. Written once, after G20 / G21 and before the first operation's
+// G90 / G54 and tool change. A stock no block describes (PARAM StockShape)
+// gets a comment that says why, never a block that draws another blank.
+// An inverted Z never reaches here: the engine refuses it.
+var mgiDone = false;
+function mgiNum(v) { return has(v) ? Number(v) : NaN; }
+function manualGuideBlank() {
+  if (mgiDone || !optBool("manualGuideBlank", false)) return;
+  mgiDone = true;
+  var p = typeof properties !== "undefined" ? properties : {};
+  var shape = String(p.StockShape || "");
+  var lo = [mgiNum(p.StockXYLeft), mgiNum(p.StockXYFront), mgiNum(p.StockShapeBottom)];
+  var hi = [mgiNum(p.StockXYRight), mgiNum(p.StockXYBack), mgiNum(p.StockZTop)];
+  var dia = mgiNum(p.StockShapeDiameter);
+  var why = { "": "NO STOCK SHAPE STATED", "from-model": "STOCK FROM A MODEL",
+    "from-previous": "STOCK FROM THE SETUP BEFORE", rotated: "STOCK OFF THE MACHINE AXES",
+    "cylinder-x": "BAR ALONG X - NOT SUPPORTED YET", "cylinder-y": "BAR ALONG Y" }[shape] || "";
+  if (!why && shape !== "box" && shape !== "cylinder-z") why = "UNKNOWN STOCK SHAPE " + clean(shape).toUpperCase();
+  for (var i = 0; i < 3 && !why; i++) {
+    if (!(isFinite(lo[i]) && isFinite(hi[i]))) why = "STOCK BOUNDS NOT STATED";
+    else if (!(hi[i] - lo[i] > 0)) why = "STOCK HAS NO SIZE";
+  }
+  if (!why && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6) why = "WCS ROTATED ABOUT Z";
+  if (!why && shape === "cylinder-z") {
+    if (!(dia > 0)) why = "BAR DIAMETER NOT STATED";
+    else if (!(hi[2] - orgZ >= 0)) why = "BAR END FACE BELOW THE WORK ORIGIN";
+    else if (Math.abs((lo[0] + hi[0]) / 2 - orgX) > 0.001 || Math.abs((lo[1] + hi[1]) / 2 - orgY) > 0.001) {
+      why = "BAR AXIS NOT ON THE WORK ORIGIN";
+    }
+  }
+  if (why) { note("NO BLANK BLOCK - " + why); return; }
+  if (shape === "box") {
+    block(["G1902", "B" + fu(hi[0] - lo[0]), "D" + fu(hi[1] - lo[1]), "H" + fu(hi[2] - lo[2]),
+      "I" + fu(orgX - lo[0]), "J" + fu(orgY - lo[1]), "K" + fu(orgZ - lo[2])]);
+  } else {
+    block(["G1900", "D" + fu(dia), "L" + fu(hi[2] - lo[2]), "K" + fu(hi[2] - orgZ)]);
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
@@ -646,14 +696,37 @@ function onToolChange(number, name) {
 // form is stated per control (#614's Doosan DNM).
 var smoothNamed = false;
 function smoothOn() {
+  if (optBool("aiContourControl", false)) return;  // #2603: aiccOn() writes the words
   if (!(smoothTol > 0) || smoothNamed) return;
   note("SMOOTHING NOT WRITTEN - G5.1 STATES NO TOLERANCE");
   smoothNamed = true;
 }
 function smoothOff() {
-  smoothActive = false;
+  aiccOff();
   smoothTol = 0;
   smoothMode = "";
+}
+// #2603: AI contour control on the user's ask (aiContourControl), per
+// operation: G05.1 Q1 R<level> after the preamble (the R level is the
+// control's machining condition, 1-10, not a tolerance), G05.1 Q0 at the
+// operation's end or before a canned cycle (the Doosan DNM manual cited
+// in doosan-dnm.cps requires Q0 before G73-G89). A section with the
+// spindle stopped (a touch probe, G31 skip) never arms it.
+var aiccRefused = false;
+function aiccOn() {
+  if (!optBool("aiContourControl", false) || !spindleOn || probeSection || smoothActive) return;
+  var lvl = optInt("aiContourLevel", 5);
+  if (!(lvl >= 1 && lvl <= 10)) {
+    if (!aiccRefused) msg("AI contour control level " + lvl + " - G05.1 Q1 takes R1 to R10; not written");
+    aiccRefused = true;
+    return;
+  }
+  block(["G05.1", "Q1", "R" + lvl]);
+  smoothActive = true;
+}
+function aiccOff() {
+  if (smoothActive) block(["G05.1", "Q0"]);
+  smoothActive = false;
 }
 
 function startPreamble() {
@@ -694,6 +767,7 @@ function startPreamble() {
     block(["G68", "X0.", "Y0.", "R" + fa(wcsYaw)]);
     wcsRotActive = true;
   }
+  aiccOn();                  // #2603: after G68, so G68 / G69 stay outside AICC
 }
 
 // The op's after-action (#110), written once its spindle has stopped:
@@ -732,9 +806,9 @@ function endPreamble() {
   if (!sectionOpen) return;
   restorePlane();            // M11.2 A: the plane never leaks past its section
   sectionOpen = false;
-  smoothOff();
   if (inCycle) block(["G80"]);
   inCycle = false;
+  smoothOff();               // #2603: G05.1 Q0 after G80, before G69 and M9/M5
   if (wcsRotActive) { block(["G69"]); wcsRotActive = false; }
   wcsYaw = 0;
   wcsRotMode = "";
@@ -759,7 +833,7 @@ function endPreamble() {
   lastA = 0; lastB = 0; lastC = 0;
 }
 
-function onSection() { seatKnown = false; startPreamble(); }
+function onSection() { seatKnown = false; manualGuideBlank(); startPreamble(); }
 function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions
@@ -1102,6 +1176,7 @@ function onCycle() {
   if (spindleStopped("canned cycle " + g)) return;
   if (!xyFirst(p.X, p.Y, p.R, false)) return;  // #1633: refused - the move is not written
   cycleSeat(p);
+  aiccOff();                 // #2603: no canned cycle under AI contour control
   var sig = g + "|" + p.Z + "|" + p.R + "|" + p.Q;
   // #2360 (as #2350 for Haas): P is modal in the dwell cycles, so a
   // changed dwell reopens the cycle and each hole posts its own P.
