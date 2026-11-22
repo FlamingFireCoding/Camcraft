@@ -94,6 +94,7 @@ fn punch_setup(
         clearance: DEFAULT_CLEARANCE,
         skims: Vec::new(),
         four_axis: None,
+        sharp_corners: false,
     };
     h.execute(
         &world,
