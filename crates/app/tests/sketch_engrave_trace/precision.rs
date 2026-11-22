@@ -101,9 +101,7 @@ fn a_short_arc_with_coincident_posted_endpoints_refuses_by_name() {
         Err(e) => e.to_string(),
         Ok(cmd) => {
             history.execute(&world, cmd);
-            posting::post_setup_unwritten(&world)
-                .err()
-                .expect("an unrepresentable arc must not post")
+            posting::post_setup_unwritten(&world).expect_err("an unrepresentable arc must not post")
         }
     };
     let why = why.to_lowercase();

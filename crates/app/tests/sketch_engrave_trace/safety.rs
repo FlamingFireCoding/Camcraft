@@ -25,7 +25,7 @@ fn refused_mark(world: &World, history: &mut History) -> String {
         }
         Err(e) => e.to_string(),
     };
-    let err = posting::post_setup_unwritten(world).err().expect("unsafe marks must never post");
+    let err = posting::post_setup_unwritten(world).expect_err("unsafe marks must never post");
     assert!(err.contains(OP), "{err}");
     format!("{reason}\n{err}")
 }
@@ -61,7 +61,7 @@ fn a_fixture_in_a_sketch_mark_is_a_blocking_collision() {
             "{:?}",
             mark.warnings
         );
-        let err = posting::post_setup_unwritten(&world).err().expect("fixture blocks posting");
+        let err = posting::post_setup_unwritten(&world).expect_err("fixture blocks posting");
         assert!(err.contains(OP) && err.contains("fixture"), "{err}");
     }
 }
@@ -139,7 +139,7 @@ fn crossing_selected_strokes_keep_the_crossing_check() {
             "{:?}",
             mark.warnings
         );
-        let err = posting::post_setup_unwritten(&world).err().expect("crossings block posting");
+        let err = posting::post_setup_unwritten(&world).expect_err("crossings block posting");
         assert!(err.contains(OP) && err.contains("cross"), "{err}");
     }
 }
