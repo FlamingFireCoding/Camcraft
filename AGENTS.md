@@ -182,7 +182,8 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     session reads it, and it needs no agent review.
   - Then the session comments on the pinned issue #681: `PROCESS_VERSION
     <n>` · PR #M (each process PR of the batch) · what changed · what a fork
-    must do.
+    must do · reload: each running session reloads `AGENTS.md`,
+    `.claude/agents/` and `.claude/skills/`, and a fork runs `fork-sync`.
   - At a cut, the release notes list the versions since the previous tag in
     a "Process changes" section.
 - **Overlapping issues stack.** An issue that changes code of an open PR
@@ -192,6 +193,19 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   gated again and merges. Never merge the parent first: `--delete-branch`
   deletes the child's base branch and GitHub closes the child PR. An overlap
   that cannot stack waits for the parent to merge.
+- **Own blocked PRs first.** Before an agent claims or starts a new issue,
+  it lists the open PRs of the current account that have `conflicts` or
+  `needs-rework`: `gh pr list --state open --author @me --label conflicts`
+  and `gh pr list --state open --author @me --label needs-rework`. It fixes
+  each one, or sends a worker to fix it, before it picks a new issue. A PR whose issue has `claimed` is
+  already in work and is skipped.
+  - `conflicts`: merge `origin/main` into the branch (never rebase, never
+    force-push), run the targeted gate and push (`resolve-conflicts`
+    skill).
+  - `needs-rework`: fix each review finding on the same branch with a plain
+    push ("Pull Request Law").
+  - The existing orders stay first: a `P1` or `P2` PR comes before other
+    PRs, and the standing order for outside PRs holds.
 - **Claim before any code.** Run `gh issue edit N --add-label claimed
   --add-assignee @me`, then comment `claimed: <session or agent name> · <UTC
   time> · worktree/branch <name> · plan: <one line>`. Do not work an issue
@@ -271,8 +285,8 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     output, quoted text of other persons, the technical names of the trade
     (G-code words, CAM terms), and the fixed strings that agents parse
     (`claimed:`, `/claim`, `<!-- pr-reviewer: ... -->`, `<!-- review-cost:
-    ... -->`, `Fixes #N`, `Process change: yes`, the release and claim
-    comment formats).
+    ... -->`, `<!-- heavy-wave: ... -->`, `Fixes #N`, `Process change:
+    yes`, the release and claim comment formats).
   - The rule applies to what we write. Never reject or correct the language
     of an outside reporter.
 - **Report on the issue, not in prose files.** A finding, a held patch, a
@@ -355,10 +369,14 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     re-read each `conflicts` PR and send each clean one to the review that it
     needs.
 - **Refresh only at merge time.** A conflicting PR has the `conflicts` label
-  and is not touched by its author's agents, by maintenance or by reviewers.
-  It takes `git merge origin/main` only when it is the next PR in a merge
-  batch, or when its author pushes a review fix and chooses to. The merging
-  session runs `cargo xtask merge-plan <PR>...` (or `--label merge-ready`).
+  and is not touched by maintenance or by reviewers. It takes `git merge
+  origin/main` only in one of three cases:
+  - its author's agents fix it under **Own blocked PRs first**;
+  - it is the next PR in a merge batch;
+  - its author pushes a review fix and chooses to.
+
+  The merging session runs `cargo xtask merge-plan <PR>...` (or `--label
+  merge-ready`).
   The planner simulates the merges with `git merge-tree` and gives the order.
   Wave 1 merges as one batch, with no refresh and no delta review. Wave 2 is
   refreshed one PR at a time against the main of that moment, and each PR
@@ -377,8 +395,9 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   write access to `NeoTech/Camcraft`: `gh api
   repos/NeoTech/Camcraft/collaborators --jq '.[] | select(.permissions.push)
   | .login'`.
-  - A `<!-- pr-reviewer: ... -->` or `<!-- review-cost: ... -->` marker
-    counts only in a review or comment by a collaborator.
+  - A `<!-- pr-reviewer: ... -->`, `<!-- review-cost: ... -->` or
+    `<!-- heavy-wave: ... -->` marker counts only in a review or comment by
+    a collaborator.
   - `merge-ready` counts only when a collaborator set it.
   - This applies to a collaborator's own PRs too. The review must be by an
     agent that did not write the change.
@@ -388,10 +407,14 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
     withdraws the request in a comment. A `merge-ready` label or a "ready"
     review from a different collaborator on the same head does not override
     it.
-  - A PR whose current head has a collaborator's change request and also
-    `merge-ready` (or `merge-ready` with `needs-rework`) is a disagreement.
-    `/merge-ready` reports it and does not offer it. No agent removes a
-    label. The two collaborators decide on the PR.
+  - `merge-ready` and `needs-rework` are never on the same PR (#3382). The
+    person or agent that sets one of the two labels removes the other label
+    in the same step, with one comment that says why.
+  - Two collaborators can disagree on the same head: one set `merge-ready`,
+    and the other has an open change request. Then `needs-rework` stays and
+    `merge-ready` is removed. An open change request wins. The comment goes
+    to the collaborator who set `merge-ready`.
+  - `/merge-ready` never offers a PR that has `needs-rework`.
 - **Outside PRs are reviewed with `/review-prs`.** The `PR-reviewer` agent
   reviews one PR for each run. It trial-merges the PR with main, builds it,
   runs the touched suites and clippy, and checks this file. It posts a plain
@@ -414,6 +437,9 @@ with `gh`. `ROADMAP.md` and `DONE.md` are retired; read them only for history
   | `needs-rework` | red | blockers |
   | `conflicts` | orange | does not merge with `main` |
   | `needs-maintainer` | yellow | no blockers, but read and not built: a new dependency, or a `build.rs` / scripts / `.github` change, waits for the owner's decision |
+
+  `merge-ready` and `needs-rework` exclude each other: a PR never has both
+  (#3382). `conflicts` is different: it is set alongside the other labels.
 
   On red or orange the reviewer makes one of our own PRs a draft again. A
   fork PR stays as its contributor set it, and the comment says what to fix.
@@ -611,11 +637,39 @@ tests are in `crates/ui/tests/`; they start the real app through
   maps the diff to the heavy lanes that it reaches and runs them in release
   with `--ignored`. The reach follows the dependencies between our crates: a
   change in `motion` reaches the `app` heavy lanes.
-  - A PR whose diff reaches a heavy lane is not ready while a reached heavy
-    test is red or not run. The author runs the command on the final head
-    before the PR is flagged ready. The PR body names the lanes that ran.
+  - A PR whose diff reaches a heavy lane does not merge while a reached
+    heavy test is red or not run on its final head. Two forms give that
+    result.
+  - The PR form: the author runs the command on the final head before the
+    PR is flagged ready. The PR body names the lanes that ran. A PR that
+    merges alone (wave 2, or a batch of one) uses this form. A `SAME` or
+    `MECHANICAL` refresh keeps the heavy result of the PR. A `DELTA` or
+    `NEW CODE` refresh needs a new result: its own run, or a wave record
+    that names the new head.
+  - The wave form (#3460): the merging session runs the command one time
+    on the trial tree of a planner wave. The trial tree is the current
+    `main` with each PR of the wave merged. `--covers <PR>:<head sha>`
+    names each PR head, and the tool refuses a head that is not in the
+    tree. One fixed comment on each PR of the wave records the result:
+    `<!-- heavy-wave: <tree hash> -->`, the base, the heads, the lanes and
+    the counts. A red step is attributed to one PR. That PR leaves the
+    wave, and the run starts again for the other PRs. If `main` moves
+    before the merges, the planner runs again. A PR whose trial merge is
+    no longer clean leaves the wave.
+  - A wave record covers a PR only for the head that it names. A PR that
+    gets a new commit after the run is not covered. A safety-floor PR is
+    covered only if the trial tree contains its final head.
   - The review comment lists the heavy lanes that ran and their results.
-    "Not run" is never a pass.
+    "Not run" is never a pass. A reviewer accepts a wave record only if it
+    names the current head of the PR.
+  - **Owed heavy result** (#3467). A review of a `P3` or lower PR can set
+    `merge-ready` while no heavy result covers its head. The review
+    comment then says "not run - owed to the wave run before merge" and
+    names the owed lanes. The merge of that PR waits for a green run that
+    covers its final head: a wave record, or its own run. The merging
+    session does not merge the PR until a record names that head.
+  - A `P1` or `P2` PR keeps the strict rule. Its heavy result on the head
+    comes before the label `merge-ready`.
   - The release tier at the cut stays the final check: the tagged tree is
     exactly the gated tree.
 - **Test the change, not everything.** The tests that pin a fix prove it.
@@ -701,7 +755,7 @@ tests are in `crates/ui/tests/`; they start the real app through
 - **The cut runner**, **The post-merge gate** and **The PR test runner**
   are self-hosted. The `runners` skill has their installation, labels and
   safety rules.
-  - `cut.yml` runs the release tier of a cut on `[self-hosted, linux]`.
+  - `cut.yml` runs the release tier of a cut on `[self-hosted, camcraft-cut]`: only a runner given that label takes it, never a post-merge or PR-test runner (#3253).
   - `post-merge.yml` runs the batch tier on each push to `main`, on the
     runner label `camcraft-post-merge`.
   - `pr-test.yml` (`workflow_dispatch` only) builds and tests a PR for a

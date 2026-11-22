@@ -58,6 +58,12 @@ are never written. Sodick output remains unverified on a real control.
 
 ## Wire Contour
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-wire-contour" /> }} ![Top view of wire travel from a start hole around a die profile.](../../../operation-paths.svg#WireContour)
 
 **For:** cutting one profile through the workpiece with a vertical or tapered
@@ -77,6 +83,7 @@ how far the threading point and run-out stand beyond the stock.
 | Geometry | Side | Die - the wire runs inside the profile; or Punch - the wire runs outside the profile |
 | Geometry | Start hole stated | off |
 | Geometry | Start hole X / Start hole Y | 0 / 0 when first ticked |
+| Geometry | Sharp inside corners at the wire radius | off by default |
 | Geometry | Taper angle | 0 degrees (vertical) |
 | Geometry | 4-axis (upper and lower profiles) | off |
 | Heights | Top of workpiece | model top |
@@ -154,10 +161,17 @@ the deepest reading at any height, so you can see whether the model's
 tolerance explains it. The value must be below the kerf offset and at
 most 0.25 mm.
 
-**Inside corners.** No inside corner can be cut tighter than the kerf
-offset. A corner, slot or neck the wire cannot reach is refused by name,
-never rounded for you; round it in the model or cut with a thinner wire
-(another condition).
+**Inside corners.** On **Geometry**, **Sharp inside corners at the wire
+radius** is off by default: a corner, slot or neck that the kerf cannot
+reach is refused. Turn it on only when the wire's own corner radius is
+acceptable. The path keeps wire radius + spark gap at a sharp inside
+corner, and its notes state the worst uncut rest and its location.
+For example, a 0.25 mm wire with a 0.02 mm spark gap leaves a 0.145 mm
+corner radius. The allowance admits sharp corners of 60 degrees or more;
+it does not admit arbitrary narrow slots or acute corners. A refusal
+saying "even with sharp inside corners stated" means the leftover
+exceeds that wire radius + gap. Open the corner to at least 60 degrees,
+round it in the model, or choose a thinner-wire condition.
 
 ## Wire Contour refusals
 
@@ -283,6 +297,12 @@ atom) judges the burn".
 
 ## Sinker Burn
 
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
 {{ <icon name="op-sinker-burn" /> }} ![Side view of an electrode plunging into a cavity and retracting.](../../../operation-paths.svg#SinkerBurn)
 
 **For:** burning a cavity the shape of the electrode's face, straight
@@ -347,6 +367,12 @@ remaining electrode length. Compensation still obeys the floor and
 electrode-length checks.
 
 ## Sinker Side Burn
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
 
 {{ <icon name="op-sinker-side-burn" /> }} ![Side view of an electrode plunging, moving toward one wall and returning.](../../../operation-paths.svg#SinkerSideBurn)
 

@@ -18,8 +18,13 @@ use std::fs;
 mod support;
 use support::*;
 
+include!("example_catalog/case_probe_face.rs");
+
 #[path = "example_catalog/contract.rs"]
 mod contract;
+
+#[path = "example_catalog/refusal.rs"]
+mod refusal;
 
 /// #2865: three original parts demonstrate the five additional turning kinds.
 #[test]
@@ -97,6 +102,22 @@ mod catalog_multiaxis_indexed {
     }
 }
 
+// These full-case checks exceed the 60 s debug budget. The heavy lane keeps
+// both checks; example_catalog_adaptive pins the committed program in quick.
+mod catalog_2d_adaptive_pocket {
+    use super::*;
+    #[test]
+    #[ignore = "heavy lane (#3163 2d/adaptive-pocket): exceeds its 60 s debug budget - run with --release -- --ignored"]
+    fn regenerates() {
+        run_case("2d", "adaptive-pocket", "regenerates", regenerate);
+    }
+    #[test]
+    #[ignore = "heavy lane (#3163 2d/adaptive-pocket): exceeds its 60 s debug budget - run with --release -- --ignored"]
+    fn rebuilds() {
+        run_case("2d", "adaptive-pocket", "rebuilds", rebuild);
+    }
+}
+
 mod catalog_2d_contour_tabs {
     use super::*;
     #[test]
@@ -144,6 +165,12 @@ mod catalog_2d_hole_work {
         run_case("2d", "hole-work", "rebuilds", rebuild);
     }
 }
+
+// #2861: the case 2d/slots, its two case tests and its program pin.
+include!("example_catalog/case_2d_slots.rs");
+
+// #2856: the refusal case 2d/drill-overfeed and its two case tests.
+include!("example_catalog/case_2d_drill_overfeed.rs");
 
 mod catalog_turning_bushing {
     use super::*;

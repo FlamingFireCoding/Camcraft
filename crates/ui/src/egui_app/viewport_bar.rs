@@ -38,7 +38,7 @@ const BAR_RADIUS: f32 = 8.0;
 /// zoom tools latch the drag onto that mode and leave the shortcut to
 /// the vertex (a tool latched is a tool any drag obeys). View state
 /// like the camera - never commands, never saved.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Nav {
     /// Reframe the whole document - the F key's button twin.
     Frame,
@@ -92,46 +92,6 @@ pub(crate) const NAVS: [Nav; NAV_COUNT] = [
     Nav::Pan,
     Nav::Zoom,
 ];
-
-/// The plain-English state line of the pick-through button (#692).
-#[must_use]
-pub(crate) fn pick_through_label(on: bool) -> &'static str {
-    if on { "Pick through: on" } else { "Pick through: off" }
-}
-
-/// The plain-English state line of the Rotate button (#2047).
-#[must_use]
-pub(crate) fn rotate_label(on: bool) -> &'static str {
-    if on { "Rotate: drag a ring on the selected part" } else { "Rotate: off" }
-}
-
-/// The plain-English state line of the Move button (#1198 b).
-#[must_use]
-pub(crate) fn move_label(on: bool) -> &'static str {
-    if on { "Move: drag a ball to move or a ring to rotate the selected part" } else { "Move: off" }
-}
-
-/// The status line the projection button flips the viewer between.
-#[must_use]
-pub(crate) fn projection_label(mode: ProjectionMode) -> &'static str {
-    match mode {
-        ProjectionMode::Perspective => "projection: perspective",
-        ProjectionMode::Orthographic => "projection: orthographic",
-    }
-}
-
-/// The status line a latched nav tool wears on the status bar.
-#[must_use]
-pub(crate) fn nav_tool_label(tool: DragMode) -> &'static str {
-    match tool {
-        DragMode::Orbit => "nav tool: orbit",
-        DragMode::Pan => "nav tool: pan",
-        DragMode::Zoom => "nav tool: zoom",
-    }
-}
-
-/// The status line when a nav tool latches off.
-pub(crate) const NAV_TOOL_CLEAR: &str = "nav tool: off";
 
 /// The ribbon: centred on the pane's width, resting on its bottom edge at
 /// the same margin as before. Floats over the 3D view (#1198, maintainer:
@@ -248,7 +208,7 @@ pub(crate) fn act(state: &mut State, kind: Nav) {
     }
 }
 
-/// Paint the ribbon and its buttons. Pure state -> paint, like the cube.
+/// Paint the ribbon and its buttons, with hover help for each icon.
 pub(crate) fn draw(
     ui: &egui::Ui,
     bar: egui::Rect,
@@ -280,6 +240,13 @@ pub(crate) fn draw(
             Nav::Zoom => state.nav_tool == Some(DragMode::Zoom),
         };
         let hov = hover.is_some_and(|p| r.contains(p));
+        let lab = label(kind);
+        let tip = tooltip(kind, state);
+        let resp = ui.interact(r, ui.id().with(("viewport_nav", kind)), egui::Sense::hover());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, lab));
+        if hov && state.drag.is_none() {
+            resp.on_hover_text(tip);
+        }
         let fill = if hov { ink.button.saturating_add(28) } else { ink.button };
         ui.painter().rect_filled(r, 5.0, egui::Color32::from_gray(fill));
         if ink.outline_buttons {
@@ -302,3 +269,8 @@ mod glyphs;
 pub(crate) mod controls;
 
 pub(crate) use controls::HandleBarState;
+
+#[path = "viewport_bar_text.rs"]
+pub(crate) mod text;
+
+pub(crate) use text::*;

@@ -36,7 +36,7 @@ const SECONDS: [&str; 4] = ["tormach", "grblhal", "linuxcnc", "mach3"];
 /// Posts that require a non-negative P on every G86 cycle block (#2362).
 const ZERO_DWELL_P0: [&str; 3] = ["tormach", "grblhal", "linuxcnc"];
 /// Posts that refuse a bore: they cannot stop the spindle before the rapid retract.
-const EXPANDED: [&str; 3] = ["heidenhain", "tinyg", "carvera"];
+const EXPANDED: [&str; 4] = ["heidenhain", "tinyg", "grbl", "carvera"];
 /// Posts that write no drilling at all.
 const REFUSING: [&str; 3] = ["sinker-iso", "wire-iso", "tormach-plasma"];
 /// The posts #1445 names, each with a golden.

@@ -166,26 +166,32 @@ pub(crate) fn window(ctx: &egui::Context, state: &mut State) {
             ScrollArea::vertical()
                 .max_height(max_h)
                 .auto_shrink([false, true])
-                .show(ui, |ui| match dlg.tab {
-                    PostDialogTab::Settings => {
-                        draw_output_section(ui, &mut dlg);
-                        draw_program_section(ui, &mut dlg);
-                        let changed = post_script_options::render_draft(
-                            ui,
-                            "post_dlg_script",
-                            &dlg.schema,
-                            &mut dlg.values,
-                            !dlg.baseline.is_empty(),
-                            true,
-                            &mut dlg.reset_script,
-                        );
-                        if changed && !dlg.values.iter().all(|(k, v)| {
-                            dlg.schema.iter().find(|d| &d.key == k).is_some_and(|d| &d.default == v)
-                        }) {
-                            dlg.reset_script = false;
+                .show(ui, |ui| {
+                    // #3384: the floating scroll bar lies over the right edge of
+                    // the content. Keep a gutter, so that a right-aligned
+                    // checkbox stays clickable when the options overflow.
+                    super::layout::keep_scroll_gutter(ui, 0.0);
+                    match dlg.tab {
+                        PostDialogTab::Settings => {
+                            draw_output_section(ui, &mut dlg);
+                            draw_program_section(ui, &mut dlg);
+                            let changed = post_script_options::render_draft(
+                                ui,
+                                "post_dlg_script",
+                                &dlg.schema,
+                                &mut dlg.values,
+                                !dlg.baseline.is_empty(),
+                                true,
+                                &mut dlg.reset_script,
+                            );
+                            if changed && !dlg.values.iter().all(|(k, v)| {
+                                dlg.schema.iter().find(|d| &d.key == k).is_some_and(|d| &d.default == v)
+                            }) {
+                                dlg.reset_script = false;
+                            }
                         }
+                        PostDialogTab::Operations => draw_operations_tab(ui, state),
                     }
-                    PostDialogTab::Operations => draw_operations_tab(ui, state),
                 });
 
             let bar = [

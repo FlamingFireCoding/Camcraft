@@ -14,17 +14,17 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use solidcore::kernel::CancelToken;
-use solidcore::mass::integrator::properties::brep_area;
 use solidcore::topology::Brep;
-use solidcore_convert::brep::to_kernel_body;
-use solidcore_step::p21::{self, Exchange, Progress};
-use solidcore_step::{topology, units};
+use solidcore_step::p21::{self, Progress};
+use solidcore_step::topology;
 
-use crate::solidcore_impl::{SolidcoreKernel, VOLUME_ACCURACY, checked, failed};
-use crate::solidcore_import::{HEAL_GAP_LIMIT, vertex_gaps};
+use crate::solidcore_impl::SolidcoreKernel;
 use crate::solidcore_trims::KernelTrims;
 use crate::step_edge_gap::{EdgeGap, EdgeGapCap, raised_edge_gap};
-use crate::{Kernel, KernelError, Measure};
+use crate::{KernelError, Measure};
+
+mod record;
+pub(crate) use record::{RecordSource, build_record};
 
 pub use crate::solidcore_step_import::{StepImport, StepModel, StepSheet, import_step, import_step_model};
 
@@ -38,7 +38,7 @@ pub const SHEET: &str = "a surface model of open shells, not a closed solid";
 /// parsed entity in memory, so the seam refuses earlier, by name.
 pub const MAX_STEP_BYTES: usize = 64 << 20;
 
-/// One solid of a STEP file, in millimetres, healed and checked.
+/// One checked solid of a STEP file, in millimetres.
 #[derive(Debug)]
 pub struct StepSolid {
     /// The file's entity id of the solid item (`#id`).
@@ -55,10 +55,10 @@ pub struct StepSolid {
     /// trimmed cylinder face, so it can be too large. Do not size or place
     /// anything from it until that is fixed.
     pub measure: Measure,
-    /// Surface area (mm^2), the port's estimate at [`VOLUME_ACCURACY`].
+    /// Surface area (mm^2), the port's estimate at [`crate::solidcore_impl::VOLUME_ACCURACY`].
     pub area: f64,
     /// Largest vertex-to-edge-end distance left in the solid (mm), always
-    /// at or under [`HEAL_GAP_LIMIT`].
+    /// at or under [`crate::solidcore_import::HEAL_GAP_LIMIT`].
     pub vertex_gap: f64,
     /// What the reader repaired or noted on this solid.
     pub notes: Vec<String>,
@@ -180,13 +180,17 @@ fn read_guarded(
     text: &str,
     stop: &CancelToken,
 ) -> Result<StepRead, KernelError> {
-    let ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
+    let mut ex = p21::parse_with(text, Some(&Watch(stop))).map_err(|e| match e {
         p21::Error::Cancelled => timed_out("parsing"),
         other => refused_input(other.to_string()),
     })?;
+    // Validation and topology must read the same canonical unit records.
+    crate::step_units_guard::expand_short_names(&mut ex);
+    crate::step_units_guard::check_angle_units(&ex).map_err(refused_input)?;
     crate::step_curve_guard::check(&ex).map_err(refused_input)?;
+    let units = crate::step_length_units::read(&ex).map_err(refused_input)?;
     let mut out = StepRead {
-        length_units_mm: length_units(&ex).map_err(refused_input)?,
+        length_units_mm: units.mm.clone(),
         ..StepRead::default()
     };
     if !ex.duplicates.is_empty() {
@@ -229,11 +233,22 @@ fn read_guarded(
         cap,
         widest_mm: measured.max(raised),
     };
+    // An item with no unit context reads its angles in radians (#3079).
+    let unlisted = crate::step_units_guard::UnlistedAngles::new(&ex);
+    let mut read = read;
+    read.solids.retain(|s| match unlisted.refusal(s.item) {
+        Some(reason) => {
+            out.refused.push(StepRefusal { item: s.item, stage: "read", reason });
+            false
+        }
+        None => true,
+    });
     for f in read.failures {
         out.refused.push(StepRefusal {
             item: f.item,
             stage: "read",
-            reason: f.message,
+            // The wrong angle unit is the first cause of what then failed.
+            reason: unlisted.refusal(f.item).unwrap_or(f.message),
         });
     }
     for s in read.solids {
@@ -241,11 +256,19 @@ fn read_guarded(
             return Err(timed_out("building solids"));
         }
         let item = s.item;
+        if let Some(reason) = units.unstated(item) {
+            out.refused.push(StepRefusal {
+                item,
+                stage: "read",
+                reason,
+            });
+            continue;
+        }
         if s.sheet {
             out.sheets.push(StepSheet { item, name: s.name, record: s.brep, notes: s.notes });
             continue;
         }
-        match build_record(k, item, s.name, s.brep, s.notes) {
+        match build_record(k, RecordSource::Step(item), s.name, s.brep, s.notes) {
             Ok(solid) => out.solids.push(solid),
             Err(_) if stop.is_cancelled() => return Err(timed_out("building solids")),
             Err((stage, reason)) => out.refused.push(StepRefusal {
@@ -257,116 +280,4 @@ fn read_guarded(
     }
     out.refused.sort_by_key(|r| r.item);
     Ok(out)
-}
-
-/// The distinct length units the file's representation contexts state, in
-/// millimetres per unit. A context whose unit list names no length unit
-/// states none. `Err` names a length unit the reader cannot convert: it
-/// would read such a unit as millimetres without a word (its units module
-/// says so), and a guessed scale is the silent wrong answer, so the seam
-/// refuses the file as `camcraft_geometry::step_units` does (#306).
-fn length_units(ex: &Exchange) -> Result<Vec<f64>, String> {
-    let mut found: Vec<f64> = Vec::new();
-    for (id, e) in &ex.entities {
-        let Some(list) = e
-            .record("GLOBAL_UNIT_ASSIGNED_CONTEXT")
-            .and_then(|r| r.first())
-            .and_then(p21::Param::as_list)
-        else {
-            continue;
-        };
-        let mut states_length = false;
-        for u in list.iter().filter_map(p21::Param::as_ref_id) {
-            let Some(unit) = ex.get(u).filter(|x| x.has("LENGTH_UNIT")) else {
-                continue;
-            };
-            states_length = true;
-            // An SI length is a (prefixed) metre; anything else must be a
-            // conversion the reader can follow to one.
-            let si_metre = unit
-                .record("SI_UNIT")
-                .map(|si| si.get(1).and_then(p21::Param::as_enum) == Some("METRE"));
-            let sized = match (si_metre, units::unit_factor(ex, u)) {
-                (Some(false), _) => None,
-                (None, _) if unit.record("CONVERSION_BASED_UNIT").is_none() => None,
-                (_, Some((units::UnitKind::Length, f))) if f.is_finite() && f > 0.0 => Some(f),
-                _ => None,
-            };
-            if sized.is_none() {
-                return Err(format!("length unit #{u} cannot be converted to millimetres"));
-            }
-        }
-        if !states_length {
-            continue;
-        }
-        let len = units::context(ex, *id).units.len;
-        if !found.iter().any(|f| f.to_bits() == len.to_bits()) {
-            found.push(len);
-        }
-    }
-    Ok(found)
-}
-
-/// One B-rep record (mm) from a file as a checked kernel solid: built,
-/// healed, integrity-checked, measured and its vertex gaps judged. Shared
-/// by the STEP and the Solidcraft (#1456) importers. `Err` is
-/// `(stage, reason)`.
-pub(crate) fn build_record(
-    k: &mut SolidcoreKernel,
-    item: u64,
-    name: String,
-    record: solidcore_record::brep::Brep,
-    notes: Vec<String>,
-) -> Result<StepSolid, (&'static str, String)> {
-    // Untrusted: the record comes from a file, so the kernel heals it as it
-    // builds it (the conversion's own rule for records not made by a
-    // modeller that keeps the kernel's rules).
-    let mut brep =
-        to_kernel_body(&mut k.k, &record, false).map_err(|e| ("build", e.to_string()))?;
-    // Finding at the pinned commit (bench, tests/step_agreement.rs): the
-    // build leaves the port's cached `Face::shell` behind its face-use
-    // links on every fixture, which the integrity check below refuses. The
-    // port's own operations rewrite those caches before they return; the
-    // conversion does not, so the seam does (it changes the cached fields
-    // only, never a result).
-    brep.refresh_cached_topology();
-    let mut brep = checked("read_step", brep).map_err(|e| ("check", e.to_string()))?;
-    let measure = k.measure(&mut brep).map_err(|e| ("measure", e.to_string()))?;
-    let area = brep_area(&k.k, &mut brep, VOLUME_ACCURACY)
-        .map_err(|e| ("measure", failed("read_step", &e).to_string()))?;
-    if !(area.is_finite() && area > 0.0) {
-        return Err(("measure", format!("not a positive finite area {area}")));
-    }
-    // The same law the native importer keeps (docs/decisions/27, point 3):
-    // a vertex off its edges by more than the limit is not a model a
-    // toolpath may trust, and an edge with no 3D curve cannot be judged.
-    let gaps = vertex_gaps(k, &brep).map_err(|e| ("check", e.to_string()))?;
-    if gaps.unjudged_edges > 0 {
-        return Err((
-            "check",
-            format!(
-                "{} edge(s) without a 3D curve: gaps cannot be judged",
-                gaps.unjudged_edges
-            ),
-        ));
-    }
-    if gaps.gap > HEAL_GAP_LIMIT {
-        return Err((
-            "check",
-            format!(
-                "a vertex sits {:.3e} mm off its edges (limit {HEAL_GAP_LIMIT:e})",
-                gaps.gap
-            ),
-        ));
-    }
-    Ok(StepSolid {
-        item,
-        name,
-        brep,
-        record,
-        measure,
-        area,
-        vertex_gap: gaps.gap,
-        notes,
-    })
 }
