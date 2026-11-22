@@ -115,7 +115,7 @@ fn hole(world: &World) -> SrcRef {
 }
 
 fn pocket(strategy: PocketStrategy, climb: bool) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         stepover: 4.0,
@@ -229,6 +229,7 @@ fn adaptive2d(climb: bool) -> OpParams {
         blend_turns: false,
         tilt: None,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     }
 }
 

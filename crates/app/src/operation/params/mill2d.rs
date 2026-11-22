@@ -39,6 +39,7 @@ impl OpParams {
                 entry,
                 helix_radius,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -66,6 +67,7 @@ impl OpParams {
                     }
                 }
                 digest::write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Slot {
                 links: _,
@@ -252,6 +254,7 @@ impl OpParams {
                 center,
                 radius,
                 vault,
+                pass_start,
                 stepover,
                 stock_to_leave,
                 clearance_z,
@@ -286,6 +289,7 @@ impl OpParams {
                 });
                 wh_opt(h, *retract_z);
                 wt(h, *tilt);
+                digest::write_pass_start(*pass_start, h);
             }
             // The V-carve (#1443) digests each number the path reads:
             // the heights, the ladder, the feeds and the floor choice.
