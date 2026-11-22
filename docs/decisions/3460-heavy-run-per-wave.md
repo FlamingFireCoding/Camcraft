@@ -44,7 +44,7 @@ check makes the tree hash the tree that the run tested.
   merge time. The PR form keeps "before the PR is flagged ready".
 - The reviewer keeps its duty of #2568 for a `P1` or `P2` PR
   (PR-reviewer step 5, pinned by
-  `runner_review_requires_heavy_lanes_without_author_results`). A wave
+  `review_requires_targeted_heavy_tests_on_both_paths`). A wave
   record that names the current head takes the place of the author
   result. The maintainer decided the `P3` and lower case in #3467 (the
   entry below).
