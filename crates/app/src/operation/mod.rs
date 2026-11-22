@@ -91,6 +91,8 @@ pub(crate) use stamp_stock::write_setup_stock;
 mod material;
 // #2496: a drill makes its own size; a wider hole is named.
 mod drill_size;
+// #3448: a mill names the radial holes it cannot reach.
+mod cross_reach;
 // #2598: a Drill or Thread op's feed against its tool's stated feed.
 pub mod feed_rating;
 pub use material::*;
@@ -209,6 +211,7 @@ mod tilt_heights;
 pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
 pub(crate) mod corner_relief;
+mod pass_start_stock;
 mod corner_relief_sim;
 mod job;
 pub use job::*;

@@ -359,6 +359,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             links, (blend_turns, blend_radius),
             corner_relief,
             tilt,
+            None,
         ),
         OpParams::Offset2D {
             links,
@@ -376,6 +377,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             helix_radius, blend_turns, blend_radius,
             corner_relief,
             tilt,
+            pass_start,
         } => roughing2d_pane(
             ui,
             world,
@@ -399,6 +401,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             links, (blend_turns, blend_radius),
             corner_relief,
             tilt,
+            Some(pass_start),
         ),
         _ => {}
     }
