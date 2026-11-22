@@ -72,23 +72,11 @@ impl OpParams {
         if let Some(why) = crate::operation::rest_op::rest_refusal(self) {
             return Some(why);
         }
-        // #1448: only the untilted 2D contour takes a picked start so far;
-        // every other kind refuses it here rather than ignore it.
-        // #1473: the exit point likewise.
-        for (what, set) in [
-            ("start", self.links().is_some_and(|l| l.approach.start_point.is_some())),
-            ("exit", self.links().is_some_and(|l| l.approach.exit_point.is_some())),
-        ] {
-            if !set {
-                continue;
-            }
-            match self {
-                OpParams::Contour { tilt: None, .. } => {}
-                OpParams::Contour { .. } => {
-                    return Some(format!("a {what} point is not taken on a tilted (3+2) contour yet - clear it or the tilt"));
-                }
-                _ => return Some(format!("a {what} point is taken only by the 2D contour so far - clear it on this operation")),
-            }
+        // #1448 / #3324: a start or exit pick on a kind whose capability
+        // does not take it is refused here, by the kind's name, rather
+        // than ignored (`operation::pick_kinds`).
+        if let Some(why) = self.pick_refusal() {
+            return Some(why);
         }
         match self {
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
