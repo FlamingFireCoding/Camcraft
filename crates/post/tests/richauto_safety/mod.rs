@@ -69,6 +69,88 @@ fn invalid_tool_and_coolant_are_refused_by_name() {
 }
 
 #[test]
+fn coolant_refusals_name_the_operation() {
+    let script = read("assets/posts/richauto.cps");
+    for (ask, coolants, word) in [
+        ("mist", json!([]), "coolant mist is unsupported"),
+        ("flood", json!([{"name": "Mist", "mCode": "M7"}]), "no flood entry"),
+        ("flood", json!([{"name": "Flood", "mCode": "M7"}]), "requires m8"),
+        ("flood", json!([{"name": "Flood", "mCode": ""}]), "empty"),
+    ] {
+        let stream = program(CUT)
+            .replace("OperationName A11", "OperationName ReviewCoolantOp")
+            .replace("Coolant off", &format!("Coolant {ask}"));
+        let out = engine::run(
+            &script,
+            &json!({"spindleMax": 24000, "coolants": coolants}),
+            &stream,
+        )
+        .expect("post");
+        assert!(
+            out.warnings
+                .iter()
+                .any(|w| w.contains("operation ReviewCoolantOp:") && w.to_ascii_lowercase().contains(word)),
+            "{ask} {coolants}: {:?}",
+            out.warnings
+        );
+    }
+
+    // Default coolant ask (Coolant param omitted) also names the operation.
+    let unstated = program(CUT)
+        .replace("OperationName A11", "OperationName UnstatedFloodOp")
+        .replace("PARAM Coolant off\n", "");
+    let out = engine::run(
+        &script,
+        &json!({"spindleMax": 24000, "coolants": [{"name": "Flood", "mCode": "M7"}]}),
+        &unstated,
+    )
+    .expect("post");
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("operation UnstatedFloodOp:") && w.contains("requires M8, got M7")),
+        "{:?}",
+        out.warnings
+    );
+
+    // A prior dry section's OperationName does not leak into the next section.
+    let dry = program(CUT).replace("OperationName A11", "OperationName DryPassOp");
+    let wet = program(CUT)
+        .replace("OperationName A11", "OperationName ReviewCoolantOp")
+        .replace("Coolant off", "Coolant flood");
+    let out = engine::run(
+        &script,
+        &json!({"spindleMax": 24000, "coolants": [{"name": "Flood", "mCode": "M7"}]}),
+        &format!("{dry}{wet}"),
+    )
+    .expect("post");
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("operation ReviewCoolantOp:") && !w.contains("DryPassOp")),
+        "{:?}",
+        out.warnings
+    );
+
+    let nameless_wet = program(CUT)
+        .replace("PARAM OperationName A11\n", "")
+        .replace("Coolant off", "Coolant flood");
+    let out = engine::run(
+        &script,
+        &json!({"spindleMax": 24000, "coolants": [{"name": "Flood", "mCode": "M7"}]}),
+        &format!("{dry}{nameless_wet}"),
+    )
+    .expect("post");
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("requires M8, got M7") && !w.contains("DryPassOp")),
+        "{:?}",
+        out.warnings
+    );
+}
+
+#[test]
 fn a_bore_without_rapid_retract_is_refused_by_name() {
     let stream = hole("BORE", 0, " F 100000", true).replace(
         "Rapid X 10000 Y 20000 Z 2000\nRapid X 10000 Y 20000 Z 10000\n",

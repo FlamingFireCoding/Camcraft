@@ -53,6 +53,7 @@ var spindleOn = false;
 var coolantAsk = "flood";
 var coolantOn = false;
 var opName = "";
+var coolantOp = "";
 var badOffset = null;
 
 var sectionOpen = false;
@@ -182,11 +183,13 @@ function spinStart() {
   return true;
 }
 
+function coolantWho() { return coolantOp ? "operation " + coolantOp + ": " : ""; }
+
 function coolantCode() {
   var ask = String(coolantAsk || "flood").toLowerCase();
   if (ask === "off") return "";
   if (ask !== "flood") {
-    fail("coolant " + ask + " is unsupported by RichAuto DSP A11 (use flood or off)");
+    fail(coolantWho() + "coolant " + ask + " is unsupported by RichAuto DSP A11 (use flood or off)");
     return "";
   }
   var cs = (typeof machine !== "undefined" && machine && machine.coolants) ? machine.coolants : [];
@@ -201,12 +204,12 @@ function coolantCode() {
     }
   }
   if (!floodEntry) {
-    fail("machine coolants list has no Flood entry for coolant flood ask");
+    fail(coolantWho() + "machine coolants list has no Flood entry for coolant flood ask");
     return "";
   }
   var code = typeof floodEntry === "string" ? "" : String(floodEntry.mCode || "").trim().toUpperCase();
   if (code !== "M8") {
-    fail("RichAuto DSP A11 flood coolant requires M8, got " + (code || "empty"));
+    fail(coolantWho() + "RichAuto DSP A11 flood coolant requires M8, got " + (code || "empty"));
     return "";
   }
   return "M8";
@@ -379,7 +382,10 @@ function onOpen() {
 }
 
 function onParameter(name, value) {
-  if (name === "OperationName") opName = clean(value);
+  if (name === "OperationName") {
+    opName = clean(value);
+    coolantOp = (value === null || value === undefined) ? "" : String(value).trim();
+  }
   else if (name === "ToolDiameter" && has(value)) toolDia = Number(value);
   else if (name === "WorkOffset") {
     var n = Number(value);
@@ -443,6 +449,8 @@ function onSectionEnd() {
   stockTop = null;
   startParamKnown = false;
   coolantAsk = "flood";
+  opName = "";
+  coolantOp = "";
 }
 
 function onRapid() {
