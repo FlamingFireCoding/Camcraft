@@ -169,7 +169,7 @@ struct Scan {
     start: StartMode,
 }
 
-/// How the window first appears (issue number to fill at filing).
+/// How the window first appears (#3582).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StartMode {
     /// `--minimized`: the window opens minimized.
