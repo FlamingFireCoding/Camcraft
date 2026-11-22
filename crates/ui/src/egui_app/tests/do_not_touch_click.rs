@@ -63,6 +63,8 @@ fn armed_operation(kind: OpType) -> Harness<'static, ShellUi> {
     h.run_steps(3);
     let boundary = h.get_by_label("Boundary").rect();
     click(&mut h, egui::pos2(boundary.left() - 10.0, boundary.center().y));
+    h.get_by_label("Pick protected").scroll_to_me();
+    h.run_steps(4);
     h.get_by_label("Pick protected").click();
     h.run_steps(2);
     assert_eq!(h.state().state.boundary_pick, Some(crate::state::BoundaryPick::DoNotTouch), "the group is armed");
@@ -89,6 +91,8 @@ fn face_then_edge(mut h: Harness<'static, ShellUi>) {
     assert!(matches!(two[1].feature, FeatureSel::Chain(_)), "the second row is an edge: {two:?}");
     assert!(h.state().state.status.contains("added to Do not touch"), "the status names the pick: {}", h.state().state.status);
     h.run_steps(2);
+    h.query_all_by_label("×").last().expect("a Do not touch remove button").scroll_to_me();
+    h.run_steps(4);
     h.query_all_by_label("×").last().expect("a Do not touch remove button").click();
     h.run_steps(2);
     assert_eq!(dnt(&h), vec![one[0].clone()], "the remove button takes the edge row out");
