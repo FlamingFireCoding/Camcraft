@@ -97,6 +97,9 @@ fn patched(base: &OpParams, patch: &Value) -> Result<OpParams, String> {
             back.insert(k.clone(), Value::Bool(false));
         } else if k == "corner_relief" && !back.contains_key(k) && corner_relief_kept(&key, &fields_of(base)) {
             back.insert(k.clone(), v.clone());
+        } else if k == "pass_start" && *v == json!("auto") && !back.contains_key(k) && pass_start_kept(&key, &fields_of(base)) {
+            // #3316: `auto` is never written, so it never comes back.
+            back.insert(k.clone(), v.clone());
         }
     }
     if let Some(path) = lost(patch, &back, "") {
@@ -153,6 +156,18 @@ fn corner_relief_kept(key: &str, fields: &Map<String, Value>) -> bool {
     tagged.insert(key.to_owned(), Value::Object(probe));
     project::params_from_json(&Value::Object(tagged))
         .map(|p| fields_of(&p).contains_key("corner_relief"))
+        .unwrap_or(false)
+}
+
+/// True when the kind `key` has the `pass_start` field (#3316): a value
+/// off `auto` survives the typed round-trip.
+fn pass_start_kept(key: &str, fields: &Map<String, Value>) -> bool {
+    let mut probe = fields.clone();
+    probe.insert("pass_start".into(), json!("outside"));
+    let mut tagged = Map::new();
+    tagged.insert(key.to_owned(), Value::Object(probe));
+    project::params_from_json(&Value::Object(tagged))
+        .map(|p| fields_of(&p).contains_key("pass_start"))
         .unwrap_or(false)
 }
 

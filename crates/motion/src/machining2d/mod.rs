@@ -80,9 +80,13 @@ mod lead_ext;
 mod lead_fit;
 mod lead_seam;
 mod ladder_links;
+mod level_order;
+mod level_rings;
 mod levels;
 mod microlift;
+mod pass_start;
 mod pocket;
+mod pocket_plan;
 mod pocket_emit;
 mod pocket_zigzag;
 mod pocket_hsm;
@@ -162,8 +166,11 @@ pub use corner_relief::{
     InsideCorner, ResolvedRelief, TBoneDirection, capsule_region, inside_corners, plan_corner_reliefs,
 };
 pub use corner_relief_spur::pocket_relief_plan;
-pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, PocketParams, PocketStrategy};
-pub use pocket_avoid::{pocket_avoid, pocket_avoid_with_relief};
+pub use pass_start::{PASS_START_NOTE, PassStart, StartSide};
+pub use pocket::{
+    pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
+};
+pub use pocket_avoid::{pocket_avoid, pocket_avoid_started, pocket_avoid_started_on, pocket_avoid_with_relief};
 pub use predrilled::PreHole;
 pub use rest2d::{
     rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, RestSource, REST_FILM,
