@@ -9,8 +9,8 @@ use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::Links;
 use camcraft_motion::load::DEFAULT_OPTIMAL_LOAD;
 use camcraft_motion::machining2d::{
-    AdaptiveTrochParams, CornerRelief, PocketParams, PocketStrategy, adaptive_spiral_avoid, adaptive_trochoidal_avoid,
-    adaptive_trochoidal_with, pocket, ARC_FIT_TOL,
+    AdaptiveTrochParams, CornerRelief, PassStart, PocketParams, PocketStrategy, StartSide, adaptive_spiral_avoid,
+    adaptive_spiral_avoid_on, adaptive_trochoidal_avoid, adaptive_trochoidal_with, pocket, ARC_FIT_TOL,
 };
 use camcraft_motion::tools::ToolGeom;
 use camcraft_motion::verify::{AVOID_VERIFY_TOL, AvoidItem, AvoidSpec, Cutter, avoid_hits, crossed_pairs};
@@ -175,6 +175,28 @@ fn a_spiral_adaptive_with_no_keepout_on_the_region_is_the_plain_path() {
     };
     let msg = adaptive_spiral_avoid(&region, &spiral(), &shield, &none).expect_err("covered").to_string();
     assert!(msg.contains("full shield") && msg.contains("Do not touch"), "{msg}");
+}
+
+#[test]
+fn a_spiral_adaptive_with_a_pass_start_keeps_the_full_tool_clear_of_a_protected_pin() {
+    // #3355 x #3346: Inside and Outside read the area that the keep-out
+    // leaves; neither may bring the tool back to the pin.
+    let (region, spec) = channel_and_pin();
+    let none = CornerRelief::default();
+    let auto = adaptive_spiral_avoid(&region, &spiral(), &spec, &none).expect("auto");
+    let side = |start| StartSide { start, stock: Some(rect(-20.0, -20.0, 60.0, 40.0)), around_part: false };
+    assert_eq!(
+        adaptive_spiral_avoid_on(&region, &spiral(), &spec, &none, &StartSide::default()).expect("auto side"),
+        auto,
+        "Auto is the four-argument path"
+    );
+    for start in [PassStart::Inside, PassStart::Outside] {
+        let path = adaptive_spiral_avoid_on(&region, &spiral(), &spec, &none, &side(start)).expect("pass start");
+        let hits = avoid_hits(&path, &spec, AVOID_VERIFY_TOL).expect("verify");
+        assert!(hits.is_empty(), "{start:?}: the protected path touches the pin: {hits:?}");
+        assert!(path.moves.iter().any(|m| (m.to.z + 5.0).abs() < 1e-6), "{start:?}: the path reaches the floor");
+        assert!(path.notes.iter().any(|n| n.contains("Do not touch (east pin)")), "{start:?}: {:?}", path.notes);
+    }
 }
 
 fn spiral() -> PocketParams {
