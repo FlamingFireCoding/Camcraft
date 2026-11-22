@@ -154,8 +154,12 @@ fn rapids_and_floors_hold_no_pose_and_flanks_do() {
     let region = silhouette(&f);
     let rough = multiaxis_rough(&f, &region, &params(), &control(0.0, 0.0, Some(60.0)), None).unwrap();
     // Rapids travel under the pose they inherit (the post keeps the
-    // tilt modal): they state no NEW angle.
-    let mut held: Option<[f64; 3]> = None;
+    // tilt modal): they state no NEW angle. #3300: the rough leans on
+    // its flanks, so it inherits the upright home and states it on
+    // every move before the first lean (floors included - the post
+    // commands it as zero angles); after the lean a floor states the
+    // upright Z column as before. The flank count below proves the lean.
+    let mut held: Option<[f64; 3]> = Some([0.0, 0.0, 1.0]);
     for m in &rough.moves {
         if m.kind == MoveKind::Rapid {
             assert_eq!(m.axis, held, "a rapid changed the pose it inherited");

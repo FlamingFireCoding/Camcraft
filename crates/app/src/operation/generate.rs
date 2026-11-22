@@ -73,6 +73,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         unit,
         wcs_yaw,
         spindle_note: _,
+        part_off_side,
         post_order,
         carried_overhang: _,
         op_name: _,
@@ -434,7 +435,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 machining2d::FaceHoles::Through => None,
             };
-            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn)?;
+            // #3343: the keep-out of the protected items at each level, for
+            // every tip height from the level up to the clearance plane, in
+            // the facer's turned frame.
+            let keep_at = |z: f64| -> Result<Region, GenError> {
+                match &avoid_spec {
+                    Some(spec) => {
+                        let ko = spec
+                            .keepout_region(z, fparams.clearance_z.max(z), verify::AVOID_PAD)
+                            .map_err(GenError::Invalid)?;
+                        boundary_turn::turn_region(&ko, turn)
+                    }
+                    None => Ok(Region::empty()),
+                }
+            };
+            let keep = avoid_spec
+                .as_ref()
+                .map(|spec| machining2d::FaceKeep { names: spec.names_list(), at: &keep_at });
+            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn, keep.as_ref())?;
             // M11.3 owed: the facer enters a radius off the footprint -
             // from air over the stock's edge; over the stock (an inner
             // patch) the entry runs on along its row out to air, or the
@@ -446,7 +464,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     path,
                     (stock_facets.as_deref(), m_gen, frame.as_ref()),
                     band.as_deref().unwrap_or(&[]),
-                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn),
+                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn, keep.as_ref()),
                     d * 0.5,
                 )?
             };
@@ -2951,6 +2969,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #3452: where the model goes on past the plane on both sides,
+            // the chuck-side rule decides which piece is the part; a setup
+            // that cannot say which end is free is refused there.
+            let plane = req_z(hl.bottom, "Parting Plane Z")?;
+            if let Some(why) = &part_off_side
+                && crate::turning::plane_inside_model(&material.facets, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why.clone()));
+            }
             let path = crate::turning::part_in(
                 &material.facets,
                 &crate::turning::PartParams {
@@ -2965,6 +2992,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 turn_stock,
             )?;
+            // #3452: the revolved-blade scan reads a cutoff's kerf as
+            // scrap BY DESIGN, so it cannot see a kerf that stands in
+            // the finished part. The part-off law judges the kerf
+            // against the part's end face: a blade band that takes
+            // part material is a gouge, refused and never posted.
+            if let Some(why) =
+                crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why));
+            }
             (region, path)
         }
         // M5.2 stage D: threading. The tool door names the V-form

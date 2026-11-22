@@ -31,9 +31,42 @@
     holes and the "Do not touch" keep-outs) are cut last, with the stock
     to leave. Inside is the mirror: ring j is the holes grown by j
     stepovers, the outer wall last.
+  - Each part of the material is planned from its own edges: an outer
+    loop with the holes directly inside it. Material inside a hole (the
+    bore of a hollow boss cleared to the pocket floor, the stock inside a
+    ring part) is a part of its own, at any depth of nesting. Review fix 2
+    (third read of 9939a6238): the first fill read the outer loops with
+    `Region::new`, which turns a nested outer loop into a hole, so such
+    material got one ring along its edge and its middle stayed standing
+    (153.7 mm2 on the ring-part fixture, 26.4 mm2 on the hollow boss).
+    Dropped: `Region::union_all` of the outer loops (the reader's
+    proposal). It cuts the nested material with rings of the FAR outer
+    edge, so its first cut lands in its middle, at the full width; a part
+    of its own starts on its own edge and is named when that edge is a
+    wall.
+  - Inside on a part with no hole (material nested in a hole): that part
+    is cut from the middle outward, as Auto cuts it, with the note
+    "Pass start Inside: N part(s) of this area have no hole to start
+    from, so they are cut from the middle outward, as Auto cuts them".
   - Each connected piece of the area is cut on its own, ring by ring, the
     nearest piece next. Each piece is walked with the uncut side on the
     right for climb.
+  - The completeness guard (Prime Directive: no silently short path).
+    After the plan of a level, the passes are swept by the tool disc and
+    compared with the cutter-centre area. If more than 0.1 mm2 of it
+    stays unswept (read after a 50 um erosion, so arc flats and ring-end
+    slivers do not count), the plan is not posted: the level takes the
+    Auto plan, and the toolpath says "Pass start <side>: the rings from
+    the start side would leave A mm2 of this area uncut - Offset rings
+    cut this area in the Auto order instead". Chosen over marking the
+    operation incomplete: Auto is a complete, proved plan, and the
+    warning names why the order changed. Dropped: a refusal, which would
+    leave the user with no path for a case the planner can still cut.
+    The note carries `machining2d::RINGS_FALLBACK`, so `rings_fallbacks`
+    counts it and the op posts the advisory `Warning::StrategyFallback`
+    (#3035) for the area. The maintainer decided this WARN behaviour
+    for the whole pass-start family: every fallback from the requested
+    ring order raises that warning, not only a note.
   - A piece joins the pass before it only by a chord that stays in the
     area, crosses no planned cut and runs through cut material all along
     (each sample inside the swath of a walk already cut, 0.9 tool radii

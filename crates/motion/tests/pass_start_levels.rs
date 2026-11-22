@@ -171,8 +171,12 @@ fn outside_band_with_a_do_not_touch_pin_cuts_no_move_at_full_width() {
     mask("pass_start_outside_pin", &reach, &path).assert_no_overcut();
     let m = mask("pass_start_outside_pin", &expected, &path);
     let got = m.metrics();
-    eprintln!("outside pin: max cut width {:.3} at {:?}", got.max_cut_width, got.worst_cut_point);
+    eprintln!("outside pin: max cut width {:.3} at {:?}, uncut {:.3} mm2", got.max_cut_width, got.worst_cut_point, got.uncut_area);
     m.assert_max_engagement(ENGAGEMENT);
+    // Only the keep-out's own band (the pin grown by its clearance and
+    // pad) may stay; the rest of the band is cut whole.
+    let kept_out = pin.offset(1.5).expect("keep-out band");
+    m.assert_bounded_leftover(60.0, Some(&kept_out));
 }
 
 
@@ -203,13 +207,25 @@ fn the_wall_first_and_narrow_cases_are_named_on_the_path() {
     let block = region(vec![rect(-50.0, -50.0, 50.0, 50.0)]);
     let island = warnings(&pocket, StartSide { start: PassStart::Inside, stock: Some(block.clone()), around_part: false });
     assert!(island.len() == 1 && island[0].contains("island wall"), "Inside round an island: {island:?}");
-    // A ring part: the stock inside it has no edge on the start side, so
-    // its first cut takes the full width wherever it starts.
+    // A ring part: the stock inside it is a part of its own. Outside
+    // starts it on its own edge, a wall in the stock; Inside has no hole
+    // there and cuts it from the middle, as Auto.
     let square = region(vec![rect(-40.0, -40.0, 40.0, 40.0)]);
     let annulus = region(vec![circle(25.0), circle(15.0)]);
     let ringed = square.offset(2.0 * R).and_then(|r| r.difference(&annulus)).expect("reach");
-    let inner = warnings(&ringed, StartSide { start: PassStart::Outside, stock: Some(square), around_part: true });
-    assert!(inner.iter().any(|n| n.contains("full tool width where the area is narrower")), "the enclosed stock: {inner:?}");
+    let on = |start| StartSide { start, stock: Some(square.clone()), around_part: true };
+    let inner = warnings(&ringed, on(PassStart::Outside));
+    assert!(inner.iter().any(|n| n.contains("outer edge of this area is a wall")), "the enclosed stock: {inner:?}");
+    let core = warnings(&ringed, on(PassStart::Inside));
+    assert!(core.iter().any(|n| n.contains("1 part(s) of this area have no hole")), "the enclosed stock: {core:?}");
+    // A horseshoe part whose mouth is narrower than the tool: the stock in
+    // its cavity is reached from the start side by no ring, so its first
+    // cut takes the full width - named.
+    let ring = region(vec![rect(-20.0, -20.0, 20.0, 20.0), rect(-12.0, -12.0, 12.0, 12.0)]);
+    let shoe = ring.difference(&region(vec![rect(10.0, -1.0, 21.0, 1.0)])).expect("horseshoe");
+    let cavity = square.offset(2.0 * R).and_then(|r| r.difference(&shoe)).expect("reach");
+    let narrow = warnings(&cavity, on(PassStart::Outside));
+    assert!(narrow.iter().any(|n| n.contains("full tool width where the area is narrower")), "the cavity: {narrow:?}");
 }
 
 /// The start-side plan's walks meet only at shared points: the
@@ -231,5 +247,51 @@ fn the_start_side_plan_posts_no_crossing_feeds() {
             .filter(|pr| planar(pr[0]) && planar(pr[1]))
             .collect();
         assert!(crossed.is_empty(), "{start:?} step {}: {crossed:?}", p.stepover);
+    }
+}
+
+/// What no tool of radius `r` reaches in `material` (its inside corners):
+/// the material less its opening by the tool disc, grown by a cell.
+fn unreachable(material: &Region, r: f64) -> Region {
+    let opened = material.offset(-r).and_then(|o| o.offset(r)).expect("opening");
+    material.difference(&opened).and_then(|u| u.offset(0.2)).expect("unreachable")
+}
+
+/// The leftover law on one fixture: the plan cuts every place the tool
+/// reaches (an Auto plan's area), none of it stays standing.
+fn cuts_whole(name: &str, reach: &Region, material: &Region, side: StartSide) {
+    let path = pocket_started_on(reach, &params(), &[], &CornerRelief::default(), &side).expect("plan");
+    mask(name, reach, &path).assert_no_overcut();
+    let m = mask(name, material, &path);
+    let got = m.metrics();
+    eprintln!("{name}: uncut {:.3} mm2, {} interior uncut cell(s)", got.uncut_area, got.interior_uncut_cells);
+    let allowed = unreachable(material, R);
+    m.assert_bounded_leftover(allowed.area().abs() + 8.0, Some(&allowed));
+}
+
+/// #3316 second read of 9939a6238: material nested in a hole (the stock
+/// inside a ring part) is cut whole, Outside and Inside.
+#[test]
+fn the_stock_inside_a_ring_part_is_cut_whole() {
+    let square = region(vec![rect(-40.0, -40.0, 40.0, 40.0)]);
+    let annulus = region(vec![circle(25.0), circle(15.0)]);
+    let reach = square.offset(2.0 * R).and_then(|r| r.difference(&annulus)).expect("reach");
+    let material = square.difference(&annulus).expect("material");
+    for start in [PassStart::Outside, PassStart::Inside] {
+        let side = StartSide { start, stock: Some(square.clone()), around_part: true };
+        cuts_whole(&format!("pass_start_ringed_{}", start.label()), &reach, &material, side);
+    }
+}
+
+/// A closed pocket with a hollow boss whose bore is cleared to the same
+/// floor: the bore is material nested in the boss's hole. Outside and
+/// Inside cut the pocket and the bore whole.
+#[test]
+fn a_pocket_with_a_hollow_boss_is_cut_whole() {
+    let pocket = region(vec![rect(-40.0, -30.0, 40.0, 30.0), circle(18.0), circle(10.0)]);
+    let block = region(vec![rect(-60.0, -50.0, 60.0, 50.0)]);
+    for start in [PassStart::Outside, PassStart::Inside] {
+        let side = StartSide { start, stock: Some(block.clone()), around_part: false };
+        cuts_whole(&format!("pass_start_hollow_boss_{}", start.label()), &pocket, &pocket, side);
     }
 }
