@@ -219,3 +219,18 @@ fn clearance_normalizes_the_numeric_skin_before_any_traverse() {
         assert_eq!(m.to.z, p.clearance_z, "a traverse stays at clearance");
     }
 }
+
+#[test]
+fn an_edge_at_the_window_floor_is_excluded_before_contact_sizing() {
+    let curtain = vec![
+        Triangle::new(p3(0.0, 0.0, -10.0), p3(10.0, 0.0, -10.0), p3(10.0, 0.0, 0.0)),
+        Triangle::new(p3(0.0, 0.0, -10.0), p3(10.0, 0.0, 0.0), p3(0.0, 0.0, 0.0)),
+    ];
+    let mut p = params(DeburrBreak::default());
+    p.bottom_z = -10.0;
+    for mesh in [wedge_block(), curtain] {
+        let t = deburr(&mesh, &p).expect("every positive drop puts a floor edge below the window");
+        assert!(!t.breaks.is_empty(), "the supported top edges still ride");
+        assert!(t.breaks.iter().all(|b| b.edge.iter().all(|q| q.z == 0.0)), "only the top edges ride: {:?}", t.breaks);
+    }
+}
