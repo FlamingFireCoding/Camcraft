@@ -14,7 +14,7 @@ use crate::geometry::Point3;
 use crate::links::{Link, LinkTally, Links, NOT_PROVED, TOO_LONG};
 
 use super::arcs::Seg;
-use super::descent::{Cuts, Lvl, entry_restart, feed_down, plan, push, restart, start};
+use super::descent::{Cuts, Lvl, entry_restart, feed_down, plan, push, ramp_fallback, restart, start};
 use crate::plunge_law;
 use super::levels::{Cert, Motion};
 use super::slots::chord_clears;
@@ -180,6 +180,19 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     // The climb-and-dive every planar ladder has posted between passes:
     // the floor its neighbours already cleared, crossed in air.
     b.push(MoveKind::Rapid, Point3::new(at.x, at.y, plane), None);
+    // #3567: a dead-end later pass of an Outside plan starts in solid -
+    // no earlier pass has cleared its column. Enter it by the ramp along
+    // the pass, so the tool lowers while it travels the first cut and the
+    // engagement grows in a gradual way. The helix and the plunge stay
+    // the entry everywhere else.
+    if m.dead_end_ramp && plunge_law::into_solid(b, e, z, mat_top, m.tool_r()) && let Some(cen) = cert {
+        let l = Lvl { cen, passes, pass: lv.pass, walk: lv.walk, mat_top };
+        let from = (mat_top + m.links.approach.plunge_height).min(plane);
+        if let Some(d) = ramp_fallback(&l, z, from, m) {
+            st.level.extend(push(b, &d, &l, z, plane, m));
+            return;
+        }
+    }
     // M11.3 (the centre-cutting law between passes): a tool that may not
     // plunge into solid enters a pass start its neighbours have not
     // cleared like a level - the helix onto it, else the ramp along the

@@ -206,7 +206,11 @@ pub fn pocket_avoid_started_on(
             .with_xy_arc(p.links.approach.arc_xy)
             .with_microlift(joins)
             .with_solid_restart()
-            .with_cleared_links(side.start != PassStart::Auto);
+            .with_cleared_links(side.start != PassStart::Auto)
+            .with_dead_end_ramp(
+                side.start == PassStart::Outside
+                    && matches!(actual, PocketStrategy::Waterline | PocketStrategy::OffsetRings),
+            );
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_links = Cert::Region(&level_center);
         walk_one_level(

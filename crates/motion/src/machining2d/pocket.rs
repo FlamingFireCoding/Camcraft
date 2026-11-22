@@ -344,6 +344,8 @@ pub(super) fn pocket_over_with_relief(
             holes,
             corner_reliefs,
             cleared_links: side.start != PassStart::Auto,
+            dead_end_ramp: side.start == PassStart::Outside
+                && matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings),
         },
     )
 }

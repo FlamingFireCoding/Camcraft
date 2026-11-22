@@ -171,6 +171,10 @@ pub(super) struct Motion {
     /// path already cut (the start-side plan's open pieces end on walls,
     /// beside stock no cut has reached yet).
     pub(super) cleared_links: bool,
+    /// #3567: a later Outside pass that starts in solid (a dead end of a
+    /// split level) enters by the ramp along the pass, not by a helix or
+    /// a plunge into uncut stock.
+    pub(super) dead_end_ramp: bool,
 }
 
 impl Motion {
@@ -199,12 +203,19 @@ impl Motion {
             ring_zig: false,
             solid_restart: false,
             cleared_links: false,
+            dead_end_ramp: false,
         }
     }
 
     /// #3316: prove keep-down pass links through cut material too.
     pub(super) fn with_cleared_links(mut self, on: bool) -> Self {
         self.cleared_links = on;
+        self
+    }
+
+    /// #3567: enter a dead-end later pass by the ramp along the pass.
+    pub(super) fn with_dead_end_ramp(mut self, on: bool) -> Self {
+        self.dead_end_ramp = on;
         self
     }
 

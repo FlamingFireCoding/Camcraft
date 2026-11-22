@@ -40,6 +40,9 @@ pub(super) struct PocketWalks<'a> {
     /// #3316: the start-side plan - its keep-down pass links must run
     /// through cut material, and no pre-drilled hole re-seats its order.
     pub(super) cleared_links: bool,
+    /// #3567: a later Outside pass that starts in solid enters by the
+    /// ramp along the pass.
+    pub(super) dead_end_ramp: bool,
 }
 
 /// Fit, optionally fillet, descend, link, and post `walks` across all Z levels.
@@ -59,6 +62,7 @@ pub(super) fn emit_pocket_passes(
         holes,
         corner_reliefs,
         cleared_links,
+        dead_end_ramp,
     } = walks;
     // The horizontal arc entry (M11.3) lands on the first pass: a closed
     // first ring starts mid its longest edge, where an arc has room.
@@ -100,7 +104,8 @@ pub(super) fn emit_pocket_passes(
         .with_microlift(joins)
         .with_holes(holes)
         .with_solid_restart()
-        .with_cleared_links(cleared_links);
+        .with_cleared_links(cleared_links)
+        .with_dead_end_ramp(dead_end_ramp);
     let fitted: Option<Vec<Vec<Seg>>> = fit.map(|tol| passes.iter().map(|p| fit_pass(p, tol)).collect());
     // #1733: the corner arcs asked for. They round the walks as fitted
     // (a pass with no fit: its own chords).
@@ -264,6 +269,7 @@ mod tests {
                 holes: &[],
                 corner_reliefs: &[],
                 cleared_links: false,
+                dead_end_ramp: false,
             },
         ) else {
             panic!("emit_pocket_passes")
