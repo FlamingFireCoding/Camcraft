@@ -8,13 +8,17 @@
 use std::sync::OnceLock;
 
 use crate::adapter::HeadlessGpu;
-use crate::cut::{cell_cut, cut_cpu, slot, CutInput};
+use crate::cut::{cell_cut, cut_cpu, slot, CutGrid, CutInput, CutItem};
 use crate::cut_gpu::CutKernel;
 use crate::shared::shared_device;
 use crate::switch::log_fallback_once;
 
-/// Texels that the spot check compares, at most, for each batch.
+/// Item probes in the spot check of a batch, at most.
 pub const SPOT_TEXELS: usize = 64;
+
+/// Fixed lattice places that the spot check also compares, so a wrong
+/// value away from every sampled item is found.
+pub const SPOT_LATTICE_TEXELS: usize = 8;
 
 /// The spot check's bound, as a fraction of the winning item's claim
 /// margin: the GPU value and the CPU law may differ by at most this
@@ -63,11 +67,14 @@ pub fn cut_or_cpu_on(gpu: Result<(&HeadlessGpu, &CutKernel), String>, input: &Cu
         }
         let (gpu, kernel) = gpu?;
         let compute = gpu.compute.as_ref().map_err(Clone::clone)?;
-        let values = kernel.run(&gpu.device, &gpu.queue, compute, input).inspect_err(|e| {
-            if e.contains("did not answer") {
-                let _ = OFF.set(format!("{e}; the GPU stock cut is off for this process"));
-            }
-        })?;
+        let values = kernel
+            .run(&gpu.device, &gpu.queue, compute, input)
+            .inspect_err(|e| {
+                if let Some(why) = e.off_reason() {
+                    let _ = OFF.set(why);
+                }
+            })
+            .map_err(|e| e.message)?;
         spot_check(input, &values).inspect_err(|e| {
             let _ = OFF.set(format!("{e}; the GPU stock cut is off for this process"));
         })?;
@@ -82,37 +89,18 @@ pub fn cut_or_cpu_on(gpu: Result<(&HeadlessGpu, &CutKernel), String>, input: &Cu
     }
 }
 
-/// Compare the GPU layer with the CPU law on up to [`SPOT_TEXELS`]
-/// texels: the center cell of evenly spaced items, each evaluated over
-/// every item that covers it. Values below `-cap` never show and
-/// compare clamped there.
+/// Compare the GPU layer with the CPU law on the spot probes: the
+/// deepest claimed cell of evenly spaced items and [`SPOT_LATTICE_TEXELS`]
+/// fixed places across the lattice, each evaluated over every item that
+/// covers it. Values below `-cap` never show and compare clamped there.
 pub fn spot_check(input: &CutInput, gpu: &[f32]) -> Result<(), String> {
     let n = input.check()?;
     if gpu.len() != n {
         return Err(format!("stock cut kernel: the GPU gave {} texels, not {n}", gpu.len()));
     }
     let g = &input.grid;
-    let floor = -4.0 * g.cap;
-    let step = input.items.len().div_ceil(SPOT_TEXELS).max(1);
-    for probe in input.items.iter().step_by(step) {
-        let local: [u32; 3] = std::array::from_fn(|a| (probe.lo[a] + probe.hi[a]) / 2);
-        let Some(at) = slot(probe, local, g.dims) else {
-            return Err("stock cut kernel: a checked item left the lattice".into());
-        };
-        let (mut want, mut margin) = (floor, 0.0f32);
-        for it in &input.items {
-            let l: [i64; 3] = std::array::from_fn(|a| i64::from(probe.base[a]) + i64::from(local[a]) - i64::from(it.base[a]));
-            let inside = (0..3).all(|a| i64::from(it.lo[a]) <= l[a] && l[a] <= i64::from(it.hi[a]));
-            if !inside {
-                continue;
-            }
-            let l = l.map(|v| u32::try_from(v).unwrap_or(0));
-            if let Some(v) = cell_cut(it, l, g)
-                && v > want
-            {
-                (want, margin) = (v, it.margin);
-            }
-        }
+    for at in spot_probes(input)? {
+        let (want, margin) = want_at(input, cell_of_slot(at, g.dims));
         let got = gpu.get(at).copied().unwrap_or(f32::NAN);
         let (w, h) = (want.max(-g.cap), got.max(-g.cap));
         let bound = (margin * SPOT_MARGIN_FRACTION).max(f32::EPSILON * g.cap);
@@ -123,4 +111,81 @@ pub fn spot_check(input: &CutInput, gpu: &[f32]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The lattice slots that [`spot_check`] compares: the deepest claimed
+/// cell of each sampled item, then [`SPOT_LATTICE_TEXELS`] fixed places
+/// across the lattice. The item probes come first, so a test can take
+/// the first one as a claimed cell.
+pub fn spot_probes(input: &CutInput) -> Result<Vec<usize>, String> {
+    input.check()?;
+    let g = &input.grid;
+    let mut probes = Vec::with_capacity(SPOT_TEXELS + SPOT_LATTICE_TEXELS);
+    let step = input.items.len().div_ceil(SPOT_TEXELS).max(1);
+    for item in input.items.iter().step_by(step) {
+        let Some(local) = deepest_local(item, g) else {
+            continue;
+        };
+        let Some(at) = slot(item, local, g.dims) else {
+            return Err("stock cut kernel: a checked item left the lattice".into());
+        };
+        probes.push(at);
+    }
+    // 8 fixed places: the quarter and three-quarter cell of each axis.
+    let [dx, dy, dz] = g.dims.map(|d| d as usize);
+    for z in [dz / 4, 3 * dz / 4] {
+        for y in [dy / 4, 3 * dy / 4] {
+            for x in [dx / 4, 3 * dx / 4] {
+                probes.push((z * dy + y) * dx + x);
+            }
+        }
+    }
+    Ok(probes)
+}
+
+/// The local cell of `item` with the deepest cut (the largest value; the
+/// layer folds with the max law), or `None` when the item claims no cell.
+fn deepest_local(item: &CutItem, grid: &CutGrid) -> Option<[u32; 3]> {
+    let (mut deepest, mut at) = (None, None);
+    for z in item.lo[2]..=item.hi[2] {
+        for y in item.lo[1]..=item.hi[1] {
+            for x in item.lo[0]..=item.hi[0] {
+                let local = [x, y, z];
+                let Some(v) = cell_cut(item, local, grid) else {
+                    continue;
+                };
+                if deepest.is_none_or(|d| v > d) {
+                    (deepest, at) = (Some(v), Some(local));
+                }
+            }
+        }
+    }
+    at
+}
+
+/// The CPU cut at absolute cell `at`, and the claim margin of the item
+/// that makes it.
+fn want_at(input: &CutInput, at: [u32; 3]) -> (f32, f32) {
+    let g = &input.grid;
+    let (mut want, mut margin) = (-4.0 * g.cap, 0.0f32);
+    for item in &input.items {
+        let l: [i64; 3] = std::array::from_fn(|a| i64::from(at[a]) - i64::from(item.base[a]));
+        let inside = (0..3).all(|a| i64::from(item.lo[a]) <= l[a] && l[a] <= i64::from(item.hi[a]));
+        if !inside {
+            continue;
+        }
+        let l = l.map(|v| u32::try_from(v).unwrap_or(0));
+        if let Some(v) = cell_cut(item, l, g)
+            && v > want
+        {
+            (want, margin) = (v, item.margin);
+        }
+    }
+    (want, margin)
+}
+
+/// The absolute cell `[x, y, z]` of lattice slot `s`.
+fn cell_of_slot(s: usize, dims: [u32; 3]) -> [u32; 3] {
+    let [dx, dy, _] = dims.map(|d| d as usize);
+    [(s % dx) as u32, ((s / dx) % dy) as u32, (s / (dx * dy)) as u32]
 }

@@ -10,8 +10,8 @@
 use std::time::Instant;
 
 use camcraft_gpu::{
-    cut_cpu, cut_or_cpu, cut_or_cpu_on, gpu_required, shared_device, spot_check, CutGrid, CutInput, CutItem,
-    CutKernel, CutPath, SPOT_TEXELS,
+    cut_cpu, cut_or_cpu, cut_or_cpu_on, gpu_required, shared_device, spot_check, spot_probes, CutError, CutGrid,
+    CutInput, CutItem, CutKernel, CutPath, CUT_WAIT,
 };
 
 const BALL: &str = include_str!("fixtures/cut_twin_ball_2627.txt");
@@ -124,26 +124,101 @@ fn a_layer_off_the_cpu_law_fails_the_spot_check() {
     let f = fixture(FLAT);
     let good = cut_cpu(&f.input).expect("the CPU law cuts");
     spot_check(&f.input, &good).expect("the CPU law passes its own check");
-    // one probed, claimed texel 0.1 mm deeper than the law: a gouge of
-    // the display (the probes are the center cells of every step-th item)
-    let [dx, dy, _] = f.input.grid.dims.map(|d| d as usize);
-    let step = f.input.items.len().div_ceil(SPOT_TEXELS).max(1);
-    let slot = f
-        .input
-        .items
-        .iter()
-        .step_by(step)
-        .map(|p| {
-            let at = [0, 1, 2].map(|a| (i64::from(p.base[a]) + i64::from((p.lo[a] + p.hi[a]) / 2)) as usize);
-            (at[2] * dy + at[1]) * dx + at[0]
-        })
-        .find(|s| good[*s] > -f.input.grid.cap)
-        .expect("a probe on a claimed texel");
+    // The first probe is the deepest claimed cell of a sampled item (not
+    // a centre cell picked by hand): 0.1 mm deeper than the law is a
+    // gouge of the display.
+    let probes = spot_probes(&f.input).expect("the probes");
+    let slot = probes[0];
+    assert!(good[slot] > -f.input.grid.cap, "the first probe is a claimed cell");
     let mut deep = good.clone();
     deep[slot] += 0.1;
     let err = spot_check(&f.input, &deep).expect_err("a deeper texel fails");
     assert!(err.contains("not used"), "{err}");
     assert!(spot_check(&f.input, &good[1..]).is_err(), "a short layer fails");
+}
+
+/// An item whose chord reaches only the edge of its cells: the centre
+/// of its `lo..hi` window is at the floor, so a check that probes only
+/// the centre cannot see a wrong value at the claimed edge cell. The
+/// deepest claimed cell is the one probe, and the check must find a
+/// wrong GPU value there.
+#[test]
+fn an_edge_only_chord_is_checked_at_its_deepest_cell() {
+    let grid = CutGrid { dims: [16, 16, 16], cell: 1.0, cap: 1.0 };
+    let input = CutInput {
+        grid,
+        items: vec![CutItem {
+            // local x 7 of a brick at cell 8: the capsule touches only
+            // absolute x 15; the window's centre cell (local 3) is floor
+            a: [7.9, 3.5, 3.5],
+            b: [7.9, 3.5, 3.5],
+            r: 0.6,
+            flank: 0.0,
+            margin: 0.05,
+            ball: true,
+            base: [8, 8, 8],
+            lo: [0, 0, 0],
+            hi: [7, 7, 7],
+        }],
+    };
+    let good = cut_cpu(&input).expect("the CPU law cuts");
+    spot_check(&input, &good).expect("the CPU law passes its own check");
+    let [dx, dy, _] = grid.dims.map(|d| d as usize);
+    let deepest = (11 * dy + 11) * dx + 15; // absolute [15, 11, 11]
+    let centre = (11 * dy + 11) * dx + 11; // absolute [11, 11, 11]
+    assert!(good[deepest] > -grid.cap, "the edge cell is claimed");
+    assert_eq!(good[centre], -4.0 * grid.cap, "the window's centre cell is at the floor");
+    let mut deep = good.clone();
+    deep[deepest] += 0.1;
+    let err = spot_check(&input, &deep).expect_err("a wrong value at the deepest cell fails");
+    assert!(err.contains("not used"), "{err}");
+}
+
+/// A claimed texel at a fixed lattice place, where no sampled item
+/// reaches, is also a probe: a GPU value there is a cut that the law
+/// does not make.
+#[test]
+fn a_wrong_texel_at_a_fixed_lattice_place_fails_the_spot_check() {
+    let grid = CutGrid { dims: [4, 4, 4], cell: 1.0, cap: 4.0 };
+    let input = CutInput {
+        grid,
+        items: vec![CutItem {
+            // the brick covers absolute cells 2..=3 only; the fixed
+            // lattice place [1, 1, 1] is outside every item
+            a: [0.5, 0.5, 0.5],
+            b: [0.5, 0.5, 0.5],
+            r: 0.6,
+            flank: 0.0,
+            margin: 0.05,
+            ball: true,
+            base: [2, 2, 2],
+            lo: [0, 0, 0],
+            hi: [1, 1, 1],
+        }],
+    };
+    let good = cut_cpu(&input).expect("the CPU law cuts");
+    spot_check(&input, &good).expect("the CPU law passes its own check");
+    let [dx, dy, _] = grid.dims.map(|d| d as usize);
+    let fixed = (1 * dy + 1) * dx + 1; // the quarter place, cell [1, 1, 1]
+    assert_eq!(good[fixed], -4.0 * grid.cap, "the fixed place is outside every item");
+    let mut bad = good.clone();
+    bad[fixed] = 0.0;
+    let err = spot_check(&input, &bad).expect_err("a cut at a fixed place fails");
+    assert!(err.contains("not used"), "{err}");
+}
+
+/// The read-back map wait that ends ("did not complete") is the same
+/// kind as the poll wait, so the latch turns the GPU off for it too. The
+/// text-only latch missed it.
+#[test]
+fn a_map_wait_that_ends_latches_the_gpu_off() {
+    let ended = CutError::no_answer("stock cut kernel: the read-back map did not complete");
+    let why = ended.off_reason().expect("the map wait turns the GPU off");
+    assert!(why.contains("off for this process"), "{why}");
+    let poll = CutError::no_answer(format!("stock cut kernel: the GPU did not answer within {CUT_WAIT:?}: timeout"));
+    assert!(poll.off_reason().is_some(), "the poll wait turns the GPU off");
+    let bad = CutError::other("stock cut kernel: GPU validation error: bad");
+    assert_eq!(bad.off_reason(), None, "a validation error leaves the GPU on");
 }
 
 #[test]

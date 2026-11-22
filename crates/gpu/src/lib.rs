@@ -35,9 +35,12 @@ pub use binning::{bin_twin, pad_boxes, plan, CellLists, GridSpec, PaddedBoxes, P
 pub use binning_gpu::{bin_facets, bin_on};
 pub use cut::{cut_cpu, CutGrid, CutInput, CutItem, CUT_BRICK, MAX_CUT_TEXELS};
 #[cfg(not(target_arch = "wasm32"))]
-pub use cut_gpu::{CutKernel, CUT_WAIT, ITEMS_PER_DISPATCH};
+pub use cut_gpu::{CutError, CutErrorKind, CutKernel, CUT_WAIT, ITEMS_PER_DISPATCH};
 #[cfg(not(target_arch = "wasm32"))]
-pub use cut_run::{cut_or_cpu, cut_or_cpu_on, spot_check, CutOutput, CutPath, SPOT_MARGIN_FRACTION, SPOT_TEXELS};
+pub use cut_run::{
+    cut_or_cpu, cut_or_cpu_on, spot_check, spot_probes, CutOutput, CutPath, SPOT_LATTICE_TEXELS, SPOT_MARGIN_FRACTION,
+    SPOT_TEXELS,
+};
 pub use probe::{probe, Compute};
 #[cfg(not(target_arch = "wasm32"))]
 pub use shared::shared_device;

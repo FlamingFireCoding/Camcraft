@@ -23,6 +23,57 @@ pub const ITEMS_PER_DISPATCH: u32 = 256;
 /// failure and the CPU law answers.
 pub const CUT_WAIT: Duration = Duration::from_secs(10);
 
+/// The kind of a kernel failure, so the caller's latch reads a value and
+/// not the text of the reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CutErrorKind {
+    /// A wait ended without an answer: the poll passed [`CUT_WAIT`], or
+    /// the read-back map did not complete. A device that does not answer
+    /// once is not asked again.
+    NoAnswer,
+    /// Any other failure: a limit, a validation, a memory error, or a
+    /// batch that the kernel refuses.
+    Other,
+}
+
+/// A failure of the GPU half: the reason and its kind.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CutError {
+    pub kind: CutErrorKind,
+    pub message: String,
+}
+
+impl CutError {
+    /// A failure that is not a timeout.
+    pub fn other(message: impl Into<String>) -> CutError {
+        CutError { kind: CutErrorKind::Other, message: message.into() }
+    }
+
+    /// A wait that ended without an answer.
+    pub fn no_answer(message: impl Into<String>) -> CutError {
+        CutError { kind: CutErrorKind::NoAnswer, message: message.into() }
+    }
+
+    /// The reason to turn the GPU path off for the rest of the process,
+    /// or `None` when this failure leaves the path on.
+    pub fn off_reason(&self) -> Option<String> {
+        (self.kind == CutErrorKind::NoAnswer)
+            .then(|| format!("{}; the GPU stock cut is off for this process", self.message))
+    }
+}
+
+impl From<String> for CutError {
+    fn from(message: String) -> CutError {
+        CutError::other(message)
+    }
+}
+
+impl std::fmt::Display for CutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 /// Bytes of one `Item` in `cut.wgsl` (five 16-byte rows).
 const ITEM_BYTES: u64 = 80;
 
@@ -48,7 +99,7 @@ pub(crate) fn gpu_error(err: wgpu::Error) -> String {
 }
 
 /// Run `f` inside the three error scopes; any captured error wins.
-fn scoped<T>(device: &wgpu::Device, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+fn scoped<T, E: From<String>>(device: &wgpu::Device, f: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
     let oom = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -60,7 +111,7 @@ fn scoped<T>(device: &wgpu::Device, f: impl FnOnce() -> Result<T, String>) -> Re
         }
     }
     match failure {
-        Some(err) => Err(err),
+        Some(err) => Err(E::from(err)),
         None => result,
     }
 }
@@ -119,7 +170,7 @@ impl CutKernel {
         queue: &wgpu::Queue,
         compute: &Compute,
         input: &CutInput,
-    ) -> Result<Vec<f32>, String> {
+    ) -> Result<Vec<f32>, CutError> {
         let n_tex = input.check()?;
         let plan = Layout::of(device, compute, input, n_tex)?;
         scoped(device, || {
@@ -272,29 +323,52 @@ fn read_back(
     read: &wgpu::Buffer,
     at: wgpu::SubmissionIndex,
     out_bytes: u64,
-) -> Result<Vec<f32>, String> {
+) -> Result<Vec<f32>, CutError> {
     let (tx, rx) = mpsc::channel();
     read.slice(..).map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
     device
         .poll(wgpu::PollType::Wait { submission_index: Some(at), timeout: Some(CUT_WAIT) })
-        .map_err(|e| format!("stock cut kernel: the GPU did not answer within {CUT_WAIT:?}: {e}"))?;
-    match rx.recv_timeout(Duration::from_millis(100)) {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(format!("stock cut kernel: the read-back map failed: {e}")),
-        Err(_) => return Err("stock cut kernel: the read-back map did not complete".into()),
-    }
+        .map_err(|e| CutError::no_answer(format!("stock cut kernel: the GPU did not answer within {CUT_WAIT:?}: {e}")))?;
+    map_wait_end(rx.recv_timeout(Duration::from_millis(100)))?;
     let out = {
-        let view = read.get_mapped_range(..).map_err(|e| format!("stock cut kernel: the read-back range failed: {e:?}"))?;
+        let view = read
+            .get_mapped_range(..)
+            .map_err(|e| CutError::other(format!("stock cut kernel: the read-back range failed: {e:?}")))?;
         if view.len() as u64 != out_bytes {
-            return Err(format!("stock cut kernel: the read-back has {} bytes, not {out_bytes}", view.len()));
+            return Err(CutError::other(format!("stock cut kernel: the read-back has {} bytes, not {out_bytes}", view.len())));
         }
         let mut out = Vec::new();
-        out.try_reserve_exact(view.len() / 4).map_err(|e| format!("stock cut kernel: no host memory: {e}"))?;
+        out.try_reserve_exact(view.len() / 4).map_err(|e| CutError::other(format!("stock cut kernel: no host memory: {e}")))?;
         out.extend(view.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)));
         out
     };
     read.unmap();
     Ok(out)
+}
+
+/// Classify the read-back map wait: a wait that ends without the map is
+/// a device that did not answer (the kind that the latch reads), while a
+/// map that fails with an error is not a stalled device.
+fn map_wait_end(wait: Result<Result<(), wgpu::BufferAsyncError>, mpsc::RecvTimeoutError>) -> Result<(), CutError> {
+    match wait {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(CutError::other(format!("stock cut kernel: the read-back map failed: {e}"))),
+        Err(_) => Err(CutError::no_answer("stock cut kernel: the read-back map did not complete")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_read_back_wait_that_ends_is_a_no_answer() {
+        // The map wait that ends is the same kind as the poll wait: the
+        // latch must fire for its text, not only for "did not answer".
+        let ended = map_wait_end(Err(mpsc::RecvTimeoutError::Timeout));
+        assert_eq!(ended.expect_err("the map wait ended").kind, CutErrorKind::NoAnswer);
+        assert!(map_wait_end(Ok(Ok(()))).is_ok(), "a map that completed is not a failure");
+    }
 }

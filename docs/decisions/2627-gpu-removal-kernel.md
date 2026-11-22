@@ -35,14 +35,19 @@
 - **Watchdog and time bound.** At most `ITEMS_PER_DISPATCH = 256` items
   in one dispatch of `cs_cut`. The read-back waits at most
   `CUT_WAIT = 10 s` (`PollType::Wait` with a timeout), then the map gets
-  100 ms. A timeout is an `Err`, and it turns the GPU path off for the
-  process: a device that does not answer once is not asked again.
-- **Spot check on every GPU batch.** Up to 64 texels (the center cell of
-  evenly spaced items) are evaluated by the CPU law over every item that
-  covers them. A GPU value more than half the winning item's claim margin
-  away (values clamped at `-cap`) rejects the batch: the CPU law answers,
-  the reason is logged, and the GPU path is off for the process. Cost:
-  64 x items containment tests, a few hundred cell evaluations.
+  100 ms. A wait that ends without an answer (the poll timeout, or a map
+  that did not complete) is an `Err` with the kind `NoAnswer`; the kind,
+  not the message text, turns the GPU path off for the process: a device
+  that does not answer once is not asked again. A map that fails with an
+  error is the kind `Other` and leaves the path on.
+- **Spot check on every GPU batch.** The deepest claimed cell of up to 64
+  evenly spaced items, and 8 fixed places across the lattice, are
+  evaluated by the CPU law over every item that covers them. A GPU value
+  more than half the winning item's claim margin away (values clamped at
+  `-cap`) rejects the batch: the CPU law answers, the reason is logged,
+  and the GPU path is off for the process. Cost: at most 72 x items
+  containment tests, plus up to 64 x 512 cell evaluations for the deepest
+  cell of each sampled item.
 - **Validation before any work.** Each item is checked (finite values,
   coordinates under 1e6 mm, a positive radius, a flat with a flank, a
   non-negative margin, cells inside one brick and inside the lattice);
