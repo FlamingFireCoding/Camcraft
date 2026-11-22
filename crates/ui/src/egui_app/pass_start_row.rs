@@ -12,6 +12,12 @@ use super::fields::*;
 /// The row's label - one spelling for every kind.
 pub(crate) const PASS_START_LABEL: &str = "Pass starts at";
 
+/// The consequence line under the row when the 2D Adaptive method is
+/// Trochoidal and the row is off Auto (#3355): its loops have no ring
+/// order, so the generator refuses the operation by name.
+pub(crate) const TROCH_PASS_START_REFUSED: &str =
+    "Inside and Outside are not available with the Trochoidal method (its loops have no ring order): the operation is refused";
+
 /// What the three values do: the row's hover text.
 const PASS_START_HINT: &str = "Auto: the order this operation always cut. Inside: start at the part or island wall and work out. Outside: start at the outer edge and work in. With an Outside containment the outer edge is the stock edge, so the tool starts in air and no ring cuts a full-width slot";
 

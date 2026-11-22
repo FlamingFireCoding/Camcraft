@@ -269,7 +269,26 @@ A microlift above clearance is refused.
 Choose Retract when the return must rise higher. These controls do not
 apply to Spiral.
 
-**Common refusals:** as Pocket.
+**Pass starts at** (Passes tab) sets where each level starts. It is the
+same option as on 2D Offset:
+
+- **Auto** is the plan that 2D Adaptive always cut.
+- **Outside** starts at the outer edge of the area and works in. Where
+  the area reaches past the stock edge with room for an entry in air,
+  the adaptive plan cuts the band from the air inward and ends on the
+  part wall. Where it does not (for example an Outside containment that
+  stops where the tool touches the stock, or a closed pocket), Offset
+  rings cut the area from its outer edge in, and the operation's notes
+  say so.
+- **Inside** starts in the middle of a pocket without islands and grows
+  out to its wall (the adaptive plan). An area with islands or a part in
+  it is cut with Offset rings from the island or part wall out, and the
+  notes say so.
+
+The Trochoidal method has no ring order: it refuses Inside and Outside.
+
+**Common refusals:** as Pocket. With **Method = Trochoidal**, a **Pass
+starts at** other than Auto.
 
 ## 2D Offset
 

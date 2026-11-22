@@ -829,6 +829,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_turns,
             blend_radius,
             corner_relief,
+            pass_start,
             ..
         } => {
             if *method == machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
@@ -836,6 +837,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     "corner relief is not supported with the Trochoidal adaptive method".into(),
                 ));
             }
+            if let Some(why) = machining2d::trochoidal_pass_start_refusal(*method, *pass_start) {
+                return Err(GenError::Invalid(why));
+            }
+            // #3355: Outside cuts an open side from the air past the
+            // stock outline; the outline is world XY, so a tilted op
+            // passes none (its plan then says so and rides the rings).
+            let air_stock = if frame.is_none() { stock_region.as_ref() } else { None };
             let region = region_for_job(
                     &mut picked_region,
                     &mut section_z,
@@ -892,7 +900,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // region, the one the op's source and boundary settings give.
             let adaptive = |pp: &PocketParams| match method {
                 machining2d::AdaptiveMethod::Spiral => {
-                    machining2d::pocket_entered_with_relief(&region, pp, &[], corner_relief)
+                    machining2d::pocket_started_in(&region, pp, &[], corner_relief, *pass_start, air_stock)
                 }
                 // #1733: the loops are arcs already; the option is
                 // refused by name, never ignored (`sane` says it first).

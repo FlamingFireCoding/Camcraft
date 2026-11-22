@@ -16,7 +16,8 @@ use crate::geo2d::{Loop, Point2, Region};
 
 use super::adaptive::{AdaptiveSpec, Return, Travel, boundary_dist, central_point, corner_radius, first_crossing, plan, preferred_seed};
 use super::face::GenError;
-use super::pocket::{PocketParams, PocketStrategy, plan_passes};
+use super::pass_start::PassStart;
+use super::pocket::{PocketParams, PocketStrategy, plan_passes_from};
 
 /// Where the plan put the entry: the spot, the radius of the disc
 /// about it that is inside the center area, the helix radius the
@@ -44,7 +45,16 @@ pub(crate) struct EntryRoom {
 /// piece of `center` that reaches past it is cut from the air
 /// (`adaptive::plan_from_air`) on the material clipped to the stock.
 pub(crate) fn adaptive_passes(center: &Region, p: &PocketParams, what: &str, trochoid: bool, stock: Option<&Region>) -> Result<Planned, GenError> {
-    let (passes, notes, rest, room, joins, travel, refused) = hsm_passes(center, p, stock)?;
+    adaptive_ordered(center, p, what, trochoid, stock, PassStart::Auto)
+}
+
+/// [`adaptive_passes`] under a pass start (#3355). `Auto` is that
+/// function, byte for byte. `Outside` plans every piece from the air
+/// (`air_plan`) or refuses the HSM plan; the fallback rings take
+/// `start`, so the forced order holds on every path
+/// (`pocket_hsm_start`).
+pub(super) fn adaptive_ordered(center: &Region, p: &PocketParams, what: &str, trochoid: bool, stock: Option<&Region>, start: PassStart) -> Result<Planned, GenError> {
+    let (passes, notes, rest, room, joins, travel, refused) = hsm_passes(center, p, stock, start == PassStart::Outside)?;
     // A plan that would cross itself is never posted (the verifier's
     // crossing law, asked of the plan first); one refused past its
     // planning budget (issue #13) has no passes to judge.
@@ -68,10 +78,14 @@ pub(crate) fn adaptive_passes(center: &Region, p: &PocketParams, what: &str, tro
             return Ok((passes, notes, PocketStrategy::Adaptive, Some(room), joins));
         }
         Err(t) if trochoid => format!("adaptive: the HSM plan {why}; a trochoid {t} - Offset rings cut {what} instead"),
-        Err(_) => format!("adaptive: the HSM plan {why} - Offset rings cut {what} instead"),
+        Err(_) if start == PassStart::Auto => format!("adaptive: the HSM plan {why} - Offset rings cut {what} instead"),
+        Err(_) => format!(
+            "adaptive: Pass starts at {} - the HSM plan {why}; Offset rings cut {what} in that order instead",
+            start.label()
+        ),
     };
     let step = crate::load::load_step(p.tool_diameter, p.optimal_load);
-    Ok((plan_passes(center, step, p.climb, s)?, vec![note], s, None, Vec::new()))
+    Ok((plan_passes_from(center, step, p.climb, s, start)?, vec![note], s, None, Vec::new()))
 }
 
 /// Cutter-center walks, one per pass.
@@ -199,8 +213,11 @@ pub(crate) fn choose_entry(center: &Region, p: &PocketParams, notes: &mut Vec<St
 }
 
 /// Cutter-center walks for an Adaptive pocket, the plan's notes, the
-/// share of the reachable stock it leaves standing and its entry.
-fn hsm_passes(center: &Region, p: &PocketParams, stock: Option<&Region>) -> Result<HsmPlanned, GenError> {
+/// share of the reachable stock it leaves standing and its entry. With
+/// `air_only` (#3355, Pass starts at Outside) a piece that the air plan
+/// cannot start refuses the plan by name: the growth spiral would start
+/// it inside, not at its outer edge.
+fn hsm_passes(center: &Region, p: &PocketParams, stock: Option<&Region>, air_only: bool) -> Result<HsmPlanned, GenError> {
     let r = p.tool_diameter * 0.5;
     let mut notes = Vec::new();
     let mut passes = Vec::new();
@@ -265,6 +282,10 @@ fn hsm_passes(center: &Region, p: &PocketParams, stock: Option<&Region>) -> Resu
             // Over the load bound: no pass of it is posted, the level is
             // refused by name (the Offset rings cut it, said).
             Some(Err(why)) => return Ok((Vec::new(), notes, 1.0, room, Vec::new(), travel, Some(why))),
+            None if air_only => {
+                let why = "cannot start a piece of the area in the air past the stock edge".to_owned();
+                return Ok((Vec::new(), notes, 1.0, room, Vec::new(), travel, Some(why)));
+            }
             None => (plan(&reach, comp, &spec)?, reach.area()),
         };
         if let Some(why) = pl.refused {

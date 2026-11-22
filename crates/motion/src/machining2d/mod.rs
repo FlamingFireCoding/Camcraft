@@ -86,6 +86,7 @@ mod pocket_plan;
 mod pocket_emit;
 mod pocket_zigzag;
 mod pocket_hsm;
+mod pocket_hsm_start;
 mod pocket_strategy;
 mod pocket_troch;
 mod predrilled;
@@ -163,7 +164,7 @@ pub use corner_relief::{
 };
 pub use corner_relief_spur::pocket_relief_plan;
 pub use pass_start::PassStart;
-pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, pocket_started, PocketParams, PocketStrategy};
+pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_in, PocketParams, PocketStrategy};
 pub use pocket_avoid::{pocket_avoid, pocket_avoid_started, pocket_avoid_with_relief};
 pub use predrilled::PreHole;
 pub use rest2d::{
@@ -182,6 +183,7 @@ pub use vcarve::{v_carve, VCarveParams};
 pub use unreached::{unreached_corner_note, unreached_corners, unreached_note, unreached_pieces};
 pub use adaptive::{rest_adaptive, RestStock, StockFloor, REST_STOCK_FILM};
 pub use adaptive_method::AdaptiveMethod;
+pub use pocket_hsm_start::trochoidal_pass_start_refusal;
 pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
 pub use trochoid_air::lifted_cut;
 pub use trochoid_slot::{

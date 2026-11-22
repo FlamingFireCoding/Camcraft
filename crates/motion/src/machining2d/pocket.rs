@@ -15,7 +15,7 @@ use super::arcs::ARC_FIT_TOL;
 use super::fillet_tally::corner_arc_radius;
 use super::pass_start::PassStart;
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
-use super::pocket_hsm::adaptive_passes;
+use super::pocket_hsm_start::adaptive_passes_from;
 use super::pocket_zigzag::rest_passes;
 pub(crate) use super::pocket_plan::{plan_passes, plan_passes_from};
 use super::predrilled::PreHole;
@@ -235,6 +235,20 @@ pub fn pocket_started(
     relief: &CornerRelief,
     start: PassStart,
 ) -> Result<Toolpath, GenError> {
+    pocket_started_in(region, p, holes, relief, start, None)
+}
+
+/// [`pocket_started`] with the stock outline in the region's frame
+/// (#3355): read only by the Adaptive plan under [`PassStart::Outside`],
+/// which cuts an open side from the air past it.
+pub fn pocket_started_in(
+    region: &Region,
+    p: &PocketParams,
+    holes: &[PreHole],
+    relief: &CornerRelief,
+    start: PassStart,
+    stock: Option<&Region>,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
     relief.validate()?;
     if region.is_empty() {
@@ -247,7 +261,7 @@ pub fn pocket_started(
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     let plan = plan_corner_reliefs(region, &center, off, relief)?;
-    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, start)
+    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, start, stock)
 }
 
 /// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
@@ -290,7 +304,7 @@ pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, G
 /// posted path (`arc_cross`): rest areas have thin horns where two
 /// fitted arcs can cross within tolerance. `holes` are the proved
 /// pre-drilled entries (#1449; rest machining passes none).
-#[allow(clippy::too_many_arguments)] // the body of every planar pocket: area, plan inputs and the #3316 pass start, threaded once
+#[allow(clippy::too_many_arguments)] // the body of every planar pocket: area, plan inputs and the #3316 pass start with its #3355 stock outline, threaded once
 pub(super) fn pocket_over_with_relief(
     region: &Region,
     center: &Region,
@@ -300,6 +314,7 @@ pub(super) fn pocket_over_with_relief(
     holes: &[PreHole],
     corner_reliefs: &[ResolvedRelief],
     start: PassStart,
+    stock: Option<&Region>,
 ) -> Result<Toolpath, GenError> {
     // Auto commits to a shape here, from the region's own outline - the
     // outermost loop (largest area; holes and islands never decide the
@@ -322,7 +337,7 @@ pub(super) fn pocket_over_with_relief(
     // The HSM plan may choose where its entry stands (`pocket_hsm`).
     let (mut passes, strategy, room, joins) = match strategy {
         PocketStrategy::Adaptive => {
-            let (passes, notes, s, room, joins) = adaptive_passes(center, p, "this pocket", true, None)?;
+            let (passes, notes, s, room, joins) = adaptive_passes_from(center, p, "this pocket", stock, start)?;
             notes.into_iter().for_each(|n| b.note(n));
             (passes, s, room, joins)
         }

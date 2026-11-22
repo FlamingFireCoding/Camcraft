@@ -821,6 +821,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 

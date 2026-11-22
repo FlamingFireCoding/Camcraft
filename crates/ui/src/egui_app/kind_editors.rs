@@ -69,6 +69,10 @@ pub(super) fn roughing2d_pane(
         // #3316: the shared pass-order row; the kinds that own it pass it.
         if let Some(s) = pass_start {
             super::pass_start_row::pass_start_row(ui, tag, s);
+            // #3355: the Trochoidal loops have no ring order; said by name.
+            if trochoidal && *s != camcraft_app::machining2d::PassStart::Auto {
+                consequence(ui, super::pass_start_row::TROCH_PASS_START_REFUSED);
+            }
         }
         prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
         arc_turn_rows(ui, u, "Arc turns at corners", arc.0, arc.1);
