@@ -42,6 +42,7 @@ pub(super) fn roughing2d_pane(
     arc: (&mut bool, &mut Option<f64>),
     corner_relief: &mut camcraft_app::machining2d::CornerRelief,
     tilt: &mut Option<Tilt>,
+    pass_start: Option<&mut camcraft_app::machining2d::PassStart>,
 ) {
     if tab == SEC_HEIGHTS {
         orientation_editor(ui, u, tilt);
@@ -64,6 +65,10 @@ pub(super) fn roughing2d_pane(
         // reads the stepover, so only the offset twin shows the field.
         if optimal_load.is_none() {
             prop_row(ui, "Stepover", |ui| num(ui, u, stepover));
+        }
+        // #3316: the shared pass-order row; the kinds that own it pass it.
+        if let Some(s) = pass_start {
+            super::pass_start_row::pass_start_row(ui, tag, s);
         }
         prop_row(ui, "Stock to leave", |ui| num(ui, u, stock_to_leave));
         arc_turn_rows(ui, u, "Arc turns at corners", arc.0, arc.1);

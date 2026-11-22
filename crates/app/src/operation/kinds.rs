@@ -845,6 +845,7 @@ fn seed_offset2d(c: &Carried) -> OpParams {
         entry: Entry3D::Helix, // M11.3: new pocket-family ops helix in (ramp, then plunge, stand in)
         helix_radius: 1.0,
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 

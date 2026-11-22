@@ -77,6 +77,7 @@ mod op_icons;
 mod tool_icons;
 mod layout;
 mod load_field;
+mod pass_start_row;
 // #2339: the Panel setups window (save, load and delete dock arrangements).
 mod panel_setups;
 // pub(crate) past egui_app: `State::machine_editor` names its draft

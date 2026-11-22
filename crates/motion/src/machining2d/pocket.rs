@@ -5,7 +5,7 @@
 use crate::cl::{PathBuilder, Toolpath};
 use crate::entry::Entry3D;
 use crate::load::{load_in_door, load_step};
-use crate::geo2d::{Point2, Region};
+use crate::geo2d::Region;
 use crate::geometry::Point3;
 use crate::links::Links;
 
@@ -13,10 +13,11 @@ use super::corner_relief::{CornerRelief, ResolvedRelief, plan_corner_reliefs};
 use super::face::GenError;
 use super::arcs::ARC_FIT_TOL;
 use super::fillet_tally::corner_arc_radius;
-use super::waterscan::waterline_passes;
+use super::pass_start::PassStart;
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::adaptive_passes;
-use super::pocket_zigzag::{rest_passes, zigzag_passes};
+use super::pocket_zigzag::rest_passes;
+pub(crate) use super::pocket_plan::{plan_passes, plan_passes_from};
 use super::predrilled::PreHole;
 pub use super::pocket_strategy::PocketStrategy;
 
@@ -222,6 +223,18 @@ pub fn pocket_entered_with_relief(
     holes: &[PreHole],
     relief: &CornerRelief,
 ) -> Result<Toolpath, GenError> {
+    pocket_started(region, p, holes, relief, PassStart::Auto)
+}
+
+/// [`pocket_entered_with_relief`] with the side each level starts on
+/// (#3316); [`PassStart::Auto`] is that function, byte for byte.
+pub fn pocket_started(
+    region: &Region,
+    p: &PocketParams,
+    holes: &[PreHole],
+    relief: &CornerRelief,
+    start: PassStart,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
     relief.validate()?;
     if region.is_empty() {
@@ -234,7 +247,7 @@ pub fn pocket_entered_with_relief(
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     let plan = plan_corner_reliefs(region, &center, off, relief)?;
-    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs)
+    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, start)
 }
 
 /// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
@@ -277,6 +290,7 @@ pub(super) fn non_sliver_center(region: &Region, erode: f64) -> Result<Region, G
 /// posted path (`arc_cross`): rest areas have thin horns where two
 /// fitted arcs can cross within tolerance. `holes` are the proved
 /// pre-drilled entries (#1449; rest machining passes none).
+#[allow(clippy::too_many_arguments)] // the body of every planar pocket: area, plan inputs and the #3316 pass start, threaded once
 pub(super) fn pocket_over_with_relief(
     region: &Region,
     center: &Region,
@@ -285,6 +299,7 @@ pub(super) fn pocket_over_with_relief(
     hold_crossings: bool,
     holes: &[PreHole],
     corner_reliefs: &[ResolvedRelief],
+    start: PassStart,
 ) -> Result<Toolpath, GenError> {
     // Auto commits to a shape here, from the region's own outline - the
     // outermost loop (largest area; holes and islands never decide the
@@ -311,7 +326,7 @@ pub(super) fn pocket_over_with_relief(
             notes.into_iter().for_each(|n| b.note(n));
             (passes, s, room, joins)
         }
-        s => (plan_passes(center, p.tiling_step(), p.climb, s)?, s, None, Vec::new()),
+        s => (plan_passes_from(center, p.tiling_step(), p.climb, s, start)?, s, None, Vec::new()),
     };
     // #3021: rows alone leave a cusp between row ends on every wall and
     // island; each Zigzag pocket closes with the area's boundary rings.
@@ -337,32 +352,6 @@ pub(super) fn pocket_over_with_relief(
             corner_reliefs,
         },
     )
-}
-
-/// Concentric rings marching inward: ring k is the cutter-center area
-/// eroded by `k * stepover`, travelled closed. Offsets are taken from
-/// `center` at absolute distances (never buffer-of-buffer), so micron
-/// quantization cannot compound across rings.
-/// The cutter-center passes for one planar area: the shape law both the
-/// 2-D pocket and the 3-D pocket's per-level plan share (the strategies
-/// band/erode `center` identically; only the numbers come from the
-/// operation's params either way).
-pub(crate) fn plan_passes(
-    center: &Region,
-    stepover: f64,
-    climb: bool,
-    strategy: PocketStrategy,
-) -> Result<Vec<Vec<Point2>>, GenError> {
-    match strategy {
-        PocketStrategy::Zigzag | PocketStrategy::Auto => zigzag_passes(center, stepover, climb),
-        // Offset rings are ring tiling at the caller's step; the HSM
-        // plan is `pocket_hsm.rs`'s (the planar pocket's own, and the
-        // 3-D ladder's per level through `machining3d::hsm`), which
-        // hands a refused area back here as rings.
-        PocketStrategy::Waterline | PocketStrategy::Adaptive | PocketStrategy::OffsetRings => {
-            waterline_passes(center, stepover, climb)
-        }
-    }
 }
 
 #[cfg(test)]

@@ -288,6 +288,16 @@ wanted rather than a constant load.
 **Picks:** as Pocket. **Settings:** Stepover 3, Stepdown 5, Stock to leave
 0, Entry Helix radius 1.
 
+**Pass starts at** (Passes tab) sets where each level starts:
+
+- **Auto** cuts the rings from the middle of the area outward. This is
+  the order that 2D Offset always cut.
+- **Outside** starts at the outer edge of the area and works in. With an
+  Outside containment, the outer edge is the stock edge: the tool starts
+  outside the stock, cuts one stepover at a time and ends on the part
+  wall. Use it to stop full-width slots in the stock.
+- **Inside** starts at the part or island wall and works out.
+
 **Do not touch** (Geometry tab, **Boundaries**): pick faces or edge chains
 to protect from every cut, plunge, ramp, helix, keep-down and rapid link
 across the full tool assembly (flutes, shank and holder). **Clearance**

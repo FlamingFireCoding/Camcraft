@@ -15,9 +15,10 @@ use super::fillet::{Legal, fillet_corners};
 use super::fillet_tally::{FilletTally, corner_arc_radius, fillet_floor};
 use super::equal_steps::cut_levels_for;
 use super::levels::{Cert, Motion, WalkState, walk_one_level};
-use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, plan_passes};
+use super::pass_start::PassStart;
+use super::pocket::{PocketParams, PocketStrategy, non_sliver_center, plan_passes_from};
 use super::pocket_zigzag::rest_passes;
-use super::{GenError, pocket_entered_with_relief};
+use super::GenError;
 
 /// Plan a 2D pocket/offset path whose tool assembly stays clear of `avoid`.
 pub fn pocket_avoid(
@@ -35,8 +36,20 @@ pub fn pocket_avoid_with_relief(
     avoid: &AvoidSpec,
     relief: &CornerRelief,
 ) -> Result<Toolpath, GenError> {
+    pocket_avoid_started(region, p, avoid, relief, PassStart::Auto)
+}
+
+/// [`pocket_avoid_with_relief`] with the side each level starts on
+/// (#3316); [`PassStart::Auto`] is that function, byte for byte.
+pub fn pocket_avoid_started(
+    region: &Region,
+    p: &PocketParams,
+    avoid: &AvoidSpec,
+    relief: &CornerRelief,
+    start: PassStart,
+) -> Result<Toolpath, GenError> {
     if avoid.is_empty() {
-        return pocket_entered_with_relief(region, p, &[], relief);
+        return super::pocket_started(region, p, &[], relief, start);
     }
     p.validate()?;
     relief.validate()?;
@@ -129,7 +142,7 @@ pub fn pocket_avoid_with_relief(
             // island and keep-out edge; the level closes with its rings.
             (rest_passes(&level_center, p.tiling_step(), p.climb)?, strategy, None, Vec::new())
         } else {
-            (plan_passes(&level_center, p.tiling_step(), p.climb, strategy)?, strategy, None, Vec::new())
+            (plan_passes_from(&level_center, p.tiling_step(), p.climb, strategy, start)?, strategy, None, Vec::new())
         };
         let fit = match actual {
             PocketStrategy::Waterline | PocketStrategy::OffsetRings => Some(ARC_FIT_TOL),

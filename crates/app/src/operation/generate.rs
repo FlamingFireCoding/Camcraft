@@ -922,6 +922,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_turns,
             blend_radius,
             corner_relief,
+            pass_start,
             ..
         } => {
             let region = region_for_job(
@@ -977,15 +978,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
             )?;
             let mut path = match &avoid_spec {
-                Some(spec) => machining2d::pocket_avoid_with_relief(&region, &pp, spec, corner_relief)?,
-                None => machining2d::pocket_entered_with_relief(&region, &pp, &[], corner_relief)?,
+                Some(spec) => machining2d::pocket_avoid_started(&region, &pp, spec, corner_relief, *pass_start)?,
+                None => machining2d::pocket_started(&region, &pp, &[], corner_relief, *pass_start)?,
             };
             if let Some(m) = carry_need!(&relieved_region, &path) {
                 pp.links.approach.material_top = Some(m);
                 lk = pp.links;
                 path = match &avoid_spec {
-                    Some(spec) => machining2d::pocket_avoid_with_relief(&region, &pp, spec, corner_relief)?,
-                    None => machining2d::pocket_entered_with_relief(&region, &pp, &[], corner_relief)?,
+                    Some(spec) => machining2d::pocket_avoid_started(&region, &pp, spec, corner_relief, *pass_start)?,
+                    None => machining2d::pocket_started(&region, &pp, &[], corner_relief, *pass_start)?,
                 };
             }
             relief_zones = zones;
