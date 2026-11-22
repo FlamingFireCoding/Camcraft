@@ -1111,6 +1111,7 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
 fn seed_finish3d(c: &Carried) -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Parallel,
+        direction_angle: 0.0,
         // None = the stepover cos-law derives spacing from the
         // tolerance; the panel can override it per line set.
         stepover: None,

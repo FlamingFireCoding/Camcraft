@@ -593,7 +593,7 @@ pub enum OpParams {
     /// stepdown field: the tolerance IS the depth increment's author
     /// (see [`crate::finishing3d`]). `Parallel`/`ParallelMulti`/
     /// `Scallop`: a Z-following raster over the shallow terrain (once
-    /// along X, crossed along the axes, crossed along the diagonals),
+    /// at the direction angle, crossed along the axes or the diagonals),
     /// then the same scallop ladder's rings on the steep flanks - the
     /// 45° auto-split, one jurisdiction line for both halves. Region,
     /// heights and refusals follow the 3-D pocket's laws exactly:
@@ -604,6 +604,9 @@ pub enum OpParams {
         /// M2.2a default; Parallel adds the raster (M2.2b),
         /// ParallelMulti and Scallop cross it (M2.2c).
         pattern: finishing3d::FinishPattern,
+        /// Parallel raster direction in degrees counterclockwise from +X
+        /// in the work coordinate system. The valid range is [0, 360).
+        direction_angle: f64,
         /// Raster line spacing, mm; `None` (always for Waterline)
         /// follows the stepover cos-law from the tolerance instead -
         /// same "the tolerance is the author" law as the stepdown.
