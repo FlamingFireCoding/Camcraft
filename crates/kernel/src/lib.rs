@@ -38,6 +38,7 @@ mod mesh_bound_blossom;
 mod mesh_bound_spline;
 pub mod mesh_deviation;
 mod mesh_distance;
+mod mesh_pole;
 pub mod mesh_redivide;
 mod mesh_redivide_fill;
 pub mod mesh_weld;
@@ -50,6 +51,7 @@ pub mod solidcore_trims;
 pub mod solidcraft;
 mod step_curve_guard;
 pub mod step_edge_gap;
+mod step_length_units;
 mod step_face_winding;
 mod step_units_guard;
 #[cfg(feature = "truck")]

@@ -192,6 +192,8 @@ pub(crate) fn shell_layout(
     super::fixture_library_dialog::window(ui.ctx(), state);
     // #2339: the Panel setups window - same window law, closed by default.
     super::panel_setups::window(ui.ctx(), state);
+    // #1863: the DXF units prompt (None on a fresh State).
+    super::dxf_units_dialog::window(ui.ctx(), state);
     // #107: the unsaved-changes prompt, last so it sits over everything.
     unsaved_prompt::window(ui.ctx(), state);
     drop(windows);
@@ -499,7 +501,10 @@ fn viewport_panel(
             hud = viewcube::Hud::with_controls(resp.rect, state.move_handles || state.rotate_handles);
         }
         if !over_hud && interact::inside_viewport(state, parr(p)) {
-            if state.look_at_armed && left_pressed {
+            if state.look_at_plane_armed && left_pressed {
+                // #2834: the armed "Look at a work plane" takes this press.
+                crate::look_at_plane::click(state, parr(p));
+            } else if state.look_at_armed && left_pressed {
                 // #2818: the armed "Look at" takes this one press. It is
                 // never remembered, so the release picks nothing.
                 crate::look_at::click(state, parr(p));

@@ -72,8 +72,8 @@ fn user_job(params: OpParams) -> (World, Toolpath, Vec<String>) {
     let mut h = History::default();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/models/Milling-test.step");
     let imp = ImportModel::new(&path).expect("the user's STEP imports");
-    // PR #2904 replaces the truck mesh (952 facets) with solidcore's
-    // measured machining mesh. The level regions and fitted arcs use it.
+    // PR #2904 replaces the 952-facet truck mesh with solidcore's mesh.
+    // The cutting regions and fitted arcs use this measured mesh.
     if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         assert_eq!(imp.mesh.facets.len(), 6228, "the mesh behind the Linux path pin");
     }
@@ -177,9 +177,12 @@ fn the_users_whole_model_bore_roughs_adaptive_on_each_level() {
     h.execute(&world, GenerateOperation::new(&world, "Op1").expect("generate"));
     let e = model::find_by_name(&world, "Op1").expect("op");
     let tp = model::toolpath_of(&world, &e).expect("cached path");
-    let warns: Vec<String> = tp.warnings.iter().map(|w| format!("{w:?}")).collect();
-    assert!(warns.is_empty(), "every level verifies clean: {warns:?}
-notes {:?}", tp.path.notes);
+    let areas = camcraft_app::machining2d::rings_fallbacks(&tp.path.notes);
+    assert_eq!(tp.warnings.len(), usize::from(areas > 0), "only the fallback is reported: {:?}", tp.warnings);
+    assert!(tp.warnings.iter().all(|w| {
+        matches!(w, camcraft_app::verify::Warning::StrategyFallback { areas: n, .. } if *n == areas)
+            && !w.blocks_post()
+    }), "unexpected warnings: {:?}\nnotes {:?}", tp.warnings, tp.path.notes);
     let fell: Vec<&String> = tp.path.notes.iter().filter(|n| n.contains("Offset rings cut")).collect();
     // known-fail-assert
     assert!(fell.is_empty(), "every level keeps the HSM plan: {fell:?}");
@@ -200,10 +203,11 @@ fn bore_path_matches(got: (usize, usize, usize)) -> bool {
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         // PR #2904 (bac4a96c7) changes this fixture's mesh from 952 to
         // 6228 facets at the same chord cap (decision #917). The fixture
-        // and HSM planner are unchanged; the new mesh changes the level
+        // and HSM planner are unchanged; the mesh changes the cutting
         // regions and their proved arc fits. The old truck-mesh reading
-        // was (4726, 4698, 549). With solidcore, all four cutting levels
-        // still verify clean, with no fallback or planning-budget stop.
+        // was (4726, 4698, 549), issue #2004 (PR #2013). Every cutting
+        // level still verifies clean, with no fallback or planning-budget
+        // stop.
         got == (3158, 3130, 1141)
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         // Issue #2371: measured in release on PR #2934 at 48071efd4 and
@@ -218,54 +222,38 @@ fn bore_path_matches(got: (usize, usize, usize)) -> bool {
     }
 }
 
+/// The exact pin of a measured platform rejects each adjacent count.
+#[cfg(any(
+    all(target_os = "windows", target_arch = "x86_64"),
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "macos", target_arch = "aarch64")
+))]
+fn assert_bore_pin_is_exact(pin: (usize, usize, usize)) {
+    assert!(bore_path_matches(pin));
+    let (m, p, a) = pin;
+    for got in [(m - 1, p, a), (m + 1, p, a), (m, p - 1, a), (m, p + 1, a), (m, p, a - 1), (m, p, a + 1)] {
+        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
+    }
+}
+
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn the_linux_x86_64_bore_count_pin_is_exact() {
-    assert!(bore_path_matches((3158, 3130, 1141)));
-    for got in [
-        (4726, 4698, 549),
-        (3157, 3130, 1141),
-        (3159, 3130, 1141),
-        (3158, 3129, 1141),
-        (3158, 3131, 1141),
-        (3158, 3130, 1140),
-        (3158, 3130, 1142),
-    ] {
-        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
-    }
+    assert_bore_pin_is_exact((3158, 3130, 1141));
+    assert!(!bore_path_matches((4726, 4698, 549)), "the count pin must reject the old truck-mesh reading");
 }
 
 #[test]
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn the_windows_x86_64_bore_count_pin_is_exact() {
-    assert!(bore_path_matches((3158, 3130, 1141)));
-    for got in [
-        (4716, 4688, 549),
-        (3157, 3130, 1141),
-        (3159, 3130, 1141),
-        (3158, 3129, 1141),
-        (3158, 3131, 1141),
-        (3158, 3130, 1140),
-        (3158, 3130, 1142),
-    ] {
-        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
-    }
+    assert_bore_pin_is_exact((3158, 3130, 1141));
+    assert!(!bore_path_matches((4716, 4688, 549)), "the count pin must reject the old truck-mesh reading");
 }
 
 #[test]
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn the_macos_arm64_bore_count_pin_is_exact() {
-    assert!(bore_path_matches((3158, 3130, 1141)));
-    for got in [
-        (3157, 3130, 1141),
-        (3159, 3130, 1141),
-        (3158, 3129, 1141),
-        (3158, 3131, 1141),
-        (3158, 3130, 1140),
-        (3158, 3130, 1142),
-    ] {
-        assert!(!bore_path_matches(got), "the count pin must reject {got:?}");
-    }
+    assert_bore_pin_is_exact((3158, 3130, 1141));
 }
 
 #[test]

@@ -185,10 +185,13 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
         return Err("machine file: expected a machine object".to_owned());
     }
 
+    super::installation::check_input_form(&v)?;
     let general = v.pointer("/general");
     let mut m = Machine {
         model: text_of(general.and_then(|g| g.get("model"))),
         vendor: text_of(general.and_then(|g| g.get("vendor"))),
+        controller_identity: super::installation::identity(&v)?,
+        tool_change: super::installation::tool_change(&v)?,
         ..Default::default()
     };
 
@@ -211,6 +214,8 @@ pub fn parse_mch_with(text: &str, holders: Option<super::HolderLookup>) -> Resul
             ));
         }
     };
+
+    m.post = super::post_name::parse_post_name(&v).map_err(|e| format!("machine file: controller.post: {e}"))?;
 
     let kine = v.pointer("/kinematics/default/parts");
     let f = mm_factor(v.pointer("/kinematics/default/units")).unwrap_or(1.0);

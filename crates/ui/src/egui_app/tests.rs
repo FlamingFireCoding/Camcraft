@@ -89,6 +89,8 @@ mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod dxf_profile;
+mod stock_axis;
 mod stock_material;
 mod setup_settings_page;
 mod machine_page;
@@ -120,6 +122,7 @@ mod page_layout;
 mod page_layout_windows;
 mod anchors;
 mod stock_fit;
+mod stock_source_default;
 mod ribbon_rows;
 mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
@@ -146,6 +149,9 @@ mod one_pick_rule;
 // #692: the user-facing pick-through toggle (off by default) reaches the far side.
 mod pick_through;
 mod display_menu;
+// #2834 and #2958: the Display menu's quality, line width and
+// anti-aliasing entries.
+mod display_quality;
 mod see_through;
 // #1198 b: move handles drag a body - one undo step per drag.
 mod body_drag;
@@ -167,6 +173,8 @@ mod setup_tree;
 mod mcp_live;
 // #389: per-setup post options and the tool-list export.
 mod setup_post_options;
+// #2374: the machine's own post offered on the Post page.
+mod machine_named_post;
 // #821: the raised-rotary rows of a setup's Machine page.
 mod setup_rotary;
 // #1494: the setup eye (display only).
@@ -175,6 +183,8 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3335: real viewport clicks into the "Do not touch" group.
+mod do_not_touch_click;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;
@@ -191,17 +201,18 @@ mod tool_library_import;
 mod tool_cutter;
 // #93 slice 3: the drawn cutter edited by its parameters.
 mod tool_cutter_params;
+// #1444: undercut tool editor seeding/angle/corner filter and Slot Undercut page.
+mod tool_undercut;
 // #2397: the new-tool flow in Properties and the shape window it opens.
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
 mod theme_door;
-// #2958: the Display menu's line width and anti-aliasing entries.
-mod display_quality;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
+mod browser_delete;
 // #1450: a model file dropped on the window.
 mod file_drop;
 // #645: the browser's "Show origin names" switch and the per-user view file.
@@ -247,6 +258,8 @@ mod edm_tool_visibility;
 mod highlight_perf;
 // #1517: 2D Pocket drops Adaptive; migrated un-carriable params carry needs_review.
 mod pocket_no_adaptive;
+// #1864: 2D Contour on DXF sketches layer picker & per-chain overrides UI test.
+mod contour_dxf_sketch;
 
 /// What the per-frame state of `Shell` is, minus the GPU half: the fields
 /// `shell_layout` touches, so the harness exercises the window's real body.
@@ -1311,14 +1324,15 @@ fn every_field_lives_on_exactly_one_section() {
             // labels name the TIP's law, not a cut floor), and the
             // feeds are the ride's - no climb row, the cone follows
             // the edge wherever the weld puts it. There is NO Passes
-            // group: one edge, one pass - the loci are what the weld
-            // exposes, and a stepover could only disagree with the
-            // taxonomy (has_section's exclusion, Chamfer2D's answer
-            // once more).
+            // tab: the loci are what the weld exposes, and a stepover
+            // could only disagree with the taxonomy (has_section's
+            // exclusion, Chamfer2D's answer once more). The pass count
+            // of one break rides Geometry with its size (#1890).
             "Deburr",
             vec![
-                // #1888 and #1889: keep the edge filters and reach policy.
-                ("Geometry", vec!["Break width", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
+                // #1888 and #1889: keep the edge filters and reach policy;
+                // #1890: the break mode, profile and passes ride Geometry.
+                ("Geometry", vec!["Break mode", "Break width", "Break profile", "Number of passes", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
                 ("Heights", vec!["Clearance Z", "Window Top Z", "Window Bottom Z"]),
                 ("Feeds", vec!["Feed", "Plunge feed"]),
             ],

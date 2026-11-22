@@ -227,6 +227,16 @@ pub const ROWS: &[Row] = &[
         import: "agree",
         mesh: "watertight, within tolerance",
     },
+    // #3034: the recorded QA part (a mould base with an ellipsoid boss
+    // whose spline face ends in a pole). Added after #2790, so truck has
+    // no recorded reading.
+    Row {
+        file: "q02_3d_mold.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "watertight, within tolerance",
+    },
     Row {
         file: "sample_ap214.step",
         mm_per_unit: 1000.0,
@@ -254,7 +264,8 @@ pub const ROWS: &[Row] = &[
         mesh: "no mesh: solid #16 not read: pcurves failed",
     },
     // #2919: the model reader expands unit aliases; the raw tessellator
-    // still assumes millimetres, and truck cannot read the short geometry names.
+    // still assumes millimetres. The geometry is in long form. These two
+    // truck readings are from the live bench at 72ab66fc1, not 4b694c7c7.
     Row {
         file: "short_units_inch.step",
         mm_per_unit: 25.4,
@@ -268,6 +279,15 @@ pub const ROWS: &[Row] = &[
         truck: Truck::Refused("a shell's mesh is not finite"),
         import: "truck refuses: a shell's mesh is not finite",
         mesh: "off: volume, area",
+    },
+    // #3034: a rational B-spline dome that ends in a pole at a vertex. It
+    // was added after #2790, so truck has no recorded reading.
+    Row {
+        file: "sphere_quarter_pole.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "watertight, within tolerance",
     },
     Row {
         file: "spline_revolved.step",
