@@ -849,12 +849,12 @@ const GRID_MAJOR_EVERY: i64 = 5;
 /// at any zoom. World-space geometry in the overlay buffer, not a
 /// screen-space overlay, so the part occludes it like a real table.
 ///
-/// The same switch as the triads (`show_world_axes`): the grid is
-/// reference furniture, and hiding the axes hides it too. The Display
-/// menu's "Grid" box (`show_grid`, #2818) hides the grid alone. It fades
+/// Its own switch: the Display menu's "Grid" box (`show_grid`, #2818)
+/// hides the grid alone. The axes switch (`show_world_axes`) hides the axes
+/// alone and does not change the grid (#3322). It fades
 /// toward the viewport ground at the rim rather than stopping on a rectangle.
 pub(crate) fn ground_grid_lines(state: &State) -> Vec<[f32; 6]> {
-    if !state.show_world_axes || !state.show_grid {
+    if !state.show_grid {
         return Vec::new();
     }
     let step = nice_step(state.cam.dist / 10.0);
