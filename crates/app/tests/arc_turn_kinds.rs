@@ -211,6 +211,24 @@ fn arc_radii(world: &World) -> Vec<i64> {
         .collect()
 }
 
+/// The Slot's arcs split by kind, to the micron: the #2906 wall lap's arcs
+/// (centered on a slot end, `slot_params`' `a` and `b`) and the #1759 turn
+/// arcs (all others).
+fn slot_arcs(world: &World) -> (Vec<i64>, Vec<i64>) {
+    let e = model::find_by_name(world, "OP").expect("op");
+    assert_eq!(operation::status_of(world, &e), OpStatus::Ok);
+    let cache = model::toolpath_of(world, &e).expect("cached path");
+    assert!(cache.warnings.is_empty(), "{:?}", cache.warnings);
+    let on_end = |x: f64, y: f64| [(15.0, 30.0), (45.0, 30.0)].iter().any(|&(ex, ey)| (x - ex).abs() < 1e-9 && (y - ey).abs() < 1e-9);
+    let (mut lap, mut turns) = (Vec::new(), Vec::new());
+    for m in &cache.path.moves {
+        let Some(a) = m.arc else { continue };
+        let r = ((m.from.x - a.center.x).hypot(m.from.y - a.center.y) * 1000.0).round() as i64;
+        if on_end(a.center.x, a.center.y) { lap.push(r) } else { turns.push(r) }
+    }
+    (lap, turns)
+}
+
 #[test]
 fn generation_cuts_the_face_and_the_slot_turns_at_the_radius_asked() {
     // Face: 3 mm rows, the last one snapped 2 mm off. No radius is the
@@ -225,11 +243,15 @@ fn generation_cuts_the_face_and_the_slot_turns_at_the_radius_asked() {
     assert_eq!(corners.len(), semi.len() + wide, "two quarter arcs a 3 mm turn");
     assert!(corners.iter().all(|r| *r == 1000), "{corners:?}");
 
-    // Slot: off is the sharp pass; on, no arc is larger than the radius.
-    assert!(arc_radii(&generated(slot_params(false, Some(0.5)))).is_empty());
-    let turns = arc_radii(&generated(slot_params(true, Some(0.5))));
+    // Slot: off is the sharp rows and the #2906 wall lap; on, no turn arc
+    // is larger than the radius, and the wall lap stays, arc for arc.
+    let (lap, sharp) = slot_arcs(&generated(slot_params(false, Some(0.5))));
+    assert!(sharp.is_empty() && !lap.is_empty(), "lap {lap:?}, turns {sharp:?}");
+    let (lap_on, turns) = slot_arcs(&generated(slot_params(true, Some(0.5))));
+    assert_eq!(lap_on, lap, "the arc turns lost the wall lap");
     assert!(!turns.is_empty() && turns.iter().all(|r| *r <= 500) && turns.contains(&500), "{turns:?}");
-    let tool = arc_radii(&generated(slot_params(true, None)));
+    let (lap_tool, tool) = slot_arcs(&generated(slot_params(true, None)));
+    assert_eq!(lap_tool, lap, "the arc turns lost the wall lap");
     assert!(!tool.is_empty() && tool.iter().all(|r| *r <= 2000), "{tool:?}");
 }
 
