@@ -711,6 +711,13 @@ function onCycle() {
     msg("canned cycle " + g + " has no feed rate - refused: without F the control drills at whatever feed was last modal");
     return;
   }
+  // #2609: "Using Mach3Mill" (1.84) gives G73 (10.7.22) and G85
+  // (10.7.24.6) no P word, so a peck or ream dwell is refused, not dropped.
+  if ((g === "G73" || g === "G85") && dwell > 0) {
+    var cycleName = g === "G73" ? "peck" : "ream";
+    msg("canned cycle " + g + " (" + cycleName + ") dwell is not supported by this post - a " + dwell + " s dwell is refused, not dropped; set the dwell to 0");
+    return;
+  }
   // #2348: G83 has no P word in Mach3's cycle list, so a deep-peck
   // dwell is refused, not dropped.
   if (g === "G83" && dwell > 0) {
