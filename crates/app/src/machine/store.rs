@@ -98,13 +98,28 @@ pub fn file_in(dir: &Path, name: &str) -> Result<PathBuf, SaveError> {
 }
 
 /// The temp file that [`write_atomic`] writes before its rename: a hidden
-/// file beside `path`, named for the target and this process. `None`
-/// when `path` names no file.
+/// file beside `path`, named for the target, this process and the calling
+/// thread. Two saves at the same moment run on two threads (an autosave
+/// and a save by the user), so they never share a temp file; the saves of
+/// one thread run one after another, so its name can repeat. `None` when
+/// `path` names no file.
 #[must_use]
 pub fn temp_path_for(path: &Path) -> Option<PathBuf> {
     let dir = path.parent()?;
     let name = path.file_name()?.to_string_lossy().into_owned();
-    Some(dir.join(format!(".{name}.{}.tmp", std::process::id())))
+    Some(dir.join(format!(".{name}.{}.{}.tmp", std::process::id(), thread_number())))
+}
+
+/// A number for the calling thread, taken from one counter the first time
+/// the thread asks and kept for the thread's life: different threads of
+/// this process never get the same number.
+fn thread_number() -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(1);
+    thread_local! {
+        static NUMBER: usize = NEXT.fetch_add(1, Ordering::Relaxed);
+    }
+    NUMBER.with(|n| *n)
 }
 
 /// Write `text` to `path` atomically: a temp file in the same folder,

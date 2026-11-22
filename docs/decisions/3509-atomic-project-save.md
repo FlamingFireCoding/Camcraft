@@ -14,6 +14,12 @@
   uses it, and the tests use it to make a save fail. A path that names
   no file is now refused by name before a folder is made. Before, the
   temp file took the name "machine" and the rename failed.
+- The temp name has the process ID and a number for the calling thread
+  (review of PR #3510). Before, it had the process ID only, so two saves
+  of one file at the same moment (an autosave and a save by the user)
+  wrote the same temp file. Each thread takes its number one time, from
+  one counter. The saves of one thread run one after another, so its name
+  can repeat.
 
 **Why.** A plain `std::fs::write` truncates the old file first. A write
 that stops (a full disk, a lost network share, a stopped app) left a
@@ -32,6 +38,14 @@ settings already used `write_atomic`.
   temp file fails the same way on all systems.
 - Merge the copy of the same steps in `fixture_library/store.rs`: a
   different change.
+- A new number for each save (a counter in each name): a test could not
+  know the name before the save, so it could not put a folder in its
+  place. A number for each thread keeps two saves at the same moment
+  apart and keeps the name known to the thread.
+- A test with two threads that save one file many times: on Windows, two
+  renames over one file at the same moment can fail for a reason that is
+  not the temp name, so the test could fail at random. The test checks
+  the names that two threads get.
 
 **Known limits.**
 
