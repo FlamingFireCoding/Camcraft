@@ -1,0 +1,67 @@
+## #3011 - CL toolpath transforms: translate, XY turn, A/B turn, vertical mirror
+
+**What was decided.** `crates/cl/src/cl/transform.rs` (re-exported as
+`app::cl::transform`) adds `translate`, `transform_xy`,
+`rotate_about_axis` and `mirror_plane`. All four use one map,
+`p -> M p + t` with `M` orthogonal. An arc keeps its plane only when `M`
+maps the plane normal exactly onto plus or minus itself. Its turning sense
+flips when `det(M)` times that sign is negative. This one rule gives
+G2 <-> G3 under a mirror, keeps G2/G3 under a turn, and finds the XZ / YZ
+arcs that a transform cannot keep. A reflection swaps `CompSide`
+(G41 <-> G42). Quarter turns use exact sine and cosine, so a 90 degree
+map stays on the lattice bit for bit.
+
+- Moves, arc centres and cycles snap to the 1 um lattice. Edge-break
+  polylines do not snap: a snap would move a framed cap's frames off
+  orthonormal, and `EdgeBreak::is_sane` would then refuse the cap.
+- `transform_xy` refuses an XZ / YZ arc at every angle except a half or
+  a whole turn (`VerticalArc`). It does not flatten it: a flatten changes
+  the move count, and the index records (cycles, compensated spans, torch
+  spans) would then point at the wrong moves.
+- `rotate_about_axis` flattens every arc at `chord_tol` when the turn is
+  not the identity. A rotated vertical-plane arc can turn past a Z
+  extremum, and the builder's Z-monotone law for XZ / YZ arcs would then
+  be false. With a flatten, the index records cannot follow. So a canned
+  cycle and a plasma statement are refused, and a compensated span is
+  dropped with a note, as `TiltedFrame::world_path` does. A legacy
+  vertical chamfer cone is dropped with a note, as in a tilted frame. The
+  map is the same rotation that a `TiltedFrame` with those columns
+  applies; the axis goes through `pose::normalize_axis`.
+- `mirror_plane` refuses a horizontal plane (`HorizontalMirrorPlane`, the
+  reason that `post::wcs_flip` refuses a flipped Z) and a tilted plane
+  (`TiltedMirrorPlane`). It refuses tilted moves and plasma statements.
+  An XZ / YZ arc mirrors only across a plane whose normal is X or Y.
+- `MirrorMode::PreserveClimb(PassFamily)` mirrors, then walks each pass
+  backwards. The caller names the path family, because the cl layer
+  cannot read the operation from the moves. Contour, profile and
+  chamfer reverse. Helical ramp, adaptive, multi-pass roughing and other
+  are refused by name. The moves must also read as passes: an entry
+  column down, a planar cut at one Z, an exit column up to the same top
+  with the same rapid-to-feed height, and rapids on that one clearance
+  plane between the passes. The entry column moves to the old cut end
+  and the exit column to the old cut start. A compensated span inside a
+  cut reverses with it and keeps its original side. Every other shape (a
+  ramp or helical entry, a level change without a retract, a cut before
+  the first pass or after the last, a link off the clearance plane) is
+  refused by name.
+- Every transform refuses thread cycles, probe touches and C-axis moves,
+  and a non-finite input or result.
+
+**Why.** The issue asks for a pure module shared by patterns, mirror
+folders and nesting (#2166). One matrix rule is easier to prove than four
+special cases. Refusal is the Prime Directive answer where a record's
+meaning does not follow a rigid map.
+
+**Dropped.**
+- Flatten of vertical arcs in `transform_xy`: it would need an index
+  remap of every index record. A refusal is safe and named.
+- Keeping vertical-plane arcs under an A/B turn when the plane is kept:
+  the Z-monotone law would need a re-split through `PathBuilder`.
+- Reading the path family from the moves: no safe test separates a
+  contour from a single-level pocket. The caller states it.
+- Moving probe touches: a probe writes a work offset, and a moved touch
+  changes what it measures.
+
+**Cost to change.** Local to `crates/cl/src/cl/transform*.rs`. No caller
+exists yet. A later caller that needs vertical arcs under an XY turn can
+add a flatten with an index remap behind the same function.

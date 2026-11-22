@@ -1,0 +1,224 @@
+//! The rigid transforms' laws (#3011): translation, the XY turn and
+//! the A / B turn land every record to the micron, and the records a
+//! rigid map cannot carry are refused by name.
+
+use super::*;
+use crate::cl::{
+    CompSide, CompSpan, Cycle, CycleKind, EdgeBreak, MoveKind, PathBuilder, ProbeTouch, ThreadCycle,
+};
+
+pub(super) fn p(x: f64, y: f64, z: f64) -> Point3 {
+    Point3::new(x, y, z)
+}
+
+pub(super) fn near(a: Point3, b: Point3) -> bool {
+    (a.x - b.x).abs() <= 1e-6 && (a.y - b.y).abs() <= 1e-6 && (a.z - b.z).abs() <= 1e-6
+}
+
+/// One 2D contour pass: a clearance-plane approach, a rapid then a
+/// plunge down at the lead-in start, a lead-in, a closed loop with one
+/// XY arc, a lead-out, a feed then a rapid up, a clearance-plane exit.
+/// Moves 3..=8 are a wear-mode compensated span.
+pub(super) fn contour() -> Toolpath {
+    let mut b = PathBuilder::new(p(-20.0, -20.0, 20.0));
+    b.push(MoveKind::Rapid, p(-5.0, 0.0, 20.0), None);
+    b.push(MoveKind::Rapid, p(-5.0, 0.0, 5.0), None);
+    b.push(MoveKind::Plunge, p(-5.0, 0.0, -2.0), Some(100.0));
+    b.push(MoveKind::Feed, p(0.0, 0.0, -2.0), Some(500.0));
+    b.push(MoveKind::Feed, p(10.0, 0.0, -2.0), Some(500.0));
+    b.push_arc(MoveKind::Feed, p(10.0, 10.0, -2.0), Some(500.0), Point2::new(10.0, 5.0), true);
+    b.push(MoveKind::Feed, p(0.0, 10.0, -2.0), Some(500.0));
+    b.push(MoveKind::Feed, p(0.0, 0.0, -2.0), Some(500.0));
+    b.push(MoveKind::Feed, p(0.0, -5.0, -2.0), Some(500.0));
+    b.push(MoveKind::Feed, p(0.0, -5.0, 5.0), Some(100.0));
+    b.push(MoveKind::Rapid, p(0.0, -5.0, 20.0), None);
+    b.push(MoveKind::Rapid, p(-20.0, -20.0, 20.0), None);
+    let mut t = b.finish();
+    t.comps.push(CompSpan {
+        side: CompSide::Left,
+        radius: 3.0,
+        wear: true,
+        first: 3,
+        last: 8,
+        programmed: t.moves[3..=8].to_vec(),
+    });
+    assert!(t.comps[0].is_sane(&t.moves));
+    t
+}
+
+fn drilled() -> Toolpath {
+    let mut t = Toolpath::new(vec![
+        Move::new(MoveKind::Rapid, p(0.0, 0.0, 10.0), p(4.0, 2.0, 10.0), None),
+        Move::new(MoveKind::Plunge, p(4.0, 2.0, 10.0), p(4.0, 2.0, -6.0), Some(80.0)),
+        Move::new(MoveKind::Rapid, p(4.0, 2.0, -6.0), p(4.0, 2.0, 10.0), None),
+    ]);
+    t.cycles.push(Cycle {
+        kind: CycleKind::Drill,
+        xy: Point2::new(4.0, 2.0),
+        r_z: 2.0,
+        bottom_z: -6.0,
+        entry_z: 0.0,
+        peck: 0.0,
+        dwell: 0.0,
+        first_move: 0,
+    });
+    t.breaks.push(EdgeBreak { edge: vec![p(0.0, 0.0, 0.0), p(5.0, 0.0, 0.0)], depth: 0.5, slope: 1.0, volume: None });
+    t
+}
+
+#[test]
+fn translate_shifts_every_record_to_the_micron() {
+    let d = [1.5, -2.25, 0.125];
+    let shift = |q: Point3| p(q.x + d[0], q.y + d[1], q.z + d[2]);
+    let src = contour();
+    let out = translate(&src, d).expect("a finite shift translates");
+    assert_eq!(out.moves.len(), src.moves.len());
+    assert!(out.is_chained());
+    for (a, b) in src.moves.iter().zip(&out.moves) {
+        assert!(near(b.from, shift(a.from)) && near(b.to, shift(a.to)), "{a:?} -> {b:?}");
+        assert_eq!(a.kind, b.kind);
+    }
+    let arc = out.moves[5].arc.expect("the arc stays an arc");
+    assert_eq!((arc.center.x, arc.center.y, arc.ccw), (11.5, 2.75, true));
+    let c = &out.comps[0];
+    assert_eq!(c.side, CompSide::Left);
+    assert!(c.is_sane(&out.moves));
+    let dr = translate(&drilled(), d).expect("a drilled path translates");
+    let cy = dr.cycles[0];
+    assert_eq!((cy.xy.x, cy.xy.y, cy.r_z, cy.bottom_z, cy.entry_z), (5.5, -0.25, 2.125, -5.875, 0.125));
+    assert!(near(dr.breaks[0].edge[1], p(6.5, -2.25, 0.125)));
+}
+
+#[test]
+fn translate_refuses_a_non_finite_offset() {
+    assert!(matches!(translate(&contour(), [f64::NAN, 0.0, 0.0]), Err(TransformError::BadInput(_))));
+    assert!(matches!(translate(&contour(), [f64::MAX, 0.0, 0.0]), Err(TransformError::BadInput(_))));
+}
+
+#[test]
+fn transform_xy_turns_a_quarter_about_the_pivot_then_shifts() {
+    // (x, y) -> pivot + R90 (p - pivot) + (tx, ty); R90 (x, y) = (-y, x).
+    let pivot = Point2::new(10.0, 0.0);
+    let map = |q: Point3| p(10.0 - q.y + 1.0, q.x - 10.0 + 2.0, q.z);
+    let src = contour();
+    let out = transform_xy(&src, 1.0, 2.0, 90.0, pivot).expect("an XY turn maps");
+    for (a, b) in src.moves.iter().zip(&out.moves) {
+        assert_eq!((b.from, b.to), (map(a.from), map(a.to)), "a quarter turn is exact");
+    }
+    let arc = out.moves[5].arc.expect("an XY arc stays an XY arc");
+    assert_eq!((arc.center.x, arc.center.y, arc.ccw), (6.0, 2.0, true));
+    assert_eq!(out.comps[0].side, CompSide::Left, "a turn keeps G41");
+    assert!(out.comps[0].is_sane(&out.moves));
+}
+
+#[test]
+fn transform_xy_at_thirty_degrees_is_micron_accurate() {
+    let (s, c) = 30f64.to_radians().sin_cos();
+    let map = |q: Point3| p(3.0 + (q.x - 3.0) * c - (q.y - 4.0) * s, 4.0 + (q.x - 3.0) * s + (q.y - 4.0) * c, q.z);
+    let src = contour();
+    let out = transform_xy(&src, 0.0, 0.0, 30.0, Point2::new(3.0, 4.0)).expect("maps");
+    assert!(out.is_chained());
+    for (a, b) in src.moves.iter().zip(&out.moves) {
+        assert!(near(b.from, map(a.from)) && near(b.to, map(a.to)));
+    }
+    let arc = out.moves[5].arc.expect("arc");
+    assert!(near(p(arc.center.x, arc.center.y, 0.0), map(p(10.0, 5.0, 0.0))));
+}
+
+#[test]
+fn transform_xy_refuses_a_vertical_arc_it_cannot_keep() {
+    let m = Move::new(MoveKind::Feed, p(0.0, 0.0, 0.0), p(10.0, 0.0, 10.0), Some(300.0))
+        .with_arc_in(Point2::new(10.0, 0.0), true, crate::cl::ArcPlane::Xz);
+    let t = Toolpath::new(vec![m]);
+    assert_eq!(transform_xy(&t, 0.0, 0.0, 90.0, Point2::new(0.0, 0.0)), Err(TransformError::VerticalArc));
+    // A pure shift keeps the plane, so the arc rides it.
+    let kept = transform_xy(&t, 5.0, 0.0, 0.0, Point2::new(0.0, 0.0)).expect("a shift keeps the plane");
+    assert_eq!(kept.moves[0].arc.map(|a| (a.center.x, a.center.y)), Some((15.0, 0.0)));
+}
+
+#[test]
+fn rotate_about_a_turns_the_point_and_states_the_axis() {
+    // Rx(90): (x, y, z) -> (x, -z, y); the tool axis +Z leans to -Y,
+    // which pose.rs reads back as A = 90.
+    let t = Toolpath::new(vec![Move::new(MoveKind::Feed, p(1.0, 2.0, 10.0), p(5.0, 2.0, 10.0), Some(400.0))]);
+    let out = rotate_about_axis(&t, RotaryAxis::A, p(0.0, 0.0, 0.0), 90.0, 0.01).expect("turns");
+    assert_eq!((out.moves[0].from, out.moves[0].to), (p(1.0, -10.0, 2.0), p(5.0, -10.0, 2.0)));
+    let axis = out.moves[0].axis.expect("a tilted move states its axis");
+    assert_eq!(crate::cl::axis_to_angles(axis)[0], 90.0);
+}
+
+#[test]
+fn rotate_about_b_flattens_arcs_within_the_chord_tolerance() {
+    let (s, c) = 30f64.to_radians().sin_cos();
+    let o = p(5.0, 0.0, -2.0);
+    let ry = |q: Point3| {
+        let (x, z) = (q.x - o.x, q.z - o.z);
+        p(o.x + x * c + z * s, q.y, o.z - x * s + z * c)
+    };
+    let mut src = contour();
+    src.comps.clear();
+    let out = rotate_about_axis(&src, RotaryAxis::B, o, 30.0, 0.01).expect("turns");
+    assert!(out.is_chained() && !out.has_arcs());
+    assert!(out.moves.len() > src.moves.len(), "the arc is now chords");
+    let centre = ry(p(10.0, 5.0, -2.0));
+    for m in &out.moves {
+        assert_eq!(m.axis.map(crate::cl::axis_to_angles).map(|a| (a[1] * 1e6).round() / 1e6), Some(30.0));
+        let r = |q: Point3| ((q.x - centre.x).powi(2) + (q.y - centre.y).powi(2) + (q.z - centre.z).powi(2)).sqrt();
+        if m.from.z != m.to.z && m.kind == MoveKind::Feed && r(m.from) < 5.01 && r(m.to) < 5.01 {
+            assert!((r(m.from) - 5.0).abs() < 2e-6 && (r(m.to) - 5.0).abs() < 2e-6);
+        }
+    }
+    assert!(near(out.moves[0].from, ry(src.moves[0].from)));
+    assert!(near(out.end().expect("end"), ry(src.end().expect("end"))));
+}
+
+#[test]
+fn rotate_about_an_axis_by_zero_is_the_identity() {
+    let src = contour();
+    let out = rotate_about_axis(&src, RotaryAxis::A, p(3.0, 3.0, 3.0), 360.0, 0.01).expect("identity");
+    assert_eq!(out, src);
+}
+
+#[test]
+fn rotate_about_an_axis_refuses_a_tilted_canned_cycle() {
+    assert_eq!(
+        rotate_about_axis(&drilled(), RotaryAxis::B, p(0.0, 0.0, 0.0), 15.0, 0.01),
+        Err(TransformError::CannedCycleTilt)
+    );
+}
+
+#[test]
+fn every_transform_refuses_thread_cycles_probe_touches_and_c_moves() {
+    let mut probed = contour();
+    probed.probes.push(ProbeTouch { index: 3, measure: None, target: p(1.0, 0.0, -2.0) });
+    assert_eq!(translate(&probed, [1.0, 0.0, 0.0]), Err(TransformError::ProbeTouch));
+    let mut c_live = contour();
+    c_live.moves[4] = c_live.moves[4].with_rotary(30.0);
+    assert_eq!(transform_xy(&c_live, 0.0, 0.0, 10.0, Point2::new(0.0, 0.0)), Err(TransformError::RotaryMove));
+    let mut threaded = contour();
+    threaded.threads.push(ThreadCycle {
+        start: p(0.0, 0.0, 0.0),
+        end: p(1.0, 0.0, -10.0),
+        major_diameter: 10.0,
+        minor_diameter: 8.0,
+        lead: 1.5,
+        height: 1.0,
+        first_depth: 0.3,
+        min_depth: 0.05,
+        finish_allowance: 0.05,
+        infeed_angle: 0.0,
+        spring_passes: 0,
+        alternating: false,
+        repeat_each_depth: false,
+        chip_break_dips: false,
+        pull_out: 0.0,
+        first: 0,
+        last: 1,
+        hand: crate::cl::ThreadHand::Right,
+        start_in_air: true,
+    });
+    assert_eq!(
+        rotate_about_axis(&threaded, RotaryAxis::A, p(0.0, 0.0, 0.0), 0.0, 0.01),
+        Err(TransformError::ThreadCycle)
+    );
+}
