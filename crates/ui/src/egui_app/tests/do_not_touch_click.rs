@@ -45,9 +45,10 @@ fn dnt(h: &Harness<'static, ShellUi>) -> Vec<GeoSel> {
 /// the Top view in orthographic framing the block.
 fn armed_operation(kind: OpType) -> Harness<'static, ShellUi> {
     let mut h = shell_harness();
-    // Finish3D has more geometry controls above the protected rows.
-    // Keep both rows and their remove buttons inside the test viewport.
-    let height = if kind == OpType::Finish3D { 1400.0 } else { 1100.0 };
+    // Finish3D has more geometry controls above the protected rows. Trace
+    // has the "Not taken" Start point and Exit point groups (#3324) above
+    // them. Keep both rows and their remove buttons inside the test viewport.
+    let height = if matches!(kind, OpType::Finish3D | OpType::Trace) { 1400.0 } else { 1100.0 };
     h.set_size(egui::vec2(1440.0, height));
     {
         let st = &mut h.state_mut().state;
