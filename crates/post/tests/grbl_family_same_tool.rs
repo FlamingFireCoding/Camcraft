@@ -5,7 +5,7 @@
 //! A section that keeps the tool this program already loaded writes no
 //! tool change (grblHAL / TinyG `T M6`, the Grbl 1.1 `M0` stop). A new
 //! tool, a return to an earlier tool, and a tool after a program stop
-//! each change again.
+//! or optional stop each change again.
 
 use camcraft_post::machine::parse_mch;
 use camcraft_post::post::{engine, machine};
@@ -68,8 +68,11 @@ fn grblhal_new_tool_return_and_stop_each_change_again() {
     let (s, m) = GRBLHAL;
     let program = post(s, m, &[(1, ""), (1, ""), (7, ""), (1, "")]);
     assert_eq!(changes(&program), ["T1 M6", "T7 M6", "T1 M6"], "{program}");
-    // The operator may take the tool out at a program stop.
+    // The operator may take the tool out at a program stop or optional stop.
     let program = post(s, m, &[(1, "stop"), (1, "")]);
+    assert_eq!(changes(&program), ["T1 M6", "T1 M6"], "{program}");
+    let program = post(s, m, &[(1, "optional-stop"), (1, "")]);
+    assert_eq!(count(&program, "M1"), 1, "{program}");
     assert_eq!(changes(&program), ["T1 M6", "T1 M6"], "{program}");
 }
 
@@ -91,6 +94,20 @@ fn grbl_new_tool_return_and_stop_each_change_again() {
     // The program stop itself is one M0; the tool after it is asked for again.
     let program = post(s, m, &[(1, "stop"), (1, "")]);
     assert_eq!(count(&program, "M0"), 2, "{program}");
+    // An optional stop (M1) also makes the tool unknown; the next section
+    // writes one TOOL CHANGE - LOAD T1 note and its M0 after the M1.
+    let program = post(s, m, &[(1, "optional-stop"), (1, "")]);
+    assert_eq!(count(&program, "M1"), 1, "{program}");
+    assert_eq!(count(&program, "M0"), 1, "{program}");
+    assert_eq!(program.matches("TOOL CHANGE - LOAD T1").count(), 1, "{program}");
+    let lines: Vec<_> = program.lines().collect();
+    let m1 = lines.iter().position(|l| *l == "M1").expect("M1");
+    let reload = lines
+        .iter()
+        .position(|l| l.contains("TOOL CHANGE - LOAD T1"))
+        .expect("TOOL CHANGE - LOAD T1");
+    let m0 = lines.iter().position(|l| *l == "M0").expect("M0");
+    assert!(m1 < reload && reload < m0, "{program}");
 }
 
 #[test]
@@ -108,5 +125,8 @@ fn tinyg_new_tool_return_and_stop_each_change_again() {
     let program = post(s, m, &[(1, ""), (1, ""), (7, ""), (1, "")]);
     assert_eq!(changes(&program), ["T1 M6", "T7 M6", "T1 M6"], "{program}");
     let program = post(s, m, &[(1, "stop"), (1, "")]);
+    assert_eq!(changes(&program), ["T1 M6", "T1 M6"], "{program}");
+    let program = post(s, m, &[(1, "optional-stop"), (1, "")]);
+    assert_eq!(count(&program, "M1"), 1, "{program}");
     assert_eq!(changes(&program), ["T1 M6", "T1 M6"], "{program}");
 }
