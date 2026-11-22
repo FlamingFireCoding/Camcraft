@@ -371,6 +371,10 @@ pub enum ParamsDto {
         corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3316 where each level's rings start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Engraving (M2.4 B): the trace arm verbatim under the new tag -
     /// the twin law again, so the arms state the same shape by

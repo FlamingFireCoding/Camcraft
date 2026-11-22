@@ -49,6 +49,7 @@ mod contour_auto;
 mod contour_bore;
 mod contour_chain;
 mod contour_comp;
+mod contour_comp_pick;
 mod contour_comp_room;
 mod contour_depth;
 mod contour_entry;
@@ -69,6 +70,7 @@ mod equal_steps;
 mod face;
 mod face_entry;
 mod face_holes;
+mod face_keep;
 mod fillet;
 mod gen_error;
 mod ghost;
@@ -78,9 +80,13 @@ mod lead_ext;
 mod lead_fit;
 mod lead_seam;
 mod ladder_links;
+mod level_order;
+mod level_rings;
 mod levels;
 mod microlift;
+mod pass_start;
 mod pocket;
+mod pocket_plan;
 mod pocket_emit;
 mod pocket_zigzag;
 mod pocket_hsm;
@@ -148,7 +154,7 @@ pub use contour_run_stock::contour_open_run_sided;
 pub use contour_link::DEFAULT_LEVEL_RAMP_ANGLE;
 pub use crate::links::{Link, Links};
 pub use equal_steps::{cut_levels_for, equal_stepdown, ladder_stepdown};
-pub use face::{face, face_led, face_over, FaceParams, GenError, MAX_PASSES};
+pub use face::{face, face_led, face_over, face_over_kept, FaceKeep, FaceParams, GenError, MAX_PASSES};
 pub use face_holes::FaceHoles;
 pub use ghost::Ghost;
 pub use face_entry::{air_lead, AIR_MARGIN};
@@ -160,8 +166,11 @@ pub use corner_relief::{
     InsideCorner, ResolvedRelief, TBoneDirection, capsule_region, inside_corners, plan_corner_reliefs,
 };
 pub use corner_relief_spur::pocket_relief_plan;
-pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, PocketParams, PocketStrategy};
-pub use pocket_avoid::{pocket_avoid, pocket_avoid_with_relief};
+pub use pass_start::{PASS_START_NOTE, PassStart, StartSide};
+pub use pocket::{
+    pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
+};
+pub use pocket_avoid::{pocket_avoid, pocket_avoid_started, pocket_avoid_started_on, pocket_avoid_with_relief};
 pub use predrilled::PreHole;
 pub use rest2d::{
     rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, RestSource, REST_FILM,

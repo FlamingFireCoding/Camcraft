@@ -311,6 +311,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => ParamsDto::Offset2D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -334,6 +335,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_to_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio: the engrave twin rides the trace arm
             // verbatim, the chamfer states its two authored face
@@ -1635,6 +1637,7 @@ impl ParamsDto {
                 blend_radius,
                 corner_relief,
                 tilt,
+                pass_start,
             } => OpParams::Offset2D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::PLANAR),
                 stepover: *stepover,
@@ -1658,6 +1661,7 @@ impl ParamsDto {
                 blend_radius: *blend_radius,
                 corner_relief: cr_from_dto(corner_relief),
                 tilt: (*tilt).map(Into::into),
+                pass_start: (*pass_start).into(),
             },
             // The M2.4 B trio back out of the wire, same shapes.
             ParamsDto::Engrave {
