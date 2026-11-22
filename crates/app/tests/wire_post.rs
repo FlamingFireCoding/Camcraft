@@ -188,7 +188,7 @@ fn the_punch_contour_posts_its_golden_through_the_gate() {
     let lines: Vec<&str> = text.lines().collect();
     let at = |w: &str| lines.iter().position(|l| *l == w).unwrap_or_else(|| panic!("no {w} in\n{text}"));
     let (g0, th, cond, comp, cut, tip) =
-        (at("G0 X-30 Y0"), at("FX-THREAD"), at("FX-COND C110"), at("FX-COMP-OFF"), at("FX-CUT"), at("FX-TIP-OUT"));
+        (at("G0 X-30. Y0."), at("FX-THREAD"), at("FX-COND C110"), at("FX-COMP-OFF"), at("FX-CUT"), at("FX-TIP-OUT"));
     assert!(g0 < th && th < cond && cond < comp && comp < cut && cut < tip, "{text}");
     let cuts: Vec<&&str> = lines[comp + 1..cut].iter().collect();
     assert!(!cuts.is_empty() && cuts.iter().all(|l| l.starts_with("G1 X") && !l.contains('Z') && !l.contains('F')), "{text}");
@@ -339,7 +339,7 @@ fn a_rough_and_two_skims_post_three_offsets_and_condition_selects() {
     // the gap 0.04, 0.02, 0.01 - the punch's left side at X = -20 - k.
     for (i, x) in ["-20.165", "-20.145", "-20.135"].iter().enumerate() {
         let lead = lines[selects[i] + 2];
-        assert_eq!(lead, format!("G1 X{x} Y0"), "pass {i}: {text}");
+        assert_eq!(lead, format!("G1 X{x} Y0."), "pass {i}: {text}");
     }
     // The first skim keeps the rough's direction (down the left side),
     // the reversed second one goes up it.
