@@ -89,6 +89,7 @@ mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod dxf_profile;
 mod stock_axis;
 mod stock_material;
 mod setup_settings_page;
@@ -121,6 +122,7 @@ mod page_layout;
 mod page_layout_windows;
 mod anchors;
 mod stock_fit;
+mod stock_source_default;
 mod ribbon_rows;
 mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
@@ -197,6 +199,8 @@ mod tool_library_import;
 mod tool_cutter;
 // #93 slice 3: the drawn cutter edited by its parameters.
 mod tool_cutter_params;
+// #1444: undercut tool editor seeding/angle/corner filter and Slot Undercut page.
+mod tool_undercut;
 // #2397: the new-tool flow in Properties and the shape window it opens.
 mod tool_shape_window;
 // #441: the Theme ribbon door; the Stock page shows stock only.
@@ -1318,14 +1322,15 @@ fn every_field_lives_on_exactly_one_section() {
             // labels name the TIP's law, not a cut floor), and the
             // feeds are the ride's - no climb row, the cone follows
             // the edge wherever the weld puts it. There is NO Passes
-            // group: one edge, one pass - the loci are what the weld
-            // exposes, and a stepover could only disagree with the
-            // taxonomy (has_section's exclusion, Chamfer2D's answer
-            // once more).
+            // tab: the loci are what the weld exposes, and a stepover
+            // could only disagree with the taxonomy (has_section's
+            // exclusion, Chamfer2D's answer once more). The pass count
+            // of one break rides Geometry with its size (#1890).
             "Deburr",
             vec![
-                // #1888 and #1889: keep the edge filters and reach policy.
-                ("Geometry", vec!["Break width", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
+                // #1888 and #1889: keep the edge filters and reach policy;
+                // #1890: the break mode, profile and passes ride Geometry.
+                ("Geometry", vec!["Break mode", "Break width", "Break profile", "Number of passes", "Minimum edge angle", "Skip round holes", "Exclude the picked edges", "Unreachable edges"]),
                 ("Heights", vec!["Clearance Z", "Window Top Z", "Window Bottom Z"]),
                 ("Feeds", vec!["Feed", "Plunge feed"]),
             ],

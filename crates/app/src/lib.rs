@@ -99,6 +99,8 @@ pub mod schema;
 pub mod script;
 // #1862: DXF profiles placed on a setup's stock, and the virtual model reference.
 pub use camcraft_geometry::sketch_data;
+// #1863: the DXF primitives a sketch's data holds, for the viewport's drawing.
+pub use camcraft_geometry::dxf;
 pub mod sketch;
 pub mod sketch_model;
 pub mod setup;
@@ -157,6 +159,8 @@ pub mod tool_numbers;
 pub use camcraft_tools::tools;
 // #894: the thread mills' form constants, sanity law and pitch door.
 pub use camcraft_tools::thread_mill;
+// #1444: the undercut cutters' record law and profile.
+pub use camcraft_tools::undercut;
 // #630: the lathe tool orientation code (LinuxCNC 1-9) and its control point.
 pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;

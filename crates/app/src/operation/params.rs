@@ -332,6 +332,7 @@ impl OpParams {
             | OpParams::Slot { .. }
             | OpParams::TrochoidalSlot { .. }
             | OpParams::Trace { .. }
+            | OpParams::VCarve { .. }
             | OpParams::Engrave { .. }
             | OpParams::Chamfer2D { .. }
             | OpParams::Circular { .. } => self.stamp_mill2d(world, setup, src, h),
@@ -367,6 +368,7 @@ impl OpParams {
             OpParams::WireContour { .. }
             | OpParams::SinkerBurn { .. }
             | OpParams::SinkerSideBurn { .. }
+            | OpParams::SlotUndercut { .. }
             | OpParams::PlasmaProfile { .. } => self.stamp_cutting(world, setup, src, h),
         }
         self.stamp_links(h);

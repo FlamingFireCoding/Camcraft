@@ -89,6 +89,7 @@ impl OpParams {
         match self {
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
+            OpParams::SlotUndercut(p) => p.refusal(),
             OpParams::Pocket { corner_relief, .. }
             | OpParams::Offset2D { corner_relief, .. } => corner_relief.validate().err().map(|e| e.to_string()),
             OpParams::Adaptive2D { method, troch, corner_relief, .. } => troch.refusal().or_else(|| {
@@ -145,6 +146,8 @@ impl OpParams {
             OpParams::SinkerBurn(p) => p.is_sane(),
             // #545: the side burn's own door.
             OpParams::SinkerSideBurn(p) => p.is_sane(),
+            // #1444: the undercut's own door.
+            OpParams::SlotUndercut(p) => p.is_sane(),
             // The probe's door (#108): every distance and feed a real
             // number, the measure no faster than the seek, the back-off
             // inside the approach, a slot G54..G59 when one is named.
@@ -361,6 +364,28 @@ impl OpParams {
                     && pos(*feed)
                     && pos(*plunge_feed)
             }
+            // The V-carve's door (#1443): the engrave's numbers, and a
+            // floor stepover the generator can ring with.
+            OpParams::VCarve {
+                clearance_z,
+                retract_z,
+                top_z,
+                bottom_z,
+                stepdown,
+                feed,
+                plunge_feed,
+                flat_stepover,
+                ..
+            } => {
+                clearance_z.is_sane()
+                    && retract_z.is_none_or(|r| r.is_sane())
+                    && top_z.is_sane()
+                    && bottom_z.is_sane()
+                    && pos(*stepdown)
+                    && pos(*feed)
+                    && pos(*plunge_feed)
+                    && pos(*flat_stepover)
+            }
             // The 2-D chamfer's door (M2.4 B): the authored promise -
             // a land wider than nothing, cut at an angle that is a
             // chamfer and not a flat (0) or a wall (90): the ride
@@ -526,8 +551,11 @@ impl OpParams {
                 hole_max_diameter,
                 // #1889: the policy is an enum; each value is legal.
                 unreachable: _,
+                sizing,
             } => {
                 pos(*width)
+                    // #1890: a positive depth and 1..=100 passes.
+                    && sizing.is_sane()
                     && clearance_z.is_sane()
                     && top_z.is_sane()
                     && bottom_z.is_sane()

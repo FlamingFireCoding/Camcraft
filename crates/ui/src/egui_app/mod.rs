@@ -54,6 +54,10 @@ pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_profiles;
+mod dxf_units_dialog;
+mod dxf_drop;
+mod op_source;
 mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
@@ -121,6 +125,8 @@ mod tool_orientation_row;
 mod thread_page;
 // #894: the thread mills' pitch and form rows.
 mod tool_thread_mill_row;
+// #1444: the undercut cutters' seeding and dovetail flank angle row.
+mod tool_undercut_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
@@ -187,9 +193,12 @@ mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
 mod trochoid_page;
+// #1444: the Slot Undercut kind's fields.
+mod undercut_page;
 mod kind_editors;
 mod deburr_page;
 mod mill2d_more_page;
+mod vcarve_page;
 mod mill2d_page;
 // #1815: 2D Pocket's "Rest machining" group on the Passes tab.
 mod rest_pocket_page;

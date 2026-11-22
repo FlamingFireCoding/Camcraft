@@ -336,6 +336,16 @@ pub enum OpType {
     /// one wall out by a stated amount (see [`crate::sinker_side`]).
     /// Appended: stored kind ids never move.
     SinkerSideBurn,
+    /// Slot undercut (#1444): side-entry passes of a T-slot, keyseat,
+    /// dovetail or lollipop cutter along a slot (see
+    /// [`crate::machining2d::undercut`]). Appended: stored kind ids
+    /// never move.
+    SlotUndercut,
+    /// V-carve (#1443): a V-bit's tip on the medial axis of a closed
+    /// region, the depth set by the region's width (see
+    /// [`crate::machining2d::v_carve`]). Appended: the declaration order
+    /// is the table order (`OpType as usize` is the row everywhere).
+    VCarve,
 }
 
 impl core::fmt::Display for OpType {

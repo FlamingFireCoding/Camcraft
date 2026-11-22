@@ -992,6 +992,8 @@ pub(crate) fn collect_overlay(state: &State) -> Vec<[f32; 6]> {
     out.extend(time("scene/overlay.toolpaths", || toolpath_lines(state)));
     out.extend(time("scene/overlay.regions", || region_lines(state)));
     out.extend(time("scene/overlay.height_planes", || height_plane_lines(state)));
+    // #1863: the active setup's DXF profiles on its stock top.
+    out.extend(time("scene/overlay.sketches", || crate::sketch_overlay::sketch_lines(state)));
     out.extend(time("scene/overlay.envelope", || crate::work_envelope::envelope_lines(state)));
     out.extend(time("scene/overlay.selection_features", || selection_feature_lines(state)).iter().copied());
     capped(out)
@@ -1318,6 +1320,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // where the pocket hops, and the chamfer ride between its
         // chains the trace's way (M2.4 B) - all the store-either shape.
         | operation::OpParams::Trace { retract_z, .. }
+        | operation::OpParams::VCarve { retract_z, .. }
         | operation::OpParams::Engrave { retract_z, .. }
         | operation::OpParams::Chamfer2D { retract_z, .. }
         | operation::OpParams::Circular { retract_z, .. }
@@ -1375,6 +1378,8 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         // The electrode retracts to its approach plane only (#541).
         | operation::OpParams::SinkerBurn(_)
         | operation::OpParams::SinkerSideBurn(_) => None,
+        // #1444: the undercut's feed-down plane at its entry station.
+        operation::OpParams::SlotUndercut(p) => p.retract_z,
     };
     if let Some(hop) = hop
         && let (Some(r), Some(c)) = (resolve(hop), resolve(draft.clearance()))
@@ -1464,6 +1469,7 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
         | operation::OpParams::MultiAxisContour { top_z, bottom_z, .. }
         | operation::OpParams::Slot { top_z, bottom_z, .. }
         | operation::OpParams::TrochoidalSlot { top_z, bottom_z, .. }
+        | operation::OpParams::VCarve { top_z, bottom_z, .. }
         // The engrave twin draws the trace's ladder - first level up
         // top, floor below - and the circular ladder its rings' two
         // rungs: vault or flat, the dome law's stations live between
@@ -1513,6 +1519,8 @@ pub(crate) fn height_planes(state: &State) -> Vec<HeightPlane> {
             burn: operation::SinkerBurnOp { top_z, floor_z: bottom_z, .. },
             ..
         })
+        // #1444: the material top and the undercut's floor.
+        | operation::OpParams::SlotUndercut(operation::SlotUndercutOp { top_z, bottom_z, .. })
         | operation::OpParams::Deburr { top_z, bottom_z, .. } => {
             if let Some(z) = resolve(*top_z) {
                 out.push(HeightPlane {

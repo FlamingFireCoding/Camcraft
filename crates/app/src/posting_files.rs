@@ -51,6 +51,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     ("Doosan DNM", AssetFile("doosan-dnm.cps")),
     ("Makera Carvera", AssetFile("carvera.cps")),
     ("Mach4", AssetFile("mach4.cps")),
+    ("Heidenhain Klartext", AssetFile("heidenhain-klartext.cps")),
     ("Fanuc Lathe", AssetFile("fanuc-lathe.cps")),
     ("Tormach PathPilot Lathe", AssetFile("tormach-lathe.cps")),
     // #671: the plasma dialect, from UM10720 §6-7 and the PathPilot
@@ -333,6 +334,7 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "haas.cps") => Some(include_str!("../../../assets/posts/haas.cps")),
         ("posts", "sinumerik.cps") => Some(include_str!("../../../assets/posts/sinumerik.cps")),
         ("posts", "heidenhain.cps") => Some(include_str!("../../../assets/posts/heidenhain.cps")),
+        ("posts", "heidenhain-klartext.cps") => Some(include_str!("../../../assets/posts/heidenhain-klartext.cps")),
         ("posts", "mazak.cps") => Some(include_str!("../../../assets/posts/mazak.cps")),
         ("posts", "tormach.cps") => Some(include_str!("../../../assets/posts/tormach.cps")),
         ("posts", "grblhal.cps") => Some(include_str!("../../../assets/posts/grblhal.cps")),
