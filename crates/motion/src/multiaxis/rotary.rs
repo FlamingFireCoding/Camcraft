@@ -56,6 +56,7 @@ use crate::machining2d::{GenError, ARC_FIT_TOL};
 
 use super::axis::{self, Axis};
 use super::radial::{self, RadialHeights};
+use super::radial_band;
 use super::retip::{along, radial_at, tip_of};
 use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
@@ -89,10 +90,10 @@ pub fn rotary_contour(
 
 /// [`rotary_contour`] with #2774's radial heights: `clearance`/`retract` are
 /// TIP radii about the fitted axis, and the ladder's axial lifts are rebuilt
-/// as radial retracts and plunges. The band's top and bottom do not apply: a
-/// standing contour's ladder is a STATION ladder, so its axial window stays
-/// the `top_z`/`bottom_z` author. All `None` is the Z-plane law, byte for
-/// byte.
+/// as radial retracts and plunges. `top`/`bottom` cut between two CYLINDERS
+/// about that axis: the ladder is trimmed to the radial band before it is
+/// linked, and a band that crosses no skin refuses by name. All `None` is
+/// the Z-plane law, byte for byte.
 pub fn rotary_contour_radial(
     facets: &[Triangle],
     p: &Finish3DParams,
@@ -142,8 +143,9 @@ fn rotary_contour_about(
     let uz = if ax.dir.dot(UP) < 0.0 { -lean } else { lean };
     let q = stations(&local, p, &f, &|h| (h - ax.origin.z) / uz);
     let r = p.tool_diameter * 0.5;
+    let band = radial_band::band_window(&radial, "Rotary Contour").map_err(|e| to_world(e, &f, &ax, c, r))?;
     let mut base = finishing3d::waterline(&local, &q).map_err(|e| to_world(e, &f, &ax, c, r))?;
-    if radial.clearance.is_some() || radial.retract.is_some() {
+    if radial.clearance.is_some() || radial.retract.is_some() || band.is_some() {
         let clear = radial.clearance.unwrap_or(q.clearance_z);
         let hop = radial.retract.map_or(clear, |h| h.min(clear));
         let rho = local
@@ -152,6 +154,13 @@ fn rotary_contour_about(
             .map(|p| p.x.hypot(p.y))
             .filter(|v| v.is_finite())
             .fold(0.0f64, f64::max);
+        // #2774: keep the whole rings whose tip radius touches the band of
+        // cylinders first: the select drops the other rings and their links,
+        // and the relink below owns every link.
+        if let Some(b) = band {
+            base = radial_band::band_select(&base, b, &|x, y, _z| x.hypot(y) - r, "Rotary Contour")
+                .map_err(|e| to_world(e, &f, &ax, c, r))?;
+        }
         base = radial::radial_relink_z(&base, clear, hop, rho, p.feed, p.plunge_feed, "Rotary Contour")
             .map_err(|e| to_world(e, &f, &ax, c, r))?;
     }
@@ -274,13 +283,9 @@ fn rotary_parallel_about(
     };
     let local = f.local_facets(facets);
     let mut q = stations(&local, p, &f, &|h| h - ax.origin.z);
-    // #2774: the cut band's radial window, when the op states it.
-    if let Some(top) = radial.top {
-        q.top_z = top;
-    }
-    if let Some(bottom) = radial.bottom {
-        q.bottom_z = bottom;
-    }
+    // #2774: a stated band is two CYLINDERS about the axis, not two Z
+    // planes: the ladder plans the whole work and the radial trim below
+    // cuts each pass back to the band.
     // #15: the raster's certified diagonal hops and the rings' ramped
     // first contacts are an UPRIGHT tool's verbs - on the bar's flank
     // and end, posed radially, they run down the tool's own axis. The
@@ -289,6 +294,7 @@ fn rotary_parallel_about(
     q.ramp = false;
     q.entry_ramp = false;
     let r = p.tool_diameter * 0.5;
+    let band = radial_band::band_window(&radial, "Rotary Parallel").map_err(|e| to_world(e, &f, &ax, c, r))?;
     // #2970: the laid raster finishes the bar from above only. Half B
     // is the same frame turned half a turn about the axis; each half
     // keeps the cut over its own upper half, B carried back into A's
@@ -316,6 +322,17 @@ fn rotary_parallel_about(
     let window = rotary_ends::held(&local, local_stock.as_deref(), r, p.tolerance)?;
     let base = match &window {
         Some(w) => rotary_ends::clip(&base, w),
+        None => base,
+    };
+    // #2774: trim each generatrix pass to the band of cylinders about the
+    // axis. A parallel pass at one azimuth follows the skin across every
+    // radius it reaches, so only the trim can window it: the band edge is
+    // the entry and exit there. The tip read follows the laid frame's retip
+    // law: its ball center stands `r` up the frame's own z. The trim leaves
+    // a Rapid between kept runs; the relink below owns every link.
+    let base = match band {
+        Some(b) => radial_band::band_trim(&base, b, &|_x, y, z| y.hypot(z + r) - r, "Rotary Parallel")
+            .map_err(|e| to_world(e, &f, &ax, c, r))?,
         None => base,
     };
     // #2848: picked faces keep the cut to their radial shadow, before

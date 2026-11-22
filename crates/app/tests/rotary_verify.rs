@@ -519,7 +519,37 @@ fn a_radial_band_crossed_is_refused_by_name() {
         .map(|_| ())
         .expect_err("a top radius under the bottom radius must refuse the command");
     let msg = e.to_string();
-    assert!(msg.contains("Top radius") && msg.contains("below Bottom radius"), "{msg}");
+    assert!(msg.contains("Top radius") && msg.contains("Bottom radius"), "{msg}");
+}
+
+#[test]
+fn a_band_at_the_clearance_cylinder_is_refused_by_name() {
+    // #2774: the rapids ride the clearance cylinder. A top radius at or
+    // above it puts a cut where the hop travels - refused when the
+    // command is made.
+    let world = bar_with_contour([None, None, None, None]);
+    let mut p = params(Kind::Contour, 25.0);
+    if let OpParams::RotaryContour { clearance_r, top_r, .. } = &mut p {
+        *clearance_r = Some(RadialHeight::absolute(8.0));
+        *top_r = Some(RadialHeight::absolute(8.0));
+    }
+    let e = CreateOperation::new(&world, "OP2", "BN-0600", SrcRef::Entity("bar".into()), p)
+        .map(|_| ())
+        .expect_err("a band at the rapids cylinder must refuse the command");
+    let msg = e.to_string();
+    assert!(msg.contains("Top radius") && msg.contains("Clearance radius"), "{msg}");
+}
+
+#[test]
+fn a_band_that_crosses_no_skin_is_refused_by_name() {
+    // #2774's Prime Directive door at the generator: the tool ball's
+    // reach about this bar's axis spans 0..6.0 mm - its skin stands at
+    // r5..r6. A band r6.05..r6.5 above that reach cuts nothing: the
+    // generate refuses with both radii in the words, never an empty
+    // path and never the uncut one.
+    let e = parallel_generate([None, None, Some(RadialHeight::absolute(6.5)), Some(RadialHeight::absolute(6.05))])
+        .expect_err("a band that crosses no skin must refuse the generate");
+    assert!(e.contains("6.05") && e.contains("6.5") && e.contains("crosses no part skin"), "{e}");
 }
 
 #[test]
@@ -551,4 +581,113 @@ fn the_radial_heights_survive_the_project_round_trip() {
     obj.insert("clearance_r".to_string(), saved["rotary_contour"]["clearance_r"].clone());
     assert_eq!(camcraft_app::project::params_from_json(&half).expect("a v73 file plus one radial key"), plain);
     assert_eq!(camcraft_app::project::params_from_json(&v73).expect("a v73 file"), params(Kind::Contour, 25.0));
+}
+
+/// The bar laid along x with one Rotary Parallel that STATES its radial
+/// heights (#2774): clearance r8, retract r6.5, band r4.0..r5.5. The Z
+/// fields stay at the plain fixture's numbers (clearance 25, band
+/// 1.0..6.0) - the test reads which numbers the path actually moved to.
+fn parallel_world(radii: [Option<RadialHeight>; 4]) -> World {
+    parallel_generate(radii).expect("generate")
+}
+
+/// The same build, with the generator's answer in hand instead of a panic:
+/// a band that crosses no skin must refuse there.
+fn parallel_generate(radii: [Option<RadialHeight>; 4]) -> Result<World, String> {
+    let world = new_world();
+    let mut h = History::default();
+    let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
+    h.execute(&world, AddTool::new(&world, "BN-0600", tool).expect("tool"));
+    let loc = Location { pos: Point3::new(-16.0, 0.0, 0.0), rot: quat_from_axis_angle(1, std::f64::consts::FRAC_PI_2) };
+    h.execute(&world, SetStock::new(&world, StockShape::Cylinder { diameter: 12.4, height: 32.0 }, loc).expect("bar stock"));
+    h.execute(&world, ImportModel::from_mesh("bar", Mesh::from_facets(laid())));
+    let mut p = params(Kind::Parallel, 25.0);
+    if let OpParams::RotaryParallel { stepover, clearance_r, retract_r, top_r, bottom_r, .. } = &mut p {
+        *stepover = Some(0.5);
+        *clearance_r = radii[0];
+        *retract_r = radii[1];
+        *top_r = radii[2];
+        *bottom_r = radii[3];
+    }
+    h.execute(&world, CreateOperation::new(&world, "OP", "BN-0600", SrcRef::Entity("bar".into()), p).expect("create"));
+    let g = GenerateOperation::new(&world, "OP").map_err(|e| e.to_string())?;
+    h.execute(&world, g);
+    Ok(world)
+}
+
+#[test]
+fn the_stated_radial_heights_move_the_generated_path() {
+    // #2774's Done-means at the document level: the radii the operation
+    // states are the radii the generator moves to, not the Z numbers.
+    // Clearance 8 and retract 6.5 replace the plane's 25; the band
+    // 4.0..5.5 cuts a shell off the r6 bar's crown and leaves its
+    // bottom. The Z-plane twin answers with its own numbers.
+    let radii = [
+        Some(RadialHeight::absolute(8.0)),
+        Some(RadialHeight::absolute(6.5)),
+        Some(RadialHeight::absolute(5.5)),
+        Some(RadialHeight::absolute(4.0)),
+    ];
+    let c = cache(&parallel_world(radii));
+    assert!(blocking(&c).is_empty(), "{:?}", blocking(&c));
+    let rho = |q: Point3| (q.y * q.y + q.z * q.z).sqrt();
+    // The rapids ride the cylinders, never the Z-plane's 25.
+    let mut rapid_max = 0.0_f64;
+    let mut on_hop = 0usize;
+    for m in c.path.moves.iter() {
+        if m.kind == MoveKind::Rapid {
+            let r = rho(m.to);
+            assert!(r >= 6.5 - 1e-6, "a rapid drops under the hop radius: {r:.3}");
+            rapid_max = rapid_max.max(r);
+        } else if m.kind == MoveKind::Feed && (rho(m.to) - 6.5).abs() < 0.02 && rho(m.from) < 6.4 {
+            on_hop += 1; // a pass retracts to the hop 6.5, not to 25
+        }
+    }
+    let opens = rho(c.path.moves.first().expect("the opening record").from);
+    assert!((opens - 8.0).abs() < 0.02, "the program opens at the clearance radius 8, got {opens:.3}");
+    assert!(rapid_max < 20.0, "the rapids still ride the Z-plane's 25: {rapid_max:.3}");
+    assert!(on_hop > 3, "passes retract to the hop cylinder, got {on_hop}");
+    // #2774's band law: the cut tips stand BETWEEN the two cylinders about
+    // the axis (rho), not under a Z plane. The r5 neck's skin sits inside
+    // the band 4.0..5.5 and stays finished; the r6 wall's crown (rho ~6)
+    // and the lower flank rows (rho ~1) stand left.
+    let band = |r: f64| (4.0 - 0.05..=5.5 + 0.05).contains(&r);
+    let (mut cut_max, mut cut_min) = (f64::NEG_INFINITY, f64::INFINITY);
+    let mut cut_tips = 0usize;
+    for m in c.path.moves.iter() {
+        match m.kind {
+            MoveKind::Plunge => {
+                let r = rho(m.to);
+                assert!(band(r), "a plunge lands off the band: {r:.3}");
+                cut_tips += 1;
+            }
+            MoveKind::Feed => {
+                let (a, b) = (rho(m.from), rho(m.to));
+                if a < 6.4 && b < 6.4 {
+                    assert!(band(a) && band(b), "a cut tip leaves the band: {a:.3} -> {b:.3}");
+                    cut_max = cut_max.max(a.max(b));
+                    cut_min = cut_min.min(a.min(b));
+                    cut_tips += 1;
+                }
+            }
+            MoveKind::Rapid => {}
+        }
+    }
+    assert!(cut_tips > 50, "the band left no cut at all, got {cut_tips}");
+    assert!(cut_max <= 5.5 + 0.05, "a cut crosses the top cylinder: rho {cut_max:.3}");
+    assert!(cut_min >= 4.0 - 0.05, "a cut drops under the bottom cylinder: rho {cut_min:.3}");
+    assert!(cut_max >= 4.95, "the band must still finish the r5 neck skin: {cut_max:.3}");
+    // The Z-plane twin cuts its window on down to rho ~1 - the band's
+    // floor at 4.0 left those flank rows standing.
+    let plain = cache(&world_for(Kind::Parallel, 12.4, 25.0));
+    let twin_max = plain.path.moves.iter().filter(|m| m.kind == MoveKind::Rapid).map(|m| rho(m.to)).fold(0.0_f64, f64::max);
+    assert!(twin_max >= 25.0 - 1e-6, "the twin lost its Z clearance: {twin_max:.3}");
+    let twin_min = plain
+        .path
+        .moves
+        .iter()
+        .filter(|m| m.kind != MoveKind::Rapid && rho(m.to) < 6.4 && rho(m.to) > 0.1)
+        .map(|m| rho(m.to))
+        .fold(f64::INFINITY, f64::min);
+    assert!(twin_min < 3.0, "the twin does not cut the lower flank to rho ~1: {twin_min:.3}");
 }

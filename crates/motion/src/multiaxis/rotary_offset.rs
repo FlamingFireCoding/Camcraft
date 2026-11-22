@@ -316,10 +316,15 @@ fn develop_about(
 
     // The ladder in wrap space, run by pocket3d's own entry guards.
     let mut q = *p;
-    // #2774: the top radius caps the ladder's start; the clearance radius is
+    // #2774: the band of the two stated cylinders: the top radius caps the
+    // ladder's start, the bottom radius floors it; the clearance radius is
     // the rapids cylinder (the kernel's own number when the op states none).
+    let band = super::radial_band::band_window(&radial, "Rotary Offset")?;
     q.top_z = radial.top.map_or(rho_ref, |t| t.min(rho_ref));
-    q.bottom_z = rho_min.max(0.0);
+    q.bottom_z = match band {
+        Some((lo, _)) => lo.max(rho_min.max(0.0)),
+        None => rho_min.max(0.0),
+    };
     q.clearance_z = radial.clearance.unwrap_or(rho_ref + p.stepdown + r);
     q.retract_z = None;
     if let Some(clear) = radial.clearance

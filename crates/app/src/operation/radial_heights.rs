@@ -162,7 +162,8 @@ pub fn resolve_radial(
 /// The radial gate (#2774): a clearance or retract radius that stands inside
 /// the stock's or the part's own radius would drive the tool through metal on
 /// a rapid. Refused by name at the command, in the generators' own words. The
-/// cut band must also order (top at or above bottom). Open when no radial
+/// cut band must also order: the top cylinder above the bottom one, and the
+/// top under the clearance cylinder. Open when no radial
 /// field is set, or when the axis cannot be fitted (the generator names that
 /// one), so an old Z-plane op and a non-turning model never gain a new wall.
 pub fn radial_gate(world: &World, setup: Option<&str>, src: &super::types::SrcRef, params: &OpParams) -> Option<String> {
@@ -185,10 +186,19 @@ pub fn radial_gate(world: &World, setup: Option<&str>, src: &super::types::SrcRe
         h.and_then(|h| resolve_one(name, h, c.part_rho, c.stock_rho).ok())
     };
     if let (Some(t), Some(b)) = (pick("Top radius", top), pick("Bottom radius", bottom))
-        && t < b
+        && t <= b
     {
         return Some(format!(
-            "Top radius {t:.3} mm stands below Bottom radius {b:.3} mm - raise the top or lower the bottom"
+            "Top radius {t:.3} mm stands below or at Bottom radius {b:.3} mm - raise the top or lower the bottom"
+        ));
+    }
+    // The band must sit under the rapids: a top radius at or above the
+    // clearance radius would put a cut where the hop travels.
+    if let (Some(t), Some(cl)) = (pick("Top radius", top), pick("Clearance radius", clearance))
+        && t >= cl
+    {
+        return Some(format!(
+            "Top radius {t:.3} mm stands at or above Clearance radius {cl:.3} mm - the rapids would run through the band - lower the top or raise the clearance"
         ));
     }
     None

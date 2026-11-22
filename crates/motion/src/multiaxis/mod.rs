@@ -56,6 +56,7 @@ pub mod flow;
 pub mod parallel5d;
 pub mod rough;
 mod radial;
+mod radial_band;
 pub mod rotary;
 pub mod rotary_offset;
 pub mod radial_drop;
