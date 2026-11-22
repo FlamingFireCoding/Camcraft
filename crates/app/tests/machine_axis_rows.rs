@@ -1,6 +1,6 @@
 //! The machine editor's axis rows (#2756): what each row says and edits
-//! - the letter RS-274 gives a rotary's axis, a linear's direction
-//! (#373), a rotary's axis, its work lengths (#804, #1107) - and the
+//! (the letter RS-274 gives a rotary's axis, a linear's direction
+//! (#373), a rotary's axis, its work lengths (#804, #1107)) and the
 //! notes a row shows.
 //!
 //! Provenance: our own tests, specced from the issue's "Done when".
