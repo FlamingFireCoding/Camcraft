@@ -170,11 +170,12 @@ fn contour5d_balls_are_the_waterlines_balls() {
 #[test]
 fn rapids_hold_the_pose_they_inherit() {
     // The post keeps the tilt modal: a rapid travels under the pose
-    // it inherits (none before the first lean), never a new one - the
+    // it inherits (upright before the first lean), never a new one - the
     // ball lifts off its last contact along the axis it cut with.
     let facets = dome(15.0, 0.9, 8, 16);
     let got = contour5d(&facets, &finish(12.0, 9.8), &control(30.0, 0.0, None), None).unwrap();
-    let mut held: Option<[f64; 3]> = None;
+    assert_eq!(got.moves[0].axis, Some([0.0, 0.0, 1.0]), "the opening states the upright pose");
+    let mut held = Some([0.0, 0.0, 1.0]);
     for m in &got.moves {
         if m.kind == MoveKind::Rapid {
             assert_eq!(m.axis, held, "a rapid changed the pose it inherited: {m:?}");

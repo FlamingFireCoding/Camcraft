@@ -170,7 +170,8 @@ fn dodging_never_moves_the_ball() {
         let d = a.1 - b.1;
         assert!(d.dot(d).sqrt() < 1e-9, "the ball moved at {i}: {:?} vs {:?}", a.1, b.1);
     }
-    let mut held: Option<[f64; 3]> = None;
+    assert_eq!(on.moves[0].axis, Some([0.0, 0.0, 1.0]), "the opening states the upright pose");
+    let mut held = Some([0.0, 0.0, 1.0]);
     for m in &on.moves {
         if m.kind == MoveKind::Rapid {
             assert_eq!(m.axis, held, "a rapid changed the pose it inherited");
