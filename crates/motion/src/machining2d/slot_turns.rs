@@ -56,3 +56,17 @@ pub(super) fn round(pass: &[Point2], p: &SlotParams, center: Option<&Region>, b:
     }
     (tally.rounded > 0).then_some(walk)
 }
+
+/// The one walk of the slot's pass: the rows (rounded by `round` when it
+/// gave a walk, else straight past the first point), then the #2906 wall
+/// lap when there is one. The rows end on the tangent point the lap starts
+/// from, rounded or not: a fillet never moves a walk's end point.
+pub(super) fn with_lap(rows: &[Point2], turns: Option<Vec<Seg>>, lap: Option<Vec<Seg>>) -> Option<Vec<Vec<Seg>>> {
+    let mut walk = match (turns, &lap) {
+        (Some(w), _) => w,
+        (None, Some(_)) => vec![Seg::Line(rows.get(1..).unwrap_or(&[]).to_vec())],
+        (None, None) => return None,
+    };
+    walk.extend(lap.unwrap_or_default());
+    Some(vec![walk])
+}

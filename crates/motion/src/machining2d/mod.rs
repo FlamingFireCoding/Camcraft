@@ -95,6 +95,7 @@ mod adaptive_troch_lanes;
 mod adaptive_troch_level;
 mod adaptive_troch_slice;
 mod rest2d;
+mod rest_prior;
 mod rest_anchor;
 mod rest_rings;
 mod chord_clear;
@@ -104,10 +105,14 @@ mod tab_clear;
 mod tab_kerf;
 mod slots;
 mod slot_ends;
+mod slot_lap;
 mod slot_room;
 mod slot_turns;
 mod undercut;
 mod unreached;
+mod vcarve;
+mod vcarve_axis;
+mod vcarve_walk;
 mod waterscan;
 mod pocket_avoid;
 mod corner_relief;
@@ -159,12 +164,19 @@ pub use corner_relief_spur::pocket_relief_plan;
 pub use pocket::{pocket, pocket_entered, pocket_entered_with_relief, PocketParams, PocketStrategy};
 pub use pocket_avoid::{pocket_avoid, pocket_avoid_with_relief};
 pub use predrilled::PreHole;
-pub use rest2d::{rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, REST_FILM, REST_MARGIN, REST_REACH};
+pub use rest2d::{
+    rest_plan, rest_pocket, rest_pocket_with_relief, rest_strategy, RestParams, RestPlan, RestSource, REST_FILM,
+    REST_MARGIN, REST_NEEDS_STOCK, REST_REACH,
+};
+pub use rest_prior::{
+    rest_plan_stock, rest_pocket_previous, rest_pocket_previous_with_relief, rest_stock_from_columns, PRIOR_Z_TOL,
+};
 pub use ring::{on_boundary, ring_is_circular};
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use undercut::{undercut, undercut_band, undercut_station, UndercutParams, MAX_BULGE as UNDERCUT_MAX_BULGE};
+pub use vcarve::{v_carve, VCarveParams};
 pub use unreached::{unreached_corner_note, unreached_corners, unreached_note, unreached_pieces};
 pub use adaptive::{rest_adaptive, RestStock, StockFloor, REST_STOCK_FILM};
 pub use adaptive_method::AdaptiveMethod;

@@ -22,7 +22,8 @@ use super::levels::{Cert, Motion, run_level_walks, run_levels};
 /// `b + q u + d n` with `q = sqrt(h^2 - d^2)`, so each row reaches the
 /// round ends exactly as far as it can. The center area is convex, so
 /// the serpentine joins with lateral feeds and no in-cut rapids are
-/// even possible.
+/// even possible. A row touches a round end only at its end point, so
+/// for `h > 0` one lap of the stadium follows (`slot_lap`, #2906).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SlotParams {
     pub tool_diameter: f64,
@@ -156,15 +157,28 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
     let ds = band(-h, h, 0.0, p.stepover)?;
     let mut pass: Vec<Point2> = Vec::with_capacity(2 * ds.len());
     for (i, &d) in ds.iter().enumerate() {
-        let q = (h * h - d * d).max(0.0).sqrt();
-        let s = Point2::new(a.x - u.x * q + n.x * d, a.y - u.y * q + n.y * d);
-        let e = Point2::new(b.x + u.x * q + n.x * d, b.y + u.y * q + n.y * d);
+        let s = super::slot_lap::cap_point(a, u, n, h, d, false);
+        let e = super::slot_lap::cap_point(b, u, n, h, d, true);
         // Even rows run a -> b under climb; odd rows return. The join is
         // then a short lateral step at the far end, never a diagonal.
         let (s, e) = if p.climb == (i % 2 == 0) { (s, e) } else { (e, s) };
         pass.push(s);
         pass.push(e);
     }
+    // #2906: the last row (d = h, q = 0) ends on a tangent point of the
+    // +n side; the lap rides the whole wall from there, caps included.
+    // #1759: the rows alone, before the lap joins the pass - the row-end
+    // corners round on these, and the lap follows the rounded walk.
+    let rows = pass.clone();
+    let lap = match (h > 0.0, pass.is_empty()) {
+        (true, false) => {
+            let at_b = p.climb == (ds.len().saturating_sub(1) % 2 == 0);
+            let (lap, pts) = super::slot_lap::wall_lap(a, b, u, n, h, &ds, at_b, p.climb);
+            pass.extend(pts);
+            Some(lap)
+        }
+        _ => None,
+    };
 
     let zs = super::equal_steps::cut_levels_for(p.top_z, &p.links.approach,p.bottom_z, p.stepdown)?;
     let mut bld = PathBuilder::approached(Point3::new(0.0, 0.0, p.clearance_z));
@@ -207,11 +221,12 @@ pub fn slot(a: Point2, b: Point2, p: &SlotParams) -> Result<Toolpath, GenError> 
         (Some(t), _) | (None, Some(t)) => Some(Cert::Stadium { a, b, h, tess: t }),
         (None, None) => None,
     };
-    // #1759: the row-end corners on arcs, where asked and proved.
+    // #1759: the row-end corners on arcs, where asked and proved; the
+    // #2906 wall lap then follows the (rounded or sharp) rows.
     let area = if p.blend_turns { stadium_center(a, b, h) } else { None };
-    let turns = super::slot_turns::round(&pass, p, area.as_ref(), &mut bld);
-    let runs = turns.map(|walk| [walk]);
-    run_level_walks(&mut bld, &[pass], &zs, &motion, runs.as_ref().map(|r| r.as_slice()), center.as_ref(), link_cert.as_ref());
+    let turns = super::slot_turns::round(&rows, p, area.as_ref(), &mut bld);
+    let runs = super::slot_turns::with_lap(&rows, turns, lap);
+    run_level_walks(&mut bld, &[pass], &zs, &motion, runs.as_deref(), center.as_ref(), link_cert.as_ref());
     let cur = bld.at();
     bld.push(MoveKind::Rapid, Point3::new(cur.x, cur.y, p.clearance_z), None);
 

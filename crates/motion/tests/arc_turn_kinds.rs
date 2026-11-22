@@ -284,8 +284,14 @@ fn slot_ends() -> (Point2, Point2) {
 fn slot_row_ends_turn_on_tangent_arcs_of_the_given_radius() {
     let (a, b) = slot_ends();
     let sharp = slot(a, b, &sp(false, None)).unwrap();
-    assert!(sharp.moves.iter().all(|m| m.arc.is_none()));
+    // #2906: the only arcs of the sharp pass are the wall lap's, on the caps.
+    let on_cap = |m: &Move| m.arc.is_some_and(|c| c.center == a || c.center == b);
+    let lap_arcs = |t: &Toolpath| t.moves.iter().filter(|m| on_cap(m)).count();
+    assert!(sharp.moves.iter().all(|m| m.arc.is_none() || on_cap(m)));
+    assert!(lap_arcs(&sharp) > 0, "the sharp pass has no wall lap");
     let blended = slot(a, b, &sp(true, Some(1.0))).unwrap();
+    // The rounded rows keep the wall lap after them, arc for arc.
+    assert_eq!(lap_arcs(&blended), lap_arcs(&sharp), "the arc turns lost the wall lap");
     assert!(blended.is_chained() && blended.all_finite());
     let radii = added_tangent_radii(&blended, &sharp, "slot");
     assert!(!radii.is_empty(), "no row end turned on an arc: {:?}", blended.notes);

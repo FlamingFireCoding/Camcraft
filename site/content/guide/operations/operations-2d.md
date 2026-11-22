@@ -22,7 +22,8 @@ with a tool.
 
 Every kind checks its tool. Face, Contour, Pocket, Adaptive, Offset, Slot,
 Trochoidal slot, Circular and Bore cut with a flat end mill or bull-nose;
-Trace and Engrave take any mill or a taper tool; Slot Undercut takes a
+Trace and Engrave take any mill or a taper tool; V-Carve takes a chamfer
+mill (V-bit) only; Slot Undercut takes a
 T-slot, keyseat, dovetail or lollipop cutter only. A wrong tool is refused by
 name ("'<tool>' is a <kind>; a <operation> operation cuts with a ..."),
 and a document with no suitable tool is told to add one to the tool
@@ -53,6 +54,7 @@ profile has no model top or bottom: use stock or fixed height references.
 **Example cases**
 
 - [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
+- [probing/probe-face](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/probing/probe-face)
 <!-- catalog:examples:end -->
 
 {{ <icon name="op-face" /> }} ![Top view of parallel facing passes across the stock top.](../../../operation-paths.svg#Face)
@@ -382,7 +384,7 @@ use the Retract return to hop higher".
 No catalog case yet.
 <!-- catalog:examples:end -->
 
-{{ <icon name="op-slot-undercut" /> }}
+{{ <icon name="op-slot-undercut" /> }} ![Section view of the cutter going down outside the wall, feeding sideways under the roof and back out.](../../../operation-paths.svg#SlotUndercut)
 
 **For:** the part of a slot that is wider below than at its mouth: a
 T-slot, a keyseat, a dovetail, a round undercut groove. The cutter's head
@@ -472,6 +474,45 @@ markings with a V-bit. Choose Engrave when the job is marking, Trace when
 it is a functional groove; the path is the same.
 
 **Picks and settings:** as Trace.
+
+## V-Carve
+
+<!-- catalog:examples:start -->
+**Example cases**
+
+No catalog case yet.
+<!-- catalog:examples:end -->
+
+{{ <icon name="op-v-carve" /> }} ![Top view of the V-bit tip following the centre line of a picked outline.](../../../operation-paths.svg#VCarve)
+
+**For:** carving letters, logos and other closed shapes with the cone of a
+V-bit. The tip follows the centre line of each picked outline and goes as
+deep as the shape is wide at that place, so the cone touches the two walls
+together. Choose it over Engrave when the shape has width, not only a
+stroke.
+
+**Tool:** a chamfer mill (V-bit). Its tip angle sets the cone, and its
+flute must cover the deepest cut.
+
+**Picks:** closed outlines. The V-bit cuts inside them.
+
+| Tab | Setting | Default |
+|---|---|---|
+| Heights | Top Z | the model top (the start depth) |
+| Heights | Bottom Z | 2 under Top Z (the maximum depth of the tip) |
+| Heights | Stepdown | the document stepdown |
+| Passes | Flat clearing | off |
+| Passes | Floor stepover | 0.25 (shown only with flat clearing on) |
+
+Where the shape is wider than the cone at the maximum depth, the tip stops
+at Bottom Z. Flat clearing then cuts that floor flat at the floor
+stepover; with it off, the wide places keep the material that the cone
+does not reach.
+
+**Common refusals:** "V-Carve cuts with the cone of a V-bit - it needs a
+chamfer mill (V-bit)"; "the cone of ... has ... mm of flute, short of the
+... mm maximum depth of this V-Carve"; "V-Carve needs Top of Part Z: set
+the height".
 
 ## 2D Chamfer
 
@@ -563,6 +604,7 @@ needs a positive pitch to time its helix against"; "infeed must sit between
 <!-- catalog:examples:start -->
 **Example cases**
 
+- [2d/drill-overfeed](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/drill-overfeed)
 - [2d/first-part](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/first-part)
 - [2d/hole-work](https://github.com/NeoTech/Camcraft/tree/main/examples/catalog/2d/hole-work)
 <!-- catalog:examples:end -->

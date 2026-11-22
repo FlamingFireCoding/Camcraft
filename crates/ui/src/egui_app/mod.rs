@@ -54,6 +54,10 @@ pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_profiles;
+mod dxf_units_dialog;
+mod dxf_drop;
+mod op_source;
 mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
@@ -194,6 +198,7 @@ mod undercut_page;
 mod kind_editors;
 mod deburr_page;
 mod mill2d_more_page;
+mod vcarve_page;
 mod mill2d_page;
 // #1815: 2D Pocket's "Rest machining" group on the Passes tab.
 mod rest_pocket_page;

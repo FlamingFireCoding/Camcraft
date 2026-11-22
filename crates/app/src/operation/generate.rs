@@ -782,7 +782,20 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1559: when carried stock stands above the entry, the same
             // generator runs again with the entries lifted to that top
             // (rest or plain: only the entry plane moves, the cut does not).
+            // #2033: in previous-operations mode the rest area is read
+            // from the stock that the program ahead leaves, at every cut
+            // depth; that mode never falls back to the entered tool.
+            let from_ops = rest.is_some_and(|r| r.source == machining2d::RestSource::PreviousOperations);
+            let ahead = if from_ops {
+                Some(prior.take().ok_or_else(|| unreached("previous-operations rest stock"))??)
+            } else {
+                None
+            };
+            let ahead_cols = ahead.as_ref().and_then(|p| p.grid.as_ref()).map(crate::stock_sim::Columns::of_grid);
             let pocket = |pp: &PocketParams| match rest {
+                Some(r) if from_ops => {
+                    machining2d::rest_pocket_previous_with_relief(&region, pp, r, ahead_cols.as_ref(), corner_relief)
+                }
                 Some(r) => machining2d::rest_pocket_with_relief(&region, pp, r, corner_relief),
                 None => machining2d::pocket_entered_with_relief(&region, pp, &holes, corner_relief),
             };
@@ -1359,6 +1372,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             hole_min_diameter,
             hole_max_diameter,
             unreachable,
+            sizing,
             ..
         } => {
             if tool.kind != crate::tools::ToolKind::Taper {
@@ -1379,7 +1393,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // a short-fluted V stands on its shank there, and the
             // ride would dress a cylinder as a cone (the derived
             // float quotes to a tenth, chamfer's reading law).
-            let slant = width / (0.5 * tool.tip_angle.to_radians()).sin();
+            // #1890: the largest setback the size law gives any edge.
+            let slant = sizing.max_setback(*width) / (0.5 * tool.tip_angle.to_radians()).sin();
             if tool.flute_len < slant - 1e-9 {
                 return Err(GenError::Invalid(format!(
                     "the break reaches {:.1} mm up the cone's flank; '{}' has {} mm of flute",
@@ -1414,6 +1429,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     hole_min_diameter: *hole_min_diameter,
                     hole_max_diameter: *hole_max_diameter,
                     unreachable: *unreachable,
+                    sizing: *sizing,
                 },
                 &finishing3d::DeburrEdges { include, exclude },
             )?;
@@ -2250,6 +2266,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     stock_top: lk.approach.stock_top,
                 },
             )?;
+            (region, path)
+        }
+        // V-carve (#1443): the picked closed region, carved by the
+        // cone to the depth its width allows. The tool doors stand in
+        // `vcarve_op`, where the Tool is visible.
+        OpParams::VCarve { .. } => {
+            let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
+            let path = super::vcarve_op::carve(&region, &tool, &tool_name, &hl, &params)?;
             (region, path)
         }
         // The 2D chamfer (M2.4 B): a cone ride on the picked edge.
@@ -3346,7 +3370,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // stays on it as a second net.
     let parts_crossed = super::keep_law::is_cross_drill(&params);
     // #1595: what a mark may take off the part's surface under the cutter.
-    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| super::mark_law::budget(t, b, tool.diameter * 0.5));
+    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| {
+        super::mark_law::budget(t, b, super::mark_law::cutter_depth_limit(&params, &tool))
+    });
     // #1057: the containment kinds' declared rims, read untightened.
     let rims = if depth_law == DepthLaw::Contain { super::material_source::rims_of(&params) } else { Vec::new() };
     match &frame {
@@ -4048,7 +4074,8 @@ pub(super) fn depth_law_of(params: &OpParams, src: &SrcRef, part_solid: bool) ->
         OpParams::Drill { cross, .. } if cross.is_empty() => DepthLaw::Contain,
         OpParams::Bore { .. } | OpParams::Thread { .. } => DepthLaw::Contain,
         // #1595: a centreline cut on the finished part is a mark.
-        OpParams::Engrave { .. } | OpParams::Trace { .. } => DepthLaw::Mark,
+        // #1443: the V-carve enters the part the same way.
+        OpParams::Engrave { .. } | OpParams::Trace { .. } | OpParams::VCarve { .. } => DepthLaw::Mark,
         _ => DepthLaw::None,
     }
 }
@@ -4130,6 +4157,7 @@ pub(super) fn stock_to_leave_of(params: &OpParams) -> f64 {
         | OpParams::SinkerBurn(_)
         | OpParams::SinkerSideBurn(_)
         | OpParams::Trace { .. }
+        | OpParams::VCarve { .. }
         // The engrave twin leaves no kerf shelf (M2.4 B), and the
         // chamfer cone owns its face outright - the ride IS the
         // finished surface, a leave number could only move the rest
