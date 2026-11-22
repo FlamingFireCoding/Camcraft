@@ -72,6 +72,8 @@ mod heights_sel;
 pub use heights_sel::*;
 mod kinds;
 pub use kinds::*;
+mod pick_kinds;
+pub use pick_kinds::*;
 mod seed;
 pub use seed::seed_params;
 pub mod tool_law;

@@ -782,7 +782,20 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1559: when carried stock stands above the entry, the same
             // generator runs again with the entries lifted to that top
             // (rest or plain: only the entry plane moves, the cut does not).
+            // #2033: in previous-operations mode the rest area is read
+            // from the stock that the program ahead leaves, at every cut
+            // depth; that mode never falls back to the entered tool.
+            let from_ops = rest.is_some_and(|r| r.source == machining2d::RestSource::PreviousOperations);
+            let ahead = if from_ops {
+                Some(prior.take().ok_or_else(|| unreached("previous-operations rest stock"))??)
+            } else {
+                None
+            };
+            let ahead_cols = ahead.as_ref().and_then(|p| p.grid.as_ref()).map(crate::stock_sim::Columns::of_grid);
             let pocket = |pp: &PocketParams| match rest {
+                Some(r) if from_ops => {
+                    machining2d::rest_pocket_previous_with_relief(&region, pp, r, ahead_cols.as_ref(), corner_relief)
+                }
                 Some(r) => machining2d::rest_pocket_with_relief(&region, pp, r, corner_relief),
                 None => machining2d::pocket_entered_with_relief(&region, pp, &holes, corner_relief),
             };
@@ -3743,6 +3756,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2496: a hole wider than its drill is drilled undersize - named,
             // never binding (a pilot drill is a valid plan).
             super::drill_size::undersize_into(&mut warns, &path, &tool, &params);
+            // #3035: Adaptive areas cut by Offset rings - a warning, not
+            // only a note; advisory (the rings are verified above).
+            let areas = crate::machining2d::rings_fallbacks(&path.notes);
+            if areas > 0 {
+                let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+                warns.push(Warning::StrategyFallback { at, areas });
+            }
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.

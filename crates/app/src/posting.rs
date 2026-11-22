@@ -513,6 +513,8 @@ pub fn parse_cli_post_options(
 mod serves;
 #[path = "posting_edm.rs"]
 mod edm_params;
+#[path = "posting_stock_shape.rs"]
+mod stock_shape;
 #[path = "posting_nose.rs"]
 pub mod nose;
 #[path = "posting_index_swing.rs"]
@@ -1304,6 +1306,8 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
         let mut records = post::dump(&posted, &d);
         // #542: a sinker burn's condition and pickup ride the section.
         edm_params::insert(&op.params, &tool, &mut records);
+        // #2769: what the stock box bounds, for a post's blank definition.
+        stock_shape::insert(world, setup, &mut records);
         // #988: a left-hand-cut thread mill turns M4.
         if let OpParams::Thread { passes, .. } = &op.params
             && passes.spindle_reverse

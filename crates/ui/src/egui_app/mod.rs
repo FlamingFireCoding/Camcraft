@@ -54,6 +54,10 @@ pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_profiles;
+mod dxf_units_dialog;
+mod dxf_drop;
+mod op_source;
 mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
@@ -298,6 +302,8 @@ mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
 #[cfg(test)]
+mod boundary_offset_tests;
+#[cfg(test)]
 mod field_focus_tests;
 #[cfg(test)]
 mod coolant_tests;
@@ -315,6 +321,8 @@ mod after_op_tests;
 mod program_info_tests;
 #[cfg(test)]
 mod post_dialog_tests;
+#[cfg(test)]
+mod setup_post_gap_tests;
 #[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]

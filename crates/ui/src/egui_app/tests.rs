@@ -89,6 +89,7 @@ mod frame_cost_probe;
 mod pick_mode;
 mod spindle_row;
 mod stock_size;
+mod dxf_profile;
 mod stock_axis;
 mod stock_material;
 mod setup_settings_page;
@@ -121,6 +122,7 @@ mod page_layout;
 mod page_layout_windows;
 mod anchors;
 mod stock_fit;
+mod stock_source_default;
 mod ribbon_rows;
 mod ribbon_cell_fill;
 mod theme_op_tabs_tree;
@@ -181,6 +183,8 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3335: real viewport clicks into the "Do not touch" group.
+mod do_not_touch_click;
 // #371: the tool editor's Body section.
 mod tool_body;
 mod tool_body_assembly;
