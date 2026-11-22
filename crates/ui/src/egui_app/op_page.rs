@@ -77,11 +77,7 @@ pub(super) fn operation_page(ui: &mut Ui, state: &mut State, name: &str, pal: &T
         // edge. A control flush right in the control column - the box of
         // a check_row is 18 px - then sits under the bar and the bar
         // takes clicks meant for it. Stop the content short of that zone.
-        let style = ui.style();
-        let bar_total = style.spacing.scroll.bar_inner_margin
-            + style.spacing.scroll.bar_width
-            + style.spacing.scroll.bar_outer_margin;
-        ui.set_max_width((ui.available_width() - bar_total).max(120.0));
+        super::layout::keep_scroll_gutter(ui, 120.0);
         ui.horizontal(|ui| {
             ui.heading(format!("Operation: {label}"));
             if exists && ui.small_button("Rename").clicked() {

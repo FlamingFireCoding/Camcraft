@@ -1813,7 +1813,7 @@ pub struct State {
     /// kept preference (`state_view`).
     pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
-    /// the grid also needs `show_world_axes`.
+    /// the grid does not depend on `show_world_axes` (#3322).
     pub show_grid: bool,
     /// M1.7c move simulation: None while off, [`Sim`] while the
     /// transport bar is up. View state like the camera - what it holds

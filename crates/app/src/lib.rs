@@ -109,6 +109,8 @@ pub mod setup_offsets;
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
+// #2410: the router options that a machine kind offers (UI and MCP).
+pub mod router_offer;
 // #870: the WCS origin said in words ("top of stock, front-left corner").
 pub mod setup_origin;
 // #316: transforms between setups and the setup-relative link.
