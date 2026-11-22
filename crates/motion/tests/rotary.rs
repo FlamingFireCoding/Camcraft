@@ -108,7 +108,23 @@ fn lathe_bar(n_circ: usize) -> Vec<Triangle> {
 /// The same bar laid on its side: the axis becomes +x, the meridian
 /// stations run along x, the radius lives in y-z.
 fn laid_bar(n_circ: usize) -> Vec<Triangle> {
-    lathe_bar(n_circ)
+    laid_bar_of(
+        &[
+            (0.0, 0.0),
+            (2.0, 0.0),
+            (2.0, 6.0),
+            (1.2, 8.5),
+            (1.2, 18.0),
+            (2.5, 21.0),
+            (2.5, 28.0),
+            (0.0, 28.0),
+        ],
+        n_circ,
+    )
+}
+
+fn laid_bar_of(meridian: &[(f64, f64)], n_circ: usize) -> Vec<Triangle> {
+    revolve(n_circ, meridian)
         .into_iter()
         .map(|f| Triangle::new(laid(f.a), laid(f.b), laid(f.c)))
         .collect()
@@ -395,7 +411,196 @@ fn the_parallel_leaves_the_end_face_where_the_stock_goes_on() {
     }
 }
 
-// ---- the radial heights law (#2774) -------------------------------
+// ---- the radial band law (#2774) ----------------------------------
+
+#[test]
+fn the_parallel_band_cuts_between_two_cylinders() {
+    // #2774: Top and Bottom radii window the cut by DISTANCE from the
+    // rotary axis - an annulus between two cylinders, not two Z planes.
+    // The laid stepped bar has walls at r2.5, r2.0 and r1.2. A band
+    // r1.0..r1.5 finishes the r1.2 wall and the cones down to it, and
+    // leaves the r2.0 and r2.5 walls standing.
+    let facets = laid_bar(16);
+    let p = finish(3.0, -3.0);
+    let c = control(0.0, 0.0, None);
+    let radial = RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: Some(1.5), bottom: Some(1.0) };
+    let got = rotary_parallel_radial(&facets, None, &p, &c, radial).expect("the annulus band");
+    let rho = |q: Point3| (q.y * q.y + q.z * q.z).sqrt();
+    let (lo, hi, hop) = (1.0, 1.5, 7.0);
+    let mut cut_tips = 0usize;
+    let mut tip_min = f64::MAX;
+    let mut tip_max = f64::MIN;
+    for m in &got.moves {
+        match m.kind {
+            MoveKind::Rapid => {
+                assert!(rho(m.to) >= hop - 0.01, "a link drops inside the hop cylinder: {}", rho(m.to));
+            }
+            MoveKind::Plunge => {
+                let r = rho(m.to);
+                assert!(r >= lo - 0.05 && r <= hi + 0.05, "a plunge lands off the band: {r:.3}");
+            }
+            MoveKind::Feed => {
+                let (a, b) = (rho(m.from), rho(m.to));
+                if b < 4.0 {
+                    // A cut move: both tips ride inside the band.
+                    for &r in &[a, b] {
+                        assert!(r >= lo - 0.05 && r <= hi + 0.05, "a cut tip leaves the band: {r:.3}");
+                        tip_min = tip_min.min(r);
+                        tip_max = tip_max.max(r);
+                    }
+                    cut_tips += 1;
+                } else {
+                    // A link retract: it stands on the hop cylinder.
+                    assert!(b >= hop - 0.01, "a retract feed does not clear the band: {b:.3}");
+                }
+            }
+        }
+    }
+    assert!(cut_tips >= 100, "the band barely cut the r1.2 wall, got {cut_tips} tips");
+    // The band is cut to its full width: the cones run edge to edge.
+    assert!(tip_min <= lo + 0.05 && tip_max >= hi - 0.05, "the band cut {tip_min:.3}..{tip_max:.3}, not {lo}..{hi}");
+    // The unband twin finishes the r2.5 wall the band leaves standing.
+    let zed = rotary_parallel_radial(&facets, None, &p, &c, RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: None, bottom: None })
+        .expect("the same bar, no band");
+    assert_ne!(zed.moves, got.moves, "a band that changed nothing is not a band");
+    let wall = zed.moves.iter().any(|m| m.kind == MoveKind::Feed && (rho(m.to) - 2.5).abs() < 0.06);
+    assert!(wall, "the unband ladder finishes the r2.5 wall, the band one leaves it");
+    let banded_over = got.moves.iter().any(|m| m.kind == MoveKind::Feed && rho(m.to) > hi + 0.06 && rho(m.to) < hop - 0.06);
+    assert!(!banded_over, "the banded ladder cuts a wall outside its band");
+}
+
+#[test]
+fn a_parallel_band_that_crosses_no_skin_is_refused_by_name() {
+    // Prime Directive at the band: a band of cylinders that meets no part
+    // skin cuts nothing. The generator refuses with both radii and the
+    // reach it found - never an empty path, never the uncut one. The bar's
+    // skin stands at r2.5 and inside; a band at r2.7..r2.9 meets nothing.
+    let facets = laid_bar(16);
+    let p = finish(3.0, -3.0);
+    let c = control(0.0, 0.0, None);
+    let e = rotary_parallel_radial(&facets, None, &p, &c, RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: Some(2.9), bottom: Some(2.7) })
+        .expect_err("r2.7..r2.9 stands off the bar's skin");
+    let msg = e.to_string();
+    assert!(msg.contains("2.7") && msg.contains("2.9") && msg.contains("crosses no part skin"), "{msg}");
+}
+
+#[test]
+fn a_band_that_wraps_the_whole_skin_adds_no_links() {
+    // #2774 bug pin (user window test): a band that stands off the whole
+    // skin - the user's Top 8 / Bottom 0 on a rotor near r6 - trims
+    // nothing. The trim must then keep every pass whole: on a smooth
+    // turned bar its output, once relinked, must match the unband path
+    // move class for move class. A broken glue put a Rapid mid-cut at
+    // every segment and span join, and the radial relink turned each
+    // into a retract, index and plunge: "tons of radial moves through
+    // the full length of the part".
+    let facets: Vec<Triangle> = laid_bar_of(
+        &[(0.0, 0.0), (2.5, 0.0), (2.5, 28.0), (0.0, 28.0)],
+        16,
+    );
+    let p = finish(3.0, -3.0);
+    let c = control(0.0, 0.0, None);
+    let wrap = RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: Some(8.5), bottom: Some(0.0) };
+    let got = rotary_parallel_radial(&facets, None, &p, &c, wrap).expect("a band wrapping the r2.5 skin");
+    let zed = rotary_parallel_radial(&facets, None, &p, &c, RadialHeights { clearance: Some(9.0), retract: Some(7.0), top: None, bottom: None })
+        .expect("the same bar, no band");
+    let rho = |q: Point3| (q.y * q.y + q.z * q.z).sqrt();
+    // Links inside the skin: a Rapid whose two ends both ride on the
+    // part. The band must add none.
+    let inner = |ms: &[camcraft_motion::cl::Move]| -> usize {
+        ms.iter()
+            .filter(|m| m.kind == MoveKind::Rapid && rho(m.from) < 4.0 && rho(m.to) < 4.0)
+            .count()
+    };
+    let (gi, zi) = (inner(&got.moves), inner(&zed.moves));
+    assert_eq!(gi, zi, "a band that trims nothing links inside the skin {gi} times, not {zi}");
+    // Link count to the hop cylinder: the same stations link, so the
+    // same number of entries stands on the retract cylinder.
+    let hop_ex = |ms: &[camcraft_motion::cl::Move]| -> usize {
+        ms.iter().filter(|m| rho(m.to) >= 6.9).count()
+    };
+    assert_eq!(hop_ex(&got.moves), hop_ex(&zed.moves), "a band that trims nothing changed the link count to the hop cylinder");
+    // Cut coverage: the banded ladder still finishes the whole r2.5 skin.
+    let wall = got.moves.iter().any(|m| m.kind == MoveKind::Feed && (rho(m.to) - 2.5).abs() < 0.06);
+    assert!(wall, "the wrapping band must still cut the skin");
+}
+
+#[test]
+fn the_contour_band_windows_its_rings_by_radius() {
+    // #2774 for the contour: the rings come from the waterline ladder,
+    // and the band window reads their TIP radius about the standing axis,
+    // not the Z height. This bar's ladder rings the lower cone (down to
+    // a 1.5 ring) and the upper cone and rim (2.28 to 2.49). A band
+    // r1.4..r2.35 keeps the cone rings and refuses the rim rings.
+    let facets = lathe_bar(16);
+    let p = finish(28.0, 0.0);
+    let c = control(0.0, 0.0, None);
+    let (lo, hi) = (1.4, 2.35);
+    let (clr, hop) = (6.0, 4.5);
+    let ball = p.tool_diameter * 0.5;
+    let radial = RadialHeights { clearance: Some(clr), retract: Some(hop), top: Some(hi), bottom: Some(lo) };
+    let got = rotary_contour_radial(&facets, &p, &c, radial).expect("the ring band");
+    let rho = |q: Point3| (q.x * q.x + q.y * q.y).sqrt();
+    let (hop_t, clr_t) = (hop - ball, clr - ball);
+    let mut cut_tips = 0usize;
+    let mut tip_min = f64::MAX;
+    let mut tip_max = f64::MIN;
+    for m in &got.moves {
+        match m.kind {
+            MoveKind::Rapid => {
+                assert!(rho(m.to) >= hop_t - 0.01, "a link drops inside the hop cylinder: {}", rho(m.to));
+            }
+            MoveKind::Plunge => {
+                let r = rho(m.to);
+                assert!(r >= lo - 0.06 && r <= hi + 0.06, "a plunge lands off the band: {r:.3}");
+            }
+            MoveKind::Feed => {
+                let (a, b) = (rho(m.from), rho(m.to));
+                if b < 3.0 {
+                    for &r in &[a, b] {
+                        assert!(r >= lo - 0.06 && r <= hi + 0.06, "a ring tip leaves the band: {r:.3}");
+                        tip_min = tip_min.min(r);
+                        tip_max = tip_max.max(r);
+                    }
+                    cut_tips += 1;
+                } else {
+                    assert!(b >= hop_t - 0.01, "a retract feed does not clear the band: {b:.3}");
+                }
+            }
+        }
+    }
+    assert!(cut_tips >= 20, "the band barely cut the cone rings, got {cut_tips} tips");
+    // The band is cut across at its full width: every ring inside it is
+    // kept. A waterline ring stands at the radius its Z step lands on, so
+    // the finest ring inside this band sits 0.15 mm out of the lo edge -
+    // the select drops whole rings, it never chops one at the edge.
+    assert!(tip_min <= lo + 0.15 && tip_max >= hi - 0.06, "the band cut {tip_min:.3}..{tip_max:.3}, not {lo}..{hi}");
+    // The unband twin still rings the rim at r2.44..2.49 that the band
+    // leaves standing.
+    let zed = rotary_contour_radial(&facets, &p, &c, RadialHeights { clearance: Some(clr), retract: Some(hop), top: None, bottom: None })
+        .expect("the same rings, no band");
+    assert_ne!(zed.moves, got.moves, "a band that changed nothing is not a band");
+    let rim = zed.moves.iter().any(|m| m.kind == MoveKind::Feed && (rho(m.to) - 2.47).abs() < 0.05);
+    assert!(rim, "the unband ladder rings the rim, the banded one leaves it");
+    let over = got.moves.iter().any(|m| m.kind == MoveKind::Feed && rho(m.to) > hi + 0.06 && rho(m.to) < hop_t - 0.06);
+    assert!(!over, "the banded ladder cuts outside its band");
+    // The exit stands at the clearance cylinder, like the link law test.
+    let last = got.moves.last().expect("the exit rapid");
+    assert_eq!(last.kind, MoveKind::Rapid);
+    assert!((rho(last.to) - clr_t).abs() < 1e-6, "the exit stands at the clearance radius, got {}", rho(last.to));
+}
+
+#[test]
+fn a_contour_band_that_crosses_no_skin_is_refused_by_name() {
+    let facets = lathe_bar(16);
+    let p = finish(28.0, 0.0);
+    let c = control(0.0, 0.0, None);
+    let e = rotary_contour_radial(&facets, &p, &c, RadialHeights { clearance: Some(6.0), retract: Some(4.5), top: Some(2.9), bottom: Some(2.7) })
+        .expect_err("r2.7..r2.9 stands off the bar's skin");
+    let msg = e.to_string();
+    assert!(msg.contains("2.7") && msg.contains("2.9") && msg.contains("crosses no part skin"), "{msg}");
+}
+
 
 #[test]
 fn the_radial_heights_hold_the_links_off_the_axis() {
