@@ -84,10 +84,11 @@
 //! structure only - behaviour is byte-identical to the flat file it replaces.
 
 mod center_cut;
-mod crease;
+pub(crate) mod crease;
 mod deburr;
-mod deburr_filter;
-mod deburr_size;
+pub(crate) mod deburr_filter;
+pub(crate) mod deburr_scan;
+pub(crate) mod deburr_size;
 mod deburr_contact;
 mod drape;
 mod edge;
