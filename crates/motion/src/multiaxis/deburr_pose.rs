@@ -11,7 +11,9 @@
 //! direction in the plane. Then the whole cone (and the shank above it,
 //! which recedes along `+a`, since `a . n = sin(h) > 0`) stays on the
 //! outer side, and the only material on that side near the edge is the
-//! corner the break removes. Swept along `t`, the generatrix covers the
+//! corner the break removes. Other faces and the finite edge ends need
+//! the independent continuous tool-sweep check in `deburr_clear`.
+//! Swept along `t`, the generatrix covers the
 //! chord when its span across the edge is the chord or more. So `g` is
 //! free to turn in the plane: `g = cos(l) sc + sin(l) t`, with `sc` one
 //! of `+-c` (the side) and `l` the lean along the travel. That rotation

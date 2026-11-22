@@ -31,20 +31,14 @@ use crate::finishing3d::{crease, DeburrParams, UnreachableEdges};
 use crate::geometry::{Point3, Triangle};
 use crate::machining2d::GenError;
 
-use super::avoid::{shank_hits_at, Shank};
+use super::avoid::Shank;
+use super::deburr_clear;
 use super::deburr_pose::{add, ang, cross, dot, scale, sub, unit, Cross, DeburrAxisMode, Lean, Pose};
-use super::stamp_link::LINK_TURN_DEG;
 
 /// The largest tilt cap, degrees: the escape cone of stage F.
 pub const MAX_TILT_CAP_DEG: f64 = 85.0;
 /// The most posed stretches one edge segment is cut into.
 const MAX_STRETCHES: usize = 256;
-/// The most the chamfer plane may turn between two stretches of one
-/// run, degrees; a sharper corner ends the run.
-const CORNER_DEG: f64 = 10.0;
-/// How far above the window top the tool leaves the cut at the plunge
-/// feed before it rapids, mm.
-const LIFT_MM: f64 = 1.0;
 
 /// One multi-axis Deburr ride's numbers.
 #[derive(Clone, Copy, Debug)]
@@ -61,7 +55,7 @@ pub struct AxisDeburrParams {
     pub max_tilt_deg: f64,
     /// The cone's largest diameter, mm: it sets the flank length.
     pub tool_diameter: f64,
-    /// The shank and holder to keep off the part; `None` tests nothing.
+    /// The physical shank and holder; `None` checks the cone only.
     pub shank: Option<Shank>,
 }
 
@@ -98,7 +92,7 @@ impl AxisDeburrParams {
 }
 
 /// The kept edge segments by welded endpoint pair: plane and setback.
-type Book = HashMap<((i64, i64, i64), (i64, i64, i64)), (Cross, f64)>;
+type Book = HashMap<((i64, i64, i64), (i64, i64, i64)), (Cross, f64, Point3, Point3)>;
 
 /// One posed edge segment of a run: edge points, plane, setback, pose.
 #[derive(Clone, Copy)]
@@ -108,6 +102,7 @@ struct Station {
     cr: Cross,
     s: f64,
     pose: Pose,
+    edge: (Point3, Point3),
 }
 
 /// Break the exposed edges of `facets` with a tilted cone. See the
@@ -124,6 +119,13 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
         max_tilt_deg: p.max_tilt_deg,
         rotary: Point3::new(1.0, 0.0, 0.0),
     };
+    let air_z = deburr_clear::air_height(&lean, p.shank.as_ref(), facets)
+        .ok_or_else(|| GenError::Invalid("multi-axis deburr: tool clearance exceeds the finite horizon".into()))?;
+    if b0.clearance_z <= air_z {
+        return Err(GenError::Invalid(format!(
+            "multi-axis deburr: clearance must be above {air_z} mm to keep the whole tool clear during axis turns"
+        )));
+    }
     let w = crease::vkey_scale(facets);
     let mut filter = EdgeFilter::new(facets, b0, edges, w)?;
     let EdgeScan { edges: exposed, flips, manifold } = scan(facets, w);
@@ -149,32 +151,29 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
             out_of_size += 1;
             continue;
         };
-        let Some((q0, q1)) = clip(*e0, *e1, b0, 0.0) else { continue };
+        let Some((q0, q1)) = clip(*e0, *e1, b0, 0.0) else {
+            continue;
+        };
         let (k0, k1) = (crease::vkey(q0, w), crease::vkey(q1, w));
-        book.insert(pair(k0, k1), (cr, s));
+        book.insert(pair(k0, k1), (cr, s, *e0, *e1));
         groups.entry((s * 1e9).round() as i64).or_default().push(crease::Seg { c0: q0, c1: q1, k0, k1 });
     }
     let mut runs: Vec<Vec<Point3>> = groups.values().flat_map(|g| crease::chain(g)).collect();
     runs.sort_by(|a, b| crease::cmp_pt(a[0], b[0]));
 
-    let r = 0.5 * p.tool_diameter;
-    let boxes: Vec<[f64; 6]> = facets.iter().map(aabb).collect();
-    let clear = |st: &Station, pose: &Pose| -> bool {
-        let Some(sh) = &p.shank else { return true };
-        let len = dot(sub(st.q, st.p), sub(st.q, st.p)).sqrt();
-        let n = ((len / r.max(1e-3)).ceil() as usize).clamp(1, 64);
-        b0.sizing.pass_setbacks(st.s).all(|sk| {
-            (0..=n).all(|i| {
-                let e = add(st.p, scale(sub(st.q, st.p), i as f64 / n as f64));
-                let tip = lean.tip(&st.cr, pose, e, sk);
-                let c = add(tip, scale(Point3::new(pose.a[0], pose.a[1], pose.a[2]), r));
-                !shank_hits_at(c, pose.a, r, sh, facets, &boxes)
+    let clear = |st: &Station, pose: &Pose| -> Option<Station> {
+        let probe = clipped(st, &lean, pose, b0)?;
+        b0.sizing
+            .pass_setbacks(probe.s)
+            .all(|sk| {
+                let tips = (lean.tip(&probe.cr, pose, probe.p, sk), lean.tip(&probe.cr, pose, probe.q, sk));
+                deburr_clear::clear(&lean, pose, &probe.cr, sk, probe.edge, tips, b0.clearance_z, p.shank.as_ref(), facets)
             })
-        })
+            .then_some(probe)
     };
 
     // Pose every segment; cut a run where a segment is unreachable or
-    // the axis would swing more than the link turn at the contact.
+    // the pose or plane changes: no unchecked interpolation at contact.
     let (mut no_pose, mut holder) = (0usize, 0usize);
     let mut pieces: Vec<Vec<Station>> = Vec::new();
     for run in &runs {
@@ -185,28 +184,33 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
             let cands = lean.candidates(&probe.cr, t, probe.cr.chord(probe.s));
             let pick = match cands.first() {
                 None => None,
-                Some(first) if clear(&probe, first) => Some(*first),
+                Some(first) if clear(&probe, first).is_some() => clear(&probe, first),
                 Some(_) => {
                     let mut rest = cands[1..].to_vec();
                     let toward = prev.unwrap_or(cands[0].a);
                     rest.sort_by(|x, y| ang(x.a, toward).total_cmp(&ang(y.a, toward)));
-                    let got = rest.into_iter().find(|c| clear(&probe, c));
+                    let got = rest.into_iter().find_map(|c| clear(&probe, &c));
                     holder += usize::from(got.is_none());
                     got
                 }
             };
             no_pose += usize::from(cands.is_empty());
-            let Some(pose) = pick else {
+            let Some(probe) = pick else {
                 pieces.extend((!cur.is_empty()).then(|| std::mem::take(&mut cur)));
                 prev = None;
                 plane = None;
                 continue;
             };
+            let pose = probe.pose;
             // A turn at the contact stays on one chamfer plane (or near
             // one, on a faceted curve): where the plane turns at a
             // corner, the tip between two planes would cut the corner.
-            let turns = plane.is_some_and(|n| dot(n, probe.cr.n).clamp(-1.0, 1.0).acos().to_degrees() > CORNER_DEG);
-            if turns || prev.is_some_and(|pa| ang(pa, pose.a) > LINK_TURN_DEG) {
+            let turns = plane.is_some_and(|n| n != probe.cr.n);
+            let gap = cur.last().is_some_and(|last| dot(sub(last.q, probe.p), sub(last.q, probe.p)) > 1e-16);
+            let shape_change = cur.last().is_some_and(|last| {
+                last.s != probe.s || last.cr.o1 != probe.cr.o1 || last.cr.c != probe.cr.c || last.cr.wedge_deg != probe.cr.wedge_deg
+            });
+            if turns || gap || shape_change || prev.is_some_and(|pa| pa != pose.a) {
                 pieces.push(std::mem::take(&mut cur));
             }
             prev = Some(pose.a);
@@ -219,7 +223,7 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
     let unreachable = no_pose + holder;
     if unreachable > 0 && b0.unreachable == UnreachableEdges::Refuse {
         return Err(GenError::Invalid(format!(
-            "multi-axis deburr: {unreachable} edge segments have no clear pose ({no_pose} outside the max tilt, the rotary plane or the cone's flank; {holder} blocked by the shank or holder), and Unreachable edges is set to Refuse; raise Max tilt, use Axis5, or set it to Skip with note"
+            "multi-axis deburr: {unreachable} edge segments have no clear pose ({no_pose} outside the max tilt, the rotary plane or the cone's flank; {holder} blocked by the shank or holder, cone, bottom window or entry/exit sweep), and Unreachable edges is set to Refuse; raise Max tilt, use Axis5, or set it to Skip with note"
         )));
     }
     if pieces.is_empty() {
@@ -238,7 +242,7 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
         (degenerate, "edges have degenerate faces and were skipped"),
         (out_of_size, "edges have a wedge angle outside the break size's range and were skipped"),
         (no_pose, "edge segments have no pose inside the max tilt, the rotary plane or the cone's flank and were skipped"),
-        (holder, "edge segments where every pose inside the max tilt touches the shank or holder were skipped"),
+        (holder, "edge segments where every pose touches the cone, shank or holder, crosses the bottom window or has an unsafe entry/exit sweep were skipped"),
     ] {
         if n > 0 {
             b.note(format!("multi-axis deburr: {n} {what}"));
@@ -248,7 +252,7 @@ pub fn multiaxis_deburr(facets: &[Triangle], p: &AxisDeburrParams, edges: &Debur
         b.note(note);
     }
     for piece in &pieces {
-        emit(&mut b, piece, &lean, b0)?;
+        emit(&mut b, piece, &lean, b0, air_z)?;
     }
     let mut path = b.finish();
     if !path.all_finite() {
@@ -266,36 +270,40 @@ fn stretches(run: &[Point3], book: &Book, w: f64, step: f64, lean: &Lean) -> Vec
     let mut out = Vec::new();
     for wnd in run.windows(2) {
         let (a0, b1) = (wnd[0], wnd[1]);
-        let (Some(&(cr, s)), Some(t)) = (book.get(&pair(crease::vkey(a0, w), crease::vkey(b1, w))), unit(sub(b1, a0))) else {
+        let (Some(&(cr, s, e0, e1)), Some(t)) = (book.get(&pair(crease::vkey(a0, w), crease::vkey(b1, w))), unit(sub(b1, a0))) else {
             continue;
         };
         let len = dot(sub(b1, a0), sub(b1, a0)).sqrt();
         let k = ((len / step).ceil() as usize).clamp(1, MAX_STRETCHES);
-        let at = |i: usize| if i == k { b1 } else { add(a0, scale(sub(b1, a0), i as f64 / k as f64)) };
+        let at = |i: usize| {
+            if i == k {
+                b1
+            } else {
+                add(a0, scale(sub(b1, a0), i as f64 / k as f64))
+            }
+        };
         for i in 0..k {
-            out.push((Station { p: at(i), q: at(i + 1), cr, s, pose: lean.natural(&cr, t) }, t));
+            out.push((Station { p: at(i), q: at(i + 1), cr, s, pose: lean.natural(&cr, t), edge: (e0, e1) }, t));
         }
     }
     out
 }
 
 /// Ride one posed piece once for each pass: in along the first axis,
-/// along the edge (a turn at a vertex is a feed at the contact, less
-/// than the link turn), and out along the last axis.
-fn emit(b: &mut PathBuilder, piece: &[Station], lean: &Lean, p: &DeburrParams) -> Result<(), GenError> {
-    let (Some(first), Some(last)) = (piece.first(), piece.last()) else { return Ok(()) };
+/// along the edge (a turn at a vertex is a feed at the contact, only with an identical pose), and out along the last axis.
+fn emit(b: &mut PathBuilder, piece: &[Station], lean: &Lean, p: &DeburrParams, air_z: f64) -> Result<(), GenError> {
+    let (Some(first), Some(last)) = (piece.first(), piece.last()) else {
+        return Ok(());
+    };
     for sk in p.sizing.pass_setbacks(first.s) {
         let t0 = lean.tip(&first.cr, &first.pose, first.p, sk);
-        // In along the axis. The rapid at the clearance height states
-        // the new pose, so the post knows the rotary angles before any
-        // feed. The mid-turn law reads a turn on the first cut move
-        // after it: the plunge-feed descent to just over the window
-        // top, where the whole tool stands above the stock. The last
-        // plunge into the cut holds the pose.
-        let lift = p.clearance_z.min(p.top_z + LIFT_MM);
+        // State the new pose in air before descending. The first
+        // plunge ends with every intermediate tool pose above the
+        // global part; the final plunge keeps the chosen pose.
+        let lift = air_z;
         b.set_axis(Some(first.pose.a));
-        b.push(MoveKind::Rapid, above(t0, first.pose.a, p.clearance_z)?, None);
-        let low = above(t0, first.pose.a, lift)?;
+        b.push(MoveKind::Rapid, above(t0, first.pose.a, p.clearance_z, lean)?, None);
+        let low = above(t0, first.pose.a, lift, lean)?;
         if dot(sub(low, b.at()), sub(low, b.at())) > 1e-18 {
             b.push(MoveKind::Plunge, low, Some(p.plunge_feed));
         }
@@ -309,14 +317,11 @@ fn emit(b: &mut PathBuilder, piece: &[Station], lean: &Lean, p: &DeburrParams) -
             }
             b.push(MoveKind::Feed, lean.tip(&st.cr, &st.pose, st.q, sk), Some(p.feed));
         }
-        // Out along the axis the same way: the plunge feed to just
-        // over the window top, then a rapid to the clearance height.
+        // Feed until the whole tool stands above the global part,
+        // then rapid the rest of the already checked exit sweep.
         let end = b.at();
-        let low = above(end, last.pose.a, lift)?;
-        if dot(sub(low, end), sub(low, end)) > 1e-18 {
-            b.push(MoveKind::Feed, low, Some(p.plunge_feed));
-        }
-        b.push(MoveKind::Rapid, above(end, last.pose.a, p.clearance_z)?, None);
+        b.push(MoveKind::Feed, above(end, last.pose.a, lift, lean)?, Some(p.plunge_feed));
+        b.push(MoveKind::Rapid, above(end, last.pose.a, p.clearance_z, lean)?, None);
     }
     Ok(())
 }
@@ -324,14 +329,39 @@ fn emit(b: &mut PathBuilder, piece: &[Station], lean: &Lean, p: &DeburrParams) -
 /// The point on the axis line through `tip` at the clearance height:
 /// the tool enters and leaves along its own axis, which only moves it
 /// further off the chamfer plane. A tip above the clearance stays put.
-fn above(tip: Point3, a: [f64; 3], clearance_z: f64) -> Result<Point3, GenError> {
-    let d = (clearance_z - tip.z).max(0.0) / a[2];
-    let out = add(tip, scale(Point3::new(a[0], a[1], a[2]), d));
-    if out.is_finite() {
-        Ok(out)
-    } else {
-        Err(GenError::Invalid("multi-axis deburr: an axis is too flat to leave to the clearance plane".into()))
+fn above(tip: Point3, a: [f64; 3], clearance_z: f64, lean: &Lean) -> Result<Point3, GenError> {
+    deburr_clear::above(tip, a, clearance_z, 2.0 * lean.flank * lean.half.sin()).ok_or_else(|| {
+        GenError::Invalid("multi-axis deburr: an axis is too flat to leave to the clearance plane within the tool reach".into())
+    })
+}
+
+/// Trim the edge itself along its line until the lowest cone point
+/// stays above the bottom on every pass. No endpoint is lowered.
+fn clipped(st: &Station, lean: &Lean, pose: &Pose, base: &DeburrParams) -> Option<Station> {
+    let floor = deburr_clear::cone_floor(lean, pose);
+    let offset = base.sizing.pass_setbacks(st.s).map(|sk| lean.tip(&st.cr, pose, Point3::ZERO, sk).z + floor).fold(f64::INFINITY, f64::min);
+    if !offset.is_finite() {
+        return None;
     }
+    let lo = base.bottom_z - offset;
+    let mut out = Station { pose: *pose, ..*st };
+    if st.p.z.min(st.q.z) < lo {
+        if st.p.z.max(st.q.z) <= lo {
+            return None;
+        }
+        let dz = st.q.z - st.p.z;
+        let f = (lo - st.p.z) / dz;
+        if !f.is_finite() || !(0.0..=1.0).contains(&f) {
+            return None;
+        }
+        let at = add(st.p, scale(sub(st.q, st.p), f));
+        if st.p.z < lo {
+            out.p = at;
+        } else {
+            out.q = at;
+        }
+    }
+    Some(out)
 }
 
 /// The break one piece was asked to cut: a framed flat cap, the
@@ -353,16 +383,9 @@ fn declared(piece: &[Station]) -> Option<EdgeBreak> {
 }
 
 fn pair<K: Ord>(a: K, b: K) -> (K, K) {
-    if a <= b { (a, b) } else { (b, a) }
-}
-
-fn aabb(f: &Triangle) -> [f64; 6] {
-    [
-        f.a.x.min(f.b.x.min(f.c.x)),
-        f.a.y.min(f.b.y.min(f.c.y)),
-        f.a.z.min(f.b.z.min(f.c.z)),
-        f.a.x.max(f.b.x.max(f.c.x)),
-        f.a.y.max(f.b.y.max(f.c.y)),
-        f.a.z.max(f.b.z.max(f.c.z)),
-    ]
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
 }

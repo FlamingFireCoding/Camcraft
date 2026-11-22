@@ -186,3 +186,6 @@ fn a_run_ends_where_the_chamfer_plane_turns_at_a_corner() {
     }
 }
 
+
+#[path = "deburr_safety_tests.rs"]
+mod safety;

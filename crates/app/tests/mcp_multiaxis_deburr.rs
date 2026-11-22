@@ -156,3 +156,77 @@ fn multiaxis_deburr_params_round_trip_through_the_project_grammar() {
     assert!(v.get("multi_axis_deburr").is_some(), "the file tag: {v}");
     assert_eq!(params_from_json(&v).expect("reads back"), p, "{v}");
 }
+
+#[test]
+fn disabling_shank_avoid_cannot_bypass_the_mandatory_holder_collision_guard() {
+    use camcraft_app::finishing3d::{DeburrEdges, UnreachableEdges};
+    use camcraft_app::multiaxis::{Shank, multiaxis_deburr};
+    use camcraft_app::operation::{
+        Carried, Height, OpParams, OpType, multiaxis_deburr_op::kernel_params,
+    };
+    let carried = Carried {
+        feed: 400.0,
+        plunge: 100.0,
+        climb: true,
+        clearance: Height::fixed(70.0),
+        stepover: 1.0,
+        stepdown: 1.0,
+        top: Height::fixed(10.0),
+        bottom: Height::fixed(1.0),
+        retract: Height::fixed(20.0),
+        tilt: None,
+    };
+    let mut params = (OpType::MultiAxisDeburr.info().seed)(&carried);
+    let OpParams::MultiAxisDeburr {
+        shank_avoid,
+        max_tilt_deg,
+        unreachable,
+        ..
+    } = &mut params
+    else {
+        panic!("the operation has its own parameters");
+    };
+    *shank_avoid = false;
+    *max_tilt_deg = 0.0;
+    *unreachable = UnreachableEdges::Refuse;
+    let shank = Shank {
+        flute_len: 8.0,
+        shank_r: 4.0,
+        shank_len: 12.0,
+        holder_r: 8.0,
+        holder_len: 40.0,
+    };
+    let p =
+        kernel_params(&params, (70.0, 10.0, 1.0), 90.0, 6.0, shank).expect("the kernel parameters");
+    let mut facets = cube(Point3::ZERO, Point3::new(40.0, 40.0, 10.0))
+        .facets
+        .to_vec();
+    let chains = [vec![
+        Point3::new(0.0, 0.0, 10.0),
+        Point3::new(40.0, 0.0, 10.0),
+    ]];
+    let edges = DeburrEdges {
+        include: &chains,
+        exclude: &[],
+    };
+    let clear = multiaxis_deburr(&facets, &p, &edges)
+        .expect("the clear edge still cuts with the option off");
+    assert!(!clear.breaks.is_empty());
+    // This block misses the cone and the shank. Only the holder reaches it.
+    facets.extend(
+        cube(
+            Point3::new(18.0, -10.0, 35.0),
+            Point3::new(22.0, -6.0, 37.0),
+        )
+        .facets
+        .iter()
+        .copied(),
+    );
+    let err = multiaxis_deburr(&facets, &p, &edges)
+        .expect_err("the checkbox cannot allow a holder collision");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("multi-axis deburr") && msg.contains("Refuse"),
+        "{msg}"
+    );
+}

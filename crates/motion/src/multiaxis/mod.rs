@@ -33,6 +33,7 @@ pub mod deburr_axis;
 #[cfg(test)]
 mod deburr_axis_tests;
 mod deburr_pose;
+mod deburr_clear;
 mod entry_ramp;
 mod linalg;
 mod stamp;

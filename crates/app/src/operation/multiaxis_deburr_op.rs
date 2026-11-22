@@ -85,7 +85,6 @@ pub fn kernel_params(
         lead_deg,
         lag_deg,
         max_tilt_deg,
-        shank_avoid,
         ..
     } = params
     else {
@@ -113,6 +112,6 @@ pub fn kernel_params(
         lag_deg: *lag_deg,
         max_tilt_deg: *max_tilt_deg,
         tool_diameter: cone_d,
-        shank: shank_avoid.then_some(shank),
+        shank: Some(shank),
     })
 }
