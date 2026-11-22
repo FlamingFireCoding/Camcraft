@@ -1290,6 +1290,8 @@ pub(crate) fn op_streams_by(world: &World, by_post: bool) -> Result<Vec<(String,
             stock,
             stock_top_z,
             stock_bottom_z,
+            // #2769: the engine passes it only to a script that reads it.
+            stock_blank: Some(crate::posting_stock_blank::of(world, setup)),
             stock_turn_radius,
             // The scallop reading (M13.9) is a quality note: shown on
             // the op, never a WARN record - a WARN record holds the

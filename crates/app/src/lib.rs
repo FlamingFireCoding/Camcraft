@@ -64,6 +64,8 @@ pub mod path_sig;
 pub mod posting;
 // #530: the op-family door at post.
 mod posting_family;
+// #2769: a setup's stock as a controller blank.
+mod posting_stock_blank;
 /// Which spindle a lathe post turns for a section, and the door that
 /// keeps a milling operation off the work spindle (#1190).
 pub mod lathe_voice;
