@@ -4,7 +4,8 @@
 //! verdict burns that section with the outline atom: the pocket it was
 //! made for is judged clean, a smaller pocket is convicted as a gouge,
 //! and replacing the body with a rectangle of the same two sizes is
-//! refused before the burn. The record survives the
+//! refused before the burn. With legacy extent parameters, the box burns
+//! a corner that the independent stock verdict convicts. The record survives the
 //! project file, and a re-cut outline marks its burn stale.
 //!
 //! Gate map (#1152): covers app::stock_sim (simulate_document over the
@@ -164,6 +165,19 @@ fn a_rounded_pockets_faces_yield_an_electrode_whose_burn_is_judged_clean() {
     h.execute(&world, ChangeTool::new(&world, "E-F", boxed).expect("a rectangular electrode"));
     let Err(why) = GenerateOperation::new(&world, "Burn E-F") else { panic!("a box cannot certify the cavity outline") };
     assert!(why.to_string().contains("a cavity outline requires an electrode outline"), "{why}");
+
+    // The legacy extent law permits the box. The independent verdict
+    // must still convict its square corners in the rounded pocket.
+    let mut legacy = burn(&finish, SinkerPass::Finish, "F1");
+    if let OpParams::SinkerBurn(op) = &mut legacy {
+        op.cavity_outline.clear();
+    }
+    h.execute(&world, EditOperationParams::new(&world, "Burn E-F", legacy).expect("legacy extent parameters"));
+    h.execute(&world, GenerateOperation::new(&world, "Burn E-F").expect("generates"));
+    let sim = simulate_document(&world).expect("judged");
+    assert!(sim.dev.gouge_cells > 0 && sim.dev.max_gouge > 1.0, "a square corner in a round one: max gouge {}", sim.dev.max_gouge);
+    let at = sim.dev.max_gouge_at.expect("located");
+    assert!(at.x.abs() > 8.0 && at.y.abs() > 4.0, "the gouge is in a corner: {at:?}");
 }
 
 #[test]
@@ -248,7 +262,7 @@ fn an_l_cavitys_electrode_keeps_its_notch_and_gouges_nothing() {
     assert!(sim.dev.max_rest > 0.15, "the rough leaves stock: {}", sim.dev.max_rest);
     // Its finish burns the L to size. (A mitred inside corner stands
     // off 8 um further than the inset; no column centre lies in that.)
-    electrode_and_burn(&world, &mut h, &picks, "E-LF", "F1", SinkerPass::Finish);
+    let finish = electrode_and_burn(&world, &mut h, &picks, "E-LF", "F1", SinkerPass::Finish);
     let sim = simulate_document(&world).expect("judged");
     assert!(sim.dev.is_clean(), "max rest {} at {:?}, max gouge {} at {:?}", sim.dev.max_rest, sim.dev.max_rest_at, sim.dev.max_gouge, sim.dev.max_gouge_at);
     // A rectangular replacement cannot certify the L's walls.
@@ -256,6 +270,18 @@ fn an_l_cavitys_electrode_keeps_its_notch_and_gouges_nothing() {
     h.execute(&world, ChangeTool::new(&world, "E-LF", boxed).expect("a rectangular electrode"));
     let Err(why) = GenerateOperation::new(&world, "Burn E-LF") else { panic!("a box cannot certify the L outline") };
     assert!(why.to_string().contains("a cavity outline requires an electrode outline"), "{why}");
+
+    // Under the legacy extent law, the independent verdict must convict
+    // the box that burns the notch the part keeps.
+    let mut legacy = burn(&finish, SinkerPass::Finish, "F1");
+    if let OpParams::SinkerBurn(op) = &mut legacy {
+        op.cavity_outline.clear();
+    }
+    h.execute(&world, EditOperationParams::new(&world, "Burn E-LF", legacy).expect("legacy extent parameters"));
+    h.execute(&world, GenerateOperation::new(&world, "Burn E-LF").expect("generates"));
+    let sim = simulate_document(&world).expect("judged");
+    let at = sim.dev.max_gouge_at.expect("a gouge");
+    assert!(sim.dev.max_gouge > 5.0 && at.x > 0.0 && at.y > 0.0, "the box burns the notch: {} at {at:?}", sim.dev.max_gouge);
 }
 
 #[test]
