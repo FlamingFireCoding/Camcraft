@@ -8,8 +8,9 @@
 //!
 //! Contract. The shapes are in millimetres. The origin is the left end of the baseline, and
 //! `height` is the cap height of the font. Nothing is guessed: a font that cannot be read, a
-//! font with CFF outlines, a character the font does not have, and outlines that cross or
-//! touch are refused by name. The sketch that [`sketch`] returns has only closed chains, each
+//! font with CFF outlines, a character the font does not have, outlines that cross or touch,
+//! and a nested outline that runs in the same direction as the one around it (nonzero fill
+//! would make it filled, not a hole) are refused by name. The sketch that [`sketch`] returns has only closed chains, each
 //! with a clear nesting, or the call fails. This module has no file I/O and no application
 //! state.
 
@@ -82,6 +83,15 @@ pub enum OutlineTextError {
          or pick a font whose letters do not overlap"
     )]
     Shapes(String),
+    /// An outline inside another runs in the same direction as it. The font fills by the
+    /// nonzero winding rule, so the inner region is filled, not a hole: a nesting reading of
+    /// the shapes would cut the wrong region.
+    #[error(
+        "the outline near ({x:.3}, {y:.3}) mm is inside another outline that runs in the same \
+         direction, so the font fills it instead of making a hole: the shapes are not clear. \
+         Pick a different font"
+    )]
+    Winding { x: f64, y: f64 },
 }
 
 /// What to write: the font file's bytes, the string, the cap height in mm, and the extra gap
@@ -258,5 +268,45 @@ pub fn sketch(spec: &OutlineSpec) -> Result<SketchData, OutlineTextError> {
     if let Some(error) = chains.closed.iter().find_map(|chain| chain.nesting.as_ref().err()) {
         return Err(OutlineTextError::Shapes(error.to_string()));
     }
+    check_winding(&lines)?;
     Ok(data)
+}
+
+/// The font fills by the nonzero winding rule; the sketch reads holes by nesting (even-odd).
+/// The two agree only when each outline runs opposite to the innermost outline around it.
+/// Call this after the outlines are known not to cross or touch, so one vertex of an outline
+/// tells if another outline contains it.
+fn check_winding(lines: &[Vec<Point2>]) -> Result<(), OutlineTextError> {
+    let areas: Vec<f64> = lines.iter().map(|l| signed_area(l)).collect();
+    for (i, line) in lines.iter().enumerate() {
+        let Some(&p) = line.first() else { continue };
+        let parent = lines
+            .iter()
+            .enumerate()
+            .filter(|&(j, other)| j != i && areas[j].abs() > areas[i].abs() && contains(other, p))
+            .min_by(|a, b| areas[a.0].abs().total_cmp(&areas[b.0].abs()));
+        if let Some((j, _)) = parent
+            && areas[j].signum() == areas[i].signum()
+        {
+            return Err(OutlineTextError::Winding { x: p.x, y: p.y });
+        }
+    }
+    Ok(())
+}
+
+/// The shoelace area of a closed polyline: positive counterclockwise.
+fn signed_area(line: &[Point2]) -> f64 {
+    0.5 * line.windows(2).map(|w| w[0].x * w[1].y - w[1].x * w[0].y).sum::<f64>()
+}
+
+/// Is `p` inside the closed polyline `line` (crossing count of a ray to +x)?
+fn contains(line: &[Point2], p: Point2) -> bool {
+    let mut inside = false;
+    for w in line.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y) {
+            inside = !inside;
+        }
+    }
+    inside
 }

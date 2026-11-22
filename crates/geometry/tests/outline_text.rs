@@ -205,6 +205,38 @@ fn composite_offsets_use_the_component_transform() {
     );
 }
 
+/// Write the x coordinates of the eight points of `O` (outer box, then inner box) into the
+/// font as deltas. The y coordinates stay: each box keeps its corners, in a new direction.
+fn set_o_xs(font: &mut [u8], xs: [i16; 8]) {
+    let loca = table_offset(font, b"loca");
+    let glyph = u32::from_be_bytes(font[loca + 16..loca + 20].try_into().unwrap()) as usize;
+    // Header 10, two contour ends 4, instruction length 2, eight flags 8.
+    let at = table_offset(font, b"glyf") + glyph + 24;
+    let mut last = 0_i16;
+    for (k, x) in xs.into_iter().enumerate() {
+        font[at + 2 * k..at + 2 * k + 2].copy_from_slice(&(x - last).to_be_bytes());
+        last = x;
+    }
+}
+
+#[test]
+fn nested_outlines_follow_the_nonzero_winding_fill() {
+    let mut font = sample_font();
+    // The unchanged O: the box runs clockwise and its hole counterclockwise.
+    set_o_xs(&mut font, [0, 0, 600, 600, 450, 450, 150, 150]);
+    assert_eq!(roles(&font, "O"), (1, 1));
+    // The two directions swapped are still a box with a hole under nonzero fill.
+    set_o_xs(&mut font, [600, 600, 0, 0, 150, 150, 450, 450]);
+    assert_eq!(roles(&font, "O"), (1, 1));
+    // The inner box in the same direction as the outer one: nonzero fill makes it filled.
+    set_o_xs(&mut font, [0, 0, 600, 600, 150, 150, 450, 450]);
+    let err = sketch(&spec(&font, "O")).expect_err("a same-direction inner box is not a hole");
+    assert!(matches!(err, OutlineTextError::Winding { .. }), "{err}");
+    assert!(err.to_string().contains("runs in the same direction"), "{err}");
+    // Side by side, two outlines in the same direction stay two shapes.
+    assert_eq!(roles(&sample_font(), "II"), (2, 0));
+}
+
 #[test]
 fn declared_table_lengths_bound_reads_with_trailing_bytes() {
     let font = sample_font();
