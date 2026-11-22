@@ -3,23 +3,27 @@
 //! maintainer's heights (clearance top of stock +10, top of stock +0,
 //! bottom of the selection +1.5, stepdown 10, no hop below clearance)
 //! cut each level from the core of the band outward: the first ring is a
-//! full slot in the stock. Outside starts every level at the stock edge
-//! and ends it on the part wall. The option rides the undoable
+//! full slot in the stock. Outside starts every level at the stock edge,
+//! cuts no move with uncut stock on both flanks along the whole level,
+//! and ends it on the part wall. Inside names its part-wall start on the
+//! toolpath. The option rides the undoable
 //! EditOperationParams through MCP `edit_operation` and the project
 //! file, and Auto is absent from both. The #3319 law rides along: no
 //! lateral rapid below the clearance plane.
 //!
 //! Gate map: covers app::operation (generate, params digest), app::mcp
 //! (edit_operation, undo), app::project (params, params_impl),
-//! motion::machining2d (pass_start, waterscan), sim::verify.
+//! motion::machining2d (pass_start, level_rings, level_order), sim::verify.
 //! Provenance: our own regression of the maintainer's report; no vendor
 //! material consulted.
 
 mod area_support;
 mod common;
+#[path = "offset_pass_start/flanks.rs"]
+mod flanks;
 
 use area_support::*;
-use camcraft_app::machining2d::PassStart;
+use camcraft_app::machining2d::{PASS_START_NOTE, PassStart};
 use camcraft_app::mcp::Server;
 use camcraft_app::operation::HeightReference;
 use serde_json::{Value, json};
@@ -158,6 +162,7 @@ fn to_part(world: &World, name: &str, pt: Point3) -> f64 {
 /// below the clearance plane, and the verifier says no rapid crosses
 /// stock.
 #[test]
+#[ignore = "heavy lane (#3316 fig8 Outside): one generation and its verify run past the 60 s debug budget (about 170 s) - run with --release -- --ignored"]
 fn fig8_outside_offset_starts_each_level_at_the_stock_edge() {
     let (world, mut h, name, stock) = fig8_world();
     let (path, warnings) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Outside);
@@ -172,6 +177,42 @@ fn fig8_outside_offset_starts_each_level_at_the_stock_edge() {
     let clear_z = stock.1.z + CLEARANCE;
     assert_eq!(lateral_rapids_below(&path, clear_z), vec![], "#3319: a lateral rapid below Z {clear_z}");
     assert!(!warnings.iter().any(|w| w.starts_with("RapidInStock")), "#3319: a rapid through stock: {warnings:?}");
+}
+
+/// The part's outline and the material of the band: the stock box less
+/// the part, in XY.
+fn band_material(world: &World, name: &str, (lo, hi): (Point3, Point3)) -> camcraft_app::geo2d::Region {
+    use camcraft_app::geo2d::{Loop, Point2, Region};
+    let e = model::find_by_name(world, name).expect("part");
+    let facets = model::world_facets(world, &e).expect("facets");
+    let part = camcraft_app::geometry::slice::project(&facets, 64).expect("part outline");
+    let pts = vec![Point2::new(lo.x, lo.y), Point2::new(hi.x, lo.y), Point2::new(hi.x, hi.y), Point2::new(lo.x, hi.y)];
+    let stock = Region::new(vec![Loop::new(pts).expect("box")]).expect("stock");
+    stock.difference(&part).expect("band")
+}
+
+/// #3316 second read: along each WHOLE level (not only its ends), no
+/// Outside cut has uncut stock on both flanks - no cut takes the full
+/// tool width, where the band at the lobe tips splits the ring.
+#[test]
+#[ignore = "heavy lane (#3316 fig8 Outside): one generation and its verify run past the 60 s debug budget (about 170 s) - run with --release -- --ignored"]
+fn fig8_outside_offset_cuts_no_move_at_full_width() {
+    let (world, mut h, name, stock) = fig8_world();
+    let (path, _) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Outside);
+    let full = flanks::full_width_points(&path, &band_material(&world, &name, stock), R8);
+    assert!(full.is_empty(), "{} full-width cut point(s), the first at {:?}", full.len(), full.first());
+    let named: Vec<&String> = path.notes.iter().filter(|n| n.starts_with(PASS_START_NOTE)).collect();
+    assert!(named.is_empty(), "the band starts in air, so no pass start warning: {named:?}");
+}
+
+/// #3316: Inside on the Outside band starts each level on the part wall,
+/// a cut of the full tool width - the toolpath names that case.
+#[test]
+fn fig8_inside_offset_names_its_part_wall_start() {
+    let (world, mut h, name, stock) = fig8_world();
+    let (path, _) = offset_op(&world, &mut h, &name, stock.0.z, PassStart::Inside);
+    let named: Vec<&String> = path.notes.iter().filter(|n| n.starts_with(PASS_START_NOTE)).collect();
+    assert!(named.iter().any(|n| n.contains("the part wall")), "{named:?}");
 }
 
 /// #3319 guard on Auto, the maintainer's own setting: the order is the

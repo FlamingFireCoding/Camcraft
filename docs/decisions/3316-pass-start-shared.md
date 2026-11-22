@@ -19,27 +19,72 @@
   its pane passes `Some(&mut pass_start)`.
 - The digest writes the value only off Auto, so every earlier operation
   keeps its cache stamp.
-- The ring law (`PassStart::rank`), read by `waterline_passes`:
-  - Auto: the core first (`kmax - k`). This is the same stable sort as
-    the old `Reverse(k)`, so Auto is byte-identical.
-  - Outside: the loops of the outer boundary family (counter-clockwise)
-    from the boundary in, then the hole families (clockwise) from the core
-    back to their wall. On an Outside containment band the outer boundary
-    is the stock reach and the hole is the part, so the level starts with
-    the tool outside the stock and ends on the part wall. Each ring has
-    cut air on one side: no ring is a full slot.
-  - Inside: the mirror (holes from the wall out, then the outer family
-    from the core back).
+- The ring law (review fix after the second read, `level_rings.rs` and
+  `level_order.rs` in `machining2d`):
+  - Auto: the planner's old core-first order (`waterline_passes`),
+    byte-identical. Inside on an area with no hole is Auto too.
+  - Outside: rings are level curves of the distance from the outer edge
+    only. Ring 0 is the stretch of the area's boundary on its outer edge.
+    Ring j is the outer edge (holes filled) eroded by j stepovers and
+    clipped to the cutter-centre area, as OPEN pieces
+    (`Region::clip_ring`, new in `geo2d/clip_line.rs`). The walls (the
+    holes and the "Do not touch" keep-outs) are cut last, with the stock
+    to leave. Inside is the mirror: ring j is the holes grown by j
+    stepovers, the outer wall last.
+  - Each connected piece of the area is cut on its own, ring by ring, the
+    nearest piece next. Each piece is walked with the uncut side on the
+    right for climb.
+  - A piece joins the pass before it only by a chord that stays in the
+    area, crosses no planned cut and runs through cut material all along
+    (each sample inside the swath of a walk already cut, 0.9 tool radii
+    from it). Else the pass ends, and the next pass starts on a vertex of
+    a walk already cut, with a lead-in chord of the same law to the
+    piece: its re-entry plunges into a cleared column, not into solid.
+    Where no lead-in is proved (a stepover of 0.9 radii or more), the
+    piece re-enters by the user's entry (`entry_restart`, #2265).
+  - Between passes, a keep-down pass link must also run through cut
+    material (`through_cut`, columns cleared by
+    `plunge_law::column_cleared`), or it lifts to the retract or
+    clearance plane by the existing rules.
+  - The end of a ring piece on the area's boundary is inserted as a
+    vertex of the boundary walk (ring 0 or a wall), and the walls are
+    clipped from the same walk as ring 0: the walks meet at shared
+    points, so the verifier's crossing law reads touches, not crossings.
+  - Cost on fig8 (debug, motion only): Auto 9.5 s, 24768 moves, 18
+    lateral rapids; Outside 26.6 s, 25986 moves, 93 lateral rapids, 15 %
+    more feed length (the lead-ins and the lifts between pieces). The
+    first version without lead-ins took 290 s: each piece re-entered by
+    a ramp along the pass.
+  - What the tests prove: on the second read's band (stock 84 x 24,
+    reach 100 x 40, a round part of radius 15, tool radius 4, step 4) the
+    widest cut along every level is 4.87 mm (the old order: 7.97 mm, a
+    full-width cut along a part-side arc). With a "Do not touch" pin:
+    4.87 mm. Inside from an open bore: 4.52 mm. No two planar feeds
+    cross (Outside and Inside, steps 4 and 3). The bound pinned is one
+    step plus a quarter radius (5 mm), no overcut, no interior leftover.
+    On fig8 with EM-0800-4FL no Outside cut has uncut stock on both
+    flanks (the old order: 8697 such points). The two fig8 Outside
+    generation tests run in the app heavy lane (about 170 s each in
+    debug with the verifier).
+  - What they do not prove: no claim that a ring is never wider than one
+    stepover in general. A cut takes the full tool width where the first
+    ring runs along a wall (Outside on a closed pocket, Inside on an
+    Outside band, Inside round an island), or where the area is narrower
+    than the tool plus one stepover, or where a wall hides the start
+    side. Each case writes a "Pass start" note on the toolpath, and the
+    op page shows it as a warning line. The stock footprint (in the
+    area's frame) tells a start ring in open air from one on a wall.
 - Only 2D Offset reads it in this PR. The motion entry points are
-  `pocket_started` and `pocket_avoid_started`; the old
-  `pocket_entered_with_relief` and `pocket_avoid_with_relief` call them
-  with Auto. `plan_passes` calls `plan_passes_from` with Auto, so the 3-D
-  pocket, the HSM fallback and rest machining are not changed.
+  `pocket_started_on` and `pocket_avoid_started_on` (with the stock);
+  `pocket_started` / `pocket_avoid_started` take a bare `PassStart`, and
+  the old `pocket_entered_with_relief` and `pocket_avoid_with_relief`
+  call them with Auto. `plan_passes` is unchanged, so the 3-D pocket, the
+  HSM fallback and rest machining are not changed.
 
 **Room for the #1448 start point.** The start point (where on its ring a
 pass starts) and the exit point go beside `pass_start` as their own
-fields with their own key. The planner input is the pair: the ring rank
-chooses the order, the start point rotates each loop to its entry. The
+fields with their own key. The planner input is the pair: the level
+curves choose the order, the start point picks where a whole ring starts. The
 same entry functions take the new input when #1448 lands.
 
 **Why.** The maintainer asked for one parameter with one shape for every
@@ -58,6 +103,20 @@ and MCP door, so the GUI and agents use the same undoable path.
 - A pure distance-from-boundary rank. It interleaves the two families
   where the band width changes, and then a ring can have uncut stock on
   both sides.
+- The first fix of this PR, a rank of whole loops (`PassStart::rank`:
+  counter-clockwise loops before clockwise loops). The second read showed
+  that a ring that splits at a narrow place gives closed loops with
+  stock-side and part-side arcs; the part-side arcs then cut the full
+  tool width (7.97 mm on the meter). No order of whole loops can cut one
+  loop's two sides at different times.
+- Clipper2's open-subject clip (`add_open_subject`) for the level curves.
+  No code in the repository used it, its output direction and the join
+  of a ring's wrap need repair afterwards, and an open-path defect in the
+  port would be a gouge risk. The own clip splits each segment at every
+  boundary crossing and keeps a piece by the parity of its midpoint: the
+  direction is kept by construction and every point lies on the input.
+- A warning from the containment alone. An enclosed pocket under an
+  Outside containment is closed by walls, so the stock footprint decides.
 
 **Cost to change later.** Low. The type and the key are shared already.
 A new kind adds its field, its row call and its planner read.

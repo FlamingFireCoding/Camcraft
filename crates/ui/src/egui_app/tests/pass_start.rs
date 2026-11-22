@@ -71,3 +71,14 @@ fn the_adaptive_twin_has_no_pass_start_row_yet() {
     let harness = passes_of(OpType::Adaptive2D);
     assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 0, "2D Adaptive gets the row in its own issue");
 }
+
+/// #3316: a pass-start warning on the toolpath is a warning line of the
+/// op page's status, word for word.
+#[test]
+fn a_pass_start_warning_is_a_status_line() {
+    let side = camcraft_app::machining2d::StartSide::from(PassStart::Outside);
+    let note = side.wall_first_note().unwrap_or_default();
+    let lines = super::super::approach_page::entry_status_lines(&[note.clone(), "a quiet note".to_owned()]);
+    assert_eq!(lines, vec![format!("warning: {note}")]);
+    assert!(note.starts_with(camcraft_app::machining2d::PASS_START_NOTE), "{note}");
+}

@@ -13,11 +13,12 @@ use super::corner_relief::{CornerRelief, ResolvedRelief, plan_corner_reliefs};
 use super::face::GenError;
 use super::arcs::ARC_FIT_TOL;
 use super::fillet_tally::corner_arc_radius;
-use super::pass_start::PassStart;
+use super::level_rings::ring_plan;
+use super::pass_start::{PassStart, StartSide};
 use super::pocket_emit::{PocketWalks, emit_pocket_passes};
 use super::pocket_hsm::adaptive_passes;
 use super::pocket_zigzag::rest_passes;
-pub(crate) use super::pocket_plan::{plan_passes, plan_passes_from};
+pub(crate) use super::pocket_plan::plan_passes;
 use super::predrilled::PreHole;
 pub use super::pocket_strategy::PocketStrategy;
 
@@ -235,6 +236,18 @@ pub fn pocket_started(
     relief: &CornerRelief,
     start: PassStart,
 ) -> Result<Toolpath, GenError> {
+    pocket_started_on(region, p, holes, relief, &StartSide::from(start))
+}
+
+/// [`pocket_started`] with the stock known: Inside and Outside walk the
+/// level curves of one side (`level_rings`), each full-width cut named.
+pub fn pocket_started_on(
+    region: &Region,
+    p: &PocketParams,
+    holes: &[PreHole],
+    relief: &CornerRelief,
+    side: &StartSide,
+) -> Result<Toolpath, GenError> {
     p.validate()?;
     relief.validate()?;
     if region.is_empty() {
@@ -247,7 +260,7 @@ pub fn pocket_started(
         return Err(GenError::Invalid("pocket is narrower than the tool".into()));
     }
     let plan = plan_corner_reliefs(region, &center, off, relief)?;
-    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, start)
+    pocket_over_with_relief(region, &center, p, Vec::new(), false, holes, &plan.reliefs, side)
 }
 
 /// Erode `region` by `erode` and drop sub-tolerance Clipper arc-chord
@@ -299,7 +312,7 @@ pub(super) fn pocket_over_with_relief(
     hold_crossings: bool,
     holes: &[PreHole],
     corner_reliefs: &[ResolvedRelief],
-    start: PassStart,
+    side: &StartSide,
 ) -> Result<Toolpath, GenError> {
     // Auto commits to a shape here, from the region's own outline - the
     // outermost loop (largest area; holes and islands never decide the
@@ -326,7 +339,11 @@ pub(super) fn pocket_over_with_relief(
             notes.into_iter().for_each(|n| b.note(n));
             (passes, s, room, joins)
         }
-        s => (plan_passes_from(center, p.tiling_step(), p.climb, s, start)?, s, None, Vec::new()),
+        s => {
+            let (passes, notes) = ring_plan(region, center, p, s, side)?;
+            notes.into_iter().for_each(|n| b.note(n));
+            (passes, s, None, Vec::new())
+        }
     };
     // #3021: rows alone leave a cusp between row ends on every wall and
     // island; each Zigzag pocket closes with the area's boundary rings.
@@ -350,6 +367,7 @@ pub(super) fn pocket_over_with_relief(
             hold_crossings,
             holes,
             corner_reliefs,
+            cleared_links: side.start != PassStart::Auto,
         },
     )
 }
