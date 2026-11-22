@@ -70,6 +70,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 prop_row(ui, "Stepover (Y spacing)", |ui| num(ui, u, stepover));
                 // M11.1 A: row ends turn on one arc where it is legal;
                 // the status line names every turn left sharp.
+                // #3356: Face rows run edge to edge - no ring order.
+                super::pass_start_row::no_pass_order_row(ui, "face", super::pass_start_row::FACE_NO_PASS_ORDER);
                 check_row(ui, "Arc turns at row ends", blend_turns);
                 // M13.11: how a row meets a hole in the faced region.
                 // Lift is safe for a bore and a boss alike; cutting
