@@ -168,6 +168,10 @@ pub enum OpParams {
         links: Links,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// #1864: optional per-chain side and direction overrides for DXF
+        /// sketch contours; empty by default so legacy operations stamp
+        /// identically.
+        chain_overrides: Vec<super::sel::ChainOverride>,
     },
     Pocket {
         stepover: f64,
@@ -315,6 +319,28 @@ pub enum OpParams {
         feed: f64,
         plunge_feed: f64,
         climb: bool,
+        /// 3+2 index; see [`OpParams::Face`]'s field.
+        tilt: Option<Tilt>,
+    },
+    /// V-carve (#1443): a V-bit cuts the picked closed region with its
+    /// tip on the medial axis; the depth at each point is the depth at
+    /// which the cone touches the walls (see
+    /// [`crate::machining2d::v_carve`]). `top_z` is the start depth and
+    /// `top_z - bottom_z` the maximum depth. The cone's angle is the
+    /// tool's, never a second number here.
+    VCarve {
+        clearance_z: Height,
+        /// Hop plane between strokes; None hops to clearance.
+        retract_z: Option<Height>,
+        top_z: Height,
+        bottom_z: Height,
+        stepdown: f64,
+        feed: f64,
+        plunge_feed: f64,
+        /// Clear the floor the cone cannot reach at the maximum depth.
+        flat_clear: bool,
+        /// The distance between two floor passes, mm.
+        flat_stepover: f64,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
     },
@@ -649,9 +675,11 @@ pub enum OpParams {
         gap_link: finishing3d::GapLink,
     },
     /// Deburr (M2.5 E B): the cone-ruled edge break in 3D. The ONE
-    /// authored number is `width` - the break's width in the edge's
-    /// own plane - and the tip's depth follows from the tool's cone:
-    /// `drop = width / tan(half-angle)`, stated once in
+    /// authored number is `width` - the chamfer's chord across the
+    /// edge, `w = 2 s sin(theta / 2)` on a wedge `theta` (#1890), or
+    /// the depth under Constant Depth - and the tip's depth follows
+    /// from the edge's setback `s` and the tool's cone:
+    /// `drop = s / tan(half-angle)`, stated once in
     /// [`crate::finishing3d::DeburrParams::drop`] so the door, the
     /// pane and the path cannot disagree (chamfer's derived-floor
     /// grammar, read on a real dihedral). No `bottom_z` to author
@@ -662,8 +690,9 @@ pub enum OpParams {
     /// the kernel's own: every run starts and ends at `clearance_z`
     /// (no retract field exists to author, and none is needed).
     Deburr {
-        /// Break width at the edge plane, mm; > 0 at the door, and
-        /// small enough for the tool's flute is the OTHER door.
+        /// Break width, mm: the chamfer's chord across the edge on
+        /// each wedge angle (#1890); > 0 at the door, and small enough
+        /// for the tool's flute is the OTHER door.
         width: f64,
         clearance_z: Height,
         /// Tip ceiling of the ride: edges whose TIP stands above it
@@ -689,6 +718,9 @@ pub enum OpParams {
         /// #1889: what an edge out of the cone's reach does - skipped
         /// with a note (the default), or the operation is refused.
         unreachable: finishing3d::UnreachableEdges,
+        /// #1890: the break mode (Constant Width or Constant Depth and
+        /// its depth), the profile, and the passes.
+        sizing: finishing3d::DeburrBreak,
     },
     /// Simultaneous 5-axis level finishing (M5.1 stage C): the waterline
     /// ring ladder a [`Self::Finish3D`] Waterline cuts, with a tool-axis
@@ -1334,6 +1366,10 @@ pub enum OpParams {
     /// move along an axis that burns the faced wall out by a stated
     /// amount (see [`crate::sinker_side`]).
     SinkerSideBurn(super::sinker::SinkerSideBurnOp),
+    /// Slot undercut (#1444): radial passes of an undercut cutter along
+    /// a straight or circular slot at one depth, entered and left
+    /// sideways (see [`crate::machining2d::undercut`]).
+    SlotUndercut(super::undercut::SlotUndercutOp),
 }
 
 impl OpParams {
@@ -1346,6 +1382,7 @@ impl OpParams {
             OpParams::Adaptive2D { .. } => OpType::Adaptive2D,
             OpParams::Offset2D { .. } => OpType::Offset2D,
             OpParams::Engrave { .. } => OpType::Engrave,
+            OpParams::VCarve { .. } => OpType::VCarve,
             OpParams::Chamfer2D { .. } => OpType::Chamfer2D,
             OpParams::Circular { .. } => OpType::Circular,
             OpParams::Slot { .. } => OpType::Slot,
@@ -1383,6 +1420,7 @@ impl OpParams {
             OpParams::WireContour(_) => OpType::WireContour,
             OpParams::SinkerBurn(_) => OpType::SinkerBurn,
             OpParams::SinkerSideBurn(_) => OpType::SinkerSideBurn,
+            OpParams::SlotUndercut(_) => OpType::SlotUndercut,
             OpParams::TrochoidalSlot { .. } => OpType::TrochoidalSlot,
         }
     }
@@ -1399,6 +1437,7 @@ impl OpParams {
             | OpParams::Pocket { tilt, .. }
             | OpParams::Adaptive2D { tilt, .. }
             | OpParams::Offset2D { tilt, .. }
+            | OpParams::VCarve { tilt, .. }
             // The M2.4 B trio are planar rides like the five above -
             // the index reads their plane the same way.
             | OpParams::Engrave { tilt, .. }
@@ -1415,6 +1454,8 @@ impl OpParams {
             OpParams::WireContour(_) => None,
             // The electrode burns straight down Z (#541, #545).
             OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+            // The undercut's Z law is upright (#1444): no 3+2 index.
+            OpParams::SlotUndercut(_) => None,
             // The 5-axis kinds (M5.1 C) are the third answer, not the
             // second: the PART stands still and the TOOL AXIS moves -
             // a 3+2 index inside them would command the machine to
@@ -1489,11 +1530,13 @@ impl OpParams {
             // the work; its travel plane is the workpiece's top.
             OpParams::WireContour(p) => p.top_z,
             OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => p.clearance_z,
+            OpParams::SlotUndercut(p) => p.clearance_z,
             OpParams::Face { clearance_z, .. }
             | OpParams::Contour { clearance_z, .. }
             | OpParams::Pocket { clearance_z, .. }
             | OpParams::Adaptive2D { clearance_z, .. }
             | OpParams::Offset2D { clearance_z, .. }
+            | OpParams::VCarve { clearance_z, .. }
             | OpParams::Engrave { clearance_z, .. }
             | OpParams::Chamfer2D { clearance_z, .. }
             | OpParams::Circular { clearance_z, .. }
@@ -1548,11 +1591,13 @@ impl OpParams {
             OpParams::WireContour(p) => p.top_z,
             // The electrode enters at the work top (#541).
             OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::sinker::SinkerSideBurnOp { burn: p, .. }) => p.top_z,
+            OpParams::SlotUndercut(p) => p.top_z,
             OpParams::Face { top_z, cut_z, .. } => top_z.unwrap_or(*cut_z),
             OpParams::Contour { top_z, .. }
             | OpParams::Pocket { top_z, .. }
             | OpParams::Adaptive2D { top_z, .. }
             | OpParams::Offset2D { top_z, .. }
+            | OpParams::VCarve { top_z, .. }
             | OpParams::Engrave { top_z, .. }
             | OpParams::Chamfer2D { top_z, .. }
             | OpParams::Circular { top_z, .. }
@@ -1632,6 +1677,12 @@ impl OpParams {
                 f(p.top_z);
                 f(p.floor_z);
             }
+            OpParams::SlotUndercut(p) => {
+                f(p.clearance_z);
+                opt(&p.retract_z, &mut f);
+                f(p.top_z);
+                f(p.bottom_z);
+            }
             OpParams::Face { clearance_z, cut_z, top_z, .. } => {
                 f(*clearance_z);
                 f(*cut_z);
@@ -1666,6 +1717,7 @@ impl OpParams {
                 f(*bottom_z);
             }
             OpParams::Trace { clearance_z, retract_z, top_z, bottom_z, .. }
+            | OpParams::VCarve { clearance_z, retract_z, top_z, bottom_z, .. }
             // Engrave is the trace's twin (M2.4 B): the same four.
             | OpParams::Engrave { clearance_z, retract_z, top_z, bottom_z, .. } => {
                 f(*clearance_z);

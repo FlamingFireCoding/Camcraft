@@ -15,11 +15,10 @@
 use egui::{RichText, Ui, Vec2};
 
 use camcraft_app::model;
-use camcraft_app::stock::StockShape;
 
 use crate::state::{CommandKind, ErrorScope, State};
 
-use super::fields::{combo_owned, num, num_plain};
+use super::fields::{combo_owned, num};
 use super::layout::{group, prop_grid};
 
 /// A button row's height (the WCS page's).
@@ -114,10 +113,13 @@ fn source_fields(ui: &mut Ui, state: &mut State) {
     prop_grid(ui, "stock_source_grid", |ui| {
         ui.label("Source");
         let mut idx = models.iter().position(|m| *m == state.stock_ui.source).unwrap_or(models.len() - 1);
-        let before = idx;
         combo_owned(ui, "stk_src", &mut idx, &models);
-        if idx != before {
-            state.stock_ui.source = models[idx.min(models.len() - 1)].clone();
+        // #3261: the draft holds the part the picker shows, also when the
+        // user accepts the default (one model: the index never changes).
+        if let Some(shown) = models.get(idx).or(models.last())
+            && state.stock_ui.source != *shown
+        {
+            state.stock_ui.source = shown.clone();
         }
         ui.end_row();
     });
@@ -132,10 +134,8 @@ fn position_fields(ui: &mut Ui, state: &mut State, u: camcraft_app::units::Unit)
             num(ui, u, v);
             ui.end_row();
         }
-        ui.label("Rotation (yaw deg)");
-        num_plain(ui, &mut s.yaw_deg);
-        ui.end_row();
     });
+    super::stock_axis_rows::axis_rows(ui, &mut state.stock_ui);
 }
 
 /// The fit allowance: one margin, or (a box only) one per side.
@@ -197,12 +197,12 @@ fn actions(ui: &mut Ui, state: &mut State) {
 
 fn apply(state: &mut State) {
     let s = &state.stock_ui;
-    let shape = match s.shape {
-        1 => StockShape::Cylinder { diameter: s.diameter, height: s.height },
-        2 => StockShape::FromModel { source: s.source.clone() },
-        _ => StockShape::Box { dx: s.dx, dy: s.dy, dz: s.dz },
+    // #2576: the whole turn from the axis choice, never only a yaw.
+    let Some(rot) = s.draft_rot() else {
+        state.refuse(ErrorScope::Setup, String::from("stock not set: a turn angle is not a number"));
+        return;
     };
-    let cmd = CommandKind::SetStock { shape, pos: [s.x, s.y, s.z], yaw_deg: s.yaw_deg };
+    let cmd = CommandKind::SetStockPose { shape: s.draft_shape(), pos: [s.x, s.y, s.z], rot };
     state.pending.push_back(cmd);
 }
 
