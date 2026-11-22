@@ -47,3 +47,13 @@ example a spiral facing), it adds the field with the shared type and
 key, passes `Some(&mut pass_start)` to `pass_start_row`, and removes the
 refusal in `mcp/edit.rs`. The start point and exit point of #1448 go
 beside the row in the same way.
+
+**Review repair, 2026-11-22.** The latest review of PR #3387 found an
+inherited slotting defect and a UI validation failure. Merge corrected
+parent `9939a6238` and upstream main `68d645261` to address these findings.
+The parent replaces whole-loop ranking with level curves from one side.
+Its pins measure engagement along the whole level, and its claims state
+where full-width cuts can still occur. Upstream main contains the fix for
+the post dialog overlap. Use these existing corrections to keep the repair
+within the latest review. Do not introduce another planner. Verification
+results are recorded on the PR after the checks run.
