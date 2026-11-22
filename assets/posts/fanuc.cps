@@ -45,6 +45,8 @@ declaredOptions = {
   writeMachine: { type: "boolean", title: "Write machine header", group: "Header & comments", description: "Emit a comment naming the machine in the header", default: false },
   writeToolList: { type: "boolean", title: "Write tool list", group: "Header & comments", description: "Emit a summary comment per tool at program start", default: false },
   writeVersion: { type: "boolean", title: "Write post version", group: "Header & comments", description: "Emit post version metadata comment in the header", default: false },
+  // #2769: off by default - a control without Manual Guide i can alarm on G1902.
+  manualGuideBlank: { type: "boolean", title: "Manual Guide i blank (G1902 / G1900)", group: "Header & comments", description: "Write the setup's stock as a Manual Guide i blank block before the first operation - only for a control with Manual Guide i", default: false },
   optionalStop: { type: "boolean", title: "Optional stop (M1)", group: "Behavior", description: "Write M1 before tool changes after the first operation", default: false },
   safeRetract: {
     type: "enum",
@@ -569,6 +571,50 @@ function unitBlock() {
   block([inch ? "G20" : "G21"]);
 }
 
+// #2769: the setup's stock as a Manual Guide i blank block, on the user's
+// ask (manualGuideBlank). Fanuc's public MANUAL GUIDE i operator's manual
+// (B-63874EN), behaviour only: G1902 B D H is the block's X / Y / Z size
+// and I J K the work origin's X / Y / Z distance from the block's minimum
+// corner; G1900 D L K is a round bar along Z (diameter, length, the work
+// origin's Z distance from the bar's lower end) with its axis on the work
+// origin. Written once, after G20 / G21 and before the first operation's
+// G90 / G54 and tool change. A stock no block describes (PARAM StockShape)
+// gets a comment that says why, never a block that draws another blank.
+// An inverted Z never reaches here: the engine refuses it.
+var mgiDone = false;
+function mgiNum(v) { return has(v) ? Number(v) : NaN; }
+function manualGuideBlank() {
+  if (mgiDone || !optBool("manualGuideBlank", false)) return;
+  mgiDone = true;
+  var p = typeof properties !== "undefined" ? properties : {};
+  var shape = String(p.StockShape || "");
+  var lo = [mgiNum(p.StockXYLeft), mgiNum(p.StockXYFront), mgiNum(p.StockShapeBottom)];
+  var hi = [mgiNum(p.StockXYRight), mgiNum(p.StockXYBack), mgiNum(p.StockZTop)];
+  var dia = mgiNum(p.StockShapeDiameter);
+  var why = { "": "NO STOCK SHAPE STATED", "from-model": "STOCK FROM A MODEL",
+    "from-previous": "STOCK FROM THE SETUP BEFORE", rotated: "STOCK OFF THE MACHINE AXES",
+    "cylinder-x": "BAR ALONG X - NOT SUPPORTED YET", "cylinder-y": "BAR ALONG Y" }[shape] || "";
+  if (!why && shape !== "box" && shape !== "cylinder-z") why = "UNKNOWN STOCK SHAPE " + clean(shape).toUpperCase();
+  for (var i = 0; i < 3 && !why; i++) {
+    if (!(isFinite(lo[i]) && isFinite(hi[i]))) why = "STOCK BOUNDS NOT STATED";
+    else if (!(hi[i] - lo[i] > 0)) why = "STOCK HAS NO SIZE";
+  }
+  if (!why && has(wcsYaw) && Math.abs(wcsYaw) > 1e-6) why = "WCS ROTATED ABOUT Z";
+  if (!why && shape === "cylinder-z") {
+    if (!(dia > 0)) why = "BAR DIAMETER NOT STATED";
+    else if (Math.abs((lo[0] + hi[0]) / 2 - orgX) > 0.001 || Math.abs((lo[1] + hi[1]) / 2 - orgY) > 0.001) {
+      why = "BAR AXIS NOT ON THE WORK ORIGIN";
+    }
+  }
+  if (why) { note("NO BLANK BLOCK - " + why); return; }
+  if (shape === "box") {
+    block(["G1902", "B" + fu(hi[0] - lo[0]), "D" + fu(hi[1] - lo[1]), "H" + fu(hi[2] - lo[2]),
+      "I" + fu(orgX - lo[0]), "J" + fu(orgY - lo[1]), "K" + fu(orgZ - lo[2])]);
+  } else {
+    block(["G1900", "D" + fu(dia), "L" + fu(hi[2] - lo[2]), "K" + fu(orgZ - lo[2])]);
+  }
+}
+
 function onOpen() {
   inch = typeof postOptions !== "undefined" && postOptions.Units === "inch";
   var nm = (typeof machine !== "undefined" && machine.name) || "CAMCRAFT";
@@ -759,7 +805,7 @@ function endPreamble() {
   lastA = 0; lastB = 0; lastC = 0;
 }
 
-function onSection() { seatKnown = false; startPreamble(); }
+function onSection() { seatKnown = false; manualGuideBlank(); startPreamble(); }
 function onSectionEnd() { endPreamble(); hopZ = null; clearZ = null; }  // #1028, #1633: the next section states its own planes
 
 // ------------------------------------------------------------- motions
