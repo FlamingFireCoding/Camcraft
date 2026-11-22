@@ -28,8 +28,9 @@ fn slab_with_holes() -> Vec<Triangle> {
     let (x0, x1, y0, y1) = (0.0, 24.0, 0.0, 160.0);
     let (xa0, xa1, ya0, ya1) = (5.5, 18.5, 88.0, 101.0);
     let (xb0, xb1, yb0, yb1) = (9.5, 14.5, 42.0, 48.0);
+    type SlabBand = (f64, f64, Vec<(f64, f64)>);
     let mut f: Vec<Triangle> = Vec::new();
-    let bands: Vec<(f64, f64, Vec<(f64, f64)>)> = vec![
+    let bands: Vec<SlabBand> = vec![
         (y0, yb0, vec![(x0, x1)]),
         (yb0, yb1, vec![(x0, xb0), (xb1, x1)]),
         (yb1, ya0, vec![(x0, x1)]),
