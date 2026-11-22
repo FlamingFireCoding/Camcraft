@@ -49,3 +49,12 @@ The overfeed refusal is deterministic, fast, and comes from one named law.
 `xtask/src/catalog.rs`, `xtask/src/catalog_refusal.rs` and
 `crates/app/tests/example_catalog/refusal.rs`. A change of the CLI's
 `camcraft-cli: ` prefix changes one constant in each of the two readers.
+
+**Review fixes (#3162).** Merge current main to retain the generated
+`Slot Undercut` catalog block. Extend the guide link pin to require that block.
+Move the adaptive-pocket regeneration and rebuild checks to the release heavy
+lane because they exceed the 60 s debug budget. Keep both checks and their
+assertions. A default-suite contract requires both names in the ignored test
+list. The existing `example_catalog_adaptive` suite still checks the committed
+program in quick. Do not reduce the model or increase the quick budget: those
+choices either change the example or slow each quick run.

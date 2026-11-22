@@ -100,13 +100,17 @@ mod catalog_multiaxis_indexed {
     }
 }
 
+// These full-case checks exceed the 60 s debug budget. The heavy lane keeps
+// both checks; example_catalog_adaptive pins the committed program in quick.
 mod catalog_2d_adaptive_pocket {
     use super::*;
     #[test]
+    #[ignore = "heavy lane (#3163 2d/adaptive-pocket): exceeds its 60 s debug budget - run with --release -- --ignored"]
     fn regenerates() {
         run_case("2d", "adaptive-pocket", "regenerates", regenerate);
     }
     #[test]
+    #[ignore = "heavy lane (#3163 2d/adaptive-pocket): exceeds its 60 s debug budget - run with --release -- --ignored"]
     fn rebuilds() {
         run_case("2d", "adaptive-pocket", "rebuilds", rebuild);
     }
