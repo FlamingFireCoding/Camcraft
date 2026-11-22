@@ -65,6 +65,7 @@ const POSTS: &[(&str, &str, &str)] = &[
     ("Doosan DNM", "doosan-dnm", "doosan-dnm"),
     ("Makera Carvera", "carvera", "carvera"),
     ("Mach4", "mach4", "mach4"),
+    ("RichAuto DSP A11", "richauto", "richauto"),
 ];
 
 /// #1357: the Tormach goldens are runnable programs - posted for a real
@@ -110,6 +111,9 @@ const REFUSED: &[(&str, &str, &str)] = &[
     // so LinuxCNC's G33.1 rigid tap is refused by name there.
     ("linuxcnc", "tap_plate", "rigid tapping (G33.1)"),
     ("grbl", "tap_plate", "tapping"),
+    // #1914: the RichAuto A11 post expands drilling to plain moves; a
+    // tap cannot be plain moves.
+    ("richauto", "tap_plate", "tapping"),
 ];
 
 /// This mill requires a named control release and a manual change at full retract.
@@ -373,6 +377,8 @@ fn the_synthesized_stream_locks_the_tool_and_spindle_words() {
         // TinyG the same (its drill chains post as plain moves).
         let stream = match *cps_stem {
             "carvera" => synth_stream_with("G55", false),
+            // #1914: one work origin (the pendant zero), no tap.
+            "richauto" => synth_stream_with("G54", false),
             "grblhal" | "tinyg" | "linuxcnc" | "grbl" => synth_stream_with("G55", false),
             _ => synth_stream(),
         };
@@ -475,6 +481,8 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("doosan-dnm", "nc"),
     ("carvera", "nc"),
     ("mach4", "nc"),
+    // #1907: the program a Laguna Swift's A11 runs is a .mmg file.
+    ("richauto", "mmg"),
     ("heidenhain-klartext", "H"),
     ("fanuc-lathe", "nc"),
     ("tormach-lathe", "nc"),
