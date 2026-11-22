@@ -12,8 +12,17 @@ use super::fields::*;
 /// The row's label - one spelling for every kind.
 pub(crate) const PASS_START_LABEL: &str = "Pass starts at";
 
+/// The consequence line under the row when the 2D Adaptive method is
+/// Trochoidal and the row is off Auto (#3355): its loops have no ring
+/// order, so the generator refuses the operation by name.
+pub(crate) const TROCH_PASS_START_REFUSED: &str =
+    "Inside and Outside are not available with the Trochoidal method (its loops have no ring order): the operation is refused";
+
 /// What the three values do: the row's hover text.
-const PASS_START_HINT: &str = "Auto: the order this operation always cut. Inside: start at the part or island wall and work out. Outside: start at the outer edge and work in. With an Outside containment the outer edge is the stock edge, so the tool starts in air and no ring cuts a full-width slot";
+const PASS_START_HINT: &str = "Auto: the order this operation always cut. Inside: start at the part or island wall and work out. Outside: start at the outer edge and work in. Each ring follows the edge it starts from, one stepover at a time. With an Outside containment the outer edge is the stock edge, so each level starts in air. Where the first ring runs along a wall, or the area is narrower than the tool plus one stepover, a cut takes the full tool width and the toolpath shows a warning";
+
+/// What the values mean on a Bore (#3360): a hole has no inner wall.
+pub(crate) const BORE_PASS_START_HINT: &str = "Bore: a hole has no inner wall, so Inside cuts from the centre out, as Auto does. Outside cuts the wall ring first and then works in to the centre";
 
 /// Why Face has no pass order (#3356): the line under its disabled row.
 pub(crate) const FACE_NO_PASS_ORDER: &str =
