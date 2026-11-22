@@ -36,6 +36,9 @@
   subtree is skipped. This prevents hidden contours from becoming cuts without evaluating
   inheritance and child overrides. Full visibility evaluation was dropped from this fix;
   adding it later needs explicit inherited state and regression tests for child overrides.
+- A `transform-origin` presentation attribute or inline declaration is refused by name
+  before geometry is drawn. Ignoring the origin can move the cut. Applying it was dropped
+  from this fix because it needs CSS length, reference-box and inheritance rules.
 - `ImportSvg` is its own command in `commands/import_svg.rs`. It wraps an `ImportDxf` value
   (a new `ImportDxf::placed` constructor), so apply and invert are the same code. It repeats
   the 10-line setup and stock check of `ImportDxf::build` instead of a change to `build`:

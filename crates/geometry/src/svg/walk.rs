@@ -61,7 +61,15 @@ fn has_property(node: &Node, style: &[StyleDecl], name: &str) -> bool {
     node.attr(name).is_some() || has_inline_property(style, name)
 }
 
-fn check_inline_transform(style: &[StyleDecl]) -> Result<(), SvgError> {
+fn check_transform_sources(node: &Node, style: &[StyleDecl]) -> Result<(), SvgError> {
+    if node.attr("transform-origin").is_some() {
+        return Err(invalid(
+            "transform-origin presentation attribute is not supported",
+        ));
+    }
+    if has_inline_property(style, "transform-origin") {
+        return Err(invalid("inline CSS transform-origin is not supported"));
+    }
     if has_inline_property(style, "transform") {
         return Err(invalid("inline CSS transform is not supported"));
     }
@@ -120,7 +128,7 @@ impl<'a> Walk<'a> {
             if self.skip_visibility_or_hidden(root, &style)? {
                 return Ok(());
             }
-            check_inline_transform(&style)?;
+            check_transform_sources(root, &style)?;
             self.note_unsupported_effects(root, &style)?;
         }
         // Stylesheets inside <defs> or other silent elements still govern the file,
@@ -163,7 +171,7 @@ impl<'a> Walk<'a> {
         if self.skip_visibility_or_hidden(node, &style)? {
             return Ok(());
         }
-        check_inline_transform(&style)?;
+        check_transform_sources(node, &style)?;
         let map = match node.attr("transform") {
             Some(t) => parent.then(transform::parse(t)?),
             None => parent,

@@ -203,6 +203,63 @@ fn svg_inline_css_transform_is_refused_by_name() {
 }
 
 #[test]
+fn svg_transform_origin_attribute_is_refused_by_name() {
+    let origin = r#"transform-origin="10 10""#;
+    let on_root = format!(
+        r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" {origin}><rect width="20" height="20" transform="scale(2)"/></svg>"#
+    );
+    let on_group = page(&format!(
+        r#"<g transform="scale(2)" {origin}><rect x="10" y="10" width="20" height="20"/></g>"#
+    ));
+    let on_use = page(&format!(
+        r##"<defs><rect id="r" x="10" y="10" width="20" height="20"/></defs><use href="#r" transform="scale(2)" {origin}/>"##
+    ));
+    let on_shape = page(&format!(
+        r#"<rect x="10" y="10" width="20" height="20" transform="scale(2)" {origin}/>"#
+    ));
+    let on_referenced_shape = page(&format!(
+        r##"<defs><rect id="r" x="10" y="10" width="20" height="20" transform="scale(2)" {origin}/></defs><use href="#r"/>"##
+    ));
+    for text in [on_root, on_group, on_use, on_shape, on_referenced_shape] {
+        refuses(&text, "transform-origin presentation attribute");
+    }
+}
+
+#[test]
+fn svg_inline_css_transform_origin_is_refused_by_name() {
+    for style in [
+        "transform-origin:10px 10px",
+        "/* origin */transform-origin:10px 10px",
+        r"transform-ori\67 in:10px 10px",
+        "fill:black; TRANSFORM-ORIGIN:10px 10px !important",
+    ] {
+        let on_root = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" style="{style}"><rect width="20" height="20" transform="scale(2)"/></svg>"#
+        );
+        let on_group = page(&format!(
+            r#"<g transform="scale(2)" style="{style}"><rect x="10" y="10" width="20" height="20"/></g>"#
+        ));
+        let on_use = page(&format!(
+            r##"<defs><rect id="r" x="10" y="10" width="20" height="20"/></defs><use href="#r" transform="scale(2)" style="{style}"/>"##
+        ));
+        let on_shape = page(&format!(
+            r#"<rect x="10" y="10" width="20" height="20" transform="scale(2)" style="{style}"/>"#
+        ));
+        let on_referenced_shape = page(&format!(
+            r##"<defs><rect id="r" x="10" y="10" width="20" height="20" transform="scale(2)" style="{style}"/></defs><use href="#r"/>"##
+        ));
+        for text in [on_root, on_group, on_use, on_shape, on_referenced_shape] {
+            refuses(&text, "inline CSS transform-origin");
+        }
+    }
+    let benign = page(
+        r#"<rect width="20" height="20" transform="scale(2)" style="/* transform-origin:10px 10px */ font-family:'transform-origin:10px 10px'; fill:black"/>"#,
+    );
+    let doc = svg::parse(benign.as_bytes(), None).expect("benign comment/string reads");
+    assert_eq!(doc.primitives.len(), 4);
+}
+
+#[test]
 fn svg_deterministic_smoke_fuzz_never_panics() {
     let seed = page(
         r#"<g transform="translate(5 5) rotate(30)"><path d="M0 0 C10 0 10 10 0 10 S-10 20 0 20 Q5 25 10 20 T20 20 A5 3 20 1 0 30 30 Z"/>
