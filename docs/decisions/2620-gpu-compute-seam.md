@@ -40,6 +40,13 @@
   `crates/gpu/tests/fixtures/facet_grid_2619.grid`. Motion's lib test
   `gpu_parity_fixture_matches_the_grid` writes it with `CAMCRAFT_BLESS=1`
   and otherwise fails when the f64 grid changes and the file is stale.
+- The recorded fixture has every box edge on a cell border. There, a cell
+  map that moves up by one cell still gives a superset, so the fixture
+  alone does not catch it. A second parity test,
+  `twin_and_gpu_bins_hold_the_f64_cells_of_off_border_boxes`, bins 200
+  boxes with edges inside cells on a far origin. It computes the f64 cells
+  in the test with the #2619 law (floor, then clamp). A mutation of the
+  shader or the twin cell map by `+ 1.0` makes it fail.
 - No `camcraft-app` edge in this slice: the wiring of a real caller is
   #2621.
 - The pipeline is compiled for each call. No pipeline cache yet: the one
