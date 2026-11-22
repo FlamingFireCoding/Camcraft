@@ -12,7 +12,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 
 use camcraft_app::commands::{AddTool, CreateOperation, ImportModel};
 use camcraft_app::geometry::{Point3, cube};
-use camcraft_app::machining2d::{PocketStrategy, RestParams};
+use camcraft_app::machining2d::{PocketStrategy, RestParams, RestSource};
 use camcraft_app::machining3d::Entry3D;
 use camcraft_app::model;
 use camcraft_app::operation::{Height, KindInfo, OpParams, OpType, REST_PREDRILLED, SrcRef};
@@ -49,6 +49,8 @@ fn pocket(rest: Option<RestParams>) -> OpParams {
         optimal_load: camcraft_app::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         blend_radius: None,
+        corner_relief: Default::default(),
+        pass_start: Default::default(),
         rest,
         tilt: None,
     }
@@ -162,6 +164,7 @@ fn the_pre_drilled_group_switch_edits_the_draft_and_apply_commits_an_undoable_ed
 #[test]
 fn the_pre_drilled_group_names_the_refusal_beside_rest_machining() {
     let rest = RestParams {
+        source: RestSource::EnteredTool,
         previous_tool_diameter: 8.0,
         previous_corner_radius: 0.0,
         previous_stock_to_leave: 0.0,
