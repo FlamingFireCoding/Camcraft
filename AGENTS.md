@@ -636,11 +636,26 @@ tests are in `crates/ui/tests/`; they start the real app through
   maps the diff to the heavy lanes that it reaches and runs them in release
   with `--ignored`. The reach follows the dependencies between our crates: a
   change in `motion` reaches the `app` heavy lanes.
-  - A PR whose diff reaches a heavy lane is not ready while a reached heavy
-    test is red or not run. The author runs the command on the final head
-    before the PR is flagged ready. The PR body names the lanes that ran.
+  - A PR whose diff reaches a heavy lane does not merge while a reached
+    heavy test is red or not run on its final head. Two forms give that
+    result.
+  - The PR form: the author runs the command on the final head before the
+    PR is flagged ready. The PR body names the lanes that ran. A PR that
+    merges alone (wave 2, or a batch of one) uses this form.
+  - The wave form (#3460): the merging session runs the command one time
+    on the trial tree of a planner wave. The trial tree is the current
+    `main` with each PR of the wave merged. `--covers <PR>:<head sha>`
+    names each PR head, and the tool refuses a head that is not in the
+    tree. One fixed comment on each PR of the wave records the result: the
+    tree hash, the heads, the lanes and the counts. A red step is
+    attributed to one PR. That PR leaves the wave, and the run starts
+    again for the other PRs.
+  - A wave record covers a PR only for the head that it names. A PR that
+    gets a new commit after the run is not covered. A safety-floor PR is
+    covered only if the trial tree contains its final head.
   - The review comment lists the heavy lanes that ran and their results.
-    "Not run" is never a pass.
+    "Not run" is never a pass. A reviewer accepts a wave record only if it
+    names the current head of the PR.
   - The release tier at the cut stays the final check: the tagged tree is
     exactly the gated tree.
 - **Test the change, not everything.** The tests that pin a fix prove it.

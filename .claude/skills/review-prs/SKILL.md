@@ -254,6 +254,24 @@ running session reloads `AGENTS.md`, `.claude/agents/` and
 `.claude/skills/`, and a fork runs `fork-sync`. That comment is
 how fork maintainers subscribed to #681 hear about it.
 
+## 2e. Heavy evidence - the PR form and the wave form (#3460)
+
+AGENTS.md "Heavy lanes at review". The `PR-reviewer` agent (step 5) reads
+the heavy result of a PR from one of two sources:
+- the PR form: a green author run of all reached lanes on this head, named
+  in the PR body;
+- the wave form: a collaborator's comment that starts with
+  `<!-- heavy-wave: <tree hash> -->` (the `merge-ready` skill, step 4a).
+  The reviewer accepts it only if its `covers:` line names the current head
+  of this PR, all reached lanes are in it, and its verdict is `PASS`.
+
+A wave record covers a PR only for the head that it names. A PR that gets
+a new commit after the run is not covered. A safety-floor PR is covered
+only if the trial tree contains its final head. "Not run" is never a pass.
+When neither source covers the current head, the reviewer runs the lanes
+itself (PR-reviewer step 5). If they cannot run, "heavy lanes not run" is a
+blocker.
+
 ## 3. Report
 
 One short line per PR: number, author, verdict, link to the posted review.
