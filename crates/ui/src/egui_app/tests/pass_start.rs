@@ -152,3 +152,20 @@ fn a_pass_start_warning_is_a_status_line() {
     assert_eq!(lines, vec![format!("warning: {note}")]);
     assert!(note.starts_with(camcraft_app::machining2d::PASS_START_NOTE), "{note}");
 }
+
+#[test]
+fn circular_passes_tab_offers_all_three_pass_starts() {
+    let mut harness = passes_of(OpType::Circular);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Circular Passes tab has the shared row");
+    let mut current = "Auto";
+    for (label, choice) in [("Inside", Some("inside")), ("Outside", Some("outside")), ("Auto", None)] {
+        harness.get_by(|node| node.role() == Role::ComboBox && node.value().as_deref() == Some(current)).click();
+        harness.run_steps(2);
+        harness.get_by_label(label).click();
+        harness.run_steps(2);
+        let wire = camcraft_app::project::params_to_json(&harness.state().state.op_ui.params);
+        assert_eq!(wire["circular"].get("pass_start").and_then(serde_json::Value::as_str), choice);
+        assert_eq!(combos_showing(&harness, label), 1, "the combo displays the new choice");
+        current = label;
+    }
+}

@@ -455,6 +455,8 @@ pub enum ParamsDto {
         center: [f64; 2],
         radius: f64,
         vault: bool,
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
         stepover: f64,
         stock_to_leave: f64,
         clearance_z: HeightDto,

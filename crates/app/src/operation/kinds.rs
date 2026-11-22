@@ -894,6 +894,7 @@ fn seed_circular(c: &Carried) -> OpParams {
         center: Point2::new(0.0, 0.0),
         radius: 25.0,
         vault: false,
+        pass_start: crate::machining2d::PassStart::Auto,
         stepover: c.stepover,
         stock_to_leave: 0.0,
         clearance_z: c.clearance,

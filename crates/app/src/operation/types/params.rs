@@ -400,6 +400,7 @@ pub enum OpParams {
         radius: f64,
         /// The dome law instead of the flat floors (variant docs).
         vault: bool,
+        pass_start: crate::machining2d::PassStart,
         stepover: f64,
         stock_to_leave: f64,
         clearance_z: Height,
