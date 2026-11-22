@@ -122,6 +122,7 @@ mod camera_target;
 mod structural;
 // #2181: the transport row of the calculation before playback.
 mod transport_precalc;
+mod sim_op_steps;
 mod page_layout;
 mod page_layout_windows;
 mod anchors;
@@ -1051,7 +1052,7 @@ fn every_field_lives_on_exactly_one_section() {
             vec![
                 ("Geometry", vec!["Click selects:"]),
                 ("Heights", vec!["Clearance Z", "Cut Z", "Levels"]),
-                ("Passes", vec!["Stepover (Y spacing)"]),
+                ("Passes", vec!["Stepover (Y spacing)", "Pass starts at"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],
         ),
