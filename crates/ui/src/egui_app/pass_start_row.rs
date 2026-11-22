@@ -15,6 +15,9 @@ pub(crate) const PASS_START_LABEL: &str = "Pass starts at";
 /// What the three values do: the row's hover text.
 const PASS_START_HINT: &str = "Auto: the order this operation always cut. Inside: start at the part or island wall and work out. Outside: start at the outer edge and work in. With an Outside containment the outer edge is the stock edge, so the tool starts in air and no ring cuts a full-width slot";
 
+/// What the values mean on a Bore (#3360): a hole has no inner wall.
+pub(crate) const BORE_PASS_START_HINT: &str = "Bore: a hole has no inner wall, so Inside cuts from the centre out, as Auto does. Outside cuts the wall ring first and then works in to the centre";
+
 /// The names of the combo, in its order (`PassStart::ALL`).
 pub(crate) fn pass_start_names() -> Vec<&'static str> {
     PassStart::ALL.iter().map(|s| s.label()).collect()

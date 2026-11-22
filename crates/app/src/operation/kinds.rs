@@ -1018,6 +1018,7 @@ fn seed_standalone_bore(c: &Carried) -> OpParams {
         tolerance: 0.01,
         holes: Vec::new(),
         break_through: None,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 

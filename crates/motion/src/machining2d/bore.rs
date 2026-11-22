@@ -38,6 +38,7 @@ use crate::links::Links;
 use super::bore_core::{CORE_TOL, MAX_BORE_RINGS, bore_ring_count, max_bore_diameter};
 use super::face::GenError;
 use super::levels::{Cert, Motion, run_levels};
+use super::pass_start::PassStart;
 
 /// One finished round hole the ride is paid to. `xy`/`radius` are the
 /// model's wall; `floor_z` is where the rim's bottom edge stops.
@@ -247,6 +248,13 @@ fn ring_loop(center: Point2, rho: f64, climb: bool) -> Vec<Point2> {
 /// the recognition's own frame). Returns `Ok(empty)` never: every hole
 /// passed validation, so every hole earns moves.
 pub fn bore(p: &BoreParams) -> Result<Toolpath, GenError> {
+    bore_started(p, PassStart::Auto)
+}
+
+/// [`bore`] with the shared pass order (#3360): `Auto` is [`bore`] byte
+/// for byte; `Outside` cuts each level's wall ring first and walks in;
+/// `Inside` is the centre-out order (the disk has no inner wall).
+pub fn bore_started(p: &BoreParams, start: PassStart) -> Result<Toolpath, GenError> {
     p.validate()?;
     let r = p.tool_diameter * 0.5;
     let mut motion = Motion::new(p.clearance_z, p.retract_z, p.feed, p.plunge_feed);
@@ -294,7 +302,15 @@ pub fn bore(p: &BoreParams) -> Result<Toolpath, GenError> {
             .ok_or_else(|| GenError::Invalid("bore radial plan exceeds its floor reach or ring budget".into()))?;
         let mut passes = Vec::with_capacity(count * 2);
         let mut prev = h.xy;
-        for k in 1..=count {
+        // #3360: the shared ring law orders the ladder. Ring `k` sits
+        // `count - k` offsets in from the wall, in the outer family (the
+        // disk has no hole). Auto and Inside keep the centre-out walk;
+        // Outside cuts the wall ring first and walks in. Each level still
+        // dives at the centre, so the entry law does not change.
+        let kmax = u32::try_from(count.saturating_sub(1)).unwrap_or(u32::MAX);
+        let mut order: Vec<usize> = (1..=count).collect();
+        order.sort_by_key(|&k| start.rank(kmax.saturating_sub(u32::try_from(k - 1).unwrap_or(u32::MAX)), kmax, true));
+        for k in order {
             let rho = rc * (k as f64 / count as f64);
             let ring = ring_loop(h.xy, rho, p.climb);
             let Some(&start) = ring.first() else {

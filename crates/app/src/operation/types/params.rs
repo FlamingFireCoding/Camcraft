@@ -1282,6 +1282,9 @@ pub enum OpParams {
         /// before the option posted; checked at generation against the
         /// stock bottom, refused by name below it.
         break_through: Option<f64>,
+        /// Where each level's rings start (#3360): the shared pass-order
+        /// parameter. `Auto` is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Helical thread milling (M2.4 C, reworked by #894): internal
     /// threads in the listed holes - or, `external`, on the listed

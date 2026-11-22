@@ -1247,7 +1247,7 @@ fn every_field_lives_on_exactly_one_section() {
                         "Stepdown",
                     ],
                 ),
-                ("Passes", vec!["Stock to leave", "Tolerance"]),
+                ("Passes", vec!["Pass starts at", "Stock to leave", "Tolerance"]),
                 ("Lead in / Lead out", vec!["Level to level", "Between levels", "Between passes"]),
                 ("Feeds", vec!["Feed", "Plunge feed", "Climb milling"]),
             ],

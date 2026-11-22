@@ -46,6 +46,23 @@ fn the_offset_passes_tab_offers_pass_start_and_shows_the_draft() {
     assert_eq!(combos_showing(&harness, "Outside"), outside_before + 1, "the combo shows the draft's value");
 }
 
+/// #3360: Bore's Passes tab has the same row, Auto by default, and the
+/// combo shows the draft's value.
+#[test]
+fn the_bore_passes_tab_offers_pass_start_and_shows_the_draft() {
+    let mut harness = passes_of(OpType::Bore);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let outside_before = combos_showing(&harness, "Outside");
+    if let OpParams::Bore { pass_start, .. } = &mut harness.state_mut().state.op_ui.params {
+        assert_eq!(*pass_start, PassStart::Auto, "a new Bore starts Auto");
+        *pass_start = PassStart::Outside;
+    } else {
+        panic!("the draft is not a Bore");
+    }
+    harness.run();
+    assert_eq!(combos_showing(&harness, "Outside"), outside_before + 1, "the combo shows the draft's value");
+}
+
 #[test]
 fn the_adaptive_twin_has_no_pass_start_row_yet() {
     let harness = passes_of(OpType::Adaptive2D);
