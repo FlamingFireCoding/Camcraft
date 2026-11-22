@@ -227,6 +227,16 @@ pub const ROWS: &[Row] = &[
         import: "agree",
         mesh: "watertight, within tolerance",
     },
+    // #3034: the recorded QA part (a mould base with an ellipsoid boss
+    // whose spline face ends in a pole). Added after #2790, so truck has
+    // no recorded reading.
+    Row {
+        file: "q02_3d_mold.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "watertight, within tolerance",
+    },
     Row {
         file: "sample_ap214.step",
         mm_per_unit: 1000.0,
@@ -269,6 +279,15 @@ pub const ROWS: &[Row] = &[
         truck: Truck::Refused("a shell's mesh is not finite"),
         import: "truck refuses: a shell's mesh is not finite",
         mesh: "off: volume, area",
+    },
+    // #3034: a rational B-spline dome that ends in a pole at a vertex. It
+    // was added after #2790, so truck has no recorded reading.
+    Row {
+        file: "sphere_quarter_pole.step",
+        mm_per_unit: 1.0,
+        truck: Truck::NotRecorded,
+        import: "no truck reading; unit agrees",
+        mesh: "watertight, within tolerance",
     },
     Row {
         file: "spline_revolved.step",
