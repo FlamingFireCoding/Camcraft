@@ -77,15 +77,27 @@ pub(super) fn adaptive_ordered(center: &Region, p: &PocketParams, what: &str, tr
             notes.extend(tnotes);
             return Ok((passes, notes, PocketStrategy::Adaptive, Some(room), joins));
         }
-        Err(t) if trochoid => format!("adaptive: the HSM plan {why}; a trochoid {t} - Offset rings cut {what} instead"),
-        Err(_) if start == PassStart::Auto => format!("adaptive: the HSM plan {why} - Offset rings cut {what} instead"),
+        Err(t) if trochoid => format!("adaptive: the HSM plan {why}; a trochoid {t}{RINGS_FALLBACK}{what} instead"),
+        Err(_) if start == PassStart::Auto => format!("adaptive: the HSM plan {why}{RINGS_FALLBACK}{what} instead"),
         Err(_) => format!(
-            "adaptive: Pass starts at {} - the HSM plan {why}; Offset rings cut {what} in that order instead",
+            "adaptive: Pass starts at {} - the HSM plan {why}{RINGS_FALLBACK}{what} in that order instead",
             start.label()
         ),
     };
     let step = crate::load::load_step(p.tool_diameter, p.optimal_load);
     Ok((plan_passes_from(center, step, p.climb, s, start)?, vec![note], s, None, Vec::new()))
+}
+
+/// The words of each note that says the Offset rings cut an area in
+/// place of the Adaptive plan, before the area's name (issue #3035).
+pub const RINGS_FALLBACK: &str = " - Offset rings cut ";
+
+/// How many areas (a pocket, a 3-D level) the notes say the Offset rings
+/// cut in place of the Adaptive plan (issue #3035: the op raises a
+/// warning for them, not only the notes).
+#[must_use]
+pub fn rings_fallbacks(notes: &[String]) -> usize {
+    notes.iter().filter(|n| n.contains(RINGS_FALLBACK) && n.ends_with(" instead")).count()
 }
 
 /// Cutter-center walks, one per pass.
