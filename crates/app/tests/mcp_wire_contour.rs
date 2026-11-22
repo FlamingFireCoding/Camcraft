@@ -313,6 +313,8 @@ fn list_operation_types_and_skill_match_wire_contour_dto_and_tool_law() {
         "AGIECUT Classic 2S (template)",
         "Generic ISO Wire EDM",
         "Sodick Wire EDM (Mark 21)",
+        "Agie native wire EDM",
+        "AGIE_QN2",
     ] {
         assert!(skill.contains(required), "SKILL.md missing `{required}`");
     }
