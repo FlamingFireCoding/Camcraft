@@ -8,7 +8,7 @@ use camcraft_app::commands::{AddTool, ImportModel};
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::operation::{FeatureSel, GeoSel, OpType, SrcRef, retype_params};
 
-fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel) {
+pub(super) fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel) {
     let part = ImportModel::from_mesh("block", cube(Point3::new(0.0, 0.0, 0.0), Point3::new(30.0, 30.0, 15.0)));
     st.history.execute(&st.world, part);
     let feats = camcraft_app::model::find_by_name(&st.world, "block")
@@ -51,7 +51,7 @@ fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel
     (face_top, face_other, edge)
 }
 
-fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
+pub(super) fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
     let rect = h.get_by_label("Boundary").rect();
     let p = egui::pos2(rect.left() - 10.0, rect.center().y);
     h.input_mut().events.push(Event::PointerMoved(p));
@@ -178,7 +178,7 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
     }
     h.run_steps(3);
     expand_boundary(&mut h);
-    assert!(h.query_by_label_contains("2D Offset, 2D Adaptive, 3D Pocket, Face and 3D Finish").is_some());
+    assert!(h.query_by_label_contains("2D Offset, 2D Adaptive, 3D Pocket, Face, 3D Finish and Engrave").is_some());
     assert!(h.query_by_label("Pick protected").is_none());
 }
 

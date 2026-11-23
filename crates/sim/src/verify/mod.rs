@@ -208,6 +208,8 @@ mod reach_reference;
 mod reach_tests;
 mod sample_grid;
 mod rest;
+// #3615: the exact Y-slab point-location index over a cached slice.
+mod slice_index;
 mod rotary;
 mod rotary_geom;
 mod seat;
