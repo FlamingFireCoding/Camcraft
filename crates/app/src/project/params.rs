@@ -335,6 +335,10 @@ pub enum ParamsDto {
         /// earlier file - no version step.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         blend_radius: Option<f64>,
+        /// #1446 rest machining: absent is off on every earlier file -
+        /// no version step. Only `source: previous_operations` is taken.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest: Option<RestDto>,
         /// #2400 corner relief: absent is off on every earlier file.
         #[serde(default, skip_serializing_if = "CornerReliefDto::is_default")]
         corner_relief: CornerReliefDto,
