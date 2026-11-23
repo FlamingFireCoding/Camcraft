@@ -183,7 +183,7 @@ pub(super) fn ball_center(
     let mut hi = None;
     for _ in 0..STEPS {
         let x = (lo + step).min(cap);
-        if !(x > lo) {
+        if x.is_nan() || x <= lo {
             return Err(PushFail::Precision);
         }
         if clear(x) {
@@ -330,7 +330,7 @@ impl Walk<'_> {
         }
         if depth >= CHORD_DEPTH {
             let got = self.sweep(p0, p1);
-            if !(got >= self.r - TOUCH) {
+            if got.is_nan() || got < self.r - TOUCH {
                 return Err(GenError::invalid_at(
                     format!(
                         "Rotary Flow: a flow chord sweeps the ball {:.4} mm off the part, inside \

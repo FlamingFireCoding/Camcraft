@@ -166,7 +166,7 @@ pub(super) fn prove_path(
         let (c0, c1) = (center(m.from, p0, r), center(m.to, p1, r));
         let need = r - TOUCH + axis_drift(p0, p1, r);
         let got = seg_clearance(c0, c1, facets, boxes, need + 1e-6);
-        if !(got >= need) {
+        if got.is_nan() || need.is_nan() || got < need {
             return Err(GenError::invalid_at(
                 format!(
                     "Rotary Flow: move {} (a {}) sweeps the ball {:.4} mm off the part, inside \
