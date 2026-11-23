@@ -37,7 +37,7 @@ pub(super) struct LevelWalk<'a> {
 /// dive link cut at the level last entered - a planar feed a keep-down
 /// link on that plane must not cross (until the next level begins, it is
 /// the level the tool stands on).
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct LinkState {
     pub tally: LinkTally,
     level: Vec<Vec<Point2>>,
@@ -168,6 +168,7 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
             match proof {
                 Ok(()) => {
                     b.push(MoveKind::Feed, Point3::new(e.x, e.y, z), Some(m.feed));
+                    st.level.push(vec![at, e]);
                     return;
                 }
                 Err(why) => {
@@ -205,7 +206,7 @@ pub(super) fn pass_link(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cert: O
     {
         let l = Lvl { cen, passes, pass: lv.pass, walk: lv.walk, mat_top };
         let from = (mat_top + m.links.approach.plunge_height).min(plane);
-        let d = if cc { entry_restart(&l, at, z, from, m) } else { restart(b, &l, at, z, from, plane, m) };
+        let d = if cc { entry_restart(b, &l, at, z, from, plane, m) } else { restart(b, &l, at, z, from, plane, m) };
         st.level.extend(push(b, &d, &l, z, plane, m));
         return;
     }
