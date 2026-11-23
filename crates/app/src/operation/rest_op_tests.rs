@@ -31,6 +31,7 @@ fn pocket(rest: Option<RestParams>) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         blend_turns: false,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     }
 }
 
@@ -59,4 +60,26 @@ fn the_rest_group_moves_the_stamp() {
         assert_ne!(on, digest(&pocket(Some(other))), "{other:?} must move the stamp");
     }
     assert_eq!(on, digest(&pocket(Some(PREV))), "the stamp is a function");
+}
+
+/// #3354: Inside and Outside move the pocket's stamp; Auto is the stamp
+/// every earlier pocket had (nothing written).
+#[test]
+fn pass_start_moves_the_pocket_stamp_only_off_auto() {
+    use crate::machining2d::PassStart;
+    let world = crate::world::new_world();
+    let digest = |s: PassStart| {
+        let mut p = pocket(None);
+        if let OpParams::Pocket { pass_start, .. } = &mut p {
+            *pass_start = s;
+        }
+        let mut h = std::hash::DefaultHasher::new();
+        p.stamp_with(&world, None, None, &mut h);
+        h.finish()
+    };
+    let auto = digest(PassStart::Auto);
+    let (inside, outside) = (digest(PassStart::Inside), digest(PassStart::Outside));
+    assert_ne!(auto, inside, "Inside must not share Auto's stamp");
+    assert_ne!(auto, outside, "Outside must not share Auto's stamp");
+    assert_ne!(inside, outside, "the two sides must not share a stamp");
 }

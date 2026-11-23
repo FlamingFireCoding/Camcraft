@@ -51,6 +51,8 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     ("Doosan DNM", AssetFile("doosan-dnm.cps")),
     ("Makera Carvera", AssetFile("carvera.cps")),
     ("Mach4", AssetFile("mach4.cps")),
+    // #2482: Mach3 Mill, 3-axis - canned cycles with G98, T M6 + G43 H, dwell unit by option.
+    ("Mach3", AssetFile("mach3.cps")),
     ("Heidenhain Klartext", AssetFile("heidenhain-klartext.cps")),
     ("Fanuc Lathe", AssetFile("fanuc-lathe.cps")),
     ("Tormach PathPilot Lathe", AssetFile("tormach-lathe.cps")),
@@ -63,6 +65,7 @@ pub const BUILTINS: &[(&str, AssetFile)] = &[
     // #617: the Sodick 2-axis wire post, its words from Sodick's 1998
     // operation manual (Mark 21 / EX21); not verified on a control.
     ("Sodick Wire EDM (Mark 21)", AssetFile("sodick-wire.cps")),
+    (super::agie::POST, AssetFile("agie-native.cps")),
     // #2700: the G-EDM 2-axis wire post for G-RBLv3 (Grbl-family words,
     // spark power set at the controller); not verified on a control.
     ("G-EDM Wire EDM", AssetFile("g-edm.cps")),
@@ -347,10 +350,12 @@ fn embedded(kind: &str, file: &str) -> Option<&'static str> {
         ("posts", "doosan-dnm.cps") => Some(include_str!("../../../assets/posts/doosan-dnm.cps")),
         ("posts", "carvera.cps") => Some(include_str!("../../../assets/posts/carvera.cps")),
         ("posts", "mach4.cps") => Some(include_str!("../../../assets/posts/mach4.cps")),
+        ("posts", "mach3.cps") => Some(include_str!("../../../assets/posts/mach3.cps")),
         ("posts", "fanuc-lathe.cps") => Some(include_str!("../../../assets/posts/fanuc-lathe.cps")),
         ("posts", "tormach-lathe.cps") => Some(include_str!("../../../assets/posts/tormach-lathe.cps")),
         ("posts", "tormach-plasma.cps") => Some(include_str!("../../../assets/posts/tormach-plasma.cps")),
         ("posts", "wire-iso.cps") => Some(include_str!("../../../assets/posts/wire-iso.cps")),
+        ("posts", "agie-native.cps") => Some(include_str!("../../../assets/posts/agie-native.cps")),
         ("posts", "sodick-wire.cps") => Some(include_str!("../../../assets/posts/sodick-wire.cps")),
         ("posts", "g-edm.cps") => Some(include_str!("../../../assets/posts/g-edm.cps")),
         ("posts", "sinker-iso.cps") => Some(include_str!("../../../assets/posts/sinker-iso.cps")),

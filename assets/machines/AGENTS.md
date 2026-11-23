@@ -40,6 +40,14 @@ unstated capability into existence.
   — the same tilt test the RTCP judgment and `can_tilt` read, one law
   at three sites): an XYZ machine with A/B trunnions or a tilt head is
   a MILL whose axes can lean, not a mill-turn.
+- `general.operator_side` (#2632, optional) ∈ `"-X"` | `"+X"` | `"-Y"` |
+  `"+Y"`: the side of the work envelope from which the operator looks
+  into it, named by the world axis that points from the envelope to the
+  operator. The viewport draws an arrow and the text "Operator side"
+  there. Unstated takes the default of the kind: `"+Y"` for a lathe (the
+  lathe view shows the turning plane from there), `"-Y"` (the front) for
+  each other kind. Any other word REFUSES the file by name. Display
+  only: no check and no post reads it.
 - `wire_edm` / `sinker_edm` (#530, part of #290) are DECLARED only: no
   axis inventory infers an EDM. A wire machine needs X and Y (U and V,
   the upper guide, add taper); a sinker needs Z. Neither has a spindle
@@ -91,7 +99,8 @@ unstated capability into existence.
   key). Like plasma, an EDM head states no `spindle`, `live_tool` or
   coolant list (`post::machine::edm_refusals`, read by the reader and
   the Machines pane's validator alike); a rotary is allowed. No vendor
-  values are shipped. The empty sinker template (`sinker-edm.mch`, #1135)
+  values are shipped; the ALC400G's example starter set (#3214) is
+  marked EXAMPLE in its description and its condition notes. The empty sinker template (`sinker-edm.mch`, #1135)
   is in the built-in library with the sinker post (`sinker-iso.cps`,
   #542): posting on it refuses by name for each missing `edm.codes` role
   until the user fills them. No wire machine is in the library yet (the
@@ -101,7 +110,9 @@ unstated capability into existence.
   are posted against).
 
 - `edm.conditions[]` (#531): the generator conditions the user states
-  from their machine's manual. None ship. CamCraft reads only the
+  from their machine's manual. Only `sodick-alc400g.mch` ships rows
+  (#3214): an example starter set, each row's `notes` starting
+  `EXAMPLE`, for the user to replace. CamCraft reads only the
   geometry a path needs; power and flushing stay the control's, picked
   by `id`. Each entry is an object of these keys only (any other key
   refuses by name: `edm condition "C1" gapp is not a condition key`):
