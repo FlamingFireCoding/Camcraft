@@ -625,4 +625,19 @@ fn the_approach_rotates_before_it_descends() {
     let blade = capped_blade();
     let sp = finish(FinishPattern::Parallel, 11.0, -11.0);
     no_pose_change_rides_the_air_to_cut_move("swarf5d", &swarf5d(&blade, &sp, &control()).unwrap());
+    // The rough ladder over the slab with a boss: its walls lean and
+    // its floors cut upright, so a floor approach that follows a
+    // link rapid under a lean must swing back to upright at a
+    // standstill first - the upright arms of the stamp (#3414).
+    let slab = slab_with_boss();
+    let region = camcraft_motion::geometry::slice::project(&slab, 64).unwrap();
+    no_pose_change_rides_the_air_to_cut_move(
+        "multiaxis_rough",
+        &multiaxis_rough(&slab, &region, &rough_params(), &control(), None).unwrap(),
+    );
+    // The waterline rings of the dome complete the stamped kinds.
+    no_pose_change_rides_the_air_to_cut_move(
+        "contour5d",
+        &contour5d(&dome, &finish(FinishPattern::Waterline, 14.0, 9.8), &control(), None).unwrap(),
+    );
 }

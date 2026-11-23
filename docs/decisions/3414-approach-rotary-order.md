@@ -16,10 +16,11 @@ unknown air and through the rim it approaches.
 - A short travel rapid along the hop plane under the new pose: it
   drags the tip sideways while the head turns, and it blurs the law
   that a travel rapid inherits its pose.
-- A new `MoveKind::Rotate`: the post already solves a zero-travel
-  segment as a pure rotary reorientation (`g93.rs`'s `ds_tip == 0`
-  path), and the builders already keep a zero-travel move whose pose
-  changed - no new verb is needed.
+- A new `MoveKind::Rotate`: the post already commands a zero-travel
+  rapid's rotary words on `G00` (`fanuc.cps`'s `onRapid` through
+  `tilt()`; `solve_g93_segment` hands rapids to the rapid path before
+  its feed branches), and the builders already keep a zero-travel move
+  whose pose changed - no new verb is needed.
 
 **Cost to change later.** The law tests (`rapids_hold_the_pose_they_inherit`,
 `rapid_pose_contract`, the air-link ratchet, `balls_are_the_plan`) read

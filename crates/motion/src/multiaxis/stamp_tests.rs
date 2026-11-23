@@ -378,3 +378,46 @@ fn a_row_no_pose_clears_refuses_the_swarf_path_by_name() {
     };
     assert!(msg.contains("swarf pose at move 0") && msg.contains("under the horizon"), "{msg}");
 }
+
+// #3414's upright arms (the arc arm): an upright FEED ARC reached out
+// of air under a lean swings back to upright at a standstill first -
+// the rotaries never turn on the arc that reaches the part. The first
+// feed leans on the pitched plane, the rapid away travels under that
+// lean, and the air arc that follows states the upright column only
+// after a zero-travel rapid commanded it.
+#[test]
+fn an_upright_arc_out_of_air_swings_at_a_standstill_first() {
+    let r = 3.0;
+    let centers = ladder_centers(r);
+    let ms = vec![
+        Move::new(MoveKind::Rapid, p(-40.0, 0.0, 45.0), centers[0], Some(3000.0)),
+        Move::new(MoveKind::Feed, centers[0], centers[1], Some(800.0)),
+        Move::new(MoveKind::Rapid, centers[1], p(40.0, 30.0, 45.0), None),
+        Move::new(MoveKind::Feed, p(40.0, 30.0, 45.0), p(40.0, -30.0, 45.0), Some(800.0))
+            .with_arc(crate::geo2d::Point2::new(55.0, 0.0), true),
+    ];
+    let out = stamp_axes(
+        &Toolpath::new(ms),
+        &pitched_plane(),
+        r,
+        &AxisControl { lead_deg: 15.0, lag_deg: 0.0, max_tilt_deg: None },
+        None,
+    )
+    .unwrap();
+    let arc = out.moves.iter().position(|m| m.arc.is_some()).expect("the arc feed posts");
+    assert_eq!(out.moves[arc].kind, MoveKind::Feed);
+    let (link, swing) = (&out.moves[arc - 2], &out.moves[arc - 1]);
+    assert!(link.axis.is_some_and(|a| !crate::cl::is_vertical(&a)), "the link rapid holds the lean");
+    assert_eq!(swing.kind, MoveKind::Rapid, "the arc approach carries its rotary turn");
+    assert_eq!(swing.from, swing.to, "the swing travels");
+    assert!(
+        swing.axis.is_some_and(|a| crate::cl::is_vertical(&a)),
+        "the swing states the upright pose: {:?}",
+        swing.axis
+    );
+    assert!(
+        crate::cl::is_vertical(&out.moves[arc].axis.expect("the arc states a pose")),
+        "the arc carries a turn: {:?}",
+        out.moves[arc].axis
+    );
+}
