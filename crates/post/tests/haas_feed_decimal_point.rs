@@ -3,6 +3,8 @@
 //! Operator's Manual 96-8000, Settings, "77 - Scale Integer F") scales an
 //! F word with no point: at its default an mm control reads F600 as
 //! 0.6 mm/min. With the point, each value of the setting reads the same feed.
+//! #3694: the F word keeps its fraction (mm/min at three decimals, in/min
+//! at four), so a G84 tap feed of pitch x rpm cuts the tap's pitch.
 //! Provenance: our own tests over our own post and stream format.
 //!
 //! Gate map: covers assets/posts/haas.cps, camcraft_post::post::engine.
@@ -207,7 +209,82 @@ fn haas_writes_every_mm_feed_word_with_its_point() {
     assert_every_feed_pointed("mm");
     let out = post(MILL, "mm").unwrap_or_else(|e| panic!("{e}"));
     assert!(has_feed(&out.program, "F600."), "a whole mm feed keeps its point\n{}", out.program);
-    assert!(has_feed(&out.program, "F51."), "50.8 mm/min rounds to F51.\n{}", out.program);
+    // #3694: an mm feed keeps its fraction (was F51.).
+    assert!(has_feed(&out.program, "F50.8"), "50.8 mm/min posts as F50.8\n{}", out.program);
+    assert!(!has_feed(&out.program, "F51."), "50.8 mm/min is not rounded\n{}", out.program);
+}
+
+#[test]
+fn haas_keeps_the_fraction_of_an_mm_feed() {
+    // #3692 / #3694: 12.4 mm/min posts as F12.4, never F12.
+    let s = MILL.replace("F 600000", "F 12400");
+    let out = post(&s, "mm").unwrap_or_else(|e| panic!("{e}"));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    assert!(has_feed(&out.program, "F12.4"), "{}", out.program);
+    assert!(!has_feed(&out.program, "F12."), "{}", out.program);
+}
+
+/// One G84 section: the tap feed `feed_um` (0.001 mm/min) at `rpm`.
+fn tap(feed_um: u64, rpm: &str) -> String {
+    cycle(4, "TAP", "0")
+        .replace("F 60000", &format!("F {feed_um}"))
+        .replace("PARAM SpindleSpeed 1500.000000", &format!("PARAM SpindleSpeed {rpm}"))
+}
+
+/// The F word of the G84 block of `program`.
+fn g84_feed(program: &str) -> Option<String> {
+    program
+        .lines()
+        .map(code_words)
+        .find(|w| w.iter().any(|x| x == "G84"))
+        .and_then(|w| w.into_iter().find(|x| x.starts_with('F')))
+}
+
+fn tap_refused(out: &Result<Posted, String>) -> bool {
+    match out {
+        Err(e) => e.contains("G84 (tap)"),
+        Ok(out) => out.warnings.iter().any(|w| w.contains("G84 (tap)")),
+    }
+}
+
+#[test]
+fn haas_g84_writes_the_exact_tap_feed_in_mm() {
+    // M1.4 x 0.3 at S115 = 34.5; M2 x 0.4 at S333 = 133.2; M8 x 1.25 at
+    // S800 = 1000 (a whole feed keeps its point).
+    for (feed, rpm, word) in [(34_500, "115", "F34.5"), (133_200, "333", "F133.2"), (1_000_000, "800", "F1000.")] {
+        let out = post(&tap(feed, rpm), "mm").unwrap_or_else(|e| panic!("{e}"));
+        assert!(out.warnings.is_empty(), "{word}: {:?}", out.warnings);
+        assert_eq!(g84_feed(&out.program).as_deref(), Some(word), "{}", out.program);
+        assert!(out.program.contains(&format!("S{rpm} M3")), "{}", out.program);
+    }
+}
+
+#[test]
+fn haas_g84_writes_the_tap_feed_at_four_inch_decimals() {
+    // 1/4-20 (1.27 mm) at S500 = 635 mm/min = 25 in/min exactly. The metric
+    // taps of an inch program round at the fourth decimal: 34.5 mm/min is
+    // 1.35827 in/min (F1.3583, 0.002 percent pitch error) and 133.2 mm/min
+    // is 5.24409 in/min (F5.2441).
+    for (feed, rpm, word) in [(635_000, "500", "F25."), (34_500, "115", "F1.3583"), (133_200, "333", "F5.2441")] {
+        let out = post(&tap(feed, rpm), "inch").unwrap_or_else(|e| panic!("{e}"));
+        assert!(out.warnings.is_empty(), "{word}: {:?}", out.warnings);
+        assert!(out.program.contains("G20"), "{}", out.program);
+        assert_eq!(g84_feed(&out.program).as_deref(), Some(word), "{}", out.program);
+    }
+}
+
+#[test]
+fn haas_refuses_a_tap_pitch_its_words_cannot_hold() {
+    // 2 mm/min in inch is 0.07874 in/min, written F0.0787: 0.05 percent off.
+    let inch = post(&tap(2_000, "100"), "inch");
+    assert!(tap_refused(&inch), "a pitch more than 0.01 percent off is refused by name");
+    // A fractional rpm posts as a whole S: 34.5 mm/min at 115.4 rpm is a
+    // 0.299 mm pitch, written F34.5 S115 (0.3 mm): 0.35 percent off.
+    let speed = post(&tap(34_500, "115.4"), "mm");
+    assert!(tap_refused(&speed), "a rounded S that moves the pitch is refused by name");
+    // The same tap at a whole rpm posts.
+    let ok = post(&tap(34_500, "115"), "mm").unwrap_or_else(|e| panic!("{e}"));
+    assert!(ok.warnings.is_empty(), "{:?}", ok.warnings);
 }
 
 #[test]
