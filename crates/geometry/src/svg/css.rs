@@ -119,7 +119,7 @@ fn url_token(body: &str) -> (bool, usize) {
             ')' => return (good, i + 1),
             '\\' => match chars.clone().next() {
                 // `\` before a line end is not an escape.
-                Some((_, next)) if matches!(next, '\n' | '\r' | '\x0c') => good = false,
+                Some((_, '\n' | '\r' | '\x0c')) => good = false,
                 _ => {
                     chars.next();
                     good &= !gap;
