@@ -192,6 +192,7 @@ pub(crate) use pockets_page::row_text as pockets_row_text;
 mod probe_page;
 // #670: the Plasma Profile's page.
 mod plasma_page;
+mod waterjet_page;
 mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
@@ -218,6 +219,8 @@ mod thread_infeed_page;
 mod turning_page;
 // #107: Save / Don't Save / Cancel over unsaved changes.
 mod unsaved_prompt;
+// #3608: Save As / Cancel / Overwrite when the project file changed.
+mod overwrite_prompt;
 mod panes;
 // #441: the ribbon's Theme door and its dropdown.
 mod theme_drop;
@@ -339,6 +342,8 @@ mod pin_tests;
 mod ribbon_icon_tests;
 #[cfg(test)]
 mod plasma_ribbon_tests;
+#[cfg(test)]
+mod waterjet_ribbon_tests;
 #[cfg(test)]
 mod machine_mode_tests;
 #[cfg(test)]

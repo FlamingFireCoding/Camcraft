@@ -1299,6 +1299,8 @@ pub enum ParamsDto {
     SinkerSideBurn(SinkerSideDto),
     /// The slot undercut (#1444): appended the same way.
     SlotUndercut(SlotUndercutDto),
+    /// The waterjet profile (#1883): additive - no older file names it.
+    WaterjetProfile(WaterjetDto),
 }
 
 /// The angle an absent `ramp_angle` means: 45°, the ground the
