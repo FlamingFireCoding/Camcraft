@@ -45,15 +45,35 @@ fn classes_section_without_endsec_is_a_named_error() {
 }
 
 #[test]
-fn classes_section_holds_only_class_records() {
-    let text = file(&section("CLASSES", LINE));
-    let error = parse(text.as_bytes()).unwrap_err().0;
-    assert!(error.contains("CLASSES"), "{error}");
+fn thumbnailimage_section_is_skipped() {
+    let body = "90\n4\n310\n89504E47\n310\n0D0A1A0A\n";
+    let with = parse(file(&section("THUMBNAILIMAGE", body)).as_bytes()).unwrap();
+    assert!(!with.primitives.is_empty());
+    assert_eq!(with, parse(file("").as_bytes()).unwrap());
+}
+
+#[test]
+fn acdsdata_section_is_skipped() {
+    let body =
+        "70\n2\n71\n6\n0\nACDSSCHEMA\n90\n0\n1\nAcDb_Thumbnail_Schema\n0\nACDSRECORD\n90\n1\n";
+    let with = parse(file(&section("ACDSDATA", body)).as_bytes()).unwrap();
+    assert_eq!(with, parse(file("").as_bytes()).unwrap());
+}
+
+#[test]
+fn inert_section_without_endsec_is_a_named_error() {
+    for name in ["ACDSDATA", "THUMBNAILIMAGE"] {
+        let text = format!("0\nSECTION\n2\n{name}\n90\n4\n0\nEOF\n");
+        let error = parse(text.as_bytes()).unwrap_err().0;
+        assert!(error.contains(name) && error.contains("ENDSEC"), "{error}");
+        let text = format!("0\nSECTION\n2\n{name}\n90\n4\n");
+        assert!(parse(text.as_bytes()).is_err());
+    }
 }
 
 #[test]
 fn other_unknown_sections_stay_refused() {
-    let error = parse(file(&section("THUMBNAILIMAGE", "")).as_bytes())
+    let error = parse(file(&section("UNSUPPORTED", "")).as_bytes())
         .unwrap_err()
         .0;
     assert!(error.contains("unsupported SECTION"), "{error}");
