@@ -77,6 +77,7 @@ fn punch_doc(skims: Vec<WireSkim>) -> World {
         burnout: None,
         clearance: operation::DEFAULT_CLEARANCE,
         skims,
+        sharp_corners: false,
     };
     let c = CreateOperation::new(&world, "Punch1", "EDM-W025", SrcRef::Entity("slug".into()), OpParams::WireContour(op)).expect("op");
     h.execute(&world, c);
@@ -229,6 +230,44 @@ fn g_edm_refuses_radius_compensation_by_name() {
     let out = run(&recs);
     refused(&out, &["Punch1", "G41 / G42"]);
     assert!(!code_words(&out.program).iter().any(|w| w == "G41" || w == "G42"), "{}", out.program);
+}
+
+/// The cut lines (G1 / G2 / G3) of a program, in order.
+fn cut_lines(program: &str) -> Vec<&str> {
+    program.lines().filter(|l| l.split_whitespace().next().is_some_and(|w| ["G1", "G2", "G3"].contains(&w))).collect()
+}
+
+/// A rapid after the first cut writes no word, so it must refuse: a
+/// dropped rapid lets the next G1 cut a straight line that the verified
+/// path does not have (#3312 review). No cut is written after it.
+#[test]
+fn g_edm_refuses_a_rapid_with_the_wire_threaded_by_name() {
+    let recs = records();
+    let clean = run(&recs);
+    assert!(clean.warnings.is_empty(), "{:?}", clean.warnings);
+    let feeds: Vec<usize> = recs
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| matches!(r, cnc::Record::Move(m) if m.kind == MoveKind::Feed))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(feeds.len() >= 3, "the punch has a lead-in and a contour");
+    let at = feeds[1];
+    let mut rapid = recs[at].clone();
+    if let cnc::Record::Move(m) = &mut rapid {
+        m.kind = MoveKind::Rapid;
+    }
+    let mut recs = recs;
+    recs.insert(at, rapid);
+    let out = run(&recs);
+    assert!(
+        out.warnings.iter().any(|w| w.contains("Punch1") && w.contains("rapid with the wire threaded")),
+        "{:?}",
+        out.warnings
+    );
+    // Only the cut before the rapid is written; no cut follows it.
+    let before = &cut_lines(&clean.program)[..1];
+    assert_eq!(cut_lines(&out.program), before, "{}", out.program);
 }
 
 /// Done means: skims refuse by name, through the app's own post - no file.

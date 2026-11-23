@@ -316,7 +316,7 @@ in `docs/decisions/617-sodick-wire-post.md` and
 `docs/decisions/2649-sodick-ln-pass-structure.md`. Its goldens ride
 under `nc/sodick-wire/` (`sodick_wire_post.rs`, `sodick_wire_passes.rs`).
 
-`g-edm.cps` (#2700, "G-EDM Wire EDM") is the third `WIRE_POSTS` entry,
+`g-edm.cps` (#2700, "G-EDM Wire EDM") is the fourth `WIRE_POSTS` entry,
 never the default. It serves G-EDM builds on G-RBLv3 (a Grbl derivative):
 Grbl-family words only (`G21` / `G20 G90 G17`, `G0`, `G1`, `G2` / `G3`
 with `I J`, `M30`), no `%` fence, no `O` word, no `F` (the gap servo sets
