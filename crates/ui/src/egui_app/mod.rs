@@ -349,6 +349,8 @@ mod debug_info_tests;
 #[cfg(test)]
 mod report_tests;
 #[cfg(test)]
+mod gpu_test_lock;
+#[cfg(test)]
 mod fresh_op_tests;
 #[cfg(test)]
 mod tool_number_tests;

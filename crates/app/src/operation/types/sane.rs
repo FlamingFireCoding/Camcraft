@@ -75,6 +75,9 @@ impl OpParams {
             return Some(why);
         }
         match self {
+            OpParams::Finish3D { direction_angle, .. } => {
+                crate::finishing3d::parallel_angle_refusal(*direction_angle).map(str::to_owned)
+            }
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
             OpParams::SlotUndercut(p) => p.refusal(),
@@ -477,6 +480,7 @@ impl OpParams {
                             || crate::load::load_in_door(*optimal_load)))
             }
             OpParams::Finish3D {
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -497,6 +501,7 @@ impl OpParams {
                 // level cap refuses a tolerance that would need more
                 // rings than the machine of record may hold.
                 pos(*tolerance)
+                    && crate::finishing3d::parallel_angle_refusal(*direction_angle).is_none()
                     && stepover.is_none_or(pos)
                     // M2.5 A: the flank's own number is a spacing
                     // like the raster's - finite and positive, or absent.
