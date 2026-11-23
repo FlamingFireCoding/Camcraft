@@ -34,7 +34,12 @@
   through the same `emit_runs` link law as before (hop to retract or
   clearance, `diagonal_ok` for `ramp`, `straight_ok` for the gap link),
   so each entry and each link between loops is certified by the
-  existing laws. The 2D `level_ring_plan` is not used: its input is a
+  existing laws. Correction (#3627): the plain hop was not certified
+  before #3627. With a retract plane below the end of the current
+  run, it fed the tool down into the part (the verifier held the
+  post). Since #3627 its plane is never below the run end, and its
+  move across is over every facet, cleared by `straight_ok`, or at
+  clearance. The 2D `level_ring_plan` is not used: its input is a
   pocket band with walls, and the finishing loops are ground loops of a
   shadow region.
 - The digest writes the value only off Auto and only for Contour and

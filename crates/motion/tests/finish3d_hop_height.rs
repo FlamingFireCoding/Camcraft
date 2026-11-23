@@ -3,14 +3,17 @@
 //! two, must never take the tool down at the end of the high run (the
 //! tool rests on the surface there), and its move across must not pass
 //! through the part. Fixture: the stepped pocket of `finish3d.rs` (top
-//! annulus at z 10, floor at z 5), Contour pattern (outer passes first).
+//! annulus at z 10, floor at z 5), Contour pattern (outer passes first);
+//! and a mesa (top at z 10 on a base at z 5) cut with `Pass starts at:
+//! Inside` (#3362), where the inner pass is the high one.
 //!
 //! Gate map (M4.4): covers camcraft_motion::finishing3d, camcraft_motion::verify.
 
 use camcraft_motion::cl::{Move, MoveKind, Toolpath};
-use camcraft_motion::finishing3d::{contour, Finish3DParams, FinishPattern, GapLink};
+use camcraft_motion::finishing3d::{contour, contour_from, Finish3DParams, FinishPattern, GapLink};
 use camcraft_motion::geo2d::Region;
 use camcraft_motion::geometry::{slice, Point3, Triangle};
+use camcraft_motion::machining2d::PassStart;
 use camcraft_motion::verify::{verify, Mode, ToolGeom, VerifyContext, Warning};
 
 const R: f64 = 3.0;
@@ -78,7 +81,7 @@ fn descents_at_run_end(t: &Toolpath) -> Vec<(Move, Move, Move)> {
         let (a, d) = (&m[i - 1], &m[i]);
         let same_xy = (a.to.x - d.to.x).hypot(a.to.y - d.to.y) < 1e-9;
         if a.kind == MoveKind::Feed && same_xy && d.to.z < a.to.z - 1e-6 && m[i + 1].kind == MoveKind::Rapid {
-            out.push((a.clone(), d.clone(), m[i + 1].clone()));
+            out.push((*a, *d, m[i + 1]));
         }
     }
     out
@@ -113,6 +116,10 @@ fn rapids_through_block(t: &Toolpath) -> Vec<(Point3, Point3)> {
 }
 
 fn verify_finish(facets: &[Triangle], t: &Toolpath) -> Vec<Warning> {
+    verify_at(facets, t, TOP)
+}
+
+fn verify_at(facets: &[Triangle], t: &Toolpath, stock_top: f64) -> Vec<Warning> {
     let region: Region = slice::project(facets, 64).expect("fixture silhouette");
     let tool = ToolGeom {
         radius: R,
@@ -130,7 +137,7 @@ fn verify_finish(facets: &[Triangle], t: &Toolpath) -> Vec<Warning> {
         tool: &tool,
         cutter: None,
         mode: Mode::Envelope,
-        stock_top_z: TOP,
+        stock_top_z: stock_top,
         clearance_z: 25.0,
         stock_to_leave: 0.0,
         gouge_tol: 0.01,
@@ -188,5 +195,81 @@ fn a_retract_above_the_part_hops_clean() {
         );
         assert_eq!(rapids_through_block(&t), Vec::new(), "retract {rz:?}");
         assert_eq!(verify_finish(&f, &t), Vec::new(), "retract {rz:?}: the verifier agrees");
+    }
+}
+
+/// A convex part: a mesa, top at 10 over (-4..4)^2, on a base at 5 over
+/// (-12..12)^2, outer walls down to 0.
+fn mesa() -> Vec<Triangle> {
+    let quad = |p: [Point3; 4]| vec![Triangle::new(p[0], p[1], p[2]), Triangle::new(p[0], p[2], p[3])];
+    let (t, b) = (TOP, FLOOR);
+    let mut f = Vec::new();
+    f.extend(quad([p3(-4.0, -4.0, t), p3(4.0, -4.0, t), p3(4.0, 4.0, t), p3(-4.0, 4.0, t)]));
+    f.extend(quad([p3(-4.0, -4.0, b), p3(4.0, -4.0, b), p3(4.0, -4.0, t), p3(-4.0, -4.0, t)]));
+    f.extend(quad([p3(4.0, -4.0, b), p3(4.0, 4.0, b), p3(4.0, 4.0, t), p3(4.0, -4.0, t)]));
+    f.extend(quad([p3(4.0, 4.0, b), p3(-4.0, 4.0, b), p3(-4.0, 4.0, t), p3(4.0, 4.0, t)]));
+    f.extend(quad([p3(-4.0, 4.0, b), p3(-4.0, -4.0, b), p3(-4.0, -4.0, t), p3(-4.0, 4.0, t)]));
+    f.extend(quad([p3(-12.0, -12.0, b), p3(12.0, -12.0, b), p3(12.0, -4.0, b), p3(-12.0, -4.0, b)]));
+    f.extend(quad([p3(-12.0, 4.0, b), p3(12.0, 4.0, b), p3(12.0, 12.0, b), p3(-12.0, 12.0, b)]));
+    f.extend(quad([p3(-12.0, -4.0, b), p3(-4.0, -4.0, b), p3(-4.0, 4.0, b), p3(-12.0, 4.0, b)]));
+    f.extend(quad([p3(4.0, -4.0, b), p3(12.0, -4.0, b), p3(12.0, 4.0, b), p3(4.0, 4.0, b)]));
+    f.extend(quad([p3(-12.0, -12.0, 0.0), p3(12.0, -12.0, 0.0), p3(12.0, -12.0, b), p3(-12.0, -12.0, b)]));
+    f.extend(quad([p3(12.0, -12.0, 0.0), p3(12.0, 12.0, 0.0), p3(12.0, 12.0, b), p3(12.0, -12.0, b)]));
+    f.extend(quad([p3(12.0, 12.0, 0.0), p3(-12.0, 12.0, 0.0), p3(-12.0, 12.0, b), p3(12.0, 12.0, b)]));
+    f.extend(quad([p3(-12.0, 12.0, 0.0), p3(-12.0, -12.0, 0.0), p3(-12.0, -12.0, b), p3(-12.0, 12.0, b)]));
+    f
+}
+
+/// Each Rapid that crosses XY over the mesa (-4..4)^2, padded by the
+/// ball radius, below its top.
+fn rapids_through_mesa(t: &Toolpath) -> Vec<(Point3, Point3)> {
+    let mut out = Vec::new();
+    for w in t.moves.windows(2) {
+        let (a, b) = (w[0].to, w[1].to);
+        let vertical = (a.x - b.x).hypot(a.y - b.y) < 1e-9;
+        if w[1].kind != MoveKind::Rapid || vertical || a.z.min(b.z) >= TOP - 1e-6 {
+            continue;
+        }
+        let crosses = (0..=16).any(|k| {
+            let s = f64::from(k) / 16.0;
+            let (x, y) = (a.x + (b.x - a.x) * s, a.y + (b.y - a.y) * s);
+            x.abs() < 4.0 + R - 1e-6 && y.abs() < 4.0 + R - 1e-6
+        });
+        if crosses {
+            out.push((a, b));
+        }
+    }
+    out
+}
+
+/// `Pass starts at: Inside` (#3362) on a convex part: the inner pass on
+/// the mesa top (z 10) is cut first, the next pass on the base (z 5) is
+/// lower. A retract at 7 is below the inner pass. The hop must not go
+/// down at the mesa top, nor cross the mesa below its top.
+#[test]
+fn inside_first_on_a_convex_part_with_a_low_retract_never_digs_in() {
+    let f = mesa();
+    let t = contour_from(&f, &params(Some(7.0)), PassStart::Inside).expect("mesa contour");
+    let downs = descents_at_run_end(&t);
+    assert!(
+        downs.iter().all(|(a, d, _)| a.to.z < TOP - 1e-6 || d.to.z >= TOP - 1e-6),
+        "the hop takes the tool down at the end of a run on the mesa top: {downs:?}"
+    );
+    assert_eq!(rapids_through_mesa(&t), Vec::new(), "a rapid crosses the mesa below its top");
+    // No gouge. The verifier still holds the post for the hops between
+    // the base passes at the retract plane (z 7): it reads the stock as
+    // uncut up to its top (z 10), so a rapid below that is "in stock".
+    // That is its own conservative law, not this hop: each such rapid
+    // is above the base and off the mesa.
+    for w in verify_at(&f, &t, TOP) {
+        let Warning::RapidInStock { at } = w else {
+            panic!("blocking finding other than a rapid in stock: {w:?}");
+        };
+        let (a, b) = (t.moves[at - 1].to, t.moves[at].to);
+        let off_mesa = |q: Point3| q.x.abs() >= 4.0 + R - 1e-6 || q.y.abs() >= 4.0 + R - 1e-6;
+        assert!(
+            a.z >= FLOOR && b.z >= FLOOR && off_mesa(a) && off_mesa(b),
+            "rapid in stock {at}: {a:?} -> {b:?} is not a base hop"
+        );
     }
 }
