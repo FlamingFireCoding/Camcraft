@@ -191,3 +191,41 @@ fn circular_passes_tab_offers_all_three_pass_starts() {
         current = label;
     }
 }
+
+/// #3361: 3D Pocket's Passes tab carries the shared row, Auto by default.
+/// Under the default strategy (Auto, which cuts rows) and under Adaptive
+/// the line under it says, in view, that the value changes no move; the
+/// ring strategies take it without that line. The wire writes no key for
+/// Auto and the word for Inside / Outside.
+#[test]
+fn the_pocket3d_passes_tab_offers_pass_start_and_names_the_row_strategies() {
+    use super::super::pass_start_row::POCKET3D_NO_RING_ORDER;
+    use camcraft_app::machining2d::PocketStrategy;
+    let shown = |h: &Harness<'static, ShellUi>| {
+        h.query_all_by(|n| [n.label(), n.value()].into_iter().flatten().any(|l| l.contains(POCKET3D_NO_RING_ORDER)))
+            .count()
+    };
+    let mut harness = passes_of(OpType::Pocket3D);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    assert_eq!(shown(&harness), 1, "the default strategy cuts rows: the line says the value is not used");
+    let wire = camcraft_app::project::params_to_json(&harness.state().state.op_ui.params);
+    assert_eq!(wire["pocket3d"].get("pass_start"), None, "Auto writes no key");
+    let outside_before = combos_showing(&harness, "Outside");
+    if let OpParams::Pocket3D { pass_start, strategy, .. } = &mut harness.state_mut().state.op_ui.params {
+        assert_eq!(*pass_start, PassStart::Auto, "a new 3D Pocket starts Auto");
+        *pass_start = PassStart::Outside;
+        *strategy = PocketStrategy::Waterline;
+    } else {
+        panic!("the draft is not a 3D Pocket");
+    }
+    harness.run();
+    assert_eq!(combos_showing(&harness, "Outside"), outside_before + 1, "the combo shows the draft's value");
+    assert_eq!(shown(&harness), 0, "Waterline uses the value: no line");
+    let wire = camcraft_app::project::params_to_json(&harness.state().state.op_ui.params);
+    assert_eq!(wire["pocket3d"].get("pass_start").and_then(serde_json::Value::as_str), Some("outside"));
+    if let OpParams::Pocket3D { strategy, .. } = &mut harness.state_mut().state.op_ui.params {
+        *strategy = PocketStrategy::Adaptive;
+    }
+    harness.run();
+    assert_eq!(shown(&harness), 1, "the Adaptive spiral has no ring order: the line is back");
+}

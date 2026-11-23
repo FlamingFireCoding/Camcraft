@@ -291,6 +291,7 @@ fn plate() -> Vec<Triangle> {
 #[test]
 fn a_3d_pocket_whose_stepdown_spans_the_depth_cuts_one_level() {
     let p = Pocket3DParams {
+        pass_start: Default::default(),
         links: Links::ROUGH3D,
         tool_diameter: 6.0,
         stepover: 2.4,

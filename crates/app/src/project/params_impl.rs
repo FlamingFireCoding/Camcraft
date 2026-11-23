@@ -483,6 +483,7 @@ impl ParamsDto {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => ParamsDto::Pocket3D {
                 links: links_to_dto(links, &p.default_links()),
                 stepover: *stepover,
@@ -518,6 +519,7 @@ impl ParamsDto {
                 optimal_load: Some(*optimal_load),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             OpParams::Finish3D {
                 pattern,
@@ -1815,6 +1817,7 @@ impl ParamsDto {
                 optimal_load,
                 feed_opt,
                 shell,
+                pass_start,
             } => OpParams::Pocket3D {
                 links: links_from_dto(links.as_ref(), crate::links::Links::ROUGH3D),
                 stepover: *stepover,
@@ -1849,6 +1852,7 @@ impl ParamsDto {
                 optimal_load: load_from_file(*optimal_load, *max_engagement),
                 feed_opt: *feed_opt,
                 shell: *shell,
+                pass_start: (*pass_start).into(),
             },
             ParamsDto::Finish3D {
                 pattern,

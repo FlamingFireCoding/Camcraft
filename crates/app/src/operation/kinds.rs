@@ -1110,6 +1110,8 @@ fn seed_pocket3d(c: &Carried) -> OpParams {
         // Off is the ladder exactly as it always generated; the shell
         // is the user's ask, not the fresh op's guess (M2.5 F).
         shell: false,
+        // #3361: the core-first order every earlier 3D pocket cut.
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
