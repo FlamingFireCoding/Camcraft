@@ -189,30 +189,24 @@ pub fn batch(root: &Path) -> Plan {
 /// Crate dirs whose `#[ignore]`d tests run in release (the heavy lanes).
 pub const HEAVY_CRATES: &[&str] = &["kernel", "motion", "app"];
 
-/// True when the integration binary `b` can hold an `#[ignore]`d test. A flat suite (`tests/<b>.rs`) is
-/// heavy when its text names `ignore`, or when it pulls in other files (`mod x;`, `include!`, `#[path]`)
-/// the entry file does not show. A directory suite (`tests/<b>/main.rs`) is read through all its module
-/// files, so a `mod x;` line alone does not make it heavy (#3186); `include!` and `#[path]` still do.
-/// A binary with no ignored test has nothing for a heavy step to run, so it gets none (526 steps
-/// otherwise, one cargo start each); the test `heavy_steps_skip_only_binaries_without_ignored_tests` pins
-/// that no binary is skipped by mistake. Unreadable source, a module walk error or a declared module
-/// whose file is absent counts as heavy: the gate never drops a binary by accident.
+/// True when the integration binary `b` can hold an `#[ignore]`d test. The entry file and each module
+/// file it declares are read (`suites::sources`), for a flat suite (`tests/<b>.rs`) and a directory suite
+/// (`tests/<b>/main.rs`) alike (#3186, #3706). A file that names `ignore`, or pulls in files the module
+/// walk does not follow (`include!`, `#[path]`, `#[cfg_attr(.., path = ..)]`), makes the binary heavy.
+/// A binary with no ignored test has nothing for a heavy step to run, so it gets none (one cargo start
+/// each); the test `heavy_steps_skip_only_binaries_without_ignored_tests` pins that no binary is skipped
+/// by mistake. Unreadable source, a module walk error, a declared module whose file is absent, or a `mod`
+/// token the walk could not read counts as heavy: the gate never drops a binary by accident.
 fn may_run_ignored(root: &Path, d: &str, b: &str) -> bool {
     let entry = crate::suites::entry(root, d, b);
-    let heavy_text = |t: &str| t.contains("ignore") || t.contains("include!") || t.contains("#[path");
-    if entry.file_name().is_some_and(|n| n == "main.rs") {
-        let Ok((sources, missing)) = crate::suites::sources_and_missing(&entry) else { return true };
-        return missing > 0
-            || sources.is_empty()
-            || sources.iter().any(|s| std::fs::read_to_string(&s.path).map_or(true, |t| heavy_text(&t)));
-    }
-    let Ok(text) = std::fs::read_to_string(&entry) else { return true };
-    heavy_text(&text)
-        || text.lines().any(|l| {
-            let t = l.trim_start();
-            let t = t.strip_prefix("pub ").unwrap_or(t);
-            t.starts_with("mod ") && t.trim_end().ends_with(';')
-        })
+    let Ok(path_attr) = crate::scan::re(r"#\s*!?\s*\[\s*(?:path\b|cfg_attr\b[^\]]*\bpath\s*=)") else {
+        return true;
+    };
+    let heavy_text = |t: &str| t.contains("ignore") || t.contains("include!") || path_attr.is_match(t);
+    let Ok((sources, missing)) = crate::suites::sources_and_missing(&entry) else { return true };
+    missing > 0
+        || sources.is_empty()
+        || sources.iter().any(|s| std::fs::read_to_string(&s.path).map_or(true, |t| heavy_text(&t)))
 }
 
 /// The heavy lanes as one step for each test target (#1714): one release build of the heavy crates

@@ -1328,6 +1328,8 @@ pub enum ParamsDto {
     SlotUndercut(SlotUndercutDto),
     /// The waterjet profile (#1883): additive - no older file names it.
     WaterjetProfile(WaterjetDto),
+    /// The multi-axis deburr (#1894): appended the same way.
+    MultiAxisDeburr(MultiAxisDeburrDto),
 }
 
 /// The angle an absent `ramp_angle` means: 45°, the ground the
