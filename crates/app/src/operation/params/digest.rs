@@ -59,6 +59,15 @@ pub(super) fn write_blend_radius(h: &mut std::hash::DefaultHasher, r: Option<f64
     }
 }
 
+/// The blend tag and its radius, written only for arc turns: a legacy
+/// (sharp) operation keeps the digest it was cached under.
+pub(super) fn write_blend(h: &mut std::hash::DefaultHasher, on: bool, r: Option<f64>) {
+    if on {
+        h.write_u8(0xB1);
+        write_blend_radius(h, r);
+    }
+}
+
 /// One scalar, as its bit pattern.
 pub(super) fn w(h: &mut std::hash::DefaultHasher, v: f64) {
     h.write(&v.to_bits().to_le_bytes());
