@@ -224,6 +224,13 @@ impl OpParams {
                 if a.predrilled {
                     h.write_u8(0xC7);
                 }
+                // #3745: the approach distance outside the stock - bytes
+                // only when it differs from the default, so every earlier
+                // approach keeps its digest.
+                if a.approach_distance.to_bits() != crate::links::Approach::DEFAULT.approach_distance.to_bits() {
+                    h.write_u8(0xCA);
+                    w(h, a.approach_distance);
+                }
                 // M13.11: control compensation moves what the post
                 // writes - a byte only when on, so every earlier
                 // approach keeps its digest.

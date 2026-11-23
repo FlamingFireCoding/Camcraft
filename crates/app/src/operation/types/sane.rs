@@ -74,6 +74,10 @@ impl OpParams {
         if let Some(why) = self.pick_refusal() {
             return Some(why);
         }
+        // #3745: the approach distance outside the stock, by name.
+        if let Some(why) = self.links().and_then(|l| l.approach.approach_distance_refusal()) {
+            return Some(why.into());
+        }
         match self {
             OpParams::Finish3D { direction_angle, .. } => {
                 crate::finishing3d::parallel_angle_refusal(*direction_angle).map(str::to_owned)

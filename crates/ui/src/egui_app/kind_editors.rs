@@ -96,6 +96,10 @@ pub(super) fn roughing2d_pane(
         }
     } else if tab == SEC_LEADS {
         lead_page::leads_tab_with_retract(ui, u, tag, Some((entry, helix_radius)), links, retract_z.is_some());
+        // #3745: an Inside or Outside pass enters outside the stock edge.
+        if let Some(s) = pass_start.as_deref() {
+            super::approach_page::approach_distance_group(ui, u, *s, &mut links.approach);
+        }
     } else if tab == SEC_FEEDS {
         prop_row(ui, "Feed", |ui| num_feed(ui, u, feed));
         if let Some((m, t)) = troch
