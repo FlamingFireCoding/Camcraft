@@ -620,7 +620,7 @@ flute must cover the deepest cut.
 |---|---|---|
 | Heights | Top Z | the model top (the start depth) |
 | Heights | Bottom Z | 2 under Top Z (the maximum depth of the tip) |
-| Heights | Stepdown | the document stepdown |
+| Heights | Stepdown | 5 |
 | Passes | Flat clearing | off |
 | Passes | Floor stepover | 0.25 (shown only with flat clearing on) |
 
