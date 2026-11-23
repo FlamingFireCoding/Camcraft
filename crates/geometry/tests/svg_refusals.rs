@@ -3,7 +3,7 @@
 //! Provenance: hand-built malformed SVG text and deterministic byte mutations.
 //! Gate map (M4.4): covers camcraft_geometry::svg.
 
-use camcraft_geometry::dxf::Limits;
+use camcraft_geometry::dxf::{Limits, Primitive};
 use camcraft_geometry::svg;
 
 fn page(body: &str) -> String {
@@ -302,6 +302,25 @@ fn svg_many_ampersands_in_an_attribute_read_in_linear_time() {
     assert_eq!(doc.primitives.len(), 4);
     let spent = start.elapsed();
     assert!(spent < std::time::Duration::from_secs(5), "{spent:?}");
+}
+
+#[test]
+fn svg_many_attributes_on_a_tag_read_in_linear_time() {
+    // Each attribute once scanned all earlier attributes of its tag for a duplicate name:
+    // quadratic time, about 35 minutes for a 16 MiB tag. 100 000 must read in under five seconds.
+    let many: String = (0..100_000).map(|i| format!(r#" a{i}="1""#)).collect();
+    let text = page(&format!(r#"<rect width="2" height="1"{many} width="9"/>"#));
+    let start = std::time::Instant::now();
+    let doc = svg::parse(text.as_bytes(), None).expect("the attributes read");
+    let spent = start.elapsed();
+    assert!(spent < std::time::Duration::from_secs(5), "{spent:?}");
+    // The first value of a repeated attribute stays, as before: the rect is 2 wide, not 9.
+    assert_eq!(doc.primitives.len(), 4);
+    let (lo, hi) = doc.primitives.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| match &p.primitive {
+        Primitive::Line { start, end } => (lo.min(start.x).min(end.x), hi.max(start.x).max(end.x)),
+        _ => (lo, hi),
+    });
+    assert!((hi - lo - 2.0).abs() < 1e-9, "width {}", hi - lo);
 }
 
 #[test]

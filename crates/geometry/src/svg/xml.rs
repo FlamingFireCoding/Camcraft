@@ -5,6 +5,8 @@
 //! Text content is not kept. Entity references other than the five predefined ones and
 //! character references stay as written: a DOCTYPE entity is never expanded.
 
+use std::collections::HashSet;
+
 use super::{SvgError, invalid};
 
 /// The deepest element nesting read; deeper input is refused, not followed.
@@ -204,6 +206,8 @@ pub(super) fn parse(text: &str, max_elements: usize) -> Result<Tree, SvgError> {
 /// The attributes of a start tag; leaves the cursor on `>` or `/>`.
 fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<Vec<(String, String)>, SvgError> {
     let mut attrs: Vec<(String, String)> = Vec::new();
+    // The names read so far: a scan of `attrs` for each attribute is quadratic in one tag.
+    let mut seen: HashSet<String> = HashSet::new();
     loop {
         cur.skip_space();
         if cur.starts("/>") || cur.starts(">") {
@@ -231,7 +235,7 @@ fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<Vec<(String, String)>, 
         let raw = cur.rest().get(..len).unwrap_or("");
         let value = decode(raw);
         cur.at += len + 1;
-        if !attrs.iter().any(|(n, _)| *n == name) {
+        if seen.insert(name.clone()) {
             attrs.push((name, value));
         }
     }
