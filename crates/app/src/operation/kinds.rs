@@ -1405,6 +1405,8 @@ fn seed_part(c: &Carried) -> OpParams {
         bar_unload: false,
         bar_transfer: false,
         inspect_tol: 0.0,
+        // #3469: the #3452 kerf - the cut-off piece is the part.
+        kerf: crate::turning::PartKerf::default(),
     }
 }
 

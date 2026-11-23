@@ -1081,6 +1081,7 @@ impl OpParams {
                 plunge_feed,
                 bar_advance,
                 inspect_tol,
+                kerf,
                 ..
             } => {
                 pos(*tolerance)
@@ -1105,6 +1106,8 @@ impl OpParams {
                     // generator's level-cap precedent, at the door.
                     && inspect_tol.is_finite()
                     && (*inspect_tol == 0.0 || *inspect_tol >= 1e-4)
+                    // #3469: the back stock is a length, 0 or more.
+                    && kerf.problem().is_none()
             }
             // The threading door (M5.2 stage D): three positive helix
             // numbers - pitch, depth, infeed - beside the twins'

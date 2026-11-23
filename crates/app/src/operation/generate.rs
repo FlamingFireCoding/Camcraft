@@ -3027,6 +3027,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             feed,
             plunge_feed,
             tolerance,
+            kerf,
             ..
         } => {
             if tool.kind != crate::tools::ToolKind::Groove {
@@ -3045,12 +3046,17 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             // #3452: where the model goes on past the plane on both sides,
             // the chuck-side rule decides which piece is the part; a setup
-            // that cannot say which end is free is refused there.
+            // that cannot say which end is free is refused there. #3469:
+            // the kept-piece setting states the side, so it resolves that
+            // ambiguity - the refusal stays for the default (cut-off) only.
             let plane = req_z(hl.bottom, "Parting Plane Z")?;
             if let Some(why) = &part_off_side
+                && kerf.kept == crate::turning::PartKept::CutOff
                 && crate::turning::plane_inside_model(&material.facets, plane, *tolerance)
             {
-                return Err(GenError::Invalid(why.clone()));
+                return Err(GenError::Invalid(format!(
+                    "{why} Or set 'The part is' to 'Chuck piece' to state the side."
+                )));
             }
             let path = crate::turning::part_in(
                 &material.facets,
@@ -3063,6 +3069,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     plunge_feed: *plunge_feed,
                     blade_width: tool.width,
                     tolerance: *tolerance,
+                    kerf: *kerf,
                 },
                 turn_stock,
             )?;
@@ -3072,7 +3079,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // against the part's end face: a blade band that takes
             // part material is a gouge, refused and never posted.
             if let Some(why) =
-                crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance)
+                crate::turning::part_kerf_refusal_for(&material.facets, &path, tool.width, plane, *tolerance, *kerf)
             {
                 return Err(GenError::Invalid(why));
             }
