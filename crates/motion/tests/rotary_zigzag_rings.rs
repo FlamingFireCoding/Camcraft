@@ -18,7 +18,7 @@ use camcraft_motion::cl::{MoveKind, Toolpath};
 use camcraft_motion::geo2d::{Loop, Point2, Region};
 use camcraft_motion::geometry::{Point3, Triangle};
 use camcraft_motion::links::Links;
-use camcraft_motion::machining2d::{PocketStrategy, ARC_FIT_TOL};
+use camcraft_motion::machining2d::{PocketStrategy, ARC_FIT_TOL, boundary_rings_probe};
 use camcraft_motion::machining3d::{Entry3D, Pocket3DParams, pocket3d_air_split};
 use camcraft_motion::multiaxis::{AxisControl, rotary_offset_in};
 
@@ -344,6 +344,46 @@ fn the_dflat_edge_walls_are_ringed() {
         checked += 1;
     }
     assert!(checked > 0, "no level stands between the flat and the skin");
+}
+
+// ---- the closing-edge law on a near-end loop ------------------------
+
+/// PR #3496's review: the seam ring's reach gate admits a loop that
+/// stands near a cover end but owns no vertex ON the bound. The split
+/// then found no seam run, and returned the loop's points open - the
+/// closing edge (here the wall at x = 1.5 mod 10) was dropped, and the
+/// periodic copy did not restore it. A loop the gate admits but whose
+/// vertices touch no cover bound must close exactly as the no-seam path
+/// closes: only a loop with a real seam run may wrap the seam.
+#[test]
+fn the_near_end_loop_without_a_seam_vertex_keeps_its_closing_edge() {
+    let loops: [Vec<Point2>; 2] = [
+        [(1.5, 2.0), (8.5, 2.0), (8.5, 8.0), (1.5, 8.0)]
+            .into_iter()
+            .map(|(x, y)| Point2::new(x, y))
+            .collect(),
+        [(11.5, 2.0), (18.5, 2.0), (18.5, 8.0), (11.5, 8.0)]
+            .into_iter()
+            .map(|(x, y)| Point2::new(x, y))
+            .collect(),
+    ];
+    // The reviewer's cover: two periods wide, reach 2 - both loops
+    // enter the seam branch, neither stands on a cover bound.
+    let seam = (0.0, 20.0, 10.0, 2.0);
+    for (i, pts) in loops.iter().enumerate() {
+        for climb in [true, false] {
+            let passes = boundary_rings_probe(pts, climb, Some(seam));
+            assert_eq!(passes.len(), 1, "loop {i}, climb {climb}: one ring");
+            let ring = &passes[0];
+            let (first, last) = (ring.first().copied(), ring.last().copied());
+            assert_eq!(
+                first,
+                last,
+                "loop {i}, climb {climb}: the ring stays open - its closing wall edge is dropped"
+            );
+            assert_eq!(ring.len(), pts.len() + 1, "loop {i}, climb {climb}: the ring is the loop plus its close");
+        }
+    }
 }
 
 

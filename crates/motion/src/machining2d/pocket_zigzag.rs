@@ -84,12 +84,20 @@ fn boundary_rings(points: &[Point2], climb: bool, seam: Option<SeamWrap>) -> Vec
     if !at_end {
         return closed_ring(pts);
     }
-    // The loop wraps the seam: its arcs arrive open. An arc ends on the
-    // seam's copy of its start azimuth - closed on the work, for the
-    // cover's two laps carry the same wall - and a closing chord there
-    // would run one full period across the cover.
+    // The loop wraps the seam: its arcs arrive open. A closing chord
+    // there would run one full period across the cover.
     let edge_tol = 1e-6 * (max - min).abs().max(1.0);
     let span_tol = 1e-6 * sm.period.abs().max(1.0);
+    // A ring whose wall touches no cover bound owns no seam run to drop.
+    // One that still spans a period wraps the seam through one period of
+    // its own extent (`one_period`); a shorter one closes - only a real
+    // seam run may leave a pass open, for an open pass drops its closing
+    // wall edge (PR #3496 review).
+    let has_seam_vertex =
+        pts.iter().any(|p| (p.x - sm.lo).abs() <= edge_tol || (p.x - sm.hi).abs() <= edge_tol);
+    if !has_seam_vertex && max - min < sm.period - span_tol {
+        return closed_ring(pts);
+    }
     let mut out = Vec::new();
     for arc in seam_open_arcs(&pts, sm.lo, sm.hi, edge_tol) {
         let lo = arc.iter().fold(f64::INFINITY, |m, p| m.min(p.x));
@@ -117,9 +125,8 @@ fn closed_ring(mut pts: Vec<Point2>) -> Vec<Vec<Point2>> {
 /// The loop with its cover-end edge runs (points within `tol` of the
 /// ends `a`/`b`) removed: each maximal run of seam points is dropped and
 /// the leftover non-seam arcs come back open. A loop with no seam point
-/// comes back whole and open - it wraps an azimuth it never touches, and
-/// an open pass cuts every edge once where a closed one would repeat the
-/// closure.
+/// comes back whole and open; `boundary_rings` closes such a loop before
+/// this helper runs, and keeps that branch for a direct caller.
 fn seam_open_arcs(pts: &[Point2], a: f64, b: f64, tol: f64) -> Vec<Vec<Point2>> {
     let flags: Vec<bool> = pts.iter().map(|p| (p.x - a).abs() <= tol || (p.x - b).abs() <= tol).collect();
     if !flags.iter().any(|&f| f) {
@@ -238,4 +245,13 @@ pub(super) fn zigzag_passes(center: &Region, stepover: f64, climb: bool) -> Resu
         passes.push(cur);
     }
     Ok(passes)
+}
+
+/// Test probe for the seam ring law (PR #3496's review): one boundary
+/// loop's ring passes, exactly as the Zigzag level's planner takes them,
+/// with the seam's `(lo, hi, period, reach)`. Not a public API.
+#[doc(hidden)]
+pub fn boundary_rings_probe(points: &[Point2], climb: bool, seam: Option<(f64, f64, f64, f64)>) -> Vec<Vec<Point2>> {
+    let seam = seam.map(|(lo, hi, period, reach)| SeamWrap { lo, hi, period, reach });
+    boundary_rings(points, climb, seam)
 }
