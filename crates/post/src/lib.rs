@@ -18,11 +18,13 @@
 //! (assets/posts/AGENTS.md). No flecs, no schema, no world.
 
 pub mod agie;
+pub mod agie_setup;
 pub mod data_dir;
 pub mod data_scan;
 pub mod kinematics;
 pub mod machine;
 pub mod post;
+pub mod session_files;
 
 pub use camcraft_cl::cl;
 pub use camcraft_geometry::{geo2d, geometry};

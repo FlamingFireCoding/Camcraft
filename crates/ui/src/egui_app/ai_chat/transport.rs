@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use camcraft_app::mcp::provider::{
-    FallbackMode, Provider, is_read_only_tool, prompt_context, qa_context, tools,
+    CORE_TOOLS, FallbackMode, Provider, ToolSet, is_read_only_tool, prompt_context, qa_context, tools_in,
 };
 use camcraft_app::mcp::requires_approval;
 use serde_json::{Value, json};
@@ -199,17 +199,26 @@ pub(crate) fn requires_confirmation(
         FallbackMode::ReadOnly => true,
         FallbackMode::PromptJson => !is_read_only_tool(tool_name),
         FallbackMode::Native => {
-            tool_name == "open_project" || requires_approval(tool_name, arguments).is_some()
+            tool_name.starts_with("delete_")
+                || tool_name == "open_project"
+                || requires_approval(tool_name, arguments).is_some()
         }
     }
 }
 
 /// Build the provider/fallback tool schema payload sent alongside chat messages.
+/// `set` picks the whole tool table or the core subset (#1944).
 #[must_use]
-pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, project: &Value) -> Value {
+pub(crate) fn build_tools_payload(provider: Provider, mode: FallbackMode, set: ToolSet, project: &Value) -> Value {
     match mode {
-        FallbackMode::Native => json!({ "tools": tools(provider) }),
-        FallbackMode::PromptJson => prompt_context(project),
+        FallbackMode::Native => json!({ "tools": tools_in(provider, set) }),
+        FallbackMode::PromptJson => {
+            let mut context = prompt_context(project);
+            if set == ToolSet::Core && let Some(tools) = context["tools"].as_array_mut() {
+                tools.retain(|tool| tool["name"].as_str().is_some_and(|name| CORE_TOOLS.contains(&name)));
+            }
+            context
+        }
         FallbackMode::ReadOnly => qa_context(project),
     }
 }
@@ -322,6 +331,21 @@ pub(crate) fn encode_base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_confirmation_covers_every_published_delete_tool() {
+        let deletes: Vec<_> = camcraft_app::mcp::catalog::tool_names().into_iter()
+            .filter(|name| name.starts_with("delete_")).collect();
+        assert!(!deletes.is_empty(), "the published delete tools must be covered");
+        for name in deletes {
+            assert!(requires_confirmation(name, &json!({}), FallbackMode::Native),
+                "native {name} must wait for Allow/Deny");
+        }
+        for name in ["get_job", "add_operation"] {
+            assert!(!requires_confirmation(name, &json!({}), FallbackMode::Native),
+                "ordinary {name} must retain its native policy");
+        }
+    }
 
     #[test]
     fn offline_policy_refuses_cloud_and_allows_local() {

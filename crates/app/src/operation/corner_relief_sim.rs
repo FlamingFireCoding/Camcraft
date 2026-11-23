@@ -22,8 +22,10 @@ pub(crate) fn zones_for_op(world: &World, op: &Operation, op_name: &str) -> Vec<
         OpParams::Pocket { corner_relief, .. } | OpParams::Offset2D { corner_relief, .. } => {
             corner_relief.is_off()
         }
-        OpParams::Adaptive2D { corner_relief, method, .. } => {
-            corner_relief.is_off() || *method == crate::machining2d::AdaptiveMethod::Trochoidal
+        OpParams::Adaptive2D { corner_relief, method, rest, .. } => {
+            corner_relief.is_off()
+                || *method == crate::machining2d::AdaptiveMethod::Trochoidal
+                || rest.is_some()
         }
         _ => true,
     };
@@ -48,6 +50,7 @@ pub(crate) fn zones_for_op(world: &World, op: &Operation, op_name: &str) -> Vec<
                 &mut job.stock_aabb,
                 &mut job.picked_region,
                 &mut job.contour_sel,
+                &mut job.sketch_contour,
                 &mut job.drive_chains,
                 &mut job.slot_bound,
                 &mut job.prior,
