@@ -130,6 +130,25 @@ fn agiecut_classic_2s_exposes_the_sourced_axes_and_wire_sizes() {
     assert!(edm.conditions.is_empty());
 }
 
+/// #3038: the WorkBee 1000x1500 from Ooznest's product page (770 x 1270
+/// working area, 88 mm Z, 2500 mm/min). Z rates stay unstated.
+#[test]
+fn ooznest_workbee_states_the_published_envelope_and_feed() {
+    let entry = library::builtins()
+        .into_iter()
+        .find(|e| e.name == "Ooznest WorkBee 1000x1500 (Estlcam)")
+        .expect("WorkBee in the library");
+    assert_eq!(entry.kind, Some(Kind::Mill));
+    assert_eq!(entry.units, "mm");
+    let (_, machine) = library::read_for_assign(&entry.source).expect("assignable machine");
+    let axes: Vec<_> = machine.axes.iter().map(|a| (a.name.as_str(), a.travel, a.rapid)).collect();
+    assert_eq!(axes, [
+        ("X", Some((-770.0, 770.0)), Some(2500.0)),
+        ("Y", Some((-1270.0, 1270.0)), Some(2500.0)),
+        ("Z", Some((-88.0, 88.0)), None),
+    ]);
+}
+
 /// Every `.mch` in `assets/machines` is a library entry, except the
 /// post-grammar default (`3axis-vmc.mch` is the static mirror form the
 /// post reads, not a checker-grammar machine file).
