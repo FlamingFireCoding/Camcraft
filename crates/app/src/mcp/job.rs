@@ -352,6 +352,13 @@ pub(super) fn verify(env: &mut Env, a: &Map<String, Value>) -> Result<Value, Str
             findings.extend(t.warnings.iter().map(|w| finding(&label, w)));
         }
     }
+    // #3456: a program law's warning (a plasma tip-up, a kerf crossing)
+    // names its op but no move; the law decides it holds nothing.
+    if let Some(warnings) = report["gate"]["warnings"].as_array() {
+        for w in warnings {
+            findings.push(json!({ "op": w["op"], "move": null, "kind": w["kind"], "message": w["message"], "blocks_post": false }));
+        }
+    }
     // The program gate's problems speak of the whole program, not one
     // move: they ride as findings with no op and no move index.
     if let Some(problems) = report["gate"]["problems"].as_array() {
