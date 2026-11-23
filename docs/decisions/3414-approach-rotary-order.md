@@ -26,3 +26,34 @@ unknown air and through the rim it approaches.
 `rapid_pose_contract`, the air-link ratchet, `balls_are_the_plan`) read
 the swing-free stream through `no_swings`/`sans_swings` helpers. If a
 real rotate verb ever lands, those helpers collapse into one place.
+
+## Review round (2026-11-23, unattended)
+
+**What was decided.** The standstill swing now runs in BOTH upright
+arms of the stamp (`stamp.rs`), on the reviewer's cut line: reached
+out of air, the move is not a Rapid, and a held pose exists and
+differs from the upright one. An opening upright statement from no
+held pose stays as its own move (#3300); a pose that already matches
+drops in the builder. The `no_swings`/`sans_swings` filters keep an
+opening upright statement from no held pose: the app ladder's first
+move is a zero-travel Rapid, and stripping its #3300 statement
+desynced the plain-vs-posed pairing. The branch also merged the
+newest `origin/main` (9e5af7b91), past the first refresh, so the
+conflicts verdict reads against the main of the moment.
+
+**Why.** The review of ad1e5acba reproduced a 90-degree rotary turn
+riding an upright approach at move 261 of the slab-with-boss rough
+ladder. The merged #3300 opening statement is a zero-travel Rapid
+with axis `Some([0, 0, 1])`; the filters read every zero-travel
+rapid with a changed axis as a rotary index, and the pairing assert
+`same_balls` failed at move 0.
+
+**What was considered and dropped.**
+- A generator-scale pin for the arc arm: `the_approach_rotates_
+  before_it_descends` gained `multiaxis_rough` (slab_with_boss) and
+  `contour5d`, but no case of that suite reaches the arc arm out of
+  air under a lean; the arc arm is pinned by the stamp unit test
+  `an_upright_arc_out_of_air_swings_at_a_standstill_first` instead.
+- Fixing the Windows-checkout CRLF failure of the drill-overfeed
+  refusal golden inside this PR: filed as #3628 (a gate fix that
+  blocks Windows contributors), out of this PR's scope.
