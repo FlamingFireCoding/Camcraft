@@ -75,13 +75,18 @@ impl OpParams {
             return Some(why);
         }
         match self {
+            OpParams::Finish3D { direction_angle, .. } => {
+                crate::finishing3d::parallel_angle_refusal(*direction_angle).map(str::to_owned)
+            }
             OpParams::SinkerBurn(p) => p.compensation_refusal(),
             OpParams::SinkerSideBurn(p) => p.refusal(),
             OpParams::SlotUndercut(p) => p.refusal(),
             OpParams::Pocket { corner_relief, .. }
             | OpParams::Offset2D { corner_relief, .. } => corner_relief.validate().err().map(|e| e.to_string()),
-            OpParams::Adaptive2D { method, troch, corner_relief, .. } => troch.refusal().or_else(|| {
-                if *method == crate::machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
+            OpParams::Adaptive2D { method, troch, corner_relief, pass_start, .. } => troch.refusal().or_else(|| {
+                if let Some(why) = crate::machining2d::trochoidal_pass_start_refusal(*method, *pass_start) {
+                    Some(why)
+                } else if *method == crate::machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
                     Some("corner relief is not available with the Trochoidal method - turn corner relief off or use Spiral".into())
                 } else {
                     corner_relief.validate().err().map(|e| e.to_string())
@@ -127,6 +132,8 @@ impl OpParams {
             && match self {
             // The plasma door (#670): the parameter set's own sanity.
             OpParams::PlasmaProfile(p) => p.is_sane(),
+            // The waterjet door (#1883).
+            OpParams::WaterjetProfile(p) => p.is_sane(),
             // The wire door (#532): the parameter set's own sanity; the
             // condition is the command door's world question.
             OpParams::WireContour(p) => p.is_sane(),
@@ -473,6 +480,7 @@ impl OpParams {
                             || crate::load::load_in_door(*optimal_load)))
             }
             OpParams::Finish3D {
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -493,6 +501,7 @@ impl OpParams {
                 // level cap refuses a tolerance that would need more
                 // rings than the machine of record may hold.
                 pos(*tolerance)
+                    && crate::finishing3d::parallel_angle_refusal(*direction_angle).is_none()
                     && stepover.is_none_or(pos)
                     // M2.5 A: the flank's own number is a spacing
                     // like the raster's - finite and positive, or absent.

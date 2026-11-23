@@ -178,7 +178,7 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
     }
     h.run_steps(3);
     expand_boundary(&mut h);
-    assert!(h.query_by_label_contains("Trace, 2D Offset, 3D Pocket and 3D Finish").is_some());
+    assert!(h.query_by_label_contains("2D Offset, 3D Pocket, Face and 3D Finish").is_some());
     assert!(h.query_by_label("Pick protected").is_none());
 }
 
@@ -194,6 +194,24 @@ fn finish3d_shows_pick_protected_button() {
     expand_boundary(&mut h);
     assert!(h.query_by_label("Pick protected").is_some());
     assert!(h.query_by_label("Clearance").is_some());
+}
+
+#[test]
+fn face_op_shows_pick_protected_button() {
+    // #3343: a Face operation takes protected items like 2D Offset does.
+    let _g = snapshot_guard();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1400.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    h.run_steps(2);
+    {
+        let st = &mut h.state_mut().state;
+        seed_part_and_offset(st, OpType::Face);
+    }
+    h.run_steps(3);
+    expand_boundary(&mut h);
+    assert!(h.query_by_label("Pick protected").is_some());
+    assert!(h.query_by_label_contains("only so far").is_none());
 }
 
 #[test]

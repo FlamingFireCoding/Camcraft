@@ -111,6 +111,8 @@ mod file;
 pub use file::*;
 mod params;
 pub use params::*;
+mod pass_start_dto;
+pub use pass_start_dto::PassStartDto;
 mod entity;
 // #2463: a linked model's source file and its digest.
 mod source_dto;
@@ -147,6 +149,9 @@ mod plasma_dto;
 mod cutting_rows_dto;
 pub use cutting_rows_dto::{CuttingRowDto, MaterialWord, StockMaterialWord};
 pub use plasma_dto::*;
+// #1883: the waterjet profile's file mirror.
+mod waterjet_dto;
+pub use waterjet_dto::*;
 mod wire_edm_dto;
 pub use wire_edm_dto::*;
 // #541: the sinker burn's file mirror.
@@ -169,6 +174,9 @@ pub use links::*;
 pub use entity::*;
 mod wire;
 pub use wire::*;
+// #3608: the project file's size and modification time, for the overwrite guard of a save.
+mod disk_stamp;
+pub use disk_stamp::DiskStamp;
 mod json;
 pub use json::*;
 mod apply;

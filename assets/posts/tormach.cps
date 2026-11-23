@@ -53,6 +53,7 @@ declaredOptions = {
 };
 afterModes = true; // #1532: reads PARAM AfterOperation (stop / optional stop) and PARAM SetupChange; a trip home is refused by name
 rotariesBeforeTraverse = true; // #3100: each section turns A at the safe Z (G53 G0 Z, then G0 A) before its first X/Y traverse (indexFor, xyFirst); pinned by posting_rotaries_first.rs
+uprightReturn = true; // #3477: the same G53 G0 Z, then G0 A turn writes A0 at a section after a tilted section; pinned by upright_after_tilt.rs
 explains = "paren"; // #1387: LinuxCNC parenthesized comments; shared helper keeps them inert
 // Original wording; inherited mill meanings cite RS-274 / LinuxCNC in explain.rs.
 explainWords = {
@@ -176,6 +177,7 @@ function xyz(p) {
   return [wo("X", p.X, orgX), wo("Y", p.Y, orgY), wo("Z", p.Z, orgZ)];
 }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }  // axis word, origin-relative
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 function msg(s) {  // counted warning where the host offers message()
   if (typeof message === "function") message(s); else writeln("(" + s + ")");
 }
@@ -1103,6 +1105,9 @@ function onLinear() {
 }
 function onCircular() {
   startPreamble();
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (chainCut() || !motionFor(properties, "arc move")) return;
   var p = properties;
   if (indexed()) {  // #785: a tilted path is chords; an arc here is unstated
