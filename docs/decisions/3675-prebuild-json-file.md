@@ -27,11 +27,23 @@ Readings (this machine, cargo 1.100.0, Windows 11):
 - The same test with the fix: the step ends at once (11 xtask watchdog and
   direct tests pass in 7 s).
 
-**Decided.** The JSON goes to a file in the temporary directory (one name for
-each process and build). The watchdog counts the file size from the open
-handle as output, as it counted the pipe bytes. When cargo exits, the gate
-reads the file and deletes it. A descendant that still holds the file only
-delays the deletion. It cannot hold the gate.
+**Decided.** The JSON goes to a file next to the step log, in the run's own
+log directory (`<step log>.json`). The watchdog counts the file size from
+the open handle as output, as it counted the pipe bytes. When cargo exits,
+the gate reads the file. A descendant that still holds the file only
+delays its deletion. It cannot hold the gate.
+
+The review of #3738 asked for one rule for the life of the file:
+
+- The file is opened with `create_new`. An entry that is at the name
+  already (a stale file, a link) is an error. The gate does not follow it,
+  write it or remove it.
+- A guard (`direct::JsonFile`) removes the file on each exit: green, red,
+  a failed start, an early return. Only a hard kill of xtask can leave it,
+  and then it stays in that run's log directory, not in a shared one.
+- An I/O error of the file (create, clone, read) is not a gate error. The
+  build runs with its JSON dropped, the step prints "no test executable of
+  <crate> recorded (<why>)", and its suite steps start cargo.
 
 **Dropped.**
 
