@@ -137,7 +137,11 @@ impl<'c, 'a> Rest<'c, 'a> {
         self.cx
     }
 
-    /// The cutting chords, deepest plane first.
+    /// The cutting chords, deepest plane first. Read by the test-only
+    /// all-plane reference (`reach_reference`): #3615 moved law (c)'s own
+    /// island samples off the per-chord planes, so production reads the
+    /// chords only through `near`/`surface_before`.
+    #[cfg(test)]
     pub(super) fn cut(&self) -> &[Cut] {
         &self.cut
     }

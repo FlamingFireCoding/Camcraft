@@ -170,6 +170,8 @@ mod c_steel;
 mod contact;
 mod crossing;
 mod cut_index;
+// #3615: the model planes law (c) samples - cut levels plus the deepest cut.
+mod cut_planes;
 mod engine;
 mod excess;
 mod fine_bore;

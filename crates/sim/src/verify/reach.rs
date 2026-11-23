@@ -1,5 +1,6 @@
 //! Laws (c), (c3) and (e), shank/holder reach against rest material, the mid-turn sweep and cycle reach - the shop practice of comparing cutter reach against wall height (machine-tool handbooks) on our own conservative rest model (split from `engine.rs` by M13.7; structure only).
 
+use super::cut_planes::sampled_cut_planes;
 use super::laws::{boundary_samples, dist2_seg, law_points};
 use super::rest::Rest;
 use super::sample_grid::SampleGrid;
@@ -99,12 +100,21 @@ pub(super) fn band_reach_counted(
             samples.extend(boundary_samples(s));
         }
         if let Some(f) = cx.model {
-            let mut zs: Vec<u64> = rest.cut().iter().map(|c| c.2.to_bits()).collect();
-            zs.sort_unstable();
-            zs.dedup();
-            for k in zs {
+            // #3615: the island samples come from the cut LEVELS plus the
+            // deepest cut, not one plane per feed chord. A ramp emits one
+            // feed move per thinned vertex, each with its own Z; per-chord
+            // planes grew the sample set with the vertex count and turned
+            // minutes into hours.
+            //
+            // HELD: this is a draft demonstrator, not a fix. The
+            // equivalence pin in `reach_tests` is RED: on a real wall ramp
+            // the surviving planes lose triangulation-tie wall points the
+            // per-chord planes had, so 19 part-true ShankHit verdicts move.
+            // A less conservative law does not merge; see
+            // `docs/decisions/3615-verify-cut-levels.md`.
+            for z in sampled_cut_planes(path, cx.z_tol) {
                 stats.slices += 1;
-                if let Some(s) = rest.islands_at(f, f64::from_bits(k)) {
+                if let Some(s) = rest.islands_at(f, z) {
                     samples.extend(boundary_samples(&s));
                 }
             }
