@@ -83,8 +83,9 @@ impl Sink {
 
     fn check_merge(&self, curve: &str, from: Point2, to: Point2, omitted: &[Point2]) -> Result<(), SvgError> {
         let slack = self.chord - self.flatten_chord();
-        // `!(d <= slack)` also refuses a NaN distance.
-        if omitted.iter().any(|&p| !(Self::segment_distance(from, to, p) <= slack)) {
+        // A NaN distance is not within the slack, so it is refused too.
+        let within = |p: Point2| Self::segment_distance(from, to, p) <= slack;
+        if !omitted.iter().all(|&p| within(p)) {
             return Err(invalid(format!("{curve} cannot keep the chord bound when short segments merge")));
         }
         Ok(())
