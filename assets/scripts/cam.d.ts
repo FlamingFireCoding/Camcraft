@@ -126,7 +126,7 @@ interface JobReport {
 
 interface CamApi {
   load(path: string): DocumentInfo;  // arity 1
-  save(path?: string): { path: string };  // variadic
+  save(path?: string | null, options?: { overwrite?: boolean }): { path: string };  // variadic
   import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] };  // variadic
   importDxf(path: string, options?: { setup?: string; units?: "mm" | "in"; join_tol?: number; name?: string }): DxfProfile;  // variadic
   exportTools(path: string, format?: "auto" | "camtools" | "pathpilot" | "hurco", units?: "mm" | "inch"): { path: string; tools: number; format: string };  // variadic
