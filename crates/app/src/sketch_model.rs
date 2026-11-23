@@ -110,7 +110,14 @@ pub fn source_problem(world: &World, declared: Option<&str>, src: &SrcRef, param
                     ));
                 }
             }
-            if !matches!(params, OpParams::Contour { .. }) {
+            if matches!(params, OpParams::WireContour(_)) {
+                if let Err(why) = crate::operation::wire_sketch::pick(world, src) {
+                    return Some(why);
+                }
+            } else if !matches!(
+                params,
+                OpParams::Contour { .. } | OpParams::Slot { .. } | OpParams::TrochoidalSlot { .. }
+            ) {
                 return Some(format!(
                     "'{}' is a DXF profile - an operation takes the whole profile as its source; picked chains of a profile are not supported yet",
                     profiles[0]
@@ -155,6 +162,10 @@ pub fn source_problem(world: &World, declared: Option<&str>, src: &SrcRef, param
 /// `None` for an operation whose source is not a profile.
 #[must_use]
 pub fn checked_against(world: &World, op: &Operation) -> Option<String> {
+    if crate::operation::wire_sketch::selected(&op.src, &op.params) {
+        let (name, chain) = crate::operation::wire_sketch::pick(world, &op.src).ok()?;
+        return Some(format!("checked against the stock and selected DXF chain {} in '{name}' through the stock height", chain.id));
+    }
     let profiles = source_profiles(world, &op.src);
     let name = profiles.first()?;
     let (_, profile) = sketch::find(world, name)?;
@@ -175,8 +186,21 @@ pub fn generation_problem(world: &World, op: &Operation) -> Option<String> {
     if let Some(why) = source_problem(world, op.setup.as_deref(), &op.src, &op.params) {
         return Some(why);
     }
-    if matches!(op.params, OpParams::Contour { .. }) {
+    if matches!(op.params, OpParams::Contour { .. }) || crate::operation::wire_sketch::selected(&op.src, &op.params) {
         return None;
+    }
+    // #1868: a slot kind reads one picked chain of a profile; the whole
+    // profile names no slot.
+    if matches!(op.params, OpParams::Slot { .. } | OpParams::TrochoidalSlot { .. }) {
+        if matches!(op.src, SrcRef::Selection(_)) {
+            return None;
+        }
+        return source_profiles(world, &op.src).first().map(|name| {
+            format!(
+                "a {} operation on the DXF profile '{name}' needs one picked chain - pick one closed slot outline or one open centerline",
+                op.params.kind()
+            )
+        });
     }
     checked_against(world, op)
         .map(|what| format!("this operation is {what}; a toolpath from the chains of a DXF profile is not generated yet"))

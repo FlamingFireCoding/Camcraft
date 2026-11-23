@@ -65,6 +65,7 @@ const POSTS: &[(&str, &str, &str)] = &[
     ("Doosan DNM", "doosan-dnm", "doosan-dnm"),
     ("Makera Carvera", "carvera", "carvera"),
     ("Mach4", "mach4", "mach4"),
+    ("Mach3", "mach3", "mach3"),
 ];
 
 /// #1357: the Tormach goldens are runnable programs - posted for a real
@@ -105,12 +106,18 @@ fn golden_input(cps_stem: &str, g: &str) -> (serde_json::Value, String) {
 const REFUSED: &[(&str, &str, &str)] = &[
     ("carvera", "tap_plate", "tapping"),
     ("grblhal", "tap_plate", "tapping"),
+    ("mach3", "tap_plate", "tapping"),
     ("tinyg", "tap_plate", "tapping"),
     // #2303: the generic VMC states no spindle encoder (rigid_tapping),
     // so LinuxCNC's G33.1 rigid tap is refused by name there.
     ("linuxcnc", "tap_plate", "rigid tapping (G33.1)"),
     ("grbl", "tap_plate", "tapping"),
 ];
+
+/// This mill requires a named control release and a manual change at full retract.
+/// Its Picomax program is qualified separately in `klartext_builtin` and
+/// `script_heidenhain_klartext`. The generic VMC has neither machine fact.
+const KLARTEXT: (&str, &str) = ("Heidenhain Klartext", "heidenhain-klartext");
 
 /// The TURNING dialects (M13.5): their goldens are the lathe
 /// documents' own streams (`lathe_post.rs`); on a mill golden they
@@ -124,7 +131,7 @@ const PLASMA_POSTS: &[(&str, &str)] = &[("Tormach PathPilot Plasma", "tormach-pl
 
 /// The WIRE EDM dialects (#533): their golden is the wire stream's own
 /// (`wire_post.rs`, `nc/wire-iso/`); a mill golden they refuse by name.
-const WIRE_POSTS: &[(&str, &str)] = &[("Generic ISO Wire EDM", "wire-iso"), ("Sodick Wire EDM (Mark 21)", "sodick-wire")];
+const WIRE_POSTS: &[(&str, &str)] = &[("Generic ISO Wire EDM", "wire-iso"), ("Sodick Wire EDM (Mark 21)", "sodick-wire"), ("Agie native wire EDM", "agie-native")];
 
 /// The SINKER EDM dialects (#542): their golden is the sinker burn's
 /// own (`crates/post/tests/script_sinker_iso.rs`, `nc/sinker-iso/`); a
@@ -368,7 +375,7 @@ fn the_synthesized_stream_locks_the_tool_and_spindle_words() {
         // TinyG the same (its drill chains post as plain moves).
         let stream = match *cps_stem {
             "carvera" => synth_stream_with("G55", false),
-            "grblhal" | "tinyg" | "linuxcnc" | "grbl" => synth_stream_with("G55", false),
+            "grblhal" | "tinyg" | "linuxcnc" | "grbl" | "mach3" => synth_stream_with("G55", false),
             _ => synth_stream(),
         };
         let cps = read(&format!("assets/posts/{cps_stem}.cps"));
@@ -429,6 +436,7 @@ fn every_builtin_registry_entry_compiles() {
     // contract, so spell the registry out here against posting.rs.
     let names: Vec<&str> = camcraft_app::posting::BUILTINS.iter().map(|(n, _)| *n).collect();
     let mut want: Vec<&str> = POSTS.iter().map(|(n, _, _)| *n).collect();
+    want.push(KLARTEXT.0);
     want.extend(LATHE_POSTS.iter().map(|(n, _)| *n));
     want.extend(PLASMA_POSTS.iter().map(|(n, _)| *n));
     want.extend(WIRE_POSTS.iter().map(|(n, _)| *n));
@@ -469,11 +477,14 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("doosan-dnm", "nc"),
     ("carvera", "nc"),
     ("mach4", "nc"),
+    ("mach3", "nc"),
+    ("heidenhain-klartext", "H"),
     ("fanuc-lathe", "nc"),
     ("tormach-lathe", "nc"),
     ("tormach-plasma", "nc"),
     ("wire-iso", "nc"),
     ("sodick-wire", "nc"),
+    ("agie-native", "agie"),
     ("sinker-iso", "nc"),
 ];
 
@@ -487,6 +498,7 @@ fn declared_extension(script: &str) -> Option<&str> {
 #[test]
 fn every_builtin_declares_its_controls_file_extension() {
     let mut stems: Vec<&str> = POSTS.iter().map(|(_, s, _)| *s).collect();
+    stems.push(KLARTEXT.1);
     stems.extend(LATHE_POSTS.iter().map(|(_, s)| *s));
     stems.extend(PLASMA_POSTS.iter().map(|(_, s)| *s));
     stems.extend(WIRE_POSTS.iter().map(|(_, s)| *s));

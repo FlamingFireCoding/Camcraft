@@ -165,16 +165,20 @@ fn a_head_tilt_plane_that_a_move_from_the_tool_change_height_takes_under_the_tab
     // X +-400: from (400, y, 300) the move along the B 30 axis to a plane
     // 20 mm over the origin ends at Z 300 - (442.49 - 20) cos 30 = -48.6,
     // under the table top. Refused by name, with the height to clear.
+    // #2991: the verdict gives the two heights in the frame the user sets
+    // them in (the local height plus the origin Z), and its text names the
+    // raise, not a Z value.
     let want = table_clear(WIDE, B_DEG);
     assert!((want - 96.077).abs() < 1e-3, "{want}");
     let (world, status, warns, _) = generate_on(Rig::Head, WIDE, B_DEG, 40.0);
     assert_eq!(status, OpStatus::Ok);
     let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict: {warns:?}"));
-    assert!((h_mm - 20.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
-    assert!((top_mm - want).abs() < 1e-6, "the height to clear along the axis: {top_mm}, want {want}");
+    assert!((h_mm - 40.0).abs() < 1e-6, "the clearance height the user set: {h_mm}");
+    assert!((top_mm - (want + ORIGIN_Z)).abs() < 1e-6, "the height to clear, in the user's frame: {top_mm}, want {}", want + ORIGIN_Z);
     assert!(fixture, "the table is steel, not stock");
     let err = posting::post_setup_unwritten(&world).expect_err("the program must not post");
-    for text in ["Face1", "first rapid (move 0)", &format!("raise the clearance height above Z{want:.3}")] {
+    let raise = format!("raise the clearance height by at least {:.3} mm", want - 20.0);
+    for text in ["Face1", "first rapid (move 0)", "measured along the tilted tool axis", &raise] {
         assert!(err.contains(text), "{text}: {err}");
     }
 }
@@ -205,8 +209,10 @@ fn a_work_turning_rotary_keeps_the_table_under_the_work() {
     let (_, status, warns, notes) = generate_on(Rig::Work, WIDE, B_DEG, 40.0);
     assert_eq!(status, OpStatus::Ok);
     let (h_mm, top_mm, fixture) = low(&warns).unwrap_or_else(|| panic!("no first-traverse verdict: {warns:?}"));
-    assert!((h_mm - 20.0).abs() < 1e-6, "{h_mm}");
-    assert!((top_mm - want).abs() < 1e-6 && !fixture, "the block on its sphere: {top_mm}, want {want}");
+    // #2991: the heights in the user's frame (local + origin Z 20).
+    assert!((h_mm - 40.0).abs() < 1e-6, "the clearance the user set: {h_mm}");
+    assert!((top_mm - (want + ORIGIN_Z)).abs() < 1e-6 && !fixture, "the block on its sphere: {top_mm}, want {}", want + ORIGIN_Z);
+    assert!(warns.iter().any(|w| matches!(w, Warning::FirstTraverseLow { tilted: true, .. })), "a 3+2 verdict is tilted: {warns:?}");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "{notes:?}");
     let (_, status, warns, _) = generate_on(Rig::Work, WIDE, B_DEG, ORIGIN_Z + 30.0);
     assert_eq!(status, OpStatus::Ok);
@@ -254,17 +260,30 @@ fn a_head_tilt_past_90_under_the_table_is_refused_with_lower() {
     let (world, _, warns, notes) = generate_on(Rig::Head, WIDE, 120.0, ORIGIN_Z + 150.0);
     assert_eq!(low(&warns), None, "{warns:?}");
     let (h_mm, limit_mm) = under(&warns).unwrap_or_else(|| panic!("no table verdict past 90 deg: {warns:?}"));
-    assert!((h_mm - 150.0).abs() < 1e-6, "the plane along the tool axis: {h_mm}");
-    assert!((limit_mm - want).abs() < 1e-6, "the plane to lower to: {limit_mm}, want {want}");
-    let verdict = Warning::FirstTraverseUnderTable { at: 0, height_mm: h_mm, limit_mm };
+    // #3148: the heights in the user's frame (local + origin Z 20): the
+    // plane the user set (170) and the limit 133.590, not the local 150
+    // and 113.590.
+    let user_limit = want + ORIGIN_Z;
+    assert!((h_mm - (ORIGIN_Z + 150.0)).abs() < 1e-6, "the clearance the user set: {h_mm}");
+    assert!((limit_mm - user_limit).abs() < 1e-6, "the plane to lower to: {limit_mm}, want {user_limit}");
+    assert!((user_limit - 133.590).abs() < 1e-3, "{user_limit}");
+    let verdict = warns.iter().find(|w| matches!(w, Warning::FirstTraverseUnderTable { .. })).copied().unwrap_or_else(|| panic!("{warns:?}"));
     assert!(verdict.blocks_post(), "the table verdict must hold the post");
     assert!(!notes.iter().any(|n| n.contains("machine table is not judged")), "a verdict, not a note: {notes:?}");
-    // The message names the repair: lower, never raise.
+    // The message names the repair: lower, never raise, in the user's
+    // values along the tilted axis, never as a Z value.
     let text = verdict.to_string();
-    for want_text in ["first rapid (move 0)", "points down toward the machine table", &format!("lower the clearance plane to Z{want:.3}")] {
+    for want_text in [
+        "first rapid (move 0)",
+        "points down toward the machine table",
+        "clearance plane at 170.000 mm",
+        "lower the clearance plane to 133.590 mm or under it",
+        "measured along the tilted tool axis",
+    ] {
         assert!(text.contains(want_text), "{want_text}: {text}");
     }
     assert!(!text.contains("raise"), "a down-pointing axis must not say raise: {text}");
+    assert!(!text.contains(" Z1"), "a height along a tilted axis is no Z value: {text}");
     // This rig's B 120 face also cuts under the Z stroke, so the machine
     // limit law refuses the post first; the post must not pass either way.
     posting::post_setup_unwritten(&world).expect_err("the program must not post");

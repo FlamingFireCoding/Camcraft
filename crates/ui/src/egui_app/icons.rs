@@ -87,6 +87,8 @@ icon_table! {
     TrochoidalSlot => "op-trochoidal-slot", "icon-trochoidal-slot";
     Trace => "op-trace", "icon-trace";
     Engrave => "op-engrave", "icon-engrave";
+    /// A V-bit in the groove it cuts (#1443).
+    VCarve => "op-v-carve", "icon-v-carve";
     Chamfer2D => "op-chamfer2d", "icon-chamfer2d";
     Deburr => "op-deburr", "icon-deburr";
     Circular => "op-circular", "icon-circular";
@@ -97,6 +99,8 @@ icon_table! {
     SinkerBurn => "op-sinker-burn", "icon-sinker-burn";
     /// A sinker EDM side burn (#545): the electrode planing one wall.
     SinkerSideBurn => "op-sinker-side-burn", "icon-sinker-side-burn";
+    /// A slot undercut (#1444): a T-slot's section, the cutter in it.
+    SlotUndercut => "op-slot-undercut", "icon-slot-undercut";
     /// A waterjet profile (#1883): the nozzle and its straight jet
     /// through the sheet.
     WaterjetProfile => "op-waterjet-profile", "icon-waterjet-profile";
@@ -188,6 +192,12 @@ icon_table! {
     // or over one form tooth (single-form).
     ToolThreadMill => "tool-thread-mill", "icon-tool-thread-mill";
     ToolThreadMillSingle => "tool-thread-mill-single", "icon-tool-thread-mill-single";
+    // #1444: the undercut cutters - a head wider than its neck: a disc
+    // (T-slot), a thin disc (keyseat), a flared head (dovetail), a ball.
+    ToolTSlot => "tool-t-slot", "icon-tool-t-slot";
+    ToolKeyseat => "tool-keyseat", "icon-tool-keyseat";
+    ToolDovetail => "tool-dovetail", "icon-tool-dovetail";
+    ToolLollipop => "tool-lollipop", "icon-tool-lollipop";
     // The operation page's section tabs (M1.4's named sections), one
     // per tab the page shows; drawn from what each section is.
     SecGeometry => "sec-geometry", "icon-sec-geometry";

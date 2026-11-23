@@ -110,6 +110,8 @@ fn want(ty: OpType) -> Want {
         | OpType::Adaptive2D
         | OpType::Offset2D
         | OpType::Engrave
+        // #1443: a V-carve is a mill kind.
+        | OpType::VCarve
         | OpType::Chamfer2D
         | OpType::Circular
         | OpType::Thread
@@ -134,6 +136,8 @@ fn want(ty: OpType) -> Want {
         // #541: a sinker burn is an EDM op; a lathe never runs it with the work turning.
         | OpType::SinkerBurn
         | OpType::SinkerSideBurn
+        // #1444: a mill kind, like the Slot.
+        | OpType::SlotUndercut
         // #1883: a waterjet profile has no spindle either.
         | OpType::WaterjetProfile => Want::Refused,
     }
@@ -181,7 +185,7 @@ fn every_kind_is_work_spindle_live_tool_or_refused_by_name() {
         // The post's own order: a path stating C is live-tool work.
         assert_eq!(voice(&params, &stating_c(meridian()), ORIGIN), LatheVoice::LiveTool, "{}", info.label);
     }
-    assert_eq!((turns, holes, refused), (12, 1, 32), "the table covers every kind");
+    assert_eq!((turns, holes, refused), (12, 1, 34), "the table covers every kind");
     assert_eq!(turns + holes + refused, KindInfo::ALL.len());
 }
 

@@ -21,7 +21,7 @@ use camcraft_app::commands::{
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, History, ImportModel,
     MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
-    SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
+    SetFixtureFixed, SetOperationSetup, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
 };
@@ -32,6 +32,7 @@ use camcraft_app::operation::{
     self, AreaControls, FeatureSel, GeoSel, Height, HeightReference, OpParams, SrcRef,
 };
 use camcraft_app::schema::{ColorVision, Location, Operation as OperationDef, PostRef, ThemeRef};
+use camcraft_app::geometry::stock_axis::{StockAxis, stock_axis_of};
 use camcraft_app::stock::StockShape;
 use camcraft_app::stock_fit::FitKind as StockFitKind;
 use camcraft_app::tools::{Tool, ToolKind, catalog};
@@ -40,6 +41,9 @@ use camcraft_app::{machine, model, posting, project, world::new_world};
 
 #[path = "state_per_op.rs"]
 mod per_op;
+#[path = "state_stock_pose.rs"]
+mod stock_pose;
+pub use stock_pose::SIM_NOTE_TILTED;
 #[path = "state_browser.rs"]
 mod browser;
 #[path = "state_picked.rs"]
@@ -62,6 +66,8 @@ pub use pockets::PocketScan;
 mod setup_post_options;
 #[path = "state_setup_workholding.rs"]
 mod setup_workholding;
+#[path = "state_sheet_job.rs"]
+mod sheet_job;
 #[path = "state_fixture.rs"]
 mod fixture_view;
 #[path = "state_locate.rs"]
@@ -91,6 +97,9 @@ mod accessory_ui;
 pub use accessory_ui::{AccessoryDraft, AccessorySizeDraft};
 #[path = "state_fixture_profile.rs"]
 mod fixture_profile_ui;
+#[path = "state_sketch.rs"]
+mod sketch_ui;
+pub use sketch_ui::{DxfSource, DxfUnitsPrompt, SketchUi};
 pub use fixture_profile_ui::{FixtureProfileDraft, ProfileEditDraft, ProfileKindChoice};
 #[path = "state_program_entry.rs"]
 mod program_entry;
@@ -173,6 +182,13 @@ pub enum CommandKind {
         pos: [f64; 3],
         yaw_deg: f64,
     },
+    /// #2576: the Stock page's Apply - the shape, its place and its whole
+    /// turn (a unit quaternion from the axis choice), one `SetStock`.
+    SetStockPose {
+        shape: StockShape,
+        pos: [f64; 3],
+        rot: [f64; 4],
+    },
     /// #1094: the stock page's "raw stock only" checkbox for a from-model
     /// stock's source model, one undo unit (`SetStockSourceOnly`).
     SetRawStockOnly(bool),
@@ -224,6 +240,9 @@ pub enum CommandKind {
     SelectPostBuiltin,
     SelectPostDialog,
     SelectPostFile(PathBuf),
+    /// #2950: the browser's folder picker - every `.mch` and `.cps` of
+    /// one folder joins the session's machine and post lists (read-only).
+    LoadSetupFolderDialog,
     /// Pick a built-in from the shipped registry by NAME (M3.3 B) -
     /// the combo's index is screen furniture; what the document stores
     /// is the name, so a registry re-growth never re-points a saved
@@ -255,6 +274,8 @@ pub enum CommandKind {
     /// #1031: state (`Some`) or clear a setup's workholding maximum rpm
     /// (`SetSetupWorkholdingRpm`).
     SetSetupWorkholdingRpm { setup: String, max_rpm: Option<f64> },
+    /// #3070: set up (`Some`) or clear the setup's sheet job (`SetSheetJob`).
+    SetSheetJob { setup: String, job: Option<camcraft_app::sheet_job::SheetJob> },
     /// The post's user options (issue #34): the undoable
     /// `SetPostOptions` with the picked value.
     SetPostOptions(camcraft_app::schema::PostOptions),
@@ -727,6 +748,15 @@ pub enum CommandKind {
     },
     /// Export fixture `name`'s profile to ASCII DXF path.
     ExportFixtureDxf { name: String, path: PathBuf },
+    /// #1863: the Stock page's "Add DXF profile…" picker.
+    AddDxfProfileDialog,
+    /// #1863: place a DXF drawing on the active setup's stock - one
+    /// `ImportDxf`; `units` answers a drawing that states none.
+    ImportDxf { source: DxfSource, units: Option<camcraft_app::units::Unit> },
+    /// #1863: the units prompt's answer (`None` - Cancel).
+    ResolveDxfUnits(Option<camcraft_app::units::Unit>),
+    /// #1863: move and turn a DXF profile on its stock top - one `MoveSketch`.
+    MoveSketch { name: String, x: f64, y: f64, angle_deg: f64 },
     /// Part orientation (M5.2 G): a model's full rigid placement -
     /// position plus yaw-pitch-roll degrees (R = Rz ⊗ Ry ⊗ Rx, the
     /// `SetWcs` voice). The world stores a unit quaternion; the
@@ -805,7 +835,10 @@ pub struct StockUi {
     pub x: f64,
     pub y: f64,
     pub z: f64,
-    pub yaw_deg: f64,
+    /// #2576: which way the stock's own Z runs (Z, X, Y or Custom).
+    pub axis: StockAxis,
+    /// #2576: `[yaw, pitch, roll]` in degrees, read for Custom only.
+    pub angles_deg: [f64; 3],
     pub fit_margin: f64,
     /// #198: fit a box by a separate allowance per side instead of the
     /// one margin.
@@ -829,7 +862,8 @@ impl Default for StockUi {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            yaw_deg: 0.0,
+            axis: StockAxis::Z,
+            angles_deg: [0.0; 3],
             fit_margin: 2.0,
             fit_per_side: false,
             fit_sides: [2.0; 6],
@@ -1237,6 +1271,10 @@ impl ToolUi {
                 ToolKind::ThreadMillSingle => 15,
                 ToolKind::Waterjet => 16,
                 ToolKind::Wire => 17,
+                ToolKind::TSlot => 18,
+                ToolKind::Keyseat => 19,
+                ToolKind::Dovetail => 20,
+                ToolKind::Lollipop => 21,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1291,6 +1329,10 @@ impl ToolUi {
             15 => ToolKind::ThreadMillSingle,
             16 => ToolKind::Waterjet,
             17 => ToolKind::Wire,
+            18 => ToolKind::TSlot,
+            19 => ToolKind::Keyseat,
+            20 => ToolKind::Dovetail,
+            21 => ToolKind::Lollipop,
             _ => ToolKind::EndMill,
         }
     }
@@ -1685,6 +1727,10 @@ pub struct State {
     /// computed from it keeps running - hiding geometry must never
     /// silently change what the machine does).
     pub hidden_models: Vec<String>,
+    /// #1863: a DXF drawing that states no unit, held for the units prompt.
+    pub dxf_units_prompt: Option<DxfUnitsPrompt>,
+    /// #1863: the Stock page's DXF profile placement drafts.
+    pub sketch_ui: SketchUi,
     /// Stock entities hidden from the viewport by the browser eye.
     pub hidden_stocks: Vec<String>,
     /// Work-offset gizmos hidden by their browser eyes.
@@ -1698,6 +1744,11 @@ pub struct State {
     /// The Browser's "Show work envelope" box (#1567): view state, never
     /// saved, never a command; display only.
     pub show_work_envelope: bool,
+    /// The "Show operator side" box (#2632): the arrow and the text at the
+    /// work envelope. View state like the envelope box; on by default.
+    pub show_operator_side: bool,
+    /// The kept operator-side arrow, built when its input changes (#2632).
+    pub operator_side_cache: std::sync::Mutex<crate::operator_side::Cache>,
     pub operation_clipboard: Option<OperationClipboard>,
     /// Expanded state of Setup, Models, Tools, and Operations in the browser.
     pub browser_expanded: [bool; 3],
@@ -1770,7 +1821,7 @@ pub struct State {
     /// kept preference (`state_view`).
     pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
-    /// the grid also needs `show_world_axes`.
+    /// the grid does not depend on `show_world_axes` (#3322).
     pub show_grid: bool,
     /// M1.7c move simulation: None while off, [`Sim`] while the
     /// transport bar is up. View state like the camera - what it holds
@@ -1818,6 +1869,9 @@ pub struct State {
     /// The transport's timeline, built once per `doc_version` (never
     /// per frame: it walks every op's path) - see `shell::cached_script`.
     pub sim_script_cache: Option<(u64, std::sync::Arc<camcraft_app::sim::Script>)>,
+    /// #2608: the operation starts of that timeline, with a `Weak` of the
+    /// script they belong to - see `sim_steps::cached_op_starts`.
+    pub sim_op_starts: Option<(std::sync::Weak<camcraft_app::sim::Script>, std::sync::Arc<camcraft_app::sim::OpStarts>)>,
     /// #743: the revolved mesh of the tool at the playhead, as the
     /// collision laws read it - rebuilt only when its judged outline
     /// changes, emptied when the tool, its operation or the transport
@@ -2293,11 +2347,15 @@ impl State {
             geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
+            dxf_units_prompt: None,
+            sketch_ui: SketchUi::default(),
             hidden_stocks: Vec::new(),
             hidden_offsets: Vec::new(),
             hidden_paths: Vec::new(),
             shown_setups: Vec::new(),
             show_work_envelope: false,
+            show_operator_side: true,
+            operator_side_cache: std::sync::Mutex::default(),
             operation_clipboard: None,
             browser_expanded: [true; 3],
             cam: Camera::default(),
@@ -2327,6 +2385,7 @@ impl State {
             field_view: None,
             field_play: None,
             sim_script_cache: None,
+            sim_op_starts: None,
             sim_tool_cache: std::sync::Mutex::default(),
             move_center: std::sync::Mutex::default(),
             field_mode: None,
@@ -2514,7 +2573,8 @@ impl State {
                 self.stock_ui.x = loc.pos.x;
                 self.stock_ui.y = loc.pos.y;
                 self.stock_ui.z = loc.pos.z;
-                self.stock_ui.yaw_deg = quat_yaw_deg(loc.rot);
+                // #2576: the whole turn reads back, not only its Z twist.
+                (self.stock_ui.axis, self.stock_ui.angles_deg) = stock_axis_of(loc.rot);
             }
             match model::stock_def_of(&self.world, &entity) {
                 Some(StockShape::Box { dx, dy, dz }) => {
@@ -3444,20 +3504,8 @@ impl State {
                 shape,
                 pos,
                 yaw_deg,
-            } => {
-                let location = Location {
-                    pos: Point3::new(pos[0], pos[1], pos[2]),
-                    rot: quat_from_yaw(yaw_deg.to_radians()),
-                };
-                match SetStock::new(&self.world, shape, location) {
-                    Ok(command) => {
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        self.status = String::from("stock set");
-                    }
-                    Err(err) => self.refuse(ErrorScope::Setup, format!("stock not set: {err}")),
-                }
-            }
+            } => self.dispatch_set_stock(shape, pos, quat_from_yaw(yaw_deg.to_radians())),
+            CommandKind::SetStockPose { shape, pos, rot } => self.dispatch_set_stock(shape, pos, rot),
             CommandKind::SetStockMaterial(m) => {
                 match camcraft_app::commands::SetStockMaterial::new(&self.world, m) {
                     Ok(command) => {
@@ -3495,12 +3543,7 @@ impl State {
                 }
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
-            CommandKind::LoadMachineDialog => {
-                let dir = crate::egui_app::machines_pane::user_dir(self);
-                if let Some(path) = pick_machine_file(dir.as_deref()) {
-                    self.load_machine_path(path);
-                }
-            }
+            CommandKind::LoadMachineDialog => self.load_machine_dialog(),
             CommandKind::LoadMachineFile(path) => self.load_machine_path(path),
             // #343: the machine verbs land on the active setup's own
             // machine when it has one (`setup_mount`).
@@ -3511,6 +3554,7 @@ impl State {
             CommandKind::SetupOwnPostOptions { setup, own } => self.own_post_options(&setup, own),
             CommandKind::SetupNoseToAxis { setup, value } => self.set_setup_nose(&setup, value),
             CommandKind::SetSetupWorkholdingRpm { setup, max_rpm } => self.set_workholding_rpm(&setup, max_rpm),
+            CommandKind::SetSheetJob { setup, job } => self.set_sheet_job(&setup, job),
             CommandKind::EditMachineDialog => {
                 let (path, m) = machine::of(&self.world);
                 match m {
@@ -3532,11 +3576,8 @@ impl State {
             // like every machine verb (`setup_mount`).
             CommandKind::UseCatalogueMachine(source) => self.mount_catalogue(&source),
             CommandKind::SelectPostBuiltin => self.select_post(PostRef::Builtin),
-            CommandKind::SelectPostDialog => {
-                if let Some(path) = pick_post_file() {
-                    self.select_post(PostRef::File(path.display().to_string()));
-                }
-            }
+            CommandKind::SelectPostDialog => self.select_post_dialog(),
+            CommandKind::LoadSetupFolderDialog => self.load_setup_folder_dialog(),
             CommandKind::SelectPostFile(path) => {
                 self.select_post(PostRef::File(path.display().to_string()));
             }
@@ -4205,6 +4246,10 @@ impl State {
             CommandKind::SetFixtureProfile { name, profile } => self.set_fixture_profile(&name, profile),
             CommandKind::DeriveFixtureProfile { name, axis } => self.derive_fixture_profile(&name, axis),
             CommandKind::ExportFixtureDxf { name, path } => self.export_fixture_dxf_path(&name, path),
+            CommandKind::AddDxfProfileDialog => self.add_dxf_profile_dialog(),
+            CommandKind::ImportDxf { source, units } => self.import_dxf(source, units),
+            CommandKind::ResolveDxfUnits(units) => self.resolve_dxf_units(units),
+            CommandKind::MoveSketch { name, x, y, angle_deg } => self.move_sketch(&name, x, y, angle_deg),
             CommandKind::InsertBuiltinVise { setup, params, fit_stock, pos, yaw_deg } => {
                 self.insert_builtin_vise(setup, &params, fit_stock, pos, yaw_deg);
             }
@@ -4734,6 +4779,20 @@ impl State {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
+                if !posted.bundle_files.is_empty() {
+                    self.post_view = None;
+                    self.status = format!(
+                        "Agie job prepared in {} ({} controller files, zero working steps)",
+                        path.display(), posted.bundle_files.len()
+                    );
+                    if let Some(review) = posted.controller_review {
+                        self.status.push_str(&format!(" — {review}"));
+                    }
+                    if let Some(note) = posted.not_judged {
+                        self.status.push_str(&format!(" — {note}"));
+                    }
+                    return;
+                }
                 self.status = format!(
                     "posted {} op(s), {} lines in {} to {}",
                     posted.ops,

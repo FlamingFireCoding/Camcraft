@@ -307,6 +307,7 @@ fn a_bore_cuts_the_levels_of_its_mode() {
 fn a_circular_cuts_the_levels_of_its_mode() {
     two_modes("circular", |equal| {
         let p = CircularParams {
+            pass_start: Default::default(),
             links: links(Links::PLANAR, equal),
             center: Point2::new(0.0, 0.0),
             radius: 10.0,

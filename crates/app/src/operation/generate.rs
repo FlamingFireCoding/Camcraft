@@ -73,11 +73,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         unit,
         wcs_yaw,
         spindle_note: _,
+        part_off_side,
         post_order,
         carried_overhang: _,
         op_name: _,
         wire,
         wire_ruled,
+        wire_sketch,
         sinker_gap,
         sinker_pass,
         sinker_wear,
@@ -105,11 +107,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // #368: what the fixture laws sweep above the shank.
     // #852: and a necked tool's drawn shank beside it.
     let holder = crate::tool_body::stack(&geom, body.as_ref()).with_neck(neck);
+    // #1444: the steel laws sweep the head's whole envelope (a
+    // lollipop's ball runs on above its neck start); the holder above
+    // stays where the real tool puts it.
+    let steel_geom = crate::undercut::fixture_geom(&tool);
     // #835: the cutter every stack law reads - its tip (M13.7) and,
     // with a body, the same bands above the shank, never the cylinder
     // enclosing them (#842: drill reach and the cross drill too).
     let cutter = verify::Cutter::of(&tool).with_body(&geom, &holder);
-    let avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
+    let mut avoid_spec = avoid_ok.map(|(items, cl)| super::avoid::spec_of(items, cl, &params, cutter));
     // The probe (#108) cuts nothing: its own protected-move law judges
     // the stylus against the model, and no cutting law or region applies.
     if matches!(params, OpParams::Probe { .. }) {
@@ -157,19 +163,29 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // the kerf offset of the machine's condition, on the stated side;
     // the generator certifies its kerf and corner laws (#534 verifies).
     if let OpParams::WireContour(op) = &params {
-        let picks = contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains));
+        let cond = wire.ok_or_else(|| unreached("wire condition"))?;
+        let k = cond.0.wire_diameter * 0.5 + cond.0.gap;
+        let picks = if let Some(sketch) = &wire_sketch {
+            Some((vec![sketch.straight_ring(op).map_err(GenError::Invalid)?], Vec::new()))
+        } else {
+            contour_sel.take().transpose()?.map(|(loops, chains, _)| (loops, chains))
+        };
         // #1109: an open run is entered from the stock's edge - the
         // setup's stock outline, read only when a run is picked.
         let stock = || stock_facets.as_deref().and_then(|f| slice::project(f, FOOTPRINT_SAMPLES).ok()).filter(|r| !r.is_empty());
-        return super::wire_op::generate_wire(
+        let (path, warnings) = super::wire_op::generate_wire(
             op,
-            wire.ok_or_else(|| unreached("wire condition")),
+            Ok(cond),
             &hs,
             picks,
             wire_ruled,
             || region_for_job(&mut picked_region, &mut section_z, &src, &params, &material, None),
             stock,
-        );
+        )?;
+        if let Some(sketch) = &wire_sketch {
+            sketch.check_path(&path, k).map_err(GenError::Invalid)?;
+        }
+        return Ok((path, warnings));
     }
     // The program ahead, cut only when a law asks (#89, #96 review).
     let mut verify_prior = super::drill_prior::PriorCell::new(verify_prior);
@@ -305,6 +321,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
         None
     };
     let mut face_band: Option<(Vec<(&'static str, Region)>, f64)> = None;
+    // #3316: an Outside band's holes are the part (the pass start names them).
+    let around_band = area.as_ref().and_then(|c| c.outside_clearing_stock()) == Some(true);
     if !contour_sel_arm && !contour_open && let Some(ctx) = area.take() {
         let base = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
         let applied = apply_area_full(base, Some(&ctx))?;
@@ -431,7 +449,24 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 }
                 machining2d::FaceHoles::Through => None,
             };
-            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn)?;
+            // #3343: the keep-out of the protected items at each level, for
+            // every tip height from the level up to the clearance plane, in
+            // the facer's turned frame.
+            let keep_at = |z: f64| -> Result<Region, GenError> {
+                match &avoid_spec {
+                    Some(spec) => {
+                        let ko = spec
+                            .keepout_region(z, fparams.clearance_z.max(z), verify::AVOID_PAD)
+                            .map_err(GenError::Invalid)?;
+                        boundary_turn::turn_region(&ko, turn)
+                    }
+                    None => Ok(Region::empty()),
+                }
+            };
+            let keep = avoid_spec
+                .as_ref()
+                .map(|spec| machining2d::FaceKeep { names: spec.names_list(), at: &keep_at });
+            let path = boundary_turn::face_over_back(&laid, &fparams, 0.0, solid.as_ref(), turn, keep.as_ref())?;
             // M11.3 owed: the facer enters a radius off the footprint -
             // from air over the stock's edge; over the stock (an inner
             // patch) the entry runs on along its row out to air, or the
@@ -443,7 +478,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     path,
                     (stock_facets.as_deref(), m_gen, frame.as_ref()),
                     band.as_deref().unwrap_or(&[]),
-                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn),
+                    |lead| boundary_turn::face_over_back(&laid, &fparams, lead, solid.as_ref(), turn, keep.as_ref()),
                     d * 0.5,
                 )?
             };
@@ -711,6 +746,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_radius,
             rest,
             corner_relief,
+            pass_start,
             ..
         } => {
             if *strategy == PocketStrategy::Adaptive {
@@ -781,9 +817,22 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1559: when carried stock stands above the entry, the same
             // generator runs again with the entries lifted to that top
             // (rest or plain: only the entry plane moves, the cut does not).
+            // #2033: in previous-operations mode the rest area is read
+            // from the stock that the program ahead leaves, at every cut
+            // depth; that mode never falls back to the entered tool.
+            let from_ops = rest.is_some_and(|r| r.source == machining2d::RestSource::PreviousOperations);
+            let ahead = if from_ops {
+                Some(prior.take().ok_or_else(|| unreached("previous-operations rest stock"))??)
+            } else {
+                None
+            };
+            let ahead_cols = ahead.as_ref().and_then(|p| p.grid.as_ref()).map(crate::stock_sim::Columns::of_grid);
             let pocket = |pp: &PocketParams| match rest {
+                Some(r) if from_ops => {
+                    machining2d::rest_pocket_previous_with_relief(&region, pp, r, ahead_cols.as_ref(), corner_relief)
+                }
                 Some(r) => machining2d::rest_pocket_with_relief(&region, pp, r, corner_relief),
-                None => machining2d::pocket_entered_with_relief(&region, pp, &holes, corner_relief),
+                None => machining2d::pocket_started(&region, pp, &holes, corner_relief, *pass_start),
             };
             let mut path = pocket(&pp)?;
             if let Some(m) = carry_need!(&relieved_region, &path) {
@@ -792,6 +841,12 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 path = pocket(&pp)?;
             }
             super::predrilled_entry::say(&mut path, hole_notes);
+            // #3354: rest machining walks its own rest areas, not the
+            // pocket's rings; it says so by name, never drops the choice
+            // silently (the Zigzag rows say it in the planner).
+            if rest.is_some() && *pass_start != machining2d::PassStart::Auto {
+                super::predrilled_entry::say(&mut path, vec![machining2d::PASS_START_REST_NOTE.to_owned()]);
+            }
             relief_zones = zones;
             (relieved_region, path)
         }
@@ -815,12 +870,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_turns,
             blend_radius,
             corner_relief,
+            pass_start,
             ..
         } => {
             if *method == machining2d::AdaptiveMethod::Trochoidal && !corner_relief.is_off() {
                 return Err(GenError::Invalid(
                     "corner relief is not supported with the Trochoidal adaptive method".into(),
                 ));
+            }
+            if let Some(why) = machining2d::trochoidal_pass_start_refusal(*method, *pass_start) {
+                return Err(GenError::Invalid(why));
             }
             let region = region_for_job(
                     &mut picked_region,
@@ -874,11 +933,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     neighbour_parts: &neighbour_parts,
                 },
             )?;
+            // #3355: Outside cuts an open side from the air past the
+            // stock outline, read in the area's own frame the way the
+            // Offset's pass start reads it (#3316). A tilted op takes
+            // the projected footprint, or none (its plan says so and
+            // rides the rings).
+            let side = machining2d::StartSide {
+                start: *pass_start,
+                stock: (*pass_start != machining2d::PassStart::Auto)
+                    .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
+                    .flatten(),
+                around_part: around_band,
+            };
             // #1509 / #1588: the method picks the planner; both cut the same
             // region, the one the op's source and boundary settings give.
             let adaptive = |pp: &PocketParams| match method {
                 machining2d::AdaptiveMethod::Spiral => {
-                    machining2d::pocket_entered_with_relief(&region, pp, &[], corner_relief)
+                    machining2d::pocket_started_on(&region, pp, &[], corner_relief, &side)
                 }
                 // #1733: the loops are arcs already; the option is
                 // refused by name, never ignored (`sane` says it first).
@@ -908,6 +979,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             blend_turns,
             blend_radius,
             corner_relief,
+            pass_start,
             ..
         } => {
             let region = region_for_job(
@@ -962,16 +1034,25 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     neighbour_parts: &neighbour_parts,
                 },
             )?;
+            // #3316: the stock footprint in the area's frame tells a start
+            // ring in open air from one on a wall.
+            let side = machining2d::StartSide {
+                start: *pass_start,
+                stock: (*pass_start != machining2d::PassStart::Auto)
+                    .then(|| super::pass_start_stock::footprint(stock_region.as_ref(), frame.as_ref(), stock_facets.as_deref(), &src, &params, &material))
+                    .flatten(),
+                around_part: around_band,
+            };
             let mut path = match &avoid_spec {
-                Some(spec) => machining2d::pocket_avoid_with_relief(&region, &pp, spec, corner_relief)?,
-                None => machining2d::pocket_entered_with_relief(&region, &pp, &[], corner_relief)?,
+                Some(spec) => machining2d::pocket_avoid_started_on(&region, &pp, spec, corner_relief, &side)?,
+                None => machining2d::pocket_started_on(&region, &pp, &[], corner_relief, &side)?,
             };
             if let Some(m) = carry_need!(&relieved_region, &path) {
                 pp.links.approach.material_top = Some(m);
                 lk = pp.links;
                 path = match &avoid_spec {
-                    Some(spec) => machining2d::pocket_avoid_with_relief(&region, &pp, spec, corner_relief)?,
-                    None => machining2d::pocket_entered_with_relief(&region, &pp, &[], corner_relief)?,
+                    Some(spec) => machining2d::pocket_avoid_started_on(&region, &pp, spec, corner_relief, &side)?,
+                    None => machining2d::pocket_started_on(&region, &pp, &[], corner_relief, &side)?,
                 };
             }
             relief_zones = zones;
@@ -1358,6 +1439,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             hole_min_diameter,
             hole_max_diameter,
             unreachable,
+            sizing,
             ..
         } => {
             if tool.kind != crate::tools::ToolKind::Taper {
@@ -1378,7 +1460,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // a short-fluted V stands on its shank there, and the
             // ride would dress a cylinder as a cone (the derived
             // float quotes to a tenth, chamfer's reading law).
-            let slant = width / (0.5 * tool.tip_angle.to_radians()).sin();
+            // #1890: the largest setback the size law gives any edge.
+            let slant = sizing.max_setback(*width) / (0.5 * tool.tip_angle.to_radians()).sin();
             if tool.flute_len < slant - 1e-9 {
                 return Err(GenError::Invalid(format!(
                     "the break reaches {:.1} mm up the cone's flank; '{}' has {} mm of flute",
@@ -1413,6 +1496,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     hole_min_diameter: *hole_min_diameter,
                     hole_max_diameter: *hole_max_diameter,
                     unreachable: *unreachable,
+                    sizing: *sizing,
                 },
                 &finishing3d::DeburrEdges { include, exclude },
             )?;
@@ -2132,6 +2216,26 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             )?;
             (region, path)
         }
+        // #1444: the undercut's Z moves stand at its entry station only.
+        OpParams::SlotUndercut(op) => {
+            let path = super::slot_undercut_op::generate(
+                op,
+                &tool_name,
+                &tool,
+                hl.clearance,
+                hl.retract,
+                req_z(hl.bottom, "Bottom of Part Z")?,
+            )?;
+            let region = region_for_job(
+                &mut picked_region,
+                &mut section_z,
+                &src,
+                &params,
+                m_gen,
+                frame.as_ref(),
+            )?;
+            (region, path)
+        }
         OpParams::TrochoidalSlot { a, b, width, .. } => {
             let tp = super::trochoid_op::trochoid_params(
                 &params,
@@ -2153,7 +2257,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #1503: with a selection picked, the slot must fit inside
             // it - refused by name, never cut across a wall into the
             // model and reported OK.
-            if matches!(src, SrcRef::Selection(_)) {
+            // #1868: sketch picks are judged by their slot room instead.
+            if let Some(room) = slot_bound.take() {
+                room?.judge(*a, *b, *width)?;
+            } else if matches!(src, SrcRef::Selection(_)) {
                 super::slot_fit::refuse_unfit_slot(params.kind().info().label, *a, *b, *width, &region)?;
             }
             let path = machining2d::trochoidal_slot(&[*a, *b], &tp)?;
@@ -2226,6 +2333,14 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     stock_top: lk.approach.stock_top,
                 },
             )?;
+            (region, path)
+        }
+        // V-carve (#1443): the picked closed region, carved by the
+        // cone to the depth its width allows. The tool doors stand in
+        // `vcarve_op`, where the Tool is visible.
+        OpParams::VCarve { .. } => {
+            let region = region_for_job(&mut picked_region, &mut section_z, &src, &params, m_gen, frame.as_ref())?;
+            let path = super::vcarve_op::carve(&region, &tool, &tool_name, &hl, &params)?;
             (region, path)
         }
         // The 2D chamfer (M2.4 B): a cone ride on the picked edge.
@@ -2318,6 +2433,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             center,
             radius,
             vault,
+            pass_start,
             stepover,
             stock_to_leave,
             stepdown,
@@ -2348,6 +2464,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     center,
                     radius,
                     vault: *vault,
+                    pass_start: *pass_start,
                     bottom_z: req_z(hl.bottom, "Bottom of Part Z")?,
                     top_z: req_z(hl.top, "Top of Part Z")?,
                     tool_diameter: d,
@@ -2570,6 +2687,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             tolerance,
             holes,
             break_through,
+            pass_start,
             ..
         } => {
             // #1557: the stated break-through, the drill's own by default.
@@ -2586,7 +2704,8 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
-            let path = machining2d::bore(&machining2d::BoreParams {
+            // #3360: the shared ring order; Auto is the old ladder.
+            let path = machining2d::bore_started(&machining2d::BoreParams {
                 links: lk,
                 holes: holes
                     .iter()
@@ -2614,7 +2733,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 tolerance: *tolerance,
                 entry: Entry3D::Plunge,
                 helix_radius: 1.0,
-            })?;
+            }, *pass_start)?;
             (region, path)
         }
         // M2.4 C, #894: helical thread milling with a thread mill
@@ -2891,6 +3010,15 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 m_gen,
                 frame.as_ref(),
             )?;
+            // #3452: where the model goes on past the plane on both sides,
+            // the chuck-side rule decides which piece is the part; a setup
+            // that cannot say which end is free is refused there.
+            let plane = req_z(hl.bottom, "Parting Plane Z")?;
+            if let Some(why) = &part_off_side
+                && crate::turning::plane_inside_model(&material.facets, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why.clone()));
+            }
             let path = crate::turning::part_in(
                 &material.facets,
                 &crate::turning::PartParams {
@@ -2905,6 +3033,16 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 },
                 turn_stock,
             )?;
+            // #3452: the revolved-blade scan reads a cutoff's kerf as
+            // scrap BY DESIGN, so it cannot see a kerf that stands in
+            // the finished part. The part-off law judges the kerf
+            // against the part's end face: a blade band that takes
+            // part material is a gouge, refused and never posted.
+            if let Some(why) =
+                crate::turning::part_kerf_refusal(&material.facets, &path, tool.width, plane, *tolerance)
+            {
+                return Err(GenError::Invalid(why));
+            }
             (region, path)
         }
         // M5.2 stage D: threading. The tool door names the V-form
@@ -3285,18 +3423,23 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // no link posts unjudged; routing them would change its program.
     let mut path = if frame.is_none() && rotary_axis.is_none() && is_mill && !lathe_tool {
         let named: Vec<_> = fixture_names.iter().cloned().zip(fixture_boxes.iter().copied()).collect();
-        let stack = verify::steel_stack(&geom, &holder, spindle);
+        let stack = verify::steel_stack(&steel_geom, &holder, spindle);
         let steel = super::fixture_route::LinkSteel { boxes: &named, stack: &stack, ceiling: z_ceiling };
         // The re-judge is the post gate's own per-op law over the same
         // per-setup inputs (#482's `fixture_struck`), so a routed link
         // posts exactly when the gate would pass it.
         let wh = verify::Workholding { turning: &workholding.0, fixed: &workholding.1, axis: rotary_axis };
         super::fixture_route::plan_links(path, &steel, |p| {
-            !crate::fixture_struck::path_hits(p, (&geom, &holder), &wh, spindle, mesh_steel).is_empty()
+            !crate::fixture_struck::path_hits(p, (&steel_geom, &holder), &wh, spindle, mesh_steel).is_empty()
         })?
     } else {
         path
     };
+    // Judge the final Trace after fixture routing, in the same frame as
+    // the protected geometry. All following laws see any elevated links.
+    if let Some(spec) = avoid_spec.take_if(|_| matches!(params, OpParams::Trace { .. })) {
+        super::avoid::protect_trace(&mut path, &spec, frame.is_none(), z_ceiling)?;
+    }
     let stl = stock_to_leave_of(&params);
     // The 2D kinds' depth-aware verify (the silent-gouge fix): a flat
     // region says where the walls stand at ONE plane, and a path walked
@@ -3322,7 +3465,9 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     // stays on it as a second net.
     let parts_crossed = super::keep_law::is_cross_drill(&params);
     // #1595: what a mark may take off the part's surface under the cutter.
-    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| super::mark_law::budget(t, b, tool.diameter * 0.5));
+    let mark_budget = hl.top.zip(hl.bottom).map_or(0.0, |(t, b)| {
+        super::mark_law::budget(t, b, super::mark_law::cutter_depth_limit(&params, &tool))
+    });
     // #1057: the containment kinds' declared rims, read untightened.
     let rims = if depth_law == DepthLaw::Contain { super::material_source::rims_of(&params) } else { Vec::new() };
     match &frame {
@@ -3441,6 +3586,21 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 let prior = crate::stock_sim::Columns::of_grid(dex);
                 verify::acquit_by_prior(&path, &prior, geom.radius, Z_TOL, &mut warns);
             }
+            // #1444: an undercut answers to the part's solid with the
+            // cutter's real head and neck (a stock source: the kept
+            // parts, below), and its Z-move and neck convictions are
+            // re-read against what the program ahead left - a slot cut
+            // earlier for the neck, a pocket cut earlier for the entry.
+            if mode == crate::verify::Mode::Undercut {
+                if part_solid {
+                    contain_into(&mut warns, &path, &material.facets, &cutter, DepthLaw::Keep, stl, material.excess, material.file_tolerance, &params, &[]);
+                }
+                if let Some(dex) = verify_prior.get() {
+                    let prior = crate::stock_sim::Columns::of_grid(dex);
+                    let judged = verify::Cutter::judged(&geom, Some(cutter));
+                    verify::acquit_undercut_by_prior(&path, &judged, &prior, Z_TOL, GOUGE_TOL, &mut warns);
+                }
+            }
             // #2121: a traverse AT the clearance plane is judged too; one
             // the program ahead cleared the stock under is re-read, and
             // one that stands is named (the plane is inside the stock).
@@ -3515,7 +3675,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // the revolved stock standing at each instant.
             super::turning_holder::judge(&params, &path, &meridian, lathe_body.as_deref(), &tool, &mut verify_prior, &mut warns)
                 .map_err(GenError::Invalid)?;
-            warns.extend(workholding_warnings(&path, (&geom, &holder), &fixture_boxes, &workholding, rotary_axis, spindle, mesh_steel));
+            warns.extend(workholding_warnings(&path, (&steel_geom, &holder), &fixture_boxes, &workholding, rotary_axis, spindle, mesh_steel));
             // ...and the lathe holder against that steel (#1037): the chuck
             // revolved, the tailstock standing.
             if let Some(b) = lathe_body.as_deref() {
@@ -3673,6 +3833,13 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             // #2496: a hole wider than its drill is drilled undersize - named,
             // never binding (a pilot drill is a valid plan).
             super::drill_size::undersize_into(&mut warns, &path, &tool, &params);
+            // #3035: Adaptive areas cut by Offset rings - a warning, not
+            // only a note; advisory (the rings are verified above).
+            let areas = crate::machining2d::rings_fallbacks(&path.notes);
+            if areas > 0 {
+                let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+                warns.push(Warning::StrategyFallback { at, areas });
+            }
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.
@@ -3851,7 +4018,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             }
             warns.extend(workholding_warnings(
                 &path_world,
-                (&geom, &holder),
+                (&steel_geom, &holder),
                 &fixture_boxes,
                 &workholding,
                 rotary_axis,
@@ -4009,7 +4176,8 @@ pub(super) fn depth_law_of(params: &OpParams, src: &SrcRef, part_solid: bool) ->
         OpParams::Drill { cross, .. } if cross.is_empty() => DepthLaw::Contain,
         OpParams::Bore { .. } | OpParams::Thread { .. } => DepthLaw::Contain,
         // #1595: a centreline cut on the finished part is a mark.
-        OpParams::Engrave { .. } | OpParams::Trace { .. } => DepthLaw::Mark,
+        // #1443: the V-carve enters the part the same way.
+        OpParams::Engrave { .. } | OpParams::Trace { .. } | OpParams::VCarve { .. } => DepthLaw::Mark,
         _ => DepthLaw::None,
     }
 }
@@ -4084,11 +4252,14 @@ pub(super) fn stock_to_leave_of(params: &OpParams) -> f64 {
     match params {
         OpParams::Face { .. }
         | OpParams::Probe { .. }
+        // #1444: the undercut cuts to its wall and floor.
+        | OpParams::SlotUndercut(_)
         | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_)
         | OpParams::WireContour(_)
         | OpParams::SinkerBurn(_)
         | OpParams::SinkerSideBurn(_)
         | OpParams::Trace { .. }
+        | OpParams::VCarve { .. }
         // The engrave twin leaves no kerf shelf (M2.4 B), and the
         // chamfer cone owns its face outright - the ride IS the
         // finished surface, a leave number could only move the rest

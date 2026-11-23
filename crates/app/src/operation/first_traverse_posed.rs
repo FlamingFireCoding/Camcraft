@@ -12,13 +12,14 @@
 //!
 //! Each line of a work-turning rotary passes through the WCS origin
 //! (the indexed post's setup law, as the index-swing clause reads it).
+//! A stated non-zero `pivot` or `offset` moves it off: refused (#3127).
 //! Decisions #3084 and #3100 have the premises and the limits.
 
 use crate::cl::{TiltedFrame, Toolpath};
 use crate::fixture::{FixtureBox, MACHINE_TABLE};
 use crate::geometry::Point3;
 use crate::machine::AxisLimits;
-use crate::posting::index_swing::{RotaryLine, rotary_line};
+use crate::posting::index_swing::{RotaryLine, off_origin, rotary_line};
 use crate::verify::{self, PosedTurn, Warning};
 
 use super::OpParams;
@@ -79,13 +80,27 @@ pub(super) fn turn_of(params: &OpParams, mill: bool, rotaries: Option<&[AxisLimi
         return Ok(None);
     }
     let origin = Point3::new(wcs_origin[0], wcs_origin[1], wcs_origin[2]);
+    // #3127: the sphere and the line both pass through the WCS origin.
+    let off = |a: &AxisLimits| {
+        format!(
+            "{}: the work-turning rotary {} states a pivot or offset that moves its line off the WCS origin, so the first traverse over the work it turns cannot be judged",
+            params.kind().info().label,
+            a.name
+        )
+    };
     if turning.len() >= 2 {
+        if let Some(a) = turning.iter().find(|a| off_origin(a)) {
+            return Err(off(a));
+        }
         return Ok(Some(PosedTurn::About { origin }));
     }
     if params.kind().info().mode == verify::Mode::Rotary {
         return Ok(None);
     }
     let Some(a) = turning.first() else { return Ok(None) };
+    if off_origin(a) && rotary_line(a) != RotaryLine::Vertical {
+        return Err(off(a));
+    }
     let stated = a.axis.filter(|d| d.iter().all(|c| c.is_finite()) && d.iter().any(|c| c.abs() > 1e-12));
     match (rotary_line(a), stated) {
         (RotaryLine::Vertical, _) => Ok(None),
@@ -243,13 +258,17 @@ pub(super) fn judge(path: &Toolpath, params: &OpParams, frame: Option<&TiltedFra
     let worked = verify::first_traverse_low_posed(height, &work, up, base, Z_TOL);
     let table = table_top(&turn, posed.fixtures, posed.names, up, base)
         .filter(|t| table_stays(posed.rotaries) && height.is_finite() && height < t - Z_TOL)
-        .map(|top_mm| Warning::FirstTraverseLow { at: 0, height_mm: height, top_mm, fixture: true });
+        .map(|top_mm| Warning::FirstTraverseLow { at: 0, height_mm: height, top_mm, fixture: true, tilted: false });
     let top_of = |w: &Option<Warning>| match w {
         Some(Warning::FirstTraverseLow { top_mm, .. }) => *top_mm,
         _ => f64::NEG_INFINITY,
     };
     let w = if top_of(&table) > top_of(&worked) { table } else { worked };
     let Some(w) = w else { return };
+    // #2991: both posed reads are along the frame's axis from its origin.
+    // In the user's frame and `tilted`, as the first-traverse verdicts
+    // that this one replaces are, so the tops compare in one frame.
+    let w = frame.map_or(w, |f| super::first_traverse::in_user_frame(w, f));
     let Warning::FirstTraverseLow { top_mm, .. } = w else { return };
     warns.retain(|o| !matches!(o, Warning::FirstTraverseLow { top_mm: t, .. } if *t <= top_mm));
     warns.push(w);

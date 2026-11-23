@@ -54,6 +54,11 @@ pub(crate) mod home;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
+mod stock_profiles;
+mod dxf_units_dialog;
+mod dxf_drop;
+mod op_source;
+mod stock_axis_rows;
 // pub: M13.4's ColorVision layer - the viewport, the traced stock and
 // the overlay lines read the palette; `cvd` is its maths.
 pub mod colorvision;
@@ -72,6 +77,7 @@ mod op_icons;
 mod tool_icons;
 mod layout;
 mod load_field;
+mod pass_start_row;
 // #2339: the Panel setups window (save, load and delete dock arrangements).
 mod panel_setups;
 // pub(crate) past egui_app: `State::machine_editor` names its draft
@@ -96,8 +102,10 @@ mod spindle_row;
 mod approach_page;
 mod lead_page;
 mod start_exit_rows;
+mod predrilled_page;
 pub(crate) mod op_tabs;
 mod painted;
+mod sim_steps;
 mod ribbon_cell;
 mod tree_badges;
 mod tree_glyphs;
@@ -120,6 +128,8 @@ mod tool_orientation_row;
 mod thread_page;
 // #894: the thread mills' pitch and form rows.
 mod tool_thread_mill_row;
+// #1444: the undercut cutters' seeding and dovetail flank angle row.
+mod tool_undercut_row;
 // #898: the tool editor's catalog rows (part number, vendor, ...).
 mod tool_catalog_rows;
 mod tool_settings;
@@ -163,6 +173,8 @@ mod wcs_pick_row;
 // #316: the setup page's "relative to the previous setup" control.
 mod setup_relative_pick;
 mod setup_workholding_row;
+// #3070: the guided sheet job checklist on the setup's Settings page.
+mod setup_sheet_job_row;
 // The operation dialog, split out of `pages` with the property grid
 // (user review 2026-11-06): the frame, the Geometry pick block, the
 // params dispatcher and its kind-family pages, the shared widgets.
@@ -185,9 +197,12 @@ mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
 mod trochoid_page;
+// #1444: the Slot Undercut kind's fields.
+mod undercut_page;
 mod kind_editors;
 mod deburr_page;
 mod mill2d_more_page;
+mod vcarve_page;
 mod mill2d_page;
 // #1815: 2D Pocket's "Rest machining" group on the Passes tab.
 mod rest_pocket_page;
@@ -209,6 +224,8 @@ mod panes;
 mod theme_drop;
 mod recent_drop;
 mod file_drop;
+// #2950: dropped .mch and .cps files go to the machine and post lists.
+mod setup_file_drop;
 mod gen_overlay;
 // #343: the browser tree, split from panes (rows / pane / operation menu).
 mod browser_tree;
@@ -290,6 +307,8 @@ mod footer_tests;
 #[cfg(test)]
 mod dialog_tests;
 #[cfg(test)]
+mod boundary_offset_tests;
+#[cfg(test)]
 mod field_focus_tests;
 #[cfg(test)]
 mod coolant_tests;
@@ -307,6 +326,8 @@ mod after_op_tests;
 mod program_info_tests;
 #[cfg(test)]
 mod post_dialog_tests;
+#[cfg(test)]
+mod setup_post_gap_tests;
 #[cfg(test)]
 mod colorvision_tests;
 #[cfg(test)]
@@ -372,6 +393,8 @@ mod sinker_pass_tests;
 mod sinker_machine_tests;
 #[cfg(test)]
 mod rest_pocket_tests;
+#[cfg(test)]
+mod predrilled_page_tests;
 
 /// Entry for `--ui egui`; returns the process exit code. `--headless`
 /// selects the no-window proof (seeded document, or the file named on the

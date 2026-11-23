@@ -17,6 +17,7 @@ pub fn classify(params: &OpParams, path: &Toolpath) -> Option<SectionMode> {
         | OpParams::Pocket { .. }
         | OpParams::Adaptive2D { .. }
         | OpParams::Offset2D { .. }
+        | OpParams::VCarve { .. }
         | OpParams::Engrave { .. }
         | OpParams::Chamfer2D { .. }
         | OpParams::Circular { .. }
@@ -89,6 +90,7 @@ pub fn classify(params: &OpParams, path: &Toolpath) -> Option<SectionMode> {
         | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_)
         | OpParams::WireContour(_)
         | OpParams::SinkerBurn(_)
+        | OpParams::SlotUndercut(_)
         | OpParams::SinkerSideBurn(_) => None,
     }
 }

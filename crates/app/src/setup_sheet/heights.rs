@@ -37,6 +37,12 @@ pub(super) fn height_fields(params: &OpParams) -> [(&'static str, &'static str, 
             ("TOP", "Work Top Z", Some(p.top_z)),
             ("BOT", "Cavity Floor Z", Some(p.floor_z)),
         ],
+        OpParams::SlotUndercut(p) => [
+            ("CLR", "Clearance Z", Some(p.clearance_z)),
+            ("RET", "Retract Z", p.retract_z),
+            ("TOP", "Top of Part Z", Some(p.top_z)),
+            ("BOT", "Bottom of Part Z", Some(p.bottom_z)),
+        ],
         OpParams::Probe { clearance_z, .. } => [
             ("CLR", "Clearance Z", Some(*clearance_z)),
             ("RET", "Retract Z", None),
@@ -92,6 +98,13 @@ pub(super) fn height_fields(params: &OpParams) -> [(&'static str, &'static str, 
         // The engrave twin and the circular ladder ride the family's
         // four columns, the optional hop among them (M2.4 B).
         | OpParams::Engrave {
+            clearance_z,
+            retract_z,
+            top_z,
+            bottom_z,
+            ..
+        }
+        | OpParams::VCarve {
             clearance_z,
             retract_z,
             top_z,

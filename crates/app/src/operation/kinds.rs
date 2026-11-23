@@ -79,6 +79,7 @@ fn feed_of(p: &OpParams) -> f64 {
         | OpParams::Pocket { feed, .. }
         | OpParams::Adaptive2D { feed, .. }
         | OpParams::Offset2D { feed, .. }
+        | OpParams::VCarve { feed, .. }
         // The engrave ride and the chamfer ride feed along the curve
         // like the contour's; the circular ladder feeds along its
         // rings (M2.4 B).
@@ -147,6 +148,7 @@ fn feed_of(p: &OpParams) -> f64 {
         OpParams::WireContour(_) => 0.0,
         // The sinker's servo feed down (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => p.feed,
+        OpParams::SlotUndercut(p) => p.feed,
     }
 }
 
@@ -157,6 +159,7 @@ fn plunge_of(p: &OpParams) -> f64 {
         | OpParams::Pocket { plunge_feed, .. }
         | OpParams::Adaptive2D { plunge_feed, .. }
         | OpParams::Offset2D { plunge_feed, .. }
+        | OpParams::VCarve { plunge_feed, .. }
         // The engrave twin plunges into the line like the trace; the
         // chamfer ride enters over the shoulder at the plunge number;
         // the circular ladder plunges through open disk like the
@@ -224,6 +227,7 @@ fn plunge_of(p: &OpParams) -> f64 {
         OpParams::WireContour(_) => 0.0,
         // The sinker's servo feed down (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => p.feed,
+        OpParams::SlotUndercut(p) => p.plunge_feed,
     }
 }
 
@@ -298,6 +302,9 @@ fn climb_of(p: &OpParams) -> bool {
         // number says which way the circle runs (M2.4 C).
         OpParams::Bore { climb, .. } | OpParams::Thread { climb, .. } => *climb,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => false,
+        OpParams::SlotUndercut(p) => p.climb,
+        // #1443: the cone cuts the two walls at once; no side leads.
+        OpParams::VCarve { .. } => true,
     }
 }
 
@@ -328,6 +335,7 @@ fn stepover_of(p: &OpParams) -> Option<f64> {
         // no spacing to carry; the chamfer is one ride of the cone,
         // the authored wall is the pattern (M2.4 B).
         OpParams::Contour { .. }
+        | OpParams::VCarve { .. }
         | OpParams::Engrave { .. }
         | OpParams::Chamfer2D { .. }
         | OpParams::Trace { .. }
@@ -381,6 +389,7 @@ fn stepover_of(p: &OpParams) -> Option<f64> {
         // own edges are the pattern, nothing tiles (M2.5 E B).
         | OpParams::Deburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+        OpParams::SlotUndercut(p) => Some(p.stepover),
     }
 }
 
@@ -390,6 +399,7 @@ fn stepdown_of(p: &OpParams) -> Option<f64> {
         | OpParams::Pocket { stepdown, .. }
         | OpParams::Adaptive2D { stepdown, .. }
         | OpParams::Offset2D { stepdown, .. }
+        | OpParams::VCarve { stepdown, .. }
         // The engrave twin steps down through the sheet like the
         // trace; the circular ladder is the pocket's rung law
         // (M2.4 B). The chamfer has no stepdown arm: its depth is
@@ -458,6 +468,8 @@ fn stepdown_of(p: &OpParams) -> Option<f64> {
         // infeed ladder to step (M2.5 E B).
         OpParams::Deburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+        // One depth: the undercut is cut at its floor (#1444).
+        OpParams::SlotUndercut(_) => None,
     }
 }
 
@@ -470,6 +482,7 @@ pub fn top_of(p: &OpParams) -> Option<Height> {
         | OpParams::Pocket { top_z, .. }
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
+        | OpParams::VCarve { top_z, .. }
         // The engrave and circular tops are the pocket family's; the
         // chamfer's top plane is where the cone's apex stands - the
         // ride's only height (M2.4 B).
@@ -530,6 +543,7 @@ pub fn top_of(p: &OpParams) -> Option<Height> {
         OpParams::WireContour(p) => Some(p.top_z),
         // The work top the sinker's depth may be read from (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => Some(p.top_z),
+        OpParams::SlotUndercut(p) => Some(p.top_z),
     }
 }
 
@@ -542,6 +556,7 @@ pub fn bottom_of(p: &OpParams) -> Option<Height> {
         | OpParams::Pocket { bottom_z, .. }
         | OpParams::Adaptive2D { bottom_z, .. }
         | OpParams::Offset2D { bottom_z, .. }
+        | OpParams::VCarve { bottom_z, .. }
         // The engrave twin and the circular ladder both finish on an
         // authored plane; the chamfer's floor is the wall's own,
         // derived from width and angle - no plane to carry (M2.4 B).
@@ -611,6 +626,7 @@ pub fn bottom_of(p: &OpParams) -> Option<Height> {
         OpParams::WireContour(p) => Some(p.bottom_z),
         // The cavity floor datum no burn passes (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(super::SinkerSideBurnOp { burn: p, .. }) => Some(p.floor_z),
+        OpParams::SlotUndercut(p) => Some(p.bottom_z),
     }
 }
 
@@ -622,6 +638,7 @@ fn retract_of(p: &OpParams) -> Option<Height> {
         OpParams::Pocket { retract_z, .. }
         | OpParams::Adaptive2D { retract_z, .. }
         | OpParams::Offset2D { retract_z, .. }
+        | OpParams::VCarve { retract_z, .. }
         // The three new kinds hop between loops like their parents:
         // the trace, the contour and the pocket (M2.4 B).
         | OpParams::Engrave { retract_z, .. }
@@ -688,6 +705,7 @@ fn retract_of(p: &OpParams) -> Option<Height> {
         // the kernel's own word, no between-run plane authored (M2.5 E B).
         | OpParams::Deburr { .. } => None,
         OpParams::Probe { .. } | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) | OpParams::WireContour(_) | OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => None,
+        OpParams::SlotUndercut(p) => p.retract_z,
     }
 }
 
@@ -779,6 +797,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
         blend_turns: false,
         corner_relief: crate::machining2d::CornerRelief::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -807,6 +826,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -831,6 +851,7 @@ fn seed_offset2d(c: &Carried) -> OpParams {
         entry: Entry3D::Helix, // M11.3: new pocket-family ops helix in (ramp, then plunge, stand in)
         helix_radius: 1.0,
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -877,6 +898,7 @@ fn seed_circular(c: &Carried) -> OpParams {
         center: Point2::new(0.0, 0.0),
         radius: 25.0,
         vault: false,
+        pass_start: crate::machining2d::PassStart::Auto,
         stepover: c.stepover,
         stock_to_leave: 0.0,
         clearance_z: c.clearance,
@@ -1003,6 +1025,7 @@ fn seed_standalone_bore(c: &Carried) -> OpParams {
         tolerance: 0.01,
         holes: Vec::new(),
         break_through: None,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -1162,6 +1185,8 @@ fn seed_deburr(c: &Carried) -> OpParams {
         hole_max_diameter: 10.0,
         // #1889: skip with a note, as each earlier Deburr did.
         unreachable: crate::finishing3d::UnreachableEdges::SkipWithNote,
+        // #1890: one Constant Width chamfer pass.
+        sizing: crate::finishing3d::DeburrBreak::default(),
     }
 }
 
@@ -2459,10 +2484,40 @@ impl KindInfo {
             tool_kinds: tk::ELECTRODE,
         },
         KindInfo {
+            ty: OpType::SlotUndercut,
+            label: "Slot Undercut",
+            caption: "Undercut",
+            tag: 44,
+            // The head cuts sideways under a roof (#1444): the column
+            // laws stand down for the undercut law - no Z move with
+            // the head under material, no neck through a slot mouth -
+            // and the solid law judges the cutter's real profile.
+            mode: Mode::Undercut,
+            section: Section::Mill2D,
+            seed: super::slot_undercut_op::seed_slot_undercut,
+            tool_kinds: tk::UNDERCUT,
+        },
+        KindInfo {
+            ty: OpType::VCarve,
+            label: "V-Carve",
+            caption: "V-Carve",
+            tag: 45,
+            // #1443: the tip rides the medial axis inside the picked
+            // region and enters the part by design, as the engrave
+            // ride does: the tangency laws stand down and the mark law
+            // judges the depth. The generator proves the cone inside
+            // the region. `Mode::Carve` is the engrave mode with the
+            // crossing law off: each branch is ridden from two walls.
+            mode: Mode::Carve,
+            section: Section::Mill2D,
+            seed: super::vcarve_op::seed_vcarve,
+            tool_kinds: tk::CONE,
+        },
+        KindInfo {
             ty: OpType::WaterjetProfile,
             label: "Waterjet Profile",
             caption: "Waterjet Profile",
-            tag: 44,
+            tag: 46,
             // The jet cuts a kerf through the sheet: the milling laws
             // have no jet to judge and stand down as for the plasma
             // cut; the waterjet generator certifies its own kerf and
@@ -2550,6 +2605,8 @@ pub const ALL_LABELS: [&str; KIND_COUNT] = [
     KindInfo::ALL[42].label,
     KindInfo::ALL[43].label,
     KindInfo::ALL[44].label,
+    KindInfo::ALL[45].label,
+    KindInfo::ALL[46].label,
 ];
 
 impl OpType {
@@ -2619,8 +2676,13 @@ impl OpType {
             OpType::SinkerBurn => 42,
             // #545: the side burn appends (stored ids never move).
             OpType::SinkerSideBurn => 43,
+            // #1444: the slot undercut appends (stored ids never move).
+            OpType::SlotUndercut => 44,
+            // #1443: the V-carve appends (stored ids never move); the
+            // menu lists it in the 2D section by its row.
+            OpType::VCarve => 45,
             // #1883: the waterjet profile appends (stored ids never move).
-            OpType::WaterjetProfile => 44,
+            OpType::WaterjetProfile => 46,
         }
     }
 

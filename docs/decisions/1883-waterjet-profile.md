@@ -32,7 +32,7 @@
    - optional arc linearization through `Move::chords`.
 
    The kerf and cover laws certify the result.
-4. `OpType::WaterjetProfile` uses the stored id 44 and
+4. `OpType::WaterjetProfile` uses the stored id 46 and
    `Section::Waterjet` (`Family::Waterjet`). It mounts a `ToolKind::Waterjet`
    nozzle only. `.camproj` stores it as `waterjet_profile` (additive).
    MCP reaches it through the generic `add_operation` / `edit_operation`.
@@ -67,7 +67,7 @@ goldens prove it). The waterjet then reuses the same certified laws.
   computer's offset with a note is safer and does not refuse a legal
   program.
 
-**Cost to change later.** The stored id 44 and the `waterjet_profile`
+**Cost to change later.** The stored id 46 and the `waterjet_profile`
 file key are permanent. An open PR that also appends a kind takes the
 next free id when it merges second. The cut data can move to the recipe
 without a file change: an absent field can mean "read the recipe".
