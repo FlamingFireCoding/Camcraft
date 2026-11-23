@@ -331,6 +331,12 @@ same option as on 2D Offset:
 
 The Trochoidal method has no ring order: it refuses Inside and Outside.
 
+**Do not touch** (Geometry tab, **Boundaries**): as 2D Offset, with both
+methods. 2D Adaptive plans one area for all levels, so its keep-out covers
+each level from the floor up to the clearance height. Beside a protected
+item that is lower than the top of the cut, it leaves more stock than
+2D Offset, which keeps out level by level.
+
 **Common refusals:** as Pocket. With **Method = Trochoidal**, a **Pass
 starts at** other than Auto.
 

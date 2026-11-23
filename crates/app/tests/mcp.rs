@@ -10,7 +10,15 @@
 //! app::operation (detect_holes, #312), app::mcp::pockets (detect_pockets, #35).
 
 mod common;
+#[path = "mcp/approach_distance.rs"]
+mod mcp_approach_distance;
+#[path = "mcp/finish3d_direction.rs"]
+mod mcp_finish3d_direction;
+#[path = "mcp/finish3d_pass_start.rs"]
+mod mcp_finish3d_pass_start;
 mod mcp_open;
+#[path = "mcp/slot_tool_fit.rs"]
+mod slot_tool_fit;
 #[path = "mcp/trochoid_pass_start.rs"]
 mod trochoid_pass_start;
 

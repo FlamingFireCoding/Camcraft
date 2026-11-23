@@ -92,6 +92,8 @@ pub(crate) use stamp_stock::write_setup_stock;
 mod material;
 // #2496: a drill makes its own size; a wider hole is named.
 mod drill_size;
+// #3525: a cut deeper than the flute length is named first.
+mod flute_law;
 // #3448: a mill names the radial holes it cannot reach.
 mod cross_reach;
 // #2598: a Drill or Thread op's feed against its tool's stated feed.
@@ -104,7 +106,7 @@ mod circle_fit;
 mod slot_pick;
 // #1868: the same room read off DXF sketch chains.
 mod slot_sketch;
-pub use slot_pick::{slot_bound_of, slot_fit_of, slot_from_picks};
+pub use slot_pick::{seed_slot_for_tool, slot_bound_of, slot_fit_of, slot_from_picks, slot_width_is_stated};
 pub use circle_fit::{CIRCLE_FIT_TOL, circle_of_region, circular_fit_of};
 mod material_source;
 // #1071: the thread mill's major-circle rims and solid-law bores.
@@ -116,6 +118,8 @@ mod probe;
 pub mod probe_op;
 // #670: the Plasma Profile's seed and generation glue.
 pub mod plasma_op;
+// #1883: the Waterjet Profile's seed and generation glue.
+pub mod waterjet_op;
 // #894: the thread-milling operation's door, kernel plan and its two verdict readings.
 pub mod thread_op;
 mod thread_entry;
@@ -127,6 +131,9 @@ mod agie_profile;
 pub(crate) use agie_profile::agie_job;
 mod wire_ruled;
 pub(crate) mod wire_sketch;
+mod agie_inspection;
+pub(crate) use agie_inspection::prepare_inspection;
+pub use agie_inspection::{AgieInspectionReceipt, export_agie_inspection, has_agie_inspection_source};
 // #534: the wire laws' inputs, read live at the post.
 pub mod wire_verify;
 // #541: the sinker EDM burn to depth.
@@ -143,6 +150,8 @@ pub mod sinker_side_op;
 pub mod slot_undercut_op;
 /// #1443: the V-Carve operation's seed and tool doors.
 pub mod vcarve_op;
+/// #1894: the Multi-Axis Deburr operation's seed, tool doors and kernel numbers.
+pub mod multiaxis_deburr_op;
 // #171: the Probe op seeded from one picked face, edge, vertex or round wall.
 mod probe_pick;
 mod probe_pick_round;
