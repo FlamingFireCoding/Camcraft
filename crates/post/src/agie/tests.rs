@@ -293,7 +293,7 @@ fn an_acute_miter_needs_more_stock_than_a_round_corner() {
     assert!(points(&job).is_ok());
 
     job.contour = vec![[-20., -10.], [20., -10.], [0., 0.], [20., 10.], [-20., 10.]];
-    // The (20, -10) - (0, 0) - (20, 10) notch turns by 53 degrees: the rough
+    // The (20, -10) - (0, 0) - (20, 10) notch opens at 53 degrees: the rough
     // offset cannot reach its reentrant vertex within 0.002 mm.
     let why = points(&job).unwrap_err();
     assert!(why.contains("reentrant corner"), "{why}");
