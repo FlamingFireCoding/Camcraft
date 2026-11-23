@@ -4,18 +4,30 @@
 `assets/machines/ooznest-workbee-1000x1500.mch` ("Ooznest WorkBee 1000x1500
 (Estlcam)"), a 3-axis `mill`:
 
-- X travel 770 mm, Y travel 1270 mm, Z travel 88 mm (written `-L..L`, the
+- X travel 1200 mm, Y travel 770 mm, Z travel 88 mm (written `-L..L`, the
   library's travel rule).
 - X and Y feed and rapid 2500 mm/min. Z feed and rapid are not stated.
 - Spindle power 2.2 kW. No rpm range is stated.
 - No coolant list, no tool count, no `controller.post`.
 
-**The owner must confirm the work area.** The values come from the public
-Ooznest page for the 1000x1500 frame. The owner (MisterMaker, relayed by
-mkinney on the issue) thinks that his frame is a "1500 x 1000" and gave a
-work area of 1200 x 800 mm. The public page gives 770 x 1270 for that frame.
-His axes may be the other way round, or his frame may be a different size.
-Until he confirms, the file keeps the published figures.
+**The work area takes the smaller value on each axis** (maintainer
+decision, 2026-11-23, on PR #3736). The WorkBee's owner (MisterMaker,
+relayed by mkinney on the issue) thinks that his frame is a "1500 x 1000"
+and gave a work area of 1200 x 800 mm (X x Y). The public Ooznest page for
+the 1000x1500 frame gives 1270 x 770 (long axis taken as X, as the owner
+states it):
+
+- X 1200 mm: the owner's figure, inside the published 1270.
+- Y 770 mm: the published figure; the owner's 800 is more than it.
+- Z 88 mm: the published figure; the owner has not stated Z.
+
+A smaller travel can refuse a program that the machine could run. It never
+passes a move past the real end of travel. **The WorkBee's owner must
+confirm his frame size and his real X/Y/Z travel** before the values are
+final.
+
+The first version of this PR kept the public figures with Ooznest's axis
+names (X 770, Y 1270). The maintainer replaced it with the rule above.
 
 **Why.**
 
@@ -54,15 +66,16 @@ Until he confirms, the file keeps the published figures.
 
 **Considered and dropped.**
 
-- The owner's 1200 x 800 mm: not a public figure, and it disagrees with the
-  page. Kept as a note for the owner to confirm.
+- The owner's 1200 x 800 mm as stated: Y 800 is more than the published Y.
+- The public 770 x 1270 with Ooznest's axis names: the owner's long axis is
+  X.
 - `controller.post: "Grbl 1.1"` (the issue body's first plan): Estlcam is not
   grbl, and a grbl post that leaves out repeated G words breaks the rule
   above.
 - A 6000-24000 rpm range (typical for 2.2 kW VFD spindles): not confirmed.
 
 **Cost to change later.** Edit the JSON values in the one file and the
-pinning test `ooznest_workbee_states_the_published_envelope_and_feed`. A
+pinning test `ooznest_workbee_states_the_smaller_envelope_and_feed`. A
 rename also changes the picker row in `crates/app/src/posting_files.rs` and
 the list in `every_shipped_machine_mounts_and_speaks_its_declaration`.
 

@@ -130,10 +130,11 @@ fn agiecut_classic_2s_exposes_the_sourced_axes_and_wire_sizes() {
     assert!(edm.conditions.is_empty());
 }
 
-/// #3038: the WorkBee 1000x1500 from Ooznest's product page (770 x 1270
-/// working area, 88 mm Z, 2500 mm/min). Z rates stay unstated.
+/// #3038: the WorkBee 1000x1500 takes the smaller value on each axis of
+/// the owner's figure (1200 x 800) and Ooznest's page (1270 x 770, 88 mm
+/// Z, 2500 mm/min). Z rates stay unstated.
 #[test]
-fn ooznest_workbee_states_the_published_envelope_and_feed() {
+fn ooznest_workbee_states_the_smaller_envelope_and_feed() {
     let entry = library::builtins()
         .into_iter()
         .find(|e| e.name == "Ooznest WorkBee 1000x1500 (Estlcam)")
@@ -143,8 +144,8 @@ fn ooznest_workbee_states_the_published_envelope_and_feed() {
     let (_, machine) = library::read_for_assign(&entry.source).expect("assignable machine");
     let axes: Vec<_> = machine.axes.iter().map(|a| (a.name.as_str(), a.travel, a.rapid)).collect();
     assert_eq!(axes, [
-        ("X", Some((-770.0, 770.0)), Some(2500.0)),
-        ("Y", Some((-1270.0, 1270.0)), Some(2500.0)),
+        ("X", Some((-1200.0, 1200.0)), Some(2500.0)),
+        ("Y", Some((-770.0, 770.0)), Some(2500.0)),
         ("Z", Some((-88.0, 88.0)), None),
     ]);
 }

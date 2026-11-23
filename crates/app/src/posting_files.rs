@@ -142,7 +142,7 @@ pub const MACHINES: &[(&str, AssetFile)] = &[
     ("Sienci AltMill 2x4", AssetFile("sienci-altmill-2x4.mch")),
     ("Sienci AltMill 4x4", AssetFile("sienci-altmill-4x4.mch")),
     ("Sienci AltMill 4x8", AssetFile("sienci-altmill-4x8.mch")),
-    // #3038: Ooznest's public 1000x1500 page; Estlcam control, so no post is
+    // #3038: the 1000x1500 frame, the smaller of the owner's and Ooznest's travel; Estlcam control, so no post is
     // named until #3735 (sources in docs/decisions/3038-workbee-estlcam.md).
     ("Ooznest WorkBee 1000x1500 (Estlcam)", AssetFile("ooznest-workbee-1000x1500.mch")),
     // #614: Doosan DNM 5700 VMC (Fanuc 0i-MF). #1433: the plain 3-axis
