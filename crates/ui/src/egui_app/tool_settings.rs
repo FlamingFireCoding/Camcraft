@@ -12,41 +12,66 @@ use camcraft_app::model;
 use egui::Ui;
 
 pub(crate) fn page(ui: &mut Ui, state: &mut State, name: &str) {
-    if name.is_empty() {
+    if name.is_empty() && !state.new_tool_form {
         // The Tool target with the empty name is the tool destination. It
         // shows the blank draft when New opened one, and the pointer to the
         // library otherwise (#2397).
-        if !state.new_tool_form {
-            ui.label("Open the Tool library from Tools to browse or create tools.");
-            return;
+        let content_h = (ui.available_height() - 40.0).max(80.0);
+        egui::ScrollArea::vertical()
+            .id_salt("tool_page_scroll")
+            .auto_shrink([false, false])
+            .max_height(content_h)
+            .show(ui, |ui| {
+                ui.label("Open the Tool library from Tools to browse or create tools.");
+            });
+        ui.separator();
+        if ui.button("Close").clicked() {
+            state.close_property_editor();
         }
-        ui.heading("New tool");
-        state.sync_tool_ui();
-        contents(ui, state);
         return;
     }
-    state.tool_ui.name = name.to_owned();
-    state.sync_tool_ui();
-    if state.tool_ui.exists {
-        ui.heading(format!("Tool: {name}"));
-        if ui.button("Delete").clicked() {
-            state
-                .pending
-                .push_back(CommandKind::DeleteTool(name.to_owned()));
-        }
-        // #2397: the body, the profile and the holder have their own
-        // window; Properties keeps the settings and the one preview.
-        if ui
-            .button("Edit tool shape")
-            .on_hover_text("open the body, profile and holder editor in its own window")
-            .clicked()
-        {
-            actions::open_tool_shape_editor(state, name);
-        }
-    } else {
-        ui.heading("New tool");
+    if !name.is_empty() {
+        state.tool_ui.name = name.to_owned();
     }
-    contents(ui, state);
+    state.sync_tool_ui();
+    let exists = state.tool_ui.exists;
+    let err_preview = state.error_for(ErrorScope::Tool).is_some();
+    let block_preview = !exists && !block_reason(state, exists, &state.tool_ui.name).is_empty();
+    let footer_h = if err_preview && block_preview {
+        96.0
+    } else if err_preview || block_preview {
+        68.0
+    } else {
+        40.0
+    };
+    let scroll_h = (ui.available_height() - footer_h).max(80.0);
+    egui::ScrollArea::vertical()
+        .id_salt("tool_page_scroll")
+        .auto_shrink([false, false])
+        .max_height(scroll_h)
+        .show(ui, |ui| {
+            if exists && !name.is_empty() {
+                ui.heading(format!("Tool: {name}"));
+                if ui.button("Delete").clicked() {
+                    state
+                        .pending
+                        .push_back(CommandKind::DeleteTool(name.to_owned()));
+                }
+                // #2397: the body, the profile and the holder have their own
+                // window; Properties keeps the settings and the one preview.
+                if ui
+                    .button("Edit tool shape")
+                    .on_hover_text("open the body, profile and holder editor in its own window")
+                    .clicked()
+                {
+                    actions::open_tool_shape_editor(state, name);
+                }
+            } else {
+                ui.heading("New tool");
+            }
+            contents(ui, state);
+        });
+    footer(ui, state);
 }
 
 fn contents(ui: &mut Ui, state: &mut State) {
@@ -65,46 +90,17 @@ fn contents(ui: &mut Ui, state: &mut State) {
     // shape editor live in their own window ("Edit tool shape").
     let (body, steel) = super::tool_profile_page::preview_inputs(state, exists);
     super::tool_preview::draw(ui, &preview_tool, u, body.as_deref(), steel.as_deref(), false);
-    ui.separator();
+}
+
+/// Fixed bottom button row (#2007): Apply / Add tool beside Close,
+/// always visible without scrolling, with any block or refusal above it.
+fn footer(ui: &mut Ui, state: &mut State) {
+    let exists = state.tool_ui.exists;
     let name_now = state.tool_ui.name.clone();
-    let block = if name_now.trim().is_empty() {
-        "Name the tool first.".to_owned()
-    } else if !exists && model::find_by_name(&state.world, &name_now).is_some() {
-        "That name is already in the document.".to_owned()
-    } else {
-        String::new()
-    };
-    if exists {
-        let recipe_refusal = (state.tool_ui.tool_kind() == camcraft_app::tools::ToolKind::Waterjet)
-            .then(|| state.tool_ui.to_tool().torch_refusal())
-            .flatten();
-        if ui.add_enabled(recipe_refusal.is_none(), egui::Button::new("Apply"))
-            .on_disabled_hover_text(recipe_refusal.as_deref().unwrap_or_default())
-            .clicked()
-        {
-            // #93 slice 3: a landed drawn cutter rides the edit.
-            let apply = state.apply_tool_numbers(&name_now);
-            state.pending.push_back(apply);
-            push_number_if_changed(state, &name_now);
-        }
-    } else {
-        let add = ui.add_enabled(block.is_empty(), egui::Button::new("Add tool"));
-        if add.clicked() {
-            let landed = name_now.trim().to_owned();
-            state.pending.push_back(CommandKind::AddTool {
-                name: landed.clone(),
-                tool: state.tool_ui.to_tool(),
-            });
-            push_number_if_changed(state, &landed);
-            // #2397 review: the saved tool becomes the selection, so the
-            // page leaves the new-tool form and shows its normal controls,
-            // including the Edit tool shape button, without a second
-            // browser click. The AddTool command lands in the same frame.
-            actions::target(state, UiTarget::Tool(landed));
-        }
-        if !block.is_empty() {
-            ui.label(block);
-        }
+    let block = block_reason(state, exists, &name_now);
+    ui.separator();
+    if !exists && !block.is_empty() {
+        ui.label(&block);
     }
     if let Some(msg) = state.error_for(ErrorScope::Tool).map(str::to_owned) {
         super::error_text::error_text(
@@ -112,6 +108,53 @@ fn contents(ui: &mut Ui, state: &mut State) {
             super::colorvision::text_inks(ui, &state.world).error,
             &msg,
         );
+    }
+    ui.horizontal(|ui| {
+        if exists {
+            let recipe_refusal = (state.tool_ui.tool_kind() == camcraft_app::tools::ToolKind::Waterjet)
+                .then(|| state.tool_ui.to_tool().torch_refusal())
+                .flatten();
+            if ui
+                .add_enabled(recipe_refusal.is_none(), egui::Button::new("Apply"))
+                .on_disabled_hover_text(recipe_refusal.as_deref().unwrap_or_default())
+                .clicked()
+            {
+                // #93 slice 3: a landed drawn cutter rides the edit.
+                let apply = state.apply_tool_numbers(&name_now);
+                state.pending.push_back(apply);
+                push_number_if_changed(state, &name_now);
+            }
+        } else {
+            let add = ui
+                .add_enabled(block.is_empty(), egui::Button::new("Add tool"))
+                .on_disabled_hover_text(&block);
+            if add.clicked() {
+                let landed = name_now.trim().to_owned();
+                state.pending.push_back(CommandKind::AddTool {
+                    name: landed.clone(),
+                    tool: state.tool_ui.to_tool(),
+                });
+                push_number_if_changed(state, &landed);
+                // #2397 review: the saved tool becomes the selection, so the
+                // page leaves the new-tool form and shows its normal controls,
+                // including the Edit tool shape button, without a second
+                // browser click. The AddTool command lands in the same frame.
+                actions::target(state, UiTarget::Tool(landed));
+            }
+        }
+        if ui.button("Close").clicked() {
+            state.close_property_editor();
+        }
+    });
+}
+
+fn block_reason(state: &State, exists: bool, name_now: &str) -> String {
+    if name_now.trim().is_empty() {
+        "Name the tool first.".to_owned()
+    } else if !exists && model::find_by_name(&state.world, name_now).is_some() {
+        "That name is already in the document.".to_owned()
+    } else {
+        String::new()
     }
 }
 
@@ -176,6 +219,8 @@ pub(super) fn seed_kind(state: &mut State, before: usize) {
     }
     // The thread mills (#894): a form and a pitch.
     super::tool_thread_mill_row::seed(&mut state.tool_ui);
+    // The undercut cutters (#1444): head wider than neck, and dovetail flank angle.
+    super::tool_undercut_row::seed(&mut state.tool_ui);
     // The torch (#670): no spindle, no corner - a kerf. The sinker
     // electrode (#541) and EDM wire (#2011) turn none either.
     if matches!(

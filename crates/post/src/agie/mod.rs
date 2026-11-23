@@ -3,9 +3,11 @@
 use std::path::{Path, PathBuf};
 
 mod contour;
-mod jescript;
+mod spacing;
+pub use crate::agie_setup::valid_stem as valid_name;
 
-/// The retained side of a closed contour. The control applies the wire offset.
+/// The retained side of a closed contour. The control applies the wire offset
+/// toward the waste: outside a punch, inside a die opening.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgieSide {
     Punch,
@@ -21,19 +23,11 @@ pub struct AgieJob {
     pub stock_max: [f64; 3],
 }
 
-/// The job name doubles as a controller file stem. Reject DOS device names
-/// and directory components even when the host filesystem permits them.
-pub fn valid_name(name: &str) -> bool {
-    let bytes = name.as_bytes();
-    (1..=8).contains(&bytes.len())
-        && bytes[0].is_ascii_uppercase()
-        && bytes
-            .iter()
-            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        && !matches!(name, "CON" | "AUX" | "NUL" | "PRN")
-        && !(bytes.len() == 4
-            && (name.starts_with("COM") || name.starts_with("LPT"))
-            && bytes[3].is_ascii_digit())
+/// Published setup files and the checks to perform on the imported work.
+#[derive(Debug)]
+pub struct ExportedJob {
+    pub files: Vec<PathBuf>,
+    pub controller_review: String,
 }
 
 /// Write a complete controller job to a new directory.
@@ -46,13 +40,31 @@ pub fn export(
     program: &str,
     separation_length_mm: f64,
 ) -> Result<Vec<PathBuf>, String> {
+    export_with_review(job, destination, program, separation_length_mm).map(|result| result.files)
+}
+
+/// Publish a setup-only punch or die opening and return the required operator checks.
+///
+/// # Errors
+/// Returns the same validation and publication errors as [`export`].
+pub fn export_with_review(
+    job: &AgieJob,
+    destination: &Path,
+    program: &str,
+    separation_length_mm: f64,
+) -> Result<ExportedJob, String> {
     if separation_length_mm != 1.0 {
-        return Err("Set the Agie separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
+        return Err("Set the separation cut length (separationLengthMm) to 1.0 mm for this closed contour. A zero or unspecified separation cannot pass the control formal check".into());
     }
     if !valid_name(program) {
-        return Err("Agie program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
+        return Err("The job program name must be a non-reserved 1–8 character DOS name starting with a letter and using uppercase letters or digits".into());
     }
-    let points = contour::prepare(job)?;
+    let (points, setup) = contour::prepare(job, program)?;
+    let setup = match job.side {
+        AgieSide::Punch => setup.encode(),
+        AgieSide::Die => setup.encode_die(),
+    }
+    .map_err(|error| error.to_string())?;
     let iso_name = format!("{program}.ISO");
     let mut iso = format!("( {iso_name} )\r\n");
     for (i, point) in points.iter().chain(points.first()).enumerate() {
@@ -67,16 +79,13 @@ pub fn export(
     iso.push_str(&format!("N{:04} M02 ;\r\n", points.len() + 2));
     let files = [
         (iso_name, iso),
-        (
-            format!("{program}.SBR"),
-            format!("AGIE.USING_{program}.ISO IMPORT {program}.ISO;\r\n"),
-        ),
-        (
-            format!("{program}.SBL"),
-            jescript::piece(job, program, separation_length_mm),
-        ),
+        (format!("{program}.SBR"), setup.sbr),
+        (format!("{program}.SBL"), setup.sbl),
     ];
-    publish(destination, &files)
+    Ok(ExportedJob {
+        files: publish(destination, &files)?,
+        controller_review: setup.controller_review,
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -87,19 +96,19 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     if destination.file_name().is_none() {
-        return Err("Choose a new directory name for the Agie bundle".into());
+        return Err("Choose a new directory name for the job bundle".into());
     }
     match fs::symlink_metadata(destination) {
         Ok(_) => {
             return Err(format!(
-                "Agie destination {} already exists; choose a new directory",
+                "Job destination {} already exists; choose a new directory",
                 destination.display()
             ));
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
             return Err(format!(
-                "Cannot inspect Agie destination {}: {e}",
+                "Cannot inspect job destination {}: {e}",
                 destination.display()
             ));
         }
@@ -109,7 +118,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
     let stage = tempfile::Builder::new()
         .prefix(".camcraft-agie-")
         .tempdir_in(parent)
-        .map_err(|e| format!("Cannot stage Agie job in {}: {e}", parent.display()))?;
+        .map_err(|e| format!("Cannot stage the job in {}: {e}", parent.display()))?;
     let mut paths = Vec::new();
     for (name, text) in files {
         let mut file = fs::OpenOptions::new()
@@ -123,7 +132,7 @@ fn publish(destination: &Path, files: &[(String, String)]) -> Result<Vec<PathBuf
         paths.push(destination.join(name));
     }
     rename_new(stage.path(), destination)
-        .map_err(|e| format!("Cannot publish Agie job to {}: {e}", destination.display()))?;
+        .map_err(|e| format!("Cannot publish the job to {}: {e}", destination.display()))?;
     // The temporary name ceased to exist at the rename. Disarm its path-based cleanup.
     let _old_name = stage.keep();
     Ok(paths)
@@ -171,14 +180,18 @@ fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
 fn rename_new(_: &Path, _: &Path) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "atomic Agie bundle publication is unavailable on this platform",
+        "atomic job bundle publication is unavailable on this platform",
     ))
 }
 
 #[cfg(target_arch = "wasm32")]
 fn publish(_: &Path, _: &[(String, String)]) -> Result<Vec<PathBuf>, String> {
-    Err("Agie bundle output requires a local filesystem".into())
+    Err("Job bundle output requires a local filesystem".into())
 }
 
+#[cfg(test)]
+mod die_tests;
+#[cfg(test)]
+mod reentrant_tests;
 #[cfg(test)]
 mod tests;

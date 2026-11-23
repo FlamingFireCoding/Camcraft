@@ -3,7 +3,7 @@
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, ImportModel, LoadMachine, SelectPost,
-    SetPostScriptOptions, SetStock, SetWcsOrigin,
+    SetPostOptions, SetPostScriptOptions, SetStock, SetWcsOrigin,
 };
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::operation::{
@@ -11,10 +11,15 @@ use camcraft_app::operation::{
 };
 use camcraft_app::post::options::OptionValue;
 use camcraft_app::posting::{self, agie};
-use camcraft_app::schema::{Location, PostRef};
+use camcraft_app::schema::{Location, PostOptions, PostRef};
 use camcraft_app::stock::StockShape;
 use flecs_ecs::prelude::World;
 use std::{collections::BTreeMap, fs};
+
+#[path = "agie_native/die.rs"]
+mod die;
+#[path = "agie_native/reentrant.rs"]
+mod reentrant;
 
 fn separation(value: f64) -> BTreeMap<String, OptionValue> {
     BTreeMap::from([("separationLengthMm".into(), OptionValue::Float(value))])
@@ -94,6 +99,7 @@ fn punch_setup(
         clearance: DEFAULT_CLEARANCE,
         skims: Vec::new(),
         four_axis: None,
+        sharp_corners: false,
     };
     h.execute(
         &world,
@@ -124,6 +130,9 @@ fn the_mounted_agie_post_writes_nominal_geometry_and_preserves_existing_jobs() {
     );
     let files = posting::post_mounts(&world, &dest).expect("native post");
     assert_eq!(files[0].posted.bundle_files.len(), 3);
+    let review = files[0].posted.controller_review.as_ref().unwrap();
+    assert!(review.contains("Confirm zero steps"));
+    assert!(review.contains("CCB030") && review.contains("245, 155, 140 and 134"));
     let iso = fs::read_to_string(dest.join("PUNCH40.ISO")).unwrap();
     // Translated nominal X limits. A wire radius or gap would change both.
     assert!(
@@ -140,6 +149,7 @@ fn the_mounted_agie_post_writes_nominal_geometry_and_preserves_existing_jobs() {
         "{sbl}"
     );
     assert!(sbl.contains("ID_PUNCH,c_punch") && sbl.contains("ID_MATERIAL,\"0001\""));
+    assert!(sbl.contains("ASDELETE") && !sbl.contains("ASAGIE"));
     assert!(sbl.contains("ID_POSPOSZ,\"-20.000\""));
     assert!(sbl.contains("ID_SEPCUT,\"1.0\",je_dim)"));
     let sbr = fs::read_to_string(dest.join("PUNCH40.SBR")).unwrap();
@@ -282,6 +292,18 @@ fn the_work_must_fit_between_each_stated_guide() {
 }
 
 #[test]
+fn smoothing_blocks_the_native_agie_job_before_publication() {
+    let world = punch(20.0, [0., 0., 20.], [-30., 0.]);
+    let options = PostOptions { smoothing: true, ..PostOptions::default() };
+    History::default().execute(&world, SetPostOptions::new(&world, options).unwrap());
+    let temp = tempfile::tempdir().unwrap();
+    let dest = temp.path().join("SMOOTH");
+    let error = posting::post_mounts_with_script_options(&world, &dest, Some(&separation(1.0))).unwrap_err();
+    assert_eq!(error, "Native wire EDM jobs require default post options and One program output");
+    assert!(!dest.exists());
+}
+
+#[test]
 fn the_native_files_match_the_control_checked_rectangular_punch() {
     let world = punch(20.0, [0., 0., 20.], [-30., 0.]);
     let temp = tempfile::tempdir().unwrap();
@@ -331,37 +353,39 @@ fn qn2_requires_the_rough_wire_size_in_the_mounted_condition() {
 }
 
 #[test]
-fn cli_posts_the_notched_punch_from_its_original_mesh() {
-    let dir = tempfile::tempdir().unwrap();
-    let examples = dir.path().join("examples/agie");
-    fs::create_dir_all(&examples).unwrap();
+fn script_post_reports_the_required_control_review_and_zero_working_steps() {
+    let temp = tempfile::tempdir().unwrap();
+    let example = temp.path().join("examples/agie");
+    fs::create_dir_all(&example).unwrap();
     fs::write(
-        examples.join("notched-punch.obj"),
-        include_str!("../../../examples/agie/notched-punch.obj"),
+        example.join("punch.obj"),
+        include_bytes!("../../../examples/agie/punch.obj"),
     )
     .unwrap();
-    fs::write(
-        examples.join("notched-punch.camscript"),
-        include_str!("../../../examples/agie/notched-punch.camscript"),
-    )
-    .unwrap();
-    let run = std::process::Command::new(env!("CARGO_BIN_EXE_camcraft-cli"))
-        .current_dir(dir.path())
-        .args(["script", "examples/agie/notched-punch.camscript"])
+    let mut script = include_str!("../../../examples/agie/punch.camscript")
+        .replace("cam.post(", "const receipt = cam.post(");
+    script.push_str(
+        r#"if (receipt.working_steps_generated !== false ||
+              !receipt.controller_review.includes("CCB030") ||
+              !receipt.controller_review.includes("245, 155, 140 and 134") ||
+              receipt.files.length !== 3) {
+            throw new Error("Expected a setup-only job and the effective work checks");
+        }"#,
+    );
+    fs::write(example.join("punch.camscript"), script).unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_camcraft-cli"))
+        .current_dir(temp.path())
+        .args(["script", "examples/agie/punch.camscript"])
         .output()
         .unwrap();
     assert!(
-        run.status.success(),
-        "{} {}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
     );
-    let iso = fs::read_to_string(dir.path().join("NOTCH20/NOTCH20.ISO")).unwrap();
-    for vertex in [
-        "X10.00000 Y10.00000",
-        "X0.00000 Y9.00000",
-        "X-10.00000 Y10.00000",
-    ] {
-        assert!(iso.contains(vertex), "{iso}");
-    }
+    let sbl = fs::read_to_string(temp.path().join("PUNCH40/PUNCH40.SBL")).unwrap();
+    assert_eq!(
+        sbl,
+        include_str!("golden/nc/agie-native/CCSEP20.SBL").replace("CCSEP20", "PUNCH40")
+    );
 }
