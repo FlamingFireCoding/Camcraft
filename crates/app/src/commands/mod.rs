@@ -25,6 +25,8 @@ pub mod import_svg;
 pub mod move_sketch;
 // #2679: typed text placed as a profile of engraving strokes.
 pub mod insert_text;
+// #3072: typed text in an outline font placed as a profile of closed shapes.
+pub mod insert_outline_text;
 // #339 slice 6: a fixture library entry placed into a setup.
 pub mod insert_fixture;
 // #744: DXF/profile fixtures and STEP profile derivation.
@@ -112,6 +114,7 @@ pub use import_dxf::{DxfOptions, ImportDxf};
 pub use import_svg::ImportSvg;
 pub use import_model::ImportModel;
 pub use insert_text::{InsertText, TextOptions};
+pub use insert_outline_text::{InsertOutlineText, OutlineTextOptions};
 pub use move_sketch::MoveSketch;
 pub use insert_fixture::InsertFixture;
 pub use profile_fixture::{DeriveFixtureProfile, InsertProfileFixture, SetFixtureProfile};

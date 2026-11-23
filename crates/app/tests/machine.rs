@@ -760,6 +760,7 @@ fn every_shipped_machine_mounts_and_speaks_its_declaration() {
         ("Sienci AltMill 2x4", Kind::Mill),
         ("Sienci AltMill 4x4", Kind::Mill),
         ("Sienci AltMill 4x8", Kind::Mill),
+        ("Ooznest WorkBee 1000x1500 (Estlcam)", Kind::Mill),
         ("Doosan DNM 5700", Kind::Mill),
         ("Doosan DNM 5700 + rotary table", Kind::Mill),
         ("Haas VF-2", Kind::Mill),
