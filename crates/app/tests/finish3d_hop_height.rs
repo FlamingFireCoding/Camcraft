@@ -78,9 +78,11 @@ fn step_pocket_stl() -> String {
 
 /// The job: the pocket, stock from the model, a ball 3D Finish with
 /// the Contour pattern, generated with `retract` (offset from the top
-/// of the model; `None` keeps the default hop to clearance).
-fn generate(retract: Option<f64>) -> (Client, Value) {
-    let dir = std::env::temp_dir().join(format!("camcraft-3627-{}", std::process::id()));
+/// of the model; `None` keeps the default hop to clearance). Each test
+/// passes its own `test` tag: the fixture file is per test, so tests that
+/// run at the same time never share it.
+fn generate(test: &str, retract: Option<f64>) -> (Client, Value) {
+    let dir = std::env::temp_dir().join(format!("camcraft-3627-{}-{test}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("step_pocket.stl");
     std::fs::write(&path, step_pocket_stl()).expect("write the fixture");
@@ -114,7 +116,7 @@ fn gate_problems(v: &Value) -> Vec<String> {
 /// finds no gouge and does not hold the post.
 #[test]
 fn a_retract_below_the_top_of_the_part_is_accepted_and_verifies_clean() {
-    let (mut c, generated) = generate(Some(-3.0));
+    let (mut c, generated) = generate("low_retract", Some(-3.0));
     assert!(generated.to_string().contains("\"ok\""), "F1 generates: {generated}");
     let v = c.ok("verify", json!({}));
     eprintln!("verify: {v}");
@@ -132,7 +134,7 @@ fn a_retract_below_the_top_of_the_part_is_accepted_and_verifies_clean() {
 /// The usual setup: no retract plane, the hop goes to clearance.
 #[test]
 fn the_default_hop_verifies_clean() {
-    let (mut c, generated) = generate(None);
+    let (mut c, generated) = generate("default_hop", None);
     assert!(generated.to_string().contains("\"ok\""), "F1 generates: {generated}");
     let v = c.ok("verify", json!({}));
     let blocking: Vec<&Value> = v["findings"]
