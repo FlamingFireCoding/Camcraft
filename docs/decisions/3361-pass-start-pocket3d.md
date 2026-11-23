@@ -55,7 +55,7 @@ the 3D Pocket strategies with rings, and they use the same ring law as
   (`rings_named`): each such fallback is on the rotary wrap, where the
   side stays Auto. The HSM planner's own internal fallback to rings
   (inside `adaptive_passes`) does not follow the parameter. That is more
-  than a few lines, so it is a follow-up issue (P7).
+  than a few lines, so it is the follow-up issue #3616 (P7).
 - A disabled row for Zigzag and Adaptive: dropped, because the strategy
   can change after the value is set; a kept value with a visible line is
   clearer than a value that the page resets.

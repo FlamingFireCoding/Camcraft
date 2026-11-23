@@ -77,16 +77,17 @@ fn side_plan(
     side: &StartSide,
 ) -> Result<(Vec<Vec<Point2>>, Vec<String>), GenError> {
     let rings = matches!(strategy, PocketStrategy::Waterline | PocketStrategy::OffsetRings | PocketStrategy::Adaptive);
-    if side.start != PassStart::Auto && rings {
-        if let Some(pieces) = level_pieces(region, center, off, step, climb, side.start)? {
-            let plan = order(pieces, center, tool_r, side)?;
-            let left = unswept(center, &plan.passes, tool_r)?;
-            if left <= LEFT_TOL {
-                return Ok((plan.passes, plan.notes));
-            }
-            let auto = plan_passes(center, step, climb, strategy)?;
-            return Ok((auto, vec![side.fallback_note(left)]));
+    if side.start != PassStart::Auto
+        && rings
+        && let Some(pieces) = level_pieces(region, center, off, step, climb, side.start)?
+    {
+        let plan = order(pieces, center, tool_r, side)?;
+        let left = unswept(center, &plan.passes, tool_r)?;
+        if left <= LEFT_TOL {
+            return Ok((plan.passes, plan.notes));
         }
+        let auto = plan_passes(center, step, climb, strategy)?;
+        return Ok((auto, vec![side.fallback_note(left)]));
     }
     Ok((plan_passes(center, step, climb, strategy)?, Vec::new()))
 }
