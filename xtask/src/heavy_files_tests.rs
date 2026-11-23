@@ -33,7 +33,7 @@ const MANIFEST: (&str, &str) = ("Cargo.toml", "[package]\nname = \"camcraft-demo
 #[test]
 fn a_cfg_test_module_reaches_only_the_unit_tests_of_its_crate() {
     // Top-level and nested `#[cfg(test)] mod x;` (lib.rs and drilling/mod.rs of motion).
-    for f in ["crates/motion/src/ring_zig_tests.rs", "crates/motion/src/drilling/tests.rs"] {
+    for f in ["crates/motion/src/ring_zig_tests.rs", "crates/motion/src/drilling/tests_cross.rs"] {
         let n = names(&[f]);
         assert_eq!(n[..2], ["heavy build (release --no-run)", "motion heavy: lib"], "{f}");
         // The known-fail checks of the motion unit tests (#2567) stay with the lib target.
@@ -124,4 +124,31 @@ fn the_dry_run_names_each_skipped_target_and_the_counts() {
     let reached = p.steps.len() - 1;
     let want = format!("  heavy reach: {reached} step(s) reached, {} skipped (not run)", all - reached);
     assert!(p.notes.contains(&want), "{want} in {:#?}", p.notes);
+}
+
+#[test]
+fn a_second_compile_root_that_names_the_file_keeps_the_crate_reach() {
+    let lib = ("src/lib.rs", "#[cfg(test)]\nmod t;\npub mod a;\n");
+    let base = [MANIFEST, lib, ("src/t.rs", ""), ("src/a/mod.rs", "#[cfg(test)]\nmod u;\n"), ("src/a/u.rs", "")];
+    let probes: [(&str, (&str, &str), &str); 4] = [
+        ("mainmod", ("src/main.rs", "mod t;\nfn main() {}\n"), "t.rs"),
+        ("testspath", ("tests/x.rs", "#[path = \"../src/t.rs\"]\nmod t;\n"), "t.rs"),
+        ("binpath", ("src/bin/x.rs", "#[path = \"../t.rs\"]\nmod t;\nfn main() {}\n"), "t.rs"),
+        // main.rs builds module `a` again, so a/u.rs is in the unit tests of the binary too.
+        ("mainancestor", ("src/main.rs", "mod a;\nfn main() {}\n"), "a/u.rs"),
+    ];
+    for (tag, extra, rel) in probes {
+        let mut files = base.to_vec();
+        files.push(extra);
+        let r = scratch(tag, &files);
+        assert_eq!(seen_by(&r, "demo", rel), Seen::Library, "{tag}");
+        let _ = std::fs::remove_dir_all(&r);
+    }
+    // A `mod t;` of a test binary loads tests/t.rs, not src/t.rs: the narrow answer stays.
+    let mut files = base.to_vec();
+    files.push(("tests/x.rs", "mod t;\n"));
+    let r = scratch("testsmod", &files);
+    assert!(matches!(seen_by(&r, "demo", "t.rs"), Seen::UnitTestsOnly(_)));
+    assert!(matches!(seen_by(&r, "demo", "a/u.rs"), Seen::UnitTestsOnly(_)));
+    let _ = std::fs::remove_dir_all(&r);
 }

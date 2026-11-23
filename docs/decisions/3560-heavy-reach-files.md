@@ -15,11 +15,17 @@
     and of each crate that depends on `<d>`.
 - A narrower answer must be a proof. Each doubt gives the crate reach:
   - the crate manifest sets a target `path`, or cannot be read;
-  - a source line of the crate names the file as a path part (`"x.rs`,
-    `/x.rs`), for example in `include!` or in a `#[path]` attribute;
+  - a line of any `.rs` file in the crate directory (`src/`, `src/bin/`,
+    `tests/`, `benches/`, `examples/`) names the file as a path part
+    (`"x.rs`, `/x.rs`), for example in `include!` or in a `#[path]`
+    attribute;
+  - a file other than the proven parent has a `mod <seg>;` that can load
+    the file or one of its ancestor modules (for example `mod t;` in
+    `main.rs`), or an indented `mod <seg>;`. A file is test-only only if no
+    other compile root can name it (review of #3737);
   - the declaration is missing, indented (in an inline module), inline
     (`mod x {`), has a `#[path]`, or is declared again without
-    `#[cfg(test)]`;
+    `#[cfg(test)]` in the same parent file;
   - the attribute is not exactly `#[cfg(test)]` (for example
     `#[cfg(any(test, feature = ".."))]`);
   - the parent module file is not found, or both `x.rs` and `x/mod.rs`

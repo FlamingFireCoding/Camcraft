@@ -20,9 +20,13 @@ pub enum Seen {
 /// Classifies `rel` (the path under `crates/<d>/src/`, `/`-separated). Every doubt answers `Library`:
 /// an unreadable file, a module declaration that is missing, inline or found more than once, a
 /// `#[path]` attribute or an `include!` that names the file. A narrower answer must be a proof.
+/// `UnitTestsOnly` also needs that no other compile root can name the file: each `.rs` file of the
+/// crate directory (`src/bin`, `tests/`, `benches/`, `examples/` included) is read for it.
 pub fn seen_by(root: &Path, d: &str, rel: &str) -> Seen {
-    let src = root.join("crates").join(d).join("src");
-    if !rel.ends_with(".rs") || custom_target_paths(root, d) || named_by_path_or_include(&src, rel) {
+    let krate = root.join("crates").join(d);
+    let src = krate.join("src");
+    let Some(files) = rust_files(&krate) else { return Seen::Library };
+    if !rel.ends_with(".rs") || custom_target_paths(root, d) || named_by_path_or_include(&files, rel) {
         return Seen::Library;
     }
     if rel == "main.rs" || rel.starts_with("bin/") {
@@ -43,6 +47,9 @@ pub fn seen_by(root: &Path, d: &str, rel: &str) -> Seen {
         let Ok(text) = std::fs::read_to_string(&parent) else { return Seen::Library };
         match decl_is_test_only(&text, segs[i]) {
             Some(true) => {
+                if declared_elsewhere(&krate, &src, &files, &segs) {
+                    return Seen::Library;
+                }
                 let m = segs[..=i].join("::");
                 return Seen::UnitTestsOnly(format!("module {m} is #[cfg(test)]: only the unit tests of {d} build it"));
             }
@@ -127,28 +134,73 @@ fn custom_target_paths(root: &Path, d: &str) -> bool {
     std::fs::read_to_string(manifest).map_or(true, |t| t.lines().any(|l| l.trim_start().starts_with("path")))
 }
 
+/// Every `.rs` file under the crate directory, or `None` when a directory or entry cannot be read.
+fn rust_files(krate: &Path) -> Option<Vec<(PathBuf, String)>> {
+    let mut out = Vec::new();
+    let mut stack = vec![krate.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).ok()? {
+            let p = e.ok()?.path();
+            if p.is_dir() {
+                if p.file_name().is_some_and(|n| n != "target") {
+                    stack.push(p);
+                }
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                let text = std::fs::read_to_string(&p).ok()?;
+                out.push((p, text));
+            }
+        }
+    }
+    Some(out)
+}
+
 /// True when a line of a source file of the crate names the changed file as a path part (in an
 /// `include!`, a `#[path]` attribute split over lines, or any other string): then the file can be built
-/// where the module walk does not look. An unreadable directory or file counts as true.
-fn named_by_path_or_include(src: &Path, rel: &str) -> bool {
+/// where the module walk does not look.
+fn named_by_path_or_include(files: &[(PathBuf, String)], rel: &str) -> bool {
     let file = rel.rsplit('/').next().unwrap_or(rel);
     // The name as a whole path part: `"x.rs`, `/x.rs` or `\x.rs` (so `air_x.rs` does not name `x.rs`).
     let names = |l: &str| ['"', '/', '\\'].iter().any(|c| l.contains(&format!("{c}{file}")));
-    let mut stack = vec![src.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { return true };
-        for e in entries {
-            let Ok(e) = e else { return true };
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                let Ok(text) = std::fs::read_to_string(&p) else { return true };
-                if text.lines().any(&names) {
+    files.iter().any(|(_, text)| text.lines().any(names))
+}
+
+/// True when a file other than the proven parent declares `mod <seg>;` for a segment of `segs` and that
+/// declaration can load the same file: a second compile root (`main.rs`, `src/bin`, `tests/`, ...) or a
+/// second module tree. An indented declaration (inside an inline module) always counts.
+fn declared_elsewhere(krate: &Path, src: &Path, files: &[(PathBuf, String)], segs: &[&str]) -> bool {
+    for (f, text) in files {
+        for line in text.lines() {
+            let Some(after) = mod_name(line) else { continue };
+            for (j, seg) in segs.iter().enumerate() {
+                let Some(rest) = after.strip_prefix(seg) else { continue };
+                if !rest.trim_start().starts_with(';') {
+                    continue; // another name (`mod segx;`) or an inline module, which loads no file
+                }
+                if line.starts_with(char::is_whitespace) {
+                    return true;
+                }
+                if parent_file(src, &segs[..j]).as_deref() == Some(f.as_path()) {
+                    continue; // the declaration that the walk proved
+                }
+                let want: PathBuf = segs[..j].iter().fold(src.to_path_buf(), |p, s| p.join(s));
+                if child_dir(krate, f) == want {
                     return true;
                 }
             }
         }
     }
     false
+}
+
+/// The directory in which `mod x;` of file `f` looks for `x.rs`: the file's own directory for a crate
+/// root or a `mod.rs`, else the directory named after the file.
+fn child_dir(krate: &Path, f: &Path) -> PathBuf {
+    let dir = f.parent().map(Path::to_path_buf).unwrap_or_default();
+    let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let roots = [krate.join("src").join("bin"), krate.join("tests"), krate.join("benches"), krate.join("examples")];
+    if matches!(name, "lib.rs" | "main.rs" | "mod.rs" | "build.rs") || roots.contains(&dir) {
+        dir
+    } else {
+        f.with_extension("")
+    }
 }
