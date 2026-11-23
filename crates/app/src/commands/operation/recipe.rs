@@ -88,10 +88,12 @@ fn has_saved_geometry(params: &OpParams) -> bool {
         | OpParams::WireContour(_)
         | OpParams::SinkerBurn(_)
         | OpParams::SinkerSideBurn(_) => true,
+        // A per-corner relief override is matched by a source corner XY.
+        // The global relief kind and T-bone rule carry no coordinate.
+        OpParams::Pocket { corner_relief, .. }
+        | OpParams::Adaptive2D { corner_relief, .. }
+        | OpParams::Offset2D { corner_relief, .. } => !corner_relief.overrides.is_empty(),
         OpParams::Face { .. }
-        | OpParams::Pocket { .. }
-        | OpParams::Adaptive2D { .. }
-        | OpParams::Offset2D { .. }
         | OpParams::Engrave { .. }
         | OpParams::VCarve { .. }
         | OpParams::Chamfer2D { .. }

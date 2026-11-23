@@ -10,6 +10,8 @@
 mod common;
 #[path = "cut_recipe/picks.rs"]
 mod picks;
+#[path = "cut_recipe/relief.rs"]
+mod relief;
 #[path = "cut_recipe/safety.rs"]
 mod safety;
 
