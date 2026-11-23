@@ -27,6 +27,7 @@ use super::shell::*;
 use super::{gpu, gpu_init, icons, theme, world};
 
 mod capture;
+mod eye_boot;
 mod frame;
 mod start;
 
@@ -109,6 +110,8 @@ struct Shell {
     /// M7.2 B3b: the traced-stock eye; `None` where the device cannot
     /// composite it (the stock sheet then stands, said once at init).
     stock_eye: Option<crate::trace::eye::StockEye>,
+    /// The eye being built on its own thread (`eye_boot`); `None` once taken.
+    eye_rx: Option<eye_boot::EyeRx>,
     view_tex: Option<egui::TextureId>,
     /// The bundled glyphs, built once on the first GPU-backed frame (the
     /// retired imgui loader's law: lazy, and `None` means painted fallback,
@@ -186,6 +189,7 @@ impl Shell {
             dock_state,
             view: None,
             stock_eye: None,
+            eye_rx: None,
             view_tex: None,
             icons: None,
             viewport_points: [600.0, 400.0],
@@ -274,13 +278,17 @@ impl Shell {
         view.set_document(&device, &queue, &scene.parts);
         view.set_shade(&device, &queue, &scene.shade);
         view.set_overlay(&device, &queue, &scene.overlay);
-        let stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
-            Ok(e) => Some(e),
-            Err(err) => {
-                diag_warn!("stock eye: {err} - the deviate sheet stands in");
-                None
-            }
-        };
+        // The eye lands on a later frame; until then the sheet stands in.
+        self.eye_rx = eye_boot::spawn(device.clone(), VIEW3D_FORMAT, Arc::clone(&window));
+        if self.eye_rx.is_none() {
+            self.stock_eye = match crate::trace::eye::StockEye::new(&device, VIEW3D_FORMAT) {
+                Ok(e) => Some(e),
+                Err(err) => {
+                    diag_warn!("stock eye: {err} - the deviate sheet stands in");
+                    None
+                }
+            };
+        }
         let tex =
             renderer.register_native_texture(&device, view.color_view(), wgpu::FilterMode::Linear);
         let winit_state = egui_winit::State::new(
@@ -301,7 +309,6 @@ impl Shell {
         self.renderer = Some(renderer);
         self.winit_state = Some(winit_state);
         self.view = Some(view);
-        self.stock_eye = stock_eye;
         self.view_tex = Some(tex);
     }
 
