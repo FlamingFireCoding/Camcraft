@@ -170,8 +170,6 @@ mod c_steel;
 mod contact;
 mod crossing;
 mod cut_index;
-// #3615: the model planes law (c) samples - cut levels plus the deepest cut.
-mod cut_planes;
 mod engine;
 mod excess;
 mod fine_bore;
@@ -210,6 +208,8 @@ mod reach_reference;
 mod reach_tests;
 mod sample_grid;
 mod rest;
+// #3615: the exact Y-slab point-location index over a cached slice.
+mod slice_index;
 mod rotary;
 mod rotary_geom;
 mod seat;

@@ -1,78 +1,103 @@
-## #3615 - The verifier samples island walls at the cut levels, not every cut Z (HELD: equivalence failed)
+## #3615 - cut the verifier island-slice cost with an exact index (accepted)
 
-### Outcome (read this first)
+### Decision
 
-The plane-set builder was implemented and the all-plane equivalence pin was
-run. **The pin failed.** On the existing sloped ramp fixture
-(`ramp_at(500, 36.0)` in `crates/sim/src/verify/reach_tests.rs`) the new
-plane set loses 19 part-true `ShankHit` convictions that the all-plane law
-makes. The change is less conservative, so it does NOT merge. The work is
-held on the draft PR; the issue is `blocked`.
+Keep every cut plane and every sample. Cut the cost of law (c)'s island
+membership test with an exact point-location index on each cached slice.
 
-### What was built
+- The index is a Y-slab edge index (`crates/sim/src/verify/slice_index.rs`).
+  It stores the directed edges of a `Region` and, for each slab between two
+  distinct edge-endpoint Y values, the edges whose half-open Y span holds the
+  slab.
+- A query reads only the edges that cross its own Y. It computes the crossing
+  `x` with the same expression, in the same order, as `Region::contains`
+  (`Loop::contains_xy` in `crates/geometry/src/geo2d.rs`), so the answer equals
+  it bit for bit.
+- `Rest::island_holds` asks the cached index instead of cloning and scanning
+  the region. `Rest::islands_at` still returns the region, because law (c)
+  builds its wall samples from it.
+- The plane set is unchanged. Law (c) slices every cut plane, the same set
+  the all-plane reference keeps. No sample is dropped.
 
-Law (c) (`band_reach_counted`, `crates/sim/src/verify/reach.rs`) takes its
-model planes from the cut LEVELS plus the deepest cut, in the new
-`crates/sim/src/verify/cut_planes.rs`. A cut level is a cutting move whose Z
-does not change: `|from.z - to.z| <= z_tol`. The deepest cut is the lowest
-`min(from.z, to.z)` over the cutting moves. Nothing else in any law changes;
-`Rest::new` still keys a cut per feed chord, and the tangent law and every
-column-surface law read those cuts as before.
+The equality holds because a ray-parity boolean is the XOR of its per-edge
+crossings, and XOR is associative: the source XORs crossings per loop and then
+per loop, the index XORs the same crossings in slab order. Each edge's
+crossing is independent and uses the source's exact arithmetic, with the
+directed endpoints in the source's order (never swapped), so rounding matches.
 
-The level tolerance is `VerifyContext::z_tol` (production `Z_TOL = 1e-6` in
-`crates/app/src/operation/material.rs`). A zero tolerance still recognizes a
-level move, because an unchanged Z differs by exactly zero.
+### Why
 
-### Why the change was attempted
+In release, 98 percent of the time is `Rest::surface_before` in `band_reach`:
+about 154 s to 174 s for one generation, at about 34 microseconds a call on
+4.7 M calls. Each call runs `island_threshold` (about 16 `island_holds`), and
+each `island_holds` was a full `Region::contains` over a slice of some
+thousands of edges. The index reads only the few edges that cross the query's
+Y (about two per loop), and it drops no sample, so it can only cut cost.
 
-An interpolated ramp emits one feed move per thinned vertex, each with its
-own Z (`crates/motion/src/links.rs`, `push_zig`). `Rest::new` keys a cut on
-`m.to.z`, so a ramp gave about 1,700 planes where the path has 3 cut levels,
-and the sample set and verdict walk grew with the vertex count.
+### The rejected design (dropped)
 
-### The finding (STOP condition)
+The first attempt sampled the model planes at the cut LEVELS plus the deepest
+cut, in `crates/sim/src/verify/cut_planes.rs`. It was less conservative and is
+removed here.
 
-Fixture: `reach_tests::ramp_at(500, 36.0)` - 500 feed moves, X 10 to 90, Z 9
-down to 1, Y 36, over the 20 mm boss (X and Y 40 to 60, Z 0 to 10) of
-`reach_tests::model()`, with a 6 mm cutter and a 10 mm shank 5 mm above the
-tip.
+Finding, on the sloped ramp `ramp_at(500, 36.0)`:
 
-- New set (levels plus deepest; the ramp has no level move, so the set is the
-  single deepest plane Z 1): `ShankHit { part: true }` at moves 250 to 273
-  and 293 to 329.
-- All-plane reference (500 per-chord planes): `ShankHit { part: true }` at
-  moves 250 to 292 and 293 to 329.
-- Lost: moves 274 to 292, 19 part-true convictions. Each is a real collision:
-  the shank disc (bottom `to.z + 5`) stands below the boss top Z 10 and
-  reaches 1 mm into the boss wall, and the flute did not clear that wall
-  point.
+- All-plane reference: `ShankHit { part: true }` at moves 250 to 292 and 293
+  to 329.
+- Levels plus deepest (the ramp has no level move, so its single deepest
+  plane): `ShankHit { part: true }` at moves 250 to 273 and 293 to 329.
+- Lost: moves 274 to 292, 19 part-true convictions.
 
-Cost measured on the away-from-wall ramp (`ramp_at(2000, 34)`), where the
-verdicts do match: new `slices = 1, sample_tests = 0`; old
-`slices = 2000, sample_tests = 32,016,000`. The speed win is real; the lost
-verdicts disqualify it.
-
-The prismatic boss slice is nominally the same at every Z, but the extra
-per-chord planes also place triangulation-tie vertices along the wall at
-z-dependent positions. Those points are what catch moves 274 to 292. Sampling
-one plane cannot reproduce them.
+The per-chord planes also place triangulation-tie wall vertices at
+z-dependent positions, and those points catch the lost moves. One plane
+cannot reproduce them. A verifier that loses a part-true collision is less
+conservative, and the Prime Directive forbids it.
 
 ### Considered and dropped
 
-- **Quantize the plane key and cap the sample count.** The lower-risk variant
-  that issue #3615 also names. Not taken: the maintainer's condition is the
-  levels-plus-deepest set, and this variant only bounds the damage.
-- **Change the tangent law's per-move section plane.** Not taken: it would
-  change law (b), not only law (c)'s sample set.
-- **Adjust the ramp fixture to match.** Forbidden by the issue's condition 4.
-  The fixture and the reference are unchanged; only the `slices` cost
-  assertion was relaxed from equality to `<=` (a cost counter, never a
-  verdict), and the findings equality stays strict.
+- **Memoise `surface_before` per plane.** Kept as a fallback only. The exact
+  index attacks the same hotspot without a second cache to invalidate.
+- **Quantize the plane key and cap the sample count.** Dropped: a bound that
+  is not conservative drops a collision, which is the failure above.
+- **Adjust the ramp fixture to match.** Forbidden by the issue. The fixture
+  and the reference are unchanged.
 
-### What a fix needs
+### The gate
 
-A plane set that keeps the wall coverage these triangulation-tie points give
-while collapsing the duplicate planes - for example, keep the levels and the
-deepest cut AND a bounded set of points per wall, or derive samples from the
-model's mesh edges directly instead of from plane slices. That is a new
-design, not the levels-plus-deepest set.
+- `verify::slice_index::tests::the_index_equals_region_contains_bit_for_bit`
+  compares the index with `Region::contains` over a grid that lands on every
+  vertex line and between them, for a U shape, a staircase, and a holed
+  region. Any difference fails.
+- `verify::reach_tests::a_many_plane_ramp_reads_only_the_samples_near_its_discs`
+  runs law (c) and the all-plane reference (`reach_reference`) on the sloped
+  ramp `ramp_at(500, 36.0)` and on a stepped fixture, and asserts the same
+  findings in the same order, the same slice count, and no more sample tests.
+- The stepped fixture has a different island section in each Z band: a wide
+  low block (X and Y 40..60, Z 0..5) under a narrow tall block (X and Y
+  45..55, Z 5..10), with the ramp at Y 49. Measured on a temporary variant
+  that keeps only the wide low block (the deepest section's sample set), the
+  all-plane reference convicts 93 `ShankHit { part: true }` moves, the
+  wide-only set convicts 63, and it loses moves 250 to 279, 30 part-true
+  convictions. The narrow band's Y 45 wall sample (4 mm off the path, so the
+  flute cannot clear it) is what catches them. Keeping every plane keeps
+  them.
+- The reached heavy sim/verify lanes run on the final head.
+
+### Readings (debug, this branch)
+
+- `ramp_at(500, 34)`: new `slices = 500, sample_tests = 0`; reference
+  `slices = 500, sample_tests = 2,004,000`.
+- `ramp_at(500, 36)`: new `slices = 500, sample_tests = 20,192`; reference
+  `slices = 500, sample_tests = 1,394,117`.
+- Stepped ramp Y 49: new `slices = 500, sample_tests = 28,368`; reference
+  `slices = 500, sample_tests = 1,390,052`.
+
+### What changing this later costs
+
+Remove the index by pointing `Rest::island_holds` back at
+`Region::contains`: local to one method, and the plane set is untouched. Make
+the plane set smaller again: that re-opens the 19 sloped-ramp and 30
+stepped-ramp lost convictions, so it needs a new equivalence proof, not a
+cost measurement.
+
+Changelog: none (perf, no behaviour change)

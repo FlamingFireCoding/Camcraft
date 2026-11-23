@@ -30,14 +30,30 @@ fn model() -> Vec<Triangle> {
     f
 }
 
+/// A stepped boss on the same floor plate: a wide low block (X and Y 40..60,
+/// Z 0..5) under a narrow tall block (X and Y 45..55, Z 5..10). The island
+/// section is the wide block below Z 5 and the narrow block above it, so each
+/// Z band puts its wall points at a different Y - the shape a levels-only
+/// plane set cannot reproduce.
+fn stepped_model() -> Vec<Triangle> {
+    let mut f = cube(Point3::new(0.0, 0.0, -2.0), Point3::new(100.0, 100.0, 0.0)).facets.to_vec();
+    f.extend(cube(Point3::new(40.0, 40.0, 0.0), Point3::new(60.0, 60.0, 5.0)).facets.iter().cloned());
+    f.extend(cube(Point3::new(45.0, 45.0, 5.0), Point3::new(55.0, 55.0, 10.0)).facets.iter().cloned());
+    f
+}
+
 fn feed(a: (f64, f64, f64), b: (f64, f64, f64)) -> Move {
     Move::new(MoveKind::Feed, Point3::new(a.0, a.1, a.2), Point3::new(b.0, b.1, b.2), Some(500.0))
 }
 
-/// Run the new law and the old one, each on its own rest model (the
-/// island cache is per rest, so each pays its own slices).
-fn both(moves: Vec<Move>, mode: Mode) -> ((Vec<Warning>, ReachStats), (Vec<Warning>, ReachStats)) {
-    let (region, model, tool) = (square(0.0, 0.0, 100.0, 100.0), model(), tool());
+/// Run the new law and the old one on the same model, each on its own rest
+/// model (the island cache is per rest, so each pays its own slices).
+fn both_on(
+    model: Vec<Triangle>,
+    moves: Vec<Move>,
+    mode: Mode,
+) -> ((Vec<Warning>, ReachStats), (Vec<Warning>, ReachStats)) {
+    let (region, tool) = (square(0.0, 0.0, 100.0, 100.0), tool());
     let cx = VerifyContext {
         region: &region,
         stock: Some(&region),
@@ -106,13 +122,20 @@ fn helix() -> Vec<Move> {
 }
 
 fn assert_same(name: &str, moves: Vec<Move>, mode: Mode) -> (Vec<Warning>, ReachStats, ReachStats) {
-    let ((new, s_new), (old, s_old)) = both(moves, mode);
+    assert_same_on(name, model(), moves, mode)
+}
+
+/// #3615: every verdict, its order and the slice (reach) count must equal the
+/// all-plane reference, and the sample grid may only cut the tested pairs.
+fn assert_same_on(
+    name: &str,
+    model: Vec<Triangle>,
+    moves: Vec<Move>,
+    mode: Mode,
+) -> (Vec<Warning>, ReachStats, ReachStats) {
+    let ((new, s_new), (old, s_old)) = both_on(model, moves, mode);
     assert_eq!(new, old, "{name}: the findings and their order must not move");
-    // #3615: the new plane set samples the cut levels plus the deepest cut,
-    // so a ramp's per-chord planes collapse; the reference keeps one slice
-    // per chord. Slices is a cost counter, never a verdict: the findings
-    // above must stay identical, and the new set never slices more planes.
-    assert!(s_new.slices <= s_old.slices, "{name}: {s_new:?} vs {s_old:?}");
+    assert_eq!(s_new.slices, s_old.slices, "{name}: one slice per plane, as before");
     assert!(s_new.sample_tests <= s_old.sample_tests, "{name}: {s_new:?} vs {s_old:?}");
     (new, s_new, s_old)
 }
@@ -152,24 +175,39 @@ fn a_many_plane_ramp_reads_only_the_samples_near_its_discs() {
     let (_, long_new, long_old) = assert_same("ramp 2000", ramp(2000), Mode::Area);
     eprintln!("ramp 500: new {short_new:?}, old {short_old:?}");
     eprintln!("ramp 2000: new {long_new:?}, old {long_old:?}");
-    // #3615: a ramp has no level move, so the new set is its deepest plane
-    // alone - not one plane per chord. `slices` stays tiny and the three
-    // planes of a level ladder stay three.
-    assert!(long_new.slices <= 4, "{long_new:?}");
+    // One slice per distinct plane: linear in the moves of a ramp.
+    assert!(long_new.slices <= 2001, "{long_new:?}");
     // The old scan paid moves x planes x samples (about sixteen times
     // for four times the moves); a disc clear of every wall reads at
     // most a few samples a move.
     assert!(long_old.sample_tests >= 15 * short_old.sample_tests, "{short_old:?} -> {long_old:?}");
     assert!(long_new.sample_tests <= 2000, "{long_new:?}");
     // A ramp whose shank reaches the boss wall (Y 36: the shank's rim
-    // 1 mm into it) must still read that wall (#3615: the boss is
-    // prismatic, so its deepest section carries the same wall points the
-    // old per-chord planes repeated). The index only drops the samples no
-    // disc can hold, a fixed large share.
+    // 1 mm into it) must read that wall's samples of EVERY plane - the
+    // law reads no sample's plane, and each plane's section puts its
+    // own vertices on the wall. Exactness keeps that growth; the index
+    // only drops the samples no disc can hold, a fixed large share.
     let (short_hits, s_new, s_old) = assert_same("wall ramp 500", ramp_at(500, 36.0), Mode::Area);
     let (long_hits, l_new, l_old) = assert_same("wall ramp 2000", ramp_at(2000, 36.0), Mode::Area);
     eprintln!("wall ramp 500: new {s_new:?}, old {s_old:?}; wall ramp 2000: new {l_new:?}, old {l_old:?}");
     assert!(!short_hits.is_empty() && !long_hits.is_empty(), "the shank meets the boss");
     assert!(s_new.sample_tests > 0, "{s_new:?}");
     assert!(20 * l_new.sample_tests <= l_old.sample_tests, "{l_new:?} vs {l_old:?}");
+
+    // #3615: a stepped part has a different island section in each Z band,
+    // so a levels-only plane set would keep one band's wall points and miss
+    // the other's. Keeping every plane keeps both; the all-plane reference
+    // must agree with the indexed law on every verdict, its order and the
+    // slice count. The ramp at Y 49 puts the shank's annulus on the narrow
+    // upper block's Y 45 wall (4 mm off the path, so the flute cannot clear
+    // it) and clear of the wide lower block's nearest wall sample (over 5 mm
+    // away): a hit the levels-only deepest section cannot reproduce.
+    let (stepped_hits, st_new, st_old) =
+        assert_same_on("stepped wall ramp", stepped_model(), ramp_at(500, 49.0), Mode::Area);
+    eprintln!("stepped wall ramp: new {st_new:?}, old {st_old:?}");
+    assert!(
+        stepped_hits.iter().any(|w| matches!(w, Warning::ShankHit { part: true, .. })),
+        "the shank meets the stepped wall: {stepped_hits:?}"
+    );
+    assert!(st_new.sample_tests > 0, "{st_new:?}");
 }
