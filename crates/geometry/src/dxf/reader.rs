@@ -1,6 +1,8 @@
-//! Provenance: Autodesk DXF SECTION, HEADER, TABLES and ENTITIES structure.
+//! Provenance: Autodesk DXF SECTION, HEADER, CLASSES, THUMBNAILIMAGE, ACDSDATA, TABLES and ENTITIES structure.
 use super::Units;
-use super::entities::{layer_name, simple};
+use super::blocks::Blocks;
+use super::dictionaries;
+use super::entities::{is_entity_kind, layer_name, simple};
 use super::pairs::{Pairs, Record, integer};
 use super::polyline::{legacy, lightweight};
 use super::types::{Document, DxfError, Layer, Limits, State, TextAnnotation, error};
@@ -25,6 +27,7 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
         doc: Document::default(),
         limits,
     };
+    let mut blocks = Blocks::default();
     let mut sections = BTreeSet::new();
     loop {
         let record = input
@@ -36,6 +39,7 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
                 if input.next()?.is_some() {
                     return Err(error("EOF", "data after EOF"));
                 }
+                blocks.check_owners()?;
                 return Ok(state.doc);
             }
             "SECTION" => {
@@ -53,19 +57,43 @@ pub fn parse_with_limits(bytes: &[u8], limits: Limits) -> Result<Document, DxfEr
                 if name == "HEADER" {
                     header(fields, &mut state.doc)?;
                     end_section(&mut input, "HEADER")?;
+                } else if matches!(name, "CLASSES" | "THUMBNAILIMAGE" | "ACDSDATA") {
+                    skip_inert(&mut input, name)?;
                 } else {
                     if fields.next()?.is_some() {
                         return Err(error(name, "unexpected SECTION fields"));
                     }
                     match name {
                         "ENTITIES" => entities(&mut input, &mut state)?,
-                        "TABLES" => tables(&mut input, &mut state)?,
-                        "BLOCKS" => end_section(&mut input, "BLOCK")?,
+                        "TABLES" => tables(&mut input, &mut state, &mut blocks)?,
+                        "BLOCKS" => blocks.read(&mut input, limits.max_entities)?,
+                        "OBJECTS" => dictionaries::read(&mut input, limits.max_entities)?,
                         _ => return Err(error(name, "unsupported SECTION")),
                     }
                 }
             }
             _ => return Err(error(record.kind, "expected SECTION or EOF")),
+        }
+    }
+}
+
+/// CLASSES, THUMBNAILIMAGE and ACDSDATA carry no geometry. Their content is opaque,
+/// including group pairs right after the name: consume records to the matching ENDSEC.
+fn skip_inert(input: &mut Pairs<'_>, name: &str) -> Result<(), DxfError> {
+    loop {
+        let record = input
+            .record()?
+            .ok_or_else(|| error(name, "missing ENDSEC"))?;
+        match record.kind {
+            "ENDSEC" => return record.empty(),
+            "EOF" | "SECTION" => return Err(error(name, "missing ENDSEC")),
+            kind if is_entity_kind(kind) => {
+                return Err(error(
+                    name,
+                    &format!("{kind} entity in a section without geometry"),
+                ));
+            }
+            _ => {}
         }
     }
 }
@@ -161,7 +189,7 @@ fn entities(input: &mut Pairs<'_>, state: &mut State) -> Result<(), DxfError> {
     }
 }
 
-fn tables(input: &mut Pairs<'_>, state: &mut State) -> Result<(), DxfError> {
+fn tables(input: &mut Pairs<'_>, state: &mut State, blocks: &mut Blocks) -> Result<(), DxfError> {
     let mut table = None;
     let mut names = BTreeSet::new();
     loop {
@@ -191,6 +219,9 @@ fn tables(input: &mut Pairs<'_>, state: &mut State) -> Result<(), DxfError> {
             kind => {
                 if table != Some(kind) {
                     return Err(error(kind, "entry does not match TABLE"));
+                }
+                if kind == "BLOCK_RECORD" {
+                    blocks.table_record(record, state.limits.max_entities)?;
                 }
                 if kind == "LAYER" {
                     if state.doc.layers.len() >= state.limits.max_entities {

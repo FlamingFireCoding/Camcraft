@@ -129,12 +129,33 @@ pub(crate) fn tightened(tol: f64, excess: f64) -> f64 {
     crate::verify::excess_floor(tol, excess).unwrap_or(tol)
 }
 
+/// [`tightened`] without the #2996 widening: the whole `excess` comes
+/// off (`verify::strict_floor`). For a law that also guards a holder, a
+/// bar, a shank or a stylus - the kinds [`widens`] leaves out.
+pub(crate) fn tightened_strict(tol: f64, excess: f64) -> f64 {
+    crate::verify::strict_floor(tol, excess).unwrap_or(tol)
+}
+
+/// Whether the program gate judges this kind at the #2996 widened
+/// tolerance (`verify::excess_floor`) or at #864's strict one
+/// (`verify::strict_floor`). Turning (its meridian margin also guards
+/// the holder and the bar), the rotary kinds (one field allowance for
+/// the ball and the shank) and probe (its slack guards the stylus)
+/// read the strict law: on a model whose excess uses their whole floor,
+/// they are refused by name, as before #2996.
+pub(crate) fn widens(params: &OpParams) -> bool {
+    !(matches!(params, OpParams::Probe { .. })
+        || params.kind().info().section == Section::Turning
+        || super::rotary_law::rotary_tolerance(params).is_some())
+}
+
 /// How much a measured standoff, entry or band grows on a model
-/// imported coarser than promised (#1053): `excess` while `GOUGE_TOL`
-/// stays positive, `0.0` past that (where [`floor_of`] makes the
-/// program gate refuse the operation instead).
+/// imported coarser than promised (#1053): the whole `excess` while
+/// `GOUGE_TOL` is still judged, also where #2996 widens that tolerance;
+/// `0.0` past that (where [`floor_of`] makes the program gate refuse the
+/// operation instead).
 pub(crate) fn band_growth(excess: f64) -> f64 {
-    (GOUGE_TOL - tightened(GOUGE_TOL, excess)).max(0.0)
+    crate::verify::band_growth(GOUGE_TOL, excess)
 }
 
 /// The band kinds' meridian-scan tolerance (`turning::revolve`), `None`
@@ -165,6 +186,7 @@ fn own_law_tol_of(params: &OpParams) -> Option<f64> {
     match params {
         OpParams::Probe { .. } => Some(STYLUS_SLACK),
         OpParams::PlasmaProfile(_) => Some(KERF_TOL),
+        OpParams::WaterjetProfile(_) => Some(crate::waterjet::KERF_TOL),
         _ => None,
     }
 }
@@ -207,7 +229,7 @@ pub(crate) fn excess_aware(params: &OpParams) -> bool {
         }
         Section::Turning => true,
         Section::MultiAxis => !matches!(params, OpParams::Swarf { .. } | OpParams::AdvancedSwarf { .. }),
-        Section::Plasma => true,
+        Section::Plasma | Section::Waterjet => true,
         // #532: the wire's kerf law is not excess-aware yet either.
         // #541: nor the sinker's burn verdict.
         Section::WireEdm | Section::Sinker => false,

@@ -1,16 +1,14 @@
 //! Quantize the nominal polygon and find an exterior perpendicular Agie punch entry (planar geometry).
 use super::AgieJob;
+use crate::agie_setup::{PunchSetup20, QN2_OFFSETS_UM, qn2_offsets_um};
 
 type Point = [i64; 2];
 const UNITS: f64 = 100_000.0; // Five decimal places in the native ISO geometry file.
 const MAX_VERTICES: usize = 4096;
-// Stock thickness (mm) and the furthest observed QN2 wire-centre offset (µm).
-// Measurements are for Berco Cut 0.25 mm, cold die steel and Fine Ra0.30.
-const QN2_HEIGHTS: &[(u16, u32)] = &[(15, 245), (20, 245), (40, 260), (80, 266)];
 
 fn quantize(v: f64) -> Result<i64, String> {
     if !v.is_finite() || v.abs() > 9999.9999 {
-        return Err("Agie coordinates must be finite and within ±9999.9999 mm".into());
+        return Err("Job coordinates must be finite and within ±9999.9999 mm".into());
     }
     Ok((v * UNITS).round() as i64)
 }
@@ -38,48 +36,72 @@ fn intersects(a: Point, b: Point, c: Point, d: Point) -> bool {
         || (z == 0 && between(c, d, b))
 }
 
-fn stock_offset_um(job: &AgieJob) -> Result<u32, String> {
-    for &v in job.stock_min.iter().chain(&job.stock_max).chain(&job.start) {
-        quantize(v)?;
-        if (v - (v * 1000.0).round() / 1000.0).abs() > 1e-9 {
-            return Err(
-                "Agie stock and start-hole coordinates must be representable to 0.001 mm".into(),
-            );
-        }
+fn micrometres(value: f64) -> Result<i32, String> {
+    // quantize rejects nonfinite or out-of-range geometry before conversion.
+    let hundredth_microns = quantize(value)?;
+    let microns = i32::try_from(hundredth_microns / 100)
+        .map_err(|_| "The setup coordinate exceeds the micrometre range")?;
+    if (value - f64::from(microns) / 1000.0).abs() > 1e-9 {
+        return Err(
+            "The stock and start-hole coordinates must be representable to 0.001 mm".into(),
+        );
     }
+    Ok(microns)
+}
+
+fn punch_setup<'a>(job: &AgieJob, program: &'a str) -> Result<PunchSetup20<'a>, String> {
     let [width, depth, height] = std::array::from_fn(|i| job.stock_max[i] - job.stock_min[i]);
     if !(width > 0.0 && width <= 350.0 && depth > 0.0 && depth <= 250.0) {
-        return Err("Agie stock must fit the stated 350 × 250 mm working span".into());
+        return Err("The stock must fit the stated 350 × 250 mm working span".into());
     }
     if job.stock_max[2] != 0.0 {
-        return Err("The Agie Berco Fine Ra0.30 profile requires stock top Z0".into());
+        return Err("The Berco Fine Ra0.30 profile requires stock top Z0".into());
     }
+    // Only a measured thickness has known QN2 offsets. No height is interpolated.
+    let Some(&(mm, _)) = QN2_OFFSETS_UM
+        .iter()
+        .find(|(mm, _)| height == f64::from(*mm))
+    else {
+        let supported = QN2_OFFSETS_UM
+            .iter()
+            .map(|(mm, _)| mm.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "The QN2 recipe has no measured offset for stock thickness {height} mm. Supported thicknesses in mm are {supported}"
+        ));
+    };
     if !(0..2)
         .all(|i| job.start[i] - 1.0 >= job.stock_min[i] && job.start[i] + 1.0 <= job.stock_max[i])
     {
-        return Err("The complete 2 mm Agie start hole must lie inside the stock".into());
+        return Err("The complete 2 mm start hole must lie inside the stock".into());
     }
-    for &(mm, offset) in QN2_HEIGHTS {
-        if height == f64::from(mm) {
-            return Ok(offset);
-        }
-    }
-    let supported = QN2_HEIGHTS
-        .iter()
-        .map(|(mm, _)| mm.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    Err(format!(
-        "Agie QN2 has no qualified offset for stock thickness {height} mm. Supported thicknesses in mm are {supported}"
-    ))
+    Ok(PunchSetup20 {
+        stem: program,
+        stock_min_um: [
+            micrometres(job.stock_min[0])?,
+            micrometres(job.stock_min[1])?,
+        ],
+        stock_max_um: [
+            micrometres(job.stock_max[0])?,
+            micrometres(job.stock_max[1])?,
+        ],
+        start_hole_um: [micrometres(job.start[0])?, micrometres(job.start[1])?],
+        height_um: i32::from(mm) * 1000,
+    })
 }
 
-pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
-    let offset_um = stock_offset_um(job)?;
+pub(super) fn prepare<'a>(
+    job: &AgieJob,
+    program: &'a str,
+) -> Result<(Vec<[f64; 2]>, PunchSetup20<'a>), String> {
+    let setup = punch_setup(job, program)?;
+    let [rough_um, ..] = qn2_offsets_um(setup.height_um)
+        .ok_or("The QN2 recipe has no measured offset for this stock thickness")?;
     let input = &job.contour;
     if input.len() < 3 || input.len() > MAX_VERTICES + 1 {
         return Err(format!(
-            "Agie needs one closed nominal polygon with 3–{MAX_VERTICES} vertices"
+            "The job needs one closed nominal polygon with 3–{MAX_VERTICES} vertices"
         ));
     }
     let mut ring = Vec::with_capacity(input.len());
@@ -89,7 +111,7 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
             let value = p[i] as f64 / UNITS;
             value >= job.stock_min[i] && value <= job.stock_max[i]
         }) {
-            return Err("Agie nominal contour extends outside the stock".into());
+            return Err("The nominal contour extends outside the stock".into());
         }
         ring.push(p);
     }
@@ -98,7 +120,7 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     }
     let n = ring.len();
     if !(3..=MAX_VERTICES).contains(&n) {
-        return Err("Agie contour vertex count exceeds the supported range".into());
+        return Err("The contour vertex count exceeds the supported range".into());
     }
     // Validate quantized segments, including the closing edge, before choosing a start point.
     // Keep collinear intermediate vertices out of the search for the perpendicular entry edge.
@@ -108,7 +130,7 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
         let b = ring[i];
         let c = ring[(i + 1) % n];
         if a == b || (cross(a, b, c) == 0 && !between(a, c, b)) {
-            return Err("Agie nominal contour contains a collapsed or reversed edge".into());
+            return Err("The nominal contour contains a collapsed or reversed edge".into());
         }
         if cross(a, b, c) != 0 {
             outline.push(b);
@@ -124,17 +146,19 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
                 continue;
             }
             if intersects(a, b, outline[j], outline[(j + 1) % n]) {
-                return Err("Agie nominal contour crosses or touches itself".into());
+                return Err("The nominal contour crosses or touches itself".into());
             }
         }
     }
     if area == 0 {
-        return Err("Agie nominal contour has no enclosed area".into());
+        return Err("The nominal contour has no enclosed area".into());
     }
     if area < 0 {
         outline.reverse();
     }
-    check_punch_envelope(&outline, job, offset_um)?;
+    // The hole (radius 1 mm) and the swept rough pass both fit in the convex
+    // stock. The straight perpendicular entry between them fits too.
+    check_punch_envelope(&outline, job, rough_um)?;
     let hole = [quantize(job.start[0])?, quantize(job.start[1])?];
     let (edge, foot) = entry_face(&outline, hole)?;
     // Begin the nominal program at the middle of the chosen edge, facing along that edge. The
@@ -147,24 +171,27 @@ pub(super) fn prepare(job: &AgieJob) -> Result<Vec<[f64; 2]>, String> {
     // An exterior rounded seam adds a small convex corner and slightly
     // changes its neighbours. Check the envelope of the actual ISO lines.
     if !exact_face {
-        check_punch_envelope(&vertices, job, offset_um)?;
+        check_punch_envelope(&vertices, job, rough_um)?;
     }
-    Ok(vertices
+    let vertices = vertices
         .into_iter()
         .map(|p| [p[0] as f64 / UNITS, p[1] as f64 / UNITS])
-        .collect())
+        .collect();
+    Ok((vertices, setup))
 }
 
-/// Check the swept wire against the stock before Agie chooses its corner joins.
-/// A round join lies within the rough offset of its nominal vertex. A miter
-/// reaches the intersection of the two parallel, outward-offset face lines.
-/// The segments connecting adjacent joins stay inside their stock bounds.
-fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result<(), String> {
-    // Round the measured wire-centre offset plus the 125 µm wire radius
-    // upwards to a tenth of a millimetre for the straight/round swept envelope.
-    let margin_um = (offset_um + 125).next_multiple_of(100);
-    let stock_margin = i64::from(margin_um) * 100;
-    let rough_offset = f64::from(offset_um) * 100.0;
+/// Check the swept wire against the stock before the control chooses its
+/// corner joins. A round join lies within the rough offset of its nominal
+/// vertex. A miter reaches the intersection of the two parallel,
+/// outward-offset face lines. The segments that connect adjacent joins stay
+/// inside the convex stock bounds.
+fn check_punch_envelope(ring: &[Point], job: &AgieJob, rough_um: u16) -> Result<(), String> {
+    // Round the measured rough wire-centre offset plus the 125 µm wire radius
+    // up to a tenth of a millimetre for the straight and round swept envelope.
+    // All measured heights give 0.4 mm. The miter below uses the exact offset.
+    let margin_um = (u32::from(rough_um) + 125).next_multiple_of(100);
+    let stock_margin = i64::from(margin_um) * 100; // ISO lattice units.
+    let rough_offset = f64::from(rough_um) * 100.0;
     let wire_and_allowance = stock_margin as f64 - rough_offset;
     let lo = [quantize(job.stock_min[0])?, quantize(job.stock_min[1])?];
     let hi = [quantize(job.stock_max[0])?, quantize(job.stock_max[1])?];
@@ -172,6 +199,7 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result
     let outward = |a: Point, b: Point| {
         let dx = (b[0] - a[0]) as f64;
         let dy = (b[1] - a[1]) as f64;
+        // Adjacent ring points are distinct (checked by the caller), so the length is positive.
         let length = dx.hypot(dy);
         [dy / length, -dx / length]
     };
@@ -179,9 +207,7 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result
         let previous = ring[(i + n - 1) % n];
         let next = ring[(i + 1) % n];
         if cross(previous, corner, next) <= 0 {
-            return Err(
-                "Agie requires a convex punch contour; a reentrant corner is unsupported".into(),
-            );
+            return Err("The punch contour must be convex; a reentrant corner is refused".into());
         }
         let a = outward(previous, corner);
         let b = outward(corner, next);
@@ -189,24 +215,28 @@ fn check_punch_envelope(ring: &[Point], job: &AgieJob, offset_um: u32) -> Result
         // the latter loses precision when the punch corner is very sharp.
         let bisector = [a[0] + b[0], a[1] + b[1]];
         let norm2 = bisector[0] * bisector[0] + bisector[1] * bisector[1];
-        if norm2 <= f64::EPSILON {
+        if norm2.is_nan() || norm2 <= f64::EPSILON {
             return Err(
-                "Agie cannot bound the rough pass at a nearly reversed punch corner".into(),
+                "The rough pass cannot be bounded at a nearly reversed punch corner".into(),
             );
         }
         for axis in 0..2 {
             if corner[axis] - stock_margin < lo[axis] || corner[axis] + stock_margin > hi[axis] {
                 return Err(format!(
-                    "The Agie rough pass and wire need at least {:.1} mm of stock beyond the punch",
-                    f64::from(margin_um) / 1000.0,
+                    "The rough pass and wire need at least {}.{} mm of stock beyond every punch face",
+                    margin_um / 1000,
+                    margin_um % 1000 / 100,
                 ));
             }
             let miter = 2.0 * rough_offset * bisector[axis] / norm2;
             let left = (lo[axis] - corner[axis]) as f64;
             let right = (hi[axis] - corner[axis]) as f64;
-            if miter - wire_and_allowance < left || miter + wire_and_allowance > right {
+            if !miter.is_finite()
+                || miter - wire_and_allowance < left
+                || miter + wire_and_allowance > right
+            {
                 return Err(
-                    "The Agie rough corner and wire can reach outside the stock at a punch vertex"
+                    "The rough corner and wire can reach outside the stock at a punch vertex"
                         .into(),
                 );
             }
@@ -241,8 +271,11 @@ fn outside_seam(a: Point, b: Point, hole: Point, along: i128) -> Option<Point> {
     let length2 = dot(edge, edge);
     let numerator: [i128; 2] =
         std::array::from_fn(|k| i128::from(a[k]) * length2 + i128::from(edge[k]) * along);
-    // The projected point lies strictly between bounded i64 endpoints.
-    let floor = numerator.map(|v| v.div_euclid(length2) as i64);
+    // The projected point lies strictly between the bounded endpoints, so it fits an i64.
+    let floor = [
+        i64::try_from(numerator[0].div_euclid(length2)).ok()?,
+        i64::try_from(numerator[1].div_euclid(length2)).ok()?,
+    ];
     let mut best = None;
     for x in floor[0]..=floor[0] + 1 {
         for y in floor[1]..=floor[1] + 1 {
@@ -306,9 +339,9 @@ fn entry_face(ring: &[Point], hole: Point) -> Result<(usize, Point), String> {
     }
     best.ok_or_else(|| {
         if nominal_room {
-            "Agie cannot place an exterior entry on the 0.00001 mm ISO grid and keep the required 3 mm clearance".into()
+            "The job cannot place an exterior entry on the 0.00001 mm ISO grid and keep the required 3 mm clearance".into()
         } else {
-            "Agie needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation".into()
+            "The job needs the start hole at least 3 mm outside a straight face, with at least 3 mm of straight face on both sides of the perpendicular entry for the lead and separation".into()
         }
     })
 }

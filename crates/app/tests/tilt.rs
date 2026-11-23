@@ -99,7 +99,7 @@ fn rotated_by_90(m: Mesh) -> Mesh {
 /// uncut collar the shank law (rightly) reports as a collision, and a
 /// test that generates a warning per level tests nothing.
 fn pocket(tilt: Option<Tilt>, top_z: f64) -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt,
@@ -131,7 +131,7 @@ fn pocket(tilt: Option<Tilt>, top_z: f64) -> OpParams {
 /// recorded in RECOMMENDED.md). A fixture meant to be a rigid parked copy
 /// must therefore choose heights by the door, not by hand.
 fn pocket_parked() -> OpParams {
-    OpParams::Pocket { rest: None,
+    OpParams::Pocket { pass_start: Default::default(), rest: None,
         blend_radius: None,
         links: camcraft_app::links::Links::PLANAR,
         tilt: Some(tilt90_parked()),
@@ -392,6 +392,7 @@ fn tilt_on_a_picked_selection_refuses_by_name() {
         helix_radius: 1.0,
         blend_turns: false,
         links: camcraft_app::links::Links::PLANAR,
+        chain_overrides: Vec::new(),
     };
     // The prismatic control: the same pick on the same part is legal.
     history.execute(

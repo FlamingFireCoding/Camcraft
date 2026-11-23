@@ -104,16 +104,22 @@ fn properties_body(ui: &mut Ui, state: &mut State, pal: &Tokens) {
         super::op_page::operation_page(ui, state, n.as_str(), pal);
         return;
     }
+    if let UiTarget::Tool(n) = &t {
+        super::tool_settings::page(ui, state, n);
+        return;
+    }
     let is_wcs = matches!(t, UiTarget::Wcs);
-    let has_close = matches!(&t, UiTarget::Tool(_) | UiTarget::Stock | UiTarget::Wcs | UiTarget::Model(_) | UiTarget::SetupNode(..));
+    let has_close = matches!(&t, UiTarget::Stock | UiTarget::Wcs | UiTarget::Model(_) | UiTarget::SetupNode(..));
     let content_height = (ui.available_height() - if has_close { 40.0 } else { 0.0 }).max(80.0);
     ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(content_height)
-        .show(ui, |ui| match t {
+        .show(ui, |ui| {
+            // #3390: keep the gap that the scroll bar needs on the right.
+            super::layout::keep_scroll_gutter(ui, 120.0);
+            match t {
             UiTarget::None => super::op_page::no_operation_page(ui),
-            UiTarget::Operation(_) => {}
-            UiTarget::Tool(n) => tool_page(ui, state, &n),
+            UiTarget::Operation(_) | UiTarget::Tool(_) => {}
             UiTarget::Stock => {
                 state.sync_setup_ui();
                 ui.heading("Stock");
@@ -161,6 +167,7 @@ fn properties_body(ui: &mut Ui, state: &mut State, pal: &Tokens) {
                 ui.separator();
                 setups_page(ui, state);
                 setup_error(ui, state);
+            }
             }
         });
     if has_close {
@@ -298,22 +305,21 @@ pub(super) fn post_section(ui: &mut Ui, state: &mut State) {
 /// chooses. The law (`posting::post_offer`) lives in app; this only
 /// draws it.
 fn post_offer_banner(ui: &mut Ui, state: &mut State) {
-    let Some((serves, offer)) = posting::post_offer(&state.world) else {
+    let Some(offer) = posting::post_offer(&state.world) else {
         return;
     };
-    let Some(name) = posting::post_name(&offer).map(str::to_owned) else {
+    let Some(name) = posting::post_name(&offer.post).map(str::to_owned) else {
         return;
+    };
+    // #2374: the machine's own post, or the post for the mount's kind.
+    let line = match offer.why {
+        posting::OfferWhy::Machine => format!("the machine names {name} as its post; switch to it?"),
+        posting::OfferWhy::Kind(serves) => format!("the current post serves a {serves}; switch to {name}?"),
     };
     let ink = super::colorvision::text_inks(ui, &state.world).warn;
-    super::layout::status_banner(
-        ui,
-        "post_offer",
-        &format!("the current post serves a {serves}; switch to {name}?"),
-        ink,
-        &[],
-    );
+    super::layout::status_banner(ui, "post_offer", &line, ink, &[]);
     if ui.button("Switch post").clicked() {
-        state.pending.push_back(match offer {
+        state.pending.push_back(match offer.post {
             PostRef::Builtin => CommandKind::SelectPostBuiltin,
             PostRef::Named(n) => CommandKind::SelectPostNamed(n),
             // A file post is never the registry's default (post_offer
@@ -465,11 +471,7 @@ pub(super) fn sheet_footer(ui: &mut Ui, state: &mut State) {
 
 pub(super) use super::fixtures_page::fixtures_section;
 
-// ----------------------------------------------------------------- tool page
-
-fn tool_page(ui: &mut Ui, state: &mut State, name: &str) {
-    super::tool_settings::page(ui, state, name);
-}
+// ----------------------------------------------------------------- tool shape window
 
 /// #2397: the tool shape editor - its own modal window for the body, the
 /// profile and the holder, with the settings left in Properties. The old
@@ -486,6 +488,7 @@ pub(crate) fn tool_shape_editor_window(ctx: &egui::Context, state: &mut State) {
         "Tool shape".to_owned()
     };
     let unit = state.units();
+    let err = state.error_for(ErrorScope::Tool).map(str::to_owned);
     let mut open = true;
     let mut close_clicked = false;
     Window::new(title)
@@ -505,12 +508,21 @@ pub(crate) fn tool_shape_editor_window(ctx: &egui::Context, state: &mut State) {
             // and Close stays in view under it (#2007).
             ui.set_width(560.0);
             ui.set_max_height(590.0);
+            let footer_h: f32 = if err.is_some() { 72.0 } else { 36.0 };
             egui::ScrollArea::vertical()
+                .max_height((590.0_f32 - footer_h).max(120.0))
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     super::tool_profile_page::editor(ui, state, exists, unit);
                 });
             ui.separator();
+            if let Some(msg) = &err {
+                super::error_text::error_text(
+                    ui,
+                    super::colorvision::text_inks(ui, &state.world).error,
+                    msg,
+                );
+            }
             close_clicked = ui.button("Close").clicked();
         });
     if !open || close_clicked {
@@ -537,10 +549,11 @@ fn model_page(ui: &mut Ui, state: &mut State, name: String) {
         if camcraft_app::mesh_open::hole_of(&state.world, &entity).is_none() {
             hint(
             ui,
-            "This model was too large to import at full detail. Gouge checks against it are \
-             stricter to make up for that; when it is too coarse to check at all, its operations \
-             are refused at the post. Raise the STEP facet budget below and import the file \
-             again to clear this.",
+            "This model is approximated more coarsely than usual: it was too large to import at \
+             full detail, or the file's own edges lie off their surfaces. Gouge checks against it \
+             are stricter to make up for that; when it is too coarse to check at all, its \
+             operations are refused at the post. Raise the STEP facet budget below and import the \
+             file again, or export the file again with a tighter tolerance, to clear this.",
             );
         }
     }
