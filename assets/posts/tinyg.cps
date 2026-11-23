@@ -60,6 +60,7 @@ var sRpm = 0;              // spindle/T order follows the stream: PARAMs,
 var spindleWait = false;   // TOOL, SECTION - the preamble writes them
 var toolWait = false;      // when the first motion needs them legal
 var tNo = 0;
+var loadedTool = null;     // #3445: the tool this program wrote M6 for; null = unknown
 var coolant = "";          // the M-code this section started, if any
 var coolantAsk = "flood";  // the section's PARAM Coolant (#112), flood when unstated
 var afterAsk = "";         // the section's PARAM AfterOperation (#110), none when unstated
@@ -472,7 +473,16 @@ function startPreamble() {
   // #1649: the operator reads why every sign on a flipped axis is the other one.
   if (wcsFlip) note("WCS " + wcsFlip.split("").join(" AND ") + " FLIPPED - PROGRAM MIRRORED");
   block(["G17", "G90", wcsWord]);
+  if (toolWait && loadedTool === tNo) {
+    // #3445: a tool this program loaded, with no stop since, is still in
+    // the spindle: Z goes up, and no M6 / M0 stops the program.
+    toolNote();
+    retract();
+    xyUnknown = true;
+    toolWait = false;
+  }
   if (toolWait) {
+    loadedTool = tNo;
     toolNote();
     block(["M5"]);
     block(["M9"]);
@@ -518,8 +528,9 @@ function afterOp() {
     retract();
     note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
   }
-  if (ask === "optional-stop") { block(["M1"]); return; }
-  if (ask === "stop") { block(["M0"]); return; }
+  // The operator may take the tool out at either stop (#3445).
+  if (ask === "optional-stop") { block(["M1"]); loadedTool = null; return; }
+  if (ask === "stop") { block(["M0"]); loadedTool = null; return; }
   if (ask === "home") {
     msg(coolantWho() + "going home after an operation is not posted by the TinyG post - the G28/G30 positions are set at the machine and it cannot see them; pick Optional stop or Program stop");
     return;
