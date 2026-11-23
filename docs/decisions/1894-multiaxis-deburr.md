@@ -125,3 +125,22 @@ operations. These cases need a complete stock proof before admission.
 **Cost to change.** The restriction can be relaxed when a continuous posed
 stock check covers the complete tool and all moves. The file format and
 operation parameters do not change.
+
+## The shank guard on the page (PR #3283 second review)
+
+**Chosen.** The page shows a read-only row "Shank and holder guard:
+Always on" with a true hint, in place of the "Avoid shank collisions"
+check box. The Geometry tab shows one visible line: the stock must be the
+source model, and the setup can hold no other part.
+
+**Why.** The kernel always runs the shank and holder guard, so the check
+box did nothing. The user learned the stock and part law only from the
+refusal.
+
+**Dropped.** Removing `shank_avoid` from the parameters: it is in the
+project file and the MCP grammar of this kind, and a removal changes the
+file format for no safety gain. The field stays, has no effect, and the
+page no longer offers it.
+
+**Cost to change.** If a later kind gives the guard a real switch, the
+row becomes a check box again. The file format does not change.

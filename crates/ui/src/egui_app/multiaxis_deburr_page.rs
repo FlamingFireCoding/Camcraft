@@ -1,17 +1,27 @@
 //! The operation page: the Multi-Axis Deburr kind's fields (#1894) - the
 //! Deburr's break size, edge filters and unreachable-edge policy on the
-//! Geometry tab, the axis mode, lean, tilt cap and holder escape on the
-//! Passes tab, the window and the feeds. Each value edits the page
-//! draft, and Apply rides the command history.
+//! Geometry tab (with the stock and part law in one visible line), the
+//! axis mode, lean and tilt cap on the Passes tab (the shank and holder
+//! guard shown as always on: the kind has no switch for it), the window
+//! and the feeds. Each value edits the page draft, and Apply rides the
+//! command history.
 //!
 //! Provenance: our own UI over the operation parameter model
 //! (`operation::multiaxis_deburr_op` names the kind's sources); no
 //! vendor material or text.
 
 use super::fields::*;
-use super::kind_editors::{axis_editor, shank_avoid_editor};
+use super::kind_editors::axis_editor;
 use camcraft_app::finishing3d::UnreachableEdges;
 use camcraft_app::multiaxis::DeburrAxisMode;
+
+/// The setup law, said before the user meets the refusal: the guards
+/// judge the posed tool only against the source model.
+pub(super) const MA_DEBURR_SETUP_HINT: &str =
+    "Stock must be the source model itself, and the setup can hold no other part: the tilted tool is checked against this model only.";
+/// The shank and holder guard is always on for this kind.
+pub(super) const MA_DEBURR_SHANK_HINT: &str =
+    "the cone, shank and holder are always checked against the part on every pose; a pose that hits is tilted away or the edge is out of reach";
 
 pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut Cx<'_>) {
     let (u, tab, op_ctx) = (cx.u, cx.tab, cx.op_ctx);
@@ -33,12 +43,13 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         lead_deg,
         lag_deg,
         max_tilt_deg,
-        shank_avoid,
+        ..
     } = params
     else {
         return;
     };
     if tab == SEC_GEO {
+        consequence(ui, MA_DEBURR_SETUP_HINT);
         super::deburr_page::sizing(ui, u, width, sizing);
         super::deburr_page::filters(
             ui,
@@ -63,7 +74,10 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
         hint(ui, "the cone's flank lies on each break; 5-axis turns the axis freely about the break, 4-axis keeps it square to the A axis");
         axis_editor(ui, lead_deg, lag_deg, max_tilt_deg);
         hint(ui, "here the max tilt is measured from the edge's natural pose, and lead minus lag must stay inside it");
-        shank_avoid_editor(ui, shank_avoid);
+        // #1894 review: the shank and holder guard has no switch on this
+        // kind. The kernel always runs it, so the page shows a fact.
+        prop_row(ui, "Shank and holder guard", |ui| ui.label("Always on"));
+        hint(ui, MA_DEBURR_SHANK_HINT);
     }
     if tab == SEC_HEIGHTS {
         height_editor(ui, "Clearance Z", world, op_ctx.as_deref(), clearance_z, "ma_deburr.clearance");
