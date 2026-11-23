@@ -111,6 +111,7 @@ mod tab_bridge;
 mod tab_clear;
 mod tab_kerf;
 mod slots;
+mod slot_band;
 mod slot_ends;
 mod slot_lap;
 mod slot_room;
@@ -167,7 +168,8 @@ pub use corner_relief::{
     InsideCorner, ResolvedRelief, TBoneDirection, capsule_region, inside_corners, plan_corner_reliefs,
 };
 pub use corner_relief_spur::pocket_relief_plan;
-pub use pass_start::{PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide};
+pub use level_rings::level_ring_plan;
+pub use pass_start::{PASS_START_NOTE, PASS_START_REST_NOTE, PASS_START_ZIGZAG_NOTE, PassStart, StartSide, pass_start_fallbacks};
 pub use pocket::{
     pocket, pocket_entered, pocket_entered_with_relief, pocket_started, pocket_started_on, PocketParams, PocketStrategy,
 };
@@ -181,6 +183,7 @@ pub use rest_prior::{
     rest_plan_stock, rest_pocket_previous, rest_pocket_previous_with_relief, rest_stock_from_columns, PRIOR_Z_TOL,
 };
 pub use ring::{on_boundary, ring_is_circular};
+pub use slot_band::slot_centre_band;
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};

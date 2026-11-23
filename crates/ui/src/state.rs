@@ -1977,6 +1977,10 @@ pub struct State {
     /// Set only while a held action runs after the user chose to discard
     /// (or saved first), so the guard lets it through once.
     pub(crate) discard_confirmed: bool,
+    /// #3608: the disk stamp of the project file, and a Save held because
+    /// that file on disk changed after the open or the last save (the
+    /// Overwrite prompt).
+    pub save_guard: crate::save_guard::SaveGuard,
     /// Receiver for the in-flight import worker (None when idle). The worker
     /// runs `ImportModel::new` off-thread and sends the finished command back.
     import_rx: Option<mpsc::Receiver<Result<ImportModel, CommandError>>>,
@@ -2421,6 +2425,7 @@ impl State {
             request_quit: false,
             unsaved_prompt: None,
             discard_confirmed: false,
+            save_guard: crate::save_guard::SaveGuard::default(),
             import_rx: None,
             import_file: None,
             import_started: None,
@@ -3421,6 +3426,8 @@ impl State {
                 self.post_last_name = None;
                 self.rename_draft = None;
                 self.dragging_op = None;
+                // #3608: a new document has no file; a held Save is dropped.
+                self.save_guard = crate::save_guard::SaveGuard::default();
                 self.doc_version += 1;
                 self.status = String::from("new document");
             }
@@ -4668,10 +4675,13 @@ impl State {
 
     fn open_project_path(&mut self, path: PathBuf) {
         let loaded = new_world();
+        // #3608: stamped before the read, so a write during the load asks at the next Save.
+        let stamp = camcraft_app::project::DiskStamp::of(&path);
         match project::load_noted(&loaded, &path) {
             Ok(notes) => {
                 self.reset_for_open(loaded);
                 self.project_path = Some(path.clone());
+                self.save_guard.stamp = stamp;
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 // The loaded document is the new clean point (#107).
                 self.history.mark_clean();
@@ -4713,6 +4723,9 @@ impl State {
         self.post_last_name = None;
         self.rename_draft = None;
         self.dragging_op = None;
+        // #3608: the old document's stamp and a held Save are dropped; a
+        // desktop open stamps its own file after this.
+        self.save_guard = crate::save_guard::SaveGuard::default();
         self.world = loaded;
         // #1997: the orbit pivot is the new document's part and stock, never
         // the old document's target (the envelope is not in the bounds).
@@ -4720,10 +4733,16 @@ impl State {
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
+        // #3608: when the file on disk changed after the open or the last
+        // save, the save waits for the Overwrite prompt; nothing is written.
+        if !self.may_save_over(&path) {
+            return;
+        }
         match project::save(&self.world, &path) {
             Ok(()) => {
                 // What is on disk now matches the history position (#107).
                 self.history.mark_clean();
+                self.save_guard.stamp = camcraft_app::project::DiskStamp::of(&path);
                 self.status = format!("saved {}", path.display());
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 self.project_path = Some(path);
@@ -4782,7 +4801,7 @@ impl State {
                 if !posted.bundle_files.is_empty() {
                     self.post_view = None;
                     self.status = format!(
-                        "Agie job prepared in {} ({} controller files, zero working steps)",
+                        "Native wire EDM job prepared in {} ({} controller files, zero working steps)",
                         path.display(), posted.bundle_files.len()
                     );
                     if let Some(review) = posted.controller_review {

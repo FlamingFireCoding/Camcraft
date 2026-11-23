@@ -192,6 +192,7 @@ pub(crate) use pockets_page::row_text as pockets_row_text;
 mod probe_page;
 // #670: the Plasma Profile's page.
 mod plasma_page;
+mod waterjet_page;
 mod wire_page;
 // #541: the Sinker Burn's fields.
 mod sinker_page;
@@ -218,6 +219,8 @@ mod thread_infeed_page;
 mod turning_page;
 // #107: Save / Don't Save / Cancel over unsaved changes.
 mod unsaved_prompt;
+// #3608: Save As / Cancel / Overwrite when the project file changed.
+mod overwrite_prompt;
 mod panes;
 // #441: the ribbon's Theme door and its dropdown.
 mod theme_drop;
@@ -340,11 +343,15 @@ mod ribbon_icon_tests;
 #[cfg(test)]
 mod plasma_ribbon_tests;
 #[cfg(test)]
+mod waterjet_ribbon_tests;
+#[cfg(test)]
 mod machine_mode_tests;
 #[cfg(test)]
 mod debug_info_tests;
 #[cfg(test)]
 mod report_tests;
+#[cfg(test)]
+mod gpu_test_lock;
 #[cfg(test)]
 mod fresh_op_tests;
 #[cfg(test)]
@@ -441,7 +448,7 @@ pub fn run(args: &[String]) -> i32 {
         }
     } else {
         // #2462: the file named on the command line opens in the window.
-        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args))
+        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args), crate::cli_options::start_mode(args))
     }
 }
 
@@ -468,15 +475,15 @@ fn run_headless(_open: Option<crate::state::CommandKind>) -> i32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
-    shell_window::run_windowed(pick, want, mcp_port, files)
+fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String], start: crate::cli_options::StartMode) -> i32 {
+    shell_window::run_windowed(pick, want, mcp_port, files, start)
 }
 
 /// #31: the browser build has no winit window to open - its shell is the
 /// web runner still owed on that issue - so the windowed entry refuses by
 /// name instead of pretending.
 #[cfg(target_arch = "wasm32")]
-fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String]) -> i32 {
+fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String], _start: crate::cli_options::StartMode) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }
