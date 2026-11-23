@@ -197,6 +197,11 @@ mod rapids;
 mod rapids_posed;
 mod rapids_radial;
 mod reach;
+#[cfg(test)]
+mod reach_reference;
+#[cfg(test)]
+mod reach_tests;
+mod sample_grid;
 mod rest;
 mod rotary;
 mod rotary_geom;
