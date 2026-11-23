@@ -6,11 +6,8 @@
 //! Fixture law (clean-room): the shipped grblHAL mill plus our own
 //! values in the `.mch` layout of `assets/machines/AGENTS.md`.
 //! Provenance: our own tests, specced from the issue's "Done when".
-//!
-//! Gate map (M4.4): covers app::machine, post::machine::draft, app::machine, post::machine::chain.
 
-mod axis_chain_support;
-use axis_chain_support::*;
+use super::axis_support::*;
 
 #[test]
 fn an_a_about_minus_x_on_the_table_is_added_and_turns_the_work() {

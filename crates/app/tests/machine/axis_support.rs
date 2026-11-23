@@ -1,5 +1,5 @@
-//! Shared fixtures of the axis chain suites (#2756: `machine_axis_chain`,
-//! `machine_axis_rows`): the shipped grblHAL mill with unknown keys, a
+//! Shared fixtures of the axis chain tests (#2756: `axis_chain`,
+//! `axis_rows`): the shipped grblHAL mill with unknown keys, a
 //! tilting head of our own, and readers of the parsed axes. Not a suite.
 //!
 //! Fixture law (clean-room): the shipped grblHAL mill plus our own

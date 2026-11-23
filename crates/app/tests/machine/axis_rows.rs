@@ -4,11 +4,8 @@
 //! notes a row shows.
 //!
 //! Provenance: our own tests, specced from the issue's "Done when".
-//!
-//! Gate map (M4.4): covers app::machine, post::machine::draft, app::machine, post::machine::chain, app::machine, post::machine::fields.
 
-mod axis_chain_support;
-use axis_chain_support::*;
+use super::axis_support::*;
 
 #[test]
 fn the_rows_follow_the_chain_and_say_what_carries_the_head() {
