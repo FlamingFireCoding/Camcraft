@@ -260,6 +260,51 @@ fn svg_inline_css_transform_origin_is_refused_by_name() {
 }
 
 #[test]
+fn svg_more_transform_sources_are_refused_by_name() {
+    // CSS Transforms 1 and 2 and CSS Motion Path move geometry through these properties.
+    // The reader does not apply them, so it must refuse them, never cut in the wrong place.
+    let attr = page(r#"<rect x="10" y="10" width="20" height="20" transform="scale(2)" transform-box="fill-box"/>"#);
+    refuses(&attr, "transform-box presentation attribute");
+    for (style, name) in [
+        ("transform-box:fill-box", "inline CSS transform-box"),
+        ("scale:2", "inline CSS scale"),
+        ("translate:10px 10px", "inline CSS translate"),
+        ("ROTATE:45deg", "inline CSS rotate"),
+        ("offset-path:path('M0 0 L10 10')", "inline CSS offset-path"),
+        ("offset:path('M0 0 L10 10') 50%", "inline CSS offset"),
+    ] {
+        let on_shape = page(&format!(r#"<rect width="20" height="20" style="{style}"/>"#));
+        let on_group = page(&format!(r#"<g style="{style}"><rect width="20" height="20"/></g>"#));
+        let on_root = format!(
+            r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100" style="{style}"><rect width="20" height="20"/></svg>"#
+        );
+        for text in [on_shape, on_group, on_root] {
+            refuses(&text, name);
+        }
+    }
+    // The `rotate` attribute of <text> is a glyph rotation, not a transform: the text is noted.
+    let text = page(r#"<text rotate="30">A</text><rect width="20" height="20"/>"#);
+    let doc = svg::parse(text.as_bytes(), None).expect("text rotate reads");
+    assert_eq!(doc.primitives.len(), 4);
+    assert_eq!(doc.summary.skipped.get("text"), Some(&1), "{:?}", doc.summary.skipped);
+}
+
+#[test]
+fn svg_many_ampersands_in_an_attribute_read_in_linear_time() {
+    // Each `&` once scanned the whole rest of the attribute for a `;`: quadratic time,
+    // hours of CPU for a 16 MiB file. 1 MiB must read in well under five seconds.
+    let text = format!(
+        r#"<svg width="10mm" height="10mm" viewBox="0 0 10 10" a="{}"><rect width="1" height="1"/></svg>"#,
+        "&".repeat(1 << 20)
+    );
+    let start = std::time::Instant::now();
+    let doc = svg::parse(text.as_bytes(), None).expect("the ampersands read as text");
+    assert_eq!(doc.primitives.len(), 4);
+    let spent = start.elapsed();
+    assert!(spent < std::time::Duration::from_secs(5), "{spent:?}");
+}
+
+#[test]
 fn svg_deterministic_smoke_fuzz_never_panics() {
     let seed = page(
         r#"<g transform="translate(5 5) rotate(30)"><path d="M0 0 C10 0 10 10 0 10 S-10 20 0 20 Q5 25 10 20 T20 20 A5 3 20 1 0 30 30 Z"/>

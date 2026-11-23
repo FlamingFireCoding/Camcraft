@@ -61,17 +61,22 @@ fn has_property(node: &Node, style: &[StyleDecl], name: &str) -> bool {
     node.attr(name).is_some() || has_inline_property(style, name)
 }
 
+/// Presentation attributes that move geometry and are not applied (CSS Transforms 1).
+const UNSUPPORTED_TRANSFORM_ATTRS: &[&str] = &["transform-origin", "transform-box"];
+
+/// Inline CSS properties that move geometry and are not applied (CSS Transforms 1 and 2,
+/// CSS Motion Path 1). The `rotate` SVG attribute of `<text>` is not one of these: only the
+/// CSS property is refused.
+const UNSUPPORTED_TRANSFORM_PROPERTIES: &[&str] = &[
+    "transform-origin", "transform-box", "transform", "translate", "rotate", "scale", "offset", "offset-path",
+];
+
 fn check_transform_sources(node: &Node, style: &[StyleDecl]) -> Result<(), SvgError> {
-    if node.attr("transform-origin").is_some() {
-        return Err(invalid(
-            "transform-origin presentation attribute is not supported",
-        ));
+    if let Some(attr) = UNSUPPORTED_TRANSFORM_ATTRS.iter().find(|a| node.attr(a).is_some()) {
+        return Err(invalid(format!("{attr} presentation attribute is not supported")));
     }
-    if has_inline_property(style, "transform-origin") {
-        return Err(invalid("inline CSS transform-origin is not supported"));
-    }
-    if has_inline_property(style, "transform") {
-        return Err(invalid("inline CSS transform is not supported"));
+    if let Some(prop) = UNSUPPORTED_TRANSFORM_PROPERTIES.iter().find(|p| has_inline_property(style, p)) {
+        return Err(invalid(format!("inline CSS {prop} is not supported")));
     }
     Ok(())
 }

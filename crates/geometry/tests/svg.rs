@@ -316,3 +316,51 @@ fn svg_flags_and_numbers_in_compact_path_syntax() {
     let data = sketch(text, None);
     assert_eq!(data.chains().closed.len(), 1, "{:?}", data.chains().rejected);
 }
+
+#[test]
+fn svg_cusp_beziers_with_a_retracted_handle_import_within_the_chord_bound() {
+    // A control point equal to its end point (a cusp node in Inkscape and Illustrator files)
+    // makes the end piece shorter than the join tolerance. The short piece merges, and the
+    // merged outline stays within the chord bound of the true curve.
+    let cusps = [
+        [10.0, 0.0, 10.0, 10.0, 10.0, 10.0],
+        [0.0, 0.0, 10.0, 0.0, 10.0, 10.0],
+        [100.0, 0.0, 100.0, 100.0, 100.0, 100.0],
+    ];
+    for c in cusps {
+        let d = format!("M0 0 C{} {} {} {} {} {}", c[0], c[1], c[2], c[3], c[4], c[5]);
+        let text = format!(r#"<svg width="120mm" height="120mm" viewBox="-10 -10 120 120"><path d="{d}"/></svg>"#);
+        let doc = svg::parse(text.as_bytes(), None).unwrap_or_else(|e| panic!("{d}: {e}"));
+        let lines: Vec<_> = doc
+            .primitives
+            .iter()
+            .filter_map(|p| match p.primitive {
+                Primitive::Line { start, end } => Some((start, end)),
+                _ => None,
+            })
+            .collect();
+        assert!(!lines.is_empty(), "{d}");
+        let gap = |x: f64, y: f64| {
+            lines
+                .iter()
+                .map(|&(a, b)| {
+                    let (dx, dy) = (b.x - a.x, b.y - a.y);
+                    let t = (((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
+                    (x - a.x - t * dx).hypot(y - a.y - t * dy)
+                })
+                .fold(f64::MAX, f64::min)
+        };
+        let worst = (0..=4000)
+            .map(|i| {
+                let t = i as f64 / 4000.0;
+                let u = 1.0 - t;
+                let (w1, w2, w3) = (3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+                let x = w1 * c[0] + w2 * c[2] + w3 * c[4];
+                let y = w1 * c[1] + w2 * c[3] + w3 * c[5];
+                // The viewBox starts at (-10, -10) and is 120 high: x moves by 10, y flips to 110 - y.
+                gap(x + 10.0, 110.0 - y)
+            })
+            .fold(0.0, f64::max);
+        assert!(worst <= svg::CHORD_TOLERANCE_MM, "{d}: {worst} mm from the curve");
+    }
+}

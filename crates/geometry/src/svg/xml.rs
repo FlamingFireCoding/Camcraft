@@ -92,7 +92,10 @@ fn decode(raw: &str) -> String {
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         rest = &rest[amp..];
-        let Some(semi) = rest.find(';').filter(|&s| s <= 10) else {
+        // Look for the `;` only in the next few bytes: a scan of the whole rest
+        // for each `&` is quadratic and lets a hostile file hang the reader.
+        let window = rest.as_bytes().get(..12).unwrap_or(rest.as_bytes());
+        let Some(semi) = window.iter().position(|&b| b == b';').filter(|&s| s <= 10) else {
             out.push('&');
             rest = &rest[1..];
             continue;

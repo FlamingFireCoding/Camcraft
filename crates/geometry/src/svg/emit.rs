@@ -51,14 +51,22 @@ impl Sink {
         self.push(Primitive::Line { start, end })
     }
 
-    /// Merge short pieces only when the omitted vertices lie on the replacement segment.
-    /// Otherwise refuse the curve: a second approximation would consume the chord budget.
+    /// Half of the chord bound: the sampled pieces keep within it of the true curve, and a
+    /// merge of short pieces may move the path by at most the other half. Distance to a
+    /// segment is convex, so the merged path stays within the whole bound.
+    fn flatten_chord(&self) -> f64 {
+        self.chord / 2.0
+    }
+
+    /// Merge short pieces only when the omitted vertices lie within half the chord bound of
+    /// the replacement segment (a cusp node with a retracted handle). Otherwise refuse the
+    /// curve: the merge would break the chord bound.
     fn polyline(&mut self, curve: &str, from: Point2, inner: impl Iterator<Item = Point2>, to: Point2) -> Result<(), SvgError> {
         let mut last = from;
         let mut omitted = Vec::new();
         for p in inner {
             if dist(last, p) >= self.min_len && dist(p, to) >= self.min_len {
-                Self::check_merge(curve, last, p, &omitted)?;
+                self.check_merge(curve, last, p, &omitted)?;
                 self.push(Primitive::Line { start: last, end: p })?;
                 last = p;
                 omitted.clear();
@@ -66,15 +74,17 @@ impl Sink {
                 omitted.push(p);
             }
         }
-        Self::check_merge(curve, last, to, &omitted)?;
+        self.check_merge(curve, last, to, &omitted)?;
         if dist(last, to) > 0.0 {
             self.push(Primitive::Line { start: last, end: to })?;
         }
         Ok(())
     }
 
-    fn check_merge(curve: &str, from: Point2, to: Point2, omitted: &[Point2]) -> Result<(), SvgError> {
-        if omitted.iter().any(|&p| !Self::on_segment(from, to, p)) {
+    fn check_merge(&self, curve: &str, from: Point2, to: Point2, omitted: &[Point2]) -> Result<(), SvgError> {
+        let slack = self.chord - self.flatten_chord();
+        // `!(d <= slack)` also refuses a NaN distance.
+        if omitted.iter().any(|&p| !(Self::segment_distance(from, to, p) <= slack)) {
             return Err(invalid(format!("{curve} cannot keep the chord bound when short segments merge")));
         }
         Ok(())
@@ -84,6 +94,13 @@ impl Sink {
         let cross = (p.x - from.x) * (to.y - from.y) - (p.y - from.y) * (to.x - from.x);
         cross == 0.0 && p.x >= from.x.min(to.x) && p.x <= from.x.max(to.x)
             && p.y >= from.y.min(to.y) && p.y <= from.y.max(to.y)
+    }
+
+    fn segment_distance(from: Point2, to: Point2, p: Point2) -> f64 {
+        let (dx, dy) = (to.x - from.x, to.y - from.y);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 > 0.0 { (((p.x - from.x) * dx + (p.y - from.y) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+        dist(p, Point2::new(from.x + t * dx, from.y + t * dy))
     }
 
     fn segment_budget(curve: &str, required: f64, minimum: usize) -> Result<usize, SvgError> {
@@ -96,7 +113,7 @@ impl Sink {
     /// Segment count for a curve whose largest second difference of control points is `m`
     /// (output units) and whose degree is `degree`.
     fn segments(&self, curve: &str, degree: f64, m: f64) -> Result<usize, SvgError> {
-        let n = (degree * (degree - 1.0) / 8.0 * m / self.chord).sqrt().ceil();
+        let n = (degree * (degree - 1.0) / 8.0 * m / self.flatten_chord()).sqrt().ceil();
         Self::segment_budget(curve, n, 1)
     }
 
@@ -166,7 +183,8 @@ impl Sink {
             return self.push(Primitive::Arc { center: o, radius, start_angle, sweep_angle });
         }
         let dt = if whole { TAU.copysign(dt) } else { dt };
-        let step = if self.chord < largest { 2.0 * (1.0 - self.chord / largest).acos() } else { dt.abs() };
+        let flat = self.flatten_chord();
+        let step = if flat < largest { 2.0 * (1.0 - flat / largest).acos() } else { dt.abs() };
         let n = (dt.abs() / step).ceil();
         let n = Self::segment_budget("ellipse", n, 4)?;
         let (from, to) = (on(t0), if whole { on(t0) } else { on(t0 + dt) });
