@@ -40,6 +40,11 @@ pub(super) fn collect_items(
                 "{desc} is a vertex - 'Do not touch' protects faces or edge chains, not vertices"
             )));
         }
+        if matches!(g.feature, FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_)) {
+            return Err(GenError::Invalid(format!(
+                "{desc} is a sketch pick - 'Do not touch' protects model faces or edge chains, not DXF sketch chains"
+            )));
+        }
         if !cache.contains_key(g.entity.as_str()) {
             let entity = model::find_by_name(world, &g.entity).ok_or_else(|| {
                 GenError::Invalid(format!("'Do not touch' references '{}', which is gone", g.entity))
@@ -122,7 +127,11 @@ pub(super) fn collect_items(
                     edges.push(([a.x, a.y, a.z], [b.x, b.y, b.z]));
                 }
             }
-            FeatureSel::Vertex(_) => unreachable!(),
+            FeatureSel::Vertex(_) | FeatureSel::SketchChain(_) | FeatureSel::SketchLayer(_) => {
+                return Err(GenError::Invalid(format!(
+                    "{desc} cannot be protected - 'Do not touch' protects faces or edge chains"
+                )));
+            }
         }
         out.push(AvoidItem { label: desc, tris, edges });
     }
@@ -236,6 +245,45 @@ pub fn verify_avoid(path: &Toolpath, spec: &AvoidSpec) -> (Vec<Warning>, Vec<Str
     }
 }
 
+/// A Trace must follow the selected curve. An upright rapid may lift over a
+/// protected item, but a remaining contact must refuse the entire Trace.
+pub(super) fn protect_trace(
+    path: &mut Toolpath,
+    spec: &AvoidSpec,
+    upright: bool,
+    z_ceiling: Option<f64>,
+) -> Result<(), GenError> {
+    if upright {
+        let notes = route_links(path, spec, z_ceiling);
+        path.notes.extend(notes);
+    }
+    if let Some(problem) = clearance_problems(path, spec).first() {
+        return Err(GenError::Invalid(format!("Trace: {problem}")));
+    }
+    Ok(())
+}
+
+fn clearance_problems(path: &Toolpath, spec: &AvoidSpec) -> Vec<String> {
+    let hits = match spec.hits_named(path, AVOID_VERIFY_TOL) {
+        Ok(hits) => hits,
+        Err(e) => return vec![format!("cannot verify 'Do not touch' on {}: {e}", spec.names_list())],
+    };
+    let mut problems = Vec::new();
+    let mut seen = HashSet::new();
+    for (w, label) in hits {
+        if let Warning::AvoidHit { at, part, short_mm, .. } = w
+            && seen.insert(label.clone())
+        {
+            problems.push(format!(
+                "violates 'Do not touch' {label} at move {} ({part:?}, {short_mm:.3} mm short of {:.2} mm clearance)",
+                at + 1,
+                spec.clearance
+            ));
+        }
+    }
+    problems
+}
+
 /// Live post/verify check over every active cached operation with "Do not touch" configured.
 #[must_use]
 pub fn live_avoid_problems(world: &World) -> Vec<String> {
@@ -276,23 +324,7 @@ pub fn live_avoid_problems(world: &World) -> Vec<String> {
         let holder = crate::tool_body::stack(&geom, body.as_ref()).with_neck(neck);
         let cutter = Cutter::of(&tool).with_body(&geom, &holder);
         let spec = spec_of(items, op.area.do_not_touch.clearance, &op.params, cutter);
-        match spec.hits_named(&cache.path, AVOID_VERIFY_TOL) {
-            Ok(hits) => {
-                let mut seen = HashSet::new();
-                for (w, label) in hits {
-                    if let Warning::AvoidHit { at, part, short_mm, .. } = w
-                        && seen.insert(label.clone())
-                    {
-                        problems.push(format!(
-                            "{name}: violates 'Do not touch' {label} at move {} ({part:?}, {short_mm:.3} mm short of {:.2} mm clearance)",
-                            at + 1,
-                            spec.clearance
-                        ));
-                    }
-                }
-            }
-            Err(e) => problems.push(format!("{name}: {e}")),
-        }
+        problems.extend(clearance_problems(&cache.path, &spec).into_iter().map(|why| format!("{name}: {why}")));
     }
     problems
 }

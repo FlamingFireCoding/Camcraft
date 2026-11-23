@@ -39,6 +39,7 @@ impl OpParams {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -86,9 +87,13 @@ impl OpParams {
                 if *strategy == PocketStrategy::Adaptive && *method == crate::machining2d::AdaptiveMethod::Trochoidal {
                     h.write_u8(0xA5);
                 }
+                // #3361: written only off Auto, so every earlier op keeps
+                // its digest (a forced value on rows changes the notes).
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -106,6 +111,7 @@ impl OpParams {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => {
                 // v16: the pattern chooses a different kinematic (and
                 // the raster fields only answer to Parallel), so they
@@ -194,6 +200,17 @@ impl OpParams {
                         crate::finishing3d::GapLink::Jump => 1,
                     });
                 }
+                // Keep the old stamp for the default direction and for
+                // patterns whose paths do not depend on this angle.
+                if *pattern == crate::finishing3d::FinishPattern::Parallel && *direction_angle != 0.0 {
+                    h.write_u8(0x50);
+                    w(h, *direction_angle);
+                }
+                // #3362: written only off Auto and only for the patterns
+                // that read it, so every other op keeps its stamp.
+                if crate::finishing3d::reads_pass_start(*pattern) {
+                    digest::write_pass_start(*pass_start, h);
+                }
             }
             // The deburr ride digests the one authored number, the
             // window's two planes, the clearance plane it hops to,
@@ -214,6 +231,7 @@ impl OpParams {
                 hole_min_diameter,
                 hole_max_diameter,
                 unreachable,
+                sizing,
             } => {
                 wh(h, *clearance_z);
                 wh(h, *top_z);
@@ -241,6 +259,15 @@ impl OpParams {
                 // each earlier Deburr (skip with a note) does not move.
                 if *unreachable == crate::finishing3d::UnreachableEdges::Refuse {
                     h.write_u8(0x52);
+                }
+                // #1890: the break sizing writes only off one Constant
+                // Width chamfer pass, the ride of each earlier Deburr.
+                if *sizing != crate::finishing3d::DeburrBreak::default() {
+                    h.write_u8(0x53);
+                    h.write_u8(u8::from(sizing.mode == crate::finishing3d::BreakMode::ConstantDepth));
+                    w(h, sizing.depth);
+                    h.write_u8(u8::from(sizing.profile == crate::finishing3d::BreakProfile::Round));
+                    h.write_u32(sizing.passes);
                 }
             }
             _ => {}

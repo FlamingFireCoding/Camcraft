@@ -1,4 +1,4 @@
-//! Project save/load: `.camproj`, JSON, version 73 (see `PROJECT_VERSION`).
+//! Project save/load for the `.camproj` JSON format. See [`PROJECT_VERSION`].
 //!
 //! Serialization goes through plain DTO structs (deliberately not flecs
 //! reflection): the file format is our public persistence contract and must
@@ -111,6 +111,8 @@ mod file;
 pub use file::*;
 mod params;
 pub use params::*;
+mod pass_start_dto;
+pub use pass_start_dto::PassStartDto;
 mod entity;
 // #2463: a linked model's source file and its digest.
 mod source_dto;
@@ -127,6 +129,9 @@ mod thread_dto;
 mod break_dto;
 mod unreachable_dto;
 use unreachable_dto::UnreachableDto;
+// #1890: the Deburr break sizing's file words and the v75 chord step.
+mod deburr_break_dto;
+use deburr_break_dto::{break_dto, break_of, default_break_depth, default_passes, BreakModeDto, BreakProfileDto};
 pub use break_dto::EdgeBreakDto;
 // #416: the threading infeed plan's file mirror.
 mod thread_infeed_dto;
@@ -144,6 +149,9 @@ mod plasma_dto;
 mod cutting_rows_dto;
 pub use cutting_rows_dto::{CuttingRowDto, MaterialWord, StockMaterialWord};
 pub use plasma_dto::*;
+// #1883: the waterjet profile's file mirror.
+mod waterjet_dto;
+pub use waterjet_dto::*;
 mod wire_edm_dto;
 pub use wire_edm_dto::*;
 // #541: the sinker burn's file mirror.
@@ -151,6 +159,9 @@ mod sinker_dto;
 pub use sinker_dto::*;
 mod trochoid_dto;
 pub use trochoid_dto::*;
+// #1444: the Slot Undercut's file mirror.
+mod undercut_dto;
+pub use undercut_dto::*;
 // #1862: a DXF profile's row.
 mod sketch_dto;
 pub use sketch_dto::{PrimitiveDto, SketchDto};
@@ -163,6 +174,9 @@ pub use links::*;
 pub use entity::*;
 mod wire;
 pub use wire::*;
+// #3608: the project file's size and modification time, for the overwrite guard of a save.
+mod disk_stamp;
+pub use disk_stamp::DiskStamp;
 mod json;
 pub use json::*;
 mod apply;

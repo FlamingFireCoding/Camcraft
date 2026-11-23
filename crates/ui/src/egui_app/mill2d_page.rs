@@ -70,6 +70,8 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 prop_row(ui, "Stepover (Y spacing)", |ui| num(ui, u, stepover));
                 // M11.1 A: row ends turn on one arc where it is legal;
                 // the status line names every turn left sharp.
+                // #3356: Face rows run edge to edge - no ring order.
+                super::pass_start_row::no_pass_order_row(ui, "face", super::pass_start_row::FACE_NO_PASS_ORDER);
                 check_row(ui, "Arc turns at row ends", blend_turns);
                 // M13.11: how a row meets a hole in the faced region.
                 // Lift is safe for a bore and a boss alike; cutting
@@ -119,6 +121,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             blend_turns,
             links,
             tilt,
+            chain_overrides,
         } => {
             if tab == SEC_GEO {
                 let mut s_idx = match side {
@@ -136,6 +139,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                     consequence(ui, note);
                 }
                 prop_row(ui, "Tolerance", |ui| num(ui, u, tolerance));
+                sketch_chain_overrides_ui(ui, world, cx.op_src, chain_overrides);
             }
             if tab == SEC_HEIGHTS {
                 orientation_editor(ui, u, tilt);
@@ -241,10 +245,12 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             rest,
             corner_relief,
             tilt,
+            pass_start,
         } => {
             if tab == SEC_LEADS {
                 lead_page::leads_tab(ui, u, "p", Some((&mut *entry, helix_radius)), links);
                 super::approach_page::pocket_arc_group(ui, u, *entry, &mut links.approach);
+                super::predrilled_page::predrilled_group(ui, &mut links.approach, rest.is_some());
             }
             if tab == SEC_HEIGHTS {
                 orientation_editor(ui, u, tilt);
@@ -280,7 +286,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 // M11.1 C: pass corners and row-to-row links round on
                 // one arc inside the cleared area where it is legal.
                 super::kind_editors::arc_turn_rows(ui, u, "Arc turns at corners and links", blend_turns, blend_radius);
-                super::kind_editors::corner_relief_rows(ui, "pocket", corner_relief);
+                super::kind_editors::corner_relief_rows(ui, world, op_ctx.as_deref(), "pocket", corner_relief);
                 // #1517: Adaptive left 2D Pocket for 2D Adaptive.
                 let mut st_idx = match strategy {
                     PocketStrategy::Zigzag => 0,
@@ -302,6 +308,9 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
                 if strategy.steps_by_load() {
                     super::load_field::optimal_load_field(ui, optimal_load);
                 }
+                // #3354: the shared pass-order row; the ring strategies
+                // read it, Zigzag rows say by name that they do not.
+                super::pass_start_row::pass_start_row(ui, "pocket", pass_start);
                 if let Some(note) = &auto_note {
                     consequence(ui, note);
                 }
@@ -334,6 +343,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             optimal_load, method, troch, blend_turns, blend_radius,
             corner_relief,
             tilt,
+            pass_start,
         } => roughing2d_pane(
             ui,
             world,
@@ -357,6 +367,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             links, (blend_turns, blend_radius),
             corner_relief,
             tilt,
+            Some(pass_start),
         ),
         OpParams::Offset2D {
             links,
@@ -374,6 +385,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             helix_radius, blend_turns, blend_radius,
             corner_relief,
             tilt,
+            pass_start,
         } => roughing2d_pane(
             ui,
             world,
@@ -397,6 +409,7 @@ pub(super) fn fields(ui: &mut Ui, world: &World, params: &mut OpParams, cx: &mut
             links, (blend_turns, blend_radius),
             corner_relief,
             tilt,
+            Some(pass_start),
         ),
         _ => {}
     }

@@ -23,11 +23,14 @@ pub(crate) fn v_load(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     let path = PathBuf::from(arg_str(&args, 0, "a project path")?);
     // Load in isolation: refusal leaves the current document and its undo/redo intact.
     let world = crate::world::new_world();
+    // #3608: stamped before the read, so a write during the load refuses the next save.
+    let stamp = crate::project::DiskStamp::of(&path);
     let notes = crate::project::load_noted(&world, &path).map_err(|e| e.to_string())?;
     env.history = History::default();
     env.world = world;
     env.posted = None;
     env.doc_path = Some(path.clone());
+    env.doc_stamp = stamp;
     let mut out = json!({ "path": path.display().to_string(), "operations": ops_view(env) });
     if !notes.is_empty() {
         out["notes"] = json!(notes);
@@ -35,18 +38,22 @@ pub(crate) fn v_load(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     Ok(out)
 }
 
-/// `cam.save(path?)` - write the document. With no path this saves
+/// `cam.save(path?, options?)` - write the document. With no path this saves
 /// over the file `cam.load` opened; with neither, it refuses - a
 /// document that silently goes nowhere is the silent-wrong answer.
+/// #3608: a save over the file loaded or saved here is refused when another
+/// program changed it since, unless `options.overwrite` is true.
 pub(crate) fn v_save(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
-    if args.len() > 1 {
-        return Err(format!("save takes at most one path, got {}", args.len()));
+    if args.len() > 2 {
+        return Err(format!("save takes a path and one options object, got {} arguments", args.len()));
     }
     let path = match arg_opt(&args, 0, "a project path")? {
         Some(p) => PathBuf::from(p),
         None => env.doc_path.clone().ok_or("no document was loaded to save over - pass a path")?,
     };
+    super::save_guard::check(env.doc_stamp.as_ref(), &path, args.get(1))?;
     crate::project::save(&env.world, &path).map_err(|e| e.to_string())?;
+    env.doc_stamp = crate::project::DiskStamp::of(&path);
     env.doc_path = Some(path.clone());
     Ok(json!({ "path": path.display().to_string() }))
 }

@@ -52,6 +52,7 @@ pub(super) fn section_z_of(
         // along (M2.4 B).
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
+        | OpParams::VCarve { top_z, .. }
         | OpParams::Engrave { top_z, .. }
         | OpParams::Chamfer2D { top_z, .. }
         | OpParams::Trace { top_z, .. } => *top_z,
@@ -128,7 +129,7 @@ fn source_region(
         OpParams::SinkerBurn(_) | OpParams::SinkerSideBurn(_) => Err(GenError::Invalid("a sinker burn has no machining region".into())),
         // The plasma cut goes THROUGH the plate (#670): what it can cut
         // is the through-silhouette - a blind pocket is no torch's work.
-        OpParams::PlasmaProfile(_) => {
+        OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_) => {
             slice::project(&material.facets, FOOTPRINT_SAMPLES).map_err(from_slice)
         }
         // The wire cuts THROUGH the workpiece too (#532): its profile
@@ -207,6 +208,7 @@ fn source_region(
         | OpParams::Pocket { .. }
         | OpParams::Adaptive2D { .. }
         | OpParams::Offset2D { .. }
+        | OpParams::VCarve { .. }
         | OpParams::Engrave { .. }
         | OpParams::Trace { .. } => {
             let z = z?;
@@ -225,8 +227,11 @@ fn source_region(
             let corner_z = z - width * angle_deg.to_radians().tan();
             let top = section(&material.facets, &material.bodies, z)?;
             let wall = section(&material.facets, &material.bodies, corner_z)?;
+            // #2929: the section half way down tells a drafted wall (one
+            // straight face) from a modelled chamfer.
+            let mid = section(&material.facets, &material.bodies, (z + corner_z) * 0.5)?;
             let lean = crate::machining2d::chamfer_wall_lean(frame, z - corner_z);
-            crate::machining2d::chamfer_ride_loops(&top, &wall, *width, corner_z, lean)
+            crate::machining2d::chamfer_ride_loops(&top, &mid, &wall, *width, z - corner_z, corner_z, lean)
         }
         // #1731: the Slot's machine area is the stadium of its EXTENDED
         // ends - the channel the pass is asked to cut. Where the
@@ -238,6 +243,8 @@ fn source_region(
             stadium(ea, eb, width * 0.5)
         }
         OpParams::TrochoidalSlot { a, b, width, .. } => stadium(*a, *b, width * 0.5),
+        // #1444: the undercut's authored band about its centreline.
+        OpParams::SlotUndercut(op) => super::slot_undercut_op::footprint(op),
         // The circular ladder's machine area is the AUTHORED disk -
         // the slot's authored-geometry law with a circle for a
         // stadium; the generator refuses a disk that meets no

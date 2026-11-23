@@ -14,6 +14,7 @@
 pub mod feature;
 mod mesh_solids;
 mod primitives;
+mod prism;
 pub mod shared_edge;
 pub mod repair;
 pub mod revision;
@@ -21,9 +22,11 @@ pub mod slice;
 mod slice_bodies;
 mod slice_weld;
 pub mod stock;
+pub mod stock_axis;
 pub mod units;
 
 pub use primitives::{cube, cylinder};
+pub use prism::is_closed_convex_prism;
 
 /// A point in world space. f64 throughout the domain layer; the GPU converts
 /// to f32 at the draw boundary, never the other way around.
