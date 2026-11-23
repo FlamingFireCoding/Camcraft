@@ -254,6 +254,10 @@ pub(super) fn list_operation_types(_env: &mut Env, a: &Map<String, Value>) -> Re
                     ],
                 );
             }
+            if matches!(key.as_str(), "sinker_burn" | "sinker_side_burn") {
+                fields.push(json!({ "name": "cavity_outline", "type": "array", "default": Value::Null }));
+                fields.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            }
             let mut kind = json!({
                 "label": k.label,
                 "key": key,
@@ -321,6 +325,7 @@ pub(super) fn finding(op: &str, w: &Warning) -> Value {
         Warning::DrillUndersize { at, .. } => ("drill_undersize", *at),
         Warning::UndercutLift { at } => ("undercut_lift", *at),
         Warning::StrategyFallback { at, .. } => ("strategy_fallback", *at),
+        Warning::FluteShort { at, .. } => ("flute_short", *at),
     };
     json!({
         "op": op,

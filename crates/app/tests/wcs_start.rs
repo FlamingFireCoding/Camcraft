@@ -93,6 +93,7 @@ fn face() -> OpParams {
 fn finish() -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Parallel,
+        direction_angle: 0.0,
         stepover: Some(2.0),
         tolerance: 0.05,
         clearance_z: Height::fixed(CLEAR),
