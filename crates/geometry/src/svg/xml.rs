@@ -2,8 +2,10 @@
 //! Provenance: the W3C XML 1.0 syntax (tags, attributes, comments, CDATA, processing
 //! instructions, DOCTYPE, character references); original implementation.
 //!
-//! Text content is not kept. Entity references other than the five predefined ones and
-//! character references stay as written: a DOCTYPE entity is never expanded.
+//! Text content is kept for `<style>` only. A DOCTYPE entity is never expanded: a reference
+//! to one (`&name;`) in content or in an attribute is refused by name, because a browser
+//! expands it into elements or values that this reader cannot see. A namespace declaration
+//! (`xmlns`) is the exception: its value is not read.
 
 use std::collections::HashMap;
 
@@ -20,6 +22,8 @@ pub(super) struct Node {
     /// lets a hostile file hang the reader.
     pub attrs: HashMap<String, String>,
     pub children: Vec<usize>,
+    /// The character data of a `<style>` element (empty for each other element).
+    pub text: String,
 }
 
 impl Node {
@@ -132,6 +136,51 @@ fn decode(raw: &str) -> String {
     out
 }
 
+/// Refuse a reference to an entity that is not predefined (`&name;`) in `raw`. `place` gives
+/// the words for where `raw` is; it is called for a refusal only.
+fn no_foreign_entity(raw: &str, place: impl Fn() -> String) -> Result<(), SvgError> {
+    let mut rest = raw;
+    // One pass: each scan stops at the end of a name, and the next search starts there.
+    while let Some(amp) = rest.find('&') {
+        rest = rest.get(amp + 1..).unwrap_or("");
+        let len = rest
+            .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '#')))
+            .unwrap_or(rest.len());
+        let (name, tail) = rest.split_at(len);
+        let known = name.starts_with('#') || matches!(name, "lt" | "gt" | "amp" | "quot" | "apos");
+        if tail.starts_with(';') && !name.is_empty() && !known {
+            return Err(invalid(format!(
+                "entity reference &{}; in {}: an entity of the DOCTYPE is not expanded",
+                short(name),
+                place()
+            )));
+        }
+        rest = tail;
+    }
+    Ok(())
+}
+
+/// Character data between two tags: checked for entities, and kept when it is in a `<style>`.
+fn content(text: &str, cdata: bool, stack: &[(usize, String)], nodes: &mut [Node]) -> Result<(), SvgError> {
+    if !cdata {
+        no_foreign_entity(text, || "the content".to_owned())?;
+    }
+    let open = stack.last().and_then(|(index, _)| nodes.get_mut(*index));
+    if let Some(style) = open.filter(|node| node.name == "style") {
+        if cdata {
+            style.text.push_str(text);
+        } else {
+            style.text.push_str(&decode(text));
+        }
+    }
+    Ok(())
+}
+
+/// The start of a name for a message: a hostile name can be megabytes long.
+fn short(name: &str) -> String {
+    name.chars().take(40).collect()
+}
+
 fn local(name: &str) -> &str {
     name.rsplit(':').next().unwrap_or(name)
 }
@@ -144,13 +193,23 @@ pub(super) fn parse(text: &str, max_elements: usize) -> Result<Tree, SvgError> {
     let mut stack: Vec<(usize, String)> = Vec::new();
     let mut root_done = false;
     while let Some(lt) = cur.rest().find('<') {
+        content(cur.rest().get(..lt).unwrap_or(""), false, &stack, &mut nodes)?;
         cur.at += lt;
         if cur.starts("<?") {
+            // An external style sheet can hide or resize a shape, and it is never loaded.
+            if cur.starts("<?xml-stylesheet") {
+                return Err(invalid(
+                    "xml-stylesheet processing instruction: an external style sheet is not supported",
+                ));
+            }
             cur.skip_past("?>", "processing instruction")?;
         } else if cur.starts("<!--") {
             cur.skip_past("-->", "comment")?;
         } else if cur.starts("<![CDATA[") {
+            let start = cur.at + "<![CDATA[".len();
             cur.skip_past("]]>", "CDATA section")?;
+            let body = text.get(start..cur.at.saturating_sub("]]>".len())).unwrap_or("");
+            content(body, true, &stack, &mut nodes)?;
         } else if cur.starts("<!") {
             cur.skip_doctype()?;
         } else if cur.starts("</") {
@@ -183,7 +242,7 @@ pub(super) fn parse(text: &str, max_elements: usize) -> Result<Tree, SvgError> {
             }
             let attrs = attributes(&mut cur, &qualified)?;
             let index = nodes.len();
-            nodes.push(Node { name: local(&qualified).to_owned(), attrs, children: Vec::new() });
+            nodes.push(Node { name: local(&qualified).to_owned(), attrs, children: Vec::new(), text: String::new() });
             if let Some(p) = stack.last().and_then(|(parent, _)| nodes.get_mut(*parent)) {
                 p.children.push(index);
             }
@@ -196,6 +255,7 @@ pub(super) fn parse(text: &str, max_elements: usize) -> Result<Tree, SvgError> {
             }
         }
     }
+    content(cur.rest(), false, &stack, &mut nodes)?;
     if let Some((_, open)) = stack.last() {
         return Err(invalid(format!("<{open}> is not closed")));
     }
@@ -234,6 +294,9 @@ fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<HashMap<String, String>
         cur.at += 1;
         let len = cur.rest().find(quote).ok_or_else(|| invalid(format!("unterminated tag <{tag}")))?;
         let raw = cur.rest().get(..len).unwrap_or("");
+        if name != "xmlns" && !name.starts_with("xmlns:") {
+            no_foreign_entity(raw, || format!("attribute {} of <{}>", short(&name), short(tag)))?;
+        }
         let value = decode(raw);
         cur.at += len + 1;
         // The first value of a repeated attribute stays.

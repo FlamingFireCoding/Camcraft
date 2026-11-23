@@ -1,6 +1,8 @@
 //! The SVG element tree walked into sketch primitives: groups and their transforms, `use`
 //! references inside the file, layers from top-level groups, and the content that is skipped
-//! with a note.
+//! with a note. Each element name has one of four results: it is drawn, it is silent (it draws
+//! nothing and changes nothing), it is refused by name (it can change a drawn shape), or it is
+//! counted in the summary by its name. A name that this reader does not know is counted.
 //! Provenance: the W3C SVG 1.1 structure chapter (g, defs, symbol, use, the `display`
 //! property), its painting chapter (`visibility`), and Inkscape's public `inkscape:label`
 //! layer convention; original implementation.
@@ -8,6 +10,7 @@
 use super::emit::Sink;
 use super::shapes::{self, Drawn};
 use super::facts::Facts;
+use super::sheet;
 use super::transform::Affine;
 use super::xml::{Node, Tree};
 use super::{SvgError, invalid};
@@ -25,6 +28,15 @@ const SILENT: &[&str] = &[
     "defs", "symbol", "style", "metadata", "title", "desc", "namedview", "linearGradient",
     "radialGradient", "filter", "RDF", "perspective", "font", "font-face", "cursor",
 ];
+
+/// Elements that change an attribute or a transform of a shape after the file is read (SMIL
+/// animation, SVG 1.1 chapter 19, and `discard` of SVG 2). They can name their target with
+/// `href`, so one of them at any place in the tree refuses the import.
+const ANIMATION: &[&str] = &["animate", "set", "animateTransform", "animateMotion", "animateColor", "discard"];
+
+/// Children of a shape or of a `use` that draw nothing and change nothing. A sheet is checked
+/// for the whole tree in `Walk::root`.
+const DESCRIPTIVE: &[&str] = &["title", "desc", "metadata", "style"];
 
 /// The layer of elements outside any top-level group.
 pub(super) const DEFAULT_LAYER: &str = "0";
@@ -116,7 +128,8 @@ impl<'a> Walk<'a> {
     }
 
     fn note_unsupported_effects(&mut self, facts: &Facts) -> Result<(), SvgError> {
-        for (attr, present) in [("clip-path", facts.clip_path), ("mask", facts.mask)] {
+        let effects = [("clip-path", facts.clip_path), ("mask", facts.mask), ("marker", facts.marker)];
+        for (attr, present) in effects {
             if present {
                 self.note(attr)?;
             }
@@ -139,8 +152,48 @@ impl<'a> Walk<'a> {
         self.tree.nodes.get(index)
     }
 
+    /// The checks of the whole tree, hidden and unreferenced content included: animation and
+    /// style sheets apply by `href` or by selector, not by their place. Gives the kinds that
+    /// the sheets add to the summary.
+    fn tree_rules(&self) -> Result<Vec<&'static str>, SvgError> {
+        let mut notes = Vec::new();
+        for node in &self.tree.nodes {
+            let name = node.name.as_str();
+            if ANIMATION.contains(&name) {
+                return Err(invalid(format!(
+                    "<{name}> animation is not supported: it can change a shape after the file is read"
+                )));
+            }
+            let sheet_link = name == "link"
+                && node.attr("rel").is_some_and(|rel| rel.to_ascii_lowercase().contains("stylesheet"));
+            if sheet_link {
+                return Err(invalid("<link> to an external style sheet is not supported"));
+            }
+            if name == "style" {
+                sheet::check(&node.text, &mut notes)?;
+            }
+        }
+        Ok(notes)
+    }
+
+    /// The children of a shape or of a `use` are not drawn. Each one that is not descriptive
+    /// is counted as `<child> in <parent>`, so no element below a shape is ignored.
+    fn undrawn_children(&mut self, node: &'a Node, parent: &str) -> Result<(), SvgError> {
+        // A `use` can visit the parent again: charge the scan of its children.
+        self.charge(node.children.len())?;
+        for &child in &node.children {
+            let Some(child) = self.node(child) else { continue };
+            if !DESCRIPTIVE.contains(&child.name.as_str()) {
+                let name: String = child.name.chars().take(40).collect();
+                self.note(&format!("{name} in {parent}"))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Walk the children of the root element under the root transform.
     pub fn root(&mut self, root_map: Affine) -> Result<(), SvgError> {
+        let sheet_notes = self.tree_rules()?;
         if let Some(root) = self.node(0) {
             let facts = self.facts(0, root);
             if self.skip_visibility_or_hidden(&facts)? {
@@ -156,6 +209,9 @@ impl<'a> Walk<'a> {
         let style_count = self.tree.nodes.iter().filter(|n| n.name == "style").count();
         for _ in 0..style_count {
             self.note("style")?;
+        }
+        for kind in sheet_notes {
+            self.note(kind)?;
         }
         let children = self.node(0).map(|n| n.children.clone()).unwrap_or_default();
         for child in children {
@@ -207,8 +263,12 @@ impl<'a> Walk<'a> {
                 }
                 Ok(())
             }
-            "use" => self.reference(node, map, uses, depth),
+            "use" => {
+                self.undrawn_children(node, &name)?;
+                self.reference(node, map, uses, depth)
+            }
             "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon" => {
+                self.undrawn_children(node, &name)?;
                 self.count()?;
                 let saved = std::mem::replace(&mut self.sink.map, map);
                 let drawn = shapes::draw(node, &mut self.sink, self.max_cmds);

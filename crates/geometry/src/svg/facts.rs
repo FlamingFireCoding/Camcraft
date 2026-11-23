@@ -1,5 +1,6 @@
 //! What the walk needs from one element's `style` and `transform`, read one time per element,
-//! and the allow-list of the inline style properties that cannot change geometry.
+//! and the allow-list of the style properties that cannot change geometry (the inline `style`
+//! and the `<style>` sheets use the same list).
 //! Provenance: the W3C SVG 1.1 styling chapter (the property index), the SVG 2 geometry
 //! chapter (`x`, `y`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry` and `d` are CSS
 //! properties there), CSS Transforms 1 and 2 and CSS Motion Path 1; original implementation.
@@ -47,16 +48,23 @@ fn short(text: &str) -> String {
     text.chars().take(40).collect()
 }
 
-/// The refusal of inline property `name` (lower case) with `value`, or `None` when it is safe.
-fn refused(name: &str, value: &str) -> Option<SvgError> {
+/// A marker property with a value that draws a marker shape. The shape is not imported.
+pub(super) fn draws_marker(name: &str, value: &str) -> bool {
+    matches!(name, "marker" | "marker-start" | "marker-mid" | "marker-end")
+        && !value.trim().eq_ignore_ascii_case("none")
+}
+
+/// The refusal of property `name` (lower case) with `value`, or `None` when it is safe.
+/// `source` names where the declaration is: `inline CSS` or `style sheet`.
+pub(super) fn refused(source: &str, name: &str, value: &str) -> Option<SvgError> {
     if SAFE_PROPERTIES.contains(&name) {
         return None;
     }
-    let hint = "a style attribute can hold only paint and text properties";
+    let hint = "a style can hold only paint and text properties";
     match SAFE_VALUES.iter().find(|(n, _)| *n == name) {
         Some((_, values)) if values.iter().any(|v| value.trim().eq_ignore_ascii_case(v)) => None,
-        Some(_) => Some(invalid(format!("inline CSS {name}: {} is not supported", short(value)))),
-        None => Some(invalid(format!("inline CSS {} is not supported: {hint}", short(name)))),
+        Some(_) => Some(invalid(format!("{source} {name}: {} is not supported", short(value)))),
+        None => Some(invalid(format!("{source} {} is not supported: {hint}", short(name)))),
     }
 }
 
@@ -74,6 +82,8 @@ pub(super) struct Facts {
     pub transform: Result<Option<Affine>, SvgError>,
     pub clip_path: bool,
     pub mask: bool,
+    /// A marker property that draws a marker: the marker shape is skipped and counted.
+    pub marker: bool,
     /// The bytes of the attributes that each visit reads again (all but `style` and
     /// `transform`): the charge of one visit against the work budget.
     pub reread: usize,
@@ -92,6 +102,7 @@ impl Facts {
             transform: node.attr("transform").map(transform::parse).transpose(),
             clip_path: node.attr("clip-path").is_some(),
             mask: node.attr("mask").is_some(),
+            marker: node.attrs.iter().any(|(name, value)| draws_marker(name, value)),
             reread: node
                 .attrs
                 .iter()
@@ -115,10 +126,10 @@ impl Facts {
                 }
                 "clip-path" => facts.clip_path = true,
                 "mask" => facts.mask = true,
-                _ => {}
+                _ => facts.marker |= draws_marker(&name, &decl.value),
             }
             if imported && facts.refusal.is_none() {
-                facts.refusal = refused(&name, &decl.value);
+                facts.refusal = refused("inline CSS", &name, &decl.value);
             }
         }
         facts

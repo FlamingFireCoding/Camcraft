@@ -29,28 +29,46 @@ fn dimension(node: &Node, name: &str) -> Result<Option<(f64, LenUnit)>, SvgError
 }
 
 /// The `preserveAspectRatio` placement of a `vw` x `vh` viewBox at (`vx`, `vy`) in a
-/// `w` x `h` viewport.
-fn fit(node: &Node, [vx, vy, vw, vh]: [f64; 4], w: f64, h: f64) -> Affine {
+/// `w` x `h` viewport. A value that is not in the SVG grammar is refused: a guess of its
+/// alignment moves the drawing.
+fn fit(node: &Node, [vx, vy, vw, vh]: [f64; 4], w: f64, h: f64) -> Result<Affine, SvgError> {
     let par = node.attr("preserveAspectRatio").unwrap_or("xMidYMid meet");
-    let mut words = par.split_whitespace().filter(|w| *w != "defer");
-    let align = words.next().unwrap_or("xMidYMid");
-    let slice = words.next() == Some("slice");
+    let bad = || {
+        let short: String = par.chars().take(40).collect();
+        invalid(format!("<svg> preserveAspectRatio \"{short}\" is not a known value"))
+    };
+    let mut words = par.split_whitespace().peekable();
+    if words.peek() == Some(&"defer") {
+        words.next();
+    }
+    let align = words.next().ok_or_else(bad)?;
+    let slice = match words.next() {
+        None | Some("meet") => false,
+        Some("slice") => true,
+        Some(_) => return Err(bad()),
+    };
+    if words.next().is_some() {
+        return Err(bad());
+    }
     let (sx, sy) = (w / vw, h / vh);
     if align == "none" {
-        return Affine::scale(sx, sy).then(Affine::translate(-vx, -vy));
+        return Ok(Affine::scale(sx, sy).then(Affine::translate(-vx, -vy)));
     }
-    let s = if slice { sx.max(sy) } else { sx.min(sy) };
-    let share = |axis: &str, free: f64| {
-        if align.contains(&format!("{axis}Mid")) {
-            free / 2.0
-        } else if align.contains(&format!("{axis}Max")) {
-            free
-        } else {
-            0.0
-        }
+    // The share of the free space before the viewBox: `xMinYMid` is (0, 1/2).
+    let share = |word: &str| match word {
+        "Min" => Some(0.0),
+        "Mid" => Some(0.5),
+        "Max" => Some(1.0),
+        _ => None,
     };
-    let (tx, ty) = (share("x", w - vw * s), share("Y", h - vh * s));
-    Affine::translate(tx, ty).then(Affine::scale(s, s)).then(Affine::translate(-vx, -vy))
+    let (fx, fy) = align
+        .strip_prefix('x')
+        .and_then(|rest| rest.split_once('Y'))
+        .and_then(|(x, y)| Some((share(x)?, share(y)?)))
+        .ok_or_else(bad)?;
+    let s = if slice { sx.max(sy) } else { sx.min(sy) };
+    let (tx, ty) = (fx * (w - vw * s), fy * (h - vh * s));
+    Ok(Affine::translate(tx, ty).then(Affine::scale(s, s)).then(Affine::translate(-vx, -vy)))
 }
 
 /// Read the root element's size and viewBox.
@@ -87,7 +105,7 @@ pub(super) fn read(root: &Node) -> Result<Viewport, SvgError> {
     };
     // User space to the viewport, Y still down.
     let (to_viewport, page_height) = match (view_box, w, h) {
-        (Some(vb), Some(w), Some(h)) => (fit(root, vb, w, h), Some(h)),
+        (Some(vb), Some(w), Some(h)) => (fit(root, vb, w, h)?, Some(h)),
         (Some([vx, vy, _, vh]), _, _) => (Affine::translate(-vx, -vy), Some(vh)),
         // No viewBox: a user unit is one CSS px.
         (None, _, h) if physical => (Affine::scale(25.4 / 96.0, 25.4 / 96.0), h),

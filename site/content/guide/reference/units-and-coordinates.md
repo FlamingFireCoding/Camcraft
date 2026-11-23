@@ -61,8 +61,15 @@ program before you run it.
   it is never guessed. SVG's Y axis points down, so CamCraft flips it:
   the drawing looks as it does in Inkscape or Illustrator. Circular arcs
   stay arcs; Beziers and other ellipses become short lines within
-  0.005 mm. Text, images, clip paths and masks are skipped and counted in
-  the reply: convert text to paths in the editor before you export.
+  0.005 mm. Text, images, clip paths, masks and markers are skipped and
+  counted in the reply: convert text to paths in the editor before you
+  export. Fill and stroke are not read: a shape with a stroke imports as
+  its centre line, not as the outline of the stroke. To cut the outline,
+  convert the stroke to a path in the editor. A style sheet can hold
+  paint and text rules only. A file with a rule that hides, moves or
+  resizes a shape, with an animation element, or with a reference to a
+  DOCTYPE entity is refused by name: the import never cuts a shape that
+  the editor shows at a different size or does not show.
 - **Check the size after every import.** The Stock page reports the
   models' size and extents. Compare one dimension you know, for example
   a 2 in plate that should read 50.8 mm (or 2.0000 in with the document

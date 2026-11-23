@@ -276,9 +276,11 @@ fn svg_shape_inline_clipping_and_masking_are_reported_as_unsupported() {
 #[test]
 fn svg_stylesheets_inside_defs_and_tree_are_counted_as_skipped() {
     let in_defs = r#"<svg width="100mm" height="100mm" viewBox="0 0 100 100">
-      <defs><style>.h{display:none}</style></defs>
+      <defs><style>.h{stroke:none}</style></defs>
       <rect class="h" width="20" height="20"/>
     </svg>"#;
+    // A sheet of paint rules is counted. A rule that can hide or move a shape is refused:
+    // `svg_tree_rules.rs` pins that.
     let doc = svg::parse(in_defs.as_bytes(), None).expect("stylesheet in defs reads");
     assert_eq!(doc.summary.skipped.get("style"), Some(&1), "{:?}", doc.summary.skipped);
     assert_eq!(doc.summary.skipped.len(), 1, "{:?}", doc.summary.skipped);

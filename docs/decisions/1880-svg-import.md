@@ -57,6 +57,35 @@
   each visit charges those attribute bytes against a work budget of 4 x the byte budget.
   A file that goes above it is refused by name. One pass over a file is never above 1 x.
   Dropped: a cache of the parsed path commands (memory for each reused path).
+- A `<style>` sheet is checked with the allow-list of the inline styles, with no selector
+  matching (`svg/sheet.rs`). The reader does not know which element a rule matches. Thus
+  `display` and `visibility` are refused by name with any value, and each property that is
+  not on the list is refused. A sheet of paint rules (`.cls-1{fill:none;stroke:#000}`)
+  imports and is counted as `style`. `clip-path`, `mask` and a marker in a sheet are
+  counted, as the inline ones are. Refused by name: an at-rule other than `@charset`,
+  `@namespace` and `@font-face` (`@import` and `@media` included), a rule inside a rule,
+  and text that is not a whole rule. The last one is necessary: this scan is not a full
+  CSS tokenizer, and a part that it cannot read must stop the import. An
+  `<?xml-stylesheet?>` instruction and a `<link rel="stylesheet">` are refused by name.
+  Dropped: selector matching (a CSS engine in the geometry crate), and a refusal of each
+  `<style>` element (the usual Illustrator export has a paint sheet).
+- Each element name has one of four results: drawn, silent, refused by name, or counted in
+  the summary by its name. The animation elements (`animate`, `set`, `animateTransform`,
+  `animateMotion`, `animateColor`, `discard`) are refused at each place in the tree, hidden
+  and unreferenced content included, because they can name their target with `href`. A
+  child of a shape or of a `use` that is not `title`, `desc`, `metadata` or `style` is
+  counted as `<child> in <parent>`. An unknown element at a walked place is counted by its
+  name. The scan of the children is charged against the work budget. Dropped: a refusal of
+  each unknown element (an editor's private elements would stop the import).
+- A reference to an entity that is not predefined (`&name;`) is refused by name in content
+  and in an attribute value. A browser expands a DOCTYPE entity into elements or into a
+  value (`display="&d;"`), and this reader does not expand it. The exception is a namespace
+  declaration (`xmlns`, `xmlns:*`): its value is not read, and old Illustrator files write
+  it with an entity. Dropped: entity expansion (the size of the result has no bound).
+- A `preserveAspectRatio` value that is not in the SVG grammar is refused. Before, an
+  unknown alignment fell back to xMin/yMin, which moves the drawing.
+- A marker property with a value other than `none` is counted as `marker`: the marker shape
+  is not cut geometry.
 - `ImportSvg` is its own command in `commands/import_svg.rs`. It wraps an `ImportDxf` value
   (a new `ImportDxf::placed` constructor), so apply and invert are the same code. It repeats
   the 10-line setup and stock check of `ImportDxf::build` instead of a change to `build`:

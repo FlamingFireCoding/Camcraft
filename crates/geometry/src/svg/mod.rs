@@ -11,8 +11,10 @@
 //! [`crate::sketch_data::SketchData::from_dxf`] refuses the drawing until the caller states
 //! one. Y points up (the page's bottom edge on y = 0), as the drawing looks in an SVG editor.
 //! An elliptical arc that maps to a circular arc stays an analytic arc; Beziers and other
-//! ellipses become lines within [`CHORD_TOLERANCE_MM`]. Text, images, clipping, masks, styles
-//! and references to other files are not geometry: each is counted in `summary.skipped`.
+//! ellipses become lines within [`CHORD_TOLERANCE_MM`]. Text, images, clipping, masks, markers,
+//! styles and references to other files are not geometry: each is counted in
+//! `summary.skipped`. What can hide, move or resize a drawn shape and is not applied (a style
+//! rule that is not paint, an animation element, a DOCTYPE entity) is refused by name.
 //! Malformed input is refused by name. This module has no file I/O and no application state.
 
 mod emit;
@@ -20,6 +22,7 @@ mod facts;
 mod number;
 mod path;
 mod shapes;
+mod sheet;
 mod style;
 mod transform;
 mod viewport;
