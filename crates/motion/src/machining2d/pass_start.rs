@@ -27,6 +27,17 @@ pub enum PassStart {
     Outside,
 }
 
+/// The note of a Zigzag plan with Inside or Outside (#3354): rows sweep
+/// across the area and have no inside or outside, so the choice is not
+/// used - said by name, never dropped silently.
+pub const PASS_START_ZIGZAG_NOTE: &str =
+    "Pass starts at: Zigzag rows have no inside or outside order; the choice is used only by the ring strategies (Waterline, Offset rings)";
+
+/// The note of a rest pocket with Inside or Outside (#3354): rest
+/// machining walks its own rest areas, not the pocket's rings.
+pub const PASS_START_REST_NOTE: &str =
+    "Pass starts at: rest machining keeps its own order of the rest areas; the choice is not used";
+
 impl PassStart {
     /// Every value, in the order the page lists them.
     pub const ALL: [PassStart; 3] = [PassStart::Auto, PassStart::Inside, PassStart::Outside];
@@ -105,7 +116,7 @@ impl StartSide {
     #[must_use]
     pub fn fallback_note(&self, area: f64) -> String {
         format!(
-            "{PASS_START_NOTE} {}: the rings from the start side would leave {area:.1} mm2 of this area uncut{RINGS_FALLBACK}this area in the Auto order instead",
+            "{PASS_START_NOTE} {}: the rings from the start side would leave {area:.1} mm2 of this area uncut{RINGS_FALLBACK}{PASS_START_FALLBACK_TAIL}",
             self.start.label()
         )
     }
@@ -122,9 +133,31 @@ impl StartSide {
     }
 }
 
+/// The last words of the completeness guard's note (#3542): no Adaptive
+/// note ends so ("... instead" / "... in that order instead"), and a
+/// caller may put its own words before the note (3D pocket: "Z 1.000: ").
+const PASS_START_FALLBACK_TAIL: &str = "this area in the Auto order instead";
+
+/// How many of the Offset-rings fallbacks in `notes` (the ones
+/// [`super::pocket_hsm::rings_fallbacks`] counts) are this planner's
+/// completeness guard, not the Adaptive plan (#3542): the op names the
+/// cause from the note that made the fallback, never from its kind. The
+/// match does not read the start of the note, which a caller can prefix.
+#[must_use]
+pub fn pass_start_fallbacks(notes: &[String]) -> usize {
+    notes
+        .iter()
+        .filter(|n| {
+            n.contains(PASS_START_NOTE)
+                && n.contains(&format!("{RINGS_FALLBACK}{PASS_START_FALLBACK_TAIL}"))
+                && n.ends_with(PASS_START_FALLBACK_TAIL)
+        })
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{PASS_START_NOTE, PassStart, StartSide};
+    use super::{PASS_START_NOTE, PassStart, StartSide, pass_start_fallbacks};
     use crate::machining2d::rings_fallbacks;
 
     /// #3316/#3035: the completeness guard's note is an Offset-rings
@@ -137,6 +170,19 @@ mod tests {
         let note = side.fallback_note(12.3);
         assert!(note.starts_with(PASS_START_NOTE), "{note}");
         assert_eq!(rings_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+        // #3542: the guard's note is a pass-start fallback; an Adaptive
+        // note with a pass start ("adaptive: Pass starts at ...") is not.
+        assert_eq!(pass_start_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+        let adaptive = "adaptive: Pass starts at Outside - the HSM plan failed - Offset rings cut the pocket in that order instead".to_owned();
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&adaptive)), 1, "{adaptive}");
+        assert_eq!(pass_start_fallbacks(std::slice::from_ref(&adaptive)), 0, "{adaptive}");
+        let plain = "adaptive: the HSM plan failed - Offset rings cut level at Z 1.00 instead".to_owned();
+        assert_eq!(pass_start_fallbacks(std::slice::from_ref(&plain)), 0, "{plain}");
+        // The 3D pocket note carries its level first (`level_side`): still
+        // a pass-start fallback, and still one ring fallback.
+        let level = format!("Z 1.000: {note}");
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&level)), 1, "{level}");
+        assert_eq!(pass_start_fallbacks(std::slice::from_ref(&level)), 1, "{level}");
         let wall = side.wall_first_note().unwrap_or_default();
         assert_eq!(rings_fallbacks(std::slice::from_ref(&wall)), 0, "{wall}");
         let narrow = side.narrow_note(1, 0.0, 0.0);

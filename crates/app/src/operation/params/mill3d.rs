@@ -39,6 +39,7 @@ impl OpParams {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -86,9 +87,13 @@ impl OpParams {
                 if *strategy == PocketStrategy::Adaptive && *method == crate::machining2d::AdaptiveMethod::Trochoidal {
                     h.write_u8(0xA5);
                 }
+                // #3361: written only off Auto, so every earlier op keeps
+                // its digest (a forced value on rows changes the notes).
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -107,6 +112,7 @@ impl OpParams {
                 fill_openings,
                 gap_link,
                 waterlines,
+                pass_start,
             } => {
                 // v16: the pattern chooses a different kinematic (and
                 // the raster fields only answer to Parallel), so they
@@ -200,6 +206,17 @@ impl OpParams {
                 // byte), so every op with waterlines on keeps its stamp.
                 if !*waterlines {
                     h.write_u8(0x4E);
+                }
+                // Keep the old stamp for the default direction and for
+                // patterns whose paths do not depend on this angle.
+                if *pattern == crate::finishing3d::FinishPattern::Parallel && *direction_angle != 0.0 {
+                    h.write_u8(0x50);
+                    w(h, *direction_angle);
+                }
+                // #3362: written only off Auto and only for the patterns
+                // that read it, so every other op keeps its stamp.
+                if crate::finishing3d::reads_pass_start(*pattern) {
+                    digest::write_pass_start(*pass_start, h);
                 }
             }
             // The deburr ride digests the one authored number, the

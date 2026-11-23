@@ -180,6 +180,7 @@ fn rapids_hold_the_pose_they_inherit() {
     let got = contour5d(&facets, &finish(12.0, 9.8), &control(30.0, 0.0, None), None).unwrap();
     let leans = got.moves.iter().any(|m| m.axis.is_some_and(|a| !camcraft_motion::cl::is_vertical(&a)));
     assert!(leans, "the dome ladder must lean for this law to bite");
+    assert_eq!(got.moves[0].axis, Some([0.0, 0.0, 1.0]), "the opening states the upright pose");
     let mut held: Option<[f64; 3]> = Some([0.0, 0.0, 1.0]);
     for m in &got.moves {
         if m.kind == MoveKind::Rapid {
