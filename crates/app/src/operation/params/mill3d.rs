@@ -111,6 +111,7 @@ impl OpParams {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => {
                 // v16: the pattern chooses a different kinematic (and
                 // the raster fields only answer to Parallel), so they
@@ -204,6 +205,11 @@ impl OpParams {
                 if *pattern == crate::finishing3d::FinishPattern::Parallel && *direction_angle != 0.0 {
                     h.write_u8(0x50);
                     w(h, *direction_angle);
+                }
+                // #3362: written only off Auto and only for the patterns
+                // that read it, so every other op keeps its stamp.
+                if crate::finishing3d::reads_pass_start(*pattern) {
+                    digest::write_pass_start(*pass_start, h);
                 }
             }
             // The deburr ride digests the one authored number, the

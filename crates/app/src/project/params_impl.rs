@@ -541,6 +541,7 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
                 direction_angle: *direction_angle,
@@ -561,6 +562,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // The deburr ride (M2.5 E B): the six keys are the kind's
             // whole content - no pattern, no retract, nothing derived
@@ -1874,6 +1876,7 @@ impl ParamsDto {
                 pencil_reference,
                 fill_openings,
                 gap_link,
+                pass_start,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
                 direction_angle: *direction_angle,
@@ -1894,6 +1897,7 @@ impl ParamsDto {
                 pencil_reference: *pencil_reference,
                 fill_openings: *fill_openings,
                 gap_link: (*gap_link).into(),
+                pass_start: (*pass_start).into(),
             },
             // Read back whole, the blade kinds' way - sane or
             // nothing, `validate_kind`'s door first (M2.5 E B):

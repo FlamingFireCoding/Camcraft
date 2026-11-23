@@ -12,6 +12,8 @@
 mod common;
 #[path = "mcp/finish3d_direction.rs"]
 mod mcp_finish3d_direction;
+#[path = "mcp/finish3d_pass_start.rs"]
+mod mcp_finish3d_pass_start;
 mod mcp_open;
 #[path = "mcp/trochoid_pass_start.rs"]
 mod trochoid_pass_start;
