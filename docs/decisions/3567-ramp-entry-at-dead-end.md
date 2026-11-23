@@ -55,6 +55,27 @@ stepover 4, depth 3, no ramp angle set):
   dead end; the full-width slot is the case where it does not.
 - The late-entry pin: 332.88 mm2 on main, 0.00 mm2 with the ramp.
 
+**The slow pin is a test-speed problem, not a block.** The verification of
+`fig8_pocket_outside_starts_each_level_at_the_stock_edge` is slow. This is a
+test-speed problem, filed as #3587 (`P5`). The verifier speed is filed as
+#3588 (fix PR #3595, draft). Neither issue blocks #3577.
+
+Readings on head `d41c2b76a`:
+
+- `pocket_pass_start`: 5 passed of 6. The sixth test,
+  `fig8_pocket_outside_starts_each_level_at_the_stock_edge`, did not
+  complete. It stopped at 29 min 23 s. The earlier run tripped the 15-min
+  stall watchdog at 961 s.
+- Every other suite is green:
+  - motion `pass_start_engagement` 6/6 and `pass_start_levels` 7/7;
+  - motion lib `machining2d` 267 passed and 10 ignored, `level_ramp_entry`
+    4/4;
+  - app `offset_pass_start` 4/4, `golden_cl` 33/33, `conformance` 7/7,
+    `adaptive_pass_start` 4/4, `bore_pass_start` 3/3;
+  - the catalogs 37/1/1;
+  - clippy clean;
+  - the light lane 2 twins green.
+
 **What was decided by the workers, inside those decisions.**
 
 1. **The plan marks the dead ends.** `level_order::order` marks each later
