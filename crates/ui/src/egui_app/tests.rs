@@ -219,6 +219,8 @@ mod theme_door;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;
+// #2428: startup update check, Settings dropdown toggle, and title-bar notice.
+mod update_check;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
 mod browser_delete;
