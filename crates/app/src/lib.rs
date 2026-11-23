@@ -98,6 +98,9 @@ pub mod recent;
 pub mod rest;
 pub mod ribbon;
 pub mod rotary_stack;
+// #2772 parts 1-2: the stated rotation-axis resolver (the op's own
+// direction, else the machine's stated rotary line, through the WCS).
+pub mod rotary_stated;
 pub mod schema;
 pub mod script;
 // #1862: DXF profiles placed on a setup's stock, and the virtual model reference.

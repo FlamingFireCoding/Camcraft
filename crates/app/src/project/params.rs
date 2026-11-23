@@ -877,6 +877,12 @@ pub enum ParamsDto {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2 (v78): the op's own stated rotation axis,
+        /// a direction through the setup's work offset origin that
+        /// overrides the machine's stated rotary line. Absent is what
+        /// every v77 file stated: follow the machine, else fit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stated_axis: Option<[f64; 3]>,
     },
     /// The parallel twin's shape: the raster's optional stepover,
     /// absent-means-derived exactly as the finish's (M5.1 stage E).
@@ -896,6 +902,10 @@ pub enum ParamsDto {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2 (v78): the op's own stated rotation axis -
+        /// see `RotaryContour`'s `stated_axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stated_axis: Option<[f64; 3]>,
     },
     /// Declared at v27 with the wrap ladder (M5.1 stage E2). The
     /// pocket's shape, read the wrap's way - and deliberately no
@@ -940,6 +950,10 @@ pub enum ParamsDto {
         lead_deg: f64,
         lag_deg: f64,
         max_tilt_deg: f64,
+        /// #2772 parts 1-2 (v78): the op's own stated rotation axis -
+        /// see `RotaryContour`'s `stated_axis`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stated_axis: Option<[f64; 3]>,
     },
     /// Declared at v28 with the stamped ladder (M5.1 stage E3). The
     /// pocket's shape field for field, minus the `rest_rough` and

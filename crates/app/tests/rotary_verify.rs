@@ -86,6 +86,7 @@ fn params(kind: Kind, clearance: f64) -> OpParams {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 60.0,
+            stated_axis: None,
         },
         // The crown and upper flanks: a laid bar's passes stay on the
         // half the head can reach from above (B never past +-90).
@@ -102,6 +103,7 @@ fn params(kind: Kind, clearance: f64) -> OpParams {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 60.0,
+            stated_axis: None,
         },
         Kind::Offset => OpParams::RotaryOffset {
             links: camcraft_app::links::Links::ROUGH3D,
@@ -122,6 +124,7 @@ fn params(kind: Kind, clearance: f64) -> OpParams {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 60.0,
+            stated_axis: None,
         },
     }
 }

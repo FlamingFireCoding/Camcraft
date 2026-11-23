@@ -169,7 +169,14 @@ use super::*;
 /// v76 file posted - so a v76 file steps up unchanged. An old reader must
 /// refuse a v77 file rather than drop the order and post a setup before
 /// the setup its datum comes from.
-pub const PROJECT_VERSION: u32 = 77;
+/// v78 (#2772): the rotary kinds' operations may state their own
+/// rotation axis (`stated_axis`, a direction through the setup's work
+/// offset origin, overriding the machine's stated rotary line). Absent
+/// is what every v77 file stated: follow the machine, else fit the axis
+/// off the model - so a v77 file steps up unchanged. An old reader must
+/// refuse a v78 file rather than drop the statement and turn the part
+/// about an axis the user never named.
+pub const PROJECT_VERSION: u32 = 78;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {

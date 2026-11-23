@@ -176,6 +176,7 @@ mod tests {
             lead_deg: 0.0,
             lag_deg: 0.0,
             max_tilt_deg: 45.0,
+            stated_axis: None,
         };
         assert_eq!(classify(&rotary_op, &empty), Some(SectionMode::Simultaneous5Axis));
         assert_eq!(classify(&rotary_op, &live_path), None);

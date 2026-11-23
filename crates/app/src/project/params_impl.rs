@@ -754,6 +754,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
             } => ParamsDto::RotaryContour {
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -766,6 +767,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
             },
             OpParams::RotaryParallel {
                 tolerance,
@@ -780,6 +782,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
             } => ParamsDto::RotaryParallel {
                 tolerance: *tolerance,
                 stepover: *stepover,
@@ -793,6 +796,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
             },
             // The wrap ladder (M5.1 stage E2): the pocket's bridge,
             // minus the retract key the kernel could never honor.
@@ -815,6 +819,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
             } => ParamsDto::RotaryOffset {
                 links: links_to_dto(links, &p.default_links()),
                 tolerance: *tolerance,
@@ -846,6 +851,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
             },
             // The stamped ladder (M5.1 stage E3): the pocket's bridge
             // with the hop plane back in (the kernel reads it - it is
@@ -2068,6 +2074,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
             } => OpParams::RotaryContour {
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -2080,6 +2087,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
             },
             ParamsDto::RotaryParallel {
                 tolerance,
@@ -2094,6 +2102,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
             } => OpParams::RotaryParallel {
                 tolerance: *tolerance,
                 stepover: *stepover,
@@ -2107,6 +2116,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
             },
             // The wrap ladder reads back whole; `validate_kind` has
             // already refused anything the door would fail (M5.1 E2).
@@ -2130,6 +2140,7 @@ impl ParamsDto {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
             } => OpParams::RotaryOffset {
                 links: links_from_dto(links.as_ref(), crate::links::Links::ROUGH3D),
                 tolerance: *tolerance,
@@ -2160,6 +2171,7 @@ impl ParamsDto {
                 lead_deg: *lead_deg,
                 lag_deg: *lag_deg,
                 max_tilt_deg: *max_tilt_deg,
+                stated_axis: *stated_axis,
             },
             // The stamped ladder reads back whole; `validate_kind` has
             // already refused anything the door would fail (M5.1 E3).

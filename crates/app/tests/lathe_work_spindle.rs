@@ -333,6 +333,7 @@ fn live_tool_and_turning_sections_pass_the_lathe_door() {
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
     };
     create(&world, &mut h, "C1", "BN-0600", SrcRef::Entity("bar".into()), wrap);
     assert_eq!(voice(&world, "C1"), Some(LatheVoice::LiveTool));

@@ -690,6 +690,13 @@ impl OpParams {
                 // stepover rides the same Some-or-derived law as the
                 // finish's.
                 let angle = |v: &f64| v.is_finite() && v.abs() <= 90.0;
+                // #2772: a stated rotation axis is a direction - three
+                // finite numbers, not all zero. A leaning line is a
+                // statement the resolver and the letter door judge by
+                // name, not a sanity matter here.
+                let direction = |v: &Option<[f64; 3]>| {
+                    v.is_none_or(|d| d.iter().all(|x| x.is_finite()) && d.iter().map(|x| x * x).sum::<f64>() > 0.0)
+                };
                 pos(*tolerance)
                     && clearance_z.is_sane()
                     && retract_z.is_none_or(|r| r.is_sane())
@@ -701,6 +708,15 @@ impl OpParams {
                     && angle(lag_deg)
                     && *max_tilt_deg > 0.0
                     && *max_tilt_deg <= 180.0
+                    // #2772: the twins' read-back (the or-pattern shares
+                    // Flow and the drive-curve contour, which state no
+                    // axis of their own).
+                    && (match self {
+                        OpParams::RotaryContour { stated_axis, .. } | OpParams::RotaryParallel { stated_axis, .. } => {
+                            direction(stated_axis)
+                        }
+                        _ => true,
+                    })
                     && (match self {
                         OpParams::Parallel5D { stepover, .. }
                         | OpParams::Swarf { stepover, .. }
@@ -733,9 +749,15 @@ impl OpParams {
                 lead_deg,
                 lag_deg,
                 max_tilt_deg,
+                stated_axis,
                 ..
             } => {
                 let angle = |v: &f64| v.is_finite() && v.abs() <= 90.0;
+                // #2772: the twins' own direction law for the op's
+                // stated axis.
+                let direction = |v: &Option<[f64; 3]>| {
+                    v.is_none_or(|d| d.iter().all(|x| x.is_finite()) && d.iter().map(|x| x * x).sum::<f64>() > 0.0)
+                };
                 pos(*tolerance)
                     && pos(*stepover)
                     && nneg(*stock_to_leave)
@@ -753,6 +775,7 @@ impl OpParams {
                     && angle(lag_deg)
                     && *max_tilt_deg > 0.0
                     && *max_tilt_deg <= 180.0
+                    && direction(stated_axis)
             }
             // The stamped ladder's door (M5.1 stage E3): the Pocket3D
             // door verbatim - the hop plane included, which the plain

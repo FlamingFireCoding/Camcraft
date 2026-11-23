@@ -146,6 +146,7 @@ fn laid_bar_on(rig: Rig, clearance: f64) -> Result<(World, OpStatus, Vec<Warning
         lead_deg: 0.0,
         lag_deg: 0.0,
         max_tilt_deg: 60.0,
+        stated_axis: None,
     };
     h.execute(&world, CreateOperation::new(&world, "OP", BALL, SrcRef::Entity("bar".into()), p).expect("create"));
     let cmd = GenerateOperation::new(&world, "OP").map_err(|e| format!("{e:?}"))?;
