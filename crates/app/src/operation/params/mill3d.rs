@@ -39,6 +39,7 @@ impl OpParams {
                 feed_opt,
                 shell,
                 method,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -86,6 +87,9 @@ impl OpParams {
                 if *strategy == PocketStrategy::Adaptive && *method == crate::machining2d::AdaptiveMethod::Trochoidal {
                     h.write_u8(0xA5);
                 }
+                // #3361: written only off Auto, so every earlier op keeps
+                // its digest (a forced value on rows changes the notes).
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Finish3D {
                 pattern,

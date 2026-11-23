@@ -1287,6 +1287,7 @@ fn every_field_lives_on_exactly_one_section() {
                     "Stepover",
                     "Stock to leave",
                     "Strategy",
+                    "Pass starts at",
                     "Offset shells",
                     "Rest roughing",
                     "Feed optimization",
