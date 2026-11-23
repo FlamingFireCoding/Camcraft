@@ -27,6 +27,7 @@ use crate::geometry::{Point3, Triangle};
 use crate::machining2d::GenError;
 
 use super::axis::Axis;
+use super::rotary_flow_guard::seg_clearance;
 use super::rotary_flow_unwrap::{lerp_at, Basis, Unwrapped};
 
 /// The oracle's float allowance - the finishing kinds' own TOUCH_EPS.
@@ -122,10 +123,22 @@ fn mesh_dist(q: Point3, facets: &[Triangle], idx: &[usize]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
+/// Why a station has no ball center.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PushFail {
+    /// No radius within [`PUSH_CAP`] radii of the blended one clears.
+    Blocked,
+    /// The radius cannot advance: the coordinates are so large that a
+    /// march step is lost in the float spacing.
+    Precision,
+}
+
 /// The ball center at station `(th, v, rho)` pushed out along its
-/// radial until every facet keeps `r` of ball around it. `None` when
-/// no radius within [`PUSH_CAP`] radii of the blended one clears -
-/// the caller refuses by name at the station's own spot.
+/// radial until every facet keeps `r + margin` around it (the margin
+/// is the chord allowance that the swept segments between stations
+/// may spend). An error when no radius within [`PUSH_CAP`] radii of
+/// the blended one clears, or when the radius cannot advance - the
+/// caller refuses by name at the station's own spot.
 #[allow(clippy::too_many_arguments)] // one push-out's flat read
 pub(super) fn ball_center(
     ax: &Axis,
@@ -136,38 +149,55 @@ pub(super) fn ball_center(
     v: f64,
     rho: f64,
     r: f64,
-) -> Option<Point3> {
+    margin: f64,
+) -> Result<Point3, PushFail> {
+    let need = r + margin;
+    // The march: quarter-radius steps to the cap, a fixed count. Each
+    // step must move the radius, or the march stops by name - a step
+    // lost in the float spacing would repeat forever.
+    const STEPS: usize = (PUSH_CAP * 4.0) as usize;
+    let step = 0.25 * r;
     let cap = rho + PUSH_CAP * r;
+    if !(cap.is_finite() && cap > rho && rho + step > rho) {
+        return Err(PushFail::Precision);
+    }
     // The screen is the ball's whole push corridor: any facet that
-    // can come within `r` of a center on it has a box within `r` of
-    // the corridor's bounds.
+    // can come within `need` of a center on it has a box within
+    // `need` of the corridor's bounds.
     let idx = near(
         boxes,
         station(ax, b, th, v, rho),
         station(ax, b, th, v, cap),
-        r + 1e-6,
+        need + 1e-6,
     );
     let clear = |rr: f64| -> bool {
         let q = station(ax, b, th, v, rr);
-        mesh_dist(q, facets, &idx) >= r - TOUCH
+        mesh_dist(q, facets, &idx) >= need - TOUCH
     };
     if clear(rho) {
-        return Some(station(ax, b, th, v, rho));
+        return Ok(station(ax, b, th, v, rho));
     }
-    // March outward in quarter-radius steps to the cap: the FIRST
-    // clear radius wins, then the bisection refines inside its step.
-    let step = 0.25 * r;
+    // The FIRST clear radius wins, then the bisection refines inside
+    // its step.
     let mut lo = rho;
     let mut hi = None;
-    while lo < cap {
+    for _ in 0..STEPS {
         let x = (lo + step).min(cap);
+        if !(x > lo) {
+            return Err(PushFail::Precision);
+        }
         if clear(x) {
             hi = Some(x);
             break;
         }
         lo = x;
+        if lo >= cap {
+            break;
+        }
     }
-    let mut hi = hi?;
+    let Some(mut hi) = hi else {
+        return Err(PushFail::Blocked);
+    };
     for _ in 0..24 {
         let mid = 0.5 * (lo + hi);
         if clear(mid) {
@@ -176,7 +206,7 @@ pub(super) fn ball_center(
             lo = mid;
         }
     }
-    Some(station(ax, b, th, v, hi))
+    Ok(station(ax, b, th, v, hi))
 }
 
 /// The blended cylindrical coordinates at cross fraction `t` and
@@ -215,16 +245,21 @@ pub(super) fn flow_pass(
 ) -> Result<PassOut, GenError> {
     let at = |x: f64| -> Result<Point3, GenError> {
         let (th, v, rho) = blend_track(a, b, t, x);
-        ball_center(ax, basis, facets, boxes, th, v, rho, r).ok_or_else(|| {
-            GenError::invalid_at(
-                format!(
-                    "Rotary Flow: the ball cannot clear the part within {} radii of the flow \
-                     station at cross {:.2} - the band is narrower than the tool there; pick flow \
-                     lines on exposed ground, or use a smaller ball",
-                    PUSH_CAP, t
+        ball_center(ax, basis, facets, boxes, th, v, rho, r, tol).map_err(|why| {
+            let msg = match why {
+                PushFail::Blocked => format!(
+                    "Rotary Flow: the ball cannot clear the part within {PUSH_CAP} radii of the \
+                     flow station at cross {t:.2} - the band is narrower than the tool there; pick \
+                     flow lines on exposed ground, or use a smaller ball"
                 ),
-                station(ax, basis, th, v, rho),
-            )
+                PushFail::Precision => format!(
+                    "Rotary Flow: the flow station at cross {t:.2} stands so far from the axis \
+                     that a {:.3} mm push-out step is lost in the float spacing - move the work \
+                     and the axis near the origin",
+                    0.25 * r
+                ),
+            };
+            GenError::invalid_at(msg, station(ax, basis, th, v, rho))
         })
     };
     // The knot union: every place either chain states a vertex.
@@ -240,55 +275,90 @@ pub(super) fn flow_pass(
             "Rotary Flow: a guide pair left no arc-length knot to walk".into(),
         ));
     };
+    let walk = Walk {
+        at: &at,
+        facets,
+        boxes,
+        r,
+        tol,
+    };
     let mut out = PassOut {
         centers: vec![p0],
         depth_capped: false,
     };
     for span in 0..knots.len() - 1 {
-        flatten(
-            &at, knots[span], first[span], knots[span + 1], first[span + 1], tol, 0, &mut out,
-        )?;
+        walk.flatten(knots[span], first[span], knots[span + 1], first[span + 1], 0, &mut out)?;
     }
     Ok(out)
 }
 
-/// Walk one span: accept its endpoint when the midpoint station sits
-/// within `tol` of the chord, else bisect. At the depth cap the span
-/// is accepted and flagged - said in the notes, never silently.
-#[allow(clippy::too_many_arguments)] // one span's flat read
-fn flatten(
-    at: &dyn Fn(f64) -> Result<Point3, GenError>,
-    x0: f64,
-    p0: Point3,
-    x1: f64,
-    p1: Point3,
+/// One pass's chord walk: the station oracle and the swept-ball law.
+struct Walk<'a> {
+    at: &'a dyn Fn(f64) -> Result<Point3, GenError>,
+    facets: &'a [Triangle],
+    boxes: &'a [[f64; 6]],
+    r: f64,
     tol: f64,
-    depth: u32,
-    out: &mut PassOut,
-) -> Result<(), GenError> {
-    if out.centers.len() >= CHORD_CAP {
-        return Err(GenError::Invalid(format!(
-            "Rotary Flow: a flow pass needs more than {CHORD_CAP} chord stations - the picks or \
-             the tolerance are wrong for this band"
-        )));
+}
+
+impl Walk<'_> {
+    /// The swept-ball clearance of the chord `p0 -> p1`.
+    fn sweep(&self, p0: Point3, p1: Point3) -> f64 {
+        seg_clearance(p0, p1, self.facets, self.boxes, self.r + self.tol + 1e-6)
     }
-    if depth >= CHORD_DEPTH {
-        out.depth_capped = true;
-        out.centers.push(p1);
-        return Ok(());
+
+    /// Walk one span: accept its endpoint when the midpoint station
+    /// sits within `tol` of the chord AND the chord's swept ball keeps
+    /// `r + tol / 2` off the part, else bisect. At the depth cap a
+    /// span whose sweep still clears the bare ball is accepted and
+    /// flagged (said in the notes); a span that does not is refused
+    /// at its own spot - never posted.
+    fn flatten(
+        &self,
+        x0: f64,
+        p0: Point3,
+        x1: f64,
+        p1: Point3,
+        depth: u32,
+        out: &mut PassOut,
+    ) -> Result<(), GenError> {
+        if out.centers.len() >= CHORD_CAP {
+            return Err(GenError::Invalid(format!(
+                "Rotary Flow: a flow pass needs more than {CHORD_CAP} chord stations - the picks \
+                 or the tolerance are wrong for this band"
+            )));
+        }
+        if depth >= CHORD_DEPTH {
+            let got = self.sweep(p0, p1);
+            if !(got >= self.r - TOUCH) {
+                return Err(GenError::invalid_at(
+                    format!(
+                        "Rotary Flow: a flow chord sweeps the ball {:.4} mm off the part, inside \
+                         its {:.3} mm radius, at the chord depth cap - the band is narrower than \
+                         the tool there; use a smaller ball",
+                        got.max(0.0),
+                        self.r
+                    ),
+                    p1,
+                ));
+            }
+            out.depth_capped = true;
+            out.centers.push(p1);
+            return Ok(());
+        }
+        let xm = 0.5 * (x0 + x1);
+        let pm = (self.at)(xm)?;
+        let mid = Point3::new(
+            0.5 * (p0.x + p1.x),
+            0.5 * (p0.y + p1.y),
+            0.5 * (p0.z + p1.z),
+        );
+        let d = pm - mid;
+        if d.dot(d).sqrt() <= self.tol && self.sweep(p0, p1) >= self.r + 0.5 * self.tol {
+            out.centers.push(p1);
+            return Ok(());
+        }
+        self.flatten(x0, p0, xm, pm, depth + 1, out)?;
+        self.flatten(xm, pm, x1, p1, depth + 1, out)
     }
-    let xm = 0.5 * (x0 + x1);
-    let pm = at(xm)?;
-    let mid = Point3::new(
-        0.5 * (p0.x + p1.x),
-        0.5 * (p0.y + p1.y),
-        0.5 * (p0.z + p1.z),
-    );
-    let d = pm - mid;
-    if d.dot(d).sqrt() <= tol {
-        out.centers.push(p1);
-        return Ok(());
-    }
-    flatten(at, x0, p0, xm, pm, tol, depth + 1, out)?;
-    flatten(at, xm, pm, x1, p1, tol, depth + 1, out)
 }

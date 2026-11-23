@@ -57,6 +57,7 @@ pub mod rotary_bar;
 mod rotary_ends;
 mod rotary_flow;
 mod rotary_flow_emit;
+mod rotary_flow_guard;
 mod rotary_flow_pass;
 mod rotary_flow_unwrap;
 mod rotary_links;

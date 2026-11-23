@@ -32,6 +32,7 @@ use crate::tools::{Tool, ToolKind};
 use super::axis::Axis;
 use super::retip::radial_at;
 use super::rotary_flow_emit::Emitter;
+use super::rotary_flow_guard::prove_path;
 use super::rotary_flow_pass::{boxes_of, flow_pass};
 use super::rotary_flow_unwrap::{self, Basis, Unwrapped};
 use super::tilt::AxisControl;
@@ -101,6 +102,7 @@ pub fn rotary_flow(
             "Rotary Flow found no model to read the band from".into(),
         ));
     }
+    validate_facets(facets)?;
     if chains.len() < 2 {
         return Err(GenError::Invalid(format!(
             "Rotary Flow needs at least two picked guide chains to span a band; got {} - pick \
@@ -247,7 +249,27 @@ pub fn rotary_flow(
     if let Some(last) = prev_last {
         emit.exit(last)?;
     }
-    emit.finish(notes)
+    let path = emit.finish(notes)?;
+    // The proof over every emitted move - cuts, plunges, retracts,
+    // links and the exit: safe stations do not prove a safe sweep.
+    prove_path(&path, facets, &boxes, r)?;
+    Ok(path)
+}
+
+/// The model, or the refusal that names its first non-finite facet:
+/// the bounds and the distance oracle would read past a NaN.
+fn validate_facets(facets: &[Triangle]) -> Result<(), GenError> {
+    match facets
+        .iter()
+        .position(|f| !(f.a.is_finite() && f.b.is_finite() && f.c.is_finite()))
+    {
+        Some(i) => Err(GenError::Invalid(format!(
+            "Rotary Flow: model facet {} carries a non-finite vertex - repair the model before \
+             it is machined",
+            i + 1
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// The tool and the numbers, or the refusal that names them.

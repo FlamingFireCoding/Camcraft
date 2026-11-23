@@ -171,11 +171,16 @@ pub(super) fn align_pair(a: &Unwrapped, b: &mut Unwrapped, samples: usize) -> f6
 /// length the flow passes divide. `R_ref` is the band's outermost
 /// radius, where a developed stepover reads widest - ground inside it
 /// gets finer, never coarser.
+///
+/// The read runs over the union of both tracks' own knots and the
+/// fixed samples: the offset is piecewise linear in the place, so its
+/// largest length stands at a knot of one track or the other - a
+/// fixed grid alone can step over the widest place of the band.
 pub(super) fn cross_width(a: &Unwrapped, b: &Unwrapped, r_ref: f64, samples: usize) -> f64 {
     let n = samples.max(2);
+    let fixed = (0..n).map(|i| i as f64 / (n - 1) as f64);
     let mut w = 0.0f64;
-    for i in 0..n {
-        let x = i as f64 / (n - 1) as f64;
+    for x in fixed.chain(a.u.iter().copied()).chain(b.u.iter().copied()) {
         let (dth, dv) = (
             lerp_at(&b.u, &b.th, x) - lerp_at(&a.u, &a.th, x),
             lerp_at(&b.u, &b.v, x) - lerp_at(&a.u, &a.v, x),
@@ -235,8 +240,10 @@ pub(super) fn extent(facets: &[Triangle]) -> f64 {
 }
 
 /// One chain as the walkable points it claims: finite, its
-/// coincidental repeats collapsed, its closing duplicate dropped
-/// when the ends meet (a closed lap is one legal guide chain).
+/// coincidental repeats collapsed. A closed lap is one legal guide
+/// chain, and its closing point STAYS: the unwrap carries it on to
+/// the first point's azimuth plus a whole turn, so the closing span
+/// is walked like any other (dropping it lost a whole strip, #3630).
 pub(super) fn clean_chain(ch: &[Point3], ci: usize, eps2: f64) -> Result<Vec<Point3>, GenError> {
     if !ch.iter().all(|q| q.is_finite()) {
         return Err(GenError::Invalid(format!(
@@ -252,16 +259,6 @@ pub(super) fn clean_chain(ch: &[Point3], ci: usize, eps2: f64) -> Result<Vec<Poi
         }) {
             pts.push(*q);
         }
-    }
-    let ring = match (pts.first(), pts.last()) {
-        (Some(&f), Some(&l)) => {
-            let d = f - l;
-            pts.len() >= 4 && d.dot(d) <= eps2
-        }
-        _ => false,
-    };
-    if ring {
-        pts.pop();
     }
     if pts.len() < 2 {
         return Err(GenError::Invalid(format!(
