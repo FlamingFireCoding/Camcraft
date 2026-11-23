@@ -1,5 +1,9 @@
 //! App-side registration, EMCO VMC-200 gate checks, and air-cut kit tests
 //! for Siemens Sinumerik 810M (`issue #2888`).
+//!
+//! Gate map (#2888): covers camcraft_post::post (sinumerik-810m.cps), app::posting
+//! (BUILTINS, MACHINES, post_serves, post_offer, post_setup), app::project (save),
+//! app::commands (LoadMachine, SelectPost, CreateOperation, GenerateOperation).
 
 use camcraft_app::commands::{
     AddTool, CreateOperation, GenerateOperation, History, LoadMachine, SelectPost, SetStock,
