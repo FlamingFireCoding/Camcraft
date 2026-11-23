@@ -80,6 +80,14 @@ pub const OPTIONS: &[Opt] = &[
         default: "off",
         help: "Open the MCP server for AI agents on this local port (0 to 65535).",
     },
+    Opt {
+        flag: "--read-only",
+        short: None,
+        value: None,
+        env: None,
+        default: "off",
+        help: "Open the project file read-only. Save does not write over the file: it opens Save As, which writes your own copy. Changes are allowed. A model file is imported as usual.",
+    },
 ];
 
 /// An environment variable that has no option of its own.
@@ -147,6 +155,8 @@ pub const FILE_HELP: &str = "File:\n  A model file (.stl, .obj, .step, .stp, or 
 struct Scan {
     help: bool,
     version: bool,
+    /// `--read-only` (#3609): the project file on the command line opens read-only.
+    read_only: bool,
     /// The arguments that are neither an option nor an option's value, in
     /// order: the files to open (#2462).
     files: Vec<String>,
@@ -173,8 +183,14 @@ pub fn files(args: &[String]) -> Vec<String> {
     scan(args).map(|s| s.files).unwrap_or_default()
 }
 
+/// Whether `--read-only` is given (#3609). `false` when [`parse`] refuses
+/// the arguments.
+pub fn read_only(args: &[String]) -> bool {
+    scan(args).is_ok_and(|s| s.read_only)
+}
+
 fn scan(args: &[String]) -> Result<Scan, String> {
-    let (mut help, mut version, mut files) = (false, false, Vec::new());
+    let (mut help, mut version, mut read_only, mut files) = (false, false, false, Vec::new());
     let mut it = args.iter().peekable();
     while let Some(arg) = it.next() {
         if arg == "-" {
@@ -205,10 +221,11 @@ fn scan(args: &[String]) -> Result<Scan, String> {
         match opt.flag {
             "--help" => help = true,
             "--version" => version = true,
+            "--read-only" => read_only = true,
             _ => {}
         }
     }
-    Ok(Scan { help, version, files })
+    Ok(Scan { help, version, read_only, files })
 }
 
 /// The text of `--help`, built from the tables.

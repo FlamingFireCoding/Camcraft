@@ -41,6 +41,7 @@ fn answer_request(state: &mut State, request: camcraft_app::mcp::Request, track_
             auto_approve_non_critical: false,
         },
         selection: Some(state.selection_context()),
+        read_only: state.project_read_only,
     };
     let answer = camcraft_app::mcp::answer_live_with(
         &state.world,

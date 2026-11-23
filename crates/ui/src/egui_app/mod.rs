@@ -437,8 +437,9 @@ pub fn run(args: &[String]) -> i32 {
             }
         }
     } else {
-        // #2462: the file named on the command line opens in the window.
-        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args))
+        // #2462: the file named on the command line opens in the window;
+        // #3609: read-only with `--read-only`.
+        run_windowed(pick, want, mcp_port, &crate::cli_options::files(args), crate::cli_options::read_only(args))
     }
 }
 
@@ -465,15 +466,15 @@ fn run_headless(_open: Option<crate::state::CommandKind>) -> i32 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String]) -> i32 {
-    shell_window::run_windowed(pick, want, mcp_port, files)
+fn run_windowed(pick: gpu::GpuPick, want: Option<String>, mcp_port: Option<u16>, files: &[String], read_only: bool) -> i32 {
+    shell_window::run_windowed(pick, want, mcp_port, files, read_only)
 }
 
 /// #31: the browser build has no winit window to open - its shell is the
 /// web runner still owed on that issue - so the windowed entry refuses by
 /// name instead of pretending.
 #[cfg(target_arch = "wasm32")]
-fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String]) -> i32 {
+fn run_windowed(_pick: gpu::GpuPick, _want: Option<String>, _mcp_port: Option<u16>, _files: &[String], _read_only: bool) -> i32 {
     diag_warn!("{WASM_NO_WINDOW}");
     2
 }

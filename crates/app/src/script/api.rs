@@ -28,6 +28,7 @@ pub(crate) fn v_load(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     env.world = world;
     env.posted = None;
     env.doc_path = Some(path.clone());
+    env.doc_read_only = false;
     let mut out = json!({ "path": path.display().to_string(), "operations": ops_view(env) });
     if !notes.is_empty() {
         out["notes"] = json!(notes);
@@ -37,7 +38,8 @@ pub(crate) fn v_load(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
 
 /// `cam.save(path?)` - write the document. With no path this saves
 /// over the file `cam.load` opened; with neither, it refuses - a
-/// document that silently goes nowhere is the silent-wrong answer.
+/// document that silently goes nowhere is the silent-wrong answer. A
+/// document open read-only is not saved over its own file (#3609).
 pub(crate) fn v_save(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
     if args.len() > 1 {
         return Err(format!("save takes at most one path, got {}", args.len()));
@@ -46,8 +48,10 @@ pub(crate) fn v_save(env: &mut Env, args: Vec<Value>) -> Result<Value, String> {
         Some(p) => PathBuf::from(p),
         None => env.doc_path.clone().ok_or("no document was loaded to save over - pass a path")?,
     };
+    crate::project::refuse_read_only_save(env.doc_path.as_deref(), env.doc_read_only, &path)?;
     crate::project::save(&env.world, &path).map_err(|e| e.to_string())?;
     env.doc_path = Some(path.clone());
+    env.doc_read_only = false;
     Ok(json!({ "path": path.display().to_string() }))
 }
 

@@ -73,6 +73,10 @@ pub(crate) struct Env {
     /// The document file a `cam.load` opened, or a `cam.save` wrote to
     /// - what a bare `cam.save()` means the way the app's Ctrl+S does.
     pub doc_path: Option<PathBuf>,
+    /// `doc_path` is open read-only (`open_project` with `read_only`,
+    /// or a window started with `--read-only` on the live seam, #3609): a
+    /// save to it is refused, and a save to another file ends it.
+    pub doc_read_only: bool,
     pub posted: Option<PathBuf>,
     /// The last verb result, parked for the shapes the host cannot
     /// pull (`cam.result()`, and the non-string read of a parked
@@ -125,6 +129,7 @@ impl Env {
             logs: Vec::new(),
             errors: Vec::new(),
             doc_path: None,
+            doc_read_only: false,
             posted: None,
             last_value: Value::Null,
             selection: None,

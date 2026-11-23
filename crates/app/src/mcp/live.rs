@@ -162,11 +162,15 @@ fn refusal_message(tool: &str, kind: GateKind) -> String {
     }
 }
 
-/// Caller-supplied live gate and UI selection context for [`answer_live_with`].
+/// Caller-supplied live gate, UI selection context and read-only state for
+/// [`answer_live_with`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LiveOptions {
     pub gate: LiveGate,
     pub selection: Option<SelectionContext>,
+    /// The window's project is open read-only (`camcraft-ui --read-only`,
+    /// #3609): `save_project` refuses to save over `doc_path`.
+    pub read_only: bool,
 }
 
 /// What one live line did.
@@ -227,6 +231,7 @@ pub fn answer_live_with(
             logs: Vec::new(),
             errors: Vec::new(),
             doc_path: doc_path.map(Path::to_path_buf),
+            doc_read_only: options.read_only,
             posted: None,
             last_value: Value::Null,
             selection: options.selection.clone(),
