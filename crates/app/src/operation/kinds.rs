@@ -793,6 +793,7 @@ fn seed_pocket(c: &Carried) -> OpParams {
         blend_turns: false,
         corner_relief: crate::machining2d::CornerRelief::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -821,6 +822,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -845,6 +847,7 @@ fn seed_offset2d(c: &Carried) -> OpParams {
         entry: Entry3D::Helix, // M11.3: new pocket-family ops helix in (ramp, then plunge, stand in)
         helix_radius: 1.0,
         tilt: c.tilt,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 
@@ -891,6 +894,7 @@ fn seed_circular(c: &Carried) -> OpParams {
         center: Point2::new(0.0, 0.0),
         radius: 25.0,
         vault: false,
+        pass_start: crate::machining2d::PassStart::Auto,
         stepover: c.stepover,
         stock_to_leave: 0.0,
         clearance_z: c.clearance,
@@ -1017,6 +1021,7 @@ fn seed_standalone_bore(c: &Carried) -> OpParams {
         tolerance: 0.01,
         holes: Vec::new(),
         break_through: None,
+        pass_start: crate::machining2d::PassStart::Auto,
     }
 }
 

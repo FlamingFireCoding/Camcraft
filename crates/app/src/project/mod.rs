@@ -111,6 +111,8 @@ mod file;
 pub use file::*;
 mod params;
 pub use params::*;
+mod pass_start_dto;
+pub use pass_start_dto::PassStartDto;
 mod entity;
 // #2463: a linked model's source file and its digest.
 mod source_dto;

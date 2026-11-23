@@ -28,6 +28,7 @@
 
 mod after_op;
 pub mod cnc;
+pub mod cnc_arc_lattice;
 pub mod cnc_thread;
 pub mod cnc_torch;
 mod coolant;
@@ -51,7 +52,9 @@ pub mod probe_rec;
 mod program;
 mod tool_change;
 pub mod rotary_cap;
+pub mod arc_guard;
 pub mod section_mode;
+mod upright_after_tilt;
 pub mod work_offset;
 pub mod units;
 pub mod wcs_flip;
