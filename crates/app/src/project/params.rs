@@ -711,6 +711,10 @@ pub enum ParamsDto {
         /// grammar, so no version step-up.
         #[serde(default)]
         gap_link: GapLinkDto,
+        /// #3362 where the nested offset loops start: absent is
+        /// `auto`, the order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Declared at v48 with the deburr ride (M2.5 E B). `Deburr`'s
     /// automatic snake_case tag IS the clean word - no rename needed -
