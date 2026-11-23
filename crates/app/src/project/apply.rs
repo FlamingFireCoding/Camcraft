@@ -547,6 +547,8 @@ pub(super) fn check_and_apply(world: &World, mut file: ProjectFile) -> Result<Ve
         // old setback steps up by sqrt(2), its chord on a 90-degree edge.
         // v76 -> v77 (#3447): a setup may state its creation `order`;
         // absent stays absent and sorts by name, as every v76 file posted.
+        // v77 -> v78 (#2604): absent machine `reserved_tools` reserves
+        // nothing; a v77 file steps up unchanged.
         notes = super::wcs_one::settle(&mut file, from)?;
         notes.extend(super::fidelity_migrate::settle(&mut file.entities, from));
         if from < 68 {
