@@ -101,6 +101,46 @@ fn the_face_passes_tab_says_it_has_no_pass_order() {
     );
 }
 
+#[test]
+fn the_slot_passes_tab_locks_auto_and_names_the_continuous_pass() {
+    let harness = passes_of(OpType::Slot);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let locked = harness
+        .query_all_by(|n| n.role() == Role::ComboBox && n.value().as_deref() == Some("Auto") && n.is_disabled())
+        .count();
+    assert_eq!(locked, 1, "Slot shows Auto and cannot pick an order");
+    let reason = "Slot has no pass order. Each depth has one continuous pass. A tool-width cut follows the centerline. A wider cut connects rows.";
+    assert_eq!(
+        harness
+            .query_all_by(|n| [n.label(), n.value()].into_iter().flatten().any(|text| text.contains(reason)))
+            .count(),
+        1,
+        "the reason is visible without hovering"
+    );
+}
+
+#[test]
+fn the_trochoidal_slot_passes_tab_locks_auto_and_explains_the_loop_order() {
+    let harness = passes_of(OpType::TrochoidalSlot);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Pass starts at row");
+    let locked = harness
+        .query_all_by(|n| {
+            n.role() == Role::ComboBox && n.value().as_deref() == Some("Auto") && n.is_disabled()
+        })
+        .count();
+    assert_eq!(locked, 1, "Trochoidal Slot shows Auto and cannot pick an order");
+    let reason = harness
+        .query_all_by(|n| {
+            [n.label(), n.value()].into_iter().flatten().any(|text| {
+                text.contains("entry bore")
+                    && text.contains("advances along the slot")
+                    && text.contains("clearance from the previous cut")
+            })
+        })
+        .count();
+    assert_eq!(reason, 1, "the reason is visible without hovering");
+}
+
 /// #3355: 2D Adaptive has the same row; under the Trochoidal method a
 /// forced order is said refused by name, never dropped in silence.
 #[test]
@@ -133,4 +173,21 @@ fn a_pass_start_warning_is_a_status_line() {
     let lines = super::super::approach_page::entry_status_lines(&[note.clone(), "a quiet note".to_owned()]);
     assert_eq!(lines, vec![format!("warning: {note}")]);
     assert!(note.starts_with(camcraft_app::machining2d::PASS_START_NOTE), "{note}");
+}
+
+#[test]
+fn circular_passes_tab_offers_all_three_pass_starts() {
+    let mut harness = passes_of(OpType::Circular);
+    assert_eq!(harness.query_all_by_label(PASS_START_LABEL).count(), 1, "the Circular Passes tab has the shared row");
+    let mut current = "Auto";
+    for (label, choice) in [("Inside", Some("inside")), ("Outside", Some("outside")), ("Auto", None)] {
+        harness.get_by(|node| node.role() == Role::ComboBox && node.value().as_deref() == Some(current)).click();
+        harness.run_steps(2);
+        harness.get_by_label(label).click();
+        harness.run_steps(2);
+        let wire = camcraft_app::project::params_to_json(&harness.state().state.op_ui.params);
+        assert_eq!(wire["circular"].get("pass_start").and_then(serde_json::Value::as_str), choice);
+        assert_eq!(combos_showing(&harness, label), 1, "the combo displays the new choice");
+        current = label;
+    }
 }

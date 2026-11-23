@@ -210,6 +210,7 @@ fn a_bore_whose_stepdown_spans_the_depth_cuts_one_level() {
 
 fn cp(vault: bool) -> CircularParams {
     CircularParams {
+        pass_start: Default::default(),
         links: Links::PLANAR,
         center: Point2::new(0.0, 0.0),
         radius: 10.0,
