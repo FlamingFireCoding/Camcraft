@@ -208,6 +208,7 @@ mod mill2d_page;
 mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
+mod multiaxis_deburr_page;
 mod op_page;
 // #144: macOS Cmd+Q / app-menu Quit routed through the guarded Quit.
 #[cfg(not(target_arch = "wasm32"))]

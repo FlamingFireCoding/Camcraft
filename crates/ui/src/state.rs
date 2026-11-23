@@ -4445,10 +4445,20 @@ impl State {
         match result {
             Ok(command) => {
                 // #2463: a file a model is linked to lands on that model,
-                // whatever the file is called.
-                let command = match file.as_deref().and_then(|f| crate::model_link_watch::linked_name(&self.world, f)) {
-                    Some(linked) if linked != command.name => command.renamed(&linked),
-                    _ => command,
+                // whatever the file is called. #3686: the link keeps its
+                // text (a relative link stays relative to the project).
+                let linked = file
+                    .as_deref()
+                    .and_then(|f| crate::model_link_watch::linked_to(&self.world, f, self.project_path.as_deref()));
+                let command = match linked {
+                    Some((linked, link)) => {
+                        let mut command = if linked == command.name { command } else { command.renamed(&linked) };
+                        if let Some(source) = command.source.as_mut() {
+                            source.path = link;
+                        }
+                        command
+                    }
+                    None => command,
                 };
                 let name = command.name.clone();
                 // #1573 review: what the importer changed (a STEP face

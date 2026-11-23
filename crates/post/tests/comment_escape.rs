@@ -318,6 +318,6 @@ fn header_notes_use_each_shipped_dialect_and_keep_the_full_surface_bound() {
         }
         text_posts += 1;
     }
-    assert_eq!(text_posts, 21, "every shipped text post writes both notes");
+    assert_eq!(text_posts, 24, "every shipped text post writes both notes");
     assert_eq!(native_refusals, 1, "the native Agie dispatcher refused the notes");
 }

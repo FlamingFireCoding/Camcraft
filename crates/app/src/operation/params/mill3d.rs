@@ -270,6 +270,52 @@ impl OpParams {
                     h.write_u32(sizing.passes);
                 }
             }
+            // #1894: a new kind, so every field is digested from the
+            // start - no earlier stamp to keep.
+            OpParams::MultiAxisDeburr {
+                width,
+                clearance_z,
+                top_z,
+                bottom_z,
+                feed,
+                plunge_feed,
+                exclude_edges,
+                min_edge_angle_deg,
+                exclude_holes,
+                hole_min_diameter,
+                hole_max_diameter,
+                unreachable,
+                sizing,
+                axis_mode,
+                lead_deg,
+                lag_deg,
+                max_tilt_deg,
+                shank_avoid,
+            } => {
+                h.write_u8(0x5A);
+                wh(h, *clearance_z);
+                wh(h, *top_z);
+                wh(h, *bottom_z);
+                for v in [*width, *feed, *plunge_feed, *min_edge_angle_deg, *hole_min_diameter, *hole_max_diameter] {
+                    w(h, v);
+                }
+                h.write_u8(u8::from(*exclude_holes));
+                for g in exclude_edges {
+                    h.write_u8(0x4F);
+                    h.write(g.entity.as_bytes());
+                    h.write_u64(g.feature.id());
+                }
+                h.write_u8(u8::from(*unreachable == crate::finishing3d::UnreachableEdges::Refuse));
+                h.write_u8(u8::from(sizing.mode == crate::finishing3d::BreakMode::ConstantDepth));
+                w(h, sizing.depth);
+                h.write_u8(u8::from(sizing.profile == crate::finishing3d::BreakProfile::Round));
+                h.write_u32(sizing.passes);
+                h.write_u8(u8::from(*axis_mode == crate::multiaxis::DeburrAxisMode::Axis4));
+                for v in [*lead_deg, *lag_deg, *max_tilt_deg] {
+                    w(h, v);
+                }
+                h.write_u8(u8::from(*shank_avoid));
+            }
             _ => {}
         }
     }

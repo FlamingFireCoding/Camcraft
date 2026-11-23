@@ -185,6 +185,9 @@ write (the gate), so the released program never carries one.
   Doosan posts write every length, angle, lead and feed-per-rev word with
   its point (`Z14.`); only the words the control documents as "no decimal
   point" (lathe G76 P Q, G83 Q) stay in whole least increments.
+  The Haas post writes each feed-per-minute word with its point too
+  (#3681, `F600.`): Haas Setting 77 (Scale Integer F) scales an F with no
+  point, and at its default an mm control reads `F600` as 0.6 mm/min.
 - **Refuse, never lie.** A record you cannot honor in this dialect
   gets a counted `message()` naming why (Fanuc's `tilt()` returns null
   after one refusal per program — a per-line refusal is noise, a
@@ -315,6 +318,17 @@ operation's C word. It was not run on a control; what is unconfirmed is
 in `docs/decisions/617-sodick-wire-post.md` and
 `docs/decisions/2649-sodick-ln-pass-structure.md`. Its goldens ride
 under `nc/sodick-wire/` (`sodick_wire_post.rs`, `sodick_wire_passes.rs`).
+
+`g-edm.cps` (#2700, "G-EDM Wire EDM") is the fourth `WIRE_POSTS` entry,
+never the default. It serves G-EDM builds on G-RBLv3 (a Grbl derivative):
+Grbl-family words only (`G21` / `G20 G90 G17`, `G0`, `G1`, `G2` / `G3`
+with `I J`, `M30`), no `%` fence, no `O` word, no `F` (the gap servo sets
+the rate), and no `edm.codes` (the spark power is set at the controller;
+the condition id is a comment). It writes one vertical 2-axis wire section
+per program and refuses by name taper, 4-axis, any `COMP` record, skims,
+`edm.awt`, an offset other than G54, and every stop or home ask. It was not
+run on a control; `docs/decisions/2700-g-edm-post.md` lists what is not
+confirmed. Its golden rides under `nc/g-edm/` (`g_edm_post.rs`).
 
 ## Adding a post to the app
 
