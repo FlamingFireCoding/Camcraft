@@ -51,9 +51,30 @@ so such a record stays a full-turn arc, as before.
   ends cannot put the end behind the start about the written centre in
   the cases that we found. A centre word that rounds apart from the
   start could do it in theory. This is not exercised and is left open.
-- The centre as the control sees it (start plus the written `I J`). The
-  rule uses the written absolute centre word, the same as the #3442 rule.
-  The two can differ by one output step.
+- The rounded absolute centre for a post that writes increments (review
+  of PR #3500). The two centres can differ by one output step. Fanuc mm
+  wrote `G02 X10.01 Y5. Z5.5 I-0.011 J0.` after `G01 X10.011 Y5.`: the
+  control's centre is X10. Y5., and both ends are on its positive X ray.
+  The rounded absolute centre is X10. Y5.001, so the rule kept the arc.
+
+**The centre that the control reads.** A post that writes `I J K` as
+increments from the start passes a third argument to `arcFate` /
+`arcFateOf`: `inc(axis, delta)`, the number of the written increment word
+in the scale of that axis's position word. The rule adds it to the
+written start. The mill posts pass `arcIncOf(fu)`. The lathes double the
+radius `I` to the diameter `X` scale. The Heidenhain posts write an
+absolute centre (`I J`, `CC`) and pass no `inc`: their written centre is
+the rounded absolute word. Pinned by
+`a_same_angle_arc_about_the_written_incremental_centre_posts_as_its_straight_move`
+(mm and inch) and the `offset-*` rows of
+`arc_fate_reads_a_same_angle_short_arc_as_a_straight_move`.
+
+**Merged with main's full-turn test.** Main (`532d0fa92`) reads a full
+turn from ends that are equal in the stream, not from ends within 1e-5
+mm. The merge keeps main's exact equality and this branch's `_arcSweep`
+helper for the sweep.
+
+**Dropped (continued).**
 - A refusal of the record: it would block a legal program for a move
   under the output step.
 

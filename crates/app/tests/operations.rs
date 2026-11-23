@@ -1998,7 +1998,7 @@ fn pocket_refuses_an_open_run() {
     let op = Operation {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
-        params: OpParams::Pocket { rest: None,
+        params: OpParams::Pocket { pass_start: Default::default(), rest: None,
             blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,
@@ -4074,6 +4074,7 @@ fn finish_params(top_z: f64, bottom_z: f64, tolerance: f64) -> OpParams {
     OpParams::Finish3D {
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
         pattern: camcraft_app::finishing3d::FinishPattern::Waterline,
+        direction_angle: 0.0,
         stepover: None,
         tolerance,
         clearance_z: Height::fixed(25.0),

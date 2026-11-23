@@ -59,6 +59,7 @@ var sRpm = 0;              // spindle/T order follows the stream: PARAMs,
 var spindleWait = false;   // TOOL, SECTION - the preamble writes them
 var toolWait = false;      // when the first motion needs them legal
 var tNo = 0;
+var loadedTool = null;     // #3445: the tool this program wrote M6 for; null = unknown
 var inCycle = false;       // a cycle group is open; its chain is suppressed
 var cycleSig = "";         // g|Z|R|Q of the open group (modal X Y holes)
 var retractSet = false;    // G98 written once per program
@@ -459,10 +460,15 @@ function startPreamble() {
   if (toolWait) {
     toolNote();
     retract();
-    if (secIdx > 0 && optBool("optionalStop", false)) block(["M1"]);
+    // #3445: a tool this program loaded, with no stop since, is still in
+    // the spindle: no M6 (a pause and maybe a probe run on grblHAL).
+    if (loadedTool !== tNo) {
+      if (secIdx > 0 && optBool("optionalStop", false)) block(["M1"]);
+      if (optStr("showSequenceNumbers", "off") === "tool-change") seqNextForce = true;
+      block(["T" + ni(tNo), "M6"]);
+      loadedTool = tNo;
+    }
     xyUnknown = true;        // a manual change may have jogged X and Y
-    if (optStr("showSequenceNumbers", "off") === "tool-change") seqNextForce = true;
-    block(["T" + ni(tNo), "M6"]);
     toolWait = false;
   }
   // A touch probe states 0 rpm: no spindle start and no cutting fluid.
@@ -490,8 +496,9 @@ function afterOp() {
     retract();
     note("SETUP CHANGE - NEXT: " + (next || "UNNAMED SETUP"));
   }
-  if (ask === "optional-stop") { block(["M1"]); return; }
-  if (ask === "stop") { block(["M0"]); return; }
+  // The operator may take the tool out at either stop (#3445).
+  if (ask === "optional-stop") { block(["M1"]); loadedTool = null; return; }
+  if (ask === "stop") { block(["M0"]); loadedTool = null; return; }
   if (ask === "home") {
     msg(coolantWho() + "going home after an operation is not posted by the grblHAL post - the G28/G30 positions are controller settings it cannot see; pick Optional stop or Program stop");
     return;
@@ -606,7 +613,7 @@ function onLinear() {
 function onCircular() {
   startPreamble();
   // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
-  var fate = arcFate(arcWord);
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
   if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   if (!tiltOk(properties) || inCycle) return;
   if (spindleStopped("arc move " + (properties.CircularDirection === "CW" ? "G2" : "G3"))) return;

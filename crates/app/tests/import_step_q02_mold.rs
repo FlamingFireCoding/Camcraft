@@ -99,6 +99,7 @@ fn the_recorded_q02_mould_generates_a_3d_flat_finish() {
     // Waterline ladder over the curved boss.
     let params = OpParams::Finish3D {
         pattern: FinishPattern::Flat,
+        direction_angle: 0.0,
         gap_link: GapLink::Jump,
         stepover: Some(2.0),
         tolerance: 0.05,

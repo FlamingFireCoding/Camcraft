@@ -13,10 +13,13 @@ function and obeys the answer:
 
 - `"arc"` - the written in-plane ends differ: the arc posts as before.
   Also when the ends coincide on a record that turns more than half a
-  circle, or whose ends are within 1e-5 mm in the stream (the band
-  `emitArcWithRadius` uses, so float noise on a one-record full helical
-  turn never makes it a straight move): the full circle is that arc
-  within the output resolution, and the dialect writes it as before.
+  circle (its sweep from its direction and centre), or whose ends are
+  equal in the stream (a full turn stated as one record): the full
+  circle is that arc within the output resolution, and the dialect
+  writes it as before. No distance band: a true short arc with a chord
+  under any band is still short (a band was tried after the second read
+  and dropped after the re-read: under it, a true short arc became a
+  full circle).
   Also when the record states no centre: the script's own refusal by
   name (sodick-wire, heidenhain DIN, tinyg) still runs.
 - `"linear"` - the ends coincide on a short arc, and the plane's normal
@@ -72,3 +75,30 @@ specified for in the manual that the script cites.
 
 **Cost to change.** The helper is one function; a dialect with a
 different full-circle rule changes its own call site only.
+
+**The stream writer (after the re-read).** The app posts through
+`cnc::serialize`, which writes each position as whole micrometres. A
+generator arc with a chord under one micrometre (#3463: a fillet can
+reach 0.09 um) rounded to a record whose end equals its start, which the
+reader takes as a full turn: every post then wrote a full circle, on a
+large-radius fit arc a large circle through the part. Only the writer
+still knows the true sweep, so the writer decides
+(`crates/post/src/post/cnc_arc_lattice.rs`, called by `serialize`):
+an arc whose in-plane ends round to the same micrometre and whose true
+sweep is half a turn or less is written as a `Feed` to its rounded end.
+A near-full turn keeps its arc record (equal ends: the full turn within
+one micrometre). A true full turn reaches the writer as two halves (the
+CL `fit_arcs` split; `push_arc` drops a zero-sweep arc), or as one
+record with exactly equal ends, which is the stream's stated full-turn
+form.
+
+- The record stays, also when nothing moves after rounding (a
+  zero-length `Feed`): the engine's line map counts stream records as
+  toolpath moves, and a dropped record would shift the viewer's sync.
+  The post writes a legal zero-length `G01` for it.
+- The reader is not made stricter. An arc record whose ends are equal is
+  the stream's full-turn form (`full_circle_raw`, with a golden on every
+  post), and with the writer fixed our own streams never use it for a
+  short arc. A refusal would break that legal form; a zero-sweep reading
+  would turn a stated full turn into no motion. Dropped.
+

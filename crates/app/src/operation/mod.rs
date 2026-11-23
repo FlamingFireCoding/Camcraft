@@ -72,6 +72,8 @@ mod heights_sel;
 pub use heights_sel::*;
 mod kinds;
 pub use kinds::*;
+mod pick_kinds;
+pub use pick_kinds::*;
 mod seed;
 pub use seed::seed_params;
 pub mod tool_law;
@@ -80,6 +82,7 @@ mod params;
 mod hole_digest;
 mod slot_fit;
 mod trochoid_op;
+pub use trochoid_op::TROCHOIDAL_SLOT_NO_PASS_ORDER;
 mod stamp;
 mod stamp_tool;
 pub use stamp::*;
@@ -89,6 +92,10 @@ pub(crate) use stamp_stock::write_setup_stock;
 mod material;
 // #2496: a drill makes its own size; a wider hole is named.
 mod drill_size;
+// #3525: a cut deeper than the flute length is named first.
+mod flute_law;
+// #3448: a mill names the radial holes it cannot reach.
+mod cross_reach;
 // #2598: a Drill or Thread op's feed against its tool's stated feed.
 pub mod feed_rating;
 pub use material::*;
@@ -118,6 +125,8 @@ mod thread_r_plane;
 // #985: external threads - the boss door, the crest region, the neighbour law.
 mod thread_boss;
 pub mod wire_op;
+mod agie_profile;
+pub(crate) use agie_profile::agie_job;
 mod wire_ruled;
 pub(crate) mod wire_sketch;
 // #534: the wire laws' inputs, read live at the post.
@@ -205,6 +214,7 @@ mod tilt_heights;
 pub use tilt_heights::{fold_height, resolve_params_folded};
 mod wcs_yaw;
 pub(crate) mod corner_relief;
+mod pass_start_stock;
 mod corner_relief_sim;
 mod job;
 pub use job::*;
@@ -258,6 +268,7 @@ pub(crate) mod fidelity_law;
 mod clearance_stock;
 mod first_traverse;
 mod first_traverse_posed;
+mod first_traverse_table;
 mod top_stock;
 mod stock_top_law;
 // #266: a tap judged at its thread's core.

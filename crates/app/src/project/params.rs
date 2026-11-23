@@ -272,6 +272,10 @@ pub enum ParamsDto {
         /// 3+2 index; see the Face arm.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3354 where each level's rings start (the 2D Offset key of
+        /// #3316): absent is `auto` on every earlier file - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// 2D Adaptive (M2.4 A): the pocket arm without the strategy tag -
     /// the kind fixes the ladder; every default the pocket needs, this
@@ -336,6 +340,10 @@ pub enum ParamsDto {
         corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3355 where each level's passes start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// 2D Offset (M2.4 A): the same arm minus the engagement door -
     /// style-A rings are spaced by the stepover alone.
@@ -371,6 +379,10 @@ pub enum ParamsDto {
         corner_relief: CornerReliefDto,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tilt: Option<TiltDto>,
+        /// #3316 where each level's rings start: absent is `auto`, the
+        /// order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Engraving (M2.4 B): the trace arm verbatim under the new tag -
     /// the twin law again, so the arms state the same shape by
@@ -443,6 +455,8 @@ pub enum ParamsDto {
         center: [f64; 2],
         radius: f64,
         vault: bool,
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
         stepover: f64,
         stock_to_leave: f64,
         clearance_z: HeightDto,
@@ -633,6 +647,9 @@ pub enum ParamsDto {
         /// Absent means Waterline (the v15 truth).
         #[serde(default)]
         pattern: FinishPatternDto,
+        /// Absent means 0 degrees, along +X.
+        #[serde(default)]
+        direction_angle: f64,
         /// Absent follows the stepover cos-law from the tolerance.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stepover: Option<f64>,
@@ -1215,6 +1232,10 @@ pub enum ParamsDto {
         /// older file - is the kind's own default; written only when stated.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         break_through: Option<f64>,
+        /// #3360 where each level's rings start: absent is `auto`, the
+        /// centre-out order every earlier file cut - no version step.
+        #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
+        pass_start: PassStartDto,
     },
     /// Helical thread milling (M2.4 C). The pitch rides no DTO -
     /// it lives on the tool, like every other tool number.

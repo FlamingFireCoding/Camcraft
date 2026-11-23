@@ -220,6 +220,10 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's rings start (#3354, the shared #3316
+        /// parameter); read by the ring strategies. `Auto` is every
+        /// earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// 2D Adaptive roughing (M2.4 A): the pocket's constant-engagement
     /// ladder as its own catalog name. The rings are the `Adaptive`
@@ -269,6 +273,10 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's passes start (#3355): the shared
+        /// pass-order parameter of #3316. `Auto` is every earlier file,
+        /// byte for byte; the Trochoidal method refuses the other two.
+        pass_start: crate::machining2d::PassStart,
     },
     /// 2D Offset pocket roughing, style A (M2.4 A): concentric rings
     /// from the boundary inward at the roughing stepover - the pocket's
@@ -302,6 +310,9 @@ pub enum OpParams {
         corner_relief: crate::machining2d::CornerRelief,
         /// 3+2 index; see [`OpParams::Face`]'s field.
         tilt: Option<Tilt>,
+        /// Where each level's rings start (#3316): the shared pass-order
+        /// parameter. `Auto` is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Engraving (M2.4 B): the trace's numbers under the catalog name -
     /// the twin law again (as `Adaptive2D` is the pocket's). The chain
@@ -389,6 +400,7 @@ pub enum OpParams {
         radius: f64,
         /// The dome law instead of the flat floors (variant docs).
         vault: bool,
+        pass_start: crate::machining2d::PassStart,
         stepover: f64,
         stock_to_leave: f64,
         clearance_z: Height,
@@ -593,7 +605,7 @@ pub enum OpParams {
     /// stepdown field: the tolerance IS the depth increment's author
     /// (see [`crate::finishing3d`]). `Parallel`/`ParallelMulti`/
     /// `Scallop`: a Z-following raster over the shallow terrain (once
-    /// along X, crossed along the axes, crossed along the diagonals),
+    /// at the direction angle, crossed along the axes or the diagonals),
     /// then the same scallop ladder's rings on the steep flanks - the
     /// 45° auto-split, one jurisdiction line for both halves. Region,
     /// heights and refusals follow the 3-D pocket's laws exactly:
@@ -604,6 +616,9 @@ pub enum OpParams {
         /// M2.2a default; Parallel adds the raster (M2.2b),
         /// ParallelMulti and Scallop cross it (M2.2c).
         pattern: finishing3d::FinishPattern,
+        /// Parallel raster direction in degrees counterclockwise from +X
+        /// in the work coordinate system. The valid range is [0, 360).
+        direction_angle: f64,
         /// Raster line spacing, mm; `None` (always for Waterline)
         /// follows the stepover cos-law from the tolerance instead -
         /// same "the tolerance is the author" law as the stepdown.
@@ -1279,6 +1294,9 @@ pub enum OpParams {
         /// before the option posted; checked at generation against the
         /// stock bottom, refused by name below it.
         break_through: Option<f64>,
+        /// Where each level's rings start (#3360): the shared pass-order
+        /// parameter. `Auto` is every earlier file, byte for byte.
+        pass_start: crate::machining2d::PassStart,
     },
     /// Helical thread milling (M2.4 C, reworked by #894): internal
     /// threads in the listed holes - or, `external`, on the listed

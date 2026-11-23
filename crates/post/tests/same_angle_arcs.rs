@@ -11,11 +11,13 @@
 //!
 //! Gate map (M4.4): covers assets/posts/carvera.cps,
 //! assets/posts/doosan-dnm.cps, assets/posts/fanuc.cps,
+//! assets/posts/fanuc-lathe.cps,
 //! assets/posts/grbl.cps, assets/posts/grblhal.cps, assets/posts/haas.cps,
 //! assets/posts/heidenhain.cps, assets/posts/heidenhain-klartext.cps,
-//! assets/posts/linuxcnc.cps, assets/posts/mach4.cps,
+//! assets/posts/linuxcnc.cps, assets/posts/mach3.cps, assets/posts/mach4.cps,
 //! assets/posts/mazak.cps, assets/posts/sinumerik.cps,
 //! assets/posts/tinyg.cps, assets/posts/tormach.cps,
+//! assets/posts/tormach-lathe.cps,
 //! camcraft_post::post::arc_guard, camcraft_post::post::engine.
 
 use camcraft_post::post::engine;
@@ -103,14 +105,40 @@ const INCH: Case = Case {
     centre: ("10160", "5080"),
 };
 
+/// The review witness of #3500 (mm, 3 decimals): a CW record about X10
+/// Y5.00098. The absolute centre rounds to X10. Y5.001, but the control
+/// adds the written I-0.011 J0. to the written start X10.011 Y5.: its
+/// centre is X10. Y5. The written end X10.01 Y5. is on the same ray.
+const MM_OFFSET: Case = Case {
+    unit: "mm",
+    start: ("10010.51", "5000.49"),
+    end: ("10010.475372320", "4999.996752949"),
+    centre: ("10000", "5000.98"),
+};
+
+/// The same in inch (4 decimals): the absolute centre rounds to X0.4
+/// Y0.2001; the written start X0.4011 Y0.2 plus I-0.0011 J0. gives X0.4
+/// Y0.2. The written end X0.401 Y0.2 is on the same ray (a CW sweep of
+/// 0.051 rad).
+const INCH_OFFSET: Case = Case {
+    unit: "inch",
+    start: ("10186.72", "5081.143"),
+    end: ("10186.645370", "5079.768811"),
+    centre: ("10160", "5081.905"),
+};
+
 /// A mill section that plunges at the case's start to Z 5.5, cuts the
 /// arc (or, for the reference, the straight feed to its end) and retracts.
 fn stream(c: &Case, arc: bool) -> String {
+    stream_dir(c, arc, "CCW")
+}
+
+fn stream_dir(c: &Case, arc: bool, dir: &str) -> String {
     let (sx, sy) = c.start;
     let (ex, ey) = c.end;
     let (cx, cy) = c.centre;
     let cut = if arc {
-        format!("Arc CCW X {ex} Y {ey} Z 5500 F 180000 I {cx} J {cy}\n")
+        format!("Arc {dir} X {ex} Y {ey} Z 5500 F 180000 I {cx} J {cy}\n")
     } else {
         format!("Feed X {ex} Y {ey} Z 5500 F 180000\n")
     };
@@ -202,6 +230,46 @@ fn every_post_writes_a_same_angle_arc_as_its_straight_move() {
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
+/// #3500 review: the guard reads the centre that the control computes, the
+/// written start plus the written I J increments, not the rounded absolute
+/// centre. Each mill post that writes increments, in each unit that it
+/// offers, posts the offset-centre witness exactly as the straight feed.
+/// The Heidenhain posts write an absolute centre (I J or CC): their
+/// written centre is the rounded absolute one, so this witness is not on
+/// one ray there. TinyG writes 4 decimals in mm: the mm witness is a
+/// visible arc there.
+#[test]
+fn a_same_angle_arc_about_the_written_incremental_centre_posts_as_its_straight_move() {
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for &stem in MILLS.iter().chain(["mach3"].iter()) {
+        if stem.starts_with("heidenhain") {
+            continue;
+        }
+        for unit in units(stem) {
+            if stem == "tinyg" && unit == "mm" {
+                continue;
+            }
+            let case = if unit == "inch" { &INCH_OFFSET } else { &MM_OFFSET };
+            let got = post(stem, &stream_dir(case, true, "CW"), unit);
+            let want = post(stem, &stream_dir(case, false, "CW"), unit);
+            checked += 1;
+            if !arc_blocks(&got, false).is_empty() {
+                failures.push(format!("{stem} {unit}: an arc block\n{got}"));
+            } else if got != want {
+                failures.push(format!("{stem} {unit}: output differs from the straight move\n--- got\n{got}--- want\n{want}"));
+            } else if !want.ends_with("warnings: []\n") {
+                failures.push(format!("{stem} {unit}: the reference warns\n{want}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    assert!(checked >= 20, "only {checked} post and unit pairs ran");
+    // The review's own blocks: Fanuc mm wrote G02 X10.01 Y5. Z5.5 I-0.011 J0.
+    let fanuc = post("fanuc", &stream_dir(&MM_OFFSET, true, "CW"), "mm");
+    assert!(fanuc.lines().any(|l| l.contains("G01") && l.contains("X10.01 Y5.")), "{fanuc}");
+}
+
 /// The rule itself: the written ends differ, but the written end is on the
 /// written start's ray from the written centre (or on the centre). A short
 /// record is a straight move; a long record (a turn of more than half a
@@ -217,7 +285,21 @@ fn arc_fate_reads_a_same_angle_short_arc_as_a_straight_move() {
             start: { X: s[0], Y: s[1], Z: 0 }, end: { X: e[0], Y: e[1], Z: 0 },
             center: { X: c[0], Y: c[1], Z: 0 } }, w);
         }
+        function inc(s, e, c, ccw, scale) {
+          return arcFateOf({ plane: "XY", ccw: ccw, rotary: false,
+            start: { X: s[0], Y: s[1], Z: 0 }, end: { X: e[0], Y: e[1], Z: 0 },
+            center: { X: c[0], Y: c[1], Z: 0 } },
+            function (k, v) { return w(k, (k === "X" ? scale : 1) * v); },
+            function (k, d) { return (k === "X" ? scale : 1) * _arcWordNum(w(k, d)); });
+        }
         function onOpen() {
+          // #3500: the centre is the written start plus the written I J.
+          writeln("offset-absolute " + fate([10.01051, 5.00049], [10.01047537232, 4.999996752949], [10, 5.00098], false));
+          writeln("offset-incremental " + inc([10.01051, 5.00049], [10.01047537232, 4.999996752949], [10, 5.00098], false, 1));
+          writeln("offset-incremental-ccw-is-long " + inc([10.01051, 5.00049], [10.01047537232, 4.999996752949], [10, 5.00098], true, 1));
+          writeln("incremental-normal " + inc([11, 5], [10, 6], [10, 5], true, 1));
+          // A diameter X (the lathes): the radius I is doubled to the X scale.
+          writeln("diameter-incremental " + inc([12.01026, -1], [12.01, -1.0004], [12, -1], false, 2));
           writeln("same-angle " + fate([10.01051, 5], [10.010498393, 5.000493788], [10, 5], true));
           writeln("same-angle-cw-is-long " + fate([10.01051, 5], [10.010498393, 5.000493788], [10, 5], false));
           writeln("end-on-centre " + fate([10.0006, 5], [10.00044, 5.00041], [10, 5], true));
@@ -229,6 +311,8 @@ fn arc_fate_reads_a_same_angle_short_arc_as_a_straight_move() {
     let out = engine::run(cps, &Value::Null, "").expect("the rule script runs");
     assert_eq!(
         out.program,
-        "same-angle linear\nsame-angle-cw-is-long arc\nend-on-centre linear\nopposite arc\nnormal arc\nstream-ray-is-full arc\n"
+        "offset-absolute arc\noffset-incremental linear\noffset-incremental-ccw-is-long arc\n\
+         incremental-normal arc\ndiameter-incremental linear\n\
+         same-angle linear\nsame-angle-cw-is-long arc\nend-on-centre linear\nopposite arc\nnormal arc\nstream-ray-is-full arc\n"
     );
 }
