@@ -56,6 +56,44 @@ recommended option while he sleeps), taken by the coordinator.**
    machine's reach inside the generator (the generator does not know the
    machine). A follow-up issue asks for an angular-range parameter.
 
+**Review rule: no cut of the single frame is lost (review of PR #3650).**
+The plane seam alone dropped cuts on a part that is not round. On a keyed
+bar (R 10, keyway walls at z = +-5, 6 mm ball), half A cut the lower
+keyway wall with its ball centre 2 mm under the axis plane, under the
+seam, and half B cannot see that wall: 52 centre samples that the
+single-frame path cut (stations 23.7..36.3 mm, at 347 degrees) were
+lost. The rule now:
+
+- A cut of half A under the seam stays where no kept cut of half B
+  stands within half a pass spacing at the ball centre ("the same
+  place"). The pass spacing is the stepover, or the scallop step
+  `sqrt(8 r tol)`, the larger.
+- A cut of half B over the seam (a wall that faces down, which A cannot
+  see) is added where no kept cut of A stands within half a pass
+  spacing.
+- So each place is cut once. On a round bar every A cut under the seam
+  has a B cut at the same place, and the output is the same as before.
+- A reach reading names the places no pass reaches. It uses a fixed
+  grid of at most 48 stations and 72 angles. A ray from the axis finds
+  the outermost surface. A place under Bottom is skipped. A place where
+  a ball cannot fit (a corner) is skipped. A place with no ball centre
+  within one pass spacing gets a note with its arc (degrees about the
+  axis, from the top of the laid bar toward its +y side) and its
+  stations (mm along the axis). Only a path with no such place says
+  "all the way round". The reading sees the outermost surface only: a
+  wall hidden behind other material along the radial is not read.
+- The test reference is the generator as it stood before the two halves
+  (`rotary/single_frame_tests.rs`, test only). On the keyed bar the new
+  path loses 0 samples and cuts no place twice.
+- An eccentric collar (a round section off the axis) was planned as a
+  second fixture. The axis fit refuses every variant that was tried
+  ("every axis fits this model equally"), so no such part reaches
+  Rotary Parallel. That case has no fixture; it is a gap in the
+  evidence.
+- If half B fails with an error other than `Empty` (a refusal of its
+  ladder), the whole operation is refused, also where the single-frame
+  path would post. The refusal is visible and names its reason.
+
 **Why.** A ball sphere clear of the model stays clear under a rigid
 rotation, and the radial pose keeps every ball centre. So each half is
 as safe as today's single run. The change stays in

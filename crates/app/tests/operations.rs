@@ -5963,13 +5963,25 @@ fn rotary_parallel_generates_radial_axes_and_verifies_clean() {
         .filter(|m| matches!(m.kind, MoveKind::Feed | MoveKind::Plunge))
         .filter(|m| !on_clearance(m))
         .collect();
+    let (mut over, mut under) = (0usize, 0usize);
     for m in &cuts {
-        let (a, b) = (low(m), low_b(m));
-        assert!(a >= -4.0 - 1e-9 || b >= -4.0 - 1e-9, "the raster sank below its Bottom plane in both halves: {a}, {b}: {m:?}");
-        if a < -4.0 - 1e-9 && m.kind == MoveKind::Feed {
-            assert!(m.to.z >= -4.0 - 0.1 - 1e-9, "a pass of the turned half touches under the Bottom: {m:?}");
+        // Over the axis plane only half A cuts: its own law, the old one.
+        if center(m).1 >= 0.0 {
+            assert!(low(m) >= -4.0 - 1e-9, "half A sank below its Bottom plane: {}: {m:?}", low(m));
+            over += 1;
+        } else {
+            // Under it, B's ladder reads its own Bottom (`low_b`, never
+            // under it there by construction); what bounds the cut is
+            // the contact: a posed tip on the bar is where the ball
+            // touches, and it is not under the Bottom (tolerance 0.1).
+            assert!(low_b(m) >= -4.0 - 1e-9, "half B sank below its Bottom plane: {}: {m:?}", low_b(m));
+            under += 1;
         }
+        // Every feed and plunge, of either half: the touch is not under
+        // the Bottom in world z.
+        assert!(m.to.z >= -4.0 - 0.1 - 1e-9, "a cut touches under the Bottom: {m:?}");
     }
+    assert!(over > 20 && under > 20, "both halves cut: {over} over the axis plane, {under} under it");
     // #2970: the passes go all the way round - every 30-degree sector
     // about the axis holds a cutting ball center out on the turned
     // surface (off the axis by more than the ball).

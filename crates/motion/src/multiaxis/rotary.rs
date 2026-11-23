@@ -60,7 +60,10 @@ use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
 
 mod flat;
+mod gaps;
 mod halves;
+#[cfg(test)]
+mod single_frame_tests;
 
 /// The stance boundary (sin 1 degree): near horizontal, contour
 /// uses explicit stations; near vertical, parallel refuses its raster.
@@ -180,14 +183,17 @@ pub fn rotary_parallel_over(
     let local_b = fb.local_facets(facets);
     let mut qb = stations(&local_b, p, &fb, &|h| h - ax.origin.z);
     (qb.ramp, qb.entry_ramp) = (false, false);
+    // The pass spacing the halves read their reach by: the stepover, or
+    // the scallop step of the ball at the tolerance, the larger.
+    let spacing = p.stepover.unwrap_or(0.0).max((8.0 * r * p.tolerance).max(0.0).sqrt());
     let half_a = finishing3d::swarf(&local, &q, 1.0, 0.0).map_err(|e| to_world(e, &f, &ax, c, r));
     let half_b = finishing3d::swarf(&local_b, &qb, 1.0, 0.0).map_err(|e| to_world(e, &fb, &ax, c, r));
     let base = match (half_a, half_b) {
-        (Ok(a), Ok(b)) => halves::both(&a, &b, &local, r, q.bottom_z, p.tolerance),
+        (Ok(a), Ok(b)) => halves::both(&a, &b, &local, r, spacing, q.bottom_z, p.tolerance),
         // A half with no surface under it (an open shell over one side
         // only) leaves the other half's whole cut, as before.
         (Ok(a), Err(GenError::Empty(_))) => a,
-        (Err(GenError::Empty(_)), Ok(b)) => halves::only_b(&b, r, q.bottom_z, p.tolerance),
+        (Err(GenError::Empty(_)), Ok(b)) => halves::only_b(&b, &local, r, spacing, q.bottom_z, p.tolerance),
         (Err(e), _) | (_, Err(e)) => return Err(e),
     };
     // #2343: a held end's face is inside the bar - the cut keeps to

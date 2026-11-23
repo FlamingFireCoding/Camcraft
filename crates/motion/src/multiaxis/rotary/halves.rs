@@ -16,40 +16,72 @@ use crate::cl::{Move, MoveKind, Toolpath};
 use crate::geometry::{Point3, Triangle};
 use crate::machining2d::ARC_FIT_TOL;
 
+use super::gaps::{self, Cover};
+
 /// Half A (`a`, planned in the laid frame over `local`) and half B
 /// (`b`, planned in that frame turned half a turn) as one base path in
-/// A's frame. The seam: A keeps the centers down to half a ball radius
-/// under the axis plane (its first ring past the equator), B only those
-/// strictly under A's lowest kept center on each side, read over the
-/// turned surface. Each seam pass is cut once, and no seam step is
-/// wider than a ring step of the ladder. B is held to the Bottom
-/// ([`over_bottom`]).
-pub(super) fn both(a: &Toolpath, b: &Toolpath, local: &[Triangle], r: f64, bottom: f64, tol: f64) -> Toolpath {
+/// A's frame.
+///
+/// The seam: A keeps the centers down to half a ball radius under the
+/// axis plane (its first ring past the equator), B those strictly under
+/// A's lowest kept center on each side, read over the turned surface.
+/// Each seam pass is cut once, and no seam step is wider than a ring
+/// step of the ladder.
+///
+/// Past the seam no cut is lost and none is made twice (#2970 review):
+/// a cut of A under the seam stays where no kept cut of B stands within
+/// the pass spacing `d` (a keyway floor B cannot see), and a cut of B
+/// over the seam is added where no kept cut of A stands within `d` (a
+/// wall that faces down, which A cannot see). B is held to the Bottom
+/// ([`over_bottom`]). The places no half reaches are named in the notes
+/// ([`gaps::unreached`]); only a path with none says it goes all the
+/// way round.
+pub(super) fn both(a: &Toolpath, b: &Toolpath, local: &[Triangle], r: f64, d: f64, bottom: f64, tol: f64) -> Toolpath {
     let (x0, x1, rho) = local.iter().flat_map(|t| [t.a, t.b, t.c]).fold(
         (f64::INFINITY, f64::NEG_INFINITY, 0.0f64),
         |(l, h, rho), p| (l.min(p.x), h.max(p.x), rho.max((p.y * p.y + p.z * p.z).sqrt())),
     );
     let seat = Seat { reach: 0.5 * rho, x0: x0 + r, x1: x1 - r };
-    let (a, lo) = upper(a, r, [-0.5 * r; 2], false, &seat);
+    let (_, lo) = upper(a, r, [-0.5 * r; 2], false, &seat);
     // B's side y >= 0 is A's y <= 0: the half turn swaps them.
-    let (b, _) = upper(b, r, [-lo[1], -lo[0]], true, &seat);
-    let b = over_bottom(&turned(&b, r), r, bottom, tol);
-    let under = b.moves.iter().any(|m| m.kind == MoveKind::Feed);
-    let mut path = joined(a, b);
-    if under {
-        path.notes.push(UNDER.into());
-    }
+    let (b_seam, _) = upper(b, r, [-lo[1], -lo[0]], true, &seat);
+    let b_seam = over_bottom(&turned(&b_seam, r), r, bottom, tol);
+    // "The same place": a centre within half a pass spacing.
+    let near_b = Cover::of(&b_seam, r, 0.5 * d);
+    let centre = move |t: Point3| Point3::new(t.x, t.y, t.z + r);
+    let lim = -0.5 * r - r;
+    let a = kept(a, &|t| t.z >= lim || !near_b.near(centre(t)), d);
+    let near_a = Cover::of(&a, r, 0.5 * d);
+    // B's cuts the seam set aside (in A's frame: centres at or over A's
+    // lowest on their side), kept where A cuts nothing near.
+    let b_extra = kept(&turned(b, r), &|t| t.z + r >= lo[side(t)] && !near_a.near(centre(t)), d);
+    let b_extra = over_bottom(&b_extra, r, bottom, tol);
+    let under = [&b_seam, &b_extra].iter().any(|p| p.moves.iter().any(|m| m.kind == MoveKind::Feed));
+    let mut path = joined(joined(a, b_seam), b_extra);
+    finish_notes(&mut path, local, r, d, bottom, tol, under);
     path
 }
 
 /// Half B alone (half A found no surface): turned into A's frame and
-/// held to the Bottom, with the note when it cuts.
-pub(super) fn only_b(b: &Toolpath, r: f64, bottom: f64, tol: f64) -> Toolpath {
+/// held to the Bottom, with the reach notes.
+pub(super) fn only_b(b: &Toolpath, local: &[Triangle], r: f64, d: f64, bottom: f64, tol: f64) -> Toolpath {
     let mut path = over_bottom(&turned(b, r), r, bottom, tol);
-    if path.moves.iter().any(|m| m.kind == MoveKind::Feed) {
-        path.notes.push(UNDER.into());
-    }
+    let under = path.moves.iter().any(|m| m.kind == MoveKind::Feed);
+    finish_notes(&mut path, local, r, d, bottom, tol, under);
     path
+}
+
+/// The reach notes: each arc no pass reaches, or - when the path cuts
+/// under the axis and leaves no such arc - the full-turn note.
+fn finish_notes(path: &mut Toolpath, local: &[Triangle], r: f64, d: f64, bottom: f64, tol: f64, under: bool) {
+    let gaps = gaps::unreached(local, &Cover::of(path, r, d + tol), r, bottom, tol);
+    if gaps.is_empty() {
+        if under {
+            path.notes.push(UNDER.into());
+        }
+    } else {
+        path.notes.extend(gaps);
+    }
 }
 
 /// The note a path that cuts under the axis carries: the machine must
@@ -106,23 +138,25 @@ fn upper(base: &Toolpath, r: f64, floor: Floor, strict: bool, seat: &Seat) -> (T
             }
         }
     }
-    (kept(base, &keeps), lo)
+    (kept(base, &keeps, f64::INFINITY), lo)
 }
 
-fn chords(m: &Move) -> Vec<(Point3, Point3)> {
+pub(super) fn chords(m: &Move) -> Vec<(Point3, Point3)> {
     match m.arc {
         None => vec![(m.from, m.to)],
         Some(_) => m.segments3(ARC_FIT_TOL),
     }
 }
 
-/// `base` with every cutting move kept where `keeps` holds. Links pass
-/// through: the radial relink rebuilds them from the cut runs. Where
-/// the cut leaves the kept region and comes back, a plunge marker
-/// stands between the two pieces, so the relink reads two runs and
-/// links them over the retract cylinder, never with a feed across the
-/// part.
-fn kept(base: &Toolpath, keeps: &dyn Fn(Point3) -> bool) -> Toolpath {
+/// `base` with every cutting move kept where `keeps` holds, read every
+/// `step` along each chord (a chord the predicate crosses more than
+/// once is split there; one crossing is found on the whole chord, as a
+/// plane cut is). Links pass through: the radial relink rebuilds them
+/// from the cut runs. Where the cut leaves the kept region and comes
+/// back, a plunge marker stands between the two pieces, so the relink
+/// reads two runs and links them over the retract cylinder, never with
+/// a feed across the part.
+fn kept(base: &Toolpath, keeps: &dyn Fn(Point3) -> bool, step: f64) -> Toolpath {
     let mut out: Vec<Move> = Vec::with_capacity(base.moves.len());
     let mut cut_end: Option<Point3> = None;
     for m in &base.moves {
@@ -131,12 +165,20 @@ fn kept(base: &Toolpath, keeps: &dyn Fn(Point3) -> bool) -> Toolpath {
             cut_end = None;
             continue;
         }
-        let cs = chords(m);
+        let cs: Vec<(Point3, Point3)> = chords(m).into_iter().flat_map(|(a, b)| split(a, b, keeps, step)).collect();
         let whole = cs.iter().all(|(a, b)| keeps(*a) && keeps(*b));
         let pieces: Vec<(Point3, Point3)> = if whole {
             vec![(m.from, m.to)]
         } else {
-            cs.into_iter().filter_map(|(a, b)| part(a, b, keeps)).collect()
+            let mut ps: Vec<(Point3, Point3)> = Vec::new();
+            for (a, b) in cs.into_iter().filter_map(|(a, b)| part(a, b, keeps)) {
+                // Pieces of one chord that meet ride as one.
+                match ps.last_mut() {
+                    Some(last) if last.1 == a && collinear(last.0, a, b) => last.1 = b,
+                    _ => ps.push((a, b)),
+                }
+            }
+            ps
         };
         for (a, b) in pieces {
             if let Some(e) = cut_end
@@ -151,6 +193,32 @@ fn kept(base: &Toolpath, keeps: &dyn Fn(Point3) -> bool) -> Toolpath {
     let mut path = Toolpath::new(out);
     path.notes = base.notes.clone();
     path
+}
+
+/// The chord `a..b` as itself when `keeps` changes at most once along
+/// it (read every `step`), else as sub-chords of about `step`.
+fn split(a: Point3, b: Point3, keeps: &dyn Fn(Point3) -> bool, step: f64) -> Vec<(Point3, Point3)> {
+    let len = (b - a).dot(b - a).sqrt();
+    if !(len.is_finite() && step.is_finite() && step > 0.0 && len > step) {
+        return vec![(a, b)];
+    }
+    let n = ((len / step).ceil() as usize).clamp(1, 4096);
+    let at = |i: usize| {
+        let t = i as f64 / n as f64;
+        Point3::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
+    };
+    let flips = (0..n).filter(|i| keeps(at(*i)) != keeps(at(i + 1))).count();
+    if flips <= 1 {
+        return vec![(a, b)];
+    }
+    (0..n).map(|i| (if i == 0 { a } else { at(i) }, if i + 1 == n { b } else { at(i + 1) })).collect()
+}
+
+/// Whether `a`, `b`, `c` run on one line, `b` between the two.
+fn collinear(a: Point3, b: Point3, c: Point3) -> bool {
+    let (u, v) = (b - a, c - b);
+    let x = u.cross(v);
+    x.dot(x) <= 1e-18 * u.dot(u).max(1e-30) * v.dot(v).max(1e-30) && u.dot(v) > 0.0
 }
 
 /// The part of the segment `a..b` that `keeps`, when one end is kept
@@ -197,7 +265,7 @@ fn over_bottom(base: &Toolpath, r: f64, bottom: f64, tol: f64) -> Toolpath {
         let contact = if rho > 1e-12 { cz - r * cz / rho } else { cz };
         contact >= bottom - tol
     };
-    kept(base, &keeps)
+    kept(base, &keeps, f64::INFINITY)
 }
 
 /// Half B's path in half A's frame: the frames share the axis line
