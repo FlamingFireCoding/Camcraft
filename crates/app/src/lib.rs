@@ -37,6 +37,7 @@ pub use camcraft_motion::finishing3d;
 pub use camcraft_geometry::geo2d;
 pub mod geometry;
 pub use camcraft_motion::links;
+pub use camcraft_motion::path_picks;
 pub use camcraft_motion::load;
 pub use camcraft_motion::machining2d;
 pub use camcraft_motion::machining3d;
@@ -62,6 +63,8 @@ pub mod pick;
 pub use camcraft_post::post;
 pub mod path_sig;
 pub mod posting;
+// #2950: the browser's own .mch and .cps files, kept for the session.
+pub use camcraft_post::session_files;
 // #530: the op-family door at post.
 mod posting_family;
 /// Which spindle a lathe post turns for a section, and the door that
@@ -70,6 +73,8 @@ pub mod lathe_voice;
 // #155: standalone Pause / Home entries in the operation list.
 pub mod program_entry;
 pub use camcraft_motion::plasma;
+// #1883: the waterjet profile and the 2D sheet kernel it shares.
+pub use camcraft_motion::{sheet, waterjet};
 pub use camcraft_motion::wire_edm;
 pub use camcraft_motion::probing;
 // #541: sinker EDM burn to depth.
@@ -161,6 +166,7 @@ pub mod tool_list;
 pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.
 pub mod tool_numbers;
+mod tool_reservations;
 pub use camcraft_tools::tools;
 // #894: the thread mills' form constants, sanity law and pitch door.
 pub use camcraft_tools::thread_mill;
