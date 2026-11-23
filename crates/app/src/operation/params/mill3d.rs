@@ -89,6 +89,7 @@ impl OpParams {
             }
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -193,6 +194,12 @@ impl OpParams {
                         crate::finishing3d::GapLink::Straight => 2,
                         crate::finishing3d::GapLink::Jump => 1,
                     });
+                }
+                // Keep the old stamp for the default direction and for
+                // patterns whose paths do not depend on this angle.
+                if *pattern == crate::finishing3d::FinishPattern::Parallel && *direction_angle != 0.0 {
+                    h.write_u8(0x50);
+                    w(h, *direction_angle);
                 }
             }
             // The deburr ride digests the one authored number, the

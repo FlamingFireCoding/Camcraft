@@ -218,7 +218,7 @@ pub(super) fn build_3d_world() -> World {
         links: Links::ROUGH3D, rest_rough: false, optimal_load: 0.25, feed_opt: false, shell: false, method: camcraft_app::machining2d::AdaptiveMethod::Spiral,
     });
     create_and_gen(&world, &mut h, "3D Finish1", "BN-0600", SrcRef::Entity("Mold".into()), OpParams::Finish3D {
-        pattern: FinishPattern::Parallel, stepover: Some(2.0), tolerance: 0.08,
+        pattern: FinishPattern::Parallel, direction_angle: 0.0, stepover: Some(2.0), tolerance: 0.08,
         clearance_z: top_clr, retract_z: Some(ret_z),
         top_z: Height::of(HeightReference::TopOfModel, 0.0),
         bottom_z: Height::of(HeightReference::BottomOfModel, 0.0),

@@ -647,6 +647,9 @@ pub enum ParamsDto {
         /// Absent means Waterline (the v15 truth).
         #[serde(default)]
         pattern: FinishPatternDto,
+        /// Absent means 0 degrees, along +X.
+        #[serde(default)]
+        direction_angle: f64,
         /// Absent follows the stepover cos-law from the tolerance.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stepover: Option<f64>,

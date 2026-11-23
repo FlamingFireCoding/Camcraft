@@ -567,6 +567,7 @@ impl ParamsDto {
             },
             OpParams::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -586,6 +587,7 @@ impl ParamsDto {
                 gap_link,
             } => ParamsDto::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),
@@ -1897,6 +1899,7 @@ impl ParamsDto {
             },
             ParamsDto::Finish3D {
                 pattern,
+                direction_angle,
                 stepover,
                 tolerance,
                 clearance_z,
@@ -1916,6 +1919,7 @@ impl ParamsDto {
                 gap_link,
             } => OpParams::Finish3D {
                 pattern: (*pattern).into(),
+                direction_angle: *direction_angle,
                 stepover: *stepover,
                 tolerance: *tolerance,
                 clearance_z: (*clearance_z).into(),

@@ -1979,6 +1979,7 @@ fn origin_page_shows_the_anchor_grid_and_arms_pick_mode() {
 /// including the View3D readback and the fallback-adapter law).
 #[test]
 fn headless_run_succeeds() {
+    let _gpu = super::gpu_test_lock::gpu_guard(); // #3589
     headless::run(None).map_err(|err| panic!("egui headless run failed: {err}")).ok();
 }
 

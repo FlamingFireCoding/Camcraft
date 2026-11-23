@@ -128,6 +128,7 @@ fn rough(strategy: PocketStrategy) -> OpParams {
 fn finish() -> OpParams {
     OpParams::Finish3D {
         pattern: FinishPattern::Waterline,
+        direction_angle: 0.0,
         stepover: None,
         tolerance: 0.1,
         clearance_z: Height::fixed(16.0),
