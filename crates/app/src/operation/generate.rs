@@ -3689,6 +3689,10 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                 // about the spindle its kernel fitted.
                 lathe_axis: super::turning_axis::lathe_axis_of(&params, &geom, &material.facets),
                 corner_reliefs: &relief_zones,
+                // #3679: the plunge depth law reads the op's own
+                // stepdown; None keeps the kinds that cut no levels
+                // silent.
+                plunge_stepdown: crate::cutting_rows::plunge_stepdown(&params),
             };
             // The picks' touching bodies, read as their union
             // (M13.11); empty for one body.
@@ -4087,6 +4091,11 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
                     // No envelope runs in a plane's frame (finish_tol None).
                     lathe_axis: None,
                     corner_reliefs: &relief_zones,
+                    // #3679: the plunge law reads world-Z axial descents;
+                    // a tilted plane's descents answer to its own entry
+                    // law, not to the column - so the law stays silent
+                    // here.
+                    plunge_stepdown: None,
                 },
                 &m_gen.bodies,
             );

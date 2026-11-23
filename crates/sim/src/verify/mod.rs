@@ -105,6 +105,17 @@
 //!   [`crate::fixture::FIXTURE_HIT_TOL`]
 //!   of a face is silent (mating surfaces touch by design); everything
 //!   else errs toward HIT.
+//! - [`Warning::PlungeTooDeep`] - a feed plunge (d3, #3679) whose disc
+//!   meets stock that the cuts before it did not clear, and whose
+//!   cutter reaches deeper below that stock's surface than one
+//!   stepdown of the operation. The floor is the rest model's own
+//!   `surface_before` under the full disc (a dive beside a tab reads
+//!   the tab's stock top, not the level its centre passed through),
+//!   each sample judged at the tool's height there, the worst sample
+//!   named once. Advisory by the #3525 pattern: the risk is the tool
+//!   load, not a gouge or a collision, so the finding names the dive
+//!   and the post is not held. [`VerifyContext::plunge_stepdown`] gates
+//!   it: `None` keeps every kind that cuts no levels silent.
 //! - [`Warning::Envelope`] - the measured verdict of a 3-D finish
 //!   (`Mode::Envelope`, law (f) below): the swept ball envelope cuts
 //!   below, or leaves above, the model surface by more than
@@ -228,6 +239,8 @@ mod turn_hidden;
 mod types;
 // #1444: the undercut cutters' Z-move and neck law.
 mod undercut;
+// #3679: the feed plunge depth law (d3).
+mod plunge_depth;
 mod upright;
 mod workholding;
 mod corner_relief;

@@ -309,6 +309,9 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // #3525: a cut deeper than the flute length - the cause of
             // the shank findings after it, its own line (advisory).
             Warning::FluteShort { .. } => (226, false),
+            // #3679: a feed plunge deeper than one stepdown below the
+            // uncut floor - a tool-load note, its own line (advisory).
+            Warning::PlungeTooDeep { .. } => (227, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }
@@ -336,7 +339,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             | Warning::SinkerFinishOrder { at, .. }
             | Warning::DrillUndersize { at, .. }
             | Warning::StrategyFallback { at, .. }
-            | Warning::FluteShort { at, .. } => *at,
+            | Warning::FluteShort { at, .. }
+            | Warning::PlungeTooDeep { at, .. } => *at,
         }
     }
     let mut lines: Vec<(String, Option<usize>)> = Vec::new();
