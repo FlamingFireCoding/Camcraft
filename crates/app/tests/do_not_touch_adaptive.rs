@@ -1,6 +1,6 @@
 //! #3346: "Do not touch" on 2D Adaptive operations, through MCP and the post.
 //! Gate map (M4.4): covers app::operation, app::operation::generate, app::mcp,
-//! motion::machining2d::pocket_avoid, motion::machining2d::adaptive_troch_avoid.
+//! motion::machining2d::adaptive_avoid.
 
 mod common;
 mod do_not_touch_support;
