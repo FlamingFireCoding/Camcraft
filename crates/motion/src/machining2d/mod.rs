@@ -81,6 +81,7 @@ mod lead_fit;
 mod lead_seam;
 mod ladder_links;
 mod level_order;
+mod level_ramp_entry;
 mod level_rings;
 mod levels;
 mod microlift;
@@ -97,6 +98,7 @@ mod predrilled;
 mod adaptive;
 mod adaptive_method;
 mod adaptive_troch;
+mod adaptive_avoid;
 mod adaptive_troch_clean;
 mod adaptive_troch_lanes;
 mod adaptive_troch_level;
@@ -113,6 +115,7 @@ mod tab_clear;
 mod tab_kerf;
 mod slots;
 mod slot_band;
+mod trace_avoid;
 mod slot_ends;
 mod slot_lap;
 mod slot_room;
@@ -192,6 +195,7 @@ pub use rest_prior_adaptive::{rest_adaptive_previous, REST_ADAPTIVE_ENTERED, RES
 pub use ring::{on_boundary, ring_is_circular};
 pub use slot_band::slot_centre_band;
 pub use slots::{chord_clears, slot, trace, SlotParams, TraceParams};
+pub use trace_avoid::trace_avoid;
 pub use slot_ends::extended_ends as slot_extended_ends;
 pub use slot_room::{SlotBound, SlotFit, FIT_TOL as SLOT_FIT_TOL};
 pub use undercut::{undercut, undercut_band, undercut_station, UndercutParams, MAX_BULGE as UNDERCUT_MAX_BULGE};
@@ -201,6 +205,7 @@ pub use adaptive::{rest_adaptive, rest_levels, RestStock, StockFloor, REST_STOCK
 pub use adaptive_method::AdaptiveMethod;
 pub use pocket_hsm_start::trochoidal_pass_start_refusal;
 pub use adaptive_troch::{AdaptiveTrochParams, adaptive_trochoidal, adaptive_trochoidal_with};
+pub use adaptive_avoid::{adaptive_spiral_avoid, adaptive_spiral_avoid_on, adaptive_trochoidal_avoid};
 pub use trochoid_air::lifted_cut;
 pub use trochoid_slot::{
     plan_trochoidal_slot, trochoidal_slot, TrochoidParams, TrochoidPlan, TrochoidReturn, DEFAULT_MAX_ENGAGEMENT,

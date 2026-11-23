@@ -230,7 +230,10 @@ fn pocket3d_do_not_touch_keeps_clear_raises_links_and_blocks_impossible_cut() {
         "picks": [{ "model": "tower", "id": tower_top_face }]
     }));
     assert!(
-        unsup.contains("2D Pocket") && unsup.contains("2D Offset") && unsup.contains("3D Pocket"),
+        unsup.contains("2D Pocket")
+            && unsup.contains("2D Offset")
+            && unsup.contains("3D Pocket")
+            && unsup.contains("Engrave"),
         "unsupported msg: {unsup}"
     );
 

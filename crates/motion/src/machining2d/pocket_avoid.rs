@@ -181,7 +181,7 @@ pub(super) fn pocket_avoid_over(
             blocked_levels.push(z);
             continue;
         }
-        let Some((passes, actual, room, joins, links_center)) =
+        let Some((passes, actual, room, joins, links_center, ramp_starts)) =
             plan_avoid_level(&src, &level_center, p, strategy, z, &mut notes)?
         else {
             blocked_levels.push(z);
@@ -247,7 +247,8 @@ pub(super) fn pocket_avoid_over(
             .with_microlift(joins)
             .with_holes(holes)
             .with_solid_restart()
-            .with_cleared_links(cleared_links);
+            .with_cleared_links(cleared_links)
+            .with_ramp_starts(ramp_starts);
         let cert_entry = room.as_ref().map(|rm| Cert::Region(&rm.tess));
         let cert_center = Cert::Region(&level_center);
         let cert_links = Cert::Region(&links_center);

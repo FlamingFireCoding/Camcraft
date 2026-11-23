@@ -1,4 +1,4 @@
-//! Structural UI checks for #2055: Geometry tab -> Boundaries ->
+//! Structural UI checks for #2055 and #3346: Geometry tab -> Boundaries ->
 //! "Do not touch" controls, rows with remove buttons, Apply/Undo, and viewport highlight.
 //! Provenance: our own tests over our own shell; no vendor material.
 //! Gate map (M4.4): covers ui::egui_app::boundary, ui::avoid_viz, ui::boundary_draft.
@@ -8,7 +8,7 @@ use camcraft_app::commands::{AddTool, ImportModel};
 use camcraft_app::geometry::{Point3, cube};
 use camcraft_app::operation::{FeatureSel, GeoSel, OpType, SrcRef, retype_params};
 
-fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel) {
+pub(super) fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel) {
     let part = ImportModel::from_mesh("block", cube(Point3::new(0.0, 0.0, 0.0), Point3::new(30.0, 30.0, 15.0)));
     st.history.execute(&st.world, part);
     let feats = camcraft_app::model::find_by_name(&st.world, "block")
@@ -51,7 +51,7 @@ fn seed_part_and_offset(st: &mut State, kind: OpType) -> (GeoSel, GeoSel, GeoSel
     (face_top, face_other, edge)
 }
 
-fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
+pub(super) fn expand_boundary(h: &mut Harness<'static, ShellUi>) {
     let rect = h.get_by_label("Boundary").rect();
     let p = egui::pos2(rect.left() - 10.0, rect.center().y);
     h.input_mut().events.push(Event::PointerMoved(p));
@@ -179,7 +179,7 @@ fn unsupported_op_shows_do_not_touch_note_without_pick_button() {
     h.run_steps(3);
     expand_boundary(&mut h);
     assert!(h
-        .query_by_label_contains("2D Pocket, 2D Offset, 3D Pocket, Face, Trace and 3D Finish")
+        .query_by_label_contains("2D Pocket, Trace, 2D Offset, 2D Adaptive, 3D Pocket, Face, 3D Finish and Engrave")
         .is_some());
     assert!(h.query_by_label("Pick protected").is_none());
 }
@@ -214,6 +214,25 @@ fn face_op_shows_pick_protected_button() {
     expand_boundary(&mut h);
     assert!(h.query_by_label("Pick protected").is_some());
     assert!(h.query_by_label_contains("only so far").is_none());
+}
+
+#[test]
+fn adaptive2d_shows_the_pick_protected_button_and_no_unsupported_note() {
+    let _g = snapshot_guard();
+    let mut h = Harness::builder()
+        .with_size(Vec2::new(1400.0, 1100.0))
+        .build_ui_state(frame, ShellUi::seeded());
+    h.run_steps(2);
+    {
+        let st = &mut h.state_mut().state;
+        seed_part_and_offset(st, OpType::Adaptive2D);
+    }
+    h.run_steps(3);
+    expand_boundary(&mut h);
+    assert!(h.query_by_label_contains("is supported on").is_none(), "2D Adaptive supports Do not touch (#3346)");
+    h.get_by_label("Pick protected").click();
+    h.run_steps(2);
+    assert_eq!(h.state().state.boundary_pick, Some(crate::state::BoundaryPick::DoNotTouch));
 }
 
 #[test]

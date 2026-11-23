@@ -48,9 +48,13 @@ mod report_scrub;
 mod status_alert;
 
 mod stock_info;
+mod browser_open;
 mod donate;
 // #2384: the Home button and the recent projects start page.
 pub(crate) mod home;
+// #2428: top-band Settings dropdown and startup update-available notice.
+mod settings_drop;
+mod update_notice;
 mod machine_page;
 mod tool_list_page;
 mod stock_page;
@@ -208,6 +212,7 @@ mod mill2d_page;
 mod rest_pocket_page;
 mod mill3d_page;
 mod multiaxis_page;
+mod multiaxis_deburr_page;
 mod op_page;
 // #144: macOS Cmd+Q / app-menu Quit routed through the guarded Quit.
 #[cfg(not(target_arch = "wasm32"))]

@@ -115,7 +115,7 @@ pub fn check_stream(machine: &super::Machine, text: &str) -> Result<(), String> 
             }
             Record::Move(_) | Record::Cycle(_) | Record::Thread(Some(_))
             | Record::Touch(_) | Record::Retreat(_) | Record::Guard(_)
-            | Record::Probe { .. } | Record::Found(_) | Record::Torch(_) => {
+            | Record::Probe { .. } | Record::Found(_) | Record::Torch(_) | Record::Jet(_) => {
                 if tool.is_none() {
                     return Err("TOOL selector is not stated; declare TOOL before motion on a machine with reserved tools".into());
                 }
@@ -125,7 +125,7 @@ pub fn check_stream(machine: &super::Machine, text: &str) -> Result<(), String> 
             }
             Record::Param { .. } | Record::Warn { .. } | Record::Part { .. }
             | Record::Transfer { .. } | Record::Comp { .. } | Record::Thread(None)
-            | Record::Plasma(_) => {}
+            | Record::Plasma(_) | Record::Waterjet(_) => {}
         }
     }
     if tool_pending || in_section {

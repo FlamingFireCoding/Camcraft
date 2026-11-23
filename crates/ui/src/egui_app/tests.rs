@@ -137,6 +137,7 @@ mod catalog_filters;
 mod cycle_combo;
 mod holes_break_through;
 mod holes_fine_bore;
+mod ma_deburr_page;
 mod radial_step_field;
 mod auto_input_manual;
 // #1509: 2D Adaptive's Method choice on the Passes tab.
@@ -189,6 +190,8 @@ mod setup_eye;
 mod program_entry;
 // #2055: "Do not touch" protected faces/edges in Boundaries.
 mod do_not_touch;
+// #3349: Engrave takes "Do not touch" protected faces/edges.
+mod do_not_touch_engrave;
 // #3335: real viewport clicks into the "Do not touch" group.
 mod do_not_touch_click;
 // #371: the tool editor's Body section.
@@ -216,6 +219,8 @@ mod theme_door;
 mod recent_door;
 // #2384: the Home button and the recent projects start page.
 mod home_page;
+// #2428: startup update check, Settings dropdown toggle, and title-bar notice.
+mod update_check;
 // #1431: the browser build's Save, Save As and Post as downloads; the rest refused by name.
 mod browser_files;
 mod browser_delete;
