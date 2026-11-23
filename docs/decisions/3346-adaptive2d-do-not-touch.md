@@ -16,6 +16,11 @@ two methods:
   - **Trochoidal** (`adaptive_trochoidal_avoid`) calls the plain planner
     with the reduced area (`trochoidal_inside`). Its move check
     (`check_path`) reads the reduced area.
+- **Pass starts at** (#3355) is read on the protected Spiral path too
+  (`adaptive_spiral_avoid_on`): the plan takes the `StartSide` over the
+  area that the keep-out leaves, as the plain planner takes it over the
+  full area. The Trochoidal method still refuses Inside and Outside by
+  name before the keep-out is built.
 - Rapid links are lifted over the items with `elevate_rapid_links`. A link
   that cannot clear them refuses the operation.
 - A corner relief that enters the keep-out refuses the operation, as on
