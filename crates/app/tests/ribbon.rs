@@ -64,6 +64,8 @@ fn family_is_derived_not_forked() {
             Section::WireEdm => Family::WireEdm,
             // #541: the Sinker section is the sinker family's.
             Section::Sinker => Family::Sinker,
+            // #1883: the Waterjet section is the waterjet family's.
+            Section::Waterjet => Family::Waterjet,
             _ => Family::Mill,
         };
         assert_eq!(k.family(), want, "row {i} ({}) family drifted", k.label);
@@ -320,7 +322,9 @@ fn the_probe_appends_its_id_and_lists_in_drilling() {
     assert_eq!(KindInfo::ALL[44].ty, operation::OpType::SlotUndercut);
     // #1443 appended the V-carve behind it (45).
     assert_eq!(KindInfo::ALL[45].ty, operation::OpType::VCarve);
-    // #1894 appended the multi-axis deburr behind it (46).
+    // #1883 appended the waterjet profile behind it (46).
+    assert_eq!(KindInfo::ALL[46].ty, operation::OpType::WaterjetProfile);
+    // #1894 appended the multi-axis deburr behind it (47).
     assert_eq!(KindInfo::ALL[KIND_COUNT - 1].ty, operation::OpType::MultiAxisDeburr);
     assert_eq!(KindInfo::ALL[13].ty, operation::OpType::Pocket3D, "Pocket3D keeps id 13");
     assert_eq!(KindInfo::ALL[37].ty, operation::OpType::BoringTurning, "the turning tail keeps 37");
@@ -371,11 +375,11 @@ fn a_pin_is_a_command_undo_restores_the_previous_pins() {
 #[test]
 fn the_multiaxis_deburr_appends_its_id_and_lists_in_multiaxis() {
     // #1894: stored kind ids never move - the multi-axis deburr takes the
-    // next id behind the V-carve, and the menu shows it in the
+    // next id behind the waterjet profile, and the menu shows it in the
     // multi-axis section, behind the drive-curve contour.
-    assert_eq!(KindInfo::ALL[46].ty, operation::OpType::MultiAxisDeburr);
-    assert_eq!(operation::OpType::MultiAxisDeburr.ordinal(), 46);
-    assert_eq!(KindInfo::ALL[46].section, Section::MultiAxis);
+    assert_eq!(KindInfo::ALL[47].ty, operation::OpType::MultiAxisDeburr);
+    assert_eq!(operation::OpType::MultiAxisDeburr.ordinal(), 47);
+    assert_eq!(KindInfo::ALL[47].section, Section::MultiAxis);
     assert_eq!(KindInfo::ALL[15].ty, operation::OpType::Deburr, "the 3D Deburr keeps id 15");
     let multi: Vec<operation::OpType> = Section::MultiAxis.kinds().into_iter().map(|i| KindInfo::ALL[i].ty).collect();
     assert_eq!(multi.last(), Some(&operation::OpType::MultiAxisDeburr), "{multi:?}");

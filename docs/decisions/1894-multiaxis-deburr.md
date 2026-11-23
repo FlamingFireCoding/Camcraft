@@ -1,7 +1,7 @@
 ## #1894 - Multi-Axis Deburr: a tilted cone flank on the chamfer plane
 
 **Decided.** A new kind, `OpType::MultiAxisDeburr`, is appended at
-ordinal 46 in `Section::MultiAxis`. It has every field of the 3D Deburr
+ordinal 47 in `Section::MultiAxis`. It has every field of the 3D Deburr
 and five more: `axis_mode` (`Axis5` or `Axis4`), `lead_deg`, `lag_deg`,
 `max_tilt_deg` and `shank_avoid`.
 
@@ -74,10 +74,10 @@ the corner, not a chamfer.
   machine whose rotary is about Y needs a follow-up.
 - A shared icon: the icon table needs one glyph for each kind, so the
   kind has its own original glyph (`op-multiaxis-deburr`).
-- Overlap with PR #3058 (Waterjet): it adds a kind at a stale ordinal 44.
+- Overlap with PR #3058 (Waterjet): it took ordinal 46 first; this PR merged second and moved to 47.
   Whichever PR merges second takes the next free ordinal.
 
-**Cost to change.** The project tag `multi_axis_deburr` and ordinal 46
+**Cost to change.** The project tag `multi_axis_deburr` and ordinal 47
 are file contract. The pose law and the link moves are kernel-only.
 
 **Not exercised.** The column stock sim does not model posed moves; it

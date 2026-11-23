@@ -75,9 +75,17 @@ fn modules(text: &str) -> Result<(Vec<String>, Vec<Module>), String> {
 
 /// Actual declared module files, not every .rs helper lying next to the suite.
 pub fn sources(entry: &Path) -> Result<Vec<Source>, String> {
+    Ok(sources_and_missing(entry)?.0)
+}
+
+/// [`sources`], with the count of declared `mod x;` children whose file is absent (a cfg-gated module
+/// can be). A caller that must not drop a suite by accident (`plan::may_run_ignored`, #3186) treats a
+/// missing child as unknown text.
+pub fn sources_and_missing(entry: &Path) -> Result<(Vec<Source>, usize), String> {
     let mut out = Vec::new();
-    visit(entry, "", true, &mut Vec::new(), &mut out)?;
-    Ok(out)
+    let mut missing = 0;
+    visit(entry, "", true, &mut Vec::new(), &mut out, &mut missing)?;
+    Ok((out, missing))
 }
 
 fn visit(
@@ -86,6 +94,7 @@ fn visit(
     inherited_precision: bool,
     active: &mut Vec<PathBuf>,
     out: &mut Vec<Source>,
+    missing: &mut usize,
 ) -> Result<(), String> {
     if active.len() >= 64 || active.iter().any(|p| p == file) {
         return Err(format!(
@@ -152,7 +161,9 @@ fn visit(
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
                 .join("::");
-            visit(&child, &name, precise, active, out)?;
+            visit(&child, &name, precise, active, out, missing)?;
+        } else {
+            *missing = missing.saturating_add(1);
         }
     }
     active.pop();

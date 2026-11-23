@@ -381,8 +381,9 @@ pub fn serialize(records: &[Record]) -> String {
                     .abc
                     .map(|[a, b, c]| format!(" A {} B {} C {}", q(a), q(b), q(c)))
                     .unwrap_or_default();
-                // #3442: a short arc whose ends round to one micrometre
-                // is written as the straight move it is on the lattice.
+                // #3442, #3474: a short arc whose ends round to one
+                // micrometre, or to one ray from the rounded centre, is
+                // written as the straight move it is on the lattice.
                 match m.center.filter(|_| !short) {
                     // The center words name the plane (M11.2 A): I J
                     // is XY - byte-identical to every pre-M11.2
