@@ -353,13 +353,13 @@ pub fn collect_job(world: &World, op: &Operation, op_name: &str) -> Result<GenJo
             )
         }
         // #2033: a 2D Pocket whose rest area is read from the previous
-        // operations takes the same grid. The stock must be established:
+        // operations takes the same grid (#1446: a 2D Adaptive too). The stock must be established:
         // a tilted plane, or an earlier operation without a current
         // toolpath, is refused by name. Declared material past a carried
         // grid is no grid: the whole pocket stands.
         p if super::rest_op::reads_previous_ops(p) => {
             if frame.is_some() {
-                return Err(GenError::Invalid(format!("{op_name}: {}", super::rest_op::REST_PREVIOUS_TILTED)));
+                return Err(GenError::Invalid(format!("{op_name}: {}", super::rest_op::tilted_refusal(p))));
             }
             if let Some(why) = super::rest_op::previous_ops_refusal(world, op_name, setup) {
                 return Err(GenError::Invalid(format!("{op_name}: {why}")));

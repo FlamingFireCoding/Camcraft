@@ -401,7 +401,7 @@ fn a_parting_op_ahead_does_not_credit_the_lathe_end_face() {
         bar_advance: 0.0,
         bar_unload: false,
         bar_transfer: false,
-        inspect_tol: 0.0,
+        inspect_tol: 0.0, kerf: Default::default(),
     };
     create(&world, &mut h, "Op1", "GT-0300", "bar", part);
     generate(&world, &mut h, "Op1").expect("the parting generates");

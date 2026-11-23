@@ -825,6 +825,7 @@ fn seed_adaptive2d(c: &Carried) -> OpParams {
         optimal_load: crate::load::DEFAULT_OPTIMAL_LOAD,
         method: crate::machining2d::AdaptiveMethod::Spiral,
         troch: crate::machining2d::AdaptiveTrochParams::default(),
+        rest: None,
         tilt: c.tilt,
         pass_start: crate::machining2d::PassStart::Auto,
     }
@@ -1405,6 +1406,8 @@ fn seed_part(c: &Carried) -> OpParams {
         bar_unload: false,
         bar_transfer: false,
         inspect_tol: 0.0,
+        // #3469: the #3452 kerf - the cut-off piece is the part.
+        kerf: crate::turning::PartKerf::default(),
     }
 }
 
