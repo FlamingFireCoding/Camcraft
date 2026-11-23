@@ -88,6 +88,7 @@ fn fig8_offset() -> (World, String) {
         blend_radius: None,
         links: Links::PLANAR,
         corner_relief: Default::default(),
+        pass_start: Default::default(),
     };
     let params = operation::retype_params(&adaptive, OpType::Offset2D as usize);
     assert!(matches!(params, OpParams::Offset2D { .. }), "the retype gives a 2D Offset");
