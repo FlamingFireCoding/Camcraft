@@ -93,6 +93,9 @@ fn has_saved_geometry(params: &OpParams) -> bool {
         OpParams::Pocket { corner_relief, .. }
         | OpParams::Adaptive2D { corner_relief, .. }
         | OpParams::Offset2D { corner_relief, .. } => !corner_relief.overrides.is_empty(),
+        // A tab position is a world X, Y of the source contour (#1883).
+        // The other waterjet fields carry no coordinate.
+        OpParams::WaterjetProfile(op) => op.tabs.as_ref().is_some_and(|t| !t.at.is_empty()),
         OpParams::Face { .. }
         | OpParams::Engrave { .. }
         | OpParams::VCarve { .. }

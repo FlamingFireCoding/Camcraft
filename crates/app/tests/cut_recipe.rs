@@ -14,6 +14,8 @@ mod picks;
 mod relief;
 #[path = "cut_recipe/safety.rs"]
 mod safety;
+#[path = "cut_recipe/waterjet.rs"]
+mod waterjet;
 
 use camcraft_app::commands::{
     AddTool, ApplyCutRecipe, CreateOperation, GenerateOperation, History, SetStock, SetStockMaterial,
