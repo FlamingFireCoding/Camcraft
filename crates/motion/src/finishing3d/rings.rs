@@ -462,14 +462,15 @@ pub(super) fn emit_rings_with_trim(
                     // entry reaches a ring; a run that cannot be begun
                     // legally is refused by note, and the material it
                     // would have ridden stands as rest, reported.
-                    if !column_clear(
+                    let cc = column_clear(
                         entry.x,
                         entry.y,
                         z_tip + r,
                         approach_z + r,
                         r - p.tolerance,
                         &sups,
-                    ) {
+                    );
+                    if !cc {
                         refused += 1;
                         continue;
                     }

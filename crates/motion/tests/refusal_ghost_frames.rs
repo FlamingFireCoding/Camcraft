@@ -93,10 +93,10 @@ fn laid_cylinder(rad: f64, len: f64, y0: f64, z0: f64) -> Vec<Triangle> {
     let mut t = Vec::new();
     for j in 0..n {
         let (a1, a2, b1, b2) = (at(j, rad, 0.0), at(j + 1, rad, 0.0), at(j, rad, len), at(j + 1, rad, len));
-        t.push(Triangle::new(a1, b2, a2));
-        t.push(Triangle::new(a1, b1, b2));
-        t.push(Triangle::new(p3(0.0, y0, z0), a2, a1));
-        t.push(Triangle::new(p3(len, y0, z0), b1, b2));
+        t.push(Triangle::new(a1, a2, b2));
+        t.push(Triangle::new(a1, b2, b1));
+        t.push(Triangle::new(p3(0.0, y0, z0), a1, a2));
+        t.push(Triangle::new(p3(len, y0, z0), b2, b1));
     }
     t
 }

@@ -29,14 +29,22 @@ pub(super) fn build_sups(facets: &[Triangle], r: f64) -> SupSet {
     let mut sups: Vec<Sup> = facets
         .iter()
         .map(|f| {
-            let mut m = f.normal();
+            let normal = f.normal();
+            let mut m = normal;
             if m.z < 0.0 {
                 m = Point3::new(-m.x, -m.y, -m.z);
             }
             let tri = [f.a, f.b, f.c];
             Sup {
                 tri,
-                shallow: m.is_finite() && m.z >= SPLIT_MZ,
+                // The shallow/steep split reads the ORIGINAL normal: a facet
+                // facing down (normal.z < 0, e.g. the bottom of a laid
+                // cylinder) cannot be machined from above in the laid frame,
+                // so it is steep and belongs to the rings, not the raster.
+                // The flipped `m` is kept only for the tangent computation of
+                // shallow facets, which all face up (original m.z >= SPLIT_MZ
+                // > 0, so no flip happens for them).
+                shallow: m.is_finite() && normal.z >= SPLIT_MZ,
                 folds: [None; 3],
                 xmin: tri[0].x.min(tri[1].x.min(tri[2].x)) - r,
                 xmax: tri[0].x.max(tri[1].x.max(tri[2].x)) + r,
