@@ -47,6 +47,7 @@ fn params(v_top: f64, v_bot: f64) -> Pocket3DParams {
         plunge_feed: 100.0,
         climb: true,
         strategy: PocketStrategy::Zigzag,
+        pass_start: Default::default(),
         retract_z: None,
         entry: Entry3D::Helix,
         helix_radius: 1.0,
