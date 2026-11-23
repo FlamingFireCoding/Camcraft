@@ -8,7 +8,9 @@
 //! The path must read as passes the reversal cannot make unsafe:
 //!
 //! - an entry column: straight down at one XY, rapids first, then feeds;
-//! - a planar cut: feeds at one Z, straight or XY arcs;
+//! - a planar cut: feeds at one Z, straight or XY arcs, whose last move
+//!   (the lead-out) has the shape and the length of its first move (the
+//!   lead-in), so the reversed plunge stands as far off the contour;
 //! - an exit column: straight up at one XY, feeds first, then rapids,
 //!   back to the entry column's top and with the same rapid-to-feed
 //!   height, so the column profile is the same on both ends;
@@ -82,6 +84,11 @@ fn read_passes(ms: &[Move]) -> Result<Vec<Pass>, TransformError> {
         if a == c {
             return refuse("the cut does not start with a planar move at the entry depth (a ramp or helical entry)");
         }
+        if !leads_match(&ms[c], &ms[a - 1]) {
+            return refuse(
+                "the pass has no lead-out that matches its lead-in: reversed, it would plunge at the old cut end, on the contour",
+            );
+        }
         let e = (a..ms.len()).find(|&j| !up(&ms[j])).unwrap_or(ms.len());
         if e == a {
             return refuse("a pass leaves its cut level without a straight retract (a ramp, or a level change)");
@@ -102,6 +109,20 @@ fn read_passes(ms: &[Move]) -> Result<Vec<Pass>, TransformError> {
         return refuse("the path has no cutting pass between an entry and a retract");
     }
     Ok(passes)
+}
+
+/// The path length of a move, over chords of 0.1 um sagitta.
+fn length(m: &Move) -> f64 {
+    m.segments3(1e-4).iter().map(|&(p, q)| (q - p).dot(q - p).sqrt()).sum()
+}
+
+/// The reversed pass plunges where the old pass left its cut, so the
+/// exit must stand off the contour as far as the entry did. The cl
+/// layer cannot tell a lead from the contour, so the law asks for
+/// symmetry: the first and the last cut move are of one shape (straight
+/// or arc) and one length. A single-move cut matches itself.
+fn leads_match(first: &Move, last: &Move) -> bool {
+    first.arc.is_some() == last.arc.is_some() && (length(first) - length(last)).abs() <= 2e-3
 }
 
 /// The move run backwards: from and to swap, an arc turns the other way.

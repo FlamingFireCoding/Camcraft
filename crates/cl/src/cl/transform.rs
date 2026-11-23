@@ -22,7 +22,7 @@ use crate::geo2d::Point2;
 use crate::geometry::Point3;
 
 use super::comp::{CompSide, CompSpan};
-use super::cycle::Cycle;
+use super::cycle::{Cycle, CycleKind};
 use super::edge_break::EdgeBreak;
 use super::moves::{lattice, ArcMove, Move};
 use super::path::Toolpath;
@@ -60,6 +60,9 @@ pub enum TransformError {
     VerticalArc,
     /// A canned drilling cycle turned off the Z axis.
     CannedCycleTilt,
+    /// A fine-boring cycle under an XY turn or a mirror: its bottom shift
+    /// follows the machine's oriented spindle stop, not the path.
+    FineBoreShift,
     /// Arc subdivision and coordinate rounding cannot meet `chord_tol`.
     ArcChordTolerance,
     /// A mirror plane that flips Z.
@@ -82,6 +85,9 @@ impl fmt::Display for TransformError {
             TransformError::PlasmaCut => "a plasma cut's kerf side and torch spans do not follow a mirror or a tilt",
             TransformError::VerticalArc => "an XZ / YZ arc does not keep its plane under this transform",
             TransformError::CannedCycleTilt => "a canned drilling cycle cannot turn off the Z axis",
+            TransformError::FineBoreShift => {
+                "a fine-boring cycle's bottom shift is fixed to the machine by the oriented spindle stop: it does not turn or mirror"
+            }
             TransformError::ArcChordTolerance => "the arc subdivision limit or coordinate rounding cannot meet the chord tolerance",
             TransformError::HorizontalMirrorPlane => {
                 "a horizontal mirror plane flips Z: the tool would stand on the wrong side of its tip"
@@ -242,6 +248,12 @@ impl Rigid {
     fn map_cycle(&self, c: &Cycle) -> Result<Cycle, TransformError> {
         if !self.keeps_up() {
             return Err(TransformError::CannedCycleTilt);
+        }
+        // The shift rapid at the bottom moves off the wall in the
+        // direction the oriented stop fixes; turned or mirrored, it would
+        // drive the stopped tip into the finished wall. Only a shift keeps it.
+        if c.kind == CycleKind::FineBore && self.m != IDENTITY {
+            return Err(TransformError::FineBoreShift);
         }
         let xy = self.point(Point3::new(c.xy.x, c.xy.y, 0.0));
         let dz = self.t[2];

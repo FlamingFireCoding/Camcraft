@@ -90,6 +90,25 @@ fn translate_shifts_every_record_to_the_micron() {
 }
 
 #[test]
+fn fine_bore_refuses_an_xy_turn_and_a_mirror_and_translates() {
+    // The shift rapid at the bottom is fixed to the machine by the
+    // oriented stop; a turn or a mirror points it into the finished wall.
+    let mut t = drilled();
+    t.cycles[0].kind = CycleKind::FineBore;
+    let o = Point2::new(0.0, 0.0);
+    assert_eq!(transform_xy(&t, 0.0, 0.0, 180.0, o), Err(TransformError::FineBoreShift));
+    assert_eq!(transform_xy(&t, 0.0, 0.0, 90.0, o), Err(TransformError::FineBoreShift));
+    let plane = MirrorPlane { point: p(0.0, 0.0, 0.0), normal: [1.0, 0.0, 0.0] };
+    assert_eq!(mirror_plane(&t, plane, MirrorMode::GeometricMirror), Err(TransformError::FineBoreShift));
+    // A shift, or a whole turn, keeps the shift direction.
+    assert!(translate(&t, [1.0, 2.0, 0.5]).is_ok());
+    assert!(transform_xy(&t, 3.0, 0.0, 360.0, o).is_ok());
+    // A plain drill cycle still turns and mirrors.
+    assert!(transform_xy(&drilled(), 0.0, 0.0, 180.0, o).is_ok());
+    assert!(mirror_plane(&drilled(), plane, MirrorMode::GeometricMirror).is_ok());
+}
+
+#[test]
 fn translate_refuses_a_non_finite_offset() {
     assert!(matches!(translate(&contour(), [f64::NAN, 0.0, 0.0]), Err(TransformError::BadInput(_))));
     assert!(matches!(translate(&contour(), [f64::MAX, 0.0, 0.0]), Err(TransformError::BadInput(_))));

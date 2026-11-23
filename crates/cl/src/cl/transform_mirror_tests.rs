@@ -173,3 +173,36 @@ fn preserve_climb_refuses_a_level_change_without_a_retract() {
     let got = mirror_plane(&b.finish(), x5(), MirrorMode::PreserveClimb(PassFamily::Profile));
     assert!(matches!(got, Err(TransformError::NotReversible(_))), "{got:?}");
 }
+
+/// A pass at Z-2: a 5 mm lead-in from (-5, 0), the cut to (10, 0), then
+/// a straight lead-out of `lead_out` mm (none at 0) and the lift.
+fn led_pass(lead_out: f64) -> Toolpath {
+    let mut b = PathBuilder::new(p(-5.0, 0.0, 20.0));
+    b.push(MoveKind::Rapid, p(-5.0, 0.0, 2.0), None);
+    b.push(MoveKind::Plunge, p(-5.0, 0.0, -2.0), Some(100.0));
+    b.push(MoveKind::Feed, p(0.0, 0.0, -2.0), Some(500.0));
+    b.push(MoveKind::Feed, p(10.0, 0.0, -2.0), Some(500.0));
+    let end = 10.0 + lead_out;
+    if lead_out > 0.0 {
+        b.push(MoveKind::Feed, p(end, 0.0, -2.0), Some(500.0));
+    }
+    b.push(MoveKind::Feed, p(end, 0.0, 2.0), Some(100.0));
+    b.push(MoveKind::Rapid, p(end, 0.0, 20.0), None);
+    b.finish()
+}
+
+#[test]
+fn preserve_climb_refuses_a_lead_in_without_a_lead_out() {
+    // Reversed, the plunge would land at the old cut end (10, 0): on the
+    // contour, at full depth.
+    let got = mirror_plane(&led_pass(0.0), x5(), MirrorMode::PreserveClimb(PassFamily::Contour));
+    assert!(matches!(got, Err(TransformError::NotReversible(ref why)) if why.contains("lead-out")), "{got:?}");
+    // A lead-out shorter than the lead-in stands closer to the contour.
+    let got = mirror_plane(&led_pass(2.0), x5(), MirrorMode::PreserveClimb(PassFamily::Contour));
+    assert!(matches!(got, Err(TransformError::NotReversible(ref why)) if why.contains("lead-out")), "{got:?}");
+    // A matching 5 mm lead-out: the reversed plunge is in the air at the
+    // mirror of (15, 0).
+    let out = mirror_plane(&led_pass(5.0), x5(), MirrorMode::PreserveClimb(PassFamily::Contour)).expect("reverses");
+    let plunge = out.moves.iter().find(|m| m.kind == MoveKind::Plunge).map(|m| m.to);
+    assert_eq!(plunge, Some(p(-5.0, 0.0, -2.0)));
+}

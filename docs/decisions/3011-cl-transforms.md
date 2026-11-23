@@ -62,6 +62,30 @@ map stays on the lattice bit for bit.
   dropped because the existing no-motion law permits this pose change.
   Changing this choice later is local to the rotary chord filter and
   its regression test; the public API does not change.
+- Review #3308, fine boring: a `CycleKind::FineBore` cycle is refused
+  (`FineBoreShift`) under each map whose matrix is not the identity: an
+  XY turn and a mirror. Its shift rapid at the hole bottom points in the
+  direction that the oriented spindle stop fixes on the machine. A turned
+  or mirrored shift drives the stopped tip into the finished wall. A
+  translate keeps it. A rotary turn refuses every cycle already. A remap
+  of the shift to the new direction was dropped: the stop orientation is
+  a machine setting, not a path value.
+- Review #3308, `PreserveClimb` leads: the reversed pass plunges where
+  the old pass left its cut. The cl layer cannot tell a lead from the
+  contour. So the law asks for symmetry: the first cut move and the last
+  cut move have one shape (straight or arc) and one length, within 2 um.
+  A pass with a lead-in and no lead-out (or a shorter lead-out) is
+  refused by name. This also refuses some safe paths, for example a
+  closed contour with no leads whose first and last segments differ.
+  `GeometricMirror` stays available for them. A tag on each lead move was
+  dropped: it changes the `Move` record and every generator.
+- A geometric mirror of a thread-milling helix changes the hand of the
+  thread (a right-hand thread becomes a left-hand thread).
+  `PreserveClimb` refuses a helix, so only `GeometricMirror` gives this
+  result. The caller must know it.
+- Heights outside the path (clearance and retract planes of the
+  operation) do not move with a Z translate. Only the moves, the cycle
+  heights and the records in the path move.
 
 **Why.** The issue asks for a pure module shared by patterns, mirror
 folders and nesting (#2166). One matrix rule is easier to prove than four
