@@ -41,6 +41,8 @@ fn wire_op() -> WireContourOp {
         start: Some([-4.0, 5.0]),
         tabs: None,
         capture: true,
+        both_pieces_restrained: false,
+        stock_centered_in_xy_travel: false,
         taper_deg: 0.0,
         four_axis: None,
         burnout: None,
@@ -224,6 +226,8 @@ fn selected_chain_requires_clear_stock_a_stated_start_and_slug_capture() {
         (
             WireContourOp {
                 capture: false,
+                both_pieces_restrained: false,
+                stock_centered_in_xy_travel: false,
                 ..wire_op()
             },
             "slug capture",
