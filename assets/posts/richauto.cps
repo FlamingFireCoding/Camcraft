@@ -108,6 +108,7 @@ function fu(v) {
 function ni(v) { return String(Math.round(Number(v))); }
 
 function wo(letter, v, o) { return has(v) ? letter + fu(Number(v) - o) : ""; }
+function arcWord(k, v) { return wo(k, v, k === "X" ? orgX : (k === "Y" ? orgY : orgZ)); }  // #3442: a position word as written, for arcFate
 
 function forgetPosition() {
   lastWord = { X: null, Y: null, Z: null };
@@ -530,6 +531,11 @@ function onCircular() {
     fail("missing start position before arc; lead section with rapid positioning");
     return;
   }
+  // #3442: an arc whose written ends coincide is no arc block (arcFate,
+  // PRELUDE): the A11 would read it as a full circle. The refusals above
+  // stay first. The plane word and the feed are not touched for "none".
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var f = ensureFeed(p.FeedRate);
   if (f === null) return;
   if (xyUnknown && has(p.StartX) && has(p.StartY)) {

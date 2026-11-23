@@ -253,3 +253,45 @@ fn comments_are_ascii_parentheses_and_active_flood_stops() {
     let end = b.iter().position(|l| *l == "M05").expect("M05");
     assert_eq!(b[end..], ["M05", "M9", "M30", "%"], "{}", out.program);
 }
+
+/// #3442 / #3474 (review of PR #3294): an arc under the three-decimal
+/// output step is no arc block. The A11 reads a block whose written end is
+/// its written start as a full circle. Two flat arcs post no block, the
+/// helix posts its straight Z move, the XZ arc posts no block and no G18,
+/// and the real quarter arc stays. A short arc whose written ends are on
+/// one ray from the written centre posts as its straight move.
+#[test]
+fn an_arc_under_the_output_step_is_no_arc_block() {
+    let f = "F 180000";
+    let out = run(
+        &program(&format!(
+            "Rapid X 18123 Y 5432 Z 5500\nPlunge X 18123 Y 5432 Z 5500 F 300000\n\
+             Arc CCW X 18123 Y 5432.03 Z 5500 {f} I 10123 J 5432\n\
+             Arc CCW X 18123 Y 5432.04 Z 5500 {f} I 10123 J 5432\n\
+             Arc CW X 18123 Y 5432.02 Z 5400 {f} I 10123 J 5432\n\
+             Arc CCW X 18123 Y 5432.02 Z 5399.97 {f} I 10123 K 5400\n\
+             Arc CCW X 10123 Y 13432 Z 5400 {f} I 10123 J 5432\n\
+             Rapid X 10123 Y 13432 Z 10000\n"
+        )),
+        &Value::Null,
+    );
+    clean(&out);
+    let b = bodies(&out.program);
+    let arcs: Vec<&str> = b.iter().copied().filter(|l| starts_word(l, "G2") || starts_word(l, "G3")).collect();
+    assert_eq!(arcs, ["G3X10.123Y13.432Z5.400I-8.000J0.000"], "{}", out.program);
+    assert!(b.contains(&"G1Z5.400F180.0"), "the helix posts its Z move:\n{}", out.program);
+    assert!(!b.iter().any(|l| l.contains("G18")), "{}", out.program);
+
+    let out = run(
+        &program(
+            "Rapid X 10010.51 Y 5000 Z 5500\nPlunge X 10010.51 Y 5000 Z 5500 F 300000\n\
+             Arc CCW X 10010.498393 Y 5000.493788 Z 5500 F 180000 I 10000 J 5000\n\
+             Rapid X 10010.498393 Y 5000.493788 Z 10000\n",
+        ),
+        &Value::Null,
+    );
+    clean(&out);
+    let b = bodies(&out.program);
+    assert!(!b.iter().any(|l| starts_word(l, "G2") || starts_word(l, "G3")), "{}", out.program);
+    assert!(b.contains(&"G1X10.010F180.0"), "the same-angle arc posts its straight move:\n{}", out.program);
+}
