@@ -87,7 +87,7 @@ pub fn classify(params: &OpParams, path: &Toolpath) -> Option<SectionMode> {
         | OpParams::MultiPassTurning { .. }
         | OpParams::FormTurning { .. }
         | OpParams::BoringTurning { .. }
-        | OpParams::PlasmaProfile(_)
+        | OpParams::PlasmaProfile(_) | OpParams::WaterjetProfile(_)
         | OpParams::WireContour(_)
         | OpParams::SinkerBurn(_)
         | OpParams::SlotUndercut(_)

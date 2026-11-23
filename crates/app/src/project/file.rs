@@ -169,7 +169,12 @@ use super::*;
 /// v76 file posted - so a v76 file steps up unchanged. An old reader must
 /// refuse a v77 file rather than drop the order and post a setup before
 /// the setup its datum comes from.
-pub const PROJECT_VERSION: u32 = 77;
+/// v78 (#2604): a stored machine may hold `reserved_tools`, the tool
+/// numbers and names kept for a probe or a tool setter. Absent reserves
+/// nothing, what every v77 machine was, so a v77 file steps up unchanged.
+/// An old reader must refuse a v78 file rather than drop the reservations
+/// and post a cutting tool at a reserved probe pocket.
+pub const PROJECT_VERSION: u32 = 78;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
