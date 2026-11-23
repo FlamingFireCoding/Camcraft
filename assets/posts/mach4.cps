@@ -15,6 +15,7 @@ afterModes = true;
 workOffsetIndex = true;
 workOffsetMax = 254;
 millSpindleReverse = true;
+uprightReturn = true; // #3477: a section after a tilted section retracts and indexes A/C to zero before its first X/Y traverse; pinned by upright_after_tilt.rs
 
 declaredOptions = {
   safeRetract: {
@@ -71,6 +72,8 @@ function who() { return opName ? "operation " + opName + ": " : (coolantOp ? "op
 function msg(s) { if (typeof message === "function") message(s); else writeln("(MSG: " + s + ")"); }
 function clean(s) { return String(s || "").replace(/[()]/g, " ").replace(/\s+/g, " ").trim(); }
 function note(s) { if (s) block(["(" + clean(s) + ")"]); }
+// Program notes use this dialect without truncating the stated bound.
+function onComment(s) { note(commentText(s)); }
 function block(ws) {
   var xs = [];
   for (var i = 0; i < ws.length; i++) if (ws[i]) xs.push(ws[i]);
@@ -730,6 +733,15 @@ function onCircular() {
   var qS = transformPt(pose, cfg, sx, sy, sz);
   var qC = transformPt(pose, cfg, cx, cy, cz);
   var qE = transformPt(pose, cfg, num(p.X, 0), num(p.Y, 0), num(p.Z, 0));
+  // #3442: an arc whose written ends coincide is no arc block (arcFate,
+  // PRELUDE), judged on the machine-frame words this block writes.
+  var pt3 = function (q) { return { X: q[0], Y: q[1], Z: q[2] }; };
+  var fate = arcFateOf({
+    plane: machPlaneG === 18 ? "XZ" : (machPlaneG === 19 ? "YZ" : "XY"),
+    ccw: (cw !== flipDir) === false,
+    start: pt3(qS), end: pt3(qE), center: pt3(qC), rotary: false
+  }, function (k, v) { return fu(v); }, arcIncOf(fu));  // #3474: I J K from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var centerWs = [];
   if (machPlaneG === 17) centerWs = ["I" + fu(qC[0] - qS[0]), "J" + fu(qC[1] - qS[1])];
   else if (machPlaneG === 18) centerWs = ["I" + fu(qC[0] - qS[0]), "K" + fu(qC[2] - qS[2])];

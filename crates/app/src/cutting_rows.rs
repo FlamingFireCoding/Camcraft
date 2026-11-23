@@ -148,17 +148,24 @@ fn seed_into(params: &mut OpParams, tool: &Tool, material: Option<WorkMaterial>)
 pub fn seed_feed_for_tool(world: &World, params: &mut OpParams, tool: &Tool) {
     let material = crate::stock_material::in_force(world, crate::setup::active(world).as_deref());
     seed_into(params, tool, material);
-    crate::operation::feed_rating::seed_into(params, tool, material);
+    crate::operation::feed_rating::seed_into(params, tool, material, cutting::material_of(world));
 }
 
 /// `params` with `tool` set in its place (`EditOperationLinks`): the
 /// rows' seed of [`reseeded_params`], then a Drill or Thread op's feed
-/// from the new tool's stated feed (#2598). `None` when nothing moves.
+/// from the new tool's stated feed (#2598; `document` is the document's
+/// material, which the running feed follows, #2724). `None` when nothing
+/// moves.
 #[must_use]
-pub fn retargeted_params(params: &OpParams, tool: &Tool, material: Option<WorkMaterial>) -> Option<OpParams> {
+pub fn retargeted_params(
+    params: &OpParams,
+    tool: &Tool,
+    material: Option<WorkMaterial>,
+    document: Option<WorkMaterial>,
+) -> Option<OpParams> {
     let mut next = params.clone();
     let rows = seed_into(&mut next, tool, material);
-    let rated = crate::operation::feed_rating::seed_into(&mut next, tool, material);
+    let rated = crate::operation::feed_rating::seed_into(&mut next, tool, material, document);
     (rows || rated).then_some(next)
 }
 

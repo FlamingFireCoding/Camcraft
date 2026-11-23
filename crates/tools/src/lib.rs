@@ -14,6 +14,8 @@ pub mod catalog_asset;
 #[cfg(test)]
 mod catalog_asset_tests;
 pub mod cutting;
+// #3068: the router chip-load curve by cutter diameter.
+pub mod cutting_router;
 // #541: the sinker EDM electrode as a tool record.
 pub mod electrode;
 // #1152: the body electrode's outline law.
@@ -22,6 +24,8 @@ pub mod electrode_outline;
 pub mod holder_profile;
 // #793: the built-in BT/CAT taper holder library, drawn as spun profiles.
 pub mod holder_library;
+// #3367: the tool meridian (lines and arcs) and its convex atoms.
+pub mod meridian;
 // #93: a drawn revolved (spun) profile for milling tools and holders.
 pub mod spun;
 // #93 slice 2: a milling tool's own drawn cutter, checked against its numbers.
@@ -39,6 +43,8 @@ pub mod orientation;
 // #894: the thread mills - form constants, sanity and the pitch door.
 pub mod thread_mill;
 pub mod thread_hand;
+// #1444: the undercut cutters - T-slot, keyseat, dovetail, lollipop.
+pub mod undercut;
 pub mod catalog_fields;
 // #890: a tool's cutting data per workpiece material.
 pub mod cutting_rows;
