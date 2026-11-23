@@ -1,9 +1,9 @@
 //! #2970 review: Rotary Parallel's two halves on a part that is not
 //! round. A keyed bar in a coaxial round bar stock: the path that keeps
 //! the single frame's cuts in the keyway and adds the turned half's
-//! verifies with no blocking finding but the keyway corners' rest (no
-//! gouge past the tolerance, no rapid in the stock), and its links are
-//! the radial relink's.
+//! leaves no blocking finding but the keyway corners' rest (gouge within
+//! 0.05 mm, reported in the keyway; no rapid in the stock), and its
+//! links are the radial relink's.
 //!
 //! Provenance: our own fixture (a round bar with a keyway in its side).
 //! Gate map (M4.4): covers app::operation, sim::verify, motion::multiaxis.
@@ -54,7 +54,7 @@ fn keyway_bar() -> Vec<Triangle> {
 }
 
 #[test]
-fn a_keyed_bar_cut_all_the_way_round_verifies_clean() {
+fn a_keyed_bar_cut_all_the_way_round_leaves_only_the_corner_rest() {
     let world = new_world();
     let mut h = History::default();
     let tool = catalog().into_iter().find(|(n, _)| *n == "BN-0600").map(|(_, t)| t).expect("catalog ball");
@@ -85,18 +85,28 @@ fn a_keyed_bar_cut_all_the_way_round_verifies_clean() {
     // The keyway's inner corners are rest a 6 mm ball cannot reach: the
     // envelope verdict reports them (rest about 2 mm), on the single-frame
     // path as on this one (measured: gouge 0.020 / rest 1.99 there, 0.020
-    // / 1.95 here). That verdict may stand, with its gouge inside the
-    // tolerance; nothing else may block - no gouge past it, no rapid in
-    // the stock, no shank or holder hit.
+    // / 1.95 here). That one verdict may stand: its gouge within 0.05 mm,
+    // reported at a move over the keyway - stations 20..40 widened by the
+    // ball, on the keyway's +y side. The verdict names the move nearest
+    // the deviation in plan (XY) only, so its height is not read (here:
+    // a plunge at the keyway's end, station 40). Nothing else may block -
+    // no gouge past it, no rapid in the stock, no shank or holder hit.
+    let r = 3.0;
+    let centre = |m: &camcraft_app::cl::Move| {
+        let a = m.axis.unwrap_or([0.0, 0.0, 1.0]);
+        Point3::new(m.to.x + r * a[0], m.to.y + r * a[1], m.to.z + r * a[2])
+    };
+    let in_keyway = |at: usize| {
+        c.path.moves.get(at).map(centre).is_some_and(|p| (20.0 - r..=40.0 + r).contains(&p.x) && p.y > 0.0)
+    };
     let blocking: Vec<_> = c
         .warnings
         .iter()
         .filter(|w| w.blocks_post())
-        .filter(|w| !matches!(w, Warning::Envelope { gouge_mm, .. } if *gouge_mm <= 0.1))
+        .filter(|w| !matches!(w, Warning::Envelope { at, gouge_mm, .. } if *gouge_mm <= 0.05 && in_keyway(*at)))
         .collect();
-    assert!(blocking.is_empty(), "the keyed bar verifies with no other blocking finding: {blocking:?}");
+    assert!(blocking.is_empty(), "the keyed bar leaves no blocking finding but the keyway corner rest: {blocking:?}");
     // The passes go round: cuts stand over and under the axis plane.
-    let r = 3.0;
     let centre_z = |m: &camcraft_app::cl::Move| m.to.z + r * m.axis.map_or(1.0, |a| a[2]);
     let feeds: Vec<_> = c.path.moves.iter().filter(|m| m.kind == MoveKind::Feed).collect();
     assert!(feeds.iter().any(|m| centre_z(m) > 5.0) && feeds.iter().any(|m| centre_z(m) < -5.0), "both halves cut");

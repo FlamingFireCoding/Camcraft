@@ -5955,7 +5955,6 @@ fn rotary_parallel_generates_radial_axes_and_verifies_clean() {
         (m.to.y + 3.0 * a[1], m.to.z + 3.0 * a[2])
     };
     let low = |m: &camcraft_app::cl::Move| center(m).1 - 3.0; // A's reading
-    let low_b = |m: &camcraft_app::cl::Move| -center(m).1 - 3.0; // B's reading
     let on_clearance = |m: &&camcraft_app::cl::Move| (m.to.y * m.to.y + m.to.z * m.to.z).sqrt() >= 25.0 - 1e-6;
     let cuts: Vec<_> = t
         .moves
@@ -5963,22 +5962,21 @@ fn rotary_parallel_generates_radial_axes_and_verifies_clean() {
         .filter(|m| matches!(m.kind, MoveKind::Feed | MoveKind::Plunge))
         .filter(|m| !on_clearance(m))
         .collect();
+    // The Bottom bound of both halves: every feed and plunge touches the
+    // bar at or over the Bottom in world z (a posed tip on the bar is
+    // where the ball touches; tolerance 0.1). It reads half A's cuts
+    // under the axis plane that the two-half filter keeps as well as
+    // half B's. A per-half reading in each half's own frame cannot fail
+    // here (over the axis plane `low` >= -3, under it B's `-cz - 3` >
+    // -3), so it is not asserted; this bound, the counts and the sector
+    // check below are the bounds.
     let (mut over, mut under) = (0usize, 0usize);
     for m in &cuts {
-        // Over the axis plane only half A cuts: its own law, the old one.
         if center(m).1 >= 0.0 {
-            assert!(low(m) >= -4.0 - 1e-9, "half A sank below its Bottom plane: {}: {m:?}", low(m));
             over += 1;
         } else {
-            // Under it, B's ladder reads its own Bottom (`low_b`, never
-            // under it there by construction); what bounds the cut is
-            // the contact: a posed tip on the bar is where the ball
-            // touches, and it is not under the Bottom (tolerance 0.1).
-            assert!(low_b(m) >= -4.0 - 1e-9, "half B sank below its Bottom plane: {}: {m:?}", low_b(m));
             under += 1;
         }
-        // Every feed and plunge, of either half: the touch is not under
-        // the Bottom in world z.
         assert!(m.to.z >= -4.0 - 0.1 - 1e-9, "a cut touches under the Bottom: {m:?}");
     }
     assert!(over > 20 && under > 20, "both halves cut: {over} over the axis plane, {under} under it");

@@ -71,9 +71,18 @@ lost. The rule now:
 - A cut of half B over the seam (a wall that faces down, which A cannot
   see) is added where no kept cut of A stands within half a pass
   spacing.
-- So each place is cut once. On a round bar every A cut under the seam
-  has a B cut at the same place, and the output is the same as before.
-- A reach reading names the places no pass reaches. It uses a fixed
+- The threshold for "the same place" is half a pass spacing. So each
+  place is cut once.
+- Round bars: the output of the first head stays byte-identical for the
+  fixtures that were run (`rotary_coverage`, the example program, the
+  microARC wrap golden). This is a measured result, not a law. On those
+  bars every A cut under the seam has a B sample within half a pass
+  spacing. On another bar an A cut under the seam can stay when no B
+  sample is that close. Such an extra cut is one that the single-frame
+  path makes too.
+- A reach reading names the places no pass reaches (follow-up #3658:
+  its cost on a dense mesh, the document unit, a frame the user can
+  see). It uses a fixed
   grid of at most 48 stations and 72 angles. A ray from the axis finds
   the outermost surface. A place under Bottom is skipped. A place where
   a ball cannot fit (a corner) is skipped. A place with no ball centre
