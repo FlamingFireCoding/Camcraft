@@ -53,7 +53,9 @@ A fix for one red step then costs one step, not a full run.
   each app step. `--failed gate-logs/<run>` runs only the red steps.
 - Quick runs the steps one after the other. If a build step (`debug build (--no-run)` or
   `<crate> build (--no-run)`) fails, quick stops there (#3601). The summary lists each later step as
-  `SKIP ... not run (build failed: <step>)`, and the gate exits red. If the build log has a rustc metadata
+  `SKIP ... not run (build failed: <step>)`, and the gate exits red. Each such step gets a log with that one
+  line, so `cargo xtask gate quick --failed gate-logs/<run>` runs the build step and each step that it
+  stopped. If the build log of a `--no-run` step has a rustc metadata
   error (E0786 `found invalid metadata files`, E0460 `found possibly newer version`), the step prints a
   `BUILD FAULT` block: the crate of the error, then two things to try, one at a time: the same gate with
   `CAMCRAFT_GATE_JOBS=4`, and `cargo clean -p <package of the step>`. The gate does not retry or clean by

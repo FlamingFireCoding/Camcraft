@@ -198,6 +198,7 @@ impl Run {
                 if failed && crate::build_stop::stops(&s.name) {
                     let note = crate::build_stop::not_run_note(&s.name);
                     self.not_run = plan.steps[i + 1..].iter().map(|r| (r.name.clone(), note.clone())).collect();
+                    crate::build_stop::write_not_run(&self.log_dir, self.done.len() + 1, &self.not_run)?;
                     break;
                 }
             }

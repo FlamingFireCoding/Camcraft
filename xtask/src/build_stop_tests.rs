@@ -74,11 +74,25 @@ fn quick_plan_stops_after_a_failed_per_crate_build() {
         Step::new("ui suites: lib", &["test", "--invalid-suite-flag"], ""),
         Step::new("ui suites: boundary", &["test", "--invalid-suite-flag"], ""),
     ];
-    run.plan(&Plan { notes: Vec::new(), steps }).expect("execute fixture");
+    run.plan(&Plan { notes: Vec::new(), steps: steps.clone() }).expect("execute fixture");
     assert_eq!(run.done.len(), 1, "no step may start after the failed build");
     assert!(!run.done[0].ok);
     let names: Vec<&str> = run.not_run.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, ["ui suites: lib", "ui suites: boundary"]);
     assert!(run.not_run.iter().all(|(_, note)| note == "not run (build failed: ui build (--no-run))"));
+    // A rerun with `--failed` on this run's logs selects the build step and each stopped step.
+    let failed = crate::select::failed_in_dir(&run.log_dir).expect("failed logs");
+    let again = crate::select::apply(Plan { notes: Vec::new(), steps }, &[], Some(&failed)).expect("selection");
+    let names: Vec<&str> = again.steps.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["ui build (--no-run)", "ui suites: lib", "ui suites: boundary"]);
     assert_eq!(run.summary(), 1, "the gate exits red");
+}
+
+#[test]
+fn a_test_step_that_quotes_a_metadata_error_gives_no_block() {
+    let log = "error[E0786]: found invalid metadata files for crate `accesskit`
+test result: FAILED. 0 passed; 1 failed";
+    let suite = args(&["test", "-j", "16", "-p", "camcraft-ui", "--test", "boundary"]);
+    assert!(metadata_note(log, &suite, "gate quick").expect("pattern").is_empty());
+    assert!(!metadata_note(log, &args(&UI_BUILD), "gate quick").expect("pattern").is_empty());
 }

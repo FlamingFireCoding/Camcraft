@@ -17,6 +17,13 @@ maintainer's standing word "choose recommended".
 - **Why.** Each later step needs the binaries of that build. In the
   reported runs the 8 ui suites ran after the failed build and failed with
   E0463. That hid the one real failure among 9 red rows.
+- **Rerun after a stop (review of PR #3708).** Each stopped step gets a
+  log with the one line `not run (build failed: <step>)`. `--failed`
+  reads that line as a failed step (`select::log_failed`). So
+  `--failed gate-logs/<run>` runs the build step and each stopped step,
+  not the build step alone. The summary row of a stopped step is `SKIP`,
+  not `FAIL`, so the post-merge report and the light-lane note do not
+  count it as a test failure.
 - **Dropped.** Stop only the steps of the same crate: the steps of other
   crates use the same target directory, and a bad build output there can
   give the same error. A plain stop is simpler and agrees with the
@@ -24,7 +31,8 @@ maintainer's standing word "choose recommended".
 
 ### 2. The metadata error - chosen: one diagnostic block, no automatic action
 
-- **Decided.** When the log of a failed step has
+- **Decided.** When the log of a failed build step (its arguments have
+  `--no-run`) has
   `found invalid metadata files for crate`, `E0786`,
   `found possibly newer version of crate` or `E0460`, the step prints one
   `BUILD FAULT` block. The block names the crate of the error and says that
