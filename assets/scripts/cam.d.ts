@@ -133,7 +133,7 @@ interface JobReport {
 interface CamApi {
   load(path: string): DocumentInfo;  // arity 1
   save(path?: string | null, options?: { overwrite?: boolean }): { path: string };  // variadic
-  import(path: string, name?: string | null, facetBudget?: number): { model: string; facets: number; facet_budget?: number; notes?: string[] };  // variadic
+  import(path: string, name?: string | null, facetBudget?: number | null, units?: "mm" | "in"): { model: string; facets: number; facet_budget?: number; notes?: string[] };  // variadic
   importDxf(path: string, options?: { setup?: string; units?: "mm" | "in"; join_tol?: number; name?: string }): DxfProfile;  // variadic
   insertText(text: string, options: { height: number; position?: [number, number]; angle?: number; letter_spacing?: number; setup?: string; name?: string }): TextProfile;  // variadic
   exportTools(path: string, format?: "auto" | "camtools" | "pathpilot" | "hurco", units?: "mm" | "inch"): { path: string; tools: number; format: string };  // variadic
