@@ -219,7 +219,7 @@ fn probed(coarse: Option<f64>, ask: f64, sink: f64) -> World {
         bar_advance: 0.0,
         bar_unload: true,
         bar_transfer: true,
-        inspect_tol: ask,
+        inspect_tol: ask, kerf: Default::default(),
     };
     create(&world, &mut h, "P1", "GT-0300", part);
     let e = model::find_by_name(&world, "G2").expect("op");
@@ -350,7 +350,9 @@ fn every_kind_is_either_judged_or_refused_for_a_stated_reason_on_a_reduced_model
     // walls, so a reduced model is refused until it reads the excess.
     // SinkerSideBurn (#545): its lateral move is judged against the same
     // walls - refused on a reduced model for the same reason.
-    let refused = [Swarf, AdvancedSwarf, Trace, Engrave, Chamfer2D, Deburr, WireContour, SinkerBurn, SinkerSideBurn];
+    // VCarve (#1443): a cone ride like the engrave; refused the same way.
+    // SlotUndercut (#1444): its undercut law does not read the excess yet.
+    let refused = [Swarf, AdvancedSwarf, Trace, Engrave, Chamfer2D, Deburr, WireContour, SinkerBurn, SinkerSideBurn, SlotUndercut, VCarve];
     for row in KindInfo::ALL {
         assert_eq!(problem(row.ty, None, None), None, "{:?}: full fidelity is untouched", row.ty);
         let said = problem(row.ty, Some(TIGHT), None);

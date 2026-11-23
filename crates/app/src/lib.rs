@@ -8,6 +8,8 @@ pub use camcraft_cl::cl;
 pub mod cli;
 pub mod clock;
 pub mod commands;
+// #3073: saved cut recipes - an operation's settings under a name.
+pub mod cut_recipe;
 pub mod cutting;
 // #890: which row of a tool's per-material cutting data the document picks.
 pub mod cutting_rows;
@@ -37,6 +39,7 @@ pub use camcraft_motion::finishing3d;
 pub use camcraft_geometry::geo2d;
 pub mod geometry;
 pub use camcraft_motion::links;
+pub use camcraft_motion::path_picks;
 pub use camcraft_motion::load;
 pub use camcraft_motion::machining2d;
 pub use camcraft_motion::machining3d;
@@ -62,6 +65,8 @@ pub mod pick;
 pub use camcraft_post::post;
 pub mod path_sig;
 pub mod posting;
+// #2950: the browser's own .mch and .cps files, kept for the session.
+pub use camcraft_post::session_files;
 // #530: the op-family door at post.
 mod posting_family;
 /// Which spindle a lathe post turns for a section, and the door that
@@ -70,6 +75,8 @@ pub mod lathe_voice;
 // #155: standalone Pause / Home entries in the operation list.
 pub mod program_entry;
 pub use camcraft_motion::plasma;
+// #1883: the waterjet profile and the 2D sheet kernel it shares.
+pub use camcraft_motion::{sheet, waterjet};
 pub use camcraft_motion::wire_edm;
 pub use camcraft_motion::probing;
 // #541: sinker EDM burn to depth.
@@ -99,6 +106,8 @@ pub mod schema;
 pub mod script;
 // #1862: DXF profiles placed on a setup's stock, and the virtual model reference.
 pub use camcraft_geometry::sketch_data;
+// #1863: the DXF primitives a sketch's data holds, for the viewport's drawing.
+pub use camcraft_geometry::dxf;
 pub mod sketch;
 pub mod sketch_model;
 pub mod setup;
@@ -107,6 +116,8 @@ pub mod setup_offsets;
 pub mod setup_align;
 // #343: each setup's own machine and post, and the one-mount law.
 pub mod setup_mount;
+// #2410: the router options that a machine kind offers (UI and MCP).
+pub mod router_offer;
 // #870: the WCS origin said in words ("top of stock, front-left corner").
 pub mod setup_origin;
 // #316: transforms between setups and the setup-relative link.
@@ -154,9 +165,12 @@ pub mod tool_list;
 pub mod tool_list_export;
 // #221: the number a tool posts as, and the clash law.
 pub mod tool_numbers;
+mod tool_reservations;
 pub use camcraft_tools::tools;
 // #894: the thread mills' form constants, sanity law and pitch door.
 pub use camcraft_tools::thread_mill;
+// #1444: the undercut cutters' record law and profile.
+pub use camcraft_tools::undercut;
 // #630: the lathe tool orientation code (LinuxCNC 1-9) and its control point.
 pub use camcraft_tools::orientation;
 pub use camcraft_tools::catalog_fields;

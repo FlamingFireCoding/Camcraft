@@ -104,6 +104,10 @@ pub const PROBE: &[ToolKind] = &[ToolKind::Probe];
 /// and no cutting kind mounts a torch.
 pub const TORCH: &[ToolKind] = &[ToolKind::Torch];
 
+/// The waterjet nozzle (#1883): the waterjet operations mount nothing
+/// else, and no cutting kind mounts a nozzle.
+pub const NOZZLE: &[ToolKind] = &[ToolKind::Waterjet];
+
 /// No library tool (#532): a wire EDM kind mounts none - the wire's
 /// diameter and spark gap are the machine's condition (#531), and a
 /// tool beside it would be a second source for the same number. The
@@ -138,6 +142,11 @@ pub fn cutting_radius(tool: &crate::tools::Tool) -> Result<f64, String> {
 /// The sinker electrode (#541): the sinker operations mount nothing
 /// else, and no cutting kind mounts an electrode.
 pub const ELECTRODE: &[ToolKind] = &[ToolKind::Electrode];
+
+/// The undercut cutters (#1444): a head wider than its neck cuts
+/// sideways only, so only the Slot Undercut kind mounts them, and it
+/// mounts nothing else - an end mill has no overhang to cut a roof with.
+pub const UNDERCUT: &[ToolKind] = &[ToolKind::TSlot, ToolKind::Keyseat, ToolKind::Dovetail, ToolKind::Lollipop];
 
 /// The wire EDM wire (#2011): the wire operations mount nothing else,
 /// and no cutting kind mounts a wire.

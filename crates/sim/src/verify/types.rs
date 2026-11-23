@@ -13,6 +13,15 @@ pub enum Mode {
     /// Trace: the cutter center runs on the boundary itself; laws that
     /// assume tangency do not apply.
     Engrave,
+    /// V-carve (#1443): a cone's tip rides the medial axis of the
+    /// region, and each branch of the axis is ridden two times, one
+    /// time from each wall. Engrave's stand-downs apply (the cut is a
+    /// mark inside the region, proved by the generator), and the
+    /// crossing law (a) stands down too: the second ride of a branch
+    /// lies on the first within the chord tolerance, so their chords
+    /// cross at a shared depth by design. That is the pattern, not a
+    /// path defect.
+    Carve,
     /// The cone rides (M2.5 E B): a chamfer mill whose GENERATRIX lies
     /// on the wall - the axis runs exactly on the edge's own XY, and
     /// on a convex crease the virtual tip stands deliberately INSIDE
@@ -76,6 +85,19 @@ pub enum Mode {
     /// which reads rest material in the frame the work turns in. The
     /// fixture laws stay: boxes, no height field.
     Rotary,
+    /// The undercut cutters (#1444): a head wider than its neck cuts
+    /// SIDEWAYS under a roof, so it clears no column - the stock above
+    /// the head still stands. The column laws would read every pass as
+    /// a cleared kerf (and acquit a lift straight through the roof), so
+    /// the rest model takes no cut from this path; the crossing law (a)
+    /// and the region tangency (b) stand down (passes retrace by design,
+    /// and a 2-D region cannot say an undercut); the solid law (b2)
+    /// judges head and neck against the mesh with the cutter's real
+    /// profile; and the band law (c) hands over to the undercut law
+    /// ([`super::undercut`]): no Z move with the head in or under
+    /// material, no neck or holder band through material above the
+    /// head. Rapids (d) and the fixture laws stay.
+    Undercut,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -164,6 +186,10 @@ pub struct VerifyContext<'a> {
     /// that traces one at the untightened `gouge_tol`
     /// ([`VerifyContext::loop_tol`]). Empty everywhere else.
     pub rims: &'a [(crate::geo2d::Point2, f64)],
+    /// Geometric upper bound of the finished hole walls (#3451).
+    /// Only the axial cone boundary check reads this cap. `None` keeps
+    /// the stock-top cap; the rapid and collision laws always use stock.
+    pub rim_top_z: Option<f64>,
     /// The spindle a turning nose path cuts about (#1408): given, the
     /// envelope law (f) reads the hidden half as the turning work sees
     /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
@@ -210,6 +236,7 @@ impl Default for VerifyContext<'_> {
             model_excess: 0.0,
             file_tolerance: false,
             rims: &[],
+            rim_top_z: None,
             lathe_axis: None,
             corner_reliefs: &[],
         }
@@ -236,6 +263,20 @@ pub enum FixturePart {
     /// the edge milling into clamping steel - the worst thing this law
     /// can report, and named as itself, never as a "shank".
     Flute,
+}
+
+/// What fell back to the Offset rings in a [`Warning::StrategyFallback`]
+/// (#3542): the text names the operation's own choice. Absent in a cache
+/// saved before #3542: read as the Adaptive plan, the only cause then.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackCause {
+    /// The Adaptive plan could not cut an area (#3035).
+    #[default]
+    Adaptive,
+    /// The selected "Pass starts at" side would leave material uncut, so
+    /// the area is cut in the Auto order (the completeness guard, #3316).
+    PassStart,
 }
 
 /// Serde derives: the operation layer persists warnings with the cached
@@ -288,7 +329,8 @@ pub enum Warning {
     /// along that axis; the move to it from the tool-change height (the Z
     /// travel top) can end under the table top. A HIGHER plane along the
     /// axis stands LOWER in the world, so the repair is a plane at
-    /// `limit_mm` or under it - never a raise.
+    /// `limit_mm` or under it - never a raise. The operation layer gives
+    /// the two heights in the frame the user sets them in (#3148).
     FirstTraverseUnderTable { at: usize, height_mm: f64, limit_mm: f64 },
     /// Move `move` carries a modelled lathe holder body (#369) through
     /// material standing about the spindle: `part` as ShankHit reads
@@ -367,6 +409,29 @@ pub enum Warning {
     /// pilot drill is a valid plan, so the post is not held, but each such
     /// hole is named.
     DrillUndersize { at: usize, hole_mm: f64, drill_mm: f64 },
+    /// An undercut cutter moves in Z at move `at` while material stands
+    /// in or over its head's footprint (#1444): a lift there drives the
+    /// head into the roof of its own undercut, a dive drives it into
+    /// uncut stock it cannot plunge. Blocking like `Gouge`.
+    UndercutLift { at: usize },
+    /// An Adaptive op whose planner gave `areas` areas (a pocket, a 3-D
+    /// level) to the Offset rings (#3035), from the first cut at `at`.
+    /// The notes name each one. Advisory: the rings are verified like any
+    /// path, so the post is not held - but the strategy the user asked for
+    /// did not cut those areas, and the op says so. `cause` (#3542): the
+    /// Adaptive plan, or a "Pass starts at" side cut in the Auto order.
+    StrategyFallback {
+        at: usize,
+        areas: usize,
+        #[serde(default)]
+        cause: FallbackCause,
+    },
+    /// #3525: the operation cuts `depth_mm` below the stock top, deeper
+    /// than the tool's `flute_mm` flute length, from the cutting move
+    /// `at` on ([`super::flute_reach`]). Always advisory (#3525
+    /// decision): it names the cause of the shank and holder findings that
+    /// follow it, and those findings hold the post.
+    FluteShort { at: usize, flute_mm: f64, depth_mm: f64 },
 }
 
 impl Warning {
@@ -377,7 +442,9 @@ impl Warning {
         !matches!(self, Warning::Scallop { .. }
                 | Warning::ProbeSearch { .. }
                 | Warning::SinkerFinishOrder { .. }
-                | Warning::DrillUndersize { .. })
+                | Warning::DrillUndersize { .. }
+                | Warning::StrategyFallback { .. }
+                | Warning::FluteShort { .. })
     }
 
     /// The envelope report's unjudged hidden half, as the warning that
@@ -449,11 +516,13 @@ impl core::fmt::Display for Warning {
                 if *fixture { "fixture" } else { "stock" },
                 top_mm - height_mm
             ),
+            // #3148: the axis is always tilted here, so the heights are
+            // the user's values along it, never a Z value.
             Warning::FirstTraverseUnderTable { at, height_mm, limit_mm } => write!(
                 f,
                 "the first rapid (move {at}) runs from the tool-change height along a tool axis that points down toward the \
-                 machine table; to the clearance plane at Z{height_mm:.3} it can go under the table top - lower the clearance \
-                 plane to Z{limit_mm:.3} or under it"
+                 machine table; to the clearance plane at {height_mm:.3} mm it can go under the table top - lower the \
+                 clearance plane to {limit_mm:.3} mm or under it (both measured along the tilted tool axis)"
             ),
             Warning::FixtureHit { at, fixture_part } => write!(
                 f,
@@ -491,6 +560,10 @@ impl core::fmt::Display for Warning {
                 f,
                 "sinker finish at move {at}: its electrode's undersize {finish_mm:.3} mm per side is not smaller than the rough's {rough_mm:.3} mm - the finish electrode is no larger than the rough and takes nothing off its walls (the post is not held)"
             ),
+            Warning::UndercutLift { at } => write!(
+                f,
+                "move {at} moves the undercut cutter in Z with material in or over its head (it must enter and leave sideways, clear of the stock)"
+            ),
             Warning::AvoidHit { at, item, part, short_mm } => write!(
                 f,
                 "{} at move {at} violates protected 'Do not touch' item #{item} ({short_mm:.3} mm short of clearance)",
@@ -505,6 +578,22 @@ impl core::fmt::Display for Warning {
             Warning::DrillUndersize { at, hole_mm, drill_mm } => write!(
                 f,
                 "undersize hole at move {at}: the hole is {hole_mm:.3} mm, and the {drill_mm:.3} mm drill makes it {drill_mm:.3} mm - use a {hole_mm:.3} mm drill, or follow with a Bore or a reamer (the post is not held: a pilot drill is a valid plan)"
+            ),
+            Warning::StrategyFallback { at, areas, cause: FallbackCause::Adaptive } => write!(
+                f,
+                "Adaptive fell back to Offset rings on {areas} area{} from move {at}: the notes name each one and why (the post is not held: the rings are verified)",
+                if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::StrategyFallback { at, areas, cause: FallbackCause::PassStart } => write!(
+                f,
+                "Pass starts at: the selected start side would leave material uncut in {areas} area{}, so the Auto order was used there instead, from move {at}: the notes name each one (the post is not held: the cut is verified)",
+                if *areas == 1 { "" } else { "s" }
+            ),
+            Warning::FluteShort { at, flute_mm, depth_mm } => write!(
+                f,
+                "the tool's flute length is {flute_mm:.3} mm, but the cut goes {depth_mm:.3} mm below the stock top from move {at}: \
+                 above the flutes, the shank or the holder goes into the cut; the findings after this one name the moves where \
+                 it meets material - use a tool with a longer flute, or cut less deep (this finding alone does not hold the post)"
             ),
         }
     }

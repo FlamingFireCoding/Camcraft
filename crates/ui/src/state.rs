@@ -21,7 +21,7 @@ use camcraft_app::commands::{
     ClearToolpath, CreateSetup, DeleteEntity, DeleteFixture, DeleteOperation, DeleteSetup, DeleteTool,
     EditOperationLinks, EditOperationParams, History, ImportModel,
     MoveModel, PasteOperation, RegenerateAll, MarkOperationReviewed, RenameOperation, ReorderOperation, RepairModel, SelectEntity, SetOperationGeometry,
-    SetFixtureFixed, SetOperationSetup, SetStock, SetToolNumber, SetUnits, SetWcsOrigin,
+    SetFixtureFixed, SetOperationSetup, SetToolNumber, SetUnits, SetWcsOrigin,
     SetWorkMaterial, TagFixture, UntagFixture, ImportFixture,
     UpdateModel, theme_of,
 };
@@ -32,6 +32,7 @@ use camcraft_app::operation::{
     self, AreaControls, FeatureSel, GeoSel, Height, HeightReference, OpParams, SrcRef,
 };
 use camcraft_app::schema::{ColorVision, Location, Operation as OperationDef, PostRef, ThemeRef};
+use camcraft_app::geometry::stock_axis::{StockAxis, stock_axis_of};
 use camcraft_app::stock::StockShape;
 use camcraft_app::stock_fit::FitKind as StockFitKind;
 use camcraft_app::tools::{Tool, ToolKind, catalog};
@@ -40,6 +41,9 @@ use camcraft_app::{machine, model, posting, project, world::new_world};
 
 #[path = "state_per_op.rs"]
 mod per_op;
+#[path = "state_stock_pose.rs"]
+mod stock_pose;
+pub use stock_pose::SIM_NOTE_TILTED;
 #[path = "state_browser.rs"]
 mod browser;
 #[path = "state_picked.rs"]
@@ -93,6 +97,9 @@ mod accessory_ui;
 pub use accessory_ui::{AccessoryDraft, AccessorySizeDraft};
 #[path = "state_fixture_profile.rs"]
 mod fixture_profile_ui;
+#[path = "state_sketch.rs"]
+mod sketch_ui;
+pub use sketch_ui::{DxfSource, DxfUnitsPrompt, SketchUi};
 pub use fixture_profile_ui::{FixtureProfileDraft, ProfileEditDraft, ProfileKindChoice};
 #[path = "state_program_entry.rs"]
 mod program_entry;
@@ -123,9 +130,12 @@ mod prefs_ui;
 mod setups_ui;
 #[path = "state_step_budget.rs"]
 mod step_budget_ui;
+#[path = "state_step_units.rs"]
+mod step_units_ui;
 #[path = "state_vouch.rs"]
 mod vouch_ui;
 pub use step_budget_ui::StepBudgetUi;
+pub use step_units_ui::StepUnitsAsk;
 pub use tool_profile_ui::{ToolColumn, ToolProfileUi, is_spun_kind, parametric_points};
 use flecs_ecs::prelude::World;
 
@@ -174,12 +184,23 @@ pub enum CommandKind {
     /// The answer to the unsaved-changes prompt (#107): New, Open or Quit
     /// over a dirty document is held in `unsaved_prompt` until this lands.
     ResolveUnsaved(crate::unsaved::UnsavedChoice),
+    /// The answer to the length-unit question of a STEP file that states
+    /// none (#1874): import it again in the unit, or (`None`) import
+    /// nothing.
+    ResolveStepUnits(Option<camcraft_app::units::Unit>),
     /// The Setup pane's shape+placement draft; the command itself is built
     /// here, so validation and status reporting live in one place.
     SetStock {
         shape: StockShape,
         pos: [f64; 3],
         yaw_deg: f64,
+    },
+    /// #2576: the Stock page's Apply - the shape, its place and its whole
+    /// turn (a unit quaternion from the axis choice), one `SetStock`.
+    SetStockPose {
+        shape: StockShape,
+        pos: [f64; 3],
+        rot: [f64; 4],
     },
     /// #1094: the stock page's "raw stock only" checkbox for a from-model
     /// stock's source model, one undo unit (`SetStockSourceOnly`).
@@ -232,6 +253,9 @@ pub enum CommandKind {
     SelectPostBuiltin,
     SelectPostDialog,
     SelectPostFile(PathBuf),
+    /// #2950: the browser's folder picker - every `.mch` and `.cps` of
+    /// one folder joins the session's machine and post lists (read-only).
+    LoadSetupFolderDialog,
     /// Pick a built-in from the shipped registry by NAME (M3.3 B) -
     /// the combo's index is screen furniture; what the document stores
     /// is the name, so a registry re-growth never re-points a saved
@@ -737,6 +761,15 @@ pub enum CommandKind {
     },
     /// Export fixture `name`'s profile to ASCII DXF path.
     ExportFixtureDxf { name: String, path: PathBuf },
+    /// #1863: the Stock page's "Add DXF profile…" picker.
+    AddDxfProfileDialog,
+    /// #1863: place a DXF drawing on the active setup's stock - one
+    /// `ImportDxf`; `units` answers a drawing that states none.
+    ImportDxf { source: DxfSource, units: Option<camcraft_app::units::Unit> },
+    /// #1863: the units prompt's answer (`None` - Cancel).
+    ResolveDxfUnits(Option<camcraft_app::units::Unit>),
+    /// #1863: move and turn a DXF profile on its stock top - one `MoveSketch`.
+    MoveSketch { name: String, x: f64, y: f64, angle_deg: f64 },
     /// Part orientation (M5.2 G): a model's full rigid placement -
     /// position plus yaw-pitch-roll degrees (R = Rz ⊗ Ry ⊗ Rx, the
     /// `SetWcs` voice). The world stores a unit quaternion; the
@@ -815,7 +848,10 @@ pub struct StockUi {
     pub x: f64,
     pub y: f64,
     pub z: f64,
-    pub yaw_deg: f64,
+    /// #2576: which way the stock's own Z runs (Z, X, Y or Custom).
+    pub axis: StockAxis,
+    /// #2576: `[yaw, pitch, roll]` in degrees, read for Custom only.
+    pub angles_deg: [f64; 3],
     pub fit_margin: f64,
     /// #198: fit a box by a separate allowance per side instead of the
     /// one margin.
@@ -839,7 +875,8 @@ impl Default for StockUi {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            yaw_deg: 0.0,
+            axis: StockAxis::Z,
+            angles_deg: [0.0; 3],
             fit_margin: 2.0,
             fit_per_side: false,
             fit_sides: [2.0; 6],
@@ -1247,6 +1284,10 @@ impl ToolUi {
                 ToolKind::ThreadMillSingle => 15,
                 ToolKind::Waterjet => 16,
                 ToolKind::Wire => 17,
+                ToolKind::TSlot => 18,
+                ToolKind::Keyseat => 19,
+                ToolKind::Dovetail => 20,
+                ToolKind::Lollipop => 21,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -1301,6 +1342,10 @@ impl ToolUi {
             15 => ToolKind::ThreadMillSingle,
             16 => ToolKind::Waterjet,
             17 => ToolKind::Wire,
+            18 => ToolKind::TSlot,
+            19 => ToolKind::Keyseat,
+            20 => ToolKind::Dovetail,
+            21 => ToolKind::Lollipop,
             _ => ToolKind::EndMill,
         }
     }
@@ -1695,6 +1740,10 @@ pub struct State {
     /// computed from it keeps running - hiding geometry must never
     /// silently change what the machine does).
     pub hidden_models: Vec<String>,
+    /// #1863: a DXF drawing that states no unit, held for the units prompt.
+    pub dxf_units_prompt: Option<DxfUnitsPrompt>,
+    /// #1863: the Stock page's DXF profile placement drafts.
+    pub sketch_ui: SketchUi,
     /// Stock entities hidden from the viewport by the browser eye.
     pub hidden_stocks: Vec<String>,
     /// Work-offset gizmos hidden by their browser eyes.
@@ -1708,6 +1757,11 @@ pub struct State {
     /// The Browser's "Show work envelope" box (#1567): view state, never
     /// saved, never a command; display only.
     pub show_work_envelope: bool,
+    /// The "Show operator side" box (#2632): the arrow and the text at the
+    /// work envelope. View state like the envelope box; on by default.
+    pub show_operator_side: bool,
+    /// The kept operator-side arrow, built when its input changes (#2632).
+    pub operator_side_cache: std::sync::Mutex<crate::operator_side::Cache>,
     pub operation_clipboard: Option<OperationClipboard>,
     /// Expanded state of Setup, Models, Tools, and Operations in the browser.
     pub browser_expanded: [bool; 3],
@@ -1780,7 +1834,7 @@ pub struct State {
     /// kept preference (`state_view`).
     pub ambient_occlusion: bool,
     /// Show the ground grid (#2818). View state and a kept preference;
-    /// the grid also needs `show_world_axes`.
+    /// the grid does not depend on `show_world_axes` (#3322).
     pub show_grid: bool,
     /// M1.7c move simulation: None while off, [`Sim`] while the
     /// transport bar is up. View state like the camera - what it holds
@@ -1828,6 +1882,9 @@ pub struct State {
     /// The transport's timeline, built once per `doc_version` (never
     /// per frame: it walks every op's path) - see `shell::cached_script`.
     pub sim_script_cache: Option<(u64, std::sync::Arc<camcraft_app::sim::Script>)>,
+    /// #2608: the operation starts of that timeline, with a `Weak` of the
+    /// script they belong to - see `sim_steps::cached_op_starts`.
+    pub sim_op_starts: Option<(std::sync::Weak<camcraft_app::sim::Script>, std::sync::Arc<camcraft_app::sim::OpStarts>)>,
     /// #743: the revolved mesh of the tool at the playhead, as the
     /// collision laws read it - rebuilt only when its judged outline
     /// changes, emptied when the tool, its operation or the transport
@@ -1933,6 +1990,10 @@ pub struct State {
     /// Set only while a held action runs after the user chose to discard
     /// (or saved first), so the guard lets it through once.
     pub(crate) discard_confirmed: bool,
+    /// #3608: the disk stamp of the project file, and a Save held because
+    /// that file on disk changed after the open or the last save (the
+    /// Overwrite prompt).
+    pub save_guard: crate::save_guard::SaveGuard,
     /// Receiver for the in-flight import worker (None when idle). The worker
     /// runs `ImportModel::new` off-thread and sends the finished command back.
     import_rx: Option<mpsc::Receiver<Result<ImportModel, CommandError>>>,
@@ -1968,6 +2029,11 @@ pub struct State {
     /// implicit first setup. Public so tests run the dialog hand-off
     /// without a modal file picker.
     pub import_as_fixture: Option<Option<String>>,
+    /// #1874: a STEP import that waits for its length unit (the prompt
+    /// shows while it is set). View state, never on the history.
+    pub step_units_ask: Option<StepUnitsAsk>,
+    /// #1874: the unit chosen for the next import of that file.
+    pub(crate) step_units_next: Option<(PathBuf, camcraft_app::units::Unit)>,
     /// #1054: the STEP facet budget the next import runs under (an import
     /// setting, not on the history; the import that uses it is).
     pub step_budget: StepBudgetUi,
@@ -2303,11 +2369,15 @@ impl State {
             geo_row_marked: Vec::new(),
             op_tab: 0,
             hidden_models: Vec::new(),
+            dxf_units_prompt: None,
+            sketch_ui: SketchUi::default(),
             hidden_stocks: Vec::new(),
             hidden_offsets: Vec::new(),
             hidden_paths: Vec::new(),
             shown_setups: Vec::new(),
             show_work_envelope: false,
+            show_operator_side: true,
+            operator_side_cache: std::sync::Mutex::default(),
             operation_clipboard: None,
             browser_expanded: [true; 3],
             cam: Camera::default(),
@@ -2337,6 +2407,7 @@ impl State {
             field_view: None,
             field_play: None,
             sim_script_cache: None,
+            sim_op_starts: None,
             sim_tool_cache: std::sync::Mutex::default(),
             move_center: std::sync::Mutex::default(),
             field_mode: None,
@@ -2372,6 +2443,7 @@ impl State {
             request_quit: false,
             unsaved_prompt: None,
             discard_confirmed: false,
+            save_guard: crate::save_guard::SaveGuard::default(),
             import_rx: None,
             import_file: None,
             import_started: None,
@@ -2391,6 +2463,8 @@ impl State {
             repair_ui: RepairUi::default(),
             pocket_scan: PocketScan::default(),
             import_as_fixture: None,
+            step_units_ask: None,
+            step_units_next: None,
             step_budget: StepBudgetUi::default(),
             vouch_by: String::new(),
             accessory_sizes: HashMap::new(),
@@ -2524,7 +2598,8 @@ impl State {
                 self.stock_ui.x = loc.pos.x;
                 self.stock_ui.y = loc.pos.y;
                 self.stock_ui.z = loc.pos.z;
-                self.stock_ui.yaw_deg = quat_yaw_deg(loc.rot);
+                // #2576: the whole turn reads back, not only its Z twist.
+                (self.stock_ui.axis, self.stock_ui.angles_deg) = stock_axis_of(loc.rot);
             }
             match model::stock_def_of(&self.world, &entity) {
                 Some(StockShape::Box { dx, dy, dz }) => {
@@ -3371,6 +3446,8 @@ impl State {
                 self.post_last_name = None;
                 self.rename_draft = None;
                 self.dragging_op = None;
+                // #3608: a new document has no file; a held Save is dropped.
+                self.save_guard = crate::save_guard::SaveGuard::default();
                 self.doc_version += 1;
                 self.status = String::from("new document");
             }
@@ -3447,6 +3524,7 @@ impl State {
             CommandKind::FrameAll => self.frame_all(),
             CommandKind::Quit => self.request_quit = true,
             CommandKind::ResolveUnsaved(choice) => self.resolve_unsaved(choice),
+            CommandKind::ResolveStepUnits(unit) => self.resolve_step_units(unit),
             CommandKind::DeleteByName(name) => match DeleteEntity::new(&self.world, &name) {
                 Ok(command) => {
                     self.history.execute(&self.world, command);
@@ -3459,20 +3537,8 @@ impl State {
                 shape,
                 pos,
                 yaw_deg,
-            } => {
-                let location = Location {
-                    pos: Point3::new(pos[0], pos[1], pos[2]),
-                    rot: quat_from_yaw(yaw_deg.to_radians()),
-                };
-                match SetStock::new(&self.world, shape, location) {
-                    Ok(command) => {
-                        self.history.execute(&self.world, command);
-                        self.doc_version += 1;
-                        self.status = String::from("stock set");
-                    }
-                    Err(err) => self.refuse(ErrorScope::Setup, format!("stock not set: {err}")),
-                }
-            }
+            } => self.dispatch_set_stock(shape, pos, quat_from_yaw(yaw_deg.to_radians())),
+            CommandKind::SetStockPose { shape, pos, rot } => self.dispatch_set_stock(shape, pos, rot),
             CommandKind::SetStockMaterial(m) => {
                 match camcraft_app::commands::SetStockMaterial::new(&self.world, m) {
                     Ok(command) => {
@@ -3510,12 +3576,7 @@ impl State {
                 }
                 Err(err) => self.refuse(ErrorScope::Setup, format!("units not set: {err}")),
             },
-            CommandKind::LoadMachineDialog => {
-                let dir = crate::egui_app::machines_pane::user_dir(self);
-                if let Some(path) = pick_machine_file(dir.as_deref()) {
-                    self.load_machine_path(path);
-                }
-            }
+            CommandKind::LoadMachineDialog => self.load_machine_dialog(),
             CommandKind::LoadMachineFile(path) => self.load_machine_path(path),
             // #343: the machine verbs land on the active setup's own
             // machine when it has one (`setup_mount`).
@@ -3548,11 +3609,8 @@ impl State {
             // like every machine verb (`setup_mount`).
             CommandKind::UseCatalogueMachine(source) => self.mount_catalogue(&source),
             CommandKind::SelectPostBuiltin => self.select_post(PostRef::Builtin),
-            CommandKind::SelectPostDialog => {
-                if let Some(path) = pick_post_file() {
-                    self.select_post(PostRef::File(path.display().to_string()));
-                }
-            }
+            CommandKind::SelectPostDialog => self.select_post_dialog(),
+            CommandKind::LoadSetupFolderDialog => self.load_setup_folder_dialog(),
             CommandKind::SelectPostFile(path) => {
                 self.select_post(PostRef::File(path.display().to_string()));
             }
@@ -4221,6 +4279,10 @@ impl State {
             CommandKind::SetFixtureProfile { name, profile } => self.set_fixture_profile(&name, profile),
             CommandKind::DeriveFixtureProfile { name, axis } => self.derive_fixture_profile(&name, axis),
             CommandKind::ExportFixtureDxf { name, path } => self.export_fixture_dxf_path(&name, path),
+            CommandKind::AddDxfProfileDialog => self.add_dxf_profile_dialog(),
+            CommandKind::ImportDxf { source, units } => self.import_dxf(source, units),
+            CommandKind::ResolveDxfUnits(units) => self.resolve_dxf_units(units),
+            CommandKind::MoveSketch { name, x, y, angle_deg } => self.move_sketch(&name, x, y, angle_deg),
             CommandKind::InsertBuiltinVise { setup, params, fit_stock, pos, yaw_deg } => {
                 self.insert_builtin_vise(setup, &params, fit_stock, pos, yaw_deg);
             }
@@ -4355,6 +4417,8 @@ impl State {
         let (tx, rx) = mpsc::channel();
         let worker_path = path.clone();
         let budget = self.step_budget_for(&path);
+        // #1874: the unit chosen for a STEP file that states none.
+        let units = self.take_step_units(&path);
         if let (Some(b), false) = (budget, self.step_budget.explicit) {
             self.status = format!("importing {} under its recorded STEP facet budget of {b}…", file_label(&path));
         }
@@ -4362,7 +4426,7 @@ impl State {
             .name("camcraft-import".to_string())
             .spawn(move || {
                 // No World here: pure file + geometry work, Send across.
-                let result = ImportModel::within(&worker_path, budget);
+                let result = ImportModel::within_in(&worker_path, budget, units);
                 // A dropped rx means the document changed or we are closing;
                 // the command is simply never applied.
                 if tx.send(result).is_err() {
@@ -4374,7 +4438,7 @@ impl State {
             Err(err) => {
                 // Thread exhaustion must not lose the import: run inline.
                 diag_warn!("import: worker spawn failed ({err}); running inline");
-                let result = ImportModel::within(&path, budget);
+                let result = ImportModel::within_in(&path, budget, units);
                 self.finish_import(result);
             }
         }
@@ -4392,10 +4456,20 @@ impl State {
         match result {
             Ok(command) => {
                 // #2463: a file a model is linked to lands on that model,
-                // whatever the file is called.
-                let command = match file.as_deref().and_then(|f| crate::model_link_watch::linked_name(&self.world, f)) {
-                    Some(linked) if linked != command.name => command.renamed(&linked),
-                    _ => command,
+                // whatever the file is called. #3686: the link keeps its
+                // text (a relative link stays relative to the project).
+                let linked = file
+                    .as_deref()
+                    .and_then(|f| crate::model_link_watch::linked_to(&self.world, f, self.project_path.as_deref()));
+                let command = match linked {
+                    Some((linked, link)) => {
+                        let mut command = if linked == command.name { command } else { command.renamed(&linked) };
+                        if let Some(source) = command.source.as_mut() {
+                            source.path = link;
+                        }
+                        command
+                    }
+                    None => command,
                 };
                 let name = command.name.clone();
                 // #1573 review: what the importer changed (a STEP face
@@ -4462,6 +4536,14 @@ impl State {
                 {
                     let said = camcraft_app::mesh_open::summary(&self.world, &e, chord);
                     self.status = format!("{} - {said}", self.status);
+                }
+            }
+            // #1874: a STEP file that states no length unit is never read
+            // in a guessed one: ask for the unit, then import it again.
+            Err(CommandError::Import(camcraft_app::geometry::ImportError::StepUnitsMissing)) if file.is_some() => {
+                let as_fixture = self.import_as_fixture.take();
+                if let Some(path) = file {
+                    self.ask_step_units(path, as_fixture);
                 }
             }
             Err(err) => {
@@ -4537,6 +4619,8 @@ impl State {
         self.import_file = None;
         self.import_started = None;
         self.import_as_fixture = None;
+        self.step_units_ask = None;
+        self.step_units_next = None;
     }
 
     /// Mount a `.mch` machine definition on the document (M2.3 C). The
@@ -4639,10 +4723,13 @@ impl State {
 
     fn open_project_path(&mut self, path: PathBuf) {
         let loaded = new_world();
+        // #3608: stamped before the read, so a write during the load asks at the next Save.
+        let stamp = camcraft_app::project::DiskStamp::of(&path);
         match project::load_noted(&loaded, &path) {
             Ok(notes) => {
                 self.reset_for_open(loaded);
                 self.project_path = Some(path.clone());
+                self.save_guard.stamp = stamp;
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 // The loaded document is the new clean point (#107).
                 self.history.mark_clean();
@@ -4684,6 +4771,9 @@ impl State {
         self.post_last_name = None;
         self.rename_draft = None;
         self.dragging_op = None;
+        // #3608: the old document's stamp and a held Save are dropped; a
+        // desktop open stamps its own file after this.
+        self.save_guard = crate::save_guard::SaveGuard::default();
         self.world = loaded;
         // #1997: the orbit pivot is the new document's part and stock, never
         // the old document's target (the envelope is not in the bounds).
@@ -4691,10 +4781,16 @@ impl State {
     }
 
     pub(crate) fn save_project_path(&mut self, path: PathBuf) {
+        // #3608: when the file on disk changed after the open or the last
+        // save, the save waits for the Overwrite prompt; nothing is written.
+        if !self.may_save_over(&path) {
+            return;
+        }
         match project::save(&self.world, &path) {
             Ok(()) => {
                 // What is on disk now matches the history position (#107).
                 self.history.mark_clean();
+                self.save_guard.stamp = camcraft_app::project::DiskStamp::of(&path);
                 self.status = format!("saved {}", path.display());
                 self.note_recent(camcraft_app::recent::RecentKind::Project, &path);
                 self.project_path = Some(path);
@@ -4750,6 +4846,20 @@ impl State {
                 // A program went out: an earlier refusal no longer
                 // describes the document's post (#265).
                 self.post_refusal = None;
+                if !posted.bundle_files.is_empty() {
+                    self.post_view = None;
+                    self.status = format!(
+                        "Native wire EDM job prepared in {} ({} controller files, zero working steps)",
+                        path.display(), posted.bundle_files.len()
+                    );
+                    if let Some(review) = posted.controller_review {
+                        self.status.push_str(&format!(" — {review}"));
+                    }
+                    if let Some(note) = posted.not_judged {
+                        self.status.push_str(&format!(" — {note}"));
+                    }
+                    return;
+                }
                 self.status = format!(
                     "posted {} op(s), {} lines in {} to {}",
                     posted.ops,

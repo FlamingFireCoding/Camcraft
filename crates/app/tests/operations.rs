@@ -779,11 +779,9 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     assert_eq!(status(&world, "Slot1"), OpStatus::Ok);
     let before = cache(&world, "Slot1").expect("cached").path;
     assert!(height_notes_only(&world), "no entry fallback, only the independent height warnings: {:?}", before.notes);
-    assert_eq!(
-        before.moves.iter().filter(|m| m.arc.is_some()).count(),
-        0,
-        "Plunge means no orbit in the file"
-    );
+    // An orbit descends; the planar arcs are the slot's wall lap (#2906).
+    let orbits = |p: &camcraft_app::cl::Toolpath| p.moves.iter().filter(|m| m.arc.is_some() && m.from.z != m.to.z).count();
+    assert_eq!(orbits(&before), 0, "Plunge means no orbit in the file");
 
     let mut edited = slot_params();
     let OpParams::Slot {
@@ -812,7 +810,7 @@ fn an_entry_edit_marks_the_slot_stale_and_the_orbit_proves_itself() {
     assert_eq!(status(&world, "Slot1"), OpStatus::Ok);
     let after = cache(&world, "Slot1").expect("cached").path;
     assert!(
-        after.moves.iter().any(|m| m.arc.is_some()),
+        orbits(&after) > 0,
         "a channel this wide certifies the orbit - it must land"
     );
     assert!(height_notes_only(&world), "a certified orbit adds no entry note; only the height warnings remain: {:?}", after.notes);
@@ -2000,7 +1998,7 @@ fn pocket_refuses_an_open_run() {
     let op = Operation {
         tool: "EM-0600-4FL".into(),
         src: sel("part", open),
-        params: OpParams::Pocket { rest: None,
+        params: OpParams::Pocket { pass_start: Default::default(), rest: None,
             blend_radius: None,
             links: camcraft_app::links::Links::PLANAR,
             tilt: None,
@@ -4076,6 +4074,8 @@ fn finish_params(top_z: f64, bottom_z: f64, tolerance: f64) -> OpParams {
     OpParams::Finish3D {
         gap_link: camcraft_app::finishing3d::GapLink::Jump,
         pattern: camcraft_app::finishing3d::FinishPattern::Waterline,
+        direction_angle: 0.0,
+        pass_start: camcraft_app::machining2d::PassStart::Auto,
         stepover: None,
         tolerance,
         clearance_z: Height::fixed(25.0),
@@ -5941,25 +5941,57 @@ fn rotary_parallel_generates_radial_axes_and_verifies_clean() {
     // The raster's heights are world z in the laid frame (an exact
     // reading for a flat-lying bar), read off the BALL a vertical tip
     // there would carry - its center r up the pose from the posted
-    // tip, its lowest point r under that (M13 pivot law): the ladder
-    // never sinks below its Bottom, and its last line IS the Bottom.
-    // The links are not the raster (M13.8): a pass on the flank under
-    // the equator retracts along ITS radius onto the 25 mm clearance
-    // cylinder, below the Bottom plane and in air - those retract
-    // ends are judged by the verdict above, not by the Bottom law.
-    let low = |m: &camcraft_app::cl::Move| m.to.z + 3.0 * m.axis.map_or(1.0, |a| a[2]) - 3.0;
+    // tip, its lowest point r under that (M13 pivot law). #2970: the
+    // bar is planned in two halves, the laid frame (A) and that frame
+    // turned half a turn about the axis (B); each half's ladder never
+    // sinks below its Bottom in its OWN frame, and its last line IS
+    // the Bottom. B's tips are also held to the Bottom where they touch
+    // the bar: a posed tip on the wall is the contact. The links are
+    // not the raster (M13.8): a pass retracts along ITS radius onto the
+    // 25 mm clearance cylinder, in air - those retract ends are judged
+    // by the verdict above, not by the Bottom law.
+    let center = |m: &camcraft_app::cl::Move| {
+        let a = m.axis.unwrap_or([0.0, 0.0, 1.0]);
+        (m.to.y + 3.0 * a[1], m.to.z + 3.0 * a[2])
+    };
+    let low = |m: &camcraft_app::cl::Move| center(m).1 - 3.0; // A's reading
     let on_clearance = |m: &&camcraft_app::cl::Move| (m.to.y * m.to.y + m.to.z * m.to.z).sqrt() >= 25.0 - 1e-6;
-    let lowest = t
+    let cuts: Vec<_> = t
         .moves
         .iter()
         .filter(|m| matches!(m.kind, MoveKind::Feed | MoveKind::Plunge))
         .filter(|m| !on_clearance(m))
-        .map(low)
-        .fold(f64::INFINITY, f64::min);
-    assert!(
-        lowest >= -4.0 - 1e-9,
-        "the raster sank below its Bottom plane: {lowest}"
-    );
+        .collect();
+    // The Bottom bound of both halves: every feed and plunge touches the
+    // bar at or over the Bottom in world z (a posed tip on the bar is
+    // where the ball touches; tolerance 0.1). It reads half A's cuts
+    // under the axis plane that the two-half filter keeps as well as
+    // half B's. A per-half reading in each half's own frame cannot fail
+    // here (over the axis plane `low` >= -3, under it B's `-cz - 3` >
+    // -3), so it is not asserted; this bound, the counts and the sector
+    // check below are the bounds.
+    let (mut over, mut under) = (0usize, 0usize);
+    for m in &cuts {
+        if center(m).1 >= 0.0 {
+            over += 1;
+        } else {
+            under += 1;
+        }
+        assert!(m.to.z >= -4.0 - 0.1 - 1e-9, "a cut touches under the Bottom: {m:?}");
+    }
+    assert!(over > 20 && under > 20, "both halves cut: {over} over the axis plane, {under} under it");
+    // #2970: the passes go all the way round - every 30-degree sector
+    // about the axis holds a cutting ball center out on the turned
+    // surface (off the axis by more than the ball).
+    let mut hit = [false; 12];
+    for m in cuts.iter().filter(|m| m.kind == MoveKind::Feed) {
+        let (y, z) = center(m);
+        if (y * y + z * z).sqrt() > 3.0 {
+            let k = (z.atan2(y).to_degrees().rem_euclid(360.0) / 30.0) as usize;
+            hit[k.min(11)] = true;
+        }
+    }
+    assert!(hit.iter().all(|h| *h), "sectors (30 deg, 0 = +y) with no pass: {hit:?}");
     let on_bottom = t
         .moves
         .iter()
@@ -6415,6 +6447,7 @@ fn multiaxis_rough_params() -> OpParams {
 
 fn multiaxis_rough_pocket_twin() -> OpParams {
     OpParams::Pocket3D {
+        pass_start: Default::default(),
         links: camcraft_app::links::Links::ROUGH3D,
         stepover: 3.0,
         stock_to_leave: 0.0,
@@ -7565,9 +7598,11 @@ fn the_crease_pair_generates_through_the_operation_layer() {
 /// The deburr ride's params: the window is stated in the TIP's units
 /// (the kernel's clipping law), so a `top_z` at the model's own top
 /// minus the drop names exactly the rim that stands there.
-fn deburr_params(width: f64, top_z: f64, bottom_z: f64) -> OpParams {
+/// #1890: callers state the setback on a 90-degree edge; the width is
+/// its chord, `setback * sqrt(2)`.
+fn deburr_params(setback: f64, top_z: f64, bottom_z: f64) -> OpParams {
     OpParams::Deburr {
-        width,
+        width: setback * std::f64::consts::SQRT_2,
         clearance_z: Height::fixed(25.0),
         top_z: Height::fixed(top_z),
         bottom_z: Height::fixed(bottom_z),
@@ -7580,6 +7615,7 @@ fn deburr_params(width: f64, top_z: f64, bottom_z: f64) -> OpParams {
         hole_min_diameter: 0.0,
         hole_max_diameter: 0.0,
         unreachable: camcraft_app::finishing3d::UnreachableEdges::SkipWithNote,
+        sizing: camcraft_app::finishing3d::DeburrBreak::default(),
     }
 }
 
@@ -7720,8 +7756,10 @@ fn deburr_refuses_a_cone_that_rules_no_chamfer() {
 
 #[test]
 fn deburr_refuses_a_flank_too_short_for_the_break() {
-    // Width 5 on the 90-degree cone reaches 5 / sin 45 = 7.1 mm up
-    // the flank - the CM-0400's 6 mm of flute stops at its shank, and
+    // A 5 mm setback (chord 5 * sqrt(2)) may reach a setback of
+    // 5 * sqrt(2) / (2 sin 15) = 13.66 mm on the sharpest wedge the
+    // size law sizes (#1890), 13.66 / sin 45 = 19.3 mm up the flank -
+    // the CM-0400's 6 mm of flute stops at its shank, and
     // the ride would dress a cylinder as a cone. The catalog's own
     // tool proves the door: no fixture invention needed.
     let world = new_world();
@@ -7747,7 +7785,7 @@ fn deburr_refuses_a_flank_too_short_for_the_break() {
         panic!("expected a machining refusal");
     };
     assert!(msg.contains("up the cone's flank"), "{msg}");
-    assert!(msg.contains("7.1"), "{msg}");
+    assert!(msg.contains("19.3"), "{msg}");
     assert_eq!(status(&world, "DB"), OpStatus::Never);
 }
 

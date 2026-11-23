@@ -4,7 +4,7 @@
 //! Provenance: our own digest law over this repo's operation registry.
 
 use super::*;
-use digest::{w, write_corner_relief, wt};
+use digest::{w, write_corner_relief, write_rest, wt};
 
 impl OpParams {
     /// The digest-relevant scalars, written to a hasher in a fixed
@@ -201,6 +201,7 @@ impl OpParams {
                 optimal_load,
                 blend_turns,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -246,15 +247,9 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
-                // #1489: written only when ON, so every pocket without
-                // rest machining keeps its digest.
-                if let Some(r) = rest {
-                    h.write_u8(0xD7);
-                    for v in [r.previous_tool_diameter, r.previous_corner_radius, r.previous_stock_to_leave, r.allowance] {
-                        w(h, v);
-                    }
-                }
+                write_rest(rest, h, true);
                 write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h); // #3354: only off Auto
             }
             // The roughing twins (M2.4 A): the pocket's digest minus
             // the strategy byte - the kind tag at the head already
@@ -280,7 +275,9 @@ impl OpParams {
                 optimal_load,
                 method,
                 troch,
+                rest,
                 tilt,
+                pass_start,
             } => {
                 w(h, *stepover);
                 w(h, *stock_to_leave);
@@ -331,18 +328,21 @@ impl OpParams {
                         w(h, *r);
                     }
                 }
+                write_rest(rest, h, false);
                 write_corner_relief(corner_relief, h);
+                digest::write_pass_start(*pass_start, h);
             }
             OpParams::Offset2D { .. }
             | OpParams::Slot { .. }
             | OpParams::TrochoidalSlot { .. }
             | OpParams::Trace { .. }
+            | OpParams::VCarve { .. }
             | OpParams::Engrave { .. }
             | OpParams::Chamfer2D { .. }
             | OpParams::Circular { .. } => self.stamp_mill2d(world, setup, src, h),
             OpParams::Pocket3D { .. }
             | OpParams::Finish3D { .. }
-            | OpParams::Deburr { .. } => self.stamp_mill3d(world, setup, src, h),
+            | OpParams::Deburr { .. } | OpParams::MultiAxisDeburr { .. } => self.stamp_mill3d(world, setup, src, h),
             OpParams::Contour5D { .. }
             | OpParams::Parallel5D { .. }
             | OpParams::Swarf { .. }
@@ -372,7 +372,8 @@ impl OpParams {
             OpParams::WireContour { .. }
             | OpParams::SinkerBurn { .. }
             | OpParams::SinkerSideBurn { .. }
-            | OpParams::PlasmaProfile { .. } => self.stamp_cutting(world, setup, src, h),
+            | OpParams::SlotUndercut { .. }
+            | OpParams::PlasmaProfile { .. } | OpParams::WaterjetProfile { .. } => self.stamp_cutting(world, setup, src, h),
         }
         self.stamp_links(h);
     }

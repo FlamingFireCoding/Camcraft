@@ -76,6 +76,13 @@ var taperOk = true;
 var dialect = "";          // "angle": the machine tapers by angle word (#1164)
 var corner = "", plane = null;
 var angleNext = null;      // the next move's angle word (WireAngle)
+// A wire number the stream states but that is no finite number (#3236):
+// the param's name, "" for none. A non-finite f64 reaches the stream as
+// "null" (or "nan" / "inf" in a hand-written one); skipped, it would turn
+// a leaning move into a plain G1. Refused, and no cut of the section is
+// written.
+var WIRE_NUMBERS = ["WireTaper", "WirePlane", "WireAngle", "WireU", "WireV"];
+var notFinite = "";
 var codesOk = false;
 var refused = {};
 
@@ -85,8 +92,16 @@ function trim(s) {
   if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
   return s === "-0" ? "0" : s;
 }
-function fu(v) { return trim(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3)); }
+// A dimension word always carries its decimal point (#3206): many wire
+// controls read a number without one in their least input unit, so
+// "X5" would be 5 um there, not 5 mm.
+function pt(s) {
+  s = s.replace(/0+$/, "");
+  return (s === "-0." || s === "-.") ? "0." : s;
+}
+function fu(v) { return pt(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3)); }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return k === "Z" ? "" : wo(k, v, k === "X" ? orgX : orgY); }  // #3442: a position word as written (no Z), for arcFate
 function block(words, machineCode) {
   var a = [];
   for (var i = 0; i < words.length; i++) {
@@ -176,6 +191,11 @@ function onOpen() {
 }
 
 function onParameter(name, value) {
+  if (WIRE_NUMBERS.indexOf(name) >= 0 && !has(value)) {
+    notFinite = name;
+    refuse("nf" + name + opName, who() + "PARAM " + name + " is not a finite number (" + (value === null || value === undefined ? "null" : clean(value)) + ") - refused, the wire post writes no cut from it");
+    return;
+  }
   if (name === "WorkOffset" && value) wcsWord = String(value);
   else if (name === "OriginX" && has(value)) orgX = Number(value);
   else if (name === "OriginY" && has(value)) orgY = Number(value);
@@ -240,7 +260,7 @@ function onSection() {
       refuse("angtpl" + opName, "machine " + machineName() + ": edm.codes.taper_angle states no {angle} place for the taper angle");
       taperOk = false;
     }
-    note("TAPER " + trim(Number(taper).toFixed(3)) + " DEG BY ANGLE WORD - XY ON THE PROGRAMMED PLANE Z" + (has(plane) ? fu(plane) : "?") + ", CORNERS " + corner.toUpperCase());
+    note("TAPER " + trim(Number(taper).toFixed(3)) + " DEG BY ANGLE WORD - XY ON THE PROGRAMMED PLANE Z" + (has(plane) ? trim(fu(plane)) : "?") + ", CORNERS " + corner.toUpperCase());
   } else if (taper !== 0 || fourAxis !== "") {
     for (var i = 0; i < TAPER_REQUIRED.length; i++) {
       if (code(TAPER_REQUIRED[i]) === null) {
@@ -313,6 +333,7 @@ function cutOk(p) {
     refuse("tilt" + opName, who() + "a posed move - this post writes a 2-axis (vertical wire) cut only");
     return false;
   }
+  if (notFinite !== "") return false; // refused by name in onParameter (#3236)
   if (!startCut(p)) return false;
   if (has(p.Z) && cutZ !== null && Math.abs(p.Z - cutZ) > 0.0005) {
     refuse("z" + opName, who() + "a move changes Z - a 2-axis wire cut rides one programmed plane");
@@ -347,7 +368,7 @@ function onLinear() {
     }
     if (ang !== 0 && !tapering) {
       block([code("taper_on")], true);
-      block([code("taper_angle").split("{angle}").join(trim(Number(ang).toFixed(3)))], true);
+      block([code("taper_angle").split("{angle}").join(pt(Number(ang).toFixed(3)))], true);
       tapering = true;
     } else if (ang === 0 && tapering) {
       block([code("taper_off")], true);
@@ -383,6 +404,9 @@ function onCircular() {
     refuse("uvarc" + opName, who() + "a tapered arc - this post writes straight tapered moves only");
     return;
   }
+  // #3442: an arc whose written ends coincide is no arc block (arcFate, PRELUDE).
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J K are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var c = p.IJKIncrement || {};
   block([
     p.CircularDirection === "CW" ? "G2" : "G3",
@@ -431,6 +455,7 @@ function onSectionEnd() {
   corner = "";
   plane = null;
   angleNext = null;
+  notFinite = "";
 }
 
 // ------------------------------------------------------------ footer
