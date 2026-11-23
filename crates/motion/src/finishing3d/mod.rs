@@ -98,6 +98,8 @@ mod grid;
 #[cfg(test)]
 mod grid_tests;
 mod geodesic;
+#[cfg(test)]
+mod hop_tests;
 mod ladder;
 mod morph;
 mod pencil;
