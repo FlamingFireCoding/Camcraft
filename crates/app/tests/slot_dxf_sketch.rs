@@ -263,9 +263,17 @@ fn picks_that_are_no_slot_are_refused_by_name() {
         };
 
         // A channel narrower than the tool: the 3 mm outline under the 4 mm cutter.
-        let why = refused(pick(&world, "narrow"), "narrow outline");
-        let named = if kind == OpType::Slot { "slot is narrower than the tool" } else { "is too narrow for a 4.000 mm tool" };
-        assert!(why.contains(named) && why.contains("3.000 mm") && why.contains("4.000 mm"), "{kind}: {why}");
+        // #3475: the plain Slot refuses it at create, in plain words; the
+        // trochoidal slot still at generate.
+        if kind == OpType::Slot {
+            let created = CreateOperation::new(&world, &format!("{name} narrow outline"), TOOL, pick(&world, "narrow"), seed(kind));
+            let why = refusal(created, "narrow outline");
+            assert!(why.contains("is 4 mm wide and the slot is 3 mm wide: choose a tool of 3 mm or less"), "{kind}: {why}");
+        } else {
+            let why = refused(pick(&world, "narrow"), "narrow outline");
+            let named = "is too narrow for a 4.000 mm tool";
+            assert!(why.contains(named) && why.contains("3.000 mm") && why.contains("4.000 mm"), "{kind}: {why}");
+        }
 
         // A closed outline that is not a slot.
         let why = refused(pick(&world, "plate"), "rectangle");

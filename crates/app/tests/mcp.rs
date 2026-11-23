@@ -13,6 +13,8 @@ mod common;
 #[path = "mcp/finish3d_direction.rs"]
 mod mcp_finish3d_direction;
 mod mcp_open;
+#[path = "mcp/slot_tool_fit.rs"]
+mod slot_tool_fit;
 #[path = "mcp/trochoid_pass_start.rs"]
 mod trochoid_pass_start;
 
