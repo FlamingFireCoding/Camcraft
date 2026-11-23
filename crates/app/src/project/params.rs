@@ -730,6 +730,10 @@ pub enum ParamsDto {
         /// grammar, so no version step-up.
         #[serde(default)]
         gap_link: GapLinkDto,
+        /// Absent means the waterline ring pass runs on steep flanks,
+        /// what every older file ran (#2811). Written always, like `ramp`.
+        #[serde(default = "default_true")]
+        waterlines: bool,
         /// #3362 where the nested offset loops start: absent is
         /// `auto`, the order every earlier file cut - no version step.
         #[serde(default, skip_serializing_if = "PassStartDto::is_auto")]
@@ -1488,6 +1492,11 @@ fn default_helix_radius() -> f64 {
 /// `false` is absent from the file, so legacy saves stay byte-identical.
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// Default `true` for additive on-by-default flags (#2811 `waterlines`).
+fn default_true() -> bool {
+    true
 }
 
 /// Serde's skip test for an additive length that is zero by default

@@ -713,6 +713,11 @@ pub enum OpParams {
         /// own diagonal certifies the break.
         /// See [`crate::finishing3d::GapLink`].
         gap_link: finishing3d::GapLink,
+        /// Run the waterline ring pass on steep flanks after the
+        /// shallow pass (#2811). `true` (default) preserves every
+        /// older operation; `false` cuts the shallow pass only and
+        /// notes any steep flanks left uncut.
+        waterlines: bool,
         /// Where the nested offset loops start (#3362, the shared
         /// parameter of #3316): read by Contour and Flat only. `Auto`
         /// is every earlier file, byte for byte.

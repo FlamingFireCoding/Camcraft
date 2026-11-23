@@ -112,6 +112,7 @@ fn finish() -> OpParams {
         steep_stepover: None,
         pencil_reference: None,
         fill_openings: None,
+        waterlines: true,
     }
 }
 

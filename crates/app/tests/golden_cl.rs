@@ -659,6 +659,7 @@ fn finish3d_waterline_cone() {
             entry_ramp: false,
             steep_stepover: None,
             pencil_reference: None,
+            waterlines: true,
         },
     )
     .unwrap();
@@ -715,6 +716,7 @@ fn finish3d_scallop_plateau() {
             entry_ramp: false,
             steep_stepover: None,
             pencil_reference: None,
+            waterlines: true,
         },
     )
     .unwrap();
@@ -767,6 +769,7 @@ fn finish3d_ramp_parallel_plateau() {
         entry_ramp: false,
         steep_stepover: None,
         pencil_reference: None,
+        waterlines: true,
     };
     let t = parallel_with_angle(&facets, &params, 0.0).unwrap();
     assert_eq!(t.moves, parallel(&facets, &params).unwrap().moves);
@@ -839,6 +842,7 @@ fn finish3d_radial_dome() {
             entry_ramp: false,
             steep_stepover: None,
             pencil_reference: None,
+            waterlines: true,
         },
     )
     .unwrap();
@@ -887,6 +891,7 @@ fn finish3d_spiral_plateau() {
             entry_ramp: false,
             steep_stepover: None,
             pencil_reference: None,
+            waterlines: true,
         },
     )
     .unwrap();
@@ -935,6 +940,7 @@ fn finish3d_contour_plateau() {
             entry_ramp: false,
             steep_stepover: None,
             pencil_reference: None,
+            waterlines: true,
         },
     )
     .unwrap();
@@ -1001,6 +1007,7 @@ fn finish3d_project_dome() {
             entry_ramp: false,
             steep_stepover: None,
             pencil_reference: None,
+            waterlines: true,
         },
     )
     .unwrap();
