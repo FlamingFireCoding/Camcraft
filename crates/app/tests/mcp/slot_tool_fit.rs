@@ -25,4 +25,29 @@ fn set_tool_refuses_a_tool_wider_than_the_slot_without_mutation() {
     // A tool of the slot's own width fits.
     let set = c.ok("set_tool", json!({ "operation": "S6", "tool": "EM-0600-4FL" }));
     assert_eq!(set["tool"], json!("EM-0600-4FL"), "{set}");
+    // A width that the caller states is judged: 4 mm under the 6 mm tool is refused.
+    let msg = c.refused("add_operation", json!({
+        "kind": "Slot", "tool": "EM-0600-4FL", "name": "S7", "params": { "width": 4.0 }
+    }));
+    assert!(msg.contains("the slot is 4 mm wide: choose a tool of 4 mm or less"), "{msg}");
+}
+
+/// A Slot added with no width takes the larger of the seed's 4 mm and its
+/// tool's diameter, so the default Slot always holds its own tool.
+#[test]
+fn add_operation_seeds_the_slot_width_from_the_tool() {
+    let mut c = Client::new();
+    c.ok("set_stock", json!({ "box": { "dx": 60.0, "dy": 50.0, "dz": 10.0 } }));
+    c.ok("add_tool", json!({ "catalog": "EM-0600-4FL" }));
+    c.ok("add_tool", json!({ "catalog": "EM-0300-2FL" }));
+    c.ok("add_operation", json!({ "kind": "Slot", "tool": "EM-0600-4FL", "name": "S6" }));
+    c.ok("add_operation", json!({ "kind": "Slot", "tool": "EM-0300-2FL", "name": "S3" }));
+    let job = c.ok("get_job", json!({}));
+    let width = |name: &str| {
+        let ops = job["operations"].as_array().cloned().unwrap_or_default();
+        let op = ops.into_iter().find(|o| o["name"] == json!(name)).unwrap_or_else(|| panic!("{name} in {job}"));
+        op["params"]["slot"]["width"].clone()
+    };
+    assert_eq!(width("S6"), json!(6.0), "a 6 mm tool widens the seed");
+    assert_eq!(width("S3"), json!(4.0), "a 3 mm tool keeps the seed's 4 mm");
 }

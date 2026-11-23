@@ -298,3 +298,18 @@ fn picks_that_are_no_slot_are_refused_by_name() {
         assert!(why.contains("pick one closed slot outline or one open centerline"), "{kind}: {why}");
     }
 }
+
+/// #3475: picks that are no slot seed no width, so the slot fit law does
+/// not speak for the seed's fallback width: a 6 mm tool on them is made,
+/// and generation names the picks, as before.
+#[test]
+fn picks_that_are_no_slot_keep_their_pick_refusal_under_a_wider_tool() {
+    let (world, mut history) = sheet_world();
+    const WIDE: &str = "EM-0600-4FL";
+    let tool = catalog().into_iter().find(|(n, _)| *n == WIDE).map(|(_, t)| t).expect("catalog tool");
+    run(&world, &mut history, AddTool::new(&world, WIDE, tool), "wide tool");
+    let created = CreateOperation::new(&world, "S plate", WIDE, pick(&world, "plate"), seed(OpType::Slot));
+    run(&world, &mut history, created, "a Slot on a rectangle");
+    let why = refusal(GenerateOperation::new(&world, "S plate"), "rectangle");
+    assert!(why.contains("is not a slot outline"), "{why}");
+}

@@ -215,6 +215,7 @@ pub fn resize_refusal(world: &World, tool: &str, diameter: f64) -> Option<String
         .into_iter()
         .filter_map(|(name, e)| model::operation_of(world, &e).map(|op| (name, op)))
         .filter(|(_, op)| op.tool == tool)
+        .filter(|(_, op)| super::slot_width_is_stated(world, op.setup.as_deref(), &op.src, &op.params))
         .find_map(|(name, op)| match op.params {
             crate::operation::OpParams::Slot { width, stock_to_leave, .. } => {
                 slot_fit_refusal(tool, diameter, width, stock_to_leave, unit).map(|why| format!("{name} uses it: {why}"))

@@ -1,7 +1,8 @@
 //! #3475: a tool wider than a plain Slot is refused at the command, by
 //! the slot generator's own rule, with both sizes and the largest tool
 //! that fits - at create, at a tool reassignment (MCP `set_tool`, the
-//! UI's links edit) and at a tool library edit that widens the cutter.
+//! UI's links edit), at a change of kind and at a tool library edit that
+//! widens the cutter. A Slot made from the seed is as wide as its tool.
 //! A refused command changes nothing; a tool that fits is accepted.
 //!
 //! Provenance: plain offset geometry of a slot (machine-tool handbook
@@ -9,12 +10,14 @@
 //! consulted.
 //!
 //! Gate map (M4.4): covers app::operation::tool_gate, app::commands
-//! (CreateOperation, EditOperationLinks, ChangeTool).
+//! (CreateOperation, EditOperationLinks, ChangeOperationKind, ChangeTool).
 //! Lane shape (M4.4): all tests here run in milliseconds.
 
 use flecs_ecs::prelude::World;
 
-use camcraft_app::commands::{AddTool, ChangeTool, CommandError, CreateOperation, EditOperationLinks, History, SetStock};
+use camcraft_app::commands::{
+    AddTool, ChangeOperationKind, ChangeTool, CommandError, CreateOperation, EditOperationLinks, History, SetStock,
+};
 use camcraft_app::model;
 use camcraft_app::operation::{self, tool_gate, Height, HeightReference, OpParams, OpType, SrcRef};
 use camcraft_app::schema::Location;
@@ -131,4 +134,40 @@ fn a_tool_library_edit_that_widens_a_slot_cutter_is_refused() {
     // A smaller cutter, or one that still fits, passes.
     h.execute(&world, ChangeTool::new(&world, SMALL, end_mill(6.0)).expect("6 mm still fits"));
     h.execute(&world, ChangeTool::new(&world, SMALL, end_mill(3.0)).expect("a smaller cutter"));
+}
+
+fn face() -> OpParams {
+    OpParams::Face {
+        holes: Default::default(),
+        blend_turns: false,
+        tilt: None,
+        stepover: 3.0,
+        clearance_z: Height::fixed(25.0),
+        cut_z: Height::fixed(19.5),
+        top_z: None,
+        stepdown: None,
+        feed: 1200.0,
+        plunge_feed: 300.0,
+        climb: true,
+    }
+}
+
+fn slot_width(world: &World, name: &str) -> f64 {
+    match model::find_by_name(world, name).and_then(|e| model::operation_of(world, &e)).map(|op| op.params) {
+        Some(OpParams::Slot { width, .. }) => width,
+        other => panic!("{name} is no Slot: {other:?}"),
+    }
+}
+
+#[test]
+fn a_change_of_kind_to_slot_holds_the_ops_own_tool() {
+    let (world, mut h) = world();
+    h.execute(&world, CreateOperation::new(&world, "W", WIDE, SrcRef::Stock, face()).expect("a 10 mm face"));
+    h.execute(&world, CreateOperation::new(&world, "N", SMALL, SrcRef::Stock, face()).expect("a 4 mm face"));
+    for name in ["W", "N"] {
+        let retype = ChangeOperationKind::new(&world, name, OpType::Slot.ordinal());
+        h.execute(&world, retype.unwrap_or_else(|e| panic!("{name} becomes a Slot: {e}")));
+    }
+    assert!((slot_width(&world, "W") - 10.0).abs() < 1e-9, "the 10 mm tool widens the seed");
+    assert!((slot_width(&world, "N") - 4.0).abs() < 1e-9, "a 4 mm tool keeps the seed's 4 mm");
 }

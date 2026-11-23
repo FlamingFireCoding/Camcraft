@@ -6,16 +6,33 @@
   `h = 0` permitted) moved into one pure function,
   `camcraft_motion::machining2d::slot_centre_band`. The slot generator
   and the commands call it. There is no second copy of the rule.
-- `tool_gate` (the tool law's door in `commands/operation/gates.rs`) now
-  ends with `slot_gate`. Thus `CreateOperation` and `EditOperationLinks`
-  (MCP `set_tool`, the UI's links edit) refuse a plain Slot whose tool is
-  too wide. The text names both sizes and the largest tool that fits, in
-  the document unit: "The tool 'EM-WIDE' is 10 mm wide. The slot is 6 mm
-  wide. Choose a tool of 6 mm or less." The UI shows the same text after
-  its "links not updated: " prefix. It is one command path.
+- A new `slot_gate` in `commands/operation/gates.rs` runs in
+  `CreateOperation`, `EditOperationLinks` (MCP `set_tool`, the UI's links
+  edit, only when the tool changes) and `ChangeOperationKind`. It refuses
+  a plain Slot whose tool is too wide. The text is one sentence that names
+  both sizes and the largest tool that fits, in the document unit:
+  "the tool 'EM-WIDE' is 10 mm wide and the slot is 6 mm wide: choose a
+  tool of 6 mm or less" (after the usual "invalid parameters: " prefix).
+  The UI shows the same text after its "links not updated: " prefix.
+- The default width (review of PR #3635, maintainer's standing order to
+  take the recommended option). A Slot whose width comes from the seed
+  (4 mm) takes the larger of 4 mm and its tool's diameter:
+  `operation::seed_slot_for_tool` (`operation/slot_pick.rs`), called
+  beside `seed_helix_for_tool` at the ribbon's quick-add
+  (`ui/src/actions.rs`) and at MCP `add_operation` before its params
+  patch (`mcp/edit.rs`), and in `ChangeOperationKind` after
+  `retype_params`. A tool of 4 mm or less gives exactly the old operation.
+  A width that the caller or the picks state is not changed, and the gate
+  judges it.
+- Picks that seed no slot (`slot_from_picks` is `None`): the width is only
+  the seed's fallback, so the gate skips it
+  (`operation::slot_width_is_stated`) and generation still refuses with the
+  pick text. The `ChangeTool` check skips such operations too. The
+  alternative (seed the fallback width from the tool) was dropped: it
+  writes a width that nobody stated.
 - The second door: `ChangeTool` refuses an edit that makes a tool wider
   when a plain Slot that uses the tool can then not hold it
-  ("S1 uses it: The tool ..."). It reads the operations that name the tool,
+  ("S1 uses it: the tool ..."). It reads the operations that name the tool,
   as `retype_refusal` does.
 - The generator keeps its own refusal. A project file from an older build
   can still hold the bad pair.
@@ -29,6 +46,9 @@ numbers that the command has, so the check is exact. It cannot refuse a
 slot that the generator cuts.
 
 **Dropped.**
+
+- A check at `set_tool` only (not at creation): an AI caller could then
+  make the bad pair with `add_operation`.
 
 - 2D Pocket. Its fit depends on the region: the containment (an open
   side lets a wider tool cut from outside), the stock and the part-sliced
