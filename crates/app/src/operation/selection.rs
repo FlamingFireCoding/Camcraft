@@ -193,6 +193,7 @@ pub(super) fn selection_geometry_impl(
         params,
         OpParams::Contour { .. }
             | OpParams::PlasmaProfile(_)
+            | OpParams::WaterjetProfile(_)
             | OpParams::WireContour(_)
             | OpParams::Chamfer2D { .. }
     )
@@ -242,6 +243,7 @@ pub(super) fn selection_geometry_in(
         params,
         OpParams::Contour { .. }
             | OpParams::PlasmaProfile(_)
+            | OpParams::WaterjetProfile(_)
             | OpParams::WireContour(_)
             | OpParams::Chamfer2D { .. }
     );

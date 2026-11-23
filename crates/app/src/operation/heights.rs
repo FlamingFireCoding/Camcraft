@@ -137,6 +137,7 @@ pub fn region_z(
         // ride's only height (M2.4 B).
         | OpParams::Adaptive2D { top_z, .. }
         | OpParams::Offset2D { top_z, .. }
+        | OpParams::VCarve { top_z, .. }
         | OpParams::Engrave { top_z, .. }
         | OpParams::Chamfer2D { top_z, .. }
         | OpParams::Circular { top_z, .. }
@@ -181,10 +182,14 @@ pub fn region_z(
         OpParams::Probe { target, .. } => Some(target[2]),
         // The plasma cut rides the plate's top (#670).
         OpParams::PlasmaProfile(p) => resolve(p.top_z),
+        // The waterjet cut rides the sheet's top (#1883).
+        OpParams::WaterjetProfile(p) => resolve(p.top_z),
         // The wire's profile is read on the workpiece's top (#532).
         OpParams::WireContour(p) => resolve(p.top_z),
         // The electrode enters at the work top (#541).
         OpParams::SinkerBurn(p) | OpParams::SinkerSideBurn(crate::operation::SinkerSideBurnOp { burn: p, .. }) => resolve(p.top_z),
+        // #1444: the material top over the slot.
+        OpParams::SlotUndercut(p) => resolve(p.top_z),
     }
 }
 
@@ -266,6 +271,7 @@ pub fn resolve_params_with(
         // and the circular ladder do too (M2.4 B).
         | OpParams::Adaptive2D { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Offset2D { clearance_z, retract_z, top_z, bottom_z, .. }
+        | OpParams::VCarve { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Engrave { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Circular { clearance_z, retract_z, top_z, bottom_z, .. }
         | OpParams::Slot { clearance_z, retract_z, top_z, bottom_z, .. }
@@ -414,6 +420,15 @@ pub fn resolve_params_with(
             None,
             None,
         ),
+        // The waterjet cut (#1883): the jet-off plane, the sheet's top
+        // (the cut plane) and bottom - no hop plane.
+        OpParams::WaterjetProfile(p) => (
+            req("Clearance Z", p.clearance_z)?,
+            Some(req("Top of Plate Z", p.top_z)?),
+            Some(req("Bottom of Plate Z", p.bottom_z)?),
+            None,
+            None,
+        ),
         // The wire cut (#532): the workpiece's top and bottom - the two
         // programmed planes. A wire never lifts out of the work, so no
         // rapids plane is stated; the slot reads the top.
@@ -429,6 +444,14 @@ pub fn resolve_params_with(
             Some(req("Cavity Floor Z", p.floor_z)?),
             None,
             None,
+        ),
+        // #1444: the undercut's floor is its only cut plane.
+        OpParams::SlotUndercut(p) => (
+            req("Clearance Z", p.clearance_z)?,
+            Some(req("Top of Part Z", p.top_z)?),
+            Some(req("Bottom of Part Z", p.bottom_z)?),
+            None,
+            opt("Retract Z", p.retract_z)?,
         ),
     };
     Ok(ResolvedHeights { clearance, top, bottom, face_top, retract })

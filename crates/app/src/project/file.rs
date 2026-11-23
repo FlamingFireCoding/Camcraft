@@ -157,7 +157,19 @@ use super::*;
 /// v75 (#3181): a machine can record its controller model, exact NC software,
 /// installed options and tool-change procedure. A v74 file leaves them
 /// unstated. Older readers must refuse v75 to prevent losing these facts.
-pub const PROJECT_VERSION: u32 = 75;
+/// v76 (#1890): a 3D Deburr `width` is the chamfer chord across the
+/// edge, not the cone's setback at the edge's level, and Deburr adds
+/// `break_mode`, `break_depth`, `break_profile` and `passes` (absent is
+/// one Constant Width chamfer pass). A v75 width steps up by sqrt(2),
+/// the chord of its setback on a 90-degree edge, so the cut depth stays.
+/// An old reader must refuse a v76 file rather than read the chord as a
+/// setback and cut each break sqrt(2) times deeper.
+/// v77 (#3447): a setup may state its creation order (`order`), and the
+/// program posts setups in that order. Absent sorts by name - what every
+/// v76 file posted - so a v76 file steps up unchanged. An old reader must
+/// refuse a v77 file rather than drop the order and post a setup before
+/// the setup its datum comes from.
+pub const PROJECT_VERSION: u32 = 77;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -578,6 +590,14 @@ pub enum ToolKindDto {
     ThreadMillSingle,
     /// Wire EDM wire (#2011): additive in the same way.
     Wire,
+    /// The undercut cutters (#1444): additive words - no older file
+    /// names them. They read the shared keys: `diameter` the head,
+    /// `flute_len` its height, `shank_d` and `shank_len` the neck,
+    /// `tip_angle` the dovetail's flank angle.
+    TSlot,
+    Keyseat,
+    Dovetail,
+    Lollipop,
 }
 
 impl ToolDto {
@@ -602,6 +622,10 @@ impl ToolDto {
                 ToolKind::ThreadMill => ToolKindDto::ThreadMill,
                 ToolKind::ThreadMillSingle => ToolKindDto::ThreadMillSingle,
                 ToolKind::Wire => ToolKindDto::Wire,
+                ToolKind::TSlot => ToolKindDto::TSlot,
+                ToolKind::Keyseat => ToolKindDto::Keyseat,
+                ToolKind::Dovetail => ToolKindDto::Dovetail,
+                ToolKind::Lollipop => ToolKindDto::Lollipop,
             },
             diameter: t.diameter,
             corner_r: t.corner_r,
@@ -671,6 +695,10 @@ impl ToolDto {
                 ToolKindDto::ThreadMill => ToolKind::ThreadMill,
                 ToolKindDto::ThreadMillSingle => ToolKind::ThreadMillSingle,
                 ToolKindDto::Wire => ToolKind::Wire,
+                ToolKindDto::TSlot => ToolKind::TSlot,
+                ToolKindDto::Keyseat => ToolKind::Keyseat,
+                ToolKindDto::Dovetail => ToolKind::Dovetail,
+                ToolKindDto::Lollipop => ToolKind::Lollipop,
             },
             diameter: self.diameter,
             corner_r: self.corner_r,

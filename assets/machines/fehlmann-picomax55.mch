@@ -22,6 +22,7 @@
     ]
   } },
   "controller": {
+    "post": "Heidenhain Klartext",
     "identity": { "model": "iTNC 530", "nc_software": "340490-03" },
     "synced_configuration": { "parts": {
       "X": { "coordinate": 0, "max_rapid_speed": 11000 },
