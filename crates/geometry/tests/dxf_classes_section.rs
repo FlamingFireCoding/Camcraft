@@ -78,3 +78,23 @@ fn other_unknown_sections_stay_refused() {
         .0;
     assert!(error.contains("unsupported SECTION"), "{error}");
 }
+
+#[test]
+fn an_entity_in_a_section_without_geometry_is_refused() {
+    // A drawable record in a skipped section would be dropped silently: refuse it instead.
+    for name in ["CLASSES", "ACDSDATA", "THUMBNAILIMAGE"] {
+        for record in [
+            LINE,
+            "0\nlwpolyline\n90\n2\n10\n0\n20\n0\n10\n1\n20\n0\n",
+            "0\nINSERT\n2\nB\n10\n0\n20\n0\n",
+        ] {
+            let error = parse(file(&section(name, record)).as_bytes())
+                .unwrap_err()
+                .0;
+            assert!(
+                error.contains(name) && error.contains("entity in a section without geometry"),
+                "{error}"
+            );
+        }
+    }
+}

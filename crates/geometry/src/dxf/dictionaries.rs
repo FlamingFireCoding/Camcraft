@@ -1,4 +1,5 @@
 //! Provenance: dictionary entries, handles, ownership and group 102 brackets in the Autodesk DXF Reference.
+use super::entities::is_entity_kind;
 use super::pairs::{Pair, Pairs, Record, handle, integer};
 use super::types::{DxfError, error};
 use std::collections::{BTreeMap, BTreeSet};
@@ -72,6 +73,9 @@ pub(super) fn read(input: &mut Pairs<'_>, limit: usize) -> Result<(), DxfError> 
                 }
             }
             "EOF" | "SECTION" => return Err(error("OBJECTS", "missing ENDSEC")),
+            kind if is_entity_kind(kind) => {
+                return Err(error(kind, "graphical entity in OBJECTS"));
+            }
             _ => {
                 if owners.len() >= limit {
                     return Err(error("OBJECTS", "object count exceeds limit"));

@@ -2,7 +2,7 @@
 use super::Units;
 use super::blocks::Blocks;
 use super::dictionaries;
-use super::entities::{layer_name, simple};
+use super::entities::{is_entity_kind, layer_name, simple};
 use super::pairs::{Pairs, Record, integer};
 use super::polyline::{legacy, lightweight};
 use super::types::{Document, DxfError, Layer, Limits, State, TextAnnotation, error};
@@ -87,6 +87,12 @@ fn skip_inert(input: &mut Pairs<'_>, name: &str) -> Result<(), DxfError> {
         match record.kind {
             "ENDSEC" => return record.empty(),
             "EOF" | "SECTION" => return Err(error(name, "missing ENDSEC")),
+            kind if is_entity_kind(kind) => {
+                return Err(error(
+                    name,
+                    &format!("{kind} entity in a section without geometry"),
+                ));
+            }
             _ => {}
         }
     }
