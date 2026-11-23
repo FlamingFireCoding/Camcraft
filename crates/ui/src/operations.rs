@@ -659,7 +659,7 @@ mod warning_fold_tests {
         let mut w = vec![
             Warning::UndercutLift { at: 2 },
             Warning::DrillUndersize { at: 3, hole_mm: 6.0, drill_mm: 5.0 },
-            Warning::StrategyFallback { at: 4, areas: 1 },
+            Warning::StrategyFallback { at: 4, areas: 1, cause: camcraft_app::verify::FallbackCause::PassStart },
         ];
         w.extend(parts.iter().enumerate().map(|(i, &part)| Warning::AvoidHit { at: 10 + i, item: 1, part, short_mm: 0.5 }));
         assert!(w[0].blocks_post(), "an undercut lift must still block posting");

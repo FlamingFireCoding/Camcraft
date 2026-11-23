@@ -126,7 +126,7 @@ fn fanuc_refuses_a_comp_word_that_would_land_on_an_arc_a_rapid_or_the_section_en
 /// engage carries no D (the tool call's `T2 D2` selected the edge) and
 /// states the NORM approach.
 const DIALECTS: &[(&str, &str, &str)] = &[
-    ("haas", "G1 G42 X0. Y0. Z-2. D2 F500", "G1 G40 X8. Y0. Z-2. F500"),
+    ("haas", "G1 G42 X0. Y0. Z-2. D2 F500.", "G1 G40 X8. Y0. Z-2. F500."),
     ("mazak", "G01 G42 X0. Y0. Z-2. D2 F500", "G01 G40 X8. Y0. Z-2. F500"),
     ("sinumerik", "G1 G42 NORM X0 Y0 Z-2 F500", "G1 G40 X8 Y0 Z-2 F500"),
 ];
