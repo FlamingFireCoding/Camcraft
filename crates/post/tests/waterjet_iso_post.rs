@@ -232,3 +232,76 @@ fn waterjet_rapid_cache_resets_when_the_coordinate_frame_changes() {
         );
     }
 }
+
+/// A jet span from X20 to `start`, then `cut`, in the plate's frame.
+fn span(start: (&str, &str), cut: &str) -> String {
+    let (sx, sy) = start;
+    format!(
+        "PARAM OperationName Arc pin\nPARAM WorkOffset 1\nWATERJET ABRASIVE DWELL800 LAG300\nSECTION\n\
+         Rapid X 20000 Y {sy} Z 0\nJET ON C0 OPEN\nFeed X {sx} Y {sy} Z 0 F 300000\n{cut}JET OFF C0\nENDSECTION\n"
+    )
+}
+
+/// The blocks and the warnings of one post, without the `(EXTENT ...)`
+/// comment: `programBounds` boxes a short arc record by its full circle
+/// (the safe side for the travel check), so that comment differs between
+/// an arc record and its straight reference.
+fn program(stream: &str, unit: &str) -> String {
+    let out = post(&jet_machine(), stream, &json!({ "Units": unit }));
+    let blocks: String = out.program.lines().filter(|l| !l.starts_with("(EXTENT ")).map(|l| format!("{l}\n")).collect();
+    format!("{blocks}--- warnings: {:?}\n", out.warnings)
+}
+
+fn arc_lines(text: &str) -> Vec<&str> {
+    text.lines().filter(|l| l.starts_with("G2 ") || l.starts_with("G3 ")).collect()
+}
+
+/// Review of #3046 (the rule of #3442): the reviewer's stream. The record
+/// is an arc of 0.03 um whose written ends are the same point. The post
+/// wrote `G3 X59.5 Y30 I-9.5 J0`, which a control cuts as a full circle
+/// of radius 9.5 mm with the jet on. It is no block now, in each unit.
+#[test]
+fn waterjet_post_writes_no_full_circle_for_an_arc_under_the_output_step() {
+    let cut = |arc: bool| {
+        let short = if arc { "Arc CCW X 59500 Y 30000.03 Z 0 F 300000 I 50000 J 30000\n" } else { "" };
+        format!(
+            "WATERJET\nSECTION\nRapid X 50000 Y 30000 Z 0\nJET ON C0 INNER\nFeed X 59500 Y 30000 Z 0 F 300000\n\
+             {short}Feed X 70000 Y 30000 Z 0 F 300000\nJET OFF C0\nENDSECTION\n"
+        )
+    };
+    for unit in ["mm", "inch"] {
+        let (got, want) = (program(&cut(true), unit), program(&cut(false), unit));
+        assert!(arc_lines(&got).is_empty(), "{unit}: an arc block for a 0.03 um arc:\n{got}");
+        assert_eq!(got, want, "{unit}: the short arc posts as no block");
+        assert!(got.ends_with("warnings: []\n"), "{unit}: {got}");
+    }
+    let mm = program(&cut(true), "mm");
+    assert!(mm.contains("G1 X59.5 Y30 F300\nG1 X70 Y30\n"), "{mm}");
+}
+
+/// The rule of #3474 for this post: a short arc whose written ends are on
+/// one ray from the centre that the control computes (the written start
+/// plus the written I J) posts as the straight move to its end. The
+/// witnesses are those of `same_angle_arcs.rs`: (start, end, centre,
+/// direction) in micrometres, the plain pair and the offset-centre pair
+/// of #3500.
+#[test]
+fn waterjet_post_writes_a_same_angle_arc_as_its_straight_move() {
+    for (unit, start, end, centre, dir, word) in [
+        ("mm", ("10010.51", "5000"), ("10010.498393", "5000.493788"), ("10000", "5000"), "CCW", "G1 X10.01 Y5\n"),
+        ("inch", ("10186.68", "5080"), ("10186.658660", "5081.066911"), ("10160", "5080"), "CCW", "G1 X0.401 Y0.2\n"),
+        ("mm", ("10010.51", "5000.49"), ("10010.475372320", "4999.996752949"), ("10000", "5000.98"), "CW", "G1 X10.01 Y5\n"),
+        ("inch", ("10186.72", "5081.143"), ("10186.645370", "5079.768811"), ("10160", "5081.905"), "CW", "G1 X0.401 Y0.2\n"),
+    ] {
+        let ((ex, ey), (cx, cy)) = (end, centre);
+        let arc = span(start, &format!("Arc {dir} X {ex} Y {ey} Z 0 F 300000 I {cx} J {cy}\n"));
+        let feed = span(start, &format!("Feed X {ex} Y {ey} Z 0 F 300000\n"));
+        let (got, want) = (program(&arc, unit), program(&feed, unit));
+        assert!(arc_lines(&got).is_empty(), "{unit} {dir}: an arc block:\n{got}");
+        assert_eq!(got, want, "{unit} {dir}: the same-angle arc posts as the straight feed");
+        assert!(got.ends_with("warnings: []\n") && got.contains(word), "{unit} {dir}: {got}");
+    }
+    // A normal quarter arc from the same start keeps its arc block.
+    let quarter = program(&span(("20000", "5000"), "Arc CCW X 10000 Y 15000 Z 0 F 300000 I 10000 J 5000\n"), "mm");
+    assert_eq!(arc_lines(&quarter), ["G3 X10 Y15 I-10 J0"], "{quarter}");
+}

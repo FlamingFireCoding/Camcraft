@@ -98,6 +98,7 @@ function fu(v) { return trim(Number(inch ? v / 25.4 : v).toFixed(inch ? 4 : 3));
 // in in/min; a positive feed that rounds to zero is refused in feedWord.
 function ff(v) { return trim(Number(inch ? v / 25.4 : v).toFixed(inch ? 2 : 3)); }
 function wo(letter, v, o) { return has(v) ? letter + fu(v - o) : ""; }
+function arcWord(k, v) { return k === "Z" ? "" : wo(k, v, k === "X" ? orgX : orgY); }  // #3442: a position word as written (no Z), for arcFate
 function block(words) {
   var a = [];
   for (var i = 0; i < words.length; i++) {
@@ -350,6 +351,10 @@ function onCircular() {
     refuse("plane" + opName, who() + "an arc in the " + p.CircularPlane + " plane - a waterjet cut is flat");
     return;
   }
+  // #3442: an arc whose written ends coincide is no arc block (arcFate,
+  // PRELUDE) - a control reads it as a full circle, cut with the jet on.
+  var fate = arcFate(arcWord, arcIncOf(fu));  // #3474: I J are increments from the start
+  if (fate !== "arc") { if (fate === "linear") onLinear(); return; }
   var c = p.IJKIncrement || {};
   block([
     p.CircularDirection === "CW" ? "G2" : "G3",

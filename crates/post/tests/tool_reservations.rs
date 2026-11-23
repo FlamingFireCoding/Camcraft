@@ -2,7 +2,7 @@
 //! Gate map (M4.4): covers camcraft_post::machine::tooling,
 //! camcraft_post::machine::parse, camcraft_post::machine::def, camcraft_post::machine::reservations.
 
-use camcraft_post::machine::{Machine, parse_mch};
+use camcraft_post::machine::{Machine, parse_mch, reservations::check_stream};
 use serde_json::{Value, json};
 
 fn file(reserved: Value) -> String {
@@ -100,4 +100,34 @@ fn shipped_machines_reserve_no_pocket_without_a_cited_manual() {
         read += 1;
     }
     assert!(read > 18, "read only {read} machine files");
+}
+
+/// Review of #3046: a waterjet stream on a machine that states
+/// `tooling.reserved`. A `JET` record is cutting, as a `TORCH` record is:
+/// it needs a stated TOOL, and a nozzle in the probe pocket refuses. The
+/// `WATERJET` header is no motion, as the `PLASMA` header is: it can
+/// come before the TOOL record.
+#[test]
+fn a_waterjet_stream_obeys_the_reserved_pockets() {
+    let file = json!({
+        "general": {"model": "Reserved waterjet", "kind": "waterjet"},
+        "kinematics": {"default": {"units": {"length": "mm", "angle": "degrees"}, "parts": [
+            {"id": "x", "name": "X", "type": "linear", "travel": {"min": 0.0, "max": 460.0}},
+            {"id": "y", "name": "Y", "type": "linear", "travel": {"min": -305.0, "max": 0.0}},
+            {"id": "nozzle", "name": "nozzle", "type": "head"}
+        ]}},
+        "tooling": {"reserved": [{"number": 1, "use": "probe"}]}
+    });
+    let machine = parse_mch(&file.to_string()).expect("waterjet machine with a reserved pocket");
+    let stream = |tool: &str| {
+        format!("; HSMW-CNC v1\nWATERJET ABRASIVE DWELL800 LAG300\n{tool}SECTION\nJET ON C0 OPEN\nJET OFF C0\nENDSECTION\n")
+    };
+    // The header comes before the TOOL record (the order of the app's stream).
+    assert_eq!(check_stream(&machine, &stream("TOOL 2 NOZZLE 1.0\n")), Ok(()));
+    let reserved = check_stream(&machine, &stream("TOOL 1 NOZZLE 1.0\n")).expect_err("a nozzle in the probe pocket");
+    assert!(reserved.contains("NOZZLE 1.0") && reserved.contains("(T1) is reserved for probe"), "{reserved}");
+    // A jet with no TOOL record: the JET record itself must ask for the selector.
+    let bare = "; HSMW-CNC v1\nWATERJET\nJET ON C0 OPEN\n";
+    let missing = check_stream(&machine, bare).expect_err("a jet with no stated tool");
+    assert!(missing.contains("TOOL selector is not stated"), "{missing}");
 }
