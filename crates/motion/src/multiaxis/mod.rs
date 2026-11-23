@@ -43,6 +43,7 @@ mod axis_point;
 mod axis_poles;
 mod axis_refine;
 mod axis_robust;
+pub mod axis_stated;
 pub mod contour5d;
 pub mod curve;
 pub mod flow;
