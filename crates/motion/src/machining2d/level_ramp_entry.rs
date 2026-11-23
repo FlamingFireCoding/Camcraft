@@ -14,6 +14,7 @@ use crate::entry::Entry3D;
 use crate::geo2d::Point2;
 use crate::links::plan_zig_capped;
 
+use super::arcs::ARC_FIT_TOL;
 use super::descent::{Cuts, Lvl, fallback_ramp_angle, push, ramp_fallback};
 use super::equal_steps::cut_levels_for;
 use super::ladder_links::LevelWalk;
@@ -102,8 +103,16 @@ pub(super) fn dead_end_ramp(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cer
         return None;
     }
     let cen = cert?;
-    let l = Lvl { cen, passes: lv.passes, pass: lv.pass, walk: lv.walk, mat_top: lv.mat_top };
-    let from = (lv.mat_top + m.links.approach.plunge_height).min(plane);
+    let a = &m.links.approach;
+    let from = (lv.mat_top + a.plunge_height).min(plane);
+    // The ramp rides the start of the pass thinned within the arc fit's
+    // budget: a level curve of a meshed part has a vertex every few
+    // microns, and a ramp posted on each one is tens of thousands of moves.
+    let tan = fallback_ramp_angle(a).to_radians().tan();
+    let drop = (m.top_z + a.plunge_height).max(from) - lv.z;
+    let need = if tan.is_finite() && tan > 0.0 { (0.5 * drop / tan).max(a.ramp_max_len) } else { f64::INFINITY };
+    let lead = thinned(lead_of(lv.pass, need), ARC_FIT_TOL);
+    let l = Lvl { cen, passes: lv.passes, pass: &lead, walk: lv.walk, mat_top: lv.mat_top };
     let Some(d) = ramp_fallback(&l, lv.z, from, m) else {
         b.note_once(&format!(
             "entry: the dead-end pass at ({:.3}, {:.3}) is too short for a ramp along it - it takes the pass link's entry",
@@ -117,9 +126,54 @@ pub(super) fn dead_end_ramp(b: &mut PathBuilder, lv: &LevelWalk, m: &Motion, cer
     Some(push(b, &d, &l, lv.z, plane, m))
 }
 
+/// The start of `pts` up to the first vertex at or past `len` mm of
+/// travel (all of it when shorter): the stretch a zig-zag ramp can use.
+fn lead_of(pts: &[Point2], len: f64) -> &[Point2] {
+    let mut run = 0.0;
+    for (i, w) in pts.windows(2).enumerate() {
+        run += (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+        if run >= len {
+            return &pts[..i + 2];
+        }
+    }
+    pts
+}
+
+/// `pts` thinned by Douglas-Peucker to the vertices the polyline needs
+/// within `tol` mm: each kept point is a vertex of `pts`, each dropped one
+/// lies within `tol` of the chord that replaces it. Iterative, so a long
+/// walk cannot overflow the stack.
+fn thinned(pts: &[Point2], tol: f64) -> Vec<Point2> {
+    let n = pts.len();
+    if n < 3 {
+        return pts.to_vec();
+    }
+    let mut keep = vec![false; n];
+    keep[0] = true;
+    keep[n - 1] = true;
+    let mut todo = vec![(0usize, n - 1)];
+    while let Some((i, j)) = todo.pop() {
+        let (a, b) = (pts[i], pts[j]);
+        let far = (i + 1..j).map(|k| (seg_dist(pts[k], a, b), k)).fold((0.0, i), |m, d| if d.0 > m.0 { d } else { m });
+        if far.0 > tol && far.1 > i {
+            keep[far.1] = true;
+            todo.push((i, far.1));
+            todo.push((far.1, j));
+        }
+    }
+    pts.iter().zip(keep).filter_map(|(p, k)| k.then_some(*p)).collect()
+}
+
+fn seg_dist(p: Point2, a: Point2, b: Point2) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let dd = dx * dx + dy * dy;
+    let t = if dd > 0.0 && dd.is_finite() { (((p.x - a.x) * dx + (p.y - a.y) * dy) / dd).clamp(0.0, 1.0) } else { 0.0 };
+    (p.x - a.x - t * dx).hypot(p.y - a.y - t * dy)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{stand_in_note, too_short_at};
+    use super::{lead_of, stand_in_note, thinned, too_short_at};
     use crate::entry::Entry3D;
     use crate::geo2d::Point2;
     use crate::links::Links;
@@ -161,7 +215,7 @@ mod tests {
         let short = vec![s, Point2::new(1.5, 2.0)];
         let long = vec![s, Point2::new(60.0, 2.0)];
         let lone = vec![Point2::new(9.0, 9.0), Point2::new(9.0, 9.0)];
-        assert_eq!(too_short_at(&[long.clone()], &[s], &p), None);
+        assert_eq!(too_short_at(std::slice::from_ref(&long), &[s], &p), None);
         assert_eq!(too_short_at(&[long, short.clone()], &[s], &p), Some(s));
         assert_eq!(too_short_at(&[short, lone], &[], &p), None);
         let zero = vec![s, s];
@@ -189,5 +243,23 @@ mod tests {
             "entry: a pass of the Outside order starts at a dead end in uncut stock - ramp along the pass at 3.0 deg instead of the helix entry"
         );
         assert!(stand_in_note(Entry3D::Plunge, 2.5).is_some_and(|n| n.ends_with("at 2.5 deg instead of the plunge entry")));
+    }
+
+    /// The ramp's lead: a dense straight walk thins to its two ends, a
+    /// corner stays, each kept point is a vertex of the walk, and short or
+    /// empty walks pass through. The lead stops at the first vertex past
+    /// the length asked; a non-finite length takes the whole walk.
+    #[test]
+    fn the_ramp_lead_is_thinned_within_the_fit_budget() {
+        let dense: Vec<Point2> = (0..=1000).map(|k| Point2::new(f64::from(k) * 0.01, 0.0)).collect();
+        assert_eq!(thinned(&dense, 0.01), vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]);
+        let corner = vec![Point2::new(0.0, 0.0), Point2::new(5.0, 0.0), Point2::new(5.0, 5.0)];
+        assert_eq!(thinned(&corner, 0.01), corner);
+        assert!(thinned(&[], 0.01).is_empty());
+        assert_eq!(thinned(&corner[..2], 0.01), corner[..2].to_vec());
+        assert_eq!(lead_of(&dense, 2.0).len(), 201);
+        assert_eq!(lead_of(&dense, f64::NAN).len(), dense.len());
+        assert_eq!(lead_of(&dense, f64::INFINITY).len(), dense.len());
+        assert!(lead_of(&[], 1.0).is_empty());
     }
 }
