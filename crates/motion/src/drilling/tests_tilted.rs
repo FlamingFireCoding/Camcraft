@@ -2,18 +2,16 @@
 //! only; the meshes are built here from the section of a tilted
 //! circular cylinder (an ellipse, centre sliding along the tilt).
 
-use crate::geometry::{Point3, Triangle};
 use super::recognize::FIT_TOL;
 use super::tests::ring_walls;
 use super::*;
+use crate::geometry::{Point3, Triangle};
 
-/// The inward-facing wall of a cylinder of radius `r` whose axis
-/// passes through `(cx, cy, 0)` and leans `deg` degrees from Z
+/// The geometry of one tilted wall: a cylinder of radius `r` whose
+/// axis passes through `(cx, cy, 0)` and leans `deg` degrees from Z
 /// toward +X, cut between `z0` and `z1` in `levels` bands of `n`
-/// facets around. Each horizontal section is the ellipse of the
-/// tilted cylinder: semi-axis `r / cos` along X, `r` along Y, and its
-/// centre at `x = cx + z * tan`.
-fn tilted_wall(
+/// facets around.
+struct TiltedWall {
     cx: f64,
     cy: f64,
     r: f64,
@@ -22,7 +20,22 @@ fn tilted_wall(
     z1: f64,
     levels: usize,
     n: usize,
-) -> Vec<Triangle> {
+}
+
+/// The inward-facing wall of a `TiltedWall`. Each horizontal section
+/// is the ellipse of the tilted cylinder: semi-axis `r / cos` along X,
+/// `r` along Y, and its centre at `x = cx + z * tan`.
+fn tilted_wall(spec: TiltedWall) -> Vec<Triangle> {
+    let TiltedWall {
+        cx,
+        cy,
+        r,
+        deg,
+        z0,
+        z1,
+        levels,
+        n,
+    } = spec;
     let (s, c) = deg.to_radians().sin_cos();
     let ring = |z: f64| -> Vec<Point3> {
         // CW order: a hole's wall faces its axis (as `circle_cw`).
@@ -60,7 +73,20 @@ fn plate(w: f64, t: f64, extra: Vec<Triangle>) -> Vec<Triangle> {
 /// verdict, not a broken mesh.
 #[test]
 fn tilted_wall_builder_at_zero_tilt_is_a_z_hole() {
-    let m = plate(30.0, 10.0, tilted_wall(15.0, 15.0, 3.0, 0.0, 0.0, 10.0, 4, 32));
+    let m = plate(
+        30.0,
+        10.0,
+        tilted_wall(TiltedWall {
+            cx: 15.0,
+            cy: 15.0,
+            r: 3.0,
+            deg: 0.0,
+            z0: 0.0,
+            z1: 10.0,
+            levels: 4,
+            n: 32,
+        }),
+    );
     let h = recognize(&m);
     assert_eq!(h.len(), 1, "{h:?}");
     assert!((h[0].radius - 3.0).abs() < 1e-3, "{h:?}");
@@ -74,17 +100,55 @@ fn tilted_wall_builder_at_zero_tilt_is_a_z_hole() {
 /// the Z circle fit refuses the wall.
 #[test]
 fn tilted_holes_in_a_plate_are_not_drilled_along_z() {
-    let mut walls = tilted_wall(10.0, 15.0, 3.0, 2.0, 0.0, 10.0, 4, 32);
-    walls.extend(tilted_wall(30.0, 15.0, 3.0, 5.0, 0.0, 10.0, 4, 32));
+    let mut walls = tilted_wall(TiltedWall {
+        cx: 10.0,
+        cy: 15.0,
+        r: 3.0,
+        deg: 2.0,
+        z0: 0.0,
+        z1: 10.0,
+        levels: 4,
+        n: 32,
+    });
+    walls.extend(tilted_wall(TiltedWall {
+        cx: 30.0,
+        cy: 15.0,
+        r: 3.0,
+        deg: 5.0,
+        z0: 0.0,
+        z1: 10.0,
+        levels: 4,
+        n: 32,
+    }));
     let m = plate(40.0, 10.0, walls);
     let z = recognize(&m);
-    assert!(z.is_empty(), "a tilted hole must not pass as a Z hole: {z:?}");
+    assert!(
+        z.is_empty(),
+        "a tilted hole must not pass as a Z hole: {z:?}"
+    );
     let x = recognize_cross(&m);
-    assert!(x.is_empty(), "a tilted hole is not a cross hole either: {} found", x.len());
+    assert!(
+        x.is_empty(),
+        "a tilted hole is not a cross hole either: {} found",
+        x.len()
+    );
     // One band or many: the fit reads every wall vertex the same way.
     for levels in [1, 2, 8] {
         for deg in [2.0, 5.0, -2.0] {
-            let m = plate(30.0, 10.0, tilted_wall(15.0, 15.0, 3.0, deg, 0.0, 10.0, levels, 32));
+            let m = plate(
+                30.0,
+                10.0,
+                tilted_wall(TiltedWall {
+                    cx: 15.0,
+                    cy: 15.0,
+                    r: 3.0,
+                    deg,
+                    z0: 0.0,
+                    z1: 10.0,
+                    levels,
+                    n: 32,
+                }),
+            );
             assert!(recognize(&m).is_empty(), "{deg} deg, {levels} bands");
         }
     }
@@ -98,8 +162,24 @@ fn tilted_holes_in_a_plate_are_not_drilled_along_z() {
 #[test]
 fn a_tilt_the_fit_accepts_moves_no_wall_past_fit_tol() {
     let mut accepted = 0;
-    for &(deg, t) in &[(2.0, 0.5), (2.0, 1.0), (2.0, 2.0), (5.0, 0.3), (5.0, 1.0), (1.0, 3.0)] {
-        let walls = tilted_wall(15.0, 15.0, 3.0, deg, 0.0, t, 1, 48);
+    for &(deg, t) in &[
+        (2.0, 0.5),
+        (2.0, 1.0),
+        (2.0, 2.0),
+        (5.0, 0.3),
+        (5.0, 1.0),
+        (1.0, 3.0),
+    ] {
+        let walls = tilted_wall(TiltedWall {
+            cx: 15.0,
+            cy: 15.0,
+            r: 3.0,
+            deg,
+            z0: 0.0,
+            z1: t,
+            levels: 1,
+            n: 48,
+        });
         let pts: Vec<Point3> = walls.iter().flat_map(|f| [f.a, f.b, f.c]).collect();
         let m = plate(30.0, t, walls);
         for h in recognize(&m) {
@@ -116,5 +196,8 @@ fn a_tilt_the_fit_accepts_moves_no_wall_past_fit_tol() {
         }
     }
     // The bound is exercised, not vacuous: the thinnest walls pass.
-    assert!(accepted > 0, "no thin tilted wall was accepted; the bound was not tested");
+    assert!(
+        accepted > 0,
+        "no thin tilted wall was accepted; the bound was not tested"
+    );
 }
