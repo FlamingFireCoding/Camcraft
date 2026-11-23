@@ -4,12 +4,13 @@
 use camcraft_geometry::geometry::Point3;
 use camcraft_geometry::geometry::units::{from_display, Unit, MM_PER_INCH};
 
-use crate::block::{decode_block, DecodedBlock, LengthOp, PathControlG, StopOrEnd};
+use crate::block::{decode_block, DecodedBlock, PathControlG, StopOrEnd};
 use crate::cycle::ActiveCycle;
+use crate::domain::{check_feed, check_len, check_options};
 use crate::lexer::tokenize;
 use crate::section::SectionBuilder;
 use crate::types::{
-    DistanceMode, DwellEvent, GcodeError, LineMap, ModalState, MotionMode, MoveLine,
+    DwellEvent, GcodeError, LineMap, ModalState, MotionMode, MoveLine,
     ParseOptions, ParsedProgram, ParsedSection, PathControlMode, ProgramEnd, StopEvent,
 };
 
@@ -19,12 +20,12 @@ pub(crate) struct Interpreter<'a> {
     pub(crate) pos: Point3,
     pub(crate) active_cycle: Option<ActiveCycle>,
     program_number: Option<u32>,
-    sections: Vec<ParsedSection>,
+    pub(crate) sections: Vec<ParsedSection>,
     pub(crate) current: SectionBuilder,
     pub(crate) dwells: Vec<DwellEvent>,
     stops: Vec<StopEvent>,
     ended: Option<ProgramEnd>,
-    tools: Vec<u32>,
+    pub(crate) tools: Vec<u32>,
 }
 
 impl<'a> Interpreter<'a> {
@@ -73,7 +74,7 @@ impl<'a> Interpreter<'a> {
 
         self.apply_modal_setup(b)?;
         self.apply_tool_and_aux(b)?;
-        self.current.sync_pre_motion(&self.modal);
+        self.sync_section();
         self.execute_motion(b)?;
 
         if let Some(se) = b.stop_or_end {
@@ -109,6 +110,7 @@ impl<'a> Interpreter<'a> {
             self.modal.feed_mode = fm;
         }
         if let Some(pl) = b.plane {
+            self.guard_cycle_plane(b, pl)?;
             self.modal.plane = pl;
         }
         if let Some(d) = b.distance {
@@ -121,7 +123,7 @@ impl<'a> Interpreter<'a> {
             self.modal.cycle_return = cr;
         }
         if let Some(w) = b.work_offset {
-            self.modal.work_offset = w;
+            self.change_work_offset(line, w)?;
         }
         if let Some(pc) = b.path_control {
             self.modal.path_control = match pc {
@@ -136,7 +138,7 @@ impl<'a> Interpreter<'a> {
                                 });
                             }
                             let u = self.require_unit(line)?;
-                            Some(from_display(p, u))
+                            Some(check_len(line, "G64 P tolerance", from_display(p, u))?)
                         }
                         None => None,
                     };
@@ -161,7 +163,7 @@ impl<'a> Interpreter<'a> {
                 });
             }
             let u = self.require_unit(line)?;
-            self.modal.feed_rate_mm_min = Some(scale_rate(f, u));
+            self.modal.feed_rate_mm_min = Some(check_feed(line, scale_rate(f, u))?);
         }
         if let Some(s) = b.s {
             if !s.is_finite() || s < 0.0 {
@@ -171,79 +173,6 @@ impl<'a> Interpreter<'a> {
                 });
             }
             self.modal.spindle_rpm = Some(s);
-        }
-        Ok(())
-    }
-
-    fn apply_tool_and_aux(&mut self, b: &DecodedBlock) -> Result<(), GcodeError> {
-        let line = b.line;
-        if let Some(t) = b.t {
-            self.modal.pending_tool = Some(t);
-        }
-        if b.tool_change {
-            let new_tool = self.modal.pending_tool.take().ok_or_else(|| GcodeError::InvalidModal {
-                line,
-                message: "M6 tool change requires a T tool number".to_string(),
-            })?;
-            if !self.tools.contains(&new_tool) {
-                self.tools.push(new_tool);
-            }
-            self.active_cycle = None;
-            if matches!(self.modal.motion, MotionMode::Cycle(_)) {
-                self.modal.motion = MotionMode::None;
-            }
-            self.modal.active_tool = Some(new_tool);
-            if self.current.has_moves() {
-                let next_idx = self.sections.len() + 1;
-                let prev = std::mem::replace(
-                    &mut self.current,
-                    SectionBuilder::new(next_idx, self.pos, &self.modal),
-                );
-                self.sections.push(prev.finish());
-            } else {
-                self.current.tool_number = Some(new_tool);
-            }
-        }
-        if let Some(lo) = b.length_op {
-            match lo {
-                LengthOp::Apply => {
-                    let h = b.h.ok_or_else(|| GcodeError::InvalidModal {
-                        line,
-                        message: "G43 requires an H length-offset number".to_string(),
-                    })?;
-                    self.modal.length_offset = Some(h);
-                }
-                LengthOp::Cancel => {
-                    if b.h.is_some() {
-                        return Err(GcodeError::InvalidModal {
-                            line,
-                            message: "H word is invalid with G49".to_string(),
-                        });
-                    }
-                    self.modal.length_offset = None;
-                }
-            }
-        } else if b.h.is_some() {
-            return Err(GcodeError::InvalidModal {
-                line,
-                message: "word 'H' requires G43 on the same block".to_string(),
-            });
-        }
-        if let Some(dir) = b.spindle_dir {
-            self.modal.spindle_dir = dir;
-        }
-        if b.mist_on {
-            self.modal.coolant.mist = true;
-        }
-        if b.flood_on {
-            self.modal.coolant.flood = true;
-        }
-        if b.coolant_off {
-            self.modal.coolant.flood = false;
-            self.modal.coolant.mist = false;
-        }
-        if let Some(tsc) = b.tsc {
-            self.modal.coolant.through_spindle = tsc;
         }
         Ok(())
     }
@@ -262,24 +191,17 @@ impl<'a> Interpreter<'a> {
             })
     }
 
-    pub(crate) fn target_point(&self, b: &DecodedBlock, unit: Unit) -> Point3 {
-        let conv = |v: f64| from_display(v, unit);
-        match self.modal.distance {
-            DistanceMode::Absolute => Point3::new(
-                b.x.map_or(self.pos.x, conv),
-                b.y.map_or(self.pos.y, conv),
-                b.z.map_or(self.pos.z, conv),
-            ),
-            DistanceMode::Incremental => Point3::new(
-                self.pos.x + b.x.map_or(0.0, conv),
-                self.pos.y + b.y.map_or(0.0, conv),
-                self.pos.z + b.z.map_or(0.0, conv),
-            ),
-        }
+    /// True once any move was emitted in the program.
+    pub(crate) fn has_moved(&self) -> bool {
+        !self.sections.is_empty() || self.current.has_moves()
     }
 
     fn finish(mut self) -> ParsedProgram {
-        if self.current.has_moves() {
+        // An empty last section is kept only when a dwell or stop names it.
+        let idx = self.current.index;
+        let named = self.dwells.iter().any(|d| d.section == idx)
+            || self.stops.iter().any(|s| s.section == idx);
+        if self.current.has_moves() || named {
             self.sections.push(self.current.finish());
         }
         let mut entries = Vec::new();
@@ -313,6 +235,7 @@ fn scale_rate(v: f64, unit: Unit) -> f64 {
 }
 
 pub fn interpret(program: &str, options: &ParseOptions) -> Result<ParsedProgram, GcodeError> {
+    check_options(options)?;
     let lines = tokenize(program)?;
     let mut interp = Interpreter::new(options);
     for parsed in &lines {

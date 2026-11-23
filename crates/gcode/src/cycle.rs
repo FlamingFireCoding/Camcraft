@@ -1,11 +1,25 @@
-//! Canned cycle validation and expansion into explicit `cl::Move` chains and `cl::Cycle` records.
-//! Provenance: cycle motion geometry from RS-274/NGC (NISTIR 6556 §3.5.16) and CamCraft's canonical drilling chains (`crates/motion/src/drilling/cycle.rs`).
+//! Canned cycle modal state, sticky words and validation before expansion.
+//! Provenance: canned cycle rules from RS-274/NGC (NISTIR 6556 §3.5.16) and the LinuxCNC G-code reference (common cycle info: sticky R/Z, clear Z, G98/G99, L repeats).
+//!
+//! State rule (#3657 review 6): a cycle stays active over contiguous cycle blocks, also
+//! when the same or another cycle code is written again. Only a non-cycle motion
+//! code, G80, M6 or a program end ends it. R and Z (stored as absolute levels) and
+//! the initial level of G98 come from the first block of the series. Q and P carry
+//! over between cycle codes that use them.
 
-use camcraft_cl::cl::{lattice, Cycle, CycleKind, MoveKind, PathBuilder};
-use camcraft_geometry::geo2d::Point2;
+use camcraft_cl::cl::{ArcPlane, PathBuilder};
 use camcraft_geometry::geometry::Point3;
 
+use crate::block::DecodedBlock;
+use crate::block_codes::check_unused_words;
+use crate::cycle_expand::{expand_hole, moves_per_hole, peck_count, Hole};
+use crate::domain::{check_len, check_point};
+use crate::interp::Interpreter;
+use crate::motion::dwell_to_seconds;
 use crate::types::{CycleReturnMode, CycleType, DistanceMode, GcodeError};
+
+/// Most moves that one cycle block (all holes of its `L` repeats) can emit.
+pub const MAX_BLOCK_MOVES: usize = 100_000;
 
 /// Sticky parameters for an active canned-cycle modal group.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,12 +32,11 @@ pub struct ActiveCycle {
     pub dwell_s: f64,
 }
 
-/// Parameters parsed from one canned-cycle block (in mm and seconds).
+/// Parameters parsed from one canned-cycle block (in mm and seconds, domain-checked).
 #[derive(Clone, Copy, Debug)]
 pub struct CycleBlockInput {
     pub line: usize,
     pub kind: CycleType,
-    pub is_new_cycle: bool,
     pub distance: DistanceMode,
     pub return_mode: CycleReturnMode,
     pub x_mm: Option<f64>,
@@ -37,7 +50,20 @@ pub struct CycleBlockInput {
     pub chip_break_retract_mm: f64,
 }
 
-const MAX_PECKS: f64 = 4096.0;
+fn invalid(line: usize, message: String) -> GcodeError {
+    GcodeError::InvalidCycle { line, message }
+}
+
+fn is_peck(kind: CycleType) -> bool {
+    matches!(kind, CycleType::ChipBreakPeck | CycleType::DeepPeck)
+}
+
+fn allows_dwell(kind: CycleType) -> bool {
+    matches!(
+        kind,
+        CycleType::DwellDrill | CycleType::DeepPeck | CycleType::Bore | CycleType::BackBore
+    )
+}
 
 /// Validate and expand one canned-cycle block (with optional `L` repeats) onto `builder`.
 pub fn execute_cycle_block(
@@ -48,346 +74,163 @@ pub fn execute_cycle_block(
     move_lines: &mut Vec<usize>,
 ) -> Result<(), GcodeError> {
     let line = input.line;
-    let same_active = active.filter(|a| a.kind == input.kind && !input.is_new_cycle);
-    let initial_z = same_active.map_or(cur.z, |a| a.initial_z);
-
-    let r_z = match input.r_mm {
-        Some(r) => match input.distance {
-            DistanceMode::Absolute => r,
-            DistanceMode::Incremental => initial_z + r,
-        },
-        None => same_active.map(|a| a.r_z).ok_or_else(|| GcodeError::InvalidCycle {
-            line,
-            message: format!("canned cycle {:?} requires R retract plane", input.kind),
-        })?,
+    let prev = *active;
+    let initial_z = prev.map_or(cur.z, |a| a.initial_z);
+    let r_z = match (input.r_mm, input.distance) {
+        (Some(r), DistanceMode::Absolute) => r,
+        (Some(r), DistanceMode::Incremental) => initial_z + r,
+        (None, _) => prev
+            .map(|a| a.r_z)
+            .ok_or_else(|| invalid(line, format!("canned cycle {:?} requires R retract plane", input.kind)))?,
     };
-
-    let bottom_z = match input.z_mm {
-        Some(z) => match input.distance {
-            DistanceMode::Absolute => z,
-            DistanceMode::Incremental => r_z + z,
-        },
-        None => same_active.map(|a| a.bottom_z).ok_or_else(|| GcodeError::InvalidCycle {
-            line,
-            message: format!("canned cycle {:?} requires Z depth", input.kind),
-        })?,
+    let r_z = check_len(line, "cycle R level", r_z)?;
+    let bottom_z = match (input.z_mm, input.distance) {
+        (Some(z), DistanceMode::Absolute) => z,
+        (Some(z), DistanceMode::Incremental) => r_z + z,
+        (None, _) => prev
+            .map(|a| a.bottom_z)
+            .ok_or_else(|| invalid(line, format!("canned cycle {:?} requires Z depth", input.kind)))?,
     };
-
-    if !r_z.is_finite() || !bottom_z.is_finite() || bottom_z >= r_z {
-        return Err(GcodeError::InvalidCycle {
-            line,
-            message: format!("bottom Z ({bottom_z:.4}) must be below R plane ({r_z:.4})"),
-        });
+    let bottom_z = check_len(line, "cycle Z depth", bottom_z)?;
+    if bottom_z >= r_z {
+        return Err(invalid(line, format!("bottom Z ({bottom_z:.4}) must be below R plane ({r_z:.4})")));
     }
 
-    let peck_mm = resolve_peck(input, same_active, r_z, bottom_z)?;
-    let dwell_s = resolve_dwell(input, same_active)?;
-
-    *active = Some(ActiveCycle {
-        kind: input.kind,
-        initial_z,
-        r_z,
-        bottom_z,
-        peck_mm,
-        dwell_s,
-    });
-
-    if input.repeat == 0 {
-        return Ok(());
+    let peck_mm = resolve_peck(input, prev)?;
+    let dwell_s = resolve_dwell(input, prev)?;
+    let pecks = if is_peck(input.kind) {
+        peck_count(r_z, bottom_z, peck_mm).ok_or_else(|| {
+            invalid(line, format!("peck increment Q ({peck_mm}) needs more than 4096 pecks per hole"))
+        })?
+    } else {
+        0
+    };
+    // Bound the whole expansion of the block before any move is emitted.
+    let total = moves_per_hole(input.kind, pecks).saturating_mul(input.repeat as usize);
+    if total > MAX_BLOCK_MOVES {
+        return Err(invalid(
+            line,
+            format!("cycle block expands to {total} moves; the limit is {MAX_BLOCK_MOVES}"),
+        ));
     }
 
-    for rep in 0..input.repeat {
+    *active = Some(ActiveCycle { kind: input.kind, initial_z, r_z, bottom_z, peck_mm, dwell_s });
+
+    let clear_z = match input.return_mode {
+        CycleReturnMode::InitialZ => initial_z.max(r_z),
+        CycleReturnMode::RPlane => r_z,
+    };
+    for _ in 0..input.repeat {
         let (hx, hy) = match input.distance {
-            DistanceMode::Absolute => (
-                input.x_mm.unwrap_or(cur.x),
-                input.y_mm.unwrap_or(cur.y),
-            ),
-            DistanceMode::Incremental => (
-                cur.x + input.x_mm.unwrap_or(0.0),
-                cur.y + input.y_mm.unwrap_or(0.0),
-            ),
+            DistanceMode::Absolute => (input.x_mm.unwrap_or(cur.x), input.y_mm.unwrap_or(cur.y)),
+            DistanceMode::Incremental => (cur.x + input.x_mm.unwrap_or(0.0), cur.y + input.y_mm.unwrap_or(0.0)),
         };
-        let _ = rep;
-        expand_single_hole(
-            input.line,
-            input.kind,
-            input.return_mode,
-            initial_z,
+        check_point(line, "hole position", Point3::new(hx, hy, r_z))?;
+        let hole = Hole {
+            line,
+            kind: input.kind,
             hx,
             hy,
             r_z,
             bottom_z,
+            clear_z,
             peck_mm,
             dwell_s,
-            input.feed_mm_min,
-            input.chip_break_retract_mm,
-            cur,
-            builder,
-            move_lines,
-        );
+            feed: input.feed_mm_min,
+            chip_break_retract_mm: input.chip_break_retract_mm,
+        };
+        expand_hole(&hole, cur, builder, move_lines)?;
     }
-
     Ok(())
 }
 
-fn resolve_peck(
-    input: CycleBlockInput,
-    same_active: Option<ActiveCycle>,
-    r_z: f64,
-    bottom_z: f64,
-) -> Result<f64, GcodeError> {
-    let needs_peck = matches!(input.kind, CycleType::ChipBreakPeck | CycleType::DeepPeck);
-    if !needs_peck {
+fn resolve_peck(input: CycleBlockInput, prev: Option<ActiveCycle>) -> Result<f64, GcodeError> {
+    let line = input.line;
+    if !is_peck(input.kind) {
         if input.q_mm.is_some() {
-            return Err(GcodeError::InvalidCycle {
-                line: input.line,
-                message: format!("Q peck depth is not valid for {:?}", input.kind),
-            });
+            return Err(invalid(line, format!("Q peck depth is not valid for {:?}", input.kind)));
         }
         return Ok(0.0);
     }
-
     let q = match input.q_mm {
         Some(v) => v,
-        None => same_active.map(|a| a.peck_mm).ok_or_else(|| GcodeError::InvalidCycle {
-            line: input.line,
-            message: format!("peck cycle {:?} requires positive Q increment", input.kind),
-        })?,
+        None => prev
+            .filter(|a| is_peck(a.kind))
+            .map(|a| a.peck_mm)
+            .ok_or_else(|| invalid(line, format!("peck cycle {:?} requires positive Q increment", input.kind)))?,
     };
     if !q.is_finite() || q <= 0.0 {
-        return Err(GcodeError::InvalidCycle {
-            line: input.line,
-            message: format!("peck increment Q ({q}) must be positive"),
-        });
-    }
-    if (r_z - bottom_z) / q > MAX_PECKS {
-        return Err(GcodeError::InvalidCycle {
-            line: input.line,
-            message: "peck increment Q is too small (exceeds 4096 pecks per hole)".to_string(),
-        });
+        return Err(invalid(line, format!("peck increment Q ({q}) must be positive")));
     }
     Ok(q)
 }
 
-fn resolve_dwell(
-    input: CycleBlockInput,
-    same_active: Option<ActiveCycle>,
-) -> Result<f64, GcodeError> {
-    let allows_dwell = matches!(
-        input.kind,
-        CycleType::DwellDrill | CycleType::DeepPeck | CycleType::Bore | CycleType::BackBore
-    );
-    if !allows_dwell {
+fn resolve_dwell(input: CycleBlockInput, prev: Option<ActiveCycle>) -> Result<f64, GcodeError> {
+    let line = input.line;
+    if !allows_dwell(input.kind) {
         if input.p_sec.is_some() {
-            return Err(GcodeError::InvalidCycle {
-                line: input.line,
-                message: format!("P dwell is not valid for {:?}", input.kind),
-            });
+            return Err(invalid(line, format!("P dwell is not valid for {:?}", input.kind)));
         }
         return Ok(0.0);
     }
-
-    let p = match input.p_sec {
-        Some(v) => v,
+    let sticky = prev.filter(|a| allows_dwell(a.kind)).map(|a| a.dwell_s);
+    match input.p_sec {
+        Some(v) => Ok(v),
         None if input.kind == CycleType::DwellDrill => {
-            same_active.map(|a| a.dwell_s).ok_or_else(|| GcodeError::InvalidCycle {
-                line: input.line,
-                message: "G82 dwell cycle requires P dwell word".to_string(),
-            })?
+            sticky.ok_or_else(|| invalid(line, "G82 dwell cycle requires P dwell word".to_string()))
         }
-        None => same_active.map_or(0.0, |a| a.dwell_s),
-    };
-    if !p.is_finite() || p < 0.0 {
-        return Err(GcodeError::InvalidCycle {
-            line: input.line,
-            message: format!("dwell P ({p}) must be non-negative"),
-        });
+        None => Ok(sticky.unwrap_or(0.0)),
     }
-    Ok(p)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn expand_single_hole(
-    line: usize,
-    kind: CycleType,
-    return_mode: CycleReturnMode,
-    initial_z: f64,
-    hx: f64,
-    hy: f64,
-    r_z: f64,
-    bottom_z: f64,
-    peck_mm: f64,
-    dwell_s: f64,
-    feed: f64,
-    chip_break_retract_mm: f64,
-    cur: &mut Point3,
-    builder: &mut PathBuilder,
-    move_lines: &mut Vec<usize>,
-) {
-    let push_tracked = |builder: &mut PathBuilder,
-                        move_lines: &mut Vec<usize>,
-                        k: MoveKind,
-                        to: Point3,
-                        f: Option<f64>| {
-        let before = builder.moves_len();
-        builder.push(k, to, f);
-        let after = builder.moves_len();
-        for _ in before..after {
-            move_lines.push(line);
+impl<'a> Interpreter<'a> {
+    pub(crate) fn execute_cycle(
+        &mut self,
+        b: &DecodedBlock,
+        cycle_type: CycleType,
+        allow_h: bool,
+    ) -> Result<(), GcodeError> {
+        let line = b.line;
+        check_unused_words(b, false, true, true, true, allow_h, true)?;
+        // Cycle axes are X/Y locations and Z depths: only G17 maps them (#3657 review 4).
+        if self.modal.plane != ArcPlane::Xy {
+            return Err(GcodeError::UnsupportedCode {
+                line,
+                code: format!("{cycle_type:?} cycle in G18/G19"),
+                reason: "canned cycles run in the G17 (XY) plane only".to_string(),
+            });
         }
-    };
-
-    // Preliminary positioning: lift to R first if currently below R, then XY, then R.
-    if cur.z < r_z - 1e-9 {
-        let p = Point3::new(cur.x, cur.y, r_z);
-        push_tracked(builder, move_lines, MoveKind::Rapid, p, None);
-        *cur = p;
+        let unit = self.require_unit(line)?;
+        let feed = self.require_feed(line, "canned cycle")?;
+        let repeat = b.l.unwrap_or(1);
+        if repeat > 10_000 {
+            return Err(invalid(line, format!("cycle repeat count L{repeat} exceeds 10000")));
+        }
+        let p_sec = match b.p {
+            Some(p) => Some(dwell_to_seconds(line, p, b.p_has_point, self.options.dialect.cycle_dwell_unit)?),
+            None => None,
+        };
+        let input = CycleBlockInput {
+            line,
+            kind: cycle_type,
+            distance: self.modal.distance,
+            return_mode: self.modal.cycle_return,
+            x_mm: self.len_word(line, 'X', b.x, unit)?,
+            y_mm: self.len_word(line, 'Y', b.y, unit)?,
+            z_mm: self.len_word(line, 'Z', b.z, unit)?,
+            r_mm: self.len_word(line, 'R', b.r, unit)?,
+            q_mm: self.len_word(line, 'Q', b.q, unit)?,
+            p_sec,
+            repeat,
+            feed_mm_min: feed,
+            chip_break_retract_mm: self.options.dialect.chip_break_retract_mm,
+        };
+        execute_cycle_block(
+            input,
+            &mut self.active_cycle,
+            &mut self.pos,
+            &mut self.current.builder,
+            &mut self.current.move_lines,
+        )
     }
-    let over_hole = Point3::new(hx, hy, cur.z);
-    push_tracked(builder, move_lines, MoveKind::Rapid, over_hole, None);
-    *cur = over_hole;
-
-    let at_r = Point3::new(hx, hy, r_z);
-    push_tracked(builder, move_lines, MoveKind::Rapid, at_r, None);
-    *cur = at_r;
-
-    let retract_z = match return_mode {
-        CycleReturnMode::InitialZ => initial_z.max(r_z),
-        CycleReturnMode::RPlane => r_z,
-    };
-    let first_move = builder.moves_len();
-
-    match kind {
-        CycleType::Drill | CycleType::DwellDrill | CycleType::Bore => {
-            push_tracked(
-                builder,
-                move_lines,
-                MoveKind::Plunge,
-                Point3::new(hx, hy, bottom_z),
-                Some(feed),
-            );
-            let out = Point3::new(hx, hy, retract_z);
-            push_tracked(builder, move_lines, MoveKind::Rapid, out, None);
-            *cur = out;
-        }
-        CycleType::ChipBreakPeck => {
-            let mut t = (r_z - peck_mm).max(bottom_z);
-            loop {
-                push_tracked(
-                    builder,
-                    move_lines,
-                    MoveKind::Plunge,
-                    Point3::new(hx, hy, t),
-                    Some(feed),
-                );
-                if t <= bottom_z + 1e-9 {
-                    break;
-                }
-                let up = (t + chip_break_retract_mm).min(r_z);
-                push_tracked(
-                    builder,
-                    move_lines,
-                    MoveKind::Rapid,
-                    Point3::new(hx, hy, up),
-                    None,
-                );
-                t = (t - peck_mm).max(bottom_z);
-            }
-            let out = Point3::new(hx, hy, retract_z);
-            push_tracked(builder, move_lines, MoveKind::Rapid, out, None);
-            *cur = out;
-        }
-        CycleType::DeepPeck => {
-            let mut t = (r_z - peck_mm).max(bottom_z);
-            loop {
-                push_tracked(
-                    builder,
-                    move_lines,
-                    MoveKind::Plunge,
-                    Point3::new(hx, hy, t),
-                    Some(feed),
-                );
-                if t <= bottom_z + 1e-9 {
-                    break;
-                }
-                push_tracked(
-                    builder,
-                    move_lines,
-                    MoveKind::Rapid,
-                    Point3::new(hx, hy, r_z),
-                    None,
-                );
-                t = (t - peck_mm).max(bottom_z);
-            }
-            let out = Point3::new(hx, hy, retract_z);
-            push_tracked(builder, move_lines, MoveKind::Rapid, out, None);
-            *cur = out;
-        }
-        CycleType::Tap => {
-            push_tracked(
-                builder,
-                move_lines,
-                MoveKind::Feed,
-                Point3::new(hx, hy, bottom_z),
-                Some(feed),
-            );
-            push_tracked(
-                builder,
-                move_lines,
-                MoveKind::Feed,
-                Point3::new(hx, hy, r_z),
-                Some(feed),
-            );
-            if retract_z > r_z + 1e-9 {
-                let out = Point3::new(hx, hy, retract_z);
-                push_tracked(builder, move_lines, MoveKind::Rapid, out, None);
-                *cur = out;
-            } else {
-                *cur = at_r;
-            }
-        }
-        CycleType::Ream | CycleType::BackBore => {
-            push_tracked(
-                builder,
-                move_lines,
-                MoveKind::Plunge,
-                Point3::new(hx, hy, bottom_z),
-                Some(feed),
-            );
-            push_tracked(
-                builder,
-                move_lines,
-                MoveKind::Feed,
-                Point3::new(hx, hy, r_z),
-                Some(feed),
-            );
-            if retract_z > r_z + 1e-9 {
-                let out = Point3::new(hx, hy, retract_z);
-                push_tracked(builder, move_lines, MoveKind::Rapid, out, None);
-                *cur = out;
-            } else {
-                *cur = at_r;
-            }
-        }
-    }
-
-    let cl_kind = match kind {
-        CycleType::ChipBreakPeck => CycleKind::Peck,
-        CycleType::Drill | CycleType::DwellDrill => CycleKind::Drill,
-        CycleType::DeepPeck => CycleKind::Deep,
-        CycleType::Tap => CycleKind::Tap,
-        CycleType::Ream => CycleKind::Ream,
-        CycleType::Bore => CycleKind::Bore,
-        CycleType::BackBore => CycleKind::BackBore,
-    };
-    builder.push_cycle(Cycle {
-        kind: cl_kind,
-        xy: Point2::new(lattice(hx), lattice(hy)),
-        r_z: lattice(r_z),
-        bottom_z: lattice(bottom_z),
-        entry_z: lattice(r_z),
-        peck: lattice(peck_mm),
-        dwell: dwell_s,
-        first_move,
-    });
 }

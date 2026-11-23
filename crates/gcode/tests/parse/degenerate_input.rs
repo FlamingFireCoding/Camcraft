@@ -1,26 +1,9 @@
 //! Degenerate-input tests for `camcraft-gcode`: malformed programs give a value or a refusal, never a panic or a hang.
 //! Provenance: AGENTS.md Prime Directive (degenerate input gives a clean error); inputs follow RS-274/NGC (NISTIR 6556) word syntax.
-//! Gate map: covers camcraft_gcode::{lexer, block, block_codes, arc, cycle, motion, interp}.
 
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
+use camcraft_gcode::ParseOptions;
 
-use camcraft_gcode::parse;
-
-/// Parse `nc` on a worker thread. Fail on a panic, or when no answer arrives in five seconds.
-fn parses_without_panic_or_hang(nc: &'static str) {
-    let (tx, rx) = mpsc::channel();
-    let worker = thread::spawn(move || {
-        let ok = parse(nc).is_ok();
-        let _ = tx.send(ok);
-    });
-    match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(_) => assert!(worker.join().is_ok(), "parse panicked for {nc:?}"),
-        Err(mpsc::RecvTimeoutError::Disconnected) => panic!("parse panicked for {nc:?}"),
-        Err(mpsc::RecvTimeoutError::Timeout) => panic!("parse did not return in 5 s for {nc:?}"),
-    }
-}
+use crate::parse_in_time;
 
 #[test]
 fn degenerate_programs_refuse_or_parse_without_panic_or_hang() {
@@ -55,6 +38,6 @@ fn degenerate_programs_refuse_or_parse_without_panic_or_hang() {
         "G21 G20 G0 X1.\n",
     ];
     for nc in cases {
-        parses_without_panic_or_hang(nc);
+        let _ = parse_in_time(nc, &ParseOptions::default());
     }
 }

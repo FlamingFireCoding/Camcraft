@@ -1,5 +1,5 @@
 //! Toolpath section accumulation and aligned 1-based move-to-line tracking.
-//! Provenance: binds RS-274 tool-change section splitting to CamCraft's `cl::PathBuilder` and `cl::Toolpath` contract.
+//! Provenance: binds RS-274 tool-change and modal-state section splitting to CamCraft's `cl::PathBuilder` and `cl::Toolpath` contract.
 
 use camcraft_cl::cl::{ArcPlane, MoveKind, PathBuilder};
 use camcraft_geometry::geo2d::Point2;
@@ -38,14 +38,14 @@ impl SectionBuilder {
         self.builder.moves_len() > 0
     }
 
-    pub fn sync_pre_motion(&mut self, modal: &ModalState) {
-        if !self.has_moves() {
-            self.work_offset = modal.work_offset;
-            self.length_offset = modal.length_offset;
-            self.spindle_rpm = modal.spindle_rpm;
-            self.spindle_dir = modal.spindle_dir;
-            self.coolant = modal.coolant;
-        }
+    /// True when the section's tool, offsets, spindle and coolant equal `modal`.
+    pub fn state_matches(&self, modal: &ModalState) -> bool {
+        self.tool_number == modal.active_tool
+            && self.work_offset == modal.work_offset
+            && self.length_offset == modal.length_offset
+            && self.spindle_rpm == modal.spindle_rpm
+            && self.spindle_dir == modal.spindle_dir
+            && self.coolant == modal.coolant
     }
 
     pub fn push_move(&mut self, line: usize, kind: MoveKind, to: Point3, feed: Option<f64>) {

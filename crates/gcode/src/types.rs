@@ -222,7 +222,9 @@ impl LineMap {
     }
 }
 
-/// One tool section of a parsed NC program.
+/// One section of a parsed NC program: a run of moves with one tool, work offset,
+/// length offset, spindle and coolant state. A change of any of these after a move
+/// starts a new section, so consecutive sections can have the same tool.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParsedSection {
     pub index: usize,

@@ -31,13 +31,21 @@ pub enum GcodeError {
 
     #[error("line {line}: invalid modal state: {message}")]
     InvalidModal { line: usize, message: String },
+
+    #[error("line {line}: value out of range: {message}")]
+    OutOfRange { line: usize, message: String },
+
+    #[error("invalid parse option {field}: {message}")]
+    InvalidOptions { field: String, message: String },
 }
 
 impl GcodeError {
-    /// 1-based NC line number where the error occurred.
+    /// 1-based NC line number where the error occurred; 0 for a caller option
+    /// ([`GcodeError::InvalidOptions`]), which no source line holds.
     #[must_use]
     pub const fn line(&self) -> usize {
         match self {
+            GcodeError::InvalidOptions { .. } => 0,
             GcodeError::Syntax { line, .. }
             | GcodeError::UnknownWord { line, .. }
             | GcodeError::MissingUnitMode { line }
@@ -45,7 +53,8 @@ impl GcodeError {
             | GcodeError::MissingReferencePosition { line, .. }
             | GcodeError::InvalidArc { line, .. }
             | GcodeError::InvalidCycle { line, .. }
-            | GcodeError::InvalidModal { line, .. } => *line,
+            | GcodeError::InvalidModal { line, .. }
+            | GcodeError::OutOfRange { line, .. } => *line,
         }
     }
 }

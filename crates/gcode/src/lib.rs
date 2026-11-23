@@ -5,14 +5,19 @@ mod arc;
 mod block;
 mod block_codes;
 mod cycle;
+mod cycle_expand;
 mod dialect;
+mod domain;
 mod error;
+mod frame;
 mod interp;
 mod lexer;
 mod motion;
 mod section;
+mod tooling;
 pub mod types;
 
+pub use domain::{MAX_ABS_MM, MAX_DWELL_S, MAX_FEED_MM_MIN};
 pub use types::{
     ArcCenterMode, CoolantState, CycleReturnMode, CycleType, Dialect, DistanceMode, DwellEvent,
     DwellUnit, FeedMode, GcodeError, LineMap, ModalState, MotionMode, MoveLine, ParseOptions,

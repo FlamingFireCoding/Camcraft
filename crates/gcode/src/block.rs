@@ -80,6 +80,9 @@ pub struct DecodedBlock {
     pub k: Option<f64>,
     pub r: Option<f64>,
     pub p: Option<f64>,
+    /// The `P` word was written with a decimal point (`P10.`): some controllers
+    /// (Haas) read it as seconds, and without the point as milliseconds.
+    pub p_has_point: bool,
     pub q: Option<f64>,
     pub f: Option<f64>,
     pub s: Option<f64>,
@@ -153,7 +156,10 @@ pub fn decode_block(parsed: &ParsedLine) -> Result<DecodedBlock, GcodeError> {
             'J' => set_unique(line, 'J', &mut b.j, w.value)?,
             'K' => set_unique(line, 'K', &mut b.k, w.value)?,
             'R' => set_unique(line, 'R', &mut b.r, w.value)?,
-            'P' => set_unique(line, 'P', &mut b.p, w.value)?,
+            'P' => {
+                set_unique(line, 'P', &mut b.p, w.value)?;
+                b.p_has_point = w.raw.contains('.');
+            }
             'Q' => set_unique(line, 'Q', &mut b.q, w.value)?,
             'F' => set_unique(line, 'F', &mut b.f, w.value)?,
             'S' => set_unique(line, 'S', &mut b.s, w.value)?,

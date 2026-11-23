@@ -1,6 +1,5 @@
 //! Additional dialect preset, vertical-plane R-arc, and M-code tests for `camcraft-gcode`.
 //! Provenance: verifies 3-axis dialect conventions and G18/G19 R-radius arcs against RS-274/NGC and CamCraft post formats.
-//! Gate map: covers camcraft_gcode::{dialect, arc, block_codes, interp, motion}.
 
 use camcraft_cl::cl::{ArcPlane, CycleKind, MoveKind};
 use camcraft_gcode::{

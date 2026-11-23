@@ -16,8 +16,24 @@ pub enum DwellUnit {
     /// `P` is in seconds (RS-274/NGC, LinuxCNC, Tormach, grblHAL, TinyG, Carvera).
     #[default]
     Seconds,
-    /// `P` is in milliseconds (Fanuc, Haas).
+    /// `P` is in milliseconds (Fanuc).
     Milliseconds,
+    /// `P` with a decimal point is in seconds, `P` without one is in milliseconds
+    /// (Haas: `G04 P10` is 10 ms, `G04 P10.` is 10 s).
+    PointSecondsElseMilliseconds,
+}
+
+impl DwellUnit {
+    /// Scale a `P` value to seconds. `has_point` says whether the word had a decimal point.
+    #[must_use]
+    pub fn to_seconds(self, value: f64, has_point: bool) -> f64 {
+        match self {
+            DwellUnit::Seconds => value,
+            DwellUnit::Milliseconds => value / 1000.0,
+            DwellUnit::PointSecondsElseMilliseconds if has_point => value,
+            DwellUnit::PointSecondsElseMilliseconds => value / 1000.0,
+        }
+    }
 }
 
 /// Dialect configuration passed by the caller.
@@ -66,13 +82,14 @@ impl Dialect {
         }
     }
 
-    /// Haas 3-axis milling profile (`G91.1`, `P` in milliseconds).
+    /// Haas 3-axis milling profile (`G91.1`; `P` with a decimal point in seconds,
+    /// without one in milliseconds).
     #[must_use]
     pub fn haas() -> Self {
         Self {
             name: "haas".to_string(),
-            cycle_dwell_unit: DwellUnit::Milliseconds,
-            g4_dwell_unit: DwellUnit::Milliseconds,
+            cycle_dwell_unit: DwellUnit::PointSecondsElseMilliseconds,
+            g4_dwell_unit: DwellUnit::PointSecondsElseMilliseconds,
             ..Self::rs274()
         }
     }

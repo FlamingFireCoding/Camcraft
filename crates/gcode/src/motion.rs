@@ -2,15 +2,12 @@
 //! Provenance: motion, reference return, and canned-cycle invocation semantics from RS-274/NGC (NISTIR 6556 §3.5) and ISO 6983.
 
 use camcraft_cl::cl::MoveKind;
-use camcraft_geometry::geometry::Point3;
-use camcraft_geometry::geometry::units::from_display;
-
 use crate::arc::resolve_arc;
 use crate::block::{DecodedBlock, Group1G, LengthOp, NonModalG, PathControlG};
 use crate::block_codes::check_unused_words;
-use crate::cycle::{execute_cycle_block, CycleBlockInput};
+use crate::domain::{check_dwell, check_len, check_point};
 use crate::interp::Interpreter;
-use crate::types::{DistanceMode, DwellEvent, DwellUnit, GcodeError, MotionMode};
+use crate::types::{DwellEvent, DwellUnit, GcodeError, MotionMode};
 
 impl<'a> Interpreter<'a> {
     pub(crate) fn execute_motion(&mut self, b: &DecodedBlock) -> Result<(), GcodeError> {
@@ -110,9 +107,9 @@ impl<'a> Interpreter<'a> {
             });
         }
         let seconds = if let Some(p) = b.p {
-            dwell_to_seconds(line, p, self.options.dialect.g4_dwell_unit)?
+            dwell_to_seconds(line, p, b.p_has_point, self.options.dialect.g4_dwell_unit)?
         } else if let Some(x) = b.x {
-            dwell_to_seconds(line, x, DwellUnit::Seconds)?
+            dwell_to_seconds(line, x, b.p_has_point, DwellUnit::Seconds)?
         } else {
             return Err(GcodeError::Syntax {
                 line,
@@ -146,7 +143,7 @@ impl<'a> Interpreter<'a> {
         } else {
             (MoveKind::Rapid, None)
         };
-        let to = self.target_point(b, unit);
+        let to = self.target_point(b, unit)?;
         self.current.push_move(line, kind, to, feed);
         self.pos = to;
         Ok(())
@@ -174,13 +171,13 @@ impl<'a> Interpreter<'a> {
         let unit = self.require_unit(line)?;
         let ccw = self.modal.motion == MotionMode::ArcCcw;
         let feed = self.require_feed(line, if ccw { "G3" } else { "G2" })?;
-        let to = self.target_point(b, unit);
+        let to = self.target_point(b, unit)?;
         let ijk = [
-            b.i.map(|v| from_display(v, unit)),
-            b.j.map(|v| from_display(v, unit)),
-            b.k.map(|v| from_display(v, unit)),
+            self.len_word(line, 'I', b.i, unit)?,
+            self.len_word(line, 'J', b.j, unit)?,
+            self.len_word(line, 'K', b.k, unit)?,
         ];
-        let r_mm = b.r.map(|v| from_display(v, unit));
+        let r_mm = self.len_word(line, 'R', b.r, unit)?;
         let resolved = resolve_arc(
             line,
             self.pos,
@@ -192,7 +189,13 @@ impl<'a> Interpreter<'a> {
             r_mm,
             self.options.dialect.arc_radius_tolerance_mm,
         )?;
+        // A resolved centre or mid point outside the domain is refused here: the
+        // builder would replace an arc with a non-finite centre by a straight move.
+        let c = resolved.center_words;
+        check_len(line, "arc centre", c.x)?;
+        check_len(line, "arc centre", c.y)?;
         if let Some(mid) = resolved.split_mid {
+            check_point(line, "arc mid point", mid)?;
             self.current.push_arc(
                 line,
                 mid,
@@ -214,53 +217,6 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn execute_cycle(
-        &mut self,
-        b: &DecodedBlock,
-        cycle_type: crate::types::CycleType,
-        allow_h: bool,
-    ) -> Result<(), GcodeError> {
-        let line = b.line;
-        check_unused_words(b, false, true, true, true, allow_h, true)?;
-        let unit = self.require_unit(line)?;
-        let feed = self.require_feed(line, "canned cycle")?;
-        let repeat = b.l.unwrap_or(1);
-        if repeat > 10_000 {
-            return Err(GcodeError::InvalidCycle {
-                line,
-                message: format!("cycle repeat count L{repeat} exceeds 10000"),
-            });
-        }
-        let p_sec = match b.p {
-            Some(p) => Some(dwell_to_seconds(line, p, self.options.dialect.cycle_dwell_unit)?),
-            None => None,
-        };
-        let is_new_cycle = matches!(b.group1, Some(Group1G::Cycle(_)));
-        let input = CycleBlockInput {
-            line,
-            kind: cycle_type,
-            is_new_cycle,
-            distance: self.modal.distance,
-            return_mode: self.modal.cycle_return,
-            x_mm: b.x.map(|v| from_display(v, unit)),
-            y_mm: b.y.map(|v| from_display(v, unit)),
-            z_mm: b.z.map(|v| from_display(v, unit)),
-            r_mm: b.r.map(|v| from_display(v, unit)),
-            q_mm: b.q.map(|v| from_display(v, unit)),
-            p_sec,
-            repeat,
-            feed_mm_min: feed,
-            chip_break_retract_mm: self.options.dialect.chip_break_retract_mm,
-        };
-        execute_cycle_block(
-            input,
-            &mut self.active_cycle,
-            &mut self.pos,
-            &mut self.current.builder,
-            &mut self.current.move_lines,
-        )
-    }
-
     pub(crate) fn set_group1(&mut self, g1: Group1G) {
         let next = match g1 {
             Group1G::Rapid => MotionMode::Rapid,
@@ -270,105 +226,23 @@ impl<'a> Interpreter<'a> {
             Group1G::Cancel => MotionMode::None,
             Group1G::Cycle(ct) => MotionMode::Cycle(ct),
         };
-        if !matches!(next, MotionMode::Cycle(_)) || self.modal.motion != next {
+        // Contiguous canned cycles keep their state, also across cycle codes
+        // (#3657 review 6): only a non-cycle motion code ends it.
+        if !matches!(next, MotionMode::Cycle(_)) {
             self.active_cycle = None;
         }
         self.modal.motion = next;
     }
-
-    fn execute_reference_return(
-        &mut self,
-        b: &DecodedBlock,
-        is_g28: bool,
-    ) -> Result<(), GcodeError> {
-        let line = b.line;
-        let code = if is_g28 { "G28" } else { "G30" };
-        let unit = self.require_unit(line)?;
-        let ref_pt = if is_g28 {
-            self.options.references.g28
-        } else {
-            self.options.references.g30
-        }
-        .ok_or_else(|| GcodeError::MissingReferencePosition {
-            line,
-            code: code.to_string(),
-        })?;
-        let wcs_org = self
-            .options
-            .references
-            .wcs_origin(self.modal.work_offset)
-            .unwrap_or(Point3::ZERO);
-        let ref_wcs = Point3::new(
-            ref_pt.x - wcs_org.x,
-            ref_pt.y - wcs_org.y,
-            ref_pt.z - wcs_org.z,
-        );
-        if b.x.is_some() || b.y.is_some() || b.z.is_some() {
-            let inter = self.target_point(b, unit);
-            self.current.push_move(line, MoveKind::Rapid, inter, None);
-            self.pos = inter;
-            let final_pt = Point3::new(
-                if b.x.is_some() { ref_wcs.x } else { self.pos.x },
-                if b.y.is_some() { ref_wcs.y } else { self.pos.y },
-                if b.z.is_some() { ref_wcs.z } else { self.pos.z },
-            );
-            self.current.push_move(line, MoveKind::Rapid, final_pt, None);
-            self.pos = final_pt;
-        } else {
-            self.current.push_move(line, MoveKind::Rapid, ref_wcs, None);
-            self.pos = ref_wcs;
-        }
-        Ok(())
-    }
-
-    fn execute_g53(&mut self, b: &DecodedBlock) -> Result<(), GcodeError> {
-        let line = b.line;
-        let unit = self.require_unit(line)?;
-        if self.modal.distance != DistanceMode::Absolute {
-            return Err(GcodeError::InvalidModal {
-                line,
-                message: "G53 machine-coordinate move requires G90 absolute distance mode"
-                    .to_string(),
-            });
-        }
-        let wcs_org = self
-            .options
-            .references
-            .wcs_origin(self.modal.work_offset)
-            .ok_or_else(|| GcodeError::MissingReferencePosition {
-                line,
-                code: "G53".to_string(),
-            })?;
-        let (kind, feed) = match self.modal.motion {
-            MotionMode::Rapid => (MoveKind::Rapid, None),
-            MotionMode::Linear => (MoveKind::Feed, Some(self.require_feed(line, "G53 G1")?)),
-            _ => {
-                return Err(GcodeError::InvalidModal {
-                    line,
-                    message: "G53 is valid only with G0 or G1 motion mode".to_string(),
-                });
-            }
-        };
-        let to = Point3::new(
-            b.x.map_or(self.pos.x, |v| from_display(v, unit) - wcs_org.x),
-            b.y.map_or(self.pos.y, |v| from_display(v, unit) - wcs_org.y),
-            b.z.map_or(self.pos.z, |v| from_display(v, unit) - wcs_org.z),
-        );
-        self.current.push_move(line, kind, to, feed);
-        self.pos = to;
-        Ok(())
-    }
 }
 
-fn dwell_to_seconds(line: usize, val: f64, unit: DwellUnit) -> Result<f64, GcodeError> {
+/// Scale a dwell word to seconds by the dialect rule and refuse it outside the domain.
+/// `has_point` is the written form of the `P` word (Haas reads `P10.` as seconds).
+pub(crate) fn dwell_to_seconds(line: usize, val: f64, has_point: bool, unit: DwellUnit) -> Result<f64, GcodeError> {
     if !val.is_finite() || val < 0.0 {
         return Err(GcodeError::InvalidModal {
             line,
             message: format!("dwell duration ({val}) must be non-negative"),
         });
     }
-    Ok(match unit {
-        DwellUnit::Seconds => val,
-        DwellUnit::Milliseconds => val / 1000.0,
-    })
+    check_dwell(line, unit.to_seconds(val, has_point))
 }

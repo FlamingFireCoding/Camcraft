@@ -1,5 +1,4 @@
 //! Pinning tests for `camcraft-gcode` RS-274/NGC and ISO 6983 3-axis milling parsing.
-//! Gate map: covers camcraft_gcode::{types, lexer, block, block_codes, arc, cycle, motion, section, interp, error}.
 
 use camcraft_cl::cl::{ArcPlane, CycleKind, MoveKind};
 use camcraft_gcode::{
@@ -58,10 +57,11 @@ M9
 M5
 M30
 %";
-    let opts = ParseOptions {
-        dialect: Dialect::tormach(),
-        ..Default::default()
-    };
+    // G55 and G56 origins differ: tool 2 starts at the last G55 point in G56 (#3657 review 3).
+    let mut references = ReferencePositions::default();
+    references.wcs_origins[1] = Some(Point3::new(100.0, 0.0, 0.0));
+    references.wcs_origins[2] = Some(Point3::new(0.0, 50.0, -10.0));
+    let opts = ParseOptions { dialect: Dialect::tormach(), references };
     let parsed = parse_with(nc, &opts).expect("valid two-tool program");
 
     assert_eq!(parsed.program_number, Some(1));
@@ -95,7 +95,7 @@ M30
     assert!(s1.toolpath.is_chained());
     assert_eq!(s1.toolpath.moves.len(), 2);
     assert_eq!(s1.move_lines, vec![26, 28]);
-    assert_pt_near(s1.toolpath.moves[0].from, Point3::new(35.0, 15.0, -2.0), 1e-6);
+    assert_pt_near(s1.toolpath.moves[0].from, Point3::new(135.0, -35.0, 8.0), 1e-6);
     assert_pt_near(s1.toolpath.moves[0].to, Point3::new(0.0, 0.0, 10.0), 1e-6);
     assert_pt_near(s1.toolpath.moves[1].to, Point3::new(0.0, 0.0, -1.0), 1e-6);
 

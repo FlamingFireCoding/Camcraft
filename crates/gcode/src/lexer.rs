@@ -3,7 +3,8 @@
 
 use crate::types::GcodeError;
 
-/// Parsed G-code or M-code number (integer major plus optional trimmed decimal minor).
+/// Parsed G-code or M-code number (integer major plus an optional one-digit decimal minor:
+/// `G90.1` has minor 1; a code with two or more significant decimal digits is refused).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodeNum {
     pub major: u32,
@@ -341,6 +342,17 @@ fn parse_code_num(line: usize, letter: char, num_str: &str) -> Result<CodeNum, G
                     return Err(GcodeError::Syntax {
                         line,
                         message: format!("M-code '{letter}{num_str}' cannot be fractional"),
+                    });
+                }
+                // The minor number keeps its decimal place value (#3657 review 8): only
+                // trailing zeros are dropped, so G90.10 is G90.1, but G90.01 is not. Every
+                // supported code has one decimal digit; a longer code is refused by name.
+                if trimmed.len() > 1 {
+                    return Err(GcodeError::UnsupportedCode {
+                        line,
+                        code: format!("{letter}{num_str}"),
+                        reason: "codes with more than one significant decimal place are not supported"
+                            .to_string(),
                     });
                 }
                 let m = trimmed.parse::<u32>().map_err(|_| GcodeError::Syntax {
