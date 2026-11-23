@@ -23,6 +23,27 @@ pub fn generate(
 mod run_job;
 pub use run_job::run_job;
 
+/// #3035: the areas the Offset rings cut in place of the planned order -
+/// a warning, not only a note; advisory (the rings are verified). #3542:
+/// the cause comes from the notes, not from the op kind - a Pocket, an
+/// Offset or a 3D pocket reaches the pass-start guard too, and an
+/// Adaptive op on its ring fallback can write both notes; any Adaptive
+/// note keeps the Adaptive text.
+#[must_use]
+pub fn strategy_fallback(path: &Toolpath) -> Option<Warning> {
+    let areas = crate::machining2d::rings_fallbacks(&path.notes);
+    if areas == 0 {
+        return None;
+    }
+    let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
+    let cause = if crate::machining2d::pass_start_fallbacks(&path.notes) == areas {
+        crate::verify::FallbackCause::PassStart
+    } else {
+        crate::verify::FallbackCause::Adaptive
+    };
+    Some(Warning::StrategyFallback { at, areas, cause })
+}
+
 /// [`run_job`]'s body: every arm, unchanged.
 fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
     let GenJob {
@@ -3824,11 +3845,7 @@ fn run_job_arms(job: GenJob) -> Result<(Toolpath, Vec<Warning>), GenError> {
             super::drill_size::undersize_into(&mut warns, &path, &tool, &params);
             // #3035: Adaptive areas cut by Offset rings - a warning, not
             // only a note; advisory (the rings are verified above).
-            let areas = crate::machining2d::rings_fallbacks(&path.notes);
-            if areas > 0 {
-                let at = path.moves.iter().position(|m| m.kind != crate::cl::MoveKind::Rapid).unwrap_or(0);
-                warns.push(Warning::StrategyFallback { at, areas });
-            }
+            warns.extend(strategy_fallback(&path));
             // The rotary kinds' bands and rapids (M13): `Mode::Rotary`
             // stood the vertical-column laws down; the radial field
             // reads rest material in the frame the work turns in.

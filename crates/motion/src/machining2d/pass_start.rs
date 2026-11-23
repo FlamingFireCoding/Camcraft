@@ -133,9 +133,21 @@ impl StartSide {
     }
 }
 
+/// How many of the Offset-rings fallbacks in `notes` (the ones
+/// [`super::pocket_hsm::rings_fallbacks`] counts) are this planner's
+/// completeness guard, not the Adaptive plan (#3542): the op names the
+/// cause from the note that made the fallback, never from its kind.
+#[must_use]
+pub fn pass_start_fallbacks(notes: &[String]) -> usize {
+    notes
+        .iter()
+        .filter(|n| n.starts_with(PASS_START_NOTE) && n.contains(RINGS_FALLBACK) && n.ends_with(" instead"))
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{PASS_START_NOTE, PassStart, StartSide};
+    use super::{PASS_START_NOTE, PassStart, StartSide, pass_start_fallbacks};
     use crate::machining2d::rings_fallbacks;
 
     /// #3316/#3035: the completeness guard's note is an Offset-rings
@@ -148,6 +160,12 @@ mod tests {
         let note = side.fallback_note(12.3);
         assert!(note.starts_with(PASS_START_NOTE), "{note}");
         assert_eq!(rings_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+        // #3542: the guard's note is a pass-start fallback; an Adaptive
+        // note with a pass start ("adaptive: Pass starts at ...") is not.
+        assert_eq!(pass_start_fallbacks(std::slice::from_ref(&note)), 1, "{note}");
+        let adaptive = "adaptive: Pass starts at Outside - the HSM plan failed - Offset rings cut the pocket in that order instead".to_owned();
+        assert_eq!(rings_fallbacks(std::slice::from_ref(&adaptive)), 1, "{adaptive}");
+        assert_eq!(pass_start_fallbacks(std::slice::from_ref(&adaptive)), 0, "{adaptive}");
         let wall = side.wall_first_note().unwrap_or_default();
         assert_eq!(rings_fallbacks(std::slice::from_ref(&wall)), 0, "{wall}");
         let narrow = side.narrow_note(1, 0.0, 0.0);
