@@ -307,8 +307,8 @@ pub fn fold_warnings_located(warnings: &[Warning]) -> Vec<(String, Option<usize>
             // own line, clear of the keys above (224 is the table's).
             Warning::StrategyFallback { .. } => (225, false),
             // #3525: a cut deeper than the flute length - the cause of
-            // the move findings, its own line (blocking or advisory).
-            Warning::FluteShort { wider, .. } => (226, wider.is_some()),
+            // the shank findings after it, its own line (advisory).
+            Warning::FluteShort { .. } => (226, false),
             // A lathe holder's rub (#369) splits part from stock too.
             Warning::HolderHit { part, .. } => (212 + *part as u8, false),
         }

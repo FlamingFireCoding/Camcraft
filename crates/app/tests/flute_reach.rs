@@ -4,9 +4,10 @@
 //! EM-0800-4FL (10 mm over an 8 mm cutter) enters the cut. The first
 //! warning and the first note name that cause - the tool, its flute length
 //! and the depth below the stock top - before the shank and rapid
-//! findings, and the post stays blocked. A 25 mm flute gets no such
-//! finding. A same-diameter shank deeper than its flute gets the advisory
-//! finding, which never holds the post by itself.
+//! findings. The finding is advisory (the #3525 decision): the post stays
+//! blocked by the shank findings. A 25 mm flute gets no such finding. A
+//! same-diameter shank deeper than its flute meets nothing: it gets the
+//! note alone, no warning, and that program posts.
 //!
 //! Gate map: covers app::operation (generate, flute_law), app::mcp (job
 //! finding kinds), app::posting (post_setup_unwritten), sim::verify
@@ -109,35 +110,44 @@ fn the_catalog_flute_names_its_cause_before_the_shank_findings() {
     named_first(20.0);
 }
 
+/// The note the flute finding gives on this job.
+const NOTE: &str = "EM-0800-4FL has a flute length of {F} mm; this operation cuts 20.500 mm below the stock top; above the \
+     flutes, the shank or the holder goes into the cut and can rub or collide - use a tool with a flute length of at \
+     least 20.500 mm, or cut less deep";
+
 /// The job with a `flute` mm flute: the flute finding first and once,
 /// its note first with the tool's name, the shank findings after it, and
-/// the post held with the cause named. Returns the warnings.
+/// the post held by those shank findings. Returns the warnings.
 fn named_first(flute: f64) -> Vec<Warning> {
     let (world, path, warns, want) = job(|t| t.flute_len = flute);
     let all = texts(&warns);
-    let Some(Warning::FluteShort { flute_mm, depth_mm, wider, .. }) = warns.first().copied() else {
+    let Some(Warning::FluteShort { at, flute_mm, depth_mm }) = warns.first().copied() else {
         panic!("the first warning names the flute: {all:?}");
     };
     assert_eq!(flute_mm, flute, "{all:?}");
     // The lowest level is the selection +1.5 over the floor: 2 mm of stock
     // over the part's 20 mm, so 20.5 mm under the stock top.
     assert!((depth_mm - want).abs() < 0.01 && (want - 20.5).abs() < 0.01, "depth {depth_mm}: {all:?}");
-    assert!(wider.is_some(), "the shank is wider than the cutter: {all:?}");
-    assert!(warns[0].blocks_post(), "{}", all[0]);
+    assert!(!warns[0].blocks_post(), "advisory: {}", all[0]);
+    assert_eq!(
+        all[0],
+        format!(
+            "the tool's flute length is {flute:.3} mm, but the cut goes 20.500 mm below the stock top from move {at}: above \
+             the flutes, the shank or the holder goes into the cut; the findings after this one name the moves where it \
+             meets material - use a tool with a longer flute, or cut less deep (this finding alone does not hold the post)"
+        )
+    );
     // The note names the tool, its flute and the depth, first.
-    let note = path.notes.first().cloned().unwrap_or_default();
-    assert!(note.starts_with(&format!("EM-0800-4FL has a flute length of {flute:.3} mm")), "{note}");
-    assert!(note.contains("this operation cuts 20.500 mm below the stock top"), "{note}");
-    assert!(note.contains("the shank, wider than the cutter, is in the cut"), "{note}");
+    assert_eq!(path.notes.first().cloned().unwrap_or_default(), NOTE.replace("{F}", &format!("{flute:.3}")));
     // Every rapid and shank finding comes after it; none is lost.
     let first_rapid = warns.iter().position(|w| matches!(w, Warning::RapidInStock { .. }));
     let first_shank = warns.iter().position(|w| matches!(w, Warning::ShankHit { .. }));
     assert!(first_shank.is_some(), "the shank still collides: {all:?}");
     assert!(first_rapid.is_none_or(|i| i > 0) && first_shank.is_some_and(|i| i > 0), "{all:?}");
     assert_eq!(warns.iter().filter(|w| matches!(w, Warning::FluteShort { .. })).count(), 1, "{all:?}");
-    // The post stays blocked.
+    // The post stays blocked, by the shank findings.
     let err = camcraft_app::posting::post_setup_unwritten(&world).expect_err("the post must be held");
-    assert!(err.contains(&format!("flute length is {flute:.3} mm")), "the post names the cause: {err}");
+    assert!(err.contains("shank/holder at move"), "the shank findings hold the post: {err}");
     warns
 }
 
@@ -149,23 +159,18 @@ fn a_twenty_five_mm_flute_gets_no_flute_finding() {
     assert!(!path.notes.iter().any(|n| n.contains("has a flute length of")), "{:?}", path.notes);
 }
 
-/// A same-diameter shank deeper than its 10 mm flute: the advisory
-/// finding, which does not hold the post.
+/// A same-diameter shank deeper than its 10 mm flute: nothing collides,
+/// so the cause is the advisory note alone (no warning), and the program
+/// posts.
 #[test]
-fn a_same_diameter_shank_past_the_flute_is_advisory() {
+fn a_same_diameter_shank_past_the_flute_is_an_advisory_note() {
     let (world, path, warns, _) = job(|t| {
         t.flute_len = 10.0;
         t.shank_d = t.diameter;
     });
-    let all = texts(&warns);
-    let Some(w @ Warning::FluteShort { wider: None, .. }) = warns.first().copied() else {
-        panic!("the first warning is the advisory flute finding: {all:?}");
-    };
-    assert!(!w.blocks_post(), "advisory: {}", all[0]);
-    assert!(all[0].contains("the post is not held"), "{}", all[0]);
-    let note = path.notes.first().cloned().unwrap_or_default();
-    assert!(note.starts_with("EM-0800-4FL has a flute length of 10.000 mm") && note.contains("can rub the walls"), "{note}");
-    // The advisory finding is never a reason the post is held.
+    assert!(!warns.iter().any(|w| matches!(w, Warning::FluteShort { .. })), "{:?}", texts(&warns));
+    assert!(!warns.iter().any(Warning::blocks_post), "nothing collides: {:?}", texts(&warns));
+    assert_eq!(path.notes.first().cloned().unwrap_or_default(), NOTE.replace("{F}", "10.000"));
     let posted = camcraft_app::posting::post_setup_unwritten(&world);
     assert!(posted.is_ok(), "nothing collides, so the program posts: {posted:?}");
 }

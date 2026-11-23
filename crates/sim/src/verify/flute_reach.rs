@@ -3,24 +3,22 @@
 //! the shop rule that the depth of cut stays within the flute length
 //! (machine-tool handbooks, end mill selection). Our own reading.
 //!
-//! The law names the CAUSE that the collision laws report one move at a
-//! time: the operation asks for a depth that the flutes cannot reach. It
-//! reads the path's lowest cutting tip against the stock top (the stock's
-//! highest point, the conservative reading for a box or flat stock) and
-//! compares that depth with the flute length.
+//! The law names the CAUSE that the shank and holder laws report one move
+//! at a time: the operation asks for a depth that the flutes cannot reach.
+//! It reads the path's lowest cutting tip against the stock top (the
+//! stock's highest point, the conservative reading for a box or flat
+//! stock) and compares that depth with the flute length.
 //!
-//! - The shank (or, past the shank, the holder) is wider than the cutter:
-//!   the body meets the wall that the flutes leave. The finding holds the
-//!   post, like the shank and holder findings that it explains.
-//! - The body is not wider (a reduced or same-diameter shank): it rubs
-//!   the wall below the flute. That is a risk, not a certain collision, so
-//!   the finding is advisory; the collision laws still judge each move.
+//! The finding is advisory (#3525 decision). The body above the flutes in
+//! the cut CAN meet the walls, but need not: a contour's shank can pass
+//! beside the wall. The shank and holder laws judge each move against the
+//! real body, and their findings hold the post when it does meet material.
 
-use super::types::{FixturePart, ToolGeom, Warning};
+use super::types::{ToolGeom, Warning};
 use crate::cl::{MoveKind, Toolpath};
 
-/// The slack under which a depth equal to the flute length is no finding,
-/// and under which a body radius equal to the cutter's is "not wider" (mm).
+/// The slack under which a depth equal to the flute length is no finding
+/// (mm).
 const SLACK: f64 = 1e-3;
 
 /// The flute-reach finding of `path` against a stock whose top stands at
@@ -29,7 +27,7 @@ const SLACK: f64 = 1e-3;
 #[must_use]
 pub fn flute_reach(path: &Toolpath, tool: &ToolGeom, stock_top_z: f64) -> Option<Warning> {
     let flute = tool.flute_len;
-    if !(flute.is_finite() && flute > 0.0 && stock_top_z.is_finite() && tool.radius.is_finite()) {
+    if !(flute.is_finite() && flute > 0.0 && stock_top_z.is_finite()) {
         return None;
     }
     let reach_z = stock_top_z - flute;
@@ -49,32 +47,20 @@ pub fn flute_reach(path: &Toolpath, tool: &ToolGeom, stock_top_z: f64) -> Option
         low = low.min(z);
     }
     let at = first?;
-    let depth_mm = stock_top_z - low;
-    let wider = |r: f64| r.is_finite() && r > tool.radius + SLACK;
-    let into_holder = depth_mm > flute + tool.shank_len.max(0.0) + SLACK;
-    let wider_body = if wider(tool.shank_radius) {
-        Some(FixturePart::Shank)
-    } else if into_holder && wider(tool.holder_radius) {
-        Some(FixturePart::Holder)
-    } else {
-        None
-    };
-    Some(Warning::FluteShort { at, flute_mm: flute, depth_mm, wider: wider_body })
+    Some(Warning::FluteShort { at, flute_mm: flute, depth_mm: stock_top_z - low })
 }
 
-/// The finding's note with the tool's name (the warning itself is `Copy`
-/// and carries no name): `None` for any other warning.
+/// The finding as the note that names the tool (the warning itself is
+/// `Copy` and carries no name): `None` for any other warning. It states
+/// the facts and what MAY follow; it claims no contact.
 #[must_use]
 pub fn flute_note(tool_name: &str, w: &Warning) -> Option<String> {
-    let Warning::FluteShort { flute_mm, depth_mm, wider, .. } = w else {
+    let Warning::FluteShort { flute_mm, depth_mm, .. } = w else {
         return None;
     };
-    let cause = match wider {
-        Some(FixturePart::Holder) => "the holder, wider than the cutter, is in the cut".to_string(),
-        Some(_) => "the shank, wider than the cutter, is in the cut".to_string(),
-        None => "the shank is in the cut and can rub the walls (the post is not held)".to_string(),
-    };
     Some(format!(
-        "{tool_name} has a flute length of {flute_mm:.3} mm; this operation cuts {depth_mm:.3} mm below the stock top; {cause} - use a tool with a flute length of at least {depth_mm:.3} mm, or cut less deep"
+        "{tool_name} has a flute length of {flute_mm:.3} mm; this operation cuts {depth_mm:.3} mm below the stock top; \
+         above the flutes, the shank or the holder goes into the cut and can rub or collide - use a tool with a flute \
+         length of at least {depth_mm:.3} mm, or cut less deep"
     ))
 }
