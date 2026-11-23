@@ -60,6 +60,7 @@ use super::{rotary_ends, rotary_links, rotary_pick};
 use super::tilt::{command_axis, AxisControl};
 
 mod flat;
+mod halves;
 
 /// The stance boundary (sin 1 degree): near horizontal, contour
 /// uses explicit stations; near vertical, parallel refuses its raster.
@@ -171,7 +172,24 @@ pub fn rotary_parallel_over(
     q.ramp = false;
     q.entry_ramp = false;
     let r = p.tool_diameter * 0.5;
-    let base = finishing3d::swarf(&local, &q, 1.0, 0.0).map_err(|e| to_world(e, &f, &ax, c, r))?;
+    // #2970: the laid raster finishes the bar from above only. Half B
+    // is the same frame turned half a turn about the axis; each half
+    // keeps the cut over its own upper half, B carried back into A's
+    // frame ([`halves::both`] states the seam).
+    let fb = TiltedFrame { v: [-v.x, -v.y, -v.z], axis: [-up.x, -up.y, -up.z], ..f };
+    let local_b = fb.local_facets(facets);
+    let mut qb = stations(&local_b, p, &fb, &|h| h - ax.origin.z);
+    (qb.ramp, qb.entry_ramp) = (false, false);
+    let half_a = finishing3d::swarf(&local, &q, 1.0, 0.0).map_err(|e| to_world(e, &f, &ax, c, r));
+    let half_b = finishing3d::swarf(&local_b, &qb, 1.0, 0.0).map_err(|e| to_world(e, &fb, &ax, c, r));
+    let base = match (half_a, half_b) {
+        (Ok(a), Ok(b)) => halves::both(&a, &b, &local, r, q.bottom_z, p.tolerance),
+        // A half with no surface under it (an open shell over one side
+        // only) leaves the other half's whole cut, as before.
+        (Ok(a), Err(GenError::Empty(_))) => a,
+        (Err(GenError::Empty(_)), Ok(b)) => halves::only_b(&b, r, q.bottom_z, p.tolerance),
+        (Err(e), _) | (_, Err(e)) => return Err(e),
+    };
     // #2343: a held end's face is inside the bar - the cut keeps to
     // the model's side of its plane, before the links are built.
     let local_stock = stock.map(|s| f.local_facets(s));
@@ -209,9 +227,9 @@ pub fn rotary_parallel_over(
     let base = rotary_links::radial_relink(&base, r, q.clearance_z, hop, rho, p.feed, p.plunge_feed, ramp)
         .map_err(|e| to_world(e, &f, &ax, c, r))?;
     let mut out = posed(&f, &base, &ax, c, r)?;
-    if ramp.is_some() {
-        out.notes.extend(base.notes.iter().filter(|n| n.starts_with("Rotary Parallel:")).cloned());
-    }
+    // #2970: the raster's and the rings' notes (samples refused, rest
+    // reported not cut) reach the path - never only the ramp's.
+    out.notes.extend(base.notes.iter().cloned());
     for e in window.iter().flat_map(|w| &w.ends) {
         let at = f.to_world(Point3::new(e.station, 0.0, 0.0));
         out.notes.push(format!(
