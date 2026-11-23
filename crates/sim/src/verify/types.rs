@@ -186,6 +186,10 @@ pub struct VerifyContext<'a> {
     /// that traces one at the untightened `gouge_tol`
     /// ([`VerifyContext::loop_tol`]). Empty everywhere else.
     pub rims: &'a [(crate::geo2d::Point2, f64)],
+    /// Geometric upper bound of the finished hole walls (#3451).
+    /// Only the axial cone boundary check reads this cap. `None` keeps
+    /// the stock-top cap; the rapid and collision laws always use stock.
+    pub rim_top_z: Option<f64>,
     /// The spindle a turning nose path cuts about (#1408): given, the
     /// envelope law (f) reads the hidden half as the turning work sees
     /// it (`stock_sim::envelope_scan_turned`). `None` - every mill
@@ -232,6 +236,7 @@ impl Default for VerifyContext<'_> {
             model_excess: 0.0,
             file_tolerance: false,
             rims: &[],
+            rim_top_z: None,
             lathe_axis: None,
             corner_reliefs: &[],
         }
