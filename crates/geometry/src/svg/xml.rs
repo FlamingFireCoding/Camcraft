@@ -4,11 +4,14 @@
 //!
 //! Text content is kept for `<style>` only. A DOCTYPE entity is never expanded: a reference
 //! to one (`&name;`) in content or in an attribute is refused by name, because a browser
-//! expands it into elements or values that this reader cannot see. A namespace declaration
-//! (`xmlns`) is the exception: its value is not read.
+//! expands it into elements or values that this reader cannot see. A reference that is not a
+//! character is refused in the same way (`reference.rs`). A namespace declaration (`xmlns`)
+//! is the exception: its value is not read.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
+use super::reference::expand;
 use super::{SvgError, invalid};
 
 /// The deepest element nesting read; deeper input is refused, not followed.
@@ -93,85 +96,13 @@ impl Cursor<'_> {
     }
 }
 
-/// Decode the predefined entities and character references; leave any other reference as is.
-fn decode(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut rest = raw;
-    while let Some(amp) = rest.find('&') {
-        out.push_str(&rest[..amp]);
-        rest = &rest[amp..];
-        // Look for the `;` only in the next few bytes: a scan of the whole rest
-        // for each `&` is quadratic and lets a hostile file hang the reader.
-        let window = rest.as_bytes().get(..12).unwrap_or(rest.as_bytes());
-        let Some(semi) = window.iter().position(|&b| b == b';').filter(|&s| s <= 10) else {
-            out.push('&');
-            rest = &rest[1..];
-            continue;
-        };
-        let body = &rest[1..semi];
-        let ch = match body {
-            "lt" => Some('<'),
-            "gt" => Some('>'),
-            "amp" => Some('&'),
-            "quot" => Some('"'),
-            "apos" => Some('\''),
-            _ => body
-                .strip_prefix("#x")
-                .or_else(|| body.strip_prefix("#X"))
-                .map_or_else(|| body.strip_prefix('#').and_then(|d| d.parse().ok()), |h| u32::from_str_radix(h, 16).ok())
-                .and_then(char::from_u32),
-        };
-        match ch {
-            Some(c) => {
-                out.push(c);
-                rest = &rest[semi + 1..];
-            }
-            None => {
-                out.push('&');
-                rest = &rest[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Refuse a reference to an entity that is not predefined (`&name;`) in `raw`. `place` gives
-/// the words for where `raw` is; it is called for a refusal only.
-fn no_foreign_entity(raw: &str, place: impl Fn() -> String) -> Result<(), SvgError> {
-    let mut rest = raw;
-    // One pass: each scan stops at the end of a name, and the next search starts there.
-    while let Some(amp) = rest.find('&') {
-        rest = rest.get(amp + 1..).unwrap_or("");
-        let len = rest
-            .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '#')))
-            .unwrap_or(rest.len());
-        let (name, tail) = rest.split_at(len);
-        let known = name.starts_with('#') || matches!(name, "lt" | "gt" | "amp" | "quot" | "apos");
-        if tail.starts_with(';') && !name.is_empty() && !known {
-            return Err(invalid(format!(
-                "entity reference &{}; in {}: an entity of the DOCTYPE is not expanded",
-                short(name),
-                place()
-            )));
-        }
-        rest = tail;
-    }
-    Ok(())
-}
-
-/// Character data between two tags: checked for entities, and kept when it is in a `<style>`.
+/// Character data between two tags: its references are checked, and it is kept when it is in
+/// a `<style>`. A CDATA section has no references.
 fn content(text: &str, cdata: bool, stack: &[(usize, String)], nodes: &mut [Node]) -> Result<(), SvgError> {
-    if !cdata {
-        no_foreign_entity(text, || "the content".to_owned())?;
-    }
+    let text = if cdata { Cow::Borrowed(text) } else { expand(text, || "the content".to_owned())? };
     let open = stack.last().and_then(|(index, _)| nodes.get_mut(*index));
     if let Some(style) = open.filter(|node| node.name == "style") {
-        if cdata {
-            style.text.push_str(text);
-        } else {
-            style.text.push_str(&decode(text));
-        }
+        style.text.push_str(&text);
     }
     Ok(())
 }
@@ -294,10 +225,12 @@ fn attributes(cur: &mut Cursor<'_>, tag: &str) -> Result<HashMap<String, String>
         cur.at += 1;
         let len = cur.rest().find(quote).ok_or_else(|| invalid(format!("unterminated tag <{tag}")))?;
         let raw = cur.rest().get(..len).unwrap_or("");
-        if name != "xmlns" && !name.starts_with("xmlns:") {
-            no_foreign_entity(raw, || format!("attribute {} of <{}>", short(&name), short(tag)))?;
-        }
-        let value = decode(raw);
+        // The value of a namespace declaration is not read: it stays as written.
+        let value = if name == "xmlns" || name.starts_with("xmlns:") {
+            raw.to_owned()
+        } else {
+            expand(raw, || format!("attribute {} of <{}>", short(&name), short(tag)))?.into_owned()
+        };
         cur.at += len + 1;
         // The first value of a repeated attribute stays.
         attrs.entry(name).or_insert(value);

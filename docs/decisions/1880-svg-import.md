@@ -82,6 +82,21 @@
   value (`display="&d;"`), and this reader does not expand it. The exception is a namespace
   declaration (`xmlns`, `xmlns:*`): its value is not read, and old Illustrator files write
   it with an entity. Dropped: entity expansion (the size of the result has no bound).
+- A reference is a run after an `&` that ends at a `;` (`svg/reference.rs`). It is decoded
+  only if it is one of the five predefined entities or a character reference to a character
+  that XML permits, with any count of leading zeros. Each other reference is refused by
+  name: a name with a character outside ASCII, a run that is not an XML name (`&a=b;`,
+  `&#X41;`), a code point that is not a character (`&#0;`). A browser puts a value there,
+  or does not draw the file. Dropped: a list of the characters of an XML name (a list that
+  is too short lets a reference through as text).
+- The inline style and the sheet use one CSS scanner (`svg/css.rs`). It reads an unquoted
+  `url(` token as CSS Syntax 3 does: the token ends at the first `)` that is not escaped,
+  and a quote, a `(`, a `;`, a brace or a `/*` in it starts nothing. A bad url token (a
+  quote, a `(` or a gap in the address) is refused by name in a sheet and in the inline
+  style of an imported element, because a style is not read in part. If the same style has
+  `display:none`, the shape is hidden as in a browser, and nothing of it is imported.
+  Dropped: only the browser rule (drop the declaration, read the next one) with no
+  refusal; a later difference from a browser would then import a shape without a message.
 - A `preserveAspectRatio` value that is not in the SVG grammar is refused. Before, an
   unknown alignment fell back to xMin/yMin, which moves the drawing.
 - A marker property with a value other than `none` is counted as `marker`: the marker shape

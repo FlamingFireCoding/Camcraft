@@ -110,6 +110,14 @@ impl Facts {
                 .fold(0usize, |sum, (name, value)| sum.saturating_add(name.len()).saturating_add(value.len())),
         };
         for decl in node.attr("style").map(inline_declarations).unwrap_or_default() {
+            // A browser drops a declaration with a bad `url(` token and reads the next one.
+            // A style is not read in part: the import is refused.
+            if decl.bad_url {
+                if imported && facts.refusal.is_none() {
+                    facts.refusal = Some(invalid("inline CSS has a bad url( token: a style is not read in part"));
+                }
+                continue;
+            }
             // A name that is empty or has a space in it is not a CSS property: a browser drops
             // that declaration, and so does this reader.
             if decl.property.is_empty() || decl.property.contains(' ') {

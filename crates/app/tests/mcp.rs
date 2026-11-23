@@ -17,6 +17,9 @@ mod mcp_finish3d_pass_start;
 mod mcp_open;
 #[path = "mcp/slot_tool_fit.rs"]
 mod slot_tool_fit;
+// #1880: import_svg, the importSvg script verb and the ImportSvg command.
+#[path = "mcp/svg.rs"]
+mod svg;
 #[path = "mcp/trochoid_pass_start.rs"]
 mod trochoid_pass_start;
 

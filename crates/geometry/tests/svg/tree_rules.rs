@@ -66,9 +66,9 @@ fn svg_style_sheet_rules_that_hide_or_resize_a_shape_are_refused_by_name() {
         ("@supports (display:grid){.s{display:none}}", "rule @supports"),
         ("@import url(other.css);", "rule @import"),
         ("@IMPORT 'other.css';", "rule @import"),
-        // A `}` in an unquoted url ends no block in a browser: what this scan cannot read
-        // is refused, not skipped.
-        (".a{fill:url(a}b);transform:scale(2)}", "style sheet has"),
+        // A `}` in an unquoted url ends no block in a browser, and none here: the next
+        // declaration is read and refused (`url_tokens.rs` has the url cases).
+        (".a{fill:url(a}b);transform:scale(2)}", "style sheet transform"),
         (".a{fill:red}} .s{transform:scale(2)}", "'}' outside a rule"),
         (".a{fill:red} transform:scale(2)", "text after its last rule"),
         (".a{fill:red} x; .s{fill:red}", "';' outside a rule"),

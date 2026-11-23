@@ -4,6 +4,22 @@
 //! Provenance: hand-written SVG fixtures from the W3C SVG 1.1 element and path grammar;
 //! the expected sizes are worked by hand. Gate map (M4.4): covers camcraft_geometry::svg and
 //! camcraft_geometry::sketch_data (from_dxf over an SVG document).
+//!
+//! This is the directory suite of the SVG reader: each file in `tests/svg/` is a module of
+//! this one test binary (AGENTS.md "New tests join a directory suite").
+
+#[path = "svg/references.rs"]
+mod references;
+#[path = "svg/refusals.rs"]
+mod refusals;
+#[path = "svg/style_safety.rs"]
+mod style_safety;
+#[path = "svg/tree_rules.rs"]
+mod tree_rules;
+#[path = "svg/url_tokens.rs"]
+mod url_tokens;
+#[path = "svg/visibility.rs"]
+mod visibility;
 
 use camcraft_geometry::dxf::{Primitive, Unit, Units};
 use camcraft_geometry::sketch_chains::LoopRole;
@@ -280,7 +296,7 @@ fn svg_stylesheets_inside_defs_and_tree_are_counted_as_skipped() {
       <rect class="h" width="20" height="20"/>
     </svg>"#;
     // A sheet of paint rules is counted. A rule that can hide or move a shape is refused:
-    // `svg_tree_rules.rs` pins that.
+    // `svg/tree_rules.rs` pins that.
     let doc = svg::parse(in_defs.as_bytes(), None).expect("stylesheet in defs reads");
     assert_eq!(doc.summary.skipped.get("style"), Some(&1), "{:?}", doc.summary.skipped);
     assert_eq!(doc.summary.skipped.len(), 1, "{:?}", doc.summary.skipped);

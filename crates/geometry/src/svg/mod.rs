@@ -17,10 +17,12 @@
 //! rule that is not paint, an animation element, a DOCTYPE entity) is refused by name.
 //! Malformed input is refused by name. This module has no file I/O and no application state.
 
+mod css;
 mod emit;
 mod facts;
 mod number;
 mod path;
+mod reference;
 mod shapes;
 mod sheet;
 mod style;

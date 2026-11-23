@@ -1,13 +1,14 @@
 //! The CSS of a `<style>` element, checked without selector matching: each declaration of
 //! each rule must be on the allow-list of the inline styles, so no rule of a sheet can hide,
 //! move or resize a shape that the import cuts.
-//! Provenance: CSS Syntax Level 3 (qualified rules, at-rules, blocks, strings, comments and
-//! escapes) and CSS Nesting 1 (a rule inside a declaration block); original implementation.
+//! Provenance: CSS Syntax Level 3 (qualified rules, at-rules and blocks; the tokens come from
+//! `css.rs`) and CSS Nesting 1 (a rule inside a declaration block); original implementation.
 //!
 //! The reader does not know which element a selector matches. Thus `display` and
 //! `visibility` are refused by name with any value, and text that is not a whole rule is
 //! refused: a part that this scan cannot read is never skipped.
 
+use super::css::{Lexer, Piece};
 use super::facts::{draws_marker, refused};
 use super::style::inline_declarations;
 use super::{SvgError, invalid};
@@ -21,36 +22,22 @@ fn short(text: &str) -> String {
     text.chars().take(40).collect()
 }
 
+/// The refusal of a bad `url(` token: a browser drops its declaration and reads the next one.
+fn bad_url() -> SvgError {
+    invalid("style sheet has a bad url( token: it is not read in part")
+}
+
 /// The index of the first byte of `stops` at or after `from` that is outside a string, a
-/// comment and an escape.
-fn scan(text: &str, from: usize, stops: &[u8]) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let mut i = from;
-    while let Some(&byte) = bytes.get(i) {
-        match byte {
-            b'\\' => i += 2,
-            b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                let end = text.get(i + 2..).and_then(|rest| rest.find("*/"));
-                i = end.map_or(bytes.len(), |end| i + 2 + end + 2);
-            }
-            b'"' | b'\'' => {
-                i += 1;
-                // A string ends at its quote or at the end of the line (CSS Syntax 3).
-                while let Some(&c) = bytes.get(i) {
-                    i += 1;
-                    match c {
-                        b'\\' => i += 1,
-                        b'\n' | b'\r' | 0x0c => break,
-                        c if c == byte => break,
-                        _ => {}
-                    }
-                }
-            }
-            byte if stops.contains(&byte) => return Some(i),
-            _ => i += 1,
+/// comment, an escape and a `url(` token.
+fn scan(text: &str, from: usize, stops: &[u8]) -> Result<Option<usize>, SvgError> {
+    for (at, piece) in Lexer::new(text, from) {
+        match piece {
+            Piece::BadUrl => return Err(bad_url()),
+            Piece::Char(ch) if u8::try_from(ch).is_ok_and(|byte| stops.contains(&byte)) => return Ok(Some(at)),
+            _ => {}
         }
     }
-    None
+    Ok(None)
 }
 
 /// `text` without the leading white space, comments and the `<!--` / `-->` that CSS permits.
@@ -71,6 +58,9 @@ fn lead(text: &str) -> &str {
 /// Check one declaration block. `notes` gets the kinds that the summary counts.
 fn declarations(body: &str, notes: &mut Vec<&'static str>) -> Result<(), SvgError> {
     for decl in inline_declarations(body) {
+        if decl.bad_url {
+            return Err(bad_url());
+        }
         // A name that is empty or has a space in it is not a CSS property: a browser drops
         // that declaration, and so does this reader.
         if decl.property.is_empty() || decl.property.contains(' ') {
@@ -102,7 +92,7 @@ pub(super) fn check(sheet: &str, notes: &mut Vec<&'static str>) -> Result<(), Sv
     let unsupported = |rule: &str| invalid(format!("style sheet rule @{} is not supported", short(rule)));
     let mut at = 0;
     loop {
-        let Some(stop) = scan(sheet, at, b"{};") else {
+        let Some(stop) = scan(sheet, at, b"{};")? else {
             return match lead(sheet.get(at..).unwrap_or("")) {
                 "" => Ok(()),
                 _ => Err(malformed("text after its last rule")),
@@ -122,7 +112,7 @@ pub(super) fn check(sheet: &str, notes: &mut Vec<&'static str>) -> Result<(), Sv
                     return Err(unsupported(rule));
                 }
                 // The end of the file closes an open block, as in a browser.
-                let end = scan(sheet, stop + 1, b"{}").unwrap_or(sheet.len());
+                let end = scan(sheet, stop + 1, b"{}")?.unwrap_or(sheet.len());
                 if sheet.as_bytes().get(end) == Some(&b'{') {
                     return Err(malformed("a rule inside a rule"));
                 }
